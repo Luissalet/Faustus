@@ -985,3 +985,12 @@ y la landing con Vitruvius salió de principio a fin con el 27B (19/19 en
 `page_assay`).
 **Queda:** que el selector ofrezca las skills de familia (`hoard-daily-digest`)
 en vez de diez `lookup_tools`; los candidatos fantasma `mcp__vitruvius__*`.
+
+**Todo local (25-09, tarde; FAUSTUS.md §194).** Luis: «todo local, queremos
+que sea potente por sí mismo». Nada de modelos de suscripción para visión ni
+para nada. Hecho: el 27B carga su propio proyector (`--mmproj`) y lee las
+imágenes él mismo en la GPU; los motores lo encuentran y lo pasan solos.
+**Queda:** medir MTP (`draft-mtp`) con una sola instancia en el servidor;
+reparto de ranuras entre instancias que comparten el servidor; probar
+`--image-min-tokens` en escaneos con letra pequeña; repetir la ruta del
+examen con visión local.

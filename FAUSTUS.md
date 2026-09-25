@@ -8777,3 +8777,19 @@ compartido. Subir el repositorio a GitHub cuando Luis lo diga.
 - *Vitruvius `11b020d`*: por eso `render_preview`, `design_lint` y `design_critique` aceptan ya `path` (un `.html` o una carpeta con `index.html`) como `page_assay`, y la descripción dice que una página ya escrita se pasa por ruta.
 
 **Faustus.** El 7003 murió a las 15:45 sin traza en su log (ni excepción ni apagado); se relanzó con `restart7003.ps1`. `lookup_tools` devolvió nombres `mcp__vitruvius__*` que no existen en ningún servidor (el conector real es `mcp__67b3358f__*`); el modelo acabó llamando al bueno, pero son candidatos fantasma. Ambos a PENDIENTES.
+
+## 194. Todo local: el modelo principal ve con su propio proyector (25-09-2026, tarde)
+
+**Problema.** Luis: «todo local, queremos que sea potente por sí mismo». La ejecución 27 del examen usaba el cliente de suscripción como modelo de Visión; eso queda fuera. En local, cada imagen iba a un modelo de visión de 30B en CPU (minutos por pregunta), mientras el 27B que sirve el chat se lanzaba sin visión.
+
+**Hallazgo.** El modelo de Ollama del 27B trae en su manifiesto una capa `application/vnd.ollama.image.projector` (el proyector `mmproj`, ~0,9 GB) que nadie cargaba. Lanzado `llama-server` con `--mmproj <blob>`, el log dice «loaded multimodal model» y `/props` pasa a `modalities.vision: true`.
+
+**Hecho.**
+- `src/engines.py`: `find_mmproj(model_path)` encuentra el proyector que acompaña al modelo (en un almacén de Ollama, por el manifiesto que lista la capa de pesos; en una carpeta, un único `mmproj*.gguf` hermano o el que lleva el nombre del modelo). Un motor nuevo se crea con `--mmproj` cuando lo hay (`vision` omitido = automático; `vision: false` lo quita; `vision: true` sin proyector se rechaza; `mmproj_path` explícito debe existir). Al editar se conserva el proyector actual, se vuelve a buscar si cambia el modelo y no se duplica el flag en `extra_args`. Una edición conserva una espera de arranque (`readiness.timeout_s`) mayor puesta a mano. Rutas: `vision` y `mmproj_path` en crear y editar. Ajustes → Modelos locales: etiqueta «Visión» y casilla. 11 pruebas nuevas (`tests/test_engines_vision.py`).
+- No hizo falta tocar el agente: `model_supports_vision` ya lee `/props`, así que con el proyector cargado las imágenes de `read_file` y de `inspect_image` van al modelo principal directamente y el modelo de Visión aparte sólo queda para un modelo principal sin visión.
+- 7006: `vision_model` local (`qwen3-vl-30b-cpu`) sólo de reserva, sin modelos de visión de respaldo remotos y `agent_external_runners` desactivado.
+
+**Verificado en vivo.** El 27B con su proyector, por la API del servidor: leyó el gráfico de barras de prueba (Norte 12, Sur 31, Este 27, Oeste 8, Centro 19; mejor Sur, diferencia 23). Por Faustus en el 7006 («mira grafico.png…»): `read_file` del PNG, sin descripción del modelo de visión aparte en el resultado, y la respuesta exacta con las cinco cifras. El turno tardó 15 min porque el mismo servidor atendía a la vez a otras dos instancias (tres ranuras ocupadas, generación bajando a 2–3 t/s); la lectura de la imagen en sí fue de segundos. En el navegador (Ajustes → Modelos locales del 7006): el motor muestra la etiqueta «Visión», la casilla sale marcada, y Guardar deja `--mmproj` una sola vez en el perfil y conserva los 180 s de espera.
+
+**No hecho.** MTP (`--spec-type draft-mtp`): este `llama-server` lo soporta y el 27B trae las capas `nextn`, pero con varias ranuras paralelas compartidas entre instancias la ganancia se pierde casi entera; queda en OBJETIVOS para cuando el servidor sirva una sola instancia. `--image-min-tokens` para imágenes con mucho detalle tampoco se ha probado.
+
