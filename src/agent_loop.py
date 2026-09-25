@@ -14,6 +14,7 @@ import functools
 import hashlib
 import inspect
 import json
+from collections import OrderedDict
 import random
 import re
 import time
@@ -5808,6 +5809,46 @@ def _tool_image_messages(
     return [{"role": "user", "content": content, "metadata": metadata}]
 
 
+#: session id -> (relevant tools, hot tools) offered on its last turn.
+_SESSION_TOOLSETS: "OrderedDict[str, Tuple[frozenset, Optional[frozenset]]]" = OrderedDict()
+_SESSION_TOOLSETS_MAX = 256
+#: A turn may widen the previous set up to this many tools; past it, it
+#: starts from its own selection again.
+_STICKY_TOOLSET_MAX = 28
+
+
+def _sticky_toolset(session_id: str, relevant: Set[str], hot: Optional[Set[str]],
+                    disabled: Set[str]) -> Tuple[Set[str], Optional[Set[str]]]:
+    """The tools for this turn, kept as close as possible to the last turn's.
+
+    Measured on the local 27B (25-09): a follow-up question in the same chat
+    reprocessed all 9k prompt tokens (`cached_tokens` 0) because its tool
+    selection differed from the previous turn's and the chat template
+    renders the tool list inside the system block, ahead of the history.
+    When the previous set already covers this turn, it is reused as is; when
+    this turn needs more, the union is used (and remembered) while it stays
+    small; otherwise the turn's own selection starts a new set."""
+    prev = _SESSION_TOOLSETS.get(session_id)
+    out_relevant, out_hot = set(relevant), (None if hot is None else set(hot))
+    if prev is not None:
+        prev_relevant = set(prev[0]) - disabled
+        prev_hot = None if prev[1] is None else set(prev[1]) - disabled
+        if relevant <= prev_relevant and (hot is None or prev_hot is None or hot <= prev_hot):
+            out_relevant, out_hot = prev_relevant, prev_hot if hot is not None else None
+        else:
+            union = prev_relevant | relevant
+            if len(union) <= _STICKY_TOOLSET_MAX:
+                out_relevant = union
+                if hot is not None:
+                    out_hot = (prev_hot or set()) | hot
+    _SESSION_TOOLSETS[session_id] = (frozenset(out_relevant),
+                                     None if out_hot is None else frozenset(out_hot))
+    _SESSION_TOOLSETS.move_to_end(session_id)
+    while len(_SESSION_TOOLSETS) > _SESSION_TOOLSETS_MAX:
+        _SESSION_TOOLSETS.popitem(last=False)
+    return out_relevant, out_hot
+
+
 def _template_keeps_turn_reasoning(model: Optional[str]) -> bool:
     """Does this model's chat template itself keep the reasoning of the
     current turn's assistant messages (and drop earlier turns')? True for the
@@ -8330,6 +8371,16 @@ async def _stream_agent_loop_body(
             "overflow_ids": list(_outcome.get("overflow_ids") or [])[:20],
         }
     from src.tool_serve import LOOKUP_TOOL as _LOOKUP_TOOL, partition_offer as _partition_offer
+    # Same tools as the previous turn of this chat when they still cover
+    # this one (see `_sticky_toolset`): the tool list is rendered at the top
+    # of the prompt, so a different list costs a full reprocess every turn.
+    if (_relevant_tools is not None and not relevant_tools and not guide_only and session_id
+            and bool(get_setting("agent_sticky_toolset", True))):
+        _relevant_tools, _hot_seed = _sticky_toolset(
+            session_id, set(_relevant_tools),
+            None if _hot_seed is None else set(_hot_seed),
+            set(disabled_tools or ()),
+        )
     _schema_tools = None
     _deferred_tools: Set[str] = set()
     if _relevant_tools is not None:

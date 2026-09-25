@@ -90,6 +90,16 @@ def isolated_managed_objectives(tmp_path_factory):
         patch.setattr(objective_locations, 'managed_root', path)
         yield
 
+@pytest.fixture(autouse=True)
+def fresh_session_toolsets():
+    """The agent loop remembers each chat's last tool set; tests reuse session
+    ids freely, so each starts without that memory."""
+    import sys as _sys
+    loop = _sys.modules.get("src.agent_loop")
+    if loop is not None and hasattr(loop, "_SESSION_TOOLSETS"):
+        loop._SESSION_TOOLSETS.clear()
+    yield
+
 # Child processes the tests spawn (node for the JS contract tests, python for
 # scripts) must speak UTF-8 regardless of the host code page: on Windows the
 # default is cp1252, and every test that pipes an arrow or an accent through a
