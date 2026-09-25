@@ -1081,7 +1081,6 @@ contamina a cual, y aislar ese estado en una fixture, como se hizo con
 
 ## Uso diario 25-09 tarde (FAUSTUS.md §196)
 
-- La puerta del modelo local (`_local_model_slot` en `src/llm_core.py`) es un solo candado para toda la instancia: dos turnos del mismo 7006 contra el mismo `llama-server` con 4 ranuras esperan uno tras otro («waited 60s for the local model slot»). Valorar un grupo por URL (varias peticiones al mismo servidor y modelo ya cargado, hasta sus ranuras; exclusivo frente a otros destinos, que son los que cargan modelos en la VRAM). Tocar con cuidado: es la protección de VRAM.
 - Cantidades en listas de la compra y recetas escaladas: el 27B no usa `python` para multiplicar raciones y se equivoca (6 muslos para 7 personas «2,5–3 kg»). Un aviso de respuesta, al estilo de `answer_checks`, que detecte «para N personas» con cantidades y pida la cuenta, está por pensar.
 - Erratas del 27B en castellano (≈1 por respuesta larga): no las causa `repeat_penalty` (A/B en FAUSTUS.md §198). Queda probar una temperatura más baja para respuestas largas en prosa o una pasada de ortografía local antes de mostrar; ninguna está hecha.
 - Seguridad (revisión de §199): tras contenido de fuera, `web_search` sigue permitido y su consulta es un canal de salida (anterior a §199, no lo abre la lectura privada nueva). Valorar si una consulta de búsqueda que contiene texto de una lectura privada reciente debe pedir tarjeta.

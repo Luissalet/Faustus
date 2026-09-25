@@ -113,6 +113,11 @@ def test_a_run_spread_over_step_tasks_is_one_owner(monkeypatch):
 
 
 def test_another_run_still_waits_for_the_slot(monkeypatch):
+    # A server with one generation pipe; several slots are shared (see
+    # tests/test_local_slot_sharing.py).
+    async def _one_slot(url):
+        return 1
+    monkeypatch.setattr(llm_core, "_server_slots", _one_slot)
     monkeypatch.setattr(llm_core, "_LOCAL_MODEL_LOCK", asyncio.Lock())
     monkeypatch.setattr(llm_core, "_LOCAL_MODEL_CURRENT", {})
     monkeypatch.setattr(llm_core, "_local_model_gate_enabled", lambda: True, raising=False)

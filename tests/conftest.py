@@ -100,6 +100,29 @@ def fresh_session_toolsets():
         loop._SESSION_TOOLSETS.clear()
     yield
 
+@pytest.fixture(autouse=True)
+def fresh_local_model_slot(monkeypatch):
+    """Every test gets its own local-model slot, and the servers it names
+    have one generation pipe unless the test says otherwise: the real
+    llama-server on a developer machine (four slots on 8081) must not decide
+    whether two calls share it, and a test that leaves the process-wide lock
+    held must not break the next one's event loop."""
+    import sys as _sys
+    core = _sys.modules.get("src.llm_core")
+    if core is not None and hasattr(core, "_LOCAL_MODEL_LOCK"):
+        import asyncio as _asyncio
+        monkeypatch.setattr(core, "_LOCAL_MODEL_LOCK", _asyncio.Lock())
+        monkeypatch.setattr(core, "_LOCAL_MODEL_CURRENT", {})
+        monkeypatch.setattr(core, "_LOCAL_MODEL_WAITING_FOREGROUND", 0)
+        if hasattr(core, "_LOCAL_MODEL_SHARED"):
+            monkeypatch.setattr(core, "_LOCAL_MODEL_SHARED", {"host": "", "model": "", "count": 0})
+
+            async def _one_slot(url):
+                return 1
+            monkeypatch.setattr(core, "_server_slots", _one_slot)
+    yield
+
+
 # Child processes the tests spawn (node for the JS contract tests, python for
 # scripts) must speak UTF-8 regardless of the host code page: on Windows the
 # default is cp1252, and every test that pipes an arrow or an accent through a

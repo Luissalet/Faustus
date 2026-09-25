@@ -28,6 +28,9 @@ logger = logging.getLogger(__name__)
 _LOCAL_MODEL_LOCK = asyncio.Lock()
 _LOCAL_MODEL_WAITING_FOREGROUND = 0
 _LOCAL_MODEL_CURRENT: Dict[str, object] = {}
+#: Foreground calls sharing the slot holder's server (see
+#: `_can_share_local_slot`): {"host", "model", "count"}.
+_LOCAL_MODEL_SHARED: Dict[str, object] = {"host": "", "model": "", "count": 0}
 
 
 def _normalize_usage_counts(input_value=0, output_value=0):
@@ -306,9 +309,78 @@ async def _acquire_local_model_lock(model: str) -> None:
                 _LOCAL_MODEL_LOCK.release()
 
 
+def _shared_slot_enabled() -> bool:
+    try:
+        from src.settings import get_setting
+        return bool(get_setting("local_model_shared_slots", True))
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _host_key(url: str) -> str:
+    try:
+        from src.swarm.lane import host_key
+        return host_key(url)
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+async def _server_slots(url: str) -> int:
+    """Parallel slots of the llama-server behind `url` (cached for a minute
+    by `src.swarm.capacity`), 1 when unknown or not a llama-server."""
+    try:
+        from src.swarm import capacity
+        if capacity._looks_ollama(url):  # its parallelism cannot be read back
+            return 1
+        slots = await capacity.llamacpp_slots(url, timeout=1.5)
+        return int(slots or 1)
+    except Exception:  # noqa: BLE001
+        return 1
+
+
+async def _can_share_local_slot(target_url: str, model: str) -> bool:
+    """Whether a foreground call may run beside the one holding the slot.
+
+    The slot is one lock for the whole instance because most local servers
+    have one generation pipe and a second model must never be loaded while
+    one is answering. Two chats of the same instance asking the same
+    llama-server, already serving that model with several slots (``-np 4``),
+    waited for each other anyway ("waited 60s for the local model slot",
+    25-09). Such a call joins the holder instead: same server, same model,
+    both in the foreground, and fewer calls in flight than the server has
+    slots. Nothing new is loaded, so the VRAM the slot protects is not
+    touched; a call to any other server or model still waits."""
+    if not (_shared_slot_enabled() and _LOCAL_MODEL_LOCK.locked()):
+        return False
+    holder = dict(_LOCAL_MODEL_CURRENT)
+    host = _host_key(target_url)
+    if (not host or holder.get("workload") != "foreground"
+            or _host_key(str(holder.get("url") or "")) != host
+            or str(holder.get("model") or "") != str(model or "")):
+        return False
+    slots = await _server_slots(target_url)
+    in_flight = 1 + int(_LOCAL_MODEL_SHARED.get("count") or 0)
+    return slots > 1 and in_flight < slots
+
+
+async def _wait_for_other_shared_calls(target_url: str, model: str, kind: str) -> None:
+    """After taking the slot: calls that joined the previous holder on
+    another server or model must finish before this one starts (it may load
+    a model). Same server and model in the foreground: nothing to wait for."""
+    while int(_LOCAL_MODEL_SHARED.get("count") or 0) > 0:
+        same = (kind == "foreground"
+                and _LOCAL_MODEL_SHARED.get("host") == _host_key(target_url)
+                and _LOCAL_MODEL_SHARED.get("model") == str(model or ""))
+        if same:
+            return
+        await asyncio.sleep(0.1)
+
+
 def _foreground_model_busy() -> bool:
     """A foreground call is waiting for the local model slot or holds it."""
     if _LOCAL_MODEL_WAITING_FOREGROUND > 0:
+        return True
+    if int(_LOCAL_MODEL_SHARED.get("count") or 0) > 0:
         return True
     return _LOCAL_MODEL_LOCK.locked() and _LOCAL_MODEL_CURRENT.get("workload") == "foreground"
 
@@ -387,6 +459,16 @@ async def _local_model_slot(target_url: str, model: str, workload: Optional[str]
                         "nested call proceeds model=%s", model)
             yield
             return
+        if kind == "foreground" and await _can_share_local_slot(target_url, model):
+            _LOCAL_MODEL_SHARED.update({"host": _host_key(target_url), "model": str(model or ""),
+                                        "count": int(_LOCAL_MODEL_SHARED.get("count") or 0) + 1})
+            logger.info("[model-gate] sharing the local server's slots with the holder model=%s (%d beside it)",
+                        model, _LOCAL_MODEL_SHARED["count"])
+            try:
+                yield
+            finally:
+                _LOCAL_MODEL_SHARED["count"] = max(0, int(_LOCAL_MODEL_SHARED.get("count") or 0) - 1)
+            return
         if kind == "foreground":
             _LOCAL_MODEL_WAITING_FOREGROUND += 1
             current = dict(_LOCAL_MODEL_CURRENT)
@@ -412,6 +494,7 @@ async def _local_model_slot(target_url: str, model: str, workload: Optional[str]
         try:
             await _acquire_local_model_lock(model)
             acquired = True
+            await _wait_for_other_shared_calls(target_url, model, kind)
             if kind == "foreground":
                 _LOCAL_MODEL_WAITING_FOREGROUND = max(0, _LOCAL_MODEL_WAITING_FOREGROUND - 1)
             _LOCAL_MODEL_CURRENT.clear()
