@@ -34,6 +34,7 @@
 (no output yet)	(aún sin salida)
 (no output)	(sin salida)
 (no output) — exit code {n}	(sin salida) — código de salida {n}
+(no owner)	(sin propietario)
 (no problem recorded)	(sin problema registrado)
 (no question recorded)	(no se anotó la pregunta)
 (no subject)	(sin asunto)
@@ -340,6 +341,7 @@ Agent's suggestions applied	Sugerencias del agente aplicadas
 Agents	Agentes
 Agents in this conversation	Agentes de esta conversación
 Agents: the workers board, the experts, and the tournament that makes several models compete on one prompt.	Agentes: el tablero de workers, los expertos, y el torneo que hace competir a varios modelos con un mismo prompt.
+Agreement	Acuerdo
 Album	Álbum
 Album created	Álbum creado
 Album deleted	Álbum borrado
@@ -383,6 +385,7 @@ Allow once	Permitir una vez
 Allow paid escalation	Permitir escalado a modelos de pago
 Allow routine desktop actions; ask when other approval checks require it.	Permite acciones habituales del escritorio; pregunta cuando otros controles requieren permiso.
 Allow this exact action once?	¿Permitir esta acción exacta una vez?
+Allow this task to continue?	¿Dejar que esta tarea continúe?
 Allowed models	Modelos permitidos
 Allowed tools (comma-separated; empty inherits)	Herramientas permitidas (separadas por comas; vacío hereda)
 Allowed.	Permitido.
@@ -488,6 +491,7 @@ Apply to all occurrences	Aplicar a todas las apariciones
 Apply to this repo	Aplicar a este repositorio
 Applying…	Aplicando…
 Approval	Aprobación
+Approval autonomy — shadow log	Autonomía de aprobaciones — registro en sombra
 Approval mode for all Faustus chats. Only an administrator can change it.	Se aplica a todos los chats de Faustus. Solo un administrador puede cambiarlo.
 Approval required — approve it in the Preflight panel, then render again.	Aprobación requerida — apruébala en el panel de preflight y vuelve a renderizar.
 Approval: {label}	Aprobación: {label}
@@ -1081,6 +1085,7 @@ Confidence	Confianza
 Confidence from the anchoring layer that passed	Confianza de la capa de anclaje que pasó
 Confidence up to	Confianza hasta
 Confidence ≤ {n}%	Confianza ≤ {n}%
+Confident (act-tier)	Con confianza (nivel de actuar)
 Configuration	Configuración
 Configure Google	Configurar Google
 Configure Google first	Configurar Google primero
@@ -1516,6 +1521,7 @@ Cue text	Texto del cue
 Curator	Curador
 Current	Actual
 Current commit	Commit actual
+Current mode: {mode}. Auto-approve threshold {act}, promotion needs {n}+ confident decisions at {pct}% agreement.	Modo actual: {mode}. Umbral de aprobación automática {act}; promocionar necesita {n} o más decisiones con confianza y un {pct} % de acuerdo.
 Current password	Contraseña actual
 Current plan	Plan actual
 Currently going into the prompt	Ahora mismo entra en el prompt
@@ -1681,6 +1687,8 @@ Deleting {name}…	Borrando {name}…
 Delivered	Entregado
 Delivery method	Método de entrega
 Deltas	Deltas
+Demote	Degradar
+Demoted back to computed value.	Devuelto al valor calculado.
 Denied	Denegada
 Denoise	Quitar ruido
 Denoised	Sin ruido
@@ -2126,6 +2134,7 @@ Failed checks	Comprobaciones fallidas
 Failure candidates	Candidatos a fallo
 Failures	Fallos
 Fallback chain	Cadena de respaldo
+Family	Familia
 Fast	Rápido
 Fastmail needs an app password (Settings → Privacy & Security → App passwords).	Fastmail necesita una contraseña de aplicación (Ajustes → Privacidad y seguridad → Contraseñas de aplicación).
 Faustus can pick rounds, timeouts and concurrency for the GPU it finds, and fix a search provider that would leave it with nothing to read.	Faustus puede elegir rondas, tiempos de espera y concurrencia para la GPU que encuentre, y arreglar un buscador que lo dejaría sin nada que leer.
@@ -3605,6 +3614,7 @@ No saved signatures yet — draw one below.	Aún no hay firmas guardadas: dibuja
 No saved visual references yet.	Todavía no hay referencias visuales guardadas.
 No search has run since the server started. Test it to see which engines answer.	No se ha hecho ninguna búsqueda desde que arrancó el servidor. Pruébala para ver qué motores responden.
 No server signal for {n}s	Sin señal del servidor desde hace {n}s
+No shadow-log history yet — it fills in as gated calls are decided, in any mode.	Todavía no hay historial en el registro en sombra: se llena a medida que se deciden llamadas protegidas, en cualquier modo.
 No side threads yet. Select text in a reply to start one.	Todavía no hay excursos. Selecciona texto en una respuesta para abrir uno.
 No skills match "{q}".	Ninguna skill coincide con «{q}».
 No skills yet	Aún no hay skills
@@ -4062,6 +4072,7 @@ Overridden	Sobrescrito
 Override for one project or session	Excepción para un proyecto o sesión concretos
 Overview	Resumen
 Own	Propio
+Owner	Propietario
 Owner: {owner} · Reviewer: {reviewer}	Propietario: {owner} · Revisor: {reviewer}
 P0 · Urgent	P0 · Urgente
 P1 · High	P1 · Alta
@@ -4144,6 +4155,7 @@ Pen	Lápiz
 Pending	Pendiente
 Pending ({n})	Pendientes ({n})
 Pending · 30 days	Pendientes · 30 días
+Per tool family: how many gated calls this logged, how often the confidence score agreed with what was actually decided, and whether the family is promoted for auto-approval in "active" mode. A family with any disagreement on a destructive call is never auto-promoted.	Por familia de herramientas: cuántas llamadas protegidas registró, con qué frecuencia la puntuación de confianza coincidió con lo que se decidió de verdad y si la familia está promocionada para aprobarse sola en el modo «active». Una familia con algún desacuerdo en una llamada destructiva nunca se promociona sola.
 Per-model reliability of your agent turns: verified rate, questions, tests, time.	Fiabilidad por modelo de tus turnos de agente: verificados, preguntas, tests, tiempo.
 Per-node breakdown	Desglose por nodo
 Perfect	Perfecto
@@ -4301,7 +4313,9 @@ Project saved	Proyecto guardado
 Project sections	Secciones del proyecto
 Project “{name}” created	Proyecto «{name}» creado
 Projects	Proyectos
+Promote	Promocionar
 Promoted to an active anti-pattern.	Promovido a antipatrón activo.
+Promoted — this family may now be auto-approved.	Promocionada: esta familia ya puede aprobarse sola.
 Prompt	Prompt
 Prompt (in English, for the model — empty means no extra block at all)	Prompt (en inglés, para el modelo — vacío significa sin bloque adicional)
 Prompt (seam fix only)	Prompt (solo para el arreglo de costura)
@@ -5485,7 +5499,9 @@ Story 1080 × 1920	Historia 1080 × 1920
 Strategy profile	Perfil de estrategia
 Strategy profile: {label}	Perfil de estrategia: {label}
 Strategy: {method} · {profile}{reason}	Estrategia: {method} · {profile}{reason}
+Untrusted context influenced this run, so continuing with otherwise-gated actions needs your explicit approval.	Algo de fuera (una página, un archivo, un resultado de herramienta) ha influido en esta tarea, así que seguir con acciones protegidas necesita tu permiso expreso.
 direct edit	edición directa
+not promoted	sin promocionar
 plan, then do	planificar y hacer
 research	investigación
 specialised review	revisión especializada

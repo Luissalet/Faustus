@@ -848,12 +848,14 @@ export function AskCard({
     return (
       <div className="fs-studio__ask" ref={ref} data-testid="studio-approval">
         <p className="fs-studio__ask-title">{t('Needs your permission')}</p>
-        {ask.question && <p className="fs-prose">{ask.question}</p>}
+        {/* The gate's own sentences are fixed English; t() gives the known
+            ones in the reader's language and leaves any other as it is. */}
+        {ask.question && <p className="fs-prose">{t(ask.question)}</p>}
         {/* 20-09-2026: both gates ask the same question ("Allow this task to
             continue?"), so without the server's reason a destructive-command
             confirmation is indistinguishable from the untrusted-context one
             and reads like the folder grant stopped working. */}
-        {ask.description && <p className="fs-studio__ask-reason">{ask.description}</p>}
+        {ask.description && <p className="fs-studio__ask-reason">{t(ask.description)}</p>}
         <div className="fs-studio__ask-actions">
           {approvalChoices(ask.options).map((choice) => (
             <Button

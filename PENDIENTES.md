@@ -202,7 +202,6 @@ La suite completa acabó por primera vez en el día: **20.766 pasan, 93 fallan, 
 
 ## 21-09 — motor parado a la vista y la tabla de traducciones como única fuente
 
-- ABIERTO: el propio `--check` sigue reportando ~50 cadenas de la interfaz sin traducir (fallo preexistente de `tests/test_side_threads_js.py::test_i18n_check_passes`). Ahora que la tabla es la única fuente, se pueden añadir en tandas.
 
 ## 20-09 — sesión real de lote (fichas por carpeta) con qwen3.8 27B q4, aprendido haciendo de coach
 
@@ -1084,7 +1083,6 @@ contamina a cual, y aislar ese estado en una fixture, como se hizo con
 
 - La puerta del modelo local (`_local_model_slot` en `src/llm_core.py`) es un solo candado para toda la instancia: dos turnos del mismo 7006 contra el mismo `llama-server` con 4 ranuras esperan uno tras otro («waited 60s for the local model slot»). Valorar un grupo por URL (varias peticiones al mismo servidor y modelo ya cargado, hasta sus ranuras; exclusivo frente a otros destinos, que son los que cargan modelos en la VRAM). Tocar con cuidado: es la protección de VRAM.
 - Cantidades en listas de la compra y recetas escaladas: el 27B no usa `python` para multiplicar raciones y se equivoca (6 muslos para 7 personas «2,5–3 kg»). Un aviso de respuesta, al estilo de `answer_checks`, que detecte «para N personas» con cantidades y pida la cuenta, está por pensar.
-- La tarjeta de aprobación se guarda como texto del asistente en inglés («Allow this task to continue?»). La interfaz la oculta y la exportación ya la quita (§208); un cliente que lea el historial por la API la sigue viendo. Si hace falta, localizar la pregunta de la tarjeta al idioma del usuario.
 - Erratas del 27B en castellano (≈1 por respuesta larga): no las causa `repeat_penalty` (A/B en FAUSTUS.md §198). Queda probar una temperatura más baja para respuestas largas en prosa o una pasada de ortografía local antes de mostrar; ninguna está hecha.
 - Seguridad (revisión de §199): tras contenido de fuera, `web_search` sigue permitido y su consulta es un canal de salida (anterior a §199, no lo abre la lectura privada nueva). Valorar si una consulta de búsqueda que contiene texto de una lectura privada reciente debe pedir tarjeta.
 
