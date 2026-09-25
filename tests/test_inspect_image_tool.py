@@ -646,3 +646,24 @@ async def test_earlier_answers_on_the_same_region_are_shown_next_to_a_new_one(tm
                             "question": "How many people?"}, ctx={"turn_model": "qwen2.5:7b-instruct",
                                                                   "session_id": "another-session"})
     assert "earlier in this session" not in elsewhere["output"]
+
+
+@pytest.mark.asyncio
+async def test_a_small_crop_is_enlarged_before_the_vision_model_sees_it(tmp_path, monkeypatch):
+    from PIL import Image
+    p = _save_png(tmp_path / "small.png", 450, 640)
+    seen = []
+
+    def fake_analyze(images, prompt, owner=None, model_override=None):
+        seen.append(Image.open(__import__("io").BytesIO(images[0][0])).size)
+        return {"text": "ok", "model": "local-vl-model"}
+
+    monkeypatch.setattr(dp, "analyze_image_with_vl_prompt", fake_analyze)
+    out = await _run({"action": "ask", "path": p, "region": [0, 0.35, 1, 0.8], "question": "What is written?"},
+                     ctx={"turn_model": "qwen2.5:7b-instruct"})
+    assert max(seen[-1]) >= 1000, seen
+    assert out["measurements"].get("enlarged_for_vision")
+
+    big = _save_png(tmp_path / "big.png", 2000, 1500)
+    await _run({"action": "ask", "path": big, "question": "What is written?"}, ctx={"turn_model": "qwen2.5:7b-instruct"})
+    assert max(seen[-1]) <= 1280

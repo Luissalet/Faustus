@@ -122,6 +122,37 @@ def _vision_max_side_limit() -> int:
         return 1600
 
 
+def _vision_min_side() -> int:
+    """Longest side a crop is enlarged to before the Vision model sees it
+    (vision_min_side, 1024 px by default; 0 = never)."""
+    try:
+        from src.settings import get_setting
+        return max(0, min(int(get_setting("vision_min_side", 1024) or 0), 4096))
+    except Exception:  # noqa: BLE001
+        return 1024
+
+
+def _enlarge_small(image: Any, min_side: int, max_side: int) -> Tuple[Any, float]:
+    """`image` scaled up so its longest side reaches `min_side` (never past
+    `max_side`, never more than 4x), and the factor used (1.0 = unchanged).
+    Vision encoders read small text badly at its native size: live, a
+    453x288 crop of handwriting came back as invented words, and the same
+    crop at 3x was read correctly."""
+    try:
+        w, h = image.size
+    except Exception:  # noqa: BLE001
+        return image, 1.0
+    longest = max(w, h)
+    if not min_side or longest <= 0 or longest >= min_side:
+        return image, 1.0
+    target = min(min_side, max_side or min_side)
+    factor = min(target / float(longest), 4.0)
+    if factor <= 1.05:
+        return image, 1.0
+    from PIL import Image as _PILImage
+    return image.resize((max(1, round(w * factor)), max(1, round(h * factor))), _PILImage.LANCZOS), factor
+
+
 def _vision_max_side() -> int:
     try:
         from src.settings import get_setting
@@ -208,7 +239,11 @@ async def _action_ask(args: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, An
         return {"output": text, "exit_code": 0, "images": _images_payload((b64, mime)),
                 "answered_by": "main_model", "measurements": measurements}
 
-    b64, mime = ii.image_to_b64(proc.image)
+    vision_image, enlarged = _enlarge_small(proc.image, _vision_min_side(),
+                                            int(pargs.get("max_side") or _vision_max_side()))
+    if enlarged > 1.0:
+        measurements["enlarged_for_vision"] = round(enlarged, 2)
+    b64, mime = ii.image_to_b64(vision_image)
     prompt = f"{_LITERAL_INSTRUCTIONS}\n\nQuestion: {question}"
     model_override = str(args.get("model") or "").strip() or None
     result = await _ask_vision_model([(_b64_to_bytes(b64), mime)], prompt, owner, model_override)

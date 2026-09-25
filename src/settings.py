@@ -167,6 +167,11 @@ DEFAULT_SETTINGS = {
     # The most a caller may ask for (max_side) when the Vision model answers:
     # 2400 px made each question on a CPU vision model take minutes.
     "vision_max_side_limit": 1600,
+    # A crop smaller than this (longest side, px) is enlarged before the
+    # Vision model sees it (0 = never). Live, 25-09-2026: a 453x288 crop of
+    # handwritten operations came back as invented words ("Build & connect")
+    # from a strong vision model; the same crop at 3x read correctly.
+    "vision_min_side": 1024,
     # Longest answer one vision question may produce (0 = no limit). Live,
     # 24-09-2026: a CPU vision model asked to transcribe a crop fell into a
     # repetition loop and generated 3,600+ tokens at ~6 tokens/s (10 min).
