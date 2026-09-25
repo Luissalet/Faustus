@@ -239,3 +239,13 @@ def test_word_problems_get_reasoning(text):
 ])
 def test_numbers_alone_are_not_a_word_problem(text):
     assert decide(text)["mode"] == "fast"
+
+
+def test_one_line_answer_about_work_still_thinks():
+    out = decide("En el workspace, lee src/think_mode.py y src/swarm/capacity.py. "
+                 "Dime en una línea qué hace cada uno.")
+    assert out["mode"] == "think", out
+
+
+def test_one_line_answer_to_small_question_is_fast():
+    assert decide("Dime en una línea qué es un agujero negro")["mode"] == "fast"

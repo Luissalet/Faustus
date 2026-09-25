@@ -91,8 +91,13 @@ _FAST_ASK = _rx(
     r"\bsin pensar(?:lo)?(?: mucho)?\b", r"\bno (?:lo )?pienses(?: mucho)?\b",
     r"\bdon'?t (?:over)?think\b", r"\bno need to think\b",
     r"\bquick question\b", r"\bpregunta r[aá]pida\b",
-    r"\ben una (?:palabra|frase|l[ií]nea)\b", r"\bin one (?:word|sentence|line)\b",
     r"\bs[ií] o no\b", r"\byes or no\b", r"\btl;?dr\b", r"\(r[aá]pido\)",
+)
+# "In one line" asks for a SHORT ANSWER, not for less thinking: it only means
+# fast when nothing in the message is work ("read these two files and tell me
+# in one line what each does" is still work).
+_BRIEF_ASK = _rx(
+    r"\ben una (?:palabra|frase|l[ií]nea)\b", r"\bin one (?:word|sentence|line)\b",
 )
 
 # Work that benefits from reasoning, by family (the family names become the
@@ -221,6 +226,8 @@ def _decide(text: str, attachments: int, agent: bool, coding: bool, history_len:
 
     if _FAST_ASK.search(stripped):
         return _result("fast", ["asked_speed"], "the message asks for a quick answer", "high")
+    if _BRIEF_ASK.search(stripped) and not families and not multi_constraint:
+        return _result("fast", ["asked_brevity"], "the message asks for a one-line answer", "medium")
 
     if words >= _DEEP_WORDS and (families or multi_constraint or list_items >= 2):
         return _result("deep", ["long_brief"] + families, "a long multi-part brief", "medium")
