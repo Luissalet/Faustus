@@ -8470,6 +8470,6 @@ High#effort	Alto
 Maximum#effort	Máximo
 Level#effort	Nivel
 Follow the mode#effort	Según el modo
-This model's own reasoning levels. A level picked here wins over the mode above.	Niveles de razonamiento del propio modelo. El que elijas aquí manda sobre el modo de arriba.
+This model's own reasoning levels. A level picked here wins over the modes below.	Niveles de razonamiento del propio modelo. El que elijas aquí manda sobre los modos de abajo.
 Reasoning level	Nivel de razonamiento
 Answers without reasoning. Quick, but it gets dates and counts wrong.	Responde sin razonar. Rápido, pero se equivoca en fechas y cuentas.

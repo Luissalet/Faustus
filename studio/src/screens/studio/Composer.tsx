@@ -1619,18 +1619,9 @@ function ThinkModeChip({ mode, chosen, onPick, levels = [], effort = null, onPic
         </button>
       }
     >
-      <p>{t('How much the model reasons before answering, for this chat. /think auto|fast|think|deep does the same.')}</p>
-      <div role="radiogroup" aria-label={t('Reasoning')}>
-        {THINK_MODES.map((m) => (
-          <button key={m} type="button" role="radio" aria-checked={mode === m} onClick={() => onPick(m)}
-            data-testid={`studio-think-mode-${m}`}>
-            <strong>{thinkModeLabel(m)}</strong><span>{details[m]}</span>
-          </button>
-        ))}
-      </div>
       {levels.length > 0 && onPickEffort && (
         <>
-          <p>{t("This model's own reasoning levels. A level picked here wins over the mode above.")}</p>
+          <p>{t("This model's own reasoning levels. A level picked here wins over the modes below.")}</p>
           <div role="radiogroup" aria-label={t('Reasoning level')} data-testid="studio-think-levels">
             <button type="button" role="radio" aria-checked={!effort} onClick={() => onPickEffort(null)}
               data-testid="studio-think-level-auto">
@@ -1649,6 +1640,18 @@ function ThinkModeChip({ mode, chosen, onPick, levels = [], effort = null, onPic
           </div>
         </>
       )}
+      <p>{t('How much the model reasons before answering, for this chat. /think auto|fast|think|deep does the same.')}</p>
+      <div role="radiogroup" aria-label={t('Reasoning')}>
+        {THINK_MODES.map((m) => (
+          // A level picked above wins, so no mode shows as the one in use
+          // while it is set, and picking a mode hands control back to it.
+          <button key={m} type="button" role="radio" aria-checked={!effort && mode === m}
+            onClick={() => { if (effort) onPickEffort?.(null); onPick(m); }}
+            data-testid={`studio-think-mode-${m}`}>
+            <strong>{thinkModeLabel(m)}</strong><span>{details[m]}</span>
+          </button>
+        ))}
+      </div>
     </Popover>
   );
 }
