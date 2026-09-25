@@ -729,7 +729,10 @@ def _edits_the_project(user_text: str, content: Any, workspace: str = "", tool: 
 _ASKS_FOR_DATA_WORK = re.compile(
     r"\b(?:grafic\w*|chart\w*|plot\w*|analiz\w*|analisis|analy[sz]\w*|calcul\w*|estadistic\w*|statistic\w*"
     r"|media|promedio|average|mean|suma|sum|totales|factur\w*|cifras|figures|numbers|numeros|datos|data"
-    r"|csv|excel|xlsx|informe|report|resumen|summary|ventas|sales)\b"
+    r"|csv|excel|xlsx|informe|report|resumen|summary|ventas|sales"
+    # A follow-up on the same numbers ("¿y si fueran 120 unidades? dime el
+    # total del año y el porcentaje", seen live) is data work too.
+    r"|total|totals|porcentajes?|percent\w*|ingresos|revenue|unidades|units|recuento|count)\b"
 )
 # Standard modules whose whole public surface is computation or works on
 # file objects `open()` already vetted.

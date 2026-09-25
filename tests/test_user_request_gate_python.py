@@ -215,3 +215,13 @@ def test_a_workspace_file_named_like_an_allowed_module_keeps_the_card(ws):
     with open(os.path.join(ws, "csv.py"), "w", encoding="utf-8") as fh:
         fh.write("import os\n")
     assert not allows("python", AGENT_FIRST_CALL, ASK, ws)
+
+
+def test_a_follow_up_on_the_same_numbers_is_data_work(ws):
+    # Seen live: the second turn of a sales analysis stopped at the card on a
+    # read-only recalculation.
+    code = ("import csv\nwith open('ventas_junio.csv', encoding='utf-8-sig') as f:\n"
+            "    rows = list(csv.DictReader(f, delimiter=';'))\nprint(len(rows))\n")
+    text = ("¿Y si lo del id 400 fueran en realidad 120 unidades? Dime cómo quedarían "
+            "septiembre, el total del año y el porcentaje de la Mochila. No toques ningún archivo.")
+    assert allows("python", code, text, ws) is True
