@@ -88,3 +88,12 @@ def test_a_module_an_allowed_module_re_exports_is_not_reachable():
         assert not is_pure_compute(code), code
     assert is_pure_compute("import calendar\nprint(calendar.monthrange(2026, 2))")
     assert is_pure_compute("from statistics import mean\nprint(mean([1, 2, 3]))")
+
+
+def test_pure_compute_python_is_not_a_destructive_command():
+    from src.command_guard import classify_tool
+    code = "import math\n# truncate the list to the first ten forts\nforts = ['a', 'b']\nprint(math.pi, forts[:10])\n"
+    assert classify_tool("python", code).tier == "SAFE"
+    acting = "import sqlite3\nsqlite3.connect('x.db').execute('truncate table t')\n"
+    assert classify_tool("python", acting).tier != "SAFE"
+    assert classify_tool("bash", "psql -c 'truncate table t'").tier != "SAFE"

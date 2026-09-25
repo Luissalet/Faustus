@@ -508,6 +508,20 @@ def classify_tool(
     """Classify a tool call's content. ``python`` tool content IS python
     source (string literals scanned too); everything else is shell."""
     command = content if isinstance(content, str) else ("" if content is None else str(content))
+    if tool_name == "python":
+        # Python that provably cannot act outside its own process
+        # (src/pure_compute.py: no I/O modules, no open/exec/getattr, no
+        # dunders) cannot truncate a table or delete a file, whatever its
+        # comments and strings say. Live (exam run 25): "truncate t..." in a
+        # comment of a coordinates calculation stopped the turn on a
+        # destructive-command card.
+        try:
+            from src.pure_compute import is_pure_compute
+            if is_pure_compute(command):
+                return GuardDecision("SAFE", rule="pure_compute", pack="whitelist",
+                                     trace=["python that only computes"])
+        except Exception:  # noqa: BLE001 - fall through to the normal scan
+            pass
     return classify(
         command,
         packs=packs,
