@@ -544,3 +544,22 @@ def test_request_voices_win_over_settings(monkeypatch):
     got = rp.pick_voices("es", installed=installed, voice_a="es_ES-sharvard-medium", voice_b="es_ES-davefx-medium",
                          catalogue=[])
     assert (got["A"], got["B"]) == ("es_ES-sharvard-medium", "es_ES-davefx-medium")
+
+
+async def test_a_retry_reuses_the_condensed_report(monkeypatch):
+    from src import research_podcast as rp
+    rp._CONDENSED.clear()
+    calls = {"condense": 0}
+
+    async def fake_condense(md, language, llm, on_progress=None):
+        calls["condense"] += 1
+        return "short version", True
+
+    async def llm(messages, max_tokens, schema=None):
+        return json.dumps({"lines": [{"speaker": sp, "text": f"Frase número {i} del guion."}
+                                     for i, sp in enumerate("ABABAB")]})
+
+    monkeypatch.setattr(rp, "condense_report", fake_condense)
+    await rp.build_script("x " * 3000, "es", 3, llm=llm)
+    await rp.build_script("x " * 3000, "es", 3, llm=llm)
+    assert calls["condense"] == 1

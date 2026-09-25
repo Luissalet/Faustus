@@ -34,6 +34,7 @@ posture the research run markers take.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import io
 import json
 import logging
@@ -465,6 +466,10 @@ async def condense_report(md: str, language: str, llm: LLMCaller,
     return "\n\n".join(notes), True
 
 
+_CONDENSED: Dict[str, Tuple[float, str, bool]] = {}
+_CONDENSED_TTL_S = 6 * 3600
+
+
 async def build_script(report_md: str, language: str, target_minutes: Optional[float] = None,
                        hosts: Optional[Dict[str, str]] = None, *, query: str = "",
                        llm: Optional[LLMCaller] = None, owner: Optional[str] = None,
@@ -474,7 +479,18 @@ async def build_script(report_md: str, language: str, target_minutes: Optional[f
         raise PodcastError("This research has no report to turn into a podcast.")
     minutes = float(target_minutes) if target_minutes else target_minutes_setting()
     llm = llm or make_llm_caller(owner)
-    material, condensed = await condense_report(report_md, language, llm, on_progress)
+    key = hashlib.sha256(f"{language}\n{report_md}".encode("utf-8", "replace")).hexdigest()
+    hit = _CONDENSED.get(key)
+    if hit and time.time() - hit[0] < _CONDENSED_TTL_S:
+        # "Try again" after the script call failed (the model server
+        # restarted mid-job) must not pay the condensing pass a second time:
+        # on a 7k-word report that is six model calls, ~10 minutes local.
+        material, condensed = hit[1], hit[2]
+    else:
+        material, condensed = await condense_report(report_md, language, llm, on_progress)
+        _CONDENSED[key] = (time.time(), material, condensed)
+        for stale in [k for k, v in _CONDENSED.items() if time.time() - v[0] >= _CONDENSED_TTL_S]:
+            _CONDENSED.pop(stale, None)
     if on_progress:
         on_progress({"phase": "script"})
     messages = _script_messages(material, query, language, minutes, hosts, condensed)
