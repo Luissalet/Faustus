@@ -11,9 +11,9 @@ Actualizado: 25-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n 
 - **`since` común en `hoard_link`**: Links (JS) y Echo (Python) lo implementan cada uno por su lado; subirlo a la librería vendorizada y usarlo en toda la familia.
 - **Writer's Hoard, release**: el exe de `release/win-unpacked` se recompiló (0.1.2 con el puente de familia) pero una release pública nueva es de Luis; en esta máquina el Hub arranca el modo desarrollo por `data/hub.json` → `launch_overrides` (la biblioteca vive en el origen `127.0.0.1:5174`). Origen estable para ambos modos sigue abierto como decisión de la app.
 
-## 25-09 mediodía — uso diario en el 7006 (FAUSTUS.md §184, puntos 17–22) — verificado por tests, falta en vivo
+## 25-09 mediodía — uso diario en el 7006 (FAUSTUS.md §184, puntos 17–27)
 
-- **Desplegar en el 7006** (checkout de master, `npm run build`, `Start-7006Task.ps1`) cuando no haya una ejecución larga que deba sobrevivir, y repetir: «Recuerda que…» sin tarjeta; la tarjeta que sí salga nombra el contexto del prompt; tras aprobar no queda la tarjeta duplicada en el historial; `grep …; wc -l …` sobre el CSV sin tarjeta; el ledger ya no marca `ventas.csv` como modificado por un `if x > 100`.
+- **Desplegado en el 7006 (a967c30e)**. Visto en vivo: el historial ya no guarda la tarjeta dos veces; el seguimiento de datos acertó. Falta ver en vivo: «recuerda que…» sin tarjeta con la paráfrasis tolerante; la reescritura por día de la semana erróneo o razonamiento en voz alta (la primera prueba sí quitó el razonamiento en voz alta, pero el día seguía mal porque la fecha iba entre paréntesis — ya cubierto); que el borrador rechazado desaparezca también en Studio (evento `response_replace`).
 - **Ruta ofrecida vs inventada**: medir en turnos reales que una oferta («¿quieres que guarde X?») ya no provoca el rechazo, y que un «He guardado X» falso sí.
 - **La memoria guardada, el índice de skills y las descripciones MCP arman la puerta en cada turno** por diseño. Si siguen saliendo tarjetas en peticiones explícitas, añadir la regla de «lo pidió el usuario» para esa herramienta en `src/user_request_gate.py` en vez de rebajar la puerta.
 
