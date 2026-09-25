@@ -14552,7 +14552,11 @@ async def _stream_agent_loop_body(
                             _notes_text = _notes_text[4:].strip()
                         if _notes_text and not re.match(r"^(done|note|item|deleted)\b", _notes_text, re.IGNORECASE):
                             _notes_text = f"Done — {_notes_text}"
-                if _notes_text:
+                # Only a fine-tuned notes model ends the turn on this line
+                # (see the break after the round); any other model writes its
+                # own reply next, and the raw "Note created: … (id: …)" line
+                # above it was a second, cruder copy of the same answer.
+                if _notes_text and (_ody_notes_finetune_mode or _ody_qwen_finetune_model):
                     _clean_current = strip_tool_blocks(full_response).strip()
                     if _notes_text not in _clean_current:
                         _prefix = "\n\n" if _clean_current else ""
@@ -14582,7 +14586,7 @@ async def _stream_agent_loop_body(
                         _tasks_text = _tasks_text
                     elif _tasks_text and not re.match(r"^(done|created|updated|deleted|task)\b", _tasks_text, re.IGNORECASE):
                         _tasks_text = f"Done — {_tasks_text}"
-                if _tasks_text:
+                if _tasks_text and (_ody_notes_finetune_mode or _ody_qwen_finetune_model):
                     _clean_current = strip_tool_blocks(full_response).strip()
                     if _tasks_text not in _clean_current:
                         _prefix = "\n\n" if _clean_current else ""
