@@ -272,6 +272,17 @@ def test_concat_wavs_mismatch_resamples_with_ffmpeg():
     assert abs(duration - 0.4) < 0.02
 
 
+@pytest.mark.skipif(rp._ffmpeg() is None, reason="ffmpeg not installed")
+def test_wav_to_mp3_with_ffmpeg():
+    mp3 = rp.wav_to_mp3(_sine_wav(0.5))
+    assert mp3 and (mp3[:3] == b"ID3" or mp3[0] == 0xFF)
+
+
+def test_wav_to_mp3_without_ffmpeg_is_none(monkeypatch):
+    monkeypatch.setattr(rp, "_ffmpeg", lambda: None)
+    assert rp.wav_to_mp3(_sine_wav(0.1)) is None
+
+
 def test_split_for_speech_bounds_pieces():
     text = ("This is a sentence. " * 40) + ("x" * 700)
     parts = rp.split_for_speech(text, 120)

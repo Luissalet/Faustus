@@ -231,7 +231,9 @@ def make_llm_caller(owner: Optional[str]) -> LLMCaller:
         raw = await llm_call_async(
             url=url, model=model, messages=messages, temperature=0.6,
             max_tokens=max_tokens, headers=headers, timeout=LLM_TIMEOUT_S,
-            workload="background", response_schema=schema,
+            # Foreground on purpose: a "background" call on a local model is
+            # cancelled by the next chat request, which would kill the job.
+            response_schema=schema,
         )
         return raw if isinstance(raw, str) else str(raw or "")
 
@@ -816,10 +818,14 @@ async def start_podcast(session_id: str, path: Path, owner: str, *,
         "owner": owner,
     }
     _JOBS[session_id] = job
-    await asyncio.to_thread(write_podcast_block, path, {
-        "status": "running", "created_at": None, "started_at": job["started_at"],
-        "language": language, "error": "",
-    })
+    try:
+        await asyncio.to_thread(write_podcast_block, path, {
+            "status": "running", "created_at": None, "started_at": job["started_at"],
+            "language": language, "error": "",
+        })
+    except BaseException:
+        _JOBS.pop(session_id, None)
+        raise
     job["task"] = asyncio.create_task(
         _run(session_id, Path(path), owner, data, md, language, voices, job, llm=llm, hosts=hosts))
     return status_payload(session_id, path)
