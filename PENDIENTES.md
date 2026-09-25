@@ -171,7 +171,6 @@ Segunda pasada completa de la suite, ya con los arreglos del día: **74 fallan, 
 La suite completa acabó por primera vez en el día: **20.766 pasan, 93 fallan, 53 min**. Con ese número delante, los fallos dejan de ser ruido y se pueden mirar uno a uno. Estos son los que se han cerrado.
 
 - NOTA sobre los 93: una parte son de esta clase — tests que afirman algo sobre el entorno (hardware presente, servicios levantados, binarios instalados) y no sobre el código. Los que he comprobado uno a uno contra la base son preexistentes; los cuatro que eran míos están arriba.
-- ABIERTO: `test_launch_profiles::test_already_running_via_readiness_is_not_relaunched` **lanza Electron de verdad** durante la suite. Un test que arranca la aplicación deja procesos sueltos y depende del escritorio de quien lo corra.
 - ABIERTO: siguen en rojo, sin mirar a fondo: `test_ui_smoke_audit` (4), `test_studio_close_dialog_js` (5), `test_studio_clipboard_js`, `test_l86_source_control_panel_js`, `test_studio_guards`, `test_w3a_composer_js`, `test_sse_catalog`, `test_typed_choice`, `test_tool_policy`, `test_process_center`, `test_tls_overrides_scope`, `test_workflow_waits`, `test_model_warmup`, `test_ollama_structured_output` (2), `test_two_tier_search` (1 de 2).
 - NOTA: `test_health::test_the_usage_endpoint_carries_the_health_block` falla porque el bloque de salud dice `warn`, y ahora mismo lo dice con razón (ChromaDB en 8100 y Ollama en 11434 no responden). No es un fallo de código; es el test afirmando que la instalación está sana.
 
