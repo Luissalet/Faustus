@@ -6,7 +6,6 @@ Actualizado: 25-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n 
 ## 25-09 noche — razonamiento del 27B y selector de nivel (FAUSTUS.md §202)
 
 - **Caché de prompt**: arreglada la parte en que una nota del harness movía la pregunta y el sitio del paquete (§203). Queda: el paquete se recompila en cada vuelta y puede cambiar si el presupuesto encoge; y cualquier cambio en la lista de herramientas a mitad de turno (un `lookup_tools` que promociona) reprocesa el prompt entero, porque la plantilla pone las herramientas al principio.
-- **Marcas de cita crudas**: «Faltan 91 días para Navidad … [L-000010]», «12,96 € [L-000011]». Las citas a resultados de herramientas son a propósito (el harness comprueba que el id exista, `agent_harness.py`), pero el Studio las pinta como texto. Falta pintarlas como chip con el cálculo o el resultado al pasar el ratón.
 - **Ruido de la búsqueda de herramientas**: para preguntas sin dominio (una receta, un mensaje) la búsqueda vectorial sigue ofreciendo herramientas sin relación (`ask_teacher`, `desktop_scroll`, `whatsapp_react`, `screen_pause`…).
 - **Niveles de Ollama**: `GET /api/models/reasoning-levels` sólo lee la plantilla de un llama-server local; un modelo servido por Ollama o por una API con niveles no muestra el selector.
 - **Consulta de búsqueda de mala calidad**: la consulta extraída para la búsqueda automática del chat salió «viernes» de una pregunta de fechas. El caso ya no busca (§202), pero el extractor sigue sin comprobar que la consulta conserve el tema.
