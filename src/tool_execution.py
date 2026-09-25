@@ -1785,6 +1785,23 @@ async def _execute_tool_block_impl(
     if tool in ("bash", "powershell") and session_id:
         _is_bg, _bg_cmd = _split_bg_marker(content)
         if _is_bg and _bg_cmd:
+            # The shell tools' own routing guards apply to a background job
+            # too: the marker is split off here, before BashTool or
+            # PowershellTool could see the command, so a `#!bg git push` or
+            # a `#!bg powershell -File x.bat` in bash went straight through.
+            from src.agent_tools.subprocess_tools import (
+                git_mutation_routed_to_tools, windows_shell_routed_to_powershell,
+            )
+            _bg_routed = git_mutation_routed_to_tools(_bg_cmd)
+            if _bg_routed is None and tool == "bash":
+                _bg_routed = windows_shell_routed_to_powershell(_bg_cmd)
+                if _bg_routed is not None:
+                    _bg_routed["error"] += (" For a detached run, put `#!bg` on the first line "
+                                            "of the powershell script.")
+            if _bg_routed is not None:
+                if tool == "powershell":
+                    _bg_routed["error"] = str(_bg_routed["error"]).replace("bash:", "powershell:", 1)
+                return f"{tool} (background): refused", _bg_routed
             from src import bg_jobs
             rec = bg_jobs.launch(
                 _bg_cmd, session_id=session_id, cwd=agent_cwd(),

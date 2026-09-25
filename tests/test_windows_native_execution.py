@@ -551,6 +551,7 @@ async def test_powershell_bg_marker_launches_a_job(monkeypatch):
         return {"id": "job-ps1"}
 
     monkeypatch.setattr("src.bg_jobs.launch", _launch)
+    monkeypatch.setattr("src.tool_execution._owner_is_admin", lambda owner: True)
     Block = namedtuple("ToolBlock", ["tool_type", "content"])
     desc, result = await _execute_tool_block_impl(
         Block("powershell", "#!bg\nwinget install --id Foo.Bar -e"),

@@ -465,14 +465,6 @@ Pasada del 17-09 sobre `89740d02` (+ arreglos): **18.946 verdes**; 46 fallos lis
 
 Contexto completo en FAUSTUS.md §85. Lo que queda abierto:
 
-- **`powershell` no tiene `#!bg`.** Los trabajos en segundo plano siguen siendo de
-  `bash` (`src/bg_jobs.py` lanza con el shell de bash). Un `.bat` largo que haga
-  falta detached hoy se envuelve desde `bash` con `#!bg`, y eso **funciona a
-  propósito**: el marcador `#!bg` se parte en `src/tool_execution.py` antes de
-  llegar a `BashTool`, así que la guarda que enruta `powershell`/`cmd` al tool
-  nuevo no lo ve. Es la única vía para detached en Windows y está bien que lo
-  sea, pero conviene que `powershell` tenga su propio `#!bg` y que entonces la
-  guarda cubra también ese camino.
 - **POSIX con Docker caído cambia de comportamiento.** `agent_sandbox_mode` es
   `auto` por defecto: donde antes se rechazaba el comando, ahora lo corre el host
   y el resultado lo dice (`sandbox_skipped`). Quien quiera la puerta dura tiene
