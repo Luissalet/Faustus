@@ -57,6 +57,7 @@ _HOST_FLAGS = ("--host",)
 _SPEC_TYPE_FLAGS = ("--spec-type",)
 _SPEC_DRAFT_N_MAX_FLAGS = ("--spec-draft-n-max",)
 _PARALLEL_FLAGS = ("-np", "--parallel")
+_MMPROJ_FLAGS = ("--mmproj", "-mm")
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_CTX = 4096
@@ -140,8 +141,9 @@ def _parse_fields(profile: Dict[str, Any]) -> Dict[str, Any]:
     # (round-trips through extra_args untouched) — only its current value
     # is surfaced via `parallel` for the UI's "parallel slots cancel most
     # of the MTP gain" hint.
+    mmproj_path = _flag_value(argv, _MMPROJ_FLAGS) or ""
     known = (set(_MODEL_FLAGS) | set(_CTX_FLAGS) | set(_PORT_FLAGS) | set(_HOST_FLAGS)
-             | set(_SPEC_TYPE_FLAGS) | set(_SPEC_DRAFT_N_MAX_FLAGS))
+             | set(_SPEC_TYPE_FLAGS) | set(_SPEC_DRAFT_N_MAX_FLAGS) | set(_MMPROJ_FLAGS))
     extra: List[str] = []
     skip_next = False
     for tok in argv:
@@ -170,17 +172,92 @@ def _parse_fields(profile: Dict[str, Any]) -> Dict[str, Any]:
         "mtp": mtp,
         "mtp_draft_n_max": mtp_draft_n_max,
         "parallel": parallel,
+        "vision": bool(mmproj_path),
+        "mmproj_path": mmproj_path,
     }
 
 
 def _build_argv(*, model_path: str, ctx_size: int, port: int, host: str,
                  extra_args: Optional[List[str]] = None,
-                 mtp: bool = False, mtp_draft_n_max: int = DEFAULT_MTP_DRAFT_N_MAX) -> List[str]:
-    argv = ["-m", model_path, "-c", str(int(ctx_size)), "--port", str(int(port)), "--host", host]
+                 mtp: bool = False, mtp_draft_n_max: int = DEFAULT_MTP_DRAFT_N_MAX,
+                 mmproj_path: str = "") -> List[str]:
+    argv = ["-m", model_path]
+    if mmproj_path:
+        argv.extend(["--mmproj", mmproj_path])
+    argv.extend(["-c", str(int(ctx_size)), "--port", str(int(port)), "--host", host])
     if mtp:
         argv.extend(["--spec-type", "draft-mtp", "--spec-draft-n-max", str(int(mtp_draft_n_max))])
     argv.extend(extra_args or [])
     return argv
+
+
+def find_mmproj(model_path: str) -> Optional[str]:
+    """The vision projector that ships with this model, or None.
+
+    Two places it lives: an Ollama blob store (the model's manifest lists a
+    layer of media type ``application/vnd.ollama.image.projector`` next to
+    the weights), and a plain folder (an ``mmproj*.gguf`` beside the GGUF).
+    Seen live: the 27B served by llama-server from an Ollama blob had its
+    projector sitting in the same store, unused, while every image went to
+    a 30B vision model on the CPU."""
+    import json
+    import re as _re
+
+    path = str(model_path or "")
+    if not path or not os.path.isfile(path):
+        return None
+    folder, name = os.path.split(path)
+    blob = _re.fullmatch(r"sha256[-:]([0-9a-f]{64})", name)
+    if blob and os.path.basename(folder).lower() == "blobs":
+        digest = "sha256:" + blob.group(1)
+        manifests = os.path.join(os.path.dirname(folder), "manifests")
+        for root, _dirs, files in os.walk(manifests):
+            for fname in files:
+                try:
+                    with open(os.path.join(root, fname), encoding="utf-8") as fh:
+                        manifest = json.load(fh)
+                except (OSError, ValueError):
+                    continue
+                layers = manifest.get("layers") if isinstance(manifest, dict) else None
+                if not isinstance(layers, list) or not any(
+                        isinstance(l, dict) and l.get("digest") == digest for l in layers):
+                    continue
+                for layer in layers:
+                    if isinstance(layer, dict) and str(layer.get("mediaType") or "").endswith("image.projector"):
+                        candidate = os.path.join(folder, str(layer.get("digest") or "").replace(":", "-"))
+                        if os.path.isfile(candidate):
+                            return candidate
+        return None
+    try:
+        siblings = sorted(f for f in os.listdir(folder)
+                          if f.lower().startswith("mmproj") and f.lower().endswith(".gguf"))
+    except OSError:
+        return None
+    if not siblings:
+        return None
+    stem = os.path.splitext(name)[0].lower().split("-q")[0]
+    named = [f for f in siblings if stem and stem in f.lower()]
+    return os.path.join(folder, (named or siblings)[0]) if len(siblings) == 1 or named else None
+
+
+# How long a start waits for /health. A big model from a cold disk cache
+# (plus its projector) can take longer; a start that outlives this is only
+# reported as "not ready yet", never killed, and an edit keeps a longer
+# wait the owner set on the profile by hand.
+READINESS_TIMEOUT_S = 30
+
+
+def _resolve_mmproj(model_path: str, vision: Optional[bool], mmproj_path: str) -> str:
+    """The projector to pass, or "" for a text-only engine.
+
+    ``vision`` False turns it off; an explicit ``mmproj_path`` wins;
+    otherwise (None = automatic, True = asked for) the projector that ships
+    with the model is used when there is one."""
+    if vision is False:
+        return ""
+    if mmproj_path:
+        return str(mmproj_path)
+    return find_mmproj(model_path) or ""
 
 
 def mtp_supported_for(model_path: str) -> Optional[bool]:
@@ -200,6 +277,7 @@ def _decorate(profile: Dict[str, Any]) -> Dict[str, Any]:
     fields = _parse_fields(profile)
     out.update(fields)
     out["mtp_supported"] = mtp_supported_for(fields.get("model_path") or "")
+    out["mmproj_available"] = find_mmproj(fields.get("model_path") or "")
     return out
 
 
@@ -207,8 +285,17 @@ def _decorate(profile: Dict[str, Any]) -> Dict[str, Any]:
 
 def _validate_fields(*, name: str, executable: str, model_path: str, ctx_size: Any,
                       port: Any, host: str, mtp: bool = False,
-                      mtp_draft_n_max: Any = DEFAULT_MTP_DRAFT_N_MAX) -> List[str]:
+                      mtp_draft_n_max: Any = DEFAULT_MTP_DRAFT_N_MAX,
+                      vision: Optional[bool] = None, mmproj_path: str = "") -> List[str]:
     reasons: List[str] = []
+    if mmproj_path:
+        if not os.path.isabs(str(mmproj_path)):
+            reasons.append("mmproj_path must be an absolute path")
+        elif not os.path.isfile(mmproj_path):
+            reasons.append(f"vision projector not found: {mmproj_path}")
+    elif vision is True:
+        reasons.append("vision needs a projector (mmproj) and none ships with this model; "
+                       "set mmproj_path to one")
     if not str(name or "").strip():
         reasons.append("name is required")
     if not _is_engine_executable(executable):
@@ -263,16 +350,20 @@ def create_engine(*, owner: Optional[str], name: str, executable: str, model_pat
                    ctx_size: int = DEFAULT_CTX, port: int, host: str = DEFAULT_HOST,
                    extra_args: Optional[List[str]] = None,
                    mtp: bool = False, mtp_draft_n_max: int = DEFAULT_MTP_DRAFT_N_MAX,
-                   description: Optional[str] = None) -> Dict[str, Any]:
+                   description: Optional[str] = None,
+                   vision: Optional[bool] = None, mmproj_path: str = "") -> Dict[str, Any]:
+    mmproj = _resolve_mmproj(model_path, vision, mmproj_path or "")
     reasons = _validate_fields(name=name, executable=executable, model_path=model_path,
                                 ctx_size=ctx_size, port=port, host=host,
-                                mtp=mtp, mtp_draft_n_max=mtp_draft_n_max)
+                                mtp=mtp, mtp_draft_n_max=mtp_draft_n_max,
+                                vision=vision, mmproj_path=mmproj)
     if reasons:
         raise EngineValidationError("; ".join(reasons))
     argv = _build_argv(model_path=model_path, ctx_size=ctx_size, port=port, host=host,
-                        extra_args=extra_args, mtp=mtp, mtp_draft_n_max=mtp_draft_n_max)
+                        extra_args=extra_args, mtp=mtp, mtp_draft_n_max=mtp_draft_n_max,
+                        mmproj_path=mmproj)
     cwd = os.path.dirname(executable) or "."
-    readiness = {"url": f"http://{host}:{int(port)}/health", "timeout_s": 30}
+    readiness = {"url": f"http://{host}:{int(port)}/health", "timeout_s": READINESS_TIMEOUT_S}
     try:
         profile = launch_profiles.create_profile(
             owner=owner, name=name, kind="process", executable=executable,
@@ -301,16 +392,31 @@ def update_engine(engine_id: str, **fields: Any) -> Optional[Dict[str, Any]]:
         "mtp_draft_n_max": fields.get("mtp_draft_n_max", current.get("mtp_draft_n_max", DEFAULT_MTP_DRAFT_N_MAX)),
         "description": fields.get("description", current.get("description")),
     }
+    # Vision: an explicit change wins; a new model re-looks for its own
+    # projector (keeping vision on/off as it was); otherwise the current
+    # projector stays as it is.
+    vision = fields.get("vision")
+    if "mmproj_path" in fields or vision is not None:
+        mmproj = _resolve_mmproj(merged["model_path"], vision, fields.get("mmproj_path") or "")
+    elif merged["model_path"] != current["model_path"]:
+        mmproj = (_resolve_mmproj(merged["model_path"], None, "")
+                  if current.get("mmproj_path") else "")
+    else:
+        mmproj = current.get("mmproj_path") or ""
     reasons = _validate_fields(name=merged["name"], executable=merged["executable"],
                                 model_path=merged["model_path"], ctx_size=merged["ctx_size"],
                                 port=merged["port"], host=merged["host"],
-                                mtp=merged["mtp"], mtp_draft_n_max=merged["mtp_draft_n_max"])
+                                mtp=merged["mtp"], mtp_draft_n_max=merged["mtp_draft_n_max"],
+                                vision=vision, mmproj_path=mmproj)
     if reasons:
         raise EngineValidationError("; ".join(reasons))
     argv = _build_argv(model_path=merged["model_path"], ctx_size=merged["ctx_size"],
                         port=merged["port"], host=merged["host"], extra_args=merged["extra_args"],
-                        mtp=merged["mtp"], mtp_draft_n_max=merged["mtp_draft_n_max"])
-    readiness = {"url": f"http://{merged['host']}:{int(merged['port'])}/health", "timeout_s": 30}
+                        mtp=merged["mtp"], mtp_draft_n_max=merged["mtp_draft_n_max"],
+                        mmproj_path=mmproj)
+    readiness = {"url": f"http://{merged['host']}:{int(merged['port'])}/health",
+                 "timeout_s": max(READINESS_TIMEOUT_S,
+                                  int((current.get("readiness") or {}).get("timeout_s") or 0))}
     try:
         profile = launch_profiles.update_profile(
             engine_id, name=merged["name"], executable=merged["executable"], argv=argv,

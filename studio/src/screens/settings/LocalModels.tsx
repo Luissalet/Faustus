@@ -878,6 +878,7 @@ function EnginesSection({ admin, say, defaultModel }: { admin: boolean; say: (t:
                   <strong>{engine.name}</strong>{' '}
                   <span className="fs-set__help" data-testid="engine-state" data-state={state}>{t(ENGINE_STATE_LABELS[state] ?? state)}</span>
                   {engine.mtp && <span className="fs-set__tag" data-testid="engine-mtp-tag">{t('MTP')}</span>}
+                  {engine.vision && <span className="fs-set__tag" data-testid="engine-vision-tag">{t('Vision')}</span>}
                   {status?.model && <span className="fs-set__help"> · {status.model}</span>}
                   {status?.context_length ? <span className="fs-set__help"> · {fmtCtx(status.context_length)}</span> : null}
                   {status?.footprint_bytes ? <span className="fs-set__help"> · {fmtGb(status.footprint_bytes)}</span> : null}
@@ -958,6 +959,16 @@ function EngineEditor({ engine, onCancel, onSave }: {
   // checkbox's disabled/hint state; the server re-validates on save either
   // way.
   const mtpSupported = engine ? engine.mtp_supported : null;
+  // Vision: a new engine uses the model's own projector when it ships one
+  // (the field is left out); unticking sends `vision: false`. Editing sends
+  // the field only when it changes.
+  const [visionOn, setVisionOn] = useState<boolean>(engine ? Boolean(engine.vision) : true);
+  const visionPossible = engine ? Boolean(engine.vision || engine.mmproj_available) : true;
+  const withVision = (fields: EngineCreateInput): EngineCreateInput => {
+    const { vision: _drop, ...rest } = fields;
+    if (!engine) return visionOn ? rest : { ...rest, vision: false };
+    return visionOn === Boolean(engine.vision) ? rest : { ...rest, vision: visionOn };
+  };
 
   const discover = async () => {
     setDiscovering(true);
@@ -988,7 +999,7 @@ function EngineEditor({ engine, onCancel, onSave }: {
     <form
       className="fs-set__form"
       aria-label={engine ? t('Edit engine') : t('Add engine')}
-      onSubmit={(e) => { e.preventDefault(); void onSave(draft); }}
+      onSubmit={(e) => { e.preventDefault(); void onSave(withVision(draft)); }}
     >
       <label>{t('Name')}<input value={draft.name} onChange={(e) => set('name', e.target.value)} required /></label>
       <label>{t('Executable (llama-server path)')}<input value={draft.executable} onChange={(e) => set('executable', e.target.value)} required /></label>
@@ -1029,6 +1040,19 @@ function EngineEditor({ engine, onCancel, onSave }: {
       </div>
       {mtpSupported === false && (
         <p className="fs-set__form-hint">{t('This model does not ship MTP/nextn draft-head layers (e.g. Qwen3.x GGUFs do).')}</p>
+      )}
+      <label className="fs-set__check">
+        <input
+          type="checkbox"
+          data-testid="engine-vision-checkbox"
+          checked={visionOn && visionPossible}
+          disabled={!visionPossible}
+          onChange={(e) => setVisionOn(e.target.checked)}
+        />{' '}
+        {t("Vision: load the model's own image projector (mmproj)")}
+      </label>
+      {!visionPossible && (
+        <p className="fs-set__form-hint">{t('No vision projector ships with this model.')}</p>
       )}
       <div className="fs-set__row-actions">
         <Button type="button" size="sm" variant="ghost" disabled={discovering} label={t('Fill from what is listening on this port')} onClick={() => void discover()} />

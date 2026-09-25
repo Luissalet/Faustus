@@ -29,6 +29,12 @@ export interface EngineConfig {
   mtp_supported: boolean | null;
   /** Current `-np`/`--parallel` value, if the engine's extra flags set one. */
   parallel: number | null;
+  /** Started with the model's own vision projector (`--mmproj`). */
+  vision?: boolean;
+  mmproj_path?: string;
+  /** The projector that ships with this model (Ollama store or a sibling
+   * `mmproj*.gguf`), or null when there is none. */
+  mmproj_available?: string | null;
   description?: string | null;
 }
 
@@ -57,6 +63,8 @@ export interface EngineCreateInput {
   extra_args?: string[];
   mtp?: boolean;
   mtp_draft_n_max?: number;
+  /** Omitted = use the model's own projector when it ships one. */
+  vision?: boolean;
   description?: string;
 }
 

@@ -3183,6 +3183,8 @@ export const es: Record<string, string> = {
   "MCP servers, OAuth and their tools.": "Servidores MCP, OAuth y sus herramientas.",
   "MTP": "MTP",
   "MTP speculative decoding (faster generation)": "Decodificación especulativa MTP (generación más rápida)",
+  "Vision: load the model's own image projector (mmproj)": "Visión: cargar el proyector de imágenes del propio modelo (mmproj)",
+  "No vision projector ships with this model.": "Este modelo no trae proyector de visión.",
   "Magenta – Green": "Magenta – Verde",
   "Magic wand": "Varita mágica",
   "Mail": "Correo",

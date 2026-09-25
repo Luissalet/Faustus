@@ -42,6 +42,9 @@ class EngineCreateBody(BaseModel):
     mtp: bool = False
     mtp_draft_n_max: int = engines.DEFAULT_MTP_DRAFT_N_MAX
     description: Optional[str] = None
+    # None = use the projector that ships with the model when there is one.
+    vision: Optional[bool] = None
+    mmproj_path: str = ""
 
 
 class EngineUpdateBody(BaseModel):
@@ -55,6 +58,8 @@ class EngineUpdateBody(BaseModel):
     mtp: Optional[bool] = None
     mtp_draft_n_max: Optional[int] = None
     description: Optional[str] = None
+    vision: Optional[bool] = None
+    mmproj_path: Optional[str] = None
 
 
 def setup_engine_routes() -> APIRouter:
