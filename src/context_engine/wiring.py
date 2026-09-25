@@ -540,8 +540,16 @@ async def deliver_round(*, request: ContextRequest,
                         tool_schemas: Sequence[Any] = (),
                         context_length: int = 0, window_known: bool = False,
                         max_output_tokens: int = 0,
-                        round_index: int = 0) -> Optional[Dict[str, Any]]:
+                        round_index: int = 0,
+                        previous: Optional[Mapping[str, Any]] = None) -> Optional[Dict[str, Any]]:
     """Compile and safely deliver one auditable packet for one model call.
+
+    ``previous`` is what this function returned on an earlier round of the
+    same turn. When it still fits the room left, it is delivered again byte
+    for byte instead of compiling a new one: the question is the same all turn
+    (see `last_user_text`), and a packet that differs from the last round's
+    makes a local server reprocess everything after it -- the person's
+    message and every tool round so far -- on every round.
 
     Failure is fail-open for availability and fail-closed for scope: the
     existing prompt continues unchanged, while an owner/session mismatch in a
@@ -567,6 +575,17 @@ async def deliver_round(*, request: ContextRequest,
                         "is below the compiler's %d-token floor", allowance,
                         MIN_INPUT_BUDGET)
             return None
+        if previous and isinstance(previous.get("report"), Mapping):
+            prior_report = previous["report"]
+            prior_tokens = int(prior_report.get("packet_tokens") or 0)
+            if 0 < prior_tokens <= allowance and previous.get("message"):
+                report = dict(prior_report)
+                report.update({
+                    "round": max(0, int(round_index or 0)),
+                    "elapsed_ms": int((time.monotonic() - started) * 1000),
+                    "reused": True,
+                })
+                return {"message": previous["message"], "report": report}
         bounded = replace(
             request,
             policy=replace(request.policy, token_budget=allowance),

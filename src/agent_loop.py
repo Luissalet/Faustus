@@ -9007,6 +9007,8 @@ async def _stream_agent_loop_body(
     except Exception:  # noqa: BLE001 - a receipt is never worth a turn
         logger.debug("[context-engine] could not register the receipt finalizer")
     _context_turn_id = f"{session_id or 'session'}:{int(total_start * 1000)}"[:128]
+    # The packet delivered on the previous round of this turn (wiring.deliver_round).
+    _ce_live_previous: Optional[Dict[str, Any]] = None
     # CMP-04: a compact, deduplicated summary of what the delivered context
     # packets actually put in front of the model this turn — {source, kind,
     # ref, why} rows built straight from `deliver_round`'s own report
@@ -10527,8 +10529,10 @@ async def _stream_agent_loop_body(
                     window_known=bool(_last_route_context_length),
                     max_output_tokens=max_tokens,
                     round_index=round_num - 1,
+                    previous=_ce_live_previous,
                 )
                 if _ce_live:
+                    _ce_live_previous = _ce_live
                     # The packet replaces the standby learned-memory block.
                     messages = _insert_before_latest_user(
                         _ce_request_messages, _ce_live["message"])

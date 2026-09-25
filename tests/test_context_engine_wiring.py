@@ -523,3 +523,44 @@ def test_the_scope_is_handed_over_by_the_runtime():
 
 def test_the_chat_route_forwards_the_event_type():
     assert '"context_shadow",' in ROUTES
+
+
+async def test_a_later_round_reuses_the_packet_while_it_fits(flags, monkeypatch):
+    """Same question all turn: a packet that changes between rounds makes a
+    local server reprocess every tool round after it, so the previous
+    round's packet goes out again while it fits the room left."""
+    from src.context_engine.contracts import (
+        ContextBudget, ContextItem, ContextPacket, ContextSection,
+    )
+
+    flags["agent_context_engine"] = True
+    room = {"tokens": 6000}
+    monkeypatch.setattr(wiring, "_live_budget", lambda *a, **k: room["tokens"])
+    compiled = []
+
+    class CountingCompiler:
+        async def compile(self, request, **kw):
+            compiled.append(request.request_id)
+            return ContextPacket(
+                packet_id=f"ctxpkt_{len(compiled)}", request_id=request.request_id,
+                owner="luis", session_id="s1", model="test-model",
+                window=ContextBudget(max_tokens=4096, input_budget=900),
+                sections=(ContextSection(kind="retrieved_memory", items=(
+                    ContextItem(item_id="m", source_type="memory", source_ref="mem:one",
+                                title="Known preference", body=f"note {len(compiled)}", tokens=3000),
+                )),),
+            )
+
+    monkeypatch.setattr(compiler_module, "compiler", lambda: CountingCompiler())
+    first = await wiring.deliver_round(request=_request(), messages=MESSAGES, round_index=0)
+    second = await wiring.deliver_round(request=_request(), messages=MESSAGES, round_index=1,
+                                        previous=first)
+    assert len(compiled) == 1
+    assert second["message"] is first["message"]
+    assert second["report"]["round"] == 1 and second["report"]["reused"] is True
+    # Less room than the packet needs: a new, smaller one is compiled.
+    room["tokens"] = int(first["report"]["packet_tokens"]) - 1
+    third = await wiring.deliver_round(request=_request(), messages=MESSAGES, round_index=2,
+                                       previous=second)
+    assert len(compiled) == 2
+    assert third["message"] is not first["message"]
