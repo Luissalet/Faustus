@@ -40,7 +40,7 @@ assert.equal(citeToolResults(text, []), text);
 // A markdown link whose text looks like an id is left alone.
 assert.equal(citeToolResults('[L-000011](https://example.com)', steps), '[L-000011](https://example.com)');
 // Non-JSON output: the start of the text.
-const plain = [{ id: 's', tool: 'x', label: 'analysis', state: 'done', round: 1, output: 'N-000123 mean 4.2, sd 1.1' }];
+const plain = [{ id: 's', tool: 'mcp__8e9ef00b__analysis', label: 'mcp 8e9ef00b analysis · {"q": 1}', state: 'done', round: 1, output: 'N-000123 mean 4.2, sd 1.1' }];
 assert.match(citeToolResults('media 4,2 [N-000123]', plain), /^\[\^N-000123\]: N-000123 mean 4\.2, sd 1\.1 · analysis \(N-000123\)$/m);
 
 console.log('cite-tool-results: ok');

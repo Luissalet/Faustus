@@ -299,7 +299,10 @@ export function citeToolResults(text: string, steps: Step[]): string {
     if (!seen.has(id)) {
       seen.add(id);
       const line = citedResultLine(step).replace(/\n/g, ' ');
-      notes.push(`[^${id}]: ${line}${line ? ' · ' : ''}${step.label || step.tool} (${id})`);
+      // The tool's own short name: the step label repeats the arguments the
+      // note already shows ("mcp 26a426d3 calc · {\"expression\": …}").
+      const name = String(step.tool || step.label || '').split('__').pop() || '';
+      notes.push(`[^${id}]: ${line}${line && name ? ' · ' : ''}${name} (${id})`);
     }
     return `[^${id}]`;
   });
