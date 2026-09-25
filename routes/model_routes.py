@@ -1852,6 +1852,17 @@ def setup_model_routes(model_discovery):
                                      getattr(ep, "id", "?"), e)
                 if changed:
                     _invalidate_models_cache()
+                    # The commit expired every row this session loaded; the
+                    # loop below reads them after the session is closed.
+                    # Seen live: the first /api/models after a restart
+                    # answered 500 (DetachedInstanceError) and the picker
+                    # showed "No models" until a manual refresh.
+                    for ep in endpoints:
+                        try:
+                            db.refresh(ep)
+                        except Exception as e:  # noqa: BLE001
+                            logger.debug("Reloading endpoint %s after refresh failed: %s",
+                                         getattr(ep, "id", "?"), e)
         finally:
             db.close()
 
