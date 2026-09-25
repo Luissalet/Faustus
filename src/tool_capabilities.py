@@ -754,6 +754,28 @@ _register(
     ToolEffect.WRITE_WORKSPACE,
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
+# Swarm map (src/swarm/, src/agent_tools/swarm_tools.py). `swarm_map` is
+# registered at its worst case -- agent mode starts one tool-using worker per
+# item, the class of `delegate_agents` -- and narrowed per call by
+# `_swarm_map_capabilities` below: llm mode only sends the items to a model,
+# the class of `chat_with_model`. Every result carries model output about
+# items that may have come from anywhere, so it is EXTERNAL_UNTRUSTED.
+# `swarm_cancel` only stops the owner's own run.
+_register(
+    {"swarm_map"},
+    ToolEffect.EXECUTE_CODE,
+    ToolEffect.NETWORK_EGRESS,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+_register(
+    {"swarm_status", "swarm_results"},
+    ToolEffect.READ_PRIVATE,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+_register(
+    {"swarm_cancel"},
+    ToolEffect.WRITE_PRIVATE,
+)
 _register(
     # PDF operations (R4, Reach wave, src/agent_tools/pdf_ops_tool.py): every
     # op reads an input PDF from the workspace/uploads allowlist and (except
@@ -1483,10 +1505,30 @@ def _action_from_content(tool_name: str, content: Any) -> str | None:
     return _ACTION_ALIASES.get(tool_name, {}).get(normalized, normalized)
 
 
+def _swarm_map_capabilities(content: Any) -> ToolCapabilities:
+    """`swarm_map` in llm mode (the default) is model-only; agent mode, a
+    resume (whose mode is on disk, not in the call) or anything unreadable
+    keeps the registered worst case."""
+    base = capabilities_for_tool("swarm_map")
+    payload: Any = content
+    if isinstance(content, str):
+        try:
+            payload = json.loads(content) if content.strip() else {}
+        except (TypeError, ValueError):
+            return base
+    if not isinstance(payload, Mapping) or payload.get("resume_run_id"):
+        return base
+    if str(payload.get("mode") or "llm").strip().lower() == "llm":
+        return _capabilities(ToolEffect.NETWORK_EGRESS, result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED)
+    return base
+
+
 def capabilities_for_action(tool_name: Any, content: Any) -> ToolCapabilities:
     """Classify a sealed multiplexed action; ambiguous actions fail high."""
     if tool_name == _BROWSER_MCP_TABS_QUALIFIED:
         return _browser_tabs_capabilities(content)
+    if tool_name == "swarm_map":
+        return _swarm_map_capabilities(content)
     base = capabilities_for_tool(tool_name)
     if not isinstance(tool_name, str):
         return base
