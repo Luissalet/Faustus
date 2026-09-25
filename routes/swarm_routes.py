@@ -59,8 +59,10 @@ def setup_swarm_routes() -> APIRouter:
         except SwarmNotFoundError as exc:
             return _not_found(exc)
 
+    # async: cancelling the run's tasks must happen on the event loop's own
+    # thread (a `def` route runs in the threadpool, where cancel() can be lost).
     @router.post("/{run_id}/cancel")
-    def cancel_run(run_id: str, request: Request, _u: str = Depends(require_user)) -> Any:
+    async def cancel_run(run_id: str, request: Request, _u: str = Depends(require_user)) -> Any:
         try:
             return _service.cancel(run_id, _owner(request))
         except SwarmNotFoundError as exc:

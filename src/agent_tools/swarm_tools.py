@@ -84,10 +84,13 @@ class SwarmMapTool:
     async def execute(self, content: str, ctx: dict) -> dict:
         args = _args(content)
         owner = _owner(ctx)
-        progress_cb = (ctx or {}).get("progress_cb")
+        # Progress goes to this tool call's stream only while the call waits
+        # for the run; after it returns, the run carries on silently.
+        sink: Dict[str, Any] = {"cb": (ctx or {}).get("progress_cb") if args.get("wait") else None}
         resume_id = str(args.get("resume_run_id") or "").strip()
 
         async def _on_progress(p: Dict[str, Any]) -> None:
+            progress_cb = sink["cb"]
             if progress_cb is None:
                 return
             await progress_cb({
@@ -135,7 +138,10 @@ class SwarmMapTool:
             wait_s = float(args.get("wait_timeout") or DEFAULT_WAIT_S)
         except (TypeError, ValueError):
             wait_s = DEFAULT_WAIT_S
-        finished = await _service.wait(run_id, max(1.0, min(MAX_WAIT_S, wait_s)))
+        try:
+            finished = await _service.wait(run_id, max(1.0, min(MAX_WAIT_S, wait_s)))
+        finally:
+            sink["cb"] = None
         if not finished:
             summary = _service.status(run_id, owner)
             return {"output": f"Still running after {int(wait_s)} s — {_status_line(summary)}. "
