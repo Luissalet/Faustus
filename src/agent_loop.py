@@ -647,6 +647,13 @@ _CODE_INTEL_INTENT_RE = re.compile(
     re.IGNORECASE,
 )
 #: What such a question gets: the answer tools, not the whole family.
+# Tools that start work in the background travel with the tools that follow
+# it (see the tool floor in _stream_agent_loop_body).
+_BACKGROUND_TOOL_FAMILIES = (
+    frozenset({"swarm_map", "swarm_status", "swarm_results", "swarm_cancel"}),
+    frozenset({"fanout_run", "fanout_status", "fanout_results", "fanout_apply"}),
+)
+
 _CODE_INTEL_FAMILY = frozenset({
     "code_graph_impact", "code_graph_flows", "code_graph_communities", "tests_for",
     "code_graph_drift", "code_history",
@@ -8027,6 +8034,20 @@ async def _stream_agent_loop_body(
                         _hot_seed |= _git_add
         except Exception as _git_floor_err:  # noqa: BLE001
             logger.debug("[tool-floor] git floor skipped: %s", _git_floor_err)
+
+    # A tool that starts background work is useless without the ones that
+    # read it back: a turn offered only `swarm_map` (named in the request)
+    # started the same run a second time when the first wait ran out, because
+    # it had no `swarm_status`/`swarm_results` to follow the one it had.
+    if not guide_only and _relevant_tools is not None:
+        for _family in _BACKGROUND_TOOL_FAMILIES:
+            if set(_relevant_tools) & _family:
+                _fam_add = set(_family) - set(disabled_tools) - set(_relevant_tools)
+                if _fam_add:
+                    logger.info("[tool-floor] companion tools offered: %s", sorted(_fam_add))
+                    _relevant_tools.update(_fam_add)
+                    if _hot_seed is not None:
+                        _hot_seed |= _fam_add
 
     # Per-request forced tools are stronger than retrieval. Explicit search
     # settings make web tools visible even when tool RAG misses them;

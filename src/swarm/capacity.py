@@ -126,7 +126,19 @@ async def llamacpp_slots(url: str, *, refresh: bool = False, timeout: float = 2.
         value = limits.get("parallel_slots")
         slots = int(value) if value else None
     _SLOT_CACHE[root] = (now, slots)
+    if isinstance(slots_payload, list):
+        _BUSY_SEEN[root] = sum(1 for sl in slots_payload
+                               if isinstance(sl, dict) and sl.get("is_processing"))
     return slots
+
+
+_BUSY_SEEN: Dict[str, int] = {}
+
+
+def busy_slots_seen(url: str) -> int:
+    """Slots the server reported busy on the last `/slots` read (other chats,
+    other instances). 0 when unknown."""
+    return int(_BUSY_SEEN.get(server_root(url), 0) or 0)
 
 
 async def effective_parallel(url: str, *, refresh: bool = False) -> Dict[str, Any]:
@@ -142,8 +154,13 @@ async def effective_parallel(url: str, *, refresh: bool = False) -> Dict[str, An
         n = _int_setting("swarm_ollama_parallel", DEFAULT_OLLAMA_PARALLEL)
         return {"parallel": min(n, cap), "source": "setting:swarm_ollama_parallel",
                 "backend": "ollama", "local": True}
-    slots = await llamacpp_slots(url, refresh=refresh)
+    slots = await llamacpp_slots(url, refresh=True)
     if slots:
-        return {"parallel": max(1, min(int(slots), cap)), "source": "llamacpp:/slots",
-                "backend": "llamacpp", "local": True, "slots": int(slots)}
+        # Slots other conversations are using right now are not ours: taking
+        # all four on a shared server queued every item behind them and
+        # timed items out while they waited.
+        busy = min(busy_slots_seen(url), int(slots) - 1)
+        free = max(1, int(slots) - max(0, busy))
+        return {"parallel": max(1, min(free, cap)), "source": "llamacpp:/slots",
+                "backend": "llamacpp", "local": True, "slots": int(slots), "busy": busy}
     return {"parallel": 1, "source": "local_default", "backend": "local", "local": True}

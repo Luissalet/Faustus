@@ -144,9 +144,18 @@ class SwarmMapTool:
             sink["cb"] = None
         if not finished:
             summary = _service.status(run_id, owner)
-            return {"output": f"Still running after {int(wait_s)} s — {_status_line(summary)}. "
-                              "It carries on in the background; poll with swarm_status / swarm_results.",
-                    "exit_code": 0, "run_id": run_id, "finished": False, "status": summary}
+            parts = [f"Still running after {int(wait_s)} s — {_status_line(summary)}.",
+                     f"It carries on in the background as run_id={run_id}. Do NOT call swarm_map again "
+                     f"for these items: follow this run with swarm_status / swarm_results "
+                     f"(run_id={run_id}), or answer with the rows below if they are enough."]
+            try:
+                partial = _service.results(run_id, owner, offset=0, limit=INLINE_ROWS, status_filter="ok")
+                if partial.get("rows"):
+                    parts += ["", "Finished so far:", _table_text(partial)]
+            except Exception:  # noqa: BLE001 - the partial table is a courtesy
+                pass
+            return {"output": "\n".join(parts), "exit_code": 0, "run_id": run_id, "finished": False,
+                    "status": summary}
         result = _service.results(run_id, owner, offset=0, limit=INLINE_ROWS)
         parts = [_status_line(result), "", _table_text(result)]
         reduce_result = result.get("reduce_result") or {}

@@ -117,10 +117,13 @@ async def test_llamacpp_slots_are_read_from_slots_endpoint(env, monkeypatch):
     info = await capacity.effective_parallel(LLAMA_URL)
     assert info["parallel"] == 4 and info["backend"] == "llamacpp" and info["local"] is True
     assert seen[0] == "http://127.0.0.1:8080/slots"
-    # cached: a second call does not probe again
+    # The slot count is cached, but a run start re-reads /slots: which slots
+    # other conversations are busy with changes from one run to the next.
     n = len(seen)
-    await capacity.effective_parallel(LLAMA_URL)
+    await capacity.llamacpp_slots(LLAMA_URL)
     assert len(seen) == n
+    await capacity.effective_parallel(LLAMA_URL)
+    assert len(seen) > n
 
 
 async def test_llamacpp_props_total_slots_when_slots_endpoint_is_off(env, monkeypatch):
@@ -638,3 +641,39 @@ async def test_agent_call_reuses_the_delegate_worker_with_the_swarm_limits(env, 
     assert run.permissions is not None and run.permissions.tool_denied("delegate_agents")
     assert seen["max_rounds"] == runner.DEFAULT_AGENT_ROUNDS and seen["workspace"] == "/tmp/ws"
     assert seen["save_transcript"] is False and seen["parent_session_id"] == "sess-1"
+
+
+async def test_llamacpp_parallel_leaves_the_busy_slots_to_others(monkeypatch):
+    from src.swarm import capacity as cap
+    cap._SLOT_CACHE.clear()
+    cap._BUSY_SEEN.clear()
+
+    async def fake_get(url, timeout):
+        if url.endswith("/slots"):
+            return [{"id": i, "is_processing": i < 2} for i in range(4)]
+        return {"total_slots": 4}
+
+    monkeypatch.setattr(cap, "_get_json", fake_get)
+    monkeypatch.setattr(cap, "_is_local", lambda url: True)
+    monkeypatch.setattr(cap, "_looks_ollama", lambda url: False)
+    info = await cap.effective_parallel("http://127.0.0.1:8081/v1/chat/completions")
+    assert info["slots"] == 4 and info["busy"] == 2 and info["parallel"] == 2
+
+
+def test_background_tools_travel_with_their_followers():
+    from src import agent_loop
+    from src.agent_tools import TOOL_HANDLERS
+    fam = next(f for f in agent_loop._BACKGROUND_TOOL_FAMILIES if "swarm_map" in f)
+    assert {"swarm_status", "swarm_results", "swarm_cancel"} <= fam
+    for family in agent_loop._BACKGROUND_TOOL_FAMILIES:
+        assert family <= set(TOOL_HANDLERS), family - set(TOOL_HANDLERS)
+
+
+async def test_a_timed_out_wait_names_the_run_and_forbids_a_second_start(env, monkeypatch):
+    monkeypatch.setattr(runner, "_llm_call", FakeLLM(delay=0.4))
+    from src.agent_tools.swarm_tools import SwarmMapTool
+    out = await SwarmMapTool().execute(json.dumps({"instruction": "x {item}", "items": ["a", "b", "c"],
+                                                   "wait": True, "wait_timeout": 1, "max_parallel": 1}),
+                                       {"owner": "ana", "session_id": "s1"})
+    assert out["finished"] is False
+    assert f"run_id={out['run_id']}" in out["output"] and "Do NOT call swarm_map again" in out["output"]
