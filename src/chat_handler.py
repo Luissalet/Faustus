@@ -274,7 +274,12 @@ class ChatHandler:
                             except Exception:
                                 vl_desc = None
                         if not vl_desc:
-                            vl_result = analyze_image_with_vl_result(file_info["path"], owner=owner)
+                            # The vision call is a blocking HTTP request that
+                            # can take minutes on a CPU model: run it off the
+                            # event loop so other requests keep flowing.
+                            vl_result = await asyncio.to_thread(
+                                lambda: analyze_image_with_vl_result(file_info["path"], owner=owner)  # noqa: B023 - awaited now
+                            )
                             vl_desc = vl_result.get("text", "")
                             vl_model = vl_result.get("model", "")
                             if vl_desc and not vl_desc.startswith("["):
