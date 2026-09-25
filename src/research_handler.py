@@ -1143,6 +1143,12 @@ class ResearchHandler:
                 hidden_images=data.get("hidden_images") or [],
             )
             logger.info(f"Visual report generated for {session_id}")
+            # A finished podcast of this report gets a player at the end.
+            try:
+                from src.research_podcast import inject_report_audio
+                html_content = inject_report_audio(html_content, session_id, data)
+            except Exception:
+                logger.debug("podcast player injection failed", exc_info=True)
             return html_content
         except Exception as e:
             logger.error(f"Failed to generate visual report: {e}")
