@@ -184,8 +184,10 @@ def test_the_reviewer_is_chosen_among_what_the_writers_endpoint_serves(tmp_path,
 
     ids = auto_review.available_models_for_review(None, "http://localhost:8081/v1/chat/completions")
     assert ids == ["writer-27b"]
-    # Nothing else on that endpoint: the writer reviews, under its own name.
-    assert auto_review.resolve_reviewer("writer-27b", "same", available_models=ids) == "writer-27b"
+    # Nothing else on that endpoint: reviewing with the writer itself would
+    # add little and can hang the turn, so the automatic review is skipped
+    # rather than run under a borrowed name.
+    assert auto_review.resolve_reviewer("writer-27b", "same", available_models=ids) is None
 
 
 # ── (46) PLAN-04 evidence_weighted_support wired into synthesis.build ──────

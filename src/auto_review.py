@@ -130,7 +130,7 @@ def available_models_for_review(owner: Optional[str], endpoint_url: Optional[str
 
 def resolve_reviewer(model: str, project_override: Optional[str] = None, *,
                       available_models: Optional[Sequence[str]] = None) -> Optional[str]:
-    """The model to review with, or None when auto-review is off.
+    """The model to review with, or None when auto-review is off (or skipped).
 
     `available_models`, when a caller passes one, lets a "same model"
     setting still produce an INDEPENDENT reviewer when another model is
@@ -138,17 +138,43 @@ def resolve_reviewer(model: str, project_override: Optional[str] = None, *,
     exactly what it always has: `model` itself for "same"/truthy settings,
     so every existing caller keeps today's behaviour unchanged.
     """
+    reviewer, _reason = resolve_reviewer_with_reason(
+        model, project_override, available_models=available_models,
+    )
+    return reviewer
+
+
+def resolve_reviewer_with_reason(model: str, project_override: Optional[str] = None, *,
+                                  available_models: Optional[Sequence[str]] = None,
+                                  ) -> Tuple[Optional[str], Optional[str]]:
+    """Same as `resolve_reviewer`, but also returns WHY review is skipped
+    when it is a deliberate skip rather than the setting simply being off:
+    `(None, "off")`-style unconfigured skips return `(None, None)`, while a
+    "same model, same endpoint" skip returns `(None, <human reason>)` so a
+    caller can record that reason where the review result is persisted
+    (seen live: the automatic reviewer was the same 27B model on the same
+    llama-server as the writer, timed out after three minutes reviewing
+    itself and added nothing — reviewing yourself is worth little, so this
+    is skipped outright instead of run).
+    """
     raw = (project_override or "").strip() or str(_setting("agent_auto_review", "off") or "off").strip()
     low = raw.lower()
     if low in ("", "off", "false", "0", "none", "no"):
-        return None
+        return None, None
     if low in ("same", "self", "true", "1", "on", "yes"):
         if available_models:
             distinct = _distinct_reviewer(model, available_models)
             if distinct:
-                return distinct
-        return model
-    return raw
+                return distinct, None
+            reason = (
+                f"the only model available to review with on this endpoint is the writer "
+                f"itself ({model!r}); reviewing a turn with the same model that wrote it "
+                "adds little and can hang the turn, so the automatic review is skipped"
+            )
+            logger.info("[review] skipping automatic review: reviewer == writer (%r) on the same endpoint", model)
+            return None, reason
+        return model, None
+    return raw, None
 
 
 # ---------------------------------------------------------------------------

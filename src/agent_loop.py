@@ -9499,12 +9499,20 @@ async def _stream_agent_loop_body(
         _tests_max_fix = 1
     try:
         from src import auto_review as _auto_review
-        _reviewer_model = _auto_review.resolve_reviewer(
+        _reviewer_model, _reviewer_skip_reason = _auto_review.resolve_reviewer_with_reason(
             model, _hopts.get("review_model") or str(get_setting("agent_auto_review", "off") or "off"),
             available_models=_auto_review.available_models_for_review(owner, endpoint_url),
-        ) if (_harness_enabled and workspace) else None
+        ) if (_harness_enabled and workspace) else (None, None)
     except Exception:
         _reviewer_model = None
+        _reviewer_skip_reason = None
+    if _reviewer_skip_reason:
+        # VER-0x: the automatic reviewer would be the same model as the
+        # writer on the same endpoint — skipped rather than run, and the
+        # skip reason is recorded right where a real review result would
+        # have landed so it shows up in the turn's history the same way.
+        _ledger.review = {"model": model, "verdict": "skipped", "summary": _reviewer_skip_reason, "findings": []}
+        logger.info("[harness] auto-review skipped for this turn: %s", _reviewer_skip_reason)
     try:
         _review_max_fix = int(get_setting("agent_auto_review_fix_rounds", 1) or 0) if get_setting("agent_auto_review_fix_round", True) else 0
     except (TypeError, ValueError):

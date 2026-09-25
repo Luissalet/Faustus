@@ -16,10 +16,16 @@ def test_same_setting_prefers_a_distinct_model_when_one_is_available(monkeypatch
     assert reviewer == "gpt-oss-20b"
 
 
-def test_same_setting_falls_back_to_the_writer_when_nothing_else_is_available(monkeypatch):
+def test_same_setting_skips_review_when_nothing_else_is_available(monkeypatch):
+    """Decided behaviour: reviewing with the same model that wrote the turn,
+    on the same endpoint, is skipped rather than run (it adds little and can
+    hang the turn reviewing itself)."""
     monkeypatch.setattr(auto_review, "_setting", lambda key, default: "same")
     reviewer = auto_review.resolve_reviewer("qwen3-coder", available_models=["qwen3-coder"])
-    assert reviewer == "qwen3-coder"
+    assert reviewer is None
+    reviewer2, reason = auto_review.resolve_reviewer_with_reason("qwen3-coder", available_models=["qwen3-coder"])
+    assert reviewer2 is None
+    assert reason and "qwen3-coder" in reason
 
 
 def test_omitting_available_models_keeps_prior_behaviour(monkeypatch):

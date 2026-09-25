@@ -317,6 +317,43 @@ def test_ungrounded_review_errors_do_not_cost_a_fix_round(project, monkeypatch):
     assert verified["review"]["verdict"] == "ok" and verified["review"]["ungrounded"] == 1
 
 
+def test_auto_review_skipped_when_reviewer_would_be_the_writer(project, monkeypatch):
+    """Seen live: the automatic reviewer ended up the same model on the same
+    endpoint as the writer and timed out after minutes reviewing itself.
+    When the endpoint's only model is the writer, the review is skipped
+    outright — no LLM call, no `review_running` card — and the skip reason
+    is recorded where a real review result would have landed."""
+    _patch_common(monkeypatch, settings={"agent_project_tests": False, "agent_auto_review": "same"},
+                  tool_exec=_real_edit(project))
+    from src import auto_review as _auto_review
+    monkeypatch.setattr(_auto_review, "available_models_for_review",
+                        lambda owner, endpoint_url=None: ["qwen3-coder:30b"], raising=False)
+
+    called = {"n": 0}
+
+    async def _fake_llm(url, model, messages, **kwargs):
+        called["n"] += 1
+        return json.dumps({"verdict": "ok", "summary": "should never run", "findings": []})
+    import src.llm_core as lc
+    monkeypatch.setattr(lc, "llm_call_async", _fake_llm, raising=False)
+
+    _scripted_stream(monkeypatch, [
+        (_edit_call("src/calc.py", "return a - b", "return a + b"), "tool_calls"),
+        ("He corregido src/calc.py.", "stop"),
+    ])
+    events = _run(project)
+    statuses = [e["status"] for e in events if e.get("type") == "harness_check"]
+    assert "review_running" not in statuses and statuses[-1] == "verified"
+    assert called["n"] == 0
+    verified = next(e for e in events if e.get("type") == "harness_check" and e["status"] == "verified")
+    assert verified["review"]["verdict"] == "skipped"
+    assert verified["review"]["model"] == "qwen3-coder:30b"
+    assert "qwen3-coder:30b" in verified["review"]["summary"]
+    summary = next(e for e in events if e.get("type") == "harness_summary")["data"]
+    assert summary["review"]["verdict"] == "skipped"
+    assert summary["review_fix_rounds"] == 0
+
+
 def test_review_mode_flag_reaches_the_card_and_metrics(project, monkeypatch):
     _patch_common(monkeypatch, settings={"agent_project_tests": False}, tool_exec=_real_edit(project))
     _scripted_stream(monkeypatch, [
