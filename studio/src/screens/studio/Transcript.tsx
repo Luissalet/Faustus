@@ -267,6 +267,45 @@ export function linkifyBoardIds(text: string, boardKey: string | undefined, proj
   return text.replace(issueIdRegex(boardKey), (m) => `[${m}](/projects/${encodeURIComponent(projectId)}?tab=board&issue=${encodeURIComponent(m)})`);
 }
 
+/** What a cited tool result says, in one line: `input = decimal` for a
+ *  calculation, else the start of the output. */
+function citedResultLine(step: Step): string {
+  const raw = String(step.output || '').trim();
+  try {
+    const data = JSON.parse(raw) as Record<string, unknown>;
+    const input = typeof data.input === 'string' ? data.input : '';
+    const value = data.decimal ?? data.result ?? data.value ?? data.answer;
+    if (input && value !== undefined && value !== null) return `${input} = ${String(value)}`;
+    if (typeof data.summary === 'string' && data.summary.trim()) return data.summary.trim();
+  } catch { /* not JSON: the text itself */ }
+  const flat = raw.replace(/\s+/g, ' ');
+  return flat.length > 160 ? `${flat.slice(0, 157)}…` : flat;
+}
+
+/**
+ * An app tool hands out result ids for the model to cite (`[L-000011]` for a
+ * calculation, `[N-000123]` for an analysis step; the harness checks they
+ * exist, src/agent_harness.py `cite_ids`). Shown raw they read as noise, so a
+ * cited id that a step of this turn returned becomes a footnote whose note
+ * says what that result was. An id no step returned stays as written.
+ */
+export function citeToolResults(text: string, steps: Step[]): string {
+  if (!text || !steps.length || !/\[[A-Z]{1,3}-\d{6}\]/.test(text)) return text;
+  const notes: string[] = [];
+  const seen = new Set<string>();
+  const out = text.replace(/\[([A-Z]{1,3}-\d{6})\](?!\()/g, (whole, id: string) => {
+    const step = steps.find((s) => String(s.output || '').includes(id));
+    if (!step) return whole;
+    if (!seen.has(id)) {
+      seen.add(id);
+      const line = citedResultLine(step).replace(/\n/g, ' ');
+      notes.push(`[^${id}]: ${line}${line ? ' · ' : ''}${step.label || step.tool} (${id})`);
+    }
+    return `[^${id}]`;
+  });
+  return notes.length ? `${out}\n\n${notes.join('\n')}` : out;
+}
+
 /** EXEC-01: a short label for `Step.executionTarget.kind` — the words a
  *  person reads next to the command, not the wire's own vocabulary. */
 function executionTargetLabel(kind: string): string {
@@ -1768,7 +1807,7 @@ function AssistantTurn({
   };
   // The tool call has already run and is in the rail; its fence is leftovers.
   const fences = useFenceRegex();
-  const body = linkifyBoardIds(stripExecutedFences(turn.text, fences), boardKey, projectId);
+  const body = citeToolResults(linkifyBoardIds(stripExecutedFences(turn.text, fences), boardKey, projectId), turn.steps);
   // A11Y-02: grouped, not per-token — see useGroupedStreamAnnouncement above.
   const streamAnnouncement = useGroupedStreamAnnouncement(body, turn.streaming);
   return (
