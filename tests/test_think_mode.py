@@ -218,3 +218,24 @@ def test_resolve_turn_does_not_mutate_input():
     base = {"think": True}
     resolve_turn("fast", base, "x", settings=SETTINGS)
     assert base == {"think": True}
+
+
+@pytest.mark.parametrize("text", [
+    "Tengo 3 cajas: la A pesa el doble que la B y la C pesa 4 kg más que la A. "
+    "Juntas pesan 44 kg. ¿Cuánto pesa cada una?",
+    "A train leaves at 3 pm going 80 km/h and another at 4 pm going 100 km/h. How long until the second catches up?",
+    "Si 5 obreros tardan 12 días, ¿cuántos días tardan 3 obreros?",
+    "What is 15% of 240 plus half of 60?",
+])
+def test_word_problems_get_reasoning(text):
+    out = decide(text)
+    assert out["mode"] == "think", out
+    assert "math" in out["reasons"]
+
+
+@pytest.mark.parametrize("text", [
+    "tengo 2 perros y 1 gato",
+    "quedamos a las 5 el día 3",
+])
+def test_numbers_alone_are_not_a_word_problem(text):
+    assert decide(text)["mode"] == "fast"

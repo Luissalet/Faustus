@@ -164,6 +164,26 @@ _FAST_MAX_WORDS = 40
 _BIG_ATTACHMENTS = 3
 
 
+# A word problem: several quantities plus a relation or a "how much" --
+# "A weighs twice B, C is 4 kg more, together 44 kg: how much is each?"
+# carries no operator and no "solve", yet is exactly what reasoning is for.
+_NUMBER = re.compile(r"\d+(?:[.,]\d+)?")
+_QUANT_WORDS = _rx(
+    r"\b(?:cu[aá]nt[oa]s?|how (?:much|many|long|old|far)|doble|triple|mitad|tercio|cuarto de|"
+    r"twice|double|triple|half|third|quarter|m[aá]s que|menos que|more than|less than|fewer than|"
+    r"juntos?|juntas|together|in total|en total|por ciento|percent|porcentaje|percentage|"
+    r"proporci[oó]n|ratio|promedio|average|media de|velocidad|speed|tarda\w*|takes?)\b",
+    r"%",
+)
+
+
+def _word_problem(text: str) -> bool:
+    numbers = len(_NUMBER.findall(text))
+    if numbers >= 2 and len(_QUANT_WORDS.findall(text)) >= 2:
+        return True
+    return numbers >= 3 and "?" in text and bool(_QUANT_WORDS.search(text))
+
+
 def _small_talk(text: str) -> bool:
     try:
         from src.turn_effort import is_small_talk
@@ -192,6 +212,8 @@ def _decide(text: str, attachments: int, agent: bool, coding: bool, history_len:
         return _result("deep", ["asked_depth"], "the message asks for depth", "high")
 
     families = [name for name, rx in _THINK_SIGNALS if rx.search(stripped)]
+    if "math" not in families and _word_problem(stripped):
+        families.append("math")
     constraints = len(_CONSTRAINT.findall(stripped))
     list_items = len(_LIST_ITEM.findall(raw))
     questions = stripped.count("?")
