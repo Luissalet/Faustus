@@ -1493,3 +1493,22 @@ def test_catalog_read_results_still_arm_the_gate(monkeypatch, tool_name, content
 
     assert context.external_untrusted_context_seen is True
     assert context.decision_for("bash", '{"command": "echo hi"}').allowed is False
+
+
+def test_a_remember_request_after_web_text_keeps_the_card():
+    """The user's "remember that…" lets manage_memory add through while only
+    Faustus's own prompt context armed the gate; after a web result the
+    text to save may come from the page, so the card stays."""
+    from src.prompt_security import untrusted_context_message
+
+    add = "add\nLa editorial favorita del usuario es Tinta Roja.\npreference"
+    text = "Recuerda que mi editorial favorita es Tinta Roja"
+    own = ToolRunSecurityContext(user_request=text)
+    own.observe_messages([untrusted_context_message("saved memory: pinned context", "- x")])
+    assert own.decision_for("manage_memory", add).allowed is True
+
+    web = ToolRunSecurityContext(user_request=text)
+    web.observe_messages([untrusted_context_message("saved memory: pinned context", "- x")])
+    web.observe_tool_result("web_search", {"output": "Tinta Roja ...", "exit_code": 0}, "q")
+    assert web.external_untrusted_context_seen is True
+    assert web.decision_for("manage_memory", add).allowed is False

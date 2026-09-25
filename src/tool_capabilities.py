@@ -1684,6 +1684,9 @@ def external_context_labels(messages: Iterable[dict], limit: int = 4) -> list[st
 
 
 _TRUSTED_WRITE_TOOLS = frozenset({"write_file", "edit_file", "apply_patch"})
+# Tools whose user-request allowance (src/user_request_gate.py) holds only
+# while nothing from outside -- a tool result, web text -- is in the run.
+_WRITES_OUTSIDE_TEXT = frozenset({"create_document", "manage_memory", "manage_calendar"})
 _APPLY_PATCH_DELETE_RE = re.compile(r"^\*\*\*\s+Delete\s+File:", re.MULTILINE)
 
 
@@ -1922,6 +1925,22 @@ class ToolRunSecurityContext:
         logger.info("[gate] user delegation matched %d task(s): delegate_agents passes the gate", len(call["tasks"]))
         return True
 
+    def _only_own_context(self) -> bool:
+        """The gate was armed only by Faustus's own prompt context (saved
+        memory, skills, tool descriptions), not by a tool result or by web
+        text in the prompt. A tool that writes model-authored text somewhere
+        the user will read it later (`_WRITES_OUTSIDE_TEXT`) may follow the
+        user's words only then: after a web search, "write a document" would
+        otherwise put whatever the page said into the user's editor."""
+        for source in self.external_sources:
+            label = str(source or "")
+            if not label.startswith("prompt context ("):
+                return False
+            inner = label[len("prompt context ("):].rstrip(")").strip().casefold()
+            if inner in _EXTERNAL_MESSAGE_SOURCES or inner.startswith(_EXTERNAL_MESSAGE_SOURCE_PREFIXES):
+                return False
+        return True
+
     def _trusted_override(self, tool_name: Any, content: Any) -> bool:
         if not self.trusted_workspace or not isinstance(tool_name, str):
             return False
@@ -2054,7 +2073,11 @@ class ToolRunSecurityContext:
             return ToolGateDecision(True)
         if self._user_delegation_allows(tool_name, content):
             return ToolGateDecision(True)
-        if self.user_request:
+        if self.user_request and (
+            tool_name not in _WRITES_OUTSIDE_TEXT
+            or _action_from_content(str(tool_name), content) in ("list", "search")
+            or self._only_own_context()
+        ):
             from src.user_request_gate import allows as _user_asked_for
             if _user_asked_for(tool_name, content, self.user_request, self.workspace, self.asked_before):
                 return ToolGateDecision(True)
