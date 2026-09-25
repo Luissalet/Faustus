@@ -8758,3 +8758,21 @@ compartido. Subir el repositorio a GitHub cuando Luis lo diga.
 **Verificación.** Tests en Windows de cada repo tocado (HoardLink 263, Echo 104, Funes 304, Vulcan completo, Writer's `tsc`); auditoría del Hub por el proxy: solo errores de argumentos esperados y las tres apps sin contrato (dorian, gepetto, platos) más Prospero (otra conversación); push de HoardLink, Writer's, Echo, Vulcan y Funes.
 
 **Pendiente.** Subir `since` a `hoard_link` para que toda la familia hable el mismo idioma de tiempo (Links lo tiene en JS, Echo en Python). DiskHoard olvida el escaneo al reiniciar (cada respuesta de espacio empieza escaneando C: durante unos 3 minutos). Writer's: un origen estable para desarrollo y release sigue siendo decisión de la app. La skill instalada en el 7003 conserva la descripción vieja hasta que se reinstale.
+
+
+## 193. Cerrar los pendientes de la familia (25-09-2026, tarde)
+
+**Problema.** Luis: «haz todo lo pendiente» sobre la lista de §192.
+
+**Hecho.**
+- *`since` común* (HoardLink `60d219d`): `hoard_link/since.py` (`resolve_since` → segundos) y `resolveSince` en `js/hoard-link.js` (→ ISO) hablan el mismo idioma: edades (`2h`, `hace 3 días`, `2 weeks ago`, `1mo`), palabras (`hoy`, `ayer`, `esta mañana`, `esta semana`, `la semana pasada`, `este mes`, `el mes pasado`, `última hora` y sus formas en inglés), ISO o epoch; lo que no entiende falla con la lista de formas. Test de Python y test de la versión JS ejecutada con node. `scripts/sync_vendored.py` lo llevó a las 18 apps que vendorizan la librería (un commit por repo; Nightingale y Vitruvius se pusieron al día con 14 ficheros, Prospero se dejó fuera); Echo usa ya la copia vendorizada y Links reexporta la de `hoard-link.js`. Tests de las 19 apps en verde en Windows.
+- *DiskHoard `5d30c9d`*: el último escaneo terminado se guarda en `data/last-scan.pkl.gz` (solo carpetas, comprimido, escritura atómica en segundo plano, refrescado tras borrar) y se carga al arrancar; las tools que leen el árbol añaden `snapshot` con fecha, horas de antigüedad y la indicación de decirlo; las instrucciones piden mirar `disk_status` antes de escanear. Medido: C: entero (4,7 M ficheros, 838 k carpetas) ocupa 12 MB y tras reiniciar `disk_dir` responde en 40 ms sin volver a escanear.
+- *Gepetto `d808a0b`*: marca propia (icono y «Gepetto's Hoard»), título sin eslogan y el hueco vacío dice qué hacer. Commiteado solo el cambio de marca sobre `HEAD` (blob preparado en el índice), sin arrastrar el trabajo sin commitear de la otra sesión, que sigue en el árbol; el `HEAD` compila (`tsc -b` en un export limpio).
+- *Prospero `7f67e98`*: fuera el subtítulo de la barra lateral (árbol limpio; `npm run build` en verde).
+- *Portfolio `eba2fac`*: cuatro fichas que abrían con un gancho retórico (familia Hoard, Prospero, Nightingale, Dorian) dicen ahora qué es cada cosa; lint, `check:cv` y build; desplegado en Pages y comprobado en el navegador.
+- *Skill `hoard-daily-digest`* reinstalada en el 7003 con la descripción nueva.
+
+- *La landing de «La Espiga» con el 27B, de principio a fin* (7003 recién arrancado con el master actual, workspace propio): `design_brief` de Vitruvius → `write_file index.html` (15,6 KB, sin tarjeta porque cae en el workspace) → `render_preview` (con tarjeta, aprobada, y el turno **siguió**: la reanudación arrastró 24 k caracteres del trabajo previo). `page_assay` sobre el fichero: **19/19 casos**, todos los enlaces, el teléfono y el botón «Copiar número» funcionan. Lo que costó: el modelo tardó 13 min en escribir el HTML y otros 18 en volver a pegarlo entero como `html` de `render_preview`.
+- *Vitruvius `11b020d`*: por eso `render_preview`, `design_lint` y `design_critique` aceptan ya `path` (un `.html` o una carpeta con `index.html`) como `page_assay`, y la descripción dice que una página ya escrita se pasa por ruta.
+
+**Faustus.** El 7003 murió a las 15:45 sin traza en su log (ni excepción ni apagado); se relanzó con `restart7003.ps1`. `lookup_tools` devolvió nombres `mcp__vitruvius__*` que no existen en ningún servidor (el conector real es `mcp__67b3358f__*`); el modelo acabó llamando al bueno, pero son candidatos fantasma. Ambos a PENDIENTES.
