@@ -9315,6 +9315,18 @@ async def _stream_agent_loop_body(
             except (TypeError, ValueError):
                 _deep_factor = 2.0
             _think_budget_s = _think_budget_s * max(1.0, _deep_factor)
+    # A local server that enforces a token budget stops the reasoning itself
+    # (llama-server reads `thinking_budget_tokens`, see llm_core.
+    # _mirror_thinking_budget); the clock only has to catch a budget that is
+    # not honoured, so it waits as long as the budget can take at a slow
+    # 8 tokens/s. With 240 s it cut a 4096-token exam round halfway (seen live).
+    try:
+        _turn_budget_tokens = int((gen_overrides or {}).get("reasoning_budget") or 0) \
+            if isinstance(gen_overrides, dict) else 0
+    except (TypeError, ValueError):
+        _turn_budget_tokens = 0
+    if _think_budget_s > 0 and _turn_budget_tokens > 0:
+        _think_budget_s = max(_think_budget_s, _turn_budget_tokens / 8.0 * 1.2)
     if _think_user_pinned:
         _think_watchdog_on = False  # the user pinned thinking on: respect it
     elif not _think_user_off and _harness_scope_active and _local_ep:

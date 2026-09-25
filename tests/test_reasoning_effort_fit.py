@@ -73,3 +73,18 @@ def test_an_explicit_level_becomes_overrides():
 def test_xhigh_survives_the_override_cleaner():
     assert llm_core._clean_gen_overrides({"reasoning_effort": "xhigh"}) == {"reasoning_effort": "xhigh"}
     assert llm_core._clean_gen_overrides({"reasoning_effort": "ultra"}) == {}
+
+
+def test_the_budget_also_goes_out_as_thinking_budget_tokens(monkeypatch):
+    """llama-server reads `thinking_budget_tokens`; `reasoning_budget` alone
+    was ignored (measured: 1.302 reasoning chars under a budget of 40)."""
+    from src import llm_core
+    monkeypatch.setattr(llm_core, "_is_self_hosted_openai_compatible", lambda url: True)
+    monkeypatch.setattr(llm_core, "_is_local_ollama_target", lambda url: False)
+    payload = {"reasoning_budget": 1024}
+    llm_core._mirror_thinking_budget(payload, "http://127.0.0.1:8081/v1")
+    assert payload["thinking_budget_tokens"] == 1024
+    ollama = {"reasoning_budget": 1024}
+    monkeypatch.setattr(llm_core, "_is_local_ollama_target", lambda url: True)
+    llm_core._mirror_thinking_budget(ollama, "http://127.0.0.1:11434/v1")
+    assert "thinking_budget_tokens" not in ollama

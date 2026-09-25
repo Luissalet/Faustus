@@ -4642,9 +4642,33 @@ def fit_reasoning_effort(value: str, accepted: Optional[tuple]) -> Optional[str]
     return min(ranked, key=lambda v: (abs(_EFFORT_ORDER.index(v) - want), -_EFFORT_ORDER.index(v)))
 
 
+def _mirror_thinking_budget(payload: Dict, url: str) -> None:
+    """Send the reasoning budget under the name llama-server reads.
+
+    Measured on the local llama-server (build 11040, Qwen3.8 27B): a request
+    with `reasoning_budget: 40` reasoned 1.302 characters and hit its output
+    cap still thinking; the same request with `thinking_budget_tokens: 40`
+    reasoned 161 characters and answered. Every budget Faustus set (1024
+    light, 4096 think, 16384 deep) had been ignored, and only the time-based
+    watchdog stopped long reasoning. Both names go out: builds and servers
+    that read `reasoning_budget` keep working."""
+    budget = payload.get("reasoning_budget")
+    if budget is None or "thinking_budget_tokens" in payload:
+        return
+    if not _is_self_hosted_openai_compatible(url) or _is_local_ollama_target(url):
+        return
+    try:
+        value = int(budget)
+    except (TypeError, ValueError):
+        return
+    if value > 0:
+        payload["thinking_budget_tokens"] = value
+
+
 def _fit_reasoning_effort_to_template(payload: Dict, url: str) -> None:
     """A local llama-server renders `reasoning_effort` into the model's chat
     template, which may raise on a value it does not list (HTTP 500)."""
+    _mirror_thinking_budget(payload, url)
     effort = payload.get("reasoning_effort")
     if not effort or not _is_self_hosted_openai_compatible(url) or _is_local_ollama_target(url):
         return
