@@ -11,7 +11,7 @@ Actualizado: 25-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n 
 - **El 7003 murió a las 15:45 sin dejar traza** en `server7003.log`; se relanzó. Vigilar si se repite (Cassandra no lo vigila: solo conoce el 7001).
 - **Writer's Hoard, release**: el exe de `release/win-unpacked` se recompiló (0.1.2 con el puente de familia) pero una release pública nueva es de Luis; en esta máquina el Hub arranca el modo desarrollo por `data/hub.json` → `launch_overrides` (la biblioteca vive en el origen `127.0.0.1:5174`). Origen estable para ambos modos sigue abierto como decisión de la app.
 
-## 25-09 mediodía — uso diario en el 7006 (FAUSTUS.md §184, puntos 17–32)
+## 25-09 mediodía — uso diario en el 7006 (FAUSTUS.md §184, puntos 17–35)
 
 - **Desplegado en el 7006**. Visto en vivo: el historial ya no guarda la tarjeta dos veces; el seguimiento de datos acertó; «recuerda», calendario, correo y `web_fetch` de enlaces de la búsqueda sin tarjeta; la reescritura por día de la semana erróneo (lunes → viernes). Falta ver en vivo la comprobación de huecos ocupados del calendario (32) y la búsqueda en memoria por una pregunta sobre el usuario (31). Falta ver en vivo: «recuerda que…» sin tarjeta con la paráfrasis tolerante; la reescritura por día de la semana erróneo o razonamiento en voz alta (la primera prueba sí quitó el razonamiento en voz alta, pero el día seguía mal porque la fecha iba entre paréntesis — ya cubierto); que el borrador rechazado desaparezca también en Studio (evento `response_replace`).
 - **Ruta ofrecida vs inventada**: medir en turnos reales que una oferta («¿quieres que guarde X?») ya no provoca el rechazo, y que un «He guardado X» falso sí.
