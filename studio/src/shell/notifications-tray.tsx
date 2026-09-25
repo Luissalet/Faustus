@@ -3,8 +3,11 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { IconButton, Popover } from '../components';
 import { t } from '../i18n';
+import { loadActivity } from '../adapters/activity';
 import {
+  dedupeKeyForRun,
   dismissNotification,
+  emitForNewRuns,
   listNotifications,
   markAllNotificationsRead,
   markNotificationRead,
@@ -25,14 +28,40 @@ import './notifications-tray.css';
  */
 
 const POLL_MS = 20000;
+/** Every this many tray polls, the activity feed is read too, so a run that
+ *  needs the user becomes a notification without the Activity screen open. */
+const ACTIVITY_EVERY = 3;
 
-export function NotificationTray() {
+export function NotificationTray({ side = 'bottom', align = 'end' }: {
+  side?: 'top' | 'bottom' | 'left' | 'right';
+  align?: 'start' | 'center' | 'end';
+} = {}) {
   const [rows, setRows] = useState<StoredNotification[]>([]);
   const [unread, setUnread] = useState(0);
   const navigate = useNavigate();
   const notifiedDesktop = useRef(new Set<string>());
+  const seenRuns = useRef<Set<string> | null>(null);
+  const tick = useRef(0);
+
+  const watchActivity = async () => {
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+    try {
+      const feed = await loadActivity();
+      if (seenRuns.current === null) {
+        // First look: what already finished is history, not news. Only a
+        // run still waiting for the user is worth telling about now.
+        seenRuns.current = new Set(feed.runs
+          .filter((r) => r.status !== 'waiting')
+          .map(dedupeKeyForRun));
+      }
+      await emitForNewRuns(feed.runs, seenRuns.current);
+    } catch {
+      /* the next tick tries again */
+    }
+  };
 
   const reload = async () => {
+    if (tick.current++ % ACTIVITY_EVERY === 0) await watchActivity();
     try {
       const data = await listNotifications();
       setRows(data.notifications);
@@ -85,8 +114,8 @@ export function NotificationTray() {
 
   return (
     <Popover
-      side="bottom"
-      align="end"
+      side={side}
+      align={align}
       className="fs-notif-tray"
       testId="notification-tray"
       trigger={

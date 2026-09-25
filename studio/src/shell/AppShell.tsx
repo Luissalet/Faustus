@@ -11,6 +11,7 @@ import { HomeScreen } from '../screens/Home';
 import { NotFound } from '../screens/NotFound';
 
 import { BrandMark } from './BrandMark';
+import { NotificationTray } from './notifications-tray';
 import { DESTINATIONS, MOBILE_DESTINATIONS, TOOLS } from './routes';
 import { useBadges } from './badges';
 import { ensureOverlayRoot, removeOverlayRoot } from './overlayRoot';
@@ -211,10 +212,13 @@ function Rail() {
 
       {platform !== 'mobile' && (
         <div className="fs-nav__foot">
-          <NavLink to="/settings" className="fs-nav__tool fs-nav__settings" data-testid="nav-settings">
-            <Settings2 size={13} aria-hidden="true" />
-            <span>{t('Settings')}</span>
-          </NavLink>
+          <div className="fs-nav__foot-row">
+            <NavLink to="/settings" className="fs-nav__tool fs-nav__settings" data-testid="nav-settings">
+              <Settings2 size={13} aria-hidden="true" />
+              <span>{t('Settings')}</span>
+            </NavLink>
+            <NotificationTray side="top" align="start" />
+          </div>
           <p className="fs-nav__hint">{t('Ctrl+K to search and navigate')}</p>
         </div>
       )}

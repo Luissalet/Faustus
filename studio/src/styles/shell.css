@@ -290,6 +290,21 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
   border-block-start: 1px solid var(--fs-border);
 }
 
+.fs-nav__foot-row {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-1);
+}
+
+.fs-nav__foot-row .fs-nav__settings {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.fs-shell[data-nav='rail'] .fs-nav__foot-row {
+  flex-direction: column;
+}
+
 .fs-nav__hint {
   padding-inline: var(--fs-space-2);
   font-size: 11px;
