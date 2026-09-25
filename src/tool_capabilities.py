@@ -1175,6 +1175,35 @@ _BROWSER_MCP_READ_CAPABILITIES = _capabilities(
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
 
+# ── Read-only local (stdio, no-network) MCP tool carve-out ─────────────────
+# A tool on a LOCAL stdio MCP server that the server itself marks read-only
+# (readOnlyHint=True, destructiveHint is not True) AND whose server has
+# explicitly declared `network: false` cannot act or exfiltrate through its
+# arguments or its result -- it is the MCP equivalent of `read_file`
+# (READ_WORKSPACE, never blocked by the post-external-context gate below).
+# See `McpManager.readonly_local_tool_allowed` (src/mcp_manager.py) for the
+# full three-part rule this depends on; this module only classifies.
+_MCP_READONLY_LOCAL_CAPABILITIES = _capabilities(
+    ToolEffect.READ_WORKSPACE,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+
+
+def _mcp_readonly_local_tool_ok(tool_name: str) -> bool:
+    """Ask the live MCP manager whether `tool_name` qualifies for the
+    read-only local-MCP gate carve-out. Deferred import (mcp_manager.py
+    imports this module at load time, so this module cannot import it back
+    at module scope). Never raises: no manager, or any lookup failure,
+    means "not eligible" -- the caller stays on the normal, gated path."""
+    try:
+        from src.tool_utils import get_mcp_manager
+        manager = get_mcp_manager()
+        if manager is None:
+            return False
+        return bool(manager.readonly_local_tool_allowed(tool_name))
+    except Exception:  # noqa: BLE001 - never raise into capability classification
+        return False
+
 # ── Built-in browser (Playwright MCP) policy ───────────────────────────────
 # Bare tool names as the server exposes them; qualified names carry the prefix.
 BROWSER_MCP_SERVER_ID = "builtin_browser"
@@ -1461,6 +1490,9 @@ def capabilities_for_action(tool_name: Any, content: Any) -> ToolCapabilities:
     base = capabilities_for_tool(tool_name)
     if not isinstance(tool_name, str):
         return base
+
+    if not base.known and tool_name.startswith("mcp__") and _mcp_readonly_local_tool_ok(tool_name):
+        return _MCP_READONLY_LOCAL_CAPABILITIES
 
     action = _action_from_content(tool_name, content)
     if action in _CATALOG_ACTION_READS.get(tool_name, ()):

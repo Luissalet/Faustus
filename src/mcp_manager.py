@@ -396,6 +396,58 @@ def server_declared_permissions(srv: Any) -> Optional[Dict[str, bool]]:
     return {k: bool(data.get(k)) for k in PERMISSION_KEYS}
 
 
+def _server_declared_network_explicitly_false(srv: Any) -> bool:
+    """True only when this row's raw `declared_permissions` JSON has a
+    `"network"` key whose value is the JSON literal `false`.
+
+    Deliberately does NOT go through `server_declared_permissions` above:
+    that helper coerces every `PERMISSION_KEYS` entry with `bool(...)`,
+    which makes an ABSENT key read identically to an explicitly-declared
+    `false` one (`bool(None) == False`). The read-only-MCP-tool gate
+    carve-out in `src/tool_capabilities.py` requires the admin to have
+    actually stated "no network" for this server -- "nothing declared" must
+    stay gated, not silently pass. Never raises: any malformed input reads
+    as "not explicitly false" (i.e. stays gated)."""
+    try:
+        raw = getattr(srv, "declared_permissions", None)
+    except Exception:  # noqa: BLE001 - a detached/odd ORM object
+        return False
+    if not raw:
+        return False
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    return data.get("network") is False
+
+
+def server_network_declared_false(server_id: str) -> bool:
+    """Cheap, indexed-by-primary-key lookup: has ``server_id`` explicitly
+    declared ``network: false``?
+
+    This is the ONLY database access the read-only-MCP-tool gate carve-out
+    (`src/tool_capabilities.py`) performs, and only for a tool that has
+    already passed its (in-memory, no-DB) annotation and transport checks.
+    Never raises into the caller -- a missing server, a closed DB, or any
+    other failure reads as False (stays gated), exactly like every other
+    helper in this "declared permissions" family."""
+    if not server_id:
+        return False
+    try:
+        db = SessionLocal()
+        try:
+            srv = db.query(McpServer).filter(McpServer.id == server_id).first()
+            if srv is None:
+                return False
+            return _server_declared_network_explicitly_false(srv)
+        finally:
+            db.close()
+    except Exception:  # noqa: BLE001 - DB unavailable must never break the gate
+        return False
+
+
 def new_server_inherits_env() -> bool:
     """What a server added RIGHT NOW should get. Driven by `agent_mcp_min_env`."""
     try:
@@ -1948,6 +2000,68 @@ class McpManager:
                     disabled_map.setdefault(server_id, set()).add(tool["name"])
                     qualified.add(f"mcp__{server_id}__{tool['name']}")
         return disabled_map, qualified
+
+    def readonly_local_tool_allowed(self, qualified_name: str) -> bool:
+        """Strict, annotations-only carve-out for the post-external-context
+        approval gate (`src/tool_capabilities.py::capabilities_for_action`).
+
+        A read-only tool on a LOCAL (stdio) MCP server that has explicitly
+        declared no network access cannot exfiltrate anything through its
+        arguments or its result -- reading it is equivalent to `read_file`,
+        which the gate never blocks in the first place. Every one of these
+        is required, checked in cheapest-first order; any failure (bad
+        qualified name, unknown server/tool, DB unavailable) returns False
+        so the caller stays gated. This method must never raise.
+
+          1. the tool's OWN annotations (never the name heuristic
+             `mcp_tool_is_readonly` falls back to) say `readOnlyHint=True`
+             and `destructiveHint` is not `True`;
+          2. the server's live transport is "stdio" (a local child process);
+          3. the server's saved `declared_permissions` explicitly has
+             `network: false` (missing/unknown declared_permissions keeps
+             the gate up -- see `server_network_declared_false`).
+
+        Deliberately does not consult `disabled_tools` or any per-call
+        desktop-approval / destructive-command-guard state: those are
+        enforced elsewhere in the gate/dispatch path (`decision_for` runs
+        the destructive-command guard and per-call approval checks before
+        this is ever reached; `disabled_tools` is enforced at schema-build
+        and dispatch time in `call_tool`/`get_all_tools`) and this method
+        has no business overriding them.
+        """
+        try:
+            parts = str(qualified_name).split("__", 2)
+            if len(parts) != 3 or parts[0] != "mcp":
+                return False
+            server_id, tool_name = parts[1], parts[2]
+            if not server_id or not tool_name:
+                return False
+
+            conn = self._connections.get(server_id)
+            if not isinstance(conn, dict) or conn.get("transport") != "stdio":
+                return False
+
+            tool = next(
+                (t for t in self._tools.get(server_id, ()) if isinstance(t, dict) and t.get("name") == tool_name),
+                None,
+            )
+            if tool is None:
+                return False
+            ann = tool.get("annotations")
+            if ann is None:
+                return False
+            if isinstance(ann, dict):
+                read_hint = ann.get("readOnlyHint")
+                destructive = ann.get("destructiveHint")
+            else:
+                read_hint = getattr(ann, "readOnlyHint", None)
+                destructive = getattr(ann, "destructiveHint", None)
+            if read_hint is not True or destructive is True:
+                return False
+
+            return server_network_declared_false(server_id)
+        except Exception:  # noqa: BLE001 - never raise into an approval gate
+            return False
 
     def is_builtin(self, server_id: str) -> bool:
         """Check if a server is a built-in (auto-registered) server."""
