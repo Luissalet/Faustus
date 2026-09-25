@@ -192,6 +192,12 @@ def native_host_environment(base: Optional[Mapping[str, str]] = None, *,
     path = out.get("PATH")
     if path:
         out["PATH"] = _strip_venv_from_path(path, roots)
+    # Tool output is read as UTF-8. A Python child on Windows writes its
+    # stdout to a pipe in the ANSI code page, so "Líneas" reached the model
+    # as "L\ufffdneas" (seen live, and the model spent a sentence on it).
+    # Only the standard streams; the child's own file I/O is untouched.
+    if os.name == "nt" and "PYTHONIOENCODING" not in out:
+        out["PYTHONIOENCODING"] = "utf-8"
     for key, value in (extra or {}).items():
         if key is None:
             continue

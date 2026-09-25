@@ -36,8 +36,19 @@ def test_every_venv_marker_is_dropped(marker):
 
 
 def test_unrelated_variables_are_kept_verbatim():
-    base = {"HOME": "/home/u", "LANG": "en_GB.UTF-8", "MY_TOKEN": "abc", "EMPTY": ""}
+    base = {"HOME": "/home/u", "LANG": "en_GB.UTF-8", "MY_TOKEN": "abc", "EMPTY": "",
+            "PYTHONIOENCODING": "utf-8"}
     assert native_host_environment(base) == base
+
+
+def test_a_python_child_on_windows_writes_utf8_to_the_pipe(monkeypatch):
+    import src.native_env as ne
+    monkeypatch.setattr(ne.os, "name", "nt")
+    assert ne.native_host_environment({"HOME": "x"})["PYTHONIOENCODING"] == "utf-8"
+    # an explicit choice is kept
+    assert ne.native_host_environment({"PYTHONIOENCODING": "cp1252"})["PYTHONIOENCODING"] == "cp1252"
+    monkeypatch.setattr(ne.os, "name", "posix")
+    assert "PYTHONIOENCODING" not in ne.native_host_environment({"HOME": "x"})
 
 
 def test_absent_markers_are_not_invented():
