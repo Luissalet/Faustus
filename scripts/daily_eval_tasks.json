@@ -1,0 +1,227 @@
+[
+ {
+  "id": "dates-weekday",
+  "messages": [
+   "Si hoy es viernes 25 de septiembre de 2026, ¿qué día de la semana será el 1 de enero de 2027?"
+  ],
+  "answer_all": [
+   "viernes"
+  ],
+  "tools_none": [
+   "web_search"
+  ],
+  "max_cards": 0
+ },
+ {
+  "id": "dates-span",
+  "messages": [
+   "¿Cuántos días hay entre el 3 de marzo y el 17 de abril de 2027?"
+  ],
+  "answer_all": [
+   "\\b45\\b"
+  ],
+  "tools_none": [
+   "web_search"
+  ],
+  "max_cards": 0
+ },
+ {
+  "id": "dates-mondays",
+  "messages": [
+   "¿Cuántos lunes tiene octubre de 2026?"
+  ],
+  "answer_all": [
+   "\\b4\\b|cuatro"
+  ],
+  "tools_none": [
+   "web_search"
+  ],
+  "max_cards": 0
+ },
+ {
+  "id": "dates-pushback",
+  "messages": [
+   "El 6 de diciembre de 2026 cae en viernes, ¿verdad?"
+  ],
+  "answer_all": [
+   "domingo"
+  ],
+  "max_cards": 0
+ },
+ {
+  "id": "dates-followup",
+  "messages": [
+   "¿Cuántos días hay entre el 3 de marzo y el 17 de abril de 2027?",
+   "¿Y cuántas semanas completas son?"
+  ],
+  "answer_all": [
+   "\\b6\\b|seis"
+  ],
+  "max_cards": 0
+ },
+ {
+  "id": "letters",
+  "messages": [
+   "¿Cuántas veces aparece la letra r en la palabra ferrocarrilero?"
+  ],
+  "answer_all": [
+   "\\b5\\b|cinco"
+  ],
+  "max_tools": 1,
+  "max_cards": 0
+ },
+ {
+  "id": "iva",
+  "messages": [
+   "Una factura es de 242 € con el IVA del 21 % incluido. ¿Cuánto es la base y cuánto el IVA?"
+  ],
+  "answer_all": [
+   "\\b200\\b",
+   "\\b42\\b"
+  ],
+  "max_cards": 0
+ },
+ {
+  "id": "tip-split",
+  "messages": [
+   "Propina del 15 % sobre una cuenta de 86,40 €. Somos 4: ¿cuánto paga cada uno con la propina incluida?"
+  ],
+  "answer_all": [
+   "24[,.]84"
+  ],
+  "max_cards": 0
+ },
+ {
+  "id": "fahrenheit",
+  "messages": [
+   "Pasa 72 °F a Celsius."
+  ],
+  "answer_all": [
+   "22[,.]2"
+  ],
+  "max_cards": 0
+ },
+ {
+  "id": "multiply",
+  "messages": [
+   "¿Cuánto es 17 × 23?"
+  ],
+  "answer_all": [
+   "\\b391\\b"
+  ],
+  "max_tools": 1,
+  "max_cards": 0
+ },
+ {
+  "id": "sort-decimals",
+  "messages": [
+   "Ordena de menor a mayor: 3,5; 2,75; 3,05; 2,8"
+  ],
+  "answer_all": [
+   "2[,.]75.*2[,.]8\\b.*3[,.]05.*3[,.]5"
+  ],
+  "max_tools": 1,
+  "max_cards": 0
+ },
+ {
+  "id": "train-time",
+  "messages": [
+   "Un tren sale a las 14:35 y el viaje dura 2 h 50 min. ¿A qué hora llega?"
+  ],
+  "answer_all": [
+   "17[:.h]\\s?25"
+  ],
+  "max_tools": 1,
+  "max_cards": 0
+ },
+ {
+  "id": "translate",
+  "messages": [
+   "Tradúceme al inglés: «Mañana no puedo ir, lo siento mucho.»"
+  ],
+  "answer_all": [
+   "tomorrow",
+   "sorry"
+  ],
+  "max_tools": 0,
+  "max_cards": 0
+ },
+ {
+  "id": "recipe",
+  "messages": [
+   "Tengo 3 huevos, medio calabacín y queso rallado. ¿Qué ceno hoy en 15 minutos?"
+  ],
+  "answer_all": [
+   "huevo"
+  ],
+  "max_tools": 0,
+  "max_cards": 0
+ },
+ {
+  "id": "summary",
+  "messages": [
+   "Resume en tres puntos qué es la fotosíntesis."
+  ],
+  "answer_all": [
+   "luz|solar",
+   "ox[ií]geno|CO2|CO₂|carbono"
+  ],
+  "max_tools": 0,
+  "max_cards": 0
+ },
+ {
+  "id": "weather",
+  "messages": [
+   "¿Qué tiempo hará mañana en Madrid?"
+  ],
+  "web": true,
+  "answer_all": [
+   "°|grados"
+  ],
+  "tools_any": [
+   "web_search",
+   "web_fetch",
+   "weather",
+   "get_weather"
+  ],
+  "max_cards": 0
+ },
+ {
+  "id": "calendar-week",
+  "messages": [
+   "Mira mi calendario de esta semana y dime qué día tengo más libre."
+  ],
+  "first_tool_any": [
+   "manage_calendar"
+  ],
+  "max_cards": 0
+ },
+ {
+  "id": "tasks-pending",
+  "messages": [
+   "¿Qué tareas tengo pendientes?"
+  ],
+  "tools_any": [
+   "manage_tasks"
+  ],
+  "tools_none": [
+   "board_list",
+   "board_ready"
+  ],
+  "max_cards": 0
+ },
+ {
+  "id": "note-dictated",
+  "messages": [
+   "Apunta en mis notas: comprar tornillos y cinta americana."
+  ],
+  "writes": true,
+  "tools_any": [
+   "manage_notes"
+  ],
+  "max_cards": 0,
+  "answer_all": [
+   "tornillos"
+  ]
+ }
+]
