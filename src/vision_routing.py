@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import threading
 import time
 from typing import Any, Dict, List, Optional, Sequence
@@ -73,9 +74,10 @@ _auto_cache: Dict[str, tuple] = {}
 
 
 def clear_cache() -> None:
-    """Forget every cached auto-detection (tests, endpoint changes)."""
+    """Forget every cached auto-detection and live inventory (tests, endpoint changes)."""
     with _cache_lock:
         _auto_cache.clear()
+        _live_cache.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -173,13 +175,24 @@ def list_vision_endpoints(owner: Optional[str]) -> List[Dict[str, Any]]:
             url = build_chat_url(base)
             if not str(url or "").lower().startswith(("http://", "https://")):
                 continue
+            models = list(_endpoint_enabled_models(ep))
+            local = _is_local(url)
+            if local:
+                try:
+                    from src.endpoint_resolver import _endpoint_hidden_models
+                    hidden = _endpoint_hidden_models(ep)
+                except Exception:  # noqa: BLE001
+                    hidden = set()
+                for name in live_local_inventory(url).get("models") or {}:
+                    if name not in hidden and name not in models:
+                        models.append(name)
             out.append({
                 "id": ep.id,
                 "name": getattr(ep, "name", None) or ep.id,
                 "url": url,
                 "headers": build_headers(api_key, base),
-                "models": list(_endpoint_enabled_models(ep)),
-                "local": _is_local(url),
+                "models": models,
+                "local": local,
             })
     except Exception as exc:  # noqa: BLE001
         logger.debug("vision routing: endpoint listing failed: %s", exc)
@@ -191,6 +204,81 @@ def list_vision_endpoints(owner: Optional[str]) -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # capability
 # ---------------------------------------------------------------------------
+
+_LIVE_TTL_S = 60.0
+_live_cache: Dict[str, tuple] = {}
+
+
+def _ollama_base(url: str) -> str:
+    """`http://host:port` of a local Ollama chat URL, or "" for anything else."""
+    try:
+        from src.chat_helpers import _is_local_ollama_url
+        if not _is_local_ollama_url(url):
+            return ""
+    except Exception:  # noqa: BLE001
+        return ""
+    p = urlparse(url)
+    return f"{p.scheme}://{p.netloc}" if p.scheme and p.netloc else ""
+
+
+def live_local_inventory(url: str) -> Dict[str, Any]:
+    """What a LOCAL Ollama has installed right now and what is loaded:
+    `{"models": {name: size_bytes}, "loaded": set(names)}`. Two cheap loopback
+    calls (/api/tags, /api/ps) cached for a minute; empty for other servers.
+
+    The endpoint's cached model list can be days old (a VLM pulled this
+    morning is not in it), and the helper should prefer a model that is
+    already in memory or small over loading a second big general model."""
+    base = _ollama_base(url)
+    if not base:
+        return {"models": {}, "loaded": set()}
+    now = time.monotonic()
+    with _cache_lock:
+        hit = _live_cache.get(base)
+        if hit and now - hit[0] < _LIVE_TTL_S:
+            return hit[1]
+    inv: Dict[str, Any] = {"models": {}, "loaded": set()}
+    try:
+        import httpx
+        with httpx.Client(timeout=2.0, trust_env=False) as client:
+            tags = client.get(base + "/api/tags")
+            if tags.status_code == 200:
+                for m in (tags.json() or {}).get("models") or []:
+                    name = m.get("name") or m.get("model")
+                    if name:
+                        inv["models"][name] = int(m.get("size") or 0)
+            ps = client.get(base + "/api/ps")
+            if ps.status_code == 200:
+                for m in (ps.json() or {}).get("models") or []:
+                    name = m.get("name") or m.get("model")
+                    if name:
+                        inv["loaded"].add(name)
+    except Exception as exc:  # noqa: BLE001 - a probe never breaks a turn
+        logger.debug("vision routing: live inventory of %s failed: %s", base, exc)
+    with _cache_lock:
+        _live_cache[base] = (now, inv)
+    return inv
+
+
+def _dedicated_vlm(name: str) -> bool:
+    n = (name or "").lower()
+    return any(c in n for c in LOCAL_VLM_CANDIDATES) or bool(
+        re.search(r"(?<![a-z])vl(?![a-z])|vlm|vision|llava|moondream|minicpm-v", n))
+
+
+def rank_capable(url: str, capable: Sequence[str]) -> List[str]:
+    """Order vision-capable models for the helper role: already loaded
+    first (no load, no eviction), then dedicated vision models, then the
+    smallest. A big general model that also sees is the last resort."""
+    inv = live_local_inventory(url)
+    sizes = inv.get("models") or {}
+    loaded = inv.get("loaded") or set()
+
+    def key(m: str):
+        return (0 if m in loaded else 1, 0 if _dedicated_vlm(m) else 1,
+                sizes.get(m) or 10**13, capable.index(m))
+    return sorted(capable, key=key)
+
 
 def _probe_endpoint(url: str, models: Sequence[str], deadline: float) -> tuple:
     """(vision-capable models in probe order, models reported text-only) for
@@ -281,11 +369,13 @@ def _pick_on_endpoints(endpoints: List[Dict[str, Any]], owner: Optional[str],
         capable, negative = _probe_endpoint(ep["url"], ep.get("models") or [], deadline)
         negatives[ep["url"]] = negative
         if capable:
-            return _route(ep, capable[0], source)
+            return _route(ep, rank_capable(ep["url"], capable)[0], source)
     for group, names in ((local, AUTO_CANDIDATES), (remote, AUTO_CANDIDATES)):
         for ep in group:
-            ranked = names if group is remote else LOCAL_VLM_CANDIDATES + tuple(
-                n for n in names if n not in LOCAL_VLM_CANDIDATES)
+            # A hosted model name on a local server is an alias of something
+            # else (an Ollama tag called like a cloud model) -- only the
+            # local VLM families count there.
+            ranked = names if group is remote else LOCAL_VLM_CANDIDATES
             for cand in ranked:
                 hit = _match_candidate(cand, ep.get("models") or [], negatives.get(ep["url"], set()))
                 if hit:
@@ -310,6 +400,14 @@ def _auto_detect(owner: Optional[str]) -> Dict[str, Any]:
                 continue
             if not url or not model_id or not _gate_allows(url, owner):
                 continue
+            if _is_local(url):
+                from src import chat_helpers as _ch
+                try:
+                    confirmed = _ch.ollama_supports_vision(url, model_id)
+                except Exception:  # noqa: BLE001
+                    confirmed = None
+                if confirmed is not True and not _dedicated_vlm(model_id):
+                    continue
             ep = next((e for e in endpoints if e["url"].rstrip("/") == str(url).rstrip("/")), None)
             return {
                 "url": url, "model": model_id, "headers": dict(headers or {}),

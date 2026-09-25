@@ -415,3 +415,53 @@ def test_settings_and_schema_declare_the_new_keys():
     assert DEFAULT_SETTINGS["vision_endpoint_id"] == ""
     assert DEFAULT_SETTINGS["vision_history_filter"] is True
     assert "vision_endpoint_id" in _PER_USER_KEYS
+
+
+# ---------------------------------------------------------------------------
+# helper choice on a real local box (live inventory, ranking, aliases)
+# ---------------------------------------------------------------------------
+
+def _inv(monkeypatch, models, loaded=()):
+    monkeypatch.setattr(vr, "live_local_inventory",
+                        lambda url: {"models": dict(models), "loaded": set(loaded)})
+
+
+def test_capable_models_rank_loaded_then_dedicated_then_smallest(monkeypatch):
+    url = "http://127.0.0.1:11434/v1/chat/completions"
+    _inv(monkeypatch, {"big-general:27b": 17_000_000_000, "qwen3-vl:8b-instruct": 6_100_000_000,
+                       "tiny-vl:2b": 1_500_000_000})
+    assert vr.rank_capable(url, ["big-general:27b", "qwen3-vl:8b-instruct", "tiny-vl:2b"])[0] == "tiny-vl:2b"
+    _inv(monkeypatch, {"big-general:27b": 17_000_000_000, "qwen3-vl:8b-instruct": 6_100_000_000},
+         loaded={"big-general:27b"})
+    # Already in memory beats loading anything else.
+    assert vr.rank_capable(url, ["qwen3-vl:8b-instruct", "big-general:27b"])[0] == "big-general:27b"
+
+
+def test_auto_prefers_the_small_dedicated_vlm_over_a_big_general_alias(monkeypatch):
+    # An Ollama tag named like a hosted model (an alias of a 27B general
+    # model that also reports vision) must not win over the 8B VLM.
+    endpoints = [_ep("ollama", "http://127.0.0.1:11434/v1/chat/completions",
+                     ["claude-sonnet-4-5:latest", "qwen3-vl:8b-instruct"])]
+    monkeypatch.setattr(vr, "list_vision_endpoints", lambda owner: endpoints)
+    monkeypatch.setattr(vr, "_gate_allows", lambda url, owner: True)
+    _no_probes(monkeypatch, ollama={"claude-sonnet-4-5:latest": True, "qwen3-vl:8b-instruct": True})
+    _inv(monkeypatch, {"claude-sonnet-4-5:latest": 17_000_000_000, "qwen3-vl:8b-instruct": 6_100_000_000})
+    assert vr.resolve_vision_route("carol-vr")["model"] == "qwen3-vl:8b-instruct"
+
+
+def test_hosted_names_never_match_local_aliases(monkeypatch):
+    # No capability report at all: a local tag that merely looks like a
+    # hosted model name is not a vision model by name.
+    endpoints = [_ep("ollama", "http://127.0.0.1:11434/v1/chat/completions",
+                     ["claude-sonnet-4-5-20250929"])]
+    monkeypatch.setattr(vr, "list_vision_endpoints", lambda owner: endpoints)
+    monkeypatch.setattr(vr, "_gate_allows", lambda url, owner: True)
+    _no_probes(monkeypatch)
+    route = vr.resolve_vision_route("dave-vr")
+    assert route["model"] != "claude-sonnet-4-5-20250929"
+
+
+def test_live_inventory_is_only_for_local_ollama(monkeypatch):
+    monkeypatch.setattr(ch, "_is_local_ollama_url", lambda url: False)
+    assert vr.live_local_inventory("https://api.example.com/v1/chat/completions") == {
+        "models": {}, "loaded": set()}
