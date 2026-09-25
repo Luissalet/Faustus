@@ -1551,6 +1551,13 @@ def setup_model_routes(model_discovery):
     # background thread — so a probe here must never make the picker feel
     # slow even when an Ollama box is warming up.
     _LOCAL_MODEL_SYNC_PROBE_TIMEOUT = 2.0
+    # One /api/models read spends at most this long re-listing local
+    # endpoints inline; any still stale after that wait for the next read.
+    _LOCAL_MODEL_SYNC_TOTAL_BUDGET = 2.5
+    # Check-and-set of the per-endpoint "inflight" flag must be atomic:
+    # two concurrent reads would otherwise both probe the same endpoint.
+    import threading as _threading
+    _local_sync_lock = _threading.Lock()
 
     def _invalidate_models_cache() -> None:
         """Clear the per-user /api/models cache. Call after any change that
@@ -1742,9 +1749,10 @@ def setup_model_routes(model_discovery):
             return False
 
         key = _refresh_key(base, getattr(ep, "api_key", None))
-        state = _refresh_state.setdefault(key, {})
-        if state.get("inflight"):
-            return False
+        with _local_sync_lock:
+            state = _refresh_state.setdefault(key, {})
+            if state.get("inflight"):
+                return False
 
         fails = int(state.get("fail_count") or 0)
         if fails:
@@ -1761,7 +1769,10 @@ def setup_model_routes(model_discovery):
         if last_good and (now - last_good) < ttl:
             return False
 
-        state["inflight"] = True
+        with _local_sync_lock:
+            if state.get("inflight"):
+                return False
+            state["inflight"] = True
         try:
             ids = _probe_endpoint(base, getattr(ep, "api_key", None),
                                    timeout=_LOCAL_MODEL_SYNC_PROBE_TIMEOUT)
@@ -1831,6 +1842,8 @@ def setup_model_routes(model_discovery):
                 now = _time.time()
                 changed = False
                 for ep in endpoints:
+                    if _time.time() - now > _LOCAL_MODEL_SYNC_TOTAL_BUDGET:
+                        break
                     try:
                         if _sync_refresh_local_endpoint(db, ep, now):
                             changed = True
