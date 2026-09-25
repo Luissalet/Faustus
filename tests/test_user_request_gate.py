@@ -453,3 +453,77 @@ def test_a_glob_is_judged_by_the_files_it_matches(tmp_path):
     except (OSError, NotImplementedError):
         pytest.skip("symlinks are not available here")
     assert not ok("head -3 *.csv")
+
+
+# ---- "créalo, testéalos y ejecútalo": running the script the user named ----
+# Seen live: after write_file("stats.py") and write_file("test_stats.py"),
+# "ejecuta el script sobre ventas.csv" still stopped at the card because
+# `python stats.py ventas.csv` matched no rule (only `_runs_the_tests` reads
+# the shell's own arguments, and it only knows test runners).
+
+_STATS_TASK = (
+    "Crea un script stats.py que calcule estadisticas de ventas.csv. Anade tests "
+    "con pytest en test_stats.py, ejecutalos y dime el resultado. Luego ejecuta "
+    "el script sobre ventas.csv y ensename la salida."
+)
+
+
+@pytest.mark.parametrize("command", [
+    "python -m pytest test_stats.py -v",
+    "cd {ws} && python -m pytest test_stats.py -q",
+    "python stats.py ventas.csv",
+    "cd {ws} && python stats.py ventas.csv",
+])
+def test_the_script_and_tests_the_user_asked_for_run_without_a_card(command, tmp_path):
+    ws = str(tmp_path)
+    assert allows("bash", json.dumps({"command": command.format(ws=ws)}), _STATS_TASK, workspace=ws) is True
+
+
+@pytest.mark.parametrize("command", [
+    "python stats.py ventas.csv && rm -rf .",  # a step nobody asked for
+    "python otro.py ventas.csv",  # a script the user never named
+    "python stats.py ../fuera.csv",  # an argument outside the workspace
+    "python stats.py /etc/passwd",  # an absolute path outside the workspace
+])
+def test_running_a_script_still_needs_the_users_words(command, tmp_path):
+    ws = str(tmp_path)
+    assert allows("bash", json.dumps({"command": command}), _STATS_TASK, workspace=ws) is False
+
+
+def test_running_the_named_script_needs_a_workspace():
+    assert allows("bash", json.dumps({"command": "python stats.py ventas.csv"}), _STATS_TASK) is False
+
+
+def test_a_script_run_the_user_said_not_to_do_keeps_the_gate(tmp_path):
+    ws = str(tmp_path)
+    text = "Crea stats.py sobre ventas.csv. No ejecutes stats.py todavia."
+    assert allows("bash", json.dumps({"command": "python stats.py ventas.csv"}), text, workspace=ws) is False
+
+
+# ---- write_file's own confirmation is not content Faustus did not write ----
+# Seen live: after write_file(stats.py) and write_file(test_stats.py) (both
+# brand-new files), the next `bash` call still stopped at "This run has
+# already taken in content Faustus did not write itself, via write_file".
+
+def test_creating_a_brand_new_file_does_not_arm_the_gate():
+    from src.tool_capabilities import tool_result_should_arm_gate
+
+    new_file_result = {
+        "output": "Wrote 42 bytes to stats.py",
+        "exit_code": 0,
+        "diff": {"text": "+import pandas", "added": 1, "removed": 0, "new_file": True},
+    }
+    assert tool_result_should_arm_gate("write_file", new_file_result) is False
+
+
+def test_overwriting_an_existing_file_still_arms_the_gate():
+    from src.tool_capabilities import tool_result_should_arm_gate
+
+    overwrite_result = {
+        "output": "Wrote 10 bytes to config.py",
+        "exit_code": 0,
+        "diff": {"text": "-old\n+new", "added": 1, "removed": 1, "new_file": False},
+    }
+    assert tool_result_should_arm_gate("write_file", overwrite_result) is True
+    # no diff info at all (e.g. a synthetic/legacy result): stays cautious
+    assert tool_result_should_arm_gate("write_file", {"output": "x", "exit_code": 0}) is True

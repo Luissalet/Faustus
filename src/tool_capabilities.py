@@ -1532,6 +1532,17 @@ def tool_result_should_arm_gate(
     # stored source overrides a coarse static SYSTEM default.
     if result.get("untrusted_content") is True:
         return True
+    # `write_file` is classed WORKSPACE_UNTRUSTED because an overwrite's diff
+    # can echo the file's pre-existing (possibly attacker-planted) content
+    # back into context -- but creating a brand-new file has no pre-existing
+    # content to echo: the diff is only what Faustus itself just wrote.
+    # `_unified_diff` (src/agent_tools/filesystem_tools.py) marks that case
+    # `new_file: True`; only that positive signal is trusted; a missing or
+    # false value keeps the normal, more cautious classification below.
+    if tool_name == "write_file":
+        diff = result.get("diff")
+        if isinstance(diff, dict) and diff.get("new_file") is True:
+            return False
     capabilities = capabilities_for_action(tool_name, content)
     if capabilities.result_integrity is ResultIntegrity.SYSTEM:
         return False
@@ -1652,13 +1663,29 @@ def _write_targets(tool_name: str, content: Any) -> list[str] | None:
     return [first] if first else None
 
 
+_WIN_ABS_RE = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\|//[^/])")
+
+
+def is_abs_path(path: str) -> bool:
+    """True for a path that is absolute regardless of the host OS's own path
+    rules: a POSIX root, or a Windows drive letter / UNC form. Faustus's
+    tools run on Windows, so `C:/Users/...` or `\\\\server\\share` must never
+    read as "relative to the workspace" merely because the platform running
+    this check (Linux, in tests or other tooling) does not itself recognise
+    a drive letter as absolute -- that gap let a path like a credential file
+    outside the workspace be silently joined under it and pass as trusted."""
+    import os
+
+    return os.path.isabs(path) or bool(_WIN_ABS_RE.match(str(path)))
+
+
 def path_inside_trusted(root: str, path: str) -> bool:
     """True when `path` (absolute, or relative to `root`) resolves inside `root`."""
     if not root or not path:
         return False
     import os
     try:
-        candidate = path if os.path.isabs(path) else os.path.join(root, path)
+        candidate = path if is_abs_path(path) else os.path.join(root, path)
         real = os.path.realpath(candidate)
         root_real = os.path.realpath(root)
     except (OSError, ValueError):

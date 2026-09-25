@@ -211,16 +211,21 @@ def _command_of(content: Any) -> str:
 
 
 def _same_dir(path: str, workspace: str) -> bool:
-    import os
+    """`path` (as bash spells a "cd" target) and `workspace` name the same
+    Windows folder. Faustus's own shell is bash: the same folder arrives as
+    "D:/x", "D:\\x", "/d/x" (seen live), "/mnt/d/x" or "/cygdrive/d/x". These
+    are always compared with Windows path rules (`ntpath`), never the host's
+    own `os.path` -- which is posixpath on Linux (this runs there too, in
+    tests and in any non-Windows tooling) and would treat "D:/x" and "D:\\x"
+    as two unrelated strings instead of the same folder."""
+    import ntpath
 
     if not workspace or not path:
         return False
-    # The shell Faustus runs on Windows is bash: the same folder arrives as
-    # "D:/x", "D:\\x", "/d/x" (seen live), "/mnt/d/x" or "/cygdrive/d/x".
     drive = re.match(r"^/(?:mnt/|cygdrive/)?([a-zA-Z])(?:/(.*))?$", path)
-    if drive and os.name == "nt":
+    if drive:
         path = f"{drive.group(1)}:/{drive.group(2) or ''}"
-    norm = lambda p: os.path.normcase(os.path.normpath(os.path.abspath(str(p)))).rstrip("\\/")  # noqa: E731
+    norm = lambda p: ntpath.normcase(ntpath.normpath(str(p))).rstrip("\\")  # noqa: E731
     return norm(path) == norm(workspace)
 
 
@@ -326,10 +331,11 @@ def _harmless_awk(program: str) -> bool:
 
 
 def _host_path(token: str) -> str:
-    import os
-
+    """A git-bash-spelled path ("/d/x", "/mnt/d/x", "/cygdrive/d/x") as its
+    Windows drive-letter form, regardless of the host this runs on -- see
+    `_same_dir` above for why the conversion cannot be gated on `os.name`."""
     drive = re.match(r"^/(?:mnt/|cygdrive/)?([a-zA-Z])(?:/(.*))?$", token)
-    if drive and os.name == "nt":
+    if drive:
         return f"{drive.group(1)}:/{drive.group(2) or ''}"
     return token
 
@@ -351,7 +357,7 @@ def _inspects_the_workspace(step: str, workspace: str) -> bool:
     import os
     import shlex
 
-    from src.tool_capabilities import path_inside_trusted
+    from src.tool_capabilities import is_abs_path, path_inside_trusted
 
     if not workspace:
         return False
@@ -419,7 +425,7 @@ def _inspects_the_workspace(step: str, workspace: str) -> bool:
             if re.search(r"[~{}]", word) or re.search(r"(?:^|[\\/])\.\.(?:[\\/]|$)", word):
                 return False
             path = _host_path(word)
-            target = os.path.normpath(path if os.path.isabs(path) else os.path.join(workspace, path))
+            target = os.path.normpath(path if is_abs_path(path) else os.path.join(workspace, path))
             if re.search(r"[*?\[]", word):
                 import glob
 
@@ -450,11 +456,66 @@ def _python_dash_c(user_text: str, command: str, workspace: str) -> bool:
     return _analyses_the_data(user_text, words[2], workspace)
 
 
+# "Ejecuta el script sobre ventas.csv" runs the program the user just had
+# written, over the file they named -- not literally quoted the way
+# `_runs_what_the_user_wrote` requires, but named in plain words the way
+# `_edits_the_project`'s targets are. Seen live: after write_file("stats.py")
+# and write_file("test_stats.py"), "ejecuta el script sobre ventas.csv" still
+# stopped at the card because `python stats.py ventas.csv` matched no rule
+# (`_runs_the_tests` only knows test runners; nothing else read the shell's
+# own arguments). Only `python[3]/py <script> [args...]`, run plainly (no
+# `;`, `|`, redirection, substitution or backticks): the script and every
+# non-flag argument must both be a literal path inside the workspace and be
+# named, by its filename, in the user's own words.
+def _runs_the_named_script(user_text: str, command: str, workspace: str) -> bool:
+    import os
+    import shlex
+
+    from src import plugins as plugins_mod
+    from src.tool_capabilities import is_abs_path, path_inside_trusted
+
+    if not workspace or not command:
+        return False
+    if re.search(r"[`$\\]", re.sub(r"'[^']*'", "", command)):
+        return False
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        return False
+    if len(words) < 2 or not re.fullmatch(r"(?:python3?|py)(?:\.exe)?", words[0], re.IGNORECASE):
+        return False
+    if any(word and set(word) <= set("|&;<>()") for word in words):
+        return False
+    if not _ordered(plugins_mod.fold(str(user_text or "")), _START):
+        return False
+    lowered = str(user_text or "").lower()
+    if not any(not a.startswith("-") for a in words[1:]):
+        return False  # `python -` / flags only: no script the user named
+    if any(a in ("-c", "-m", "-") for a in words[1:]):
+        return False  # inline code, a module or stdin: not "the script" named
+    for arg in words[1:]:
+        if arg.startswith("-"):
+            continue  # a flag, not a path
+        if re.search(r"[~{}*?\[\]]", arg) or re.search(r"(?:^|[\\/])\.\.(?:[\\/]|$)", arg):
+            return False
+        target = os.path.normpath(arg if is_abs_path(arg) else os.path.join(workspace, arg))
+        if not path_inside_trusted(workspace, target):
+            return False
+        name = os.path.basename(arg).lower()
+        if len(name) < 4 or "." not in name:
+            return False  # not something the user could have named
+        at = lowered.find(name)
+        if at < 0 or _NEGATED_BEFORE.search(user_text[:at]):
+            return False
+    return True
+
+
 def _one_command(user_text: str, command: str, workspace: str) -> bool:
     return (_runs_the_tests(user_text, command, workspace)
             or _runs_what_the_user_wrote(user_text, command, workspace)
             or _inspects_the_workspace(command, workspace)
-            or _python_dash_c(user_text, command, workspace))
+            or _python_dash_c(user_text, command, workspace)
+            or _runs_the_named_script(user_text, command, workspace))
 
 
 def _shell_matcher(user_text: str, content: Any, workspace: str = "") -> bool:
@@ -655,12 +716,12 @@ def _literal_path(node: Any, workspace: str) -> Optional[str]:
     import ast
     import os
 
-    from src.tool_capabilities import path_inside_trusted
+    from src.tool_capabilities import is_abs_path, path_inside_trusted
 
     if not (isinstance(node, ast.Constant) and isinstance(node.value, str)) or not node.value.strip():
         return None
     raw = node.value.strip()
-    target = os.path.normpath(raw if os.path.isabs(raw) else os.path.join(workspace, raw))
+    target = os.path.normpath(raw if is_abs_path(raw) else os.path.join(workspace, raw))
     return target if path_inside_trusted(workspace, target) else None
 
 
