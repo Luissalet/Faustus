@@ -177,6 +177,28 @@ def _strip_quoted(command: str) -> str:
     return "".join(out)
 
 
+# A sentence that offers or asks, rather than reports: "¿quieres que guarde
+# X?", "dime si quieres que cree X", "si quieres, puedo exportarlo a X",
+# "want me to save it as X?", "I can write X if you like".
+_OFFER_SENTENCE_RE = re.compile(
+    r"\b(?:si\s+(?:quieres|lo\s+deseas|prefieres|te\s+(?:parece|viene\s+bien|sirve))|dime\s+si|"
+    r"(?:quieres|prefieres|te\s+parece)\s+que|puedo|podr[ií]a(?:mos)?|podemos|te\s+(?:lo\s+|la\s+)?"
+    r"(?:guardo|genero|creo|preparo|exporto)|want\s+me\s+to|if\s+you\s+(?:want|like|prefer|need)|"
+    r"I\s+(?:can|could)|shall\s+I|should\s+I|let\s+me\s+know\s+if|would\s+you\s+like)\b",
+    re.IGNORECASE,
+)
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?¿¡])\s+|\n+")
+
+
+def _only_offered(body: str, path: str) -> bool:
+    """Every sentence that names `path` offers or asks about it."""
+    name = str(path or "").replace("\\", "/").rsplit("/", 1)[-1]
+    if not name:
+        return False
+    sentences = [s for s in _SENTENCE_SPLIT_RE.split(body or "") if name in s.replace("\\", "/")]
+    return bool(sentences) and all(_OFFER_SENTENCE_RE.search(s) for s in sentences)
+
+
 def shell_command_looks_mutating(command: str) -> bool:
     return bool(_MUTATING_SHELL_RE.search(_strip_quoted(command or "")))
 
@@ -377,7 +399,7 @@ MUTATION_CLAIM_PATTERNS: List[re.Pattern] = [
     re.compile(r"\bI(?:'ve|\s+have)?\s+(?:just\s+|now\s+)?(?:marked|graded|logged|recorded|noted)\s+(?:it|that|this|the\s+card|the\s+answer)\b", re.IGNORECASE),
     # English
     re.compile(r"\bI(?:'ve|\s+have)\s+(?:now\s+|also\s+|successfully\s+|just\s+)?" + _EN_PP, re.IGNORECASE),
-    re.compile(r"\bI\s+(?:then\s+|also\s+|now\s+)?" + r"(?:created|added|modified|updated|implemented|removed|deleted|changed|edited|wrote|fixed|applied|moved|renamed|refactored|integrated|completed|finished|patched|inserted|replaced)\b", re.IGNORECASE),
+    re.compile(r"\bI\s+(?:then\s+|also\s+|now\s+)?" + r"(?:created|added|modified|updated|implemented|removed|deleted|changed|edited|wrote|fixed|applied|moved|renamed|refactored|integrated|completed|finished|patched|inserted|replaced|saved|exported|generated|stored)\b", re.IGNORECASE),
     re.compile(r"\b(?:has|have)\s+been\s+(?:successfully\s+)?" + _EN_PP, re.IGNORECASE),
     re.compile(r"\b(?:is|are)\s+now\s+(?:fully\s+|completely\s+)?(?:implemented|complete|done|ready|in\s+place|integrated|working|fixed|updated)\b", re.IGNORECASE),
     re.compile(r"\b(?:the\s+)?(?:implementation|feature|changes?|fix|task|work)\s+(?:is|are)\s+(?:now\s+)?(?:complete|done|ready|finished|in\s+place)\b", re.IGNORECASE),
@@ -1428,11 +1450,15 @@ class TurnLedger:
             if written:
                 kind = "mutation"
                 paths = [workspace_relative(self.workspace, p) for p in written]
+            elif writes:
+                # It wrote something the ledger cannot name (a path built in a
+                # loop, an f-string): an effect that backs "I saved the files",
+                # and the names it mentions are never called untouched.
+                kind = "effect"
+                for p in paths:
+                    self.shell_write_hints.add(_norm(p).rsplit("/", 1)[-1])
             else:
                 kind = "shell"
-                if writes:
-                    for p in paths:
-                        self.shell_write_hints.add(_norm(p).rsplit("/", 1)[-1])
         elif tool in SHELL_TOOLS:
             kind = "mutation" if shell_command_looks_mutating(content) else "shell"
             if kind != "mutation" and _SHELL_WRITE_HINT_RE.search(content or ""):
@@ -1864,6 +1890,18 @@ class TurnLedger:
             did_something = any(e["ok"] for e in self.events)
             if not did_something or find_mutation_claims(body, include_bare_done=False):
                 reasons.append("claims_without_mutation")
+        offered = ([p for p in bad_paths if _only_offered(body, p)]
+                   if claims or not self.events else [])
+        if offered:
+            # "dime si quieres que guarde una versión ventas_corregidas.csv"
+            # proposes a file; it does not claim one. Seen live: a correct
+            # data report was rejected for that offer (its other sentences
+            # claimed data corrections), and the model then created the
+            # file nobody had asked for to make the rejection go away.
+            bad_paths = [p for p in bad_paths if p not in offered]
+            note = "offered_paths:" + ",".join(offered)
+            if note not in self.notes:
+                self.notes.append(note)
         if bad_paths:
             # Unknown paths are a hallucination when the model presents work as
             # done, or when it reasons about a filesystem it never looked at

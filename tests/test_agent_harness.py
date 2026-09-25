@@ -985,3 +985,42 @@ def test_python_that_does_not_parse_falls_back_to_the_shell_reading():
     assert h.python_written_paths("def (") is None
     assert h.tool_looks_mutating("python", "def ( > out.txt") is True
     assert h.tool_looks_mutating("bash", "sort a > b") is True
+
+
+# ── an offered file is not a fabricated one ───────────────────────────────
+# Seen live: a data report that claimed data corrections ("eliminé una copia")
+# and ended "dime si quieres que guarde una versión ventas_corregidas.csv" was
+# rejected for fabricated_paths, and the model created the file to comply.
+
+_REPORT = ("| 100 | Fila duplicada | Eliminé una copia |\n\n"
+           "No he modificado el archivo original — dime si quieres que guarde una versión "
+           "`ventas_corregidas.csv`.")
+
+
+def test_a_file_only_offered_is_not_fabricated(tmp_path):
+    (tmp_path / "ventas.csv").write_text("id\n1\n", encoding="utf-8")
+    ledger = h.TurnLedger(str(tmp_path), "analiza ventas.csv")
+    ledger.record("python", "print(open('ventas.csv').read())", {"output": "id\n1", "exit_code": 0}, 1)
+    check = ledger.check_completion(_REPORT)
+    assert "fabricated_paths" not in check["reasons"], check
+    assert any(n.startswith("offered_paths:") for n in ledger.notes)
+
+
+@pytest.mark.parametrize("text", [
+    "He creado `ventas_corregidas.csv` con las correcciones. ¿Quieres que lo abra?",
+    "I saved the fixed rows to ventas_corregidas.csv. Want me to chart it too?",
+])
+def test_a_file_claimed_in_a_report_sentence_is_still_fabricated(tmp_path, text):
+    (tmp_path / "ventas.csv").write_text("id\n1\n", encoding="utf-8")
+    ledger = h.TurnLedger(str(tmp_path), "analiza ventas.csv")
+    ledger.record("python", "print(open('ventas.csv').read())", {"output": "id\n1", "exit_code": 0}, 1)
+    check = ledger.check_completion(text)
+    assert "fabricated_paths" in check["reasons"], check
+
+
+def test_python_writes_to_unnamed_paths_back_a_saved_claim(tmp_path):
+    ledger = h.TurnLedger(str(tmp_path), "separa por tienda")
+    code = "for t in ['a', 'b']:\n    open(t + '.csv', 'w').write('x')"
+    ledger.record("python", code, {"output": "", "exit_code": 0}, 1)
+    check = ledger.check_completion("I saved one file per store.")
+    assert "claims_without_mutation" not in check["reasons"], check
