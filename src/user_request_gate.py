@@ -197,6 +197,9 @@ _MEMORY_FRAMING = frozenset({
 })
 
 
+_ASKS_ABOUT_THEMSELVES = re.compile(r"\b(?:mi|mis|me|yo|conmigo|my|i|me|mine|am)\b")
+
+
 def _memory_add_text(content: Any) -> Optional[str]:
     from src.tool_capabilities import _action_from_content
 
@@ -262,9 +265,29 @@ def _memory_read(user_text: str, content: Any, workspace: str = "") -> bool:
     saved = _memory_add_text(content)
     if saved is not None:
         return bool(_ASKS_TO_REMEMBER.search(folded)) and _user_said_all_of(folded, saved)
-    if _action_from_content("manage_memory", content) not in ("list", "search"):
+    action = _action_from_content("manage_memory", content)
+    if action not in ("list", "search"):
         return False
-    return bool(_ASKS_WHAT_IS_REMEMBERED.search(folded))
+    if _ASKS_WHAT_IS_REMEMBERED.search(folded):
+        return True
+    # "¿Qué día trabajo desde casa y antes de qué hora prefiero que no me
+    # llamen?" is a question about the user, and searching the memory for it
+    # is how it gets answered. Live the search stopped at the card. Only a
+    # search, only for a question in the first person, and only with a query
+    # made of the question's own words (at least half of them).
+    if action == "search" and _ASKS_ABOUT_THEMSELVES.search(folded) and "?" in str(user_text or ""):
+        args = _parse_args(content)
+        query = args.get("text") or args.get("query") if args else None
+        if query is None and isinstance(content, str) and not content.lstrip().startswith("{"):
+            query = "\n".join(content.strip().splitlines()[1:])
+        words = [w for w in plugins_mod.fold(query or "").split() if len(w) >= 4 and w not in _MEMORY_FRAMING]
+        if not words:
+            return False
+        user_words = folded.split()
+        stems = {w[:5] for w in user_words if len(w) >= 5}
+        own = [w for w in words if w in user_words or (len(w) >= 5 and w[:5] in stems)]
+        return len(own) * 2 >= len(words)
+    return False
 
 
 # "Los tests fallan, averigua por qué" asks, in so many words, for the tests
