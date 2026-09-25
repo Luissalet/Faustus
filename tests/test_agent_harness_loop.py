@@ -758,3 +758,27 @@ def test_an_answer_with_a_wrong_weekday_or_visible_working_is_rewritten_once(tmp
     assert replaces and "domingo" not in replaces[0]["text"]
     assert calls["n"] == 2
     assert len(rejected) == 1
+
+
+def test_slow_but_short_thinking_is_not_cut_off(tmp_path, monkeypatch):
+    """Live: with the engine shared by two turns, 240 s of thinking was only
+    1.9k characters and the watchdog threw it away. Past the time budget a
+    round is cut only once it has also thought `agent_local_think_min_chars`
+    (three budgets cut it regardless)."""
+    settings = {"agent_local_think_budget_seconds": 0.3, "agent_local_think_min_chars": 6000}
+    monkeypatch.setattr(al, "get_setting", lambda key, default=None: settings.get(key, default), raising=False)
+    monkeypatch.setattr(al, "get_mcp_manager", lambda: None, raising=False)
+    monkeypatch.setattr(al, "estimate_tokens", lambda *a, **k: 10, raising=False)
+    monkeypatch.setattr(al, "blocked_tools_for_owner", lambda owner: set(), raising=False)
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        for _ in range(10):  # ~0.5 s of slow, short reasoning
+            yield f'data: {json.dumps({"delta": "pienso ", "thinking": True})}\n\n'
+            await asyncio.sleep(0.05)
+        yield f'data: {json.dumps({"delta": "El contador no está en este repositorio."})}\n\n'
+        yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
+        yield "data: [DONE]\n\n"
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+
+    events = _run(monkeypatch, str(tmp_path), user="¿Dónde está el contador de proyectos?", max_rounds=2)
+    assert not [e for e in events if e.get("type") == "harness_check" and e.get("status") == "think_cutoff"]

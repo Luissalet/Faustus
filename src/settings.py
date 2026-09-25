@@ -453,6 +453,9 @@ DEFAULT_SETTINGS = {
     # only reasoning for longer than this is cut off once and retried with
     # think=false for the rest of the turn. 0 disables.
     "agent_local_think_budget_seconds": 240,
+    # ...once the round has also produced this many reasoning characters (a
+    # slow, shared engine is not a runaway); three budgets cut it regardless.
+    "agent_local_think_min_chars": 6000,
     # When the round budget (agent_max_rounds) runs out mid-task the harness
     # injects the "continue" checkpoint itself and grants this many extra
     # cycles of max_rounds before the Continue button appears. 0 = button only.

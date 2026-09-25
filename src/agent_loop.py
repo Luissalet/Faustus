@@ -9012,6 +9012,14 @@ async def _stream_agent_loop_body(
         # runaway watchdog still able to cut over-long reasoning.
         gen_overrides = dict(gen_overrides or {})
         gen_overrides["think"] = True
+    # A slow round is not a runaway: with the engine shared between two
+    # turns, live, 240 s of thinking was only 1.9k characters and the cutoff
+    # threw that reasoning away. The time budget applies once the round has
+    # also thought at least this much; three budgets is the hard cap.
+    try:
+        _think_min_chars = int(get_setting("agent_local_think_min_chars", 6000) or 0)
+    except (TypeError, ValueError):
+        _think_min_chars = 6000
     _think_cutoffs = 0
     _thinking_segments: List[Dict[str, Any]] = []
     _open_thought: Optional[Dict[str, Any]] = None
@@ -11136,7 +11144,11 @@ async def _stream_agent_loop_body(
                             elif (
                                 _think_watchdog_on and _think_cutoffs < 1
                                 and not round_response.strip()
-                                and time.time() - _think_first_ts > _think_budget_s
+                                and (
+                                    (time.time() - _think_first_ts > _think_budget_s
+                                     and len(round_reasoning) >= _think_min_chars)
+                                    or time.time() - _think_first_ts > 3 * _think_budget_s
+                                )
                             ):
                                 _think_runaway = True
                                 break

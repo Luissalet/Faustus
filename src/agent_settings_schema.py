@@ -161,6 +161,11 @@ GROUPS: list[dict[str, Any]] = [
                  "A local thinking model that has produced only reasoning for this long is cut off once "
                  "and retried with thinking off for the rest of the turn. 0 = no watchdog.",
                  0, 3600),
+            _int("agent_local_think_min_chars", "Thinking cut-off minimum (chars, local)",
+                 "The thinking budget only cuts a round that has also produced this many reasoning "
+                 "characters, so a slow shared engine is not mistaken for a runaway; three budgets "
+                 "cut it regardless.",
+                 0, 200000),
             _int("agent_subprocess_idle_timeout_seconds", "Command idle timeout (s)",
                  "A bash / python command that prints nothing for this long is killed with its whole "
                  "process tree (a server left in the foreground, a prompt waiting for input). 0 = never.",
