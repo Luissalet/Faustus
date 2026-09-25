@@ -111,6 +111,32 @@ def setup_approvals_routes():
                 "active": [c.to_dict() for c in cards],
                 "count": len(cards)}
 
+    @router.get("/folder-grants")
+    def list_folder_grants(request: Request):
+        """The "Always for this workspace folder" answers of the permission
+        card for the signed-in user (src/tool_approval_grants.py): each
+        folder, and everything under it, where that card no longer asks."""
+        require_admin(request)
+        from src import tool_approval_grants
+        owner = _current_user(request)
+        return {"grants": tool_approval_grants.list_for(owner)}
+
+    @router.post("/folder-grants/revoke")
+    async def revoke_folder_grant(request: Request):
+        """Take one folder's standing yes back. Body: {"workspace": path}.
+        A human decision, like granting: the tool token cannot reach it."""
+        require_human(request)
+        try:
+            payload = await request.json()
+        except Exception:  # noqa: BLE001
+            payload = {}
+        workspace = str((payload or {}).get("workspace") or "").strip()
+        if not workspace:
+            raise HTTPException(status_code=400, detail="workspace is required")
+        from src import tool_approval_grants
+        removed = tool_approval_grants.revoke(_current_user(request), workspace)
+        return {"ok": removed, "reason": "" if removed else "not_found"}
+
     @router.post("/request")
     async def open_card(request: Request):
         """Open a card. Deliberately reachable by the tool layer: asking for

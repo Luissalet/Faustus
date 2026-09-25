@@ -76,7 +76,7 @@ import { ThisDeviceSection } from './settings/ThisDevice';
 import { BehaviorModesSection } from './settings/BehaviorModes';
 import { PiperVoices } from './settings/PiperVoices';
 import { authStatus } from '../adapters/account';
-import { listActiveApprovals, revokeApproval, type Approval } from '../adapters/approvals';
+import { listActiveApprovals, listFolderGrants, revokeApproval, revokeFolderGrant, type Approval, type FolderGrant } from '../adapters/approvals';
 import { addCommandAllowlistEntry, listCommandAllowlist, removeCommandAllowlistEntry, type AllowlistEntry } from '../adapters/commandGuard';
 import { getGlobalPolicy, setGlobalPolicy, type AgentGitPolicy } from '../adapters/git';
 import { AgentPolicyFields } from './source-control/AgentPolicyFields';
@@ -1188,6 +1188,62 @@ function ActiveApprovalsCard({ say }: { say: (t: string) => void }) {
   );
 }
 
+/** The permission card's third answer, "Always for this workspace folder",
+ *  kept on disk per user (`src/tool_approval_grants.py`). Until this card the
+ *  only way to take one back was editing that file. A grant covers the folder
+ *  and everything under it, so the exact path is shown. */
+function FolderGrantsCard({ say }: { say: (t: string) => void }) {
+  const [items, setItems] = useState<FolderGrant[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setErr(null);
+    listFolderGrants().then(setItems).catch((e: Error) => setErr(e.message));
+  }, []);
+  useEffect(load, [load]);
+
+  const revoke = (g: FolderGrant) => {
+    if (!window.confirm(t('Stop allowing {path}? Chats in this folder will ask again after reading outside content.', { path: g.workspace || g.key }))) return;
+    setBusy(g.key);
+    revokeFolderGrant(g.workspace || g.key)
+      .then(() => { say(t('Revoked.')); load(); })
+      .catch((e: Error) => say(e.message))
+      .finally(() => setBusy(null));
+  };
+
+  return (
+    <div className="fs-set__card" data-testid="folder-grants">
+      <h3 className="fs-set__card-title fs-tools__cat">
+        <span><ShieldAlert size={16} aria-hidden /> {t('Folders allowed for good')}</span>
+        <Button size="sm" variant="ghost" icon={RefreshCw} label={t('Refresh')} onClick={load} />
+      </h3>
+      <p className="fs-set__help">{t('Where you answered "Always for this workspace folder": chats in these folders, and in every folder under them, continue after reading outside content without asking. The destructive-command guard and every other restriction still apply.')}</p>
+      {err && <p className="fs-set__err">{err}</p>}
+      {!items && !err ? (
+        <Skeleton label={t('Loading')} count={1} height="48px" />
+      ) : items && items.length === 0 ? (
+        <p className="fs-set__help">{t('No folder is allowed for good.')}</p>
+      ) : (
+        <ul className="fs-wipe">
+          {(items ?? []).map((g) => (
+            <li key={g.key} className="fs-wipe__row" data-testid="folder-grant-row">
+              <span>
+                <strong><code>{g.workspace || g.key}</code></strong>
+                <span className="fs-set__help">
+                  {t('allowed {when}', { when: g.granted_at ? new Date(g.granted_at * 1000).toLocaleString() : '?' })}
+                  {g.tool ? ` · ${t('first for {tool}', { tool: g.tool })}` : ''}
+                </span>
+              </span>
+              <Button size="sm" variant="danger" label={t('Revoke')} loading={busy === g.key} disabled={busy !== null} onClick={() => revoke(g)} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 const ALLOWLIST_KIND: Opt[] = [
   { value: 'exact', label: 'Exact command' },
   { value: 'prefix', label: 'Prefix' },
@@ -1278,6 +1334,7 @@ function SecuritySection({ settings, onSave, say }: { settings: Settings | null;
       </header>
       <PrivacyProfileCard settings={settings} onSave={onSave} say={say} />
       <ActiveApprovalsCard say={say} />
+      <FolderGrantsCard say={say} />
       <CommandGuardAllowlistCard say={say} />
     </section>
   );

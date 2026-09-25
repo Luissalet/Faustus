@@ -64,3 +64,32 @@ export async function revokeApproval(id: string, reason = ''): Promise<{ ok: boo
   );
   return (await r.json()) as { ok: boolean; reason?: string };
 }
+
+/** A folder where the permission card's "Always for this workspace folder"
+ *  answer stands (`src/tool_approval_grants.py`); it covers every folder
+ *  under it too. */
+export interface FolderGrant {
+  key: string;
+  workspace: string;
+  granted_at: number;
+  tool: string;
+  session_id: string;
+}
+
+export async function listFolderGrants(): Promise<FolderGrant[]> {
+  const d = await getJson<{ grants?: FolderGrant[] }>('/api/approvals/folder-grants');
+  return d.grants ?? [];
+}
+
+export async function revokeFolderGrant(workspace: string): Promise<{ ok: boolean; reason?: string }> {
+  const r = await ok(
+    await fetch('/api/approvals/folder-grants/revoke', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspace }),
+    }),
+    'approvals/folder-grants/revoke',
+  );
+  return (await r.json()) as { ok: boolean; reason?: string };
+}

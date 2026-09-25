@@ -465,16 +465,6 @@ Pasada del 17-09 sobre `89740d02` (+ arreglos): **18.946 verdes**; 46 fallos lis
 
 Contexto completo en FAUSTUS.md §85. Lo que queda abierto:
 
-- **Pantalla para las concesiones por carpeta.** `src/tool_approval_grants.py` guarda
-  la respuesta «Siempre en esta carpeta» de la tarjeta de permiso y ya tiene
-  `list_for(owner)` y `revoke(owner, workspace)`, pero no hay dónde verlas ni
-  quitarlas. Sitio natural: Settings › Security, junto a las aprobaciones. Hasta
-  entonces la única forma de revocar es borrar la fila de
-  `<ODYSSEUS_DATA_DIR>/tool_approval_grants.json`.
-- **La herencia es por subárbol y eso hay que verlo.** Conceder sobre
-  `C:\Users\luism\Desktop\Proyectos independientes` cubre TODO lo que cuelgue de
-  ahí. La tarjeta lo dice, pero la pantalla de arriba debería enseñar la ruta
-  exacta concedida.
 - **`powershell` no tiene `#!bg`.** Los trabajos en segundo plano siguen siendo de
   `bash` (`src/bg_jobs.py` lanza con el shell de bash). Un `.bat` largo que haga
   falta detached hoy se envuelve desde `bash` con `#!bg`, y eso **funciona a
@@ -488,10 +478,6 @@ Contexto completo en FAUSTUS.md §85. Lo que queda abierto:
   y el resultado lo dice (`sandbox_skipped`). Quien quiera la puerta dura tiene
   que poner `strict` a mano. Decidir si el valor por defecto debería depender del
   sistema operativo en vez de ser global.
-- **Suite entera sin pasar.** Este frente pasó 813 tests en los 30 ficheros que
-  tocan sandbox, aprobaciones, validación de argumentos, selección de tools y la
-  puerta de contexto externo, más `tsc`/`vite` y los checks del Studio. La suite
-  completa (~14 min) no se ha corrido desde estos cambios.
 
 ## Comprobaciones pendientes
 

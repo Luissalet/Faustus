@@ -2254,6 +2254,7 @@ Folder	Carpeta
 Folder path	Ruta de la carpeta
 Folder: `{ws}`	Carpeta: `{ws}`
 Folders	Carpetas
+Folders allowed for good	Carpetas permitidas para siempre
 Folders outside the workspace the agent may read; one per line or comma-separated.	Carpetas fuera del workspace que el agente puede leer; una por línea o separadas por comas.
 Follow the system	Como el sistema
 Follow up in every pane…	Continúa en todos los paneles…
@@ -3519,6 +3520,7 @@ No finding matches that search.	Ningún hallazgo coincide con esa búsqueda.
 No findings	Sin hallazgos
 No fit	No cabe
 No folder	Sin carpeta
+No folder is allowed for good.	Ninguna carpeta está permitida para siempre.
 No folder: the agent cannot read or edit files	Sin carpeta: el agente no puede leer ni editar ficheros
 No git repositories found	No se encontró ningún repositorio git
 No git repository here	No hay ningún repositorio git aquí
@@ -5463,6 +5465,7 @@ Stop	Parar
 Stop Ollama?	¿Parar Ollama?
 Stop all	Parar todos
 Stop all started by Faustus	Parar todo lo iniciado por Faustus
+Stop allowing {path}? Chats in this folder will ask again after reading outside content.	¿Dejar de permitir {path}? Los chats de esta carpeta volverán a preguntar después de leer contenido de fuera.
 Stop and remove	Parar y quitar
 Stop arguments (one per line)	Argumentos de parada (uno por línea)
 Stop command (optional)	Comando de parada (opcional)
@@ -5500,7 +5503,10 @@ Strategy profile	Perfil de estrategia
 Strategy profile: {label}	Perfil de estrategia: {label}
 Strategy: {method} · {profile}{reason}	Estrategia: {method} · {profile}{reason}
 Untrusted context influenced this run, so continuing with otherwise-gated actions needs your explicit approval.	Algo de fuera (una página, un archivo, un resultado de herramienta) ha influido en esta tarea, así que seguir con acciones protegidas necesita tu permiso expreso.
+Where you answered "Always for this workspace folder": chats in these folders, and in every folder under them, continue after reading outside content without asking. The destructive-command guard and every other restriction still apply.	Donde respondiste «Siempre en esta carpeta del espacio de trabajo»: los chats de estas carpetas, y de todas las que cuelgan de ellas, siguen sin preguntar después de leer contenido de fuera. El guardián de comandos destructivos y las demás restricciones siguen igual.
+allowed {when}	permitida el {when}
 direct edit	edición directa
+first for {tool}	primero para {tool}
 not promoted	sin promocionar
 plan, then do	planificar y hacer
 research	investigación
