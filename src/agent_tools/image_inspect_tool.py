@@ -132,6 +132,26 @@ def _vision_min_side() -> int:
         return 1024
 
 
+def _vision_runs_locally(model_override: Optional[str]) -> bool:
+    """Whether the vision model that will answer is served from this machine
+    (a loopback URL). A local vision model pays for every extra pixel in
+    prefill time (a CPU-only one reads ~35 tokens/s), and the local Qwen-VL
+    family already resamples small images itself: measured on the same 453 px
+    crop it read the words at native size, while 3x cost it ~40 s more per
+    question. So enlargement is for remote and client-route models only."""
+    try:
+        from urllib.parse import urlparse
+        from src.document_processor import _load_vl_settings, _resolve_vl_model
+        name = model_override or str(_load_vl_settings().get("vision_model") or "")
+        url = str(_resolve_vl_model(name)[0] or "")
+        if url.startswith("faustus-cli://"):
+            return False
+        host = (urlparse(url).hostname or "").lower()
+        return host in ("127.0.0.1", "localhost", "::1", "0.0.0.0")
+    except Exception:  # noqa: BLE001 - unknown: treat as remote (enlarge)
+        return False
+
+
 def _enlarge_small(image: Any, min_side: int, max_side: int) -> Tuple[Any, float]:
     """`image` scaled up so its longest side reaches `min_side` (never past
     `max_side`, never more than 4x), and the factor used (1.0 = unchanged).
@@ -239,13 +259,14 @@ async def _action_ask(args: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, An
         return {"output": text, "exit_code": 0, "images": _images_payload((b64, mime)),
                 "answered_by": "main_model", "measurements": measurements}
 
-    vision_image, enlarged = _enlarge_small(proc.image, _vision_min_side(),
+    model_override = str(args.get("model") or "").strip() or None
+    min_side = 0 if await asyncio.to_thread(_vision_runs_locally, model_override) else _vision_min_side()
+    vision_image, enlarged = _enlarge_small(proc.image, min_side,
                                             int(pargs.get("max_side") or _vision_max_side()))
     if enlarged > 1.0:
         measurements["enlarged_for_vision"] = round(enlarged, 2)
     b64, mime = ii.image_to_b64(vision_image)
     prompt = f"{_LITERAL_INSTRUCTIONS}\n\nQuestion: {question}"
-    model_override = str(args.get("model") or "").strip() or None
     result = await _ask_vision_model([(_b64_to_bytes(b64), mime)], prompt, owner, model_override)
     text = str(result.get("text") or "")
     model_used = str(result.get("model") or "")

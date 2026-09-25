@@ -659,6 +659,8 @@ async def test_a_small_crop_is_enlarged_before_the_vision_model_sees_it(tmp_path
         return {"text": "ok", "model": "local-vl-model"}
 
     monkeypatch.setattr(dp, "analyze_image_with_vl_prompt", fake_analyze)
+    import src.agent_tools.image_inspect_tool as tool_mod
+    monkeypatch.setattr(tool_mod, "_vision_runs_locally", lambda model: False)
     out = await _run({"action": "ask", "path": p, "region": [0, 0.35, 1, 0.8], "question": "What is written?"},
                      ctx={"turn_model": "qwen2.5:7b-instruct"})
     assert max(seen[-1]) >= 1000, seen
@@ -667,3 +669,9 @@ async def test_a_small_crop_is_enlarged_before_the_vision_model_sees_it(tmp_path
     big = _save_png(tmp_path / "big.png", 2000, 1500)
     await _run({"action": "ask", "path": big, "question": "What is written?"}, ctx={"turn_model": "qwen2.5:7b-instruct"})
     assert max(seen[-1]) <= 1280
+
+    # A local vision model resamples by itself and pays for every pixel.
+    monkeypatch.setattr(tool_mod, "_vision_runs_locally", lambda model: True)
+    await _run({"action": "ask", "path": p, "region": [0, 0.35, 1, 0.8], "question": "What is written here?"},
+               ctx={"turn_model": "qwen2.5:7b-instruct"})
+    assert max(seen[-1]) < 1000
