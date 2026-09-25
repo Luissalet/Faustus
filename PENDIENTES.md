@@ -5,12 +5,11 @@ Actualizado: 25-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n 
 
 ## 25-09 tarde — visión, contexto, razonamiento, enjambre, podcast (FAUSTUS.md §197, OBJ-45)
 
-- **Sin desplegar en 7000/7003/7006**: probado en una instancia privada 7009 (`D:\LocalAI\_claude_tmp\vx_wt`, datos `vx_data`). El 7000 lo coge al reiniciarlo con el master nuevo; el `vite build` de la carpeta principal hay que rehacerlo.
-- **No visto en navegador**: el chip Auto/Rápido/Pensar/A fondo del compositor, el par endpoint+modelo de Visión con su línea de estado, los selectores de voz y duración del podcast y la sección Swarm de Workers (solo `tsc` y `vite build`).
+- **7000 sin reiniciar**: el 7006 lleva todo desplegado y probado; el 7000 (instancia principal de Luis) lo coge al reiniciarse con el master nuevo y rehacer el `vite build` de la carpeta principal. Es una decisión de Luis cuándo reiniciarlo.
+- **No visto en navegador**: sólo los selectores de voz y duración del podcast. Vistos el 25-09 noche en el 7006: el chip de razonamiento con los niveles, el par endpoint+modelo de Visión con su línea «En uso», y la sección Enjambre de Agentes → Workers.
 - **`context_*` automáticos**: en vivo solo se probó pidiéndolo («usa context_note»). Falta una ejecución larga real (Silhouettes o similar) para ver si el 27B las usa solo cuando se le ofrecen al 45 % o en la ronda 12, y si el aviso al umbral blando ayuda o estorba.
 - **`swarm_map` modo `agent`** sin probar en vivo; el modo `llm` sí (6 ciudades). Con otros chats ocupando slots del 8081, dos elementos agotaron sus 180 s esperando cola antes del arreglo que reserva los slots ocupados; volver a medirlo con el 8081 compartido.
 - **Visión**: tras el arreglo de `vision_num_ctx` la descripción del adjunto va a 6,5 GB, pero con el 27B q8 ocupando las cuatro GPU generó a ~7 tok/s (≈3 min para una descripción de 1.536 tokens). Valorar bajar `vision_max_tokens` para adjuntos o pedir descripciones más cortas.
-- **Tests inestables bajo xdist** (pasan solos y en el orden real del worker): `test_swarm.py::test_rest_routes_are_owner_scoped`, `test_chat_helpers.py::test_save_assistant_response_emits_turn_finished_once`.
 
 ## 25-09 tarde — familia Hoard con uso real (FAUSTUS.md §191–§192)
 
