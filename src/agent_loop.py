@@ -2915,6 +2915,10 @@ def _classify_agent_request(messages: List[Dict], last_user: str, *,
         r"\btodos?\b(?!\s+(?:lo|la|el|los|las|esto|eso|aquel|aquella|cuanto|cuánto)\b)",
         # LANG-02: nota/apunta/anota (take a note), recuerda(me)/aviso (remind).
         r"\b(notas?|apunta(?:lo|me)?|an[oó]ta(?:lo|me)?|recu[eé]rda(?:me)?|av[ií]same|pendientes? de la compra|lista de la compra)\b",
+        # Seen live: «¿Qué tareas tengo pendientes?» matched only the project
+        # board ("pendientes") and never offered `manage_tasks`.
+        r"\b(mis tareas|tareas? pendientes?|qu[eé] tareas|lista de tareas|recordatorios?|"
+        r"tareas? (?:de|para) (?:hoy|ma[ñn]ana|esta semana)|(?:a[ñn]ade|crea|apunta) (?:una )?tarea)\b",
     ):
         domains.add("notes_calendar_tasks")
     if has(r"\b(every (?:day|morning|evening|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|recurring|automatically|cron|scheduled task|background task|cada (?:dia|día|semana|mes|lunes|martes|miercoles|miércoles|jueves|viernes|sabado|sábado|domingo)|todos los (?:dias|días|lunes|martes|miercoles|miércoles|jueves|viernes|sabados|sábados|domingos)|tarea programada|programa una tarea|semanalmente|diariamente)\b"):

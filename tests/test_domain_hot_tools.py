@@ -57,3 +57,13 @@ def test_a_calendar_question_gets_the_calendar_tools_on_round_one(monkeypatch, c
     assert sent and "manage_notes" in _names(sent[0])
     debug = [r.getMessage() for r in caplog.records if "[agent-debug] round=1" in r.getMessage()]
     assert debug and "deferred=[]" in debug[0]
+
+
+def test_personal_tasks_in_spanish_reach_the_tasks_domain():
+    for text in ("¿Qué tareas tengo pendientes?", "Añade una tarea: llamar al fontanero",
+                 "Lee mis tareas de hoy", "¿Tengo algún recordatorio?"):
+        domains = al._classify_agent_request([{"role": "user", "content": text}], text)["domains"]
+        assert "notes_calendar_tasks" in domains, text
+    coding = "Sigue con la tarea del refactor en el repositorio"
+    assert "notes_calendar_tasks" not in al._classify_agent_request(
+        [{"role": "user", "content": coding}], coding)["domains"]
