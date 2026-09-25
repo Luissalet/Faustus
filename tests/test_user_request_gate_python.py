@@ -316,3 +316,29 @@ def test_a_script_with_a_folder_argument_runs_on_workspace_folders_only(ws):
 def test_the_rest_of_sys_stays_out(ws, script):
     (Path(ws) / "s.py").write_text(script, encoding="utf-8")
     assert allows("bash", "python s.py", _ASK_SCRIPT, ws) is False
+
+
+EXCEL_SHEETS = '''import pandas as pd
+xl = pd.ExcelFile("gastos_septiembre.xlsx")
+print("Hojas:", xl.sheet_names)
+for s in xl.sheet_names:
+    df = xl.parse(s)
+    print(f"\\n--- {s} ---")
+    print(df.to_string())
+'''
+
+
+def test_opening_a_workbook_to_list_its_sheets_runs_without_a_card(ws):
+    # written live by the 27B for "¿cuánto gasté en total y por categoría…?"
+    ask = "Mira gastos_septiembre.xlsx: ¿cuánto gasté en total y por categoría, y qué porcentaje se fue en el súper?"
+    assert allows("python", EXCEL_SHEETS, ask, ws)
+
+
+@pytest.mark.parametrize("code", [
+    "import pandas as pd\npd.ExcelFile('/etc/passwd.xlsx')",
+    "import pandas as pd\npd.ExcelFile('../fuera.xlsx')",
+    "import pandas as pd\nx = pd.ExcelFile\nx('gastos.xlsx')",
+    "import pandas as pd\npd.ExcelFile('gastos.xlsx', engine='mymodule')",
+])
+def test_a_workbook_outside_the_workspace_keeps_the_card(ws, code):
+    assert not allows("python", code, ASK, ws)

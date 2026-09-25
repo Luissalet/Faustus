@@ -858,6 +858,9 @@ _LISTED_MODULES = {
     "pandas": frozenset({
         "DataFrame", "Series", "Index", "MultiIndex", "Categorical", "CategoricalDtype", "Timestamp",
         "Timedelta", "Period", "NA", "NaT", "read_csv", "read_excel", "read_json", "read_parquet",
+        # a workbook opened to list its sheets (seen live); its path is
+        # vetted like read_excel's (ExcelFile is one of _READ_CALLS)
+        "ExcelFile",
         "read_table", "to_datetime", "to_numeric", "to_timedelta", "concat", "merge", "merge_asof",
         "pivot", "pivot_table", "crosstab", "melt", "cut", "qcut", "date_range", "period_range",
         "isna", "isnull", "notna", "notnull", "unique", "get_dummies", "factorize", "Grouper",
