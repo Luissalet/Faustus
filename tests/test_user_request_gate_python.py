@@ -342,3 +342,34 @@ def test_opening_a_workbook_to_list_its_sheets_runs_without_a_card(ws):
 ])
 def test_a_workbook_outside_the_workspace_keeps_the_card(ws, code):
     assert not allows("python", code, ASK, ws)
+
+
+OPENPYXL_READ = '''import openpyxl
+from collections import defaultdict
+wb = openpyxl.load_workbook("gastos_septiembre.xlsx", data_only=True)
+ws = wb.active
+cats = defaultdict(float)
+total = 0.0
+for row in ws.iter_rows(min_row=2, values_only=True):
+    if not row or row[3] is None:
+        continue
+    cats[row[2]] += float(row[3])
+    total += float(row[3])
+print(f"TOTAL: {total:.2f}")
+'''
+
+
+def test_reading_a_workbook_with_openpyxl_runs_without_a_card(ws):
+    ask = "En gastos_septiembre.xlsx, ¿qué parte del total se fue en el coche y en ocio?"
+    assert allows("python", OPENPYXL_READ, ask, ws)
+
+
+@pytest.mark.parametrize("code", [
+    "import openpyxl\nopenpyxl.load_workbook('/etc/x.xlsx')",
+    "import openpyxl\nwb = openpyxl.load_workbook('gastos.xlsx')\nwb.save('app.py')",
+    "import openpyxl\nwb = openpyxl.load_workbook('gastos.xlsx')\nwb.save('ventas_junio.csv')",
+    "import openpyxl\nopenpyxl.reader.excel.load_workbook('gastos.xlsx')",
+    "from openpyxl import load_workbook as lw\nlw('/etc/x.xlsx')",
+])
+def test_a_workbook_that_reaches_past_the_workspace_keeps_the_card(ws, code):
+    assert not allows("python", code, ASK, ws)

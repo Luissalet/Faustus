@@ -881,6 +881,10 @@ _LISTED_MODULES = {
         "load", "loadtxt", "genfromtxt",
     }),
     "matplotlib": frozenset({"use", "pyplot", "ticker", "dates", "cm", "colors", "colormaps"}),
+    # reading a workbook the user pointed at (seen live); load_workbook is a
+    # vetted read (its path must be a workspace literal) and wb.save a vetted
+    # write (a new output file only)
+    "openpyxl": frozenset({"load_workbook", "Workbook"}),
     # `typing.get_type_hints` evaluates annotation strings: names only.
     "typing": frozenset({
         "Any", "Dict", "List", "Tuple", "Set", "Optional", "Union", "Iterable", "Iterator",
@@ -921,7 +925,7 @@ _UNSAFE_FORMATS = frozenset({
 })
 _READ_CALLS = frozenset({
     "read_csv", "read_excel", "read_json", "read_table", "read_parquet", "read_fwf", "read_feather",
-    "read_orc", "read_stata", "read_spss", "read_sas", "ExcelFile", "imread", "loadtxt", "genfromtxt",
+    "read_orc", "read_stata", "read_spss", "read_sas", "ExcelFile", "load_workbook", "imread", "loadtxt", "genfromtxt",
     "fromfile", "load",
 })
 _WRITE_CALLS = frozenset({
