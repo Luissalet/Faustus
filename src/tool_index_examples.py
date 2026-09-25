@@ -1296,4 +1296,36 @@ EXAMPLES: Dict[str, List[str]] = {
         "es arriesgado modificar esta función",
         "muéstrame el historial de este símbolo",
     ],
+
+    # ── Lot C: the model managing its own context in a long run ─────────────
+    "context_status": [
+        "how full is your context window right now",
+        "which tool outputs are taking the most room in context",
+        "cuánto contexto te queda libre",
+        "qué resultados ocupan más espacio en tu contexto",
+    ],
+    "context_pin": [
+        "keep that test output in context, don't let compaction fold it",
+        "make sure you never lose the error message from the first run",
+        "fija ese resultado para que no se compacte",
+        "no olvides la salida del primer comando, mantenla en contexto",
+    ],
+    "context_unpin": [
+        "you can let go of that pinned output now",
+        "stop keeping the old log in context",
+        "ya puedes soltar ese resultado fijado",
+        "quita la fijación de esa salida",
+    ],
+    "context_drop": [
+        "free up your context, drop the big outputs you already used",
+        "forget the long file listing, you don't need it anymore",
+        "libera contexto quitando las salidas que ya no necesitas",
+        "saca ese log enorme del contexto",
+    ],
+    "context_note": [
+        "summarize those search results into a short note and free the space",
+        "replace the old test runs with a summary of what failed",
+        "resume esos resultados en una nota y libera el contexto",
+        "sustituye las lecturas de ficheros por un resumen de lo importante",
+    ],
 }

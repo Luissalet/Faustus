@@ -201,6 +201,15 @@ DEFAULT_SETTINGS = {
     "agent_midturn_keep_tool_rounds": 6,
     "agent_midturn_spill_chars": 8000,
     "agent_context_overflow_keep_hours": 48,
+    # The model managing its own context (src/context_self_manage.py): the
+    # context_status/pin/unpin/drop/note tools are offered only once a run is
+    # long -- usage at or over offer_pct of the window, or round offer_round --
+    # or when the user asks; never on every turn. max_pins caps the pins the
+    # MODEL may hold per session (user pins are not counted).
+    "agent_context_tools_enabled": True,
+    "agent_context_tools_offer_pct": 0.45,
+    "agent_context_tools_offer_round": 12,
+    "agent_context_tools_max_pins": 20,
     # A single tool result whose string fields total more than this many
     # characters (src/tool_result_offload.py) is stored whole in the
     # artifact store BEFORE the model sees it, and replaced in the prompt by

@@ -398,6 +398,19 @@ GROUPS: list[dict[str, Any]] = [
             _int("agent_context_overflow_keep_hours", "Overflow keep (hours)",
                  "How long spilled tool bodies stay under data/context_overflow.",
                  1, 8760),
+            _bool("agent_context_tools_enabled", "Context tools for the model",
+                  "In long runs the model can check its context usage, pin results, drop "
+                  "results to overflow and replace results with its own note."),
+            _float("agent_context_tools_offer_pct", "Offer context tools at",
+                   "Context usage (fraction of the window) from which those tools are offered. "
+                   "Below it, and before the round below, they cost no prompt tokens.",
+                   0.05, 0.95, step=0.01),
+            _int("agent_context_tools_offer_round", "Offer context tools from round",
+                 "Round from which the tools are offered whatever the usage. 0 = usage only.",
+                 0, 1000),
+            _int("agent_context_tools_max_pins", "Model pins per session",
+                 "How many items the model itself may keep pinned in one session.",
+                 1, 200),
             _int("agent_tool_result_offload_chars", "Offload tool result over (chars)",
                  "A single tool result whose string fields total more than this is "
                  "stored whole in the artifact store before the model sees a "

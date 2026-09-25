@@ -52,6 +52,7 @@
     {"type": "steer", "stability": "extended", "fields": {}},
     {"type": "compacted", "stability": "extended", "fields": {}},
     {"type": "context_compacted", "stability": "extended", "fields": {"round": "int?", "data": "object"}, "note": "mid-turn spill/fold under soft context ceiling (tokens_before/after, spilled, overflow_ids)"},
+    {"type": "context_op", "stability": "extended", "fields": {"round": "int?", "op": "status|pin|unpin|drop|note", "ok": "bool", "handles": "array", "tokens_freed": "int", "overflow_ids": "array?"}, "note": "the model acted on its own context with a context tool (src/context_self_manage.py): handles it named, tokens freed, overflow ids its dropped/noted results went to"},
     {"type": "cancelled", "stability": "extended", "fields": {"round": "int?", "reason": "string?", "message": "string?"}, "note": "the user pressed Stop: the turn ends at the top of a round, or between rounds, with stop_reason cancelled"},
     {"type": "loop_breaker_stop", "stability": "extended", "fields": {"round": "int?", "tool": "array?", "streak": "int?"}, "note": "A29: the turn ended because the same call kept returning the same result (stop_reason non_progressing_loop)"},
     {"type": "system_notice", "stability": "extended", "fields": {"message": "string", "round": "int?"}, "note": "advisory (e.g. qwen3.8 long-loop hint); not a turn error"},

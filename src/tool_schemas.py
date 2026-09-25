@@ -3761,6 +3761,80 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "context_status",
+            "description": "How full your context is: used/window tokens and %, the largest tool results still in it with their handles (tool_call_id, or r<round>.<i> for fenced results), what is pinned, and which results were already spilled to overflow. Use before context_drop/context_note/context_pin in a long run.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "top": {"type": "integer", "minimum": 1, "maximum": 30, "description": "How many of the largest results to list (default 8)."}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "context_pin",
+            "description": "Keep items in context: compaction will never fold or spill a pinned item. Pass handles from context_status, or a unique snippet (>= 12 chars) quoted from the message. Pins per session are capped; unpin what you no longer need.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "handles": {"type": "array", "items": {"type": "string"}, "description": "Handles from context_status (tool_call_id, r<round>.<i>, or r<round> for a whole round)."},
+                    "snippet": {"type": "string", "description": "Alternatively, a unique piece of text from the message to pin."}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "context_unpin",
+            "description": "Remove pins set with context_pin, by handle, by unique snippet, or all of your pins with all=true.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "handles": {"type": "array", "items": {"type": "string"}, "description": "Handles to unpin."},
+                    "snippet": {"type": "string", "description": "A unique piece of text from the pinned message."},
+                    "all": {"type": "boolean", "description": "Unpin every item you pinned in this session."}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "context_drop",
+            "description": "Move tool results you no longer need out of context: each body is stored in overflow and replaced by a short [overflow id=...] stub; read_overflow brings it back. Pinned results and results carrying a pending approval are refused.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "handles": {"type": "array", "items": {"type": "string"}, "description": "Handles from context_status (tool_call_id, r<round>.<i>, or r<round>)."}
+                },
+                "required": ["handles"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "context_note",
+            "description": "Replace a set of tool results with your own short note of what matters in them. Originals go to overflow (the note lists their ids, read_overflow restores any); pending approvals, constraints and identifiers found in them are kept verbatim in the note.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "handles": {"type": "array", "items": {"type": "string"}, "description": "Handles from context_status of the results to summarize."},
+                    "note": {"type": "string", "description": "What you keep from those results (max 4000 chars): findings, paths, numbers, decisions."}
+                },
+                "required": ["handles", "note"]
+            }
+        }
+    },
 ]
 
 
