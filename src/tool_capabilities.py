@@ -2215,6 +2215,16 @@ class ToolRunSecurityContext:
         blocked_effects = capabilities.effects & POST_EXTERNAL_BLOCKED_EFFECTS
         if capabilities.known and not blocked_effects:
             return ToolGateDecision(True)
+        # Reading the person's own data when the only "outside" text in the
+        # run is Faustus's own prompt context (saved memory, skills, tool
+        # descriptions). Seen live: "¿A qué hora empieza mi taller de
+        # cerámica?" listed the calendar and stopped on a card because the
+        # recalled memory had armed the gate; with memory in almost every
+        # prompt, every "¿qué tengo mañana?" would. A read moves nothing out
+        # of the machine; anything that would send it on stays gated.
+        if (capabilities.known and blocked_effects == {ToolEffect.READ_PRIVATE}
+                and self.external_sources and self._only_own_context()):
+            return ToolGateDecision(True)
         autonomy_decision = self._autonomy_decision(tool_name, content, capabilities, blocked_effects)
         if autonomy_decision is not None:
             return autonomy_decision
