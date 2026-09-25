@@ -61,6 +61,23 @@ def task_label(user_text: str) -> str:
     return text[:_MAX_TASK_CHARS]
 
 
+def _as_int(value: Any) -> Optional[int]:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _mean(items: List[Dict[str, Any]], key: str) -> Optional[float]:
+    """Mean of `key` over the rows that carry it (rows older than the field
+    simply do not count), or None when none does."""
+    values = [float(e[key]) for e in items
+              if isinstance(e.get(key), (int, float)) and not isinstance(e.get(key), bool)]
+    return round(sum(values) / len(values), 1) if values else None
+
+
 def build_entry(
     *,
     session_id: Optional[str],
@@ -82,6 +99,9 @@ def build_entry(
     serve_session_id: Optional[str] = None,
     hardware_profile_id: Optional[str] = None,
     phases: Optional[Dict[str, Any]] = None,
+    input_tokens: Optional[int] = None,
+    total_tokens: Optional[int] = None,
+    context_ops: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     stop = str(harness.get("stop_reason") or "complete")
     mutations = list(harness.get("mutations") or [])
@@ -116,6 +136,23 @@ def build_entry(
         "tok_s": round(float(tokens_per_second), 1) if tokens_per_second else None,
         "output_tokens": int(output_tokens) if output_tokens else None,
     }
+    # Tokens per trajectory: what a turn cost in prompt + completion tokens,
+    # per tool call and per round (the usage summary's own sums). Absent, not
+    # zero, when the turn has no usage figures.
+    _in = _as_int(input_tokens)
+    _total = _as_int(total_tokens)
+    if _total is None and _in is not None:
+        _total = _in + int(output_tokens or 0)
+    if _in is not None:
+        entry["input_tokens"] = _in
+    if _total is not None:
+        entry["total_tokens"] = _total
+        if entry["tool_calls"]:
+            entry["tokens_per_tool_call"] = round(_total / entry["tool_calls"], 1)
+        if entry["rounds"]:
+            entry["tokens_per_round"] = round(_total / entry["rounds"], 1)
+    if context_ops and any(int(v or 0) for v in context_ops.values()):
+        entry["context_ops"] = {k: int(v or 0) for k, v in context_ops.items()}
     # Four-value outcome (src/tool_outcome.py), additive: old rows without it
     # are read through `entry_outcome()`, which classifies them the same way.
     outcome = _classify(stop, cancelled=cancelled)
@@ -308,6 +345,10 @@ def aggregate(entries: Iterable[Dict[str, Any]], *, only_workspace: bool = False
             "reviewed": len(reviewed),
             "stalls": len([e for e in items if e.get("stop_reason") in ("rounds_exhausted", "intent_nudge_exhausted", "loop_breaker", "budget_exceeded", "budget_exhausted")]),
             "cancelled": cancelled,
+            "avg_input_tokens": _mean(items, "input_tokens"),
+            "avg_total_tokens": _mean(items, "total_tokens"),
+            "avg_tokens_per_tool_call": _mean(items, "tokens_per_tool_call"),
+            "avg_tokens_per_round": _mean(items, "tokens_per_round"),
             "avg_tok_s": round(sum(float(e.get("tok_s") or 0) for e in items if e.get("tok_s")) / max(1, len([e for e in items if e.get("tok_s")])), 1) if any(e.get("tok_s") for e in items) else None,
             "last_ts": max(int(e.get("ts") or 0) for e in items),
         })
