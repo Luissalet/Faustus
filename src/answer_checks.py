@@ -89,6 +89,32 @@ _ES_DAY_THEN_NOYEAR = re.compile(
 )
 _YEAR = re.compile(r"\b(20\d{2}|19\d{2})\b")
 
+# The same without a year in English: "Monday, September 29", "Mon Sep 29"
+# is not matched (weekday abbreviations are too common as words), "Monday
+# 29 September", "December 25 is a Friday", "Dec 25 (Friday)".
+_EN_MONTH_ABBR = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "jun": 6, "jul": 7, "aug": 8,
+    "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dec": 12,
+}
+_EN_ANY_MONTH_RE = "(" + "|".join(sorted(list(_EN_MONTHS) + list(_EN_MONTH_ABBR), key=len, reverse=True)) + r")\.?"
+_EN_NO_YEAR_AFTER = r"(?!,?\s+\d{4})(?![a-z0-9])"
+_EN_DAY_THEN_NOYEAR = re.compile(
+    r"\b" + _EN_DAY_RE + r"\**\s*,?\s*(?:the\s+)?(?:" + _EN_ANY_MONTH_RE + r"\s+(\d{1,2})(?:st|nd|rd|th)?"
+    r"|(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?" + _EN_ANY_MONTH_RE + r")" + _EN_NO_YEAR_AFTER,
+    re.IGNORECASE,
+)
+_EN_NOYEAR_THEN_DAY = re.compile(
+    r"\b" + _EN_ANY_MONTH_RE + r"\s+(\d{1,2})(?:st|nd|rd|th)?(?!,?\s+\d{4})\**" + _ASIDE + r"\s*"
+    r"(?:\(|,|:|—|-|\bis\b|\bwill\s+be\b|\bwas\b|\bfalls\s+on\b|\bfell\s+on\b)\s*(?:a\s+|on\s+)?\**"
+    + _EN_DAY_RE + r"\b",
+    re.IGNORECASE,
+)
+
+
+def _en_month_number(name: str) -> int:
+    key = name.lower().rstrip(".")
+    return _EN_MONTHS.get(key) or _EN_MONTH_ABBR[key]
+
 
 def _year_before(text: str, pos: int, fallback: Optional[str]) -> Optional[str]:
     """The last year the text names before ``pos``, else ``fallback``."""
@@ -159,6 +185,17 @@ def weekday_mismatches(text: str, context: str = "",
         _check(out, m.group(4), _ES_MONTHS[m.group(2).lower()], m.group(1), m.group(3), "es", m.group(0))
     for m in _ES_DAY_THEN_DATE.finditer(body):
         _check(out, m.group(1), _ES_MONTHS[m.group(3).lower()], m.group(2), m.group(4), "es", m.group(0))
+    for m in _EN_DAY_THEN_NOYEAR.finditer(body):
+        month = _en_month_number(m.group(2) or m.group(5))
+        dnum = m.group(3) or m.group(4)
+        year = _year_before(body, m.start(), ctx_year) or _near_year(month, int(dnum), today)
+        if year:
+            _check(out, m.group(1), month, dnum, year, "en", m.group(0))
+    for m in _EN_NOYEAR_THEN_DAY.finditer(body):
+        month = _en_month_number(m.group(1))
+        year = _year_before(body, m.start(), ctx_year) or _near_year(month, int(m.group(2)), today)
+        if year:
+            _check(out, m.group(3), month, m.group(2), year, "en", m.group(0))
     for m in _EN_DATE_THEN_DAY.finditer(body):
         _check(out, m.group(4), _EN_MONTHS[m.group(1).lower()], m.group(2), m.group(3), "en", m.group(0))
     for m in _EN_DAY_THEN_DATE.finditer(body):
