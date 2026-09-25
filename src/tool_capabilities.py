@@ -1775,7 +1775,7 @@ def _fetch_url(content: Any) -> str:
     return raw.split("\n", 1)[0].strip()
 # Tools whose user-request allowance (src/user_request_gate.py) holds only
 # while nothing from outside -- a tool result, web text -- is in the run.
-_WRITES_OUTSIDE_TEXT = frozenset({"create_document", "manage_memory", "manage_calendar"})
+_WRITES_OUTSIDE_TEXT = frozenset({"create_document", "manage_memory", "manage_calendar", "manage_notes"})
 # Prompt context Faustus builds from its own installation and the owner's own
 # stores: saved memory, learned rules, the skill index, tool descriptions, the
 # context packet compiled from the owner's store. Anything else is outside.

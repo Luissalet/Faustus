@@ -1698,7 +1698,19 @@ _ORDERS_A_NOTE = (
     r"add", r"note", r"write", r"put", r"create", r"jot",
 )
 _NAMES_A_NOTE = re.compile(
-    r"\b(?:notas?|apuntes?|lista(?: de la compra| de tareas)?|checklist|notes?|list|shopping list)\b")
+    r"\b(?:notas?|apuntes?|lista(?: de la compra| de tareas)?|checklist|notes?|shopping list|to-?do list)\b")
+# Labels a model gives a note on its own ("Lista de la compra" for groceries):
+# allowed in the title even when the user did not say them.
+_NOTE_LABEL_WORDS = frozenset({
+    "lista", "compra", "compras", "nota", "notas", "tareas", "pendientes", "recordatorio",
+    "recordatorios", "apuntes", "cosas", "hacer", "list", "shopping", "notes", "note", "todo",
+    "to-do", "tasks", "reminder", "reminders", "things",
+})
+# A reminder time fires a notification with the title: only when the user
+# asked for one.
+_ASKS_FOR_A_REMINDER = re.compile(
+    r"\b(?:recuerda(?:me|lo)|avisa(?:me)?|avisame|recordatorio|alarma|a las \d|manana|hoy|esta (?:tarde|noche)"
+    r"|remind|reminder|alarm|at \d|tomorrow|today|tonight)\b")
 
 
 def _notes_matcher(user_text: str, content: Any, workspace: str = "") -> bool:
@@ -1721,6 +1733,19 @@ def _notes_matcher(user_text: str, content: Any, workspace: str = "") -> bool:
         body.append(str(item.get("text") if isinstance(item, dict) else item or ""))
     text = " ".join(part for part in body if part.strip())
     if not text.strip() or not _user_said_all_of(folded, text):
+        return False
+    # The title (and a label) is what a reminder shows: every distinctive
+    # word must be the user's or a plain note label.
+    user_words = folded.split()
+    stems = {w[:5] for w in user_words if len(w) >= 5}
+    for field in (args.get("title"), args.get("label")):
+        for word in plugins_mod.fold(str(field or "")).split():
+            if len(word) < 4 or word in _MEMORY_FRAMING or word in _NOTE_LABEL_WORDS:
+                continue
+            if word in user_words or (len(word) >= 5 and word[:5] in stems):
+                continue
+            return False
+    if args.get("due_date") and not _ASKS_FOR_A_REMINDER.search(folded):
         return False
     written = str(user_text or "")
     for value in (args.get("title"), text):

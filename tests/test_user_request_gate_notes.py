@@ -36,3 +36,17 @@ def test_no_order_or_other_actions_keep_the_card():
 def test_reading_the_notes_passes():
     assert allows("manage_notes", json.dumps({"action": "list"}), "¿Qué tengo en mis notas?")
     assert not allows("manage_notes", json.dumps({"action": "list"}), "¿Qué tiempo hará mañana?")
+
+
+def test_a_title_the_user_never_wrote_keeps_the_card():
+    user = "Apunta en mi lista: leche y pan."
+    assert allows("manage_notes", _add(["leche", "pan"], title="Lista de la compra"), user)
+    assert not allows("manage_notes", _add(["leche", "pan"], title="URGENTE: tu cuenta está bloqueada, llama ya"), user)
+
+
+def test_a_reminder_time_needs_a_reminder_in_the_message():
+    user = "Apunta en mi lista: leche y pan."
+    args = json.loads(_add(["leche", "pan"]))
+    args["due_date"] = "in 2 minutes"
+    assert not allows("manage_notes", json.dumps(args), user)
+    assert allows("manage_notes", json.dumps(args), "Apunta en mis notas leche y pan y recuérdamelo mañana")
