@@ -15275,6 +15275,15 @@ async def _stream_agent_loop_body(
                 _stall_todos = []
             _stall_in_progress = [t for t in _stall_todos
                                   if isinstance(t, dict) and str(t.get("status")) == "in_progress"]
+            # A plan with nothing in progress but steps still pending stalls
+            # the same way (seen live: the Progress panel stayed at "0 of 7"
+            # while the work went on); its first pending step is the one the
+            # work is really on.
+            _stall_pending_only = False
+            if not _stall_in_progress:
+                _stall_in_progress = [t for t in _stall_todos
+                                      if isinstance(t, dict) and str(t.get("status")) == "pending"][:1]
+                _stall_pending_only = bool(_stall_in_progress)
             _stall_key = json.dumps(
                 [(str(t.get("content")), str(t.get("status"))) for t in _stall_todos if isinstance(t, dict)],
                 ensure_ascii=False,
@@ -15292,12 +15301,20 @@ async def _stream_agent_loop_body(
                     "role": "user",
                     "_harness_note": True,
                     "content": _lang_note(
-                        "[Runtime plan check — automatic message, not a new user request] The step "
-                        f"\"{_stalled_step}\" has been in progress for {_todo_stall_rounds} rounds while "
-                        "the plan did not change. Close it now: write down what you have established "
-                        "for it and the evidence, mark it completed (or split what really remains into "
-                        "a smaller next step), and move on to the next step. Certainty is not required: "
-                        "mark doubts as doubts."
+                        ((
+                            "[Runtime plan check — automatic message, not a new user request] Your plan "
+                            f"has not changed for {_todo_stall_rounds} rounds and no step is marked in "
+                            "progress, so the user's Progress panel shows nothing done. Call todowrite "
+                            "once now: mark what you have finished as completed and the step you are on "
+                            f"(\"{_stalled_step}\" or a later one) as in_progress, then continue."
+                        ) if _stall_pending_only else (
+                            "[Runtime plan check — automatic message, not a new user request] The step "
+                            f"\"{_stalled_step}\" has been in progress for {_todo_stall_rounds} rounds while "
+                            "the plan did not change. Close it now: write down what you have established "
+                            "for it and the evidence, mark it completed (or split what really remains into "
+                            "a smaller next step), and move on to the next step. Certainty is not required: "
+                            "mark doubts as doubts."
+                        ))
                     ),
                 })
                 _ledger.notes.append(f"todo_stall_nudge@{round_num}:{_todo_stall_rounds}")

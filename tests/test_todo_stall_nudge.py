@@ -67,3 +67,23 @@ def test_a_plan_that_moves_is_left_alone(tmp_path, monkeypatch):
         session_id="s-move",
     )))
     assert not [e for e in events if e.get("type") == "harness_check" and e.get("status") == "todo_stall"]
+
+
+def test_a_plan_with_nothing_in_progress_is_nudged_to_update(tmp_path, monkeypatch):
+    """Live: the Progress panel stayed at "0 of 7" while the work went on."""
+    _patch_common(monkeypatch, {"agent_todo_stall_nudge": 3, "agent_web_streak_nudge": 0})
+    todos = [{"content": "Read the brief", "status": "pending"},
+             {"content": "Write the answer", "status": "pending"}]
+    monkeypatch.setattr(coding_tools, "load_todos", lambda sid: list(todos))
+    snaps = []
+    _stream(monkeypatch, 7, snaps)
+    events = _events(_collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": "resuelve el acertijo de esta carpeta paso a paso"}],
+        max_rounds=12, relevant_tools={"read_file", "todowrite"}, workspace=str(tmp_path),
+        session_id="s-stall-pending",
+    )))
+    stalls = [e for e in events if e.get("type") == "harness_check" and e.get("status") == "todo_stall"]
+    assert len(stalls) == 1
+    notes = [m["content"] for m in snaps[-1] if m.get("_harness_note")]
+    assert any("no step is marked in progress" in c and "Read the brief" in c for c in notes), notes
