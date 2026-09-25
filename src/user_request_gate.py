@@ -213,13 +213,28 @@ def _memory_add_text(content: Any) -> Optional[str]:
     return None
 
 
+# "antes de las diez" saved as "antes de las 10:00": a number the user wrote
+# in words is the same number in digits.
+_NUMBER_WORDS = {
+    "cero": "0", "uno": "1", "una": "1", "dos": "2", "tres": "3", "cuatro": "4", "cinco": "5",
+    "seis": "6", "siete": "7", "ocho": "8", "nueve": "9", "diez": "10", "once": "11", "doce": "12",
+    "trece": "13", "catorce": "14", "quince": "15", "dieciseis": "16", "diecisiete": "17",
+    "dieciocho": "18", "diecinueve": "19", "veinte": "20", "treinta": "30",
+    "zero": "0", "one": "1", "two": "2", "three": "3", "four": "4", "five": "5", "six": "6",
+    "seven": "7", "eight": "8", "nine": "9", "ten": "10", "eleven": "11", "twelve": "12",
+    "twenty": "20", "thirty": "30",
+}
+
+
 def _user_said_all_of(user_folded: str, saved: str) -> bool:
     from src import plugins as plugins_mod
 
     user_words = user_folded.split()
+    user_words += [_NUMBER_WORDS[w] for w in user_words if w in _NUMBER_WORDS]
     stems = {w[:5] for w in user_words if len(w) >= 4}
     distinctive = [w for w in plugins_mod.fold(saved).split()
-                   if (len(w) >= 4 or any(ch.isdigit() for ch in w)) and w not in _MEMORY_FRAMING]
+                   if (len(w) >= 4 or any(ch.isdigit() for ch in w)) and w not in _MEMORY_FRAMING
+                   and not re.fullmatch(r"0+", w)]  # the ":00" of "10:00"
     if not distinctive:
         return False
     unmatched = []

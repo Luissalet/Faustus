@@ -45,7 +45,7 @@ _ES_DATE_THEN_DAY = re.compile(
 )
 # "domingo 25 de diciembre de 2026", "domingo, 25 de diciembre de 2026"
 _ES_DAY_THEN_DATE = re.compile(
-    r"\b" + _ES_DAY_RE + r"\s*,?\s+(?:el\s+)?(\d{1,2})\s+de\s+" + _ES_MONTH_RE + r"\s+de(?:l)?\s+(\d{4})\b",
+    r"\b" + _ES_DAY_RE + r"\**\s*[,(]?\s*(?:el\s+)?(\d{1,2})\s+de\s+" + _ES_MONTH_RE + r"\s+de(?:l)?\s+(\d{4})\b",
     re.IGNORECASE,
 )
 # "December 25, 2026 is a Sunday", "December 25, 2026 (Sunday)"
@@ -57,7 +57,7 @@ _EN_DATE_THEN_DAY = re.compile(
 )
 # "Sunday, December 25, 2026", "Sunday 25 December 2026"
 _EN_DAY_THEN_DATE = re.compile(
-    r"\b" + _EN_DAY_RE + r",?\s+(?:" + _EN_MONTH_RE + r"\s+(\d{1,2})(?:st|nd|rd|th)?|(\d{1,2})(?:st|nd|rd|th)?\s+"
+    r"\b" + _EN_DAY_RE + r"\**\s*[,(]?\s*(?:" + _EN_MONTH_RE + r"\s+(\d{1,2})(?:st|nd|rd|th)?|(\d{1,2})(?:st|nd|rd|th)?\s+"
     + _EN_MONTH_RE + r"),?\s+(\d{4})\b",
     re.IGNORECASE,
 )

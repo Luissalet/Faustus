@@ -7,6 +7,9 @@ from src import answer_checks as ac
 @pytest.mark.parametrize("text,real", [
     ("el 25 de diciembre de 2026 cae en domingo", "viernes"),
     ("Domingo, 25 de diciembre de 2026", "viernes"),
+    ("2. Domingo (25 de diciembre de 2026).", "viernes"),  # seen live
+    ("**Domingo** (25 de diciembre de 2026)", "viernes"),
+    ("Sunday (December 25, 2026)", "friday"),
     ("El 1 de enero de 2027 será jueves.", "viernes"),
     ("December 25, 2026 is a Sunday.", "friday"),
     ("Sunday, December 25, 2026", "friday"),
