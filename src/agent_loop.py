@@ -7850,7 +7850,10 @@ async def _stream_agent_loop_body(
         # call refuses (`board.no_project`). Seen live: «¿Qué tareas tengo
         # pendientes?» offered all eight, and the model spent a 90-second
         # round planning calls that could only fail.
-        if not relevant_tools and not str(_hopts.get("project_id") or "").strip():
+        # Also when the caller pinned a set: without a project those calls can
+        # only refuse, whoever chose them (a parallel-read re-entry passes the
+        # previous round's set and the domain seeding above re-added them).
+        if not str(_hopts.get("project_id") or "").strip():
             _no_board = _DOMAIN_TOOL_MAP["project_board"]
             _relevant_tools -= _no_board
             if _hot_seed is not None:
