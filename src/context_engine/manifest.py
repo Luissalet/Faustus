@@ -267,6 +267,7 @@ def _last_user_index(messages: Sequence[Mapping[str, Any]]) -> int:
     the last `user` message that is not retrieved context wearing the user
     role.  It is a position, not a classification — the classification itself
     stays in `classify()`, which is imported and never reimplemented."""
+    fallback = -1
     for index in range(len(messages) - 1, -1, -1):
         message = messages[index]
         if not isinstance(message, Mapping) or message.get("role") != "user":
@@ -274,8 +275,18 @@ def _last_user_index(messages: Sequence[Mapping[str, Any]]) -> int:
         meta = message.get("metadata")
         if isinstance(meta, Mapping) and meta.get("trusted") is False:
             continue
+        # A runtime note the loop appends mid-turn with the user role (a
+        # nudge, a check's rewrite request) is not the question. Seen in a
+        # live trace: the packet's query became such a note on round four,
+        # retrieval changed to unrelated memories and the prompt cache was
+        # lost from the packet on. Same rule as the compactor's
+        # `_last_convo_user_index`: notes count only when nothing else does.
+        if message.get("_harness_note") or message.get("_agent_injected"):
+            if fallback < 0:
+                fallback = index
+            continue
         return index
-    return -1
+    return fallback
 
 
 def _message_text(message: Mapping[str, Any]) -> str:

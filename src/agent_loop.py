@@ -1805,8 +1805,13 @@ def _insert_before_latest_user(messages: List[Dict], context_msg: Dict) -> List[
     directive when it is present.
     """
     out = list(messages or [])
+    # Runtime notes appended mid-turn with the user role (`_harness_note`)
+    # are skipped too: the packet stays in front of the person's message, so
+    # a round that adds a note does not move it and lose the prompt cache for
+    # everything after its old slot.
     for idx in range(len(out) - 1, -1, -1):
-        if out[idx].get("role") == "user" and not out[idx].get("_agent_injected"):
+        if (out[idx].get("role") == "user" and not out[idx].get("_agent_injected")
+                and not out[idx].get("_harness_note")):
             insert_at = idx
             for prior in range(idx - 1, -1, -1):
                 content = str(out[prior].get("content") or "")
