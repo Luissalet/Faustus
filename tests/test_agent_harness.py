@@ -1024,3 +1024,8 @@ def test_python_writes_to_unnamed_paths_back_a_saved_claim(tmp_path):
     ledger.record("python", code, {"output": "", "exit_code": 0}, 1)
     check = ledger.check_completion("I saved one file per store.")
     assert "claims_without_mutation" not in check["reasons"], check
+
+
+def test_answer_hygiene_policy_names_the_date_context_and_no_thinking_aloud():
+    text = h.answer_hygiene_policy()
+    assert "authoritative" in text and "think aloud" in text and "python" in text

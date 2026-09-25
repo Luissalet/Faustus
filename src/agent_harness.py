@@ -2381,6 +2381,24 @@ def _paths_from_args(tool: str, content: str) -> List[str]:
     return paths
 
 
+def answer_hygiene_policy() -> str:
+    """Rules for the visible answer itself, on every agent turn (not only when
+    file or shell tools are in play, like `local_model_policy`).
+
+    Seen live: "si hoy es jueves 25 de septiembre de 2026, ¿qué día será el
+    25 de diciembre?" (it was a Friday) was answered by counting aloud in the
+    reply — "…espera, revisemos… no: son 92 días… Corrección: viernes" — with
+    the wrong day count, and the false "jueves" was never pointed out."""
+    return (
+        "\n\n## The answer\n"
+        "The answer is the result, not your working: do not think aloud in it (no \"wait\", "
+        "\"let me recount\", \"correction:\"). Dates, weekdays and any arithmetic of more than one "
+        "step: compute them with the python tool when you have it (datetime, calendar), then state "
+        "the result. The current date/time context is authoritative: if the user's message gives "
+        "today a different date or weekday, say so in one sentence and use the real one."
+    )
+
+
 def local_model_policy() -> str:
     """Compact imperative tool-use policy for local/weak models."""
     return (
