@@ -6583,6 +6583,11 @@ async def _stream_agent_loop_body(
     gen_overrides: Optional[Dict] = None,
     security_gate_bypass: bool = False,
     harness_options: Optional[Dict[str, Any]] = None,
+    # Lot T: the per-turn reasoning mode the chat route resolved
+    # (src/think_mode.resolve_turn's event: mode/requested/source/budget).
+    # When it set `think`, that is not a user pin: the runaway watchdog
+    # stays on, stretched for "deep" by think_mode_deep_watchdog_factor.
+    think_mode: Optional[Dict[str, Any]] = None,
     pending_user_messages: Optional[Callable[[], List[Dict[str, Any]]]] = None,
     autonomy_preset: Optional[str] = None,
     pending_pause: Optional[Callable[[], bool]] = None,
@@ -9005,6 +9010,18 @@ async def _stream_agent_loop_body(
         _think_watchdog_on = False
     _think_user_pinned = isinstance(gen_overrides, dict) and gen_overrides.get("think") is True
     _think_user_off = isinstance(gen_overrides, dict) and gen_overrides.get("think") is False
+    _think_mode_info = think_mode if isinstance(think_mode, dict) else {}
+    if _think_mode_info.get("source") in ("rule", "explicit"):
+        # The think flag came from the reasoning mode (Auto or a picked
+        # mode), not from `/think on`: keep the runaway watchdog, and give
+        # a deep turn more room before it cuts in.
+        _think_user_pinned = False
+        if _think_mode_info.get("mode") == "deep" and _think_budget_s > 0:
+            try:
+                _deep_factor = float(get_setting("think_mode_deep_watchdog_factor", 2.0) or 1.0)
+            except (TypeError, ValueError):
+                _deep_factor = 2.0
+            _think_budget_s = _think_budget_s * max(1.0, _deep_factor)
     if _think_user_pinned:
         _think_watchdog_on = False  # the user pinned thinking on: respect it
     elif not _think_user_off and _harness_scope_active and _local_ep:

@@ -8,7 +8,7 @@ import re
 import time
 import logging
 from datetime import datetime
-from typing import Dict, Any, AsyncGenerator, List, Optional
+from typing import Dict, Any, AsyncGenerator, List, Optional, Tuple
 
 from fastapi import APIRouter, Request, HTTPException, Form, Query
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -849,9 +849,61 @@ def _parse_gen_overrides(raw) -> Dict[str, Any]:
             out["think"] = bool(v) if not isinstance(v, str) else v.strip().lower() in ("1", "true", "on", "yes")
         if data.get("reasoning_effort") in ("low", "medium", "high", "none"):
             out["reasoning_effort"] = data["reasoning_effort"]
+        # llm_core already honours a per-request budget (GEN_OVERRIDE_KEYS);
+        # it used to be dropped right here, so a client could never set it.
+        if data.get("reasoning_budget") not in (None, "") and not isinstance(data.get("reasoning_budget"), bool):
+            rb = int(data["reasoning_budget"])
+            if 0 <= rb <= 262144:
+                out["reasoning_budget"] = rb
     except (TypeError, ValueError):
         pass
     return out
+
+
+def _resolve_think_mode(requested, gen_overrides: Optional[Dict[str, Any]], message, *,
+                        model: str, endpoint_url: str, chat_mode: Optional[str],
+                        workspace: Optional[str], attachments: int = 0,
+                        history_len: int = 0) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
+    """Lot T: apply this turn's reasoning mode (form field `think_mode`,
+    else the `think_mode_default` setting) to the parsed gen overrides.
+
+    Precedence, see `src/think_mode.resolve_turn`: an explicit mode
+    (fast/think/deep) > an explicit `think` in gen_overrides (`/think on|off`)
+    > the Auto rule > today's defaults. In Auto an agent turn on a coding
+    task never drops below "think" unless it is plain small talk, so the
+    agent's "local coding turns think by default" is never made worse.
+
+    Returns `(overrides, event)`; `event` is the `think_mode` SSE payload, or
+    None when the model has no thinking mode (nothing changes then). Never
+    raises: any failure leaves the overrides exactly as they came in.
+    """
+    base = dict(gen_overrides or {})
+    try:
+        from src import think_mode as _tm
+        from src.llm_core import _supports_thinking, _detect_provider
+        from src.settings import get_setting as _gs
+        from src.model_context import is_local_endpoint
+        text = message if isinstance(message, str) else ""
+        agent = chat_mode == "agent"
+        coding = bool(agent and (workspace or _looks_like_workspace_coding_request(text)))
+        try:
+            local = bool(is_local_endpoint(endpoint_url or ""))
+        except Exception:  # noqa: BLE001
+            local = False
+        # `reasoning_effort` only where it is understood: a self-hosted
+        # engine ignores it, Mistral uses it; a strict remote provider could
+        # reject the unknown field.
+        effort_ok = local or _detect_provider(endpoint_url or "") == "mistral"
+        result = _tm.resolve_turn(
+            requested, base, text, model=model or "",
+            supports_thinking=_supports_thinking(model or ""),
+            attachments=attachments, agent=agent, coding=coding, history_len=history_len,
+            effort=effort_ok, default_mode=str(_gs("think_mode_default", "auto") or "auto"),
+        )
+        return dict(result.get("overrides") or {}), result.get("event")
+    except Exception as exc:  # noqa: BLE001 -- never fail a turn over this
+        logger.debug("[think-mode] skipped: %s", exc)
+        return base, None
 
 
 def _parse_doc_context_payload(raw) -> List[Dict[str, Any]]:
@@ -2658,6 +2710,31 @@ def setup_chat_routes(
                 logger.info("[gen-overrides] session=%s temperature=%s max_tokens=%s extra=%s",
                             session, ctx.preset.temperature, ctx.preset.max_tokens, _gen_overrides)
 
+            # Lot T: per-turn reasoning mode (Auto / Fast / Think / Deep).
+            # Announced to the client as a `think_mode` event at the top of
+            # the stream so the composer can show what Auto chose.
+            _think_mode_event = None
+            if not image_generation_session:
+                _think_mode_requested = form_data.get("think_mode") or (body or {}).get("think_mode")
+                _think_history_len = max(0, sum(
+                    1 for _m in (ctx.messages or [])
+                    if isinstance(_m, dict) and _m.get("role") in ("user", "assistant")
+                ) - 1)
+                _gen_overrides, _think_mode_event = _resolve_think_mode(
+                    _think_mode_requested, _gen_overrides, message,
+                    model=str(getattr(sess, "model", "") or ""),
+                    endpoint_url=str(getattr(sess, "endpoint_url", "") or ""),
+                    chat_mode=chat_mode, workspace=workspace,
+                    attachments=len(att_ids or []), history_len=_think_history_len,
+                )
+                if _think_mode_event:
+                    logger.info("[think-mode] session=%s requested=%s -> %s (%s%s) budget=%s",
+                                session, _think_mode_event.get("requested"), _think_mode_event.get("mode"),
+                                _think_mode_event.get("source"),
+                                f": {','.join(_think_mode_event.get('reasons') or [])}"
+                                if _think_mode_event.get("reasons") else "",
+                                _think_mode_event.get("budget"))
+
             _research_flags = {"do": do_research}  # Mutable container for generator scope
 
             # Query active document — prefer explicit ID from frontend, fall back to session lookup
@@ -2926,6 +3003,9 @@ def setup_chat_routes(
                     yield (
                         f"data: {json.dumps({'type': 'model_router', 'data': _model_router_mod.explain_event(_model_router_auto.model_router_decision, route=_model_router_auto.route_decision)})}\n\n"
                     )
+
+                if _think_mode_event:
+                    yield f"data: {json.dumps({'type': 'think_mode', 'data': _think_mode_event})}\n\n"
 
                 if ctx.preprocessed.attachment_meta:
                     yield f"data: {json.dumps({'type': 'attachments', 'data': ctx.preprocessed.attachment_meta})}\n\n"
@@ -3992,6 +4072,7 @@ def setup_chat_routes(
                             exact_approval=exact_tool_approval,
                             temperature_explicit=_temperature_explicit,
                             gen_overrides=_gen_overrides or None,
+                            think_mode=_think_mode_event,
                             harness_options=_loop_harness_options or None,
                             autonomy_preset=autonomy_preset or None,
                             # UX-04: main-session pause/steer, drained from the
