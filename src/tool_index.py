@@ -138,6 +138,43 @@ def _instance_collection_suffix() -> str:
     return hashlib.sha256(data_dir.encode("utf-8")).hexdigest()[:10]
 
 
+#: The tool index's own embedder: tool descriptions are English, the requests
+#: mostly Spanish. Measured on the real catalogue (12 requests, both
+#: languages): the default English model ranked `upcoming`/`world_search`
+#: above everything for a recipe and never put `manage_calendar` first for
+#: «Mira mi calendario»; this bilingual one put the right tool first for
+#: calendar, mail, WhatsApp, notes, tasks, web and PDF, and scored unrelated
+#: requests (a recipe, a percentage) below 0.2. 18 ms per query on CPU.
+DEFAULT_TOOL_EMBED_MODEL = "jinaai/jina-embeddings-v2-base-es"
+
+#: Below this cosine score a vector hit is noise for that model, not a
+#: candidate (the lexical lane still votes). Only models measured get one.
+TOOL_SCORE_FLOOR = {DEFAULT_TOOL_EMBED_MODEL: 0.3}
+
+
+def tool_embed_model() -> str:
+    """Setting `tool_index_embed_model` ("" = the app-wide default model)."""
+    try:
+        from src.settings import get_setting
+        value = get_setting("tool_index_embed_model", DEFAULT_TOOL_EMBED_MODEL)
+    except Exception:
+        value = DEFAULT_TOOL_EMBED_MODEL
+    return str(value if value is not None else DEFAULT_TOOL_EMBED_MODEL).strip()
+
+
+def _tool_lanes(base_name: str):
+    """The tool index's lanes with its own embedder, or the default one when
+    that model cannot be loaded (offline first run, a bad setting)."""
+    model = tool_embed_model()
+    lanes = build_embedding_lanes(base_name, model or None) if model else []
+    if model and not any(lane.name == LANE_FASTEMBED for lane in lanes):
+        logger.warning("tool index: embedder %s unavailable; using the default", model)
+        lanes = build_embedding_lanes(base_name)
+    if not model:
+        lanes = build_embedding_lanes(base_name)
+    return lanes
+
+
 def instance_collection_name() -> str:
     """The (possibly per-instance-suffixed) base collection name to hand to
     `build_embedding_lanes` / the in-memory lane. Each embedding lane still
@@ -487,7 +524,7 @@ class ToolIndex:
         chroma_error: Optional[BaseException] = None
         if not force_memory:
             try:
-                self._lanes = build_embedding_lanes(instance_collection_name())
+                self._lanes = _tool_lanes(instance_collection_name())
             except Exception as e:
                 # get_chroma_client() raised: not installed / not reachable.
                 chroma_error = e
@@ -534,7 +571,15 @@ class ToolIndex:
 
         try:
             # Module attribute lookup on purpose: tests stub this builder.
-            client = _lanes_mod._build_fastembed_client()
+            model = tool_embed_model()
+            try:
+                client = (_lanes_mod._build_fastembed_client(model) if model
+                          else _lanes_mod._build_fastembed_client())
+            except Exception as e:  # the bilingual model is not available: the default one
+                if not model:
+                    raise
+                logger.info("tool index: embedder %s unavailable (%s); using the default", model, e)
+                client = _lanes_mod._build_fastembed_client()
         except Exception as e:
             raise ToolIndexUnavailable(f"no local embedder for the tool index: {e}") from e
         return build_memory_lane(instance_collection_name(), client, cache_path=cache_path)
@@ -719,6 +764,9 @@ class ToolIndex:
         """Retrieve the top-K most relevant tool names for a query."""
         rows = []
         lane_priority = {LANE_CUSTOM: 0, LANE_FASTEMBED: 1}
+        # A lane that answered with nothing above its floor has said "none of
+        # these", which is not the same as no lane answering at all.
+        floored = False
         for lane in self._lanes:
             try:
                 count = lane.count()
@@ -738,6 +786,9 @@ class ToolIndex:
                         name = meta.get("tool_name", "")
                         if name:
                             distance = distance_list[idx] if idx < len(distance_list) else 1.0
+                            if 1.0 - distance < TOOL_SCORE_FLOOR.get(getattr(lane, "model", ""), -1.0):
+                                floored = True
+                                continue
                             rows.append({
                                 "tool_name": name,
                                 "score": round(1.0 - distance, 4),
@@ -745,6 +796,11 @@ class ToolIndex:
                             })
             except Exception as e:
                 logger.warning("Tool retrieval failed in %s lane: %s", lane.name, e)
+        if not rows and floored:
+            # Nothing close enough (a recipe, a translation): no candidates
+            # beyond a tool the request nearly names outright.
+            anchor = self._strong_lexical_anchor(query)
+            return [anchor] if anchor and k > 0 else []
         if not rows:
             # No vector lane could answer: none was built, all are empty, or
             # all of them raised. This used to return [] and leave the turn on

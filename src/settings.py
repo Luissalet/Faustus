@@ -1676,6 +1676,8 @@ DEFAULT_SETTINGS = {
     # Auto on a short question with no sign of work: think at effort "low"
     # with this reasoning budget instead of not thinking (src/think_mode.py).
     "think_mode_budget_light": 1024,
+    # The tool index's own embedder ("" = the app-wide default model).
+    "tool_index_embed_model": "jinaai/jina-embeddings-v2-base-es",
     "think_mode_budget_deep": 16384,
     # A "deep" turn multiplies the local thinking watchdog
     # (agent_local_think_budget_seconds) by this factor.

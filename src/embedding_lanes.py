@@ -111,10 +111,10 @@ def _load_custom_endpoint() -> Dict[str, str]:
     return {"url": url, "model": model, "api_key": api_key}
 
 
-def _build_fastembed_client():
+def _build_fastembed_client(model: Optional[str] = None):
     from src.embeddings import FastEmbedClient
 
-    client = FastEmbedClient()
+    client = FastEmbedClient(model) if model else FastEmbedClient()
     client.get_sentence_embedding_dimension()
     return client
 
@@ -265,8 +265,12 @@ def _create_lane(chroma_client, base_name: str, lane_name: str, client: Any) -> 
     )
 
 
-def build_embedding_lanes(base_name: str) -> List[EmbeddingLane]:
-    """Return healthy lanes in retrieval preference order: custom, fastembed."""
+def build_embedding_lanes(base_name: str, fastembed_model: Optional[str] = None) -> List[EmbeddingLane]:
+    """Return healthy lanes in retrieval preference order: custom, fastembed.
+
+    ``fastembed_model`` picks the local model for this collection only (the
+    tool index uses a bilingual one); a model change re-embeds the collection
+    through the lane fingerprint, see `_get_or_reset_collection`."""
     from src.chroma_client import get_chroma_client
 
     chroma_client = get_chroma_client()
@@ -280,7 +284,8 @@ def build_embedding_lanes(base_name: str) -> List[EmbeddingLane]:
         logger.warning("Custom embedding lane unavailable for %s: %s", base_name, e)
 
     try:
-        fastembed = _build_fastembed_client()
+        # Stubs in tests take no argument: pass one only when there is one.
+        fastembed = _build_fastembed_client(fastembed_model) if fastembed_model else _build_fastembed_client()
         lanes.append(_create_lane(chroma_client, base_name, LANE_FASTEMBED, fastembed))
     except Exception as e:
         logger.warning("FastEmbed lane unavailable for %s: %s", base_name, e)
