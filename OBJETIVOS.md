@@ -970,7 +970,7 @@ FAUSTUS.md §189; API en `docs/api/{git,bug_hunt,ci_failures,fix_memory,handoff_
 **Queda:** verificación en vivo con el 27B y con un repo real de GitHub (ver PENDIENTES).
 
 
-## OBJ-44 · Familia Hoard usada de verdad desde Faustus — EN CURSO (25-09-2026)
+## OBJ-44 · Familia Hoard usada de verdad desde Faustus — HECHO (25-09-2026)
 
 Que cada app Hoard aguante preguntas reales hechas con el 27B, no solo sus
 tests: arrancar todo desde el Hub, llamar a cada tool por el proxy y pasar
@@ -983,8 +983,11 @@ Tercera vuelta (§193): `since` común en `hoard_link` (Python y JS, en las 18
 apps), DiskHoard guarda el último escaneo, Vitruvius acepta páginas por ruta,
 y la landing con Vitruvius salió de principio a fin con el 27B (19/19 en
 `page_assay`).
-**Queda:** que el selector ofrezca las skills de familia (`hoard-daily-digest`)
-en vez de diez `lookup_tools`; los candidatos fantasma `mcp__vitruvius__*`.
+Cerrado en §195, §200 y §201: el selector ofrece las skills de familia (tags en
+español, umbral configurable), `lookup_tools` solo propone nombres que se pueden
+llamar, Writer's Hoard 0.1.3 publicada con una sola biblioteca, Nightingale's
+Hoard publicado, y el Lab de Nightingale de punta a punta con el 27B sin
+tarjetas de aprobación.
 
 **Todo local (25-09, tarde; FAUSTUS.md §194).** Luis: «todo local, queremos
 que sea potente por sí mismo». Nada de modelos de suscripción para visión ni
