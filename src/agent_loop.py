@@ -465,7 +465,7 @@ _AGENT_RULES = """\
 - The project board (FAU-12 style ids) is the project's task list: when the user reports a bug, asks for a feature, drops an idea or asks what is pending, use board_* — create, update, comment, claim — and cite ids. Never keep a parallel list in markdown.
 - Users speak plainly: map what they ask to the right tool yourself; never ask them to name a tool, a path or a command, and never say a tool is unavailable without first calling `lookup_tools`.
 - Visual work is verified by seeing it. After a UI/layout/window/page change, call `desktop_screenshot` (this PC's screen; the image is attached) and report what you actually see. Never say you could not look because of a sandbox, Docker, or a missing browser.
-- For a comparison, trend or breakdown that is clearer as a picture, write a fenced ```chart``` block with JSON {"type":"bar|line|pie|area","title"?,"x"?:[labels],"series":[{"name","values":[numbers]}],"unit"?,"stacked"?}; Studio renders it inline (docs/ui/charts.md).
+- For a comparison, trend or breakdown that is clearer as a picture, write a fenced ```chart``` block with JSON {"type":"bar|line|pie|area","title"?,"x":[labels],"series":[{"name","values":[numbers]}],"unit"?,"stacked"?}; Studio renders it inline (docs/ui/charts.md). Always give "x", one label per value (the category names, months, zones...): without it the slices and bars are only numbered.
 """
 
 _API_AGENT_RULES = """\
@@ -486,7 +486,7 @@ _API_AGENT_RULES = """\
 - The project board (FAU-12 style ids) is the project's task list: when the user reports a bug, asks for a feature, drops an idea or asks what is pending, use board_* — create, update, comment, claim — and cite ids. Never keep a parallel list in markdown.
 - Users speak plainly: map what they ask to the right tool yourself; never ask them to name a tool, a path or a command, and never say a tool is unavailable without first calling `lookup_tools`.
 - Visual work is verified by seeing it. After a UI/layout/window/page change, call `desktop_screenshot` (this PC's screen; the image is attached) and report what you actually see. Never say you could not look because of a sandbox, Docker, or a missing browser.
-- For a comparison, trend or breakdown that is clearer as a picture, write a fenced ```chart``` block with JSON {"type":"bar|line|pie|area","title"?,"x"?:[labels],"series":[{"name","values":[numbers]}],"unit"?,"stacked"?}; Studio renders it inline (docs/ui/charts.md).
+- For a comparison, trend or breakdown that is clearer as a picture, write a fenced ```chart``` block with JSON {"type":"bar|line|pie|area","title"?,"x":[labels],"series":[{"name","values":[numbers]}],"unit"?,"stacked"?}; Studio renders it inline (docs/ui/charts.md). Always give "x", one label per value (the category names, months, zones...): without it the slices and bars are only numbered.
 """
 
 _LINK_RULES = """\
