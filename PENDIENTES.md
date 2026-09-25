@@ -11,11 +11,9 @@ Actualizado: 25-09-2026. REGLA: nunca nombres de empresas/personas del buzÃ³n 
 - **`swarm_map` modo `agent`** sin probar en vivo; el modo `llm` sí (6 ciudades). Con otros chats ocupando slots del 8081, dos elementos agotaron sus 180 s esperando cola antes del arreglo que reserva los slots ocupados; volver a medirlo con el 8081 compartido.
 - **Visión**: tras el arreglo de `vision_num_ctx` la descripción del adjunto va a 6,5 GB, pero con el 27B q8 ocupando las cuatro GPU generó a ~7 tok/s (≈3 min para una descripción de 1.536 tokens). Valorar bajar `vision_max_tokens` para adjuntos o pedir descripciones más cortas.
 - **Tests inestables bajo xdist** (pasan solos y en el orden real del worker): `test_swarm.py::test_rest_routes_are_owner_scoped`, `test_chat_helpers.py::test_save_assistant_response_emits_turn_finished_once`.
-- **Eco «Allow this task to continue?»** sigue apareciendo en el texto de una respuesta tras aprobar `swarm_map` (ya anotado; no es de esta ola).
 
 ## 25-09 tarde — familia Hoard con uso real (FAUSTUS.md §191–§192)
 
-- **`hoard-study-cards` por debajo del umbral** (0,214 con «hazme tarjetas de estudio…»): la skill la lleva la sesión de Hypatia; cuando cierre, darle tags y triggers en español como a las otras cuatro (§193).
 
 ## 25-09 mediodía — uso diario en el 7006 (FAUSTUS.md §184, puntos 17–35)
 

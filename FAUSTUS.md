@@ -8859,7 +8859,7 @@ compartido. Subir el repositorio a GitHub cuando Luis lo diga.
 
 **Medido y descartado.** Las erratas sueltas del 27B en castellano («Levadadura», «judicioso», «vino blasco») parecían el efecto de la penalización de repetición (1,05) sobre palabras repetidas. A/B directo contra el servidor (dos textos, dos semillas, 1,05 frente a 1,0, sin razonamiento): sin penalización también salen («sartilla», «desmoranan», «soltas»). No es la penalización; no se toca el muestreo.
 
-## 196. Lo pendiente de §195 y Writer's Hoard 0.1.3 publicada (25-09-2026, tarde)
+## 200. Lo pendiente de §195 y Writer's Hoard 0.1.3 publicada (25-09-2026, tarde)
 
 **Problema.** Luis: «todo lo pendiente y push, pero no toques Hypatia»; publicar release de Writer's Hoard.
 
@@ -8881,3 +8881,16 @@ compartido. Subir el repositorio a GitHub cuando Luis lo diga.
 - *El recuerdo sólo decía cuándo no usarlo* («Do not reference unless the user asks about these topics»). Con el dato recuperado, el modelo buscó en el calendario y contestó que no lo encontraba. Ahora dice que son hechos que el usuario contó, que se responda con ellos primero cuando pregunta por ese tema y que no se saquen si no. En la repetición llegó a «jueves a las 19:30», aunque pasando antes por el calendario y el cerebro: el 27B sigue prefiriendo buscar.
 - *Días de la semana con mes abreviado*: la lista de la semana que viene decía «Lunes 29 sep» (martes). Ahora se leen «lunes 29 sep», «jueves 1 oct.» y «martes 29 septiembre», y una fecha sin año en la respuesta ni en la pregunta toma el año que la deja más cerca de hoy (a menos de medio año); sin la fecha de hoy no se adivina.
 
+## 201. Sin pendientes de la ronda de las Hoard (25-09-2026, noche)
+
+**Problema.** Luis: «nada de pendientes; no puedes parar hasta que no te queden».
+
+**Hecho.**
+- *Nightingale's Hoard publicado* (https://github.com/Luissalet/NightingalesHoard, público, CI con pytest + build del cliente en verde). Antes de publicar: sin datos, secretos ni rutas personales en el árbol (161 ficheros), 300 tests. Cerrados sus pendientes propios (subagente sonnet, revisado aquí): curva ROC en Diagnóstico (binaria y una por clase), control `write_to` en Modelos, la nota de calidad ya no muestra 100 con un componente imperfecto, y la salida de un modelo a un dataset nuevo conserva los tipos exactos (DATE, DECIMAL). Además, el informe del Lab por MCP usa el dataset con el que se entrenó el modelo si no se le pasa. El portfolio dice ya «Repositorio público» con enlace al código (desplegado y visto en el navegador).
+- *Lab de Nightingale de punta a punta con el 27B desde el 7003*: entrenar un clasificador de ciudad, diagnóstico con AUC por clase e informe PDF, sin una sola tarjeta de aprobación y con la ROC vista en el navegador. Salieron dos tarjetas que sobraban y se quitaron:
+  - `data_model {"action": "evaluate"}`: una herramienta con varias acciones no es de solo lectura entera; ahora una acción de lectura (evaluate, report, explain, compare…) pasa cuando la petición nombra la app y el acto (`user_request_gate._asks_for_the_action`). Las de escritura siguen necesitando un valor propio de la llamada.
+  - `read_artifact`/`artifact_search` sobre el resultado de esta misma ejecución que el offload guardó: releerlo no mete nada nuevo; se anotan los `occ_…` que devuelven los resultados de la ejecución (`note_run_artifacts`) y solo esos pasan.
+- *`hoard-study-cards`*: la sesión de Hypatia ya había cerrado (commit `ded2a12c`, Exam Coach 2); con tags en español sube a 0,35–0,37 en «examíname», «repasemos», «hazme tarjetas de estudio».
+- *Eco de «Allow this task to continue?»*: en el Studio, el mensaje que pausó muestra «Permiso respondido · Lo permitiste para toda la tarea» y la respuesta sigue limpia; el texto del eco solo aparece en el cliente de pruebas, que concatena los deltas de las dos patas del turno.
+
+**Fuera de mi alcance.** Firmar el instalador de Windows: hace falta un certificado de firma de código (o una cuenta de Azure Artifact Signing) a nombre de Luis; la ruta automática (`dist:publish` con `WIN_CSC_LINK`/`WIN_CSC_KEY_PASSWORD`) ya está preparada y exige firma.
