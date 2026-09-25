@@ -106,6 +106,22 @@ def _content_tokens(text: str) -> list:
     return [w for w in words if len(w) >= 3 and w not in _STOPWORDS]
 
 
+def keeps_the_topic(query: str, message: str) -> bool:
+    """Does a search query written from `message` still carry its subject?
+
+    Seen live: «Si hoy es viernes 25 de septiembre de 2026, ¿qué día de la
+    semana será el 1 de enero de 2027?» came back as the query "viernes" --
+    one word of a long question, and the search returned pages about the
+    word. A query of a single content word taken from a message with four or
+    more does not keep the subject. A query that shares no word with the
+    message is fine: the extractor may translate or rephrase."""
+    q = set(_content_tokens(query or ""))
+    m = set(_content_tokens(message or ""))
+    if not q:
+        return False
+    return not (len(m) >= 4 and len(q) == 1 and q <= m)
+
+
 class ChatProcessor:
     def __init__(self, memory_manager, personal_docs_manager, memory_vector=None, skills_manager=None):
         self.memory_manager = memory_manager
@@ -487,9 +503,11 @@ class ChatProcessor:
                         timeout=15,
                     ).strip()
 
-                    if generated_query:
+                    if generated_query and keeps_the_topic(generated_query, message):
                         # LLM successfully generated a non-empty query -> use the generated query
                         search_query = generated_query
+                    elif generated_query:
+                        logger.info("Generated search query %r lost the subject; using the message", generated_query[:80])
                     else:
                         # LLM returned an empty or whitespace-only query -> fall back to original query
                         logger.warning("LLM generated an empty search query, using fallback.")
