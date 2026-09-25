@@ -248,7 +248,9 @@ def setup_agent_runner_routes() -> APIRouter:
                     except ClientModelError as exc:
                         raise HTTPException(409, 'This connection was disabled or modified; review it in Settings') from exc
             return {'status': 'success', 'endpoint_id': ident, 'model': model, 'billing': facts,
-                    'text_only': True, 'tools': 'faustus', 'default_changed': False, 'reused': reused}
+                    # The Claude client takes images (src/cli_model.py); Codex is still text only.
+                    'text_only': key != 'claude', 'images': key == 'claude',
+                    'tools': 'faustus', 'default_changed': False, 'reused': reused}
         # A SQLite lock must not stop all chats or prevent cancellation requests.
         return await asyncio.to_thread(persist)
 

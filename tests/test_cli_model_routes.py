@@ -48,6 +48,8 @@ def test_registration_is_private_text_only_and_never_returns_capability(app_clie
     assert json.loads(ep.pinned_models) == ['client-default']
     assert ep.api_key not in response.text
     assert response.json()['default_changed'] is False
+    # The Claude client takes images (it can be the vision model); Codex does not.
+    assert response.json()['images'] is True and response.json()['text_only'] is False
 
 
 @pytest.mark.parametrize('mode', ['subscription', 'api'])
@@ -58,6 +60,7 @@ def test_codex_registration_uses_same_private_capability_and_explicit_billing(ap
     client, saved = app_client
     response = client.post('/api/agent-runners/codex/model', json={'billing_mode': mode})
     assert response.status_code == 200 and checked == [True]
+    assert response.json()['text_only'] is True and response.json()['images'] is False
     ep = saved[0]
     assert ep.base_url.startswith(f'faustus-cli://codex/{mode}/')
     assert ep.owner == 'alice' and ep.api_key not in response.text and not ep.supports_tools
