@@ -8893,6 +8893,11 @@ compartido. Subir el repositorio a GitHub cuando Luis lo diga.
 - *`hoard-study-cards`*: la sesión de Hypatia ya había cerrado (commit `ded2a12c`, Exam Coach 2); con tags en español sube a 0,35–0,37 en «examíname», «repasemos», «hazme tarjetas de estudio».
 - *Eco de «Allow this task to continue?»*: en el Studio, el mensaje que pausó muestra «Permiso respondido · Lo permitiste para toda la tarea» y la respuesta sigue limpia; el texto del eco solo aparece en el cliente de pruebas, que concatena los deltas de las dos patas del turno.
 
+- *Disk Hoard y Hoard Hub como plugins incorporados* (`plugins/diskhoard`, `plugins/hoardhub`, copias idénticas de los manifiestos de sus repos, que llevaban dos días sin commitear). Al meterlos saltó un fallo de nombres: el primer término de «Hoard Hub» es «hoard», así que «Arranca Jobhunter's Hoard» nombraba también al Hub; `plugins.names_for` ya no usa la palabra de la familia como nombre. Vistos los dos en Conectores del 7003.
+- *Conectores*: `list_presets` solo manda al formulario los valores por defecto que tienen campo (los manifiestos traen `DATA_DIR` para las copias del Hub, que Faustus no usa), y el test de salud de Jobhunter responde con el nombre de servicio real de la app.
+- *Tests que fallaban según el orden* («no such table: sessions» en `test_connector_policy.py` tras otros ficheros): la base en memoria de la batería usaba el pool por hilo de SQLAlchemy, que suelta la conexión más antigua pasados cinco hilos y deja al hilo principal con una base vacía. `core/database.py` usa `StaticPool` para SQLite en memoria. 1103 + 1526 + 1600 tests en verde en tres baterías.
+- *Writer's Hoard `7c166e1`*: la primera línea de las 126 herramientas de su puente cabe en el índice (≤110; la más larga, 109, comprobado en vivo en `/api/agent/tools`), con un test que lo exige. Subagente sonnet, revisado aquí.
+
 **Fuera de mi alcance.** Firmar el instalador de Windows: hace falta un certificado de firma de código (o una cuenta de Azure Artifact Signing) a nombre de Luis; la ruta automática (`dist:publish` con `WIN_CSC_LINK`/`WIN_CSC_KEY_PASSWORD`) ya está preparada y exige firma.
 
 

@@ -250,7 +250,8 @@ async def test_writer_wrong_service_is_error(bridge_dir, health_server):
 
 
 async def test_health_ok_and_connected_is_available(bridge_dir, health_server):
-    base_url = health_server(200, b"{}")
+    # The manifest expects the app's own service name in the health body.
+    base_url = health_server(200, b'{"service": "jubhunters-hoard"}')
     preset = connectors.get_preset("jobhunter")
     values = {"JOBHUNT_DIR": bridge_dir, "APP_URL": base_url}
     manager_status = {"status": "connected", "tool_count": 4, "error": None}

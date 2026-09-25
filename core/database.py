@@ -71,10 +71,20 @@ def _normalize_sqlite_url(url: str) -> str:
 # Get database URL from environment, default to SQLite in DATA_DIR
 DATABASE_URL = _normalize_sqlite_url(os.getenv("DATABASE_URL", _default_database_url()))
 
-# Create engine
+# Create engine. An in-memory SQLite database (the test suite's default) lives
+# inside ONE connection: SQLAlchemy's default pool for it keeps a connection
+# per thread and drops the oldest past five threads, and a test that touched
+# the database from a few worker threads then left the main thread with a
+# fresh, empty database ("no such table: sessions" in whatever ran next).
+# StaticPool shares the single connection instead.
+_engine_kwargs = {}
+if "sqlite" in DATABASE_URL and (":memory:" in DATABASE_URL or "mode=memory" in DATABASE_URL):
+    from sqlalchemy.pool import StaticPool
+    _engine_kwargs["poolclass"] = StaticPool
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
+    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
+    **_engine_kwargs,
 )
 
 

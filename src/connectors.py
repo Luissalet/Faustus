@@ -135,7 +135,10 @@ def list_presets() -> List[Dict[str, Any]]:
             "health_expect": dict(preset.health_expect),
             "ui_url_default": preset.ui_url_default,
             "placeholders": list(preset.placeholders),
-            "defaults": dict(preset.defaults),
+            # Only what the form has a field for: a manifest may carry
+            # defaults for the Hub (DATA_DIR, where the app keeps backups)
+            # that Faustus neither asks for nor uses.
+            "defaults": {k: v for k, v in preset.defaults.items() if k in preset.placeholders},
             "launch_profile_hint": dict(preset.launch_profile_hint),
             "optional_extra_env": list(preset.optional_extra_env),
         })

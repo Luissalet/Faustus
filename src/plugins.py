@@ -444,6 +444,9 @@ def fold(text: Any) -> str:
     return " ".join(re.sub(r"[^\w]+", " ", raw).split())
 
 
+_FAMILY_WORDS = frozenset({"hoard", "hoards"})
+
+
 def names_for(plugin: "Plugin") -> List[str]:
     """How a person refers to this plugin: its id, its full name, and its
     first word when the name has more than one ("Jobhunter's Hoard" ->
@@ -452,7 +455,9 @@ def names_for(plugin: "Plugin") -> List[str]:
     full = fold(getattr(plugin, "name", ""))
     names = {fold(getattr(plugin, "id", "")), full}
     parts = full.split()
-    if len(parts) > 1:
+    # "Hoard Hub": the first word is the family's own word, which every
+    # "<Name>'s Hoard" also contains; alone it names nothing in particular.
+    if len(parts) > 1 and parts[0] not in _FAMILY_WORDS:
         head = parts[0]
         names.add(head)
         if head.endswith("s") and len(head) > 5:

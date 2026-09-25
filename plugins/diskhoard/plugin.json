@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "id": "diskhoard",
+  "name": "DiskHoard",
+  "purpose": "Measures what fills the user's disks, knows which folders are regenerable junk (caches, node_modules, build output, temp files) and can clean them: to the Recycle Bin, permanently with explicit confirmation, or through a reviewable PowerShell script.",
+  "capabilities": ["disk-usage", "scan", "hotspots", "junk-catalog", "stale-folders", "largest-files", "file-types", "find-files", "explain-folder", "cleanup-script", "delete-to-recycle-bin", "delete-permanent", "rescan"],
+  "placeholders": ["DISKHOARD_DIR", "APP_URL", "TOKEN_FILE"],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:8817",
+    "TOKEN_FILE": "{DISKHOARD_DIR}/data/mcp-token"
+  },
+  "app": {
+    "url_default": "http://127.0.0.1:8817",
+    "ui_url": "{APP_URL}",
+    "health": { "path": "/api/health", "expect": { "service": "disk-hoard" } },
+    "identify": { "service": ["disk-hoard"], "title": ["diskhoard", "disk hoard"] },
+    "launch_hint": {
+      "kind": "process",
+      "executable": "{FAUSTUS_PYTHON}",
+      "argv": ["-m", "diskhoard", "--no-browser"],
+      "cwd": "{DISKHOARD_DIR}",
+      "readiness": { "url": "{APP_URL}/api/health", "timeout_s": 20 }
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{FAUSTUS_PYTHON}",
+    "args": ["{DISKHOARD_DIR}/mcp_server.py"],
+    "env": { "DISKHOARD_URL": "{APP_URL}", "DISKHOARD_TOKEN_FILE": "{TOKEN_FILE}", "DISKHOARD_DATA_DIR": "{DISKHOARD_DIR}/data" },
+    "optional_env": ["DISKHOARD_AUTOSTART"]
+  },
+  "notes": "Standard library only: any Python 3.9+ runs both the app and the MCP bridge, so Faustus's own interpreter is enough. The bridge starts the app itself when it is not running. The UI opens with a token in the URL; the bridge reads the same token from data/mcp-token. Deleting through the assistant goes to the Recycle Bin unless it says mode='permanent' with confirm=true, and drive roots, the user profile, Windows and anything the catalog marks 'do not touch' are always refused."
+}

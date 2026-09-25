@@ -1,0 +1,86 @@
+{
+  "schema": 1,
+  "id": "hoardhub",
+  "name": "Hoard Hub",
+  "purpose": "Desktop hub for the family of local apps: lists them with their state, starts and stops their servers, opens them as their own desktop windows, reports which local model servers Hoard Link resolves and arbitrates GPU memory between the apps with a single lease queue.",
+  "capabilities": [
+    "app-inventory",
+    "app-status",
+    "start-app",
+    "stop-app",
+    "restart-app",
+    "open-window",
+    "close-window",
+    "start-all",
+    "stop-all",
+    "model-backends",
+    "gpu-leases",
+    "profiles",
+    "rescan",
+    "event-bus",
+    "rules",
+    "jobs",
+    "backups",
+    "app-proxy",
+    "family-audit"
+  ],
+  "placeholders": [
+    "HOARDLINK_DIR",
+    "APP_URL",
+    "TOKEN_FILE"
+  ],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:8810",
+    "TOKEN_FILE": "{HOARDLINK_DIR}/data/mcp-token"
+  },
+  "app": {
+    "url_default": "http://127.0.0.1:8810",
+    "ui_url": "{APP_URL}",
+    "health": {
+      "path": "/api/health",
+      "expect": {
+        "service": "hoard-hub"
+      }
+    },
+    "identify": {
+      "service": [
+        "hoard-hub"
+      ],
+      "title": [
+        "hoard hub"
+      ]
+    },
+    "launch_hint": {
+      "kind": "process",
+      "executable": "{FAUSTUS_PYTHON}",
+      "argv": [
+        "-m",
+        "hoard_link.hub",
+        "--no-window"
+      ],
+      "cwd": "{HOARDLINK_DIR}",
+      "readiness": {
+        "url": "{APP_URL}/api/health",
+        "timeout_s": 20
+      }
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{FAUSTUS_PYTHON}",
+    "args": [
+      "-m",
+      "hoard_link.hub.mcp"
+    ],
+    "env": {
+      "HOARD_HUB_URL": "{APP_URL}",
+      "HOARD_HUB_TOKEN_FILE": "{TOKEN_FILE}",
+      "PYTHONPATH": "{HOARDLINK_DIR}"
+    },
+    "optional_env": [
+      "HOARD_HUB_AUTOSTART",
+      "HOARD_HUB_DATA_DIR"
+    ]
+  },
+  "notes": "Standard library plus psutil (for pids, memory and stopping process trees); any Python 3.11+ runs both the hub and the MCP bridge with PYTHONPATH pointing at the repository, so the host's own interpreter is enough. The bridge starts a headless hub itself when none is listening. Stopping an app only ever targets the process that answers that app's health check; a port held by something else is refused, and the hub never stops itself, its ancestors or the OS. GPU memory leases (hub_lease_*, /api/lease/*) are kept in data/leases.json and reaped by TTL or when the owner process dies. Profiles (hub_profile_*, /api/profiles/*) start and stop named sets of apps and external commands declared in data/hub.json. On Windows, python -m hoard_link.hub --install-autostart [--profile NAME] starts the hub headless at login. Since 0.4 the hub is also the family's bus: apps post events (hub_events lists them), rules run actions when events land (hub_rule_*), jobs run them on a clock (hub_job_*), hub_backup_* keeps deduplicated copies of every app's data folder, hub_call_app runs any app's tool with that app's token and hub_family_audit checks the whole family follows the shared contract."
+}
