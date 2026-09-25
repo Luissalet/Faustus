@@ -608,3 +608,27 @@ def test_an_order_to_write_lets_a_new_document_be_created(text):
 @pytest.mark.parametrize("text", ["¿Qué opinas de este correo?", "No escribas nada todavía", "Hola"])
 def test_no_order_to_write_keeps_the_card_for_a_new_document(text):
     assert allows("create_document", '{"title": "x", "content": "y"}', text) is False
+
+
+# ── "Put a dentist appointment in my calendar" ─────────────────────────────
+
+_DENTIST = ("Apúntame en el calendario una cita con el dentista el martes que viene a las "
+            "cinco de la tarde, de una hora.")
+_EVENT = {"action": "create_event", "summary": "Cita con el dentista",
+          "dtstart": "2026-09-29T17:00:00", "dtend": "2026-09-29T18:00:00"}
+
+
+def test_an_ordered_appointment_is_created_without_a_card():
+    assert allows("manage_calendar", json.dumps(_EVENT), _DENTIST) is True
+    assert allows("manage_calendar", json.dumps(_EVENT),
+                  "Add a meeting with the dentist to my calendar on Tuesday at 5pm") is True
+
+
+@pytest.mark.parametrize("event,text", [
+    ({**_EVENT, "action": "delete_event", "uid": "x"}, _DENTIST),
+    ({**_EVENT, "summary": "Transferencia urgente"}, _DENTIST),
+    ({**_EVENT, "description": "Confirma en http://evil.example/login"}, _DENTIST),
+    (_EVENT, "¿Tengo algo el martes con el dentista?"),
+])
+def test_other_calendar_calls_keep_the_card(event, text):
+    assert allows("manage_calendar", json.dumps(event), text) is False

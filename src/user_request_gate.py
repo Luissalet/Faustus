@@ -1420,12 +1420,52 @@ def _writes_a_document(user_text: str, content: Any, workspace: str = "") -> boo
     return _ordered(plugins_mod.fold(user_text), _ORDERS_A_CHANGE)
 
 
+# "Apúntame en el calendario una cita con el dentista el martes a las cinco"
+# asks, in so many words, for one event to be created. Live it stopped at the
+# card. Only `create_event`; the user's message must order it and name the
+# calendar or the appointment, the title must share a word with the message,
+# and no link or address may appear in the event that the user did not write
+# (an injected "meeting" whose description carries a URL keeps the card).
+_ORDERS_AN_EVENT = (
+    r"apunta(?:me|lo|la)?", r"anota(?:me|lo|la)?", r"agenda(?:me|lo|la)?", r"anade(?:me|lo|la)?",
+    r"pon(?:me|lo|la)?", r"crea(?:me|lo|la)?", r"reserva(?:me|lo|la)?", r"programa(?:me|lo|la)?",
+    r"add", r"schedule", r"put", r"book", r"create",
+)
+_NAMES_AN_EVENT = re.compile(
+    r"\b(?:calendario|agenda|cita|reunion|evento|quedada|calendar|appointment|meeting|event)\b")
+_LINK_OR_ADDRESS = re.compile(r"https?://\S+|www\.\S+|[\w.+-]+@[\w-]+\.[\w.]+", re.IGNORECASE)
+
+
+def _adds_to_the_calendar(user_text: str, content: Any, workspace: str = "") -> bool:
+    from src import plugins as plugins_mod
+
+    args = _parse_args(content)
+    if str(args.get("action") or "").strip() != "create_event":
+        return False
+    folded = plugins_mod.fold(user_text)
+    if not (_ordered(folded, _ORDERS_AN_EVENT) and _NAMES_AN_EVENT.search(folded)):
+        return False
+    title = [w for w in plugins_mod.fold(args.get("summary") or "").split()
+             if len(w) >= 4 and w not in _MEMORY_FRAMING]
+    words = folded.split()
+    stems = {w[:5] for w in words if len(w) >= 5}
+    if not any(w in words or (len(w) >= 5 and w[:5] in stems) for w in title):
+        return False
+    written = str(user_text or "")
+    for value in args.values():
+        for link in _LINK_OR_ADDRESS.findall(str(value or "")):
+            if link not in written:
+                return False
+    return True
+
+
 #: tool name -> matcher(user_text, call_content). A tool that is not here is
 #: never let through by this rule.
 MATCHERS: Dict[str, Callable[..., bool]] = {
     "plugin_app": _plugin_app,
     "manage_memory": _memory_read,
     "create_document": _writes_a_document,
+    "manage_calendar": _adds_to_the_calendar,
     "manage_skills": _skill_read,
     "bash": _shell_matcher,
     "powershell": _shell_matcher,
