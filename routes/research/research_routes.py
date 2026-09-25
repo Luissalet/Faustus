@@ -412,6 +412,55 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
             raise HTTPException(404, "Research not found")
         return {"ok": True}
 
+    # ── Podcast (src/research_podcast.py) ──────────────────────────────────
+    # A finished report as a two-voice podcast: POST starts the background
+    # job (409 while one runs), GET reports progress / script / links, and
+    # /audio streams the finished file — all behind the same owner gate.
+
+    @router.post("/api/research/{session_id}/podcast")
+    async def research_podcast_start(session_id: str, request: Request):
+        from src import research_podcast
+        user = _require_user(request)
+        _validate_session_id(session_id)
+        _assert_owns_research(session_id, user)
+        path = _require_research_path(session_id)
+        try:
+            return await research_podcast.start_podcast(session_id, path, user)
+        except research_podcast.PodcastBusy as e:
+            raise HTTPException(409, str(e))
+        except research_podcast.PodcastError as e:
+            raise HTTPException(400, str(e))
+
+    @router.get("/api/research/{session_id}/podcast")
+    async def research_podcast_status(session_id: str, request: Request):
+        from src import research_podcast
+        user = _require_user(request)
+        _validate_session_id(session_id)
+        _assert_owns_research(session_id, user)
+        path = _require_research_path(session_id)
+        return await asyncio.to_thread(research_podcast.status_payload, session_id, path)
+
+    @router.get("/api/research/{session_id}/podcast/audio")
+    async def research_podcast_audio(session_id: str, request: Request, download: int = Query(0)):
+        from fastapi.responses import FileResponse
+        from src import research_podcast
+        user = _require_user(request)
+        _validate_session_id(session_id)
+        _assert_owns_research(session_id, user)
+        path = _require_research_path(session_id)
+        block = research_podcast.read_research(path).get("podcast") or {}
+        if not isinstance(block, dict) or block.get("status") != "done":
+            raise HTTPException(404, "No podcast for this research")
+        found = await asyncio.to_thread(research_podcast.audio_file, block)
+        if found is None:
+            raise HTTPException(404, "Podcast audio unavailable")
+        filename, media_type, label = found
+        return FileResponse(
+            filename, media_type=media_type, filename=label,
+            content_disposition_type="attachment" if download else "inline",
+            headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"},
+        )
+
     @router.get("/api/research/library")
     async def research_library(
         request: Request,

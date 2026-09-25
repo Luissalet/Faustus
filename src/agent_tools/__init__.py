@@ -344,6 +344,12 @@ TOOL_HANDLERS["context_unpin"] = ContextPinTool(unpin=True).execute
 TOOL_HANDLERS["context_drop"] = ContextDropTool().execute
 TOOL_HANDLERS["context_note"] = ContextNoteTool().execute
 
+# Lot P: research podcast -- a saved Deep Research report as a two-voice
+# podcast (background job). src/agent_tools/research_podcast_tools.py.
+from .research_podcast_tools import ResearchPodcastTool  # noqa: E402
+
+TOOL_HANDLERS["research_podcast"] = ResearchPodcastTool().execute
+
 # ---------------------------------------------------------------------------
 # Constants (re-exported for backward compatibility — single source of truth
 # is src.constants; always prefer importing from there for new code)
@@ -486,7 +492,9 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "context_status", "context_pin", "context_unpin",
              "context_drop", "context_note",
              # Swarm map -- src/agent_tools/swarm_tools.py.
-             "swarm_map", "swarm_status", "swarm_results", "swarm_cancel"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
+             "swarm_map", "swarm_status", "swarm_results", "swarm_cancel",
+             # Research podcast -- src/agent_tools/research_podcast_tools.py.
+             "research_podcast"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
 

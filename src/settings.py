@@ -1683,6 +1683,16 @@ DEFAULT_SETTINGS = {
     "swarm_api_parallel": 8,
     "swarm_max_parallel": 16,
     "swarm_max_items": 200,
+    # Research podcast (src/research_podcast.py): a finished Deep Research
+    # report as a two-voice dialogue spoken by local Piper voices.
+    # Target length of the episode, in minutes (sizes the script).
+    "research_podcast_minutes": 6,
+    # Installed Piper voice names for host A / host B; "" = pick two
+    # installed voices of the report's language.
+    "research_podcast_voice_a": "",
+    "research_podcast_voice_b": "",
+    # "mp3" (needs ffmpeg; falls back to WAV without it) or "wav".
+    "research_podcast_format": "mp3",
 }
 
 

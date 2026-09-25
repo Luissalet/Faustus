@@ -8433,3 +8433,21 @@ reduce	reducción
 Swarm: one instruction applied to many items at once, as many as the model server serves in parallel. Started from a chat with the swarm_map tool.	Enjambre: una misma instrucción aplicada a muchos elementos a la vez, tantos como el servidor del modelo atiende en paralelo. Se lanza desde un chat con la herramienta swarm_map.
 Loading swarm runs	Cargando las ejecuciones del enjambre
 No swarm run yet.	Todavía no hay ninguna ejecución del enjambre.
+Condensing the report ({done}/{total})	Resumiendo el informe ({done}/{total})
+Writing the script…	Escribiendo el guion…
+Voicing line {done} of {total}	Poniendo voz a la línea {done} de {total}
+Joining the audio…	Uniendo el audio…
+Encoding MP3…	Codificando MP3…
+The podcast could not be started.	No se pudo empezar el pódcast.
+Could not read the podcast state.	No se pudo leer el estado del pódcast.
+Podcast ready.	Pódcast listo.
+Podcast	Pódcast
+Make a podcast	Hacer un pódcast
+A two-voice audio version of this report, voiced by local Piper voices.	Una versión en audio de este informe a dos voces, con voces locales de Piper.
+The podcast failed.	El pódcast ha fallado.
+Download audio	Descargar audio
+Hide transcript	Ocultar transcripción
+Show transcript	Ver transcripción
+Transcript (.md)	Transcripción (.md)
+Make it again	Hacerlo de nuevo
+Two voices talk this report through	Dos voces comentan este informe

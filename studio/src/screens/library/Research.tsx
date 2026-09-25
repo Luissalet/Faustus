@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, ChevronDown, ChevronUp, Download, ExternalLink, MessageSquarePlus, MoreHorizontal, Search, Sparkles, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, ChevronDown, ChevronUp, Download, ExternalLink, Headphones, MessageSquarePlus, MoreHorizontal, Search, Sparkles, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Button, Dialog, EmptyState, IconButton, Menu, Skeleton } from '../../components';
@@ -7,6 +7,7 @@ import { deleteResearch, discussResearch, exportFormats, exportUrl, loadResearch
 import { t, tn } from '../../i18n';
 import { safeExternal } from '../../lib/markdown';
 import { BulkBar, Highlight, SelectToggle, useSelection } from './parts';
+import { PodcastPanel } from '../research/Podcast';
 
 /**
  * Finished Deep Research reports: what was asked, how many sources, how
@@ -19,6 +20,9 @@ export function ResearchLibrary({ query, say, archived = false }: { query: strin
   const [error, setError] = useState<string | null>(null);
   const [sort, setSort] = useState<ResearchSort>('recent');
   const [expanded, setExpanded] = useState<string | null>(null);
+  // The report whose podcast the user asked for from the actions menu: its
+  // panel opens (and starts a job when there is none yet).
+  const [podcastFor, setPodcastFor] = useState<string | null>(null);
   const [detail, setDetail] = useState<Record<string, ResearchDetail | string>>({});
   const [formats, setFormats] = useState<string[]>(['md']);
   const [busy, setBusy] = useState<string | null>(null);
@@ -150,6 +154,7 @@ export function ResearchLibrary({ query, say, archived = false }: { query: strin
                     trigger={<IconButton icon={MoreHorizontal} label={t('Report actions')} size="sm" />}
                     items={[
                       { label: t('Discuss in a new chat'), icon: MessageSquarePlus, onSelect: () => void discuss(item) },
+                      { label: t('Podcast'), icon: Headphones, onSelect: () => { setPodcastFor(item.id); if (!open) void expand(item); } },
                       ...formats.map((f) => ({ label: t('Export as {format}', { format: f.toUpperCase() }), icon: Download, onSelect: () => window.open(exportUrl(item.id, f), '_blank', 'noopener') })),
                       null,
                       archived ? { label: t('Restore'), icon: ArchiveRestore, onSelect: () => void act('archive', () => setResearchArchived(item.id, false), t('Restored')) } : { label: t('Archive'), icon: Archive, onSelect: () => void act('archive', () => setResearchArchived(item.id, true), t('Archived')) },
@@ -174,6 +179,7 @@ export function ResearchLibrary({ query, say, archived = false }: { query: strin
                         <div className="fs-gal__row">
                           <Button size="sm" icon={MessageSquarePlus} label={busy === 'discuss' ? t('Creating…') : t('Discuss in a new chat')} loading={busy === 'discuss'} onClick={() => void discuss(item)} />
                         </div>
+                        <PodcastPanel key={`${item.id}-${podcastFor === item.id ? 'auto' : 'view'}`} researchId={item.id} autostart={podcastFor === item.id} say={say} />
                       </>
                     )}
                   </div>

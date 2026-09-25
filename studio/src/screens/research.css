@@ -503,3 +503,48 @@
     transition: none;
   }
 }
+
+/* Podcast of a finished report (screens/research/Podcast.tsx). */
+.fs-rs__podcast {
+  display: grid;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-3);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+}
+.fs-rs__podcast-row {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-1);
+  flex-wrap: wrap;
+}
+.fs-rs__podcast-row .fs-notice {
+  margin: 0;
+  flex: 1 1 16rem;
+}
+.fs-rs__podcast-progress {
+  display: grid;
+  gap: var(--fs-space-1);
+}
+.fs-rs__podcast-progress progress,
+.fs-rs__podcast-audio {
+  width: 100%;
+}
+.fs-rs__podcast-warnings {
+  display: grid;
+  gap: var(--fs-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fs-rs__podcast-script {
+  display: grid;
+  gap: var(--fs-space-1);
+  margin: 0;
+  padding-left: var(--fs-space-4);
+  max-height: 24rem;
+  overflow-y: auto;
+}
+.fs-rs__podcast-script li[data-speaker='B'] strong {
+  color: var(--fs-accent, inherit);
+}

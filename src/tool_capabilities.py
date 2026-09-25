@@ -900,6 +900,17 @@ _register(
     {"context_status", "context_pin", "context_unpin", "context_drop", "context_note"},
     ToolEffect.USER_INTERACTION,
 )
+_register(
+    # Lot P: research_podcast (src/research_podcast.py) writes a `podcast`
+    # block into the caller's own research JSON and two artifacts (audio +
+    # transcript) under DATA_DIR, after a model call and local Piper
+    # synthesis -- a private write, same class as manage_instincts. Its
+    # result carries the script, which is model text drawn from a report
+    # built from web sources.
+    {"research_podcast"},
+    ToolEffect.WRITE_PRIVATE,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
 
 
 TOOL_CAPABILITIES: Mapping[str, ToolCapabilities] = MappingProxyType(dict(_REGISTRY))
