@@ -4961,7 +4961,8 @@ def _build_system_prompt(
                 relevant_skills = _skill_selector.select(
                     sm, owner, last_user,
                     skills=sm.load(owner=owner),
-                    threshold=0.25,
+                    # `skill_selector_threshold` (Settings → System) decides.
+                    threshold=None,
                     max_items=_skill_max_injected,
                     min_confidence=_skill_min_conf,
                 ) if _skill_max_injected > 0 else []
@@ -8052,7 +8053,7 @@ async def _stream_agent_loop_body(
                     from src.skills_runtime import selector as _skill_selector
                     for _sk in _skill_selector.select(
                         _sm, owner, _retrieval_query, skills=_owner_skills,
-                        threshold=0.25, max_items=3,
+                        threshold=None, max_items=3,
                     ):
                         _skill_tools = {
                             t for t in (_sk.get("requires_toolsets") or [])

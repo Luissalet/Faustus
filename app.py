@@ -2025,6 +2025,20 @@ app.router.lifespan_context = _lifespan
 async def _startup_event():
     global upload_cleanup_task
     logger.info("Application starting up...")
+    # A death with no trace (killed from outside, native crash) is reported
+    # on the next start, and native faults leave their stacks in crash.log.
+    if "PYTEST_CURRENT_TEST" not in os.environ:
+        try:
+            from core import run_marker as _run_marker
+            _crash_log = _run_marker.enable_fault_log(os.path.join(DATA_DIR, "logs"))
+            _marker = os.path.join(DATA_DIR, "logs", "running.json")
+            _prev = _run_marker.previous_run_report(_marker)
+            if _prev:
+                logger.warning(f"[lifecycle] {_prev}")
+            _run_marker.mark_running(_marker)
+            logger.info(f"[lifecycle] pid {os.getpid()}; native fault log: {_crash_log}")
+        except Exception as e:  # noqa: BLE001 - diagnostics never block startup
+            logger.debug(f"run marker skipped: {e}")
     # OPS-05: mark this boot attempt before anything risky below runs. Most
     # real launch paths (Docker, the Windows/macOS scripts, `uvicorn app:app`
     # directly) invoke this lifespan without going through launcher.py's own
@@ -2567,6 +2581,12 @@ async def _shutdown_event():
     exited holding sockets it believed it had released.
     """
     logger.info("Application shutting down...")
+    if "PYTEST_CURRENT_TEST" not in os.environ:
+        try:
+            from core import run_marker as _run_marker
+            _run_marker.clear(os.path.join(DATA_DIR, "logs", "running.json"))
+        except Exception:  # noqa: BLE001
+            pass
     try:
         from src import bg_monitor as _bg_monitor
     except Exception as e:  # pragma: no cover - the monitor is optional

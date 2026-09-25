@@ -612,7 +612,8 @@ class ToolIndex:
                 if existing and existing["ids"]:
                     lane.collection.delete(ids=existing["ids"])
             except Exception:
-                pass
+                logger.warning("tool index: could not drop old MCP entries; stale names may linger",
+                               exc_info=True)
 
         # Get current MCP tools
         try:

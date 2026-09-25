@@ -180,6 +180,10 @@ The context engine retrieves and budgets relevant material from project sources,
 
 The MCP tools and integrations blocks in the prompt are scoped the same way: only the tools already selected for the turn get a one-line reminder (they already carry a full native schema), every other connected server collapses to a single "N more tools — call lookup_tools" line, and the whole block is capped by `agent_mcp_prompt_budget_tokens` (0 turns it off). Tool discovery (`lookup_tools`, tool-RAG) reads the full tool index regardless, so nothing becomes unreachable — this only trims what repeats in the prompt text. A full listing every turn is still available behind `agent_mcp_prompt_full_listing`.
 
+`lookup_tools` only proposes names a connected server offers right now, whatever the embedding index still remembers. When a server answers that a tool does not exist (it changed its tools without announcing it), Faustus re-reads that server's list on the spot, so the index stops offering the old name, and the failed result tells the model which tools the server has now. A result whose body is a JSON object with an `error` counts as a failed call in the run, the harness and exports.
+
+Skills relevant to the request are chosen by a hybrid selector (semantic, lexical and trigger lanes); the cutoff is the `skill_selector_threshold` setting (Settings → System, 0.22 by default), so a skill written in one language can still be picked for a request in another by adding tags and triggers in that language.
+
 Use **Skip memory recall** in the composer to suppress automatic personal-memory retrieval for subsequent messages, including live context compilation. Existing chat history and project sources remain available. This does not disable memory tools or saving the chat; use Incognito for its separate privacy behavior.
 
 In Agent mode, **Agent context** also lets you skip automatic skills and select a soft input-token budget before sending. These controls travel with the turn without changing global settings. The budget is an estimate, remains bounded by the selected model's context window, and is not a billing cap. Explicit tools and project instructions remain available when automatic skills are skipped.
@@ -377,6 +381,8 @@ Measured on 12 September 2026: 16,993 tests pass on Linux (`-m "not slow"`, abou
 `python scripts/acceptance_run.py` runs the 36 parity acceptance cases (A01-A36) and writes one evidence row per case; `python scripts/benchmark_matrix.py` runs a case × system × model benchmark matrix that reports a cell as `MISSING` rather than shrinking the denominator, and an unpriceable cost as `"unknown"`, never `0`.
 
 Current verification results and remaining checks are listed in [PENDIENTES.md](PENDIENTES.md).
+
+A process that ends without shutting down leaves a trace: every start writes `data/logs/running.json` (pid and start time) and removes it on a clean shutdown, so the next start logs a `[lifecycle]` warning when the previous process was killed or crashed, and native faults write their thread stacks to `data/logs/crash.log`.
 
 ## Screens
 

@@ -545,6 +545,27 @@ _MCP_READONLY_VERBS = (
 )
 
 
+_UNKNOWN_TOOL_RE = re.compile(r"unknown tool|tool not found|no such tool|tool '?[\w.-]+'? (?:is )?not found", re.I)
+
+
+def _body_reports_error(output: str) -> bool:
+    """True when a result that the server did not flag as an error is a JSON
+    object whose top-level `error` is set (and `ok` is not true). Bridges that
+    proxy an HTTP API often answer a failed call like that; counting it as a
+    success hides the failure from the harness, the run log and exports."""
+    text = (output or "").strip()
+    if len(text) > 20000 or not (text.startswith("{") and text.endswith("}")) or '"error"' not in text:
+        return False
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return False
+    if not isinstance(data, dict) or data.get("ok") is True:
+        return False
+    err = data.get("error")
+    return bool(err) and isinstance(err, (str, dict))
+
+
 def mcp_tool_is_readonly(tool: Dict) -> bool:
     """Classify an MCP tool as safe (non-mutating) for plan mode.
 
@@ -1677,10 +1698,38 @@ class McpManager:
                 self._record_call_outcome(server_id, False, time.time() - call_started)
                 return {"error": str(e), "exit_code": 1}
 
+        if result.get("exit_code") and _UNKNOWN_TOOL_RE.search(str(result.get("stderr") or "")):
+            await self._refresh_after_unknown_tool(server_id, tool_name, result)
         self._record_call_outcome(server_id, True, time.time() - call_started)
         if _is_browser_connection(server_id):
             result = self._postprocess_browser_result(tool_name, result)
         return result
+
+    async def _refresh_after_unknown_tool(self, server_id: str, tool_name: str, result: Dict) -> None:
+        """The server says the tool does not exist: our list is older than the
+        server (it changed its tools without a `tools/list_changed`). Re-read
+        it now so the index and `lookup_tools` stop offering the old name, and
+        tell the model what the server offers instead."""
+        try:
+            from src.mcp_tool_cache import invalidate as _cache_invalidate
+            _cache_invalidate(server_id)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            await asyncio.wait_for(self._refresh_tools_after_change(server_id), timeout=20)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"MCP tool list refresh after unknown tool failed for {server_id}: {e}")
+            return
+        names = [t.get("name") for t in self._tools.get(server_id, []) if t.get("name")]
+        if tool_name in names:
+            return
+        shown = ", ".join(f"mcp__{server_id}__{n}" for n in names[:40])
+        note = (f"\n[{tool_name} is not offered by this server any more; its tool list was "
+                f"refreshed. Current tools: {shown}]")
+        result["stderr"] = f"{result.get('stderr') or ''}{note}"
+        result["tools_refreshed"] = True
 
     @staticmethod
     def _postprocess_browser_result(tool_name: str, result: Dict) -> Dict:
@@ -1776,7 +1825,7 @@ class McpManager:
                 output_parts.append(str(content.data))
 
         output = "\n".join(output_parts)
-        is_error = getattr(result, 'isError', False)
+        is_error = bool(getattr(result, 'isError', False)) or _body_reports_error(output)
 
         result_dict = {
             "stdout": output if not is_error else "",
