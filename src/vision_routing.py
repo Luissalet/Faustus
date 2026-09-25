@@ -521,10 +521,14 @@ def vision_status(owner: Optional[str]) -> Dict[str, Any]:
 # /api/models: capability from caches only
 # ---------------------------------------------------------------------------
 
-def known_vision_models(chat_url: str, model_ids: Sequence[str]) -> List[str]:
+def known_vision_models(chat_url: str, model_ids: Sequence[str], backend: str = "") -> List[str]:
     """Which of `model_ids` on `chat_url` accept images, from what is already
     known: the Ollama capability cache, the LM Studio and llama.cpp probe
-    caches, then the name heuristic. Never opens a connection."""
+    caches, then the name heuristic. Never opens a connection.
+
+    `backend="llamacpp"`: a llama-server sees images only when it was started
+    with a projector (`--mmproj`), whatever the model's name says, so with
+    no cached `/props` answer nothing is claimed."""
     from src import chat_helpers as ch
 
     out: List[str] = []
@@ -563,6 +567,8 @@ def known_vision_models(chat_url: str, model_ids: Sequence[str]) -> List[str]:
             caps = hit[1] if hit else None
             if caps:
                 answer = "vision" in caps
+        if answer is None and backend == "llamacpp":
+            continue
         if answer is None:
             answer = ch.is_vision_model(mid)
         if answer:

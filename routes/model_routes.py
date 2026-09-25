@@ -81,11 +81,11 @@ def _clear_speech_settings_for_endpoint(settings: dict, ep_id: str) -> list:
     return cleared
 
 
-def _known_vision_models(chat_url: str, model_ids: list) -> list:
+def _known_vision_models(chat_url: str, model_ids: list, backend: str = "") -> list:
     """`models_vision` for one `/api/models` item; [] on any failure."""
     try:
         from src.vision_routing import known_vision_models
-        return known_vision_models(chat_url, model_ids)
+        return known_vision_models(chat_url, model_ids, backend=backend)
     except Exception as e:  # noqa: BLE001
         logger.debug("models_vision skipped: %s", e)
         return []
@@ -1911,7 +1911,9 @@ def setup_model_routes(model_discovery):
                     # Models known to accept images (docs/api/vision.md): from
                     # capability caches and the name heuristic only — never a
                     # probe, so this adds no latency to the listing.
-                    "models_vision": _known_vision_models(chat_url, [*curated, *extra]),
+                    "models_vision": _known_vision_models(
+                        chat_url, [*curated, *extra],
+                        backend=(backend or {}).get("backend", "") if isinstance(backend, dict) else ""),
                     "endpoint_id": ep.id,
                     "endpoint_name": ep.name,
                     "category": category,

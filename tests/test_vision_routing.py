@@ -221,7 +221,8 @@ def test_known_vision_models_llamacpp_projector_decides(monkeypatch):
 
 def test_api_models_items_carry_models_vision():
     source = open("routes/model_routes.py", encoding="utf-8").read()
-    assert '"models_vision": _known_vision_models(chat_url, [*curated, *extra])' in source
+    assert '"models_vision": _known_vision_models(' in source
+    assert 'backend=' in source.split('"models_vision": _known_vision_models(', 1)[1][:200]
     assert '"models_vision": [],' in source
 
 
@@ -465,3 +466,13 @@ def test_live_inventory_is_only_for_local_ollama(monkeypatch):
     monkeypatch.setattr(ch, "_is_local_ollama_url", lambda url: False)
     assert vr.live_local_inventory("https://api.example.com/v1/chat/completions") == {
         "models": {}, "loaded": set()}
+
+
+def test_llamacpp_without_cached_props_claims_nothing(monkeypatch):
+    # qwen3.8 is multimodal by name, but a llama-server started without
+    # --mmproj cannot see: with no /props answer cached, claim nothing.
+    monkeypatch.setattr(ch, "_llamacpp_props_cache", {})
+    monkeypatch.setattr(ch, "_lmstudio_models_cache", {})
+    url = "http://127.0.0.1:8081/v1/chat/completions"
+    assert vr.known_vision_models(url, ["qwen3.8-27b-q8-llamacpp"], backend="llamacpp") == []
+    assert vr.known_vision_models(url, ["qwen3.8-27b-q8-llamacpp"]) == ["qwen3.8-27b-q8-llamacpp"]
