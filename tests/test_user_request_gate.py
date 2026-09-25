@@ -590,3 +590,21 @@ def test_stating_a_fact_without_asking_to_remember_keeps_the_gate():
 @pytest.mark.parametrize("content", ['{"action": "delete", "memory_id": "m1"}', "edit\nm1\nTinta Roja"])
 def test_remember_never_edits_or_deletes(content):
     assert allows("manage_memory", content, _REMEMBER) is False
+
+
+# ── "Write me an email…" → a new editor document ─────────────────────────
+# Seen live: the draft went to create_document and stopped at the card.
+
+@pytest.mark.parametrize("text", [
+    "Escríbeme un correo corto y cordial para mi casero. No lo envíes, solo el texto.",
+    "Redacta una carta de presentación para la oferta",
+    "Write me a short cover letter",
+])
+def test_an_order_to_write_lets_a_new_document_be_created(text):
+    content = '{"title": "Correo", "language": "email", "content": "Hola Andrés, ..."}'
+    assert allows("create_document", content, text) is True
+
+
+@pytest.mark.parametrize("text", ["¿Qué opinas de este correo?", "No escribas nada todavía", "Hola"])
+def test_no_order_to_write_keeps_the_card_for_a_new_document(text):
+    assert allows("create_document", '{"title": "x", "content": "y"}', text) is False

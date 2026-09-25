@@ -1409,11 +1409,23 @@ def _skill_read(user_text: str, content: Any, workspace: str = "") -> bool:
     return False
 
 
+# "Escríbeme un correo para mi casero… solo el texto" asks, in so many words,
+# for something to be written. Live the model put the draft in a new editor
+# document and stopped at the card to create it. A new document is only
+# text in the owner's own editor panel -- nothing is sent, run or
+# overwritten -- so an order to write, draft or make something is enough.
+def _writes_a_document(user_text: str, content: Any, workspace: str = "") -> bool:
+    from src import plugins as plugins_mod
+
+    return _ordered(plugins_mod.fold(user_text), _ORDERS_A_CHANGE)
+
+
 #: tool name -> matcher(user_text, call_content). A tool that is not here is
 #: never let through by this rule.
 MATCHERS: Dict[str, Callable[..., bool]] = {
     "plugin_app": _plugin_app,
     "manage_memory": _memory_read,
+    "create_document": _writes_a_document,
     "manage_skills": _skill_read,
     "bash": _shell_matcher,
     "powershell": _shell_matcher,
