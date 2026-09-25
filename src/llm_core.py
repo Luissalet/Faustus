@@ -3689,6 +3689,19 @@ def _nonstream_error_status(error: Exception) -> Optional[int]:
     return None
 
 
+async def _vision_filter_for_route(url, model, messages):
+    """A route that cannot see never receives image blocks: each one becomes
+    its cached description or a short placeholder (src/vision_routing.py).
+    Runs per candidate, so a fallback to a text-only model is covered too.
+    The caller's list is not modified."""
+    try:
+        from src.vision_routing import strip_images_for_text_only_route
+        return await strip_images_for_text_only_route(url, model, messages)
+    except Exception as exc:  # noqa: BLE001 - never lose a turn over the filter
+        logger.debug("vision history filter skipped: %s", exc)
+        return messages
+
+
 async def llm_call_async_with_route_fallback(
     candidates,
     messages,
@@ -3728,6 +3741,7 @@ async def llm_call_async_with_route_fallback(
                 **candidate_kwargs,
                 "availability_only_transport": True,
             }
+            candidate_messages = await _vision_filter_for_route(url, model, candidate_messages)
             response = await llm_call_async(
                 url,
                 model,
@@ -6893,6 +6907,7 @@ async def stream_llm_with_fallback(candidates, messages, **kwargs):
                     continue
                 yield error_chunk
                 return
+        candidate_messages = await _vision_filter_for_route(url, model, candidate_messages)
         candidate_stream = stream_llm(
             url,
             model,
