@@ -1447,11 +1447,20 @@ def _has_pasted_code_block(msg: Dict[str, Any]) -> bool:
 
 
 def _last_convo_user_index(convo: List[Dict[str, Any]]) -> Optional[int]:
+    """The person's latest turn. Runtime notes the loop appends with role
+    "user" (`_harness_note` / `_agent_injected`: a context nudge, the
+    reply-language reminder) come after it and are not what must survive;
+    they only count when there is no real turn at all."""
+    fallback: Optional[int] = None
     for i in range(len(convo) - 1, -1, -1):
         msg = convo[i]
         if isinstance(msg, dict) and msg.get("role") == "user":
+            if msg.get("_harness_note") or msg.get("_agent_injected"):
+                if fallback is None:
+                    fallback = i
+                continue
             return i
-    return None
+    return fallback
 
 
 def _tool_batch_starts(messages: List[Dict[str, Any]]) -> List[int]:

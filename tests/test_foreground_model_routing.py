@@ -3369,6 +3369,7 @@ def test_agent_fallback_request_uses_candidate_context_budget(
         current_user = next(
             message for message in reversed(messages)
             if message.get("role") == "user" and not message.get("_agent_injected")
+            and not message.get("_harness_note")
         )
         return [route_prompt, current_user]
 
