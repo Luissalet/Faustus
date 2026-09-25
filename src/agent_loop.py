@@ -6401,6 +6401,17 @@ async def _run_verifier_subagent(
     return [r.strip() for r in reasons.split(";") if r.strip()]
 
 
+def _canned_no_answer(language: str) -> str:
+    """What to say when a closing summary came back empty, in the user's
+    language (a Spanish turn used to end on an English line)."""
+    if language == "es":
+        return ("He reunido información pero no he conseguido redactar una respuesta limpia. "
+                "¿Pruebo con una pregunta más concreta o te resumo lo que encontré?")
+    return ("I gathered some search results but couldn't pull a clean "
+            "answer together. Want me to try a more specific question, "
+            "or summarize what I did find?")
+
+
 def _empty_response_fallback(
     full_response: str,
     round_reasoning: str,
@@ -11439,7 +11450,7 @@ async def _stream_agent_loop_body(
                     }]
                     _raw = await llm_call_async(
                         url=endpoint_url, model=model, messages=_synth_messages,
-                        headers=headers, temperature=0.3, max_tokens=max_tokens, timeout=60,
+                        headers=headers, temperature=0.3, max_tokens=max_tokens, timeout=180,
                     )
                     _raw_text = _raw or ""
                     _synth = _strip_think_blocks(strip_tool_blocks(_raw_text)).strip()
@@ -11460,9 +11471,7 @@ async def _stream_agent_loop_body(
                     round_response += _synth
                     full_response += _synth
                 else:
-                    _fb = ("I gathered some search results but couldn't pull a clean "
-                           "answer together. Want me to try a more specific question, "
-                           "or summarize what I did find?")
+                    _fb = _canned_no_answer(_ledger.language)
                     yield f'data: {json.dumps({"delta": _fb})}\n\n'
                     round_response += _fb
                     full_response += _fb
@@ -14904,11 +14913,7 @@ async def _stream_agent_loop_body(
                 _lines.append(("Pendiente: " if _es else "Still open: ") + "; ".join(_open[:6]) + ".")
             _synth = ("No he podido redactar un resumen de lo reunido. " if _es else
                       "I could not write up a summary of what was gathered. ") + " ".join(_lines)
-        _out = _synth or (
-            "I gathered some search results but couldn't pull a clean "
-            "answer together. Want me to try a more specific question, "
-            "or summarize what I did find?"
-        )
+        _out = _synth or _canned_no_answer(_ledger.language)
         if _cap_needs_answer:
             _cap_note = ("(Se alcanzó el límite de pasos de este turno; esto es lo reunido hasta ahora. "
                          "Di «continúa» para seguir.)" if _ledger.language == "es" else
