@@ -5580,7 +5580,7 @@ async def _image_record_extras(
     """`vision_capable` (+ `image_description`) for a tool-result record.
 
     Runs the endpoint probe (and, for a text-only route with a Vision model
-    configured, the VL description) in a worker thread so the streaming loop
+    configured or auto-detected, the VL description) in a worker thread so the streaming loop
     is not blocked by an HTTP call.
     """
     extras: Dict[str, Any] = {}
@@ -5593,12 +5593,16 @@ async def _image_record_extras(
     extras["vision_capable"] = bool(vision_ok)
     if vision_ok:
         return extras
-    vl_model = ""
+    # Same resolver as chat attachments (src/vision_routing.py): a configured
+    # Vision model, or an auto-detected one (local vision-capable models
+    # first). Only when none exists is the image left as a note.
     try:
-        vl_model = str(get_setting("vision_model", "") or "").strip()
-    except Exception:  # noqa: BLE001
-        vl_model = ""
-    if not vl_model:
+        from src.vision_routing import resolve_vision_route
+        route = await asyncio.to_thread(resolve_vision_route, owner)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[agent] vision route lookup failed: %s", exc)
+        route = {}
+    if not (route or {}).get("model"):
         return extras
     try:
         description = await asyncio.to_thread(_describe_tool_image, result, owner)
@@ -5726,8 +5730,9 @@ def _tool_image_messages(
             which = f"the current model ({model})" if model else "the current model"
             text = (
                 f"[image from {tool_name} could not be viewed: {which} is not "
-                "vision-capable. Switch to a vision-capable model or configure a "
-                "Vision model in Settings to see it.]"
+                "vision-capable and no vision model could describe it. Switch to a "
+                "vision-capable model, or make a vision model available (Settings → "
+                "Vision, or a local vision model) to have it described.]"
             )
         return [{"role": "user", "content": text, "metadata": metadata}]
 
