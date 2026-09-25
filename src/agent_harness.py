@@ -181,6 +181,126 @@ def shell_command_looks_mutating(command: str) -> bool:
     return bool(_MUTATING_SHELL_RE.search(_strip_quoted(command or "")))
 
 
+# The `python` tool runs Python, not a shell line: `if u > 100:` is a
+# comparison, not a redirection into a file named "100". Seen live: a data
+# analysis that only read ventas.csv was recorded as having mutated it (the
+# comparison matched the redirection pattern and every path the code named
+# became a "mutated" path), while the chart it really saved was not. Python
+# code is read with `ast` instead: a write is a call that writes a file.
+# Methods that write their first argument (or `path=`/`fname=`…) on any object.
+_PY_DATA_WRITES = frozenset({
+    "to_csv", "to_excel", "to_json", "to_parquet", "to_feather", "to_html", "to_markdown",
+    "to_pickle", "to_latex", "to_xml", "to_stata", "to_hdf", "savefig", "imsave", "savetxt",
+    "savez", "savez_compressed", "save",
+})
+# os./shutil. functions: the destination is the last argument for the two-path
+# ones, the first for the rest. `"a".replace(...)` and `lst.remove(x)` are not
+# file operations, so the receiver must be the module.
+_PY_FS_TWO_PATH = frozenset({"rename", "replace", "copy", "copyfile", "copy2", "copytree", "move"})
+_PY_FS_ONE_PATH = frozenset({"remove", "unlink", "makedirs", "mkdir", "rmdir", "rmtree", "removedirs"})
+# pathlib: Path("x").write_text(...) — the path is the receiver.
+_PY_PATH_WRITES = frozenset({"write_text", "write_bytes", "touch"})
+_PY_PATH_OPS = frozenset({"unlink", "mkdir", "rmdir", "rename", "replace"})
+_PY_WRITE_MODE = re.compile(r"[wax+]")
+
+
+def _python_code_of(content: str) -> str:
+    raw = (content or "").strip()
+    if raw.startswith("{"):
+        try:
+            data = json.loads(raw)
+        except (TypeError, ValueError):
+            return raw
+        if isinstance(data, dict):
+            for key in ("code", "command", "script", "source"):
+                if isinstance(data.get(key), str):
+                    return data[key]
+    return raw
+
+
+def python_written_paths(content: str) -> Optional[Tuple[bool, List[str]]]:
+    """(writes_something, literal paths written) for python tool code, or None
+    when the code does not parse. A write whose target is not a literal (a
+    variable bound more than once, an f-string) counts as a write with no
+    path: the ledger cannot say which file it was."""
+    import ast
+
+    try:
+        tree = ast.parse(_python_code_of(content))
+    except (SyntaxError, ValueError):
+        return None
+    stores: Dict[str, int] = {}
+    literals: Dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and not isinstance(node.ctx, ast.Load):
+            stores[node.id] = stores.get(node.id, 0) + 1
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
+                and stores.get(node.targets[0].id) == 1):
+            literals[node.targets[0].id] = node.value.value
+
+    def literal(arg: Any) -> Optional[str]:
+        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+            return arg.value
+        if isinstance(arg, ast.Name):
+            return literals.get(arg.id)
+        return None
+
+    writes, paths = False, []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        name = func.attr if isinstance(func, ast.Attribute) else (func.id if isinstance(func, ast.Name) else "")
+        target: Any = None
+        if name == "open":
+            mode = node.args[1] if len(node.args) > 1 else next(
+                (k.value for k in node.keywords if k.arg == "mode"), None)
+            mode_text = literal(mode) if mode is not None else "r"
+            if mode_text is not None and not _PY_WRITE_MODE.search(mode_text):
+                continue
+            target = node.args[0] if node.args else None
+        elif name in _PY_DATA_WRITES and isinstance(func, ast.Attribute):
+            target = node.args[0] if node.args else next(
+                (k.value for k in node.keywords
+                 if k.arg in ("path", "fname", "path_or_buf", "excel_writer", "file", "filename")), None)
+            if target is None:
+                continue
+        elif (name in _PY_FS_TWO_PATH | _PY_FS_ONE_PATH and isinstance(func, ast.Attribute)
+              and isinstance(func.value, ast.Name) and func.value.id in ("os", "shutil")):
+            if not node.args:
+                continue
+            target = node.args[-1] if name in _PY_FS_TWO_PATH else node.args[0]
+        elif name in _PY_PATH_WRITES | _PY_PATH_OPS and isinstance(func, ast.Attribute):
+            recv = func.value
+            is_path = (isinstance(recv, ast.Call) and isinstance(recv.func, (ast.Name, ast.Attribute))
+                       and (getattr(recv.func, "id", None) or getattr(recv.func, "attr", None)) in ("Path", "PurePath"))
+            if name in _PY_PATH_OPS and not is_path:
+                continue
+            if name in ("rename", "replace"):
+                target = node.args[0] if node.args else None
+            else:
+                target = recv.args[0] if is_path and recv.args else None
+        else:
+            continue
+        writes = True
+        text = literal(target) if target is not None else None
+        if text and text not in paths:
+            paths.append(text)
+    return writes, paths
+
+
+def tool_looks_mutating(tool: str, content: str) -> bool:
+    """Whether a shell-like tool call plausibly changes files."""
+    if tool == "python":
+        found = python_written_paths(content)
+        if found is not None:
+            return found[0]
+    return shell_command_looks_mutating(content)
+
+
 # Written-file hints _MUTATING_SHELL_RE cannot see: a script body that opens a
 # file for writing. Used only to STAY SILENT about a path, never to claim one
 # was changed — `kind` stays "shell", so this is not mutation evidence.
@@ -1303,6 +1423,16 @@ class TurnLedger:
         kind = "read"
         if tool in FILE_MUTATION_TOOLS:
             kind = "mutation"
+        elif tool == "python" and python_written_paths(content) is not None:
+            writes, written = python_written_paths(content)
+            if written:
+                kind = "mutation"
+                paths = [workspace_relative(self.workspace, p) for p in written]
+            else:
+                kind = "shell"
+                if writes:
+                    for p in paths:
+                        self.shell_write_hints.add(_norm(p).rsplit("/", 1)[-1])
         elif tool in SHELL_TOOLS:
             kind = "mutation" if shell_command_looks_mutating(content) else "shell"
             if kind != "mutation" and _SHELL_WRITE_HINT_RE.search(content or ""):

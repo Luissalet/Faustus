@@ -941,3 +941,47 @@ def test_a_state_inside_a_relative_or_conditional_clause_is_not_a_claim():
     assert h.find_mutation_claims(text) == []
     # The subject of the sentence being the thing still counts.
     assert h.find_mutation_claims("El fichero config.py ya está modificado y el botón está añadido.")
+
+
+# ── python tool: a comparison is not a redirection ─────────────────────────
+# Seen live: a data analysis that only read ventas.csv was recorded as having
+# mutated it (`if u > 100:` matched the shell redirection pattern), and the
+# chart it really saved was not recorded at all.
+
+_PY_ANALYSIS = """import csv
+rows = list(csv.DictReader(open('ventas.csv', encoding='utf-8')))
+big = [r for r in rows if int(r['unidades']) > 100]
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+fig, ax = plt.subplots()
+fig.savefig('ventas_por_mes.png', dpi=150)
+"""
+
+
+def test_python_comparison_is_not_a_write_and_the_saved_chart_is(tmp_path):
+    (tmp_path / "ventas.csv").write_text("id\n1\n", encoding="utf-8")
+    ledger = h.TurnLedger(str(tmp_path), "analiza ventas.csv")
+    ledger.record("python", _PY_ANALYSIS, {"output": "ok", "exit_code": 0}, 1)
+    assert ledger.mutated_paths() == ["ventas_por_mes.png"]
+    assert h.tool_looks_mutating("python", _PY_ANALYSIS) is True
+
+
+@pytest.mark.parametrize("code,expected", [
+    ("x = 3 > 1\nprint(open('a.csv').read())", (False, [])),
+    ("s = 'a'.replace('a', 'b')\nl = [1]; l.remove(1)", (False, [])),
+    ("open('out.txt', 'w').write('x')", (True, ["out.txt"])),
+    ("out = 'r.md'\nwith open(out, mode='a') as f: f.write('x')", (True, ["r.md"])),
+    ("import pandas as pd\npd.DataFrame().to_csv(path_or_buf='c.csv')", (True, ["c.csv"])),
+    ("from pathlib import Path\nPath('n.txt').write_text('x')", (True, ["n.txt"])),
+    ("import shutil\nshutil.move('a.txt', 'b.txt')", (True, ["b.txt"])),
+    ("for p in ['a', 'b']:\n    open(p, 'w')", (True, [])),
+])
+def test_python_written_paths(code, expected):
+    assert h.python_written_paths(code) == expected
+
+
+def test_python_that_does_not_parse_falls_back_to_the_shell_reading():
+    assert h.python_written_paths("def (") is None
+    assert h.tool_looks_mutating("python", "def ( > out.txt") is True
+    assert h.tool_looks_mutating("bash", "sort a > b") is True

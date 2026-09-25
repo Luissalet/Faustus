@@ -9116,7 +9116,7 @@ async def _stream_agent_loop_body(
             return None
         trig = tool_type in _CHECKPOINT_TRIGGER_TOOLS or (
             tool_type in _harness.SHELL_TOOLS and (
-                _harness.shell_command_looks_mutating(content or "")
+                _harness.tool_looks_mutating(tool_type, content or "")
                 # Checkpoint-before-destructive: a command the guard rates
                 # DANGEROUS/CRITICAL takes the turn baseline even when the
                 # mutation heuristic misses it (e.g. `git push --force`).
