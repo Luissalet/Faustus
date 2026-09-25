@@ -1584,6 +1584,11 @@ app.include_router(setup_fanout_routes())
 from routes.persona_routes import setup_persona_routes
 app.include_router(setup_persona_routes())
 
+# Swarm map: one instruction over N items in parallel -- src/swarm/,
+# routes/swarm_routes.py (runs are started by the swarm_map tool).
+from routes.swarm_routes import setup_swarm_routes
+app.include_router(setup_swarm_routes())
+
 # ========= ROUTES (kept in app.py) =========
 
 @app.get("/")
