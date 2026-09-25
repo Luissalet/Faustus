@@ -8845,3 +8845,17 @@ compartido. Subir el repositorio a GitHub cuando Luis lo diga.
 - Podcast del informe WAD (7.445 palabras) con dos voces españolas: ver PENDIENTES si no terminó dentro de la sesión.
 
 **Pendiente.** Ver PENDIENTES «25-09 tarde — visión, contexto, razonamiento, enjambre, podcast».
+
+## 198. Uso diario, tercera tanda: Office, hojas de cálculo, gráficos y fechas sin año (25-09-2026, tarde)
+
+**Problema.** Luis: «sigue haciendo pruebas y mejorando la experiencia de chat y uso de Faustus, sin parar». Preguntas nuevas al 7006 (27B local): un acta de comunidad en `.docx`, una hoja de gastos en `.xlsx`, una receta escalada, un festivo y su puente.
+
+**Lo que salió bien.** El acta: resumen fiel en cinco puntos y, sin pedírselo, abrió también `contrato.pdf` para concluir que la derrama de 1.920 € la paga el casero (cláusula de gastos) y al inquilino sólo le toca el punto de recarga que pidió. La hoja: total 448,88 €, súper 224 € (49,90 %), coche y ocio juntos 39,10 %, todo exacto con `python`. La receta para 10 (×2,5): 500 g, 7,5→8 huevos, 375 g, 250 ml, 40 g de levadura.
+
+**Arreglado.**
+- *Tarjeta en la hoja de cálculo*: el modelo abrió el libro con `pd.ExcelFile(...).sheet_names` y, en otra pregunta, con `openpyxl.load_workbook`; los dos paraban en la tarjeta mientras `read_excel` pasaba. `ExcelFile` ya estaba entre las lecturas vigiladas pero faltaba en la lista de nombres de pandas; `openpyxl` entra con sólo `load_workbook` (lectura: ruta literal del espacio de trabajo) y `Workbook` (`wb.save` sólo a un fichero de salida nuevo). Una ruta fuera, un `save` sobre un fichero del usuario o `from openpyxl import load_workbook as x` siguen en la tarjeta.
+- *Tarta sin etiquetas*: el gráfico de gastos salió con las porciones numeradas 1–5 porque la instrucción marcaba `"x"` como opcional. Ahora pide siempre una etiqueta por valor; la repetición de la pregunta trajo las cinco categorías en el eje.
+- *Días de la semana de fechas sin año*: «¿qué día cae el 12 de octubre de 2026? ¿hay puente?» dio el lunes bien y después «el 2 de noviembre (Todos los Santos) cae en sábado» y «el 6 de diciembre (Día de la Constitución) en viernes» (lunes y domingo). La comprobación sólo miraba fechas completas. Una fecha sin año toma ahora el último año que la respuesta nombró antes, o el de la pregunta si sólo hay uno; sin ninguno no se adivina. Un inciso entre paréntesis entre la fecha y el día ya no esconde el par.
+
+**Medido y descartado.** Las erratas sueltas del 27B en castellano («Levadadura», «judicioso», «vino blasco») parecían el efecto de la penalización de repetición (1,05) sobre palabras repetidas. A/B directo contra el servidor (dos textos, dos semillas, 1,05 frente a 1,0, sin razonamiento): sin penalización también salen («sartilla», «desmoranan», «soltas»). No es la penalización; no se toca el muestreo.
+

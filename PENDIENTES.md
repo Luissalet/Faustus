@@ -1339,4 +1339,6 @@ contamina a cual, y aislar ese estado en una fixture, como se hizo con
 - El recuperador de ToolRAG sigue añadiendo herramientas que no vienen al caso (`whatsapp_send`, `req_list`, `structural_search` para una lista de la compra; todo el juego de código para una pregunta sobre un PDF en el espacio de trabajo): 7–11 k tokens de herramientas por ronda.
 - Cantidades en listas de la compra y recetas escaladas: el 27B no usa `python` para multiplicar raciones y se equivoca (6 muslos para 7 personas «2,5–3 kg»). Un aviso de respuesta, al estilo de `answer_checks`, que detecte «para N personas» con cantidades y pida la cuenta, está por pensar.
 - La tarjeta de aprobación se transmite como texto del asistente en inglés («Allow this task to continue?») y queda pegada al principio de la respuesta en el mensaje guardado; la interfaz la oculta al releer el historial, pero la exportación y otros clientes la verán.
+- Erratas del 27B en castellano (≈1 por respuesta larga): no las causa `repeat_penalty` (A/B en FAUSTUS.md §198). Queda probar una temperatura más baja para respuestas largas en prosa o una pasada de ortografía local antes de mostrar; ninguna está hecha.
+- La comprobación de días de la semana (`answer_checks.weekday_mismatches`) cubre fechas en castellano sin año desde §198; las fechas en inglés sin año siguen sin comprobarse.
 
