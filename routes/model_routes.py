@@ -1863,6 +1863,17 @@ def setup_model_routes(model_discovery):
                                      getattr(ep, "id", "?"), e)
                 if changed:
                     _invalidate_models_cache()
+                # A refresh commits (or rolls back), and either expires every
+                # row this session loaded; reading `ep.base_url` after
+                # `close()` below then raised DetachedInstanceError and
+                # /api/models answered 500 whenever a local endpoint's cache
+                # had aged out. Reload the rows while the session is open.
+                for ep in endpoints:
+                    try:
+                        db.refresh(ep)
+                    except Exception as e:  # noqa: BLE001
+                        logger.debug("Endpoint reload after refresh failed for %s: %s",
+                                     getattr(ep, "id", "?"), e)
         finally:
             db.close()
 
