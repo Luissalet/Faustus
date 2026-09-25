@@ -1808,3 +1808,61 @@
   .fs-run-connection__actions { flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--fs-space-2) var(--fs-space-4); }
   .fs-run-connections__intro, .fs-run-connection__content > p:first-of-type { font-size: 16px; }
 }
+
+/* Swarm map runs (Swarm.tsx) */
+.fs-wk__swarm-main {
+  display: grid;
+  gap: var(--fs-space-1);
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  padding: var(--fs-space-1) var(--fs-space-2);
+}
+
+.fs-wk__swarm-title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+  align-items: baseline;
+}
+
+.fs-wk__swarm-instr {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-wk__swarm-bar {
+  block-size: 4px;
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-3);
+  overflow: hidden;
+}
+
+.fs-wk__swarm-bar > span {
+  display: block;
+  block-size: 100%;
+  border-radius: inherit;
+  background: var(--fs-brand);
+  transition: inline-size var(--fs-duration-slow) var(--fs-ease);
+}
+
+.fs-wk__job[data-status='done'] .fs-wk__swarm-bar > span {
+  background: var(--fs-success);
+}
+
+.fs-wk__job[data-status='partial'] .fs-wk__swarm-bar > span,
+.fs-wk__job[data-status='cancelled'] .fs-wk__swarm-bar > span,
+.fs-wk__job[data-status='interrupted'] .fs-wk__swarm-bar > span {
+  background: var(--fs-warning);
+}
+
+.fs-wk__job[data-status='failed'] .fs-wk__swarm-bar > span {
+  background: var(--fs-danger);
+}
+
+.fs-wk__swarm-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+  font-size: var(--fs-label-size);
+}

@@ -19,6 +19,7 @@ import {
 } from '../../adapters/workers';
 import { locale, t, tn } from '../../i18n';
 import { NightShiftSection } from './NightShift';
+import { SwarmSection } from './Swarm';
 
 /**
  * Workers: the dispatch board (workers.js). Describe the tasks, name the
@@ -532,6 +533,7 @@ export function Workers({ agent: agentParam, runner: runnerParam }: WorkersProps
         </div>
       )}
       <NightShiftSection defaultWorkspace={workspace} />
+      <SwarmSection />
       {toast && <Toast>{toast}</Toast>}
     </div>
   );
