@@ -12169,13 +12169,15 @@ async def _stream_agent_loop_body(
                     _wd_bad = (_answer_checks.weekday_mismatches(_hc_text)
                                or _answer_checks.asked_weekday_mismatch(_last_user or "", _hc_text))
                     _aloud = _answer_checks.thinking_aloud(_hc_text)
+                    _slot_bad = _answer_checks.slot_conflicts(
+                        _hc_text, [str((e or {}).get("output") or "") for e in tool_events])
                 except Exception as _ac_err:  # a check never breaks a turn
                     logger.debug("[harness] answer checks failed: %s", _ac_err)
-                    _wd_bad, _aloud = [], []
-                if _wd_bad or _aloud:
+                    _wd_bad, _aloud, _slot_bad = [], [], []
+                if _wd_bad or _aloud or _slot_bad:
                     _answer_rewrite_used = True
-                    logger.warning("[harness] round %s answer rewrite: weekdays=%s aloud=%s",
-                                   round_num, _wd_bad, _aloud)
+                    logger.warning("[harness] round %s answer rewrite: weekdays=%s aloud=%s slots=%s",
+                                   round_num, _wd_bad, _aloud, _slot_bad)
                     _ledger.notes.append(f"answer_rewrite@{round_num}")
                     if round_response.strip():
                         messages.append({"role": "assistant", "content": round_response})
@@ -12183,11 +12185,13 @@ async def _stream_agent_loop_body(
                             full_response = full_response[:-len(round_response)]
                             yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
                     messages.append({"role": "user", "_harness_note": True,
-                                     "content": _lang_note(_answer_checks.rewrite_note(_wd_bad, _aloud))})
+                                     "content": _lang_note(_answer_checks.rewrite_note(_wd_bad, _aloud, _slot_bad))})
                     yield (
                         "data: " + json.dumps({
                             "type": "harness_check", "status": "rejected",
-                            "reasons": (["wrong_weekday"] if _wd_bad else []) + (["thinking_aloud"] if _aloud else []),
+                            "reasons": (["wrong_weekday"] if _wd_bad else []) + (["thinking_aloud"] if _aloud else [])
+                                       + (["busy_slot"] if _slot_bad else []),
+                            "slots": _slot_bad,
                             "round": round_num, "attempt": 1, "max_attempts": 1,
                             "weekdays": _wd_bad, "phrases": _aloud[:4],
                         }) + "\n\n"

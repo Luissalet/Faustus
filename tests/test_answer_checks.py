@@ -71,3 +71,30 @@ def test_a_weekday_asked_about_a_date_in_the_question_is_checked():
     assert ac.asked_weekday_mismatch(q1, "Cae en viernes.") == []
     assert ac.asked_weekday_mismatch(q1, "No lo sé.") == []
     assert ac.asked_weekday_mismatch("What day of the week is December 25, 2026?", "Sunday.")[0]["real"] == "friday"
+
+
+_CAL = ["AI: Found 2 event(s) between 2026-09-27 and 2026-10-04: - 2026-09-29T17:00:00 -> "
+        "2026-09-29T18:00:00: [Cita con el dentista](#event-64) #health (Personal) - "
+        "2026-10-01T10:00:00 -> 2026-10-01T11:00:00: [Reunión con el fontanero](#event-7) #admin"]
+
+
+def test_a_suggested_slot_the_listed_calendar_has_busy_is_found():
+    # seen live: the event was listed, then its own slot suggested as free
+    answer = ("- Martes 29, 17:00–18:00: Cita con el dentista\n\n"
+              "**Mi sugerencia:** el **martes 29 de septiembre a las 17:00**. Son huecos libres.")
+    found = ac.slot_conflicts(answer, _CAL)
+    assert found and found[0]["event"] == "Cita con el dentista"
+    assert "Cita con el dentista" in ac.rewrite_note([], [], found)
+
+
+@pytest.mark.parametrize("answer", [
+    "Te sugiero el jueves 1 a las 16:00.",                       # free
+    "El martes 29 a las 17:00 tienes la Cita con el dentista.",  # names the event, not a suggestion
+    "Tienes algo el martes 29 a las 17:00.",                    # no suggestion
+])
+def test_free_or_non_suggested_slots_are_left_alone(answer):
+    assert ac.slot_conflicts(answer, _CAL) == []
+
+
+def test_no_calendar_listed_means_nothing_to_check():
+    assert ac.slot_conflicts("Te sugiero el martes 29 a las 17:00.", ["no events"]) == []

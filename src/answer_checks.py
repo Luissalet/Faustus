@@ -1,4 +1,5 @@
-"""Deterministic checks on a final answer before it reaches the user.
+"""Deterministic checks on a final answer before it reaches the user (weekdays,
+visible working, suggested slots that the listed calendar says are busy).
 
 Two things a local model gets wrong in plain sight, seen live on a three-line
 quiz ("si hoy es jueves 25 de septiembre de 2026, ¿qué día será el 25 de
@@ -18,7 +19,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import re
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 _ES_MONTHS = {
     "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6, "julio": 7,
@@ -123,7 +124,8 @@ def thinking_aloud(text: str) -> List[str]:
     return found
 
 
-def rewrite_note(mismatches: List[Dict[str, str]], aloud: List[str]) -> str:
+def rewrite_note(mismatches: List[Dict[str, str]], aloud: List[str],
+                 slots: Optional[List[Dict[str, str]]] = None) -> str:
     """The runtime's request for one clean rewrite of the answer."""
     parts = ["[Harness check — automatic runtime message, not a new user request] "
              "Your last message is not shown to the user yet. Write the complete answer again, "
@@ -140,6 +142,8 @@ def rewrite_note(mismatches: List[Dict[str, str]], aloud: List[str]) -> str:
             "no working, no second thoughts. Check any arithmetic before stating it (use the python "
             "tool if you have it)."
         )
+    if slots:
+        parts.append(slot_note(slots))
     return " ".join(parts)
 
 
@@ -199,3 +203,75 @@ def asked_weekday_mismatch(question: str, answer: str) -> List[Dict[str, str]]:
         return [{"date": date.isoformat(), "said": said[0], "real": real, "lang": lang,
                  "text": f"{date.isoformat()} → {said[0]}"}]
     return []
+
+
+# ── A suggested free slot that is not free ──────────────────────────────────
+# Live: after listing "2026-09-29T17:00 -> 18:00: Cita con el dentista", the
+# answer suggested "el martes 29 de septiembre a las 17:00" as a free slot.
+_EVENT_SPAN = re.compile(
+    r"(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})(?::\d{2})?[^\n]{0,12}?->\s*(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})(?::\d{2})?"
+    r":?\s*(?:\[([^\]\n]{1,120})\]|([^\n#(]{1,120}))?"
+)
+_SUGGESTS = re.compile(
+    r"\b(?:sugier\w*|sugerencia|propon\w*|propuesta|hueco\w*|libre\w*|podr[ií]as|qu[eé]\s+tal"
+    r"|suggest\w*|propos\w*|free|slot|how\s+about|you\s+could)\b",
+    re.IGNORECASE,
+)
+_SLOT = re.compile(
+    r"\b(\d{1,2})(?:\s+de\s+" + _ES_MONTH_RE + r"|\s+" + _EN_MONTH_RE + r")?\b[^\n.;]{0,40}?"
+    r"(?:\ba\s+las\s+|\bat\s+|\bdesde\s+las\s+|\bfrom\s+)\**(\d{1,2})(?:[:.h](\d{2}))?",
+    re.IGNORECASE,
+)
+
+
+def _events_from(outputs: List[str]) -> List[Dict[str, object]]:
+    events: List[Dict[str, object]] = []
+    for text in outputs:
+        for m in _EVENT_SPAN.finditer(str(text or "")):
+            try:
+                start = _dt.datetime.fromisoformat(f"{m.group(1)}T{m.group(2)}:{m.group(3)}")
+                end = _dt.datetime.fromisoformat(f"{m.group(4)}T{m.group(5)}:{m.group(6)}")
+            except ValueError:
+                continue
+            title = (m.group(7) or m.group(8) or "").strip()
+            events.append({"start": start, "end": end, "title": title})
+    return events
+
+
+def slot_conflicts(answer: str, tool_outputs: List[str]) -> List[Dict[str, str]]:
+    """Slots the answer suggests that overlap an event a calendar tool listed
+    in this turn. Only sentences that suggest (and do not name the event
+    itself) are read; the day number is matched against the listed events'
+    days, so no month or year has to be guessed."""
+    events = _events_from(tool_outputs)
+    if not events:
+        return []
+    out: List[Dict[str, str]] = []
+    for sentence in re.split(r"(?<=[.!?])\s+|\n+", str(answer or "")):
+        if not _SUGGESTS.search(sentence):
+            continue
+        low = sentence.lower()
+        if any(e["title"] and str(e["title"]).lower() in low for e in events):
+            continue
+        for m in _SLOT.finditer(sentence):
+            day, hour, minute = int(m.group(1)), int(m.group(4)), int(m.group(5) or 0)
+            if not (1 <= day <= 31 and 0 <= hour <= 23 and 0 <= minute <= 59):
+                continue
+            for e in events:
+                start, end = e["start"], e["end"]
+                if start.day != day:
+                    continue
+                slot = start.replace(hour=hour, minute=minute)
+                if start <= slot < end:
+                    item = {"slot": slot.strftime("%Y-%m-%d %H:%M"), "event": str(e["title"] or "an event"),
+                            "from": start.strftime("%H:%M"), "to": end.strftime("%H:%M"),
+                            "text": m.group(0).strip()}
+                    if item not in out:
+                        out.append(item)
+    return out
+
+
+def slot_note(conflicts: List[Dict[str, str]]) -> str:
+    parts = [f"You suggest {c['slot']} as a free slot, but the calendar you listed has "
+             f"\"{c['event']}\" from {c['from']} to {c['to']} that day." for c in conflicts]
+    return " ".join(parts) + " Suggest only times that are free in the listed calendar."
