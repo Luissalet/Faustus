@@ -283,9 +283,11 @@ def _memory_read(user_text: str, content: Any, workspace: str = "") -> bool:
         words = [w for w in plugins_mod.fold(query or "").split() if len(w) >= 4 and w not in _MEMORY_FRAMING]
         if not words:
             return False
+        # A read: a looser stem (four letters) lets "llamen" match "llamar"/
+        # "llamada" and "prefiero" match "preferencia" (seen live).
         user_words = folded.split()
-        stems = {w[:5] for w in user_words if len(w) >= 5}
-        own = [w for w in words if w in user_words or (len(w) >= 5 and w[:5] in stems)]
+        stems = {w[:4] for w in user_words if len(w) >= 4}
+        own = [w for w in words if w in user_words or w[:4] in stems]
         return len(own) * 2 >= len(words)
     return False
 

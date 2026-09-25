@@ -638,6 +638,7 @@ def test_a_question_about_themselves_lets_the_memory_be_searched_with_its_words(
     text = ("¿Qué día trabajo desde casa y antes de qué hora prefiero que no me llamen? Y si quiero "
             "proponer una reunión la semana que viene respetando eso, ¿qué hueco me sugieres?")
     assert allows("manage_memory", "search\ntrabajo desde casa día semana horario no llamar", text) is True
+    assert allows("manage_memory", "search\nno llamar antes de hora llamada preferencia", text) is True
     # a query about something else, or no question, keeps the card
     assert allows("manage_memory", "search\ncontraseña banco tarjeta", text) is False
     assert allows("manage_memory", "search\ntrabajo desde casa", "Trabajo desde casa los lunes.") is False
