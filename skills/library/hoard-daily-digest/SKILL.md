@@ -27,7 +27,7 @@ The user wants the whole picture of a day or week, not one app's answer. Skip it
    - `upcoming` (People) with `days` = 7 for birthdays, reminders and
      neglected contacts.
    - `scribe_sessions` (Scribe) filtered to the period.
-   - `cards_stats` (Hypatia): due now, reviewed today, streak.
+   - `study_stats` (Hypatia): due today per subject, streak.
    Plugin tools are exposed as `mcp__<connector>__<name>`; one `lookup_tools`
    call naming all of them loads their schemas.
    A plugin that is off or unconfigured answers with an error: say "sin
