@@ -1684,6 +1684,31 @@ def external_context_labels(messages: Iterable[dict], limit: int = 4) -> list[st
 
 
 _TRUSTED_WRITE_TOOLS = frozenset({"write_file", "edit_file", "apply_patch"})
+_URL_RE = re.compile(r"https?://[^\s<>\"'`)\]]+")
+_ASKS_TO_LOOK_UP = re.compile(
+    r"\b(?:busca\w*|investiga\w*|averigua\w*|consulta\w*|comprueba\w*|mira\s+en|fuentes?|cita\w*"
+    r"|search\w*|look\s+up|find|research\w*|sources?|cite)\b")
+
+
+def _url_key(url: str) -> str:
+    """A link as compared for "seen": no fragment, no trailing slash or
+    sentence punctuation."""
+    url = str(url or "").strip().rstrip(".,;:!?")
+    url = url.split("#", 1)[0]
+    return url.rstrip("/")
+
+
+def _fetch_url(content: Any) -> str:
+    if isinstance(content, Mapping):
+        return str(content.get("url") or "")
+    raw = str(content or "").strip()
+    if raw.startswith("{"):
+        try:
+            data = json.loads(raw)
+        except (TypeError, ValueError):
+            return ""
+        return str(data.get("url") or "") if isinstance(data, dict) else ""
+    return raw.split("\n", 1)[0].strip()
 # Tools whose user-request allowance (src/user_request_gate.py) holds only
 # while nothing from outside -- a tool result, web text -- is in the run.
 _WRITES_OUTSIDE_TEXT = frozenset({"create_document", "manage_memory", "manage_calendar"})
@@ -1786,6 +1811,10 @@ class ToolRunSecurityContext:
     # something the model decided after reading untrusted text. Same
     # non-consuming contract as `user_delegation` above.
     user_request: str = ""
+    # Links this run has been shown (search results, fetched pages, prompt
+    # context). A web_fetch of one of them, when the user asked to look
+    # something up, is reading a result -- see `_fetches_a_seen_link`.
+    seen_urls: set = field(default_factory=set)
     # What the assistant said right before that message (src.user_request_gate.
     # asked_before_text): a user answering a quiz question names no act, but
     # the grading call carries the question the assistant asked.
@@ -1925,6 +1954,28 @@ class ToolRunSecurityContext:
         logger.info("[gate] user delegation matched %d task(s): delegate_agents passes the gate", len(call["tasks"]))
         return True
 
+    def _note_urls(self, value: Any) -> None:
+        try:
+            text = value if isinstance(value, str) else json.dumps(value, default=str)
+        except (TypeError, ValueError):
+            text = str(value)
+        for url in _URL_RE.findall(text or "")[:500]:
+            self.seen_urls.add(_url_key(url))
+
+    def _fetches_a_seen_link(self, tool_name: Any, content: Any) -> bool:
+        """"Busca la población de Valencia según el INE" then web_fetch of a
+        link the search itself returned. Live every such fetch stopped at the
+        card, because the search results armed the gate and a fetch is
+        network egress. The worry with egress is data leaving inside the URL;
+        a link fetched exactly as the run was shown it carries nothing the
+        model added. Only when the user asked to look something up."""
+        if tool_name != "web_fetch" or not self.user_request:
+            return False
+        if not _ASKS_TO_LOOK_UP.search(self.user_request.casefold()):
+            return False
+        url = _fetch_url(content)
+        return bool(url) and _url_key(url) in self.seen_urls
+
     def _only_own_context(self) -> bool:
         """The gate was armed only by Faustus's own prompt context (saved
         memory, skills, tool descriptions), not by a tool result or by web
@@ -1965,6 +2016,9 @@ class ToolRunSecurityContext:
             for message in message_list
         ):
             self.approval_gate_bypassed = True
+        for message in message_list:
+            if isinstance(message, dict):
+                self._note_urls(message.get("content"))
         labels = external_context_labels(message_list)
         if labels:
             self.external_untrusted_context_seen = True
@@ -2073,6 +2127,8 @@ class ToolRunSecurityContext:
             return ToolGateDecision(True)
         if self._user_delegation_allows(tool_name, content):
             return ToolGateDecision(True)
+        if self._fetches_a_seen_link(tool_name, content):
+            return ToolGateDecision(True)
         if self.user_request and (
             tool_name not in _WRITES_OUTSIDE_TEXT
             or _action_from_content(str(tool_name), content) in ("list", "search")
@@ -2119,6 +2175,7 @@ class ToolRunSecurityContext:
         result: Any,
         content: Any = None,
     ) -> None:
+        self._note_urls(result)
         if not tool_result_should_arm_gate(tool_name, result, content):
             return
         self.external_untrusted_context_seen = True

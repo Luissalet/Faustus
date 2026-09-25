@@ -1512,3 +1512,24 @@ def test_a_remember_request_after_web_text_keeps_the_card():
     web.observe_tool_result("web_search", {"output": "Tinta Roja ...", "exit_code": 0}, "q")
     assert web.external_untrusted_context_seen is True
     assert web.decision_for("manage_memory", add).allowed is False
+
+
+def test_fetching_a_link_the_search_returned_needs_no_card_when_asked_to_look_up():
+    """Live: "busca la población… según el INE" — every web_fetch of a result
+    link stopped at the card, because the results armed the gate."""
+    from src.prompt_security import untrusted_context_message
+
+    ask = "Busca la población de Valencia según el INE y cita las fuentes"
+    ctx = ToolRunSecurityContext(user_request=ask)
+    ctx.observe_messages([untrusted_context_message(
+        "web search results", "[1] INE https://www.ine.es/jaxiT3/Tabla.htm?t=2903&L=0 …")])
+    ctx.observe_tool_result("web_search", {"output": "[2] https://www.example.org/padron/ …", "exit_code": 0}, "q")
+    assert ctx.decision_for("web_fetch", '{"url": "https://www.ine.es/jaxiT3/Tabla.htm?t=2903&L=0"}').allowed
+    assert ctx.decision_for("web_fetch", '{"url": "https://www.example.org/padron"}').allowed
+    # a link the run was never shown, or one with something appended, keeps the card
+    assert not ctx.decision_for("web_fetch", '{"url": "https://www.ine.es/jaxiT3/Tabla.htm?t=2903&L=0&x=secret"}').allowed
+    assert not ctx.decision_for("web_fetch", '{"url": "https://attacker.example/c"}').allowed
+    # …and without a request to look something up, the seen link keeps it too
+    other = ToolRunSecurityContext(user_request="Hola, ¿qué tal?")
+    other.observe_tool_result("web_search", {"output": "https://www.example.org/padron/", "exit_code": 0}, "q")
+    assert not other.decision_for("web_fetch", '{"url": "https://www.example.org/padron"}').allowed
