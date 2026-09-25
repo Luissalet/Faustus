@@ -326,7 +326,7 @@ const DEFAULT_KEYS = [
   'default_endpoint_id', 'default_model',
   'task_endpoint_id', 'task_model',
   'utility_endpoint_id', 'utility_model', 'utility_model_fallbacks',
-  'vision_enabled', 'vision_model', 'vision_model_fallbacks',
+  'vision_enabled', 'vision_endpoint_id', 'vision_model', 'vision_model_fallbacks',
   'dispatch_endpoint_id', 'dispatch_model',
   'research_endpoint_id', 'research_model', 'research_search_provider', 'research_max_tokens',
   'image_gen_enabled', 'image_model', 'image_quality',
@@ -384,6 +384,33 @@ function ModelPair({ idPrefix, label, help, endpoints, draft, set, epKey, modelK
       </div>
     </Field>
   );
+}
+
+/** What `GET /api/vision/status` reports: the vision model actually in use. */
+export type VisionStatus = { enabled: boolean; source: 'configured' | 'auto' | 'none'; model: string; endpoint_name: string; error?: string };
+
+/** One line under the Vision model picker: "auto: <model>" / "none found". */
+export function visionStatusText(status: VisionStatus | null): string {
+  if (!status) return '';
+  if (!status.enabled) return t('Vision is off.');
+  const where = status.endpoint_name ? ` (${status.endpoint_name})` : '';
+  if (status.source === 'configured' && status.model) return t('In use: {model}', { model: `${status.model}${where}` });
+  if (status.source === 'auto' && status.model) return t('In use: auto: {model}', { model: `${status.model}${where}` });
+  return t('In use: none found');
+}
+
+function VisionStatusLine({ refreshKey }: { refreshKey: string }) {
+  const [status, setStatus] = useState<VisionStatus | null>(null);
+  useEffect(() => {
+    let live = true;
+    getJson<VisionStatus>('/api/vision/status')
+      .then((s) => { if (live) setStatus(s); })
+      .catch(() => { if (live) setStatus(null); });
+    return () => { live = false; };
+  }, [refreshKey]);
+  const text = visionStatusText(status);
+  if (!text) return null;
+  return <p className="fs-set__help" data-testid="vision-status" title={status?.error || undefined}>{text}</p>;
 }
 
 function DefaultsSection({ settings, endpoints, onSave, say }: { settings: Settings | null; endpoints: ModelEndpoint[]; onSave: (patch: Settings) => Promise<void>; say: (t: string) => void }) {
@@ -444,9 +471,10 @@ function DefaultsSection({ settings, endpoints, onSave, say }: { settings: Setti
       <Field label={t('Vision')} help={t('To read attached images and screenshots.')}>
         <div className="fs-set__inline">
           <Toggle id="vision-on" checked={bool(draft.vision_enabled)} onChange={(v) => set('vision_enabled', v)} label={t('On')} />
-          <Select id="vision-model" value={str(draft.vision_model)} onChange={(v) => set('vision_model', v)} allowEmpty={t('No model')} options={[...new Set(endpoints.flatMap((e) => e.models))].map((m) => ({ value: m, label: m }))} />
         </div>
       </Field>
+      <ModelPair idPrefix="vision" label={t('Vision model')} help={t('Describes images for a model that cannot see them. Empty: one is found automatically, local first.')} endpoints={endpoints} draft={draft} set={set} epKey="vision_endpoint_id" modelKey="vision_model" />
+      <VisionStatusLine refreshKey={`${str(settings.vision_endpoint_id)}|${str(settings.vision_model)}|${String(settings.vision_enabled)}`} />
       <Field label={t('Vision fallbacks')} htmlFor="vision-fb">
         <Text id="vision-fb" value={list(draft.vision_model_fallbacks)} onChange={(v) => set('vision_model_fallbacks', fromList(v))} />
       </Field>

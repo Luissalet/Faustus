@@ -8407,3 +8407,9 @@ Engine running	En marcha
 Engine unhealthy	No responde bien
 Engine stopped	Parado
 Engine state unknown	Estado desconocido
+Vision model	Modelo de visión
+Describes images for a model that cannot see them. Empty: one is found automatically, local first.	Describe las imágenes para un modelo que no puede verlas. Vacío: se busca uno automáticamente, primero los locales.
+Vision is off.	La visión está apagada.
+In use: {model}	En uso: {model}
+In use: auto: {model}	En uso: automático: {model}
+In use: none found	En uso: no se ha encontrado ninguno
