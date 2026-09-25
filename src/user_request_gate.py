@@ -1685,6 +1685,51 @@ def _lists_own_items(tool: str) -> Callable[..., bool]:
     return _matcher
 
 
+# «Apunta en mis notas: comprar pilas AA y bombillas.» asks, in so many
+# words, for a note. Live it stopped at the card: the saved memories in the
+# prompt had armed the gate. `add` passes when the message orders a note and
+# every distinctive word of the body and the checklist items is the user's
+# own (the title is the model's label for it, but may carry no link or
+# address the user did not write). Reading the notes passes when the message
+# is about them. Update, delete and the rest keep the card.
+_ORDERS_A_NOTE = (
+    r"apunta(?:me|lo|la|los|las)?", r"anota(?:me|lo|la|los|las)?", r"anade(?:me|lo|la|los|las)?",
+    r"pon(?:me|lo|la|los|las)?", r"escribe(?:me|lo|la)?", r"crea(?:me|lo|la)?", r"guarda(?:me|lo|la)?",
+    r"add", r"note", r"write", r"put", r"create", r"jot",
+)
+_NAMES_A_NOTE = re.compile(
+    r"\b(?:notas?|apuntes?|lista(?: de la compra| de tareas)?|checklist|notes?|list|shopping list)\b")
+
+
+def _notes_matcher(user_text: str, content: Any, workspace: str = "") -> bool:
+    from src.tool_capabilities import _action_from_content
+    from src import plugins as plugins_mod
+
+    folded = plugins_mod.fold(user_text)
+    if not _NAMES_A_NOTE.search(folded):
+        return False
+    action = _action_from_content("manage_notes", content) or ""
+    if action in ("list", "search", "find", "view"):
+        return True
+    if action != "add":
+        return False
+    if not _ordered(folded, _ORDERS_A_NOTE):
+        return False
+    args = _parse_args(content)
+    body = [str(args.get("content") or "")]
+    for item in args.get("checklist_items") or []:
+        body.append(str(item.get("text") if isinstance(item, dict) else item or ""))
+    text = " ".join(part for part in body if part.strip())
+    if not text.strip() or not _user_said_all_of(folded, text):
+        return False
+    written = str(user_text or "")
+    for value in (args.get("title"), text):
+        for link in _LINK_OR_ADDRESS.findall(str(value or "")):
+            if link not in written:
+                return False
+    return True
+
+
 #: tool name -> matcher(user_text, call_content). A tool that is not here is
 #: never let through by this rule.
 MATCHERS: Dict[str, Callable[..., bool]] = {
@@ -1696,6 +1741,7 @@ MATCHERS: Dict[str, Callable[..., bool]] = {
     "manage_memory": _memory_read,
     "create_document": _writes_a_document,
     "manage_calendar": _adds_to_the_calendar,
+    "manage_notes": _notes_matcher,
     "manage_skills": _skill_read,
     "bash": _shell_matcher,
     "powershell": _shell_matcher,

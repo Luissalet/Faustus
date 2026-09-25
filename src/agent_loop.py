@@ -14533,7 +14533,10 @@ async def _stream_agent_loop_body(
                 except Exception:
                     _notes_action = ""
                 _notes_text = ""
-                if not result.get("error"):
+                # A call still waiting for approval has done nothing yet: its
+                # "Waiting for an exact user approval." must not be announced
+                # as "Done — …" (seen live, before the real confirmation).
+                if not result.get("error") and not result.get("approval_required"):
                     if _notes_action in {"list", "search", "find", "view", "lis"}:
                         _notes_text = _note_list_summary_from_tool_output(
                             result.get("output") or result.get("results") or result.get("content") or ""
@@ -14566,7 +14569,7 @@ async def _stream_agent_loop_body(
                 except Exception:
                     _tasks_action = ""
                 _tasks_text = ""
-                if not result.get("error"):
+                if not result.get("error") and not result.get("approval_required"):
                     _tasks_text = str(
                         result.get("response")
                         or result.get("output")
