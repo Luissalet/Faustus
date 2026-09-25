@@ -38,13 +38,14 @@ from typing import Any, Dict, List, Mapping, Optional
 
 __all__ = [
     "MODES", "EXPLICIT_MODES", "normalize", "decide", "to_overrides",
-    "resolve_turn", "DEFAULT_BUDGET_THINK", "DEFAULT_BUDGET_DEEP",
+    "resolve_turn", "DEFAULT_BUDGET_THINK", "DEFAULT_BUDGET_DEEP", "DEFAULT_BUDGET_LIGHT",
 ]
 
 MODES = ("auto", "fast", "think", "deep")
 EXPLICIT_MODES = ("fast", "think", "deep")
 
 DEFAULT_BUDGET_THINK = 4096
+DEFAULT_BUDGET_LIGHT = 1024
 DEFAULT_BUDGET_DEEP = 16384
 
 _ALIASES = {
@@ -224,6 +225,14 @@ def _result(mode: str, reasons: List[str], why: str, confidence: str) -> Dict[st
     return {"mode": mode, "source": "rule", "reasons": reasons, "why": why, "confidence": confidence}
 
 
+def _light(reasons: List[str], why: str, confidence: str) -> Dict[str, Any]:
+    """``think`` at the lowest reasoning effort: a short question still gets
+    a quick look before the answer."""
+    out = _result("think", reasons + ["light"], why, confidence)
+    out["effort"] = "low"
+    return out
+
+
 def _decide(text: str, attachments: int, agent: bool, coding: bool, history_len: int) -> Dict[str, Any]:
     raw = str(text or "")
     stripped = raw.strip()
@@ -277,11 +286,17 @@ def _decide(text: str, attachments: int, agent: bool, coding: bool, history_len:
     if coding:
         return _result("think", ["coding_context"], "a coding turn", "low")
 
+    # A short question with no sign of work still gets a little reasoning
+    # (effort "low"), not none. Measured on the 27B, same server, eight
+    # questions with one exact answer (weekdays, counting, ordering, dates,
+    # VAT): thinking off 6/24, low effort 6/6, full effort 16/16. With
+    # thinking off it named the wrong weekday for a date the user asked
+    # about; that is what "fast" meant for any question under 40 words.
     if words <= _SHORT_WORDS and _LOOKUP.search(stripped):
-        return _result("fast", ["lookup"], "a short factual lookup", "medium")
+        return _light(["lookup"], "a short factual lookup", "medium")
 
     if words <= _FAST_MAX_WORDS:
-        return _result("fast", ["short"], "a short turn with no sign of work", "low")
+        return _light(["short"], "a short turn with no sign of work", "low")
     return _result("think", ["long"], "a long turn", "low")
 
 
@@ -374,6 +389,9 @@ def resolve_turn(requested: Any, gen_overrides: Optional[Dict[str, Any]], text: 
     decision = decide(text, attachments=attachments, agent=agent, coding=coding, history_len=history_len)
     mode = decision.get("mode") or "fast"
     ov = to_overrides(mode, model, settings, effort=effort)
+    if mode == "think" and decision.get("effort") == "low" and effort:
+        ov["reasoning_effort"] = "low"
+        ov["reasoning_budget"] = _int_setting(settings, "think_mode_budget_light", DEFAULT_BUDGET_LIGHT)
     merged = dict(base)
     for k, v in ov.items():
         # A budget/effort the client pinned itself still wins over the rule's.

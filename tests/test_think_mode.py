@@ -71,10 +71,17 @@ DEEP = [
 ]
 
 
+def _cheap(d):
+    """No reasoning, or only a quick look at effort "low": a short question
+    with no sign of work is no longer answered with thinking off (6/24 exact
+    answers off against 6/6 at low effort, measured on the 27B)."""
+    return d["mode"] == "fast" or (d["mode"] == "think" and d.get("effort") == "low")
+
+
 @pytest.mark.parametrize("text", FAST)
 def test_fast_cases(text):
     d = decide(text)
-    assert d["mode"] == "fast", (text, d)
+    assert _cheap(d), (text, d)
     assert d["source"] == "rule"
 
 
@@ -238,7 +245,8 @@ def test_word_problems_get_reasoning(text):
     "quedamos a las 5 el día 3",
 ])
 def test_numbers_alone_are_not_a_word_problem(text):
-    assert decide(text)["mode"] == "fast"
+    d = decide(text)
+    assert _cheap(d) and "math" not in d["reasons"]
 
 
 def test_one_line_answer_about_work_still_thinks():
@@ -267,6 +275,18 @@ def test_dates_and_quantities_get_thinking(text, family):
     assert d["mode"] == "think" and family in d["reasons"]
 
 
-@pytest.mark.parametrize("text", ["hola", "¿cuál es la capital de Francia?", "gracias, perfecto"])
-def test_plain_lookups_stay_fast(text):
+@pytest.mark.parametrize("text", ["hola", "gracias, perfecto"])
+def test_small_talk_stays_fast(text):
     assert think_mode.decide(text)["mode"] == "fast"
+
+
+def test_a_short_lookup_gets_a_light_look():
+    d = think_mode.decide("¿cuál es la capital de Francia?")
+    assert d["mode"] == "think" and d["effort"] == "low" and "light" in d["reasons"]
+    ov = think_mode.resolve_turn("auto", None, "¿cuál es la capital de Francia?",
+                                 settings={"think_mode_budget_light": 1024})["overrides"]
+    assert ov == {"think": True, "reasoning_budget": 1024, "reasoning_effort": "low"}
+    # a strict backend that rejects reasoning_effort gets plain thinking
+    ov = think_mode.resolve_turn("auto", None, "¿cuál es la capital de Francia?", effort=False,
+                                 settings={"think_mode_budget_think": 4096})["overrides"]
+    assert ov == {"think": True, "reasoning_budget": 4096}

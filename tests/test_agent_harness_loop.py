@@ -144,10 +144,11 @@ def test_todowrite_progress_is_annotated_and_persisted(tmp_path, monkeypatch):
     assert saved["todos"] == ups[1]["todos"]
 
 
-def test_runaway_thinking_is_cut_off_and_retried_without_think(tmp_path, monkeypatch):
+def test_runaway_thinking_is_cut_off_and_retried_with_light_thinking(tmp_path, monkeypatch):
     """A local model that only produces reasoning past the budget is cut off
-    once; the round is retried with gen_overrides.think=False and the step
-    budget is not consumed by the retry."""
+    once; the round is retried thinking at effort "low" (thinking off got
+    6/24 exact answers on the 27B, low effort 6/6) and the step budget is
+    not consumed by the retry."""
     monkeypatch.setattr(al, "get_setting",
                         lambda key, default=None: 0.05 if key == "agent_local_think_budget_seconds" else default,
                         raising=False)
@@ -155,6 +156,7 @@ def test_runaway_thinking_is_cut_off_and_retried_without_think(tmp_path, monkeyp
     monkeypatch.setattr(al, "estimate_tokens", lambda *a, **k: 10, raising=False)
     monkeypatch.setattr(al, "blocked_tools_for_owner", lambda owner: set(), raising=False)
     seen_think = []
+    seen_effort = []
     retried_with = []
     calls = {"n": 0}
 
@@ -162,6 +164,7 @@ def test_runaway_thinking_is_cut_off_and_retried_without_think(tmp_path, monkeyp
         calls["n"] += 1
         go = kwargs.get("gen_overrides") or {}
         seen_think.append(go.get("think"))
+        seen_effort.append(go.get("reasoning_effort"))
         if calls["n"] == 1:
             # endless reasoning, never a visible token
             yield f'data: {json.dumps({"delta": "The counter lives in stats.js, line 40. ", "thinking": True})}\n\n'
@@ -180,7 +183,7 @@ def test_runaway_thinking_is_cut_off_and_retried_without_think(tmp_path, monkeyp
     cut = [e for e in events if e.get("type") == "harness_check" and e.get("status") == "think_cutoff"]
     assert len(cut) == 1 and cut[0]["reasoning_chars"] > 0
     assert calls["n"] == 2
-    assert seen_think == [True, False]
+    assert seen_think == [True, True] and seen_effort[1] == "low"
     # the retry starts from what the cut reasoning had already found
     assert "The counter lives in stats.js, line 40." in retried_with[0]
     summary = next(e for e in events if e.get("type") == "harness_summary")["data"]

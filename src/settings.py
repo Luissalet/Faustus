@@ -1673,6 +1673,9 @@ DEFAULT_SETTINGS = {
     # llama-server / self-hosted OpenAI-compatible engines only; Ollama's
     # native API has no budget, so there deep is just thinking on.
     "think_mode_budget_think": 4096,
+    # Auto on a short question with no sign of work: think at effort "low"
+    # with this reasoning budget instead of not thinking (src/think_mode.py).
+    "think_mode_budget_light": 1024,
     "think_mode_budget_deep": 16384,
     # A "deep" turn multiplies the local thinking watchdog
     # (agent_local_think_budget_seconds) by this factor.

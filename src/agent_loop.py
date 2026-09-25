@@ -11470,7 +11470,7 @@ async def _stream_agent_loop_body(
             _think_cutoffs += 1
             _think_secs = time.time() - (_think_first_ts or _round_start)
             logger.warning(
-                "[harness] round %s thinking cut off after %.0fs / %d reasoning chars — retrying with think=false",
+                "[harness] round %s thinking cut off after %.0fs / %d reasoning chars — retrying with less thinking",
                 round_num, _think_secs, len(round_reasoning),
             )
             _ledger.notes.append(f"think_cutoff@{round_num}")
@@ -11478,7 +11478,16 @@ async def _stream_agent_loop_body(
             if _carry:
                 messages.append({"role": "user", "_harness_note": True, "content": _lang_note(_carry)})
             gen_overrides = dict(gen_overrides or {})
-            gen_overrides["think"] = False
+            # First cut: go on thinking at the lowest effort instead of not
+            # thinking at all -- on the 27B, thinking off got 6/24 exact
+            # answers right against 6/6 at effort "low" (same server, same
+            # questions). A second cut in the same turn turns it off.
+            if _think_cutoffs == 1 and gen_overrides.get("reasoning_effort") != "low":
+                gen_overrides["think"] = True
+                gen_overrides["reasoning_effort"] = "low"
+                gen_overrides["reasoning_budget"] = int(get_setting("think_mode_budget_light", 1024) or 1024)
+            else:
+                gen_overrides["think"] = False
             _rounds_budget += 1  # the retry must not eat the task's step budget
             yield (
                 "data: " + json.dumps({
