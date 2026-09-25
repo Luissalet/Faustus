@@ -601,10 +601,51 @@ def _shell_matcher(user_text: str, content: Any, workspace: str = "") -> bool:
             return False
         command = command[lead.end():]
     steps = [s.strip() for s in command.split("&&")]
-    if not all(steps) or (len(steps) < 2 and not lead):
+    if all(steps) and (len(steps) >= 2 or lead):
+        asked = [s for s in steps if not _PLAIN_ECHO.match(s)]
+        if asked and all(_one_command(user_text, s, workspace) for s in asked):
+            return True
+    return _reads_in_sequence(command, workspace)
+
+
+def _split_unquoted(command: str, separator: str) -> list:
+    """`command` split at `separator` outside quotes (`cut -d';' f` is one step)."""
+    parts, current, quote = [], [], ""
+    i = 0
+    while i < len(command):
+        ch = command[i]
+        if quote:
+            if ch == quote:
+                quote = ""
+        elif ch in "'\"":
+            quote = ch
+        elif command.startswith(separator, i):
+            parts.append("".join(current))
+            current = []
+            i += len(separator)
+            continue
+        current.append(ch)
+        i += 1
+    if quote:
+        return []
+    parts.append("".join(current))
+    return [p.strip() for p in parts]
+
+
+def _reads_in_sequence(command: str, workspace: str) -> bool:
+    """Read-only looks at the workspace joined by `;` or `&&`. Seen live:
+    `grep -nE '^(100|200),' ventas.csv; echo ---; wc -l ventas.csv` stopped a
+    data check at the card. With every step a read-only inspection
+    (`_inspects_the_workspace`) or a plain `echo`, `;` versus `&&` only
+    changes whether a later look runs after an earlier one found nothing.
+    Tests, scripts and quoted commands are not joined by `;` here."""
+    steps = []
+    for part in _split_unquoted(command, ";"):
+        steps.extend(_split_unquoted(part, "&&") if part else [""])
+    if len(steps) < 2 or not all(steps):
         return False
-    asked = [s for s in steps if not _PLAIN_ECHO.match(s)]
-    return bool(asked) and all(_one_command(user_text, s, workspace) for s in asked)
+    looks = [s for s in steps if not _PLAIN_ECHO.match(s)]
+    return bool(looks) and all(_inspects_the_workspace(s, workspace) for s in looks)
 
 
 # "Arréglalo" asks for the project to be changed. Live, after reading the

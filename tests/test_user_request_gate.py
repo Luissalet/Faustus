@@ -381,6 +381,8 @@ _SALES = "Analiza el export de ventas_junio.csv y dime qué tienda factura más.
     "awk -v umbral=100 -F';' '$5 > umbral {n++} END {print n}' ventas_junio.csv",
     "python -c \"import matplotlib, pandas\"",
     "sed -n '1,40p' ventas_junio.csv",  # seen live
+    "grep -nE '^(100|200|300|400),' ventas_junio.csv; echo ---; wc -l ventas_junio.csv",  # seen live
+    "cut -d';' -f2 ventas_junio.csv | sort -u; head -3 ventas_junio.csv",
     "sed -n '$p' ventas_junio.csv",
     "cd /d/proj && python3 -c 'import pandas as pd; print(pd.read_csv(\"ventas_junio.csv\", sep=\";\").shape)'",
 ])
@@ -401,6 +403,12 @@ def test_reading_workspace_files_with_the_shell_needs_no_card(command):
     "grep -f /etc/passwd ventas_junio.csv",
     "cat ventas_junio.csv > copia.csv",
     "cat ventas_junio.csv; rm ventas_junio.csv",
+    "wc -l ventas_junio.csv; python -m pytest -q",
+    "echo a; echo b",
+    "cat ventas_junio.csv; cat /etc/passwd",
+    "head ventas_junio.csv;; rm x",
+    "cat 'ventas_junio.csv; rm x",
+    "grep x ventas_junio.csv & rm ventas_junio.csv; ls",
     "cat $HOME/x",
     "cat `whoami`",
     "cat ventas_junio.csv | sh",
