@@ -57,7 +57,32 @@ ALLOWED_CALLERS = frozenset({
     # The runner providers' JSON reads (runner_providers._get_json) against
     # those same local engine endpoints. Identical case (22-09-2026).
     "src/runner_providers.py",
+    # The swarm's read of a llama-server's own /slots and /props to size how
+    # many calls it can run at once (swarm/capacity._get_json): the same
+    # local engine endpoints, read-only (25-09-2026).
+    "src/swarm/capacity.py",
+    # Typed decisions post a chat completion to the configured model
+    # endpoint (typed_decision._post): an LLM provider call like
+    # llm_core's, with the same private CA when that endpoint sits behind
+    # a TLS reverse proxy (23-09-2026).
+    "src/typed_decision.py",
 })
+
+
+#: Folders that hold no project code: a virtualenv inside the checkout (the
+#: Windows install keeps `venv/` there) made a whole-tree `rglob` read tens
+#: of thousands of third-party files and time out.
+_SKIP_DIRS = {".git", "venv", ".venv", "env", "node_modules", "__pycache__", "data",
+              "logs", ".claude", "dist", "build", ".mypy_cache", ".pytest_cache"}
+
+
+def _repo_python_files():
+    import os as _os
+    for root, dirs, files in _os.walk(REPO):
+        dirs[:] = [d for d in dirs if d not in _SKIP_DIRS and not d.startswith(".")]
+        for name in files:
+            if name.endswith(".py"):
+                yield Path(root) / name
 
 
 def _grep_files(pattern: str) -> set[str]:
@@ -66,7 +91,7 @@ def _grep_files(pattern: str) -> set[str]:
     scratch dirs."""
     rx = re.compile(pattern)
     hits: set[str] = set()
-    for path in REPO.rglob("*.py"):
+    for path in _repo_python_files():
         rel = path.relative_to(REPO).as_posix()
         if rel.startswith("tests/"):
             continue
