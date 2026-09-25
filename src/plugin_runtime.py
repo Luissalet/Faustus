@@ -220,6 +220,24 @@ async def ensure_running(ref: str, *, owner: Optional[str] = None,
         }
 
     try:
+        dangling = launch_profiles.get_profile(profile_id) is None
+    except Exception:  # noqa: BLE001 - let launch() report whatever it finds
+        dangling = False
+    if dangling:
+        # Live (25-09): the connection still pointed at a launch profile that
+        # no longer existed in this data folder, and the agent got "no such
+        # launch profile: <uuid>" -- an id it can do nothing with.
+        return {
+            "ok": False,
+            "plugin": getattr(plugin, "id", None),
+            "name": name,
+            "reason": f"{name} is not running, and the launch profile its connection points "
+                      f"to no longer exists, so there is nothing to start it with. Re-link a "
+                      f"launch profile from the Connectors screen (the plugin ships a "
+                      f"suggested command) or start the app yourself.",
+        }
+
+    try:
         launched = await launch_profiles.launch(profile_id)
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "plugin": getattr(plugin, "id", None), "name": name,

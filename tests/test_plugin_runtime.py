@@ -32,7 +32,7 @@ def world(monkeypatch):
     ]
     monkeypatch.setattr(plugin_runtime, "_connectors", lambda: list(rows))
 
-    state = {"reachable": False, "launched": [], "opened": [], "waited": 0}
+    state = {"reachable": False, "launched": [], "opened": [], "waited": 0, "profiles": {"prof-editor"}}
 
     async def fake_health(connector, plugin):
         state["waited"] += 1
@@ -49,6 +49,8 @@ def world(monkeypatch):
         return {"launched": True, "pid": 4242}
 
     monkeypatch.setattr(lp, "launch", fake_launch)
+    monkeypatch.setattr(lp, "get_profile",
+                        lambda pid: {"id": pid} if pid in state.setdefault("profiles", {"prof-editor"}) else None)
     monkeypatch.setattr(lp, "open_desktop", lambda pid: state["opened"].append(pid) or {"ok": True})
     assert "platos" in plugins_mod.load_plugins()
     return state
@@ -96,6 +98,16 @@ def test_a_plugin_with_no_launch_profile_refuses_instead_of_guessing(world):
     out = asyncio.run(plugin_runtime.ensure_running("writer"))
     assert out["ok"] is False
     assert "no launch profile" in out["reason"]
+    assert world["launched"] == []
+
+
+def test_a_connection_whose_launch_profile_is_gone_says_so_in_words(world):
+    """Live: the connection pointed at a profile that no longer existed, and
+    the agent was told "no such launch profile: <uuid>"."""
+    world["profiles"].discard("prof-editor")
+    out = asyncio.run(plugin_runtime.ensure_running("platos"))
+    assert out["ok"] is False
+    assert "no longer exists" in out["reason"] and "Connectors" in out["reason"]
     assert world["launched"] == []
 
 
