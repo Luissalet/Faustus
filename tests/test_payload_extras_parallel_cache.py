@@ -28,3 +28,18 @@ def test_openai_gets_a_hashed_stable_cache_key():
     c = {}
     llm_core._apply_openai_cache_key(c, "http://127.0.0.1:8081/v1/chat/completions", "sess-1")
     assert c == {}
+
+
+def test_openrouter_gets_a_hashed_sticky_session():
+    p = {}
+    llm_core._apply_openrouter_session(p, "chat-9")
+    assert p["session_id"].startswith("faustus-") and "chat-9" not in p["session_id"]
+    q = {}
+    llm_core._apply_openrouter_session(q, None)
+    assert q == {}
+
+
+def test_qwen_on_openrouter_gets_cache_breakpoints_too():
+    assert llm_core._openrouter_anthropic_cache_hints_applicable("openrouter", "qwen/qwen3-coder")
+    assert llm_core._openrouter_anthropic_cache_hints_applicable("openrouter", "anthropic/claude-sonnet-5")
+    assert not llm_core._openrouter_anthropic_cache_hints_applicable("openrouter", "openai/gpt-5")

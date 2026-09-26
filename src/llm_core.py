@@ -2402,6 +2402,17 @@ def _apply_parallel_tool_calls(payload: Dict, url: str) -> None:
         payload.setdefault("parallel_tool_calls", True)
 
 
+def _apply_openrouter_session(payload: Dict, session_id: Optional[str]) -> None:
+    """OpenRouter keeps a chat on the same upstream provider when requests
+    carry a `session_id` (sticky routing), so its prompt cache is found
+    again instead of landing on a provider that never saw the prefix. A hash,
+    never the chat id itself."""
+    if not session_id:
+        return
+    import hashlib
+    payload.setdefault("session_id", "faustus-" + hashlib.sha256(str(session_id).encode()).hexdigest()[:24])
+
+
 def _apply_openai_cache_key(payload: Dict, url: str, session_id: Optional[str]) -> None:
     """OpenAI routes requests with the same `prompt_cache_key` to the same
     cache, so a chat's turns keep hitting its prefix. Only api.openai.com;
@@ -3211,7 +3222,10 @@ def _openrouter_anthropic_cache_hints_applicable(provider: str, model: str) -> b
     OpenRouter model has any such mechanism, so this stays a narrow
     allow-list rather than "any openrouter call" (OBJ-8 Lote A2).
     """
-    return provider == "openrouter" and str(model or "").startswith("anthropic/")
+    # Qwen models on OpenRouter take the same explicit `cache_control`
+    # blocks (OpenRouter's prompt-caching guide, checked 26-09-2026); every
+    # other family there caches automatically.
+    return provider == "openrouter" and str(model or "").startswith(("anthropic/", "qwen/"))
 
 
 def _apply_openrouter_anthropic_cache_hints(payload: Dict, *, tools: Optional[List[Dict]] = None) -> None:
@@ -5883,6 +5897,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                 logger.debug("openrouter_options: apply_openrouter_payload failed for %s: %s", model, exc)
             if _openrouter_anthropic_cache_hints_applicable(provider, model):
                 _apply_openrouter_anthropic_cache_hints(payload, tools=tools)
+            _apply_openrouter_session(payload, session_id)
             if _overrides:
                 from src.provider_reasoning import apply_openrouter
                 apply_openrouter(payload, _overrides)

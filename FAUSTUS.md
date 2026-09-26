@@ -9374,3 +9374,5 @@ Siguen por la ruta rápida, a propósito:
 - lo mecánico: títulos, extracción y resúmenes de correo;
 - lo que responde en JSON de forma fija;
 - la vista previa del plan de investigación, que es interactiva y tiene 30 s.
+
+**OpenRouter, verificado en su guía de caché** (17:55). Con un `session_id` en la petición mantiene el chat en el mismo proveedor de origen («sticky routing»), y así su caché se vuelve a encontrar. Ahora se envía un hash del chat. Los modelos `qwen/*` de OpenRouter necesitan puntos de ruptura `cache_control` explícitos, igual que `anthropic/*`, y ahora los reciben. El resto de familias cachean solas.
