@@ -589,11 +589,14 @@ def client(env, monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     import routes.swarm_routes as swarm_routes
-    from src.auth_helpers import require_user
     monkeypatch.setattr(swarm_routes, "effective_user", lambda request: request.headers.get("X-Test-User", ""))
     app = FastAPI()
     app.include_router(swarm_routes.setup_swarm_routes())
-    app.dependency_overrides[require_user] = lambda: ""
+    # Override the very function the routes depend on. Importing it from
+    # src.auth_helpers here could hand back another object when a test
+    # elsewhere swapped that module in sys.modules; the override then missed
+    # and every call answered 401 (seen in a full Windows run).
+    app.dependency_overrides[swarm_routes.require_user] = lambda: ""
     return TestClient(app)
 
 

@@ -37,7 +37,6 @@ def test_remote_cost_requires_admin(monkeypatch):
 
 
 def test_remote_cost_reaches_remote_cost_report_for_an_admin(monkeypatch):
-    from src import cleanup_service
 
     seen = {}
 
@@ -45,7 +44,10 @@ def test_remote_cost_reaches_remote_cost_report_for_an_admin(monkeypatch):
         seen["since"] = since
         return {"known_total_usd": 1.23, "unknown_period": False, "unknown_cost_events": 0}
 
-    monkeypatch.setattr(cleanup_service, "remote_cost_report", _fake_report)
+    # By dotted path: other tests swap `src.cleanup_service` in sys.modules,
+    # and the route imports it from there at call time, so a patch on this
+    # module's own reference could miss it (seen in a full Windows run).
+    monkeypatch.setattr("src.cleanup_service.remote_cost_report", _fake_report)
     client = _client(monkeypatch)
     response = client.get("/api/ops/remote-cost")
     assert response.status_code == 200
@@ -54,10 +56,9 @@ def test_remote_cost_reaches_remote_cost_report_for_an_admin(monkeypatch):
 
 def test_remote_cost_never_fabricates_zero_when_unknown(monkeypatch):
     """OPS-07's own acceptance: an unknown remote bill must not read as $0."""
-    from src import cleanup_service
 
     monkeypatch.setattr(
-        cleanup_service, "remote_cost_report",
+        "src.cleanup_service.remote_cost_report",
         lambda **_kw: {"known_total_usd": None, "unknown_period": True, "unknown_cost_events": 0,
                         "note": "nothing logged yet"},
     )

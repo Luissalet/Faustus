@@ -123,7 +123,10 @@ def test_attribute_gpu_processes_maps_by_uuid_and_labels(monkeypatch):
 
     lm._attribute_gpu_processes(cards)
 
-    assert cards[0]["processes"] == [{"pid": 111, "label": "Coding engine", "used_mb": 11264, "kind": "model"}]
+    # A managed engine is marked so the VRAM bar counts it as a model even
+    # though its label is the engine's name, not a model's.
+    assert cards[0]["processes"] == [{"pid": 111, "label": "Coding engine", "used_mb": 11264, "kind": "model",
+                                      "engine": True}]
     # Any other app drawing on the card is kept but marked "other" (the UI
     # only counts those).
     assert cards[1]["processes"] == [
