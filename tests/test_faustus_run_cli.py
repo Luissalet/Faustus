@@ -20,10 +20,29 @@ def _sse(events):
 class _H(BaseHTTPRequestHandler):
     forms = []
     legs = []
+    sessions = []
+    gets = {}
+    refuse = None
+
+    def do_GET(self):  # noqa: N802
+        payload = _H.gets.get(self.path.split("?")[0])
+        if payload is None:
+            self.send_response(404); self.end_headers(); return
+        data = json.dumps(payload).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def do_POST(self):  # noqa: N802
         body = self.rfile.read(int(self.headers.get("Content-Length") or 0)).decode()
+        if self.path == "/api/chat_stream" and _H.refuse:
+            data = json.dumps({"detail": _H.refuse}).encode()
+            self.send_response(400); self.send_header("Content-Length", str(len(data))); self.end_headers()
+            self.wfile.write(data); return
         if self.path == "/api/session":
+            _H.sessions.append(dict(urllib.parse.parse_qsl(body)))
             out, ctype = json.dumps({"id": "s1"}), "application/json"
         else:
             form = dict(urllib.parse.parse_qsl(body))
@@ -40,8 +59,8 @@ class _H(BaseHTTPRequestHandler):
         pass
 
 
-def _serve(legs):
-    _H.forms, _H.legs = [], list(legs)
+def _serve(legs, gets=None, refuse=None):
+    _H.forms, _H.legs, _H.sessions, _H.gets, _H.refuse = [], list(legs), [], dict(gets or {}), refuse
     srv = HTTPServer(("127.0.0.1", 0), _H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv, f"http://127.0.0.1:{srv.server_port}"
@@ -83,3 +102,30 @@ def test_prompt_from_file(tmp_path):
     p = tmp_path / "m.txt"
     p.write_text("¿Qué hay?", encoding="utf-8")
     assert fr.read_prompt("@" + str(p)) == "¿Qué hay?"
+
+
+def test_a_run_without_model_opens_the_chat_on_the_default_model(capsys):
+    gets = {"/api/auth/settings": {"default_model": "big-27b", "default_endpoint_id": "e2"},
+            "/api/models": {"items": [
+                {"endpoint_id": "e1", "url": "http://127.0.0.1:9/v1", "models": ["big-27b"], "model_type": "llm"},
+                {"endpoint_id": "e2", "url": "http://127.0.0.1:8081/v1", "models": ["big-27b"], "model_type": "llm"}]}}
+    srv, url = _serve([LEG_DONE], gets=gets)
+    try:
+        code = fr.main(["-p", "hola", "--url", url])
+    finally:
+        srv.shutdown()
+    assert code == 0
+    assert _H.sessions[0]["model"] == "big-27b"
+    assert _H.sessions[0]["endpoint_url"] == "http://127.0.0.1:8081/v1"
+    assert _H.forms[0]["model"] == "big-27b"
+
+
+def test_a_refused_turn_says_why(capsys):
+    srv, url = _serve([], refuse="No model selected for this chat.")
+    try:
+        code = fr.main(["-p", "hola", "--url", url, "--json"])
+    finally:
+        srv.shutdown()
+    summary = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert code == fr.EXIT_ERROR
+    assert "No model selected for this chat." in summary["error"]

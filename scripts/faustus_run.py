@@ -68,6 +68,31 @@ class Client:
         with self._opener.open(req, timeout=timeout) as r:
             return _json_or_raw(r.read())
 
+    def get_json(self, path: str, timeout: float = 30) -> Any:
+        with self._opener.open(urllib.request.Request(self.base + path), timeout=timeout) as r:
+            return _json_or_raw(r.read())
+
+    def default_route(self) -> Dict[str, str]:
+        """The app's default chat model as the composer would send it: a new
+        chat opened with no model is refused ("No model selected"), so a run
+        without --model uses Settings' default. Empty when it cannot be read."""
+        try:
+            settings = self.get_json("/api/auth/settings") or {}
+            model = str(settings.get("default_model") or "")
+            wanted = str(settings.get("default_endpoint_id") or "")
+            if not model:
+                return {}
+            items = (self.get_json("/api/models?background=false", timeout=60) or {}).get("items") or []
+            for item in items:
+                if not isinstance(item, dict) or item.get("model_type") not in (None, "llm"):
+                    continue
+                if model in [str(m) for m in (item.get("models") or [])] and (
+                        not wanted or str(item.get("endpoint_id") or "") == wanted):
+                    return {"model": model, "endpoint_url": str(item.get("url") or "")}
+        except Exception:  # noqa: BLE001 - the server then says what is missing
+            return {}
+        return {}
+
     def post_form(self, path: str, form: Dict[str, Any], timeout: float = 30) -> Any:
         body = urllib.parse.urlencode({k: v for k, v in form.items() if v is not None}).encode()
         with self._opener.open(urllib.request.Request(self.base + path, data=body, method="POST"),
@@ -177,6 +202,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         client = Client(args.url, os.environ.get("FAUSTUS_USER"), os.environ.get("FAUSTUS_PASS"),
                         os.environ.get("FAUSTUS_API_TOKEN"))
         session = args.session
+        if not session and not args.model:
+            route = client.default_route()
+            args.model = route.get("model") or None
+            args.endpoint_url = args.endpoint_url or route.get("endpoint_url") or None
         if not session:
             made = client.post_form("/api/session", {
                 "name": "faustus run", "endpoint_url": args.endpoint_url, "model": args.model,
@@ -187,7 +216,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 raise RuntimeError(f"could not open a session: {made}")
         message = read_prompt(args.prompt)
     except (urllib.error.URLError, OSError, RuntimeError) as exc:
-        _emit_summary(out, args, None, Turn(), started, "error", str(exc))
+        _emit_summary(out, args, None, Turn(), started, "error", _error_text(exc))
         return EXIT_ERROR
 
     def base_form() -> Dict[str, Any]:
@@ -243,13 +272,34 @@ def main(argv: Optional[List[str]] = None) -> int:
     except (socket.timeout, TimeoutError):
         stop = "timeout"
     except (urllib.error.URLError, OSError) as exc:
-        turn.error = str(exc)
+        turn.error = _error_text(exc)
     if turn.error and stop == "answered":
         stop = "error"
     if turn.cancelled and stop == "answered":
         stop = "cancelled"
     _emit_summary(out, args, session, turn, started, stop, turn.error)
     return {"answered": EXIT_OK, "approval_required": EXIT_APPROVAL, "timeout": EXIT_TIMEOUT}.get(stop, EXIT_ERROR)
+
+
+def _error_text(exc: BaseException) -> str:
+    """An HTTP error with the server's own sentence: "HTTP Error 400: Bad
+    Request" alone does not say which parameter it refused."""
+    text = str(exc)
+    if isinstance(exc, urllib.error.HTTPError):
+        try:
+            body = exc.read().decode("utf-8", "replace")[:800]
+        except Exception:
+            body = ""
+        detail = body
+        try:
+            parsed = json.loads(body)
+            if isinstance(parsed, dict) and parsed.get("detail") is not None:
+                detail = parsed["detail"] if isinstance(parsed["detail"], str) else json.dumps(parsed["detail"], ensure_ascii=False)
+        except ValueError:
+            pass
+        if detail:
+            text = f"{text} — {detail.strip()[:500]}"
+    return text
 
 
 def _write(out, obj: Dict[str, Any]) -> None:
