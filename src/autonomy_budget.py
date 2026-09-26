@@ -251,6 +251,17 @@ def resolve_budget(
         "max_remote_spend": max(1.0, round(base_remote_spend * mult, 1)),
         "max_memory_mb": max(1.0, round(base_memory_mb * mult, 1)),
     }
+    # A per-turn ceiling in dollars (`agent_turn_max_cost_usd`), for people
+    # who think in money rather than spend units: when set it replaces the
+    # preset-scaled remote-spend ceiling, unscaled — a stated amount is the
+    # amount. Charged against the provider's real cost when it reports one.
+    if get_setting is not None:
+        try:
+            usd = float(get_setting("agent_turn_max_cost_usd", 0) or 0)
+        except (TypeError, ValueError):
+            usd = 0.0
+        if usd > 0:
+            values["max_remote_spend"] = round(usd / USD_PER_UNIT, 1)
     for key, value in (overrides or {}).items():
         if key in values and value is not None:
             values[key] = value

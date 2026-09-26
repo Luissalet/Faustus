@@ -247,6 +247,12 @@ GROUPS: list[dict[str, Any]] = [
                  "TASK-06 ceiling (in the same units the run's cost estimate uses) on paid-endpoint "
                  "spend for one autonomy-preset turn. Scaled by the chosen preset. 0 = unlimited.",
                  0, 1_000_000),
+            _float("agent_turn_max_cost_usd", "Cost ceiling per turn (USD)",
+                   "Stop a turn on a paid endpoint once it has spent this much, with a checkpoint of the "
+                   "work so far. Counted from the provider's real cost when it reports one, else estimated "
+                   "from tokens. Replaces the remote-spend ceiling above when set. 0 = use that ceiling "
+                   "(about 0.04 USD per turn with the supervised preset). Local models are never limited.",
+                   0, 1000, 0.5),
             _int("agent_autonomy_max_memory_mb", "Autonomy budget: memory (MB)",
                  "TASK-06 informative ceiling for one autonomy-preset turn; this process has no "
                  "per-turn memory measurement today, so it is carried but never trips. Scaled by the "

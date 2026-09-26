@@ -9465,3 +9465,5 @@ El 7006 pasa a `4f522d89` y arranca en 13 s (antes, 2,5 min por la recuperación
   - La nota de `vision_write_every` saltó a las 18:20 («12 image views with nothing written»).
   - El borrador llegó a los 51 minutos.
   - La caché sirvió el 82 % del prompt: 7 rondas con más de 20k procesados, tres de ellas inicios de tramo. Las otras cuatro son pérdidas parciales que no se han atribuido una por una.
+
+**Tope de coste por turno en dólares** (20:30). La auditoría decía que no había tope de dinero. Sí lo hay: el techo de gasto remoto del presupuesto de autonomía se aplica a todo turno en un endpoint de pago. Pero va en «unidades» (1 unidad = 0,000002 USD; 20.000 por defecto ≈ 0,04 USD por turno en supervisado) y no se entendía. `agent_turn_max_cost_usd` (Ajustes › Agent) lo fija en dólares: cuando tiene valor, sustituye a ese techo sin escalar por preset. Se cuenta con el coste real que da el proveedor o, si no lo da, con la estimación por tokens. Al llegar, el turno se para con el punto de control de siempre. Los modelos locales no tienen tope. 2 pruebas.

@@ -1148,6 +1148,9 @@ DEFAULT_SETTINGS = {
     "agent_autonomy_max_active_seconds": 900,
     "agent_autonomy_max_subagents": 4,
     "agent_autonomy_max_remote_spend": 20_000,
+    # Per-turn ceiling in US dollars on paid endpoints; replaces the
+    # remote-spend ceiling above when set (0 = use that one).
+    "agent_turn_max_cost_usd": 0,
     "agent_autonomy_max_memory_mb": 2048,
     # A31: run-wide token ceiling enforced by src/budget_account.py before a
     # worker/reviewer/judge is launched (reservations rejected up front, not
