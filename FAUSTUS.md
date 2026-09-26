@@ -9173,3 +9173,25 @@ La revisión de dudas viene apagada (`agent_doubt_review`). Quien la encienda en
 
 **Tests: la caché del índice de herramientas.** Desde que cada sesión de tests tiene su propia carpeta de datos, cada sesión volvía a calcular los embeddings de todas las descripciones de herramientas. Tardaba minutos, varios trabajadores a la vez agotaban la memoria de la máquina de la nube y los tests del bucle superaban el tiempo máximo. Ahora la sesión parte de una copia de la caché del checkout, que nunca se reescribe. Siete ficheros de tests del bucle que agotaban el tiempo pasan en 35 s con cuatro trabajadores.
 
+
+## 211. MTP en el 27B, la sexta pregunta sobre una imagen y la caché de prompt a la vista (26-09-2026, mediodía)
+
+**MTP medido y puesto.** Con el examen 29 cerrado y el 8081 libre, se midió en el PC el draft MTP del propio 27B (`--spec-type draft-mtp`) contra la configuración de siempre (4 slots, 235k de contexto, mmproj). Primera pasada: prompts cortos, temperatura 0 y un servidor aparte con `-np 1`. Segunda pasada: la configuración real, con razonamiento activo, temperatura 0,7 y una o dos peticiones a la vez.
+
+| configuración (4 slots, 235k) | 1 petición | 2 a la vez (cada una) |
+| --- | --- | --- |
+| sin MTP | 10,8 / 9,7 tok/s | 8,9 / 8,8 |
+| MTP, 2 tokens de borrador | 16,2 / 18,0 | 8,8 / 8,5 |
+| MTP, 3 tokens de borrador | 20,8 / 18,3 | 9,8 / 9,6 |
+
+`-sm tensor` fue más lento (9,6 tok/s) y se descarta. Con `-np 1` el MTP rinde lo mismo que con 4 slots, así que no hace falta sacrificar la concurrencia entre el 7000 y el 7006. El 8081 arranca ahora con `--spec-type draft-mtp --spec-draft-n-max 3` (tarea programada del PC), y los motores del 7000 y del 7006 lo tienen activado (MTP, 3) con la visión y su mmproj, para que un reinicio desde Faustus lo mantenga. En Ajustes › Local models la tarjeta del motor mostraba «Más de un slot anula casi toda la ganancia de MTP: añade -np 1»; lo medido dice lo contrario, así que ahora dice que MTP acelera sobre todo una petición cada vez y que no hace falta `-np 1`. Una ronda de 4.096 tokens de razonamiento pasa de unos 9 minutos a unos 4.
+
+**La sexta pregunta sobre la misma imagen.** El examen 29 escribió `RESPUESTA.md` tres minutos antes del tope de su tercer tramo, tras horas de preguntas distintas sobre las mismas dos imágenes. La ronda 8 de investigación coincide: la verificación de más se corta mejor con un tope por fuente que obliga a escribir lo que se tiene. `inspect_image` cuenta ahora, por sesión e imagen, las preguntas desde la última escritura correcta (`write_file`, `edit_file`, `apply_patch`, `append_file`). Cada `vision_write_every` preguntas (6 por defecto, 0 = nunca; en Ajustes › Agent › Vision), la respuesta lleva una nota: escribe ya tu mejor respuesta, con lo establecido y lo dudoso, y pregunta después sólo por los huecos que puedan cambiarla. No bloquea nada.
+
+**La caché del prompt, a la vista.** Los tiempos de cada ronda de llama-server traen ahora `cache_n` (tokens del prompt reutilizados de la caché) junto a `prompt_n`, y el bucle deja una línea por ronda en el log: `[engine] round N: prompt X tokens processed, Y from cache, prefill Z ms`. En el examen 30 la primera ronda procesa 16,6k tokens (18 s) y las siguientes sólo 250–2.900, con 17–21k de la caché (1–5 s). Si una ronda vuelve a tardar medio minuto en prefill, la línea dice si fue caché perdida.
+
+**Estado de los motores, de una vez.** `GET /api/engines/status` sondeaba un motor tras otro con una llamada bloqueante dentro de la petición: ~5 s con dos motores, y el resto de peticiones esperando. Ahora lee una sola vez la tabla (cacheada) de puertos y lanza los sondeos a la vez en hilos (`engines.status_all`): 1,3 s. El aviso del Cookbook («También sirven, gestionados en Ajustes › Local models») salía tarde por eso; verificado en el 7000 con los dos motores.
+
+**Oferta de tour que se quedaba.** Abrir Ajustes en Apariencia y pasar a Local models dejaba «¿Primera vez en Apariencia?» en pantalla. La oferta se va ahora al salir del sitio al que pertenecía; comprobado antes y después con un navegador sin cabeza.
+
+**Examen 29 corregido** con la rúbrica privada: ≈19,5/100, la meseta de siempre. Las 8 palabras de las citas bien, 185,2 m por cable, 3 de 4 obras. Las flechas otra vez como rumbos, marcas de los cuadros mal y sin numeral. Muy buena separación entre observado y supuesto. El examen 30 corre desde las 12:17 con todo lo anterior.
