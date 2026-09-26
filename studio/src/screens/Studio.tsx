@@ -1826,6 +1826,19 @@ export function StudioScreen() {
         case 'tts':
           extrasRef.current.tts();
           return true;
+        case 'review': {
+          if (!workspace) {
+            say(t('Pick a working folder first: /review looks at its changes.'), 'warning');
+            return true;
+          }
+          const base = args.trim() || 'HEAD';
+          say(t('Reviewing the changes against {base}: diff, static checks, related tests, then the model…', { base }));
+          void cmd
+            .worktreeReviewMarkdown(workspace, base, route?.model)
+            .then((md) => report(md))
+            .catch((error) => say(`${t('Could not review')}: ${(error as Error).message}`, 'danger'));
+          return true;
+        }
         case 'recap': {
           const days = Number.parseInt(args || '30', 10);
           void cmd

@@ -403,6 +403,20 @@ export async function usageRecapMarkdown(days: number): Promise<string> {
   return d.markdown || '';
 }
 
+/* ── /review: staged review of the working tree (src/staged_review.py) ──
+ * Diff, static analysis on the added lines and the related tests run first;
+ * the model reads their results with the diff and looks for what they
+ * cannot prove (logic, the request, deleted behaviour). */
+export async function worktreeReviewMarkdown(workspace: string, base: string, model?: string): Promise<string> {
+  const d = await post<{ markdown?: string; notes?: string[]; error?: string }>('/api/review/worktree', {
+    workspace, base: base || 'HEAD', model: model || undefined,
+  });
+  const notes = (d.notes ?? []).map((n) => `> ${n}`).join('\n');
+  return [d.markdown || d.error || t('Nothing to review: no changes against {base}.', { base: base || 'HEAD' }), notes]
+    .filter(Boolean)
+    .join('\n\n');
+}
+
 /* ── /turnreview: what the last turns did (src/turn_review.py) ── */
 
 export async function turnReviewMarkdown(sessionId: string, turns: number): Promise<string> {

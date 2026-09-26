@@ -8588,3 +8588,8 @@ Shortened here; using this version brings back all of it.	Recortada aquí; al us
 Use this version	Usar esta versión
 Now using that version of the answer.	Ahora se usa esa versión de la respuesta.
 Search in	Buscar en
+Nothing to review: no changes against {base}.	Nada que revisar: no hay cambios respecto a {base}.
+Pick a working folder first: /review looks at its changes.	Elige antes una carpeta de trabajo: /review mira sus cambios.
+Reviewing the changes against {base}: diff, static checks, related tests, then the model…	Revisando los cambios respecto a {base}: diff, comprobaciones estáticas, tests relacionados y luego el modelo…
+Could not review	No se pudo revisar
+Review the working folder's changes against a base (HEAD by default) in stages: the diff, static checks on the added lines, the related tests, then the chat's model on what those cannot prove.	Revisa por etapas los cambios de la carpeta de trabajo respecto a una base (HEAD por defecto): el diff, comprobaciones estáticas en las líneas añadidas, los tests relacionados y luego el modelo del chat sobre lo que esas pruebas no demuestran.

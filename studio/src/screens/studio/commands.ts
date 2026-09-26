@@ -77,6 +77,7 @@ export const COMMANDS: SlashCommand[] = [
   { name: 'compact', category: 'Chat', usage: '/compact', help: 'Summarises the old messages into one.' },
   { name: 'versions', aliases: ['history-versions', 'undo-edit'], category: 'Chat', usage: '/versions', help: 'Previous versions of this chat (what an edit or a regenerate removed).' },
   { name: 'restore', category: 'Chat', usage: '/restore ID', help: 'Restores a version from /versions.' },
+  { name: 'review', aliases: ['cr', 'code-review'], category: 'Tools', usage: '/review [base]', help: 'Review the working folder\'s changes against a base (HEAD by default) in stages: the diff, static checks on the added lines, the related tests, then the chat\'s model on what those cannot prove.' },
   { name: 'recap', aliases: ['month', 'usage-recap'], category: 'Chat', usage: '/recap [days]', help: 'What you used across every chat over the last days (30 by default): turns, tokens, prompt cache, local vs hosted, models, top tools, cost.' },
   { name: 'turnreview', aliases: ['why', 'postmortem'], category: 'Chat', usage: '/turnreview [N]', help: 'What the last N turns of this conversation did — tools, failures, rounds, writes, prompt cache — and what went wrong.' },
   { name: 'stats', aliases: ['df', 'cost', 'spend'], category: 'Chat', usage: '/stats', help: 'What this conversation used: tokens, prompt cache, steps, tool calls, time and cost, per model; and what the database holds.' },

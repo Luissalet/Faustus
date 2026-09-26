@@ -892,6 +892,11 @@ app.include_router(setup_brain_routes())
 from routes.unified_search_routes import setup_unified_search_routes
 app.include_router(setup_unified_search_routes())
 
+# Staged review of a working tree: diff, static analysis on the added lines,
+# the related tests, then a model that reads all of that (src/staged_review.py).
+from routes.staged_review_routes import setup_staged_review_routes
+app.include_router(setup_staged_review_routes())
+
 # find_symbol/callers/tests_for HTTP surface (Lote 38, IDX-02/IDX-03).
 from routes.code_index_routes import setup_code_index_routes
 app.include_router(setup_code_index_routes())
