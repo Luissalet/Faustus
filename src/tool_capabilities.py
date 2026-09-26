@@ -710,6 +710,14 @@ _register(
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
 _register(
+    # turn_review (src/turn_review.py) reads the owner's own saved chat
+    # turns (tool names, exit codes, short output excerpts, timings); the
+    # excerpts can quote text a tool fetched, so its result is untrusted.
+    {"turn_review"},
+    ToolEffect.READ_PRIVATE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
+_register(
     # doc_claims_check (src/doc_claims.py) only reads Markdown docs and
     # source files already in the workspace (plus a read-only `git log`/
     # `git blame`) to ground claims and detect drift -- same class as

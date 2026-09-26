@@ -86,6 +86,7 @@ from .code_graph_tools import (
 )
 from .structural_search_tools import StructuralSearchTool, StructuralRewriteTool
 from .doc_claims_tool import DocClaimsCheckTool
+from .turn_review_tool import TurnReviewTool
 from .pdf_ops_tool import PdfOpsTool
 from .pdf_tree_tool import PdfOutlineTool, PdfReadSectionTool, PdfFindSectionTool
 from .image_inspect_tool import InspectImageTool
@@ -349,6 +350,7 @@ TOOL_HANDLERS["context_note"] = ContextNoteTool().execute
 from .research_podcast_tools import ResearchPodcastTool  # noqa: E402
 
 TOOL_HANDLERS["research_podcast"] = ResearchPodcastTool().execute
+TOOL_HANDLERS["turn_review"] = TurnReviewTool().execute
 
 # ---------------------------------------------------------------------------
 # Constants (re-exported for backward compatibility — single source of truth
@@ -465,6 +467,8 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "structural_search", "structural_rewrite",
              # Doc-claim drift checker -- src/agent_tools/doc_claims_tool.py.
              "doc_claims_check",
+             # Review of a chat's recent turns -- src/agent_tools/turn_review_tool.py.
+             "turn_review",
              # R3 (Reach wave): fan-out -- src/agent_tools/fanout_tools.py.
              "fanout_run", "fanout_status", "fanout_results", "fanout_apply",
              # PDF operations (R4, Reach wave) -- src/agent_tools/pdf_ops_tool.py.

@@ -3245,6 +3245,21 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "turn_review",
+            "description": "What the last turns of this chat actually did, read from what they saved: tools called, failures with exit codes and output excerpts, rounds, time, writes, slowest calls and prompt-cache reuse, plus findings (the same failure twice, a loop over one tool, many rounds without writing, a lost prompt cache). Use when a turn went wrong or was slow, before retrying the same approach, or when the user asks why.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "turns": {"type": "integer", "description": "How many recent turns to review (1-10, default 1)"},
+                    "session_id": {"type": "string", "description": "Another of your chats to review (default: this one)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "doc_claims_check",
             "description": "Ground backticked claims in Markdown docs (file paths, dotted symbols, settings keys, API routes, tool names) in the actual code -- reports which ones are broken (the thing no longer exists) and which sections are stale (the code they cite changed after the doc section was last edited, with the commits in between). Use before closing a docs-writing task to catch stale references, or when asked 'is this doc still accurate'.",
             "parameters": {

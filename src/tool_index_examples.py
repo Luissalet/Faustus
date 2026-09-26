@@ -1092,6 +1092,12 @@ EXAMPLES: Dict[str, List[str]] = {
         "qué módulos se han movido o acoplado nuevo desde entonces",
         "check whether this change introduced a new dependency cycle",
     ],
+    "turn_review": [
+        "why did your last answer take so long",
+        "¿por qué falló el último turno?",
+        "review what you did in the previous turn before retrying",
+        "qué herramientas usaste y cuáles fallaron en la última respuesta",
+    ],
     "doc_claims_check": [
         "check if the README still matches the code",
         "revisa si FAUSTUS.md tiene referencias rotas al código",

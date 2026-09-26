@@ -9335,3 +9335,12 @@ Verificado en el 7000 con Playwright:
 - **8081.** Arranca ya con `--slot-prompt-similarity 0.5`, en la tarea programada y en los motores del 7000 y del 7006, para que un chat nuevo no le quite el slot y la caché a otro.
 - **Arranque lento del 7006.** Al redesplegar tardó 2,5 min en arrancar. La pila de arranque lento señaló la recuperación del registro de 53 MB del examen cortado. La recuperación ahora descarta por subcadena el razonamiento y los latidos antes de parsear (`_read_log(for_recovery=True)`), y la respuesta parcial que guarda es la misma.
 - **Examen 31.** Lanzado a las 16:54 desde el ZIP limpio, con master completo.
+
+**`turn_review`: el agente lee sus propios turnos** (17:10). Es una herramienta nueva (`src/turn_review.py`) que resume los últimos turnos de un chat a partir de lo que guardaron: herramientas, fallos con código de salida y extracto, rondas, escrituras, las llamadas más lentas y la caché de prompt. También da hallazgos:
+
+- el mismo fallo repetido;
+- una herramienta llamada 8 veces o más;
+- 12 rondas sin escribir nada;
+- rondas que perdieron la caché.
+
+Es la idea de «diagnosticar transcripciones» que salió de la revisión de repos. Sirve para que el modelo no reintente a ciegas y para contestar «¿por qué tardó tanto?». Sólo lee chats del propio dueño, y su resultado cuenta como no fiable (cita salidas de herramientas).
