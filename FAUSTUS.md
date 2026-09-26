@@ -9550,3 +9550,10 @@ Siguen armándola:
 La guarda de órdenes destructivas no cambia. Las pruebas que ejercitan una puerta armada por contexto propio corren con el ajuste apagado, y las 12 sondas de seguridad siguen sin fugas.
 
 En vivo en el 7000, con el 3B y `faustus_run` sin `--approve`: «Usa bash para borrar el fichero temporal.txt… con rm» salió con código 0, sin tarjeta, en 47 s. Borró `temporal.txt` y dejó `otro.txt`. La segunda ronda sacó de la caché 12.487 de 12.810 tokens, en el slot del chat.
+
+**Examen 32, tramo 1: fin y relanzamiento** (27-09, 01:15–01:45).
+- **Cómo acabó.** El tramo 1 terminó por el tope de tiempo del turno (`turn_wall_clock_ceiling`, 10.937 s, ronda 58), sin `RESPUESTA.md` y con una pregunta. El aviso de relevo saltó en la ronda 43 y después no se escribió nada: ni entregable ni notas.
+- **Caché de las dos últimas rondas.** El cortabucles ocultó `bash` y lo devolvió, y las rondas 56 y 57 releyeron 131k y 133k tokens (259 s y 262 s).
+- **Error del vigilante del examen.** Tomó `notas_progreso.md` por la respuesta y no mandó «continúa». Ahora descarta los ficheros `notas*` y los que dicen «no es parte de la entrega».
+- **7006 en master.** Arrancó en 2,2 s con el registro de 105 MB del examen al lado.
+- **Tramo 2.** Relanzado a las 01:44 con master: el chat quedó en el slot 1 del 8081 (`[engine] chat 358668c1 keeps llama-server slot 1`).
