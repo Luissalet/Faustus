@@ -252,6 +252,11 @@ def should_review(path: str, workspace: str, diff: Any, *, project_id: str = "",
             pass
 
     summary = get_risk_summary(path, workspace, project_id=project_id, state=state, risk_fn=risk_fn)
+    if summary.get("error"):
+        # A risk that could not be computed (a folder outside the allowed
+        # roots, a broken index) is not evidence of risk: with a low tier
+        # floor it used to earn a review of its own.
+        return False, summary
     level = str(summary.get("level") or "low").lower()
     if _TIER_RANK.get(level, 0) < _TIER_RANK.get(tier_floor, 2):
         return False, summary
