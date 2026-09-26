@@ -5890,6 +5890,8 @@ def _sticky_toolset(session_id: str, relevant: Set[str], hot: Optional[Set[str]]
             # hold them from an earlier turn, deferred to the catalog.
             if hot is not None:
                 hot = set(hot) - (weak - (prev_hot if prev_hot is not None else set()))
+            # A turn that starts a new set starts it without them too.
+            out_relevant, out_hot = set(relevant), (None if hot is None else set(hot))
         if relevant <= prev_relevant and (hot is None or prev_hot is None or hot <= prev_hot):
             out_relevant, out_hot = prev_relevant, prev_hot if hot is not None else None
         else:

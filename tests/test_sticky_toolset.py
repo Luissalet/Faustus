@@ -80,3 +80,10 @@ def test_weak_plugin_picks_already_in_the_set_are_not_promoted_to_schemas():
     out, hot = al._sticky_toolset("s", {"read_file", "inspect_image", "mcp__b__y"},
                                   {"inspect_image", "mcp__b__y"}, set(), optional={"mcp__b__y"})
     assert out == {"read_file", "inspect_image", "mcp__b__y"} and hot == {"inspect_image"}
+
+
+def test_a_turn_that_starts_over_leaves_weak_picks_out(monkeypatch):
+    monkeypatch.setattr(al, "get_setting", lambda k, d=None: 4 if k == "agent_sticky_toolset_max" else d, raising=False)
+    al._sticky_toolset("s", {"a", "b", "c"}, None, set())
+    out, _ = al._sticky_toolset("s", {"x", "y", "mcp__w__z"}, None, set(), optional={"mcp__w__z"})
+    assert out == {"x", "y"}
