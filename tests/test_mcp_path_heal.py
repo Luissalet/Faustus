@@ -43,3 +43,23 @@ def test_an_interpreter_that_exists_is_kept(tmp_path):
     root = _root(tmp_path)
     cmd, args, notes = heal(sys.executable, [str(tmp_path / "old") + "/bridges/rest_mcp/server.py"], root=root)
     assert cmd == sys.executable and len(notes) == 1
+
+
+def test_env_paths_from_an_old_install_are_rerooted(tmp_path):
+    """Live: the REST bridge's script was healed but REST_MANIFEST still
+    pointed at the old install and the bridge exited on start."""
+    from src.mcp_path_heal import heal_env
+    root = tmp_path / "app"
+    manifest = root / "bridges" / "rest_mcp" / "manifests" / "gepetto.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text("{}", encoding="utf-8")
+    env = {
+        "REST_MANIFEST": "D:\\LocalAI\\oldname/bridges/rest_mcp/manifests/gepetto.json",
+        "REST_BASE_URL": "http://127.0.0.1:5000",
+        "OTHER": "C:\\somewhere\\that\\is\\gone.json",
+    }
+    out, notes = heal_env(env, root)
+    assert out["REST_MANIFEST"] == str(manifest)
+    assert out["REST_BASE_URL"] == "http://127.0.0.1:5000"
+    assert out["OTHER"] == env["OTHER"]          # no matching tail here: left as it was
+    assert len(notes) == 1 and "REST_MANIFEST" in notes[0]

@@ -1037,8 +1037,11 @@ class McpManager:
         # A server saved while the app lived in another folder (src/mcp_path_heal.py).
         _heal_notes: List[str] = []
         try:
-            from src.mcp_path_heal import heal as _heal_paths
+            from src.mcp_path_heal import heal as _heal_paths, heal_env as _heal_env
             command, args, _heal_notes = _heal_paths(command, list(args or []))
+            if env:
+                env, _env_notes = _heal_env(dict(env))
+                _heal_notes = list(_heal_notes) + _env_notes
             for _note in _heal_notes:
                 logger.warning(f"MCP server {name} ({server_id}): {_note}")
         except Exception as _heal_exc:  # noqa: BLE001 - never block a connect on this

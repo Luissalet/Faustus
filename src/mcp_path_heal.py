@@ -20,7 +20,7 @@ import re
 import shutil
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 APP_ROOT = Path(__file__).resolve().parents[1]
 
@@ -82,3 +82,24 @@ def heal(command: str, args: List[str], root: Path = APP_ROOT) -> Tuple[str, Lis
             new_command = sys.executable
             notes.append(f"interpreter {command} does not exist; using {sys.executable}")
     return new_command, new_args, notes
+
+
+def heal_env(env: Optional[Dict[str, str]], root: Path = APP_ROOT) -> Tuple[Dict[str, str], List[str]]:
+    """(env, notes): the same repair for environment values. A REST bridge
+    saved under the previous install folder kept `REST_MANIFEST` pointing
+    there after its script had been healed, and exited on start with "could
+    not read REST_MANIFEST". Only values that look like a file path and do
+    not exist are touched, and only when the same trailing path (3+ parts)
+    exists under `root`."""
+    notes: List[str] = []
+    out: Dict[str, str] = {}
+    for key, value in (env or {}).items():
+        s = str(value) if value is not None else value
+        if isinstance(s, str) and ("/" in s or "\\" in s) and not _exists(s):
+            fixed = _rerooted(s, root)
+            if fixed:
+                notes.append(f"{key} {s} does not exist; using {fixed}")
+                out[key] = fixed
+                continue
+        out[key] = value
+    return out, notes
