@@ -390,6 +390,49 @@ def test_bare_done_with_no_tool_activity_is_still_rejected():
     assert "claims_without_mutation" in ledger.check_completion("Listo.")["reasons"]
 
 
+def test_no_change_verification_backed_by_plan_tracker_is_accepted():
+    """Seen live (FAUSTUS §95): a verification-only turn that closed all 4
+    plan tasks with plan_done (evidence required) and mutated nothing was
+    still rejected for saying 'el servicio está listo'. When the tracker
+    already shows every task done with evidence, that bare readiness claim
+    is backed, not fabricated."""
+    ledger = h.TurnLedger(None, "sigue con el plan")
+    ledger.record("read_file", '{"path": "server.py"}', {"output": "x", "exit_code": 0}, 1)
+    ledger.plan_all_done_with_evidence = True
+    check = ledger.check_completion("He revisado todo lo pendiente. El servidor está listo.")
+    assert "claims_without_mutation" not in check["reasons"], check
+    # English phrasing, same acceptance.
+    check2 = ledger.check_completion("Checked every route against the code. The server is now complete.")
+    assert "claims_without_mutation" not in check2["reasons"], check2
+    # Without the tracker backing, the identical claim is rejected as before.
+    ledger.plan_all_done_with_evidence = False
+    check3 = ledger.check_completion("He revisado todo lo pendiente. El servidor está listo.")
+    assert "claims_without_mutation" in check3["reasons"]
+
+
+def test_no_change_verification_backed_by_passing_tests_this_turn():
+    ledger = h.TurnLedger(None, "revisa si falta algo")
+    ledger.record("bash", '{"command": "pytest -q"}', {"output": "5 passed", "exit_code": 0}, 1)
+    ledger.tests = {"ran": True, "ok": True}
+    check = ledger.check_completion("All good, nothing to change. The work is done.")
+    assert "claims_without_mutation" not in check["reasons"], check
+    # Tests that ran but failed give no such pass.
+    ledger.tests = {"ran": True, "ok": False}
+    check2 = ledger.check_completion("All good, nothing to change. The work is done.")
+    assert "claims_without_mutation" in check2["reasons"]
+
+
+def test_specific_change_claim_without_mutation_still_rejected_even_with_tracker_done():
+    """The tracker/test-backed pass only excuses a bare readiness claim; a
+    claim that names a specific, unverified edit is always rejected."""
+    ledger = h.TurnLedger(None, "add the helpers")
+    ledger.plan_all_done_with_evidence = True
+    check = ledger.check_completion("He creado utils.py con los helpers.")
+    assert "claims_without_mutation" in check["reasons"]
+    check2 = ledger.check_completion("I've added the delete button in the component.")
+    assert "claims_without_mutation" in check2["reasons"]
+
+
 def test_finishing_an_investigation_is_not_a_change_claim():
     """'I have completed the review' / 'He terminado el análisis' end a
     read-only task; only completing an *implementation* is a mutation claim."""

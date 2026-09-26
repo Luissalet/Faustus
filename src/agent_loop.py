@@ -10113,6 +10113,16 @@ async def _stream_agent_loop_body(
                                 _ledger.notes.append("plan_tracker:attachment:" + str(_plan_tracker.get("hash") or ""))
                 if _plan_tracker is None:
                     _plan_tracker = _pt.active(_plan_scope)
+                if _plan_tracker:
+                    # Independent of whether a task is still pending: once
+                    # every task is `done` (plan_done requires evidence; the
+                    # auto-reconcile path only closes one when it finds
+                    # matching evidence too), a verification-only final
+                    # answer ("está listo") is backed, not fabricated. See
+                    # TurnLedger._no_change_verified.
+                    _all_prog = _pt.progress(_plan_tracker)
+                    _ledger.plan_all_done_with_evidence = bool(_all_prog.get("total")) and (
+                        _all_prog.get("done") == _all_prog.get("total"))
                 if _plan_tracker and _pt.current_task(_plan_tracker):
                     _ledger.plan_active = True
                     # Offer the plan tools alongside whatever the retriever

@@ -375,6 +375,24 @@ _RELATIVE_OR_CONDITIONAL_BEFORE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# "Todo está listo" / "the task is now ready": a bare readiness claim that
+# names no specific action (contrast "he creado utils.py"). Grouped with the
+# other _GENERIC_READY patterns below so a verification-only turn (nothing
+# mutated, on purpose) can be told apart from a fabricated "I changed X".
+_ES_GENERIC_READY_RE = re.compile(
+    r"\b(?:todo|la\s+funcionalidad|la\s+implementación|el\s+código|la\s+tarea)\s+(?:ya\s+)?(?:está|queda)\s+"
+    r"(?:completamente\s+|totalmente\s+)?(?:list[oa]|implementad[oa]|integrad[oa]|hech[oa]|completad[oa]|terminad[oa])",
+    re.IGNORECASE,
+)
+_EN_STATE_READY_RE = re.compile(
+    r"\b(?:is|are)\s+now\s+(?:fully\s+|completely\s+)?(?:implemented|complete|done|ready|in\s+place|integrated|working|fixed|updated)\b",
+    re.IGNORECASE,
+)
+_EN_GENERIC_READY_RE = re.compile(
+    r"\b(?:the\s+)?(?:implementation|feature|changes?|fix|task|work)\s+(?:is|are)\s+(?:now\s+)?(?:complete|done|ready|finished|in\s+place)\b",
+    re.IGNORECASE,
+)
+
 MUTATION_CLAIM_PATTERNS: List[re.Pattern] = [
     # Spanish — perfect / preterite / passive / "está listo"
     re.compile(r"\b(?:he|hemos)\s+" + _ES_PP, re.IGNORECASE),
@@ -382,7 +400,7 @@ MUTATION_CLAIM_PATTERNS: List[re.Pattern] = [
     re.compile(r"\bse\s+(?:ha|han)\s+" + _ES_PP, re.IGNORECASE),
     re.compile(r"\b(?:creé|añadí|agregué|modifiqué|actualicé|implementé|eliminé|borré|cambié|edité|escribí|corregí|arreglé|apliqué|moví|renombré|refactoricé|integré|completé|terminé|finalicé|solucioné|reparé|configuré|instalé|guardé)\b", re.IGNORECASE),
     re.compile(r"\b(?:los\s+)?cambios\s+(?:han\s+sido\s+|fueron\s+|están\s+)?" + _ES_PP, re.IGNORECASE),
-    re.compile(r"\b(?:todo|la\s+funcionalidad|la\s+implementación|el\s+código|la\s+tarea)\s+(?:ya\s+)?(?:está|queda)\s+(?:completamente\s+|totalmente\s+)?(?:list[oa]|implementad[oa]|integrad[oa]|hech[oa]|completad[oa]|terminad[oa])", re.IGNORECASE),
+    _ES_GENERIC_READY_RE,
     _BARE_DONE_ES,
     # Record-keeping claims a plugin turn makes in the present or perfect:
     # "te la marco como otra vez", "la he marcado como difícil", "le he
@@ -401,12 +419,27 @@ MUTATION_CLAIM_PATTERNS: List[re.Pattern] = [
     re.compile(r"\bI(?:'ve|\s+have)\s+(?:now\s+|also\s+|successfully\s+|just\s+)?" + _EN_PP, re.IGNORECASE),
     re.compile(r"\bI\s+(?:then\s+|also\s+|now\s+)?" + r"(?:created|added|modified|updated|implemented|removed|deleted|changed|edited|wrote|fixed|applied|moved|renamed|refactored|integrated|completed|finished|patched|inserted|replaced|saved|exported|generated|stored)\b", re.IGNORECASE),
     re.compile(r"\b(?:has|have)\s+been\s+(?:successfully\s+)?" + _EN_PP, re.IGNORECASE),
-    re.compile(r"\b(?:is|are)\s+now\s+(?:fully\s+|completely\s+)?(?:implemented|complete|done|ready|in\s+place|integrated|working|fixed|updated)\b", re.IGNORECASE),
-    re.compile(r"\b(?:the\s+)?(?:implementation|feature|changes?|fix|task|work)\s+(?:is|are)\s+(?:now\s+)?(?:complete|done|ready|finished|in\s+place)\b", re.IGNORECASE),
+    _EN_STATE_READY_RE,
+    _EN_GENERIC_READY_RE,
     _BARE_DONE_EN,
     re.compile(r"^\s*(?:[-*•]\s*)?(?:✅|✓|☑|\[x\])\s+\S", re.MULTILINE),
     re.compile(r"^\s*(?:[-*•]\s*)?(?:Added|Created|Modified|Updated|Implemented|Removed|Deleted|Fixed|Wired|Hooked)\b", re.MULTILINE),
     re.compile(r"^\s*(?:[-*•]\s*)?(?:Añadid[oa]|Cread[oa]|Modificad[oa]|Actualizad[oa]|Implementad[oa]|Eliminad[oa]|Corregid[oa]|Añadí|Creé|Modifiqué|Actualicé|Implementé|Eliminé)\b", re.MULTILINE),
+]
+
+# The subset of MUTATION_CLAIM_PATTERNS above that assert a bare state of
+# readiness ("está listo", "is now complete") without naming any specific
+# creation/change — as opposed to "he creado X" / "I have added X", which
+# name what was supposedly done and stay rejected regardless of the tracker.
+# check_completion() lets THESE through on a turn with zero mutations when
+# the plan tracker or this turn's own test run already backs "no changes
+# needed" — see TurnLedger._no_change_verified.
+_GENERIC_READY_CLAIM_PATTERNS = frozenset({
+    _ES_STATE_CLAIM_RE, _ES_GENERIC_READY_RE, _EN_STATE_READY_RE, _EN_GENERIC_READY_RE,
+})
+_ACTION_CLAIM_PATTERNS: List[re.Pattern] = [
+    p for p in MUTATION_CLAIM_PATTERNS
+    if p not in _GENERIC_READY_CLAIM_PATTERNS and p not in BARE_DONE_PATTERNS
 ]
 
 # Phrases that announce an action the model then never performs. Matched
@@ -624,18 +657,24 @@ def _finishes_an_investigation(match_text: str, following: str) -> bool:
     return bool(_INVESTIGATION_OBJECT_RE.search(following[:50]))
 
 
-def find_mutation_claims(text: str, limit: int = 4, include_bare_done: bool = True) -> List[str]:
+def find_mutation_claims(
+    text: str, limit: int = 4, include_bare_done: bool = True,
+    patterns: Optional[List[re.Pattern]] = None,
+) -> List[str]:
     """Return up to `limit` distinct snippets that read as 'I changed X' *about
     something technical* (see _TECH_CONTEXT_RE). Narrative first person is
     ignored. With include_bare_done=False the content-free "Done." / "Hecho."
-    lines are skipped (only claims that describe a change are returned)."""
+    lines are skipped (only claims that describe a change are returned).
+    `patterns` restricts the scan to a subset of MUTATION_CLAIM_PATTERNS
+    (e.g. _ACTION_CLAIM_PATTERNS, to see only claims that name a specific
+    creation/change)."""
     out: List[str] = []
     seen: Set[str] = set()
     body = text or ""
     has_paths = bool(PATH_TOKEN_RE.search(body))
     # A bare "Done." / "Hecho." reply is a completion claim by itself.
     terse = len(body.strip()) < 200
-    for pat in MUTATION_CLAIM_PATTERNS:
+    for pat in (patterns if patterns is not None else MUTATION_CLAIM_PATTERNS):
         if not include_bare_done and pat in BARE_DONE_PATTERNS:
             continue
         for m in pat.finditer(body):
@@ -1402,6 +1441,14 @@ class TurnLedger:
         # ("Sigue implementando el plan") on an active plan that ends with
         # zero tool calls is then a completion failure, not an answer.
         self.plan_active: bool = False
+        # Set by the loop from src.plan_tracker.progress() when a plan is
+        # attached to this scope: every task closed `done` (plan_done always
+        # requires >=20 chars of evidence, and the auto-reconcile path only
+        # closes a task when it finds matching evidence too) — so a claim
+        # that nothing more needs to change is backed, not fabricated, even
+        # on a turn that made zero mutations on purpose. See
+        # `_no_change_verified`.
+        self.plan_all_done_with_evidence: bool = False
         self.notes: List[str] = []
         # Per-file verdicts: the cheap syntax check below, enriched in place by
         # the static-analysis gate (src/static_checks.py). One entry per file —
@@ -1920,6 +1967,18 @@ class TurnLedger:
         from src.source_claims import is_page_tool
         return self.prior_pages or any(e.get("ok") and is_page_tool(str(e.get("tool") or "")) for e in self.events)
 
+    def _no_change_verified(self) -> bool:
+        """True when a turn that mutated nothing can still honestly say so:
+        the attached plan tracker already has every task closed `done` with
+        evidence, or this very turn ran the project's tests and they passed.
+        Backs a bare completion/readiness claim ("está listo", "is now
+        complete") on a verification-only turn; never backs a claim that
+        names a specific, unverified creation or change."""
+        if self.plan_all_done_with_evidence:
+            return True
+        t = self.tests
+        return bool(isinstance(t, dict) and t.get("ran") and t.get("ok"))
+
     def check_completion(self, text: str) -> Dict[str, Any]:
         """Judge a text-only (final) round against the evidence.
 
@@ -1938,7 +1997,13 @@ class TurnLedger:
             # whatever ran, not a fabricated edit: reject only when the text
             # describes changes, or when nothing at all was executed.
             did_something = any(e["ok"] for e in self.events)
-            if not did_something or find_mutation_claims(body, include_bare_done=False):
+            action_claims = find_mutation_claims(body, include_bare_done=False, patterns=_ACTION_CLAIM_PATTERNS)
+            if action_claims:
+                # "I changed X" / "he creado Y" names a specific mutation:
+                # never excused by the tracker, only by an actual effect.
+                reasons.append("claims_without_mutation")
+            elif ((not did_something or find_mutation_claims(body, include_bare_done=False))
+                    and not self._no_change_verified()):
                 reasons.append("claims_without_mutation")
         offered = ([p for p in bad_paths if _only_offered(body, p)]
                    if claims or not self.events else [])
