@@ -56,6 +56,7 @@ import { ProjectObjectives } from './project/Objectives';
 import { ProjectRequirements } from './project/Requirements';
 import { ProjectRules } from './project/Rules';
 import { ProjectSettings } from './project/Settings';
+import { ProjectSkillImports } from './project/SkillImports';
 import './projects.css';
 import './home.css';
 import { t, tn } from '../i18n';
@@ -1123,6 +1124,7 @@ export function ProjectScreen() {
       {tab === 'reglas' && (
         <div className="fs-panel">
           <ProjectRules workspace={project.workspace ?? ''} say={say} />
+          <ProjectSkillImports projectId={project.id} say={say} />
         </div>
       )}
 

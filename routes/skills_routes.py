@@ -2048,12 +2048,11 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
         workspace = _Path(project["workspace"])
         return workspace.resolve() if workspace.is_dir() else None
 
-    def _find_reviewable_skill(workspace, skill_id: str):
-        """`(DiscoveredSkill, SkillManifest, raw text)` for the manifest id
-        matching `skill_id` inside `workspace` -- mirrors the lookup in
-        `src/workflows/skills.py::run` (same discovery call, same
-        workspace-containment check) without importing that module, which
-        also builds and executes a bundle."""
+    def _iter_reviewable_skills(workspace):
+        """`(DiscoveredSkill, SkillManifest, raw text)` for every skill
+        `src/workflows/skills.py::run` could resolve inside `workspace` --
+        same discovery call, same workspace-containment check, without
+        importing that module (which also builds and executes a bundle)."""
         for found in skills_discovery.discover(str(workspace)):
             if found.error or not _Path(found.path).resolve().is_relative_to(workspace):
                 continue
@@ -2062,9 +2061,37 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
                 manifest = skills_bridge.manifest_from_markdown(text, source=found.path)
             except Exception:
                 continue
+            yield found, manifest, text
+
+    def _find_reviewable_skill(workspace, skill_id: str):
+        """The one `(DiscoveredSkill, SkillManifest, raw text)` tuple whose
+        manifest id matches `skill_id`, or `None`."""
+        for found, manifest, text in _iter_reviewable_skills(workspace):
             if manifest.id == skill_id:
                 return found, manifest, text
         return None
+
+    @router.get("/discovered")
+    async def list_discovered_skills(project_id: str, request: Request):
+        """The list behind the import-review screen: every skill
+        `.faustus|.agents|.claude/skills` discovery finds in this project's
+        workspace, each with the same review payload `/{id}/review` returns
+        (digest, tools required, permissions, privilege-request flags, the
+        SEC-09 pre-scan and the current gate status) -- so the list can show
+        risk and an Approve button per row without a second round trip."""
+        user = _owner(request)
+        workspace = _workspace_for(project_id, user)
+        if workspace is None:
+            return _review_error(404, "skills_review.project_not_found",
+                                 "Project not found or has no workspace")
+        skills = []
+        for found, manifest, text in _iter_reviewable_skills(workspace):
+            digest = skills_discovery.skill_digest(found)
+            skills.append(skill_import_review.review(
+                skill_id=manifest.id, origin=found.origin, manifest=manifest,
+                manifest_text=text, digest=digest,
+                skill_dir=str(_Path(found.path).parent)))
+        return {"skills": skills}
 
     @router.get("/{id}/review")
     async def review_import_skill(id: str, project_id: str, request: Request):

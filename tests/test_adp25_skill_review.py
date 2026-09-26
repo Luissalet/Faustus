@@ -253,6 +253,38 @@ def test_review_route_reports_unreviewed_then_approved(monkeypatch, tmp_path, ro
     assert result2["status"]["state"] == "approved"
 
 
+def test_discovered_route_lists_every_skill_with_its_review_payload(monkeypatch, tmp_path, router):
+    workspace = tmp_path / "ws-list"
+    write_skill(workspace / ".claude" / "skills", "greeter",
+               extra_lines=["permissions_backends: [docker_workspace]"])
+    write_skill(workspace / ".agents" / "skills", "reporter")
+    store = _FakeProjectStore({"proj-list": {"owner": "alice", "workspace": str(workspace)}})
+    monkeypatch.setattr(projects_module, "get_store", lambda: store)
+    _isolate_store(monkeypatch, tmp_path)
+
+    list_route = _route_handler(router, "/api/skills/discovered", "GET")
+    result = await_(list_route(project_id="proj-list", request=_request("alice")))
+    ids = sorted(s["id"] for s in result["skills"])
+    assert ids == ["greeter", "reporter"]
+    greeter = next(s for s in result["skills"] if s["id"] == "greeter")
+    assert greeter["status"]["state"] == "unreviewed"
+    assert greeter["tools_required"] == ["docker_workspace"]
+    assert "security_scan" in greeter
+
+
+def test_discovered_route_hides_a_project_the_caller_does_not_own(monkeypatch, tmp_path, router):
+    workspace = tmp_path / "ws-list2"
+    write_skill(workspace / ".claude" / "skills", "private-skill")
+    store = _FakeProjectStore({"proj-list2": {"owner": "alice", "workspace": str(workspace)}})
+    monkeypatch.setattr(projects_module, "get_store", lambda: store)
+    _isolate_store(monkeypatch, tmp_path)
+
+    list_route = _route_handler(router, "/api/skills/discovered", "GET")
+    resp = await_(list_route(project_id="proj-list2", request=_request("mallory")))
+    assert resp.status_code == 404
+    assert json.loads(resp.body)["error_class"] == "skills_review.project_not_found"
+
+
 def test_review_route_hides_a_skill_in_a_project_the_caller_does_not_own(monkeypatch, tmp_path, router):
     workspace = tmp_path / "ws2"
     write_skill(workspace / ".claude" / "skills", "private-skill")
