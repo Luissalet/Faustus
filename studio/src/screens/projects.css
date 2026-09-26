@@ -2,6 +2,10 @@
 
 .fs-screen {
   display: grid;
+  /* A track that can shrink below its widest child: the implicit `auto`
+     track grew with it, and at 420 px a screen's header and tab row ran
+     off the right edge (Cookbook: 1209 px wide). */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--fs-space-5);
 }
 

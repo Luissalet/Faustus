@@ -4639,3 +4639,18 @@ aside.fs-panel { position: relative; }
     max-inline-size: 100%;
   }
 }
+
+/* Phone width: the header's last button was cut off at 420 px (19 px too
+   wide). Tighter padding and gaps give that room back without hiding any
+   control. */
+@media (max-width: 480px) {
+  .fs-studio__head {
+    padding-inline: var(--fs-space-3);
+    gap: var(--fs-space-2);
+  }
+
+  .fs-studio__head-actions {
+    gap: var(--fs-space-1);
+    min-inline-size: 0;
+  }
+}
