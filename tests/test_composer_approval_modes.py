@@ -3,7 +3,8 @@ import json
 import pytest
 from src import tool_capabilities as caps
 
-@pytest.mark.parametrize("mode,desktop,external", [("ask",False,False),("auto",True,False),("full",True,True),("invalid",False,False)])
+# "auto" does not skip the desktop confirmation (owner decision, 26-09-2026).
+@pytest.mark.parametrize("mode,desktop,external", [("ask",False,False),("auto",False,False),("full",True,True),("invalid",False,False)])
 def test_approval_modes_reach_the_runtime_gate(monkeypatch, mode, desktop, external):
     monkeypatch.setattr(caps, "get_setting", lambda key, default=None: {"tool_approval_mode": mode, "desktop_control_mode":"ask_each"}.get(key, default))
     assert caps.ToolRunSecurityContext().decision_for("desktop_key", '{"combo":"alt+f4"}').allowed == desktop

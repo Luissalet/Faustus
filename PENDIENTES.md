@@ -143,20 +143,6 @@ L5: export de ventas con trampas (filas reexportadas, comas decimales, fechas en
 - ABIERTO (datos dev): el perfil «Jobhunter (test data, 5179)» arranca en 5179 y la conexión apunta a 5178. Útil para probar el mensaje de discrepancia; no tocar sin decidir.
 - ABIERTO: siguen sin mirar a fondo `test_h1`, `test_memory_extractor_vector_degraded`, `test_workflow_waits`, `test_ui_smoke_audit` — juntos y aislados pasan; ver el resultado de la suite de esta noche.
 
-## 22-09 madrugada (4) — una pregunta de diseño para ti
-
-**ABIERTO, decisión tuya: `tool_approval_mode = auto` anula `desktop_control_mode = ask_each`.**
-
-En `src/tool_capabilities.py::decision_for`, la puerta por llamada de las acciones de escritorio (ratón y teclado) solo se consulta `if mode == "ask"`. Con el modo global en `auto` —que es como está esta instalación— una acción de escritorio se ejecuta sin confirmar, aunque `desktop_control_mode` diga `ask_each`.
-
-El comentario justo encima dice lo contrario de lo que hace el código: *"Per-call approvals come first: neither a task/chat-scope grant nor a clean run lets a desktop input action run unconfirmed"*. Enumera lo que la puerta vence, y el modo global no está en esa lista porque se decide antes.
-
-Las dos lecturas son defendibles:
-- `auto` significa "no me preguntes por herramientas", y punto.
-- `desktop_control_mode = ask_each` es una elección más específica y más reciente sobre un riesgo concreto, y debería ganar.
-
-No lo he tocado: cambia el comportamiento de seguridad de una instalación que corre en `auto` —la tuya— y esa es tu decisión, no mía. Lo encontré porque cinco tests de code mode fallaban leyendo tus ajustes reales.
-
 ## 22-09 noche (2) — bajando por los 74
 
 Segunda pasada completa de la suite, ya con los arreglos del día: **74 fallan, 20.804 pasan, 46:12** (venía de 93 / 20.766 / 53:42). Sigo mirándolos uno a uno.

@@ -728,3 +728,14 @@ def test_off_mode_removes_control_tools_from_both_surfaces(_settings, backend):
         assert f"```{name}```" not in prompt, name
     assert "```desktop_screenshot```" in prompt
     assert "```desktop_list_windows```" in prompt
+
+
+def test_auto_mode_does_not_skip_the_desktop_confirmation(_settings, monkeypatch):
+    """Owner's decision (26-09-2026): desktop_control_mode=ask_each wins over
+    tool_approval_mode=auto; only "full" turns every gate off."""
+    import src.tool_capabilities as caps
+    monkeypatch.setattr(caps, "tool_approval_mode", lambda: "auto")
+    assert ToolRunSecurityContext().decision_for("desktop_click").allowed is False
+    assert ToolRunSecurityContext(approval_gate_bypassed=True).decision_for("desktop_click").allowed is True
+    monkeypatch.setattr(caps, "tool_approval_mode", lambda: "full")
+    assert ToolRunSecurityContext().decision_for("desktop_click").allowed is True

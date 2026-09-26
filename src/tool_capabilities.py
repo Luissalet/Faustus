@@ -2186,12 +2186,17 @@ class ToolRunSecurityContext:
         # workspace and execution restrictions are enforced separately.
         if mode == "full":
             return ToolGateDecision(True)
-        # Per-call approvals come first: neither a task/chat-scope grant nor
-        # a clean (no external context) run lets a desktop input action run
-        # unconfirmed. The sealed exact-approval path in
-        # `src/tool_execution.py` is the only way through, and it is consumed
-        # by that one call.
-        if mode == "ask" and not self.approval_gate_bypassed and tool_requires_per_call_approval(tool_name):
+        # Per-call approvals for desktop input (desktop_control_mode =
+        # ask_each) come before everything but "full": a clean (no external
+        # context) run does not let a mouse/keyboard action run unconfirmed,
+        # and neither does the global "auto" mode. Decided by the owner
+        # (26-09-2026): the desktop setting is the more specific choice about
+        # a concrete risk, so it wins over the general "don't ask me about
+        # tools". What still passes is the user's own "allow for this task"
+        # answer on a card of this run (`approval_gate_bypassed`) and the
+        # sealed exact approval in `src/tool_execution.py`, consumed by that
+        # one call.
+        if not self.approval_gate_bypassed and tool_requires_per_call_approval(tool_name):
             return ToolGateDecision(
                 False,
                 (
