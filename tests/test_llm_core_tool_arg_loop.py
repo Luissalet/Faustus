@@ -40,3 +40,24 @@ def test_stream_is_cut_with_a_degenerate_error(monkeypatch):
     assert errors, events[-3:]
     assert "prior_art" in errors[0]["error"]
     assert not any(e.get("type") == "tool_calls" for e in events)
+
+
+def test_gibberish_in_tool_call_arguments_is_caught_from_the_first_chunks(monkeypatch):
+    # §179: a broken model server ("////" or word-salad token soup) can emit
+    # its garbage as tool-call argument text instead of plain content. The
+    # server-side tool-call parser only releases that text as tool-call
+    # deltas, which the loop-only check needs 1500+ chars to evaluate — this
+    # must be cut long before that, on the same guard content/reasoning use.
+    lines = [_sse({"tool_calls": [{"index": 0, "id": "c1", "type": "function",
+                                   "function": {"name": "run_command", "arguments": '{"cmd": "'}}]})]
+    for _ in range(20):
+        lines.append(_sse({"tool_calls": [{"index": 0, "function": {"arguments": "/" * 10}}]}))
+    lines.append("data: [DONE]")
+    events = _drive(monkeypatch, lines, model="local-27b")
+    errors = [e for e in events if e.get("error_class") == llm_core.DEGENERATE_OUTPUT_ERROR_CLASS]
+    assert errors, events[-3:]
+    assert "repeated" in errors[0]["error"]
+    assert not any(e.get("type") == "tool_calls" for e in events)
+    # Cut well before the loop-only check's 1500-char warm-up window would
+    # even start looking — this is the "very first tokens" guard, not that one.
+    assert sum(len(ln) for ln in lines) > 200

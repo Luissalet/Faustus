@@ -6741,6 +6741,20 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                                 func = tc["function"]
                                             call = _tc_assembler.feed(tc)
                                             if call and call.last_appended:
+                                                # Feed the raw argument delta through the same
+                                                # guard as content/reasoning: a broken model
+                                                # server can emit gibberish ("////", token soup)
+                                                # as tool-call argument text too, and the
+                                                # server-side tool-call parser holds that text
+                                                # until the call is complete, so it would
+                                                # otherwise never reach a guard until the
+                                                # loop-specific check below (which needs 1500+
+                                                # chars to build up) — see §179.
+                                                try:
+                                                    degenerate_guard.check(call.last_appended)
+                                                except DegenerateOutput as _degenerate:
+                                                    yield _degenerate_output_error_chunk(_degenerate)
+                                                    return
                                                 _args_len = len(call.arguments)
                                                 _last = _tool_arg_checked.get(call.index, 0)
                                                 if (_args_len >= _TOOL_ARG_LOOP_START_CHARS
