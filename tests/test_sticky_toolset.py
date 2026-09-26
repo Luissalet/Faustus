@@ -87,3 +87,9 @@ def test_a_turn_that_starts_over_leaves_weak_picks_out(monkeypatch):
     al._sticky_toolset("s", {"a", "b", "c"}, None, set())
     out, _ = al._sticky_toolset("s", {"x", "y", "mcp__w__z"}, None, set(), optional={"mcp__w__z"})
     assert out == {"x", "y"}
+
+
+def test_a_covered_turn_keeps_the_same_full_schemas():
+    al._sticky_toolset("s", {"a", "b", "c"}, {"a"}, set())
+    out, hot = al._sticky_toolset("s", {"a", "b"}, {"a", "b"}, set())
+    assert out == {"a", "b", "c"} and hot == {"a"}

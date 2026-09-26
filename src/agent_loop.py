@@ -5892,7 +5892,11 @@ def _sticky_toolset(session_id: str, relevant: Set[str], hot: Optional[Set[str]]
                 hot = set(hot) - (weak - (prev_hot if prev_hot is not None else set()))
             # A turn that starts a new set starts it without them too.
             out_relevant, out_hot = set(relevant), (None if hot is None else set(hot))
-        if relevant <= prev_relevant and (hot is None or prev_hot is None or hot <= prev_hot):
+        # Covered by the set already offered: reuse it whole, full schemas
+        # included. A tool this turn would have promoted from the catalog is
+        # one `lookup_tools` away; changing which tools carry full schemas
+        # changed the tool block and cost a full re-read (live, 26-09).
+        if relevant <= prev_relevant:
             out_relevant, out_hot = prev_relevant, prev_hot if hot is not None else None
         else:
             union = prev_relevant | relevant
