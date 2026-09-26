@@ -458,3 +458,26 @@ def test_record_outcome_records_failure_with_error_class():
     stats = model_router.read_stats()
     assert stats["qwen2.5:7b"]["fail"] == 1
     assert stats["qwen2.5:7b"]["last_error_class"] == "http_500"
+
+
+# ---------------------------------------------------------------------------
+# route_decision reaches src.agent_loop._usage_bucket via harness_options
+# (integration lote, closing the gap this module's own docstring named:
+# "no caller in this repo currently has a RouteDecision in hand at the point
+# it calls _usage_bucket"). `chat_stream`'s streaming handler is too large to
+# drive end to end here, so this proves the exact wiring line exists rather
+# than re-running the whole endpoint -- `src/agent_loop.py`'s own tests
+# (tests/test_l95_openrouter_usage.py) cover `_usage_bucket`'s side of the
+# same contract with a real dict.
+# ---------------------------------------------------------------------------
+
+def test_resolved_route_decision_is_folded_into_loop_harness_options():
+    import inspect
+    src_text = inspect.getsource(chat_routes)
+    assert (
+        '_loop_harness_options["route_decision"] = _model_router_auto.route_decision.to_dict()'
+        in src_text
+    )
+    # Guarded by the same "was one actually resolved" check the SSE event
+    # and record_outcome already use -- never a bare/unconditional fold.
+    assert "if _model_router_auto is not None and _model_router_auto.route_decision is not None:" in src_text

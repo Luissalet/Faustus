@@ -6218,6 +6218,7 @@ def _usage_bucket(
     network: Optional[str] = None,
     fallback_scope: Optional[str] = None,
     route_reason: Optional[str] = None,
+    route_decision: Optional[dict] = None,
 ) -> dict:
     """Build non-secret usage attribution for one concrete Agent round.
 
@@ -6232,20 +6233,18 @@ def _usage_bucket(
     `billing`/`network`/`fallback_scope`/`route_reason` (ADP-22, lote W1-F ->
     integration lote): the `src.provider_policy.RouteDecision` fields
     `docs/api/model_router.md`'s "Integración con el turno" section asks this
-    function to accept. No caller in this repo currently has a
-    `RouteDecision` in hand at the point it calls `_usage_bucket` --
-    `routes/chat_routes.py`'s `_resolve_auto_model_route` classifies a route
-    only for the `model_router` SSE event and `model_router.record_outcome`,
-    not for the `route_descriptors`/`requested_route` dict this function
-    already reads from (`src.foreground_model_routing
-    .build_foreground_route_descriptors` / `src.endpoint_resolver
-    .resolve_route_descriptor`, ADP-22's *original*, separate fallback-chain
-    metadata, which carries only `endpoint_id`/`endpoint_label`/
-    `endpoint_cost_tracked`) -- so there is no short path to wire today
-    without adding new plumbing outside this file. Persisted ONLY when the
-    caller actually passes a non-empty string, same "absent, not a fabricated
-    default" rule as every other optional field here; every existing call
-    site is unaffected.
+    function to accept, kept as individual scalars for a caller that only
+    has one piece in hand. Persisted ONLY when the caller actually passes a
+    non-empty string, same "absent, not a fabricated default" rule as every
+    other optional field here.
+
+    `route_decision`: the same `RouteDecision`, whole, as
+    `RouteDecision.to_dict()` -- `routes/chat_routes.py`'s
+    `_resolve_auto_model_route` now folds it into `harness_options`
+    (`"route_decision"`) when MOD-05 substituted a model for this turn, and
+    every call site here reads it back off that same bag (`_hopts`), same
+    pattern as `cost_usd`: persisted only when the caller actually passes a
+    non-empty dict, absent (not a fabricated `{}`) otherwise.
     """
 
     bucket = {
@@ -6275,6 +6274,8 @@ def _usage_bucket(
         bucket["fallback_scope"] = fallback_scope
     if isinstance(route_reason, str) and route_reason.strip():
         bucket["route_reason"] = route_reason
+    if isinstance(route_decision, dict) and route_decision:
+        bucket["route_decision"] = dict(route_decision)
     return bucket
 
 
@@ -7391,6 +7392,7 @@ async def _stream_agent_loop_body(
                 cost_usd=direct_cost_usd,
                 cached_tokens=direct_cached_tokens,
                 reasoning_tokens=direct_reasoning_tokens,
+                route_decision=_hopts.get("route_decision"),
             )
             failure_note = f"[Agent stopped: {failure_message}]"
             terminal_round = (
@@ -7655,6 +7657,7 @@ async def _stream_agent_loop_body(
             cost_usd=direct_cost_usd,
             cached_tokens=direct_cached_tokens,
             reasoning_tokens=direct_reasoning_tokens,
+            route_decision=_hopts.get("route_decision"),
         )
         metrics = {
             "model": direct_actual_model,
@@ -10984,6 +10987,7 @@ async def _stream_agent_loop_body(
                 cost_usd=_round_cost_usd,
                 cached_tokens=_round_cached_tokens,
                 reasoning_tokens=_round_reasoning_tokens,
+                route_decision=_hopts.get("route_decision"),
             ))
         # --- Context ledger (FAUSTUS): what is eating the window this round.
         # Roadmap's "agent prompt/context bloat" starts as a measurement problem:
@@ -11929,6 +11933,7 @@ async def _stream_agent_loop_body(
                         input_tokens=estimate_tokens(_synth_messages),
                         output_tokens=max(len(_raw_text) // 4, 0),
                         usage_source="estimated",
+                        route_decision=_hopts.get("route_decision"),
                     ))
                 except Exception as _e:
                     logger.warning(f"[agent] grace synthesis failed: {_e}")
@@ -15469,6 +15474,7 @@ async def _stream_agent_loop_body(
                 input_tokens=estimate_tokens(_synth_messages),
                 output_tokens=max(len(_raw_text) // 4, 0),
                 usage_source="estimated",
+                route_decision=_hopts.get("route_decision"),
             ))
         except Exception as _e:  # noqa: BLE001
             logger.warning("[agent] loop-breaker synthesis failed: %s", _e)

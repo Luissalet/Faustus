@@ -4078,6 +4078,15 @@ def setup_chat_routes(
                         _loop_harness_options["incognito"] = bool(incognito)
                         _loop_harness_options["no_memory"] = bool(no_memory)
                         _loop_harness_options["no_skills"] = bool(no_skills)
+                        # ADP-22: hand the resolved route classification down
+                        # to `src.agent_loop._usage_bucket` (`route_decision`
+                        # kwarg) so saved usage carries the SAME
+                        # billing/network/fallback_scope/reason this turn's
+                        # `model_router` SSE event already shows, instead of
+                        # only existing for that one event and
+                        # `model_router.record_outcome`.
+                        if _model_router_auto is not None and _model_router_auto.route_decision is not None:
+                            _loop_harness_options["route_decision"] = _model_router_auto.route_decision.to_dict()
                         # An answer to the agent's own ask_user question is a
                         # continuation of the work that asked it, whatever the
                         # words are. Seen live 14-09-2026: the option label

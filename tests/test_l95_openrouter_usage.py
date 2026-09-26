@@ -278,10 +278,7 @@ def test_usage_bucket_ignores_malformed_cost(bad):
 # `route_reason` are the `src.provider_policy.RouteDecision` fields
 # `docs/api/model_router.md` asks `_usage_bucket` to accept -- persisted only
 # when a caller actually passes them, same "absent, not a default" rule as
-# `cost_usd`/`cached_tokens`/`reasoning_tokens` above. No caller wires a real
-# `RouteDecision` into `_usage_bucket` yet (see that function's own
-# docstring for why there is no short path today); this only proves the
-# kwargs exist and behave.
+# `cost_usd`/`cached_tokens`/`reasoning_tokens` above.
 
 def test_usage_bucket_without_route_fields_is_unchanged():
     bucket = _bucket()
@@ -298,6 +295,36 @@ def test_usage_bucket_persists_route_fields_when_given():
     assert bucket["network"] == "local"
     assert bucket["fallback_scope"] == "none"
     assert bucket["route_reason"] == "local-only profile"
+
+
+# `route_decision` carries the whole `src.provider_policy.RouteDecision.
+# to_dict()` (not the individual scalars above) -- `routes/chat_routes.py`'s
+# `_resolve_auto_model_route` now folds it into `harness_options` and every
+# `_usage_bucket` call site in `src/agent_loop.py` reads it back off that
+# bag, same "absent, not a fabricated default" rule as `cost_usd`.
+
+def test_usage_bucket_without_route_decision_is_unchanged():
+    bucket = _bucket()
+    assert "route_decision" not in bucket
+
+
+def test_usage_bucket_persists_route_decision_when_given():
+    decision = {
+        "connection_id": "conn1", "model": "qwen3:27b", "billing": "local",
+        "network": "local", "data_restrictions": {}, "fallback_scope": "none",
+        "reason": "local-only profile", "escalated": False,
+    }
+    bucket = _bucket(route_decision=decision)
+    assert bucket["route_decision"] == decision
+    # A copy, not the same object -- the caller's dict is never mutated
+    # through the bucket it was handed into.
+    assert bucket["route_decision"] is not decision
+
+
+@pytest.mark.parametrize("bad", [None, {}, "not-a-dict", 1, []])
+def test_usage_bucket_ignores_malformed_route_decision(bad):
+    bucket = _bucket(route_decision=bad)
+    assert "route_decision" not in bucket
 
 
 @pytest.mark.parametrize("field", ["billing", "network", "fallback_scope", "route_reason"])
