@@ -409,3 +409,18 @@ def test_post_gate_uses_caller_supplied_spec(monkeypatch):
     assert body["ok"] is False
     c = [x for x in body["checks"] if x["id"] == "max_tool_calls"][0]
     assert c["actual"] == 3 and c["ok"] is False
+
+
+def test_a_run_still_going_is_measured_by_the_wall_clock_and_has_no_answer_yet():
+    """Seen on a 3-hour exam leg: the gate reported 6 minutes (the sum of its
+    finished model calls) and counted streamed narration as the answer."""
+    import time as _time
+    from src import trajectory_gate as tg
+    traj = tg.Trajectory(run_id="r", session_id="s", status="running",
+                         start_ts=_time.time() - 3600, final_text="Busco las coordenadas…",
+                         steps=[tg.Step(kind="model_call", duration_ms=5000.0)])
+    duration = tg._check_max_duration_s(traj, 1800)
+    assert duration.ok is False and duration.actual >= 3599
+    assert "in progress" in duration.detail
+    final = tg._check_final_answer_required(traj, True)
+    assert final.ok is False and final.detail == "run still in progress"

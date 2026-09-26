@@ -415,6 +415,11 @@ def _check_max_duration_s(traj: Trajectory, limit: Any) -> CheckResult:
     if traj.start_ts is not None and traj.finish_ts is not None and traj.finish_ts >= traj.start_ts:
         actual = traj.finish_ts - traj.start_ts
         detail = "wall-clock run duration"
+    elif traj.status == "running" and traj.start_ts is not None:
+        # A run still going has used the wall clock so far, not the sum of
+        # its finished model calls (a 3 h exam leg read as 6 minutes).
+        actual = max(0.0, time.time() - traj.start_ts)
+        detail = "wall-clock so far (run still in progress)"
     else:
         actual = sum((s.duration_ms or 0.0) for s in traj.steps) / 1000.0
         detail = "summed model-call durations (no run wall-clock window)"
@@ -495,6 +500,9 @@ def _check_no_repeated_identical_calls(traj: Trajectory, limit: Any) -> CheckRes
 def _check_final_answer_required(traj: Trajectory, required: Any) -> CheckResult:
     if not required:
         return CheckResult("final_answer_required", True, required, True, "check disabled")
+    if traj.status == "running" and not any(s.kind == "final" for s in traj.steps):
+        # Streamed narration of a run still going is not its final answer.
+        return CheckResult("final_answer_required", False, True, False, "run still in progress")
     has_final = any(s.kind == "final" for s in traj.steps) or bool(traj.final_text.strip())
     return CheckResult("final_answer_required", has_final, True, has_final,
                         "" if has_final else "no message_saved event and no accumulated text")

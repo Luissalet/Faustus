@@ -9050,6 +9050,8 @@ La causa de los errores de fechas y cuentas era que el modo Auto mandaba las pre
 
 **Segunda tanda.** Grafo de código sobre el propio repositorio (2.017 ficheros), con un directorio de datos aparte: la línea base tarda 86 s en frío (índice incluido; 68 comunidades, 500 flujos) y la deriva contra ella 24 s. Ajustes › Default AI enseña como marcadores los valores por defecto reales del muestreo local (0,6 / 0,8 / 1,05 / 0,05), el mismo componente que Modelos locales. La validación estricta de argumentos no ha rechazado ni una llamada en los registros del 7000 y del 7006.
 
+**Puerta de trayectoria con ejecuciones reales.** `python -m src.trajectory_gate --recent 20` contra las 129 sesiones del 7006: 17 de 20 pasan. Contra la ejecución del examen en curso, informaba de 6 minutos (la suma de sus llamadas al modelo terminadas) y daba por buena la respuesta final con sólo la narración que iba saliendo. Una ejecución en marcha se mide ahora por el reloj desde su inicio y no tiene respuesta final hasta que termina.
+
 **PENDIENTES por tipo de trabajo.** Dos subagentes clasificaron las 1.033 líneas: 57 entradas cerradas u obsoletas fuera y el resto en cuatro secciones: decisiones de Luis, código por hacer, verificar en vivo sin modelo, verificar con el modelo local. De la sección de código se resolvieron 19 entradas en esta tanda.
 
 **Investigación.** Ronda 4 (ver `claude/faustus-investigacion-continua.md` del proyecto): MTP ya en llama.cpp (se medirá en el 8081 tras el examen), un fork con cuantizaciones y reparto CPU/GPU finos para comparar, `/compact` y `/status` que Faustus ya tiene como `/compact` y `/stats`.
