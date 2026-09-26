@@ -1,6 +1,6 @@
 import { t } from '../i18n';
 import { Check, Code2, Copy, CornerDownLeft, ImageOff, Play } from 'lucide-react';
-import { createContext, useContext, useId, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { findSensitive, getDisplay, stripEmojis, useDisplay } from '../shell/display';
 import { writeClipboardText } from '../lib/clipboard-write';
 import { parseMarkdown, workspaceLink, type Block, type Footnote, type Inline } from '../lib/markdown';
@@ -42,6 +42,11 @@ const OpenWorkspaceFile = createContext<((path: string) => void) | undefined>(un
  * data: URLs and hosts already allowed in this tab load straight away;
  * anything else shows its host and a button. */
 const allowedImageHosts = new Set<string>();
+const hostListeners = new Set<() => void>();
+function allowImageHost(host: string) {
+  allowedImageHosts.add(host);
+  hostListeners.forEach((fn) => fn());
+}
 
 function remoteImageHost(src: string): string | null {
   try {
@@ -57,6 +62,17 @@ function remoteImageHost(src: string): string | null {
 function RichImage({ src, alt }: { src: string; alt: string }) {
   const host = remoteImageHost(src);
   const [shown, setShown] = useState(() => !host || allowedImageHosts.has(host));
+  // One click on a host shows every picture from it already on screen.
+  useEffect(() => {
+    if (shown || !host) return;
+    const listener = () => {
+      if (allowedImageHosts.has(host)) setShown(true);
+    };
+    hostListeners.add(listener);
+    return () => {
+      hostListeners.delete(listener);
+    };
+  }, [shown, host]);
   if (shown) return <img className="fs-rich__img" src={src} alt={alt} loading="lazy" />;
   return (
     <span className="fs-rich__img-wait" data-testid="rich-remote-image">
@@ -69,8 +85,8 @@ function RichImage({ src, alt }: { src: string; alt: string }) {
         type="button"
         className="fs-rich__img-wait-btn"
         onClick={() => {
-          if (host) allowedImageHosts.add(host);
           setShown(true);
+          if (host) allowImageHost(host);
         }}
         title={t('Loading it tells {host} that you opened it, and anything written in its address.', { host: host ?? '' })}
       >

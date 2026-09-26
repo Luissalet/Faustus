@@ -10,6 +10,7 @@ assert.match(rich, /function RichImage\(/, 'RichImage exists');
 assert.match(rich, /case 'image':\s*out\.push\(<RichImage /, 'markdown images go through RichImage');
 assert.doesNotMatch(rich, /case 'image':\s*out\.push\(<img /, 'no image loads straight from the markdown');
 assert.match(rich, /url\.origin === window\.location\.origin\) return null/, 'same-origin loads at once');
-assert.match(rich, /allowedImageHosts\.add\(host\)/, 'one click allows the host for the tab');
+assert.match(rich, /allowImageHost\(host\)/, 'one click allows the host for the tab');
+assert.match(rich, /hostListeners\.add\(listener\)/, 'pictures already on screen from that host show too');
 assert.match(rich, /data-testid="rich-remote-image"/, 'the placeholder');
 console.log('rich-remote-images: ALL OK');
