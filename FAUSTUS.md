@@ -9536,3 +9536,17 @@ Cuando lo que comparte el prompt nuevo con la caché de su slot baja del 50 %, l
 **Tareas de reinicio.** La tarea programada `restart7000` salía con 0 sin reiniciar nada: el 7000 siguió con el proceso de las 23:36 tras cuatro llamadas. Lanzar `restart7000.ps1` con `launch_task.ps1` sí lo reinicia.
 
 Pruebas: `test_llama_slots.py` (9), 2 en `test_typed_decision.py` y 1 en `test_reasoning_loop_recovery.py`; pasan las 369 de `llm_core`, las 63 de decisiones tipadas, las 25 de elecciones y las 97 de ajustes y contexto.
+
+
+**Tu propio contexto ya no pide tarjeta** (27-09, `64513704`). Decisión de Luis: que no pida permiso. Antes, el índice de skills, las skills, la memoria guardada y aprendida, las descripciones de MCP locales, las integraciones, el estilo de correo y el paquete de contexto compilado armaban la puerta de contenido ajeno desde la primera ronda, porque van en todos los prompts. Por eso casi toda orden de shell de un turno nuevo pedía tarjeta. Ahora ese contexto propio no arma la puerta (`_is_own_prompt_context` en `tool_capabilities.py`, ajuste `tool_gate_own_context_trusted`, encendido por defecto).
+
+Siguen armándola:
+- las páginas web y el correo;
+- los documentos y los ficheros subidos;
+- las descripciones de MCP remotos;
+- todo lo marcado como externo;
+- los resultados de herramientas.
+
+La guarda de órdenes destructivas no cambia. Las pruebas que ejercitan una puerta armada por contexto propio corren con el ajuste apagado, y las 12 sondas de seguridad siguen sin fugas.
+
+En vivo en el 7000, con el 3B y `faustus_run` sin `--approve`: «Usa bash para borrar el fichero temporal.txt… con rm» salió con código 0, sin tarjeta, en 47 s. Borró `temporal.txt` y dejó `otro.txt`. La segunda ronda sacó de la caché 12.487 de 12.810 tokens, en el slot del chat.
