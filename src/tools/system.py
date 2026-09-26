@@ -276,6 +276,88 @@ def _skill_dump(sk) -> Dict:
 # Task management tool
 # ---------------------------------------------------------------------------
 
+# PENDIENTES §99 (17-09): a task created for "mañana a las 8:00" landed with
+# next_run on TODAY — the model picks the right schedule shape but sometimes
+# gets the day arithmetic wrong (or a "daily"/"once" schedule created before
+# the target clock time has passed today naturally resolves to today, which
+# is correct for "in a bit" but wrong for an explicit "tomorrow"). Checked
+# longest-pattern-first so "pasado mañana" is never shadowed by the plain
+# "mañana" match inside it.
+_RELATIVE_DAY_PATTERNS = [
+    (re.compile(r"\bpasado\s*ma[nñ]ana\b", re.IGNORECASE), 2),
+    (re.compile(r"\bday\s+after\s+tomorrow\b", re.IGNORECASE), 2),
+    (re.compile(r"\bma[nñ]ana\b", re.IGNORECASE), 1),
+    (re.compile(r"\btomorrow\b", re.IGNORECASE), 1),
+    (re.compile(r"\bhoy\b", re.IGNORECASE), 0),
+    (re.compile(r"\btoday\b", re.IGNORECASE), 0),
+]
+
+
+def _relative_day_offset_from_text(*texts: Optional[str]) -> Optional[int]:
+    """Detect hoy/mañana/pasado mañana (or today/tomorrow/day after tomorrow)
+    in free text and return the day offset from "today" it names, or None
+    when no relative-day word is present."""
+    combined = " ".join(str(t) for t in texts if t)
+    if not combined or combined.lstrip().startswith("{"):
+        # A JSON blob (e.g. a built-in watcher's serialized `params`, which
+        # can legitimately carry "when": "tomorrow" as CONTENT — which day's
+        # weather to fetch — never as a scheduling instruction) is not prose.
+        return None
+    for pattern, offset in _RELATIVE_DAY_PATTERNS:
+        if pattern.search(combined):
+            return offset
+    return None
+
+
+def _local_today(tz_name: Optional[str]):
+    """The current time in ``tz_name`` (a valid IANA zone) if given, else the
+    request's user-local zone, else UTC — never the bare server clock in an
+    unrelated zone."""
+    from datetime import datetime, timezone as _tz
+    tz = None
+    if tz_name:
+        try:
+            from zoneinfo import ZoneInfo
+            tz = ZoneInfo(tz_name)
+        except Exception:
+            tz = None
+    if tz is None:
+        try:
+            from src.user_time import user_timezone
+            tz = user_timezone()
+        except Exception:
+            tz = _tz.utc
+    return datetime.now(tz)
+
+
+def _resolve_relative_day_next_run(next_run, *, task_type: str, schedule: str,
+                                    tz_name: Optional[str], texts):
+    """Push ``next_run`` forward when the request explicitly named a relative
+    day (mañana/tomorrow/…) that the computed run date falls short of.
+
+    ``next_run`` is always naive UTC (``compute_next_run``'s contract). Only
+    ever moves the date LATER — an already-correct-or-later next_run is
+    untouched — so a request with no relative-day wording, or one that
+    already resolved to the right day, is a no-op. Built-in watcher actions
+    (weather_report's own `when` PARAMETER, not a scheduling instruction) are
+    excluded by the caller via ``task_type``; cron is excluded by ``schedule``
+    since its expression is exact and not up for reinterpretation.
+    """
+    if next_run is None or task_type == "action" or schedule == "cron":
+        return next_run
+    day_offset = _relative_day_offset_from_text(*texts)
+    if day_offset is None:
+        return next_run
+    from datetime import timedelta as _timedelta, timezone as _tz
+    local_now = _local_today(tz_name)
+    expected_local_date = (local_now + _timedelta(days=day_offset)).date()
+    next_run_local_date = next_run.replace(tzinfo=_tz.utc).astimezone(local_now.tzinfo).date()
+    if next_run_local_date < expected_local_date:
+        shift_days = (expected_local_date - next_run_local_date).days
+        next_run = next_run + _timedelta(days=shift_days)
+    return next_run
+
+
 async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
     """Handle manage_tasks tool calls: CRUD on scheduled tasks."""
     import uuid as _uuid
@@ -395,6 +477,15 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
                 )
                 if next_run is None:
                     return {"error": "The schedule is invalid or has no future occurrence. Supply a valid time and weekday/date.", "exit_code": 1}
+                next_run = _resolve_relative_day_next_run(
+                    next_run, task_type=task_type, schedule=schedule,
+                    tz_name=args.get("timezone"),
+                    texts=(args.get("prompt"), args.get("name")),
+                )
+                if schedule == "once":
+                    # Keep the stored scheduled_date consistent with next_run
+                    # for "once" tasks, which persist scheduled_date verbatim.
+                    args["scheduled_date"] = next_run
 
             task_id = str(_uuid.uuid4())
             # Guard each fallback with `or`: args.get("prompt", default) returns
