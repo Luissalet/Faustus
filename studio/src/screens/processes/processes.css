@@ -297,6 +297,15 @@
   display: inline-flex;
 }
 
+/* Start and Open share one slot: the label change when a poll marks the app
+   running made the button 3 px wider and nudged Restart sideways (measured
+   26-09 on a real start). Both fit this width in English and Spanish. */
+.fs-apps__card-actions > [data-testid='apps-start'],
+.fs-apps__card-actions > [data-testid='apps-open'] {
+  min-inline-size: 6.5rem;
+  justify-content: center;
+}
+
 .fs-apps__stop-slot:not([data-visible]) {
   visibility: hidden;
   pointer-events: none;
