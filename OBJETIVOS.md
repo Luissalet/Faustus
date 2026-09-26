@@ -1039,3 +1039,31 @@ Acordado el 25-09-2026 (noche): «que no sea sólo prueba y error: un flujo de i
 6. Votar varias lecturas de visión sólo en las celdas dudosas.
 
 **Descartado por ahora (con motivo).** Decodificación especulativa con modelo borrador: resultados mixtos o negativos en multi-GPU y sin VRAM libre. `split-mode tensor`: exige caché KV sin cuantizar y enlace rápido entre GPU.
+
+## OBJ-47 · Mejoras y funciones pendientes trasladadas desde PENDIENTES (26-09-2026)
+
+PENDIENTES queda para fallos y comprobaciones; lo que es una mejora o una función nueva vive aquí. Cada línea conserva su origen.
+
+- **Tipado de entidades sólo mira la primera frase** que las nombra (23-09, §177): una entidad mencionada de formas distintas podría merecer varios tipos.
+- **Migrar a esquema los puntos de decisión de cada turno** (22-09, §160b, OBJ-27): clasificación de intención, enrutado de modelo, selección de herramienta siguen en texto libre; hoy sólo `auto_review`/`doubt_review`/`research_review` piden esquema.
+- **Falta la herramienta de agente `design_canvas_pass.draft`** (22-09, §160b): registrarla y cerrar el ciclo (volver al canvas al acabar la tarea y comprobar que lo hecho cumple lo diseñado).
+- **Razonamiento + salida restringida no conviven** (22-09, §160b): si algún día se quieren juntos, hacerlo en dos llamadas (pensar libre, luego rellenar); el esquema tampoco viaja hoy junto a `tools`.
+- **Sin UI para el localizador de una cita** (20-09, §146): hoy sólo viaja en el texto inyectado al modelo.
+- **Enrutado de modelo por schema bloqueado** (19-09, §133): no puede aplicarse hasta que exista una herramienta de extracción a schema de cara al usuario.
+- **Idea: STT en streaming por WebSocket** con parciales en vez de esperar al silencio (17-09, §105), si la latencia de «oído en» molesta.
+- **WS de móvil no reenvía histórico al conectar** (17-09, mobile M-A): sólo manda `hello.last_id`; el cliente Android (lote M-B) debe pedir `since_id` una vez y fiarse del socket después.
+- **`watch_page` no ve stock renderizado sólo con JavaScript** (17-09, §99): decide disponibilidad por palabras clave en el HTML; valorar el navegador integrado para esos casos.
+- **Ideas de tarjetas de Inicio sin hacer** (17-09, §99): calendario del día, «candidaturas» (Jobhunter pendientes/entrevistas), vigilancia de precio bajo un umbral, RSS por URL, arrastrar para reordenar.
+- **Ideas de WhatsApp sin hacer** (17-09, §100): reglas automáticas, crear grupos, estados, transcripción en segundo plano de audios largos, `archived` fiable sin re-emparejar.
+- **Ideas de Apps sin hacer** (17-09, §101): autostart de perfiles al arrancar Faustus, grupos por proyecto, importar/exportar perfiles, herramienta de solo lectura para el agente, consola en vivo por SSE.
+- **Apps abiertas por Windows-MCP sin atribución** (17-09, §97): si hace falta, anotar en Faustus lo que el asistente lanza.
+- **La puerta dura no abre ronda de arreglo propia** (17-09, §95): sólo impide sellar `complete`; valorar si conviene que dispare una.
+- **`plan_done` no ejecuta criterios tipados** (17-09, §95): informa de ficheros no tocados pero el `Goal.test_passes`/`http_ok` de un WP aún no está enganchado al tracker.
+- **Parser de planes heurístico** (17-09, §95): un plan en prosa pura da 0 tareas; valorar un fallback.
+- **`delegation_receipts` con un solo reintento** (17-09, §95): si el segundo intento vuelve vacío no hay tercero; valorar si hace falta.
+- **Vista móvil / disposición bajo 1280px** (CMP-01): las tres disposiciones del Studio no tienen efecto de rejilla en pantalla estrecha; el panel sigue siendo una capa superpuesta.
+- **Canal `app_api`/`dom_cdp` sin llamador real** (CMP-10): `choose_channel` los admite como lógica pura, pero solo `native_a11y`/`pixels` tienen consumidor.
+- **Diff por pares en Alternativas** (CMP-13): `compare()` (`src/alternatives.py`) da diff contra la base + ficheros en conflicto, no ALTERNATIVA-vs-ALTERNATIVA.
+- **Requisitos: falta importación masiva y creación desde selección** (W4-A): la pestaña crea/edita/enlaza/consulta, pero no importa el fichero sidecar entero ni crea un requisito a partir de una selección del editor de documentos.
+- **Rigor del comparador de bancos** (spec INF): usa `p95−mediana` y `n≥3` como proxy de dispersión, no un test estadístico; subir repeticiones si se quiere más rigor.
+- **Cliente del SDK generado desde OpenAPI** (paridad, TF02): `sdk/ts` sigue escrito a mano; generarlo desde el OpenAPI del servidor en vez de a mano.

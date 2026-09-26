@@ -60,47 +60,12 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 ## B. Código por hacer
 
 - **`user_request_gate.py` sin comparador por herramienta** (22-09/25-09, §166): cada herramienta nueva que deba pasar sin tarjeta con una petición explícita necesita su propio comparador; hoy sólo lo tienen `python`, `plugin_app` y la lectura de memoria.
-- **Detectar servidor que devuelve basura desde el primer token** (23-09, §179): antes de esperar el timeout completo; valorar también un corte por silencio a mitad de stream.
-- **Tipado de entidades sólo mira la primera frase** que las nombra (23-09, §177): una entidad mencionada de formas distintas podría merecer varios tipos.
-- **Notas del segundo cerebro huérfanas** (23-09, §176): las generadas en `Projects/`, `Objectives/<Proyecto>/`, `Concepts/<Proyecto>/` cuya fuente se borró no se retiran solas.
-- **Fichero ilegible de la bóveda** (marcador dañado, BOM roto) (23-09, §176): se reporta en cada sincronización sin forma de silenciarlo ni de intentar repararlo solo.
-- **`test_two_tier_search` sin embedder** (22-09, §161): el suelo léxico no pone `bash` ni `web_search` entre los ocho primeros para consultas genéricas de esas herramientas.
-- **`_route_for_response_schema` reencaminada de más** (22-09, §160b): un Ollama `/v1` local sin `/api/show` va a `/api/chat` en vez de quedarse en `/v1`; revisar la función y su prueba de identidad.
-- **Migrar a esquema los puntos de decisión de cada turno** (22-09, §160b, OBJ-27): clasificación de intención, enrutado de modelo, selección de herramienta siguen en texto libre; hoy sólo `auto_review`/`doubt_review`/`research_review` piden esquema.
-- **Falta la herramienta de agente `design_canvas_pass.draft`** (22-09, §160b): registrarla y cerrar el ciclo (volver al canvas al acabar la tarea y comprobar que lo hecho cumple lo diseñado).
-- **Razonamiento + salida restringida no conviven** (22-09, §160b): si algún día se quieren juntos, hacerlo en dos llamadas (pensar libre, luego rellenar); el esquema tampoco viaja hoy junto a `tools`.
 - **Historial recortado de más entre turnos** (13-15k de 200k) (20-09, §90): el modelo gasta rondas relocalizando el workspace; revisar qué se poda.
-- **Mensaje largo en el compositor congela el renderer** >30 s (20-09, §90): falta agrupar el autoajuste de altura en un `rAF` (un reflow por fotograma) y estudiar la virtualización de la transcripción.
-- **Sin UI para el localizador de una cita** (20-09, §146): hoy sólo viaja en el texto inyectado al modelo.
-- **Revisión ciega de investigación sin vista propia** (19-09, §133): la vista de informe tampoco muestra los veredictos de las citas.
-- **Enrutado de modelo por schema bloqueado** (19-09, §133): no puede aplicarse hasta que exista una herramienta de extracción a schema de cara al usuario.
-- **`local_repeat_penalty_default`/`local_min_p_default` sin campo en Ajustes** (18-09, §108): no llevan prefijo `agent_`/`browser_`/`desktop_`; decidir dónde encajan si se exponen en la UI.
-- **Idea: STT en streaming por WebSocket** con parciales en vez de esperar al silencio (17-09, §105), si la latencia de «oído en» molesta.
-- **WS de móvil no reenvía histórico al conectar** (17-09, mobile M-A): sólo manda `hello.last_id`; el cliente Android (lote M-B) debe pedir `since_id` una vez y fiarse del socket después.
-- **`watch_page` no ve stock renderizado sólo con JavaScript** (17-09, §99): decide disponibilidad por palabras clave en el HTML; valorar el navegador integrado para esos casos.
 - **Tarjeta de tarea programada mal etiquetada** (17-09, §99): el modelo eligió «today» para «mañana» a las 8:00; valorar mostrar hoy y mañana a la vez.
-- **Ideas de tarjetas de Inicio sin hacer** (17-09, §99): calendario del día, «candidaturas» (Jobhunter pendientes/entrevistas), vigilancia de precio bajo un umbral, RSS por URL, arrastrar para reordenar.
-- **Ideas de WhatsApp sin hacer** (17-09, §100): reglas automáticas, crear grupos, estados, transcripción en segundo plano de audios largos, `archived` fiable sin re-emparejar.
 - **La extensión de Chrome no acierta a pulsar Start** en la tarjeta de perfil (17-09, §101): un `click()` por JS sí funciona; la rejilla puede desplazar el botón durante el polling de 5 s.
-- **Ideas de Apps sin hacer** (17-09, §101): autostart de perfiles al arrancar Faustus, grupos por proyecto, importar/exportar perfiles, herramienta de solo lectura para el agente, consola en vivo por SSE.
-- **`/processes` no cruza los hijos MCP con `McpServer`** (17-09, §97): para mostrar el nombre del servidor en vez de la línea de comandos; decidir también si el agente recibe una herramienta de solo lectura sobre la lista.
-- **Apps abiertas por Windows-MCP sin atribución** (17-09, §97): si hace falta, anotar en Faustus lo que el asistente lanza.
-- **Un `stop` del 7000 mata las apps de un perfil** (17-09, §96): son hijas del proceso; valorar lanzarlas desacopladas (`CREATE_NEW_PROCESS_GROUP` + `DETACHED_PROCESS`) para que sobrevivan a un reinicio.
-- **La puerta dura no abre ronda de arreglo propia** (17-09, §95): sólo impide sellar `complete`; valorar si conviene que dispare una.
-- **`plan_done` no ejecuta criterios tipados** (17-09, §95): informa de ficheros no tocados pero el `Goal.test_passes`/`http_ok` de un WP aún no está enganchado al tracker.
-- **Parser de planes heurístico** (17-09, §95): un plan en prosa pura da 0 tareas; valorar un fallback.
-- **`delegation_receipts` con un solo reintento** (17-09, §95): si el segundo intento vuelve vacío no hay tercero; valorar si hace falta.
 
 - **MOD-05/`execution_router.py` sin reconciliar del todo** (ADP-22): `model_router.choose()` solo decide cuando el modelo pedido es `auto`; una sesión con modelo explícito sigue pasando por `execution_router.py`.
-- **Vista móvil / disposición bajo 1280px** (CMP-01): las tres disposiciones del Studio no tienen efecto de rejilla en pantalla estrecha; el panel sigue siendo una capa superpuesta.
 - **Estimador `local_latency` atascado en `unknown`** (CMP-08): sin GPU medida nunca sale un número; revisar si conviene otra vía de estimación.
-- **Canal `app_api`/`dom_cdp` sin llamador real** (CMP-10): `choose_channel` los admite como lógica pura, pero solo `native_a11y`/`pixels` tienen consumidor.
-- **Diff por pares en Alternativas** (CMP-13): `compare()` (`src/alternatives.py`) da diff contra la base + ficheros en conflicto, no ALTERNATIVA-vs-ALTERNATIVA.
-- **Requisitos: falta importación masiva y creación desde selección** (W4-A): la pestaña crea/edita/enlaza/consulta, pero no importa el fichero sidecar entero ni crea un requisito a partir de una selección del editor de documentos.
-- **Rigor del comparador de bancos** (spec INF): usa `p95−mediana` y `n≥3` como proxy de dispersión, no un test estadístico; subir repeticiones si se quiere más rigor.
-- **Temperatura 1.0 en vez de 0.6 en chat directo** (w124, 19-09): el slot de una respuesta de chat normal mostró temperatura 1.0 en vez del default configurado; no bloqueante, revisar de dónde sale.
-- **Cliente del SDK generado desde OpenAPI** (paridad, TF02): `sdk/ts` sigue escrito a mano; generarlo desde el OpenAPI del servidor en vez de a mano.
-- **CI para `sdk/ts`** (paridad, TF02): falta un job que haga `npm run build && npm test && npm run check`.
 
 ## C. Verificar en vivo sin modelo
 
