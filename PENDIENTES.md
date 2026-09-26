@@ -21,7 +21,7 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 - **`data/skills/general/design-before-code`** vive sólo en una máquina y está en `.gitignore` (19-09, §132): decidir si se versiona y dónde.
 - **Perfil dev «Jobhunter (test data, 5179)»** arranca en 5179 con conector apuntando a 5178 (23-09, §169): dejado así a propósito; no tocar sin decidir.
 - **`NewRepositoryDialog` visible en modo compacto** del panel de control de versiones (22-09): decidir si es capacidad nueva (actualizar `CONTRATO_GIT_4.md` punto 3) o descuido a cerrar.
-- **Instalar una voz local de más calidad** (Kokoro o Piper) desde Ajustes → Voz (17-09, §105): las voces de Windows funcionan pero suenan peor.
+- **Instalar una voz local de más calidad** (Kokoro o Piper) desde Ajustes → Voz (17-09, §105; §106/§153): las voces de Windows funcionan pero suenan peor. La pantalla ya se vio (selector con «Local (Piper)» y frases de parada). Falta pulsar «Instalar motor» y descargar una voz, que baja ficheros de internet y sólo se hace con tu permiso; esa misma instalación probaría por fin el binario de Piper para Windows (sólo se probó el de Linux).
 - **Probar un push real** (17-09, §104): hace falta un móvil o un navegador con el servicio de push activo, servidor por HTTPS (VPN de malla); el navegador usado hasta ahora lo tiene desactivado.
 - **SearXNG debe estar levantado** para el briefing de noticias (17-09, §99): si no, la tarjeta dice «search failed».
 - **`agent_sandbox_mode` por defecto** (`auto`, corre en el host si Docker está caído) (14-09, §85): decidir si debería depender del sistema operativo en vez de ser global.
@@ -89,8 +89,6 @@ Nada abierto a 26-09 (mañana): lo que era una mejora pasó a OBJETIVOS (OBJ-47)
 ## C. Verificar en vivo sin modelo
 
 - **Pantallas nuevas del 26-09 sin datos para verlas llenas** (§209): el desglose por decisión del panel de autonomía (el registro en sombra está vacío mientras el modo sea `off`), los conflictos de memoria sugeridos (hoy no hay ninguno) y «Relaunch with this profile» (sale tras activar un perfil que deja algo pendiente; no se activó con el examen en marcha). Verificadas en vivo: la revisión de skills importadas (proyecto › Reglas, dos skills con su riesgo y el botón Aprobar) y el nombre del servidor MCP en Procesos.
-- **Instalar Piper desde Ajustes › Voz** (18-09/17-09, §106): la pantalla ya se vio (selector con «Local (Piper)» y el cuadro de frases de parada); falta pulsar «Instalar motor» y descargar una voz, que baja ficheros: con permiso de Luis.
-- **Binario Windows de Piper** (20-09, §153): sólo se probó el de Linux.
 
 - **Pestaña Optimize y formulario de serve en el 7001** (spec INF): ver en vivo el chip de arquitectura, «Capabilities», `ReceiptPanel` en una tarea y la cronología bajo una respuesta.
 - **`llama-server` gestionado desde la UI, resto de casos** (FAUSTUS §119 Parte B): crear un engine real desde Ajustes contra `llama-server.exe`, ver Start pasar de `stopped` a `unhealthy` a `running`, el rechazo si el puerto ya está ocupado por otro proceso, el Stop con confirmación cuando sirve el modelo por defecto, y «Rellenar desde lo que ya escucha en este puerto».
