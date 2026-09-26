@@ -19,7 +19,7 @@ tokens go to planning and review:
     }
 
 Tools: workers_guide (read first), dispatch_workers (start a job),
-session_usage / turn_review (what a chat or a worker's chat used and what
+session_usage / turn_review / answer_versions (what a chat or a worker's chat used and what
 its last turns did, with findings),
 workers_wait (block until done, then the compact result), workers_wait_for
 (block until ONE condition holds — a phase, a worker state, an event, a file
@@ -69,6 +69,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -425,6 +426,31 @@ def _gb(value: Any) -> str:
     except (TypeError, ValueError):
         return "?"
     return f"{n / (1024 ** 3):.1f} GB" if n > 0 else "?"
+
+
+def render_answer_versions(alts: Dict[str, Any], chars: int = 400) -> str:
+    """Earlier answers by question position (GET /api/session/{id}/alternatives)."""
+    if not alts:
+        return "No earlier answers: nothing in this chat was regenerated or edited (or the versions expired)."
+    lines: List[str] = []
+    for key in sorted(alts, key=lambda k: int(k) if str(k).isdigit() else 0):
+        items = [a for a in (alts.get(key) or []) if isinstance(a, dict)]
+        if not items:
+            continue
+        lines.append(f"### Question at message {key}: {len(items)} earlier answer(s)")
+        for i, a in enumerate(items, 1):
+            when = ""
+            try:
+                when = time.strftime("%Y-%m-%d %H:%M", time.localtime(float(a.get("created_at") or 0)))
+            except (TypeError, ValueError, OverflowError):
+                pass
+            head = f"{i}. version `{a.get('id')}` · {a.get('reason') or 'edit'}" + (f" · {when}" if when else "") \
+                + (f" · {a['model']}" if a.get("model") else "")
+            if not a.get("same_question") and a.get("question"):
+                head += f" · asked as: {str(a['question'])[:160]}"
+            text = " ".join(str(a.get("answer") or "").split())
+            lines += [head, f"   {text[:chars]}{'…' if len(text) > chars else ''}"]
+    return "\n".join(lines)
 
 
 def render_session_usage(data: Dict[str, Any]) -> str:
@@ -956,6 +982,18 @@ TOOLS: List[Tool] = [
         }, "required": ["session_id"]},
     ),
     Tool(
+        name="answer_versions",
+        description=(
+            "The earlier answers a Faustus chat keeps for each question still in it: what a regenerate or an "
+            "edit replaced, with when, which model and the start of each. Use it to compare a worker's retry "
+            "with its first attempt before deciding which one to trust."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "session_id": {"type": "string", "description": "The chat id"},
+            "chars": {"type": "integer", "default": 400, "description": "How much of each answer to show (80-4000)"},
+        }, "required": ["session_id"]},
+    ),
+    Tool(
         name="objectives_list",
         description=(
             "The objectives dashboard of a Faustus project: every objective with status, priority, "
@@ -1340,6 +1378,16 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
                 turns = 1
             data = await asyncio.to_thread(_request, "GET", f"/api/session/{sid}/turn_review?turns={turns}")
             return _text(str((data or {}).get("markdown") or "No review."))
+        if name == "answer_versions":
+            sid = urllib.parse.quote(str(args.get("session_id") or "").strip(), safe="")
+            if not sid:
+                return _text("Error: give the session_id")
+            try:
+                chars = max(80, min(int(args.get("chars") or 400), 4000))
+            except (TypeError, ValueError):
+                chars = 400
+            data = await asyncio.to_thread(_request, "GET", f"/api/session/{sid}/alternatives")
+            return _text(render_answer_versions((data or {}).get("alternatives") or {}, chars))
         if name == "models_fit":
             refresh = "true" if args.get("refresh") else "false"
             data = await asyncio.to_thread(_request, "GET", f"/api/models/fit?refresh={refresh}")

@@ -150,6 +150,7 @@ What the model sees next is exactly what is wired to the conversation — a rule
 - **Bring it back:** wire the side thread into its parent as an explicit reference block — latest exchange, or the whole thread — change its depth, withdraw it or remove it. A withdrawn wire keeps the thread.
 - **Materials:** pin a document selection (or the live document) and free-form notes as context that stays until you withdraw it. The *Context wires* panel previews the next turn layer by layer with token counts, and says what it does not count.
 - **Replay under a button:** every reply records which wires it was written against. When a side thread or document moves on, the affected replies say so and offer *Regenerate with the current version*; nothing regenerates by itself.
+- **Every answer keeps its earlier versions:** regenerating or editing a question no longer loses the answer it had. The reply shows ‹ 1/3 › to flip between them in place, with when, which model and the question as it was asked; *Use this version* makes one current and keeps the one it replaces. The `answer_versions` MCP tool lists them for an orchestrator comparing a retry with a first attempt ([chat_versions.py](src/chat_versions.py)).
 - **Condense by hand:** pick a range of settled turns and fold them into one summary row using the same summarizer as automatic compaction, on your own model. *Expand* restores the originals byte for byte; the turn in progress is never eligible.
 
 ![Context wires panel over a conversation](assets/screens/studio-wires.png)

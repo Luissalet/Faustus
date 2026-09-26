@@ -531,3 +531,27 @@ def test_workers_server_reads_a_chats_usage_and_turn_review(monkeypatch):
     review = asyncio.run(ws.call_tool("turn_review", {"session_id": "s1", "turns": 3}))[0].text
     assert "finding" in review
     assert calls == [("GET", "/api/session/s1/usage"), ("GET", "/api/session/s1/turn_review?turns=3")]
+
+
+def test_workers_server_lists_a_chats_earlier_answers(monkeypatch):
+    ws = _load_workers_server(monkeypatch)
+    assert "answer_versions" in {t.name for t in ws.TOOLS}
+    calls = []
+
+    def fake_request(method, path, body=None, timeout=None, **kw):
+        calls.append((method, path))
+        return {"alternatives": {"2": [
+            {"id": "v1", "created_at": 1790000000, "reason": "regenerate", "model": "qwen", "same_question": True,
+             "question": "q", "answer": "first try " * 100},
+            {"id": "v2", "created_at": 1790000100, "reason": "edit", "same_question": False,
+             "question": "the question as first asked", "answer": "second"},
+        ]}}
+    monkeypatch.setattr(ws, "_request", fake_request)
+    import asyncio
+    out = asyncio.run(ws.call_tool("answer_versions", {"session_id": "s1", "chars": 80}))[0].text
+    assert "Question at message 2: 2 earlier answer(s)" in out
+    assert "version `v1` · regenerate" in out and "· qwen" in out and "…" in out
+    assert "asked as: the question as first asked" in out
+    assert calls == [("GET", "/api/session/s1/alternatives")]
+    monkeypatch.setattr(ws, "_request", lambda *a, **k: {"alternatives": {}})
+    assert "No earlier answers" in asyncio.run(ws.call_tool("answer_versions", {"session_id": "s1"}))[0].text
