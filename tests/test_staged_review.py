@@ -282,3 +282,17 @@ def test_route_is_admin_only_and_never_takes_an_endpoint_from_the_body(tmp_path,
     assert r.status_code == 200, r.text
     assert seen["endpoint_url"] == "http://own-endpoint/v1" and "tests" in seen["stages"]
     assert client.post("/api/review/worktree", json={"workspace": "relative/path"}).status_code == 400
+
+
+def test_model_stage_without_a_request_is_told_so(monkeypatch):
+    import asyncio
+    from src import auto_review, staged_review
+    seen = {}
+
+    async def fake_call(**kw):
+        seen.update(kw)
+        return {"verdict": "ok", "summary": "", "findings": []}, None
+    monkeypatch.setattr(auto_review, "_call_reviewer", fake_call)
+    asyncio.run(staged_review._run_model_stage("/tmp", {"diff": "+x = 1\n", "files": ["a.py"]}, None, None, "",
+                                               "http://e/v1", "m", None, 10.0))
+    assert seen["user_text"] == staged_review.NO_REQUEST

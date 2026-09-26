@@ -458,6 +458,12 @@ def _tool_confirmed_facts(static_res: Optional[Dict[str, Any]], tests_res: Optio
     return "\n".join(lines)
 
 
+#: A /review of the working tree usually comes with no stated goal; an empty
+#: request made a small reviewer answer "this aligns with the user's request".
+NO_REQUEST = ("(No request was given. Review the change on its own merits: correctness, edge cases such "
+              "as empty or missing inputs, and behaviour it removed. Do not judge it against a request.)")
+
+
 async def _run_model_stage(workspace: str, diff_res: Dict[str, Any], static_res: Optional[Dict[str, Any]],
                            tests_res: Optional[Dict[str, Any]], request_text: str, endpoint_url: str,
                            model: str, headers: Optional[Dict[str, str]], timeout: float) -> Dict[str, Any]:
@@ -468,7 +474,7 @@ async def _run_model_stage(workspace: str, diff_res: Dict[str, Any], static_res:
     augmented_diff = (facts + "\n\n" + diff_text) if facts else diff_text
     try:
         parsed, err = await auto_review._call_reviewer(
-            diff=augmented_diff, files=files, user_text=request_text, endpoint_url=endpoint_url,
+            diff=augmented_diff, files=files, user_text=(request_text or NO_REQUEST), endpoint_url=endpoint_url,
             reviewer=model, headers=headers, tests=tests_res, timeout=timeout, workload="foreground",
         )
     except Exception as e:  # noqa: BLE001 - a review stage never raises

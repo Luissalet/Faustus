@@ -9412,3 +9412,16 @@ Tras `agent_no_progress_rounds` rondas (15) con herramientas y la huella quieta,
 **Búsqueda en todo desde Ctrl+K** (18:45). La paleta sólo navegaba; buscar conversaciones era un atajo al cajón de chats, y el cerebro, las notas, los documentos, la galería, las skills y el tablero tenían cada uno su caja. Ahora `GET /api/search/all` lanza la consulta a la vez contra la búsqueda que ya usaba cada pantalla, siempre limitada al dueño (`src/unified_search.py`). Cada fuente tiene 3 s: la que tarda o falla sale en `errors` y no tumba al resto. Los resultados se mezclan por rango recíproco con un empujón si la consulta está en el título. La paleta los enseña bajo «En todas partes» desde el segundo carácter (250 ms después de la última tecla), con una fila de filtros por tipo, y cada resultado abre su pantalla. El tablero ahora abre `?issue=<id>`.
 
 El backend lo escribió un agente más barato con las entradas exactas de cada ruta; la revisión cambió el enlace de documentos (la Biblioteca no abre `doc=`, Studio sí) y quitó el marcado del cerebro de los fragmentos (`[coincidencia]`, comentarios `%% … %%`). Comprobado en el 7000 con Playwright: «hoard» da 15 resultados en 23 ms de servidor (chats 6, cerebro 6, skills 3), el filtro Chats deja 6 y todos de chats, y un clic abre el chat. La primera captura enseñaba «Nothing matches.» encima de los resultados (cmdk no cuenta los elementos montados a la fuerza); corregido. 19 pruebas nuevas y un check de Studio.
+
+**`/review`: revisión por etapas** (19:05, `src/staged_review.py`). Las piezas ya existían sueltas en el turno del agente: el diff de `auto_review`, el análisis estático de `static_checks` y los tests relacionados de `project_tests`. Faltaba poder pedir una revisión de lo que hay en la carpeta, y que el revisor recibiera lo que las herramientas ya habían demostrado. Ahora hay cuatro etapas, cada una con su tiempo y ninguna capaz de tumbar a la siguiente:
+
+1. El diff respecto a una base segura (se rechaza lo que empieza por `-`), con los ficheros sin seguimiento.
+2. El análisis estático, sólo en las líneas añadidas.
+3. Sólo los tests relacionados.
+4. El modelo, que recibe los tres resultados como hechos confirmados y el encargo de buscar lógica, casos límite y comportamiento eliminado.
+
+- **Seguridad.** La ruta es sólo para administradores, porque las etapas ejecutan las herramientas del proyecto (configuraciones de linters, tests). El diff sólo va a endpoints del dueño: la petición nombra un modelo, nunca una URL. git va con el mismo blindaje que el panel de git más `--no-ext-diff --no-textconv`. El agente que lo escribió había quitado `-c diff.external=` porque con git 2.43 rompía `git diff`; la solución correcta es `--no-ext-diff`, y se restauró el blindaje.
+- **Comprobado en el 7000** con un repo de prueba (`offset` sin definir en una línea nueva y un `mean()` que divide por la longitud). Por API: diff 0,24 s, pyflakes da F821 en `mod.py:4`, el test relacionado falla con `NameError`, y el modelo auxiliar de 3B tarda 32 s. Desde Studio: `/workspace`, `/model` y `/review` pintan el mismo informe sin errores de página.
+- **Corrección tras la prueba.** Sin petición, el 3B respondía que el cambio «cumple lo pedido». Ahora, si no hay petición, se le dice que juzgue el cambio por sí mismo.
+
+12 pruebas.
