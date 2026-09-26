@@ -136,6 +136,9 @@ class EvalApp:
 
     def start(self, timeout: float = 90.0) -> None:
         from tests.e2e import fake_llm as _fake_llm_mod
+        # The tasks' verify() runs their tests in THIS process too.
+        self._prev_project_python = os.environ.get("FAUSTUS_PROJECT_PYTHON")
+        os.environ["FAUSTUS_PROJECT_PYTHON"] = sys.executable
         self._fake_srv = _fake_llm_mod.serve(self._fake_llm_port)
 
         env = dict(os.environ)
@@ -151,6 +154,9 @@ class EvalApp:
             "PYTHONUNBUFFERED": "1",
             "PYTHONIOENCODING": "utf-8",
             "PYTHONUTF8": "1",
+            # The tasks' own tests run with this interpreter (it has
+            # pytest); the host's PATH python may not.
+            "FAUSTUS_PROJECT_PYTHON": sys.executable,
         })
         log_path = os.path.join(self.data_dir, "server.log")
         self._log = open(log_path, "w", encoding="utf-8")
@@ -170,6 +176,11 @@ class EvalApp:
         self.endpoint_id = ep.get("id") or (ep.get("endpoint") or {}).get("id") or ""
 
     def stop(self) -> None:
+        prev = getattr(self, "_prev_project_python", None)
+        if prev is None:
+            os.environ.pop("FAUSTUS_PROJECT_PYTHON", None)
+        else:
+            os.environ["FAUSTUS_PROJECT_PYTHON"] = prev
         if self._proc is not None:
             self._proc.terminate()
             try:

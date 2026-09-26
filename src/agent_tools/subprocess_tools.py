@@ -921,7 +921,8 @@ def project_python(cwd: str, env: Optional[Mapping[str, str]] = None) -> str:
     """The interpreter the `python` tool should run in `cwd`.
 
     Order: a virtualenv inside the workspace (`.venv`, `venv`, `env`, `.env`
-    — the names projects actually use), then the `python`/`python3` the
+    — the names projects actually use), then `FAUSTUS_PROJECT_PYTHON` when it
+    names an interpreter, then the `python`/`python3` the
     host's PATH resolves with Faustus's venv already scrubbed, then the
     interpreter Faustus runs on. The last is a floor, not a preference: it
     is the one interpreter guaranteed to exist."""
@@ -931,6 +932,13 @@ def project_python(cwd: str, env: Optional[Mapping[str, str]] = None) -> str:
             cand = os.path.join(base, *rel)
             if os.path.isfile(cand):
                 return cand
+    # An interpreter named for projects without a venv of their own
+    # (`FAUSTUS_PROJECT_PYTHON`): the scripted evaluation runs its tasks'
+    # tests with the interpreter that has pytest, and a machine whose PATH
+    # python is not the one its projects use can say which one is.
+    override = str(((env if env is not None else os.environ) or {}).get("FAUSTUS_PROJECT_PYTHON") or "").strip()
+    if override and os.path.isfile(override):
+        return override
     path = (env or {}).get("PATH") if env else None
     for exe in ("python", "python3"):
         found = shutil.which(exe, path=path) if path else shutil.which(exe)
