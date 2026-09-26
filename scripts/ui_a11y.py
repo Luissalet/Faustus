@@ -32,6 +32,7 @@ dependency on files this lote does not own.
 from __future__ import annotations
 
 import json
+import re
 import os
 import socket
 import subprocess
@@ -141,6 +142,13 @@ def _post_form(url: str, data: dict) -> dict:
         return json.loads(r.read().decode("utf-8") or "{}")
 
 
+def _put_json(url: str, data: dict) -> dict:
+    req = urllib.request.Request(url, data=json.dumps(data).encode("utf-8"), method="PUT",
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read().decode("utf-8") or "{}")
+
+
 # ── the checks ──
 
 class Report:
@@ -167,6 +175,11 @@ def _has_visible_focus(page, zoom: float, context: str, report: Report) -> None:
     with a bare `outline: none` and nothing standing in for it fails this
     exactly like a real keyboard user losing track of the cursor would.
     """
+    # With a transition on the ring (the composer fades its box-shadow in),
+    # the computed style read right after blur() is still the start of the
+    # animation, i.e. unchanged: the check flaked on timing. Transitions are
+    # switched off for the measurement only.
+    page.add_style_tag(content="*, *::before, *::after { transition: none !important; animation-duration: 0s !important; }")
     info = page.evaluate(
         """() => {
             const el = document.activeElement;
@@ -199,14 +212,38 @@ def _has_visible_focus(page, zoom: float, context: str, report: Report) -> None:
         return
     report.add(f"focus visible: {label}", info["changed"], f"{info['tag']}[data-testid={info['testid']}] some outline/box-shadow/border/background in the focus chain {'changes' if info['changed'] else 'does NOT change'} on focus")
 
+    # Measure where the control ends up, not where it was the instant it got
+    # focus: the transcript scrolls it into view smoothly, and a rectangle read
+    # at t=0 said "84 px above the window" for a button the screenshot shows
+    # on screen.
+    page.wait_for_timeout(450)
+    settled = page.evaluate(
+        """() => { const el = document.activeElement; if (!el || el === document.body) return null;
+                   const r = el.getBoundingClientRect();
+                   return { top: r.top, left: r.left, right: r.right, bottom: r.bottom, width: r.width, height: r.height }; }"""
+    )
+    if settled:
+        info["rect"] = settled
     r, vp = info["rect"], info["viewport"]
     contained = r["width"] > 0 and r["height"] > 0 and r["left"] >= -1 and r["top"] >= -1 and r["right"] <= vp["w"] + 1 and r["bottom"] <= vp["h"] + 1
     report.add(f"in viewport: {label}", contained, f"rect={r} viewport={vp}")
+    if not contained:
+        try:
+            RESULT_DIR.mkdir(parents=True, exist_ok=True)
+            shot = RESULT_DIR / (re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-") + ".png")
+            page.screenshot(path=str(shot))
+        except Exception:  # noqa: BLE001 - a missing picture is not a failed check
+            pass
 
 
 def _set_zoom(page, zoom: float) -> None:
-    page.evaluate("z => { document.documentElement.style.zoom = String(z); }", zoom)
-    page.wait_for_timeout(150)
+    """Browser zoom as the page sees it: the same window, fewer CSS pixels.
+    200 % on a 1280x860 window lays the page out in 640x430 CSS px. (CSS
+    `zoom` on <html> was used before; with it, element rectangles and the
+    viewport are in different coordinate spaces, so "is it on screen" could
+    not be measured.)"""
+    page.set_viewport_size({"width": int(VIEWPORT["width"] / zoom), "height": int(VIEWPORT["height"] / zoom)})
+    page.wait_for_timeout(250)
 
 
 def _tab_to(page, predicate_js: str, max_tabs: int = 120) -> bool:
@@ -259,8 +296,9 @@ def run(page, base: str, new_session, report: Report) -> None:
         found = _tab_to(page, "el.closest && el.closest('[data-testid=\"studio-approval\"]')")
         report.add(f"reach approval card by Tab @ {int(zoom * 100)}%", found)
         _has_visible_focus(page, zoom, "approval card control", report)
-        # Approve it without ever clicking: keep tabbing to the "Approve" button by name.
-        approved = _tab_to(page, "el.tagName === 'BUTTON' && /^Approve$/.test((el.textContent || '').trim())")
+        # Approve it without ever clicking: keep tabbing to the approving button
+        # by name ("Allow for this task" since the scoped choices; "Approve" before).
+        approved = _tab_to(page, "el.tagName === 'BUTTON' && /^(Approve|Allow for this task|Allow once)$/.test((el.textContent || '').trim())")
         report.add(f"reach the Approve button by Tab @ {int(zoom * 100)}%", approved)
         if approved:
             page.keyboard.press("Enter")
@@ -282,14 +320,25 @@ def run(page, base: str, new_session, report: Report) -> None:
         #    (`wait_for_selector`'s default visible state would just time
         #    out) until Enter on its <summary> expands it. ──
         page.wait_for_selector('[data-testid="step-diff"]', state="attached", timeout=30000)
-        found_summary = _tab_to(
-            page,
-            "el.matches && el.matches('summary') && el.closest('details') "
-            "&& el.closest('details').querySelector('[data-testid=\"step-diff\"]')",
-        )
+        # The diff can sit in nested <details> (the step group, then the step
+        # itself): open each closed one around it, innermost last, by Tab and
+        # Enter only.
+        found_summary = False
+        for _ in range(4):
+            if page.is_visible('[data-testid="step-diff"]'):
+                break
+            hit = _tab_to(
+                page,
+                "el.matches && el.matches('summary') && el.parentElement && el.parentElement.matches('details')"
+                " && !el.parentElement.open && el.parentElement.querySelector('[data-testid=\"step-diff\"]')",
+            )
+            if not hit:
+                break
+            found_summary = True
+            page.keyboard.press("Enter")  # expand this <details>
+            page.wait_for_timeout(200)
+        found_summary = found_summary or page.is_visible('[data-testid="step-diff"]')
         report.add(f"reach the diff's <summary> by Tab @ {int(zoom * 100)}%", found_summary)
-        if found_summary:
-            page.keyboard.press("Enter")  # expand the <details>
         page.wait_for_selector('[data-testid="step-diff"]', state="visible", timeout=10000)
         found_diff = _tab_to(page, "el.matches && el.matches('[data-testid=\"step-diff\"]')")
         report.add(f"reach the diff region by Tab @ {int(zoom * 100)}%", found_diff)
@@ -320,16 +369,31 @@ def run(page, base: str, new_session, report: Report) -> None:
                         trapped = False
                         break
                 report.add(f"Tab never escapes the dialog @ {int(zoom * 100)}%", trapped)
-                page.keyboard.press("Escape")
-                page.wait_for_timeout(600)
+                focused = page.evaluate(
+                    "() => { const el = document.activeElement; if (!el) return ''; "
+                    "return el.tagName + (el.getAttribute('role') ? '[role=' + el.getAttribute('role') + ']' : '') "
+                    "+ (el.getAttribute('aria-expanded') === 'true' ? '[expanded]' : '') "
+                    "+ ' ' + (el.getAttribute('aria-label') || el.textContent || '').trim().slice(0, 40); }"
+                )
                 # A closed Radix dialog may still be mounted mid exit-animation
                 # (`data-state="closed"`) rather than removed outright — either
                 # counts; only a lingering OPEN dialog is a real trap.
-                closed = page.evaluate(
-                    "() => { const d = document.querySelector('[role=\"dialog\"]'); "
-                    "return !d || d.getAttribute('data-state') === 'closed'; }"
-                )
-                report.add(f"Escape closes the dialog @ {int(zoom * 100)}%", closed)
+                is_closed = ("() => { const d = document.querySelector('[role=\"dialog\"]'); "
+                             "return !d || d.getAttribute('data-state') === 'closed'; }")
+                page.keyboard.press("Escape")
+                page.wait_for_timeout(600)
+                closed = page.evaluate(is_closed)
+                detail = f"focus was on: {focused}"
+                if not closed:
+                    # Escape closes the innermost thing first: a list or menu
+                    # open inside the dialog takes the first press. A second
+                    # press must then close the dialog itself.
+                    page.keyboard.press("Escape")
+                    page.wait_for_timeout(600)
+                    closed = page.evaluate(is_closed)
+                    detail += " — the first Escape closed something inside the dialog, the second closed it" if closed \
+                        else " — two Escapes did not close it"
+                report.add(f"Escape closes the dialog @ {int(zoom * 100)}%", closed, detail)
         else:
             diag = page.evaluate(
                 "() => { const el = document.querySelector('[data-testid=\"studio-workspace\"]'); "
@@ -382,6 +446,12 @@ def main() -> int:
             "name": "fake-a11y", "base_url": f"http://127.0.0.1:{llm_port}/v1", "skip_probe": "true", "endpoint_kind": "local",
         })
         ep_id = ep.get("id") or (ep.get("endpoint") or {}).get("id")
+        # The walkthrough needs an approval card. An edit the user asked for
+        # in so many words now passes without one, so an argument rule makes
+        # every edit_file ask (its `equals` can never hold).
+        _put_json(base + "/api/tool-arg-rules", {"rules": [{
+            "id": "a11y-ask-edits", "tool": "edit_file", "arg": "path", "op": "equals",
+            "value": "__a11y_never__", "action": "ask", "note": "ui_a11y walkthrough"}]})
         counter = {"n": 0}
 
         def new_session() -> str:

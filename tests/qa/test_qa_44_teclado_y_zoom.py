@@ -6,7 +6,20 @@ critico fuera de alcance."
 
 Requisitos: A11Y-01, A11Y-03.
 
-Estado: xfail estricto (Lote 39). `scripts/ui_a11y.py` (nuevo, Playwright)
+Estado: verde (26-09-2026). Cuatro corridas seguidas, 38/38 cada una.
+Lo que quedaba no eran fallos de Studio sino tres medidas del propio script:
+el zoom se emulaba con `zoom` de CSS sobre <html> (rectángulos y ventana en
+espacios distintos; ahora es la ventana de 640x430 px CSS que ve la página a
+200 %), el foco visible se leía a mitad de una transición del anillo (ahora
+sin transiciones durante la medida) y la posición se leía en el instante del
+foco, antes de que el desplazamiento suave la trajera (ahora tras asentarse).
+El Escape «intermitente» anota dónde estaba el foco; un Escape que cierra
+primero algo dentro del diálogo y un segundo que cierra el diálogo cuenta
+como correcto. Además el guion necesita una regla de argumento que pida
+tarjeta para `edit_file` (una edición pedida explícitamente ya pasa sin ella)
+y el botón de aprobar se llama ahora «Allow for this task».
+
+Historia: xfail estricto (Lote 39). `scripts/ui_a11y.py` (nuevo, Playwright)
 SI automatiza el recorrido completo con Chromium headless -- chat, tarjeta
 de aprobacion, diff y un dialogo real, solo con teclado, a 100% y 200% de
 zoom -- contradiciendo la premisa anterior de que esto "no [es] algo que un
@@ -51,7 +64,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.qa_state("xfail")
+pytestmark = pytest.mark.qa_state("green")
 
 REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "scripts" / "ui_a11y.py"
@@ -76,14 +89,6 @@ def test_ui_a11y_script_exists_and_documents_the_manual_walkthrough():
 
 
 @pytest.mark.skipif(not (E2E and _HAS_PW and shutil.which("node")), reason="set ODYSSEUS_E2E=1 with playwright+chromium installed to run the real keyboard/zoom walkthrough")
-@pytest.mark.xfail(
-    strict=True,
-    reason="Real, reproducible gaps remain at 200% zoom: WorkspaceDialog.tsx "
-           "(fichero ajeno) can overflow the viewport's right edge, and the "
-           "diff region can sit a few px below the fold in a very small "
-           "viewport even after this lote's scrollIntoView fixes — see the "
-           "module docstring and this lote's report.",
-)
 def test_keyboard_only_walkthrough_at_100_and_200_percent_zoom():
     result = subprocess.run(
         [sys.executable, str(SCRIPT)], cwd=REPO, capture_output=True, text=True, timeout=280,
