@@ -237,6 +237,52 @@ DEFAULT_MIDTURN_SPILL_CHARS = 8000
 OVERFLOW_STUB_HEAD_CHARS = 400
 _OVERFLOW_ID_RE = re.compile(r"\[overflow id=([0-9a-f]{64})\b")
 
+# PENDIENTES §90 (20-09): keep_tool_rounds was a flat 6 regardless of the
+# model's real window, so a 200K-context model still spilled everything but
+# its last 6 tool rounds into overflow stubs — often ~13-15K tokens of live
+# history — and the model burned rounds re-running tools (re-locating the
+# workspace root, re-listing a directory) to reacquire data that was still
+# comfortably within its actual budget. DEFAULT_MIDTURN_KEEP_TOOL_ROUNDS was
+# tuned for small local-context models around this baseline window.
+MIDTURN_KEEP_ROUNDS_BASE_CONTEXT = 32_000
+# Upper bound so a 1M+ context model does not keep an unbounded number of
+# rounds verbatim; a round-count cap, kept conservative on purpose since the
+# token-budget ceiling (COMPACT_THRESHOLD / soft_pct) still governs when
+# pressure kicks in at all.
+MIDTURN_KEEP_ROUNDS_HARD_MAX = 80
+
+
+def scale_keep_tool_rounds(
+    configured: int,
+    context_length: int,
+    *,
+    default: int = DEFAULT_MIDTURN_KEEP_TOOL_ROUNDS,
+    base_context: int = MIDTURN_KEEP_ROUNDS_BASE_CONTEXT,
+    hard_max: int = MIDTURN_KEEP_ROUNDS_HARD_MAX,
+) -> int:
+    """Scale how many recent tool rounds stay verbatim with the model's window.
+
+    Only the DEFAULT value scales — an operator's explicit
+    ``agent_midturn_keep_tool_rounds`` (anything other than the default) is
+    honoured exactly, same contract as ``compute_input_token_budget``. A
+    small-context model (window <= ``base_context``) is completely
+    unaffected: it keeps exactly ``default`` rounds, as before.
+    """
+    try:
+        configured = int(configured or 0) or default
+    except (TypeError, ValueError):
+        configured = default
+    try:
+        context_length = int(context_length or 0)
+    except (TypeError, ValueError):
+        context_length = 0
+    if configured != default:
+        return max(0, configured)
+    if context_length <= base_context:
+        return default
+    scale = context_length / base_context
+    return min(int(default * scale), hard_max)
+
 # Cursor-style self-summarization prompt — produces structured, dense summaries
 SELF_SUMMARY_SYSTEM_PROMPT = """You are summarizing a conversation to preserve context after compaction. Produce a structured summary that lets the conversation continue seamlessly.
 
@@ -1829,6 +1875,13 @@ async def apply_midturn_pressure(
     if not context_length:
         report["skipped"] = "unknown_context_length"
         return messages, report
+
+    # PENDIENTES §90: a flat keep_rounds spilled everything but the last 6
+    # tool rounds even on a 200K-context model with plenty of room left —
+    # scale the DEFAULT up with the model's real window (small-context models
+    # are unaffected; an explicit operator setting is always honoured as-is).
+    keep_rounds = scale_keep_tool_rounds(keep_rounds, context_length)
+    report["keep_tool_rounds"] = keep_rounds
 
     # Calibrated: `model` is a required kwarg here, so every pressure gate
     # below uses this model's real chars->tokens ratio (src/token_calibration.py)
