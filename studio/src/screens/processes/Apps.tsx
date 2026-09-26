@@ -130,6 +130,13 @@ function AppCard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // The Stop confirm is only reachable while running; if a poll reports the
+  // app stopped from elsewhere, drop a stale confirm instead of leaving it
+  // stuck open in the always-mounted (now merely hidden) slot below.
+  useEffect(() => {
+    if (!running) setConfirmStop(false);
+  }, [running]);
+
   const run = async (kind: 'start' | 'stop' | 'restart' | 'open') => {
     // Open: the desktop window when the profile wants one (`POST /open`);
     // otherwise its `open_url`/`url` in a plain browser tab — the backend's
@@ -191,16 +198,23 @@ function AppCard({
             {t('in browser')}
           </a>
         )}
-        {running &&
-          (!confirmStop ? (
-            <Button size="sm" variant="danger" label={t('Stop')} disabled={busy} onClick={() => setConfirmStop(true)} testId="apps-stop" />
+        {/* Stop's slot is always mounted (hidden via CSS, not unmounted) so a
+            status poll that flips `running` mid-turn never inserts/removes a
+            button and shifts Restart/Console/Edit/Remove sideways — the
+            layout-shift that made a coordinate-based click miss Start
+            (§101 PENDIENTES: "la rejilla puede desplazar el botón durante el
+            polling de 5s"). */}
+        <span className="fs-apps__stop-slot" data-visible={running || undefined} aria-hidden={!running || undefined}>
+          {!confirmStop ? (
+            <Button size="sm" variant="danger" label={t('Stop')} disabled={busy || !running} tabIndex={running ? 0 : -1} onClick={() => setConfirmStop(true)} testId="apps-stop" />
           ) : (
             <span className="fs-modes__confirm" data-testid="apps-stop-confirm">
               {t('Stop {name}?', { name: app.name })}
               <Button size="sm" variant="danger" label={t('Confirm')} loading={busy} onClick={() => { setConfirmStop(false); void run('stop'); }} />
               <Button size="sm" variant="ghost" label={t('Cancel')} disabled={busy} onClick={() => setConfirmStop(false)} />
             </span>
-          ))}
+          )}
+        </span>
         <Button size="sm" variant="ghost" icon={RotateCw} label={t('Restart')} disabled={busy} onClick={() => void run('restart')} testId="apps-restart" />
         <Button size="sm" variant="ghost" icon={Terminal} label={t('Console')} onClick={onToggleConsole} testId="apps-console" />
         <IconButton icon={Pencil} label={t('Edit')} size="sm" onClick={onEdit} testId="apps-edit" />

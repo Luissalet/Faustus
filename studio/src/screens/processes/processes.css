@@ -290,6 +290,18 @@
   gap: var(--fs-space-2);
 }
 
+/* Always mounted (see Apps.tsx AppCard) so a 5s status poll flipping
+   `running` never inserts/removes this button and shifts the ones after it
+   (Restart/Console/Edit/Remove) sideways or onto another wrapped line. */
+.fs-apps__stop-slot {
+  display: inline-flex;
+}
+
+.fs-apps__stop-slot:not([data-visible]) {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .fs-apps__browser-link {
   color: var(--fs-text-3);
   font-size: var(--fs-label-size);
