@@ -9222,3 +9222,10 @@ La revisión de dudas viene apagada (`agent_doubt_review`). Quien la encienda en
 **`%APPDATA%` en un manifiesto fuera de Windows.** `posixpath.expandvars` sólo entiende `$VAR`, así que un manifiesto multiplataforma con `%APPDATA%` lo dejaba tal cual en Linux y macOS. Ahora se expande también ahí cuando la variable existe. Salió de la suite en la nube, donde ese test era de los que «sólo fallan aquí».
 
 **Una pregunta corta en un chat con carpeta pensaba a tope.** En esas pruebas, «¿Y la imagen 3? Una frase, sin herramientas.» se clasificaba en Auto como turno de código (`coding_context`) con 4.096 tokens de razonamiento: minutos en el 27B para decir un color. Una pregunta corta (12 palabras o menos, acabada en «?») en un chat con carpeta ahora piensa poco (esfuerzo bajo), y «una frase / una palabra / una línea» pide brevedad aunque no vaya precedido de «en».
+
+**Los valores por defecto se congelaban en `settings.json`.** El tope nuevo de 48 no llegaba al 7000: su `settings.json` ya tenía `agent_sticky_toolset_max: 28`, aunque nadie lo había tocado. `save_settings` escribe el documento entero ya mezclado con los valores por defecto, así que cualquier guardado desde una ruta antigua dejaba escrito el valor por defecto de ese día, y los cambios posteriores del valor por defecto no llegaban nunca. Ahora hay dos cambios:
+
+- Ese guardado ya no escribe un valor por defecto que el fichero no tenía.
+- `DEFAULT_BUMPS` lee un valor guardado igual al antiguo valor por defecto como si fuera el nuevo. Hoy lo hace con el tope, de 28 a 48.
+
+Con el log nuevo (`chat tool set: … added …, dropped …`) se vio además que el 7000 descartaba el juego guardado por ese 28.
