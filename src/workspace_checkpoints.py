@@ -49,6 +49,12 @@ _LOCKS: Dict[str, threading.Lock] = {}
 _LOCKS_GUARD = threading.Lock()
 _EXCLUDE_CACHE: Dict[str, float] = {}      # shadow dir → last exclude refresh
 _EXCLUDE_TTL_S = 120.0
+# shadow dir → bytes a snapshot would store (files not excluded by folder,
+# pattern or size), measured by the same walk that writes the exclude file.
+# `None` = the walk stopped early because the total was already over the cap.
+_INCLUDED_BYTES: Dict[str, Optional[int]] = {}
+# workspace root → why its last checkpoint was skipped (see checkpoint()).
+_SKIPPED: Dict[str, Dict[str, Any]] = {}
 
 # Directories that are never worth snapshotting (huge, regenerable).
 EXCLUDED_DIRS = (
@@ -153,8 +159,12 @@ def git_available() -> bool:
     return shutil.which("git") is not None
 
 
-def _write_exclude(root: str, gd: str, max_file_mb: float) -> None:
-    """Refresh info/exclude: vendored dirs, binary globs and oversized files."""
+def _write_exclude(root: str, gd: str, max_file_mb: float, stop_after_bytes: int = 0) -> None:
+    """Refresh info/exclude: vendored dirs, binary globs and oversized files.
+
+    The same walk adds up what a snapshot would store (``_INCLUDED_BYTES``);
+    past ``stop_after_bytes`` (when > 0) it stops and records ``None``, since
+    the answer — "too big to snapshot" — is already known."""
     now = time.time()
     if now - _EXCLUDE_CACHE.get(gd, 0.0) < _EXCLUDE_TTL_S:
         return
@@ -164,23 +174,33 @@ def _write_exclude(root: str, gd: str, max_file_mb: float) -> None:
     limit = max(0.5, float(max_file_mb or 8)) * 1024 * 1024
     big: List[str] = []
     excluded = set(EXCLUDED_DIRS)
+    included = 0
+    over = False
     try:
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames[:] = [d for d in dirnames if d not in excluded]
             for fn in filenames:
                 p = os.path.join(dirpath, fn)
                 try:
-                    if os.path.getsize(p) > limit:
-                        rel = os.path.relpath(p, root).replace(os.sep, "/")
-                        big.append("/" + _escape_exclude(rel))
+                    size = os.path.getsize(p)
                 except OSError:
                     continue
-                if len(big) >= 2000:
+                if size > limit:
+                    if len(big) < 2000:
+                        rel = os.path.relpath(p, root).replace(os.sep, "/")
+                        big.append("/" + _escape_exclude(rel))
+                    continue
+                if any(fnmatch.fnmatch(fn.lower(), g) for g in EXCLUDED_GLOBS):
+                    continue
+                included += size
+                if stop_after_bytes and included > stop_after_bytes:
+                    over = True
                     raise StopIteration
     except StopIteration:
         pass
     except OSError as e:
         logger.debug("[checkpoint] size scan failed for %s: %s", root, e)
+    _INCLUDED_BYTES[gd] = None if over else included
     if big:
         lines.append("# files above the checkpoint size limit")
         lines += big
@@ -229,8 +249,16 @@ def _ensure_repo(root: str) -> bool:
                 f.write(root + "\n")
         except OSError:
             pass
-    _write_exclude(root, gd, float(_setting("agent_checkpoint_max_file_mb", 8) or 8))
+    _write_exclude(root, gd, float(_setting("agent_checkpoint_max_file_mb", 8) or 8),
+                   stop_after_bytes=int(_repo_cap_mb() * 1024 * 1024))
     return True
+
+
+def _repo_cap_mb() -> float:
+    try:
+        return float(_setting("agent_checkpoint_max_repo_mb", 2048) or 0)
+    except (TypeError, ValueError):
+        return 2048.0
 
 
 def _head(root: str) -> Optional[str]:
@@ -275,10 +303,7 @@ def checkpoint(workspace: str, label: str = "") -> Optional[Dict[str, Any]]:
         gd = shadow_dir(root)
         # Bound disk use: a shadow repo that outgrew the limit is reset. Old
         # checkpoints are lost, the current turn still gets its baseline.
-        try:
-            cap = float(_setting("agent_checkpoint_max_repo_mb", 2048) or 0)
-        except (TypeError, ValueError):
-            cap = 2048.0
+        cap = _repo_cap_mb()
         if cap and os.path.isdir(gd) and _dir_size_mb(gd) > cap:
             logger.warning("[checkpoint] shadow repo for %s exceeds %s MB — resetting", root, cap)
             # _reset_locked, NOT reset(): we already hold _lock_for(root) and
@@ -287,6 +312,20 @@ def checkpoint(workspace: str, label: str = "") -> Optional[Dict[str, Any]]:
             _reset_locked(root)
         if not _ensure_repo(root):
             return None
+        # A folder whose snapshot alone would pass the repo cap (a 20 GB
+        # media library: 45k images and models under the per-file limit) is
+        # not snapshotted at all. Adding it would write gigabytes into the
+        # data folder and be reset on the next turn anyway.
+        included = _INCLUDED_BYTES.get(gd, 0)
+        if cap and (included is None or included > cap * 1024 * 1024):
+            prev = _SKIPPED.get(root)
+            _SKIPPED[root] = {"reason": "too_big", "cap_mb": cap, "ts": time.time(),
+                              "included_mb": None if included is None else round(included / 1048576, 1)}
+            if not prev or time.time() - float(prev.get("ts") or 0) > 3600:
+                logger.warning("[checkpoint] %s: snapshot would exceed %s MB — skipped "
+                               "(raise agent_checkpoint_max_repo_mb to include it)", root, cap)
+            return None
+        _SKIPPED.pop(root, None)
         add = _run(root, ["add", "-A", "--ignore-errors", "--", "."], timeout=_GIT_TIMEOUT * 3, check=True)
         if add is None:
             return None
@@ -643,6 +682,8 @@ def status(workspace: str) -> Dict[str, Any]:
         "size_mb": round(_dir_size_mb(gd), 1) if present else 0.0,
         "head": _head(root) if present else None,
         "count": len(list_checkpoints(root, 500)) if present else 0,
+        # Why the last checkpoint was not taken, when it was not (too big).
+        "skipped": dict(_SKIPPED[root]) if root in _SKIPPED else None,
     }
 
 
