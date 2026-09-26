@@ -104,3 +104,37 @@ def test_mtp_layers_missing_file_returns_none(tmp_path):
 
 def test_mtp_layers_empty_path_returns_none():
     assert gguf_meta.mtp_layers("") is None
+
+
+# ── architecture_kv: src/model_architecture.py's dense/moe/mtp read ─────────
+
+def test_architecture_kv_reads_all_three_keys_when_present(tmp_path):
+    path = tmp_path / "m.gguf"
+    _write_gguf(path, [
+        _kv_string("general.architecture", "qwen3moe"),
+        _kv_u32("qwen3moe.expert_count", 128),
+        _kv_u32("qwen3moe.nextn_predict_layers", 1),
+    ])
+    kv = gguf_meta.architecture_kv(str(path))
+    assert kv == {
+        "general.architecture": "qwen3moe",
+        "qwen3moe.expert_count": 128,
+        "qwen3moe.nextn_predict_layers": 1,
+    }
+
+
+def test_architecture_kv_omits_absent_keys_rather_than_defaulting_them(tmp_path):
+    path = tmp_path / "m.gguf"
+    _write_gguf(path, [_kv_string("general.architecture", "llama")])
+    kv = gguf_meta.architecture_kv(str(path))
+    assert kv == {"general.architecture": "llama"}
+
+
+def test_architecture_kv_non_gguf_file_returns_empty_dict(tmp_path):
+    path = tmp_path / "not_a_model.bin"
+    path.write_bytes(b"not a gguf file at all")
+    assert gguf_meta.architecture_kv(str(path)) == {}
+
+
+def test_architecture_kv_empty_path_returns_empty_dict():
+    assert gguf_meta.architecture_kv("") == {}

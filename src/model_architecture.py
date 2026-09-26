@@ -5,7 +5,7 @@ from a model's name.
 `get_model_architecture(repo, source)` answers the question `serve.ts`'s
 `detectModelOptimizations` used to answer by matching substrings in a
 repo name (`qwen3.5` → assume MoE): is this model dense, MoE, or unknown,
-and does it document MTP (multi-token prediction)? Two passive sources:
+and does it document MTP (multi-token prediction)? Three passive sources:
 
   hf_config    — a single, unauthenticated GET of the model's published
                  `config.json` on the Hugging Face Hub. Read-only: no
@@ -20,6 +20,15 @@ and does it document MTP (multi-token prediction)? Two passive sources:
                  architecture/expert fields this needs, so this module
                  reads `/api/show` itself rather than stretching that
                  reader's contract to a second, unrelated shape.
+  gguf_header  — a local `.gguf` file's own header, when `repo` IS that
+                 file's path on disk (`source=llamacpp`, or `auto` for a
+                 path ending in `.gguf`). Most GGUF-only quant repos ship no
+                 `config.json` at all — `hf_config` would otherwise report
+                 `unknown` for exactly the models that most need dense/moe
+                 telling apart. `src/gguf_meta.py` reads only the KV header
+                 (`general.architecture`, `<arch>.expert_count`,
+                 `<arch>.nextn_predict_layers`), never tensor data, no
+                 network involved.
 
 Absence is a first-class result, never coerced into a guess: `kind` is
 `"unknown"` (not `"dense"`) when nothing recognizable was read, and `mtp`
@@ -374,15 +383,65 @@ def _try_ollama(repo: str) -> Dict[str, Any]:
     }
 
 
+def _local_gguf_path(repo: str) -> Optional[str]:
+    """`repo` treated as a local `.gguf` file already on disk — the one
+    shape `source=llamacpp` CAN answer without a running server: a GGUF
+    repo/file cached locally rarely ships an HF `config.json` (most GGUF
+    quant repos don't), so `_try_hf` would otherwise report `unknown` for a
+    model this process can already read the header of. `None` for anything
+    that doesn't look like an existing GGUF file — never a guess."""
+    candidate = (repo or "").strip()
+    if not candidate.lower().endswith(".gguf"):
+        return None
+    try:
+        return candidate if os.path.isfile(candidate) else None
+    except OSError:
+        return None
+
+
 def _try_llamacpp(repo: str) -> Dict[str, Any]:
     # No llama.cpp process is necessarily running for `repo` yet — the
-    # architecture properties this could read (`GET /props` on a live
-    # llama-server) belong to a *running instance*, not a static artifact,
-    # and this endpoint answers a passive, pre-launch question. Rather than
-    # fake a reading from a file format (GGUF metadata) this module does not
-    # parse, source=llamacpp honestly reports "not read", same as any other
-    # unresolved case (§17 principle: no fingir soporte).
-    return _unknown(repo, "none", "llama.cpp architecture properties require a running server (GET /props); not available before launch")
+    # *runtime* properties this could otherwise read (`GET /props` on a live
+    # llama-server) belong to a running instance, not a static artifact. But
+    # when `repo` is itself a local `.gguf` file, its own header already
+    # states `general.architecture`/`<arch>.expert_count` — no server, no
+    # network, no guess (§17 principle: no fingir soporte, but this is a
+    # real read, not a fabrication).
+    path = _local_gguf_path(repo)
+    if path is None:
+        return _unknown(repo, "none", "llama.cpp architecture properties require a running server (GET /props); not available before launch, and repo is not a local .gguf file")
+    from src import gguf_meta
+    kv = gguf_meta.architecture_kv(path)
+    if not kv:
+        return _unknown(repo, "none", "local GGUF file present but its header could not be read")
+    arch_name = str(kv.get("general.architecture") or "").strip() or None
+    expert_count: Optional[int] = None
+    mtp_layers_value: Optional[int] = None
+    for key, value in kv.items():
+        if key.endswith(".expert_count") and isinstance(value, (int, float)) and not isinstance(value, bool):
+            expert_count = int(value)
+        elif key.endswith(".nextn_predict_layers") and isinstance(value, (int, float)) and not isinstance(value, bool):
+            mtp_layers_value = int(value)
+    if expert_count is not None and expert_count > 1:
+        kind = "moe"
+    elif arch_name:
+        kind = "dense"
+    else:
+        kind = "unknown"
+    return {
+        "repo": repo,
+        "kind": kind,
+        "total_params": None,
+        "active_params": None,
+        "num_experts": expert_count,
+        "mtp": (mtp_layers_value > 0) if mtp_layers_value is not None else None,
+        "architectures": [arch_name] if arch_name else None,
+        "native_context": None,
+        "context_note": None,
+        "source": "gguf_header",
+        "observed_at": _now_iso(),
+        "note": None if kind != "unknown" else "GGUF header present but no general.architecture key found",
+    }
 
 
 # ── cache ─────────────────────────────────────────────────────────────────
@@ -452,10 +511,12 @@ def get_model_architecture(
     profile: Optional[str] = None,
 ) -> Dict[str, Any]:
     """`GET /api/models/architecture`'s answer for `repo`. `source` picks
-    which reader to trust: `"auto"` (name-shape decides hf vs. ollama),
-    `"hf"`, `"ollama"`, or `"llamacpp"` (always `unknown` today — see
-    `_try_llamacpp`). Cached 1h per (repo, source); a cache hit never
-    re-issues the network call `--profile`/`owner` would have gated anyway.
+    which reader to trust: `"auto"` (a local `.gguf` file path reads its own
+    header; failing that, name-shape decides hf vs. ollama), `"hf"`,
+    `"ollama"`, or `"llamacpp"` (a local `.gguf` file's own header — see
+    `_try_llamacpp` — or `unknown` when `repo` isn't one). Cached 1h per
+    (repo, source); a cache hit never re-issues the network call
+    `--profile`/`owner` would have gated anyway.
     """
     repo = (repo or "").strip()
     if not repo:
@@ -476,7 +537,13 @@ def get_model_architecture(
     elif src == "hf":
         result = _try_hf(repo, owner=owner, project=project, profile=profile)
     else:  # auto
-        if _looks_like_ollama_tag(repo):
+        if _local_gguf_path(repo) is not None:
+            # A GGUF repo/file cached locally rarely ships an HF
+            # config.json (INF-01 §A's original gap) — its own header is
+            # both cheaper (no network) and more certain than a guess from
+            # the name, so this is tried before the ollama-tag/hf split.
+            result = _try_llamacpp(repo)
+        elif _looks_like_ollama_tag(repo):
             result = _try_ollama(repo)
             # A bare name is usually an Ollama tag, but HF does allow a
             # handful of single-segment repo ids (e.g. "gpt2") — worth one

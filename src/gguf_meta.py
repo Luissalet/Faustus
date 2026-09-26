@@ -161,6 +161,30 @@ def _read_gguf_kv_internal(path: str, wanted_suffixes: Iterable[str]):
     return out, True
 
 
+#: `general.architecture` (bare — never namespaced) plus `<arch>.expert_count`
+#: and `<arch>.nextn_predict_layers` (namespace varies per architecture, so
+#: matched by suffix like every other lookup in this module) — the three
+#: fields `src.model_architecture` needs to answer dense/moe/mtp for a GGUF
+#: repo/file that ships no HF `config.json` (most GGUF-only quant repos
+#: don't), without touching the network.
+_ARCHITECTURE_KEYS = ("general.architecture", ".expert_count", ".nextn_predict_layers")
+
+
+def architecture_kv(path: str) -> Dict[str, Any]:
+    """`{"general.architecture": ..., "<arch>.expert_count": ...,
+    "<arch>.nextn_predict_layers": ...}` for whichever of those three keys
+    are actually present in `path`'s GGUF header — never a guess for a
+    missing one. `{}` on any parse failure (not a GGUF, truncated, missing
+    file): absence, same as the rest of this module, not coerced into a
+    default."""
+    if not path:
+        return {}
+    kv, ok = _read_gguf_kv_internal(path, _ARCHITECTURE_KEYS)
+    if not ok:
+        return {}
+    return kv
+
+
 def mtp_layers(path: str) -> Optional[int]:
     """Value of the `*.nextn_predict_layers` KV key (how many MTP/draft
     layers this GGUF ships), or None when the file is unreadable / not a

@@ -16,6 +16,7 @@ No real network, no model load, matching COMUN.md rule 7bis.
 from __future__ import annotations
 
 import json
+import struct
 
 import httpx
 import pytest
@@ -312,3 +313,99 @@ def test_ollama_show_native_context_from_model_info_context_length(monkeypatch):
     result = ma.get_model_architecture("qwen3:8b", source="ollama")
     assert result["native_context"] == 40960
     assert result["context_note"] is None
+
+
+# ── gguf_header: local .gguf file, no HF config.json, no network ────────────
+# Reuses tests/test_gguf_meta.py's synthetic-GGUF byte builders rather than
+# a real model file.
+
+def _kv_string(key: str, value: str) -> bytes:
+    kb = key.encode("utf-8")
+    vb = value.encode("utf-8")
+    return struct.pack("<Q", len(kb)) + kb + struct.pack("<I", 8) + struct.pack("<Q", len(vb)) + vb
+
+
+def _kv_u32(key: str, value: int) -> bytes:
+    kb = key.encode("utf-8")
+    return struct.pack("<Q", len(kb)) + kb + struct.pack("<I", 4) + struct.pack("<I", value)
+
+
+def _write_gguf(path, kvs: list) -> None:
+    with open(path, "wb") as f:
+        f.write(b"GGUF")
+        f.write(struct.pack("<I", 3))  # version
+        f.write(struct.pack("<Q", 0))  # tensor_count
+        f.write(struct.pack("<Q", len(kvs)))  # kv_count
+        for kv in kvs:
+            f.write(kv)
+
+
+def test_llamacpp_source_reads_dense_architecture_from_local_gguf_header(tmp_path):
+    path = tmp_path / "model.gguf"
+    _write_gguf(path, [_kv_string("general.architecture", "llama")])
+    result = ma.get_model_architecture(str(path), source="llamacpp")
+    assert result["kind"] == "dense"
+    assert result["source"] == "gguf_header"
+    assert result["architectures"] == ["llama"]
+    assert result["num_experts"] is None
+    assert result["mtp"] is None  # no nextn_predict_layers key present -> absence, not False
+
+
+def test_llamacpp_source_reads_moe_architecture_from_expert_count(tmp_path):
+    path = tmp_path / "model.gguf"
+    _write_gguf(path, [
+        _kv_string("general.architecture", "qwen3moe"),
+        _kv_u32("qwen3moe.expert_count", 128),
+    ])
+    result = ma.get_model_architecture(str(path), source="llamacpp")
+    assert result["kind"] == "moe"
+    assert result["num_experts"] == 128
+
+
+def test_llamacpp_source_reports_mtp_true_when_nextn_layers_positive(tmp_path):
+    path = tmp_path / "model.gguf"
+    _write_gguf(path, [
+        _kv_string("general.architecture", "qwen3"),
+        _kv_u32("qwen3.nextn_predict_layers", 1),
+    ])
+    result = ma.get_model_architecture(str(path), source="llamacpp")
+    assert result["mtp"] is True
+
+
+def test_llamacpp_source_missing_gguf_file_is_unknown_not_an_error(tmp_path):
+    result = ma.get_model_architecture(str(tmp_path / "nope.gguf"), source="llamacpp")
+    assert result["kind"] == "unknown"
+    assert result["source"] == "none"
+
+
+def test_llamacpp_source_non_gguf_repo_string_is_unknown():
+    # Not a local file at all (an HF-style repo id) -- llamacpp cannot serve
+    # this without a running server, and must say so rather than guess.
+    result = ma.get_model_architecture("org/some-repo", source="llamacpp")
+    assert result["kind"] == "unknown"
+    assert result["source"] == "none"
+
+
+def test_auto_source_prefers_local_gguf_header_over_hf_config_when_path_is_a_gguf_file(tmp_path, monkeypatch):
+    path = tmp_path / "model.gguf"
+    _write_gguf(path, [_kv_string("general.architecture", "llama")])
+
+    def handler(request):
+        raise AssertionError("auto must not hit the network for a local .gguf path")
+
+    monkeypatch.setattr(ma.httpx, "Client", _mock_client(handler))
+    result = ma.get_model_architecture(str(path), source="auto")
+    assert result["kind"] == "dense"
+    assert result["source"] == "gguf_header"
+
+
+def test_corrupt_gguf_header_is_unknown_not_an_exception(tmp_path):
+    path = tmp_path / "truncated.gguf"
+    with open(path, "wb") as f:
+        f.write(b"GGUF")
+        f.write(struct.pack("<I", 3))
+        f.write(struct.pack("<Q", 0))
+        f.write(struct.pack("<Q", 5))  # claims 5 kv entries, file has none
+    result = ma.get_model_architecture(str(path), source="llamacpp")
+    assert result["kind"] == "unknown"
+    assert result["source"] == "none"
