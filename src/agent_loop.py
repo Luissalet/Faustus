@@ -10259,6 +10259,12 @@ async def _stream_agent_loop_body(
         _turn_max_seconds = 3600.0
     _turn_ceiling_hit = False
     _handoff_nudged = False
+    _draft_first_nudged = False
+    try:
+        from src import deliverables as _deliverables
+        _deliverable_files = _deliverables.requested_files(_retrieval_query or _last_user or "")
+    except Exception:  # noqa: BLE001 - a hint never breaks a turn
+        _deliverables, _deliverable_files = None, []
     while True:
         round_num += 1
         # BUG-STOP-01: the FIRST thing every round does -- a `scope=task`/
@@ -10318,6 +10324,20 @@ async def _stream_agent_loop_body(
                 "short notes file there. Then carry on with the task.")})
             yield "data: " + json.dumps({"type": "harness_check", "status": "handoff_requested",
                                          "round": round_num}) + "\n\n"
+        # Draft first: a task that must end in a file gets asked, once, to
+        # create it a while into the turn if nothing has written it yet
+        # (src/deliverables.py).
+        if (_deliverable_files and not _draft_first_nudged and not plan_mode and _deliverables is not None
+                and (round_num >= 12 or (_turn_max_seconds >= 600
+                     and (time.monotonic() - _turn_started_monotonic) >= 0.25 * _turn_max_seconds))):
+            _draft_first_nudged = True
+            if not (_deliverables.written(_deliverable_files, tool_events)
+                    or _deliverables.exists_in(workspace or "", _deliverable_files)):
+                _ledger.notes.append(f"draft_first_nudge@{round_num}")
+                messages.append({"role": "user", "_harness_note": True,
+                                 "content": _lang_note(_deliverables.draft_first_note(_deliverable_files))})
+                yield "data: " + json.dumps({"type": "harness_check", "status": "draft_first_requested",
+                                             "files": _deliverable_files[:3], "round": round_num}) + "\n\n"
         try:
             from src.tool_clock import set_round as _clock_set_round
             _clock_set_round(round_num)
