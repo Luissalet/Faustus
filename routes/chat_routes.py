@@ -279,6 +279,54 @@ def _stream_failure_status(chunk: str) -> Optional[int]:
     return None
 
 
+#: The question a permission card is registered under in question_store
+#: (src/tool_approvals.py `public_payload`).
+_CARD_QUESTION = "Allow this task to continue?"
+
+
+def retire_card_questions(owner: Any, *, session_id: Optional[str] = None) -> int:
+    """Close the question_store rows of permission cards that are no longer
+    waiting.
+
+    A permission card is registered as an open question so the activity
+    tray can show it, but deciding the card goes through the tool approval
+    store, never through question_store, so the row stayed open for good:
+    the notification tray filled with identical "Allow this task to
+    continue?" rows from chats long finished. With `session_id`, that
+    session's card questions are closed (its card was just decided);
+    without, every card question whose session has no pending card left
+    (pending cards live in memory and die with a restart) is closed.
+    Returns how many were closed; never raises."""
+    closed = 0
+    retired_keys: List[str] = []
+    try:
+        from src import question_store
+        waiting = set() if session_id else set(tool_approval_store.pending_session_ids(owner=owner))
+        for q in question_store.list_open(owner=owner, limit=200):
+            if str(q.get("question") or "").strip() != _CARD_QUESTION:
+                continue
+            sid = str(q.get("session_id") or "")
+            if session_id is not None and sid != str(session_id):
+                continue
+            if session_id is None and sid in waiting:
+                continue
+            outcome = question_store.cancel_question(
+                str(q.get("question_id") or ""), reason="tool_approval_decided", owner=owner)
+            if outcome.get("ok"):
+                closed += 1
+                retired_keys.append(f"question:{q.get('question_id')}")
+    except Exception:  # noqa: BLE001 - housekeeping never breaks a request
+        logger.debug("could not retire permission-card questions", exc_info=True)
+    if retired_keys:
+        # Their tray notifications are about something no longer waiting.
+        try:
+            from routes.notifications_routes import mark_read_by_keys
+            mark_read_by_keys(str(owner or ""), retired_keys)
+        except Exception:  # noqa: BLE001
+            logger.debug("could not mark retired card notifications read", exc_info=True)
+    return closed
+
+
 def _mark_tool_approval_resolved(sess, approval_id: Any, decision: Any) -> bool:
     """Persist a consumed approval decision on its existing tool event."""
 
@@ -2355,6 +2403,7 @@ def setup_chat_routes(
                         )
                     except Exception as _grant_err:  # noqa: BLE001 - never block the continuation
                         logger.warning("workspace approval grant not persisted: %s", _grant_err)
+                retire_card_questions(owner, session_id=str(session))
                 if not _mark_tool_approval_resolved(
                     sess,
                     tool_approval_id,
@@ -5057,6 +5106,7 @@ def setup_chat_routes(
     async def open_questions(request: Request) -> Dict[str, Any]:
         owner = effective_user(request)
         from src import question_store
+        retire_card_questions(owner)
         try:
             open_qs = question_store.list_open(owner=owner)
         except Exception:

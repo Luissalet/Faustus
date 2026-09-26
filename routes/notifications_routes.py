@@ -84,6 +84,24 @@ def _save(data: Dict[str, Any]) -> None:
     atomic_write_json(NOTIFICATIONS_FILE, data, indent=2)
 
 
+def mark_read_by_keys(owner: str, dedupe_keys) -> int:
+    """Mark read the notifications of `owner` about things that no longer
+    wait (a question or card closed elsewhere). Returns how many changed."""
+    keys = {str(k) for k in dedupe_keys or () if k}
+    if not keys:
+        return 0
+    changed = 0
+    with _lock:
+        data = _load()
+        for row in data["events"].get(owner or "", []):
+            if row.get("dedupe_key") in keys and not row.get("read"):
+                row["read"] = True
+                changed += 1
+        if changed:
+            _save(data)
+    return changed
+
+
 def _prefs_for(data: Dict[str, Any], owner: str) -> Dict[str, Any]:
     stored = data["prefs"].get(owner)
     defaults = _default_prefs()
