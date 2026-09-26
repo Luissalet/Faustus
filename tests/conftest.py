@@ -103,6 +103,28 @@ def isolated_settings_file(tmp_path_factory, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def isolated_run_logs(tmp_path_factory, monkeypatch):
+    """Agent-run replay logs live in `DATA_DIR/runs`. Tests that drove
+    detached runs wrote thirty `sess-a.jsonl`/`live1.jsonl`-style logs into
+    the checkout's own data folder, where the instance running from it
+    listed and pruned them as real runs. Each test gets its own folder."""
+    import os as _os
+    from src import agent_runs, constants
+    runs = tmp_path_factory.mktemp("runs")
+    real_data_dir = constants.DATA_DIR
+
+    def _isolated_runs_dir() -> str:
+        # A test that points DATA_DIR somewhere of its own keeps the real
+        # layout (readers such as the cost report join DATA_DIR/runs too).
+        if constants.DATA_DIR != real_data_dir:
+            return _os.path.join(constants.DATA_DIR, "runs")
+        return str(runs)
+
+    monkeypatch.setattr(agent_runs, "_runs_dir", _isolated_runs_dir)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def isolated_question_store(tmp_path_factory, monkeypatch):
     """Open questions (`ask_user` cards) live in `DATA_DIR/questions.sqlite3`.
     A test that drove the agent loop to an `ask_user` card left a real,

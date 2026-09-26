@@ -577,8 +577,8 @@ def _append_run_cost_event(*, cost_usd: float, runner_key: Any, run_id: Optional
     race a live chat turn and could erase its transcript).
     """
     try:
-        from src.constants import DATA_DIR
-        runs_dir = os.path.join(DATA_DIR, "runs")
+        from src.agent_runs import _runs_dir
+        runs_dir = _runs_dir()
         os.makedirs(runs_dir, exist_ok=True)
         event = {
             "event": "external_worker_result",
