@@ -67,6 +67,13 @@ RATIO_MAX = 3.0             # not a real signal about the model's tokenizer
 # it is at least this fraction of our own estimate.
 OLLAMA_CACHE_HIT_FLOOR = 0.5
 
+# Bumped whenever ``estimate_tokens`` changes what it counts: a ratio measured
+# against the old estimator describes that estimator, not the tokenizer, so
+# entries stamped with another version are dropped on load and relearned.
+# 2: reasoning_content on assistant turns is counted (26-09-2026; a Qwen3
+#    model had drifted to a x2.2 ratio from reasoning the estimate missed).
+ESTIMATOR_VERSION = 2
+
 # Same chars*0.3 rule model_context.estimate_tokens uses for text, applied to
 # the JSON-serialized tool schemas so the "estimate" side of the ratio also
 # accounts for the tools the request actually carried (they count toward the
@@ -125,10 +132,13 @@ def _load_locked() -> Dict[str, Dict[str, Any]]:
                         continue
                     if samples < 0 or not math.isfinite(ratio):
                         continue
+                    if entry.get("estimator") != ESTIMATOR_VERSION:
+                        continue  # measured against another estimator
                     data[str(key)] = {
                         "ratio_ema": ratio,
                         "samples": samples,
                         "last_update": entry.get("last_update"),
+                        "estimator": ESTIMATOR_VERSION,
                     }
     except Exception:
         logger.debug("[token_calibration] load failed", exc_info=True)
@@ -371,12 +381,14 @@ def observe(
             state = _load_locked()
             entry = state.get(key)
             if entry is None:
-                state[key] = {"ratio_ema": ratio, "samples": 1, "last_update": time.time()}
+                state[key] = {"ratio_ema": ratio, "samples": 1, "last_update": time.time(),
+                              "estimator": ESTIMATOR_VERSION}
             else:
                 old_ratio = float(entry.get("ratio_ema", ratio))
                 entry["ratio_ema"] = old_ratio * (1 - ALPHA) + ratio * ALPHA
                 entry["samples"] = int(entry.get("samples", 0)) + 1
                 entry["last_update"] = time.time()
+                entry["estimator"] = ESTIMATOR_VERSION
 
         global _DIRTY
         with _WRITE_LOCK:

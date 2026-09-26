@@ -41,6 +41,7 @@ SECTIONS: Tuple[Tuple[str, str], ...] = (
     ("attachments", "Attachments"),
     ("retrieved", "Other retrieved context"),
     ("tool_results", "Tool results"),
+    ("reasoning", "Model reasoning kept"),
     ("conversation", "Conversation history"),
     ("user", "Your message"),
 )
@@ -172,6 +173,16 @@ def build_ledger(messages: Optional[List[Dict[str, Any]]],
     for i, msg in enumerate(messages):
         key = classify(msg, is_last_user=(i == last_user))
         tokens = estimate_tokens([msg])
+        # Reasoning echoed back on assistant turns (Qwen3 templates render all
+        # of it since the last question) gets its own line: in a long agent
+        # turn it outgrows everything else and was invisible here.
+        reasoning = msg.get("reasoning_content")
+        if isinstance(reasoning, str) and reasoning:
+            r_tokens = min(tokens, int(len(reasoning) * 0.3))
+            if r_tokens:
+                tokens -= r_tokens
+                by_key["reasoning"] = by_key.get("reasoning", 0) + r_tokens
+                counts["reasoning"] = counts.get("reasoning", 0) + 1
         by_key[key] = by_key.get(key, 0) + tokens
         counts[key] = counts.get(key, 0) + 1
         meta = msg.get("metadata")

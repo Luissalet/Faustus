@@ -1141,6 +1141,8 @@ function sectionLabel(label: string): string {
       return t('Other retrieved context');
     case 'Tool results':
       return t('Tool results');
+    case 'Model reasoning kept':
+      return t('Model reasoning kept');
     case 'Conversation history':
       return t('Conversation history');
     case 'Your message':

@@ -6493,6 +6493,7 @@ export const es: Record<string, string> = {
   "Tool catalog": "Catálogo de herramientas",
   "Tool prose trimmed to fit the window: {before} → {after} tokens (descriptions capped at {limit} characters, no tool removed).": "Texto de las herramientas recortado para caber en la ventana: {before} → {after} tokens (descripciones limitadas a {limit} caracteres, sin quitar ninguna herramienta).",
   "Tool results": "Resultados de herramientas",
+  "Model reasoning kept": "Razonamiento del modelo que se conserva",
   "Tool schemas": "Esquemas de herramientas",
   "Tool screenshot": "Captura de la herramienta",
   "Toolbar, find, versions with review, export, PDF pages and signatures": "Barra de formato, buscar, versiones con revisión, exportar, páginas PDF y firmas",

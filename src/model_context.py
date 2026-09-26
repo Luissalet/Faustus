@@ -628,6 +628,15 @@ def estimate_tokens(messages: List[Dict]) -> int:
                     total += int(len(item.get("text", "")) * 0.3)
                 elif item_type in ("image_url", "image", "input_image"):
                     total += IMAGE_BLOCK_TOKENS
+        # Reasoning echoed back on assistant turns is prompt too: Qwen3-family
+        # templates render every assistant turn's reasoning since the last
+        # question (agent_loop keeps it on purpose for the prompt cache).
+        # Measured 26-09: 76k characters of it in one exam request, ~23k
+        # tokens this function did not see, which also dragged the model's
+        # token calibration to x2.2 and inflated every text-only estimate.
+        reasoning = msg.get("reasoning_content")
+        if isinstance(reasoning, str) and reasoning:
+            total += int(len(reasoning) * 0.3)
         # Tool calls carry real payload too: a tool-only assistant turn is stored
         # with content=None and the actual args (e.g. a create_document body) in
         # tool_calls[].function.arguments. Ignoring them made large tool arguments
