@@ -9425,3 +9425,12 @@ El backend lo escribió un agente más barato con las entradas exactas de cada r
 - **Corrección tras la prueba.** Sin petición, el 3B respondía que el cambio «cumple lo pedido». Ahora, si no hay petición, se le dice que juzgue el cambio por sí mismo.
 
 12 pruebas.
+
+**Documentación de repositorios por MCP** (19:00). *Nuevo servidor MCP* trae dos plantillas remotas, sin clave y por Streamable HTTP:
+
+- **Documentación de un repositorio de GitHub** (GitMCP, `https://gitmcp.io/{owner}/{repo}`). Se escribe `owner/repo` o se pega la dirección de GitHub; el analizador acepta `.git`, `/tree/…` y rechaza otros dominios y `..`.
+- **DeepWiki**, para cualquier repositorio público (`https://mcp.deepwiki.com/mcp`).
+
+Antes de escribirlas se probaron las dos URLs desde aquí: ambas contestan `initialize` por Streamable HTTP. La ayuda de cada plantilla dice que las preguntas van a ese servicio remoto.
+
+Comprobado en el 7000 con Playwright. El formulario queda con nombre «Docs: idosal/git-mcp», la URL rellenada y transporte `http`. Al añadirlo, el servidor sale conectado con 4 herramientas (`fetch_git_mcp_documentation`, `search_git_mcp_documentation`, `search_git_mcp_code`, `fetch_generic_url_content`) y después se quitó para no dejarle herramientas de más a los turnos de Luis.
