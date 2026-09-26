@@ -41,8 +41,14 @@ def summarize(messages: Iterable[Any]) -> Dict[str, Any]:
             bucket["turns"] += 1
             _add(bucket, "input_tokens", md.get("input_tokens"))
             _add(bucket, "output_tokens", md.get("output_tokens"))
-            _add(bucket, "steps", md.get("agent_rounds"))
-            _add(bucket, "tool_calls", md.get("tool_calls"))
+            _steps = md.get("agent_rounds")
+            if _num(_steps) is None and isinstance(md.get("round_models"), list):
+                _steps = len(md["round_models"])
+            _add(bucket, "steps", _steps)
+            _calls = md.get("tool_calls")
+            if _num(_calls) is None and isinstance(md.get("tool_events"), list):
+                _calls = len(md["tool_events"])
+            _add(bucket, "tool_calls", _calls)
             _add(bucket, "time_s", md.get("total_time") or md.get("response_time"))
             _add(bucket, "cost_usd", md.get("cost_usd"))
             pc = md.get("prompt_cache")

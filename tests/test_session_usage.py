@@ -23,3 +23,9 @@ def test_usage_folds_turns_per_model_with_cache():
 
 def test_empty_chat():
     assert summarize([])["total"] == {"turns": 0}
+
+
+def test_steps_and_calls_from_saved_lists():
+    out = summarize([{"role": "assistant", "metadata": {"output_tokens": 5, "round_models": ["q", "q", "q"],
+                                                        "tool_events": [{}, {}]}}])
+    assert out["total"]["steps"] == 3 and out["total"]["tool_calls"] == 2

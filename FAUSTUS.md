@@ -9233,3 +9233,71 @@ Con el log nuevo (`chat tool set: … added …, dropped …`) se vio además qu
 **Un chat cubierto conserva sus esquemas completos.** Faltaba un caso más. Un turno cuyas herramientas ya estaban todas en el juego del chat cambiaba cuáles llevaban esquema completo cuando la búsqueda subía una que estaba en el catálogo, y eso bastaba para cambiar el bloque de herramientas. Ahora un turno cubierto reutiliza el juego entero; la herramienta del catálogo sigue a un `lookup_tools` de distancia.
 
 **El examen perdió 110.000 tokens de caché de golpe.** La ronda 38 del examen 30 releyó el prompt entero: 290 s de prefill, mientras yo lanzaba turnos de prueba contra el mismo 8081. llama-server reparte las peticiones entre slots por prefijo común (`--slot-prompt-similarity`, 0,10 por defecto). Todas las sesiones de Faustus comparten el mismo prompt de sistema, así que un chat nuevo puede parecerse lo bastante al slot del examen, ocuparlo y borrarle la caché. Queda en PENDIENTES subir ese umbral en el 8081 al acabar el examen (reiniciarlo ahora le costaría otros 5 minutos de prefill).
+
+## 212. El traje para cualquier modelo: razonamiento por proveedor y por modo, Claude en bucle, abanicos anchos y ejecuciones sin interfaz (26-09-2026, tarde)
+
+Luis pidió que Deep Research usara el razonamiento más potente de cada modelo, que ese aprendizaje llegara a todos los modos y a los Hoards, y que Faustus fuera «el traje de Iron Man»: el modelo elegido es quien lo lleva y el arnés tiene que darle lo mejor posible. Después pidió igualar y superar a un arnés abierto que hizo 100 revisores en paralelo para poner al día su documentación.
+
+**Razonamiento en las palabras de cada proveedor** (`src/provider_reasoning.py`). Faustus pedía razonamiento en un solo vocabulario (`think`, `reasoning_effort`, `reasoning_budget`), pero dos rutas no lo traducían. Por la API de Anthropic nunca se mandaba `thinking` ni `output_config.effort`, así que Claude nunca pensaba a través de Faustus. OpenRouter no recibía el objeto `reasoning`. Ahora:
+
+- Claude recibe pensamiento adaptativo (4.6 en adelante) o `enabled` con presupuesto (modelos anteriores), y `output_config.effort` hasta `max`/`xhigh` según el modelo.
+- OpenRouter recibe `reasoning.effort`.
+- La ruta auxiliar sin streaming (`llm_call_async`) acepta `gen_overrides`. Antes apagaba el pensamiento siempre.
+- Un 400 que nombra un campo de razonamiento baja el nivel (max → high → sin campos) y reintenta.
+- El tope de salida crece con el presupuesto, para que la respuesta no se corte a mitad de pensamiento.
+
+**Razonamiento por modo** (`src/mode_effort.py`, Ajustes › Agent › Reasoning per mode). Cada modo tiene su nivel. Por defecto:
+
+- Deep Research y el profesor, `max`.
+- Los miembros del consejo, `high`.
+- La lectura de páginas de una investigación, `off`: son docenas por ejecución.
+
+La pantalla de Investigación tiene un selector «Reasoning», un chat en modo investigación lleva el nivel de su chip, y `delegate_agents` acepta `effort: "max"`. El enjambre y las revisiones de respuestas siguen por la ruta rápida, porque contestan en JSON con forma fija.
+
+**Los Hoards** (Hoard Link `3be5a56`). `Link.chat(effort=off|low|medium|high|max)` manda a cada servidor sus propios campos:
+
+- llama-server/vLLM: `chat_template_kwargs.enable_thinking` más el presupuesto con los dos nombres (`thinking_budget_tokens` es el que respeta la build actual);
+- Ollama: `think`.
+
+Con ello crecen el tope de salida y el timeout, y un 400 se reintenta sin los campos. El valor por defecto va por capacidad (`backend.json` o `HOARD_<CAP>_EFFORT`). Cada llamada de 11 Hoards dice ya su nivel:
+
+- **Sin pensar (`off`)**: lo mecánico, como los subtítulos de Daguerre, la traducción de una búsqueda de 60 tokens o la frase de «vibe» de Vitruvius. Un pensamiento por defecto se comía todo el tope y devolvía nada.
+- **`high` o `max`**: lo de calidad, como el SQL de Laplace, las respuestas con citas de Babel, la crítica de Vitruvius, la narración del día de Funes, la coherencia del mundo de Scheherazade, y las guías de estudio (`max`) y las preguntas (`high`) de Hypatia.
+
+Hypatia conserva su camino directo con timeout largo. Ahora respeta el nivel de cada llamada, y `HYPATIA_LLM_EFFORT` lo impone a todas. La copia vendorizada se sincronizó en 14 apps con tests verdes (Prospero y Nightingale quedan fuera, los llevan otros chats).
+
+**Claude como modelo, bien aprovechado.** Hay dos cambios:
+
+- La caché de prompt cubría el sistema y las herramientas, pero no la conversación: cada ronda de un agente pagaba entera la historia. Ahora hay puntos de ruptura rodantes en el último mensaje y en el cierre de la ronda anterior, siempre sobre copias y nunca más de cuatro. Lo mismo va en OpenRouter para `anthropic/*`. La caché que informa una API alojada entra en la línea «caché del prompt» del turno.
+- El pensamiento con herramientas estaba apagado porque los bloques firmados no volvían. Ahora cada ronda deja sus bloques en la primera llamada a herramienta (`extra_content.anthropic.thinking`), vuelven delante del `tool_use` y el pensamiento sigue dentro del bucle. Si la última ronda con herramientas no los trae, sigue sin pensar, como exige la API.
+
+**Abanicos anchos y trabajadores acotados.** Lo hecho para igualar y superar al arnés abierto:
+
+- **Despacho con clave por ruta** (`src/agent_loop.py`). Las escrituras de fichero (`write_file`, `edit_file`, `apply_patch`) a rutas que nadie más toca en la ronda se ejecutan a la vez que las demás llamadas independientes. Lo que podría ver el efecto de otra llamada conserva su orden: el mismo fichero, un directorio y un fichero de dentro, o una lectura del espacio de trabajo sin ruta.
+- **Una garantía que ese arnés no tiene.** La puerta de aprobación decide llamada a llamada, y una lectura previa puede armarla. Por eso una escritura sólo entra en el grupo si la puerta la dejaría pasar incluso tras contenido no fiable; si no, va en serie y saca su tarjeta. Salió en el propio test: la segunda escritura se habría ejecutado sin aprobación.
+- **`delegate_agents`**:
+  - `tier` (local/fast/mid/frontier), que el dueño asigna a un modelo o a `endpoint|modelo`;
+  - lista de modelos obligatoria (`agent_subagent_allowed_models`): un trabajador con otro modelo se rechaza antes de empezar y el coordinador recibe el motivo;
+  - `read_only` para revisores: el agente `explorer`, 6 rondas, 4 hallazgos y respuesta de menos de 100 palabras;
+  - `max_rounds` y `timeout_s` por tarea;
+  - ancho configurable (`agent_subagent_max_tasks`, 12 por defecto y hasta 128);
+  - los trabajadores en una API alojada esperan en el carril de esa API (`agent_subagent_max_parallel_api`, 16), no en el hueco de la GPU.
+- **Skill `docs-release-review`.** Primero la comprobación determinista (`doc_claims_check`), que no gasta modelo. Luego revisores de solo lectura por página y ángulo, un editor por fichero con propiedad y la verificación final contra el código.
+- **Lo que Faustus ya hacía mejor**, sin cambios:
+  - la parada `work` (flujo, trabajadores transitivos, preguntas, aprobaciones y trabajos de fondo);
+  - la comprobación determinista de afirmaciones en docs;
+  - el ancho según los slots reales del servidor local;
+  - la autonomía de aprobaciones por familia.
+
+**Sin interfaz y uso de la sesión.**
+
+- `scripts/faustus_run.py -p "…" --json` lanza un turno contra un servidor en marcha e imprime NDJSON: inicio, eventos y resumen con uso y motivo de parada. Tiene `--approve`, o para limpio en una tarjeta con salida 2 y se reanuda con `--resume-approval`. También `--plan`, `--effort`, `--workspace` y `--session`.
+- `GET /api/session/{id}/usage` suma las métricas de cada turno por modelo (`src/session_usage.py`), y `/stats` (o `/cost`) lo enseña. Probado en el 7000 sobre un chat real de 21 turnos: 1,25 M tokens de entrada y 73 % del prompt servido desde caché.
+
+**Arreglos de paso.**
+
+- Un mensaje que nombra un servidor MCP («el issue de github») ya no trata sus herramientas como elección débil en el seguimiento. `test_subagent_mcp_scope` fallaba por eso.
+- Una clave duplicada en `es.ts` rompía `tsc`.
+- La etiqueta «Auto» del selector se cortaba.
+
+**Investigación de ajustes de Qwen.** Temperatura 0,6, top_k 20, quitar el razonamiento de turnos anteriores y el formato de herramientas coinciden con lo recomendado. Lo recomendado para modo pensamiento (top_p 0,95, min_p 0) difiere de los valores medidos aquí (0,8 y 0,05), que se eligieron porque cortaban divagaciones. Queda como A/B en OBJETIVOS, no como cambio a ciegas.

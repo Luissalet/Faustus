@@ -6,6 +6,8 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 
 ## A. Decisiones o acciones de Luis
 
+- **Probar Claude como modelo con una clave real** (26-09, §212): la caché rodante de la conversación y el pensamiento dentro de bucles con herramientas sólo están probados contra respuestas simuladas; hace falta un endpoint de Anthropic (o `anthropic/*` por OpenRouter) con clave para un turno de agente de varias rondas, mirando `[anthropic-cache] read=` en el log y que no haya 400 por bloques de pensamiento.
+
 - **Permisos nuevos de Ledger's, Links y People's Hoard** (26-09): los tres esperan aprobación en Ajustes › Integraciones («new permissions pending approval»). Tras el re-escaneo su riesgo es `medium`: cada puente lee su propio `*_TOKEN` del entorno para llamar a su API local.
 - **Ollama como hogar del modelo por defecto** (18-09, §114/§118): el 7000 ya usa por defecto `qwen3.8-27b-q8-llamacpp` en el 8081; lo que queda por decidir es si Ollama conserva algún papel (hoy no tiene modelos cargados) o se retira del arranque.
 - **Volver a Ollama tras usar llama-server** (18-09, §114): paso manual — `D:\LocalAI\Stop-LlamaServer.ps1` y reactivar `warm_default_model=true`.
@@ -99,6 +101,11 @@ Nada abierto a 26-09 (mañana): lo que era una mejora pasó a OBJETIVOS (OBJ-47)
 - **Arranque lento del 7006** (§199/§209/§211): la pila a los 90 s del 26-09 señaló la recuperación de ejecuciones leyendo registros; ya sólo se lee la cola de los terminados. En el próximo reinicio del 7006 (tras el examen 30), mirar cuánto tarda entre «Secret file hardening» y «Application startup complete» y, si sigue en minutos, leer la pila nueva de `brain_data/logs/crash.log`.
 
 ## D. Verificar en vivo con el modelo local
+
+- **Deep Research al máximo en vivo** (26-09, §212): con el 8081 libre, lanzar una investigación desde la pantalla con «Auto» (que es `max`) y otra con «Off», y comparar tiempo, fuentes leídas y calidad del informe; si `max` se come el tiempo de las rondas, ajustar el multiplicador de `hard_timeout` (hoy ×2).
+- **Ediciones en paralelo en un turno real** (26-09, §212): pedir al 27B dos cambios a ficheros distintos en un mismo turno y buscar en el log `independent call(s) run in parallel (N write(s))`; comprobar que la sombra de git y el resumen del turno siguen correctos.
+- **`faustus_run.py` contra el 7000** (26-09, §212): `python scripts/faustus_run.py -p "lista los ficheros de docs" --workspace D:\LocalAI\faustus --json` con el 8081 libre; comprobar el registro `run_summary` y que una tarjeta sin `--approve` sale con código 2.
+- **Hoards con su nivel de razonamiento** (26-09, §212): una guía de estudio de Hypatia (`max`) y un lote de subtítulos de Daguerre (`off`) contra el 8081; la guía debe pensar y responder entera y los subtítulos no deben quedarse vacíos.
 
 - **Caché del prompt en una tarea con imágenes** (26-09, §211): en el examen 31 (con `agent_keep_images_batch` y el recordatorio de idioma que ya no se mueve), comprobar en `server7006.err` que las líneas `[engine] round` sólo pierden caché cada cuatro imágenes y nunca por el recordatorio; `prefix_diff.py` (en `_claude_tmp`) dice qué mensaje cambió.
 - **Tope del juego de herramientas por chat** (26-09, §211): en el 7000, dos turnos seguidos del mismo chat pidieron herramientas distintas (correo y luego imagen) y, al pasar de 28, el segundo empezó juego nuevo: 19k tokens releídos, 57 s. Correr la batería con `scripts/daily_eval.py --set agent_sticky_toolset_max=N` (28 y 48, el nuevo valor por defecto) y comparar aciertos y el «caché del prompt» de la cabecera; fijar el valor por defecto con eso.
