@@ -1,4 +1,4 @@
-import { timelineBars, type ExecutionMetrics, type MetricValue, type PhaseKey, type Timeline, type TimelineBar } from '../adapters/chat';
+import { timelineBars, type ExecutionMetrics, type MetricValue, type PhaseKey, type PromptCacheUse, type Timeline, type TimelineBar } from '../adapters/chat';
 import { t } from '../i18n';
 
 /**
@@ -22,6 +22,8 @@ import { t } from '../i18n';
  */
 export interface ExecutionTimelineProps {
   execution: ExecutionMetrics;
+  /** The turn's prompt-cache reuse, when the engine reports it. */
+  promptCache?: PromptCacheUse;
   variant?: 'full' | 'compact';
   testId?: string;
 }
@@ -81,7 +83,14 @@ function tokenLine(mv: MetricValue): string {
   return `${Math.round(mv.value).toLocaleString()} (${badge})`;
 }
 
-function TimelineRows({ timeline }: { timeline: Timeline }) {
+function cacheLine(pc: PromptCacheUse): string {
+  const seen = pc.processed + pc.cached;
+  const share = seen ? Math.round((pc.cached / seen) * 100) : 0;
+  const base = t('{share}% reused over {rounds} rounds', { share, rounds: pc.rounds });
+  return pc.lost_rounds ? `${base} · ${t('lost in {n}', { n: pc.lost_rounds })}` : base;
+}
+
+function TimelineRows({ timeline, promptCache }: { timeline: Timeline; promptCache?: PromptCacheUse }) {
   return (
     <>
       <ul className="fs-timeline__rows" data-testid="turn-timeline-rows">
@@ -124,18 +133,24 @@ function TimelineRows({ timeline }: { timeline: Timeline }) {
           <dt>{t('Generated tokens')}</dt>
           <dd>{tokenLine(timeline.tokens.generated)}</dd>
         </div>
+        {promptCache && promptCache.rounds > 0 && (
+          <div data-testid="turn-timeline-prompt-cache">
+            <dt>{t('Prompt cache')}</dt>
+            <dd>{cacheLine(promptCache)}</dd>
+          </div>
+        )}
       </dl>
     </>
   );
 }
 
-export function ExecutionTimeline({ execution, variant = 'full', testId = 'turn-timeline' }: ExecutionTimelineProps) {
+export function ExecutionTimeline({ execution, promptCache, variant = 'full', testId = 'turn-timeline' }: ExecutionTimelineProps) {
   const timeline = timelineBars(execution);
 
   if (variant === 'compact') {
     return (
       <div className="fs-timeline fs-timeline--compact" data-overlap={timeline.overlap || undefined} data-testid={testId}>
-        <TimelineRows timeline={timeline} />
+        <TimelineRows timeline={timeline} promptCache={promptCache} />
       </div>
     );
   }

@@ -122,6 +122,7 @@ class Client:
         form = {"session": session, "message": message, "mode": mode, "model": model,
                 "allow_web_search": "true" if web else None}
         answer, tools, cards, error = "", [], 0, ""
+        cache = {"rounds": 0, "processed": 0, "cached": 0, "lost_rounds": 0}
         started = time.time()
         for _leg in range(6):
             approval = None
@@ -146,6 +147,10 @@ class Client:
                         answer = ev["text"]
                     if kind == "tool_start":
                         tools.append(str(ev.get("tool") or ""))
+                    if kind == "metrics" and isinstance(ev.get("data"), dict):
+                        for key, value in (ev["data"].get("prompt_cache") or {}).items():
+                            if key in cache and isinstance(value, (int, float)):
+                                cache[key] += int(value)
                     if kind == "ask_user" and isinstance(ev.get("data"), dict) \
                             and ev["data"].get("kind") == "tool_approval":
                         cards += 1
@@ -158,7 +163,7 @@ class Client:
             form = {"session": session, "message": "", "mode": mode, "model": model,
                     "tool_approval_id": approval, "tool_approval_decision": "approve_task"}
         return {"answer": answer, "tools": tools, "cards": cards, "error": error,
-                "seconds": round(time.time() - started, 1)}
+                "seconds": round(time.time() - started, 1), "prompt_cache": cache}
 
 
 def parse_overrides(pairs: List[str]) -> Dict[str, Any]:
@@ -231,14 +236,32 @@ def _run(args, client: "Client") -> Dict[str, Any]:
     passed = sum(1 for r in rows if r["ok"])
     return {"when": time.strftime("%Y-%m-%d %H:%M:%S"), "base": args.base, "model": args.model,
             "passed": passed, "total": len(rows),
-            "seconds": round(sum(r["seconds"] for r in rows), 1), "tasks": rows}
+            "seconds": round(sum(r["seconds"] for r in rows), 1),
+            "prompt_cache": cache_totals(rows), "tasks": rows}
+
+
+def cache_totals(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Prompt-cache reuse over the whole run (llama-server engines only):
+    the share of prompt tokens reused, and rounds whose cache stopped short
+    of the previous request. A regression that rewrites earlier messages
+    shows here before anyone notices slower turns."""
+    total = {"rounds": 0, "processed": 0, "cached": 0, "lost_rounds": 0}
+    for r in rows:
+        for key in total:
+            total[key] += int((r.get("prompt_cache") or {}).get(key) or 0)
+    seen = total["processed"] + total["cached"]
+    total["reuse"] = round(total["cached"] / seen, 3) if seen else None
+    return total
 
 
 def markdown(report: Dict[str, Any]) -> str:
     lines = [f"# Batería de uso diario — {report['when']}", "",
              f"{report['passed']}/{report['total']} tareas bien · {report['seconds']:.0f} s · "
              f"{report['model']} en {report['base']}"
-             + (f" · ajustes: {json.dumps(report['settings'], ensure_ascii=False)}" if report.get("settings") else ""), "",
+             + (f" · ajustes: {json.dumps(report['settings'], ensure_ascii=False)}" if report.get("settings") else "")
+             + (f" · caché del prompt: {report['prompt_cache']['reuse']:.0%} reutilizado, "
+                f"{report['prompt_cache']['lost_rounds']} rondas con caché perdida"
+                if (report.get("prompt_cache") or {}).get("reuse") is not None else ""), "",
              "| tarea | resultado | s | herramientas | tarjetas | fallos |", "| --- | --- | --- | --- | --- | --- |"]
     for r in report["tasks"]:
         fails = "; ".join(f"{c['check']} {c['detail']}".strip() for c in r["checks"] if not c["ok"])

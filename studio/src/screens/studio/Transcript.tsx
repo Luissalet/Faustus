@@ -2045,7 +2045,7 @@ function AssistantTurn({
             </span>
           </div>
         )}
-        {!turn.streaming && turn.metrics?.execution && <ExecutionTimeline execution={turn.metrics.execution} />}
+        {!turn.streaming && turn.metrics?.execution && <ExecutionTimeline execution={turn.metrics.execution} promptCache={turn.metrics.prompt_cache} />}
       </div>
     </article>
   );

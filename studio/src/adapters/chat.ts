@@ -164,6 +164,13 @@ export interface EngineIdentity {
   sessionId?: string;
 }
 
+export interface PromptCacheUse {
+  rounds: number;
+  processed: number;
+  cached: number;
+  lost_rounds: number;
+}
+
 export interface ExecutionMetrics {
   schemaVersion: number;
   phases: ExecutionPhases;
@@ -193,6 +200,10 @@ export interface TurnMetrics {
    *  from the same dict). Undefined on any turn built before this lote, or
    *  any call site that never supplied the clocks it needs. */
   execution?: ExecutionMetrics;
+  /** Prompt-cache reuse over the turn's rounds (llama-server engines):
+   *  tokens processed, tokens reused, and rounds whose cache stopped short
+   *  of the previous request. */
+  prompt_cache?: PromptCacheUse;
 }
 
 export interface AskOption {
@@ -739,7 +750,16 @@ export function metricsFrom(meta: Record<string, unknown>): TurnMetrics {
     tpsSource: meta.tps_source === 'backend' ? 'backend' : meta.tps_source === 'computed' ? 'computed' : undefined,
     contextPercent: num(meta.context_percent),
     execution: executionMetricsFrom(meta.execution),
+    prompt_cache: promptCacheFrom(meta.prompt_cache),
   };
+}
+
+function promptCacheFrom(raw: unknown): PromptCacheUse | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  const rounds = num(r.rounds);
+  if (!rounds) return undefined;
+  return { rounds, processed: num(r.processed) ?? 0, cached: num(r.cached) ?? 0, lost_rounds: num(r.lost_rounds) ?? 0 };
 }
 
 const PHASE_DEFS: ReadonlyArray<{ phase: PhaseKey; get: (p: ExecutionPhases) => MetricValue }> = [

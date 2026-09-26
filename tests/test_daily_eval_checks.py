@@ -74,3 +74,16 @@ def test_an_ab_arm_restores_the_previous_settings_even_when_the_run_fails(monkey
     with pytest.raises(RuntimeError):
         de.run(args)
     assert saved == [{"agent_followup_reasoning_budget": 2048}, {"agent_followup_reasoning_budget": 0}]
+
+
+def test_cache_totals_sum_the_tasks_and_give_the_reuse_share():
+    cache_totals, markdown = daily_eval.cache_totals, daily_eval.markdown
+    rows = [{"prompt_cache": {"rounds": 3, "processed": 2000, "cached": 18000, "lost_rounds": 1}},
+            {"prompt_cache": {"rounds": 1, "processed": 1000, "cached": 0, "lost_rounds": 0}},
+            {}]
+    total = cache_totals(rows)
+    assert total == {"rounds": 4, "processed": 3000, "cached": 18000, "lost_rounds": 1, "reuse": 0.857}
+    report = {"when": "x", "passed": 0, "total": 0, "seconds": 0, "model": "m", "base": "b",
+              "prompt_cache": total, "tasks": []}
+    assert "86% reutilizado, 1 rondas con caché perdida" in markdown(report)
+    assert cache_totals([{}])["reuse"] is None

@@ -9029,6 +9029,11 @@ async def _stream_agent_loop_body(
     time_to_first_token = None
     first_token_monotonic = None  # INF-03: mirrors time_to_first_token, monotonic
     _last_engine_timings: Optional[Dict[str, Any]] = None  # INF-03: from the latest `usage` event
+    # Prompt-cache reuse across this turn's rounds (llama-server `cache_n`):
+    # tokens processed vs reused, and the rounds whose cache stopped short of
+    # the previous request (an earlier message was rewritten).
+    _prompt_cache = {"rounds": 0, "processed": 0, "cached": 0, "lost_rounds": 0}
+    _prompt_cache_prev_total: Optional[int] = None
     first_token_received = False
     tool_events = []   # Persist tool executions for history reload
     round_texts = []   # Cleaned text per round for history reload
@@ -11528,6 +11533,14 @@ async def _stream_agent_loop_body(
                             _last_engine_timings = u["engine_timings"]
                             _et = _last_engine_timings
                             if _et.get("cache_n") is not None:
+                                _pc_n = int(_et.get("prompt_n") or 0)
+                                _pc_c = int(_et.get("cache_n") or 0)
+                                _prompt_cache["rounds"] += 1
+                                _prompt_cache["processed"] += _pc_n
+                                _prompt_cache["cached"] += _pc_c
+                                if _prompt_cache_prev_total is not None and _pc_c < _prompt_cache_prev_total:
+                                    _prompt_cache["lost_rounds"] += 1
+                                _prompt_cache_prev_total = _pc_n + _pc_c
                                 # One line per round: how much prefill the
                                 # server's prompt cache saved (or did not).
                                 logger.info(
@@ -16086,6 +16099,8 @@ async def _stream_agent_loop_body(
                         _mem_result.get("kind"), _mem_result["applied"])
     except Exception as _mem_err:  # noqa: BLE001 - turn end, never raise
         logger.debug("[learned-memory] outcome attribution failed: %s", _mem_err)
+    if _prompt_cache["rounds"]:
+        metrics["prompt_cache"] = dict(_prompt_cache)
     yield f"data: {json.dumps({'type': 'metrics', 'data': metrics})}\n\n"
 
     # Teacher-escalation: inline takeover visible in the chat stream.
