@@ -77,7 +77,7 @@ export const COMMANDS: SlashCommand[] = [
   { name: 'compact', category: 'Chat', usage: '/compact', help: 'Summarises the old messages into one.' },
   { name: 'versions', aliases: ['history-versions', 'undo-edit'], category: 'Chat', usage: '/versions', help: 'Previous versions of this chat (what an edit or a regenerate removed).' },
   { name: 'restore', category: 'Chat', usage: '/restore ID', help: 'Restores a version from /versions.' },
-  { name: 'stats', aliases: ['df'], category: 'Chat', usage: '/stats', help: 'Tokens and timings of this conversation, and what the database holds.' },
+  { name: 'stats', aliases: ['df', 'cost', 'spend'], category: 'Chat', usage: '/stats', help: 'What this conversation used: tokens, prompt cache, steps, tool calls, time and cost, per model; and what the database holds.' },
   { name: 'incognito', category: 'Chat', usage: '/incognito [on|off]', help: 'Nobody mode: nothing is saved and the memory stays closed.' },
   { name: 'tts', category: 'Chat', usage: '/tts', help: 'Reads the last reply aloud.' },
   { name: 'find', aliases: ['search-history'], category: 'Chat', usage: '/find text', help: 'Searches every conversation.' },

@@ -1835,10 +1835,10 @@ export function StudioScreen() {
             '',
             `${tn(list.length, '{n} message', '{n} messages')} · ${t('{n} tokens generated', { n: tokens })} · ${t('{s} s of model', { s: seconds.toFixed(1) })} · \`${current?.model ?? route?.model ?? t('no model')}\``,
           ].join('\n');
-          void cmd
-            .dbStats()
-            .then((db) => report(db ? `${here}\n\n${db}` : here))
-            .catch(() => report(here));
+          void Promise.all([
+            sessionId ? cmd.sessionUsageMarkdown(sessionId).catch(() => '') : Promise.resolve(''),
+            cmd.dbStats().catch(() => ''),
+          ]).then(([usage, db]) => report([here, usage, db].filter(Boolean).join('\n\n')));
           return true;
         }
 

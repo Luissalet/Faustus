@@ -1948,6 +1948,17 @@ def setup_session_routes(
             "unfiled_remaining": unfiled_remaining_after,
         }
 
+    @router.get("/session/{session_id}/usage")
+    async def get_session_usage(request: Request, session_id: str):
+        """The whole chat's usage: tokens, prompt cache, steps, tools, time
+        and cost, in total and per model (src/session_usage.py)."""
+        _verify_session_owner(request, session_id, session_manager)
+        session = session_manager.get_session(session_id)
+        if not session:
+            raise HTTPException(404, "Session not found")
+        from src.session_usage import summarize
+        return {"session_id": session_id, **summarize(getattr(session, "messages", []) or [])}
+
     @router.get("/session/{session_id}/context_info")
     async def get_context_info(request: Request, session_id: str):
         """Get the real context length for a session's model from the endpoint."""

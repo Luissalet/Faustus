@@ -340,6 +340,49 @@ export async function dbStats(): Promise<string> {
   return [row([t('In the database'), t('Count')]), '| --- | ---: |', ...entries.map(([k, v]) => row([k.replace(/_/g, ' '), String(v)]))].join('\n');
 }
 
+/* ── /stats: the whole chat's usage (src/session_usage.py) ── */
+
+type UsageBucket = Record<string, number | undefined>;
+
+function fmtNum(v: number | undefined): string {
+  return typeof v === 'number' ? v.toLocaleString(locale()) : '—';
+}
+
+export async function sessionUsageMarkdown(sessionId: string): Promise<string> {
+  const d = await getJson<{ total?: UsageBucket; by_model?: Record<string, UsageBucket>; context?: Record<string, number> | null }>(
+    `/api/session/${encodeURIComponent(sessionId)}/usage`,
+  );
+  const tot = d.total ?? {};
+  if (!tot.turns) return '';
+  const lines = [
+    row([t('Usage'), t('Total')]),
+    '| --- | ---: |',
+    row([t('Turns'), fmtNum(tot.turns)]),
+    row([t('Model steps'), fmtNum(tot.steps)]),
+    row([t('Tool calls'), fmtNum(tot.tool_calls)]),
+    row([t('Input tokens'), fmtNum(tot.input_tokens)]),
+    row([t('Output tokens'), fmtNum(tot.output_tokens)]),
+  ];
+  if (tot.prompt_cached !== undefined || tot.prompt_processed !== undefined) {
+    lines.push(row([t('Prompt from cache'), `${fmtNum(tot.prompt_cached)} (${tot.cache_hit_percent ?? 0} %)`]));
+    lines.push(row([t('Prompt processed'), fmtNum(tot.prompt_processed)]));
+  }
+  if (tot.cost_usd) lines.push(row([t('Cost'), `$${Number(tot.cost_usd).toFixed(4)}`]));
+  if (tot.time_s) lines.push(row([t('Time'), `${tot.time_s} s`]));
+  if (d.context?.context_length) {
+    lines.push(row([t('Context (last turn)'), `${fmtNum(d.context.request_context_tokens)} / ${fmtNum(d.context.context_length)} (${d.context.context_percent ?? '?'} %)`]));
+  }
+  const models = Object.entries(d.by_model ?? {});
+  if (models.length > 1) {
+    lines.push('', row([t('Model'), t('Turns'), t('Input'), t('Output'), t('Cache')]), '| --- | ---: | ---: | ---: | ---: |');
+    for (const [name, b] of models) {
+      lines.push(row([`\`${name}\``, fmtNum(b.turns), fmtNum(b.input_tokens), fmtNum(b.output_tokens),
+        b.cache_hit_percent !== undefined ? `${b.cache_hit_percent} %` : '—']));
+    }
+  }
+  return lines.join('\n');
+}
+
 /* ── /skills ── */
 
 export async function skillsMarkdown(query: string): Promise<string> {
