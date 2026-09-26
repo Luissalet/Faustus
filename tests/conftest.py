@@ -79,6 +79,30 @@ def clean_bash_probe_cache():
 
 
 @pytest.fixture(autouse=True)
+def isolated_settings_file(tmp_path_factory, monkeypatch):
+    """No test may write into the checkout's real data/settings.json.
+
+    `src/settings.py`'s `SETTINGS_FILE` was never isolated here, so any test
+    that reaches the real `set_setting`/`save_settings` -- directly, or
+    through a helper that writes as a side effect (`src.safe_mode.quarantine`,
+    `src.extension_manifest.record_install_or_update`, the `manage_settings`
+    agent tool, ...) -- wrote into the actual checkout's `data/settings.json`.
+    A stray `disabled_tools` entry left there then broke unrelated tests
+    depending on run order (`tests/test_browser_mcp_reconnect.py`'s
+    fake-server tests read that same real setting through
+    `src.mcp_manager.builtin_browser_policy_disabled`) -- not reproducible
+    from any single test in isolation, hence isolating every test by default
+    here rather than chasing one "guilty" test file.
+    """
+    from src import settings as settings_mod
+    path = tmp_path_factory.mktemp("settings") / "settings.json"
+    monkeypatch.setattr(settings_mod, "SETTINGS_FILE", str(path))
+    settings_mod._invalidate_caches()
+    yield
+    settings_mod._invalidate_caches()
+
+
+@pytest.fixture(autouse=True)
 def isolated_managed_objectives(tmp_path_factory):
     from services import objective_locations
     allocated = []
