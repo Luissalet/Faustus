@@ -22,8 +22,13 @@ be unit-tested without a GPU.
 """
 from __future__ import annotations
 
+import json
+import logging
 import math
+import os
 from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 MIB = 1024 * 1024
 GIB = 1024 * MIB
@@ -121,6 +126,90 @@ def kv_bytes_per_token_estimated(model_info: Dict[str, Any]) -> Tuple[Optional[f
 KV_RATES: Dict[str, Dict[str, float]] = {}
 KV_RATES_MAX = 64
 
+# `KV_RATES[key]` only ever holds the LATEST reading, overwritten on every
+# load — a model loaded ten times at the same context never accumulates more
+# than one point. `memory_budget.estimate_candidate` needs >= 2 observations
+# AT DIFFERENT CONTEXTS to fit `fixed + per_token * ctx` (basis "fitted");
+# with only ever-overwritten single readings a box that always loads a model
+# at the same num_ctx can never reach it, however many times it runs (FAUSTUS
+# §78: "hoy KV_RATES guarda una observación por modelo"). This is the actual
+# per-key history that feeds that fit: one point per distinct context seen,
+# oldest evicted first once a key has more than KV_HISTORY_MAX_POINTS, kept
+# in memory AND persisted under DATA_DIR (`kv_rate_history.json`) so a
+# restart does not throw away points a slow, occasional user built up one
+# session at a time — a single machine stays the same machine tomorrow.
+KV_HISTORY: Dict[str, Dict[int, float]] = {}
+KV_HISTORY_MAX_POINTS = 6
+_kv_history_loaded = False
+
+
+def _kv_history_path() -> str:
+    from src.constants import DATA_DIR
+    return os.path.join(DATA_DIR, "kv_rate_history.json")
+
+
+def _load_kv_history() -> None:
+    """Populate KV_HISTORY from disk once per process. Never raises: a
+    missing/corrupt file just means no prior points, not a broken estimate."""
+    global _kv_history_loaded
+    if _kv_history_loaded:
+        return
+    _kv_history_loaded = True
+    try:
+        with open(_kv_history_path(), "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        if isinstance(raw, dict):
+            for key, points in raw.items():
+                if not isinstance(points, dict):
+                    continue
+                clean: Dict[int, float] = {}
+                for ctx_s, rate in points.items():
+                    try:
+                        clean[int(ctx_s)] = float(rate)
+                    except (TypeError, ValueError):
+                        continue
+                if clean:
+                    KV_HISTORY[str(key)] = clean
+    except FileNotFoundError:
+        pass
+    except Exception as e:  # noqa: BLE001 - a stale/corrupt file must not break a turn
+        logger.debug("vram_fit: kv history load skipped: %s", e)
+
+
+def _save_kv_history() -> None:
+    try:
+        from src.constants import DATA_DIR
+        from core.atomic_io import atomic_write_json
+        os.makedirs(DATA_DIR, exist_ok=True)
+        atomic_write_json(_kv_history_path(), {
+            key: {str(ctx): rate for ctx, rate in points.items()}
+            for key, points in KV_HISTORY.items()
+        })
+    except Exception as e:  # noqa: BLE001 - persistence is best-effort
+        logger.debug("vram_fit: kv history save skipped: %s", e)
+
+
+def kv_observations(key: str) -> List[Dict[str, float]]:
+    """Every distinct-context KV rate observed for `key` so far (this
+    process, plus whatever a previous run persisted), oldest context first.
+    This is what `memory_budget.estimate_candidate` needs: 2+ of these let it
+    fit a line instead of extrapolating a single point flat."""
+    _load_kv_history()
+    points = KV_HISTORY.get(key) or {}
+    return [{"ctx": float(ctx), "per_token": rate} for ctx, rate in sorted(points.items())]
+
+
+def _remember_kv_history(key: str, ctx: int, per_token: float) -> None:
+    _load_kv_history()
+    if key not in KV_HISTORY and len(KV_HISTORY) >= KV_RATES_MAX:
+        KV_HISTORY.pop(next(iter(KV_HISTORY)), None)
+    points = KV_HISTORY.setdefault(key, {})
+    is_new_ctx = ctx not in points
+    points[ctx] = per_token
+    if is_new_ctx and len(points) > KV_HISTORY_MAX_POINTS:
+        points.pop(next(iter(points)), None)
+    _save_kv_history()
+
 
 def remember_kv_rate(key: str, per_token: float, ctx: int) -> None:
     if not key or per_token <= 0 or ctx <= 0:
@@ -128,6 +217,10 @@ def remember_kv_rate(key: str, per_token: float, ctx: int) -> None:
     if key not in KV_RATES and len(KV_RATES) >= KV_RATES_MAX:
         KV_RATES.pop(next(iter(KV_RATES)), None)
     KV_RATES[key] = {"per_token": float(per_token), "ctx": float(ctx)}
+    try:
+        _remember_kv_history(key, int(ctx), float(per_token))
+    except Exception as e:  # noqa: BLE001 - the latest-rate table above must still land
+        logger.debug("vram_fit: kv history update skipped: %s", e)
 
 
 def plan(

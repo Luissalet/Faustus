@@ -1,10 +1,16 @@
 """The arithmetic behind "Fit to VRAM"."""
+import json
+import os
+
 import pytest
 
 from src import vram_fit
 
 GB = 1024 ** 3
 MB = 1024 ** 2
+
+# KV_HISTORY/KV_RATES and their persisted file are isolated per test by the
+# autouse `isolated_kv_rate_history` fixture in tests/conftest.py.
 
 
 def test_measured_kv_per_token():
@@ -236,3 +242,62 @@ def test_needs_split_is_between_the_largest_card_and_the_pool():
     # one card never splits
     one = vram_fit.pool_budgets(_ONE, held_by_runner_bytes=0, others_bytes=0)
     assert vram_fit.needs_split(one["budget_bytes"] - 1, one) is False
+
+
+# ---------------------------------------------------------------------------
+# KV_HISTORY: several observations at different contexts -> "fitted" reachable
+# ---------------------------------------------------------------------------
+
+def test_remember_kv_rate_at_one_context_repeatedly_stays_a_single_point():
+    """The bug: KV_RATES only ever kept the latest reading, so loading the
+    SAME model at the SAME context ten times never grew past one point and
+    `estimate_candidate` could never reach basis="fitted" on this box."""
+    for _ in range(10):
+        vram_fit.remember_kv_rate("modelA", 15000.0, 32768)
+    assert vram_fit.kv_observations("modelA") == [{"ctx": 32768.0, "per_token": 15000.0}]
+
+
+def test_remember_kv_rate_accumulates_points_at_different_contexts():
+    vram_fit.remember_kv_rate("modelA", 15000.0, 8192)
+    vram_fit.remember_kv_rate("modelA", 14800.0, 32768)
+    obs = vram_fit.kv_observations("modelA")
+    assert obs == [{"ctx": 8192.0, "per_token": 15000.0}, {"ctx": 32768.0, "per_token": 14800.0}]
+    # A second, unrelated model gets its own bucket.
+    vram_fit.remember_kv_rate("modelB", 9000.0, 4096)
+    assert vram_fit.kv_observations("modelB") == [{"ctx": 4096.0, "per_token": 9000.0}]
+    assert len(vram_fit.kv_observations("modelA")) == 2
+
+
+def test_two_observations_let_memory_budget_reach_fitted():
+    from src import memory_budget
+    vram_fit.remember_kv_rate("modelA", 15000.0, 8192)
+    vram_fit.remember_kv_rate("modelA", 14800.0, 32768)
+    estimate = memory_budget.estimate_candidate(
+        weights_bytes=6 * GB, arch=None, ctx=32768,
+        kv_observations=vram_fit.kv_observations("modelA"),
+    )
+    assert estimate.basis == "fitted"
+
+
+def test_kv_history_caps_points_per_key():
+    for ctx in range(2048, 2048 + (vram_fit.KV_HISTORY_MAX_POINTS + 4) * 1024, 1024):
+        vram_fit.remember_kv_rate("modelA", 10000.0, ctx)
+    assert len(vram_fit.kv_observations("modelA")) == vram_fit.KV_HISTORY_MAX_POINTS
+
+
+def test_kv_history_persists_across_a_restart():
+    """In-memory only means a restart throws away every point a slow user
+    built up one session at a time. Simulate a restart: clear KV_HISTORY and
+    the loaded flag, and the points must come back from disk."""
+    vram_fit.remember_kv_rate("modelA", 15000.0, 8192)
+    vram_fit.remember_kv_rate("modelA", 14800.0, 32768)
+    path = vram_fit._kv_history_path()
+    assert os.path.isfile(path)
+    on_disk = json.loads(open(path, encoding="utf-8").read())
+    assert on_disk["modelA"] == {"8192": 15000.0, "32768": 14800.0}
+    # "Restart": drop the in-memory state entirely.
+    vram_fit.KV_HISTORY.clear()
+    vram_fit._kv_history_loaded = False
+    assert vram_fit.kv_observations("modelA") == [
+        {"ctx": 8192.0, "per_token": 15000.0}, {"ctx": 32768.0, "per_token": 14800.0},
+    ]

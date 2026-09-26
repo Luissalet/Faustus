@@ -184,9 +184,11 @@ def setup_hardware_routes() -> APIRouter:
                         if str(tag.get("name") or "") == model and tag.get("digest"):
                             key = str(tag["digest"])
                             break
-                rate = vram_fit.KV_RATES.get(key)
-                if rate:
-                    kv_observations = [{"per_token": rate.get("per_token"), "ctx": rate.get("ctx")}]
+                # Every distinct context this key has been observed at, not
+                # just the latest reading: 2+ of them let estimate_candidate
+                # fit a line (basis "fitted") instead of extrapolating one
+                # point flat (vram_fit.KV_HISTORY, persisted across restarts).
+                kv_observations = vram_fit.kv_observations(key)
             estimate = memory_budget.estimate_candidate(
                 weights_bytes=weights_bytes, arch=arch, ctx=ctx, slots=max(1, int(slots or 1)),
                 kv_observations=kv_observations,

@@ -115,6 +115,30 @@ def isolated_managed_objectives(tmp_path_factory):
         yield
 
 @pytest.fixture(autouse=True)
+def isolated_kv_rate_history(tmp_path_factory, monkeypatch):
+    """`vram_fit.remember_kv_rate` persists accumulated KV-cache-rate
+    observations (`KV_HISTORY`) to `DATA_DIR/kv_rate_history.json` so a slow,
+    occasional session survives a restart instead of losing every point it
+    built up. Several existing tests (`test_vram_admission.py`,
+    `test_l66_hw01_concurrent_admit.py`) call `remember_kv_rate` directly and
+    never isolate `DATA_DIR`; without this they would write into the real
+    checkout's data dir on every run, and leak points between tests besides.
+    Point the file at a scratch path and start each test with clean
+    in-memory tables. `.clear()`, not reassignment: `routes/model_routes.py`
+    aliases `_KV_RATES = vram_fit.KV_RATES` at import time, and swapping in a
+    new dict object here would leave that alias pointing at the old one."""
+    from src import vram_fit
+    path = tmp_path_factory.mktemp("kv_history") / "kv_rate_history.json"
+    monkeypatch.setattr(vram_fit, "_kv_history_path", lambda: str(path))
+    monkeypatch.setattr(vram_fit, "_kv_history_loaded", True)
+    vram_fit.KV_HISTORY.clear()
+    vram_fit.KV_RATES.clear()
+    yield
+    vram_fit.KV_HISTORY.clear()
+    vram_fit.KV_RATES.clear()
+
+
+@pytest.fixture(autouse=True)
 def fresh_session_toolsets():
     """The agent loop remembers each chat's last tool set; tests reuse session
     ids freely, so each starts without that memory."""
