@@ -10237,6 +10237,7 @@ async def _stream_agent_loop_body(
     except (TypeError, ValueError):
         _turn_max_seconds = 3600.0
     _turn_ceiling_hit = False
+    _handoff_nudged = False
     while True:
         round_num += 1
         # BUG-STOP-01: the FIRST thing every round does -- a `scope=task`/
@@ -10278,6 +10279,24 @@ async def _stream_agent_loop_body(
                 yield _rpayload
             _awaiting_user = True
             break
+        # Handoff before the ceiling: a long turn that hits the wall clock
+        # ends with a question, and the next turn started over from scratch
+        # (exam 29: two 3-hour legs, the second re-reading everything the
+        # first had established). Once, at 85% of the ceiling, ask the model
+        # to put what it has established where the next turn will find it.
+        if (not _handoff_nudged and _turn_max_seconds >= 600
+                and (time.monotonic() - _turn_started_monotonic) >= 0.85 * _turn_max_seconds):
+            _handoff_nudged = True
+            _ledger.notes.append(f"handoff_nudge@{round_num}")
+            messages.append({"role": "user", "_harness_note": True, "content": _lang_note(
+                "[Harness check — automatic runtime message, not a new user request] This turn is "
+                "close to its time limit and will stop soon. Before anything else, record what you "
+                "have established so far so the next turn continues from it instead of starting "
+                "over: update the plan (mark finished steps and write their results into them) and, "
+                "if you have a working folder, save the findings, sources and remaining steps in a "
+                "short notes file there. Then carry on with the task.")})
+            yield "data: " + json.dumps({"type": "harness_check", "status": "handoff_requested",
+                                         "round": round_num}) + "\n\n"
         try:
             from src.tool_clock import set_round as _clock_set_round
             _clock_set_round(round_num)
