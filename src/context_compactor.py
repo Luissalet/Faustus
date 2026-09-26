@@ -249,7 +249,7 @@ MIDTURN_KEEP_ROUNDS_BASE_CONTEXT = 32_000
 # rounds verbatim; a round-count cap, kept conservative on purpose since the
 # token-budget ceiling (COMPACT_THRESHOLD / soft_pct) still governs when
 # pressure kicks in at all.
-MIDTURN_KEEP_ROUNDS_HARD_MAX = 80
+MIDTURN_KEEP_ROUNDS_HARD_MAX = 24
 
 
 def scale_keep_tool_rounds(

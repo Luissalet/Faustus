@@ -43,10 +43,10 @@ def test_small_context_model_is_unchanged():
 
 
 def test_large_context_model_scales_up():
-    # 200K is ~6.25x the 32K baseline -> keep proportionally more rounds.
+    # 64K is 2x the 32K baseline -> twice the rounds; 200K reaches the cap.
+    assert scale_keep_tool_rounds(6, 64_000) == int(6 * (64_000 / MIDTURN_KEEP_ROUNDS_BASE_CONTEXT))
     scaled = scale_keep_tool_rounds(6, 200_000)
-    assert scaled > DEFAULT_MIDTURN_KEEP_TOOL_ROUNDS
-    assert scaled == int(6 * (200_000 / MIDTURN_KEEP_ROUNDS_BASE_CONTEXT))
+    assert DEFAULT_MIDTURN_KEEP_TOOL_ROUNDS < scaled <= MIDTURN_KEEP_ROUNDS_HARD_MAX
 
 
 def test_huge_context_is_capped_at_hard_max():
