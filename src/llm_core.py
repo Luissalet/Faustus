@@ -6959,6 +6959,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
             _attempt=1, _budget=fresh_budget, _engine_wait_used=True,
         )
 
+    _dump_stream_payload(target_url, payload)
     try:
         client = _get_http_client()
         h = await apply_kimi_code_headers_async(client, h, target_url)
