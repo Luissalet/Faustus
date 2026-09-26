@@ -39,6 +39,10 @@ OVERFLOW_JS = """() => {
     const r = e.getBoundingClientRect();
     if (!r.width || r.right <= W + 1 || r.left >= W) continue;
     if (e.closest('.fs-aurora')) continue;
+    // Decoration placed past the edge on purpose (a watermark that bleeds out
+    // of its header): absolutely placed and not clickable.
+    const cs = getComputedStyle(e);
+    if (cs.pointerEvents === 'none' && /(absolute|fixed)/.test(cs.position)) continue;
     // Inside a sideways scroller, or clipped on purpose by a box that itself
     // fits (a header cropping its watermark): not a layout bug.
     let a = e.parentElement, contained = false;
