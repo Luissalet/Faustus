@@ -515,8 +515,8 @@ def _query_context_length(endpoint_url: str, model: str) -> Tuple[int, bool]:
                 slots = r.json()
                 if isinstance(slots, list) and slots:
                     try:
-                        from src.llama_slots import note_slot_count
-                        note_slot_count(endpoint_url, len(slots))
+                        from src.llama_slots import note_slots
+                        note_slots(endpoint_url, slots)
                     except Exception:  # noqa: BLE001 - a perf hint only
                         pass
                     n_ctx = slots[0].get("n_ctx")

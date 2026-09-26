@@ -2388,19 +2388,18 @@ def _apply_local_cache_affinity(payload: Dict, url: str, session_id: Optional[st
     payload.setdefault("cache_prompt", True)
 
 
-def _apply_llamacpp_session_slot(payload: Dict, url: str, session_id: Optional[str]) -> None:
-    """Keep an agent chat's rounds on one llama-server slot (`id_slot`).
+def _apply_llamacpp_slot(payload: Dict, url: str, session_id: Optional[str] = None) -> None:
+    """Name the llama-server slot (`id_slot`) for this request.
 
-    Only for a streamed round with tools (an agent round), on a server whose
-    /slots was read (so it is llama.cpp) and has at least three slots; see
-    `src/llama_slots.py` for why and what was measured. Helper passes
-    (titles, reviews) are never pinned, so they cannot take the chat's slot
-    by name."""
-    if not session_id or not _is_self_hosted_openai_compatible(url):
+    A request with a chat (`session_id`) keeps that chat's slot; any other
+    request goes to a slot no chat holds. Only on a local server whose /slots
+    was read recently (so it is llama.cpp) and has three or more slots; see
+    `src/llama_slots.py` for why and what was measured."""
+    if not _is_self_hosted_openai_compatible(url):
         return
     try:
-        from src.llama_slots import slot_for
-        slot = slot_for(url, session_id)
+        from src import llama_slots
+        slot = llama_slots.slot_for(url, session_id) if session_id else llama_slots.helper_slot(url)
     except Exception:  # noqa: BLE001 - a perf hint only
         return
     if slot is not None:
@@ -4566,6 +4565,9 @@ async def _llm_call_async_impl(
             _widen_output_for_reasoning(payload, _asked, key=("max_completion_tokens"
                                         if "max_completion_tokens" in payload else "max_tokens",))
         _apply_local_cache_affinity(payload, url, session_id)
+        # A one-off completion is a helper request even inside a chat: it
+        # must not take the slot that chat's rounds keep their cache in.
+        _apply_llamacpp_slot(payload, url, None)
         _apply_local_generation_stability(payload, target_url, model)
         _apply_openai_response_format(payload, url, schema, model=model)  # `url`: see llm_call
         # No `tools` here: this path is the tool-less completion helper.
@@ -5896,8 +5898,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
             _apply_gen_overrides_openai(payload, _overrides, url)
         _fit_reasoning_effort_to_template(payload, url)
         _apply_local_cache_affinity(payload, url, session_id)
-        if tools:
-            _apply_llamacpp_session_slot(payload, url, session_id)
+        _apply_llamacpp_slot(payload, url, session_id)
         _apply_local_generation_stability(payload, target_url, model)
         _scrub_openai_chat_tool_reasoning(payload, target_url, model)
         # The streaming path is the one the user is watching, and agent mode

@@ -398,3 +398,14 @@ def pytest_collection_modifyitems(config, items):
         path = getattr(item, "path", None) or item.fspath
         for marker_name in markers_for_path(path):
             item.add_marker(getattr(pytest.mark, marker_name))
+
+
+@pytest.fixture(autouse=True)
+def fresh_llama_slots():
+    """`src.llama_slots` remembers each llama-server's slot count and which
+    chat holds which slot; a test that mocked /slots must not make a later
+    test's payload carry an `id_slot`."""
+    from src import llama_slots
+    llama_slots.reset()
+    yield
+    llama_slots.reset()
