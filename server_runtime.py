@@ -131,7 +131,6 @@ def _is_faustus_process(details):
     cwd=_normal_path(details.get("cwd"))
     argv=[str(value) for value in (details.get("cmdline") or [])]
     command=" ".join(argv).replace("\\", "/").lower()
-    root_in_command=root.lower() in command
     markers=(
         "server_runtime.py", "launch-windows.ps1", "start-faustus.ps1",
         "start-faustus-desktop.ps1", "app:app", "mcp_servers/",
@@ -142,10 +141,19 @@ def _is_faustus_process(details):
     # Every Electron executable below this checkout is part of Faustus. This
     # includes renderer/GPU helpers whose commands omit the desktop argument.
     if _inside(exe,electron):return True
-    # Managed/manual Python servers and orphan MCP children from this venv.
-    if _inside(exe,venv) and marked:return True
+    # Managed/manual Python servers and orphan MCP children from this venv,
+    # when they run THIS checkout. The venv is shared: a second instance
+    # started from another worktree of the repository (its own cwd, its own
+    # app and mcp_servers paths) uses the same interpreter, and stopping the
+    # main instance once killed such a test instance three hours into a
+    # run (26-09-2026).
+    # (argv[0] is the shared interpreter itself, so it cannot say which
+    # checkout the process runs.)
+    root_in_args = root.lower() in " ".join(argv[1:]).replace("\\", "/").lower()
+    other_checkout = bool(cwd) and not _inside(cwd, root) and not root_in_args
+    if _inside(exe,venv) and marked and not other_checkout:return True
     # System Python or PowerShell launchers require both checkout and entrypoint.
-    if root_in_command and marked:return True
+    if root_in_args and marked:return True
     # Manual ``python -m uvicorn app:app`` can expose only its working directory.
     if cwd==root and ("app:app" in command or "server_runtime.py" in command):return True
     return False

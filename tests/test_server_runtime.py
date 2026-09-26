@@ -119,3 +119,23 @@ def test_spawn_detached_records_the_child_in_the_ledger(monkeypatch, tmp_path):
     process_launch._note_detached(78, 9.0, "x")
     ledger = json.loads((tmp_path / "detached.json").read_text())
     assert set(ledger) == {"78"}
+
+
+def test_emergency_stopper_leaves_an_instance_of_another_checkout_alone():
+    """Same venv, another worktree: a test instance on another port and its
+    MCP children are not this checkout's processes."""
+    venv=str(runtime.ROOT/'venv'/'Scripts'/'python.exe')
+    other=str(runtime.ROOT.parent/'_claude_tmp'/'brain_wt')
+    assert not runtime._is_faustus_process({
+        'exe':venv,'cwd':other,
+        'cmdline':[venv,'-m','uvicorn','app:app','--port','7006'],'pid':30,'ppid':1,
+    })
+    assert not runtime._is_faustus_process({
+        'exe':venv,'cwd':other,
+        'cmdline':[venv,other+'/mcp_servers/files_server.py'],'pid':31,'ppid':30,
+    })
+    # This checkout's own MCP child still counts, wherever its cwd is.
+    assert runtime._is_faustus_process({
+        'exe':venv,'cwd':r'C:\Windows',
+        'cmdline':[venv,str(runtime.ROOT/'mcp_servers'/'files_server.py')],'pid':32,'ppid':1,
+    })

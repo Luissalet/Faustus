@@ -5,7 +5,6 @@ Actualizado: 26-09-2026. REGLA: nunca nombres de empresas/personas del buzón de
 
 ## 25-09 tarde — visión, contexto, razonamiento, enjambre, podcast (FAUSTUS.md §197, OBJ-45)
 
-- **7000 sin reiniciar**: el 7006 lleva todo desplegado y probado; el 7000 (instancia principal de Luis) lo coge al reiniciarse con el master nuevo y rehacer el `vite build` de la carpeta principal. Es una decisión de Luis cuándo reiniciarlo.
 - **`context_*` automáticos**: en vivo solo se probó pidiéndolo («usa context_note»). Falta una ejecución larga real (Silhouettes o similar) para ver si el 27B las usa solo cuando se le ofrecen al 45 % o en la ronda 12, y si el aviso al umbral blando ayuda o estorba.
 - **`swarm_map` modo `agent`** sin probar en vivo; el modo `llm` sí (6 ciudades). Con otros chats ocupando slots del 8081, dos elementos agotaron sus 180 s esperando cola antes del arreglo que reserva los slots ocupados; volver a medirlo con el 8081 compartido.
 
@@ -18,13 +17,10 @@ Actualizado: 26-09-2026. REGLA: nunca nombres de empresas/personas del buzón de
 
 ## 24-09 noche — ingeniería autónoma (FAUSTUS.md §189, OBJ-43) — verificado por tests, no en vivo
 
-- **`github_issue` / `git_open_pr` contra GitHub de verdad**: sólo probados con transporte falso. Probar con el token de `reach` (o `gh`) sobre un repo de pruebas: leer una issue, subir rama, abrir PR, comprobar «Closes #N» y que la política git del repo los frena cuando toca.
 - **`bug_hunt` con el 27B**: la generación de tests y el triaje se probaron con el modelo simulado y la batería determinista; medir calidad real sobre `src/git_radar.py` o similar y ajustar el prompt si inventa expectativas.
-- **`ci_failures`**: sin ejecución de GitHub Actions accesible en la nube; probar con el repo Faustus (tiene workflows) y un run fallido.
 - **`fix_memory`**: comprobar en un chat real que un turno con ficheros cambiados deja línea en `DATA_DIR/fix_memory/<owner>/` y que el turno siguiente parecido enseña el bloque «Past fixes» en el ledger de contexto.
 - **Carriles en `enforce`** con `delegate_agents` real y un `AGENT.md` de biblioteca; el diálogo de Studio pintado y usado con clics.
 - **Turno de noche** con 2–3 tareas reales de `dispatch` y presupuesto corto; tarjeta de Inicio vía la acción `night_shift_report`.
-- **El 7000** necesita reinicio para cargar todo esto.
 
 ## 24-09 — examen Eldoria contra el 27B local (FAUSTUS.md §184)
 
@@ -35,7 +31,6 @@ Actualizado: 26-09-2026. REGLA: nunca nombres de empresas/personas del buzón de
 - **Prueba 02 (Ingenio)** sin ejecutar todavía; el bonus sólo después de cerrar las dos.
 - **Recuperación del motor a mitad de turno**: verificada en vivo en el 7006 el 25-09 (se mató el llama-server gestionado con la respuesta a medias; el bucle emitió `engine_lost_recovered`, Faustus lo arrancó de nuevo en 40 s, rehízo la ronda y la respuesta salió entera). Falta adoptar el 8081 como motor también en el 7000 (Ajustes → Modelos locales → Añadir motor → Rellenar).
 - **Visión**: el `qwen3-vl-30b-cpu` sigue siendo el cuello de botella (cuenta mal flechas y personas). Probados: `qwen3-vl:8b-instruct` en GPU (peor y no más rápido con el 27B cargado) y el cliente Claude de suscripción como Visión (funciona, 4 min por llamada). Pendiente probar el cliente con `--model` rápido (sonnet/haiku) y sin razonamiento largo.
-- **El 7000** necesita reinicio y `vision_model` configurado (Ajustes → Visión) para tener lo del examen.
 
 ## 24-09 — `inspect_image` sin probar en vivo (FAUSTUS.md §181)
 
