@@ -93,7 +93,6 @@ Nada abierto a 26-09 (mañana): lo que era una mejora pasó a OBJETIVOS (OBJ-47)
 - **Instalar Piper desde Ajustes › Voz** (18-09/17-09, §106): la pantalla ya se vio (selector con «Local (Piper)» y el cuadro de frases de parada); falta pulsar «Instalar motor» y descargar una voz, que baja ficheros: con permiso de Luis.
 - **Binario Windows de Piper** (20-09, §153): sólo se probó el de Linux.
 - **RAG con ChromaDB real** (20-09, §146): indexar un PDF real, comprobar los `locator` en los metadatos, buscar con `rag_manager.search()`, confirmar el `[fichero.pdf pN#bM]` inyectado, y activar `rag_pii_redaction` confirmando que el índice queda sanitizado sin tocar el fichero original.
-- **Tiempo del checkpoint del workspace** (20-09, §90): medir en una carpeta con archivos grandes (~91 s vistos).
 
 - **Pestaña Optimize y formulario de serve en el 7001** (spec INF): ver en vivo el chip de arquitectura, «Capabilities», `ReceiptPanel` en una tarea y la cronología bajo una respuesta.
 - **Chip de generación, lo que queda** (FAUSTUS §119 Parte A; §210): visto en el 7000 el 26-09 que el Reset de un control no toca los demás overrides y que el interruptor de razonamiento aparece con un modelo pensante. Salió un fallo, ya corregido: las cajas numéricas perdían el foco tras cada tecla. Tras desplegar falta comprobar que teclear «0.9» y «40» queda tal cual, que `/temp 0.9` actualiza el panel al reabrirlo y que con un modelo sin razonamiento el interruptor no sale.

@@ -9120,3 +9120,20 @@ Dos causas repetidas:
 
 Ahora las filas se pintan con una función. La caja (`GenNumberBox`) guarda el texto mientras se escribe y sólo aplica un número completo, o lo escrito al pulsar Enter o salir de la caja; Escape devuelve el valor actual. Un barrido de Studio no encontró más componentes declarados dentro de otros.
 
+**Checkpoints en carpetas grandes.** Medido en el PC con un directorio de datos aparte. «Contornos pokemon» tiene 45.473 ficheros y 20,7 GB, de los que 19,8 GB están por debajo del límite por fichero. Antes, el primer checkpoint habría metido todo eso en el repositorio sombra, que el siguiente turno borraba por pasar del tope de 2 GB. Ahora se mide lo que guardaría (`git ls-files`, que respeta el `.gitignore` de la carpeta y el fichero de exclusiones) y se salta en 12 s con el motivo en `status()`. Una primera versión medía recorriendo la carpeta, sin `.gitignore`, y daba por demasiado grande el propio repositorio de Faustus por su carpeta de datos ignorada; la prueba en el PC lo destapó. Con el arreglo, Faustus hace el primer checkpoint en 17,8 s (repositorio sombra de 43 MB) y el segundo en 0,3 s.
+
+**QA-44 en verde.** El recorrido de teclado y zoom (`scripts/ui_a11y.py`) ya no llegaba ni a la tarjeta de aprobación, porque una edición pedida explícitamente pasa sin ella. Ahora una regla de argumento pide tarjeta para `edit_file`, y el botón se busca por su nombre actual. Los fallos que quedaban eran de medida, no de Studio:
+
+- El 200 % se emulaba con `zoom` de CSS; ahora es una ventana de 640x430 px CSS.
+- El anillo de foco se leía a mitad de su transición.
+- La posición se leía antes de que terminara el desplazamiento suave.
+
+El Escape anota dónde estaba el foco. Da 38/38 en cuatro corridas seguidas, y el xfail estricto pasa a test verde (`QA_ESTADO.md`: 47 verde, 1 manual).
+
+**El comando se quedaba en la caja.** `/temp 0.8` aplicaba el ajuste pero dejaba el texto en el compositor: el compositor sube su texto justo antes de enviar, y el comando lo vacía en ese mismo instante, así que el valor del padre acababa igual que empezaba. Ahora, tras enviar, el compositor toma el valor del padre en cuanto se pinta.
+
+**Suite de Windows (`suite53`).** 3 fallos de 23.965; los tres están arreglados:
+
+- Una expectativa sin la marca `engine` nueva.
+- Dos tests que parcheaban un módulo que otro test puede cambiar en `sys.modules`. Ahora parchean por ruta, o la dependencia que usa la propia ruta.
+
