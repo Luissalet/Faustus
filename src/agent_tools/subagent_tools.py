@@ -2174,10 +2174,12 @@ class DelegateAgentsTool:
             # that API's own lane (`agent_subagent_max_parallel_api`), so a
             # wide review fan-out on a cheap hosted model runs at API width
             # while local workers still queue on the GPU.
+            _route_error: Optional[str] = None
             try:
-                _w_url = _route_for(run, endpoint_url, owner, headers)[0]
-            except ValueError:
-                _w_url = endpoint_url
+                _w_route = _route_for(run, endpoint_url, owner, headers)
+            except ValueError as exc:
+                _w_route, _route_error = (endpoint_url, headers), str(exc)
+            _w_url = _w_route[0]
             run_slots = slots
             if _w_url and _w_url != endpoint_url:
                 try:
@@ -2204,14 +2206,12 @@ class DelegateAgentsTool:
             # could have asked for directly.
             rounds = run.max_rounds_override or max_rounds or args["max_rounds"]
             limit = float(run.timeout_s_override or args["timeout_s"])
-            # A definition may name the endpoint its worker runs on. The GPU
-            # slot stays keyed on the COORDINATOR's endpoint on purpose: it
-            # bounds how many workers generate at once on this box, and reading
-            # it per-endpoint would raise that bound rather than honour it.
-            try:
-                worker_url, worker_headers = _route_for(run, endpoint_url, owner, headers)
-            except ValueError as exc:
-                run.error = str(exc)
+            # A definition or a tier may name the endpoint its worker runs on
+            # (routed once, above). A local worker keeps the COORDINATOR's GPU
+            # slot: it bounds how many workers generate at once on this box.
+            worker_url, worker_headers = _w_route
+            if _route_error is not None:
+                run.error = _route_error
                 run.finished = time.time()
                 await emit({'event': 'error', 'message': run.error})
                 await emit({'event': 'done', **run.report()})

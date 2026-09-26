@@ -405,6 +405,11 @@ class StreamingChatInvoker:
             member_overrides = mode_effort.for_mode("council")
         except Exception:  # noqa: BLE001 - the model's own default then
             member_overrides = None
+        if member_overrides and member_overrides.get("think") and timeout_s is None \
+                and self._timeout_s == 180.0:
+            # Thinking first, then the answer: the default 180 s was sized
+            # for an answer alone.
+            budget = max(budget, 600.0)
         stream = stream_llm(url, model_id or result["model"], messages,
                             headers=headers or None, timeout=int(max(1.0, budget)),
                             session_id=_text(_field(participant, "private_session_id")) or None,

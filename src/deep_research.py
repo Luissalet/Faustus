@@ -1322,6 +1322,11 @@ class DeepResearcher:
         if overrides and overrides.get("think"):
             reasoning_room = int(overrides.get("reasoning_budget") or 0)
         timeout = self._call_budget(max_tokens + reasoning_room, timeout)
+        if reasoning_room and not self._is_local():
+            # A hosted model thinking up to the budget before it writes: the
+            # caller's 60-180 s was sized for an answer, not for 16k tokens
+            # of reasoning on a non-streamed call.
+            timeout = int(min(3600, max(timeout, 120 + (max_tokens + reasoning_room) / 40)))
         response = await llm_call_async(
             url=self.llm_endpoint,
             model=self.llm_model,

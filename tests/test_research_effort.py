@@ -55,3 +55,12 @@ def test_delegate_effort_has_a_max_level():
     out = resolve("max")
     assert out["gen_overrides"] == {"think": True, "reasoning_effort": "max", "reasoning_budget": 16384}
     assert out["hint"]
+
+
+def test_a_hosted_model_thinking_gets_time_to_think(monkeypatch):
+    r = _researcher(monkeypatch)
+    seen = _capture(monkeypatch)
+    asyncio.run(r._llm([{"role": "user", "content": "plan"}], max_tokens=4096, timeout=90))
+    asyncio.run(r._llm([{"role": "user", "content": "page"}], max_tokens=2048, timeout=90, stage="read"))
+    assert seen[0]["timeout"] >= 120 + (4096 + 16384) / 40
+    assert seen[1]["timeout"] == 90

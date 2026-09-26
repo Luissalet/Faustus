@@ -1752,23 +1752,54 @@ def _drop_foreign_opaque_tool_extras(messages: List[Dict], new_endpoint_url: str
     filter it, so nothing here is a destructive, one-way loss of the token,
     only keeping it from leaking to a provider it was never for.
     """
+    # Each provider's opaque replay token lives under its own key: Gemini's
+    # thought_signature under "google", Claude's signed thinking blocks
+    # under "anthropic". The new route keeps only its own.
+    # (Gemini's token is the flat `thought_signature` shape; anything that
+    # is not Claude's own key belongs to it.)
     if _is_google_endpoint(new_endpoint_url):
-        return messages  # the one provider this token is actually for
+        def _keep(k):
+            return k != "anthropic"
+    else:
+        try:
+            from src.llm_core import _detect_provider as _dp
+            _to_claude = _dp(new_endpoint_url) == "anthropic"
+        except Exception:  # noqa: BLE001 - unknown route: keep nothing
+            _to_claude = False
+
+        def _keep(k):
+            return _to_claude and k == "anthropic"
+
+    def _filtered(tc):
+        if not isinstance(tc, dict) or not tc.get("extra_content"):
+            return tc, False
+        extra = tc["extra_content"]
+        kept = {k: v for k, v in extra.items() if _keep(k)} if isinstance(extra, dict) else {}
+        if isinstance(extra, dict) and kept == extra:
+            return tc, False
+        new_tc = {k: v for k, v in tc.items() if k != "extra_content"}
+        if kept:
+            new_tc["extra_content"] = kept
+        return new_tc, True
+
     out: List[Dict] = []
     changed = False
     for msg in messages:
         tool_calls = msg.get("tool_calls") if isinstance(msg, dict) else None
-        if not tool_calls or not any(
-            isinstance(tc, dict) and tc.get("extra_content") for tc in tool_calls
-        ):
+        if not tool_calls:
+            out.append(msg)
+            continue
+        new_calls, touched = [], False
+        for tc in tool_calls:
+            ntc, t = _filtered(tc)
+            new_calls.append(ntc)
+            touched = touched or t
+        if not touched:
             out.append(msg)
             continue
         changed = True
         new_msg = dict(msg)
-        new_msg["tool_calls"] = [
-            ({k: v for k, v in tc.items() if k != "extra_content"} if isinstance(tc, dict) else tc)
-            for tc in tool_calls
-        ]
+        new_msg["tool_calls"] = new_calls
         out.append(new_msg)
     return out if changed else messages
 
@@ -14347,7 +14378,11 @@ async def _stream_agent_loop_body(
                     _arg_policy_decision.rule_id, block.tool_type,
                     _arg_policy_decision.arg, _arg_policy_decision.op,
                 )
-            elif not security_decision.allowed:
+            elif not security_decision.allowed and i not in _prefetched:
+                # (A call the keyed dispatch already ran was admitted only if
+                # the gate would pass it even after untrusted content; its
+                # result is served below, never replaced by a card for an
+                # action that already happened.)
                 approval_document = (
                     active_document
                     if block.tool_type

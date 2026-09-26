@@ -144,3 +144,19 @@ def test_multiple_tool_calls_only_the_opaque_ones_are_touched():
     out = agent_loop._drop_foreign_opaque_tool_extras(history, OPENAI_URL)
     assert "extra_content" not in out[0]["tool_calls"][0]
     assert out[0]["tool_calls"][1] == {"id": "c2", "type": "function", "function": {"name": "b", "arguments": "{}"}}
+
+
+def test_each_provider_keeps_only_its_own_replay_token():
+    history = [{"role": "assistant", "content": None, "tool_calls": [{
+        "id": "c1", "type": "function", "function": {"name": "read_file", "arguments": "{}"},
+        "extra_content": {"thought_signature": "g",
+                          "anthropic": {"thinking": [{"type": "thinking", "thinking": "t", "signature": "s"}]}},
+    }]}]
+    to_claude = agent_loop._drop_foreign_opaque_tool_extras(history, "https://api.anthropic.com/v1/messages")
+    assert set(to_claude[0]["tool_calls"][0]["extra_content"]) == {"anthropic"}
+    to_gemini = agent_loop._drop_foreign_opaque_tool_extras(
+        history, "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions")
+    assert set(to_gemini[0]["tool_calls"][0]["extra_content"]) == {"thought_signature"}
+    to_local = agent_loop._drop_foreign_opaque_tool_extras(history, "http://127.0.0.1:8081/v1")
+    assert "extra_content" not in to_local[0]["tool_calls"][0]
+    assert set(history[0]["tool_calls"][0]["extra_content"]) == {"thought_signature", "anthropic"}
