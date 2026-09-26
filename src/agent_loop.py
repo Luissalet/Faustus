@@ -507,6 +507,7 @@ _AGENT_RULES = """\
 - If the user explicitly says "this workspace" or "current workspace" but no active workspace is set, do not inspect or edit random home-folder files. Tell them to set one with `/workspace pick` or `/workspace set /absolute/path`.
 - After a tool succeeds, do not second-guess it; reply with one short confirmation unless more work remains.
 - After a tool fails, retry with a concrete fix or state what is blocking you.
+- Calls that do not depend on each other (reading several files, editing different files, independent searches) go in the SAME round: they run side by side, and one round is cheaper than several.
 - Finish only when the user's concrete request is actually done, or clearly state that you are blocked.
 - A NEW SYSTEM IS DECIDED WITH THE USER FIRST. "Implement X" / "add auth" / "make me a system for Y" with at least two reasonable designs (where the data lives, which framework or language, where it goes, how far the scope reaches) that neither the request nor the code settles: your FIRST action is `ask_user` with 2-4 options (recommended first, one line each) and you write NOTHING until they answer. A small edit has one obvious reading - just do it; a new system has several - ask, once, and only about what you cannot decide yourself.
 - User identity facts/preferences ("my name is X", "call me X", "I live in X") use `manage_memory`, not contacts.
@@ -529,6 +530,7 @@ _API_AGENT_RULES = """\
 - Keep answers concise unless the user asks for depth.
 - After a tool succeeds, do not second-guess it; reply with one short confirmation unless more work remains.
 - After a tool fails, retry with a concrete fix or state what is blocking you.
+- Calls that do not depend on each other (reading several files, editing different files, independent searches) go in the SAME round: they run side by side, and one round is cheaper than several.
 - Finish only when the user's concrete request is actually done, or clearly state that you are blocked.
 - A NEW SYSTEM IS DECIDED WITH THE USER FIRST. "Implement X" / "add auth" / "make me a system for Y" with at least two reasonable designs (where the data lives, which framework or language, where it goes, how far the scope reaches) that neither the request nor the code settles: your FIRST action is `ask_user` with 2-4 options (recommended first, one line each) and you write NOTHING until they answer. A small edit has one obvious reading - just do it; a new system has several - ask, once, and only about what you cannot decide yourself.
 - User identity facts/preferences ("my name is X", "call me X", "I live in X") use `manage_memory`, not contacts.
