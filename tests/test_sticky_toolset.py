@@ -55,3 +55,20 @@ def test_the_cap_is_a_setting(monkeypatch):
     al._sticky_toolset("s", {f"t{i}" for i in range(20)}, None, set())
     widened, _ = al._sticky_toolset("s", {f"u{i}" for i in range(20)}, None, set())
     assert len(widened) == 40
+
+
+def test_plugin_tools_only_retrieval_picked_do_not_widen_a_follow_up():
+    al._sticky_toolset("s", {"read_file", "inspect_image", "mcp__a__x"}, {"inspect_image"}, set())
+    out, hot = al._sticky_toolset("s", {"read_file", "inspect_image", "mcp__b__y", "mcp__b__z"},
+                                  {"inspect_image", "mcp__b__y"}, set(),
+                                  optional={"mcp__b__y", "mcp__b__z", "mcp__a__x"})
+    assert out == {"read_file", "inspect_image", "mcp__a__x"} and hot == {"inspect_image"}
+    # A built-in tool the turn needs still widens it.
+    out2, _ = al._sticky_toolset("s", {"read_file", "write_file", "mcp__b__y"}, None, set(),
+                                 optional={"mcp__b__y"})
+    assert "write_file" in out2 and "mcp__b__y" not in out2
+
+
+def test_the_first_turn_keeps_what_retrieval_found():
+    out, _ = al._sticky_toolset("fresh", {"read_file", "mcp__b__y"}, None, set(), optional={"mcp__b__y"})
+    assert out == {"read_file", "mcp__b__y"}

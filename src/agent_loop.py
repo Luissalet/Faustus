@@ -5860,7 +5860,8 @@ _STICKY_TOOLSET_MAX = 48
 
 
 def _sticky_toolset(session_id: str, relevant: Set[str], hot: Optional[Set[str]],
-                    disabled: Set[str]) -> Tuple[Set[str], Optional[Set[str]]]:
+                    disabled: Set[str], optional: Optional[Set[str]] = None,
+                    ) -> Tuple[Set[str], Optional[Set[str]]]:
     """The tools for this turn, kept as close as possible to the last turn's.
 
     Measured on the local 27B (25-09): a follow-up question in the same chat
@@ -5876,6 +5877,17 @@ def _sticky_toolset(session_id: str, relevant: Set[str], hot: Optional[Set[str]]
     if prev is not None:
         prev_relevant = set(prev[0]) - disabled
         prev_hot = None if prev[1] is None else set(prev[1]) - disabled
+        # `optional`: tools only a weak signal picked (plugin tools semantic
+        # retrieval matched, from servers this chat has not used). On a
+        # follow-up they do not widen the set: each new pick changed the
+        # tool block and the server re-read the whole prompt (live, 26-09:
+        # 19,700 tokens, 49 s, for six plugin tools nobody called). They
+        # stay reachable through `lookup_tools`.
+        extra = set(optional or ()) - prev_relevant
+        if extra:
+            relevant = set(relevant) - extra
+            if hot is not None:
+                hot = set(hot) - extra
         if relevant <= prev_relevant and (hot is None or prev_hot is None or hot <= prev_hot):
             out_relevant, out_hot = prev_relevant, prev_hot if hot is not None else None
         else:
@@ -7893,6 +7905,12 @@ async def _stream_agent_loop_body(
     # extras beyond this seed are deferred to the compact catalog + lookup_tools.
     # A caller-pinned set is an authorization decision: nothing is deferred.
     _hot_seed: Optional[set] = set(relevant_tools) if relevant_tools else None
+    # For `_sticky_toolset`: what semantic retrieval alone picked, whether the
+    # request names an installed plugin, and the MCP tools kept because this
+    # chat used their server.
+    _retrieved_tools: Set[str] = set()
+    _names_a_plugin = False
+    _sticky_mcp_kept: Set[str] = set()
     _t1 = time.time()
     if _relevant_tools:
         logger.info(f"[tool-rag] Using caller-provided relevant_tools ({len(_relevant_tools)} tools)")
@@ -7962,6 +7980,7 @@ async def _stream_agent_loop_body(
                             timeout=_TOOL_SELECTION_TIMEOUT_SECONDS,
                         )
                         logger.info(f"[tool-rag] Retrieved tools for query: {sorted(_relevant_tools - ALWAYS_AVAILABLE)}")
+                        _retrieved_tools = set(_relevant_tools)
                         if _hot_seed is None:
                             _hot_seed = set(_relevant_tools)
                     except asyncio.TimeoutError:
@@ -8004,6 +8023,7 @@ async def _stream_agent_loop_body(
         try:
             from src.plugins import named_in as _plugins_named_in
             if _plugins_named_in(_retrieval_query):
+                _names_a_plugin = True
                 _relevant_tools.update({"plugins_list", "plugin_app"})
                 if _hot_seed is not None:
                     _hot_seed.update({"plugins_list", "plugin_app"})
@@ -8217,6 +8237,7 @@ async def _stream_agent_loop_body(
                 if isinstance(s, dict)
             ]
             _sticky_mcp = _sticky_mcp_tool_names(messages, _mcp_names_for_sticky)
+            _sticky_mcp_kept = set(_sticky_mcp)
         except Exception:  # noqa: BLE001 - continuity is a convenience, never the turn
             logger.debug("[tool-rag] sticky MCP tools skipped", exc_info=True)
             _sticky_mcp = set()
@@ -8501,10 +8522,14 @@ async def _stream_agent_loop_body(
     # of the prompt, so a different list costs a full reprocess every turn.
     if (_relevant_tools is not None and not relevant_tools and not guide_only and session_id
             and bool(get_setting("agent_sticky_toolset", True))):
+        _sticky_optional: Set[str] = set()
+        if not _names_a_plugin:
+            _sticky_optional = {t for t in _retrieved_tools if str(t).startswith("mcp__")} - _sticky_mcp_kept
         _relevant_tools, _hot_seed = _sticky_toolset(
             session_id, set(_relevant_tools),
             None if _hot_seed is None else set(_hot_seed),
             set(disabled_tools or ()),
+            optional=_sticky_optional,
         )
     _schema_tools = None
     _deferred_tools: Set[str] = set()
