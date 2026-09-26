@@ -441,6 +441,27 @@ def test_the_tool_index_lexical_floor_ranks_a_known_tool_first_with_no_embedder(
     assert {row["id"] for row in index.corpus_rows()} == set(BUILTIN_TOOL_DESCRIPTIONS)
 
 
+def test_the_lexical_floor_ranks_bash_and_web_search_for_one_word_queries():
+    """§161: a query naming the tool's job in a single word, or in Spanish,
+    never shares two terms with a tool's opening sentence (that sentence
+    never says "terminal" or "internet"), so the overlap-based anchor above
+    always missed it — the query had nothing else to fall back on either,
+    since neither word appears anywhere in `BUILTIN_TOOL_DESCRIPTIONS` at
+    all. A small bilingual synonym-to-tool fallback fixes this without
+    touching the generic two-term rule."""
+    from src.tool_index import BUILTIN_TOOL_DESCRIPTIONS, ToolIndex
+
+    index = ToolIndex.__new__(ToolIndex)
+    index._lanes = []
+    for tool, queries in (
+        ("bash", ["terminal", "command", "open a terminal and run a command"]),
+        ("web_search", ["buscar en internet", "necesito buscar algo en internet"]),
+    ):
+        for query in queries:
+            assert tool in index.retrieve(query, k=8), (tool, query)
+    assert {row["id"] for row in index.corpus_rows()} == set(BUILTIN_TOOL_DESCRIPTIONS)
+
+
 def test_the_lexical_floor_only_fires_when_no_lane_answered():
     """A working lane must never be second-guessed by the floor."""
     from src.tool_index import ToolIndex

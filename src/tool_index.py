@@ -930,6 +930,19 @@ class ToolIndex:
                          "%d tools (tier=%s)", len(names), found.get("tier"))
         return names
 
+    #: A single near-literal keyword for a tool's own job, checked only when
+    #: nothing else answers below. The two-meaningful-terms rule below exists
+    #: so a generic word like "run" cannot force a tool by itself, but a
+    #: one-word query like "terminal" or "buscar en internet" (ES: "search
+    #: the internet") legitimately names exactly one tool and never appears
+    #: in that tool's own opening sentence, so overlap-counting alone always
+    #: missed it — bilingual, since the rest of this index is too.
+    _STRONG_SYNONYM_ANCHORS: Dict[str, str] = {
+        "terminal": "bash", "consola": "bash", "cmd": "bash",
+        "shell": "bash", "command": "bash", "comando": "bash",
+        "internet": "web_search", "buscar": "web_search", "busqueda": "web_search",
+    }
+
     def _strong_lexical_anchor(self, query: str) -> str:
         """One near-literal tool intent that a weak embedding may miss.
 
@@ -954,22 +967,27 @@ class ToolIndex:
             return out
 
         wanted = terms(query)
-        if len(wanted) < 2:
-            return ""
-        best_name = ""
-        best_score = (0.0, 0, 0)
-        for order, row in enumerate(self.corpus_rows()):
-            text = str(row.get("text") or "")
-            opening = re.split(r"[.!?\n]", text, maxsplit=2)
-            first = " ".join(opening[:2])
-            overlap = wanted & terms(first)
-            if len(overlap) < 2:
-                continue
-            score = (len(overlap) / len(wanted), len(overlap), -order)
-            if score > best_score:
-                best_score = score
-                best_name = str(row.get("id") or "")
-        return best_name
+        if len(wanted) >= 2:
+            best_name = ""
+            best_score = (0.0, 0, 0)
+            for order, row in enumerate(self.corpus_rows()):
+                text = str(row.get("text") or "")
+                opening = re.split(r"[.!?\n]", text, maxsplit=2)
+                first = " ".join(opening[:2])
+                overlap = wanted & terms(first)
+                if len(overlap) < 2:
+                    continue
+                score = (len(overlap) / len(wanted), len(overlap), -order)
+                if score > best_score:
+                    best_score = score
+                    best_name = str(row.get("id") or "")
+            if best_name:
+                return best_name
+        for term in sorted(wanted):
+            hit = self._STRONG_SYNONYM_ANCHORS.get(term)
+            if hit:
+                return hit
+        return ""
 
     # Structural recurring-schedule intent. Typo-resilient (matches "every dya"
     # via "every <word>"), and catches bare clock times ("at 7:30 am", "7am").
