@@ -383,6 +383,15 @@ export async function sessionUsageMarkdown(sessionId: string): Promise<string> {
   return lines.join('\n');
 }
 
+/* ── /turnreview: what the last turns did (src/turn_review.py) ── */
+
+export async function turnReviewMarkdown(sessionId: string, turns: number): Promise<string> {
+  const d = await getJson<{ markdown?: string }>(
+    `/api/session/${encodeURIComponent(sessionId)}/turn_review?turns=${Math.max(1, Math.min(10, turns || 1))}`,
+  );
+  return d.markdown || t('No agent turn with saved metrics in this chat yet.');
+}
+
 /* ── /skills ── */
 
 export async function skillsMarkdown(query: string): Promise<string> {

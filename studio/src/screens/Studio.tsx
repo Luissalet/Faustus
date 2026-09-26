@@ -1824,6 +1824,18 @@ export function StudioScreen() {
         case 'tts':
           extrasRef.current.tts();
           return true;
+        case 'turnreview': {
+          if (!sessionId) {
+            say(t('Open a conversation first.'), 'warning');
+            return true;
+          }
+          const n = Number.parseInt(args || '1', 10);
+          void cmd
+            .turnReviewMarkdown(sessionId, Number.isFinite(n) ? n : 1)
+            .then((md) => report(md))
+            .catch((error) => say(`${t('Could not review the turns')}: ${(error as Error).message}`, 'danger'));
+          return true;
+        }
         case 'stats':
         case 'chats.info': {
           const list = turns ?? [];

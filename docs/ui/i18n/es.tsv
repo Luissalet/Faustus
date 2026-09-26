@@ -8561,3 +8561,7 @@ Prompt from cache	Prompt servido desde caché
 Prompt processed	Prompt procesado
 Context (last turn)	Contexto (último turno)
 What this conversation used: tokens, prompt cache, steps, tool calls, time and cost, per model; and what the database holds.	Lo que ha gastado esta conversación: tokens, caché de prompt, pasos, llamadas a herramientas, tiempo y coste, por modelo; y lo que guarda la base de datos.
+Open a conversation first.	Abre primero una conversación.
+Could not review the turns	No se pudieron revisar los turnos
+No agent turn with saved metrics in this chat yet.	Todavía no hay ningún turno del agente con métricas guardadas en este chat.
+What the last N turns of this conversation did — tools, failures, rounds, writes, prompt cache — and what went wrong.	Qué hicieron los últimos N turnos de esta conversación —herramientas, fallos, rondas, escrituras, caché del prompt— y qué falló.
