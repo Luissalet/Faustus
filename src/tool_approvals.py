@@ -175,6 +175,38 @@ def _binding_payload(
     }
 
 
+# Both denial shapes the destructive-command guard produces
+# (`command_guard.gate_check`'s DANGEROUS-tier denial and its
+# `_degraded_denial` for an unclassified command, plus
+# `tool_capabilities.GUARD_FAILURE_DENIAL` for a broken guard) end by
+# pointing the user at the allowlist endpoint — nothing else that denies
+# through `decision_for` does, so it is the cheapest reliable way to tell
+# "a specific dangerous command was stopped" apart from the generic
+# post-external-context gate (whose card is meant to stay the same
+# "Allow this task to continue?" question it always was).
+_DESTRUCTIVE_GUARD_MARKER = "/api/command-guard/allowlist"
+_APPROVAL_QUESTION_COMMAND_CHARS = 120
+
+
+def _approval_card_question(reason: str | None, content: Any) -> str:
+    """The approval card's `question` — specific for a destructive-command
+    guard denial (names the command and why it was stopped), the long-
+    standing generic wording for every other gate (external context, a
+    desktop-input confirmation, a teacher-generated skill, ...)."""
+    reason_text = (reason or "").strip()
+    if not reason_text or _DESTRUCTIVE_GUARD_MARKER not in reason_text:
+        return "Allow this task to continue?"
+    try:
+        from src import command_guard
+        preview = command_guard.command_preview(content, max_len=4000)
+    except Exception:  # noqa: BLE001 - never block an approval card on this
+        preview = str(content or "")
+    preview = preview.strip()
+    if len(preview) > _APPROVAL_QUESTION_COMMAND_CHARS:
+        preview = preview[:_APPROVAL_QUESTION_COMMAND_CHARS].rstrip() + "…"
+    return f"Run this destructive command? {preview} — {reason_text}"
+
+
 @dataclass(frozen=True)
 class PendingToolApproval:
     approval_id: str
@@ -205,6 +237,7 @@ class PendingToolApproval:
     autonomy_note: str = ""
 
     def public_payload(self, *, reason: str | None = None) -> dict[str, Any]:
+        question = _approval_card_question(reason, self.content)
         payload = {
             "kind": "tool_approval",
             "approval_id": self.approval_id,
@@ -212,7 +245,7 @@ class PendingToolApproval:
             # resolved card lets history-derived session grants remain bound to
             # this exact chat and prevents inheritance by a forked session.
             "session_id": self.session_id,
-            "question": "Allow this task to continue?",
+            "question": question,
             "description": reason or (
                 "Untrusted context influenced this run, so continuing with "
                 "otherwise-gated actions needs your explicit approval."

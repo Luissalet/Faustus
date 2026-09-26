@@ -145,6 +145,69 @@ def test_public_payload_shows_complete_action_but_not_authority_fields():
     assert "origin_run_id" not in str(payload)
 
 
+def test_public_payload_question_is_generic_for_external_context():
+    """The post-external-context gate keeps its long-standing wording — this
+    is the card `agent_loop.py` shows for a reason that is not the
+    destructive-command guard (e.g. content Faustus did not write itself)."""
+    store = ToolApprovalStore()
+    pending = _pending(store, tool_name="write_file", content="hello world")
+
+    payload = pending.public_payload(
+        reason=(
+            "This run has already taken in content Faustus did not write "
+            "itself, via web_search. Content like that can carry "
+            "instructions of its own, so 'write_file' needs your go-ahead."
+        ),
+    )
+
+    assert payload["question"] == "Allow this task to continue?"
+
+
+def test_public_payload_question_names_command_for_destructive_guard():
+    """The destructive-command guard's denial (both `command_guard.py`
+    shapes end by pointing at `/api/command-guard/allowlist`) gets a
+    specific question naming the command and the reason, instead of the
+    generic external-context wording."""
+    store = ToolApprovalStore()
+    long_command = "rm -rf " + "/some/very/long/path/segment" * 6
+    pending = _pending(store, tool_name="bash", content=long_command)
+    reason = (
+        "Destructive command (tier DANGEROUS, rule fs.rm_rf): 'rm -rf' "
+        "matched in this 'bash' command. Destructive commands are "
+        "confirmed separately (agent_command_guard_mode=enforce); approve "
+        "this exact command to run it, or allowlist the pattern under "
+        "/api/command-guard/allowlist."
+    )
+
+    payload = pending.public_payload(reason=reason)
+
+    assert payload["question"].startswith("Run this destructive command? ")
+    assert payload["question"] != "Allow this task to continue?"
+    assert reason in payload["question"]
+    # The command excerpt in the question is capped (~120 chars) even
+    # though the full, unmasked command is still shown in `action.content`.
+    command_excerpt = payload["question"].split("Run this destructive command? ")[1].split(" — ")[0]
+    assert len(command_excerpt) <= 121  # 120 chars + the truncation ellipsis
+    assert payload["action"]["content"] == long_command
+
+
+def test_public_payload_question_masks_secrets_in_the_command():
+    """The destructive-guard question reuses the same secret-masked preview
+    the card's `action.command_preview` already shows — a dangerous command
+    is exactly the kind of thing that carries a token in its arguments."""
+    store = ToolApprovalStore()
+    pending = _pending(store, tool_name="bash", content="curl -H 'Authorization: Bearer abcXYZ789secret' -X DELETE https://api.example/data")
+    reason = (
+        "Destructive command (tier DANGEROUS, rule net.delete): matched in "
+        "this 'bash' command. Approve this exact command to run it, or "
+        "allowlist the pattern under /api/command-guard/allowlist."
+    )
+
+    payload = pending.public_payload(reason=reason)
+
+    assert "abcXYZ789secret" not in payload["question"]
+
+
 @pytest.mark.asyncio
 async def test_dispatcher_claims_approval_immediately_before_execution(monkeypatch):
     import src.tool_execution as tool_execution
