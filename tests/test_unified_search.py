@@ -450,3 +450,10 @@ def test_board_adapter_skips_a_project_whose_issues_lookup_fails(monkeypatch):
     rows = unified_search._board("owner1", "q", 10)
     assert len(rows) == 1
     assert rows[0]["id"] == "OK-1"
+
+
+def test_brain_snippets_lose_their_markup():
+    from src.unified_search import _clean_brain_snippet
+    raw = "user is developing writer's [hoard] application. %% faustus:generated — edits below %% rest"
+    assert _clean_brain_snippet(raw) == "user is developing writer's hoard application.   rest"
+    assert _clean_brain_snippet("a [x] b %% open comment to the end") == "a x b  "

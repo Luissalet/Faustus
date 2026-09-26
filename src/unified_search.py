@@ -85,6 +85,13 @@ def _chats(owner: Optional[str], q: str, limit: int) -> List[Dict[str, Any]]:
     return out
 
 
+def _clean_brain_snippet(text: str) -> str:
+    """The brain's snippets carry its own markup: `[match]` highlights and
+    `%% faustus:generated ... %%` sync comments. A search row wants text."""
+    text = re.sub(r"%%.*?(?:%%|$)", " ", text or "", flags=re.S)
+    return re.sub(r"\[([^\[\]]{1,120})\]", r"\1", text)
+
+
 def _brain(owner: Optional[str], q: str, limit: int) -> List[Dict[str, Any]]:
     """`routes/brain_routes.py` GET /api/brain/search -> `src.brain.notes.search`."""
     from src.brain import notes
@@ -97,7 +104,7 @@ def _brain(owner: Optional[str], q: str, limit: int) -> List[Dict[str, Any]]:
         url = f"/brain?note={urllib.parse.quote(path, safe='')}"
         out.append(_result(
             source="brain", id_=path, title=title,
-            snippet=row.get("snippet") or "", url=url, when=None,
+            snippet=_clean_brain_snippet(row.get("snippet") or ""), url=url, when=None,
         ))
     return out
 

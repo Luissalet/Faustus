@@ -118,7 +118,11 @@ export function CommandPalette() {
         </div>
       )}
       <Command.List className="fs-palette__list">
-        <Command.Empty className="fs-palette__empty">{loading ? t('Searching…') : t('Nothing matches.')}</Command.Empty>
+        {/* cmdk does not count force-mounted items: with server hits on
+            screen, "Nothing matches." would sit on top of them. */}
+        {hits.length === 0 && (
+          <Command.Empty className="fs-palette__empty">{loading ? t('Searching…') : t('Nothing matches.')}</Command.Empty>
+        )}
 
         {hits.length > 0 && (
           <Command.Group heading={t('Everywhere')} className="fs-palette__group" forceMount data-testid="palette-everywhere">
