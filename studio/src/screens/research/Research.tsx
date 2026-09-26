@@ -97,7 +97,7 @@ const DISMISSED_KEY = 'fs-research-dismissed';
 
 /** Reasoning levels for a run (src/mode_effort.py). */
 const EFFORTS: { value: string; label: string; short: string }[] = [
-  { value: '', label: 'Auto (the strongest the model has)', short: 'max reasoning' },
+  { value: '', label: 'Auto (strongest)', short: 'max reasoning' },
   { value: 'max', label: 'Maximum', short: 'max reasoning' },
   { value: 'high', label: 'High', short: 'high reasoning' },
   { value: 'medium', label: 'Medium', short: 'medium reasoning' },

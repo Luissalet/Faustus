@@ -4317,7 +4317,7 @@ export const es: Record<string, string> = {
   "Rounds {r} · {f} · {p} · {m} · {e}": "Rondas {r} · {f} · {p} · {m} · {e}",
   "Maximum": "Máximo",
   "Off (fastest)": "Apagado (lo más rápido)",
-  "Auto (the strongest the model has)": "Auto (lo más potente que tenga el modelo)",
+  "Auto (strongest)": "Auto (lo más potente)",
   "max reasoning": "razonamiento máximo",
   "high reasoning": "razonamiento alto",
   "medium reasoning": "razonamiento medio",
