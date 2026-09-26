@@ -296,3 +296,37 @@ def test_a_detached_background_job_does_not_inherit_our_venv(fake_venv, tmp_path
     bg_jobs.launch("pip install requests", "sess-a")
 
     assert_is_native(captured["env"])
+
+
+def test_tmux_shell_does_not_inherit_private_variables(monkeypatch):
+    """Security audit 26-09: the tmux server inherits Faustus's environment,
+    so the model's shell has to unset the internal token and the decrypted
+    embedding key itself (`env -u`)."""
+    import asyncio
+    import src.agent_tools.subprocess_tools as st
+    monkeypatch.setenv("FAUSTUS_INTERNAL_TOKEN", "secret-token")
+    monkeypatch.setenv("EMBEDDING_API_KEY", "sk-embed")
+    calls = []
+
+    async def fake_run_exec(*argv, **kw):
+        calls.append(argv)
+        return "", "", 0
+
+    seen = {"n": 0}
+
+    async def fake_has_session(name):
+        seen["n"] += 1
+        return seen["n"] > 1
+    monkeypatch.setattr(st, "_run_exec", fake_run_exec)
+    monkeypatch.setattr(st, "_tmux_has_session", fake_has_session)
+    asyncio.run(st._ensure_tmux_session("ody-agent-y", "/work", {"TERM": "xterm-256color"}))
+    new_session = next(argv for argv in calls if "new-session" in argv)
+    for name in ("FAUSTUS_INTERNAL_TOKEN", "EMBEDDING_API_KEY"):
+        i = new_session.index(name)
+        assert new_session[i - 1] == "-u", f"{name} reaches the agent's tmux shell"
+
+
+def test_native_children_never_get_the_embedding_key(monkeypatch):
+    from src.native_env import native_host_environment
+    env = native_host_environment({"PATH": "/usr/bin", "EMBEDDING_API_KEY": "sk-embed", "OTHER": "1"})
+    assert "EMBEDDING_API_KEY" not in env and env["OTHER"] == "1"

@@ -6,7 +6,7 @@ import uuid
 import urllib.parse
 import html
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
 import logging
@@ -270,6 +270,39 @@ def _apply_extension_governance(
     }
 
 
+def scan_connected_tools(mcp_manager: Any, server_id: str, *, name: str, transport: str,
+                         command: Optional[str], args, env) -> Optional[dict]:
+    """SEC-09 after connecting: scan the tool descriptions the server now
+    advertises, attach the result to its manifest and quarantine on a
+    critical finding, like the install-time scan does for the launch line.
+    Before this only the manual `GET …/security-scan` looked at descriptions,
+    and nothing in the app called it (security audit 26-09). Never raises."""
+    try:
+        tool_descriptions = [
+            f"{t.get('name', '')}: {t.get('description', '')}"
+            for t in mcp_manager.get_all_tools() if t.get("server_id") == server_id
+        ]
+        if not tool_descriptions:
+            return None
+        scan = scan_mcp_server_config(
+            name=name, transport=transport, command=command, args=args, env=env,
+            tool_descriptions=tool_descriptions,
+        )
+        scan_dict = scan.to_dict()
+        extension_manifest.attach_security_scan(server_id, scan_dict)
+        from src.settings import get_setting
+        quarantined = False
+        if scan.has_critical() and bool(get_setting("security_scan_block_critical", True)) \
+                and extension_manifest.get_manifest(server_id) is not None \
+                and not extension_manifest.is_quarantined_for_permissions(server_id):
+            extension_manifest.quarantine_for_security(server_id)
+            quarantined = True
+        return {"security_scan": scan_dict, "security_scan_quarantined": quarantined}
+    except Exception as exc:  # noqa: BLE001 - a scan failure never breaks connecting
+        logger.warning("[mcp] tool-description scan failed for %s: %s", server_id, exc)
+        return None
+
+
 def setup_mcp_routes(mcp_manager: McpManager):
     """Setup MCP routes with the provided manager."""
 
@@ -524,6 +557,14 @@ def setup_mcp_routes(mcp_manager: McpManager):
 
         status = mcp_manager.get_server_status(server_id)
         needs_auth = status.get("status") == "needs_auth"
+        tools_scan = scan_connected_tools(
+            mcp_manager, server_id, name=name, transport=transport, command=command,
+            args=parsed_args, env=parsed_env,
+        ) if connected else None
+        if tools_scan:
+            governance["security_scan"] = tools_scan["security_scan"]
+            governance["security_scan_quarantined"] = (
+                governance["security_scan_quarantined"] or tools_scan["security_scan_quarantined"])
         return {
             "id": server_id,
             "name": name,
@@ -580,7 +621,12 @@ def setup_mcp_routes(mcp_manager: McpManager):
             )
 
             status = mcp_manager.get_server_status(server_id)
+            tools_scan = scan_connected_tools(
+                mcp_manager, server_id, name=srv.name, transport=srv.transport, command=srv.command,
+                args=args, env=env,
+            ) if connected else None
             return {
+                **(tools_scan or {}),
                 "connected": connected,
                 "status": status.get("status", "disconnected"),
                 "tool_count": status.get("tool_count", 0),

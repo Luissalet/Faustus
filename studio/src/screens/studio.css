@@ -4709,3 +4709,32 @@ aside.fs-panel { position: relative; }
   font-style: italic;
   overflow-wrap: anywhere;
 }
+
+/* A remote picture in a reply, waiting for a click (rich.tsx RichImage). */
+.fs-rich__img-wait {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  padding: 4px 10px;
+  border: 1px dashed var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  color: var(--fs-text-2);
+  font-size: 12px;
+  max-inline-size: 100%;
+}
+.fs-rich__img-wait-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-inline-size: 0;
+}
+.fs-rich__img-wait-btn {
+  flex: none;
+  padding: 1px 8px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: transparent;
+  color: var(--fs-text-1);
+  font: inherit;
+  cursor: pointer;
+}

@@ -8598,3 +8598,5 @@ owner/repo, or paste its GitHub address.	propietario/repo, o pega su dirección 
 Docs: {repo}	Docs: {repo}
 GitMCP serves the documentation and code search of one public GitHub repository (fetch/search tools named after the repo). Type owner/repo or paste its GitHub address. Remote service: the questions the agent asks go to gitmcp.io.	GitMCP sirve la documentación y la búsqueda de código de un repositorio público de GitHub (herramientas fetch/search con el nombre del repo). Escribe propietario/repo o pega su dirección de GitHub. Servicio remoto: las preguntas del agente van a gitmcp.io.
 One server for every public repository: read_wiki_structure, read_wiki_contents and ask_question take the repository as an argument. Remote service: the questions go to DeepWiki.	Un servidor para todos los repositorios públicos: read_wiki_structure, read_wiki_contents y ask_question reciben el repositorio como argumento. Servicio remoto: las preguntas van a DeepWiki.
+Image from {host}	Imagen de {host}
+Loading it tells {host} that you opened it, and anything written in its address.	Cargarla le dice a {host} que la has abierto, y todo lo que lleve escrito en su dirección.

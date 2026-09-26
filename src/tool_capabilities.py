@@ -17,7 +17,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from enum import Enum
 from types import MappingProxyType
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any, Iterable, Mapping, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -1063,6 +1063,64 @@ def _guard_cache_key(tool_name: str, content: Any, mode: str, packs: frozenset[s
     return (tool_name, digest, mode, tuple(sorted(packs)))
 
 
+#: Scheduled-task actions whose `prompt` becomes a shell command later
+#: (src/task_scheduler.py hands it to src/builtin_actions.py as `script` /
+#: `command`). Creating one is running that command on a timer, so the guard
+#: judges it the way it judges `bash` (security audit 26-09).
+SHELL_TASK_ACTIONS = frozenset({"run_script", "run_local", "ssh_command"})
+
+
+def _task_action_of(task_id: Any) -> Optional[str]:
+    """The stored action of a scheduled task (an edit that only changes the
+    prompt of a shell task still changes what it runs). None when unknown."""
+    if not task_id:
+        return None
+    try:
+        from core.database import ScheduledTask, SessionLocal
+        db = SessionLocal()
+        try:
+            row = db.query(ScheduledTask.action).filter(ScheduledTask.id == str(task_id)).first()
+            return str(row[0]) if row and row[0] else None
+        finally:
+            db.close()
+    except Exception:  # noqa: BLE001 - unknown is "not a shell task" only if it cannot be read
+        return None
+
+
+def _guard_target(tool_name: Any, content: Any) -> Optional[Tuple[str, Any]]:
+    """(guard tool, content) the command guard should judge for this call,
+    or None when the call runs no shell. `bash`/`python`/`powershell` are
+    themselves; a `manage_tasks` create/edit of a shell task is its future
+    command, judged as `bash`."""
+    if isinstance(tool_name, str) and tool_name in GUARD_SHELL_TOOLS:
+        return tool_name, content
+    if tool_name != "manage_tasks":
+        return None
+    payload: Any = content
+    if isinstance(content, str):
+        try:
+            payload = json.loads(content) if content.strip() else {}
+        except (TypeError, ValueError):
+            return None
+    if isinstance(payload, Mapping) and isinstance(payload.get("body"), Mapping):
+        payload = payload["body"]
+    if not isinstance(payload, Mapping):
+        return None
+    action = str(payload.get("action") or "").strip().lower()
+    if action not in ("create", "edit", "update"):
+        return None
+    params = payload.get("params") if isinstance(payload.get("params"), Mapping) else {}
+    command = payload.get("prompt") or params.get("script") or params.get("command")
+    if not isinstance(command, str) or not command.strip():
+        return None
+    task_action = payload.get("action_name")
+    if not task_action and action != "create":
+        task_action = _task_action_of(payload.get("task_id"))
+    if str(task_action or "").strip() not in SHELL_TASK_ACTIONS:
+        return None
+    return "bash", command
+
+
 def _command_guard_denial(tool_name: Any, content: Any, run_id: str = "") -> Optional[str]:
     """None to allow, or the approval-card reason. NEVER raises.
 
@@ -1072,8 +1130,10 @@ def _command_guard_denial(tool_name: Any, content: Any, run_id: str = "") -> Opt
     still allows, so the mode means what it says.
     """
     try:
-        if not isinstance(tool_name, str) or tool_name not in GUARD_SHELL_TOOLS:
+        target = _guard_target(tool_name, content)
+        if target is None:
             return None
+        tool_name, content = target
         mode = command_guard_mode()
         if mode == "off":
             return None
@@ -1114,8 +1174,10 @@ def _command_guard_denial(tool_name: Any, content: Any, run_id: str = "") -> Opt
 
 def _guard_classification(tool_name: Any, content: Any):
     """Pure classification (no receipts, no allowlist), or None off-path."""
-    if not isinstance(tool_name, str) or tool_name not in GUARD_SHELL_TOOLS:
+    target = _guard_target(tool_name, content)
+    if target is None:
         return None
+    tool_name, content = target
     from src import command_guard
     return command_guard.classify_tool(tool_name, content, packs=_command_guard_packs())
 

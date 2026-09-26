@@ -1,5 +1,5 @@
 import { t } from '../i18n';
-import { Check, Code2, Copy, CornerDownLeft, Play } from 'lucide-react';
+import { Check, Code2, Copy, CornerDownLeft, ImageOff, Play } from 'lucide-react';
 import { createContext, useContext, useId, useMemo, useState, type ReactNode } from 'react';
 import { findSensitive, getDisplay, stripEmojis, useDisplay } from '../shell/display';
 import { writeClipboardText } from '../lib/clipboard-write';
@@ -35,6 +35,51 @@ function Censored({ text }: { text: string }) {
 
 const OpenWorkspaceFile = createContext<((path: string) => void) | undefined>(undefined);
 
+/* ── Remote pictures wait for a click ──
+ * A reply can carry `![x](https://host/?q=…)`: loading it on sight sends
+ * whatever is in that URL to that host, which is how an injected page turns
+ * a model into a beacon (security audit 26-09). Pictures from this app,
+ * data: URLs and hosts already allowed in this tab load straight away;
+ * anything else shows its host and a button. */
+const allowedImageHosts = new Set<string>();
+
+function remoteImageHost(src: string): string | null {
+  try {
+    const url = new URL(src, window.location.href);
+    if (url.protocol === 'data:' || url.protocol === 'blob:') return null;
+    if (url.origin === window.location.origin) return null;
+    return url.host || null;
+  } catch {
+    return null;
+  }
+}
+
+function RichImage({ src, alt }: { src: string; alt: string }) {
+  const host = remoteImageHost(src);
+  const [shown, setShown] = useState(() => !host || allowedImageHosts.has(host));
+  if (shown) return <img className="fs-rich__img" src={src} alt={alt} loading="lazy" />;
+  return (
+    <span className="fs-rich__img-wait" data-testid="rich-remote-image">
+      <ImageOff size={14} aria-hidden="true" />
+      <span className="fs-rich__img-wait-text">
+        {alt ? `${alt} · ` : ''}
+        {t('Image from {host}', { host: host ?? '' })}
+      </span>
+      <button
+        type="button"
+        className="fs-rich__img-wait-btn"
+        onClick={() => {
+          if (host) allowedImageHosts.add(host);
+          setShown(true);
+        }}
+        title={t('Loading it tells {host} that you opened it, and anything written in its address.', { host: host ?? '' })}
+      >
+        {t('Show')}
+      </button>
+    </span>
+  );
+}
+
 function RichLink({ href, children }: { href: string; children: ReactNode }) {
   const onOpenFile = useContext(OpenWorkspaceFile);
   const path = workspaceLink(href);
@@ -69,7 +114,7 @@ function inlines(nodes: Inline[], key: string, uid: string): ReactNode[] {
         out.push(<del key={k}>{inlines(node.children, k, uid)}</del>);
         break;
       case 'image':
-        out.push(<img key={k} className="fs-rich__img" src={node.src} alt={node.alt} loading="lazy" />);
+        out.push(<RichImage key={k} src={node.src} alt={node.alt} />);
         break;
       case 'note':
         out.push(

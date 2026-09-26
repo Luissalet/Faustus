@@ -12,7 +12,7 @@ from typing import Optional, Callable, Awaitable, Tuple, Dict, Mapping
 from core.platform_compat import IS_WINDOWS, find_bash
 from src import process_ownership, sandbox_exec
 from src.constants import MAX_OUTPUT_CHARS
-from src.native_env import VENV_MARKERS, native_host_environment, host_kind, TARGET_CONTAINER, TARGET_REMOTE
+from src.native_env import VENV_MARKERS, is_private_name, native_host_environment, host_kind, TARGET_CONTAINER, TARGET_REMOTE
 
 logger = logging.getLogger(__name__)
 
@@ -367,6 +367,10 @@ async def _ensure_tmux_session(name: str, cwd: str, env: Optional[dict]) -> None
     # and hand it a PATH our venv's bin no longer leads.
     native_path = native_host_environment().get("PATH") or ""
     scrub = [part for marker in VENV_MARKERS for part in ("-u", marker)]
+    # The tmux SERVER inherited Faustus's environment, private variables
+    # included (the internal token is a key to this app): unset them for the
+    # shell the model drives, as native_host_environment does everywhere else.
+    scrub += [part for key in sorted(os.environ) if is_private_name(key) for part in ("-u", key)]
     if native_path:
         # Only when we have one: `PATH=` would leave the shell unable to exec.
         scrub.append(f"PATH={native_path}")

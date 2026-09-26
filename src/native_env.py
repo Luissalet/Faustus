@@ -223,6 +223,11 @@ def native_host_environment(base: Optional[Mapping[str, str]] = None, *,
 FAUSTUS_PRIVATE_NAMES: Tuple[str, ...] = (
     "ODYSSEUS_INTERNAL_TOKEN",
     "FAUSTUS_INTERNAL_TOKEN",
+    # A key Faustus keeps encrypted and decrypts into its OWN environment for
+    # the in-process embedding client (src/embeddings.py). No child reads it;
+    # handed to the agent's shell it was one `env` away from the model
+    # (security audit 26-09).
+    "EMBEDDING_API_KEY",
 )
 FAUSTUS_PRIVATE_PREFIXES: Tuple[str, ...] = (
     "ODYSSEUS_INTERNAL",
