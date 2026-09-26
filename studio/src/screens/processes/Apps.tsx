@@ -29,9 +29,12 @@ import { t } from '../../i18n';
  * every 5s (and right after any action) rather than one request per card.
  */
 
-function statusLabel(s: AppStatus | undefined, pending: 'starting' | 'stopping' | null): string {
+function statusLabel(s: AppStatus | undefined, pending: 'starting' | 'stopping' | null, checking = false): string {
   if (pending === 'starting') return t('Starting…');
   if (pending === 'stopping') return t('Stopping…');
+  // No status yet (the first poll has not answered): saying "Stopped" here
+  // offered Start on apps that were running, right after a restart.
+  if (!s && checking) return t('Checking…');
   if (!s || !s.running) return t('Stopped');
   const bits = [t('Running')];
   if (s.pid != null) bits.push(t('pid {pid}', { pid: s.pid }));
@@ -108,6 +111,7 @@ function AppConsole({ appId, onClose }: { appId: string; onClose: () => void }) 
 function AppCard({
   app,
   status,
+  checking,
   pending,
   onAction,
   onEdit,
@@ -117,6 +121,8 @@ function AppCard({
 }: {
   app: AppProfile;
   status: AppStatus | undefined;
+  /** True until the first status poll has answered (or failed). */
+  checking: boolean;
   pending: 'starting' | 'stopping' | null;
   onAction: (kind: 'start' | 'stop' | 'restart' | 'open', id: string) => Promise<void>;
   onEdit: () => void;
@@ -125,6 +131,7 @@ function AppCard({
   onToggleConsole: () => void;
 }) {
   const running = !!status?.running;
+  const unknown = checking && status === undefined && !pending;
   const [confirmStop, setConfirmStop] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -181,7 +188,7 @@ function AppCard({
       </div>
       <span className="fs-apps__pill" data-tone={statusTone(status, pending)} data-testid="apps-status">
         <span className="fs-apps__pill-dot" aria-hidden="true" />
-        {statusLabel(status, pending)}
+        {statusLabel(status, pending, unknown)}
       </span>
       <div className="fs-apps__card-actions">
         <Button
@@ -189,7 +196,7 @@ function AppCard({
           variant="primary"
           icon={running ? Plug : Play}
           label={running ? t('Open') : t('Start')}
-          disabled={busy}
+          disabled={busy || unknown}
           onClick={() => void run(running ? 'open' : 'start')}
           testId={running ? 'apps-open' : 'apps-start'}
         />
@@ -215,7 +222,7 @@ function AppCard({
             </span>
           )}
         </span>
-        <Button size="sm" variant="ghost" icon={RotateCw} label={t('Restart')} disabled={busy} onClick={() => void run('restart')} testId="apps-restart" />
+        <Button size="sm" variant="ghost" icon={RotateCw} label={t('Restart')} disabled={busy || unknown} onClick={() => void run('restart')} testId="apps-restart" />
         <Button size="sm" variant="ghost" icon={Terminal} label={t('Console')} onClick={onToggleConsole} testId="apps-console" />
         <IconButton icon={Pencil} label={t('Edit')} size="sm" onClick={onEdit} testId="apps-edit" />
         {!confirmRemove ? (
@@ -237,6 +244,9 @@ function AppCard({
 export function AppsSection({ say }: { say: (msg: string) => void }) {
   const [apps, setApps] = useState<AppProfile[] | null>(null);
   const [statuses, setStatuses] = useState<Record<string, AppStatus>>({});
+  // Until the first status poll answers, a card has no status at all; it
+  // must not read "Stopped" and offer Start on an app that is running.
+  const [statusesChecked, setStatusesChecked] = useState(false);
   const [failed, setFailed] = useState(false);
   const [editing, setEditing] = useState<AppProfile | 'new' | null>(null);
   const [openConsole, setOpenConsole] = useState<string | null>(null);
@@ -256,7 +266,8 @@ export function AppsSection({ say }: { say: (msg: string) => void }) {
       .then(setStatuses)
       .catch(() => {
         /* the grid still shows names/actions even if a status refresh fails */
-      });
+      })
+      .finally(() => setStatusesChecked(true));
   }, []);
 
   useEffect(() => {
@@ -338,6 +349,7 @@ export function AppsSection({ say }: { say: (msg: string) => void }) {
               key={app.id}
               app={app}
               status={statuses[app.id]}
+              checking={!statusesChecked}
               pending={pending[app.id] ?? null}
               onAction={onAction}
               onEdit={() => setEditing(app)}
