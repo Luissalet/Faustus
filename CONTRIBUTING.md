@@ -68,6 +68,8 @@ Mention what you ran in the pull request description. If you could not run a che
 - `Start-Process` kills its child when the parent command times out. Run anything longer than about 50 seconds from a scheduled task or another persistent runner.
 - Synthetic clicks and typing do not reach a browser tab in the background. Keep the tab visible while driving it.
 - Deploy each bundle or script under a new file name. Reusing a staged path can write back the previous content.
+- A restart script whose output is piped to a file leaves the new server holding that file (and the pipe) open. The task that ran it never ends, anything queued after it in the same script never runs, and the next restart cannot write the same log. Put the restart last and give each run its own log file.
+- Playwright in a fresh context is the reliable way to check a screen at a given width or theme; a real browser window that is maximised ignores resize requests, and CSS `zoom` on `<html>` is not browser zoom (use a smaller viewport instead).
 
 ## Pull Requests
 
