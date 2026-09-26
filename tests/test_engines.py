@@ -270,6 +270,31 @@ async def test_status_reports_unhealthy_when_process_exists_but_probe_unhealthy(
     assert status["state"] == "unhealthy"
 
 
+async def test_status_all_probes_every_engine_side_by_side(monkeypatch, executable, model_file):
+    """Every engine's status in one call; the probes run off the event loop
+    and at the same time (two 0.4 s probes finish well under 0.8 s)."""
+    import time as _time
+    a = engines.create_engine(owner="tester", name="A", executable=executable, model_path=model_file,
+                              port=_free_port())
+    b = engines.create_engine(owner="tester", name="B", executable=executable, model_path=model_file,
+                              port=_free_port())
+    from src import runner_providers
+
+    def slow_probe(root, force=False, timeout=1.5):
+        _time.sleep(0.4)
+        return {"available": True, "healthy": root.endswith(str(a["port"])), "model": "m",
+                "context_length": 1, "footprint_bytes": None, "footprint_measured": False,
+                "generating": False}
+
+    monkeypatch.setattr(runner_providers, "probe_llama_cpp", slow_probe)
+    t0 = _time.monotonic()
+    out = await engines.status_all()
+    took = _time.monotonic() - t0
+    assert out[a["id"]]["state"] == "running"
+    assert out[b["id"]]["state"] == "unhealthy"
+    assert took < 0.75, took
+
+
 def test_argv_fields_split_a_hand_started_server_into_fields_and_flags():
     from src.engines import _argv_fields
     argv = [r"D:\llama\llama-server.exe", "-m", r"D:\m.gguf", "-c", "235008", "-ngl", "99",

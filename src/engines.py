@@ -533,9 +533,38 @@ async def status_engine(engine_id: str) -> Dict[str, Any]:
     if engine is None:
         return {"state": "unknown", "error": f"no such engine: {engine_id}"}
     base = await launch_profiles.status(engine_id)
+    return await _status_from(engine, base)
+
+
+async def status_all() -> Dict[str, Dict[str, Any]]:
+    """`status_engine` for every engine, at once: one (cached) scan of what
+    listens where, and the health probes side by side off the event loop.
+    One at a time, the Cookbook and Settings waited ~5 s for two engines,
+    and the blocking probe held every other request meanwhile."""
+    import asyncio
+    rows = list_engines()
+    if not rows:
+        return {}
+    try:
+        bases = await launch_profiles.list_statuses()
+    except Exception:  # noqa: BLE001 - fall back to one status per engine
+        bases = {}
+
+    async def _one(engine: Dict[str, Any]) -> Dict[str, Any]:
+        base = bases.get(engine["id"])
+        if base is None:
+            base = await launch_profiles.status(engine["id"])
+        return await _status_from(engine, base)
+
+    results = await asyncio.gather(*(_one(e) for e in rows))
+    return {e["id"]: r for e, r in zip(rows, results)}
+
+
+async def _status_from(engine: Dict[str, Any], base: Dict[str, Any]) -> Dict[str, Any]:
+    import asyncio
     root = f"http://{engine.get('host') or DEFAULT_HOST}:{engine.get('port')}"
     from src import runner_providers
-    probe = runner_providers.probe_llama_cpp(root, force=True)
+    probe = await asyncio.to_thread(runner_providers.probe_llama_cpp, root, force=True)
     if probe.get("healthy"):
         state = "running"
     elif probe.get("available") or base.get("running"):

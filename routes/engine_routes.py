@@ -70,10 +70,7 @@ def setup_engine_routes() -> APIRouter:
     @router.get("/status")
     async def all_statuses(request: Request) -> Dict[str, Dict[str, Any]]:
         require_admin(request)
-        out: Dict[str, Dict[str, Any]] = {}
-        for engine in engines.list_engines():
-            out[engine["id"]] = await engines.status_engine(engine["id"])
-        return out
+        return await engines.status_all()
 
     @router.get("/swap/status")
     def swap_status_route(request: Request) -> Dict[str, Any]:
