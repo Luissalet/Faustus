@@ -160,7 +160,7 @@ export function ExecutionTimeline({ execution, promptCache, variant = 'full', te
       <summary>
         <span className="fs-timeline__title">{t('Why did it take this long?')}</span>
       </summary>
-      <TimelineRows timeline={timeline} />
+      <TimelineRows timeline={timeline} promptCache={promptCache} />
     </details>
   );
 }
