@@ -791,6 +791,8 @@ upload_cleanup_task = None
 # emojis as flat SVG instead of system color glyphs.
 from routes.emoji_routes import setup_emoji_routes
 app.include_router(setup_emoji_routes())
+from routes.sandbox_routes import setup_sandbox_routes
+app.include_router(setup_sandbox_routes())
 
 # Sessions
 from routes.session_routes import setup_session_routes

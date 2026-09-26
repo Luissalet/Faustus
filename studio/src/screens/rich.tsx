@@ -1,6 +1,6 @@
 import { t } from '../i18n';
 import { Check, Code2, Copy, CornerDownLeft, Play } from 'lucide-react';
-import { createContext, useContext, useId, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { findSensitive, getDisplay, stripEmojis, useDisplay } from '../shell/display';
 import { writeClipboardText } from '../lib/clipboard-write';
 import { parseMarkdown, workspaceLink, type Block, type Footnote, type Inline } from '../lib/markdown';
@@ -91,18 +91,32 @@ function inlines(nodes: Inline[], key: string, uid: string): ReactNode[] {
 /** Fenced languages a reply can run as a small app, right in the chat. */
 const RUNNABLE_LANGS = new Set(['html', 'htm', 'svg']);
 
+/** A snippet becomes a whole page; a whole page stays as it is. */
+function runnableDoc(code: string): string {
+  if (/<html[\s>]/i.test(code) || /<!doctype/i.test(code)) return code;
+  return '<!doctype html><html><head><meta charset="utf-8"></head><body>' + code + '</body></html>';
+}
+
 /**
- * The page a runnable block becomes. It runs in a sandboxed frame with no
- * same-origin access (it cannot read Faustus, its cookies or its storage),
- * and a content policy that allows its own inline code, styles and data:
- * images but no network at all: a generated app works offline and cannot
- * send anything anywhere.
+ * A runnable block's frame. The page it loads (`/api/sandbox/app`) is served
+ * with its own content policy: its inline code may run, nothing may load from
+ * the network, and it has an opaque origin, so a generated app works offline
+ * and cannot read Faustus or send anything anywhere. (As `srcdoc` the frame
+ * inherited Studio's own policy and no script ever ran.) The runner says
+ * when it is ready; the app's HTML is posted to it once.
  */
-export function runnableDoc(code: string): string {
-  const csp = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:\">";
-  if (/<head[^>]*>/i.test(code)) return code.replace(/<head[^>]*>/i, (m) => m + csp);
-  if (/<html[^>]*>/i.test(code)) return code.replace(/<html[^>]*>/i, (m) => m + '<head>' + csp + '</head>');
-  return '<!doctype html><html><head>' + csp + '<meta charset="utf-8"></head><body>' + code + '</body></html>';
+function AppFrame({ code }: { code: string }) {
+  const [frame, setFrame] = useState<HTMLIFrameElement | null>(null);
+  useEffect(() => {
+    if (!frame) return;
+    const onMessage = (e: MessageEvent) => {
+      if (e.source !== frame.contentWindow || !(e.data && e.data.faustusAppReady)) return;
+      frame.contentWindow?.postMessage({ faustusApp: runnableDoc(code) }, '*');
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [frame, code]);
+  return <iframe ref={setFrame} className="fs-rich__app" sandbox="allow-scripts allow-modals allow-forms" src="/api/sandbox/app" title={t('App preview')} />;
 }
 
 function CodeBlock({ lang, code }: { lang: string; code: string }) {
@@ -112,7 +126,7 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
   if (runnable && running) {
     return (
       <div className="fs-rich__codewrap fs-rich__appwrap">
-        <iframe className="fs-rich__app" sandbox="allow-scripts" srcDoc={runnableDoc(code)} title={t('App preview')} />
+        <AppFrame code={code} />
         <button type="button" className="fs-rich__copy fs-rich__run" aria-label={t('Show the code')} title={t('Show the code')}
           onClick={() => setRunning(false)}>
           <Code2 size={13} aria-hidden="true" />
