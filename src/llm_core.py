@@ -2964,7 +2964,7 @@ def _build_anthropic_payload(model, messages, temperature, max_tokens, stream=Fa
             })
         elif m.get("role") == "assistant" and isinstance(m.get("tool_calls"), list):
             # Convert OpenAI assistant tool_calls to Anthropic format
-            content = []
+            content = list(_anthropic_thinking_from_tool_calls(m["tool_calls"]))
             if m.get("content"):
                 content.append({"type": "text", "text": m["content"]})
             for tc in m["tool_calls"]:
@@ -3119,6 +3119,51 @@ def _mark_anthropic_history_for_cache(payload: Dict, *, tools=None) -> None:
         if seen_assistant and msg.get("role") == "user":
             _mark_anthropic_message(msg)
             return
+
+
+def _signed_anthropic_thinking(blocks: Dict[int, Dict]) -> List[Dict]:
+    """The round's thinking blocks in order, only when every one can be
+    replayed (a thinking block without its signature is rejected)."""
+    out = []
+    for idx in sorted(blocks):
+        b = blocks[idx]
+        if b.get("type") == "thinking":
+            if not b.get("signature"):
+                return []
+            out.append({"type": "thinking", "thinking": b.get("thinking") or "", "signature": b["signature"]})
+        elif b.get("type") == "redacted_thinking" and b.get("data"):
+            out.append({"type": "redacted_thinking", "data": b["data"]})
+    return out
+
+
+def _anthropic_thinking_from_tool_calls(tool_calls) -> List[Dict]:
+    """Signed thinking blocks a Claude round left on its first tool call
+    (`extra_content.anthropic.thinking`), to go back before its tool_use."""
+    for tc in tool_calls or []:
+        extra = tc.get("extra_content") if isinstance(tc, dict) else None
+        blocks = ((extra or {}).get("anthropic") or {}).get("thinking") if isinstance(extra, dict) else None
+        if isinstance(blocks, list) and blocks:
+            return [dict(b) for b in blocks if isinstance(b, dict)]
+    return []
+
+
+def _anthropic_tool_loop_allows_thinking(payload: Dict) -> bool:
+    """Thinking in a tool loop needs the newest assistant turn that called a
+    tool to open with its own signed thinking block; otherwise the API
+    rejects the request. True when the loop has not called a tool yet, or
+    when that turn carries its thinking (kept by the stream parser)."""
+    for msg in reversed(payload.get("messages") or []):
+        if not isinstance(msg, dict) or msg.get("role") != "assistant":
+            continue
+        content = msg.get("content")
+        if not isinstance(content, list):
+            return True
+        has_tool_use = any(isinstance(b, dict) and b.get("type") == "tool_use" for b in content)
+        if not has_tool_use:
+            return True
+        first = content[0] if content else {}
+        return isinstance(first, dict) and first.get("type") in ("thinking", "redacted_thinking")
+    return True
 
 
 def _anthropic_cache_breakpoint_applies(tools, system_text: str) -> bool:
@@ -5692,11 +5737,14 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         h = _build_anthropic_headers(headers)
         payload = _build_anthropic_payload(model, messages_copy, temperature, max_tokens, stream=True, tools=tools)
         if _overrides:
-            # Effort always; thinking only without tools: a tool loop would
-            # have to carry the signed thinking blocks back to the API, and
-            # this history does not keep them (src/provider_reasoning.py).
+            # Effort always. Thinking in a tool loop too, now that each
+            # round's signed thinking blocks ride on its first tool call and
+            # go back before the tool_use (_build_anthropic_payload); a loop
+            # whose last tool-calling turn has none (it ran without thinking,
+            # or on another model) keeps thinking off, which the API requires.
             from src.provider_reasoning import apply_anthropic
-            apply_anthropic(payload, model, _overrides, allow_thinking=not tools)
+            apply_anthropic(payload, model, _overrides,
+                            allow_thinking=(not tools) or _anthropic_tool_loop_allows_thinking(payload))
     elif provider == "ollama":
         target_url = _normalize_ollama_url(url)
         h = {"Content-Type": "application/json"}
@@ -6394,6 +6442,9 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         _anth_model_announced = False
         # Track tool_use blocks: {index: {id, name, arguments_json}}
         _anth_tool_blocks: Dict[int, Dict] = {}
+        # Signed thinking blocks, in order: a tool loop must hand them back
+        # with the tool_use they preceded (see _build_anthropic_payload).
+        _anth_thinking_blocks: Dict[int, Dict] = {}
         _anth_block_idx = -1
         _anth_block_type = ""
         _anth_stop_reason = None
@@ -6459,6 +6510,17 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                     "name": cb.get("name") or "",
                                     "arguments": "",
                                 }
+                            elif _anth_block_type == "thinking":
+                                _anth_thinking_blocks[_anth_block_idx] = {
+                                    "type": "thinking",
+                                    "thinking": cb.get("thinking") or "",
+                                    "signature": cb.get("signature") or "",
+                                }
+                            elif _anth_block_type == "redacted_thinking":
+                                _anth_thinking_blocks[_anth_block_idx] = {
+                                    "type": "redacted_thinking",
+                                    "data": cb.get("data") or "",
+                                }
                         elif evt == "content_block_delta":
                             delta = j.get("delta") or {}
                             delta_type = delta.get("type", "")
@@ -6469,8 +6531,15 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                     yield f'data: {json.dumps({"delta": text})}\n\n'
                             elif delta_type == "thinking_delta":
                                 thought = delta.get("thinking") or ""
+                                _tb = _anth_thinking_blocks.get(j.get("index", _anth_block_idx))
+                                if _tb is not None and thought:
+                                    _tb["thinking"] += thought
                                 if thought:
                                     yield f'data: {json.dumps({"delta": thought, "thinking": True})}\n\n'
+                            elif delta_type == "signature_delta":
+                                _tb = _anth_thinking_blocks.get(j.get("index", _anth_block_idx))
+                                if _tb is not None:
+                                    _tb["signature"] = (_tb.get("signature") or "") + (delta.get("signature") or "")
                             elif delta_type == "input_json_delta":
                                 # Accumulate tool arguments JSON
                                 idx = j.get("index", _anth_block_idx)
@@ -6542,6 +6611,9 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                         "name": tb["name"],
                                         "arguments": tb["arguments"],
                                     })
+                                _signed = _signed_anthropic_thinking(_anth_thinking_blocks)
+                                if calls and _signed:
+                                    calls[0]["extra_content"] = {"anthropic": {"thinking": _signed}}
                                 _delta_emitted = True
                                 yield f'data: {json.dumps({"type": "tool_calls", "calls": calls})}\n\n'
                             normalized_usage = _normalize_usage_counts(
