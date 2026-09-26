@@ -9344,3 +9344,9 @@ Verificado en el 7000 con Playwright:
 - rondas que perdieron la caché.
 
 Es la idea de «diagnosticar transcripciones» que salió de la revisión de repos. Sirve para que el modelo no reintente a ciegas y para contestar «¿por qué tardó tanto?». Sólo lee chats del propio dueño, y su resultado cuenta como no fiable (cita salidas de herramientas).
+
+**Uso y revisión también fuera de la app.**
+
+- **API.** `GET /api/session/{id}/turn_review?turns=N` da la misma revisión que la herramienta. Esa ruta y `/usage` quedan abiertas a tokens con `sessions` o `agents:dispatch`, siempre sobre sesiones propias; la tabla de `docs/api/sdk_surface.md` y el test de la matriz lo recogen.
+- **MCP de workers.** El servidor gana `session_usage` y `turn_review`, para que un coordinador externo vea qué costó un trabajo despachado y por qué falló antes de reenviarlo.
+- **CLI.** `faustus_run.py` acepta `FAUSTUS_API_TOKEN` en vez de usuario y contraseña.

@@ -19,6 +19,8 @@ tokens go to planning and review:
     }
 
 Tools: workers_guide (read first), dispatch_workers (start a job),
+session_usage / turn_review (what a chat or a worker's chat used and what
+its last turns did, with findings),
 workers_wait (block until done, then the compact result), workers_wait_for
 (block until ONE condition holds — a phase, a worker state, an event, a file
 change — and return the moment it does), workers_status,
@@ -423,6 +425,35 @@ def _gb(value: Any) -> str:
     except (TypeError, ValueError):
         return "?"
     return f"{n / (1024 ** 3):.1f} GB" if n > 0 else "?"
+
+
+def render_session_usage(data: Dict[str, Any]) -> str:
+    """One chat's usage (GET /api/session/{id}/usage) as a few lines."""
+    tot = (data or {}).get("total") or {}
+    if not tot.get("turns"):
+        return "No turn with saved metrics in that chat."
+
+    def line(label: str, b: Dict[str, Any]) -> str:
+        parts = [f"{b.get('turns', 0)} turns"]
+        for key, name in (("steps", "steps"), ("tool_calls", "tool calls"), ("input_tokens", "in"),
+                          ("output_tokens", "out")):
+            if b.get(key) is not None:
+                parts.append(f"{b[key]} {name}")
+        if b.get("cache_hit_percent") is not None:
+            parts.append(f"{b['cache_hit_percent']} % prompt from cache")
+        if b.get("time_s"):
+            parts.append(f"{b['time_s']} s")
+        if b.get("cost_usd"):
+            parts.append(f"${b['cost_usd']}")
+        return f"{label}: " + ", ".join(parts)
+
+    out = [line("total", tot)]
+    for model, b in ((data or {}).get("by_model") or {}).items():
+        out.append(line(f"  {model}", b))
+    ctx = (data or {}).get("context") or {}
+    if ctx.get("context_length"):
+        out.append(f"context (last turn): {ctx.get('request_context_tokens')} / {ctx.get('context_length')}")
+    return "\n".join(out)
 
 
 def render_models_fit(data: Dict[str, Any]) -> str:
@@ -901,6 +932,30 @@ TOOLS: List[Tool] = [
         }},
     ),
     Tool(
+        name="session_usage",
+        description=(
+            "What a Faustus chat (or a dispatched worker's chat) used, per model: turns, model steps, "
+            "tool calls, input/output tokens, how much of the prompt the cache served, time and cost. "
+            "Use it to judge what a job really cost before sending the next one the same way."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "session_id": {"type": "string", "description": "The chat id (a dispatched worker's session id works)"},
+        }, "required": ["session_id"]},
+    ),
+    Tool(
+        name="turn_review",
+        description=(
+            "What the last turns of a Faustus chat actually did, from what they saved: tools, failures with "
+            "exit codes and output excerpts, rounds, writes, slowest calls, prompt-cache reuse, and findings "
+            "(the same failure twice, a loop over one tool, many rounds without writing, a lost cache). "
+            "Read it before re-sending a job that failed, instead of guessing what went wrong."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "session_id": {"type": "string", "description": "The chat id"},
+            "turns": {"type": "integer", "default": 1, "description": "How many recent turns (1-10)"},
+        }, "required": ["session_id"]},
+    ),
+    Tool(
         name="objectives_list",
         description=(
             "The objectives dashboard of a Faustus project: every objective with status, priority, "
@@ -1269,6 +1324,22 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             result = await asyncio.to_thread(
                 _request, "POST", f"/api/projects/{project.get('id')}/objectives/deltas", body)
             return _text(render_apply(result))
+        if name == "session_usage":
+            sid = urllib.parse.quote(str(args.get("session_id") or "").strip(), safe="")
+            if not sid:
+                return _text("Error: give the session_id")
+            data = await asyncio.to_thread(_request, "GET", f"/api/session/{sid}/usage")
+            return _text(render_session_usage(data))
+        if name == "turn_review":
+            sid = urllib.parse.quote(str(args.get("session_id") or "").strip(), safe="")
+            if not sid:
+                return _text("Error: give the session_id")
+            try:
+                turns = max(1, min(int(args.get("turns") or 1), 10))
+            except (TypeError, ValueError):
+                turns = 1
+            data = await asyncio.to_thread(_request, "GET", f"/api/session/{sid}/turn_review?turns={turns}")
+            return _text(str((data or {}).get("markdown") or "No review."))
         if name == "models_fit":
             refresh = "true" if args.get("refresh") else "false"
             data = await asyncio.to_thread(_request, "GET", f"/api/models/fit?refresh={refresh}")

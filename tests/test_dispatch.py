@@ -510,3 +510,24 @@ def test_a_worker_model_runs_where_it_is_served(monkeypatch):
     monkeypatch.setattr(er, "endpoint_id_serving", lambda model, owner=None: "ep-ollama")
     monkeypatch.setattr(er, "resolve_endpoint_by_id", lambda ep, model=None, owner=None, **k: ("http://127.0.0.1:11434/v1", model, None))
     assert dispatch.resolve_route("luis") == ("http://127.0.0.1:11434/v1", "qwen3.5:9b", None)
+
+
+def test_workers_server_reads_a_chats_usage_and_turn_review(monkeypatch):
+    ws = _load_workers_server(monkeypatch)
+    names = {t.name for t in ws.TOOLS}
+    assert {"session_usage", "turn_review"} <= names
+    calls = []
+
+    def fake_request(method, path, body=None, timeout=None, **kw):
+        calls.append((method, path))
+        if path.endswith("/usage"):
+            return {"total": {"turns": 2, "steps": 9, "input_tokens": 1000, "cache_hit_percent": 80.0},
+                    "by_model": {"qwen": {"turns": 2}}, "context": None}
+        return {"markdown": "### Turn -1: fix it\\n- **finding**: `bash` failed 2 times the same way"}
+    monkeypatch.setattr(ws, "_request", fake_request)
+    import asyncio
+    usage = asyncio.run(ws.call_tool("session_usage", {"session_id": "s1"}))[0].text
+    assert "2 turns" in usage and "80.0 % prompt from cache" in usage
+    review = asyncio.run(ws.call_tool("turn_review", {"session_id": "s1", "turns": 3}))[0].text
+    assert "finding" in review
+    assert calls == [("GET", "/api/session/s1/usage"), ("GET", "/api/session/s1/turn_review?turns=3")]

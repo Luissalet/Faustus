@@ -1959,6 +1959,19 @@ def setup_session_routes(
         from src.session_usage import summarize
         return {"session_id": session_id, **summarize(getattr(session, "history", None) or getattr(session, "messages", None) or [])}
 
+    @router.get("/session/{session_id}/turn_review")
+    async def get_turn_review(request: Request, session_id: str, turns: int = 1):
+        """What the chat's last `turns` agent turns did, with findings
+        (src/turn_review.py) — the same review the `turn_review` tool gives."""
+        _verify_session_owner(request, session_id, session_manager)
+        session = session_manager.get_session(session_id)
+        if not session:
+            raise HTTPException(404, "Session not found")
+        from src import turn_review
+        history = getattr(session, "history", None) or getattr(session, "messages", None) or []
+        reviews = turn_review.review(history, max(1, min(int(turns or 1), 10)))
+        return {"session_id": session_id, "reviews": reviews, "markdown": turn_review.render(reviews)}
+
     @router.get("/session/{session_id}/context_info")
     async def get_context_info(request: Request, session_id: str):
         """Get the real context length for a session's model from the endpoint."""

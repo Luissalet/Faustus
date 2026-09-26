@@ -24,9 +24,9 @@ approved for the task (the app's "allow for this task"), up to --max-legs.
 
 Exit codes: 0 answered, 1 error, 2 stopped on an approval, 3 timed out.
 
-Environment: FAUSTUS_URL (default http://127.0.0.1:7000), FAUSTUS_USER,
-FAUSTUS_PASS (sign-in when the server requires it), FAUSTUS_MODEL,
-FAUSTUS_ENDPOINT_URL.
+Environment: FAUSTUS_URL (default http://127.0.0.1:7000), FAUSTUS_API_TOKEN
+(a token with the `sessions` scope) or FAUSTUS_USER/FAUSTUS_PASS (sign-in),
+FAUSTUS_MODEL, FAUSTUS_ENDPOINT_URL.
 """
 from __future__ import annotations
 
@@ -51,10 +51,15 @@ TOOL_EVENTS = {"tool_start", "tool_output", "tool_progress", "ask_user", "harnes
 
 
 class Client:
-    def __init__(self, base: str, user: Optional[str] = None, password: Optional[str] = None):
+    def __init__(self, base: str, user: Optional[str] = None, password: Optional[str] = None,
+                 token: Optional[str] = None):
         self.base = base.rstrip("/")
         self._opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
-        if user:
+        if token:
+            # An API token with the `sessions` scope (Settings › API tokens):
+            # no password in the environment.
+            self._opener.addheaders = [("Authorization", f"Bearer {token}")]
+        elif user:
             self.post_json("/api/auth/login", {"username": user, "password": password or ""})
 
     def post_json(self, path: str, body: Dict[str, Any], timeout: float = 30) -> Any:
@@ -169,7 +174,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     out = sys.stdout
     started = time.time()
     try:
-        client = Client(args.url, os.environ.get("FAUSTUS_USER"), os.environ.get("FAUSTUS_PASS"))
+        client = Client(args.url, os.environ.get("FAUSTUS_USER"), os.environ.get("FAUSTUS_PASS"),
+                        os.environ.get("FAUSTUS_API_TOKEN"))
         session = args.session
         if not session:
             made = client.post_form("/api/session", {

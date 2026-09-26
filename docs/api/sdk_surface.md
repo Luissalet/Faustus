@@ -65,6 +65,8 @@ reaches any route below at all — the 403 names the missing scope.
 | PATCH | `/api/session/{sid}/connectors` | `sessions` | reversible | Change an owned session's connector allowlist. |
 | GET | `/api/session/{sid}/tool-support` | `sessions` | read | Whether an owned session's current model/endpoint can use tools at all. |
 | GET | `/api/session/{session_id}/context_info` | `sessions` | read | An owned session's real model context length. |
+| GET | `/api/session/{session_id}/usage` | `sessions`, `agents:dispatch` | read | An owned session's usage per model: tokens, prompt cache, steps, tool calls, time, cost. |
+| GET | `/api/session/{session_id}/turn_review?turns=N` | `sessions`, `agents:dispatch` | read | What an owned session's last N turns did (tools, failures, rounds, writes, cache), with findings. |
 | GET | `/api/history/{session_id}` | `sessions` | read | An owned session's message history — the same route the desktop app itself loads a chat from. |
 | GET | `/api/session/{sid}/export` | `sessions` | read | Download one owned session's rendered conversation (`?fmt=md\|txt\|json\|html\|pdf\|docx`). The bytes are also recorded as an artifact (`session_id` set), so `client.artifacts.list({sessionId})` finds it right after. |
 | POST | `/api/chat_stream` | `sessions` | external (executes tools) | Run a turn: send a message, or answer an in-turn `ask_user`/`tool_approval`. Streams the events `docs/api/sse_events.json` catalogues. |
