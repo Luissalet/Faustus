@@ -1777,12 +1777,27 @@ def _read_raw() -> dict:
         return {}
 
 
+#: Defaults that changed after installs had already written the old value
+#: to disk. `save_settings` writes the whole merged document, so a default a
+#: user never touched ends up saved and a later, better default never
+#: reaches them. A saved value equal to the OLD default reads as the new one.
+#: key -> (old default, new default).
+DEFAULT_BUMPS: dict = {
+    # 26-09: a folder-bound agent turn alone picks 30-33 tools; 28 made most
+    # follow-up turns start a new set and re-read the whole prompt.
+    "agent_sticky_toolset_max": (28, 48),
+}
+
+
 def _merge(saved: dict) -> tuple[dict, int]:
     """(settings merged with defaults, revision). The revision never leaks."""
     raw_revision = saved.get(REVISION_KEY)
     revision = int(raw_revision) if isinstance(raw_revision, int) and raw_revision >= 0 else 0
     merged = {**DEFAULT_SETTINGS,
               **{k: v for k, v in saved.items() if k != REVISION_KEY}}
+    for key, (old_default, new_default) in DEFAULT_BUMPS.items():
+        if key in saved and saved[key] == old_default:
+            merged[key] = new_default
     return merged, revision
 
 
@@ -1940,8 +1955,13 @@ def save_settings(settings: dict, path: Optional[str] = None):
     """
     target = str(path or SETTINGS_FILE)
     with _WRITE_LOCK, _settings_lock(target):
-        _, revision = _merge(_read_raw_from(target))
-        _write_document(dict(settings or {}), revision + 1, target)
+        raw = _read_raw_from(target)
+        _, revision = _merge(raw)
+        # A default the file never held stays out of it: writing the whole
+        # merged document froze every default at its value of that day.
+        document = {k: v for k, v in dict(settings or {}).items()
+                    if k in raw or k not in DEFAULT_SETTINGS or v != DEFAULT_SETTINGS[k]}
+        _write_document(document, revision + 1, target)
 
 
 def get_setting(key: str, default: Any = None) -> Any:
