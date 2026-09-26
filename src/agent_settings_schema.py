@@ -109,6 +109,10 @@ GROUPS: list[dict[str, Any]] = [
             _int("agent_max_tool_calls", "Tool call limit",
                  "Tool calls allowed in one message. 0 = unlimited.",
                  0, 1000),
+            _bool("agent_parallel_writes", "Parallel file edits",
+                  "When one round asks for several independent calls, file edits (write_file, edit_file, "
+                  "apply_patch) on paths no other call in the group touches run side by side with them. Calls "
+                  "that could see each other's effect keep their order. Off while doubt review is on."),
             _int("agent_auto_continue_cycles", "Auto-continue cycles",
                  "When the step cap hits mid-task, the harness continues by itself this many times "
                  "(each grants another Max steps) before showing the Continue button. 0 = always ask.",
@@ -500,6 +504,29 @@ GROUPS: list[dict[str, Any]] = [
             _int("agent_subagent_max_parallel", "Max parallel workers",
                  "Workers running at the same time; the rest wait as 'queued'. Two requests to the SAME Ollama model queue on its single slot, so this only overlaps work when workers use another model (below) or another server.",
                  1, 32),
+            _int("agent_subagent_max_parallel_api", "Max parallel workers on a hosted API",
+                 "Workers routed to a hosted API (a tier or definition naming a remote endpoint, or a coordinator "
+                 "running on one) do not take the GPU slot above; they share this lane per API host instead. "
+                 "0 = no limit.",
+                 0, 256),
+            _int("agent_subagent_max_tasks", "Max tasks per delegation",
+                 "How many workers one delegate_agents call may start (the rest are dropped and reported). "
+                 "Width is not speed on one GPU: past 'Max parallel workers' the rest queue. Wide read-only "
+                 "review fan-outs are what this is for.",
+                 1, 128),
+            _text("agent_subagent_tier_local", "Tier: local",
+                  "Model a task gets when it asks for `tier: local`. A model name, or `endpoint_id|model` to run it "
+                  "on another endpoint. Empty = the coordinator's model."),
+            _text("agent_subagent_tier_fast", "Tier: fast",
+                  "Model for `tier: fast` — the cheap, quick tier for wide read-only reviews. Same format as above."),
+            _text("agent_subagent_tier_mid", "Tier: mid",
+                  "Model for `tier: mid` — editors and ordinary workers. Same format as above."),
+            _text("agent_subagent_tier_frontier", "Tier: frontier",
+                  "Model for `tier: frontier` — the hardest step and final verification. Same format as above."),
+            _text("agent_subagent_allowed_models", "Allowed worker models",
+                  "Comma-separated list. When set, a worker that names any other model (directly or through a "
+                  "tier) is refused before it starts, and the coordinator is told why. Empty = any model. A worker "
+                  "that inherits the coordinator's model is always allowed."),
             _int("agent_subagent_depth", "Delegation depth ceiling",
                  "How many generations of workers one turn may produce. 1 (the default) means the "
                  "workers you start may not start workers of their own; 0 refuses delegation "

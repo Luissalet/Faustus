@@ -34,7 +34,14 @@ from src import effort_profile
 
 logger = logging.getLogger(__name__)
 
-MAX_SUBAGENTS = 4
+MAX_SUBAGENTS = 4          # default width; `agent_subagent_max_tasks` raises it
+HARD_MAX_SUBAGENTS = 128   # ceiling for `agent_subagent_max_tasks`
+#: Tiers a task may name instead of a model (`tier: "fast"`), each mapped by
+#: the owner to a model in Settings (`agent_subagent_tier_<name>`).
+SUBAGENT_TIERS = ("local", "fast", "mid", "frontier")
+#: A read-only reviewer's defaults: few rounds, few findings, a short reply.
+REVIEWER_MAX_ROUNDS = 6
+REVIEWER_MAX_FINDINGS = 4
 DEFAULT_MAX_ROUNDS = 14
 DEFAULT_WORKER_TIMEOUT_S = 1500   # wall-clock bound per worker (25 min; qwen3-coder on this GPU does a task in 1-5 min)
 MIN_WORKER_TIMEOUT_S = 60         # floor for the per-worker timeout (counted from `started`, not from queueing)
@@ -782,6 +789,57 @@ def verify_criteria(criteria: List[str], *, mutations: Any, tool_calls: int,
     return {"criteria": rows, "unmet": unmet, "complete": not unmet}
 
 
+REVIEWER_CONTRACT = (
+    "\n\nYou are a REVIEWER: read and report, do not edit anything. Check what the task names against "
+    "the real source; report at most {n} findings, most important first, each with the file and line it "
+    "rests on and what is wrong. Reply in under 100 words plus the findings list; no preamble."
+)
+
+
+def max_tasks() -> int:
+    """How many tasks one delegate_agents call may run (the rest are dropped
+    and reported). The owner sets it; a local GPU still runs only
+    `agent_subagent_max_parallel` of them at once, the rest queue."""
+    try:
+        n = int(_setting("agent_subagent_max_tasks", MAX_SUBAGENTS) or MAX_SUBAGENTS)
+    except (TypeError, ValueError):
+        n = MAX_SUBAGENTS
+    return max(1, min(n, HARD_MAX_SUBAGENTS))
+
+
+def tier_route(tier: str):
+    """(endpoint_id, model) the owner mapped a tier to; ("", "") = inherit.
+    A value is a model name, or `endpoint_id|model` to run it elsewhere."""
+    raw = str(_setting(f"agent_subagent_tier_{tier}", "") or "").strip()
+    if not raw:
+        return "", ""
+    if "|" in raw:
+        ep, _, mdl = raw.partition("|")
+        return ep.strip(), mdl.strip()
+    return "", raw
+
+
+def allowed_models() -> List[str]:
+    raw = _setting("agent_subagent_allowed_models", "") or ""
+    items = raw if isinstance(raw, (list, tuple)) else re.split(r"[,\n]+", str(raw))
+    return [str(x).strip().lower() for x in items if str(x).strip()]
+
+
+def model_refusal(model: str) -> str:
+    """Why a worker naming `model` may not start, or "" when it may. The list
+    is enforced, not suggested: an empty list allows any model, and a worker
+    that inherits the coordinator's model (no model named) always may."""
+    model = str(model or "").strip().lower()
+    allowed = allowed_models()
+    if not model or not allowed:
+        return ""
+    short = model.rsplit("/", 1)[-1]
+    if model in allowed or short in allowed or any(a.rsplit("/", 1)[-1] == short for a in allowed):
+        return ""
+    return (f"model `{model}` is not in the subagent model list (Settings › Agent › Sub-agents): "
+            + ", ".join(allowed))
+
+
 def parse_delegation_args(content: str, *, workspace: Optional[str] = None) -> Dict[str, Any]:
     """Accept {"tasks":[{"name","instruction"}...], "parallel": bool,
     "max_rounds": int} — or, leniently, a plain list of instruction strings.
@@ -832,7 +890,9 @@ def parse_delegation_args(content: str, *, workspace: Optional[str] = None) -> D
     if not isinstance(tasks_raw, list) or not tasks_raw:
         raise ValueError("delegate_agents: 'tasks' must be a non-empty list")
     tasks: List[Dict[str, Any]] = []
-    for i, t in enumerate(tasks_raw[:MAX_SUBAGENTS]):
+    width = max_tasks()
+    refused: List[Dict[str, str]] = []
+    for i, t in enumerate(tasks_raw[:width]):
         files: List[str] = []
         model = ""
         agent = ""
@@ -903,6 +963,37 @@ def parse_delegation_args(content: str, *, workspace: Optional[str] = None) -> D
                 _criteria = [_criteria]
             if isinstance(_criteria, (list, tuple)) and _criteria:
                 row["criteria"] = [str(c).strip()[:300] for c in _criteria if str(c).strip()][:20]
+            # Fan-out controls (all optional; a task without them is the
+            # dict it always was): a model tier, a per-task round and time
+            # bound, and the read-only reviewer contract.
+            _tier = str(t.get("tier") or "").strip().lower()
+            if _tier in SUBAGENT_TIERS:
+                row["tier"] = _tier
+                if not row["model"]:
+                    _ep, _mdl = tier_route(_tier)
+                    if _mdl:
+                        row["model"] = _mdl[:120]
+                    if _ep:
+                        row["endpoint_id"] = _ep[:120]
+            for _key, _lo, _hi in (("max_rounds", 1, 40), ("timeout_s", MIN_WORKER_TIMEOUT_S, 7200)):
+                try:
+                    _v = int(t.get(_key)) if t.get(_key) not in (None, "") else None
+                except (TypeError, ValueError):
+                    _v = None
+                if _v is not None:
+                    row[_key] = max(_lo, min(_v, _hi))
+            if _as_bool(t.get("read_only") or (str(t.get("role") or "").lower() == "reviewer"), False):
+                row["read_only"] = True
+                if not agent:
+                    agent = "explorer"
+                if "max_rounds" not in row:
+                    row["max_rounds"] = REVIEWER_MAX_ROUNDS
+                    row["_reviewer_rounds"] = True
+                try:
+                    _nf = int(t.get("max_findings") or REVIEWER_MAX_FINDINGS)
+                except (TypeError, ValueError):
+                    _nf = REVIEWER_MAX_FINDINGS
+                row["instruction"] = (row["instruction"] + REVIEWER_CONTRACT.format(n=max(1, min(_nf, 20))))[:8600]
         # `agent` and `resume` are carried ONLY when the caller named one —
         # the discipline `runner` already keeps in src/dispatch.py. A task with
         # neither key must produce the dict this parser produced before they
@@ -912,8 +1003,15 @@ def parse_delegation_args(content: str, *, workspace: Optional[str] = None) -> D
             row["agent"] = agent
         if resume:
             row["resume"] = resume
+        _why = model_refusal(row.get("model") or "")
+        if _why:
+            refused.append({"name": row["name"], "model": row.get("model") or "", "reason": _why})
+            continue
         tasks.append(row)
     if not tasks:
+        if refused:
+            raise ValueError("delegate_agents: every task was refused before it started: " + "; ".join(
+                f"{r['name']}: {r['reason']}" for r in refused))
         raise ValueError("delegate_agents: no usable tasks (each needs an 'instruction')")
     reviewer = data.get("reviewer", data.get("review"))
     if reviewer is None:
@@ -923,9 +1021,9 @@ def parse_delegation_args(content: str, *, workspace: Optional[str] = None) -> D
         except Exception:
             reviewer = False
     reviewer_model = str(data.get("reviewer_model") or "").strip()
-    dropped = max(0, len(tasks_raw) - MAX_SUBAGENTS)
+    dropped = max(0, len(tasks_raw) - width)
     if dropped:
-        logger.info("delegate_agents: %s tasks requested, capped at %s", len(tasks_raw), MAX_SUBAGENTS)
+        logger.info("delegate_agents: %s tasks requested, capped at %s", len(tasks_raw), width)
     try:
         max_rounds = int(data.get("max_rounds") or DEFAULT_MAX_ROUNDS)
     except (TypeError, ValueError):
@@ -952,9 +1050,15 @@ def parse_delegation_args(content: str, *, workspace: Optional[str] = None) -> D
         # used to vanish silently and the model believed they were done).
         "dropped_tasks": dropped,
     }
+    if refused:
+        out["refused_tasks"] = refused
     if any(row.get("agent") for row in tasks) or reviewer_agent:
         _apply_agent_defs(out, reviewer_agent,
                           workspace if workspace is not None else _active_workspace_or_none())
+    # A reviewer's short leash survives its definition's own round budget.
+    for row in tasks:
+        if row.pop("_reviewer_rounds", False):
+            row["max_rounds"] = min(int(row.get("max_rounds") or REVIEWER_MAX_ROUNDS), REVIEWER_MAX_ROUNDS)
     return out
 
 
@@ -2065,7 +2169,33 @@ class DelegateAgentsTool:
         async def one(run: SubagentRun, max_rounds: Optional[int] = None):
             emit = await emit_for(run)
             dog: Optional[asyncio.Task] = None
-            queued = (slots is not None and slots.locked()) or (team_slots is not None and team_slots.locked())
+            # A worker routed to a hosted API (a tier or definition naming a
+            # remote endpoint) does not take this box's GPU slot: it waits on
+            # that API's own lane (`agent_subagent_max_parallel_api`), so a
+            # wide review fan-out on a cheap hosted model runs at API width
+            # while local workers still queue on the GPU.
+            try:
+                _w_url = _route_for(run, endpoint_url, owner, headers)[0]
+            except ValueError:
+                _w_url = endpoint_url
+            run_slots = slots
+            if _w_url and _w_url != endpoint_url:
+                try:
+                    from src.model_context import is_local_endpoint as _is_local_ep
+                    if not _is_local_ep(_w_url):
+                        _api_par = int(_setting("agent_subagent_max_parallel_api", 16) or 0)
+                        run_slots = shared_slots(_w_url, _api_par) if _api_par > 0 else None
+                except Exception:
+                    run_slots = slots
+            elif endpoint_url and slots is not None:
+                try:
+                    from src.model_context import is_local_endpoint as _is_local_ep
+                    if not _is_local_ep(endpoint_url):
+                        _api_par = int(_setting("agent_subagent_max_parallel_api", 16) or 0)
+                        run_slots = shared_slots(endpoint_url, _api_par) if _api_par > 0 else None
+                except Exception:
+                    run_slots = slots
+            queued = (run_slots is not None and run_slots.locked()) or (team_slots is not None and team_slots.locked())
             if queued:
                 await emit({"event": "queued"})
             # A definition's own ceilings, when it has them. Both are already
@@ -2115,8 +2245,8 @@ class DelegateAgentsTool:
                 if team_slots is not None:
                     await team_slots.acquire()
                 try:
-                    if slots is not None:
-                        await slots.acquire()
+                    if run_slots is not None:
+                        await run_slots.acquire()
                 except BaseException:
                     if team_slots is not None:
                         team_slots.release()
@@ -2193,8 +2323,8 @@ class DelegateAgentsTool:
                             run.started = original_started
                         run.receipts.append(delegation_receipts.receipt_for(run).to_dict())
                 finally:
-                    if slots is not None:
-                        slots.release()
+                    if run_slots is not None:
+                        run_slots.release()
                     if team_slots is not None:
                         team_slots.release()
             except asyncio.TimeoutError:
@@ -2333,9 +2463,11 @@ class DelegateAgentsTool:
             runs.append(reviewer)
         report = _build_report_text(runs, workspace, locks)
         dropped = int(args.get("dropped_tasks") or 0)
+        for _rf in args.get("refused_tasks") or []:
+            report += f"\n\nREFUSED before start — {_rf['name']}: {_rf['reason']}"
         if dropped:
             report += (
-                f"\n\nNOTE: {dropped} task(s) were NOT run — delegate_agents runs at most {MAX_SUBAGENTS} "
+                f"\n\nNOTE: {dropped} task(s) were NOT run — delegate_agents runs at most {max_tasks()} "
                 f"tasks per call and the extra ones were dropped. Call delegate_agents again with the remaining "
                 "tasks (or do them yourself); do not report them as done."
             )
@@ -2346,6 +2478,7 @@ class DelegateAgentsTool:
             "duration_s": round(time.time() - t0, 1),
             "lock_conflicts": list(locks.conflicts),
             "dropped_tasks": dropped,
+            "refused_tasks": list(args.get("refused_tasks") or []),
             # H3: every delegation receipt (one per worker, two for a worker
             # that got the empty/ack_only retry), so the coordinator's own
             # ledger can see `verdict` without re-deriving it from prose.

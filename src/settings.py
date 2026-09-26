@@ -1117,6 +1117,19 @@ DEFAULT_SETTINGS = {
     "agent_subagent_stall_seconds": 120,
     "agent_subagent_supervisor": True,
     "agent_subagent_max_parallel": 2,
+    # Wide fan-outs: tasks per delegate_agents call, the lane for workers on
+    # a hosted API (they do not take the GPU slot), model tiers a task can
+    # name instead of a model, and an enforced model list (empty = any).
+    "agent_subagent_max_parallel_api": 16,
+    "agent_subagent_max_tasks": 12,
+    "agent_subagent_tier_local": "",
+    "agent_subagent_tier_fast": "",
+    "agent_subagent_tier_mid": "",
+    "agent_subagent_tier_frontier": "",
+    "agent_subagent_allowed_models": "",
+    # Keyed dispatch: file writes on disjoint paths run side by side with the
+    # round's other independent calls (src/agent_loop.py).
+    "agent_parallel_writes": True,
     # How many generations of workers one turn may produce
     # (src/subagent_permissions.py). 1 = the coordinator's workers may not
     # delegate again. Registered here so the ceiling is visible in Settings:

@@ -135,6 +135,10 @@ def test_groups_follow_the_requested_layout():
             "agent_fanout_max_parallel", "agent_fanout_model_pool",
             # Handoff lanes (lot E): permissions-as-topology for delegation.
             "agent_handoff_lanes", "agent_handoff_lanes_mode",
+            # Wide fan-outs: width, the hosted-API lane, tiers, the model list.
+            "agent_subagent_max_parallel_api", "agent_subagent_max_tasks",
+            "agent_subagent_tier_local", "agent_subagent_tier_fast", "agent_subagent_tier_mid",
+            "agent_subagent_tier_frontier", "agent_subagent_allowed_models",
             } == set(by_group["subagents"])
     assert {"agent_runs_persist", "agent_runs_keep_hours", "agent_queue_local_concurrency",
             "agent_queue_api_concurrency", "agent_scorecard"} == set(by_group["runs"])

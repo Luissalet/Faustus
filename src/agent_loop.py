@@ -121,6 +121,54 @@ def _is_parallel_safe_read(tool_type: str, content: str) -> bool:
     return caps.effects <= _PARALLEL_SAFE_READ_EFFECTS
 
 
+#: File tools whose only effect is writing inside the workspace and whose
+#: target paths are named in their arguments. Calls to these on paths no
+#: other call in the group touches can run side by side (keyed dispatch).
+_PARALLEL_WRITE_TOOLS = frozenset({"write_file", "edit_file", "apply_patch"})
+
+
+def _call_paths(block: "ToolBlock", workspace: Optional[str]) -> Optional[List[str]]:
+    """Normalised absolute paths a file call names, or None when it names none."""
+    try:
+        from src import agent_harness as _ah
+        raw = _ah._paths_from_args(block.tool_type, block.content or "")
+    except Exception:
+        return None
+    out = []
+    for p in raw:
+        full = p if os.path.isabs(p) or not workspace else os.path.join(workspace, p)
+        out.append(os.path.normcase(os.path.normpath(full)))
+    return out or None
+
+
+def _paths_overlap(a: str, b: str) -> bool:
+    """Same path, or one inside the other (a directory read vs a file write)."""
+    return a == b or a.startswith(b.rstrip(os.sep) + os.sep) or b.startswith(a.rstrip(os.sep) + os.sep)
+
+
+def _is_parallel_safe_write(tool_type: str, content: str) -> bool:
+    """A workspace file write that names its paths and needs nothing else."""
+    if tool_type not in _PARALLEL_WRITE_TOOLS:
+        return False
+    try:
+        caps = capabilities_for_action(tool_type, content)
+    except Exception:
+        return False
+    return bool(caps.known and caps.effects) and caps.effects <= {ToolEffect.WRITE_WORKSPACE}
+
+
+def _gate_allows_after_untrusted(security: Any, tool_type: str, content: str) -> bool:
+    """Would the approval gate allow this call even once the run has seen
+    untrusted content? Evaluated on a copy, so the real run is untouched."""
+    try:
+        import copy as _copy
+        sim = _copy.copy(security)
+        sim.external_untrusted_context_seen = True
+        return bool(sim.decision_for(tool_type, content).allowed)
+    except Exception:
+        return False
+
+
 def _read_resource_key(block: "ToolBlock") -> str:
     """Best-effort identity of what a read targets, so two calls that name the
     SAME resource (e.g. read_file on the same path twice) never land in the
@@ -8541,7 +8589,14 @@ async def _stream_agent_loop_body(
             and bool(get_setting("agent_sticky_toolset", True))):
         _sticky_optional: Set[str] = set()
         if not _names_a_plugin:
-            _sticky_optional = {t for t in _retrieved_tools if str(t).startswith("mcp__")} - _sticky_mcp_kept
+            # A server the message names outright ("the issue on github")
+            # is a strong signal, not a weak retrieval pick: its tools may
+            # widen the set on a follow-up like any other request.
+            _q_words = set(re.findall(r"[a-z0-9_\-]{3,}", str(_retrieval_query or _last_user or "").lower()))
+            _sticky_optional = {
+                t for t in _retrieved_tools
+                if str(t).startswith("mcp__") and str(t).split("__")[1].lower() not in _q_words
+            } - _sticky_mcp_kept
         _relevant_tools, _hot_seed = _sticky_toolset(
             session_id, set(_relevant_tools),
             None if _hot_seed is None else set(_hot_seed),
@@ -13935,16 +13990,58 @@ async def _stream_agent_loop_body(
             _parallel_cap = int(get_setting("agent_parallel_read_group_size", 4) or 0)
         except (TypeError, ValueError):
             _parallel_cap = 4
+        # Keyed dispatch: file writes (write_file / edit_file / apply_patch)
+        # join the group too when every path they name is untouched by the
+        # other calls in it, so two edits to different files no longer wait
+        # for each other. Reads and writes that could see each other's effect
+        # (same file, a directory and a file inside it, a workspace read with
+        # no path) keep the order the model gave them: the group stops there.
+        try:
+            _parallel_writes = bool(get_setting("agent_parallel_writes", True)) and not bool(
+                get_setting("agent_doubt_review", False))
+        except Exception:
+            _parallel_writes = False
+        _group_writes: List[int] = []
         if _parallel_cap > 1 and len(tool_blocks) > 1:
             _group_idx: List[int] = []
             _seen_keys: Set[str] = set()
+            _read_scopes: List[Optional[List[str]]] = []  # workspace reads' paths (None = whole workspace)
+            _write_paths: List[str] = []
             for _pi, _pblock in enumerate(tool_blocks):
                 if len(_group_idx) >= _parallel_cap:
                     break
                 if max_tool_calls > 0 and (total_tool_calls + len(_group_idx)) >= max_tool_calls:
                     break
-                if not _is_parallel_safe_read(_pblock.tool_type, _pblock.content):
+                _is_read = _is_parallel_safe_read(_pblock.tool_type, _pblock.content)
+                _is_write = (not _is_read and _parallel_writes
+                             and _is_parallel_safe_write(_pblock.tool_type, _pblock.content))
+                if not _is_read and not _is_write:
                     break
+                _ppaths = _call_paths(_pblock, workspace)
+                if _is_write:
+                    if not _ppaths:
+                        break
+                    # The approval gate is decided per call, in order: a read
+                    # earlier in this round can arm it (untrusted content)
+                    # before the write's turn comes. A write only joins when
+                    # it would pass the gate even then; otherwise it waits for
+                    # the serial loop and gets its approval card as before.
+                    if not _gate_allows_after_untrusted(run_security, _pblock.tool_type, _pblock.content):
+                        break
+                    if any(sc is None or any(_paths_overlap(w, r) for w in _ppaths for r in sc)
+                           for sc in _read_scopes):
+                        break
+                    if any(_paths_overlap(w, o) for w in _ppaths for o in _write_paths):
+                        break
+                else:
+                    try:
+                        _pcaps = capabilities_for_action(_pblock.tool_type, _pblock.content)
+                        _ws_read = ToolEffect.READ_WORKSPACE in _pcaps.effects
+                    except Exception:
+                        _ws_read = True
+                    if _ws_read and _write_paths and (
+                            not _ppaths or any(_paths_overlap(r, w) for r in _ppaths for w in _write_paths)):
+                        break
                 if _denial_for_tool(
                     _pblock.tool_type, tool_policy=tool_policy,
                     disabled_tools=disabled_tools, preflight_pruned=_preflight_pruned,
@@ -13978,6 +14075,19 @@ async def _stream_agent_loop_body(
                     break
                 _seen_keys.add(_pkey)
                 _group_idx.append(_pi)
+                if _is_write:
+                    _write_paths.extend(_ppaths)
+                    _group_writes.append(_pi)
+                elif _ws_read:
+                    _read_scopes.append(_ppaths)
+            if len(_group_idx) >= 2 and _group_writes:
+                # The turn's baseline checkpoint goes before the first change,
+                # exactly as the serial loop would have taken it.
+                _first_w = tool_blocks[_group_writes[0]]
+                _cp = await _maybe_checkpoint(_first_w.tool_type, _first_w.content)
+                if _cp:
+                    yield "data: " + json.dumps({"type": "harness_check", "status": "checkpoint", "round": round_num,
+                                                 "sha": _cp.get("sha"), "created": _cp.get("created"), "ms": _cp.get("ms")}) + "\n\n"
             if len(_group_idx) >= 2:
                 async def _run_prefetched(idx: int):
                     _blk = tool_blocks[idx]
@@ -14013,8 +14123,8 @@ async def _stream_agent_loop_body(
                     _prefetched_duration_ms[idx] = round(max(0.0, (time.monotonic() - _pt0) * 1000.0), 1)
                     return idx, _pres
                 logger.info(
-                    "[agent] round %s: %d independent read(s) run in parallel: %s",
-                    round_num, len(_group_idx),
+                    "[agent] round %s: %d independent call(s) run in parallel (%d write(s)): %s",
+                    round_num, len(_group_idx), len(_group_writes),
                     [tool_blocks[j].tool_type for j in _group_idx],
                 )
                 for _idx, _res in await asyncio.gather(*(_run_prefetched(j) for j in _group_idx)):

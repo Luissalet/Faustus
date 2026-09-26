@@ -103,8 +103,9 @@ def test_parse_accepts_string_booleans():
 # ── the fifth task is not dropped silently ─────────────────────────────────
 
 def test_parse_reports_dropped_tasks():
-    args = st.parse_delegation_args(json.dumps({"tasks": [f"task {i}" for i in range(6)]}))
-    assert len(args["tasks"]) == st.MAX_SUBAGENTS
+    n = st.max_tasks()
+    args = st.parse_delegation_args(json.dumps({"tasks": [f"task {i}" for i in range(n + 2)]}))
+    assert len(args["tasks"]) == n
     assert args["dropped_tasks"] == 2
     assert st.parse_delegation_args(json.dumps({"tasks": ["a"]}))["dropped_tasks"] == 0
 

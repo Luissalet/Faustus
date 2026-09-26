@@ -371,13 +371,18 @@ FUNCTION_TOOL_SCHEMAS = [
                 "properties": {
                     "tasks": {
                         "type": "array",
-                        "description": "2-4 independent sub-tasks. Each instruction must be self-contained (mention the files/areas involved).",
+                        "description": "Independent sub-tasks (usually 2-4; wide read-only reviews may use more, up to the owner's limit). Each instruction must be self-contained (mention the files/areas involved). Give editors disjoint `files` so no two can touch the same file.",
                         "items": {
                             "type": "object",
                             "properties": {
                                 "name": {"type": "string", "description": "Short label shown in the UI"},
                                 "team_member": {"type": "string", "description": "Configured chat team member ID. Required when the user enabled a chat team; routes and restrictions come from that member."},
                                 "instruction": {"type": "string", "description": "Complete instruction for the worker"},
+                                "tier": {"type": "string", "enum": ["local", "fast", "mid", "frontier"], "description": "Model tier instead of a model name; the owner maps each tier to a model. Use 'fast' for wide read-only reviews, 'frontier' for the hardest step or final verification."},
+                                "read_only": {"type": "boolean", "description": "A reviewer: reads and reports at most max_findings findings (default 4) in a short reply, cannot edit, 6 rounds by default. Split review (many read_only workers, one angle each) from editing (few workers, one file each)."},
+                                "max_findings": {"type": "integer", "description": "Reviewer only: most findings to report (default 4)."},
+                                "files": {"type": "array", "items": {"type": "string"}, "description": "Files this worker owns; no other worker may write them."},
+                                "max_rounds": {"type": "integer", "description": "Tool rounds for this worker only."},
                                 "effort": {"type": "string", "enum": ["low", "medium", "high", "max"], "description": "How hard this worker should think. Optional, defaults to medium (current behaviour). Use 'low' for routine/mechanical work (rename, grep, summarize) to keep it fast and cheap. Use 'high' for hard or risky work that needs careful reasoning and verification, and 'max' for the hardest problem in the plan: the model's strongest reasoning setting, slowest."}
                             },
                             "required": ["instruction"]
