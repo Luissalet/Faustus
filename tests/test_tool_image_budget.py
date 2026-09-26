@@ -124,7 +124,7 @@ def test_nothing_to_prune_returns_same_object():
 # ── trim_for_context integration ───────────────────────────────────────────
 
 def test_trim_for_context_prunes_old_tool_images(monkeypatch):
-    monkeypatch.setattr(cc, "get_setting", lambda key, default=None: 1 if key == "agent_keep_images" else default, raising=False)
+    monkeypatch.setattr(cc, "get_setting", lambda key, default=None: 1 if key in ("agent_keep_images", "agent_keep_images_batch") else default, raising=False)
     msgs = [
         {"role": "system", "content": "sys"},
         {"role": "user", "content": "take screenshots"},
@@ -153,4 +153,24 @@ def test_trim_for_context_setting_failure_is_safe(monkeypatch):
     monkeypatch.setattr(cc, "get_setting", _boom, raising=False)
     msgs = [_img_msg("t", "A"), _img_msg("t", "B"), {"role": "user", "content": "x"}]
     out = cc.trim_for_context(msgs, 100000, reserve_tokens=10)
-    assert _image_tags(out) == ["B"]  # default keep=1
+    assert _image_tags(out) == ["A", "B"]  # defaults: keep=1, dropped 4 at a time on a 100k window
+
+
+# ── batches: the dropped set only changes every `batch` images ─────────────
+
+def test_batches_keep_the_prefix_steady():
+    msgs = [{"role": "user", "content": "go"}]
+    seen = []
+    for n in range(1, 10):
+        msgs = msgs + [_img_msg("t", f"I{n}")]
+        seen.append(_image_tags(cc.prune_tool_images(msgs, keep=1, batch=4)))
+    assert seen[0] == ["I1"] and seen[3] == ["I1", "I2", "I3", "I4"]
+    assert seen[4] == ["I5"] and seen[7] == ["I5", "I6", "I7", "I8"] and seen[8] == ["I9"]
+
+
+def test_small_windows_still_drop_one_by_one(monkeypatch):
+    monkeypatch.setattr(cc, "get_setting", lambda key, default=None: default, raising=False)
+    assert cc.keep_images_batch_setting(8192) == 1
+    assert cc.keep_images_batch_setting(235008) == cc.DEFAULT_KEEP_IMAGES_BATCH
+    msgs = [_img_msg("t", "A"), _img_msg("t", "B"), {"role": "user", "content": "x"}]
+    assert _image_tags(cc.trim_for_context(msgs, 200000, reserve_tokens=10)) == ["A", "B"]

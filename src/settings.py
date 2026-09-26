@@ -207,6 +207,10 @@ DEFAULT_SETTINGS = {
     "agent_tool_images": True,
     "agent_tool_image_max_px": 1280,
     "agent_keep_images": 1,
+    # Older tool images are dropped this many at a time on a model with a
+    # window of 32k or more, so the prompt before them stays the same for a
+    # few rounds and a local server's prompt cache keeps it (1 = one by one).
+    "agent_keep_images_batch": 4,
     # Mid-turn context pressure (src/context_compactor.apply_midturn_pressure):
     # each agent round spills fat/old tool results to data/context_overflow and
     # folds history so a long overnight turn stays under a soft ceiling instead

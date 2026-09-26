@@ -390,6 +390,11 @@ GROUPS: list[dict[str, Any]] = [
                  "Only the last N tool images stay in the prompt; older ones become "
                  "'[earlier image omitted]'. -1 = keep all.",
                  -1, 100),
+            _int("agent_keep_images_batch", "Drop old tool images in batches of",
+                 "On a model with a window of 32k or more, older tool images are dropped this many "
+                 "at a time instead of one per new image, so the prompt before them stays the same "
+                 "and a local server can reuse its cache. 1 = one by one.",
+                 1, 32),
             _bool("agent_midturn_compact_enabled", "Mid-turn context compaction",
                   "During a long agent turn, spill old/large tool outputs to disk and "
                   "fold history when the prompt nears the soft ceiling — so overnight "

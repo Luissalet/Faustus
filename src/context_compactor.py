@@ -81,9 +81,32 @@ def keep_images_setting() -> int:
         return DEFAULT_KEEP_IMAGES
 
 
-def prune_tool_images(messages: List[Dict], keep: int = DEFAULT_KEEP_IMAGES) -> List[Dict]:
+#: Tool images are dropped in batches of this many on a model with a large
+#: window, not one by one (`agent_keep_images_batch`).
+DEFAULT_KEEP_IMAGES_BATCH = 4
+#: Below this window every extra image matters more than the prompt cache.
+KEEP_IMAGES_BATCH_MIN_CONTEXT = 32768
+
+
+def keep_images_batch_setting(context_length: int = 0) -> int:
+    """`agent_keep_images_batch`, or 1 on a model whose window is small."""
+    if context_length and context_length < KEEP_IMAGES_BATCH_MIN_CONTEXT:
+        return 1
+    try:
+        return max(1, min(int(get_setting("agent_keep_images_batch", DEFAULT_KEEP_IMAGES_BATCH)), 32))
+    except Exception:  # noqa: BLE001 - settings unavailable / malformed
+        return DEFAULT_KEEP_IMAGES_BATCH
+
+
+def prune_tool_images(messages: List[Dict], keep: int = DEFAULT_KEEP_IMAGES, batch: int = 1) -> List[Dict]:
     """Keep only the LAST `keep` tool-sourced image messages; older ones get
     their image blocks replaced by ``EARLIER_IMAGE_OMITTED``.
+
+    With ``batch`` > 1 the older images go ``batch`` at a time: up to
+    ``keep + batch - 1`` stay, and the set that is dropped only changes when
+    the count crosses the next multiple. Dropping the previous image on
+    every new one rewrote an earlier message each round, and a server's
+    prompt cache then re-read everything after it (live on the exam, 26-09).
 
     Returns the very same list object when nothing changes (callers rely on
     identity to mean "untouched"); otherwise a new list with copied rows for
@@ -92,7 +115,9 @@ def prune_tool_images(messages: List[Dict], keep: int = DEFAULT_KEEP_IMAGES) -> 
     if keep < 0 or not messages:
         return messages
     indices = [i for i, m in enumerate(messages) if _is_tool_image_message(m)]
-    to_prune = indices[: max(0, len(indices) - keep)]
+    excess = max(0, len(indices) - keep)
+    step = max(1, int(batch or 1))
+    to_prune = indices[: (excess // step) * step]
     if not to_prune:
         return messages
     out = list(messages)
@@ -629,7 +654,8 @@ def trim_for_context(messages: List[Dict], context_length: int, reserve_tokens: 
     # Tool images first, budget or not: only the newest screen view is worth
     # its ~1200 tokens (see `prune_tool_images`). Non-destructive — the loop's
     # own message list keeps every image; this shapes the request only.
-    messages = prune_tool_images(messages, keep_images_setting())
+    messages = prune_tool_images(messages, keep_images_setting(),
+                                 batch=keep_images_batch_setting(context_length))
     used = estimate_tokens(messages)
     if used <= budget:
         return messages
