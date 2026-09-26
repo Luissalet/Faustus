@@ -9328,3 +9328,10 @@ Verificado en el 7000 con Playwright:
 
 - el grupo Sub-agents con los niveles, la lista de modelos, el ancho y el carril de API;
 - el selector de Research con «Auto (strongest)» completo.
+
+**Examen 30, 8081 y examen 31** (16:45–17:00):
+
+- **Examen 30.** Corría con el código viejo del 7006. Tras 4 h 35 min y dos tramos no había escrito `RESPUESTA.md`: sólo notas y 22 recortes. Se paró para pasar a master.
+- **8081.** Arranca ya con `--slot-prompt-similarity 0.5`, en la tarea programada y en los motores del 7000 y del 7006, para que un chat nuevo no le quite el slot y la caché a otro.
+- **Arranque lento del 7006.** Al redesplegar tardó 2,5 min en arrancar. La pila de arranque lento señaló la recuperación del registro de 53 MB del examen cortado. La recuperación ahora descarta por subcadena el razonamiento y los latidos antes de parsear (`_read_log(for_recovery=True)`), y la respuesta parcial que guarda es la misma.
+- **Examen 31.** Lanzado a las 16:54 desde el ZIP limpio, con master completo.
