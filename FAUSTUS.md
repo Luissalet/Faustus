@@ -9112,3 +9112,11 @@ Dos causas repetidas:
 - Filas flexibles que no se partían.
 
 `scripts/ui_narrow_check.py` repite la pasada sobre todas las pantallas y todas las secciones de Ajustes. Puede inyectar CSS para probar un arreglo antes de compilar. No escribe nada: toda petición que no sea GET se contesta en local.
+
+**Chip de generación.** Comprobado en el 7000: el Reset de un control deja los demás overrides como estaban, y el interruptor de razonamiento aparece con un modelo pensante. La prueba destapó un fallo: en las cajas numéricas, «40» quedaba en 4 y «0.9» en 0. Tenía dos causas:
+
+- La fila era un componente declarado dentro del panel, así que cada cambio la remontaba y la caja perdía el foco tras la primera tecla.
+- Cada pulsación se aplicaba al momento, y el «0.» se convertía en 0 antes de que llegara el 9.
+
+Ahora las filas se pintan con una función. La caja (`GenNumberBox`) guarda el texto mientras se escribe y sólo aplica un número completo, o lo escrito al pulsar Enter o salir de la caja; Escape devuelve el valor actual. Un barrido de Studio no encontró más componentes declarados dentro de otros.
+
