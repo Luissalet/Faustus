@@ -9056,6 +9056,8 @@ La causa de los errores de fechas y cuentas era que el modo Auto mandaba las pre
 
 **Relevo antes del tope de tiempo.** Visto en el examen 29: el primer tramo agotó las 3 h del turno sin guardar nada y el segundo empezó releyendo la transcripción entera. Al 85 % del tope, el bucle pide una vez al modelo que deje en el plan lo ya establecido y guarde hallazgos, fuentes y pasos pendientes en un fichero de notas de su carpeta; el turno siguiente los encuentra.
 
+**«Continúa» con el trabajo del turno anterior a la vista.** El historial sólo repite el texto de cada turno; las llamadas y resultados viven en sus metadatos, y ya se traían al reanudar tras una tarjeta de permiso. Ahora también en una continuación explícita («continúa», «sigue»): el resumen de lo que ya se hizo entra en la petición, con un tope proporcional a la ventana (hasta 24.000 caracteres). Una pregunta nueva no arrastra nada.
+
 **PENDIENTES por tipo de trabajo.** Dos subagentes clasificaron las 1.033 líneas: 57 entradas cerradas u obsoletas fuera y el resto en cuatro secciones: decisiones de Luis, código por hacer, verificar en vivo sin modelo, verificar con el modelo local. De la sección de código se resolvieron 19 entradas en esta tanda.
 
 **Investigación.** Ronda 4 (ver `claude/faustus-investigacion-continua.md` del proyecto): MTP ya en llama.cpp (se medirá en el 8081 tras el examen), un fork con cuantizaciones y reparto CPU/GPU finos para comparar, `/compact` y `/status` que Faustus ya tiene como `/compact` y `/stats`.
