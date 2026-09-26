@@ -72,7 +72,7 @@ const serve = ({ ok = true, status = 200, body = {}, headers = {} } = {}) => {
 {
   assert(s.exportUrl('abc', 'md') === '/api/session/abc/export?fmt=md', 'the single-chat export URL');
   assert(s.EXPORT_FORMATS.includes('pdf') && s.EXPORT_FORMATS.includes('docx'), 'pdf and docx are offered');
-  assert(s.EXPORT_FORMATS.length === 6, 'six formats');
+  assert(s.EXPORT_FORMATS.length === 7 && s.EXPORT_FORMATS.includes('jsonl'), 'seven formats, the JSONL event stream included');
 }
 
 // ── The server's own message survives a refusal ──
