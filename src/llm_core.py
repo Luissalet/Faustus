@@ -2388,6 +2388,25 @@ def _apply_local_cache_affinity(payload: Dict, url: str, session_id: Optional[st
     payload.setdefault("cache_prompt", True)
 
 
+def _apply_llamacpp_session_slot(payload: Dict, url: str, session_id: Optional[str]) -> None:
+    """Keep an agent chat's rounds on one llama-server slot (`id_slot`).
+
+    Only for a streamed round with tools (an agent round), on a server whose
+    /slots was read (so it is llama.cpp) and has at least three slots; see
+    `src/llama_slots.py` for why and what was measured. Helper passes
+    (titles, reviews) are never pinned, so they cannot take the chat's slot
+    by name."""
+    if not session_id or not _is_self_hosted_openai_compatible(url):
+        return
+    try:
+        from src.llama_slots import slot_for
+        slot = slot_for(url, session_id)
+    except Exception:  # noqa: BLE001 - a perf hint only
+        return
+    if slot is not None:
+        payload.setdefault("id_slot", slot)
+
+
 def _apply_parallel_tool_calls(payload: Dict, url: str) -> None:
     """Let a self-hosted server return several tool calls in one round.
 
@@ -5877,6 +5896,8 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
             _apply_gen_overrides_openai(payload, _overrides, url)
         _fit_reasoning_effort_to_template(payload, url)
         _apply_local_cache_affinity(payload, url, session_id)
+        if tools:
+            _apply_llamacpp_session_slot(payload, url, session_id)
         _apply_local_generation_stability(payload, target_url, model)
         _scrub_openai_chat_tool_reasoning(payload, target_url, model)
         # The streaming path is the one the user is watching, and agent mode

@@ -228,3 +228,31 @@ def test_a_long_turn_gets_the_retry_back_after_clean_rounds(monkeypatch):
     retries = [e for e in events if e.get("type") == "harness_check" and e.get("reason") == "degenerate_output_retry"]
     assert len(retries) == 2, [e for e in events if e.get("type") == "harness_check"]
     assert not any(e.get("type") == "harness_check" and e.get("step") == 2 for e in events)
+
+
+def test_a_reasoning_loop_retry_keeps_the_turn_context(monkeypatch):
+    """The context blocks sit near the start of the prompt: dropping them on
+    a loop retry made llama-server re-read ~72k tokens (exam 32, 26-09)."""
+    from src.agent_loop import _is_untrusted_context_message, untrusted_context_message
+    _patch_common(monkeypatch)
+    seen = []
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        seen.append([dict(m) for m in messages])
+        if len(seen) == 1:
+            yield _loop_error_chunk()
+        else:
+            yield f'data: {json.dumps({"delta": "Answer."})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
+            yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+    ctx = untrusted_context_message("notes", "Sonnet 65 opens with the waves.", arm_tool_gate=False)
+    _collect(al.stream_agent_loop(
+        "http://127.0.0.1:8081/v1", "m",
+        [ctx, {"role": "user", "content": "Which sonnet is this line from? Explain in detail."}],
+        max_rounds=3, relevant_tools={"read_file", "web_search"},
+    ))
+    assert len(seen) == 2
+    assert any(_is_untrusted_context_message(m) for m in seen[0])
+    assert any(_is_untrusted_context_message(m) for m in seen[1])

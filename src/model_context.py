@@ -514,6 +514,11 @@ def _query_context_length(endpoint_url: str, model: str) -> Tuple[int, bool]:
             if r.is_success:
                 slots = r.json()
                 if isinstance(slots, list) and slots:
+                    try:
+                        from src.llama_slots import note_slot_count
+                        note_slot_count(endpoint_url, len(slots))
+                    except Exception:  # noqa: BLE001 - a perf hint only
+                        pass
                     n_ctx = slots[0].get("n_ctx")
                     if n_ctx and isinstance(n_ctx, int) and n_ctx > 0:
                         logger.info(f"llama.cpp /slots reports n_ctx={n_ctx} for {model}")

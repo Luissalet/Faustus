@@ -38,7 +38,7 @@ EXTRA_KEYS: tuple[str, ...] = ("tool_path_extra_roots", "vision_enabled", "visio
                                "vision_write_every",
                                "vision_max_tokens", "vision_num_ctx",
                                "dispatch_model", "dispatch_endpoint_id", "gpu_placement_prefer",
-                               "sandbox_missing_policy", "compaction_summary_mode", "code_graph_community_summaries",
+                               "sandbox_missing_policy", "compaction_summary_mode", "llamacpp_pin_session_slot", "code_graph_community_summaries",
                                "code_graph_drift_check", "approval_autonomy",
                                "mode_effort_research", "mode_effort_research_reading",
                                "mode_effort_council", "mode_effort_teacher",
@@ -412,6 +412,10 @@ GROUPS: list[dict[str, Any]] = [
             _bool("agent_sticky_toolset", "Keep a chat's tools from turn to turn",
                   "The tool list sits at the start of the prompt; keeping it the same between turns "
                   "lets a local server reuse its cached prompt instead of reading it all again."),
+            _bool("llamacpp_pin_session_slot", "Keep each chat on its own llama-server slot",
+                  "On a llama-server with three or more slots, a chat's rounds always use the same "
+                  "slot, so when an early part of a long prompt changes the server re-reads only "
+                  "what follows the change instead of the whole prompt on another slot."),
             _int("agent_sticky_toolset_max", "Most tools a chat's set may grow to",
                  "A turn that needs tools the chat's set lacks widens it up to this many; past that "
                  "the turn starts a new set (and the server re-reads the prompt once).",

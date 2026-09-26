@@ -12114,7 +12114,7 @@ async def _stream_agent_loop_body(
             _last_degenerate_retry_round = round_num
             logger.warning(
                 "[harness] round %s hit a token-repeat collapse (%s) — retrying "
-                "with repeat_penalty raised and untrusted context dropped",
+                "with repeat_penalty raised (untrusted context dropped unless it was a reasoning loop)",
                 round_num, _degenerate_output_reason or "degenerate output",
             )
             # A managed local engine that answers everything with one symbol
@@ -12135,11 +12135,20 @@ async def _stream_agent_loop_body(
             gen_overrides = dict(gen_overrides or {})
             gen_overrides["repeat_penalty"] = max(1.15, float(gen_overrides.get("repeat_penalty") or 0) or 1.15)
             temperature = max(0.7, float(temperature or 0))
-            _dropped_untrusted = sum(1 for m in messages if _is_untrusted_context_message(m))
-            messages[:] = [m for m in messages if not _is_untrusted_context_message(m)]
+            _reasoning_loop = ("reasoning loop" in _degenerate_output_reason
+                               or "sentence template" in _degenerate_output_reason)
+            # A reasoning loop keeps the turn's context: the model went round
+            # in circles recalling something, which the context did not cause,
+            # and those blocks sit near the start of the prompt, so dropping
+            # them made the server re-read almost all of it (live, exam 32:
+            # 72k tokens, ~110 s, on a round-10 retry). Garbage collapses
+            # still get the clean retry.
+            _dropped_untrusted = 0
+            if not _reasoning_loop:
+                _dropped_untrusted = sum(1 for m in messages if _is_untrusted_context_message(m))
+                messages[:] = [m for m in messages if not _is_untrusted_context_message(m)]
             _rounds_budget += 1  # the retry must not eat the task's step budget
-            if ("reasoning loop" in _degenerate_output_reason
-                    or "sentence template" in _degenerate_output_reason):
+            if _reasoning_loop:
                 # (a "sentence template" loop is the same recall, written into
                 # a tool call's arguments: live, a poem guessed line by line in
                 # a python comment.)
