@@ -9062,6 +9062,8 @@ La causa de los errores de fechas y cuentas era que el modo Auto mandaba las pre
 
 **El arranque lento, reproducido.** El reinicio del 7006 de esta madrugada pasó 3 min en silencio entre «Secret file hardening» y la recuperación de ejecuciones interrumpidas. Medido aparte con una copia de sus datos: la recuperación (129 registros, 142 MB, la ejecución del examen incluida) tarda 3,2 s y la purga de sesiones incógnito 0,7 s, así que la espera está en otra parte. Un temporizador del gestor de fallos se arma al empezar el arranque y se desarma al terminarlo: si pasan 90 s, escribe la pila de todos los hilos en `logs/crash.log`.
 
+**Barras de VRAM.** Ajustes › Modelos locales nombra en cada tarjeta a quien la ocupa («llama.cpp 27B (qwen3.8-27b-q8)», el auxiliar de 3B, las apps de escritorio), pero la barra común decía «models —» y «other 48,3 GB»: el arreglo del 25-09 sólo contaba como modelo un proceso llamado literalmente `llama-server`, y un motor gestionado lleva su propio nombre. Las filas de motor se marcan al atribuirlas y cuentan como modelo.
+
 **PENDIENTES por tipo de trabajo.** Dos subagentes clasificaron las 1.033 líneas: 57 entradas cerradas u obsoletas fuera y el resto en cuatro secciones: decisiones de Luis, código por hacer, verificar en vivo sin modelo, verificar con el modelo local. De la sección de código se resolvieron 19 entradas en esta tanda.
 
 **Investigación.** Ronda 4 (ver `claude/faustus-investigacion-continua.md` del proyecto): MTP ya en llama.cpp (se medirá en el 8081 tras el examen), un fork con cuantizaciones y reparto CPU/GPU finos para comparar, `/compact` y `/status` que Faustus ya tiene como `/compact` y `/stats`.

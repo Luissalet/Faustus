@@ -55,6 +55,31 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 - **`web_search` tras leer contenido privado** (uso diario 25-09, §199): valorar si una consulta que contiene texto de una lectura privada reciente debería pedir tarjeta de aprobación.
 - **Cliente OAuth de Google Calendar** (13-09, Correo): Luis tiene que crear el cliente web en Google Cloud, habilitar la Calendar API y registrar las redirect URIs (guía en `docs/api/google_oauth_setup.md`); el asistente ya da las URIs exactas y valida el `client_secret`.
 
+Acciones físicas o de cuentas que sólo puede hacer Luis (micrófono, móvil, WhatsApp, instalar voces, lanzar sus apps, datos reales de memoria):
+
+- **Guardián del modelo por defecto** (18-09, §109): con Ollama real, confirmar el ciclo de ~20 s sin perder VRAM, reinicios seguidos sin pisar cargas, la etiqueta «Kept loaded by Faustus» en Ajustes, que Unload explícito sí funciona, y que una pregunta del móvil en el hueco no se queda sin respuesta.
+- **El por defecto cede el sitio solo** (18-09, §109): reproducir el caso del modelo grande que no cabía y ver «X steps aside for Y» en vez de tarjeta vacía; confirmar la vuelta a los ~10 min y que un modelo de embeddings activo no la retrasa.
+- **Auditar el almacén real de memoria** (22-09, §161): quitar con la pasada de auditoría las dos entradas que dieron pie a `volatile_facts.py` (siguen ahí).
+- **Síntesis real de Piper** (20-09, §153): instalar el paquete, descargar `es_ES-davefx-medium`, sintetizar, comprobar duración del WAV, forzar un timeout corto y confirmar que mata al hijo.
+- **«Seguir a la app» en Conectores** (17-09, §96): arrancar un segundo Jobhunter (cae en 5179), parar el de 5178, pulsar Check y confirmar «Followed the app from … to …».
+- **Perfiles y conector `gepetto` en vivo** (17-09, §101): probar los perfiles reales (Dorian's, Gepetto's, Plato's, Jobhunter's, Writer's) y `connect` con la app arriba.
+- **Creator con el flag activado** (16-09, §90-94): comprobar por pantalla `/creator`, la biblioteca, un preflight real contra un motor instalado y el lifecycle de un plugin de principio a fin.
+- **Voz manos libres sin micrófono probado** (17-09, §105): interrupción, guarda de eco, frases de parada, y qué transcribe Whisper al decir «Faustus».
+- **Palabra de activación con pantalla apagada** (17-09, §105): confirmar que sigue sin funcionar en el móvil.
+- **`pushsubscriptionchange` nunca disparado** (17-09, §104): esperar una rotación real de claves de push o forzarlo con flags del navegador.
+- **Emparejamiento móvil real** (17-09, mobile M-A): QR → `GET /api/mobile/bootstrap` → WS, en cuanto exista el build Android (lote M-B).
+- **Backfill completo de WhatsApp** (17-09, §100): Unlink → Start → escanear de nuevo para bajar todo el histórico de golpe.
+- **Tercera ola de WhatsApp en vivo** (17-09, §100): permiso de micrófono, popovers de reaccionar/reenviar, salto a un mensaje citado fuera de ventana, el 409 al citar un mensaje anterior al arranque del puente.
+- **Puente de WhatsApp tras reinicio** (17-09, §100): confirmar que sigue vivo (gracias a `detached.json`) y que Jobhunter no hay que relanzarlo.
+- **ADP-09, validación física Windows UIA** (11-09): `src/desktop_semantics/windows_uia.py` solo probado contra fakes; falta correrlo contra una sesión Windows real con UIA activo.
+- **`capability_pricing` de OpenRouter** (CMP-08): solo probado contra el shape documentado; contrastar contra un payload real.
+- **Grounding lint contra datos reales** (FAUSTUS §145): insertar un ítem bien respaldado y uno inventado en el store real y comprobar que el panel «Grounding» distingue uno del otro; revisar también la heurística `proper_noun` y las fechas en formato barra (día/mes vs mes/día) con datos reales.
+- **Meetings con una grabación real** (FAUSTUS §156): la pestaña (Biblioteca › Meetings) se abrió en el 7000 con «Record» y «Upload audio»; falta subir un audio real y ver transcripción y notas.
+- **Fragmentación con `ffmpeg` en audio largo real** (FAUSTUS §156): `_split_chunks()` solo probado mockeado; confirmar con una grabación de más de 10 minutos que los fragmentos y las marcas de tiempo son coherentes.
+- **Tabla de alucinaciones de Whisper con audio real** (FAUSTUS §156): cubre los casos clásicos documentados, pero no se probó contra ruido de fondo o acentos variados; alguna entrada genérica podría descartar una intervención corta real.
+- **Atajo global de Electron y ventana oculta de grabación** (FAUSTUS §157): `desktop/dictation.cjs` solo probado con `globalShortcut`/`BrowserWindow`/`net` inyectados; falta abrir la app real, pulsar el atajo y ver el diálogo de permiso de micrófono.
+- **Formatos de portapapeles perdidos al dictar** (FAUSTUS §157): solo se preserva texto (`CF_UNICODETEXT`); si había una imagen, HTML enriquecido o ficheros copiados antes de dictar, se pierde — falta ver qué apps lo notan.
+
 ## B. Código por hacer
 
 Nada abierto a 26-09 (mañana): lo que era una mejora pasó a OBJETIVOS (OBJ-47).
@@ -65,66 +90,22 @@ Nada abierto a 26-09 (mañana): lo que era una mejora pasó a OBJETIVOS (OBJ-47)
 
 - **Tarjeta de app estable al arrancar** (26-09): en Procesos › Apps, pulsar Start y comprobar que los botones no se mueven cuando el sondeo marca la app en marcha.
 - **Pantallas nuevas del 26-09 sin datos para verlas llenas** (§209): el desglose por decisión del panel de autonomía (el registro en sombra está vacío mientras el modo sea `off`), los conflictos de memoria sugeridos (hoy no hay ninguno) y «Relaunch with this profile» (sale tras activar un perfil que deja algo pendiente; no se activó con el examen en marcha). Verificadas en vivo: la revisión de skills importadas (proyecto › Reglas, dos skills con su riesgo y el botón Aprobar) y el nombre del servidor MCP en Procesos.
-- **Huecos del calendario y búsqueda en memoria** (25-09, §184): comprobar en el 7006 el hueco ocupado (32) y una búsqueda en memoria por pregunta sobre el usuario (31).
-- **Borrador rechazado en el Studio** (25-09, §184): confirmar que desaparece también ahí vía el evento `response_replace`.
-- **`seen_urls` de alcance amplio** (25-09, §184): vigilar en uso real si conviene limitarlo a resultados de búsqueda y páginas abiertas (hoy recoge cualquier enlace visto en el turno).
-- **Suelo de temperatura en modo chat** (19-09, §117): repetir la sonda `/slots` a mitad de petición en chat llano y confirmar `temperature=0.6`; confirmar que `/temp 0.9` de turno y un preset con temperatura propia siguen ganando al suelo.
-- **Arreglo `--jinja`** (18-09, §114): repetir la conversación que colgaba y confirmar en `/slots` que `enable_thinking` llega en `false` por defecto y que `/think on` sigue funcionando con `reasoning_budget:4096`; comprobar lo mismo si algún día se usa otro motor compatible OpenAI.
-- **Sampler de llama-server** (18-09, §114): repetir la conversación de 7800 tokens y confirmar en `/slots` `max_tokens`/`repeat_penalty`/`min_p`, que el tope de 8192 no corta una respuesta legítima, y que el razonamiento va al panel de pensamiento sin mezclarse con la respuesta.
-- **Recorte del bloque MCP del prompt** (18-09, §110): confirmar la bajada de tokens en un «hola», que un tool MCP concreto sigue siendo llamable, que `lookup_tools` encuentra uno no seleccionado, que el volcado completo se restaura con el ajuste, y probarlo con integraciones reales (Gitea, Linkding, Home Assistant).
-- **Guardián del modelo por defecto** (18-09, §109): con Ollama real, confirmar el ciclo de ~20 s sin perder VRAM, reinicios seguidos sin pisar cargas, la etiqueta «Kept loaded by Faustus» en Ajustes, que Unload explícito sí funciona, y que una pregunta del móvil en el hueco no se queda sin respuesta.
-- **El por defecto cede el sitio solo** (18-09, §109): reproducir el caso del modelo grande que no cabía y ver «X steps aside for Y» en vez de tarjeta vacía; confirmar la vuelta a los ~10 min y que un modelo de embeddings activo no la retrasa.
-- **Recuperación sin `ctx_ack`** (18-09, §108): contra el 27B real, confirmar que ya no aparece «0000…», que no responde sólo `<<faustus_ctx_ack>>` repetidamente con memoria recuperada grande, y que fundir contexto y pregunta en un mensaje no le hace citar la etiqueta.
-- **Escalón de recuperación en pantalla** (18-09, §108): ver renderizado `harness_check status:"recovery"` («Recuperando…») y el mensaje final de los 4 escalones fallidos; confirmar que el endpoint de utilidad responde rápido.
-- **Escalera de recuperación tras w110/w111** (18-09, §108): repetirla con un caso real que degenere (no reproducido desde el cambio) y ver «Recovering…» en Studio; vigilar que el por defecto no se descargue en una pasada larga.
-- **Settings → Voz sin ver en pantalla** (18-09/17-09, §106): botón «Instalar motor» y descarga de voz de Piper, y el textarea de frases de parada.
+- **Instalar Piper desde Ajustes › Voz** (18-09/17-09, §106): la pantalla ya se vio (selector con «Local (Piper)» y el cuadro de frases de parada); falta pulsar «Instalar motor» y descargar una voz, que baja ficheros: con permiso de Luis.
 - **Binario Windows de Piper** (20-09, §153): sólo se probó el de Linux.
 - **RAG con ChromaDB real** (20-09, §146): indexar un PDF real, comprobar los `locator` en los metadatos, buscar con `rag_manager.search()`, confirmar el `[fichero.pdf pN#bM]` inyectado, y activar `rag_pii_redaction` confirmando que el índice queda sanitizado sin tocar el fichero original.
-- **Code Mode con la pestaña visible** (19-09, §133): repetir la pregunta que se respondió por API porque la pestaña de Chrome estaba oculta.
-- **Bloques ` ```chart ` en el navegador** (19-09, §131): confirmar el SVG, el interruptor «Show/Hide data», el fallback de un JSON roto, y comparar modo oscuro y claro.
-- **Auditar el almacén real de memoria** (22-09, §161): quitar con la pasada de auditoría las dos entradas que dieron pie a `volatile_facts.py` (siguen ahí).
-- **Historial tras aprobar una tarjeta** (20-09, §90): reproducir gate de contexto externo → aprobar → comprobar que `/api/history/<sid>` guarda la parte posterior (hoy se pierde).
 - **Tiempo del checkpoint del workspace** (20-09, §90): medir en una carpeta con archivos grandes (~91 s vistos).
-- **Síntesis real de Piper** (20-09, §153): instalar el paquete, descargar `es_ES-davefx-medium`, sintetizar, comprobar duración del WAV, forzar un timeout corto y confirmar que mata al hijo.
-- **KV cache real del 27B** (17-09, §98): medirla antes de subir `num_ctx` en candidaturas (hoy 65.536, bajado de 199.680 por ir a 2 tok/s).
-- **«Seguir a la app» en Conectores** (17-09, §96): arrancar un segundo Jobhunter (cae en 5179), parar el de 5178, pulsar Check y confirmar «Followed the app from … to …».
-- **Perfiles y conector `gepetto` en vivo** (17-09, §101): probar los perfiles reales (Dorian's, Gepetto's, Plato's, Jobhunter's, Writer's) y `connect` con la app arriba.
-- **Harness con plan grande** (17-09, §95): repetir con un plan ≥60 KB / 20+ tareas y un segundo chat sin adjunto («Continua»); probar `ui_smoke` contra un proyecto FastAPI y con `npm start` (sólo Flask probado).
-- **Creator con el flag activado** (16-09, §90-94): comprobar por pantalla `/creator`, la biblioteca, un preflight real contra un motor instalado y el lifecycle de un plugin de principio a fin.
-- **Voz manos libres sin micrófono probado** (17-09, §105): interrupción, guarda de eco, frases de parada, y qué transcribe Whisper al decir «Faustus».
-- **Palabra de activación con pantalla apagada** (17-09, §105): confirmar que sigue sin funcionar en el móvil.
-- **`pushsubscriptionchange` nunca disparado** (17-09, §104): esperar una rotación real de claves de push o forzarlo con flags del navegador.
-- **Emparejamiento móvil real** (17-09, mobile M-A): QR → `GET /api/mobile/bootstrap` → WS, en cuanto exista el build Android (lote M-B).
-- **Backfill completo de WhatsApp** (17-09, §100): Unlink → Start → escanear de nuevo para bajar todo el histórico de golpe.
-- **Tercera ola de WhatsApp en vivo** (17-09, §100): permiso de micrófono, popovers de reaccionar/reenviar, salto a un mensaje citado fuera de ventana, el 409 al citar un mensaje anterior al arranque del puente.
-- **Puente de WhatsApp tras reinicio** (17-09, §100): confirmar que sigue vivo (gracias a `detached.json`) y que Jobhunter no hay que relanzarlo.
 
 - **QA-44, hueco 3: "Escape closes the dialog" intermitente** (spec v2): flaquea bajo Playwright + servidor real con carga; repetir la corrida para confirmar si es de temporización del entorno o un bug real de UI.
-- **ADP-09, validación física Windows UIA** (11-09): `src/desktop_semantics/windows_uia.py` solo probado contra fakes; falta correrlo contra una sesión Windows real con UIA activo.
-- **ADP-32, medir los pools de admisión** (11-09): `src/resource_admission.py` define pools de prioridad pero no se ha medido en producción si `llm_core._LOCAL_MODEL_LOCK` limita tareas reales.
-- **`capability_pricing` de OpenRouter** (CMP-08): solo probado contra el shape documentado; contrastar contra un payload real.
 - **Pestaña Optimize y formulario de serve en el 7001** (spec INF): ver en vivo el chip de arquitectura, «Capabilities», `ReceiptPanel` en una tarea y la cronología bajo una respuesta.
-- **INF-05, Physical GPUs y memory estimate** (FAUSTUS §78): falta ver en vivo el uuid/enlace de las tres tarjetas (¿la 5060 Ti externa como enlace estrecho?), el bloque «Memory estimate» del formulario de serve, y un `vram_blocked` real con su diálogo.
 - **Chip de generación, casos concretos** (FAUSTUS §119 Parte A): confirmar que el Reset de un control no toca los demás overrides, que el interruptor de razonamiento solo aparece con un modelo pensante, y que `/temp 0.9` actualiza el panel al reabrirlo (lo básico —abrir el chip y ver los sliders— ya se vio funcionando).
 - **`llama-server` gestionado desde la UI, resto de casos** (FAUSTUS §119 Parte B): crear un engine real desde Ajustes contra `llama-server.exe`, ver Start pasar de `stopped` a `unhealthy` a `running`, el rechazo si el puerto ya está ocupado por otro proceso, el Stop con confirmación cuando sirve el modelo por defecto, y «Rellenar desde lo que ya escucha en este puerto».
 - **Tope duro del bloque de memoria en pantalla** (FAUSTUS §120 Parte B): provocar el tope en un proyecto real y confirmar que el panel deja ver cuántos ítems se omitieron.
-- **Niveles 1 y 2 de skills en el log** (FAUSTUS §120 Parte D): en los logs del 7000 y del 7006 sólo aparece el nivel 0 (49 turnos); falta un turno que elija una skill y confirmar que sube a 1 o 2.
-- **Grounding lint contra datos reales** (FAUSTUS §145): insertar un ítem bien respaldado y uno inventado en el store real y comprobar que el panel «Grounding» distingue uno del otro; revisar también la heurística `proper_noun` y las fechas en formato barra (día/mes vs mes/día) con datos reales.
 - **Casilla de «aprobar de todas formas» con un servidor MCP crítico de verdad** (FAUSTUS §147): las insignias de riesgo y «Re-scan security» ya se vieron en Ajustes › Integraciones (26-09); falta un servidor local que lea un `*_TOKEN` y lo mande a un host externo, para ver la cuarentena y la casilla.
 - **Panel "Gate a run" en Actividad** (FAUSTUS §149): listar `run_id` recientes con `Get-ChildItem "D:\LocalAI\faustus-dev-data\runs\*.jsonl" | Sort-Object LastWriteTime -Descending | Select -First 10`, pegar uno y comprobar que las aserciones del spec por defecto se renderizan con su marca de pasa/falla.
 - **`code_graph_risk` sobre un fichero real** (FAUSTUS §150): confirmar que el tope de revisiones por turno y la caché de riesgo se comportan igual cuando `code_graph.change_risk` hace su recorrido real (git log + grafo de llamadas) sobre un repo grande.
-- **Tablas de frases en/es del pase de sueño de skills** (FAUSTUS §151): heurísticas de subcadena; probarlas contra un corpus real de respuestas de usuarios.
-- **Tarjeta de revisión con un diff realmente grande** (FAUSTUS §152): ver cómo se ve la tarjeta `harness_check` (`review_issues`/`review_running`) con un diff multi-archivo genuinamente grande.
 - **Pestaña Concepts con datos** (FAUSTUS §154): la pestaña ya se abrió en el 7000 (Contexto › Concepts con proyecto; sin proyecto dice «No project bound»), pero ningún proyecto tiene conceptos todavía: falta ver el grafo `<canvas>`, el clic en un nodo y el panel de referencias rotas cuando el agente registre alguno.
-- **Meetings con una grabación real** (FAUSTUS §156): la pestaña (Biblioteca › Meetings) se abrió en el 7000 con «Record» y «Upload audio»; falta subir un audio real y ver transcripción y notas.
-- **Fragmentación con `ffmpeg` en audio largo real** (FAUSTUS §156): `_split_chunks()` solo probado mockeado; confirmar con una grabación de más de 10 minutos que los fragmentos y las marcas de tiempo son coherentes.
-- **Tabla de alucinaciones de Whisper con audio real** (FAUSTUS §156): cubre los casos clásicos documentados, pero no se probó contra ruido de fondo o acentos variados; alguna entrada genérica podría descartar una intervención corta real.
-- **Atajo global de Electron y ventana oculta de grabación** (FAUSTUS §157): `desktop/dictation.cjs` solo probado con `globalShortcut`/`BrowserWindow`/`net` inyectados; falta abrir la app real, pulsar el atajo y ver el diálogo de permiso de micrófono.
-- **Formatos de portapapeles perdidos al dictar** (FAUSTUS §157): solo se preserva texto (`CF_UNICODETEXT`); si había una imagen, HTML enriquecido o ficheros copiados antes de dictar, se pierde — falta ver qué apps lo notan.
 - **Deriva de arquitectura contra un refactor real** (FAUSTUS §180): provocar una deriva real (mover un fichero, introducir un ciclo) en un repo de verdad y comprobar la nota en el resumen del turno; dejar `approval_autonomy` en `shadow` una sesión entera y revisar el historial del panel.
-- **Panel de autonomía en el navegador** (FAUSTUS §180): solo confirmado por `tsc`/`npm run build`; falta ver la tabla de familias con datos reales y pulsar Promover/Degradar contra el servidor.
 - **Radar de git: tema claro, 420px y tarjeta de Inicio con push real** (FAUSTUS §185/§187): sin probar en el navegador ni con una notificación push real en el móvil.
-- **Vision con un modelo sin proyector** (FAUSTUS §194): con la casilla activada ya se probó (etiqueta «Visión», espera de 180 s); falta el caso con la casilla desactivada.
 - **Arranque lento del 7006** (25-09 y 26-09, §199/§209): reproducido hoy — 3 min sin una línea de log entre «Secret file hardening» y la recuperación de ejecuciones, que por sí sola tarda 3 s con los mismos datos. En el próximo arranque lento, `logs/crash.log` traerá la pila de todos los hilos a los 90 s (vigilante nuevo); leerla y arreglar lo que espere.
 
 ## D. Verificar en vivo con el modelo local
@@ -187,3 +168,23 @@ Nada abierto a 26-09 (mañana): lo que era una mejora pasó a OBJETIVOS (OBJ-47)
 - **`learn-this-repo` usada por un modelo de verdad** (FAUSTUS §180): nadie la ha usado todavía para estudiar un repositorio; ver si `LEARN_REPO_NOTES.md` resulta útil para retomar una sesión días después.
 - **El 27B llamando a `git_radar` sin que se lo pidan** (FAUSTUS §185/§187): el banco de frases pasa; falta la conversación real con «¿qué tengo sin subir?».
 - **Temperatura más baja para respuestas largas en prosa** (uso diario 25-09, §198): las erratas del 27B en castellano no las causa `repeat_penalty` (ya descartado por A/B); falta probar con una temperatura más baja.
+- **Huecos del calendario y búsqueda en memoria** (25-09, §184): comprobar en el 7006 el hueco ocupado (32) y una búsqueda en memoria por pregunta sobre el usuario (31).
+- **Borrador rechazado en el Studio** (25-09, §184): confirmar que desaparece también ahí vía el evento `response_replace`.
+- **`seen_urls` de alcance amplio** (25-09, §184): vigilar en uso real si conviene limitarlo a resultados de búsqueda y páginas abiertas (hoy recoge cualquier enlace visto en el turno).
+- **Suelo de temperatura en modo chat** (19-09, §117): repetir la sonda `/slots` a mitad de petición en chat llano y confirmar `temperature=0.6`; confirmar que `/temp 0.9` de turno y un preset con temperatura propia siguen ganando al suelo.
+- **Arreglo `--jinja`** (18-09, §114): repetir la conversación que colgaba y confirmar en `/slots` que `enable_thinking` llega en `false` por defecto y que `/think on` sigue funcionando con `reasoning_budget:4096`; comprobar lo mismo si algún día se usa otro motor compatible OpenAI.
+- **Sampler de llama-server** (18-09, §114): repetir la conversación de 7800 tokens y confirmar en `/slots` `max_tokens`/`repeat_penalty`/`min_p`, que el tope de 8192 no corta una respuesta legítima, y que el razonamiento va al panel de pensamiento sin mezclarse con la respuesta.
+- **Recorte del bloque MCP del prompt** (18-09, §110): confirmar la bajada de tokens en un «hola», que un tool MCP concreto sigue siendo llamable, que `lookup_tools` encuentra uno no seleccionado, que el volcado completo se restaura con el ajuste, y probarlo con integraciones reales (Gitea, Linkding, Home Assistant).
+- **Recuperación sin `ctx_ack`** (18-09, §108): contra el 27B real, confirmar que ya no aparece «0000…», que no responde sólo `<<faustus_ctx_ack>>` repetidamente con memoria recuperada grande, y que fundir contexto y pregunta en un mensaje no le hace citar la etiqueta.
+- **Escalón de recuperación en pantalla** (18-09, §108): ver renderizado `harness_check status:"recovery"` («Recuperando…») y el mensaje final de los 4 escalones fallidos; confirmar que el endpoint de utilidad responde rápido.
+- **Escalera de recuperación tras w110/w111** (18-09, §108): repetirla con un caso real que degenere (no reproducido desde el cambio) y ver «Recovering…» en Studio; vigilar que el por defecto no se descargue en una pasada larga.
+- **Code Mode con la pestaña visible** (19-09, §133): repetir la pregunta que se respondió por API porque la pestaña de Chrome estaba oculta.
+- **Bloques ` ```chart ` en el navegador** (19-09, §131): confirmar el SVG, el interruptor «Show/Hide data», el fallback de un JSON roto, y comparar modo oscuro y claro.
+- **Historial tras aprobar una tarjeta** (20-09, §90): reproducir gate de contexto externo → aprobar → comprobar que `/api/history/<sid>` guarda la parte posterior (hoy se pierde).
+- **KV cache real del 27B** (17-09, §98): medirla antes de subir `num_ctx` en candidaturas (hoy 65.536, bajado de 199.680 por ir a 2 tok/s).
+- **Harness con plan grande** (17-09, §95): repetir con un plan ≥60 KB / 20+ tareas y un segundo chat sin adjunto («Continua»); probar `ui_smoke` contra un proyecto FastAPI y con `npm start` (sólo Flask probado).
+- **ADP-32, medir los pools de admisión** (11-09): `src/resource_admission.py` define pools de prioridad pero no se ha medido en producción si `llm_core._LOCAL_MODEL_LOCK` limita tareas reales.
+- **Niveles 1 y 2 de skills en el log** (FAUSTUS §120 Parte D): en los logs del 7000 y del 7006 sólo aparece el nivel 0 (49 turnos); falta un turno que elija una skill y confirmar que sube a 1 o 2.
+- **Tablas de frases en/es del pase de sueño de skills** (FAUSTUS §151): heurísticas de subcadena; probarlas contra un corpus real de respuestas de usuarios.
+- **Tarjeta de revisión con un diff realmente grande** (FAUSTUS §152): ver cómo se ve la tarjeta `harness_check` (`review_issues`/`review_running`) con un diff multi-archivo genuinamente grande.
+- **Vision con un modelo sin proyector** (FAUSTUS §194): con la casilla activada ya se probó (etiqueta «Visión», espera de 180 s); falta el caso con la casilla desactivada.
