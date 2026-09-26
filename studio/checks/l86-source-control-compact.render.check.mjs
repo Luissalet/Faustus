@@ -151,10 +151,20 @@ async function main() {
 
   const mod = await import(pathToFileURL(bundlePath).toString());
 
+  // Wait for what the assertions need instead of a fixed 60 ms: the panel
+  // renders after its fetches settle, and on a busy machine that sometimes
+  // took longer (1 run in 5 failed on "ChangesPane must be shown").
+  const waitFor = async (probe, ms = 3000) => {
+    const until = Date.now() + ms;
+    while (!probe() && Date.now() < until) await new Promise((r) => setTimeout(r, 20));
+  };
+
   // ── (a) one repo: the compact working view, none of the full-mode chrome ──
   const callsA = [];
   globalThis.fetch = makeFetch('one-repo', callsA);
   mod.mount('root-a');
+  await waitFor(() => document.getElementById('root-a')?.querySelector('[data-testid="commit-message"]')
+    && document.getElementById('root-a')?.querySelector('[data-testid="repo-branch-chip"]'));
   await new Promise((r) => setTimeout(r, 60));
 
   const rootA = document.getElementById('root-a');
@@ -182,6 +192,7 @@ async function main() {
   const callsB = [];
   globalThis.fetch = makeFetch('empty', callsB);
   mod.mount('root-b');
+  await waitFor(() => document.getElementById('root-b')?.querySelector('[data-testid="btn-create-repository"]'));
   await new Promise((r) => setTimeout(r, 60));
 
   const rootB = document.getElementById('root-b');
@@ -194,7 +205,7 @@ async function main() {
   assert.ok(rootB.textContent.includes('Create repository'), 'the action must be labelled "Create repository"');
 
   createBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  await new Promise((r) => setTimeout(r, 60));
+  await waitFor(() => document.querySelector('[data-testid="new-repo-dialog"]'));
 
   const dialog = document.querySelector('[data-testid="new-repo-dialog"]');
   assert.ok(dialog, 'clicking "Create repository" must open the New repository dialog');
