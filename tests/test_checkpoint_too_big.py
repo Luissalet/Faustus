@@ -63,3 +63,17 @@ def test_raising_the_cap_lets_it_through(env):
     cp = wc.checkpoint(str(ws))
     assert cp and cp["created"]
     assert wc.status(str(ws))["skipped"] is None
+
+
+def test_the_workspace_gitignore_is_honoured(env):
+    # A repository whose ignored data folder is large must still be
+    # snapshotted: git never adds what .gitignore names, so it cannot count.
+    wc, ws, values = env
+    values["agent_checkpoint_max_repo_mb"] = 0.01
+    (ws / ".gitignore").write_text("data/\n")
+    (ws / "data").mkdir()
+    (ws / "data" / "traces.jsonl").write_bytes(b"t" * 60_000)
+    (ws / "app.py").write_text("print('hi')\n")
+    cp = wc.checkpoint(str(ws))
+    assert cp and cp["created"], wc.status(str(ws))["skipped"]
+    assert wc._INCLUDED_BYTES[wc.shadow_dir(str(ws))] < 1000

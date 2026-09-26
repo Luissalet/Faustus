@@ -159,12 +159,8 @@ def git_available() -> bool:
     return shutil.which("git") is not None
 
 
-def _write_exclude(root: str, gd: str, max_file_mb: float, stop_after_bytes: int = 0) -> None:
-    """Refresh info/exclude: vendored dirs, binary globs and oversized files.
-
-    The same walk adds up what a snapshot would store (``_INCLUDED_BYTES``);
-    past ``stop_after_bytes`` (when > 0) it stops and records ``None``, since
-    the answer — "too big to snapshot" — is already known."""
+def _write_exclude(root: str, gd: str, max_file_mb: float) -> None:
+    """Refresh info/exclude: vendored dirs, binary globs and oversized files."""
     now = time.time()
     if now - _EXCLUDE_CACHE.get(gd, 0.0) < _EXCLUDE_TTL_S:
         return
@@ -174,33 +170,24 @@ def _write_exclude(root: str, gd: str, max_file_mb: float, stop_after_bytes: int
     limit = max(0.5, float(max_file_mb or 8)) * 1024 * 1024
     big: List[str] = []
     excluded = set(EXCLUDED_DIRS)
-    included = 0
-    over = False
     try:
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames[:] = [d for d in dirnames if d not in excluded]
             for fn in filenames:
                 p = os.path.join(dirpath, fn)
                 try:
-                    size = os.path.getsize(p)
-                except OSError:
-                    continue
-                if size > limit:
-                    if len(big) < 2000:
+                    if os.path.getsize(p) > limit:
                         rel = os.path.relpath(p, root).replace(os.sep, "/")
                         big.append("/" + _escape_exclude(rel))
+                except OSError:
                     continue
-                if any(fnmatch.fnmatch(fn.lower(), g) for g in EXCLUDED_GLOBS):
-                    continue
-                included += size
-                if stop_after_bytes and included > stop_after_bytes:
-                    over = True
+                if len(big) >= 2000:
                     raise StopIteration
     except StopIteration:
         pass
     except OSError as e:
         logger.debug("[checkpoint] size scan failed for %s: %s", root, e)
-    _INCLUDED_BYTES[gd] = None if over else included
+    _INCLUDED_BYTES.pop(gd, None)  # the exclude list changed: measure again
     if big:
         lines.append("# files above the checkpoint size limit")
         lines += big
@@ -249,9 +236,37 @@ def _ensure_repo(root: str) -> bool:
                 f.write(root + "\n")
         except OSError:
             pass
-    _write_exclude(root, gd, float(_setting("agent_checkpoint_max_file_mb", 8) or 8),
-                   stop_after_bytes=int(_repo_cap_mb() * 1024 * 1024))
+    _write_exclude(root, gd, float(_setting("agent_checkpoint_max_file_mb", 8) or 8))
     return True
+
+
+def _snapshot_bytes(root: str, stop_after_bytes: int = 0) -> Optional[int]:
+    """What a snapshot of `root` would store: every file git would add, which
+    honours the workspace's own .gitignore as well as the exclude file (a
+    walk of the folder did not, and took a repository whose ignored data
+    folder is several GB for too big to snapshot). `None` when the total
+    passed `stop_after_bytes` (the answer is then already known) or git
+    could not list the files. Cached with the exclude file."""
+    gd = shadow_dir(root)
+    if gd in _INCLUDED_BYTES:
+        return _INCLUDED_BYTES[gd]
+    proc = _run(root, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+                timeout=_GIT_TIMEOUT * 2)
+    if proc is None or proc.returncode != 0:
+        return None  # unknown: let the checkpoint try as it always did
+    total = 0
+    for rel in (proc.stdout or "").split("\0"):
+        if not rel:
+            continue
+        try:
+            total += os.path.getsize(os.path.join(root, rel))
+        except OSError:
+            continue
+        if stop_after_bytes and total > stop_after_bytes:
+            _INCLUDED_BYTES[gd] = None
+            return None
+    _INCLUDED_BYTES[gd] = total
+    return total
 
 
 def _repo_cap_mb() -> float:
@@ -316,8 +331,9 @@ def checkpoint(workspace: str, label: str = "") -> Optional[Dict[str, Any]]:
         # media library: 45k images and models under the per-file limit) is
         # not snapshotted at all. Adding it would write gigabytes into the
         # data folder and be reset on the next turn anyway.
-        included = _INCLUDED_BYTES.get(gd, 0)
-        if cap and (included is None or included > cap * 1024 * 1024):
+        included = _snapshot_bytes(root, int(cap * 1024 * 1024)) if cap else 0
+        over_cap = gd in _INCLUDED_BYTES and _INCLUDED_BYTES[gd] is None
+        if cap and (over_cap or (included or 0) > cap * 1024 * 1024):
             prev = _SKIPPED.get(root)
             _SKIPPED[root] = {"reason": "too_big", "cap_mb": cap, "ts": time.time(),
                               "included_mb": None if included is None else round(included / 1048576, 1)}
