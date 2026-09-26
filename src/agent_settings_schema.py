@@ -143,6 +143,11 @@ GROUPS: list[dict[str, Any]] = [
                  "The same note after this many minutes on one step with the plan unchanged, whichever "
                  "comes first (at least 3 rounds). 0 = count rounds only.",
                  0, 1440),
+            _int("agent_no_progress_rounds", "Rounds without progress",
+                 "Rounds of tool calls that write no file, close no plan step and ask the user nothing, "
+                 "whatever the tools, before one note asks for a first version of the deliverable now; at "
+                 "twice this it insists once. Never blocks a tool. 0 disables it.",
+                 0, 200),
             _int("agent_turn_max_seconds", "Turn wall-clock ceiling (seconds)",
                  "Hard backstop independent of round count: once a turn has run this long in real time, "
                  "it ends with a summary and a question instead of continuing indefinitely.",

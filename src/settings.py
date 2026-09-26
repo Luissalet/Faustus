@@ -789,6 +789,10 @@ DEFAULT_SETTINGS = {
     # On a slow local model 12 rounds are close to two hours; seen live, one
     # exam step ate a whole 3-hour turn. 0 = rounds only.
     "agent_todo_stall_minutes": 30,
+    # Rounds of tool calls that write nothing, close no plan step and ask the
+    # user nothing, whatever the tools, before one note asks for a first
+    # version; twice this insists once (src/progress_watch.py). 0 = off.
+    "agent_no_progress_rounds": 15,
     # PENDIENTES 23-09 noche / src/tool_index.py: names this instance's tool
     # index collection explicitly (e.g. so two instances keep sharing one on
     # purpose, or to pin a name across a data-dir move). Left empty (the

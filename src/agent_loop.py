@@ -9534,6 +9534,10 @@ async def _stream_agent_loop_body(
     _todo_stall_since = time.time()
     _todo_stall_rounds = 0
     _todo_stall_nudged_key: Optional[str] = None
+    # Whole-turn progress watch (src/progress_watch.py): rounds of tools that
+    # write nothing, close no plan step and ask nothing, whatever the tools.
+    from src.progress_watch import ProgressWatch as _ProgressWatch, message as _progress_message
+    _progress_watch = _ProgressWatch.from_settings(get_setting)
     _qwen38_notice_sent = False
     _budget_stop_echo_retried = False
     _round_finish_reason = None
@@ -15643,6 +15647,7 @@ async def _stream_agent_loop_body(
                                            if _pinned_fallback_candidate else endpoint_url),
                              tool_images_enabled=(False if _images_refused else None))
 
+        _msgs_before_round_checks = len(messages)
         # Research streak (FAUSTUS.md pending item, 23-09 noche): a gentle,
         # non-blocking nudge when many consecutive rounds only read remote
         # content. A round breaks the streak the instant it writes a file or
@@ -15833,6 +15838,45 @@ async def _stream_agent_loop_body(
                         "minutes": round(_stall_minutes_spent, 1), "by_time": bool(_stall_by_time),
                     }) + "\n\n"
                 )
+
+        # Whole-turn progress watch: N rounds whose tools fixed nothing (no
+        # write, no closed plan step, no question) -> ask for a first
+        # version; 2N -> insist. Never blocks a tool. A round where another
+        # check already spoke only counts, so the model gets one note.
+        if _harness_enabled and not plan_mode and _progress_watch.rounds > 0:
+            try:
+                _pw_tools = [b.tool_type for b in (tool_blocks or [])]
+                _pw_events = [e for e in _ledger.events if e.get("round") == round_num]
+                try:
+                    from src.agent_tools.coding_tools import load_todos as _load_todos_pw
+                    _pw_todos = (_load_todos_pw(session_id) or []) if session_id else []
+                except Exception:  # noqa: BLE001 - a missing plan never breaks a round
+                    _pw_todos = []
+                _pw_action = _progress_watch.observe(_pw_tools, _pw_events, _pw_todos,
+                                                     asked_user="ask_user" in _pw_tools)
+            except Exception:  # noqa: BLE001 - the watch is advisory
+                _pw_action = "none"
+            if _pw_action != "none" and len(messages) == _msgs_before_round_checks:
+                messages.append({
+                    "role": "user",
+                    "_harness_note": True,
+                    "content": _lang_note(_progress_message(_pw_action, _progress_watch.streak)),
+                })
+                _ledger.notes.append(f"no_progress_{_pw_action}@{round_num}:{_progress_watch.streak}")
+                logger.info("[harness] round %s: %d rounds without progress — %s",
+                            round_num, _progress_watch.streak, _pw_action)
+                yield (
+                    "data: " + json.dumps({
+                        "type": "harness_check", "status": "no_progress",
+                        "round": round_num, "rounds": _progress_watch.streak, "action": _pw_action,
+                    }) + "\n\n"
+                )
+            elif _pw_action != "none":
+                # Another check spoke this round: let this one fire next round.
+                if _pw_action == "insist":
+                    _progress_watch.insisted = False
+                else:
+                    _progress_watch.nudged = False
 
         # Progress discipline: a multi-step workspace task that is several tool
         # calls in without a todowrite list gets one nudge, so the Progress
