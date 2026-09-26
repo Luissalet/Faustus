@@ -127,6 +127,13 @@ db.register_schema(SCHEMA_NAME, [
 
 MIRRORED_PREFIXES = ("mem:", "pmem:", "ent:")
 
+# Notes the sync generates from a live store but never folds a human edit
+# back into (no `_process_*` handler exists for them, unlike the mirrored
+# prefixes above): Projects/, Objectives/<Project>/, Concepts/<Project>/.
+# Still retired to the trash when their source project/objective/concept is
+# gone — see `_retire_gone_sources`.
+GENERATED_ONLY_PREFIXES = ("proj:", "obj:", "concept:")
+
 #: Frontmatter fields of a memory note a human may edit.
 MEM_EDITABLE = ("type", "level", "status", "confidence", "valid_from", "valid_until", "pinned")
 
@@ -813,24 +820,27 @@ def _projects_for_owner(owner: str) -> List[Dict[str, Any]]:
         return []
 
 
-def _objectives_for_project(project: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _objectives_for_project(project: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], bool]:
+    """(objectives, ok). `ok=False` on a failed read — never treated as
+    "this project truly has none" (that would retire real notes)."""
     try:
         from services import objectives as objectives_mod
         state = objectives_mod.load_state(project)
-        return list((state.get("objectives") or {}).values())
+        return list((state.get("objectives") or {}).values()), True
     except Exception:  # noqa: BLE001
         logger.debug("brain vault: could not load objectives", exc_info=True)
-        return []
+        return [], False
 
 
-def _concepts_for_project(project: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _concepts_for_project(project: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], bool]:
+    """(concepts, ok) — see `_objectives_for_project`."""
     try:
         from src import project_concepts
         key = project_concepts.resolve_project_key(project_id=project.get("id"))
-        return project_concepts.Store(key).all_concepts()
+        return project_concepts.Store(key).all_concepts(), True
     except Exception:  # noqa: BLE001
         logger.debug("brain vault: could not load concepts", exc_info=True)
-        return []
+        return [], False
 
 
 def _latest_daily_dates(owner: str, limit: int = 10) -> List[str]:
@@ -904,9 +914,18 @@ def _build_plan(run: _Run) -> _Plan:
     mentions = _mentions_by_source(owner, entities_by_id)
     try:
         projects = list(_projects_for_owner(owner) or [])
+        _projects_ok = True
     except Exception as exc:  # noqa: BLE001
         run.report["errors"].append(f"export projects: {exc}")
         projects = []
+        _projects_ok = False
+    # Objectives/concepts are only "complete" (safe to retire a note whose
+    # source vanished) when the project listing itself succeeded AND every
+    # project's own listing succeeded — a failed read must never look like
+    # "this project has none now".
+    plan.complete["proj:"] = _projects_ok
+    plan.complete["obj:"] = _projects_ok
+    plan.complete["concept:"] = _projects_ok
     resolve_project = _project_resolver(projects)
 
     def add(target: _Target) -> None:
@@ -939,8 +958,13 @@ def _build_plan(run: _Run) -> _Plan:
         if not pid:
             continue
         pname = str(project.get("name") or pid)
-        objectives = [o for o in _objectives_for_project(project) if o.get("status") != "dropped"]
-        concepts = _concepts_for_project(project)
+        objectives_raw, _obj_ok = _objectives_for_project(project)
+        if not _obj_ok:
+            plan.complete["obj:"] = False
+        objectives = [o for o in objectives_raw if o.get("status") != "dropped"]
+        concepts, _concept_ok = _concepts_for_project(project)
+        if not _concept_ok:
+            plan.complete["concept:"] = False
         project_entities = [e for e in entities if str(e.get("project") or "") == pid]
         project_memories = memories_by_project.get(pid, [])
         psource = f"proj:{pid}"
@@ -1143,11 +1167,22 @@ def _export_all(run: _Run, plan: _Plan, skip_sources: Set[str]) -> None:
 def _retire_gone_sources(run: _Run, plan: _Plan) -> None:
     """A mirrored note whose source is no longer exported (forgotten,
     corrected elsewhere, suppressed, made secret, hidden) moves to the
-    trash — content kept — unless a human edited it since the last sync."""
+    trash — content kept — unless a human edited it since the last sync.
+
+    Also covers the generated-only notes under Projects/, Objectives/ and
+    Concepts/ (`GENERATED_ONLY_PREFIXES`): a project, objective or concept
+    that was deleted at its source used to leave its note behind forever.
+    Those targets are never `mirrored` (`record()` only fills `sync_rows`
+    for a mirrored one), so their tracking row lives in `vstate` instead —
+    checked here in addition to `sync_rows`, never for a free-standing note
+    under Notes/, which has no `source:` row at all in either table."""
     moved = 0
-    for rel, row in sorted(run.sync_rows.items()):
+    candidates = dict(run.sync_rows)
+    for rel, row in run.vstate.items():
+        candidates.setdefault(rel, row)
+    for rel, row in sorted(candidates.items()):
         source = str(row.get("source") or "")
-        prefix = next((p for p in MIRRORED_PREFIXES if source.startswith(p)), None)
+        prefix = next((p for p in MIRRORED_PREFIXES + GENERATED_ONLY_PREFIXES if source.startswith(p)), None)
         if prefix is None or not plan.complete.get(prefix) or source in plan.targets:
             continue
         if rel in run.hold_paths or run.stat(rel) is None:

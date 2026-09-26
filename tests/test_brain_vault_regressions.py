@@ -285,6 +285,42 @@ def test_forgotten_corrected_and_suppressed_memories_leave_disk_and_index(brain)
     assert effects == {"source_gone"}
 
 
+def test_deleted_objective_and_concept_notes_are_retired(brain, monkeypatch):
+    # §176: Objectives/<Project>/ and Concepts/<Project>/ notes had no
+    # `_retire_gone_sources` prefix at all, so once their objective/concept
+    # (or the whole project) was deleted at the source, the generated note
+    # stayed on disk forever.
+    project = {"id": "p1", "name": "Bluehaven", "created_at": "2026-01-01"}
+    objective = {"id": "o1", "title": "Lanzar beta", "status": "open"}
+    concept = {"id": "c1", "name": "Arquitectura hexagonal"}
+    state = {"objectives": [objective], "concepts": [concept]}
+
+    monkeypatch.setattr(vault, "_projects_for_owner", lambda owner: [project])
+    monkeypatch.setattr(vault, "_objectives_for_project", lambda p: (list(state["objectives"]), True))
+    monkeypatch.setattr(vault, "_concepts_for_project", lambda p: (list(state["concepts"]), True))
+
+    vault.sync(OWNER)
+    assert any(f.startswith("Projects/") and "Bluehaven" in f for f in _files())
+    assert any(f.startswith("Objectives/") and "Lanzar beta" in f for f in _files())
+    assert any(f.startswith("Concepts/") and "hexagonal" in f for f in _files())
+
+    # The objective and concept are deleted at the source; the project stays.
+    state["objectives"] = []
+    state["concepts"] = []
+    report = vault.sync(OWNER)
+    assert report["errors"] == []
+    assert not any(f.startswith("Objectives/") for f in _files())
+    assert not any(f.startswith("Concepts/") for f in _files())
+    assert any(f.startswith("Projects/") and "Bluehaven" in f for f in _files())
+    effects = {t["effect"] for t in notes.list_trash(OWNER)}
+    assert effects == {"source_gone"}
+
+    # Now the project itself is deleted: its note is retired too.
+    monkeypatch.setattr(vault, "_projects_for_owner", lambda owner: [])
+    vault.sync(OWNER)
+    assert not any(f.startswith("Projects/") for f in _files())
+
+
 def test_edited_note_of_a_gone_memory_is_kept_and_reported(brain):
     b = engine.add_item("Bruno prefiere reuniones por la manana", owner=OWNER, trust_class="human_explicit")
     vault.sync(OWNER)
@@ -414,8 +450,8 @@ def test_workspace_path_memories_land_in_their_project_and_basenames_are_unique(
     workspace = os.path.join(str(brain), "work", "bluehaven")
     monkeypatch.setattr(vault, "_projects_for_owner",
                         lambda owner: [{"id": "3f2a9c1e", "name": "Bluehaven", "workspace": workspace}])
-    monkeypatch.setattr(vault, "_objectives_for_project", lambda p: [])
-    monkeypatch.setattr(vault, "_concepts_for_project", lambda p: [])
+    monkeypatch.setattr(vault, "_objectives_for_project", lambda p: ([], True))
+    monkeypatch.setattr(vault, "_concepts_for_project", lambda p: ([], True))
     engine.add_item("El backend usa Lince", owner=OWNER, project=workspace, trust_class="human_explicit")
     engine.add_item("El frontend usa Orca", owner=OWNER, project="3f2a9c1e", trust_class="human_explicit")
     ent.upsert_entity(OWNER, "Bluehaven", type="project", project="3f2a9c1e")
