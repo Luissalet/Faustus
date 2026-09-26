@@ -9509,3 +9509,30 @@ Ninguno de los dos es bueno y `max` no gana: cita en más proporción pero sus c
 
 **Examen 32** en marcha en el 7006 desde las 21:50 con `eb3cb12d` (tareas `exam32` y `watch32`, sesión `358668c1…`).
 
+
+## 213. La caché del prompt a mitad del examen 32: un slot por chat y el reintento que ya no tira el contexto (26/27-09-2026, noche)
+
+**Qué se midió.** En la primera hora y media del examen 32 (27B en el 8081, 4 slots, `--slot-prompt-similarity 0.5`), tres rondas leyeron el prompt entero en vez de lo que venía detrás del cambio: 68k, 72k y 75k tokens, unos 110 s cada una. Las tres venían de un cambio temprano en el prompt:
+
+- **Ronda 7.** El conjunto de herramientas creció de 25 a 30. Las herramientas van antes de todos los mensajes, así que eso lo cambia todo; es lo esperado.
+- **Ronda 10.** El reintento tras un bucle de razonamiento quitaba los bloques de contexto del turno, que están al principio.
+- **Ronda 11.** Se plegaron de golpe cuatro imágenes antiguas.
+
+Cuando lo que comparte el prompt nuevo con la caché de su slot baja del 50 %, llama-server no reutiliza ese prefijo: manda la ronda al slot usado hace más tiempo, a menudo vacío.
+
+**Un slot por chat** (`06f56564`, `src/llama_slots.py`). Cada ronda de un chat en un llama-server con tres o más slots nombra su propio slot (`id_slot`). Se asignan del 1 al n-1 y el 0 queda libre para lo que elige su sitio. Así el servidor reutiliza todo hasta el primer token cambiado. El número de slots sale del `/slots` que la sonda de contexto ya lee en cada ronda. Un recuento de hace más de diez minutos no se usa, porque nombrar un slot que el servidor ya no tiene le haría retener la petición. Un chat nuevo evita los slots que el servidor está usando (otro Faustus en el mismo servidor) y se reparte por su id. Ajuste `llamacpp_pin_session_slot`, encendido por defecto. Se comprobó directamente contra el 8082: `id_slot=2` va al slot 2, y dos peticiones al mismo slot reutilizan 1.705 de 1.712 tokens. En el 7000, un chat con el 3B quedó en su slot y su primera ronda reutilizó 4.172 tokens de una ejecución anterior en ese mismo slot.
+
+**El reintento tras un bucle ya no tira el contexto.** Tras un bucle de razonamiento, el reintento mantiene los bloques de contexto del turno: el bucle no viene de ellos y tirarlos hacía releer casi todo. Si la salida es basura, el reintento sigue siendo limpio. Una prueba que falla con el código anterior.
+
+**Decisiones tipadas y elecciones** (`31c57c0a`, `0512cee4`). Llaman al servidor por su cuenta y todas sus preguntas van a un mismo slot que no tenga ningún chat. Primero se probó repartirlas por turnos entre los slots libres. Se descartó: perdían el prefijo que comparten sus preguntas (una no cupo en su segundo de presupuesto) y ocupaban más caché. Las demás peticiones de apoyo siguen eligiendo slot el servidor, porque nombrarles uno pondría en cola lo que hoy corre en paralelo (Deep Research extrae tres páginas a la vez).
+
+**Límite medido: la caché compartida.** llama-server comparte ahora la caché de KV entre todos los slots: `/slots` enseña cada slot con el `n_ctx` entero. Cuando se llena, vacía slots inactivos para hacer sitio, también uno nombrado. Medido en el 8082 (16k en total): con un chat de 6,8k en el slot 3, dos prompts de 6,8k en otros slots dejaron el siguiente turno del chat con 0 tokens de caché. Reenviados sin nada en medio, los mismos dos turnos reutilizan 4.023. En el 3B de apoyo, por tanto, un chat largo no conserva la caché entre turnos si hay más trabajo en el servidor. En los 235k del 27B sí la conserva. Para comprobar qué mandó de verdad cada ronda está `FAUSTUS_DUMP_LLM_PAYLOADS=<carpeta>` (en `.env`; sólo cuerpos, nunca cabeceras), apagado por defecto.
+
+**Pérdidas del examen 32 que no arregla nada de esto** (quedan en OBJETIVOS):
+
+- **Rondas 39 y 40.** El cortabucles ocultó `python` (30 → 29 herramientas) y la primera escritura la devolvió (29 → 30). Cada cambio de la lista de herramientas relee el prompt entero: 76k y 81k tokens, 124 s y 139 s. Ocultarla es a propósito, porque sólo rechazar la llamada dejó 300 rondas de `bash` saltadas.
+- **Principio de cada tramo.** Al seguir el turno, se relee la conversación desde el primer mensaje (24k en el tramo 2 del examen). El historial se guarda sin los bloques de contexto de cada turno, así que difiere del prompt que se mandó justo después del índice de skills.
+
+**Tareas de reinicio.** La tarea programada `restart7000` salía con 0 sin reiniciar nada: el 7000 siguió con el proceso de las 23:36 tras cuatro llamadas. Lanzar `restart7000.ps1` con `launch_task.ps1` sí lo reinicia.
+
+Pruebas: `test_llama_slots.py` (9), 2 en `test_typed_decision.py` y 1 en `test_reasoning_loop_recovery.py`; pasan las 369 de `llm_core`, las 63 de decisiones tipadas, las 25 de elecciones y las 97 de ajustes y contexto.
