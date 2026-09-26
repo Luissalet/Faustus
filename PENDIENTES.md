@@ -55,6 +55,7 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 - **Política de reparto del 27B compartido entre instancias** (FAUSTUS §194): 7003/7006/7009 comparten servidor y con tres turnos a la vez cae a 2–3 tok/s; decidir si limitar ranuras por instancia o usar una cola por prioridad antes de tocar MTP.
 - **Atajo de dictado: toggle o push-to-talk** (FAUSTUS §157): hoy es pulsar/volver a pulsar; confirmar con Luis si vale así o si merece la pena un hook nativo de teclado para mantener pulsado.
 - **`web_search` tras leer contenido privado** (uso diario 25-09, §199): valorar si una consulta que contiene texto de una lectura privada reciente debería pedir tarjeta de aprobación.
+- **La tarjeta de `bash` en un turno recién empezado** (26-09): con `faustus_run`, el primer `rm` pidió permiso porque el turno «ya ha recibido contenido que Faustus no escribió» y nombra el índice de skills, las herramientas MCP, las skills y el paquete de contexto compilado. Es el diseño (una skill o un MCP de terceros pueden traer instrucciones), pero hace que casi toda orden de shell pida tarjeta. Decidir si el índice de skills propias y el paquete compilado deben contar como contenido ajeno.
 - **Cliente OAuth de Google Calendar** (13-09, Correo): Luis tiene que crear el cliente web en Google Cloud, habilitar la Calendar API y registrar las redirect URIs (guía en `docs/api/google_oauth_setup.md`); el asistente ya da las URIs exactas y valida el `client_secret`.
 
 Acciones físicas o de cuentas que sólo puede hacer Luis (micrófono, móvil, WhatsApp, instalar voces, lanzar sus apps, datos reales de memoria):
@@ -102,8 +103,6 @@ Nada abierto a 26-09 (mañana): lo que era una mejora pasó a OBJETIVOS (OBJ-47)
 
 ## D. Verificar en vivo con el modelo local
 
-- **Deep Research al máximo en vivo** (26-09, §212): con el 8081 libre, lanzar una investigación desde la pantalla con «Auto» (que es `max`) y otra con «Off», y comparar tiempo, fuentes leídas y calidad del informe; si `max` se come el tiempo de las rondas, ajustar el multiplicador de `hard_timeout` (hoy ×2).
-- **`faustus_run.py`: la tarjeta sin `--approve`** (26-09, §212): el `run_summary` y las ejecuciones con `--approve` ya se comprobaron en vivo contra el 7000; falta ver que una tarjeta de aprobación sin `--approve` sale con código 2 (por ejemplo, pedirle que borre un fichero de una carpeta de prueba). Se hace cuando el 8081 quede libre tras la comparación de Deep Research.
 - **Hoards con su nivel de razonamiento** (26-09, §212): una guía de estudio de Hypatia (`max`) y un lote de subtítulos de Daguerre (`off`) contra el 8081; la guía debe pensar y responder entera y los subtítulos no deben quedarse vacíos.
 - **Compactación `extract` en una tarea larga** (26-09): poner `compaction_summary_mode=extract` en una ejecución larga (el examen o `daily_eval`), comprobar que la compactación ya no llama al Utility y comparar si el 27B conserva la tarea tan bien como con el resumen por modelo.
 - **Bloques `choices`/`decision` escritos por el 27B** (26-09): ver si el modelo local los usa cuando hay una elección real y no los mete donde no toca; el renderizado y el clic ya se comprobaron con una respuesta fijada.
