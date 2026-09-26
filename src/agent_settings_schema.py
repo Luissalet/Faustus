@@ -39,7 +39,9 @@ EXTRA_KEYS: tuple[str, ...] = ("tool_path_extra_roots", "vision_enabled", "visio
                                "vision_max_tokens", "vision_num_ctx",
                                "dispatch_model", "dispatch_endpoint_id", "gpu_placement_prefer",
                                "sandbox_missing_policy", "code_graph_community_summaries",
-                               "code_graph_drift_check", "approval_autonomy")
+                               "code_graph_drift_check", "approval_autonomy",
+                               "mode_effort_research", "mode_effort_research_reading",
+                               "mode_effort_council", "mode_effort_teacher")
 
 FIELD_TYPES: tuple[str, ...] = ("bool", "int", "float", "text", "select", "list", "secret")
 _NUMERIC_TYPES = ("int", "float")
@@ -674,6 +676,22 @@ GROUPS: list[dict[str, Any]] = [
                  "Context window for one Vision model call on a local Ollama: the image plus a short "
                  "question. 0 = the server's default, which can be the chat model's whole window and "
                  "makes the helper take three times the VRAM.", 0, 262144),
+        ],
+    ),
+    _group(
+        "mode_effort", "Reasoning per mode",
+        "How hard each mode asks the model to think. Auto is the mode's own default; max asks each "
+        "model for its strongest setting (a local template's top level, Claude's max, OpenRouter's "
+        "max) and steps down on a model that refuses it. Chats use the composer's reasoning chip.",
+        [
+            _select("mode_effort_research", "Deep Research",
+                    "Planning, weighing sources and writing the report. Auto = max.", ["auto", "off", "low", "medium", "high", "max"]),
+            _select("mode_effort_research_reading", "Deep Research: reading a page",
+                    "Extracting what one page says; a run reads dozens. Auto = off.", ["auto", "off", "low", "medium", "high", "max"]),
+            _select("mode_effort_council", "Council members",
+                    "Each member's answer in a council. Auto = high.", ["auto", "off", "low", "medium", "high", "max"]),
+            _select("mode_effort_teacher", "Teacher (escalation)",
+                    "The stronger model asked when a turn gets stuck. Auto = max.", ["auto", "off", "low", "medium", "high", "max"]),
         ],
     ),
     _group(

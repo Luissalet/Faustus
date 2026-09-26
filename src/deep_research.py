@@ -839,8 +839,19 @@ class DeepResearcher:
         owner: str = "",
         research_perspectives: bool = False,
         research_perspectives_max: int = DEFAULT_PERSPECTIVES_MAX,
+        effort: Optional[str] = None,
     ):
         self.llm_endpoint = llm_endpoint
+        # How hard the model thinks (src/mode_effort.py). The stages that
+        # reason -- plan, queries, synthesis, the stop decision, the report --
+        # run at the research level ("max" unless the owner or the Research
+        # screen picks another); reading a page runs at
+        # `mode_effort_research_reading` (off unless raised: a run reads dozens
+        # of pages, and each would pay the whole budget).
+        from src import mode_effort as _mode_effort
+        self.effort_level = _mode_effort.level_for("research", effort)
+        self._think_overrides = _mode_effort.overrides_for_level(self.effort_level)
+        self._read_overrides = _mode_effort.for_mode("research_reading")
         # EXEC-04: whose cpu_heavy budget a run this class starts draws from
         # (see `research()`'s bg_jobs.acquire_cpu_heavy below) — best effort,
         # never required for a caller that has no owner to give.
@@ -1298,10 +1309,19 @@ class DeepResearcher:
         return int(min(3600, max(timeout, budget)))
 
     async def _llm(self, messages: List[Dict], temperature: float = 0.3,
-                   max_tokens: int = 4096, timeout: int = 60) -> str:
-        """Call the LLM asynchronously and strip thinking tags."""
+                   max_tokens: int = 4096, timeout: int = 60, stage: str = "think") -> str:
+        """Call the LLM asynchronously and strip thinking tags.
+
+        `stage`: "think" (plan, queries, synthesis, stop, report) runs at the
+        research effort level; "read" (extracting a page) at the reading
+        level; "quick" (a one-word classification) never thinks."""
         from src.llm_core import llm_call_async
-        timeout = self._call_budget(max_tokens, timeout)
+        overrides = getattr(self, "_think_overrides" if stage == "think" else "_read_overrides", None) \
+            if stage in ("think", "read") else None
+        reasoning_room = 0
+        if overrides and overrides.get("think"):
+            reasoning_room = int(overrides.get("reasoning_budget") or 0)
+        timeout = self._call_budget(max_tokens + reasoning_room, timeout)
         response = await llm_call_async(
             url=self.llm_endpoint,
             model=self.llm_model,
@@ -1310,6 +1330,7 @@ class DeepResearcher:
             max_tokens=max_tokens,
             headers=self.llm_headers,
             timeout=timeout,
+            gen_overrides=overrides,
         )
         return strip_thinking(response)
 
@@ -1727,7 +1748,7 @@ class DeepResearcher:
         try:
             result = await self._llm(
                 [{"role": "user", "content": prompt}],
-                temperature=0, max_tokens=20, timeout=15,
+                temperature=0, max_tokens=20, timeout=15, stage="quick",
             )
             cat = (result or "").strip().lower()
             # Clean one-word answer first.
@@ -2147,7 +2168,7 @@ class DeepResearcher:
                     untrusted_context_message("webpage", content),
                 ],
                 temperature=0.2,
-                max_tokens=2048,
+                max_tokens=2048, stage="read",
                 timeout=self.extraction_timeout,
             )
             parsed = self._parse_json_object(response)

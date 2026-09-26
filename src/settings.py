@@ -1704,6 +1704,14 @@ DEFAULT_SETTINGS = {
     # local model slot share its parallel slots (src/llm_core.py).
     "local_model_shared_slots": True,
     "think_mode_budget_deep": 16384,
+    # How hard each mode asks the model to think (src/mode_effort.py):
+    # auto | off | low | medium | high | max. "auto" = the mode's own default
+    # (research and the teacher: max; a council member: high; reading one
+    # research page: off).
+    "mode_effort_research": "auto",
+    "mode_effort_research_reading": "auto",
+    "mode_effort_council": "auto",
+    "mode_effort_teacher": "auto",
     # A "deep" turn multiplies the local thinking watchdog
     # (agent_local_think_budget_seconds) by this factor.
     "think_mode_deep_watchdog_factor": 2.0,

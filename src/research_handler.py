@@ -119,6 +119,7 @@ class ResearchHandler:
                 "started_at": entry.get("started_at", 0),
                 "owner": entry.get("owner", ""),
                 "max_rounds": entry.get("max_rounds") or 0,
+                "effort": entry.get("effort") or "",
             }
             # A checkpoint (rounds/findings/report parts confirmed so far) is
             # written separately by `_write_checkpoint`, at round and report
@@ -343,6 +344,7 @@ class ResearchHandler:
             prior_urls=prior_urls,
             prior_citations=prior_citations,
             prior_queries=set(checkpoint.get("queries_done") or []),
+            effort=data.get("effort") or None,
             prior_report_parts=report_parts,
             resumed_from=session_id,
             resumed_kept=kept,
@@ -574,6 +576,7 @@ class ResearchHandler:
         prior_report_parts: list = None,
         resumed_from: str = None,
         resumed_kept: dict = None,
+        effort: str = None,
     ) -> dict:
         """Start research as a background task. Returns task info dict.
 
@@ -628,6 +631,16 @@ class ResearchHandler:
                 except Exception:
                     pass
 
+        # Reasoning costs time: a run that thinks at "max" writes each plan,
+        # synthesis and report after up to 16k reasoning tokens, so its clock
+        # grows with the level (src/mode_effort.py).
+        from src import mode_effort as _mode_effort
+        effort_level = _mode_effort.level_for("research", effort)
+        _effort_factor = {"max": 2.0, "high": 1.5}.get(effort_level, 1.0)
+        if hard_timeout and _effort_factor > 1.0:
+            hard_timeout = _bounded_int(int(hard_timeout * _effort_factor), default=hard_timeout,
+                                        minimum=60, maximum=86400)
+
         # How long the rounds may run before the report is written. The old
         # fixed 300 s suited a cloud model that answers in seconds; a local
         # 27B needs 4-5 minutes per round, so the screen's runs got one round
@@ -663,6 +676,7 @@ class ResearchHandler:
             # The cap this run was asked to honor — a resume of this run
             # (if it too gets interrupted) needs it to subtract rounds_done.
             "max_rounds": max_rounds,
+            "effort": effort_level,
             "resumed_from": resumed_from,
             "resumed_kept": resumed_kept,
         }
@@ -708,6 +722,7 @@ class ResearchHandler:
                         extraction_timeout=extraction_timeout,
                         extraction_concurrency=extraction_concurrency,
                         checkpoint_callback=on_checkpoint,
+                        effort=effort_level,
                     ),
                     timeout=hard_timeout,
                 )
@@ -1344,6 +1359,7 @@ class ResearchHandler:
         prior_queries: set = None,
         prior_report_parts: list = None,
         checkpoint_callback=None,
+        effort: str = None,
     ) -> str:
         """
         Run iterative deep research using the LLM-in-the-loop DeepResearcher.
@@ -1438,6 +1454,7 @@ class ResearchHandler:
                 owner=str((_task_entry or {}).get("owner") or ""),
                 research_perspectives=_research_perspectives,
                 research_perspectives_max=_research_perspectives_max,
+                effort=effort,
             )
             if _task_entry is not None:
                 _task_entry["researcher"] = researcher

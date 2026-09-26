@@ -666,6 +666,10 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
         extraction_timeout: Optional[int] = Field(default=None, ge=15, le=3600)
         extraction_concurrency: Optional[int] = Field(default=None, ge=1, le=12)
         category: Optional[str] = None
+        # How hard the model thinks: auto | off | low | medium | high | max
+        # (src/mode_effort.py). auto = the owner's research level, "max" by
+        # default: each provider's strongest setting.
+        effort: Optional[str] = Field(default=None, max_length=12)
 
     @router.post("/api/research/start")
     async def research_start(body: ResearchStartRequest, request: Request):
@@ -751,6 +755,7 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
             extraction_timeout=body.extraction_timeout,
             extraction_concurrency=body.extraction_concurrency,
             owner=user,
+            effort=body.effort,
         )
         return {"session_id": session_id, "status": "running", "query": body.query}
 

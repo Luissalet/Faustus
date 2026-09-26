@@ -3183,6 +3183,17 @@ def setup_chat_routes(
                         )
                         logger.info(f"Research query: {_research_query[:120]}")
 
+                        # The composer's reasoning chip picks how hard the
+                        # research thinks; Auto keeps the research default
+                        # (the strongest level, src/mode_effort.py).
+                        try:
+                            from src.mode_effort import from_chat as _research_effort_from_chat
+                            _research_effort = _research_effort_from_chat(
+                                form_data.get("think_mode") or (body or {}).get("think_mode"),
+                                form_data.get("reasoning_effort") or (body or {}).get("reasoning_effort"),
+                            )
+                        except Exception:  # noqa: BLE001 - the default level then
+                            _research_effort = None
                         research_handler.start_research(
                             session, _research_query, _r_ep, _r_model,
                             llm_headers=_r_headers,
@@ -3192,6 +3203,7 @@ def setup_chat_routes(
                             prior_citations=_prior_citations,
                             on_complete=_on_research_done,
                             owner=_user,
+                            effort=_research_effort,
                         )
 
                         _heartbeat_counter = 0

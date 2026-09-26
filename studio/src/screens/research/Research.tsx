@@ -95,6 +95,16 @@ const QUEUE_KEY = 'fs-research-queue';
 const SETTINGS_KEY = 'fs-research-settings';
 const DISMISSED_KEY = 'fs-research-dismissed';
 
+/** Reasoning levels for a run (src/mode_effort.py). */
+const EFFORTS: { value: string; label: string; short: string }[] = [
+  { value: '', label: 'Auto (the strongest the model has)', short: 'max reasoning' },
+  { value: 'max', label: 'Maximum', short: 'max reasoning' },
+  { value: 'high', label: 'High', short: 'high reasoning' },
+  { value: 'medium', label: 'Medium', short: 'medium reasoning' },
+  { value: 'low', label: 'Low', short: 'low reasoning' },
+  { value: 'off', label: 'Off (fastest)', short: 'no reasoning' },
+];
+
 const DEFAULT_SETTINGS: ResearchSettings = { maxRounds: 0, category: '', searchProvider: '', endpointId: '', model: '' };
 
 function readJson<T>(key: string, fallback: T): T {
@@ -732,11 +742,12 @@ export function ResearchScreen() {
         <div className="fs-rs__ask-row">
           <button type="button" className="fs-rs__settings-toggle" aria-expanded={showSettings} onClick={() => setShowSettings((s) => !s)}>
             <ChevronDown size={12} aria-hidden="true" data-open={showSettings || undefined} />
-            {t('Rounds {r} · {f} · {p} · {m}', {
+            {t('Rounds {r} · {f} · {p} · {m} · {e}', {
               r: settings.maxRounds || t('auto'),
               f: t(CATEGORIES.find((c) => c.value === settings.category)?.label ?? 'Auto'),
               p: providers.find((p) => p.id === settings.searchProvider)?.label ?? t('default search'),
               m: settings.model || endpoint?.name || t('default model'),
+              e: t(EFFORTS.find((o) => o.value === (settings.effort ?? ''))?.short ?? 'max reasoning'),
             })}
           </button>
           <span className="fs-spacer" />
@@ -756,6 +767,17 @@ export function ResearchScreen() {
                 ))}
               </select>
               <small>{t('Search → read → reflect cycles. Auto lets the agent stop when it has enough (up to 20).')}</small>
+            </label>
+            <label className="fs-rs__setting">
+              <span>{t('Reasoning')}</span>
+              <select className="fs-field" value={settings.effort ?? ''} onChange={(e) => setSettings((s) => ({ ...s, effort: e.target.value }))} data-testid="research-effort">
+                {EFFORTS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {t(o.label)}
+                  </option>
+                ))}
+              </select>
+              <small>{t('How hard the model thinks while it plans, weighs sources and writes. Auto uses the strongest setting each model has (Settings › Agent › Reasoning per mode); lower is faster.')}</small>
             </label>
             <label className="fs-rs__setting">
               <span>{t('Time for the rounds')}</span>

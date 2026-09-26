@@ -41,13 +41,13 @@ def _start(handler, endpoint, **kw):
 
 
 def test_a_local_endpoint_gets_most_of_a_tripled_wall_clock(capture):
-    _start(ResearchHandler(), LOCAL)
+    _start(ResearchHandler(), LOCAL, effort="off")
     # 1800 s setting × 3 for a local model = 5400 s wall clock; 60 % of it for the rounds
     assert capture["max_time"] == 3240
 
 
 def test_a_remote_endpoint_gets_most_of_the_plain_wall_clock(capture):
-    _start(ResearchHandler(), REMOTE)
+    _start(ResearchHandler(), REMOTE, effort="off")
     assert capture["max_time"] == 1080
 
 
@@ -59,3 +59,10 @@ def test_an_explicit_budget_is_kept(capture):
 def test_the_screen_s_minutes_reach_the_engine(capture):
     _start(ResearchHandler(), LOCAL, max_time=45 * 60)
     assert capture["max_time"] == 2700
+
+
+def test_thinking_at_max_doubles_the_clock_and_reaches_the_engine(capture):
+    _start(ResearchHandler(), REMOTE)
+    # default research level is "max": 1800 s x 2 = 3600 s, 60 % for the rounds
+    assert capture["max_time"] == 2160
+    assert capture["effort"] == "max"

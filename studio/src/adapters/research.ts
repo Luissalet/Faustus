@@ -165,6 +165,9 @@ export interface ResearchSettings {
   searchProvider: string;
   endpointId: string;
   model: string;
+  /** How hard the model thinks: '' (auto = the research default, the
+   *  strongest level) | off | low | medium | high | max. */
+  effort?: string;
 }
 
 /** RES-01: one node of the brief's schema (`self.subquestions`) and how
@@ -227,6 +230,7 @@ export async function startResearch(query: string, s: ResearchSettings): Promise
   if (s.searchProvider) body.search_provider = s.searchProvider;
   if (s.endpointId) body.endpoint_id = s.endpointId;
   if (s.model) body.model = s.model;
+  if (s.effort) body.effort = s.effort;
   const out = await postJson('/api/research/start', body);
   return String(out.session_id ?? '');
 }
