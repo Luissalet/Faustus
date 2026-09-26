@@ -108,7 +108,6 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 - **Dos tests rojos preexistentes en `launch_profiles`/`process_center`** (w126, 19-09): `test_already_running_via_readiness_is_not_relaunched` y `test_route_level_relative_executable_is_400`, confirmados sin relación con ese lote; queda investigarlos.
 - **UI para la revisión de skills importadas** (FAUSTUS §147): `GET/POST /api/skills/{id}/review|approve` es solo API hoy; construir una pantalla.
 - **Desglose por decisión en el panel de autonomía** (FAUSTUS §180): hoy solo se ve el agregado por familia; añadir un desplegable con las últimas N filas de `approval_shadow_log`.
-- **Aviso de cuentas en listas de la compra / recetas escaladas** (uso diario 25-09, §196): el 27B no usa `python` para multiplicar raciones y se equivoca; falta un `answer_check` al estilo de los existentes que detecte "para N personas" con cantidades y pida la cuenta.
 - **Cliente del SDK generado desde OpenAPI** (paridad, TF02): `sdk/ts` sigue escrito a mano; generarlo desde el OpenAPI del servidor en vez de a mano.
 - **CI para `sdk/ts`** (paridad, TF02): falta un job que haga `npm run build && npm test && npm run check`.
 
@@ -193,6 +192,7 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 
 ## D. Verificar en vivo con el modelo local
 
+- **Cantidades para N personas** (26-09, `answer_checks.servings_requested`): pedir en el 7006 «lista de la compra para 8: pollo al horno con patatas» y comprobar que el 27B calcula por persona con `python` y que piezas y pesos cuadran.
 - **`context_*` automáticos en una tarea larga** (25-09, §197): ver si el 27B los usa solo, a partir de qué punto, y si el aviso al umbral blando ayuda o estorba.
 - **`swarm_map` en modo `agent`** (25-09, §197): probarlo con el 8081 compartido por otros chats (el modo `llm` ya se probó con 6 ciudades).
 - **Reescritura de día de la semana y paráfrasis de «recuerda que…»** (25-09, §184): confirmar en turnos reales que el bug lunes→viernes y el razonamiento en voz alta ya no aparecen.

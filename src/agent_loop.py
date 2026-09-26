@@ -10010,6 +10010,17 @@ async def _stream_agent_loop_body(
             "content": _lang_note("This question is time-sensitive: search the web before answering."),
         })
 
+    # Quantities for N people: ask for the per-person arithmetic before the
+    # answer is written (src/answer_checks.servings_requested).
+    if not guide_only:
+        try:
+            from src import answer_checks as _servings_checks
+            _people = _servings_checks.servings_requested(_last_user or "")
+        except Exception:  # noqa: BLE001 - a hint never breaks a turn
+            _people = None
+        if _people:
+            messages.append({"role": "system", "content": _lang_note(_servings_checks.servings_note(_people))})
+
     # Round budget. Hitting the cap mid-task used to end the turn with a
     # "Continue" button the user had to click (the model re-reads "you hit the
     # step limit, continue"). Local inference is completion-bound rather than

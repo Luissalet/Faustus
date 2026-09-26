@@ -384,3 +384,36 @@ def slot_note(conflicts: List[Dict[str, str]]) -> str:
     parts = [f"You suggest {c['slot']} as a free slot, but the calendar you listed has "
              f"\"{c['event']}\" from {c['from']} to {c['to']} that day." for c in conflicts]
     return " ".join(parts) + " Suggest only times that are free in the listed calendar."
+
+
+# Quantities for a number of people ("lista de la compra para 8", "receta para
+# 6 personas", "for 4 servings"). Seen live (25-09): a shopping list for 8 with
+# "6 muslos (2,5-3 kg)" — too few pieces, and a weight that does not match the
+# count. Nothing here can check a recipe the model recalls from memory, so the
+# runtime asks for the arithmetic up front instead of rewriting afterwards.
+_SERVINGS = re.compile(
+    r"\bpara\s+(\d{1,3})\s+(?:personas?|comensales|raciones|invitados|adultos|ni[ñn]os)\b"
+    r"|\b(?:for|serves?|feeds?)\s+(\d{1,3})\s+(?:people|persons|servings|guests|adults|kids)\b",
+    re.IGNORECASE,
+)
+_QUANTITY_ASK = re.compile(
+    r"\b(?:lista\s+de\s+(?:la\s+)?compra|receta|ingredientes|cantidades|cu[aá]nt[oa]s?|men[uú]|"
+    r"shopping\s+list|recipe|ingredients|quantities|how\s+(?:much|many)|menu)\b",
+    re.IGNORECASE,
+)
+
+
+def servings_requested(text: str) -> Optional[int]:
+    """The number of people a request asks quantities for, or None."""
+    text = str(text or "")
+    if not _QUANTITY_ASK.search(text):
+        return None
+    found = [int(a or b) for a, b in _SERVINGS.findall(text)]
+    found = [n for n in found if 1 < n <= 500]
+    return found[-1] if found else None
+
+
+def servings_note(people: int) -> str:
+    return (f"The user needs quantities for {people} people. Work each one out as the portion per "
+            f"person times {people} (use the python tool for the arithmetic when you have it), and "
+            "keep counts and weights consistent with each other (pieces x weight per piece).")
