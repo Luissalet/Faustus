@@ -2042,6 +2042,7 @@ async def _startup_event():
                 logger.warning(f"[lifecycle] {_prev}")
             _run_marker.mark_running(_marker)
             logger.info(f"[lifecycle] pid {os.getpid()}; native fault log: {_crash_log}")
+            _run_marker.watch_slow_startup(90.0)
         except Exception as e:  # noqa: BLE001 - diagnostics never block startup
             logger.debug(f"run marker skipped: {e}")
     # OPS-05: mark this boot attempt before anything risky below runs. Most
@@ -2572,6 +2573,11 @@ async def _startup_event():
         safe_mode.mark_boot_completed()
     except Exception as e:
         logger.debug(f"safe_mode boot marker skipped: {e}")
+    try:
+        from core import run_marker as _run_marker_done
+        _run_marker_done.startup_finished()
+    except Exception:  # noqa: BLE001 - diagnostics never block startup
+        pass
     logger.info("Application startup complete")
 
 async def _shutdown_event():

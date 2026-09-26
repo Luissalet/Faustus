@@ -78,3 +78,26 @@ def clear(path: str) -> None:
         os.remove(path)
     except Exception:  # noqa: BLE001
         pass
+
+def watch_slow_startup(seconds: float = 90.0) -> bool:
+    """Dump every thread's stack to crash.log if startup has not finished
+    after `seconds` (cancel with `startup_finished`). A start once took four
+    minutes with nothing in the log between two steps; the stacks say where
+    it was waiting. Needs `enable_fault_log` first; never raises."""
+    try:
+        if _fault_file is None or _fault_file.closed:
+            return False
+        _fault_file.write(f"--- slow-start watch armed: stacks follow if startup exceeds {seconds:.0f}s ---\n")
+        _fault_file.flush()
+        faulthandler.dump_traceback_later(seconds, repeat=False, file=_fault_file)
+        return True
+    except Exception:  # noqa: BLE001 - diagnostics must never block startup
+        return False
+
+
+def startup_finished() -> None:
+    """Disarm `watch_slow_startup`."""
+    try:
+        faulthandler.cancel_dump_traceback_later()
+    except Exception:  # noqa: BLE001
+        pass
