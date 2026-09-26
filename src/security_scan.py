@@ -210,7 +210,7 @@ RULES: Tuple[_Rule, ...] = (
           _r(r"\beval\((?!\s*['\"])[^)]{2,}\)"),
           "eval() called with a non-literal (computed) argument."),
     _Rule("DYNCODE_EXEC_NONLITERAL", "dynamic_code", "medium",
-          _r(r"(?<!x)\bexec\((?!\s*['\"])[^)]{2,}\)"),
+          _r(r"(?<![.\w])exec\((?!\s*['\"])[^)]{2,}\)"),
           "exec() called with a non-literal (computed) argument."),
     _Rule("DYNCODE_NEW_FUNCTION", "dynamic_code", "medium",
           _r(r"new\s+Function\s*\("),
@@ -232,7 +232,7 @@ RULES: Tuple[_Rule, ...] = (
           _r(r"<!--[^>]{0,400}(instruction|system prompt|do not tell|ignore)[^>]{0,400}-->", re.IGNORECASE | re.DOTALL),
           "An HTML comment carries hidden instructions for the model."),
     _Rule("PROMPT_ZERO_WIDTH_CHARS", "prompt_injection", "medium",
-          re.compile(r"[​‌‍﻿]"),
+          re.compile(r"[​‌‍]|(?<=[^\^])﻿"),
           "Zero-width characters — often used to hide text from a human "
           "reviewer while the model still reads it."),
     _Rule("PROMPT_DO_NOT_TELL_USER", "prompt_injection", "critical",
@@ -379,6 +379,18 @@ def combine_results(results: Sequence[ScanResult]) -> ScanResult:
                        files_scanned=files_scanned, truncated=truncated)
 
 
+_URL_LITERAL = re.compile(r"https?://([^/\s'\"`:]+)", re.IGNORECASE)
+_LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "[::1]", "::1", "0.0.0.0")
+
+
+def _only_loopback_urls(text: str) -> bool:
+    """True when the text names at least one URL and every URL it names is a
+    loopback host. Hosts built at runtime cannot be judged; this only lowers
+    the severity of a finding, it never removes one."""
+    hosts = [h.lower() for h in _URL_LITERAL.findall(text or "")]
+    return bool(hosts) and all(h in _LOOPBACK_HOSTS or h.startswith("127.") for h in hosts)
+
+
 def scan_text(text: str, *, kind: str = "generic", filename: str = "<text>") -> ScanResult:
     """Scan one blob of text (source, config, markdown, or a tool
     description string) and return every rule match. Pure — no I/O, no
@@ -402,6 +414,10 @@ def scan_text(text: str, *, kind: str = "generic", filename: str = "<text>") -> 
                     continue
             line_no = text.count("\n", 0, m.start()) + 1
             severity = rule.severity
+            if rule.id == "EXFIL_SECRET_TO_NETWORK" and _only_loopback_urls(text):
+                # A local app's bridge reads its own token to call its own
+                # loopback API: every URL literal in the file is loopback.
+                severity = "low"
             if rule.category in _DOWNGRADE_IN_FENCE and line_no in fenced:
                 severity = "medium" if SEVERITY_ORDER.index(severity) < SEVERITY_ORDER.index("medium") else severity
             line_text = lines[line_no - 1] if 0 < line_no <= len(lines) else text[m.start():m.end()]
