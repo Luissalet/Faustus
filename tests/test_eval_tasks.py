@@ -5,10 +5,21 @@ of only inside the ~5 s live-app suite (`tests/eval/test_representative_tasks.py
 """
 from __future__ import annotations
 
+import pytest
+import sys
 import json
 import re
 
 from tests.eval import tasks as T
+
+
+@pytest.fixture(autouse=True)
+def _project_python_with_pytest(monkeypatch):
+    """These tests run a workspace's tests through the project-interpreter
+    lookup; a workspace without a venv falls back to the host python, which
+    may not have pytest. Use this interpreter (it has pytest)."""
+    monkeypatch.setenv("FAUSTUS_PROJECT_PYTHON", sys.executable)
+
 
 
 def test_every_task_is_registered_exactly_once():

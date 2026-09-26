@@ -18,6 +18,25 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # file-backed DB across processes - tests needing that must set DATABASE_URL.
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 
+# Everything else under DATA_DIR (run logs, traces, checkpoints, scorecards,
+# audit logs, stores) went to the checkout's own data/ folder, where an
+# instance running from the same checkout reads it as its own: a full run
+# left test run logs, test questions, test checkpoints and test records
+# there. The session gets a data folder of its own (one per xdist worker)
+# unless the caller chose one. Set before anything under src/ is imported,
+# because src.constants reads it once.
+if "ODYSSEUS_DATA_DIR" not in os.environ:
+    # Embedding models are downloaded into DATA_DIR/fastembed_cache: keep
+    # using the checkout's cache instead of fetching them again per session.
+    os.environ.setdefault("FASTEMBED_CACHE_PATH", os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "fastembed_cache"))
+    import atexit as _atexit
+    import shutil as _shutil
+    import tempfile as _tempfile
+    _TEST_DATA_DIR = _tempfile.mkdtemp(prefix="faustus-test-data-")
+    os.environ["ODYSSEUS_DATA_DIR"] = _TEST_DATA_DIR
+    _atexit.register(_shutil.rmtree, _TEST_DATA_DIR, True)
+
 
 @pytest.fixture(autouse=True)
 def isolated_changeset_receipts(tmp_path_factory):

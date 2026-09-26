@@ -11,6 +11,7 @@ bounded answer, bounded history, cancel keeps the evidence.
 """
 from __future__ import annotations
 
+import sys
 import asyncio
 import json
 import os
@@ -23,6 +24,15 @@ from types import SimpleNamespace
 import pytest
 
 from src import dispatch
+
+
+@pytest.fixture(autouse=True)
+def _project_python_with_pytest(monkeypatch):
+    """These tests run a workspace's tests through the project-interpreter
+    lookup; a workspace without a venv falls back to the host python, which
+    may not have pytest. Use this interpreter (it has pytest)."""
+    monkeypatch.setenv("FAUSTUS_PROJECT_PYTHON", sys.executable)
+
 
 REPO = Path(__file__).resolve().parents[1]
 
