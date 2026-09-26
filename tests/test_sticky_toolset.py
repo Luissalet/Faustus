@@ -72,3 +72,11 @@ def test_plugin_tools_only_retrieval_picked_do_not_widen_a_follow_up():
 def test_the_first_turn_keeps_what_retrieval_found():
     out, _ = al._sticky_toolset("fresh", {"read_file", "mcp__b__y"}, None, set(), optional={"mcp__b__y"})
     assert out == {"read_file", "mcp__b__y"}
+
+
+def test_weak_plugin_picks_already_in_the_set_are_not_promoted_to_schemas():
+    # An earlier turn left mcp__b__y in the set but deferred (not hot).
+    al._sticky_toolset("s", {"read_file", "inspect_image", "mcp__b__y"}, {"inspect_image"}, set())
+    out, hot = al._sticky_toolset("s", {"read_file", "inspect_image", "mcp__b__y"},
+                                  {"inspect_image", "mcp__b__y"}, set(), optional={"mcp__b__y"})
+    assert out == {"read_file", "inspect_image", "mcp__b__y"} and hot == {"inspect_image"}

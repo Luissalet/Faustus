@@ -5883,11 +5883,13 @@ def _sticky_toolset(session_id: str, relevant: Set[str], hot: Optional[Set[str]]
         # tool block and the server re-read the whole prompt (live, 26-09:
         # 19,700 tokens, 49 s, for six plugin tools nobody called). They
         # stay reachable through `lookup_tools`.
-        extra = set(optional or ()) - prev_relevant
-        if extra:
-            relevant = set(relevant) - extra
+        weak = set(optional or ())
+        if weak:
+            relevant = set(relevant) - (weak - prev_relevant)
+            # Nor do they get promoted to full schemas: the set may already
+            # hold them from an earlier turn, deferred to the catalog.
             if hot is not None:
-                hot = set(hot) - extra
+                hot = set(hot) - (weak - (prev_hot if prev_hot is not None else set()))
         if relevant <= prev_relevant and (hot is None or prev_hot is None or hot <= prev_hot):
             out_relevant, out_hot = prev_relevant, prev_hot if hot is not None else None
         else:
