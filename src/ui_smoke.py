@@ -431,7 +431,29 @@ def playwright_available() -> bool:
         import playwright.sync_api  # noqa: F401
     except Exception:
         return False
-    return True
+    return _chromium_installed()
+
+
+_CHROMIUM_INSTALLED: Optional[bool] = None
+
+
+def _chromium_installed() -> bool:
+    """Whether Playwright's Chromium is really on disk. The package can be
+    installed without its browsers (`playwright install` never ran): then
+    every page check came back "not used" and the smoke tests failed instead
+    of being skipped (seen on the Windows install). Asked once per process;
+    `PLAYWRIGHT_BROWSERS_PATH` and custom paths are Playwright's own business,
+    it reports the path it would launch."""
+    global _CHROMIUM_INSTALLED
+    if _CHROMIUM_INSTALLED is None:
+        try:
+            from playwright.sync_api import sync_playwright
+            with sync_playwright() as pw:
+                path = pw.chromium.executable_path
+            _CHROMIUM_INSTALLED = bool(path) and os.path.exists(path)
+        except Exception:  # noqa: BLE001 - no driver, no browser: not available
+            _CHROMIUM_INSTALLED = False
+    return _CHROMIUM_INSTALLED
 
 
 # In-page accessibility audit, run via `page.evaluate`. Deterministic,
