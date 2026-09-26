@@ -45,6 +45,7 @@ def test_the_reachable_surface_is_exactly_this():
         "GET|HEAD|OPTIONS /api/session/{session_id}/context_info": ("sessions",),
         "GET|HEAD|OPTIONS /api/session/{session_id}/usage": ("sessions", "agents:dispatch"),
         "GET|HEAD|OPTIONS /api/session/{session_id}/turn_review": ("sessions", "agents:dispatch"),
+        "GET|HEAD|OPTIONS /api/usage/recap": ("sessions",),
         "GET|HEAD|OPTIONS /api/session/{sid}/export": ("sessions",),
         "GET|HEAD|OPTIONS /api/history/{session_id}": ("sessions",),
         "POST /api/chat_stream": ("sessions",),

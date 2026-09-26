@@ -8569,3 +8569,6 @@ App preview	Vista de la app
 Show the code	Ver el código
 Run it here	Ejecutarlo aquí
 Run it here (offline, sandboxed)	Ejecutarlo aquí (sin red, aislado)
+Nothing used in that period.	Nada usado en ese periodo.
+Could not build the recap	No se pudo preparar el resumen
+What you used across every chat over the last days (30 by default): turns, tokens, prompt cache, local vs hosted, models, top tools, cost.	Lo que has usado en todos los chats en los últimos días (30 por defecto): turnos, tokens, caché del prompt, local frente a nube, modelos, herramientas más usadas y coste.

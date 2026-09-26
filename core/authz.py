@@ -179,6 +179,7 @@ API_TOKEN_RULES: Tuple[Rule, ...] = (
           note="an owned session's usage: tokens, prompt cache, steps, tool calls, time, cost"),
     _read("/api/session/{session_id}/turn_review", "sessions", "agents:dispatch",
           note="what an owned session's recent turns did, with findings"),
+    _read("/api/usage/recap", "sessions", note="the token owner's own usage over a period, across chats"),
     _read("/api/history/{session_id}", "sessions",
           note="an owned session's message history (the route the Studio itself loads a chat from)"),
     Rule(frozenset({"POST"}), "/api/chat_stream", ("sessions",), effect="external",

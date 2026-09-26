@@ -383,6 +383,13 @@ export async function sessionUsageMarkdown(sessionId: string): Promise<string> {
   return lines.join('\n');
 }
 
+/* ── /recap: a period's usage across every chat (src/usage_recap.py) ── */
+
+export async function usageRecapMarkdown(days: number): Promise<string> {
+  const d = await getJson<{ markdown?: string }>(`/api/usage/recap?days=${Math.max(1, Math.min(366, days || 30))}`);
+  return d.markdown || '';
+}
+
 /* ── /turnreview: what the last turns did (src/turn_review.py) ── */
 
 export async function turnReviewMarkdown(sessionId: string, turns: number): Promise<string> {

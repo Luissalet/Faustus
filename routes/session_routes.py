@@ -1,4 +1,5 @@
 # routes/session_routes.py
+import asyncio
 import io
 import os
 import re
@@ -1958,6 +1959,17 @@ def setup_session_routes(
             raise HTTPException(404, "Session not found")
         from src.session_usage import summarize
         return {"session_id": session_id, **summarize(getattr(session, "history", None) or getattr(session, "messages", None) or [])}
+
+    @router.get("/usage/recap")
+    async def get_usage_recap(request: Request, days: int = 30):
+        """What the signed-in owner used over the last `days`, across every
+        chat (src/usage_recap.py)."""
+        user = effective_user(request)
+        if not user and not _auth_disabled():
+            raise HTTPException(401, "Authentication required")
+        from src import usage_recap
+        data = await asyncio.to_thread(usage_recap.recap, user or None, days)
+        return {**data, "markdown": usage_recap.render(data)}
 
     @router.get("/session/{session_id}/turn_review")
     async def get_turn_review(request: Request, session_id: str, turns: int = 1):

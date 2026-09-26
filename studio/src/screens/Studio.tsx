@@ -1824,6 +1824,14 @@ export function StudioScreen() {
         case 'tts':
           extrasRef.current.tts();
           return true;
+        case 'recap': {
+          const days = Number.parseInt(args || '30', 10);
+          void cmd
+            .usageRecapMarkdown(Number.isFinite(days) ? days : 30)
+            .then((md) => report(md || t('Nothing used in that period.')))
+            .catch((error) => say(`${t('Could not build the recap')}: ${(error as Error).message}`, 'danger'));
+          return true;
+        }
         case 'turnreview': {
           if (!sessionId) {
             say(t('Open a conversation first.'), 'warning');

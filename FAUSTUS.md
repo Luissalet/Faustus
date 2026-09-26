@@ -9389,3 +9389,5 @@ Del resto de la lista:
 
 - Los disparadores por webhook entrantes ya existían (`/api/tasks/{id}/webhook/{token}`); el agente se equivocó ahí.
 - Pasan a OBJETIVOS: la búsqueda unificada, las versiones por mensaje y el resumen de uso periódico.
+
+**`/recap`** (17:50): `GET /api/usage/recap?days=N` y `/recap [días]` suman con una consulta a la base de datos las métricas guardadas de todos los chats del dueño en un periodo. Dan turnos, tokens, caché, local frente a nube, modelos, herramientas más usadas, días de más uso y coste. La ruta está abierta a tokens `sessions`.
