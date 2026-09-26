@@ -41,3 +41,19 @@ def test_their_notifications_are_marked_read(tmp_path, monkeypatch):
     chat_routes.retire_card_questions("luis", session_id="s-card")
     rows = {r["id"]: r["read"] for r in nr._load()["events"]["luis"]}
     assert rows == {"a": True, "b": False}
+
+
+def test_notifications_of_questions_that_no_longer_wait_are_settled(tmp_path, monkeypatch):
+    """The tray showed 16 unread rows for questions decided a week before."""
+    from routes import notifications_routes as nr
+    monkeypatch.setattr(nr, "NOTIFICATIONS_FILE", str(tmp_path / "n.json"))
+    card, stale, real = _open(tmp_path, monkeypatch)
+    question_store.cancel_question(card["question_id"], reason="decided", owner=None)
+    nr._save({"prefs": {}, "events": {"luis": [
+        {"id": "a", "dedupe_key": f"question:{card['question_id']}", "read": False},
+        {"id": "b", "dedupe_key": "question:qst_gone", "read": False},
+        {"id": "c", "dedupe_key": f"question:{real['question_id']}", "read": False},
+        {"id": "d", "dedupe_key": "task:x", "read": False}]}})
+    assert nr.settle_closed_questions("luis") == 2
+    unread = {r["id"] for r in nr._load()["events"]["luis"] if not r.get("read")}
+    assert unread == {"c", "d"}

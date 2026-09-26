@@ -84,6 +84,32 @@ def _save(data: Dict[str, Any]) -> None:
     atomic_write_json(NOTIFICATIONS_FILE, data, indent=2)
 
 
+def settle_closed_questions(owner: str) -> int:
+    """Mark read the unread question notifications whose question no longer
+    waits (answered, cancelled, expired or gone). The tray counted them for
+    ever: 16 unread "Allow this task to continue?" rows from a week before,
+    each for a card long decided. Best effort; returns how many changed."""
+    with _lock:
+        rows = [r for r in _load()["events"].get(owner or "", [])
+                if not r.get("read") and str(r.get("dedupe_key") or "").startswith("question:")]
+    if not rows:
+        return 0
+    try:
+        from src import question_store
+    except Exception:  # noqa: BLE001 - no store, nothing to settle
+        return 0
+    closed = []
+    for row in rows:
+        qid = str(row["dedupe_key"]).split(":", 1)[1]
+        try:
+            item = question_store.get_question(qid, owner=None)
+        except Exception:  # noqa: BLE001 - an unreadable store settles nothing
+            return 0
+        if not item or item.get("status") != "open":
+            closed.append(row["dedupe_key"])
+    return mark_read_by_keys(owner, closed)
+
+
 def mark_read_by_keys(owner: str, dedupe_keys) -> int:
     """Mark read the notifications of `owner` about things that no longer
     wait (a question or card closed elsewhere). Returns how many changed."""
@@ -201,6 +227,7 @@ def setup_notification_routes() -> APIRouter:
     async def list_notifications(request: Request, unread_only: bool = False,
                                   _admin: None = Depends(require_admin)) -> Dict[str, Any]:
         owner = effective_user(request) or ""
+        settle_closed_questions(owner)
         with _lock:
             rows = list(_load()["events"].get(owner, []))
         if unread_only:
