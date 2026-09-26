@@ -9350,3 +9350,11 @@ Es la idea de «diagnosticar transcripciones» que salió de la revisión de rep
 - **API.** `GET /api/session/{id}/turn_review?turns=N` da la misma revisión que la herramienta. Esa ruta y `/usage` quedan abiertas a tokens con `sessions` o `agents:dispatch`, siempre sobre sesiones propias; la tabla de `docs/api/sdk_surface.md` y el test de la matriz lo recogen.
 - **MCP de workers.** El servidor gana `session_usage` y `turn_review`, para que un coordinador externo vea qué costó un trabajo despachado y por qué falló antes de reenviarlo.
 - **CLI.** `faustus_run.py` acepta `FAUSTUS_API_TOKEN` en vez de usuario y contraseña.
+
+**Extras por proveedor** (investigación de las APIs oficiales, 17:30):
+
+- **llama-server.** Sólo interpreta la primera llamada a herramienta de una ronda si no se le pide `parallel_tool_calls: true`. Con eso, el despacho con clave casi nunca tenía un grupo que ejecutar a la vez por la vía nativa. Ahora se envía a servidores propios compatibles con OpenAI, no a Ollama ni a APIs alojadas, que ya lo hacen por defecto.
+- **OpenAI.** Recibe un `prompt_cache_key` estable por chat (un hash, nunca el id), para que sus turnos caigan en la misma caché.
+- **Claude 4.x anterior al pensamiento adaptativo.** Con herramientas y pensamiento lleva la cabecera beta `interleaved-thinking-2025-05-14`, para pensar entre llamadas.
+
+Quedan en OBJETIVOS la API Responses de OpenAI con razonamiento cifrado (un camino nuevo entero), la caché explícita de Gemini y la afinidad de sesión de OpenRouter, que no está verificada.

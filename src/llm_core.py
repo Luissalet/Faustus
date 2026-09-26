@@ -2388,6 +2388,30 @@ def _apply_local_cache_affinity(payload: Dict, url: str, session_id: Optional[st
     payload.setdefault("cache_prompt", True)
 
 
+def _apply_parallel_tool_calls(payload: Dict, url: str) -> None:
+    """Let a self-hosted server return several tool calls in one round.
+
+    llama-server parses only the first tool call unless the request says
+    `parallel_tool_calls: true` (docs/function-calling.md), so a model that
+    asked for three independent reads got one per round, and the keyed
+    dispatch (src/agent_loop.py) never saw a group to run side by side.
+    Hosted OpenAI-style APIs already default to parallel calls; Ollama reads
+    its own format. A server that refuses the field gets it stripped on the
+    reasoning/unknown-field retry like any other extra."""
+    if payload.get("tools") and _is_self_hosted_openai_compatible(url) and not _is_local_ollama_target(url):
+        payload.setdefault("parallel_tool_calls", True)
+
+
+def _apply_openai_cache_key(payload: Dict, url: str, session_id: Optional[str]) -> None:
+    """OpenAI routes requests with the same `prompt_cache_key` to the same
+    cache, so a chat's turns keep hitting its prefix. Only api.openai.com;
+    the key is a hash, never the session id itself."""
+    if not session_id or not _host_match(url, "openai.com"):
+        return
+    import hashlib
+    payload.setdefault("prompt_cache_key", "faustus-" + hashlib.sha256(str(session_id).encode()).hexdigest()[:24])
+
+
 def _is_local_minimax_mlx_request(url: str, model: str) -> bool:
     """Local MLX MiniMax-family endpoints need conservative sampling defaults.
 
@@ -5745,6 +5769,13 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
             from src.provider_reasoning import apply_anthropic
             apply_anthropic(payload, model, _overrides,
                             allow_thinking=(not tools) or _anthropic_tool_loop_allows_thinking(payload))
+            # Claude 4.x before adaptive thinking reasons between tool calls
+            # only with the interleaved-thinking beta; adaptive includes it.
+            if tools and isinstance(payload.get("thinking"), dict) and payload["thinking"].get("type") == "enabled":
+                _beta = [b for b in str(h.get("anthropic-beta") or "").split(",") if b.strip()]
+                if "interleaved-thinking-2025-05-14" not in _beta:
+                    _beta.append("interleaved-thinking-2025-05-14")
+                h["anthropic-beta"] = ",".join(_beta)
     elif provider == "ollama":
         target_url = _normalize_ollama_url(url)
         h = {"Content-Type": "application/json"}
@@ -5777,8 +5808,10 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
             payload[tok_key] = max_tokens
         if tools:
             payload["tools"] = _alias_harmony_tools(tools, model)
+            _apply_parallel_tool_calls(payload, target_url)
         elif tool_choice_none:
             payload["tool_choice"] = "none"
+        _apply_openai_cache_key(payload, target_url, session_id)
         # Mistral thinking-capable models — send reasoning_effort so Mistral
         # activates thinking mode and returns structured reasoning_content.
         # Effort level is configurable via ODYSSEUS_MISTRAL_REASONING_EFFORT

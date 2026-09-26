@@ -75,3 +75,33 @@ def test_first_round_of_a_loop_may_think():
 
 def test_unsigned_thinking_is_never_replayed():
     assert llm_core._signed_anthropic_thinking({0: {"type": "thinking", "thinking": "x", "signature": ""}}) == []
+
+
+def test_older_claude_with_tools_asks_for_interleaved_thinking(monkeypatch):
+    from tests import test_llm_core_streaming_retries as h
+    seen = {}
+
+    class _Capture(h._SeqClient):
+        def stream(self, method, url, **kwargs):
+            seen["headers"] = kwargs.get("headers") or {}
+            seen["json"] = kwargs.get("json") or {}
+            return super().stream(method, url, **kwargs)
+
+    lines = [_line({"type": "message_start", "message": {"model": "claude-sonnet-4-5", "usage": {"input_tokens": 3}}}),
+             _line({"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 1}}),
+             _line({"type": "message_stop"})]
+    client = _Capture([_StreamCtx(resp=_Resp(lines=lines))])
+    monkeypatch.setattr(llm_core, "_get_http_client", lambda: client)
+    monkeypatch.setattr(llm_core, "_is_host_dead", lambda u: False)
+    monkeypatch.setattr(llm_core, "_clear_host_dead", lambda *a, **k: None)
+    monkeypatch.setattr(llm_core, "note_model_activity", lambda *a, **k: None)
+    monkeypatch.setattr(llm_core, "_mark_host_dead", lambda u: False)
+    import asyncio
+
+    async def run():
+        return [c async for c in llm_core.stream_llm(
+            "https://api.anthropic.com/v1/messages", "claude-sonnet-4-5", [{"role": "user", "content": "go"}],
+            tools=_tools(), gen_overrides={"think": True, "reasoning_budget": 4096})]
+    asyncio.run(run())
+    assert seen["json"]["thinking"]["type"] == "enabled"
+    assert "interleaved-thinking-2025-05-14" in seen["headers"].get("anthropic-beta", "")
