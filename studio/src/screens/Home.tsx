@@ -10,6 +10,7 @@ import {
 } from '../adapters/home';
 import { describeTrigger, runAutomation, type Automation } from '../adapters/automations';
 import { listHomeCards, unpinHomeCard, type HomeCard } from '../adapters/homeCards';
+import { usageRecap, type UsageRecap } from '../adapters/commands';
 import { RadarRows, useGitRadar } from './source-control/GitRadar';
 import './source-control.css';
 import { Rich } from './rich';
@@ -210,6 +211,76 @@ function GitRadarBlock() {
   );
 }
 
+/* ── Your month: usage across every chat (src/usage_recap.py) ──
+ * One query, no model call. Absent until there is a turn with metrics; a
+ * row of zeros is noise. `/recap` in Studio has the full table. */
+const fmtK = (n?: number) => {
+  const v = Number(n || 0);
+  if (v >= 1e9) return `${(v / 1e9).toFixed(1)}B`;
+  if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
+  if (v >= 1e4) return `${Math.round(v / 1e3)}k`;
+  return String(v);
+};
+
+function UsageRecapBlock() {
+  const [recap, setRecap] = useState<UsageRecap | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    usageRecap(30, controller.signal)
+      .then(setRecap)
+      .catch(() => {
+        /* no card rather than a broken Home */
+      });
+    return () => controller.abort();
+  }, []);
+  const tot = recap?.total;
+  if (!recap || !tot?.turns) return null;
+  const topModel = Object.entries(recap.by_model ?? {}).sort((a, b) => (b[1].turns ?? 0) - (a[1].turns ?? 0))[0];
+  const stats: { label: string; value: string; hint?: string }[] = [
+    { label: t('Turns'), value: fmtK(tot.turns), hint: tn(recap.chats, 'in {n} chat', 'in {n} chats') },
+    { label: t('Local'), value: fmtK(recap.turns_local), hint: t('{n} hosted', { n: recap.turns_hosted }) },
+    { label: t('Tokens'), value: fmtK((tot.input_tokens ?? 0) + (tot.output_tokens ?? 0)), hint: t('{i} in · {o} out', { i: fmtK(tot.input_tokens), o: fmtK(tot.output_tokens) }) },
+  ];
+  if (tot.cache_hit_percent !== undefined && tot.cache_hit_percent !== null) {
+    stats.push({ label: t('Prompt from cache'), value: `${tot.cache_hit_percent} %` });
+  }
+  if (tot.tool_calls) stats.push({ label: t('Tool calls'), value: fmtK(tot.tool_calls) });
+  if (tot.cost_usd) stats.push({ label: t('Cost'), value: `$${Number(tot.cost_usd).toFixed(2)}` });
+  const tools = (recap.top_tools ?? []).slice(0, 4);
+  return (
+    <Block
+      title={t('Your last 30 days')}
+      index={3}
+      aside={
+        <Link className="fs-block__more" to={`/studio?draft=${encodeURIComponent('/recap 30')}`} data-testid="home-recap-more">
+          {t('Full recap')}
+        </Link>
+      }
+    >
+      <div className="fs-recap" data-testid="home-recap">
+        {stats.map((s) => (
+          <div key={s.label} className="fs-recap__stat">
+            <span className="fs-recap__value">{s.value}</span>
+            <span className="fs-recap__label">{s.label}</span>
+            {s.hint && <span className="fs-recap__hint">{s.hint}</span>}
+          </div>
+        ))}
+      </div>
+      {(topModel || tools.length > 0) && (
+        <p className="fs-recap__line">
+          {topModel && (
+            <>
+              {t('Most used model')}: <code>{topModel[0]}</code>
+            </>
+          )}
+          {topModel && tools.length > 0 && ' · '}
+          {tools.length > 0 && `${t('Top tools')}: ${tools.map(([name, n]) => `${name} ${n}`).join(', ')}`}
+        </p>
+      )}
+    </Block>
+  );
+}
+
 export function HomeScreen() {
   const spotlight = useSpotlight();
   const navigate = useNavigate();
@@ -401,6 +472,8 @@ export function HomeScreen() {
           ))}
         </div>
       </Block>
+
+      <UsageRecapBlock />
 
       {!hasAnything && (
         <EmptyState

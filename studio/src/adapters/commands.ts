@@ -385,6 +385,19 @@ export async function sessionUsageMarkdown(sessionId: string): Promise<string> {
 
 /* ── /recap: a period's usage across every chat (src/usage_recap.py) ── */
 
+export interface UsageRecap {
+  days: number;
+  chats: number;
+  turns_local: number;
+  turns_hosted: number;
+  total: { turns?: number; input_tokens?: number; output_tokens?: number; tool_calls?: number; steps?: number; cache_hit_percent?: number; cost_usd?: number };
+  by_model: Record<string, { turns?: number }>;
+  top_tools: [string, number][];
+}
+
+export const usageRecap = (days: number, signal?: AbortSignal) =>
+  getJson<UsageRecap>(`/api/usage/recap?days=${Math.max(1, Math.min(366, days || 30))}`, signal);
+
 export async function usageRecapMarkdown(days: number): Promise<string> {
   const d = await getJson<{ markdown?: string }>(`/api/usage/recap?days=${Math.max(1, Math.min(366, days || 30))}`);
   return d.markdown || '';

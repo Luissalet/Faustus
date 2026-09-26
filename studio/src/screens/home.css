@@ -454,3 +454,44 @@
   color: var(--fs-text-1);
   text-decoration: underline;
 }
+
+/* ── Your last 30 days: usage recap ── */
+.fs-recap {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--fs-space-2);
+}
+.fs-recap__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  background: var(--fs-surface-1);
+  border-radius: var(--fs-radius-control);
+  min-width: 0;
+}
+.fs-recap__value {
+  color: var(--fs-text-1);
+  font-size: 1.25rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.fs-recap__label {
+  color: var(--fs-text-2);
+  font-size: var(--fs-label-size);
+  font-weight: var(--fs-label-weight);
+}
+.fs-recap__hint {
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fs-recap__line {
+  margin: var(--fs-space-2) 0 0;
+  color: var(--fs-text-3);
+  font-size: var(--fs-label-size);
+  overflow-wrap: anywhere;
+}

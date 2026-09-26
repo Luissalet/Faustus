@@ -42,3 +42,14 @@ assert.match(automations, /fs-au__pin-badge/, 'pinned tasks show a badge in the 
 assert.match(automations, /pinned={pinnedIds\.has\(x\.id\)}/, 'the Row component receives the pinned state');
 
 console.log('home-cards: ALL OK');
+
+// Your last 30 days: the usage recap block (GET /api/usage/recap), mounted on
+// Home, hidden with no turns, and a link to the full `/recap` in Studio.
+const cmds = readFileSync(new URL('../src/adapters/commands.ts', import.meta.url), 'utf8');
+assert.match(cmds, /export const usageRecap = /, 'usageRecap() adapter exists');
+assert.match(cmds, /\/api\/usage\/recap\?days=/, 'usageRecap() calls GET /api/usage/recap');
+assert.match(home, /function UsageRecapBlock\(/, 'the recap block exists');
+assert.match(home, /<UsageRecapBlock \/>/, 'the recap block is mounted');
+assert.match(home, /if \(!recap \|\| !tot\?\.turns\) return null/, 'no block when there is no turn');
+assert.match(home, /data-testid="home-recap-more"/, 'the block links to the full recap');
+console.log('home-recap: ALL OK');
