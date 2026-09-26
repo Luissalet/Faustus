@@ -3300,7 +3300,7 @@ def _scrub_approval_card_from_history(messages: List[Dict[str, Any]], tool_name:
 
 
 def _paused_turn_work_note(messages: List[Dict[str, Any]], approved_tool: str,
-                           limit: int = 24000) -> Optional[str]:
+                           limit: int = 24000, *, reason: str = "approval") -> Optional[str]:
     """What the paused turn had already done, for the round that resumes it.
 
     A turn that stops on an approval card is saved as one assistant message:
@@ -3332,7 +3332,9 @@ def _paused_turn_work_note(messages: List[Dict[str, Any]], approved_tool: str,
             # a real answer: live, a turn that had asked a vision model twenty
             # questions resumed with only its first file reads and started over.
             snap = _build_actions_snapshot(done, limit=limit, output_chars=2500, keep="tail")
-            return ("Work this task already did before it paused for approval -- these tool calls "
+            why = ("before it paused for approval" if reason == "approval"
+                   else "in the previous turn, which the user asked to continue")
+            return (f"Work this task already did {why} -- these tool calls "
                     "ran and these are their results; use them and do not repeat them:\n\n" + snap)
         if seen >= 2:
             return None
@@ -9627,6 +9629,25 @@ async def _stream_agent_loop_body(
 
     _approved_result_injected = False
     _approval_echo_retries = 0  # the card question as an answer: bounce it, twice at most
+    # "Continúa" after a turn that stopped at its time or round limit: history
+    # replays only that turn's text, so the model re-did the work it had
+    # already done (exam 29, a second 3-hour leg that began by re-reading the
+    # whole transcription). Carry the previous turn's tool calls and results,
+    # as the approval resume below does, within a budget that fits the window.
+    if exact_approval is None and bool(_intent.get("continuation")) and not guide_only:
+        try:
+            _carry_limit = int(min(24000, max(4000, (context_length or 32768) * 0.4)))
+            _carry_note = _paused_turn_work_note(messages, "", limit=_carry_limit, reason="continuation")
+        except Exception:  # noqa: BLE001 - a missing bridge never blocks the turn
+            _carry_note = None
+            logger.debug("[continuation] previous-turn work note skipped", exc_info=True)
+        if _carry_note:
+            messages.append({"role": "system", "content": _carry_note})
+            try:
+                _ledger.note_known_text(_carry_note)
+            except Exception:  # noqa: BLE001
+                pass
+            logger.info("[continuation] carried %d chars of the previous turn's tool work", len(_carry_note))
     if exact_approval is not None:
         approved = exact_approval.pending
         approved_block = ToolBlock(approved.tool_name, approved.content)
