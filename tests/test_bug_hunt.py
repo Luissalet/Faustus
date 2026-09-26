@@ -402,3 +402,21 @@ def test_route_lists_reports(api_client, workspace, _canned_model):
     resp = api_client.get("/api/bug-hunt/reports")
     assert resp.status_code == 200
     assert len(resp.json()["reports"]) >= 1
+
+
+async def test_static_prepass_reports_undefined_names_first(tmp_path, monkeypatch):
+    """A name that does not exist is a bug a linter proves in a fraction of a
+    second; the hunt reports it before (and besides) any generated test."""
+    import importlib.util
+    if importlib.util.find_spec("pyflakes") is None:
+        pytest.skip("no pyflakes")
+    _no_model(monkeypatch)
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "broken.py").write_text(
+        "def total(xs):\n    return sum(xs) + offset\n", encoding="utf-8")
+    report = await bug_hunt.hunt(str(tmp_path), "pkg/broken.py", owner="tester")
+    static = [f for f in report.findings if f.test_name.startswith("static:")]
+    assert static, [f.to_dict() for f in report.findings]
+    assert static[0].verdict == "bug" and static[0].severity == "high"
+    assert "offset" in static[0].root_cause and static[0].traceback.startswith("pkg/broken.py:2")
+    assert any(n.startswith("static pre-pass") for n in report.notes)

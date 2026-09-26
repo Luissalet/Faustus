@@ -959,6 +959,50 @@ def list_reports(owner: str, limit: int = 50) -> List[Dict[str, Any]]:
     return out
 
 
+#: Linter codes that are defects by themselves (not style): undefined or
+#: redefined names, syntax/IO errors, undefined exports.
+_STATIC_BUG_CODES = ("F821", "F811", "F822", "F823", "F841", "F632", "E9", "E999")
+_STATIC_MAX_PER_FILE = 10
+
+
+def _static_prepass(workspace: str, targets: List["Target"], notes: List[str]) -> List["Finding"]:
+    """Run `src/static_checks.py` over the files the hunt targets and turn
+    correctness findings into `Finding`s (verdict "bug", source "static").
+    Whole files, not only changed lines: a hunt asks what is wrong with the
+    code as it is. Never raises; an unavailable linter is a note."""
+    paths = sorted({t.path for t in targets if t.path})
+    if not paths:
+        return []
+    try:
+        from src import static_checks
+        results = static_checks.run_for_files(workspace, paths)
+    except Exception as exc:  # noqa: BLE001 - the pre-pass is best effort
+        notes.append(f"static pre-pass skipped: {exc}"[:200])
+        return []
+    if not results:
+        notes.append("static pre-pass: no correctness linter available for these files")
+        return []
+    out: List[Finding] = []
+    tools = set()
+    for res in results:
+        tools.add(str(res.get("tool") or "linter"))
+        errors = [e for e in (res.get("errors") or []) if isinstance(e, dict)]
+        for err in errors[:_STATIC_MAX_PER_FILE]:
+            code = str(err.get("code") or "")
+            serious = any(code.startswith(c) for c in _STATIC_BUG_CODES)
+            out.append(Finding(
+                test_name=f"static:{res.get('tool') or 'linter'}:{code or 'error'}",
+                verdict="bug" if serious else "unclear",
+                root_cause=str(err.get("msg") or err.get("message") or "")[:400],
+                fix_suggestion="",
+                severity="high" if serious else "low",
+                traceback=f"{res.get('path')}:{err.get('line') or '?'}",
+                target=str(res.get("path") or ""),
+            ))
+    notes.append(f"static pre-pass ({', '.join(sorted(tools))}): {len(out)} finding(s)")
+    return out
+
+
 async def hunt(workspace: str, target: str, *, owner: str = "", keep_tests: bool = False,
                keep_scratch: bool = False, model: Optional[str] = None,
                max_cases: Optional[int] = None, timeout_s: Optional[int] = None) -> Report:
@@ -976,6 +1020,11 @@ async def hunt(workspace: str, target: str, *, owner: str = "", keep_tests: bool
 
     if not targets:
         notes.append(f"nothing found for target {target!r}")
+
+    # Static pre-pass: what a correctness linter proves (names that do not
+    # exist, syntax, redefinitions) costs a fraction of a second and no
+    # model call, so it goes first and its findings stand on their own.
+    all_findings.extend(_static_prepass(workspace, targets[:MAX_TARGETS_PER_HUNT], notes))
 
     for t in targets[:MAX_TARGETS_PER_HUNT]:
         suite = await generate_tests(t, owner=owner, model=model, max_cases=max_cases)
