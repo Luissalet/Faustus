@@ -9358,3 +9358,4 @@ Es la idea de «diagnosticar transcripciones» que salió de la revisión de rep
 - **Claude 4.x anterior al pensamiento adaptativo.** Con herramientas y pensamiento lleva la cabecera beta `interleaved-thinking-2025-05-14`, para pensar entre llamadas.
 
 Quedan en OBJETIVOS la API Responses de OpenAI con razonamiento cifrado (un camino nuevo entero), la caché explícita de Gemini y la afinidad de sesión de OpenRouter, que no está verificada.
+- **Studio.** `/turnreview` (alias `/why N`) enseña la revisión en el chat. Verificado en el 7000 sobre un chat real.
