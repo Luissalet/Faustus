@@ -342,6 +342,33 @@ export function Optimize({ say }: OptimizeProps) {
     [say, refreshProfiles],
   );
 
+  // "Relaunch with this profile": the same `activateProfile` call
+  // (§13 never launches a process itself — it only ever returns a plan),
+  // wired to its own explicit button so a person can re-run it after they
+  // have relaunched the server by hand with the deferred plan's options,
+  // and get back an unambiguous "restart required" vs "relaunched" result
+  // rather than re-reading the Activate button's generic note.
+  const [relaunching, setRelaunching] = useState(false);
+  const handleRelaunch = useCallback(
+    async (profileId: string) => {
+      setRelaunching(true);
+      try {
+        const result = await activateProfile(profileId);
+        setLastActivation(result);
+        const stillNeedsRestart = optionKeys(result.deferred).length > 0;
+        say(stillNeedsRestart
+          ? t('Restart required — {note}', { note: result.note })
+          : t('Relaunched — {note}', { note: result.note }));
+        refreshProfiles();
+      } catch (e) {
+        say(errorMessage(e));
+      } finally {
+        setRelaunching(false);
+      }
+    },
+    [say, refreshProfiles],
+  );
+
   const handleDeactivate = useCallback(
     async (profileId: string) => {
       setActivatingId(profileId);
@@ -671,6 +698,19 @@ export function Optimize({ say }: OptimizeProps) {
               {lastActivation.note}
               {optionKeys(lastActivation.applied).length > 0 && ` · ${t('Applied: {keys}', { keys: optionKeys(lastActivation.applied).join(', ') })}`}
               {optionKeys(lastActivation.deferred).length > 0 && ` · ${t('Deferred: {keys}', { keys: optionKeys(lastActivation.deferred).join(', ') })}`}
+              {optionKeys(lastActivation.deferred).length > 0 && (
+                <>
+                  {' '}
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    label={t('Relaunch with this profile')}
+                    loading={relaunching}
+                    onClick={() => void handleRelaunch(lastActivation.profile_id)}
+                    testId="bench-relaunch"
+                  />
+                </>
+              )}
             </p>
           )}
         </section>

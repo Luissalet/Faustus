@@ -139,10 +139,28 @@ def test_optimize_never_activates_from_useeffect():
         "(bench-deactivate) must call it explicitly"
     )
 
-    for testid in ("bench-activate", "bench-deactivate", "bench-rollback"):
+    for testid in ("bench-activate", "bench-deactivate", "bench-rollback", "bench-relaunch"):
         assert f'testId="{testid}"' in text or f'data-testid="{testid}"' in text, (
             f"Optimize.tsx is missing the {testid!r} testid CONTRATO_INF05.md Lote C names"
         )
+
+
+def test_optimize_relaunch_button_never_fires_from_useeffect():
+    """"Relaunch with this profile" (bench-relaunch) is the same
+    `activateProfile` call the Activate button makes, offered again once a
+    profile's activation came back `deferred` -- so it needs its own,
+    explicit-click-only guard, same as Activate/Deactivate above."""
+    text = OPTIMIZE.read_text(encoding="utf-8")
+    effect_bodies = _call_bodies(text, "useEffect")
+    for body in effect_bodies:
+        assert "handleRelaunch(" not in body, (
+            "Optimize.tsx must never call handleRelaunch() from inside a useEffect -- "
+            "only the explicit 'Relaunch with this profile' click does:\n" + body
+        )
+    assert "handleRelaunch(" in text, (
+        "Optimize.tsx never calls handleRelaunch() anywhere -- the "
+        "'Relaunch with this profile' button (bench-relaunch) must call it explicitly"
+    )
 
 
 def test_serve_form_never_relaunches_from_useeffect():

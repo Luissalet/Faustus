@@ -4602,7 +4602,9 @@ Rejected.	Rechazado.
 Relates to	Relacionada con
 Relations	Relaciones
 Relaunch	Relanzar
+Relaunch with this profile	Relanzar con este perfil
 Relaunched	Relanzado
+Relaunched — {note}	Relanzado — {note}
 Release	Liberar
 Reload	Recargar
 Reload and reconcile	Recargar y conciliar
@@ -4759,6 +4761,7 @@ Resolving model…	Determinando el modelo…
 Resolving the effective configuration	Resolviendo la configuración efectiva
 Responds	Responde
 Restart	Reiniciar
+Restart required — {note}	Es necesario reiniciar — {note}
 Restart the updated Faustus server before adding a private connection.	Reinicia el servidor actualizado de Faustus antes de añadir una conexión privada.
 Restart the updated Faustus server to enable client connection checks.	Reinicia el servidor actualizado de Faustus para habilitar la comprobación de clientes.
 Restarted	Reiniciado
