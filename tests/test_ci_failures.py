@@ -549,3 +549,15 @@ def test_route_success(route_client, tmp_path, monkeypatch):
     assert data["owner"] == "acme"
     assert len(data["failures"]) == 2
     assert "summary_md" in data
+
+
+def test_a_gh_cli_log_with_job_and_step_prefixes_is_parsed():
+    """`gh run view --log` puts "<job>\\t<step>\\t" before each timestamp;
+    seen live, a failing pytest run came back as "0 distinct failures"."""
+    from src.ci_failures import extract_failures
+    log = (
+        "test\tRun python -m pytest -q\t2026-09-26T00:41:15.5252059Z FAILED tests/test_calc.py::test_add - assert -1 == 5\n"
+        "test\tRun python -m pytest -q\t2026-09-26T00:41:15.5253246Z 1 failed in 0.03s\n"
+    )
+    blocks = extract_failures(log)
+    assert any(b.kind == "pytest" and b.file == "tests/test_calc.py" and b.test == "test_add" for b in blocks), blocks

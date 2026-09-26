@@ -264,10 +264,17 @@ async def job_log(owner: str, repo: str, job_id: Any, *, token: Optional[str] = 
 # ---------------------------------------------------------------------------
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 _TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s?", re.M)
+#: `gh run view --log` prefixes every line with the job and the step,
+#: tab-separated, before the timestamp ("test<TAB>Run pytest<TAB>2026-...Z
+#: FAILED ..."). Left in place, no failure pattern (all anchored at the
+#: start of the line) matched: seen live, a failing pytest run came back as
+#: "0 distinct failures".
+_GH_PREFIX_RE = re.compile(r"^[^\t\n]*\t[^\t\n]*\t(?=\d{4}-\d{2}-\d{2}T\d{2}:)", re.M)
 
 
 def _clean(text: str) -> str:
     text = _ANSI_RE.sub("", text or "")
+    text = _GH_PREFIX_RE.sub("", text)
     text = _TS_RE.sub("", text)
     return text
 
