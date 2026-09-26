@@ -9327,7 +9327,12 @@ async def _stream_agent_loop_body(
         _todo_stall_at = int(get_setting("agent_todo_stall_nudge", 12) or 0)
     except Exception:
         _todo_stall_at = 12
+    try:
+        _todo_stall_minutes = float(get_setting("agent_todo_stall_minutes", 30) or 0)
+    except Exception:
+        _todo_stall_minutes = 30.0
     _todo_stall_key: Optional[str] = None
+    _todo_stall_since = time.time()
     _todo_stall_rounds = 0
     _todo_stall_nudged_key: Optional[str] = None
     _qwen38_notice_sent = False
@@ -15451,7 +15456,11 @@ async def _stream_agent_loop_body(
             else:
                 _todo_stall_key = _stall_key
                 _todo_stall_rounds = 0
-            if (_stall_in_progress and _todo_stall_rounds >= _todo_stall_at
+                _todo_stall_since = time.time()
+            _stall_minutes_spent = (time.time() - _todo_stall_since) / 60.0
+            _stall_by_time = (_todo_stall_minutes > 0 and _todo_stall_rounds >= 3
+                              and _stall_minutes_spent >= _todo_stall_minutes)
+            if (_stall_in_progress and (_todo_stall_rounds >= _todo_stall_at or _stall_by_time)
                     and _todo_stall_nudged_key != _stall_key):
                 _todo_stall_nudged_key = _stall_key
                 _stalled_step = str(_stall_in_progress[0].get("content") or "")[:160]
@@ -15467,8 +15476,8 @@ async def _stream_agent_loop_body(
                             f"(\"{_stalled_step}\" or a later one) as in_progress, then continue."
                         ) if _stall_pending_only else (
                             "[Runtime plan check — automatic message, not a new user request] The step "
-                            f"\"{_stalled_step}\" has been in progress for {_todo_stall_rounds} rounds while "
-                            "the plan did not change. Close it now: write down what you have established "
+                            f"\"{_stalled_step}\" has been in progress for {_todo_stall_rounds} rounds "
+                            f"({int(_stall_minutes_spent)} min) while the plan did not change. Close it now: write down what you have established "
                             "for it and the evidence, mark it completed (or split what really remains into "
                             "a smaller next step), and move on to the next step. Certainty is not required: "
                             "mark doubts as doubts."
@@ -15482,6 +15491,7 @@ async def _stream_agent_loop_body(
                     "data: " + json.dumps({
                         "type": "harness_check", "status": "todo_stall",
                         "round": round_num, "rounds": _todo_stall_rounds,
+                        "minutes": round(_stall_minutes_spent, 1), "by_time": bool(_stall_by_time),
                     }) + "\n\n"
                 )
 

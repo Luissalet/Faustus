@@ -771,6 +771,10 @@ DEFAULT_SETTINGS = {
     # Rounds a plan step may stay in progress with the plan unchanged before
     # the loop asks the model to close it and move on (0 = off).
     "agent_todo_stall_nudge": 12,
+    # ...or this many minutes, whichever comes first (and at least 3 rounds).
+    # On a slow local model 12 rounds are close to two hours; seen live, one
+    # exam step ate a whole 3-hour turn. 0 = rounds only.
+    "agent_todo_stall_minutes": 30,
     # PENDIENTES 23-09 noche / src/tool_index.py: names this instance's tool
     # index collection explicitly (e.g. so two instances keep sharing one on
     # purpose, or to pin a name across a data-dir move). Left empty (the

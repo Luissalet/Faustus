@@ -130,6 +130,10 @@ GROUPS: list[dict[str, Any]] = [
                  "Rounds a plan step may stay in progress while the plan does not change before one note "
                  "asks the model to close it with what it has and move on. 0 disables it.",
                  0, 200),
+            _int("agent_todo_stall_minutes", "Stalled plan-step nudge (minutes)",
+                 "The same note after this many minutes on one step with the plan unchanged, whichever "
+                 "comes first (at least 3 rounds). 0 = count rounds only.",
+                 0, 1440),
             _int("agent_turn_max_seconds", "Turn wall-clock ceiling (seconds)",
                  "Hard backstop independent of round count: once a turn has run this long in real time, "
                  "it ends with a summary and a question instead of continuing indefinitely.",

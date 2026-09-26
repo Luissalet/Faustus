@@ -87,3 +87,28 @@ def test_a_plan_with_nothing_in_progress_is_nudged_to_update(tmp_path, monkeypat
     assert len(stalls) == 1
     notes = [m["content"] for m in snaps[-1] if m.get("_harness_note")]
     assert any("no step is marked in progress" in c and "Read the brief" in c for c in notes), notes
+
+
+def test_a_step_that_eats_the_clock_is_nudged_before_the_round_count(tmp_path, monkeypatch):
+    """Slow local model: few rounds, many minutes. The time budget fires first."""
+    _patch_common(monkeypatch, {"agent_todo_stall_nudge": 50, "agent_todo_stall_minutes": 30,
+                                "agent_web_streak_nudge": 0})
+    todos = [{"content": "Verify the originals", "status": "in_progress"},
+             {"content": "Write the answer", "status": "pending"}]
+    monkeypatch.setattr(coding_tools, "load_todos", lambda sid: list(todos))
+    clock = {"t": 1_000_000.0}
+
+    def fake_time():
+        clock["t"] += 240.0   # every call moves the clock four minutes
+        return clock["t"]
+    monkeypatch.setattr(al.time, "time", fake_time)
+    snaps = []
+    _stream(monkeypatch, 7, snaps)
+    events = _events(_collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": "resuelve el acertijo de esta carpeta paso a paso"}],
+        max_rounds=12, relevant_tools={"read_file", "todowrite"}, workspace=str(tmp_path),
+        session_id="s-slow",
+    )))
+    stalls = [e for e in events if e.get("type") == "harness_check" and e.get("status") == "todo_stall"]
+    assert len(stalls) == 1 and stalls[0]["by_time"] is True and stalls[0]["rounds"] < 50
