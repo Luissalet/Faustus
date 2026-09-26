@@ -125,7 +125,7 @@ Nada abierto a 26-09 (mañana): lo que era una mejora pasó a OBJETIVOS (OBJ-47)
 - **Panel de autonomía en el navegador** (FAUSTUS §180): solo confirmado por `tsc`/`npm run build`; falta ver la tabla de familias con datos reales y pulsar Promover/Degradar contra el servidor.
 - **Radar de git: tema claro, 420px y tarjeta de Inicio con push real** (FAUSTUS §185/§187): sin probar en el navegador ni con una notificación push real en el móvil.
 - **Vision con un modelo sin proyector** (FAUSTUS §194): con la casilla activada ya se probó (etiqueta «Visión», espera de 180 s); falta el caso con la casilla desactivada.
-- **Arranque lento no reproducido** (uso diario 25-09, §199): el 7006 tardó 4 min 15 s entre «Secret file hardening» y «Background-job monitor started» una vez; si se repite, un `py-spy dump` durante el hueco dirá la causa.
+- **Arranque lento del 7006** (25-09 y 26-09, §199/§209): reproducido hoy — 3 min sin una línea de log entre «Secret file hardening» y la recuperación de ejecuciones, que por sí sola tarda 3 s con los mismos datos. En el próximo arranque lento, `logs/crash.log` traerá la pila de todos los hilos a los 90 s (vigilante nuevo); leerla y arreglar lo que espere.
 
 ## D. Verificar en vivo con el modelo local
 
