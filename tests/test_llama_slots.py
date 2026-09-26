@@ -75,12 +75,11 @@ def test_setting_off_pins_nothing(monkeypatch):
     assert llama_slots.slot_for(URL, "chat-a") is None
 
 
-def test_helper_requests_rotate_over_the_slots_no_chat_holds():
-    llama_slots.note_slot_count(URL, 4)
+def test_helper_requests_share_one_slot_no_chat_holds():
+    llama_slots.note_slots(URL, [{"id": i, "is_processing": i == 0} for i in range(4)])
     chat = llama_slots.slot_for(URL, "chat-a")
-    got = [llama_slots.helper_slot(URL) for _ in range(6)]
-    assert chat not in got
-    assert set(got) == {0, 1, 2, 3} - {chat}
+    got = {llama_slots.helper_slot(URL) for _ in range(5)}
+    assert len(got) == 1 and chat not in got and 0 not in got  # 0 is busy right now
 
 
 def test_a_stale_slot_count_is_not_trusted(monkeypatch):

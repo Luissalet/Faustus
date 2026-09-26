@@ -19,11 +19,17 @@ llama.cpp is never sent the field; a count older than `COUNT_TTL` seconds is
 not trusted (a slot the server no longer has would make it hold the request
 forever).
 
-Helper requests (titles, reviews, one-off completions) are sent to the
-slots no chat holds, in turn (`helper_slot`). Left to the server they went
-by similarity or to the least recently used slot, which on the 3B helper
-server (similarity 0.1) was the chat's own: live, the second turn of a chat
-on its pinned slot still read its whole prompt again.
+Typed decisions and choices, short helper requests that post to the server
+themselves, go to one slot no chat holds (`helper_slot`). Other helper
+completions are left to the server: naming one slot for all of them would
+queue work that runs side by side today (Deep Research extracts three pages
+at once).
+
+Limit: when the server's KV cache is shared by all its slots (the default
+now; /slots then shows every slot with the full n_ctx) and it fills up, the
+server clears idle slots to make room, a pinned one included. On a small
+pool (the 3B helper, 16k) a few other prompts are enough; on the 27B's 235k
+pool a long chat keeps its cache.
 """
 from __future__ import annotations
 
@@ -40,7 +46,6 @@ _LOCK = threading.Lock()
 _COUNTS: Dict[str, int] = {}
 _SEEN_AT: Dict[str, float] = {}
 _ASSIGNED: Dict[str, "OrderedDict[str, int]"] = {}
-_HELPER_TURN: Dict[str, int] = {}
 _BUSY: Dict[str, frozenset] = {}
 
 MIN_SLOTS = 3
@@ -148,8 +153,16 @@ def slot_for(url: str, session_id: Optional[str]) -> Optional[int]:
 
 
 def helper_slot(url: str) -> Optional[int]:
-    """A slot no chat holds on `url`, taken in turn so parallel helper
-    requests still run side by side; None when nothing is pinned there."""
+    """The slot for short helper requests on `url` (typed decisions and
+    choices): always the same one, the lowest no chat holds, preferring one
+    the server is not working on. None when nothing is pinned there.
+
+    One slot, not a rotation: the fields of successive decisions share a
+    long prefix that only a slot that saw the last one can reuse (live, a
+    rotated decision missed its 1 s budget), and on a server whose KV cache
+    is shared by all slots every extra slot filled is room another slot's
+    cache loses (measured on the 3B helper: three prompts of 6.8k on other
+    slots cleared a chat's 6.8k on its own)."""
     if not _enabled():
         return None
     base = server_base(url)
@@ -159,9 +172,8 @@ def helper_slot(url: str) -> Optional[int]:
             return None
         taken = set((_ASSIGNED.get(base) or {}).values())
         free = [s for s in range(count) if s not in taken] or [0]
-        turn = _HELPER_TURN.get(base, 0)
-        _HELPER_TURN[base] = turn + 1
-        return free[turn % len(free)]
+        idle = [s for s in free if s not in _BUSY.get(base, frozenset())]
+        return (idle or free)[0]
 
 
 def reset() -> None:
@@ -170,5 +182,4 @@ def reset() -> None:
         _COUNTS.clear()
         _SEEN_AT.clear()
         _ASSIGNED.clear()
-        _HELPER_TURN.clear()
         _BUSY.clear()
