@@ -151,6 +151,27 @@ def isolated_kv_rate_history(tmp_path_factory, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def isolated_local_speed_cache(tmp_path_factory, monkeypatch):
+    """`llm_core.remember_local_speed` persists learned decode-speed figures
+    to `DATA_DIR/local_speed.json` (CMP-08 follow-up: `local_latency` falls
+    back to this when no live measurement exists yet this process). Same
+    shape as `isolated_kv_rate_history` above and for the same reason: point
+    the file at a scratch path, and start each test with a clean in-memory
+    table and the "already loaded from disk" flag pre-set, so no test run
+    writes into the real checkout's data dir or leaks a fake tps figure
+    between tests. A test that wants to exercise the disk-hydration path
+    itself resets `_LOCAL_SPEED_LOADED_FROM_DISK` back to False locally."""
+    from src import llm_core
+    path = tmp_path_factory.mktemp("local_speed") / "local_speed.json"
+    monkeypatch.setattr(llm_core, "_local_speed_path", lambda: str(path))
+    monkeypatch.setattr(llm_core, "_LOCAL_SPEED_LOADED_FROM_DISK", True)
+    monkeypatch.setattr(llm_core, "_LOCAL_SPEED_LAST_PERSIST", 0.0)
+    llm_core._LOCAL_SPEED.clear()
+    yield
+    llm_core._LOCAL_SPEED.clear()
+
+
+@pytest.fixture(autouse=True)
 def fresh_ports_cache():
     """`process_center._ports_by_pid_cached()` keeps one process-wide, ~2.5s
     cached scan (PENDIENTES §101). Without a reset, a test that populates it

@@ -213,6 +213,95 @@ def _llamacpp_engine_timings(tm: dict) -> Dict[str, Any]:
 # call with it (deep_research._call_budget): a guessed 8 tok/s is right for
 # a 27B q4 on consumer cards and wrong for everything else.
 _LOCAL_SPEED: Dict[str, Dict[str, float]] = {}
+_LOCAL_SPEED_LOCK = threading.Lock()
+_LOCAL_SPEED_LOADED_FROM_DISK = False
+_LOCAL_SPEED_LAST_PERSIST = 0.0
+_LOCAL_SPEED_PERSIST_MIN_INTERVAL_S = 5.0
+
+
+def _local_speed_path() -> str:
+    try:
+        from src.constants import DATA_DIR
+    except Exception:  # pragma: no cover - mirrors src/token_calibration.py's fallback
+        DATA_DIR = os.path.join(os.getcwd(), "data")
+    return os.path.join(DATA_DIR, "local_speed.json")
+
+
+def _load_local_speed_from_disk() -> None:
+    """Hydrate ``_LOCAL_SPEED`` once per process from the figures the last
+    run persisted (CMP-08 follow-up), so ``local_speed()`` for a model this
+    process has not yet replied from — a fresh restart, no GPU speed
+    measured yet THIS run — still surfaces the last real decode speed
+    Faustus observed, instead of ``unknown`` until it happens to reply
+    again. A model this run has already measured is never overwritten by
+    the stale on-disk figure."""
+    global _LOCAL_SPEED_LOADED_FROM_DISK
+    if _LOCAL_SPEED_LOADED_FROM_DISK:
+        return
+    with _LOCAL_SPEED_LOCK:
+        if _LOCAL_SPEED_LOADED_FROM_DISK:
+            return
+        _LOCAL_SPEED_LOADED_FROM_DISK = True
+        try:
+            path = _local_speed_path()
+            if not os.path.exists(path):
+                return
+            with open(path, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            if not isinstance(raw, dict):
+                return
+            for model, entry in raw.items():
+                if (
+                    isinstance(model, str) and model and model not in _LOCAL_SPEED
+                    and isinstance(entry, dict) and isinstance(entry.get("tps"), (int, float))
+                ):
+                    _LOCAL_SPEED[model] = {
+                        "tps": float(entry["tps"]),
+                        "samples": float(entry.get("samples") or 0.0),
+                    }
+        except Exception:
+            logger.debug("[llm_core] local_speed disk cache unreadable", exc_info=True)
+
+
+_LOCAL_SPEED_PERSIST_THREAD: Optional[threading.Thread] = None
+
+
+def _persist_local_speed() -> None:
+    """Best-effort, throttled, off-thread — never adds real latency to the
+    reply this measurement came from and never raises."""
+    global _LOCAL_SPEED_LAST_PERSIST, _LOCAL_SPEED_PERSIST_THREAD
+    now = time.time()
+    if now - _LOCAL_SPEED_LAST_PERSIST < _LOCAL_SPEED_PERSIST_MIN_INTERVAL_S:
+        return
+    _LOCAL_SPEED_LAST_PERSIST = now
+    snapshot = {
+        model: {"tps": data.get("tps"), "samples": data.get("samples")}
+        for model, data in dict(_LOCAL_SPEED).items()
+        if isinstance(data, dict) and isinstance(data.get("tps"), (int, float))
+    }
+
+    def _write() -> None:
+        try:
+            path = _local_speed_path()
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            tmp = path + f".{os.getpid()}.tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(snapshot, f)
+            os.replace(tmp, path)
+        except Exception:
+            logger.debug("[llm_core] local_speed persist failed", exc_info=True)
+
+    thread = threading.Thread(target=_write, daemon=True, name="local-speed-persist")
+    _LOCAL_SPEED_PERSIST_THREAD = thread
+    thread.start()
+
+
+def flush_local_speed_for_tests(timeout: float = 5.0) -> None:
+    """Block until the latest background persist finishes writing (or the
+    timeout elapses). Test-only — production code never waits on this."""
+    thread = _LOCAL_SPEED_PERSIST_THREAD
+    if thread is not None:
+        thread.join(timeout=timeout)
 
 
 def remember_local_speed(model: str, count, duration_ns) -> Optional[float]:
@@ -230,12 +319,24 @@ def remember_local_speed(model: str, count, duration_ns) -> Optional[float]:
         # for the rest of the session, one fast one must not shrink it.
         cur["tps"] = round(cur["tps"] * 0.7 + tps * 0.3, 2)
         cur["samples"] += 1
+    _persist_local_speed()
     return _LOCAL_SPEED[model]["tps"]
 
 
 def local_speed(model: str) -> Optional[float]:
-    """The learned decode speed of a local model in tok/s, or None."""
-    cur = _LOCAL_SPEED.get(str(model or ""))
+    """The learned decode speed of a local model in tok/s, or None.
+
+    Checks this process's own live measurements first; if this model has not
+    replied yet this run, falls back to the last figure persisted to disk
+    (CMP-08 follow-up) before giving up and returning ``None`` ("unknown")."""
+    key = str(model or "")
+    cur = _LOCAL_SPEED.get(key)
+    if cur:
+        return cur["tps"]
+    if not key:
+        return None
+    _load_local_speed_from_disk()
+    cur = _LOCAL_SPEED.get(key)
     return cur["tps"] if cur else None
 
 

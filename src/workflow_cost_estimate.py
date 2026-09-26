@@ -680,10 +680,14 @@ def local_latency_for(model: str, *, endpoint_url: str = "") -> Dict[str, Any]:
     function can actually trace to a real signal — never a guess:
 
     * **`generation_tps`** — `src.llm_core.local_speed(model)`, the decode
-      speed Faustus has itself learned from that model's own replies this
-      process's lifetime (`llm_core.remember_local_speed`, fed by Ollama's
-      `eval_count`/`eval_duration`). `"unknown"` until this model has
-      actually replied once.
+      speed Faustus has itself learned from that model's own replies
+      (`llm_core.remember_local_speed`, fed by Ollama's `eval_count`/
+      `eval_duration`). Checks this process's own live measurements first;
+      when this model has not replied yet this run — no GPU speed measured
+      THIS process's lifetime — falls back to the last figure Faustus
+      persisted to disk from a previous run (PENDIENTES CMP-08 follow-up:
+      "sin GPU medida nunca sale un número") before finally giving up as
+      `"unknown"` when neither exists.
     * **`load`** — always `"unknown"`. `src.gpu_policy.model_sizes(endpoint_url)`
       gives a model's size on disk (checked before writing this — the size
       IS surfaced, as `size_bytes`, when the lookup succeeds), but nothing
