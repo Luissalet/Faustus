@@ -9229,3 +9229,7 @@ La revisión de dudas viene apagada (`agent_doubt_review`). Quien la encienda en
 - `DEFAULT_BUMPS` lee un valor guardado igual al antiguo valor por defecto como si fuera el nuevo. Hoy lo hace con el tope, de 28 a 48.
 
 Con el log nuevo (`chat tool set: … added …, dropped …`) se vio además que el 7000 descartaba el juego guardado por ese 28.
+
+**Un chat cubierto conserva sus esquemas completos.** Faltaba un caso más. Un turno cuyas herramientas ya estaban todas en el juego del chat cambiaba cuáles llevaban esquema completo cuando la búsqueda subía una que estaba en el catálogo, y eso bastaba para cambiar el bloque de herramientas. Ahora un turno cubierto reutiliza el juego entero; la herramienta del catálogo sigue a un `lookup_tools` de distancia.
+
+**El examen perdió 110.000 tokens de caché de golpe.** La ronda 38 del examen 30 releyó el prompt entero: 290 s de prefill, mientras yo lanzaba turnos de prueba contra el mismo 8081. llama-server reparte las peticiones entre slots por prefijo común (`--slot-prompt-similarity`, 0,10 por defecto). Todas las sesiones de Faustus comparten el mismo prompt de sistema, así que un chat nuevo puede parecerse lo bastante al slot del examen, ocuparlo y borrarle la caché. Queda en PENDIENTES subir ese umbral en el 8081 al acabar el examen (reiniciarlo ahora le costaría otros 5 minutos de prefill).
