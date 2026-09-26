@@ -1696,6 +1696,42 @@ function ThinkModeChip({ mode, chosen, onPick, levels = [], effort = null, onPic
  * per-control "Reset" removes just that field; the chip's outer X
  * (`onClearGen`, in the caller) still clears every override at once.
  */
+/**
+ * The number box of a generation control. It keeps what is being typed as
+ * text and commits only a complete number: committing on every keystroke
+ * turned "0." into 0 before the 9 arrived. An empty box, or leaving it with
+ * something unparsable, goes back to the current value.
+ */
+function GenNumberBox({ id, value, min, max, step, placeholder, label, onCommit }: {
+  id: string; value: number | undefined; min: number; max: number; step: number;
+  placeholder: string; label: string; onCommit: (v: number) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft ?? (value === undefined ? '' : String(value));
+  const commit = (text: string) => {
+    const v = Number(text.replace(',', '.'));
+    if (text.trim() !== '' && Number.isFinite(v)) onCommit(v);
+  };
+  return (
+    <input
+      id={id} type="text" inputMode="decimal" data-min={min} data-max={max} data-step={step}
+      value={shown} placeholder={placeholder} aria-label={label}
+      onChange={(e) => {
+        const text = e.target.value;
+        setDraft(text);
+        // Commit as you type only when the text is already a whole number
+        // form ("0.9", "40"), never a prefix of one ("0.", "-", "").
+        if (/^-?\d+([.,]\d+)?$/.test(text.trim())) commit(text);
+      }}
+      onBlur={() => { if (draft !== null) commit(draft); setDraft(null); }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') { e.preventDefault(); if (draft !== null) commit(draft); setDraft(null); }
+        if (e.key === 'Escape') setDraft(null);
+      }}
+    />
+  );
+}
+
 function GenSettingsPopover({ gen, onSetGen, modelName, genLabel }: {
   gen: GenOverrides;
   onSetGen: (update: GenOverrides) => void;
@@ -1722,7 +1758,11 @@ function GenSettingsPopover({ gen, onSetGen, modelName, genLabel }: {
   const reset = (key: 'temperature' | 'max_tokens' | 'top_p' | 'top_k' | 'think') =>
     onSetGen(genWithoutOverride(gen, key));
 
-  const Row = ({
+  // A plain render helper, not a component: a component declared inside
+  // this one is a new type on every render, so React remounted the row on
+  // each keystroke and the number box lost focus after one character
+  // ("40" became 4, "0.9" became 0).
+  const row = ({
     id, label, keyName, value, min, max, step, unit, onChange,
   }: {
     id: string; label: string; keyName: 'temperature' | 'max_tokens' | 'top_p' | 'top_k';
@@ -1730,7 +1770,6 @@ function GenSettingsPopover({ gen, onSetGen, modelName, genLabel }: {
     unit?: string; onChange: (v: number) => void;
   }) => {
     const source = genFieldSource(keyName, gen);
-    const shown = value ?? '';
     return (
       <div className="fs-gen-panel__row">
         <label htmlFor={id}>
@@ -1746,11 +1785,11 @@ function GenSettingsPopover({ gen, onSetGen, modelName, genLabel }: {
             onChange={(e) => onChange(Number(e.target.value))}
             aria-describedby={`${id}-value`}
           />
-          <input
-            id={`${id}-value`} type="number" min={min} max={max} step={step}
-            value={shown} placeholder={t('auto')}
-            aria-label={t('{label} value', { label })}
-            onChange={(e) => { const v = Number(e.target.value); if (!Number.isNaN(v)) onChange(v); }}
+          <GenNumberBox
+            id={`${id}-value`} min={min} max={max} step={step}
+            value={value} placeholder={t('auto')}
+            label={t('{label} value', { label })}
+            onCommit={onChange}
           />
           {unit && <span className="fs-gen-panel__unit">{unit}</span>}
           {source === 'override' && (
@@ -1786,18 +1825,18 @@ function GenSettingsPopover({ gen, onSetGen, modelName, genLabel }: {
       <section aria-label={t('Generation settings')}>
         <h3>{t('Generation settings')}</h3>
         <p>{t('Starts from your default; changing a control overrides it for this chat only.')}</p>
-        <Row id="gen-temperature" label={t('Temperature')} keyName="temperature"
-          value={temperature} min={0} max={2} step={0.05}
-          onChange={(v) => set('temperature', Math.min(2, Math.max(0, v)))} />
-        <Row id="gen-top-p" label="top_p" keyName="top_p"
-          value={topP} min={0} max={1} step={0.05}
-          onChange={(v) => set('top_p', Math.min(1, Math.max(0, v)))} />
-        <Row id="gen-top-k" label="top_k" keyName="top_k"
-          value={topK} min={0} max={200} step={1}
-          onChange={(v) => set('top_k', Math.round(Math.min(200, Math.max(0, v))))} />
-        <Row id="gen-max-tokens" label={t('Max tokens')} keyName="max_tokens"
-          value={maxTokens} min={0} max={32768} step={64} unit={t('tokens')}
-          onChange={(v) => set('max_tokens', Math.round(Math.max(0, v)))} />
+        {row({ id: 'gen-temperature', label: t('Temperature'), keyName: 'temperature',
+          value: temperature, min: 0, max: 2, step: 0.05,
+          onChange: (v) => set('temperature', Math.min(2, Math.max(0, v))) })}
+        {row({ id: 'gen-top-p', label: 'top_p', keyName: 'top_p',
+          value: topP, min: 0, max: 1, step: 0.05,
+          onChange: (v) => set('top_p', Math.min(1, Math.max(0, v))) })}
+        {row({ id: 'gen-top-k', label: 'top_k', keyName: 'top_k',
+          value: topK, min: 0, max: 200, step: 1,
+          onChange: (v) => set('top_k', Math.round(Math.min(200, Math.max(0, v)))) })}
+        {row({ id: 'gen-max-tokens', label: t('Max tokens'), keyName: 'max_tokens',
+          value: maxTokens, min: 0, max: 32768, step: 64, unit: t('tokens'),
+          onChange: (v) => set('max_tokens', Math.round(Math.max(0, v))) })}
         {thinkApplies && (
           <div className="fs-gen-panel__row fs-gen-panel__row--switch">
             <label htmlFor="gen-think">
