@@ -50,6 +50,10 @@
 
 .fs-set__section {
   display: grid;
+  /* One track that may shrink below its content's min-content width: an
+     implicit `auto` track grew to the widest card, and at 420 px every
+     card was clipped on the right. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--fs-space-4);
 }
 
@@ -79,6 +83,8 @@
 
 .fs-set__card {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-inline-size: 0;
   gap: var(--fs-space-3);
   padding: var(--fs-space-4);
   border: 1px solid var(--fs-border);
@@ -578,6 +584,20 @@
 .fs-set__schema-text {
   display: grid;
   gap: 2px;
+  min-inline-size: 0;
+}
+
+/* Setting keys and help text carry long unbroken tokens (snake_case keys,
+   JSON shapes); let them wrap instead of widening the row. */
+.fs-set__schema-text .fs-set__key,
+.fs-set__schema-text .fs-set__help {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 560px) {
+  .fs-set__field--schema {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .fs-set__key {
@@ -728,6 +748,7 @@
 
 .fs-set__row-end {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: var(--fs-space-2);
@@ -1021,6 +1042,7 @@
 
 .fs-wipe__row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--fs-space-3);
@@ -1032,6 +1054,8 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
 }
 
 /* ── Integrations (lot S) ── */
