@@ -203,6 +203,45 @@ assert(plain.steps.length === 0 && plain.summary === undefined, 'a chat turn res
   }
 }
 
+// ── A heartbeat mid-tool must never bury "Running <tool>" under the
+// server's own model_state guess (FAUSTUS.md turn_error/status lote) ──
+{
+  const real = Date.now;
+  let clock = 0;
+  Date.now = () => clock;
+  try {
+    let t = m.blankTurn('assistant');
+    t = m.apply(t, { type: 'tool_start', tool: 'review_candidature_mail', command: '', round: 1 });
+    assert(t.live.phase === 'tool', 'tool_start opens the tool phase');
+    const runningLabel = t.live.label;
+    clock += 20_000;
+    // No tool_progress arrived (a quiet tool, e.g. reading mail for
+    // minutes) but the server's heartbeat still pings with its own idea
+    // of the phase — here 'waiting_model' with a model_state detail, the
+    // exact shape that used to read as "Loading the model into memory".
+    t = m.apply(t, {
+      type: 'heartbeat', phase: 'waiting_model', phaseAt: 0,
+      tool: '', detail: 'Loading the model into memory', round: 1,
+    });
+    assert(t.live.phase === 'tool', 'a heartbeat while a tool runs keeps the tool phase');
+    assert(t.live.label === runningLabel, 'and keeps naming the actual running tool, not the model state');
+    assert(t.live.lastAt === clock, 'the heartbeat still counts as a sign of life (no "no server signal")');
+
+    // Once the tool actually finishes, a heartbeat is free to describe the
+    // model again.
+    t = m.apply(t, { type: 'tool_output', tool: 'review_candidature_mail', command: '', output: 'ok', exitCode: 0 });
+    clock += 1_000;
+    t = m.apply(t, {
+      type: 'heartbeat', phase: 'waiting_model', phaseAt: 0,
+      tool: '', detail: 'Loading the model into memory', round: 1,
+    });
+    assert(t.live.phase === 'waiting' && t.live.label === 'Loading the model into memory',
+      'with no tool running, the heartbeat\'s own model-state label wins again');
+  } finally {
+    Date.now = real;
+  }
+}
+
 // ── Collapsed thinking segments interleaved with tools ──
 {
   const real = Date.now;

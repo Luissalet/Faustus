@@ -805,6 +805,21 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
     case 'response_replace':
       return { ...turn, text: event.text, live: liveToken(live, now, false), uncertain: undefined };
     case 'heartbeat': {
+      // While a tool is running (the latest `tool_start` has no matching
+      // `tool_output` yet), the heartbeat's own phase — the server's
+      // periodic "what is the model doing" ping, usually `waiting_model`
+      // between rounds — must never eclipse it: a long tool with no
+      // `tool_progress` in between (minutes reading mail) otherwise reads
+      // as "Loading the model into memory · No server signal" while the
+      // tool, not the model, is the thing still working.
+      const runningStep = [...turn.steps].reverse().find((s) => s.state === 'running');
+      if (runningStep) {
+        return {
+          ...turn,
+          rounds: Math.max(turn.rounds, event.round),
+          live: livePhase(live, now, 'tool', runningStep.label),
+        };
+      }
       const phase: LiveRate['phase'] =
         event.phase === 'thinking' || event.phase === 'writing' || event.phase === 'tool'
           ? event.phase
