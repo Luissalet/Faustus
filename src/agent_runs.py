@@ -1609,8 +1609,19 @@ def _unknown_effects_note(unknown_effects: List[Dict[str, Any]]) -> str:
     )
 
 
-def _read_log(path: str) -> Dict[str, Any]:
-    """Parse a run log: {"status", "run_id", "events": [ev...], "ts", "label"}."""
+#: Event lines recovery never reads (`_partial_from_events` skips them): the
+#: reasoning deltas and the heartbeats are most of a long run's log. Matched
+#: on the raw line, before any JSON is parsed.
+_RECOVERY_SKIP = ('\\"thinking\\": true', '\\"type\\": \\"run_activity\\"',
+                  '\\"type\\": \\"context_packet\\"', '\\"type\\": \\"context_ledger\\"')
+
+
+def _read_log(path: str, *, for_recovery: bool = False) -> Dict[str, Any]:
+    """Parse a run log: {"status", "run_id", "events": [ev...], "ts", "label"}.
+
+    `for_recovery` drops the events recovery never uses before parsing them:
+    an exam run killed after four hours left 53 MB of log, and parsing all of
+    it held the 7006's startup for two and a half minutes (26-09)."""
     events: Dict[int, str] = {}
     status = None
     meta: Dict[str, Any] = {}
@@ -1619,6 +1630,8 @@ def _read_log(path: str) -> Dict[str, Any]:
             for line in f:
                 line = line.strip()
                 if not line:
+                    continue
+                if for_recovery and any(marker in line for marker in _RECOVERY_SKIP):
                     continue
                 try:
                     obj = json.loads(line)
@@ -1953,7 +1966,7 @@ def recover_interrupted_runs(session_manager=None) -> List[Dict[str, Any]]:
         if peeked in ("done", "stopped", "error", "interrupted", "unreadable", "waiting_user"):
             info = {"status": peeked}
         else:
-            info = _read_log(path)
+            info = _read_log(path, for_recovery=True)
         status = info.get("status")
         if status in ("done", "stopped", "error", "interrupted", "unreadable",
                       "waiting_user", None) and status != "running":
