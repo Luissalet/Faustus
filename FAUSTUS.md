@@ -9167,3 +9167,5 @@ La revisión de dudas viene apagada (`agent_doubt_review`). Quien la encienda en
 
 **Planes sin encabezados.** Antes, un plan escrito como viñetas o como líneas «Paso 2: …» / «Step 3 - …» daba 0 tareas en el seguidor de planes. Ahora se leen cuando no hay encabezados, números ni casillas, siempre que haya al menos tres pasos. Así una carta sigue dando 0. La versión 3 del parser vuelve a leer los seguidores guardados y conserva el estado de cada tarea.
 
+**Apps: «Checking…» antes del primer sondeo.** Nada más abrir Procesos › Apps, todas las tarjetas decían «Stopped» y ofrecían Start, incluso las de apps en marcha, porque el sondeo de estado aún no había contestado. Una comprobación en vivo arrancó así una app que ya corría. Ahora la tarjeta dice «Checking…» y deja Start y Restart desactivados hasta la primera respuesta. Visto en el 7000 con el sondeo retrasado 3 s: «Checking…» y botón desactivado a 1,5 s y a 2,5 s, «Running · pid … · :5178» a 5 s. Con el hueco de ancho fijo, un arranque real no movió ningún botón. La app de prueba se paró al acabar.
+
