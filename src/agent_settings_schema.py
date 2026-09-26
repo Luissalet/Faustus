@@ -35,6 +35,7 @@ SCHEMA_KEY_RE = re.compile(r"^(agent_|browser_|desktop_)")
 # Agent-adjacent keys that live under other prefixes but belong on this page.
 EXTRA_KEYS: tuple[str, ...] = ("tool_path_extra_roots", "vision_enabled", "vision_model",
                               "vision_timeout_seconds", "vision_max_side", "vision_max_side_limit", "vision_min_side",
+                               "vision_write_every",
                                "vision_max_tokens", "vision_num_ctx",
                                "dispatch_model", "dispatch_endpoint_id", "gpu_placement_prefer",
                                "sandbox_missing_policy", "code_graph_community_summaries",
@@ -650,6 +651,10 @@ GROUPS: list[dict[str, Any]] = [
             _int("vision_min_side", "Vision minimum image size (px)",
                  "A crop smaller than this is enlarged before the Vision model sees it; small "
                  "handwriting is misread at its native size. 0 = never enlarge.", 0, 4096),
+            _int("vision_write_every", "Write down after N looks at one image",
+                 "After this many image questions about the same image with nothing written in "
+                 "between, the agent is told to write its current best answer first and then ask "
+                 "only about the gaps. 0 = never.", 0, 100),
             _int("vision_max_tokens", "Vision answer length (tokens)",
                  "Longest answer one image question may produce; 0 = no limit. Stops a vision model "
                  "that falls into repeating itself from spending minutes on one question.", 0, 16384),

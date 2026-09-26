@@ -178,6 +178,11 @@ DEFAULT_SETTINGS = {
     # handwritten operations came back as invented words ("Build & connect")
     # from a strong vision model; the same crop at 3x read correctly.
     "vision_min_side": 1024,
+    # Every this many inspect_image calls on the SAME image with nothing
+    # written in between, the answer carries a note: write your current best
+    # answer down first, then ask only about the gaps (0 = never). Exam runs
+    # spent hours re-inspecting one map without writing the deliverable.
+    "vision_write_every": 6,
     # Longest answer one vision question may produce (0 = no limit). Live,
     # 24-09-2026: a CPU vision model asked to transcribe a crop fell into a
     # repetition loop and generated 3,600+ tokens at ~6 tokens/s (10 min).

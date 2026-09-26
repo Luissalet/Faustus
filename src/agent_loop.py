@@ -14688,6 +14688,15 @@ async def _stream_agent_loop_body(
                     _tool_trouble_since_stream = True
             except Exception:  # noqa: BLE001
                 pass
+            # A successful write restarts inspect_image's per-image count
+            # (the "write your best answer down" note).
+            if block.tool_type in ("write_file", "edit_file", "apply_patch", "append_file") \
+                    and not result.get("error") and result.get("success", True) is not False:
+                try:
+                    from src.agent_tools import image_inspect_tool as _iit_w
+                    _iit_w.note_written(session_id)
+                except Exception:  # noqa: BLE001 - advisory
+                    pass
             # Emit tool_output (include ui_event data if present)
             tool_output_data = {"type": "tool_output", "tool": block.tool_type, "command": cmd_display, "output": output_text, "exit_code": result.get("exit_code"), "call_id": _call_id}
             try:

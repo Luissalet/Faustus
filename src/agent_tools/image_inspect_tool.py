@@ -861,6 +861,83 @@ def _with_repeat_note(result: Dict[str, Any], count: int) -> Dict[str, Any]:
     return result
 
 
+# ---------------------------------------------------------------------------
+# looks per image
+# ---------------------------------------------------------------------------
+#
+# The repeat ledger catches the SAME question; exam runs also showed a model
+# asking thirty DIFFERENT questions about one map over hours without writing
+# a line of its answer (research, 26-09-2026: an inspection cap per source
+# that forces "write your current best answer now" beats more looking).
+# Per session and image, count the questions since the last successful
+# write; every ``vision_write_every`` of them the answer carries a note.
+# The agent loop calls ``note_written`` when a write tool succeeds.
+
+_LOOKS: "OrderedDict[Tuple[str, str], int]" = OrderedDict()
+
+
+def _image_source(args: Dict[str, Any]) -> str:
+    for key in ("path", "url"):
+        value = str(args.get(key) or "").strip()
+        if value:
+            page = args.get("page")
+            return value + (f"#p{page}" if page else "")
+    return ""
+
+
+def _write_every() -> int:
+    try:
+        from src.settings import get_setting
+        return max(0, min(int(get_setting("vision_write_every", 6) or 0), 100))
+    except Exception:  # noqa: BLE001 - settings unavailable: default
+        return 6
+
+
+def _note_look(args: Dict[str, Any], ctx: Dict[str, Any]) -> int:
+    """One more question about this image; return the count since the last
+    write (0 when there is no session or image to key on)."""
+    session = str((ctx or {}).get("session_id") or "").strip()
+    source = _image_source(args)
+    if not session or not source:
+        return 0
+    key = (session, source)
+    count = _LOOKS.pop(key, 0) + 1
+    _LOOKS[key] = count
+    while len(_LOOKS) > _REPEAT_LEDGER_MAX:
+        _LOOKS.popitem(last=False)
+    return count
+
+
+def looks_since_write(session_id: Optional[str], source: str) -> int:
+    return _LOOKS.get((str(session_id or ""), source), 0)
+
+
+def note_written(session_id: Optional[str]) -> None:
+    """A write tool succeeded in this session: the counts start again."""
+    session = str(session_id or "")
+    for key in [k for k in _LOOKS if k[0] == session]:
+        _LOOKS.pop(key, None)
+
+
+def _write_note(looks: int, source: str) -> str:
+    name = os.path.basename(source.split("#", 1)[0]) or source
+    return (f"[inspect_image: this is question {looks} about {name} with nothing written since. "
+            "Stop looking for a moment: write your current best answer now — into the file the "
+            "task asks for, or your notes if it names none — with what you have established and "
+            "what is still uncertain. Then ask only about the specific gaps that could change "
+            "that answer.]")
+
+
+def _with_write_note(result: Dict[str, Any], looks: int, source: str) -> Dict[str, Any]:
+    every = _write_every()
+    if not every or looks < every or looks % every or not isinstance(result, dict) or result.get("error"):
+        return result
+    result = dict(result)
+    result["output"] = f"{str(result.get('output') or '')}\n\n{_write_note(looks, source)}"
+    result["looks_since_write"] = looks
+    return result
+
+
 class InspectImageTool:
     """`inspect_image`: ask/count/view/shapes/compare/grid_locate — see module
     docstring."""
@@ -873,8 +950,10 @@ class InspectImageTool:
             return {"error": f"inspect_image: unknown action '{action}' — one of "
                               f"{', '.join(sorted(_ACTIONS))}", "exit_code": 1}
         count = _note_repeat(_repeat_key({**args, "action": action}, ctx or {}))
+        looks = _note_look(args, ctx or {})
         try:
-            return _with_repeat_note(await handler(args, ctx or {}), count)
+            return _with_write_note(_with_repeat_note(await handler(args, ctx or {}), count),
+                                    looks, _image_source(args))
         except ii.InspectImageError as exc:
             return {"error": str(exc), "exit_code": 1, "error_class": "inspect_image.invalid"}
         except Exception as exc:  # noqa: BLE001 - a bad image/model call is data, not a crash
