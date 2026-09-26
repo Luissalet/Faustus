@@ -513,10 +513,13 @@ export interface MemoryConflict {
   oldText: string;
   newUpdatedAt: string;
   oldUpdatedAt: string;
-  reason: 'negation' | 'same_subject_different_value' | string;
+  reason: 'negation' | 'same_subject_different_value' | 'model_suggested' | string;
   detail: string;
-  status: 'open' | 'kept_new' | 'kept_old' | 'kept_both' | string;
+  status: 'open' | 'kept_new' | 'kept_old' | 'kept_both' | 'suggested' | string;
   createdAt: string;
+  /** 0–1, `status: 'suggested'` rows only (the typed decision's confidence,
+   *  `src.memory_conflicts.probability_of`) — `null` for every other row. */
+  probability: number | null;
 }
 
 function conflictFrom(raw: Record<string, unknown>): MemoryConflict {
@@ -532,6 +535,7 @@ function conflictFrom(raw: Record<string, unknown>): MemoryConflict {
     detail: typeof raw.detail === 'string' ? raw.detail : '',
     status: typeof raw.status === 'string' ? raw.status : 'open',
     createdAt: typeof raw.created_at === 'string' ? raw.created_at : '',
+    probability: typeof raw.probability === 'number' ? raw.probability : null,
   };
 }
 

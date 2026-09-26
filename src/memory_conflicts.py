@@ -774,6 +774,27 @@ def unsupersede(conflict_id: Any, *, now: Optional[datetime] = None) -> Optional
 
 ADVISORY_STATUS = "suggested"
 ADVISORY_REASON = "model_suggested"
+#: `advise()` writes its confidence into `detail`'s prose ("typed decision:
+#: contradict (p=0.87, mass=0.42); advisory, not resolved") rather than a
+#: column of its own -- there being exactly one producer of that text. This
+#: is the one place that reads it back out, so a caller (the API route) can
+#: hand the Studio panel a plain float instead of parsing English prose.
+_PROBABILITY_RE = re.compile(r"p=([0-9]*\.?[0-9]+)")
+
+
+def probability_of(detail: Any) -> Optional[float]:
+    """The confidence `advise()` recorded for a ``suggested`` row's typed
+    decision, or `None` for a row `detail` does not carry one (every
+    non-advisory reason, or an advisory row written before this existed).
+    Never raises on odd input."""
+    match = _PROBABILITY_RE.search(str(detail or ""))
+    if not match:
+        return None
+    try:
+        value = float(match.group(1))
+    except ValueError:
+        return None
+    return value if 0.0 <= value <= 1.0 else None
 ADVICE_CHOICES: Tuple[str, ...] = ("contradict", "update", "compatible")
 ADVICE_DESCRIPTIONS: Dict[str, str] = {
     "contradict": "they cannot both be true at the same time",
@@ -956,4 +977,5 @@ __all__ = [
     "classify", "detect_for", "list_conflicts", "get_conflict",
     "open_conflict_for", "resolve", "unsupersede",
     "ADVISORY_STATUS", "ADVISORY_REASON", "advise", "advice_candidates",
+    "probability_of",
 ]

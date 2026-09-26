@@ -444,6 +444,10 @@ def setup_memory_engine_routes() -> APIRouter:
             entry["old_text"] = (old_item or {}).get("text", "")
             entry["new_updated_at"] = (new_item or {}).get("updated_at", "")
             entry["old_updated_at"] = (old_item or {}).get("updated_at", "")
+            # `status=suggested` rows (memory_conflicts.advise) carry a typed
+            # decision's confidence inside `detail`'s prose -- pull it out as
+            # a plain float so the review panel never has to parse English.
+            entry["probability"] = memory_conflicts.probability_of(row.get("detail"))
             out.append(entry)
         return {"status": "success", "conflicts": out}
 

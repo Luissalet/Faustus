@@ -209,6 +209,7 @@ Acceptance criteria, one per line	Criterios de aceptación, uno por línea
 Accepted	Aceptadas
 Accepted ({n})	Aceptados ({n})
 Accepted.	Aceptado.
+Accepted; the older memory was forgotten.	Aceptado; se olvidó la memoria más antigua.
 Accepts images	Acepta imágenes
 Access method	Vía de acceso
 Account	Cuenta
@@ -1363,6 +1364,7 @@ Could not read the recommendation.	No se ha podido leer la recomendación.
 Could not read the router configuration.	No se pudo leer la configuración del router.
 Could not read the services: {why}	No se han podido leer los servicios: {why}
 Could not read the settings.	No he podido leer los ajustes.
+Could not read the suggested conflicts.	No se pudieron leer los conflictos sugeridos.
 Could not read the tool catalog.	No se pudo leer el catálogo de herramientas.
 Could not read the tools.	No se pudieron leer las herramientas.
 Could not read the two-factor status.	No se ha podido leer el estado del segundo factor.
@@ -1757,6 +1759,7 @@ Discuss	Comentar
 Discuss in a new chat	Comentar en un chat nuevo
 Dismiss	Descartar
 Dismiss notice	Cerrar aviso
+Dismissed; both memories are kept as true.	Descartado; ambas memorias se mantienen como ciertas.
 Dispatch workers	Lanzar workers
 Display name	Nombre visible
 Disputed	En disputa
@@ -5516,6 +5519,8 @@ Story 1080 × 1920	Historia 1080 × 1920
 Strategy profile	Perfil de estrategia
 Strategy profile: {label}	Perfil de estrategia: {label}
 Strategy: {method} · {profile}{reason}	Estrategia: {method} · {profile}{reason}
+Suggested by the model	Sugerido por el modelo
+Suggested conflicts	Conflictos sugeridos
 Untrusted context influenced this run, so continuing with otherwise-gated actions needs your explicit approval.	Algo de fuera (una página, un archivo, un resultado de herramienta) ha influido en esta tarea, así que seguir con acciones protegidas necesita tu permiso expreso.
 Use {path}? It was chosen {n} min after the dialog opened.	¿Usar {path}? Se eligió {n} min después de abrir el diálogo.
 Where you answered "Always for this workspace folder": chats in these folders, and in every folder under them, continue after reading outside content without asking. The destructive-command guard and every other restriction still apply.	Donde respondiste «Siempre en esta carpeta del espacio de trabajo»: los chats de estas carpetas, y de todas las que cuelgan de ellas, siguen sin preguntar después de leer contenido de fuera. El guardián de comandos destructivos y las demás restricciones siguen igual.
@@ -5885,6 +5890,7 @@ The model is reading {n} tokens of context	El modelo está leyendo {n} tokens de
 The model is spilling to RAM ({v} of {s} GB in VRAM) — slow	El modelo se está desbordando a RAM ({v} de {s} GB en VRAM): va lento
 The model is spilling to RAM — slow	El modelo se está desbordando a RAM: va lento
 The model may need time to load. You can keep using the app.	El modelo puede tardar en cargar. Puedes seguir usando la aplicación.
+The model noticed these might disagree, but was not certain enough to flag them outright. Nothing changes until you accept or dismiss.	El modelo notó que estos podrían no coincidir, pero no tenía suficiente certeza para marcarlos directamente. Nada cambia hasta que aceptes o descartes.
 The model of this chat; with a name, switches to it.	El modelo de este chat; con un nombre, cambia a él.
 The model of this conversation. Local or remote, one list.	El modelo de esta conversación. Local o remoto, una sola lista.
 The model reads the conversation and proposes what would be worth saving.	El modelo lee la conversación y propone lo que valdría la pena guardar.
@@ -8523,3 +8529,4 @@ Answers without reasoning. Quick, but it gets dates and counts wrong.	Responde s
 {n} skill found	{n} habilidad encontrada
 {n} skills found	{n} habilidades encontradas
 {origin} · v{version}	{origin} · v{version}
+{pct}% confident	{pct}% de confianza

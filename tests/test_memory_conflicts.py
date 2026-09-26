@@ -70,6 +70,23 @@ def test_different_subjects_are_not_flagged():
         "Luis prefers tabs", "Maria prefers spaces") is None
 
 
+# ── probability_of (the advisory row's confidence, read back from `detail`) ──
+
+def test_probability_of_reads_the_advisory_detail_text():
+    detail = "typed decision: contradict (p=0.87, mass=0.42); advisory, not resolved"
+    assert conflicts.probability_of(detail) == 0.87
+
+
+def test_probability_of_is_none_for_non_advisory_detail():
+    assert conflicts.probability_of("same subject, different value: uses") is None
+    assert conflicts.probability_of("") is None
+    assert conflicts.probability_of(None) is None
+
+
+def test_probability_of_rejects_an_out_of_range_value():
+    assert conflicts.probability_of("typed decision: update (p=1.50, mass=0.10)") is None
+
+
 # ── DB-level detection ───────────────────────────────────────────────────────
 
 def test_add_item_hook_records_an_open_conflict(store):
@@ -214,3 +231,43 @@ def test_resolve_unknown_conflict_is_404(client):
     resp = client.post(
         "/api/memory-engine/conflicts/does-not-exist/resolve", json={"keep": "new"})
     assert resp.status_code == 404
+
+
+def test_suggested_conflicts_carry_a_probability_over_http(client, store):
+    """A `status=suggested` row (what `advise()` writes for a confident
+    typed-decision contradict/update) surfaces its confidence as a plain
+    `probability` float -- the Studio review panel's whole reason for
+    reading it instead of `detail`'s prose -- and the same `resolve`
+    endpoint the open-conflict panel already uses accepts or dismisses it."""
+    from datetime import datetime, timezone
+
+    old = engine.add_item("Luis lives in Madrid", owner="luis", trust_class="human_explicit")
+    new = engine.add_item("Luis is based out of Barcelona now", owner="luis", trust_class="human_explicit")
+
+    row = conflicts._insert(
+        "luis", new["id"], old["id"], conflicts.ADVISORY_REASON,
+        "typed decision: update (p=0.91, mass=0.50); advisory, not resolved",
+        datetime.now(timezone.utc),
+    )
+    with conflicts._db() as conn:
+        conn.execute(
+            f"UPDATE {conflicts._TABLE} SET status = ? WHERE id = ?",
+            (conflicts.ADVISORY_STATUS, row["id"]),
+        )
+
+    listed = client.get("/api/memory-engine/conflicts", params={"status": "suggested"})
+    assert listed.status_code == 200, listed.text
+    rows = listed.json()["conflicts"]
+    assert len(rows) == 1
+    assert rows[0]["probability"] == pytest.approx(0.91)
+    assert rows[0]["status"] == "suggested"
+
+    # "Accept" (keep the newer, drop the contradicted older one) is the
+    # same `resolve` call the open-conflicts panel already offers.
+    resolved = client.post(
+        f"/api/memory-engine/conflicts/{rows[0]['id']}/resolve", json={"keep": "new"})
+    assert resolved.status_code == 200, resolved.text
+    assert resolved.json()["conflict"]["status"] == "kept_new"
+
+    again = client.get("/api/memory-engine/conflicts", params={"status": "suggested"})
+    assert again.json()["conflicts"] == []

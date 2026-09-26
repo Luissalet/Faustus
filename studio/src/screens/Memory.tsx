@@ -656,6 +656,111 @@ function MemoryConflicts({ say }: { say: (text: string) => void }) {
   );
 }
 
+/* ── Suggested conflicts (src/memory_conflicts.py::advise, `status:
+ * "suggested"`): a pair the deterministic rules above said nothing about,
+ * but a typed decision judged a confident contradiction or update. Never
+ * ranked down and never resolved on its own — just surfaced, with the
+ * model's own confidence, for the owner to accept (drop the older,
+ * contradicted memory) or dismiss (both stay, the model was wrong). */
+
+function MemorySuggestedConflictRow({
+  conflict,
+  onResolve,
+}: {
+  conflict: MemoryConflict;
+  onResolve: (keep: 'new' | 'both') => void;
+}) {
+  return (
+    <article className="fs-conflict" data-testid="memory-suggested-conflict">
+      <span className="fs-conflict__reason">
+        <AlertTriangle size={13} />
+        {t('Suggested by the model')}
+        {conflict.probability !== null && (
+          <span className="fs-conflict__probability">{t('{pct}% confident', { pct: Math.round(conflict.probability * 100) })}</span>
+        )}
+      </span>
+      <div className="fs-conflict__pair">
+        <div className="fs-conflict__item" data-side="new">
+          <span className="fs-conflict__tag">{t('Newer')}</span>
+          <span className="fs-conflict__text">
+            {conflict.newText} <span className="fs-conflict__date">{conflict.newUpdatedAt ? relativeTime(conflict.newUpdatedAt) : ''}</span>
+          </span>
+        </div>
+        <div className="fs-conflict__item" data-side="old">
+          <span className="fs-conflict__tag">{t('Older')}</span>
+          <span className="fs-conflict__text">
+            {conflict.oldText} <span className="fs-conflict__date">{conflict.oldUpdatedAt ? relativeTime(conflict.oldUpdatedAt) : ''}</span>
+          </span>
+        </div>
+      </div>
+      <div className="fs-conflict__actions">
+        <Button variant="secondary" size="sm" label={t('Accept')} onClick={() => onResolve('new')} testId="memory-suggested-accept" />
+        <Button variant="ghost" size="sm" label={t('Dismiss')} onClick={() => onResolve('both')} testId="memory-suggested-dismiss" />
+      </div>
+    </article>
+  );
+}
+
+function MemorySuggestedConflicts({ say }: { say: (text: string) => void }) {
+  const [conflicts, setConflicts] = useState<MemoryConflict[] | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  const load = useCallback((signal?: AbortSignal) => {
+    listConflicts('suggested', signal)
+      .then((rows) => {
+        setConflicts(rows);
+        setFailed(null);
+      })
+      .catch((err: unknown) => {
+        if ((err as { name?: string })?.name === 'AbortError') return;
+        setConflicts([]);
+        setFailed(t('Could not read the suggested conflicts.'));
+      });
+  }, []);
+
+  useEffect(() => {
+    const c = new AbortController();
+    load(c.signal);
+    return () => c.abort();
+  }, [load]);
+
+  if (!failed && conflicts && conflicts.length === 0) return null;
+
+  return (
+    <section className="fs-rules" aria-labelledby="fs-suggested-conflicts-title">
+      <header className="fs-rules__head">
+        <div>
+          <h2 id="fs-suggested-conflicts-title" className="fs-rules__title">
+            {t('Suggested conflicts')} <span className="fs-rules__count">{conflicts?.length ?? 0}</span>
+          </h2>
+          <p className="fs-prose">{t('The model noticed these might disagree, but was not certain enough to flag them outright. Nothing changes until you accept or dismiss.')}</p>
+        </div>
+      </header>
+
+      {failed && <p className="fs-rules__error">{failed}</p>}
+      {!conflicts && !failed && <Skeleton label={t('Loading conflicts')} count={1} height="48px" />}
+      {conflicts && conflicts.length > 0 && (
+        <div className="fs-rules__list">
+          {conflicts.map((c) => (
+            <MemorySuggestedConflictRow
+              key={c.id}
+              conflict={c}
+              onResolve={(keep) =>
+                void resolveConflict(c.id, keep)
+                  .then(() => {
+                    setConflicts((cur) => (cur ? cur.filter((x) => x.id !== c.id) : cur));
+                    say(keep === 'new' ? t('Accepted; the older memory was forgotten.') : t('Dismissed; both memories are kept as true.'));
+                  })
+                  .catch(() => say(t('Could not resolve the conflict.')))
+              }
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 /* ── Grounding lint (src/memory_grounding.py): a compiled memory's concrete
  * claims — numbers, dates, quotes, names — checked against the evidence it
  * cites. Flags items that say more than their evidence backs up; items with
@@ -1387,6 +1492,7 @@ export function MemoryScreen() {
       <LearnedRules say={say} />
 
       <MemoryConflicts say={say} />
+      <MemorySuggestedConflicts say={say} />
 
       <MemoryGrounding
         onOpenItem={(f) => {
