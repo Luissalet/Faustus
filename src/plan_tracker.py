@@ -38,7 +38,7 @@ from src.constants import DATA_DIR
 PLAN_TRACKER_DIR = os.path.join(DATA_DIR, "plan_tracker")
 #: Bump when parse_plan changes shape: a stored tracker from an older parser
 #: is re-parsed on next sight, keeping per-task state by key/title.
-PARSER_VERSION = 2
+PARSER_VERSION = 3
 
 # ---------------------------------------------------------------------------
 # Attachment detection
@@ -54,6 +54,16 @@ _MARKER_RE = re.compile(r"=== (File|ZIP archive): (.+?) ===\n?")
 _HEADING_RE = re.compile(r"^(#{1,4})\s+(.+?)\s*$", re.M)
 _NUM_LIST_RE = re.compile(r"^\s{0,3}(\d{1,3})[.)]\s+(.+?)\s*$", re.M)
 _CHECKBOX_RE = re.compile(r"^\s{0,3}-\s*\[( |x|X)\]\s*(.+?)\s*$", re.M)
+# Fallbacks for a plan written without headings or numbers: top-level
+# bullets, and lines that open with their own step word ("Paso 2:",
+# "Step 3 -", "Fase 1."). Only used when nothing above matched, and only
+# with at least three steps, so a letter or an essay stays at 0 tasks.
+_BULLET_RE = re.compile(r"^\s{0,1}[-*\u2022]\s+(?!\[[ xX]\])(.+?)\s*$", re.M)
+_STEP_LINE_RE = re.compile(
+    r"^\s{0,3}((?:paso|step|fase|phase|etapa|stage)\s*\d{1,3})\s*[:.)\u2013\u2014-]\s*(.+?)\s*$",
+    re.M | re.I,
+)
+_MIN_FALLBACK_STEPS = 3
 
 _KEY_RE = re.compile(
     r"\b(WP\d+|Fase\s*\d+|Tarea\s*\d+(?:\.\d+)?|Task\s*\d+(?:\.\d+)?)\b", re.I
@@ -252,6 +262,20 @@ def _split_sections(text: str) -> List[Tuple[Optional[str], str, str]]:
             start = m.end()
             end = marks[i + 1].start() if i + 1 < len(marks) else len(text)
             out.append((None, m.group(2).strip(), text[start:end]))
+        return out
+    marks = list(_STEP_LINE_RE.finditer(text))
+    if len(marks) >= _MIN_FALLBACK_STEPS:
+        out = []
+        for i, m in enumerate(marks):
+            end = marks[i + 1].start() if i + 1 < len(marks) else len(text)
+            out.append((None, f"{m.group(1).strip()}: {m.group(2).strip()}", text[m.end():end]))
+        return out
+    marks = list(_BULLET_RE.finditer(text))
+    if len(marks) >= _MIN_FALLBACK_STEPS:
+        out = []
+        for i, m in enumerate(marks):
+            end = marks[i + 1].start() if i + 1 < len(marks) else len(text)
+            out.append((None, m.group(1).strip(), text[m.end():end]))
         return out
     return []
 
