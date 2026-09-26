@@ -9,6 +9,9 @@ itself).
 
 GET  /api/approval-autonomy/mode              -- current setting + thresholds
 GET  /api/approval-autonomy/stats  ?owner=    -- per-family shadow-log stats
+GET  /api/approval-autonomy/decisions ?owner=&family=&limit=  -- one family's
+                                                  last N shadow-log rows (the
+                                                  aggregate's drilldown)
 POST /api/approval-autonomy/family            -- {owner, family, status}
                                                   status: "promoted" | "demoted" | ""
 """
@@ -52,6 +55,16 @@ def setup_approval_autonomy_routes():
             return {"families": autonomy.family_stats(owner)}
         except Exception as exc:  # noqa: BLE001
             logger.warning("approval-autonomy stats failed: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @router.get("/decisions")
+    def decisions(request: Request, family: str, owner: str = "", limit: int = 20):
+        require_admin(request)
+        from src import approval_autonomy as autonomy
+        try:
+            return {"decisions": autonomy.recent_decisions(owner, family, limit)}
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("approval-autonomy decisions failed: %s", exc)
             raise HTTPException(status_code=500, detail=str(exc))
 
     @router.post("/family")

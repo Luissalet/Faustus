@@ -201,6 +201,30 @@ export async function getApprovalAutonomyStats(owner = '', signal?: AbortSignal)
   return data.families ?? [];
 }
 
+export interface AutonomyDecision {
+  id: string;
+  owner: string;
+  family: string;
+  tool_name: string;
+  score: number;
+  tier: 'act' | 'advise' | 'escalate' | string;
+  source: string;
+  destructive: boolean;
+  actual_decision: 'approved' | 'denied' | null;
+  agreed: boolean | null;
+  created_at: string;
+  decided_at: string | null;
+}
+
+/** One family's last `limit` shadow-log rows, newest first — the drilldown
+ * behind a `family_stats` aggregate row. */
+export async function getApprovalAutonomyDecisions(owner: string, family: string, limit = 20, signal?: AbortSignal): Promise<AutonomyDecision[]> {
+  const qs = new URLSearchParams({ family, limit: String(limit) });
+  if (owner) qs.set('owner', owner);
+  const data = await getJson<{ decisions?: AutonomyDecision[] }>(`/api/approval-autonomy/decisions?${qs}`, signal);
+  return data.decisions ?? [];
+}
+
 /** `status: ''` clears a manual override back to the computed value. */
 export async function setApprovalAutonomyFamily(owner: string, family: string, status: 'promoted' | 'demoted' | ''): Promise<void> {
   await okr(

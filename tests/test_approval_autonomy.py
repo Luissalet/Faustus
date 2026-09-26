@@ -181,6 +181,48 @@ def test_record_and_finalize_shadow_decision(ce_db):
     assert row["agreement_rate"] == 1.0
 
 
+def test_recent_decisions_returns_newest_first_and_respects_limit(ce_db):
+    for i in range(3):
+        aid = f"appr-{i}"
+        autonomy.record_shadow_decision(
+            owner="alice", family="read_file", tool_name="read_file", workspace="/ws",
+            score=0.9, tier="act", approval_id=aid,
+        )
+        autonomy.finalize_shadow_decision(approval_id=aid, actual_decision="approved")
+    rows = autonomy.recent_decisions("alice", "read_file", limit=2)
+    assert len(rows) == 2
+    assert rows[0]["created_at"] >= rows[1]["created_at"]
+    assert rows[0]["tool_name"] == "read_file"
+    assert rows[0]["actual_decision"] == "approved"
+    assert rows[0]["agreed"] is True
+
+    # A different family or owner never leaks into this drilldown.
+    autonomy.record_shadow_decision(
+        owner="alice", family="write_file", tool_name="write_file", workspace="/ws",
+        score=0.9, tier="act", approval_id="appr-other-family",
+    )
+    autonomy.record_shadow_decision(
+        owner="bob", family="read_file", tool_name="read_file", workspace="/ws",
+        score=0.9, tier="act", approval_id="appr-other-owner",
+    )
+    only_alice_read = autonomy.recent_decisions("alice", "read_file", limit=20)
+    assert len(only_alice_read) == 3
+    assert all(r["owner"] == "alice" and r["family"] == "read_file" for r in only_alice_read)
+
+
+def test_recent_decisions_owner_blank_spans_all_owners(ce_db):
+    autonomy.record_shadow_decision(
+        owner="alice", family="read_file", tool_name="read_file", workspace="/ws",
+        score=0.9, tier="act", approval_id="a1",
+    )
+    autonomy.record_shadow_decision(
+        owner="bob", family="read_file", tool_name="read_file", workspace="/ws",
+        score=0.9, tier="act", approval_id="a2",
+    )
+    rows = autonomy.recent_decisions("", "read_file", limit=20)
+    assert {r["owner"] for r in rows} == {"alice", "bob"}
+
+
 def test_escalate_tier_agrees_with_a_denial():
     pass  # covered structurally below (finalize logic), kept here as an index marker.
 

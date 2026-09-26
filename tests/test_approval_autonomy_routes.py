@@ -61,6 +61,34 @@ def test_stats_endpoint_returns_family_rows(client, monkeypatch):
     assert rows[0]["act_total"] == 22
 
 
+def test_decisions_endpoint_returns_the_familys_recent_rows(client, monkeypatch):
+    from src import approval_autonomy as autonomy
+
+    def _fake(owner, family, limit=20):
+        assert family == "read_file"
+        assert limit == 5
+        return [
+            {"id": "abc", "owner": "alice", "family": "read_file", "tool_name": "read_file",
+             "score": 0.92, "tier": "act", "source": "shadow", "destructive": False,
+             "actual_decision": "approved", "agreed": True,
+             "created_at": "2026-09-25T00:00:00Z", "decided_at": "2026-09-25T00:00:01Z"},
+        ]
+    monkeypatch.setattr(autonomy, "recent_decisions", _fake)
+    resp = client.get(
+        "/api/approval-autonomy/decisions?owner=alice&family=read_file&limit=5",
+        headers=TOOL_HEADERS,
+    )
+    assert resp.status_code == 200
+    rows = resp.json()["decisions"]
+    assert rows[0]["tool_name"] == "read_file"
+    assert rows[0]["tier"] == "act"
+
+
+def test_decisions_endpoint_requires_family(client):
+    resp = client.get("/api/approval-autonomy/decisions", headers=TOOL_HEADERS)
+    assert resp.status_code == 422
+
+
 def test_the_model_cannot_promote_a_family_itself(client):
     """The one that matters, mirroring test_approvals_routes.py's grant test:
     the agent's own loopback token must not be able to flip a family to

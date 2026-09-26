@@ -569,6 +569,51 @@ def family_stats(owner: str = "") -> List[Dict[str, Any]]:
     return out
 
 
+def recent_decisions(owner: str, family: str, limit: int = 20) -> List[Dict[str, Any]]:
+    """The last `limit` shadow-log rows for one (owner, family), newest
+    first -- the drilldown behind the per-family aggregate in `family_stats`.
+    Each row already carries what shadow mode would have decided (`tier`,
+    `score`) and, once resolved, what actually happened (`actual_decision`,
+    `agreed`); a row still awaiting a human click has `actual_decision ==
+    ""`. `owner=""` returns rows for every owner in this family (an admin-
+    wide drilldown, matching `family_stats`'s own `owner=""` convention)."""
+    limit = max(1, min(int(limit or 20), 200))
+    try:
+        with ce_store.db() as conn:
+            if owner:
+                rows = ce_store.rows(conn.execute(
+                    "SELECT * FROM approval_shadow_log WHERE owner = ? AND family = ? "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (_owner_key(owner), family, limit),
+                ))
+            else:
+                rows = ce_store.rows(conn.execute(
+                    "SELECT * FROM approval_shadow_log WHERE family = ? "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (family, limit),
+                ))
+    except (ce_store.ContextStoreError, sqlite3.Error) as exc:
+        logger.warning("approval_autonomy: recent_decisions read failed: %s", exc)
+        return []
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        out.append({
+            "id": row["id"],
+            "owner": row["owner"],
+            "family": row["family"],
+            "tool_name": row["tool_name"],
+            "score": row["score"],
+            "tier": row["tier"],
+            "source": row["source"],
+            "destructive": bool(row["destructive"]),
+            "actual_decision": row["actual_decision"] or None,
+            "agreed": (None if row["agreed"] is None else bool(row["agreed"])),
+            "created_at": row["created_at"],
+            "decided_at": row["decided_at"] or None,
+        })
+    return out
+
+
 def is_family_promoted(owner: Any, family: str) -> bool:
     owner_key = _owner_key(owner)
     for row in family_stats(owner_key):
@@ -586,5 +631,5 @@ __all__ = [
     "autonomy_mode", "tier_for_score", "family_for", "dedup_key",
     "is_hard_blocked", "compute_confidence", "count_prior_approvals",
     "record_shadow_decision", "finalize_shadow_decision",
-    "set_family_override", "family_stats", "is_family_promoted",
+    "set_family_override", "family_stats", "recent_decisions", "is_family_promoted",
 ]

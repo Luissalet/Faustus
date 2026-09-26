@@ -126,6 +126,35 @@
   color: var(--fs-text-3);
 }
 
+.fs-autonomy-expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--fs-text-3);
+  cursor: pointer;
+  padding: 4px;
+}
+
+.fs-autonomy-expand svg {
+  transition: transform 0.15s ease;
+}
+
+.fs-autonomy-drilldown {
+  background: var(--fs-surface-2);
+  padding: 10px 14px !important;
+}
+
+.fs-autonomy-table--nested {
+  font-size: var(--fs-label-size-sm, var(--fs-label-size));
+}
+
+.fs-autonomy-table--nested th,
+.fs-autonomy-table--nested td {
+  padding: 4px 8px;
+}
+
 /* ── Search health (which SearXNG engines really answer) ── */
 
 .fs-set__search-health {
