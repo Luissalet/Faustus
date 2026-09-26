@@ -9453,3 +9453,15 @@ El turno acabó por tres fallos, arreglados en `4f522d89`:
 - **Deriva al inglés.** Tras la única nota de idioma a mitad de turno, la narración siguió en inglés dos horas. Ahora hay hasta 3 notas por turno, separadas 5 rondas; la reescritura de la respuesta final conserva su propio presupuesto.
 
 El 7006 pasa a `4f522d89` y arranca en 13 s (antes, 2,5 min por la recuperación de un log de 53 MB). 6 pruebas nuevas; pasan 2.310 del bucle y la visión.
+
+**Comprobaciones en vivo con el 8081 libre** (20:20, 7000 con `fa0c470b`):
+
+- **El 8081 estaba corrupto al acabar el examen.** Contestaba «The capital of France is» con «жным» doce veces, como el 19-09. Se reinició la tarea `FaustusLlamaServer8081` y volvió a responder «Paris». La primera prueba del vigilante cayó ahí: el 27B «entró en bucle» en la ronda 1 y contestó el auxiliar de 3B sin leer nada. De ahí salió el arreglo del detector de basura (`fa0c470b`), que ahora reconoce una sílaba con letras repetida.
+- **Vigilante de avance.** Con `agent_no_progress_rounds=3` y una cadena de 5 enlaces que obliga a leer de uno en uno, el turno recibe «nudge» en la ronda 3 e «insist» en la 7 y responde en español con la cadena. En el log: `3 rounds without progress — nudge` y `6 rounds without progress — insist`. El ajuste volvió a 15.
+- **`faustus_run.py`.** Tres ejecuciones por token de sesión con `--json`: salida 0, `run_summary` con herramientas, rondas y tiempo. Falta la de la tarjeta sin `--approve` (PENDIENTES).
+- **Ediciones en paralelo.** Dos `edit_file` independientes en la ronda 1, con `2 independent call(s) run in parallel (2 write(s))` en el log. Los dos ficheros cambiados; 43 s.
+- **Versiones por respuesta con un regenerar real.** Chat nuevo con el 27B («qué es un haiku»), *Regenerate*, paginador «2/2», ‹ enseña «Earlier answer 1 of 2 · hora · qwen3.8-27b-q8-llamacpp», y *Use this version* devuelve la primera respuesta. El chat de prueba se borró.
+- **Examen 31, lo que quedaba por medir.**
+  - La nota de `vision_write_every` saltó a las 18:20 («12 image views with nothing written»).
+  - El borrador llegó a los 51 minutos.
+  - La caché sirvió el 82 % del prompt: 7 rondas con más de 20k procesados, tres de ellas inicios de tramo. Las otras cuatro son pérdidas parciales que no se han atribuido una por una.
