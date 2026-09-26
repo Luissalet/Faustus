@@ -9301,3 +9301,30 @@ Hypatia conserva su camino directo con timeout largo. Ahora respeta el nivel de 
 - La etiqueta «Auto» del selector se cortaba.
 
 **Investigación de ajustes de Qwen.** Temperatura 0,6, top_k 20, quitar el razonamiento de turnos anteriores y el formato de herramientas coinciden con lo recomendado. Lo recomendado para modo pensamiento (top_p 0,95, min_p 0) difiere de los valores medidos aquí (0,8 y 0,05), que se eligieron porque cortaban divagaciones. Queda como A/B en OBJETIVOS, no como cambio a ciegas.
+
+**Revisión adversaria del día y la suite entera** (tarde, 16:00–16:45). Un agente revisor repasó el diff y encontró cuatro problemas. Los cuatro están corregidos:
+
+- **Timeout corto con modelos alojados.** Un modelo alojado pensando al nivel de investigación o de consejo tenía el timeout de una respuesta sin razonamiento. Ahora hay margen para el presupuesto; un plazo explícito del consejo sigue mandando.
+- **Tokens opacos al cambiar de modelo.** El recambio de modelo en mitad del turno mandaba los bloques de pensamiento de Claude a Gemini y se los quitaba a otro Claude. Ahora cada ruta conserva sólo su propio token.
+- **Tarjeta para algo ya hecho.** Una llamada ya ejecutada por el despacho con clave podía acabar con una tarjeta de aprobación de algo que ya había pasado. Ahora se sirve su resultado.
+- **Enrutado doble.** Cada trabajador se enrutaba dos veces; ahora se enruta una.
+
+También hay una regla nueva en las reglas base: «las llamadas que no dependen entre sí van en la misma ronda», porque el despacho paralelo sólo ayuda si el modelo las pide juntas.
+
+La suite completa en la nube dio 22 fallos. Los que eran de hoy ya están arreglados:
+
+- **Traducciones.** Las cadenas en español añadidas hoy vivían sólo en `es.ts`, pero la fuente es `docs/ui/i18n/es.tsv`. Ya están en la tabla y `es.ts` se regenera de ella.
+- **Comprobaciones de Studio desfasadas:**
+  - el tour de Apariencia en `s=general`;
+  - el marcado `row()` del panel de generación.
+- **Tests con el comportamiento antiguo:**
+  - el ancho de delegación;
+  - los guardados que ya no escriben valores por defecto;
+  - `redacted_thinking` como bloque de contenido.
+
+Los restantes también fallan en la base `16c5ae88`: reflog de git en un worktree, PowerShell y Git Bash, y el recorrido de UI en vivo. Son del entorno de la nube.
+
+Verificado en el 7000 con Playwright:
+
+- el grupo Sub-agents con los niveles, la lista de modelos, el ancho y el carril de API;
+- el selector de Research con «Auto (strongest)» completo.
