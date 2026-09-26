@@ -60,7 +60,12 @@ def test_a_shipped_manifest_never_carries_one_persons_home_directory():
     assert offenders == [], offenders
 
 
-def test_a_default_naming_an_environment_variable_is_expanded_once():
+def test_a_default_naming_an_environment_variable_is_expanded_once(monkeypatch, tmp_path):
+    # Windows always has APPDATA; elsewhere the manifest's %APPDATA% expands
+    # only when the variable is set, so the test sets it.
+    import os as _os
+    if not _os.environ.get("APPDATA"):
+        monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
     plugin = plugins.get("writer")
     token = plugin.defaults.get("TOKEN_FILE", "")
     assert "%APPDATA%" not in token, "the manifest keeps the variable; the loader resolves it"

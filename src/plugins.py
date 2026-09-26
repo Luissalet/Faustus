@@ -189,6 +189,9 @@ def _as_str_map(value: Any, where: str) -> Dict[str, str]:
     return dict(value)
 
 
+_PERCENT_VAR_RE = re.compile(r"%([A-Za-z_][A-Za-z0-9_]*)%")
+
+
 def _expand_default(value: str) -> str:
     """A default value with ``%VAR%``/``$VAR``/``~`` resolved, once.
 
@@ -199,6 +202,10 @@ def _expand_default(value: str) -> str:
     platform's own spelling, the way `os.path.join` used to write it.
     """
     expanded = os.path.expandvars(os.path.expanduser(value))
+    if os.name != "nt":
+        # `posixpath.expandvars` only knows `$VAR`; a cross-platform manifest
+        # written with `%APPDATA%` kept it literally off Windows.
+        expanded = _PERCENT_VAR_RE.sub(lambda m: os.environ.get(m.group(1), m.group(0)), expanded)
     if expanded == value or "://" in expanded:
         return expanded
     return os.path.normpath(expanded)
