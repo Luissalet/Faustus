@@ -191,6 +191,53 @@ def test_get_wsl_windows_user_profile_returns_none_when_nothing_found(monkeypatc
     assert platform_compat.get_wsl_windows_user_profile() is None
 
 
+def test_detached_popen_kwargs_on_windows_is_a_new_process_group_no_window(monkeypatch):
+    """§96: a launch-profile child must survive the 7000 server stopping.
+    CREATE_NEW_PROCESS_GROUP takes it out of the parent's process group (so a
+    blanket terminate of Faustus's own tree does not reach it), and
+    CREATE_NO_WINDOW (not DETACHED_PROCESS) keeps a grandchild the launched
+    app spawns from popping its own visible console."""
+    monkeypatch.setattr(platform_compat, "IS_WINDOWS", True)
+    kwargs = platform_compat.detached_popen_kwargs()
+    assert set(kwargs) == {"creationflags"}
+    assert kwargs["creationflags"] & 0x00000200  # CREATE_NEW_PROCESS_GROUP
+    assert kwargs["creationflags"] & 0x08000000  # CREATE_NO_WINDOW
+    assert "start_new_session" not in kwargs
+
+
+def test_detached_popen_kwargs_on_posix_starts_a_new_session(monkeypatch):
+    monkeypatch.setattr(platform_compat, "IS_WINDOWS", False)
+    assert platform_compat.detached_popen_kwargs() == {"start_new_session": True}
+
+
+def test_spawn_detached_passes_the_platform_kwargs_to_popen(monkeypatch, tmp_path):
+    """End-to-end through `src.process_launch.spawn_detached`, the one real
+    caller: whatever `detached_popen_kwargs()` returns reaches `Popen`
+    itself, not just some intermediate dict."""
+    import src.process_launch as process_launch
+
+    captured = {}
+
+    class FakeProc:
+        pid = 4242
+
+    def fake_popen(argv, **kwargs):
+        captured.update(kwargs)
+        return FakeProc()
+
+    monkeypatch.setattr(process_launch.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(process_launch, "detached_popen_kwargs", lambda: {"sentinel_kwarg": True})
+    monkeypatch.setattr(process_launch.process_ownership, "note_started", lambda *a, **k: None)
+    monkeypatch.setattr(process_launch.process_ownership, "creation_time", lambda pid: None)
+
+    process_launch.spawn_detached(
+        ["node", "server.js"], cwd=str(tmp_path), env=None,
+        log_path=str(tmp_path / "out.log"),
+    )
+    assert captured["sentinel_kwarg"] is True
+    assert captured["shell"] is False
+
+
 def test_nvidia_path_override_is_correct_string(monkeypatch):
     monkeypatch.setattr(platform_compat, "_SSH_PATH_MEMBERS", ["path1", "path2"])
     assert platform_compat._ssh_path_override() == "export PATH=\"$PATH:path1:path2\"; "
