@@ -1067,3 +1067,5 @@ PENDIENTES queda para fallos y comprobaciones; lo que es una mejora o una funci�
 - **Requisitos: falta importación masiva y creación desde selección** (W4-A): la pestaña crea/edita/enlaza/consulta, pero no importa el fichero sidecar entero ni crea un requisito a partir de una selección del editor de documentos.
 - **Rigor del comparador de bancos** (spec INF): usa `p95−mediana` y `n≥3` como proxy de dispersión, no un test estadístico; subir repeticiones si se quiere más rigor.
 - **Cliente del SDK generado desde OpenAPI** (paridad, TF02): `sdk/ts` sigue escrito a mano; generarlo desde el OpenAPI del servidor en vez de a mano.
+- **`user_request_gate.py` sin comparador por herramienta** (22-09/25-09, §166): cada herramienta nueva que deba pasar sin tarjeta con una petición explícita necesita su propio comparador; hoy sólo lo tienen `python`, `plugin_app` y la lectura de memoria.
+- **MOD-05/`execution_router.py` sin reconciliar del todo** (ADP-22): `model_router.choose()` solo decide cuando el modelo pedido es `auto`; una sesión con modelo explícito sigue pasando por `execution_router.py`.

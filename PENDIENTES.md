@@ -56,16 +56,13 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 
 ## B. Código por hacer
 
-- **`user_request_gate.py` sin comparador por herramienta** (22-09/25-09, §166): cada herramienta nueva que deba pasar sin tarjeta con una petición explícita necesita su propio comparador; hoy sólo lo tienen `python`, `plugin_app` y la lectura de memoria.
-- **Historial recortado de más entre turnos** (13-15k de 200k) (20-09, §90): el modelo gasta rondas relocalizando el workspace; revisar qué se poda.
-- **Tarjeta de tarea programada mal etiquetada** (17-09, §99): el modelo eligió «today» para «mañana» a las 8:00; valorar mostrar hoy y mañana a la vez.
-- **La extensión de Chrome no acierta a pulsar Start** en la tarjeta de perfil (17-09, §101): un `click()` por JS sí funciona; la rejilla puede desplazar el botón durante el polling de 5 s.
+Nada abierto a 26-09 (mañana): lo que era una mejora pasó a OBJETIVOS (OBJ-47).
 
-- **MOD-05/`execution_router.py` sin reconciliar del todo** (ADP-22): `model_router.choose()` solo decide cuando el modelo pedido es `auto`; una sesión con modelo explícito sigue pasando por `execution_router.py`.
-- **Estimador `local_latency` atascado en `unknown`** (CMP-08): sin GPU medida nunca sale un número; revisar si conviene otra vía de estimación.
+
 
 ## C. Verificar en vivo sin modelo
 
+- **Tarjeta de app estable al arrancar** (26-09): en Procesos › Apps, pulsar Start y comprobar que los botones no se mueven cuando el sondeo marca la app en marcha.
 - **Pantallas nuevas del 26-09 sin datos para verlas llenas** (§209): el desglose por decisión del panel de autonomía (el registro en sombra está vacío mientras el modo sea `off`), los conflictos de memoria sugeridos (hoy no hay ninguno) y «Relaunch with this profile» (sale tras activar un perfil que deja algo pendiente; no se activó con el examen en marcha). Verificadas en vivo: la revisión de skills importadas (proyecto › Reglas, dos skills con su riesgo y el botón Aprobar) y el nombre del servidor MCP en Procesos.
 - **Huecos del calendario y búsqueda en memoria** (25-09, §184): comprobar en el 7006 el hueco ocupado (32) y una búsqueda en memoria por pregunta sobre el usuario (31).
 - **Borrador rechazado en el Studio** (25-09, §184): confirmar que desaparece también ahí vía el evento `response_replace`.
@@ -143,6 +140,7 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 
 ## D. Verificar en vivo con el modelo local
 
+- **«Mañana a las 8» en una tarea programada** (26-09): pedirla en un chat y comprobar que `next_run` cae mañana.
 - **Tarjeta del guardián de comandos destructivos y línea de estado** (26-09, §209): en un turno real, que la tarjeta nombre el comando y su motivo, y que durante una herramienta larga la línea de estado diga qué herramienta corre. Los veredictos por cita del informe de investigación salen con la siguiente investigación.
 - **Cantidades para N personas** (26-09, `answer_checks.servings_requested`): pedir en el 7006 «lista de la compra para 8: pollo al horno con patatas» y comprobar que el 27B calcula por persona con `python` y que piezas y pesos cuadran.
 - **`context_*` automáticos en una tarea larga** (25-09, §197): ver si el 27B los usa solo, a partir de qué punto, y si el aviso al umbral blando ayuda o estorba.
