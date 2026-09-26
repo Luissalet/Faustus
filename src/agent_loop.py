@@ -5868,6 +5868,7 @@ def _sticky_toolset(session_id: str, relevant: Set[str], hot: Optional[Set[str]]
     When the previous set already covers this turn, it is reused as is; when
     this turn needs more, the union is used (and remembered) while it stays
     small; otherwise the turn's own selection starts a new set."""
+    _load_session_toolsets()
     prev = _SESSION_TOOLSETS.get(session_id)
     out_relevant, out_hot = set(relevant), (None if hot is None else set(hot))
     if prev is not None:
@@ -5886,7 +5887,62 @@ def _sticky_toolset(session_id: str, relevant: Set[str], hot: Optional[Set[str]]
     _SESSION_TOOLSETS.move_to_end(session_id)
     while len(_SESSION_TOOLSETS) > _SESSION_TOOLSETS_MAX:
         _SESSION_TOOLSETS.popitem(last=False)
+    _save_session_toolsets()
     return out_relevant, out_hot
+
+
+# The sets outlive a restart: after one, every chat's first turn picked a
+# new set and the server re-read the whole prompt (16,500 tokens, 32 s on
+# the 27B, 26-09).
+_SESSION_TOOLSETS_LOADED = False
+
+
+def _session_toolsets_path() -> str:
+    try:
+        from src.constants import DATA_DIR
+    except Exception:  # pragma: no cover
+        DATA_DIR = os.path.join(os.getcwd(), "data")
+    return os.path.join(DATA_DIR, "session_toolsets.json")
+
+
+def _load_session_toolsets() -> None:
+    global _SESSION_TOOLSETS_LOADED
+    if _SESSION_TOOLSETS_LOADED:
+        return
+    _SESSION_TOOLSETS_LOADED = True
+    try:
+        with open(_session_toolsets_path(), "r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except (OSError, ValueError):
+        return
+    if not isinstance(raw, dict):
+        return
+    for sid, row in raw.items():
+        if sid in _SESSION_TOOLSETS or not isinstance(row, dict):
+            continue
+        relevant = row.get("relevant")
+        hot = row.get("hot")
+        if isinstance(relevant, list):
+            _SESSION_TOOLSETS[str(sid)] = (
+                frozenset(str(x) for x in relevant),
+                None if not isinstance(hot, list) else frozenset(str(x) for x in hot),
+            )
+    while len(_SESSION_TOOLSETS) > _SESSION_TOOLSETS_MAX:
+        _SESSION_TOOLSETS.popitem(last=False)
+
+
+def _save_session_toolsets() -> None:
+    path = _session_toolsets_path()
+    data = {sid: {"relevant": sorted(rel), "hot": None if hot is None else sorted(hot)}
+            for sid, (rel, hot) in _SESSION_TOOLSETS.items()}
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+        os.replace(tmp, path)
+    except OSError:
+        logger.debug("session toolsets not saved", exc_info=True)
 
 
 def _template_keeps_turn_reasoning(model: Optional[str]) -> bool:

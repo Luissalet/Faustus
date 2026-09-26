@@ -248,6 +248,8 @@ def fresh_session_toolsets():
     loop = _sys.modules.get("src.agent_loop")
     if loop is not None and hasattr(loop, "_SESSION_TOOLSETS"):
         loop._SESSION_TOOLSETS.clear()
+        # Never read sets another test (or worker) saved to disk.
+        loop._SESSION_TOOLSETS_LOADED = True
     yield
 
 @pytest.fixture(autouse=True)

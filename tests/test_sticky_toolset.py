@@ -34,3 +34,17 @@ def test_chats_do_not_share_sets():
     al._sticky_toolset("s1", {"a", "b"}, None, set())
     out, _ = al._sticky_toolset("s2", {"c"}, None, set())
     assert out == {"c"}
+
+
+def test_sets_survive_a_restart(tmp_path, monkeypatch):
+    path = tmp_path / "session_toolsets.json"
+    monkeypatch.setattr(al, "_session_toolsets_path", lambda: str(path))
+    al._SESSION_TOOLSETS.clear()
+    monkeypatch.setattr(al, "_SESSION_TOOLSETS_LOADED", True)
+    al._sticky_toolset("keep-me", {"a", "b", "c"}, {"a"}, set())
+    assert path.exists()
+    # A fresh process: nothing in memory, the file still there.
+    al._SESSION_TOOLSETS.clear()
+    monkeypatch.setattr(al, "_SESSION_TOOLSETS_LOADED", False)
+    out, hot = al._sticky_toolset("keep-me", {"a"}, {"a"}, set())
+    assert out == {"a", "b", "c"} and hot == {"a"}
