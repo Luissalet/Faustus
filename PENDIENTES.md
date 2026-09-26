@@ -6,6 +6,7 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 
 ## A. Decisiones o acciones de Luis
 
+- **Permisos nuevos de Ledger's, Links y People's Hoard** (26-09): los tres esperan aprobación en Ajustes › Integraciones («new permissions pending approval»). Tras el re-escaneo su riesgo es `medium`: cada puente lee su propio `*_TOKEN` del entorno para llamar a su API local.
 - **Ollama como hogar del modelo por defecto** (18-09, §114/§118): el 7000 ya usa por defecto `qwen3.8-27b-q8-llamacpp` en el 8081; lo que queda por decidir es si Ollama conserva algún papel (hoy no tiene modelos cargados) o se retira del arranque.
 - **Volver a Ollama tras usar llama-server** (18-09, §114): paso manual — `D:\LocalAI\Stop-LlamaServer.ps1` y reactivar `warm_default_model=true`.
 - **`OLLAMA_KEEP_ALIVE=-1`** como variable de entorno del servicio Ollama (17-09/18-09, §107/§109): para que otra app con `keep_alive` de 5 min no desaloje al 27B entre re-pines.
