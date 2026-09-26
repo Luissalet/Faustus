@@ -3422,6 +3422,7 @@ export const es: Record<string, string> = {
   "Models": "Modelos",
   "Models could not be loaded. Reload this page to retry.": "No se pudieron cargar los modelos. Recarga esta página para reintentar.",
   "Models loaded by Ollama": "Modelos cargados por Ollama",
+  "Models loaded by Ollama and the llama.cpp engines": "Modelos cargados por Ollama y los motores llama.cpp",
   "Models tried in order if the utility one fails; comma-separated.": "Modelos que se prueban en orden si el de utilidad falla; separados por comas.",
   "Models without a price (contribute $0 to this estimate)": "Modelos sin precio (aportan 0 $ a esta estimación)",
   "Models, defaults, voice, search, reminders, the whole agent and the shortcuts. Saved per section, only what changes.": "Modelos, valores por defecto, voz, búsqueda, recordatorios, el agente entero y los atajos. Se guarda por sección, solo lo que cambia.",

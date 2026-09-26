@@ -467,7 +467,35 @@ def _vram_block(same_machine: bool, held_by_runner: int,
         placements=placements, reserve_per_card=_FIT_RESERVE_BYTES,
     )
     _attribute_gpu_processes(result.get("gpus") or [])
+    _count_engines_as_models(result)
     return result
+
+
+def _count_engines_as_models(result: Dict[str, Any]) -> None:
+    """Move what llama-server engines hold from "other" to "models".
+
+    The fit arithmetic only knows what Ollama's runner holds, so a
+    llama-server serving the 27B across four cards was drawn as "other"
+    in the VRAM bars, while each card's line already named it. The
+    per-process reading (nvidia-smi) gives each engine's share per card;
+    where it is known, that share counts as a model. `engines_bytes` is the
+    total, for the card-wide bar."""
+    total = 0
+    for card in result.get("gpus") or []:
+        engine_mb = sum(float(p.get("used_mb") or 0) for p in card.get("processes") or []
+                        if p.get("kind") == "model" and p.get("label") == "llama-server"
+                        and p.get("used_mb") is not None)
+        if engine_mb <= 0:
+            continue
+        engine = int(engine_mb * 1048576)
+        total += engine
+        if card.get("models_bytes") is not None:
+            card["models_bytes"] = int(card["models_bytes"]) + engine
+        else:
+            card["models_bytes"] = engine
+        card["other_bytes"] = max(0, int(card.get("used_bytes") or 0) - int(card["models_bytes"]))
+    if total:
+        result["engines_bytes"] = total
 
 
 def _gpu_list(same_machine: bool) -> List[Dict[str, Any]]:

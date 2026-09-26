@@ -36,7 +36,6 @@ Actualizado: 26-09-2026. REGLA: nunca nombres de empresas/personas del buzón de
 - **Prueba 02 (Ingenio)** sin ejecutar todavía; el bonus sólo después de cerrar las dos.
 - **Recuperación del motor a mitad de turno**: verificada en vivo en el 7006 el 25-09 (se mató el llama-server gestionado con la respuesta a medias; el bucle emitió `engine_lost_recovered`, Faustus lo arrancó de nuevo en 40 s, rehízo la ronda y la respuesta salió entera). Falta adoptar el 8081 como motor también en el 7000 (Ajustes → Modelos locales → Añadir motor → Rellenar).
 - **Visión**: el `qwen3-vl-30b-cpu` sigue siendo el cuello de botella (cuenta mal flechas y personas). Probados: `qwen3-vl:8b-instruct` en GPU (peor y no más rápido con el 27B cargado) y el cliente Claude de suscripción como Visión (funciona, 4 min por llamada). Pendiente probar el cliente con `--model` rápido (sonnet/haiku) y sin razonamiento largo.
-- **La barra de «modelos / otros»** de la tarjeta de VRAM sigue contando el motor llama.cpp como «otros»; las tarjetas por GPU ya lo nombran.
 - **El 7000** necesita reinicio y `vision_model` configurado (Ajustes → Visión) para tener lo del examen.
 
 ## 24-09 — `inspect_image` sin probar en vivo (FAUSTUS.md §181)

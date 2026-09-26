@@ -1075,8 +1075,11 @@ const ENGINE_STATE_LABELS: Record<string, string> = {
 function VramCard({ vram, loaded, policy, admin, onPlacement, onRelease }: { vram: Vram; loaded: LoadedModel[]; policy?: { prefer: number; order?: number[] }; admin: boolean; onPlacement: (order: number[]) => Promise<void>; onRelease: (pid: number) => void }) {
   if (!vram?.supported) return <p className="fs-set__help">{t('No VRAM reading for this endpoint.')} {vram?.reason ?? ''}</p>;
   const total = vram.total_bytes ?? 0;
-  const runner = vram.held_by_runner_bytes ?? 0;
-  const others = vram.other_bytes ?? 0;
+  // What llama-server engines hold is a model too, not "other"
+  // (routes/local_models_routes.py `_count_engines_as_models`).
+  const engines = Math.min(vram.engines_bytes ?? 0, vram.other_bytes ?? 0);
+  const runner = (vram.held_by_runner_bytes ?? 0) + engines;
+  const others = Math.max(0, (vram.other_bytes ?? 0) - engines);
   const free = Math.max(0, total - runner - others);
   const pct = (v: number) => (total ? Math.max(0, Math.min(100, (100 * v) / total)) : 0);
   const multi = (vram.count ?? 0) > 1;
@@ -1093,7 +1096,7 @@ function VramCard({ vram, loaded, policy, admin, onPlacement, onRelease }: { vra
         {multi && <GpuPriority cards={cards} policy={policy} admin={admin} onSave={onPlacement} />}
       </div>
       <div className="fs-lm__bar" role="img" aria-label={t('VRAM: {a} models, {b} other, {c} free', { a: fmtGb(runner), b: fmtGb(others), c: fmtGb(free) })}>
-        <span className="fs-lm__seg" data-kind="models" style={{ inlineSize: `${pct(runner).toFixed(1)}%` }} title={names ? `${t('Models loaded by Ollama')}: ${names}` : t('Models loaded by Ollama')} />
+        <span className="fs-lm__seg" data-kind="models" style={{ inlineSize: `${pct(runner).toFixed(1)}%` }} title={engines ? t('Models loaded by Ollama and the llama.cpp engines') : names ? `${t('Models loaded by Ollama')}: ${names}` : t('Models loaded by Ollama')} />
         <span className="fs-lm__seg" data-kind="other" style={{ inlineSize: `${pct(others).toFixed(1)}%` }} title={t('Other processes on the card')} />
       </div>
       <p className="fs-lm__legend fs-set__help">

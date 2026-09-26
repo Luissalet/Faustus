@@ -102,6 +102,8 @@ export interface Vram {
   total_bytes?: number;
   held_by_runner_bytes?: number;
   other_bytes?: number;
+  /** Held by llama-server engines (counted as models, not "other"). */
+  engines_bytes?: number;
   reserve_bytes?: number;
   reserve_per_gpu_bytes?: number;
   budget_bytes?: number;
