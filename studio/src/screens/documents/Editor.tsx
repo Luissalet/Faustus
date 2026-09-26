@@ -2,6 +2,7 @@ import { AlertTriangle, Archive, ArrowLeft, Bold, Check, ChevronDown, Code, Copy
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { Button, Dialog, EmptyState, IconButton, Menu, Skeleton, Toast } from '../../components';
+import { AppFrame } from '../../components/AppFrame';
 import { ApiError } from '../../adapters/api';
 import { archiveDoc, deleteDoc, exportPdfBlob, getDoc, listDocVersions, prepareSignedReply, renameDoc, restoreDocVersion, runOnServer, saveDoc, type Doc, type DocVersion } from '../../adapters/documents';
 import { relativeTime } from '../../adapters/home';
@@ -543,7 +544,7 @@ export function DocumentScreen() {
                 {lang === 'csv' ? (
                   <CsvTable text={text} />
                 ) : lang === 'html' ? (
-                  <iframe className="fs-docs__html" sandbox="allow-scripts" srcDoc={text} title={t('HTML preview')} />
+                  <AppFrame code={text} className="fs-docs__html" title={t('HTML preview')} />
                 ) : (
                   <div className="fs-prose">
                     <Rich text={text} />

@@ -1,12 +1,13 @@
 import { t } from '../i18n';
 import { Check, Code2, Copy, CornerDownLeft, Play } from 'lucide-react';
-import { createContext, useContext, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useId, useMemo, useState, type ReactNode } from 'react';
 import { findSensitive, getDisplay, stripEmojis, useDisplay } from '../shell/display';
 import { writeClipboardText } from '../lib/clipboard-write';
 import { parseMarkdown, workspaceLink, type Block, type Footnote, type Inline } from '../lib/markdown';
 import { replaceShortcodesInProse } from '../lib/emoji';
 import { CHART_FENCE_LANGS, parseChartSpec } from '../lib/chartSpec';
 import { ChartBlock } from '../components/ChartBlock';
+import { AppFrame } from '../components/AppFrame';
 
 /**
  * The transcript's reader. Parsing lives in lib/markdown.ts; this turns the
@@ -90,34 +91,6 @@ function inlines(nodes: Inline[], key: string, uid: string): ReactNode[] {
 
 /** Fenced languages a reply can run as a small app, right in the chat. */
 const RUNNABLE_LANGS = new Set(['html', 'htm', 'svg']);
-
-/** A snippet becomes a whole page; a whole page stays as it is. */
-function runnableDoc(code: string): string {
-  if (/<html[\s>]/i.test(code) || /<!doctype/i.test(code)) return code;
-  return '<!doctype html><html><head><meta charset="utf-8"></head><body>' + code + '</body></html>';
-}
-
-/**
- * A runnable block's frame. The page it loads (`/api/sandbox/app`) is served
- * with its own content policy: its inline code may run, nothing may load from
- * the network, and it has an opaque origin, so a generated app works offline
- * and cannot read Faustus or send anything anywhere. (As `srcdoc` the frame
- * inherited Studio's own policy and no script ever ran.) The runner says
- * when it is ready; the app's HTML is posted to it once.
- */
-function AppFrame({ code }: { code: string }) {
-  const [frame, setFrame] = useState<HTMLIFrameElement | null>(null);
-  useEffect(() => {
-    if (!frame) return;
-    const onMessage = (e: MessageEvent) => {
-      if (e.source !== frame.contentWindow || !(e.data && e.data.faustusAppReady)) return;
-      frame.contentWindow?.postMessage({ faustusApp: runnableDoc(code) }, '*');
-    };
-    window.addEventListener('message', onMessage);
-    return () => window.removeEventListener('message', onMessage);
-  }, [frame, code]);
-  return <iframe ref={setFrame} className="fs-rich__app" sandbox="allow-scripts allow-modals allow-forms" src="/api/sandbox/app" title={t('App preview')} />;
-}
 
 function CodeBlock({ lang, code }: { lang: string; code: string }) {
   const [copied, setCopied] = useState(false);
