@@ -887,6 +887,11 @@ app.include_router(setup_context_engine_routes())
 from routes.brain_routes import setup_brain_routes
 app.include_router(setup_brain_routes())
 
+# One query across chats, brain, notes, documents, gallery, skills and the
+# board, mixed by rank (Ctrl+K "Everywhere"; src/unified_search.py).
+from routes.unified_search_routes import setup_unified_search_routes
+app.include_router(setup_unified_search_routes())
+
 # find_symbol/callers/tests_for HTTP surface (Lote 38, IDX-02/IDX-03).
 from routes.code_index_routes import setup_code_index_routes
 app.include_router(setup_code_index_routes())

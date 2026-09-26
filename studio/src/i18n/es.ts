@@ -5328,6 +5328,7 @@ export const es: Record<string, string> = {
   "Search experts…": "Buscar expertos…",
   "Search findings…": "Buscar hallazgos…",
   "Search health": "Salud de la búsqueda",
+  "Search in": "Buscar en",
   "Search in files": "Buscar en ficheros",
   "Search in this chat": "Buscar en este chat",
   "Search in this conversation": "Buscar en esta conversación",

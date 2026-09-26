@@ -429,3 +429,52 @@
   min-block-size: 0;
   max-block-size: none;
 }
+
+/* Everywhere: one query across chats, brain, notes, documents, gallery,
+   skills and the board (GET /api/search/all). */
+.fs-palette__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-1);
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border-block-end: 1px solid var(--fs-border);
+}
+.fs-palette__chip {
+  padding: 2px 10px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: transparent;
+  color: var(--fs-text-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.fs-palette__chip[aria-pressed='true'] {
+  border-color: var(--fs-brand);
+  color: var(--fs-text-1);
+  background: var(--fs-surface-1);
+}
+.fs-palette__hit {
+  align-items: flex-start;
+}
+.fs-palette__hit-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-inline-size: 0;
+}
+.fs-palette__hit-title,
+.fs-palette__hit-snippet {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fs-palette__hit-snippet {
+  color: var(--fs-text-3);
+  font-size: 12px;
+}
+.fs-palette__hit-type {
+  flex: none;
+  color: var(--fs-text-3);
+  font-size: 11px;
+}

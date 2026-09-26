@@ -1,5 +1,8 @@
 import { Command } from 'cmdk';
+import { Brain, FileText, Image, KanbanSquare, MessageSquare, NotebookPen, Sparkles } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
+import { SEARCH_SOURCES, searchAll, type SearchHit, type SearchSource } from '../adapters/unifiedSearch';
 import { overlayRoot } from './overlayRoot';
 import { DESTINATIONS, TOOLS } from './routes';
 import { useShell } from './store';
@@ -16,10 +19,69 @@ import { t } from '../i18n';
  * becomes a command inside the palette rather than a rival binding: two
  * things fighting over one key means the user learns neither.
  */
+const SOURCE_LABEL: Record<SearchSource, string> = {
+  chats: 'Chats',
+  brain: 'Brain',
+  notes: 'Notes',
+  documents: 'Documents',
+  gallery: 'Gallery',
+  skills: 'Skills',
+  board: 'Board',
+};
+
+const SOURCE_ICON: Record<SearchSource, typeof Brain> = {
+  chats: MessageSquare,
+  brain: Brain,
+  notes: NotebookPen,
+  documents: FileText,
+  gallery: Image,
+  skills: Sparkles,
+  board: KanbanSquare,
+};
+
+/** Everything the owner has that matches, mixed (`GET /api/search/all`),
+ *  once the query is two characters or more; 250 ms after the last key. */
+function useEverywhere(open: boolean, query: string, types: SearchSource[]) {
+  const [hits, setHits] = useState<SearchHit[]>([]);
+  const [loading, setLoading] = useState(false);
+  const q = query.trim();
+  const key = types.join(',');
+  useEffect(() => {
+    if (!open || q.length < 2) {
+      setHits([]);
+      setLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setLoading(true);
+    const timer = window.setTimeout(() => {
+      searchAll(q, key ? (key.split(',') as SearchSource[]) : [], 6, controller.signal)
+        .then((r) => setHits(r.results ?? []))
+        .catch(() => {
+          /* navigation still works without it */
+        })
+        .finally(() => setLoading(false));
+    }, 250);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [open, q, key]);
+  return { hits, loading };
+}
+
 export function CommandPalette() {
   const open = useShell((state) => state.paletteOpen);
   const setOpen = useShell((state) => state.setPaletteOpen);
   const navigate = useNavigate();
+  const [query, setQuery] = useState('');
+  const [types, setTypes] = useState<SearchSource[]>([]);
+  const { hits, loading } = useEverywhere(open, query, types);
+  useEffect(() => {
+    if (!open) setQuery('');
+  }, [open]);
+  const toggleType = (source: SearchSource) =>
+    setTypes((current) => (current.includes(source) ? current.filter((s) => s !== source) : [...current, source]));
 
   function go(path: string) {
     setOpen(false);
@@ -35,9 +97,53 @@ export function CommandPalette() {
       container={overlayRoot()}
       data-testid="command-palette"
     >
-      <Command.Input placeholder={t('Go to, search or run…')} className="fs-palette__input" />
+      <Command.Input placeholder={t('Go to, search or run…')} className="fs-palette__input" value={query} onValueChange={setQuery} />
+      {query.trim().length >= 2 && (
+        <div className="fs-palette__filters" role="group" aria-label={t('Search in')} data-testid="palette-filters">
+          <button type="button" className="fs-palette__chip" aria-pressed={types.length === 0} onClick={() => setTypes([])}>
+            {t('Everything')}
+          </button>
+          {SEARCH_SOURCES.map((source) => (
+            <button
+              key={source}
+              type="button"
+              className="fs-palette__chip"
+              aria-pressed={types.includes(source)}
+              onClick={() => toggleType(source)}
+              data-testid={`palette-filter-${source}`}
+            >
+              {t(SOURCE_LABEL[source])}
+            </button>
+          ))}
+        </div>
+      )}
       <Command.List className="fs-palette__list">
-        <Command.Empty className="fs-palette__empty">{t('Nothing matches.')}</Command.Empty>
+        <Command.Empty className="fs-palette__empty">{loading ? t('Searching…') : t('Nothing matches.')}</Command.Empty>
+
+        {hits.length > 0 && (
+          <Command.Group heading={t('Everywhere')} className="fs-palette__group" forceMount data-testid="palette-everywhere">
+            {hits.map((hit) => {
+              const Icon = SOURCE_ICON[hit.type] ?? FileText;
+              return (
+                <Command.Item
+                  key={`${hit.type}:${hit.id}`}
+                  value={`${hit.type}:${hit.id}`}
+                  forceMount
+                  onSelect={() => go(hit.url)}
+                  className="fs-palette__item fs-palette__hit"
+                  data-testid="palette-hit"
+                >
+                  <Icon size={15} aria-hidden="true" />
+                  <span className="fs-palette__hit-text">
+                    <span className="fs-palette__hit-title">{hit.title}</span>
+                    {hit.snippet && hit.snippet !== hit.title && <span className="fs-palette__hit-snippet">{hit.snippet}</span>}
+                  </span>
+                  <span className="fs-palette__hit-type">{t(SOURCE_LABEL[hit.type] ?? hit.type)}</span>
+                </Command.Item>
+              );
+            })}
+          </Command.Group>
+        )}
 
         <Command.Group heading={t('Go to')} className="fs-palette__group">
           {DESTINATIONS.map((destination) => (

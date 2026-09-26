@@ -61,7 +61,14 @@ export function BoardPanel({ projectId }: { projectId: string }) {
   const [filterType, setFilterType] = useState<IssueType | ''>('');
   const [filterPriority, setFilterPriority] = useState<IssuePriority | ''>('');
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
-  const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
+  // `?issue=<id>` (a search hit, a link in a reply) opens that issue.
+  const [selectedIssueId, setSelectedIssueId] = useState<string | null>(() => {
+    try {
+      return new URLSearchParams(window.location.search).get('issue');
+    } catch {
+      return null;
+    }
+  });
   const [newOpen, setNewOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editingKey, setEditingKey] = useState(false);
