@@ -8,7 +8,6 @@ Actualizado: 26-09-2026. REGLA: nunca nombres de empresas/personas del buzón de
 - **7000 sin reiniciar**: el 7006 lleva todo desplegado y probado; el 7000 (instancia principal de Luis) lo coge al reiniciarse con el master nuevo y rehacer el `vite build` de la carpeta principal. Es una decisión de Luis cuándo reiniciarlo.
 - **`context_*` automáticos**: en vivo solo se probó pidiéndolo («usa context_note»). Falta una ejecución larga real (Silhouettes o similar) para ver si el 27B las usa solo cuando se le ofrecen al 45 % o en la ronda 12, y si el aviso al umbral blando ayuda o estorba.
 - **`swarm_map` modo `agent`** sin probar en vivo; el modo `llm` sí (6 ciudades). Con otros chats ocupando slots del 8081, dos elementos agotaron sus 180 s esperando cola antes del arreglo que reserva los slots ocupados; volver a medirlo con el 8081 compartido.
-- **Visión**: tras el arreglo de `vision_num_ctx` la descripción del adjunto va a 6,5 GB, pero con el 27B q8 ocupando las cuatro GPU generó a ~7 tok/s (≈3 min para una descripción de 1.536 tokens). Valorar bajar `vision_max_tokens` para adjuntos o pedir descripciones más cortas.
 
 ## 25-09 mediodía — uso diario en el 7006 (FAUSTUS.md §184, puntos 17–35)
 
