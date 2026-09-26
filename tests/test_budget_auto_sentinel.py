@@ -39,14 +39,15 @@ def test_saving_an_unrelated_setting_does_not_re_cap_the_budget(tmp_path, monkey
     settings.save_settings(merged)
     settings._settings_cache = None
 
-    # The budget default is now physically materialized into the file...
+    # The save no longer writes a default the file did not have (26-09:
+    # frozen defaults kept later default changes from ever arriving), so the
+    # budget stays out of the file entirely...
     raw = json.loads(settings_file.read_text(encoding="utf-8"))
-    assert raw["agent_input_token_budget"] == DEFAULT_BUDGET
+    assert "agent_input_token_budget" not in raw
     assert raw["search_result_count"] == 9
 
-    # ...yet it must read as AUTO (value == default), not an explicit cap — even
-    # though is_setting_overridden would report True for it now.
-    assert settings.is_setting_overridden("agent_input_token_budget") is True
+    # ...and it reads as AUTO (value == default), not an explicit cap.
+    assert settings.is_setting_overridden("agent_input_token_budget") is False
     soft = int(settings.get_setting("agent_input_token_budget", DEFAULT_BUDGET) or 0)
     assert budget_is_explicit(soft) is False
     # And the effective budget scales to the window rather than capping at 6000.

@@ -61,6 +61,7 @@ _SOURCE_FILES = (
 _NOT_SSE_FRAME_TYPES = frozenset({
     "text",        # a text content block ({"type": "text", "text": ...})
     "thinking",    # a reasoning content block
+    "redacted_thinking",  # an encrypted reasoning content block (Claude)
     "image_url",   # an image-by-url content block
     "image",       # an image-by-source content block
     "base64",      # an image source's encoding

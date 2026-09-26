@@ -1,4 +1,3 @@
-
  (check it)	 (revísalo)
  (in series)	 (en serie)
  (one per task)	 (uno por tarea)
@@ -8535,3 +8534,30 @@ Answers without reasoning. Quick, but it gets dates and counts wrong.	Responde s
 {n} skills found	{n} habilidades encontradas
 {origin} · v{version}	{origin} · v{version}
 {pct}% confident	{pct}% de confianza
+Theme: {name}	Tema: {name}
+No theme called "{name}"	No hay ningún tema llamado «{name}»
+Prompt cache	Caché del prompt
+{share}% reused over {rounds} rounds	{share} % reutilizado en {rounds} rondas
+lost in {n}	perdida en {n}
+Rounds {r} · {f} · {p} · {m} · {e}	Rondas {r} · {f} · {p} · {m} · {e}
+Maximum	Máximo
+Off (fastest)	Apagado (lo más rápido)
+Auto (strongest)	Auto (lo más potente)
+max reasoning	razonamiento máximo
+high reasoning	razonamiento alto
+medium reasoning	razonamiento medio
+low reasoning	razonamiento bajo
+How hard the model thinks while it plans, weighs sources and writes. Auto uses the strongest setting each model has (Settings › Agent › Reasoning per mode); lower is faster.	Cuánto piensa el modelo al planificar, sopesar las fuentes y escribir. Auto usa el ajuste más potente de cada modelo (Ajustes › Agent › Razonamiento por modo); más bajo es más rápido.
+Low	Bajo
+MTP speeds up one request at a time the most; while several run at once the gain is small. No need for -np 1.	MTP acelera sobre todo una petición cada vez; con varias a la vez la ganancia es pequeña. No hace falta -np 1.
+Also serving, managed in Settings › Local models:	También sirviendo, gestionados en Ajustes › Modelos locales:
+Model reasoning kept	Razonamiento del modelo que se conserva
+Usage	Uso
+Model steps	Pasos del modelo
+Tool calls	Llamadas a herramientas
+Input tokens	Tokens de entrada
+Output tokens	Tokens de salida
+Prompt from cache	Prompt servido desde caché
+Prompt processed	Prompt procesado
+Context (last turn)	Contexto (último turno)
+What this conversation used: tokens, prompt cache, steps, tool calls, time and cost, per model; and what the database holds.	Lo que ha gastado esta conversación: tokens, caché de prompt, pasos, llamadas a herramientas, tiempo y coste, por modelo; y lo que guarda la base de datos.

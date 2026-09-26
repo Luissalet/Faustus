@@ -77,10 +77,10 @@ const assert = (cond, msg) => {
 {
   const src = readFileSync(join(root, 'studio', 'src', 'screens', 'studio', 'Composer.tsx'), 'utf8');
   assert(src.includes('function GenSettingsPopover'), 'the sampling panel component exists');
-  assert(src.includes("id=\"gen-temperature\""), 'a real temperature control, not just describeGen() text');
-  assert(src.includes("id=\"gen-top-p\""), 'a real top_p control');
-  assert(src.includes("id=\"gen-top-k\""), 'a real top_k control');
-  assert(src.includes("id=\"gen-max-tokens\""), 'a real max_tokens control');
+  assert(src.includes("id=\"gen-temperature\"") || src.includes("id: 'gen-temperature'"), 'a real temperature control, not just describeGen() text');
+  assert(src.includes("id=\"gen-top-p\"") || src.includes("id: 'gen-top-p'"), 'a real top_p control');
+  assert(src.includes("id=\"gen-top-k\"") || src.includes("id: 'gen-top-k'"), 'a real top_k control');
+  assert(src.includes("id=\"gen-max-tokens\"") || src.includes("id: 'gen-max-tokens'"), 'a real max_tokens control');
   assert(src.includes('thinkApplies') && src.includes('supportsThinking(modelName)'),
     'the think switch is gated by the same capability check as the backend, not always shown');
   assert(src.includes('onClearGen') && src.includes('fs-studio__chip-x'),

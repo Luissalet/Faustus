@@ -325,12 +325,12 @@ def test_static_check_files(tmp_path):
 
 
 def test_delegation_args_parsing():
-    from src.agent_tools.subagent_tools import parse_delegation_args, MAX_SUBAGENTS
+    from src.agent_tools.subagent_tools import parse_delegation_args, max_tasks
     args = parse_delegation_args('{"tasks": [{"name": "backend", "instruction": "add route"}, "write tests for it"], "parallel": false}')
     assert len(args["tasks"]) == 2 and args["parallel"] is False
     assert args["tasks"][1]["name"].startswith("write tests")
-    many = parse_delegation_args(json.dumps({"tasks": [f"t{i}" for i in range(10)]}))
-    assert len(many["tasks"]) == MAX_SUBAGENTS
+    many = parse_delegation_args(json.dumps({"tasks": [f"t{i}" for i in range(max_tasks() + 3)]}))
+    assert len(many["tasks"]) == max_tasks() and many["dropped_tasks"] == 3
     with pytest.raises(ValueError):
         parse_delegation_args('{"tasks": []}')
     with pytest.raises(ValueError):

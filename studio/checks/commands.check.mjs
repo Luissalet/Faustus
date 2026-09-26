@@ -167,7 +167,8 @@ const assert = (cond, msg) => {
   assert(tours.tourById('nope') === null, 'an unknown tour is nothing');
   assert(tours.tourForPath('/compare')?.id === 'tour-compare', 'a path finds its tour');
   assert(tours.tourForPath('/library', '?type=imagen')?.id === 'tour-gallery', 'the gallery is a library path with a query');
-  assert(tours.tourForPath('/settings', '?s=appearance')?.id === 'tour-theme', 'the appearance editor has its own tour');
+  assert(tours.tourForPath('/settings', '?s=general')?.id === 'tour-theme', 'the appearance editor has its own tour');
+  assert(tours.tourForPath('/settings', '?s=agent')?.id !== 'tour-theme', 'the appearance tour is not offered on other settings sections');
   assert(tours.tourForPath('/studio') === null, 'the whole-product tour never offers itself');
   assert(tours.tourForPath('/nowhere') === null, 'a path with no tour offers nothing');
   // Placement: below when it fits, above when it does not, then beside.
