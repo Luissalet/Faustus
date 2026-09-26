@@ -9,6 +9,10 @@ def test_garbage_is_one_symbol_repeated():
     assert es._is_garbage("////////////////////")
     assert es._is_garbage("0000000000")
     assert not es._is_garbage("Hola, ¿qué tal?")
+    # 26-09: a corrupted 27B repeating one Cyrillic syllable.
+    assert es._is_garbage("жнымжнымжнымжнымжнымжнымжнымжным")
+    assert not es._is_garbage("Hello! Hope you are having a lovely day.")
+    assert not es._is_garbage("¡Hola! ¿Qué tal estás hoy?")
     assert not es._is_garbage("hahahahahahaha")  # letters: a model's choice, not a broken engine
     assert not es._is_garbage("")
 

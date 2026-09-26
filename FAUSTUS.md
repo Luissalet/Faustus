@@ -9443,3 +9443,13 @@ Comprobado en el 7000 con Playwright. El formulario queda con nombre «Docs: ido
 - **Imágenes remotas en las respuestas.** Esperan a un clic con su host a la vista. Un clic permite ese host en la pestaña y enseña las que ya había en pantalla. Comprobado en el 7000 con Playwright, con el historial de un chat parcheado sólo en el navegador (`![beacon](https://example.com/pixel.png?q=…)`): 10 marcadores de espera y 0 peticiones a example.com hasta el clic, que hace exactamente una.
 
 Quedan en OBJETIVOS el tope de coste por turno con modelos de pago y el pre-pase estático en `bug_hunt`. 9 pruebas nuevas; 2.662 de guarda, capacidades y tareas pasan (fallan las 2 de siempre que dependen de Windows).
+
+**Examen 31 y tres arreglos para turnos largos** (19:50). El 31 (16:54–19:32, código de master) es la primera ejecución que resuelve la mecánica de las flechas: 8/8 palabras con la regla correcta y autocomprobadas con los signos «?». El borrador de `RESPUESTA.md` llegó a los 51 minutos. Nota aproximada 40,5/100, el doble que las anteriores (detalle en el documento del examen). La caché sirvió el 82 % del prompt.
+
+El turno acabó por tres fallos, arreglados en `4f522d89`:
+
+- **Reintento tras un bucle de razonamiento.** En la ronda 30 el razonamiento repitió tres veces «navigate the distance indicated by the number of the monks» y el detector lo cortó. El único reintento del turno ya se había gastado, así que fue directo a la escalera de recuperación, que terminó el turno. Ahora el reintento vuelve tras 4 rondas limpias (hasta 3 por turno). La nota cita la frase en bucle, y esa ronda piensa con esfuerzo bajo antes de volver a los ajustes del turno.
+- **Visión mandada al modelo de texto.** A media ronda, la sonda `/props` del llama-server ocupado caducó. La comprobación de visión preguntó entonces a `/api/show` de Ollama en el llama-server y acabó en el nombre de familia («qwen3.8» parece multimodal). `count` envió las imágenes al 27B de sólo texto, reescribiendo la llamada a `8081/api/chat` (404). Ahora un llama-server ocupado conserva su última respuesta, uno visto una vez (o un motor gestionado) nunca pasa por Ollama, y sin proyector confirmado no hay imágenes.
+- **Deriva al inglés.** Tras la única nota de idioma a mitad de turno, la narración siguió en inglés dos horas. Ahora hay hasta 3 notas por turno, separadas 5 rondas; la reescritura de la respuesta final conserva su propio presupuesto.
+
+El 7006 pasa a `4f522d89` y arranca en 13 s (antes, 2,5 min por la recuperación de un log de 53 MB). 6 pruebas nuevas; pasan 2.310 del bucle y la visión.

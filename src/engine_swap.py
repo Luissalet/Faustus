@@ -252,13 +252,27 @@ _SANITY_PROMPT = "Reply with one short friendly greeting."
 
 
 def _is_garbage(text: str) -> bool:
-    """A reply made of one short unit repeated (``////``, ``0000``, ``!!``)."""
+    """A reply made of one short unit repeated: symbols (``////``, ``0000``)
+    or letters (``жнымжнымжным…``, seen live on 26-09 after an exam: the
+    27B answered "The capital of France is" with one Cyrillic syllable
+    twelve times, which the letters-free rule let through). The sanity
+    prompt asks for a greeting, so a unit of up to 8 characters filling
+    the reply is never a real answer."""
     import re
     global _GARBAGE_RE
     if _GARBAGE_RE is None:
-        _GARBAGE_RE = re.compile(r"^(.{1,3}?)\1{5,}.{0,3}$", re.DOTALL)
+        _GARBAGE_RE = re.compile(r"^(.{1,8}?)\1{4,}.{0,8}$", re.DOTALL)
     body = "".join(str(text or "").split())
-    return bool(body) and bool(_GARBAGE_RE.match(body)) and not any(ch.isalpha() for ch in body)
+    m = _GARBAGE_RE.match(body) if body else None
+    if not m:
+        return False
+    unit = m.group(1)
+    if not any(ch.isalpha() for ch in unit):
+        return True
+    # Letters: a laugh ("hahaha") is a model's choice, not a broken engine;
+    # a syllable of 3+ letters or one outside ASCII filling the whole reply
+    # to a greeting prompt is.
+    return len(unit) >= 3 or any(ord(ch) > 127 for ch in unit)
 
 
 async def generates_sanely(url: str, model: str, *, timeout_s: float = 30.0) -> Optional[bool]:
