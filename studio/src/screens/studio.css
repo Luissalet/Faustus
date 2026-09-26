@@ -4743,6 +4743,8 @@ aside.fs-panel { position: relative; }
 .fs-uib {
   display: grid;
   gap: var(--fs-space-2);
+  min-inline-size: 0;
+  max-inline-size: 100%;
   padding: var(--fs-space-3);
   border: 1px solid var(--fs-border);
   border-radius: var(--fs-radius-panel);
@@ -4812,7 +4814,7 @@ aside.fs-panel { position: relative; }
 }
 .fs-uib__cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr));
   gap: var(--fs-space-2);
 }
 .fs-uib__card {
@@ -4833,6 +4835,7 @@ aside.fs-panel { position: relative; }
 }
 .fs-uib__card-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--fs-space-2);
