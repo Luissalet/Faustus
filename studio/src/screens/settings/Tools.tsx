@@ -627,6 +627,9 @@ function ArgRulesPanel({ say }: { say: (t: string) => void }) {
     try {
       const saved = await saveToolArgRules(next);
       setRules(saved);
+      // The Test box answers against the SAVED rules: a verdict computed
+      // before this save no longer describes them.
+      setTestResult(null);
       return true;
     } catch (e: unknown) {
       setFormError((e as Error)?.message || t('Could not save the rule.'));
