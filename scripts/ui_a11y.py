@@ -34,6 +34,7 @@ from __future__ import annotations
 import json
 import re
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -498,6 +499,18 @@ def main() -> int:
         llm.shutdown()
 
     RESULT_DIR.mkdir(parents=True, exist_ok=True)
+    # Keep the server log next to the result and drop the throwaway data and
+    # workspace dirs: each run's data dir is ~600 MB (the app downloads its
+    # embedding model into it), and a test suite that runs this a few times
+    # used to fill the disk with them.
+    kept_log = RESULT_DIR / "server.log"
+    try:
+        shutil.copyfile(log_path, kept_log)
+        log_path = kept_log
+    except OSError:
+        pass
+    shutil.rmtree(data_dir, ignore_errors=True)
+    shutil.rmtree(ws_dir, ignore_errors=True)
     result = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "zooms": ZOOMS,
