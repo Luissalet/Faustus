@@ -204,6 +204,11 @@ def _llamacpp_engine_timings(tm: dict) -> Dict[str, Any]:
         "predicted_ms": _finite_ms(tm.get("predicted_ms")),
         "prompt_n": _safe_count(tm.get("prompt_n")),
         "predicted_n": _safe_count(tm.get("predicted_n")),
+        # Prompt tokens the server reused from its cache instead of
+        # processing again: with prompt_n, how much of each round's prefill
+        # a lost cache cost (a slot taken by another request, a rewritten
+        # earlier message).
+        "cache_n": _safe_count(tm.get("cache_n")),
         "source": "llamacpp",
     }
 

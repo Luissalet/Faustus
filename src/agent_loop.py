@@ -11526,6 +11526,14 @@ async def _stream_agent_loop_body(
                         # rates just above.
                         if isinstance(u.get("engine_timings"), dict):
                             _last_engine_timings = u["engine_timings"]
+                            _et = _last_engine_timings
+                            if _et.get("cache_n") is not None:
+                                # One line per round: how much prefill the
+                                # server's prompt cache saved (or did not).
+                                logger.info(
+                                    "[engine] round %s: prompt %s tokens processed, %s from cache, "
+                                    "prefill %s ms", round_num, _et.get("prompt_n"),
+                                    _et.get("cache_n"), _et.get("prompt_ms"))
                     elif data.get("type") == "fallback":
                         # The selected model failed and another answered; surface
                         # the notice so a misconfigured provider isn't masked.
