@@ -356,7 +356,7 @@ def test_rest_failure_falls_back_to_gh_cli(tmp_path, monkeypatch):
     monkeypatch.setattr(ci_failures.credentials, "get_token", lambda channel: "")
     monkeypatch.setattr(ci_failures.shutil, "which", lambda name: "/usr/bin/gh")
 
-    def fake_run(cmd, capture_output, text, timeout):
+    def fake_run(cmd, capture_output, text, timeout, **_kw):
         class P:
             returncode = 0
             stdout = ""

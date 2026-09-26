@@ -91,7 +91,7 @@ def test_parse_owner_repo_hash_number():
 
 
 def test_parse_bare_number_resolves_via_https_origin(tmp_path, monkeypatch):
-    def fake_run(cmd, cwd=None, capture_output=None, text=None, timeout=None):
+    def fake_run(cmd, cwd=None, capture_output=None, text=None, timeout=None, **_kw):
         assert cmd == ["git", "remote", "get-url", "origin"]
         return subprocess.CompletedProcess(cmd, 0, "https://github.com/acme/widgets.git\n", "")
 
@@ -101,7 +101,7 @@ def test_parse_bare_number_resolves_via_https_origin(tmp_path, monkeypatch):
 
 
 def test_parse_bare_number_resolves_via_ssh_alias_origin(tmp_path, monkeypatch):
-    def fake_run(cmd, cwd=None, capture_output=None, text=None, timeout=None):
+    def fake_run(cmd, cwd=None, capture_output=None, text=None, timeout=None, **_kw):
         return subprocess.CompletedProcess(cmd, 0, "git@Luissalet:Owner/Repo.git\n", "")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -110,7 +110,7 @@ def test_parse_bare_number_resolves_via_ssh_alias_origin(tmp_path, monkeypatch):
 
 
 def test_parse_bare_number_with_no_origin_returns_none(tmp_path, monkeypatch):
-    def fake_run(cmd, cwd=None, capture_output=None, text=None, timeout=None):
+    def fake_run(cmd, cwd=None, capture_output=None, text=None, timeout=None, **_kw):
         return subprocess.CompletedProcess(cmd, 128, "", "fatal: No such remote 'origin'")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -159,7 +159,7 @@ def test_fetch_issue_falls_back_to_gh_when_no_token_and_api_fails(monkeypatch):
     monkeypatch.setattr(httpx, "AsyncClient", _mock_client(handler))
     monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/gh" if name == "gh" else None)
 
-    def fake_run(cmd, capture_output=None, text=None, timeout=None):
+    def fake_run(cmd, capture_output=None, text=None, timeout=None, **_kw):
         assert cmd[:3] == ["/usr/bin/gh", "issue", "view"]
         payload = {
             "title": "From gh", "body": "body text", "labels": [{"name": "help wanted"}],

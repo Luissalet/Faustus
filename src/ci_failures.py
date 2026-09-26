@@ -77,7 +77,7 @@ def repo_from_workspace(workspace: str) -> Optional[Tuple[str, str]]:
     try:
         proc = subprocess.run(
             ["git", "remote", "get-url", "origin"], cwd=ws,
-            capture_output=True, text=True, timeout=8,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=8,
         )
     except Exception as exc:  # noqa: BLE001
         logger.debug("ci_failures: git remote lookup failed: %s", exc)
@@ -117,7 +117,7 @@ def _gh_json(cmd: List[str]) -> Optional[Any]:
     if not path:
         return None
     try:
-        proc = subprocess.run([path, *cmd], capture_output=True, text=True, timeout=_GH_TIMEOUT_S)
+        proc = subprocess.run([path, *cmd], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=_GH_TIMEOUT_S)
     except Exception as exc:  # noqa: BLE001
         logger.debug("ci_failures: gh CLI call failed: %s", exc)
         return None
@@ -246,7 +246,7 @@ async def job_log(owner: str, repo: str, job_id: Any, *, token: Optional[str] = 
         try:
             proc = subprocess.run(
                 [path, "run", "view", "-R", f"{owner}/{repo}", "--log", "--job", str(job_id)],
-                capture_output=True, text=True, timeout=_GH_TIMEOUT_S,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=_GH_TIMEOUT_S,
             )
             if proc.returncode == 0 and proc.stdout:
                 return proc.stdout
@@ -268,12 +268,14 @@ _TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s?", re.M)
 #: tab-separated, before the timestamp ("test<TAB>Run pytest<TAB>2026-...Z
 #: FAILED ..."). Left in place, no failure pattern (all anchored at the
 #: start of the line) matched: seen live, a failing pytest run came back as
-#: "0 distinct failures".
-_GH_PREFIX_RE = re.compile(r"^[^\t\n]*\t[^\t\n]*\t(?=\d{4}-\d{2}-\d{2}T\d{2}:)", re.M)
+#: "0 distinct failures". Its output is UTF-8 (with a byte-order mark on
+#: the first line); read with Windows' default code page it did not decode
+#: at all, and the log looked unreadable.
+_GH_PREFIX_RE = re.compile(r"^[^\t\n]*\t[^\t\n]*\t\ufeff?(?=\d{4}-\d{2}-\d{2}T\d{2}:)", re.M)
 
 
 def _clean(text: str) -> str:
-    text = _ANSI_RE.sub("", text or "")
+    text = _ANSI_RE.sub("", (text or "").replace("\ufeff", ""))
     text = _GH_PREFIX_RE.sub("", text)
     text = _TS_RE.sub("", text)
     return text
@@ -439,7 +441,7 @@ def _last_touched(workspace: str, rel_path: str) -> Optional[Dict[str, str]]:
     try:
         proc = subprocess.run(
             ["git", "log", "-1", "--format=%an|%ad", "--", rel_path],
-            cwd=workspace, capture_output=True, text=True, timeout=8,
+            cwd=workspace, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=8,
         )
     except Exception as exc:  # noqa: BLE001
         logger.debug("ci_failures: git log lookup failed: %s", exc)

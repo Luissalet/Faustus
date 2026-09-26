@@ -93,7 +93,7 @@ def _origin_owner_repo(workspace: Optional[str]) -> Optional[tuple]:
     try:
         proc = subprocess.run(
             ["git", "remote", "get-url", "origin"],
-            cwd=workspace, capture_output=True, text=True, timeout=5,
+            cwd=workspace, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5,
         )
     except (OSError, subprocess.SubprocessError):
         return None
@@ -189,7 +189,7 @@ async def _fetch_issue_gh(owner: str, repo: str, number: int) -> Dict[str, Any]:
         )
     cmd = [path, "issue", "view", str(number), "--repo", f"{owner}/{repo}",
            "--json", "title,body,labels,state,comments,url"]
-    proc = await asyncio.to_thread(subprocess.run, cmd, capture_output=True, text=True, timeout=20)
+    proc = await asyncio.to_thread(subprocess.run, cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20)
     if proc.returncode != 0:
         raise GithubPRError(f"gh issue view failed: {(proc.stderr or proc.stdout or '').strip()[:300]}")
     try:
@@ -387,13 +387,13 @@ async def _open_pull_request_gh(workspace: Optional[str], *, base: str, head: st
     if draft:
         cmd.append("--draft")
     proc = await asyncio.to_thread(subprocess.run, cmd, cwd=workspace or None,
-                                    capture_output=True, text=True, timeout=30)
+                                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
     if proc.returncode != 0:
         err = (proc.stderr or proc.stdout or "").strip()
         if "already exists" in err.lower():
             view = await asyncio.to_thread(
                 subprocess.run, [path, "pr", "view", head, "--json", "url,number"],
-                cwd=workspace or None, capture_output=True, text=True, timeout=15,
+                cwd=workspace or None, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15,
             )
             if view.returncode == 0:
                 try:
