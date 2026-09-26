@@ -627,6 +627,17 @@ async def decide(context: str, fields: Sequence[Field], *, owner: Optional[str] 
             return out
 
         wire, url, model, headers = prep["wire"], prep["url"], prep["model"], prep["headers"]
+        # On a llama-server that also serves a chat, every field goes to one
+        # slot no chat holds: left to the server, the first field could land
+        # on the chat's slot and wipe its cache (live on the 3B helper,
+        # 26-09), and one slot for all fields keeps their shared prefix.
+        helper_slot = None
+        if wire == "openai" and _loopback(url):
+            try:
+                from src.llama_slots import helper_slot as _helper_slot
+                helper_slot = _helper_slot(url)
+            except Exception:  # noqa: BLE001 - a perf hint only
+                helper_slot = None
         for f in flds:
             remaining = budget - (time.monotonic() - started)
             if remaining <= 0.02:
@@ -634,6 +645,8 @@ async def decide(context: str, fields: Sequence[Field], *, owner: Optional[str] 
                 continue
             messages = build_messages(context, f, instructions)
             payload = build_payload(wire, model, messages, len(f.options()), url)
+            if helper_slot is not None:
+                payload["id_slot"] = helper_slot
             t0 = time.monotonic()
             try:
                 data = await asyncio.wait_for(_post(url, payload, headers, remaining), timeout=remaining)

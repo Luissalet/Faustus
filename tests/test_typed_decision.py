@@ -439,3 +439,23 @@ def test_live_ollama_native_shape():
     # the empty token took ~8% of the probability: mass says so, the
     # renormalised confidence does not
     assert 0.9 < d.mass < 0.93 and d.confidence > 0.99
+
+
+def test_fields_share_one_slot_no_chat_holds(monkeypatch, endpoint):
+    """On a llama-server that also serves a pinned chat, all fields go to
+    one other slot (the chat's cache survives, the prefix is shared)."""
+    from src import llama_slots
+    monkeypatch.setattr(llama_slots, "_enabled", lambda: True)
+    llama_slots.note_slot_count(LLAMA_URL, 4)
+    chat = llama_slots.slot_for(LLAMA_URL, "chat-a")
+    server = serve(monkeypatch, lambda p: (200, openai_body([{"token": "A", "logprob": -0.01}])))
+    fields = [td.Field("person", "Is Ada a person?", "bool"), td.Field("where", "Where?", ["x", "y"])]
+    run(td.decide("Ada lives in Bluehaven.", fields))
+    slots = {r["payload"].get("id_slot") for r in server.requests}
+    assert len(slots) == 1 and None not in slots and chat not in slots
+
+
+def test_no_slot_is_named_on_an_unknown_server(monkeypatch, endpoint):
+    server = serve(monkeypatch, lambda p: (200, openai_body([{"token": "A", "logprob": -0.01}])))
+    run(td.decide("ctx", [BOOL]))
+    assert "id_slot" not in server.requests[0]["payload"]

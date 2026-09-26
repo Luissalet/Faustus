@@ -230,6 +230,11 @@ async def _post_chat_completion(base_url: str, model: str, payload: Dict[str, An
     from src import llm_core
 
     chat_url = f"{str(base_url).rstrip('/')}/v1/chat/completions"
+    # A one-off helper request: on a llama-server that also serves a chat it
+    # names a slot no chat holds (src/llama_slots.py), never the chat's own.
+    if "id_slot" not in payload:
+        payload = dict(payload)
+        llm_core._apply_llamacpp_slot(payload, chat_url, None)
     client = llm_core._get_http_client()
     async with llm_core._local_model_slot(base_url, model, workload="foreground"):
         response = await client.post(chat_url, json=payload, headers=headers or {}, timeout=timeout)
