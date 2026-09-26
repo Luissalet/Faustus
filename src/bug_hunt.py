@@ -578,10 +578,13 @@ async def generate_tests(target: Target, *, owner: str = "", model: Optional[str
     prompt = _build_generation_prompt(target, max_cases)
     try:
         from src.llm_core import llm_call_async
+        from src import mode_effort as _me
+        _bh_overrides = _me.for_mode("bug_hunt")
         raw = await llm_call_async(
             url=url, model=use_model, messages=[{"role": "user", "content": prompt}],
-            headers=headers, temperature=0.2, max_tokens=3000, timeout=60,
-            max_retries=1, workload="background",
+            headers=headers, temperature=0.2, max_tokens=3000,
+            timeout=int(_me.timeout_for(_bh_overrides, 60)),
+            max_retries=1, workload="background", gen_overrides=_bh_overrides,
         )
     except Exception as e:  # noqa: BLE001
         logger.debug("[bug_hunt] generation model call failed", exc_info=True)
@@ -788,10 +791,13 @@ async def triage(target: Target, run_result: RunResult, *, owner: str = "",
     prompt = _build_triage_prompt(target, failing)
     try:
         from src.llm_core import llm_call_async
+        from src import mode_effort as _me
+        _bh_overrides = _me.for_mode("bug_hunt")
         raw = await llm_call_async(
             url=url, model=use_model, messages=[{"role": "user", "content": prompt}],
-            headers=headers, temperature=0.1, max_tokens=1500, timeout=45,
-            max_retries=1, workload="background",
+            headers=headers, temperature=0.1, max_tokens=1500,
+            timeout=int(_me.timeout_for(_bh_overrides, 45)),
+            max_retries=1, workload="background", gen_overrides=_bh_overrides,
         )
     except Exception:  # noqa: BLE001
         logger.debug("[bug_hunt] triage model call failed", exc_info=True)

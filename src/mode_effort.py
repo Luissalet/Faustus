@@ -32,6 +32,17 @@ MODE_DEFAULTS: Dict[str, str] = {
     "research_reading": "off",
     "council": "high",
     "teacher": "max",
+    # Asking another model a question (`chat_with_model`): a consultation is
+    # for its considered answer.
+    "consult": "high",
+    # Tournament contestants and blind rounds (src/tournament.py): the answers
+    # are compared on quality.
+    "tournament": "high",
+    # bug_hunt's edge-case generation and triage, and the CI failure
+    # analysis, run on the small utility model by design (fast, background);
+    # they keep its default unless the owner raises them in Settings.
+    "bug_hunt": "auto",
+    "ci_analysis": "auto",
 }
 
 _EFFORT_WORD = {"low": "low", "medium": "medium", "high": "high", "max": "max"}
@@ -100,3 +111,15 @@ def from_chat(think_mode: Optional[str] = None, reasoning_effort: Optional[str] 
         return normalize({"minimal": "low"}.get(effort, effort))
     chip = str(think_mode or "").strip().lower()
     return {"fast": "off", "think": "high", "deep": "max"}.get(chip, "auto")
+
+
+def timeout_for(overrides: Optional[Dict[str, Any]], base: float) -> float:
+    """A call's timeout with room for the reasoning it asks for (about 20
+    tokens a second, the slow end of a local 27B)."""
+    if not overrides or not overrides.get("think"):
+        return float(base)
+    try:
+        budget = int(overrides.get("reasoning_budget") or 0)
+    except (TypeError, ValueError):
+        budget = 0
+    return float(base) + budget / 20.0

@@ -41,7 +41,9 @@ EXTRA_KEYS: tuple[str, ...] = ("tool_path_extra_roots", "vision_enabled", "visio
                                "sandbox_missing_policy", "code_graph_community_summaries",
                                "code_graph_drift_check", "approval_autonomy",
                                "mode_effort_research", "mode_effort_research_reading",
-                               "mode_effort_council", "mode_effort_teacher")
+                               "mode_effort_council", "mode_effort_teacher",
+                               "mode_effort_consult", "mode_effort_tournament",
+                               "mode_effort_bug_hunt", "mode_effort_ci_analysis")
 
 FIELD_TYPES: tuple[str, ...] = ("bool", "int", "float", "text", "select", "list", "secret")
 _NUMERIC_TYPES = ("int", "float")
@@ -718,7 +720,15 @@ GROUPS: list[dict[str, Any]] = [
             _select("mode_effort_council", "Council members",
                     "Each member's answer in a council. Auto = high.", ["auto", "off", "low", "medium", "high", "max"]),
             _select("mode_effort_teacher", "Teacher (escalation)",
-                    "The stronger model asked when a turn gets stuck. Auto = max.", ["auto", "off", "low", "medium", "high", "max"]),
+                    "The stronger model asked when a turn gets stuck, and the ask_teacher tool. Auto = max.", ["auto", "off", "low", "medium", "high", "max"]),
+            _select("mode_effort_consult", "Asking another model",
+                    "chat_with_model: the agent consults another model. Auto = high.", ["auto", "off", "low", "medium", "high", "max"]),
+            _select("mode_effort_tournament", "Tournaments and blind rounds",
+                    "Every contestant's answer and the judge. Auto = high.", ["auto", "off", "low", "medium", "high", "max"]),
+            _select("mode_effort_bug_hunt", "Bug hunter",
+                    "Edge-case generation and triage, on the utility model. Auto = that model's own default.", ["auto", "off", "low", "medium", "high", "max"]),
+            _select("mode_effort_ci_analysis", "CI failure analysis",
+                    "Proposed fixes for failed CI jobs, on the utility model. Auto = that model's own default.", ["auto", "off", "low", "medium", "high", "max"]),
         ],
     ),
     _group(

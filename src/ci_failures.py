@@ -717,10 +717,13 @@ async def propose_fixes(analysis: Analysis, owner: str = "", model: Optional[str
         ]
     try:
         from src.llm_core import llm_call_async
+        from src import mode_effort as _me
+        _ci_overrides = _me.for_mode("ci_analysis")
         raw = await llm_call_async(
             url=url, model=use_model, messages=[{"role": "user", "content": _build_fix_prompt(analysis)}],
-            headers=headers, temperature=0.2, max_tokens=1500, timeout=60,
-            max_retries=1, workload="background",
+            headers=headers, temperature=0.2, max_tokens=1500,
+            timeout=int(_me.timeout_for(_ci_overrides, 60)),
+            max_retries=1, workload="background", gen_overrides=_ci_overrides,
         )
     except Exception as exc:  # noqa: BLE001
         logger.debug("ci_failures: propose_fixes model call failed: %s", exc)

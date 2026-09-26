@@ -51,12 +51,15 @@ async def chat_with_model(content: str, session_id: Optional[str] = None, owner:
     except ValueError as e:
         return {"error": str(e)}
 
+    from src import mode_effort
+    overrides = mode_effort.for_mode("consult")
     try:
         response = await llm_call_async(
             url, model,
             [{"role": "user", "content": message}],
             headers=headers,
-            timeout=AI_CHAT_TIMEOUT,
+            timeout=int(mode_effort.timeout_for(overrides, AI_CHAT_TIMEOUT)),
+            gen_overrides=overrides,
         )
         # Truncate very long responses
         if len(response) > 10000:
@@ -98,6 +101,8 @@ async def ask_teacher(content: str, session_id: Optional[str] = None, owner: Opt
     except ValueError as e:
         return {"error": str(e)}
 
+    from src import mode_effort
+    overrides = mode_effort.for_mode("teacher")
     try:
         response = await llm_call_async(
             url, model,
@@ -106,7 +111,8 @@ async def ask_teacher(content: str, session_id: Optional[str] = None, owner: Opt
                 {"role": "user", "content": f"Problem:\n{problem}"},
             ],
             headers=headers,
-            timeout=AI_CHAT_TIMEOUT,
+            timeout=int(mode_effort.timeout_for(overrides, AI_CHAT_TIMEOUT)),
+            gen_overrides=overrides,
         )
         if len(response) > 8000:
             response = response[:8000] + "\n... (truncated)"

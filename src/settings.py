@@ -1725,6 +1725,10 @@ DEFAULT_SETTINGS = {
     "mode_effort_research_reading": "auto",
     "mode_effort_council": "auto",
     "mode_effort_teacher": "auto",
+    "mode_effort_consult": "auto",
+    "mode_effort_tournament": "auto",
+    "mode_effort_bug_hunt": "auto",
+    "mode_effort_ci_analysis": "auto",
     # A "deep" turn multiplies the local thinking watchdog
     # (agent_local_think_budget_seconds) by this factor.
     "think_mode_deep_watchdog_factor": 2.0,

@@ -9359,3 +9359,18 @@ Es la idea de «diagnosticar transcripciones» que salió de la revisión de rep
 
 Quedan en OBJETIVOS la API Responses de OpenAI con razonamiento cifrado (un camino nuevo entero), la caché explícita de Gemini y la afinidad de sesión de OpenRouter, que no está verificada.
 - **Studio.** `/turnreview` (alias `/why N`) enseña la revisión en el chat. Verificado en el 7000 sobre un chat real.
+
+**Más modos con su propio nivel de razonamiento** (17:45). Un repaso de quién llama al modelo por la ruta auxiliar encontró otros caminos de calidad que no pedían razonamiento:
+
+- **`ask_teacher`.** La herramienta con la que el agente consulta al profesor ahora usa el nivel del profesor (`max`), igual que ya hacía la escalada automática.
+- **`chat_with_model`.** Consultar a otro modelo tiene su modo, `consult`, con `high` por defecto.
+- **Torneos y rondas ciegas.** Cada concursante y el juez van en modo `tournament`, con `high` por defecto.
+- **El cazador de bugs y el análisis de CI.** Tienen su ajuste, pero van en el modelo auxiliar pequeño por diseño y conservan su valor por defecto salvo que el dueño lo suba.
+
+Cada llamada gana margen de tiempo para su presupuesto de razonamiento (`mode_effort.timeout_for`).
+
+Siguen por la ruta rápida, a propósito:
+
+- lo mecánico: títulos, extracción y resúmenes de correo;
+- lo que responde en JSON de forma fija;
+- la vista previa del plan de investigación, que es interactiva y tiene 30 s.

@@ -1007,9 +1007,11 @@ def default_llm_call(owner: Optional[str] = None, *, session_id: Optional[str] =
         from src.llm_core import llm_call_async
         url, resolved, headers = await asyncio.to_thread(
             _resolve_model, str(model or "auto"), owner=owner)
+        from src import mode_effort
+        overrides = mode_effort.for_mode("tournament")
         return await llm_call_async(url, resolved, messages, headers=headers,
-                                    timeout=timeout or AI_CHAT_TIMEOUT,
-                                    session_id=session_id)
+                                    timeout=int(mode_effort.timeout_for(overrides, timeout or AI_CHAT_TIMEOUT)),
+                                    session_id=session_id, gen_overrides=overrides)
     return _call
 
 
