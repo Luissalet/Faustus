@@ -4059,6 +4059,7 @@ async def llm_call_async(
     response_schema: Optional[Dict] = None,
     pin_public_dns: bool = False,
     on_outcome_unknown: Optional[Callable[[int, float], None]] = None,
+    gen_overrides: Optional[Dict] = None,
 ) -> str | tuple[str, str]:
     """Traced wrapper around ``_llm_call_async_impl`` (LLM-TRACE-01).
 
@@ -4084,7 +4085,7 @@ async def llm_call_async(
             availability_only_transport=availability_only_transport,
             return_model_metadata=return_model_metadata,
             response_schema=response_schema, pin_public_dns=pin_public_dns,
-            on_outcome_unknown=on_outcome_unknown,
+            on_outcome_unknown=on_outcome_unknown, gen_overrides=gen_overrides,
         )
         if isinstance(result, tuple):
             _text, _model_out = result[0], result[1]
@@ -4133,6 +4134,7 @@ async def _llm_call_async_impl(
     response_schema: Optional[Dict] = None,
     pin_public_dns: bool = False,
     on_outcome_unknown: Optional[Callable[[int, float], None]] = None,
+    gen_overrides: Optional[Dict] = None,
 ) -> str | tuple[str, str]:
     """Asynchronous LLM call using httpx with connection pooling, timeout, retry logic, and performance logging.
 
@@ -4182,10 +4184,16 @@ async def _llm_call_async_impl(
     # only overrides this non-streaming path carries; like `think` they need
     # the native endpoint, so they take part in the routing decision.
     _model_defaults = _clean_gen_overrides(_model_load_defaults(url, model))
-    _routed = _route_for_gen_overrides(url, _model_defaults or None, model)
+    # A caller that asks for reasoning (Deep Research, a council member, the
+    # teacher -- src/mode_effort.py) says so here. Without it this helper
+    # path turns thinking OFF, which is right for titles and summaries and
+    # was wrong for every mode that needs the model at its best.
+    _asked = _clean_gen_overrides(gen_overrides)
+    _all_overrides = {**_model_defaults, **_asked}
+    _routed = _route_for_gen_overrides(url, _all_overrides or None, model)
     if _routed != url:
         caps = _ollama_model_caps(url, model)
-        _native_think_off = caps is not None and "thinking" in caps
+        _native_think_off = caps is not None and "thinking" in caps and _asked.get("think") is not True
         logger.info("Ollama /v1 -> native /api/chat for %s (non-streaming call, think=%s)", model,
                     False if _native_think_off else None)
         url = _routed
@@ -4295,6 +4303,9 @@ async def _llm_call_async_impl(
         target_url = _normalize_anthropic_url(url)
         h = _build_anthropic_headers(headers)
         payload = _build_anthropic_payload(model, messages_copy, temperature, max_tokens)
+        if _asked:
+            from src.provider_reasoning import apply_anthropic
+            apply_anthropic(payload, model, _asked, allow_thinking=True)
     elif provider == "ollama":
         target_url = _normalize_ollama_url(url)
         h = {"Content-Type": "application/json"}
@@ -4305,10 +4316,11 @@ async def _llm_call_async_impl(
             stream=False, num_ctx=get_context_length(url, model),
             response_schema=schema,
         )
-        if _model_defaults:
-            _apply_gen_overrides_ollama(payload, _model_defaults)
+        if _all_overrides:
+            _apply_gen_overrides_ollama(payload, _all_overrides)
         if _native_think_off:
             payload["think"] = False
+        _widen_output_for_reasoning(payload, _asked, key=("options", "num_predict"))
     else:
         target_url = _normalize_openai_chat_url(url)
         h = _provider_headers(provider, headers)
@@ -4327,21 +4339,33 @@ async def _llm_call_async_impl(
             payload[tok_key] = max_tokens
         # Suppress thinking for qwen3/gemma4 on Ollama /v1 — same as stream_llm.
         if _is_ollama_openai_compat_url(url) and _supports_thinking(model):
-            payload["think"] = False
+            payload["think"] = bool(_asked.get("think"))
         # And the llama-server / vLLM spelling of the same default. Without it
         # the chat template's own default applies -- thinking ON for qwen3.x
         # -- and every helper call (titles, summaries, a swarm item, a
         # podcast script) reasoned for minutes before its first word, or
         # spent its whole budget thinking and returned no content at all.
+        # A caller that asked for reasoning gets it, with its budget.
         if (_supports_thinking(model) and _is_self_hosted_openai_compatible(url)
                 and not _is_local_ollama_target(url)):
             _ctk = payload.get("chat_template_kwargs")
             if not isinstance(_ctk, dict):
                 _ctk = {}
                 payload["chat_template_kwargs"] = _ctk
-            _ctk.setdefault("enable_thinking", False)
+            if _asked.get("think") is True:
+                _ctk["enable_thinking"] = True
+                _budget_asked = _asked.get("reasoning_budget")
+                if _budget_asked and int(_budget_asked) > 0:
+                    payload["reasoning_budget"] = int(_budget_asked)
+            else:
+                _ctk.setdefault("enable_thinking", False)
         if provider == "mistral" and _supports_thinking(model):
             payload["reasoning_effort"] = _MISTRAL_REASONING_EFFORT
+        if _asked:
+            _apply_gen_overrides_openai(payload, _asked, url)
+            _fit_reasoning_effort_to_template(payload, url)
+            _widen_output_for_reasoning(payload, _asked, key=("max_completion_tokens"
+                                        if "max_completion_tokens" in payload else "max_tokens",))
         _apply_local_cache_affinity(payload, url, session_id)
         _apply_local_generation_stability(payload, target_url, model)
         _apply_openai_response_format(payload, url, schema, model=model)  # `url`: see llm_call
@@ -4357,6 +4381,9 @@ async def _llm_call_async_impl(
                 logger.debug("openrouter_options: apply_openrouter_payload failed for %s: %s", model, exc)
             if _openrouter_anthropic_cache_hints_applicable(provider, model):
                 _apply_openrouter_anthropic_cache_hints(payload, tools=None)
+            if _asked:
+                from src.provider_reasoning import apply_openrouter
+                apply_openrouter(payload, _asked)
 
     if _is_host_dead(target_url):
         raise HTTPException(503, f"Upstream {_host_key(target_url)} marked unreachable (cooldown active)")
@@ -4398,6 +4425,7 @@ async def _llm_call_async_impl(
     # second time for the same call, so an engine that dies again right
     # after coming back fails normally instead of looping.
     _engine_wait_used = False
+    _reasoning_steps = 0
     while attempt < max_retries:
         attempt += 1
         start = time.time()
@@ -4426,6 +4454,16 @@ async def _llm_call_async_impl(
                         timeout=call_timeout,
                     )
             duration = time.time() - start
+            if not r.is_success and _asked and _reasoning_steps < 2:
+                from src.provider_reasoning import looks_like_reasoning_error
+                if looks_like_reasoning_error(r.status_code, r.text) and _step_down_reasoning(payload):
+                    # An older model refuses a top effort: one level down,
+                    # then no reasoning fields, never a failed call.
+                    _reasoning_steps += 1
+                    logger.info("LLM async call to %s refused the reasoning settings (HTTP 400); "
+                                "retrying with less", target_url)
+                    attempt -= 1
+                    continue
             if not r.is_success:
                 friendly = _format_upstream_error(r.status_code, r.text, target_url)
                 classification = classify_http(status=r.status_code, headers=r.headers)
@@ -4723,7 +4761,7 @@ def _clean_gen_overrides(overrides: Optional[Dict]) -> Dict:
             elif k == "think":
                 out[k] = bool(v) if not isinstance(v, str) else v.strip().lower() in ("1", "true", "on", "yes")
             elif k == "reasoning_effort":
-                if str(v) in ("minimal", "low", "medium", "high", "xhigh", "none"):
+                if str(v) in ("minimal", "low", "medium", "high", "xhigh", "max", "none"):
                     out[k] = str(v)
             elif k == "keep_alive":
                 # Seconds as a number, or an Ollama duration ("10m", "-1").
@@ -4840,7 +4878,7 @@ def _with_model_defaults(url: str, model: str, gen_overrides: Optional[Dict]) ->
     return merged if merged else gen_overrides
 
 
-_EFFORT_ORDER = ("none", "minimal", "low", "medium", "high", "xhigh")
+_EFFORT_ORDER = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
 
 
 def fit_reasoning_effort(value: str, accepted: Optional[tuple]) -> Optional[str]:
@@ -4864,7 +4902,7 @@ def fit_reasoning_effort(value: str, accepted: Optional[tuple]) -> Optional[str]
     ranked = sorted((v for v in accepted if v in _EFFORT_ORDER), key=_EFFORT_ORDER.index)
     if not ranked:
         return None
-    if value == "high":
+    if value in ("high", "xhigh", "max"):
         return ranked[-1]
     return min(ranked, key=lambda v: (abs(_EFFORT_ORDER.index(v) - want), -_EFFORT_ORDER.index(v)))
 
@@ -4890,6 +4928,53 @@ def _mirror_thinking_budget(payload: Dict, url: str) -> None:
         return
     if value > 0:
         payload["thinking_budget_tokens"] = value
+
+
+def _widen_output_for_reasoning(payload: Dict, asked: Optional[Dict], key: tuple) -> None:
+    """Room for the reasoning a caller asked for. On a local server and on
+    OpenAI's reasoning models the reasoning tokens come out of the same
+    output cap as the answer; a planning call capped at 1,024 tokens that
+    was also asked to think 16k would end mid-thought with no answer."""
+    if not isinstance(asked, dict) or asked.get("think") is not True:
+        return
+    try:
+        budget = int(asked.get("reasoning_budget") or 0)
+    except (TypeError, ValueError):
+        return
+    if budget <= 0:
+        return
+    target = payload
+    for part in key[:-1]:
+        target = target.get(part) if isinstance(target, dict) else None
+        if not isinstance(target, dict):
+            return
+    last = key[-1]
+    try:
+        current = int(target.get(last) or 0)
+    except (TypeError, ValueError):
+        return
+    if current > 0:
+        target[last] = current + budget
+
+
+def _step_down_reasoning(payload: Dict) -> bool:
+    """After a 400 that names reasoning: one level down for a top effort the
+    model does not take, else no reasoning fields at all. True when the
+    payload changed and is worth one more try."""
+    effort = payload.get("reasoning_effort")
+    if effort in ("max", "xhigh"):
+        payload["reasoning_effort"] = "high"
+        return True
+    config = payload.get("output_config")
+    if isinstance(config, dict) and config.get("effort") in ("max", "xhigh"):
+        config["effort"] = "high"
+        return True
+    reasoning = payload.get("reasoning")
+    if isinstance(reasoning, dict) and reasoning.get("effort") in ("max", "xhigh"):
+        reasoning["effort"] = "high"
+        return True
+    from src.provider_reasoning import strip_reasoning
+    return strip_reasoning(payload)
 
 
 def _fit_reasoning_effort_to_template(payload: Dict, url: str) -> None:
@@ -5509,6 +5594,12 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         target_url = _normalize_anthropic_url(url)
         h = _build_anthropic_headers(headers)
         payload = _build_anthropic_payload(model, messages_copy, temperature, max_tokens, stream=True, tools=tools)
+        if _overrides:
+            # Effort always; thinking only without tools: a tool loop would
+            # have to carry the signed thinking blocks back to the API, and
+            # this history does not keep them (src/provider_reasoning.py).
+            from src.provider_reasoning import apply_anthropic
+            apply_anthropic(payload, model, _overrides, allow_thinking=not tools)
     elif provider == "ollama":
         target_url = _normalize_ollama_url(url)
         h = {"Content-Type": "application/json"}
@@ -5614,6 +5705,9 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                 logger.debug("openrouter_options: apply_openrouter_payload failed for %s: %s", model, exc)
             if _openrouter_anthropic_cache_hints_applicable(provider, model):
                 _apply_openrouter_anthropic_cache_hints(payload, tools=tools)
+            if _overrides:
+                from src.provider_reasoning import apply_openrouter
+                apply_openrouter(payload, _overrides)
         h = _provider_headers(provider, headers)
         if provider == "copilot":
             from src.copilot import apply_request_headers
@@ -6274,6 +6368,10 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                 if text:
                                     _delta_emitted = True
                                     yield f'data: {json.dumps({"delta": text})}\n\n'
+                            elif delta_type == "thinking_delta":
+                                thought = delta.get("thinking") or ""
+                                if thought:
+                                    yield f'data: {json.dumps({"delta": thought, "thinking": True})}\n\n'
                             elif delta_type == "input_json_delta":
                                 # Accumulate tool arguments JSON
                                 idx = j.get("index", _anth_block_idx)
