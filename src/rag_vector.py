@@ -74,6 +74,17 @@ def _rewrite_owner_path(value: str, path_map: Dict[str, str], path_prefixes: Lis
     return value
 
 
+def _redaction_meta(redactions: Dict[str, int]) -> Dict[str, Any]:
+    """Chroma metadata holds scalars only: a dict of counts made the whole
+    chunk fail to index (seen live: with `rag_pii_redaction` on, a PDF with
+    one e-mail address and one phone number indexed 0 chunks). Kept as a
+    readable string plus a total."""
+    if not redactions:
+        return {}
+    kinds = ",".join(f"{k}:{int(v)}" for k, v in sorted(redactions.items()))
+    return {"redactions": kinds, "redaction_count": int(sum(int(v) for v in redactions.values()))}
+
+
 class VectorRAG:
     """RAG system using ChromaDB vector storage with hybrid search."""
 
@@ -572,8 +583,7 @@ class VectorRAG:
                                 }
                                 if pii_enabled:
                                     chunk_text, redactions = redact_pii(chunk_text)
-                                    if redactions:
-                                        chunk_meta['redactions'] = redactions
+                                    chunk_meta.update(_redaction_meta(redactions))
                                 if self.add_document(chunk_text, chunk_meta):
                                     indexed += 1
                                 else:
@@ -590,8 +600,7 @@ class VectorRAG:
                             chunk_meta = {**meta, 'chunk_id': i}
                             if pii_enabled:
                                 chunk, redactions = redact_pii(chunk)
-                                if redactions:
-                                    chunk_meta['redactions'] = redactions
+                                chunk_meta.update(_redaction_meta(redactions))
                             if self.add_document(chunk, chunk_meta):
                                 indexed += 1
                             else:
