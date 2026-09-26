@@ -3030,7 +3030,95 @@ def _build_anthropic_payload(model, messages, temperature, max_tokens, stream=Fa
             # The breakpoint caches all tool defs preceding it in the request.
             anthropic_tools[-1]["cache_control"] = {"type": "ephemeral"}
             payload["tools"] = anthropic_tools
+    _mark_anthropic_history_for_cache(payload, tools=tools)
     return payload
+
+
+#: Anthropic accepts at most four cache breakpoints per request.
+_ANTHROPIC_MAX_BREAKPOINTS = 4
+_ANTHROPIC_CACHEABLE_BLOCKS = ("text", "image", "tool_result", "tool_use", "document")
+
+
+def _count_anthropic_breakpoints(payload: Dict) -> int:
+    used = 0
+    for block in payload.get("system") or []:
+        if isinstance(block, dict) and block.get("cache_control"):
+            used += 1
+    for tool in payload.get("tools") or []:
+        if isinstance(tool, dict) and tool.get("cache_control"):
+            used += 1
+    for msg in payload.get("messages") or []:
+        content = msg.get("content") if isinstance(msg, dict) else None
+        if isinstance(content, list):
+            used += sum(1 for b in content if isinstance(b, dict) and b.get("cache_control"))
+    return used
+
+
+def _mark_anthropic_message(msg: Dict) -> bool:
+    """Put a cache breakpoint on the last cacheable block of one message.
+
+    The content list and the block are copied first: the list can be the
+    caller's own history object (`_convert_openai_content_to_anthropic`
+    passes lists through), and a marker left there would ride into every
+    later request and push it past the four-breakpoint limit."""
+    content = msg.get("content")
+    if isinstance(content, str):
+        if not content:
+            return False
+        msg["content"] = [{"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}]
+        return True
+    if not isinstance(content, list):
+        return False
+    for i in range(len(content) - 1, -1, -1):
+        block = content[i]
+        if isinstance(block, dict) and block.get("type") in _ANTHROPIC_CACHEABLE_BLOCKS:
+            if block.get("type") == "text" and not block.get("text"):
+                continue
+            copied = list(content)
+            copied[i] = {**block, "cache_control": {"type": "ephemeral"}}
+            msg["content"] = copied
+            return True
+    return False
+
+
+def _mark_anthropic_history_for_cache(payload: Dict, *, tools=None) -> None:
+    """Rolling prompt-cache breakpoints on the conversation itself.
+
+    The system prompt and the tool schemas were the only cached parts, so an
+    agent loop paid full price (and full prefill time) for its whole history
+    every round: each tool result, each earlier answer, re-read from scratch.
+    A breakpoint on the newest message caches everything up to it; the next
+    round's request finds that entry (Anthropic looks back up to 20 blocks
+    from a breakpoint) and pays only for what was added. A second breakpoint
+    on the previous round's last user message keeps the hit when one round
+    adds more than 20 blocks. Only for agent calls and multi-turn chats (a
+    one-off prompt has nothing to reuse), and never past the four-breakpoint
+    limit. Too short a prefix is simply not cached by the API; no error."""
+    messages = payload.get("messages")
+    if not isinstance(messages, list) or not messages:
+        return
+    if not tools and len(messages) < 3:
+        return
+    room = _ANTHROPIC_MAX_BREAKPOINTS - _count_anthropic_breakpoints(payload)
+    if room <= 0:
+        return
+    last = messages[-1]
+    if isinstance(last, dict) and _mark_anthropic_message(last):
+        room -= 1
+    if room <= 0:
+        return
+    # The previous round ended at the last user message before the newest
+    # assistant message.
+    seen_assistant = False
+    for msg in reversed(messages[:-1]):
+        if not isinstance(msg, dict):
+            continue
+        if msg.get("role") == "assistant":
+            seen_assistant = True
+            continue
+        if seen_assistant and msg.get("role") == "user":
+            _mark_anthropic_message(msg)
+            return
 
 
 def _anthropic_cache_breakpoint_applies(tools, system_text: str) -> bool:
@@ -3086,6 +3174,15 @@ def _apply_openrouter_anthropic_cache_hints(payload: Dict, *, tools: Optional[Li
         "text": system_text,
         "cache_control": {"type": "ephemeral"},
     }]
+    # The rolling breakpoint the native path puts on the conversation
+    # (`_mark_anthropic_history_for_cache`): the newest user or tool message.
+    # The list and the message are copied, never the caller's history edited.
+    if len(messages) >= 3 or tools:
+        last = messages[-1]
+        if isinstance(last, dict) and last.get("role") in ("user", "tool"):
+            marked = dict(last)
+            if _mark_anthropic_message(marked):
+                payload["messages"] = list(messages[:-1]) + [marked]
 
 
 def _build_anthropic_headers(headers):
@@ -6289,6 +6386,8 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
     # ── Anthropic streaming ──
     if provider == "anthropic":
         _anth_input_tokens = 0
+        _c_read = 0
+        _c_write = 0
         _anth_output_tokens = 0
         _anth_usage_seen = False
         _anth_actual_model = ""
@@ -6456,6 +6555,15 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                 # startswith "anthropic/") reports cost there the same
                                 # shape as its OpenAI-compatible `usage` object.
                                 normalized_usage.update(_extract_usage_extras(_u))
+                                # Anthropic's input_tokens leaves out what the
+                                # prompt cache served; report both sides so the
+                                # turn's prompt-cache line covers Claude too.
+                                if isinstance(_c_read, int) and isinstance(_c_write, int) and (_c_read or _c_write):
+                                    normalized_usage.setdefault("cached_tokens", _c_read)
+                                    normalized_usage["prompt_cache"] = {
+                                        "processed": int(_anth_input_tokens or 0) + _c_write,
+                                        "cached": _c_read,
+                                    }
                                 _annotate_usage_model(
                                     normalized_usage,
                                     model,

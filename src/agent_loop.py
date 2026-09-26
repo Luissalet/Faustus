@@ -11635,6 +11635,28 @@ async def _stream_agent_loop_body(
                         # sent one (src/llm_core.py). Keep the last round's —
                         # same "last round's value" convention as the two
                         # rates just above.
+                        # A hosted API reports its prompt cache in `usage`
+                        # instead of engine timings: Claude as `prompt_cache`
+                        # (src/llm_core.py), OpenAI-shaped providers as
+                        # `cached_tokens` inside a prompt count that includes
+                        # them. Same per-turn line as the local engine's.
+                        if not isinstance(u.get("engine_timings"), dict):
+                            _pc_n = _pc_c = None
+                            if isinstance(u.get("prompt_cache"), dict):
+                                _pc_n = u["prompt_cache"].get("processed")
+                                _pc_c = u["prompt_cache"].get("cached")
+                            elif isinstance(u.get("cached_tokens"), int) and not isinstance(u.get("cached_tokens"), bool):
+                                _pc_c = u["cached_tokens"]
+                                _pc_n = max(0, int(round_input) - _pc_c)
+                            if isinstance(_pc_n, int) and isinstance(_pc_c, int):
+                                _prompt_cache["rounds"] += 1
+                                _prompt_cache["processed"] += _pc_n
+                                _prompt_cache["cached"] += _pc_c
+                                if _prompt_cache_prev_total is not None and _pc_c < _prompt_cache_prev_total and round_num > 1:
+                                    _prompt_cache["lost_rounds"] += 1
+                                _prompt_cache_prev_total = _pc_n + _pc_c
+                                logger.info("[provider] round %s: prompt %s tokens processed, %s from cache",
+                                            round_num, _pc_n, _pc_c)
                         if isinstance(u.get("engine_timings"), dict):
                             _last_engine_timings = u["engine_timings"]
                             _et = _last_engine_timings
