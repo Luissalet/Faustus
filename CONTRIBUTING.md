@@ -62,6 +62,13 @@ docker compose logs --tail=120 odysseus
 
 Mention what you ran in the pull request description. If you could not run a check, say so.
 
+### Live checks on Windows: known traps
+
+- PowerShell `Set-Content -Encoding UTF8` breaks accented text in files that Python reads later. Write those files from Python.
+- `Start-Process` kills its child when the parent command times out. Run anything longer than about 50 seconds from a scheduled task or another persistent runner.
+- Synthetic clicks and typing do not reach a browser tab in the background. Keep the tab visible while driving it.
+- Deploy each bundle or script under a new file name. Reusing a staged path can write back the previous content.
+
 ## Pull Requests
 
 Good pull requests usually include:

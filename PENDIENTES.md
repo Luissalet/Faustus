@@ -82,7 +82,6 @@ Nada abierto a 26-09 (mañana): lo que era una mejora pasó a OBJETIVOS (OBJ-47)
 - **Binario Windows de Piper** (20-09, §153): sólo se probó el de Linux.
 - **RAG con ChromaDB real** (20-09, §146): indexar un PDF real, comprobar los `locator` en los metadatos, buscar con `rag_manager.search()`, confirmar el `[fichero.pdf pN#bM]` inyectado, y activar `rag_pii_redaction` confirmando que el índice queda sanitizado sin tocar el fichero original.
 - **Code Mode con la pestaña visible** (19-09, §133): repetir la pregunta que se respondió por API porque la pestaña de Chrome estaba oculta.
-- **Ajustes → Tools → «Argument rules» por clics reales** (19-09, §132): alta, edición, borrado y la caja «Test» con una herramienta y JSON real (hoy sólo `curl`/`tsc`).
 - **Bloques ` ```chart ` en el navegador** (19-09, §131): confirmar el SVG, el interruptor «Show/Hide data», el fallback de un JSON roto, y comparar modo oscuro y claro.
 - **Auditar el almacén real de memoria** (22-09, §161): quitar con la pasada de auditoría las dos entradas que dieron pie a `volatile_facts.py` (siguen ahí).
 - **Historial tras aprobar una tarjeta** (20-09, §90): reproducir gate de contexto externo → aprobar → comprobar que `/api/history/<sid>` guarda la parte posterior (hoy se pierde).
@@ -102,7 +101,6 @@ Nada abierto a 26-09 (mañana): lo que era una mejora pasó a OBJETIVOS (OBJ-47)
 - **Backfill completo de WhatsApp** (17-09, §100): Unlink → Start → escanear de nuevo para bajar todo el histórico de golpe.
 - **Tercera ola de WhatsApp en vivo** (17-09, §100): permiso de micrófono, popovers de reaccionar/reenviar, salto a un mensaje citado fuera de ventana, el 409 al citar un mensaje anterior al arranque del puente.
 - **Puente de WhatsApp tras reinicio** (17-09, §100): confirmar que sigue vivo (gracias a `detached.json`) y que Jobhunter no hay que relanzarlo.
-- **Trampas de entorno para pruebas en vivo en Windows**: `Set-Content -Encoding UTF8` de PowerShell rompe los acentos (usar Python); `Start-Process` mata el hijo si el padre agota su tiempo (usar el ejecutor persistente para más de ~50 s); el clic/tecleo sintético no llega a una pestaña en segundo plano; un `stagedPath` de despliegue reutilizado reescribe contenido viejo (usar siempre nombre nuevo).
 
 - **`FAUSTUS_TOOL_ARG_VALIDATION=strict` en uso real** (spec v2): vigilar si algún modelo local empieza a ver «INVALID ARGUMENTS» donde antes se apañaba; si pasa, bajar a `warn` y anotar la forma en `src/tool_schemas.py::repair_tool_arguments`.
 - **QA-44, hueco 3: "Escape closes the dialog" intermitente** (spec v2): flaquea bajo Playwright + servidor real con carga; repetir la corrida para confirmar si es de temporización del entorno o un bug real de UI.
@@ -110,7 +108,6 @@ Nada abierto a 26-09 (mañana): lo que era una mejora pasó a OBJETIVOS (OBJ-47)
 - **ADP-32, medir los pools de admisión** (11-09): `src/resource_admission.py` define pools de prioridad pero no se ha medido en producción si `llm_core._LOCAL_MODEL_LOCK` limita tareas reales.
 - **`capability_pricing` de OpenRouter** (CMP-08): solo probado contra el shape documentado; contrastar contra un payload real.
 - **Pestaña Optimize y formulario de serve en el 7001** (spec INF): ver en vivo el chip de arquitectura, «Capabilities», `ReceiptPanel` en una tarea y la cronología bajo una respuesta.
-- **`llama-server` `/props`/`/slots`/`timings`** (spec INF): nunca contrastado contra una versión concreta del servidor real.
 - **INF-05, Physical GPUs y memory estimate** (FAUSTUS §78): falta ver en vivo el uuid/enlace de las tres tarjetas (¿la 5060 Ti externa como enlace estrecho?), el bloque «Memory estimate» del formulario de serve, y un `vram_blocked` real con su diálogo.
 - **Panel de muestreo local en Ajustes** (FAUSTUS §117): confirmar que el grupo «Muestreo local» trae los placeholders correctos y que un campo vacío no viaja en el `PATCH`.
 - **Chip de generación, casos concretos** (FAUSTUS §119 Parte A): confirmar que el Reset de un control no toca los demás overrides, que el interruptor de razonamiento solo aparece con un modelo pensante, y que `/temp 0.9` actualiza el panel al reabrirlo (lo básico —abrir el chip y ver los sliders— ya se vio funcionando).
@@ -125,8 +122,8 @@ Nada abierto a 26-09 (mañana): lo que era una mejora pasó a OBJETIVOS (OBJ-47)
 - **`code_graph_risk` sobre un fichero real** (FAUSTUS §150): confirmar que el tope de revisiones por turno y la caché de riesgo se comportan igual cuando `code_graph.change_risk` hace su recorrido real (git log + grafo de llamadas) sobre un repo grande.
 - **Tablas de frases en/es del pase de sueño de skills** (FAUSTUS §151): heurísticas de subcadena; probarlas contra un corpus real de respuestas de usuarios.
 - **Tarjeta de revisión con un diff realmente grande** (FAUSTUS §152): ver cómo se ve la tarjeta `harness_check` (`review_issues`/`review_running`) con un diff multi-archivo genuinamente grande.
-- **Pestaña Concepts en el navegador** (FAUSTUS §154): nunca se abrió el grafo `<canvas>` en el Studio real, ni se hizo clic en un nodo, ni se comprobó el panel lateral con una referencia rota.
-- **Pestaña Meetings en el navegador** (FAUSTUS §156): confirmado solo por `tsc --noEmit` y comparación de estructura con Chats/Research; falta abrirla de verdad.
+- **Pestaña Concepts con datos** (FAUSTUS §154): la pestaña ya se abrió en el 7000 (Contexto › Concepts con proyecto; sin proyecto dice «No project bound»), pero ningún proyecto tiene conceptos todavía: falta ver el grafo `<canvas>`, el clic en un nodo y el panel de referencias rotas cuando el agente registre alguno.
+- **Meetings con una grabación real** (FAUSTUS §156): la pestaña (Biblioteca › Meetings) se abrió en el 7000 con «Record» y «Upload audio»; falta subir un audio real y ver transcripción y notas.
 - **Fragmentación con `ffmpeg` en audio largo real** (FAUSTUS §156): `_split_chunks()` solo probado mockeado; confirmar con una grabación de más de 10 minutos que los fragmentos y las marcas de tiempo son coherentes.
 - **Tabla de alucinaciones de Whisper con audio real** (FAUSTUS §156): cubre los casos clásicos documentados, pero no se probó contra ruido de fondo o acentos variados; alguna entrada genérica podría descartar una intervención corta real.
 - **Atajo global de Electron y ventana oculta de grabación** (FAUSTUS §157): `desktop/dictation.cjs` solo probado con `globalShortcut`/`BrowserWindow`/`net` inyectados; falta abrir la app real, pulsar el atajo y ver el diálogo de permiso de micrófono.
