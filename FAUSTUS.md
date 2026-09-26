@@ -9377,12 +9377,12 @@ Siguen por la ruta rápida, a propósito:
 
 **OpenRouter, verificado en su guía de caché** (17:55). Con un `session_id` en la petición mantiene el chat en el mismo proveedor de origen («sticky routing»), y así su caché se vuelve a encontrar. Ahora se envía un hash del chat. Los modelos `qwen/*` de OpenRouter necesitan puntos de ruptura `cache_control` explícitos, igual que `anthropic/*`, y ahora los reciben. El resto de familias cachean solas.
 
-**Apps pequeñas dentro del chat** (18:05). Un agente de investigación comparó las novedades de 2026 de otros espacios de trabajo con Faustus. Lo primero que se hizo de esa lista:
+**Apps pequeñas dentro del chat** (17:35). Un agente de investigación comparó las novedades de 2026 de otros espacios de trabajo con Faustus. Lo primero que se hizo de esa lista:
 
 - **Botón Ejecutar.** Un bloque `html`/`svg` de una respuesta se ejecuta en el sitio con un botón.
 - **Cómo se ejecuta.** El primer intento usaba `srcdoc`, que hereda la política de contenido de Studio (scripts sólo con su nonce), así que ningún script corría. En vivo, una calculadora de propinas se quedó en blanco. Ahora el marco carga `/api/sandbox/app`, servida con su propia política: su código en línea puede ejecutarse, no puede cargar nada de la red y la directiva `sandbox` le da un origen opaco incluso si se abre sola. Studio le envía el HTML cuando ella avisa de que está lista.
 - **Prueba en el 7000.** La calculadora calcula (4,20 €) y su `fetch` a internet sale «blocked».
-- **Editor de documentos.** Su vista HTML tenía el mismo fallo y ahora usa el mismo ejecutor.
+- **Editor de documentos.** Su vista HTML tenía el mismo fallo y ahora usa el mismo ejecutor. Comprobado en el 7000: el script pinta «ran 4» y la red sale «blocked».
 - **Reglas base.** Dicen al modelo que puede contestar así a algo pequeño e interactivo.
 
 Del resto de la lista:
