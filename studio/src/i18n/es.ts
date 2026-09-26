@@ -4309,6 +4309,7 @@ export const es: Record<string, string> = {
   "Parallel slots": "Ranuras en paralelo",
   "Parallel slots > 1 cancel most of the MTP gain": "Más de 1 ranura paralela anula la mayor parte de la ganancia de MTP",
   "Parallel slots > 1 cancel most of the MTP gain — add -np 1 to the extra arguments": "Más de un slot en paralelo anula casi toda la ganancia de MTP: añade -np 1 a los argumentos extra",
+  "MTP speeds up one request at a time the most; while several run at once the gain is small. No need for -np 1.": "MTP acelera sobre todo una petición cada vez; con varias a la vez la ganancia es pequeña. No hace falta -np 1.",
   "Parameter contract registered": "Contrato de parámetros registrado",
   "Parameter contracts": "Contratos de parámetros",
   "Parameter size": "Tamaño de parámetros",

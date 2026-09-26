@@ -885,7 +885,7 @@ function EnginesSection({ admin, say, defaultModel }: { admin: boolean; say: (t:
                   <div className="fs-set__help">{engine.host}:{engine.port ?? '—'} · {engine.model_path || t('no model configured')}</div>
                   {engine.mtp && (engine.parallel ?? 4) > 1 && (
                     <div className="fs-set__help" data-testid="engine-mtp-parallel-hint">
-                      {t('Parallel slots > 1 cancel most of the MTP gain — add -np 1 to the extra arguments')}
+                      {t('MTP speeds up one request at a time the most; while several run at once the gain is small. No need for -np 1.')}
                     </div>
                   )}
                 </div>
