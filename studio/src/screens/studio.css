@@ -613,7 +613,7 @@
   min-block-size: 160px;
   border: 1px solid var(--fs-border);
   border-radius: var(--fs-radius-panel);
-  background: #fff;
+  background: var(--fs-embed-page);
   resize: vertical;
   overflow: auto;
 }

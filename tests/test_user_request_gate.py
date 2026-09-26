@@ -15,6 +15,18 @@ from src.tool_capabilities import ToolRunSecurityContext
 from src.user_request_gate import allows, user_request_text
 
 
+@pytest.fixture(autouse=True)
+def _own_context_arms_the_gate():
+    """These tests exercise a gate armed by the owner's own prompt context
+    (skills, saved memory), which is the behaviour with
+    `tool_gate_own_context_trusted` off; the default no longer arms it
+    (see test_own_prompt_context_does_not_arm_the_gate_by_default)."""
+    from src.settings import update_settings
+    update_settings({"tool_gate_own_context_trusted": False})
+    yield
+
+
+
 def _call(plugin, action=None):
     payload = {"plugin": plugin}
     if action:

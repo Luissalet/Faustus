@@ -219,6 +219,10 @@ DEFAULT_SETTINGS = {
     # so an early change in a long prompt costs the tokens after it, not the
     # whole prompt on another slot (src/llama_slots.py).
     "llamacpp_pin_session_slot": True,
+    # The owner's own prompt context (skills, saved memory, local MCP tool
+    # descriptions, the compiled context packet) does not arm the approval
+    # gate; web text, e-mail, documents, remote MCP and tool results do.
+    "tool_gate_own_context_trusted": True,
     "agent_sticky_toolset_max": 48,
     # Mid-turn context pressure (src/context_compactor.apply_midturn_pressure):
     # each agent round spills fat/old tool results to data/context_overflow and

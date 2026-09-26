@@ -1767,11 +1767,34 @@ _EXTERNAL_MESSAGE_SOURCES = frozenset(
 _EXTERNAL_MESSAGE_SOURCE_PREFIXES = ("web page:",)
 
 
+def _is_own_prompt_context(source: Any) -> bool:
+    """True for a prompt block built from Faustus's own installation and the
+    owner's own stores (`_OWN_CONTEXT_LABELS`), unless the owner turned
+    `tool_gate_own_context_trusted` off."""
+    if not isinstance(source, str):
+        return False
+    label = source.strip().casefold()
+    if not (label in _OWN_CONTEXT_LABELS or label.startswith(_OWN_CONTEXT_PREFIXES)):
+        return False
+    try:
+        from src.settings import get_setting
+        return bool(get_setting("tool_gate_own_context_trusted", True))
+    except Exception:  # noqa: BLE001 - settings unavailable: keep the default
+        return True
+
+
 def _message_arms_gate(message: Any) -> bool:
     if not isinstance(message, dict):
         return False
     metadata = message.get("metadata")
     if not isinstance(metadata, dict) or metadata.get("trusted") is not False:
+        return False
+    if metadata.get("provenance_origin") != "external" and _is_own_prompt_context(metadata.get("source")):
+        # Faustus's own prompt context (the owner's skills and memory, local
+        # MCP tool descriptions, the compiled context packet) is the owner's
+        # material, not outside text: it no longer puts every shell command
+        # of a fresh turn behind a card. Remote MCP descriptions, web text,
+        # e-mail, documents and tool results still arm the gate.
         return False
     gate_marker = metadata.get("tool_gate_untrusted")
     if gate_marker is True:

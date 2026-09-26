@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 
 from src.tool_capabilities import (
+
+
     KNOWN_CAPABILITY_TOOLS,
     ResultIntegrity,
     ToolEffect,
@@ -20,6 +22,18 @@ from src.tool_capabilities import (
 
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
+
+
+@pytest.fixture(autouse=True)
+def _own_context_arms_the_gate():
+    """These tests exercise a gate armed by the owner's own prompt context
+    (skills, saved memory), which is the behaviour with
+    `tool_gate_own_context_trusted` off; the default no longer arms it
+    (see test_own_prompt_context_does_not_arm_the_gate_by_default)."""
+    from src.settings import update_settings
+    update_settings({"tool_gate_own_context_trusted": False})
+    yield
+
 
 
 def _collect_agent_events(generator):
@@ -1602,3 +1616,19 @@ def test_mcp_manager_tells_remote_servers_apart():
     assert mgr.has_remote_servers() is False
     mgr._connections["c"] = {"status": "connected", "transport": "sse"}
     assert mgr.has_remote_servers() is True
+
+
+def test_own_prompt_context_does_not_arm_the_gate_by_default():
+    """Live, every first shell command of a turn asked because the skills
+    index and the compiled context packet sat in the prompt. They are the
+    owner's own material; web text and remote MCP descriptions still arm."""
+    from src.prompt_security import untrusted_context_message
+    from src.settings import update_settings
+    update_settings({"tool_gate_own_context_trusted": True})
+    own = [untrusted_context_message(label, "x") for label in (
+        "available skills index", "skills", "compiled context packet",
+        "saved memory: pinned context", "learned memory", "MCP tools", "integrations")]
+    assert not messages_contain_external_untrusted_context(own)
+    for outside in ("MCP tools (remote servers)", "web search results", "active email reader",
+                    "retrieved documents"):
+        assert messages_contain_external_untrusted_context(own + [untrusted_context_message(outside, "x")]), outside
