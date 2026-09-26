@@ -346,6 +346,58 @@ def normalize_compaction_summary(summary: str) -> str:
     return text.lstrip()
 
 
+# Extractive compaction (radar #309): the older half is folded by quoting and
+# cutting, never by asking a model to rewrite it. Each row keeps its role and
+# its opening; user turns keep the most (they hold the task and the
+# constraints), tool results the least. No model call, so it costs nothing,
+# works when the summarizer is down or blocked by the privacy profile, and a
+# second pass never summarizes a summary.
+_EXTRACT_ROW_CHARS = {"user": 500, "assistant": 260, "tool": 140}
+_EXTRACT_TOTAL_CHARS = SUMMARY_MAX_TOKENS * 4
+
+
+def compaction_summary_mode() -> str:
+    try:
+        mode = str(get_setting("compaction_summary_mode") or "model").strip().lower()
+    except Exception:  # noqa: BLE001 - a broken settings read keeps the default
+        mode = "model"
+    return mode if mode in ("model", "extract") else "model"
+
+
+def extractive_digest(rows: List[Dict[str, Any]], *, max_chars: int = _EXTRACT_TOTAL_CHARS) -> str:
+    """One line per row, cut to a per-role budget; when the whole digest is
+    still over ``max_chars`` the middle rows go first (the opening states the
+    task, the end is what led to the kept half)."""
+    lines: List[str] = []
+    for row in rows or []:
+        role = str(row.get("role") or "user")
+        text = re.sub(r"\s+", " ", _content_as_text(row.get("content"))).strip()
+        calls = _tool_call_names(row) if role == "assistant" else []
+        if not text and not calls:
+            continue
+        cap = _EXTRACT_ROW_CHARS.get(role, 200)
+        if len(text) > cap:
+            text = text[: cap - 1].rstrip() + "…"
+        label = role.upper()
+        if role == "tool" and row.get("name"):
+            label = f"TOOL {row.get('name')}"
+        if calls:
+            text = (text + " " if text else "") + "[called " + ", ".join(calls[:6]) + "]"
+        lines.append(f"- {label}: {text}")
+    if sum(len(l) + 1 for l in lines) <= max_chars:
+        return "\n".join(lines)
+    head, tail = lines[:4], lines[4:]
+    budget = max_chars - sum(len(l) + 1 for l in head) - 40
+    kept: List[str] = []
+    for line in reversed(tail):
+        if budget - (len(line) + 1) < 0:
+            break
+        kept.insert(0, line)
+        budget -= len(line) + 1
+    dropped = len(tail) - len(kept)
+    return "\n".join(head + [f"- … {dropped} earlier message(s) left out …"] + kept)
+
+
 def _sanitize_tool_messages(msgs: List[Dict]) -> List[Dict]:
     """Drop orphaned `tool` messages and dangling assistant `tool_calls`.
 
@@ -991,6 +1043,16 @@ async def maybe_compact(
     # degrade this background best-effort compaction the same way the
     # inline version always did: keep the conversation intact, report
     # `was_compacted=False`, and let `trim_for_context` handle length.
+    if compaction_summary_mode() == "extract":
+        from src.compaction_guard import guard_compaction_summary
+        convo_text = "\n".join(_content_as_text(r.get("content")) for r in older)
+        summary, _report = guard_compaction_summary(extractive_digest(older), convo_text)
+        return _finish_compaction(
+            session, messages, system_msgs, older, recent, summary, used,
+            context_length, owner, persist, compaction_state, split_point,
+            kind="extract",
+        )
+
     try:
         from src.privacy_policy import PrivacyPolicyError
         summary = await summarize_rows(
@@ -1008,6 +1070,18 @@ async def maybe_compact(
         logger.error(f"Compaction summary failed: {e}")
         return messages, context_length, False
 
+    return _finish_compaction(
+        session, messages, system_msgs, older, recent, summary, used,
+        context_length, owner, persist, compaction_state, split_point,
+        kind="llm_summary",
+    )
+
+
+def _finish_compaction(session, messages, system_msgs, older, recent, summary, used,
+                       context_length, owner, persist, compaction_state, split_point,
+                       *, kind: str):
+    """The part of ``maybe_compact`` after the summary text exists, shared by
+    the model summary and the extractive digest."""
     # A14: what the LLM summary above must not be allowed to lose — built
     # from the raw `older` rows, never from the (lossy) `summary` text
     # itself, and appended verbatim, not summarized a second time. The
@@ -1022,7 +1096,9 @@ async def maybe_compact(
     preserve = build_compaction_preserve(older, objective=objective_text)
     preserve_block = preserve.to_block()
 
-    summary_content = f"[Conversation summary — earlier messages were compacted]\n{summary}"
+    header = ("[Conversation summary — earlier messages were compacted]" if kind != "extract"
+              else "[Conversation summary — earlier messages were compacted; quoted excerpts, not a rewrite]")
+    summary_content = f"{header}\n{summary}"
     if preserve_block:
         summary_content += "\n\n" + preserve_block
 
@@ -1052,7 +1128,7 @@ async def maybe_compact(
         if session_id_for_log is None and isinstance(session, dict):
             session_id_for_log = session.get("id")
         compaction_pins.record_event(
-            owner or "", str(session_id_for_log or ""), kind="llm_summary",
+            owner or "", str(session_id_for_log or ""), kind=kind,
             marker_text=summary, folded_count=len(older),
             tokens_before=used, tokens_after=0,
         )
@@ -1095,7 +1171,6 @@ async def maybe_compact(
     )
 
     return compacted, context_length, True
-
 
 def apply_compaction_state(session, compaction_state: Optional[Dict[str, Any]]) -> bool:
     """Persist a route-specific compaction after that route commits output.

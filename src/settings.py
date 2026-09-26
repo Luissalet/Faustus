@@ -221,6 +221,11 @@ DEFAULT_SETTINGS = {
     # folds history so a long overnight turn stays under a soft ceiling instead
     # of crawling at 90%+ until rounds_exhausted.
     "agent_midturn_compact_enabled": True,
+    # How the conversation compactor folds the older half
+    # (src/context_compactor.maybe_compact): "model" asks the Utility model
+    # for a summary; "extract" quotes and cuts each message, with no model
+    # call, so it never rewrites, costs nothing and works offline.
+    "compaction_summary_mode": "model",
     "agent_midturn_compact_pct": 0.70,
     "agent_midturn_keep_tool_rounds": 6,
     "agent_midturn_spill_chars": 8000,

@@ -38,7 +38,7 @@ EXTRA_KEYS: tuple[str, ...] = ("tool_path_extra_roots", "vision_enabled", "visio
                                "vision_write_every",
                                "vision_max_tokens", "vision_num_ctx",
                                "dispatch_model", "dispatch_endpoint_id", "gpu_placement_prefer",
-                               "sandbox_missing_policy", "code_graph_community_summaries",
+                               "sandbox_missing_policy", "compaction_summary_mode", "code_graph_community_summaries",
                                "code_graph_drift_check", "approval_autonomy",
                                "mode_effort_research", "mode_effort_research_reading",
                                "mode_effort_council", "mode_effort_teacher",
@@ -425,6 +425,12 @@ GROUPS: list[dict[str, Any]] = [
                   "During a long agent turn, spill old/large tool outputs to disk and "
                   "fold history when the prompt nears the soft ceiling — so overnight "
                   "tasks keep moving instead of thrashing at a full context window."),
+            _select("compaction_summary_mode", "How old messages are folded",
+                    "model = the Utility model writes a summary of the older half. "
+                    "extract = each old message is kept as a short quoted excerpt, with no "
+                    "model call: nothing is rewritten, it costs nothing and it works when the "
+                    "summarizer is down.",
+                    ["model", "extract"]),
             _float("agent_midturn_compact_pct", "Mid-turn soft ceiling",
                    "Fraction of the model context (0.40–0.95) that triggers mid-turn "
                    "spill/compaction. Lower = more aggressive. Default 0.70.",
