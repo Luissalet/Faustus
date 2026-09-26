@@ -211,6 +211,11 @@ DEFAULT_SETTINGS = {
     # window of 32k or more, so the prompt before them stays the same for a
     # few rounds and a local server's prompt cache keeps it (1 = one by one).
     "agent_keep_images_batch": 4,
+    # A chat keeps its tool set from turn to turn (the tool list sits at the
+    # start of the prompt, so a new list re-reads it all); a turn that needs
+    # more widens it up to this many tools, past that it starts over.
+    "agent_sticky_toolset": True,
+    "agent_sticky_toolset_max": 28,
     # Mid-turn context pressure (src/context_compactor.apply_midturn_pressure):
     # each agent round spills fat/old tool results to data/context_overflow and
     # folds history so a long overnight turn stays under a soft ceiling instead

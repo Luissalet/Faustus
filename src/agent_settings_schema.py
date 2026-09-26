@@ -390,6 +390,13 @@ GROUPS: list[dict[str, Any]] = [
                  "Only the last N tool images stay in the prompt; older ones become "
                  "'[earlier image omitted]'. -1 = keep all.",
                  -1, 100),
+            _bool("agent_sticky_toolset", "Keep a chat's tools from turn to turn",
+                  "The tool list sits at the start of the prompt; keeping it the same between turns "
+                  "lets a local server reuse its cached prompt instead of reading it all again."),
+            _int("agent_sticky_toolset_max", "Most tools a chat's set may grow to",
+                 "A turn that needs tools the chat's set lacks widens it up to this many; past that "
+                 "the turn starts a new set (and the server re-reads the prompt once).",
+                 8, 120),
             _int("agent_keep_images_batch", "Drop old tool images in batches of",
                  "On a model with a window of 32k or more, older tool images are dropped this many "
                  "at a time instead of one per new image, so the prompt before them stays the same "

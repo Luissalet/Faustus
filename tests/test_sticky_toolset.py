@@ -48,3 +48,10 @@ def test_sets_survive_a_restart(tmp_path, monkeypatch):
     monkeypatch.setattr(al, "_SESSION_TOOLSETS_LOADED", False)
     out, hot = al._sticky_toolset("keep-me", {"a"}, {"a"}, set())
     assert out == {"a", "b", "c"} and hot == {"a"}
+
+
+def test_the_cap_is_a_setting(monkeypatch):
+    monkeypatch.setattr(al, "get_setting", lambda k, d=None: 45 if k == "agent_sticky_toolset_max" else d, raising=False)
+    al._sticky_toolset("s", {f"t{i}" for i in range(20)}, None, set())
+    widened, _ = al._sticky_toolset("s", {f"u{i}" for i in range(20)}, None, set())
+    assert len(widened) == 40

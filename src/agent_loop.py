@@ -5878,7 +5878,11 @@ def _sticky_toolset(session_id: str, relevant: Set[str], hot: Optional[Set[str]]
             out_relevant, out_hot = prev_relevant, prev_hot if hot is not None else None
         else:
             union = prev_relevant | relevant
-            if len(union) <= _STICKY_TOOLSET_MAX:
+            try:
+                cap = int(get_setting("agent_sticky_toolset_max", _STICKY_TOOLSET_MAX) or _STICKY_TOOLSET_MAX)
+            except (TypeError, ValueError):
+                cap = _STICKY_TOOLSET_MAX
+            if len(union) <= max(1, cap):
                 out_relevant = union
                 if hot is not None:
                     out_hot = (prev_hot or set()) | hot
