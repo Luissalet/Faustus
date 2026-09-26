@@ -19,9 +19,12 @@ llama.cpp is never sent the field.
 """
 from __future__ import annotations
 
+import logging
 import threading
 from collections import OrderedDict
 from typing import Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 _LOCK = threading.Lock()
 _COUNTS: Dict[str, int] = {}
@@ -94,7 +97,9 @@ def slot_for(url: str, session_id: Optional[str]) -> Optional[int]:
             # Every slot has a chat: the one used longest ago gives it up.
             _oldest, slot = assigned.popitem(last=False)
         assigned[sid] = slot
-        return slot
+    logger.info("[engine] chat %s keeps llama-server slot %s on %s (%s slots)",
+                sid[:8], slot, base, count)
+    return slot
 
 
 def reset() -> None:
