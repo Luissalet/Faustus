@@ -9163,3 +9163,7 @@ La prueba destapó un borde. `change_risk` devuelve como diccionario con `error`
 
 La revisión de dudas viene apagada (`agent_doubt_review`). Quien la encienda en un repositorio grande paga una vez esos 75 s del índice en frío; luego el índice queda guardado.
 
+**Tarjeta de app al arrancar.** Probado con un arranque real de Writer's Hoard (app) desde Procesos › Apps, midiendo cada 0,5 s los botones durante «Starting…» → «Running · pid … · :8766». Solo se movían 3 px, y era Restart: el botón principal pasa de «Start» a «Open» y cambia de ancho. Ahora los dos comparten un hueco de ancho fijo. Al acabar la prueba se paró la app, que quedó como estaba. Se comprobó también que una herramienta de agente que liste las apps chocaría con el principio 4 (los perfiles de arranque nunca los toca un agente, ni para leerlos), así que esa idea sale de OBJ-47.
+
+**Planes sin encabezados.** Antes, un plan escrito como viñetas o como líneas «Paso 2: …» / «Step 3 - …» daba 0 tareas en el seguidor de planes. Ahora se leen cuando no hay encabezados, números ni casillas, siempre que haya al menos tres pasos. Así una carta sigue dando 0. La versión 3 del parser vuelve a leer los seguidores guardados y conserva el estado de cada tarea.
+

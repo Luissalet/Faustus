@@ -88,7 +88,7 @@ Nada abierto a 26-09 (mañana): lo que era una mejora pasó a OBJETIVOS (OBJ-47)
 
 ## C. Verificar en vivo sin modelo
 
-- **Tarjeta de app estable al arrancar** (26-09): en Procesos › Apps, pulsar Start y comprobar que los botones no se mueven cuando el sondeo marca la app en marcha.
+- **Tarjeta de app estable al arrancar, tras desplegar** (26-09, §210): repetir el arranque de una app en Procesos › Apps con el hueco de ancho fijo y comprobar que Restart ya no se mueve ni esos 3 px.
 - **Pantallas nuevas del 26-09 sin datos para verlas llenas** (§209): el desglose por decisión del panel de autonomía (el registro en sombra está vacío mientras el modo sea `off`), los conflictos de memoria sugeridos (hoy no hay ninguno) y «Relaunch with this profile» (sale tras activar un perfil que deja algo pendiente; no se activó con el examen en marcha). Verificadas en vivo: la revisión de skills importadas (proyecto › Reglas, dos skills con su riesgo y el botón Aprobar) y el nombre del servidor MCP en Procesos.
 - **Instalar Piper desde Ajustes › Voz** (18-09/17-09, §106): la pantalla ya se vio (selector con «Local (Piper)» y el cuadro de frases de parada); falta pulsar «Instalar motor» y descargar una voz, que baja ficheros: con permiso de Luis.
 - **Binario Windows de Piper** (20-09, §153): sólo se probó el de Linux.
