@@ -2849,7 +2849,8 @@ def _assistant_requested_followup(messages: List[Dict]) -> bool:
 
 
 def _classify_agent_request(messages: List[Dict], last_user: str, *,
-                            forced_continuation: bool = False) -> Dict[str, object]:
+                            forced_continuation: bool = False,
+                            typed_freshness_no: bool = False) -> Dict[str, object]:
     """Classify only whether this turn deserves domain tool retrieval.
 
     Normal chat should not inherit old Cookbook/email/document context. Recent
@@ -2861,6 +2862,15 @@ def _classify_agent_request(messages: List[Dict], last_user: str, *,
     message answers an `ask_user` question the agent itself opened
     (`harness_options["answers_question"]`): no wording heuristic can beat
     that, so it wins outright.
+
+    `typed_freshness_no` is the route's structural knowledge that a typed
+    decision (src/freshness.py::decide_freshness), not the keyword rule,
+    already settled this turn as NOT time-sensitive
+    (`harness_options["typed_freshness_no"]`). It only suppresses the "web"
+    domain this function would otherwise add on its own keyword-only
+    freshness pass below; an explicit web/search keyword elsewhere in the
+    message still adds the domain, and with no typed decision at all the
+    keyword rule behaves exactly as before.
     """
     raw_text = str(last_user or "").strip()
     has_attached_file = bool(_ATTACHED_FILE_ENVELOPE_RE.search(raw_text))
@@ -3050,7 +3060,11 @@ def _classify_agent_request(messages: List[Dict], last_user: str, *,
     # (see src/freshness.py). Fires on the same text used for the other
     # heuristics above so a continuation still inherits it.
     from src.freshness import freshness_reasons as _freshness_reasons
-    _freshness_hits = _freshness_reasons(retrieval_query)
+    # A typed decision already settled "not time-sensitive" for this turn:
+    # the keyword-only pass below must not re-add the web domain (or the
+    # "search the web" nudge downstream, which reads freshness_reasons) just
+    # because a bare time word or similar matched.
+    _freshness_hits = [] if typed_freshness_no else _freshness_reasons(retrieval_query)
     if _freshness_hits:
         domains.add("web")
 
@@ -7243,10 +7257,12 @@ async def _stream_agent_loop_body(
         logger.debug("[approval] replay scrub skipped", exc_info=True)
     # The keyword travels only when the route said this message answers an
     # ask_user question; the plain two-argument call stays the common path.
+    _typed_freshness_no = bool((_hopts or {}).get("typed_freshness_no"))
     _intent = (
-        _classify_agent_request(messages, _last_user, forced_continuation=True)
+        _classify_agent_request(messages, _last_user, forced_continuation=True,
+                                 typed_freshness_no=_typed_freshness_no)
         if (_hopts or {}).get("answers_question")
-        else _classify_agent_request(messages, _last_user)
+        else _classify_agent_request(messages, _last_user, typed_freshness_no=_typed_freshness_no)
     )
     _low_signal_turn = bool(_intent.get("low_signal"))
     _casual_low_signal_turn = _is_casual_low_signal(_last_user)

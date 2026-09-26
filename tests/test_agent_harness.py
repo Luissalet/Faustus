@@ -504,6 +504,29 @@ def test_spanish_coding_request_is_not_low_signal():
         assert r["low_signal"], text
 
 
+def test_typed_freshness_no_drops_the_keyword_only_web_domain():
+    """PENDIENTES §177: a typed decision that explicitly ruled a turn NOT
+    time-sensitive must stop the keyword-only freshness pass from re-adding
+    the 'web' domain on its own (a bare weak label like 'actualmente')."""
+    text = "¿Qué significa eso actualmente?"
+    messages = [{"role": "user", "content": text}]
+    without_decision = al._classify_agent_request(messages, text)
+    assert "web" in without_decision["domains"]
+    assert without_decision.get("freshness_reasons")
+    with_no_decision = al._classify_agent_request(messages, text, typed_freshness_no=True)
+    assert "web" not in with_no_decision["domains"]
+    assert not with_no_decision.get("freshness_reasons")
+
+
+def test_typed_freshness_no_keeps_explicit_web_intent():
+    """The typed decision only suppresses the freshness-driven add; an
+    explicit request to search the web still gets the domain."""
+    text = "busca en internet cuánto cuesta un iPhone actualmente"
+    messages = [{"role": "user", "content": text}]
+    result = al._classify_agent_request(messages, text, typed_freshness_no=True)
+    assert "web" in result["domains"]
+
+
 def test_workspace_runtime_error_report_is_actionable_coding_intent():
     text = "When I press process: Error: Mesh is not watertight (unpaired: 46728)"
     result = al._classify_agent_request([{"role": "user", "content": text}], text)

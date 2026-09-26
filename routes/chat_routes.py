@@ -2169,6 +2169,12 @@ def setup_chat_routes(
                 else:
                     use_web = "true"
                 logger.info("[freshness] time-sensitive question: web search enabled for this turn")
+            # The typed decision (not the keyword rule) explicitly ruled this
+            # turn NOT time-sensitive: tell the intent classifier so its own,
+            # keyword-only freshness pass doesn't re-add the "web" domain
+            # behind the model's back (src.agent_loop._classify_agent_request).
+            if _freshness and _freshness.get("source") == "typed_decision" and not _freshness.get("time_sensitive"):
+                _harness_options["typed_freshness_no"] = True
         _explicit_web_intent = False
         _explicit_browser_intent = False
         if isinstance(message, str):
