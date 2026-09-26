@@ -1444,6 +1444,13 @@ class TaskScheduler:
         except Exception:
             logger.debug("Task progress update failed", exc_info=True)
 
+    def _cancel_reason(self) -> str:
+        """Why a run's coroutine was cancelled. The scheduler clears
+        `_running` before it cancels anything on shutdown, so a cancel while
+        stopping is a restart, not the user: Activity listed every task a
+        restart cut short as "Stopped by user"."""
+        return "Stopped by user" if getattr(self, "_running", True) else "Interrupted: Faustus was restarting"
+
     def _mark_run_aborted(self, task_id: str, run_id: str | None = None, message: str = "Stopped by user") -> bool:
         """Mark an active run as aborted. Used by stop/cancel paths."""
         try:
@@ -1921,7 +1928,7 @@ class TaskScheduler:
         except asyncio.CancelledError:
             # If cancellation happens while queued behind the semaphore,
             # _execute_task_locked never runs and cannot update the Activity row.
-            self._mark_run_aborted(task_id, run_id)
+            self._mark_run_aborted(task_id, run_id, message=self._cancel_reason())
             self._defer_immediately_due_task(task_id, delay=timedelta(minutes=15))
             raise
         finally:
@@ -2151,7 +2158,7 @@ class TaskScheduler:
                 msg = (
                     "Paused because Faustus became active"
                     if foreground_cancel.get("hit")
-                    else "Stopped by user"
+                    else self._cancel_reason()
                 )
                 logger.info("Task '%s' %s", task.name, msg)
                 run_obj = db.query(TaskRun).filter(TaskRun.id == run_id).first()
