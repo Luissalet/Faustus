@@ -257,6 +257,26 @@ def test_local_v1_without_a_native_api_keeps_v1_and_sends_no_schema(
     assert "format" not in seen["json"]
 
 
+def test_route_for_response_schema_identity_check_is_the_real_api_show_call(monkeypatch):
+    """§160b: the previous test proves the routing OBEYS `_ollama_model_caps`
+    — it mocks that function directly. This one proves `_ollama_model_caps`
+    ITSELF correctly reports "not Ollama" for the exact wire condition the
+    bug was about: something listening on :11434/v1 that does not implement
+    /api/show and answers 404 for it (llama.cpp, vLLM, a reverse proxy) —
+    no mock standing in for the identity check this time."""
+    llm_core._ollama_caps_cache.clear()
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        request = httpx.Request("POST", url)
+        assert url.endswith("/api/show")
+        return httpx.Response(404, request=request, text="not found")
+
+    monkeypatch.setattr(llm_core.httpx, "post", fake_post)
+    assert llm_core._ollama_model_caps("http://127.0.0.1:11434/v1", "codellama:7b") is None
+    routed = llm_core._route_for_response_schema("http://127.0.0.1:11434/v1", "codellama:7b")
+    assert routed == "http://127.0.0.1:11434/v1", "a 404 on /api/show must never move the request"
+
+
 def test_a_non_ollama_local_port_is_never_rerouted(settings, stable_ctx, monkeypatch):
     """llama.cpp on :8080 matches the local-Ollama host test but has no
     /api/chat. Same rule as the `think` reroute: default port only."""
