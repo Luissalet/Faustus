@@ -17,7 +17,8 @@ route already emits (`src/agent_loop.py::stream_agent_loop`'s own docstring
 names them: `tool_start`, `tool_output`, `agent_step`, `metrics`, `ask_user`,
 `[DONE]` — nothing here reaches into agent_loop internals):
 
-  * **rounds**       — the highest `round` any event carried, +1.
+  * **rounds**       — the highest `round` any event carried (the loop
+    numbers its rounds from 1).
   * **tools used**    — one entry per `tool_start` event; a tool offered but
     never called is not in this list, by construction (the approval branch
     of agent_loop never yields `tool_start` for a tool it blocked — see the
@@ -260,9 +261,9 @@ class EvalApp:
                 etype = ev.get("type")
                 if "delta" in ev and isinstance(ev.get("delta"), str):
                     result.text += ev["delta"]
-                if etype in ("tool_start", "agent_step"):
+                if etype in ("tool_start", "agent_step", "round_info"):
                     try:
-                        result.rounds = max(result.rounds, int(ev.get("round") or 0) + 1)
+                        result.rounds = max(result.rounds, int(ev.get("round") or 0))
                     except (TypeError, ValueError):
                         pass
                 if etype == "tool_start":
