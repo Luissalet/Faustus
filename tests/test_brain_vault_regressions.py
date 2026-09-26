@@ -332,6 +332,34 @@ def test_edited_note_of_a_gone_memory_is_kept_and_reported(brain):
     assert path in _files()
 
 
+def test_unreadable_file_is_reported_once_not_on_every_sync(brain):
+    # §176: an unfixable file (broken marker, gone source...) kept the same
+    # mtime/size run after run, and `_refuse` reported it unconditionally —
+    # forever, on every single sync, until a human fixed it.
+    b = engine.add_item("Bruno prefiere reuniones por la manana", owner=OWNER, trust_class="human_explicit")
+    vault.sync(OWNER)
+    path = _only("Memories/")
+    engine.forget(b["id"], reason="asked")
+    _wr(path, _rd(path).replace("por la manana\n", "por la manana y cortas\n"))
+
+    first = vault.sync(OWNER)
+    assert any(path in e for e in first["errors"])
+
+    # Nothing about the file changed: the second and third sync must stay
+    # silent about it, even though it is still broken and still held.
+    second = vault.sync(OWNER)
+    assert second["errors"] == []
+    third = vault.sync(OWNER)
+    assert third["errors"] == []
+    assert path in _files()
+
+    # A further edit (even one that does not fix the problem) is a new
+    # mtime/size, so it earns its own fresh report.
+    _wr(path, _rd(path).replace("cortas\n", "cortas otra vez\n"))
+    again = vault.sync(OWNER)
+    assert any(path in e for e in again["errors"])
+
+
 # ── finding 7: frontmatter is a patch against the exported base ──────────
 
 def test_frontmatter_edit_does_not_revert_concurrent_store_changes(brain):

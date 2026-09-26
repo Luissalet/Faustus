@@ -612,18 +612,21 @@ class _Run:
         self._reindex_path(rel, before)
         self.dirty.add(rel)
 
-    def is_refused(self, rel: str, text_hash: str) -> bool:
+    def is_refused(self, rel: str, token: str) -> bool:
+        """Was this exact `token` (a content hash, or `_stat_token` below)
+        already reported for `rel`? Any other token means the file moved on
+        (new content, or a fresh mtime/size) and must be reported again."""
         if not self._refused_loaded:
             with db.db() as conn:
                 rows = conn.execute("SELECT path, hash FROM vault_refused WHERE owner=?",
                                     (self.owner,)).fetchall()
             self.refused = {r["path"]: r["hash"] for r in rows}
             self._refused_loaded = True
-        return self.refused.get(rel) == text_hash
+        return self.refused.get(rel) == token
 
-    def refuse(self, rel: str, text_hash: str) -> None:
-        self.is_refused(rel, text_hash)
-        self.refused[rel] = text_hash
+    def refuse(self, rel: str, token: str) -> None:
+        self.is_refused(rel, token)
+        self.refused[rel] = token
         self.refused_dirty.add(rel)
 
     def flush(self) -> None:
@@ -1118,8 +1121,8 @@ def _export_target(run: _Run, plan: _Plan, target: _Target) -> Optional[str]:
         text = load()
         _, body = fm.split(text or "")
         if text and not render.has_marker(body) and rel in run.vstate:
-            run.error(rel, "the generated-sections marker line is missing; not re-rendered, file left as is")
-            run.hold(rel, target.source)
+            _refuse(run, rel, target.source,
+                    "the generated-sections marker line is missing; not re-rendered, file left as is")
             return None
         zone = render.user_zone_of(body)
 
@@ -1213,8 +1216,28 @@ def _retire_gone_sources(run: _Run, plan: _Plan) -> None:
 
 # ── import: fold a human's edit of a mirrored file back into its store ──
 
+def _stat_token(run: _Run, rel: str) -> str:
+    """A cheap identity for the file at `rel` right now — its (mtime, size)
+    — so a refusal can be remembered without reading or hashing the file
+    again on every sync. Empty when the file cannot even be stat'd."""
+    st = run.stat(rel)
+    return f"{st[0]}:{st[1]}" if st else ""
+
+
 def _refuse(run: _Run, rel: str, source: str, message: str) -> None:
-    run.error(rel, message)
+    """Report a file the sync could not process (broken marker, wrong
+    owner, undecodable bytes, ...) and hold it so nothing overwrites it.
+
+    A file that stays broken has the same mtime/size on every subsequent
+    sync — with no `record()` ever running for it, `_needs_look` keeps
+    routing it back here run after run, so without this dedup the same
+    message was reported forever until a human fixed the file. Reported
+    once per (path, mtime, size); a real edit (even one that does not fix
+    the problem) gets its own fresh report."""
+    token = _stat_token(run, rel)
+    if not run.is_refused(rel, token):
+        run.error(rel, message)
+        run.refuse(rel, token)
     run.hold(rel, source)
 
 
