@@ -445,7 +445,11 @@ def _attribute_gpu_processes(cards: List[Dict[str, Any]]) -> None:
         # card (browser, shell, chat clients...): "model" marks the ones
         # that hold a model, the rest are only counted by the UI.
         kind = "model" if (pid in engine_pids or label in ("llama-server", "Ollama")) else "other"
-        card["processes"].append({"pid": pid, "label": label, "used_mb": row.get("used_mb"), "kind": kind})
+        row_out = {"pid": pid, "label": label, "used_mb": row.get("used_mb"), "kind": kind}
+        if pid in engine_pids or label == "llama-server":
+            # A llama.cpp engine, managed (labelled with its own name) or not.
+            row_out["engine"] = True
+        card["processes"].append(row_out)
 
 
 def _vram_block(same_machine: bool, held_by_runner: int,
@@ -482,8 +486,11 @@ def _count_engines_as_models(result: Dict[str, Any]) -> None:
     total, for the card-wide bar."""
     total = 0
     for card in result.get("gpus") or []:
+        # A managed engine carries its own name as label ("llama.cpp 27B
+        # (…)"), so the literal "llama-server" missed every managed one and
+        # the 27B was drawn as "other" again.
         engine_mb = sum(float(p.get("used_mb") or 0) for p in card.get("processes") or []
-                        if p.get("kind") == "model" and p.get("label") == "llama-server"
+                        if p.get("kind") == "model" and (p.get("engine") or p.get("label") == "llama-server")
                         and p.get("used_mb") is not None)
         if engine_mb <= 0:
             continue
