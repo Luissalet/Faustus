@@ -180,6 +180,11 @@ class FastEmbedClient:
         kwargs = {"model_name": self.model, "cache_dir": cache_dir}
         self._embedding = TextEmbedding(**kwargs)
         self._dim: Optional[int] = None
+        # fastembed pads every batch to its longest text and defaults to 256
+        # texts per batch; with long-context models (the tool index embeds
+        # tool descriptions plus examples) the attention buffers of one such
+        # batch reach several GB. Small batches keep the peak bounded.
+        self._batch_size = max(1, int(os.getenv("FASTEMBED_BATCH_SIZE", "16")))
         self.url = "local://fastembed"
         logger.info(f"FastEmbed loaded model={self.model}")
 
@@ -198,7 +203,10 @@ class FastEmbedClient:
         if not texts:
             return np.array([], dtype="float32")
 
-        vecs = np.array(list(self._embedding.embed(texts)), dtype="float32")
+        vecs = np.array(
+            list(self._embedding.embed(texts, batch_size=self._batch_size)),
+            dtype="float32",
+        )
 
         if normalize_embeddings and vecs.size > 0:
             norms = np.linalg.norm(vecs, axis=1, keepdims=True)
