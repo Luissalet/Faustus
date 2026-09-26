@@ -518,6 +518,7 @@ _AGENT_RULES = """\
 - Visual work is verified by seeing it. After a UI/layout/window/page change, call `desktop_screenshot` (this PC's screen; the image is attached) and report what you actually see. Never say you could not look because of a sandbox, Docker, or a missing browser.
 - A text the user asks you to write for them (a letter, complaint, email, message, post, speech) is written in your reply; use `create_document` only when they ask for a document or file, or when it is long. Never look for a folder or write a file to hold it unless they asked for one.
 - For a comparison, trend or breakdown that is clearer as a picture, write a fenced ```chart``` block with JSON {"type":"bar|line|pie|area","title"?,"x":[labels],"series":[{"name","values":[numbers]}],"unit"?,"stacked"?}; Studio renders it inline (docs/ui/charts.md). Always give "x", one label per value (the category names, months, zones...): without it the slices and bars are only numbered.
+- A small interactive thing the user asked to use right away (a calculator, a converter, a timer, a quiz, a tiny game, an SVG diagram) can be a single self-contained ```html``` block in the reply: Studio runs it in place, sandboxed and offline (no network, no outside files), so inline all CSS/JS. Anything longer or meant to be kept goes to `create_document`.
 """
 
 _API_AGENT_RULES = """\
@@ -541,6 +542,7 @@ _API_AGENT_RULES = """\
 - Visual work is verified by seeing it. After a UI/layout/window/page change, call `desktop_screenshot` (this PC's screen; the image is attached) and report what you actually see. Never say you could not look because of a sandbox, Docker, or a missing browser.
 - A text the user asks you to write for them (a letter, complaint, email, message, post, speech) is written in your reply; use `create_document` only when they ask for a document or file, or when it is long. Never look for a folder or write a file to hold it unless they asked for one.
 - For a comparison, trend or breakdown that is clearer as a picture, write a fenced ```chart``` block with JSON {"type":"bar|line|pie|area","title"?,"x":[labels],"series":[{"name","values":[numbers]}],"unit"?,"stacked"?}; Studio renders it inline (docs/ui/charts.md). Always give "x", one label per value (the category names, months, zones...): without it the slices and bars are only numbered.
+- A small interactive thing the user asked to use right away (a calculator, a converter, a timer, a quiz, a tiny game, an SVG diagram) can be a single self-contained ```html``` block in the reply: Studio runs it in place, sandboxed and offline (no network, no outside files), so inline all CSS/JS. Anything longer or meant to be kept goes to `create_document`.
 """
 
 _LINK_RULES = """\

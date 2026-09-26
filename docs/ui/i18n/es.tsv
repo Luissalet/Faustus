@@ -8565,3 +8565,7 @@ Open a conversation first.	Abre primero una conversación.
 Could not review the turns	No se pudieron revisar los turnos
 No agent turn with saved metrics in this chat yet.	Todavía no hay ningún turno del agente con métricas guardadas en este chat.
 What the last N turns of this conversation did — tools, failures, rounds, writes, prompt cache — and what went wrong.	Qué hicieron los últimos N turnos de esta conversación —herramientas, fallos, rondas, escrituras, caché del prompt— y qué falló.
+App preview	Vista de la app
+Show the code	Ver el código
+Run it here	Ejecutarlo aquí
+Run it here (offline, sandboxed)	Ejecutarlo aquí (sin red, aislado)

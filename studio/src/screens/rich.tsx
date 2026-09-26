@@ -1,5 +1,5 @@
 import { t } from '../i18n';
-import { Check, Copy, CornerDownLeft } from 'lucide-react';
+import { Check, Code2, Copy, CornerDownLeft, Play } from 'lucide-react';
 import { createContext, useContext, useId, useMemo, useState, type ReactNode } from 'react';
 import { findSensitive, getDisplay, stripEmojis, useDisplay } from '../shell/display';
 import { writeClipboardText } from '../lib/clipboard-write';
@@ -88,13 +88,49 @@ function inlines(nodes: Inline[], key: string, uid: string): ReactNode[] {
   return out;
 }
 
+/** Fenced languages a reply can run as a small app, right in the chat. */
+const RUNNABLE_LANGS = new Set(['html', 'htm', 'svg']);
+
+/**
+ * The page a runnable block becomes. It runs in a sandboxed frame with no
+ * same-origin access (it cannot read Faustus, its cookies or its storage),
+ * and a content policy that allows its own inline code, styles and data:
+ * images but no network at all: a generated app works offline and cannot
+ * send anything anywhere.
+ */
+export function runnableDoc(code: string): string {
+  const csp = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:\">";
+  if (/<head[^>]*>/i.test(code)) return code.replace(/<head[^>]*>/i, (m) => m + csp);
+  if (/<html[^>]*>/i.test(code)) return code.replace(/<html[^>]*>/i, (m) => m + '<head>' + csp + '</head>');
+  return '<!doctype html><html><head>' + csp + '<meta charset="utf-8"></head><body>' + code + '</body></html>';
+}
+
 function CodeBlock({ lang, code }: { lang: string; code: string }) {
   const [copied, setCopied] = useState(false);
+  const runnable = RUNNABLE_LANGS.has(lang.trim().toLowerCase());
+  const [running, setRunning] = useState(false);
+  if (runnable && running) {
+    return (
+      <div className="fs-rich__codewrap fs-rich__appwrap">
+        <iframe className="fs-rich__app" sandbox="allow-scripts" srcDoc={runnableDoc(code)} title={t('App preview')} />
+        <button type="button" className="fs-rich__copy fs-rich__run" aria-label={t('Show the code')} title={t('Show the code')}
+          onClick={() => setRunning(false)}>
+          <Code2 size={13} aria-hidden="true" />
+        </button>
+      </div>
+    );
+  }
   return (
     <div className="fs-rich__codewrap">
       <pre className="fs-rich__code" data-lang={lang || undefined}>
         <code>{code}</code>
       </pre>
+      {runnable && (
+        <button type="button" className="fs-rich__copy fs-rich__run" aria-label={t('Run it here')} title={t('Run it here (offline, sandboxed)')}
+          onClick={() => setRunning(true)}>
+          <Play size={13} aria-hidden="true" />
+        </button>
+      )}
       <button
         type="button"
         className="fs-rich__copy"

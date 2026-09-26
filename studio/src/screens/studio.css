@@ -595,6 +595,29 @@
   opacity: 1;
 }
 
+/* A runnable block's button sits left of Copy, and stays visible: it is
+   the one thing the block offers that a plain code block does not. */
+.fs-rich__run {
+  inset-inline-end: 38px;
+  opacity: 0.85;
+}
+
+.fs-rich__appwrap .fs-rich__run {
+  inset-inline-end: 6px;
+}
+
+.fs-rich__app {
+  display: block;
+  inline-size: 100%;
+  block-size: 360px;
+  min-block-size: 160px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: #fff;
+  resize: vertical;
+  overflow: auto;
+}
+
 .fs-rich__codewrap:hover .fs-rich__code[data-lang]::before {
   opacity: 0;
 }
