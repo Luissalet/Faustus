@@ -925,7 +925,12 @@ async def summarize_rows(
     except Exception as e:
         logger.error(f"Compaction summary failed: {e}")
         raise
-    return normalize_compaction_summary(summary)
+    # The summary is stored as a system message: an injection copied from a
+    # tool result, or an order the summarizer made up, must not gain that
+    # authority (src/compaction_guard.py).
+    from src.compaction_guard import guard_compaction_summary
+    guarded, _report = guard_compaction_summary(normalize_compaction_summary(summary), convo_text)
+    return guarded
 
 
 async def maybe_compact(
