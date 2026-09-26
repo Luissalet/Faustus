@@ -129,6 +129,7 @@ Nada abierto a 26-09 (mañana): lo que era una mejora pasó a OBJETIVOS (OBJ-47)
 
 ## D. Verificar en vivo con el modelo local
 
+- **Borrador primero en una tarea larga** (26-09): en el examen 30, comprobar que a la cuarta parte del turno el 27B crea `RESPUESTA.md` con la estructura y lo va completando.
 - **Relevo antes del tope de tiempo** (26-09, §209): en la próxima tarea larga (examen 30), comprobar que al 85 % del tope el 27B deja el plan con resultados y un fichero de notas, y que el turno siguiente arranca desde ahí en vez de releerlo todo.
 - **«Mañana a las 8» en una tarea programada** (26-09): pedirla en un chat y comprobar que `next_run` cae mañana.
 - **Tarjeta del guardián de comandos destructivos y línea de estado** (26-09, §209): en un turno real, que la tarjeta nombre el comando y su motivo, y que durante una herramienta larga la línea de estado diga qué herramienta corre. Los veredictos por cita del informe de investigación salen con la siguiente investigación.
