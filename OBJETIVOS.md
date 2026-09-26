@@ -1030,6 +1030,7 @@ Acordado el 25-09-2026 (noche): «que no sea sólo prueba y error: un flujo de i
 - Skills del formato abierto de `SKILL.md` importables tal cual (§207).
 
 **Por probar, en este orden.**
+0. Decodificación especulativa con la cabeza MTP del propio 27B (`--spec-type draft-mtp --spec-draft-n-max 2`, y `ngram-mod` al lado): el GGUF la trae y el build del 8081 la acepta; en la comunidad da 1,7× de velocidad de generación sin VRAM aparte. Medir tok/s y aciertos con la batería diaria antes y después. Requiere reiniciar el 8081.
 1. Línea base de la batería diaria en el 7006 y, con ella, el muestreo por modo de la ficha de Qwen3 (pensando: temp 0,6, top_p 0,95, min_p 0) frente a min_p 0,1, contando también palabras inexistentes en castellano (`typos_ab.py`).
 2. Presupuesto de razonamiento por ronda: en el examen 29 una ronda que acabó en un `ls` gastó 3.579 tokens (6,5 min a 9 tok/s). Probar un presupuesto menor en las rondas que sólo leen o listan y el completo en la primera y en la síntesis, medido con la batería y el examen.
 3. Recitar el plan (`todowrite`) cada pocas rondas en tareas largas, sin repetir la petición entera (ya se vio que eso hace empezar de cero).
