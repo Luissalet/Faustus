@@ -61,8 +61,6 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 
 - **`user_request_gate.py` sin comparador por herramienta** (22-09/25-09, §166): cada herramienta nueva que deba pasar sin tarjeta con una petición explícita necesita su propio comparador; hoy sólo lo tienen `python`, `plugin_app` y la lectura de memoria.
 - **Detectar servidor que devuelve basura desde el primer token** (23-09, §179): antes de esperar el timeout completo; valorar también un corte por silencio a mitad de stream.
-- **`agent_loop.py::_classify_turn_intent` ignora la decisión tipada** (23-09, §177): si la decisión dijo «no» a la actualidad, el dominio «web» sigue entrando en la intención de todos modos.
-- **Sugerencias de conflicto de memoria sin pantalla** (23-09, §177): `status=suggested` sólo existe por API; falta mostrarlas en la pantalla de Memoria con su probabilidad.
 - **Tipado de entidades sólo mira la primera frase** que las nombra (23-09, §177): una entidad mencionada de formas distintas podría merecer varios tipos.
 - **Notas del segundo cerebro huérfanas** (23-09, §176): las generadas en `Projects/`, `Objectives/<Proyecto>/`, `Concepts/<Proyecto>/` cuya fuente se borró no se retiran solas.
 - **Fichero ilegible de la bóveda** (marcador dañado, BOM roto) (23-09, §176): se reporta en cada sincronización sin forma de silenciarlo ni de intentar repararlo solo.
@@ -83,13 +81,11 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 - **Tarjeta de tarea programada mal etiquetada** (17-09, §99): el modelo eligió «today» para «mañana» a las 8:00; valorar mostrar hoy y mañana a la vez.
 - **Ideas de tarjetas de Inicio sin hacer** (17-09, §99): calendario del día, «candidaturas» (Jobhunter pendientes/entrevistas), vigilancia de precio bajo un umbral, RSS por URL, arrastrar para reordenar.
 - **Ideas de WhatsApp sin hacer** (17-09, §100): reglas automáticas, crear grupos, estados, transcripción en segundo plano de audios largos, `archived` fiable sin re-emparejar.
-- **`GET /api/launch-profiles/status` tarda ~2 s** (17-09, §101): cachear la tabla 2-3 s en `process_center` si molesta en pantalla.
 - **La extensión de Chrome no acierta a pulsar Start** en la tarjeta de perfil (17-09, §101): un `click()` por JS sí funciona; la rejilla puede desplazar el botón durante el polling de 5 s.
 - **Ideas de Apps sin hacer** (17-09, §101): autostart de perfiles al arrancar Faustus, grupos por proyecto, importar/exportar perfiles, herramienta de solo lectura para el agente, consola en vivo por SSE.
 - **`/processes` no cruza los hijos MCP con `McpServer`** (17-09, §97): para mostrar el nombre del servidor en vez de la línea de comandos; decidir también si el agente recibe una herramienta de solo lectura sobre la lista.
 - **Apps abiertas por Windows-MCP sin atribución** (17-09, §97): si hace falta, anotar en Faustus lo que el asistente lanza.
 - **Un `stop` del 7000 mata las apps de un perfil** (17-09, §96): son hijas del proceso; valorar lanzarlas desacopladas (`CREATE_NEW_PROCESS_GROUP` + `DETACHED_PROCESS`) para que sobrevivan a un reinicio.
-- **`check_completion` marca de más un «verificado, sin cambios»** como `claims_without_mutation` (17-09, §95) aunque el tracker ya cierre 4/4 con evidencia; afinar para no gastar una ronda extra.
 - **La puerta dura no abre ronda de arreglo propia** (17-09, §95): sólo impide sellar `complete`; valorar si conviene que dispare una.
 - **`plan_done` no ejecuta criterios tipados** (17-09, §95): informa de ficheros no tocados pero el `Goal.test_passes`/`http_ok` de un WP aún no está enganchado al tracker.
 - **Parser de planes heurístico** (17-09, §95): un plan en prosa pura da 0 tareas; valorar un fallback.
@@ -101,13 +97,8 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 - **Canal `app_api`/`dom_cdp` sin llamador real** (CMP-10): `choose_channel` los admite como lógica pura, pero solo `native_a11y`/`pixels` tienen consumidor.
 - **Diff por pares en Alternativas** (CMP-13): `compare()` (`src/alternatives.py`) da diff contra la base + ficheros en conflicto, no ALTERNATIVA-vs-ALTERNATIVA.
 - **Requisitos: falta importación masiva y creación desde selección** (W4-A): la pestaña crea/edita/enlaza/consulta, pero no importa el fichero sidecar entero ni crea un requisito a partir de una selección del editor de documentos.
-- **`KV_RATES` necesita varias observaciones** (spec INF, FAUSTUS §78): el ajuste `fitted` no se dispara hasta acumular varias muestras por modelo; cambio pequeño en `vram_fit.remember_kv_rate`.
-- **Botón "Relaunch with this profile"** (spec INF, §78/§119): `activate_profile` ya prepara el plan de relanzamiento (`deferred`, `requires_restart`), pero el botón en Cookbook › Running no existe.
 - **Rigor del comparador de bancos** (spec INF): usa `p95−mediana` y `n≥3` como proxy de dispersión, no un test estadístico; subir repeticiones si se quiere más rigor.
 - **Temperatura 1.0 en vez de 0.6 en chat directo** (w124, 19-09): el slot de una respuesta de chat normal mostró temperatura 1.0 en vez del default configurado; no bloqueante, revisar de dónde sale.
-- **Dos tests rojos preexistentes en `launch_profiles`/`process_center`** (w126, 19-09): `test_already_running_via_readiness_is_not_relaunched` y `test_route_level_relative_executable_is_400`, confirmados sin relación con ese lote; queda investigarlos.
-- **UI para la revisión de skills importadas** (FAUSTUS §147): `GET/POST /api/skills/{id}/review|approve` es solo API hoy; construir una pantalla.
-- **Desglose por decisión en el panel de autonomía** (FAUSTUS §180): hoy solo se ve el agregado por familia; añadir un desplegable con las últimas N filas de `approval_shadow_log`.
 - **Cliente del SDK generado desde OpenAPI** (paridad, TF02): `sdk/ts` sigue escrito a mano; generarlo desde el OpenAPI del servidor en vez de a mano.
 - **CI para `sdk/ts`** (paridad, TF02): falta un job que haga `npm run build && npm test && npm run check`.
 
