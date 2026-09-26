@@ -9096,6 +9096,6 @@ Ahora:
 - Instintos que aprenden de correcciones.
 - MCP por agente (§209).
 
-Queda una idea menor: que la síntesis de un reparto entre agentes diga quién hizo qué.
+La única idea nueva, que la síntesis de un reparto diga quién hizo qué, ya está: con dos o más trabajadores, el informe de `delegate_agents` pide al modelo que atribuya cada parte por nombre.
 
 **Suite en Windows.** El `rs53` de la madrugada no llegó a correr los tests. `restart7000.ps1` deja el servidor heredando la salida, así que el `| Out-File` de la misma tarea espera a que el 7000 se cierre. La suite se lanza ahora en su propia tarea (`suite53b`).

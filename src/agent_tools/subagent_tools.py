@@ -1720,6 +1720,10 @@ def _build_report_text(runs: List[SubagentRun], workspace: Optional[str], locks:
             pass
     lines.append("")
     lines.append("Report to the user ONLY what is listed above as evidence. If a worker changed no files, say so plainly.")
+    if len(workers) > 1:
+        # With several workers the user cannot tell whose work a claim rests
+        # on; naming the worker lets them open that child chat to check it.
+        lines.append("When you combine their results, say which worker (by name) each part came from.")
     return "\n".join(lines)
 
 

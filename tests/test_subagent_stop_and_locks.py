@@ -273,3 +273,12 @@ def test_the_reviewer_is_still_excluded_from_the_overlap_warning():
     rev = st.SubagentRun(1, {"name": st.REVIEWER_NAME, "instruction": "r"}, role="reviewer")
     w.mutations = rev.mutations = ["src/x.py"]
     assert "MORE THAN ONE worker" not in st._build_report_text([w, rev], None, st.FileLockRegistry(None))
+
+
+def test_several_workers_are_asked_to_be_credited_by_name():
+    a = st.SubagentRun(0, {"name": "a", "instruction": "x"})
+    b = st.SubagentRun(1, {"name": "b", "instruction": "y"})
+    assert "which worker (by name)" in st._build_report_text([a, b], None, st.FileLockRegistry(None))
+    solo = st.SubagentRun(0, {"name": "solo", "instruction": "x"})
+    rev = st.SubagentRun(1, {"name": st.REVIEWER_NAME, "instruction": "r"}, role="reviewer")
+    assert "which worker (by name)" not in st._build_report_text([solo, rev], None, st.FileLockRegistry(None))
