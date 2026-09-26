@@ -53,7 +53,9 @@ def test_a_python_child_on_windows_writes_utf8_to_the_pipe(monkeypatch):
 
 def test_absent_markers_are_not_invented():
     out = native_host_environment({"HOME": "/home/u"})
-    assert set(out) == {"HOME"}
+    # On Windows the child's standard streams are set to UTF-8 on purpose.
+    expected = {"HOME"} | ({"PYTHONIOENCODING"} if os.name == "nt" else set())
+    assert set(out) == expected
 
 
 # ── PATH loses the venv, keeps everything else ─────────────────────────────

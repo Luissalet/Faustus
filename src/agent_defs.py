@@ -510,10 +510,11 @@ def _extends_of(value: Any, slug: str) -> str:
 def _prompt_append_of(value: Any, extends: str) -> str:
     """The text appended after an inherited prompt.
 
-    Two refusals, both about text that would otherwise be lost in silence:
-    this frontmatter has no block scalars, so `prompt_append: |` reads as the
-    single character `|` and the indented lines under it never arrive; and
-    `prompt_append` without `extends` appends to nothing at all.
+    The frontmatter reads block scalars (`prompt_append: |` plus indented
+    lines) since `services.memory.skill_format` learned them; a bare `|`
+    left over would mean a parser that lost the lines again, so it is still
+    refused rather than appended. `prompt_append` without `extends` appends
+    to nothing at all and is refused too.
     """
     word = str(value or "").strip()
     if not word:

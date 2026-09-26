@@ -662,6 +662,14 @@ def test_backed_work_is_kept_when_a_permission_stall_is_exhausted(tmp_path, monk
     'the task remains unfinished'. The writes were real; the summary must stay."""
     _patch_common(monkeypatch)
     (tmp_path / "x.py").write_text("a = 1\n", encoding="utf-8")
+
+    async def _real_edit(block, *a, **k):
+        # The write must reach the disk: the summary's list of changes is the
+        # workspace checkpoint's, and a claimed edit it did not see is
+        # (rightly) reported as unverified.
+        (tmp_path / "x.py").write_text("a = 2\n", encoding="utf-8")
+        return (block.tool_type, {"output": "ok", "exit_code": 0})
+    monkeypatch.setattr(al, "execute_tool_block", _real_edit, raising=False)
     edit = (
         "```edit_file\n"
         + json.dumps({"path": "x.py", "old_string": "a = 1", "new_string": "a = 2"})

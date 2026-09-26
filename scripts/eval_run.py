@@ -49,6 +49,9 @@ def run_scripted() -> Dict[str, Any]:
     from tests.eval.harness import EvalApp
     from tests.eval import tasks as T
 
+    # The tasks' verify() runs their tests in this process, with this
+    # interpreter (it has pytest; the host's PATH python may not).
+    os.environ.setdefault("FAUSTUS_PROJECT_PYTHON", sys.executable)
     app = EvalApp()
     print("[eval_run] starting the app + scripted model…")
     app.start()

@@ -227,18 +227,20 @@ def test_wait_for_event_new_event_resets_the_settle_deadline(store, tmp_path):
     watched.mkdir()
     d = wf({"id": "hold", "type": "wait_for_event",
             "config": {"source": "file_change", "path": str(watched),
-                       "settle_ms": 400, "timeout_ms": 30_000, "poll_ms": 50}})
+                       "settle_ms": 1500, "timeout_ms": 30_000, "poll_ms": 50}})
     run_id = store.create_run(d)["run_id"]
     engine = WorkflowEngine(default_handlers(), store)
     engine.advance(run_id)                       # baseline
 
     _touch(str(watched), "a.txt")
     _wake_now(store, run_id, "hold")
-    out = engine.advance(run_id)                 # settle_until = now + 400ms
+    out = engine.advance(run_id)                 # settle_until = now + 1500ms
     assert out["status"] == "paused"
     first_settle_until = store.node_runs(run_id)["hold"].result["settle_until"]
 
-    time.sleep(0.25)
+    # Margins are wide on purpose: with 400 ms and 250 ms sleeps this failed
+    # in the full parallel suite on a loaded machine.
+    time.sleep(0.3)
     _touch(str(watched), "b.txt")
     _wake_now(store, run_id, "hold")
     out = engine.advance(run_id)                 # resets the timer
@@ -246,12 +248,12 @@ def test_wait_for_event_new_event_resets_the_settle_deadline(store, tmp_path):
     second_settle_until = store.node_runs(run_id)["hold"].result["settle_until"]
     assert second_settle_until > first_settle_until
 
-    time.sleep(0.25)                              # 250ms since the reset: not 400ms yet
+    time.sleep(0.3)                               # 300ms since the reset: not 1500ms yet
     _wake_now(store, run_id, "hold")
     out = engine.advance(run_id)
     assert out["status"] == "paused", "the second touch's settle window was not honoured"
 
-    time.sleep(0.3)
+    time.sleep(1.3)
     _wake_now(store, run_id, "hold")
     out = engine.advance(run_id)
     assert out["status"] == "completed"

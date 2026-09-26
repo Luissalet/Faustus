@@ -280,12 +280,14 @@ Prefer dependency injection.
     assert child.prompt.count("Then run the FastAPI test module.") == 1
 
 
-def test_prompt_append_refuses_the_two_ways_its_text_would_be_lost(store):
+def test_prompt_append_keeps_a_block_scalar_and_refuses_an_orphan(store):
     _write(store, "builder", PARENT)
     _write(store, "blocky", "---\nname: b\nextends: builder\nprompt_append: |\n  some text\n---\nbody\n")
     _write(store, "lonely", "---\nname: l\nprompt_append: \"orphan text\"\n---\nbody\n")
-    reasons = {e["slug"]: e["reason"] for e in defs.load_all().errors}
-    assert "block scalar" in reasons["blocky"]
+    loaded = defs.load_all()
+    reasons = {e["slug"]: e["reason"] for e in loaded.errors}
+    assert "blocky" not in reasons
+    assert loaded.by_slug()["blocky"].prompt.endswith("some text")
     assert "extends" in reasons["lonely"]
 
 

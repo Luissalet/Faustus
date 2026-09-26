@@ -158,6 +158,11 @@ def client(monkeypatch):
     monkeypatch.setattr(llm_core, "_is_host_dead", lambda u: False)
     monkeypatch.setattr(llm_core, "note_model_activity", lambda *a, **k: None)
     monkeypatch.setattr(llm_core, "_clear_host_dead", lambda *a, **k: None)
+    # The template's accepted effort levels are read from the server at LLAMA;
+    # on a machine where a real llama-server listens there, its template
+    # ("xhigh") would decide these assertions. No server: no restriction.
+    from src import chat_helpers
+    monkeypatch.setattr(chat_helpers, "llamacpp_reasoning_efforts", lambda url: None)
     return c
 
 

@@ -72,8 +72,9 @@ async def _run(owner, items, **kw):
 async def test_concurrency_is_the_backend_parallelism(env, monkeypatch):
     # Long enough per item that the run's own bookkeeping (file writes, the
     # manifest) cannot decide the timing: 0.05 s per item failed on a loaded
-    # Windows box with 0.48 s against a 0.45 s budget while running 3 at once.
-    fake = FakeLLM(delay=0.2)
+    # Windows box with 0.48 s against a 0.45 s budget while running 3 at once,
+    # and 0.2 s failed in the full parallel suite (1.38 s against 1.35 s).
+    fake = FakeLLM(delay=0.5)
     monkeypatch.setattr(runner, "_llm_call", fake)
     t0 = time.monotonic()
     run_id, manifest = await _run("ana", [f"c{i}" for i in range(9)])
@@ -82,7 +83,7 @@ async def test_concurrency_is_the_backend_parallelism(env, monkeypatch):
     assert manifest["status"] == "done"
     assert manifest["counts"] == {"total": 9, "ok": 9, "failed": 0, "pending": 0}
     assert manifest["parallel"]["effective"] == 3
-    assert elapsed < 0.2 * 9 * 0.75        # clearly less than one after another would take
+    assert elapsed < 0.5 * 9 * 0.75        # clearly less than one after another would take
 
 
 async def test_concurrency_never_exceeds_the_global_cap_or_the_item_count(env, monkeypatch):

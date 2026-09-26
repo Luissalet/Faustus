@@ -916,9 +916,13 @@ def test_due_and_last_run_remember_what_already_ran(ce_db):
     maintenance.run(("vacuum",), budget_s=30.0)
     history = maintenance.last_run()
     assert history["vacuum"]["ok"] is True and history["vacuum"]["ran_at"]
-    assert "vacuum" not in maintenance.due(now=NOW + timedelta(minutes=1))
+    # Measured from when it really ran (the wall clock), not from the fixed
+    # NOW above: with NOW fixed, "NOW + 30 days" stops being past the weekly
+    # interval as soon as the calendar gets within a week of it.
+    ran_at = store.parse_iso(history["vacuum"]["ran_at"])
+    assert "vacuum" not in maintenance.due(now=ran_at + timedelta(minutes=1))
     # And it comes back once its own interval has gone by.
-    assert "vacuum" in maintenance.due(now=NOW + timedelta(days=30))
+    assert "vacuum" in maintenance.due(now=ran_at + timedelta(days=8))
 
 
 def test_tasks_without_a_workspace_say_so_instead_of_failing(ce_db):

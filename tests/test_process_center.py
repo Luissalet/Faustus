@@ -164,7 +164,14 @@ def test_children_without_ports_are_listed_under_faustus_and_self_never_appears(
         row = next((r for r in snap["faustus"] if r["pid"] == child.pid), None)
         assert row and row["origin"] == "faustus" and row["ports"] == [], snap["faustus"][:3]
         everything = snap["ports"] + snap["faustus"] + snap["watched"]
-        assert os.getpid() not in {r["pid"] for r in everything}
+        # Self is never one of its own children or a watched app. It may hold a
+        # listening port (a real server does; in a shared test worker an
+        # earlier test's in-process server can too), and then it is the one
+        # row labelled as this server.
+        assert os.getpid() not in {r["pid"] for r in snap["faustus"] + snap["watched"]}
+        for r in snap["ports"]:
+            if r["pid"] == os.getpid():
+                assert r["label"] == "This Faustus server"
         assert len({r["pid"] for r in everything}) == len(everything), "a pid appears once"
     finally:
         child.kill()

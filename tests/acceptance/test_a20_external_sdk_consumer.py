@@ -323,6 +323,17 @@ def a20_server(node_bin, fake_model):
             status, _body, _ = _put_json(base + f"/api/prefs/{key}", {"value": False}, headers=auth_headers)
             assert status == 200, (key, status, _body)
 
+        # The walk needs one in-turn approval card to answer. Reading a file in
+        # the bound workspace no longer counts as outside context, so an
+        # explicit "fix calc.py" edits without asking; an argument rule with
+        # action "ask" is how an integrator asks for a card on every edit.
+        status, _body, _ = _put_json(base + "/api/tool-arg-rules", {"rules": [{
+            "id": "a20-ask-before-edits", "tool": "edit_file", "arg": "path", "op": "equals",
+            "value": "::no-path-matches::", "action": "ask",
+            "note": "Every edit asks first in this test.",
+        }]}, headers=auth_headers)
+        assert status == 200, (status, _body)
+
         status, tok, _ = _post_form(base + "/api/tokens", {"name": "sdk-a20", "profile": "sdk"}, headers=auth_headers)
         assert status == 200, (status, tok)
         sdk_token = tok["token"]

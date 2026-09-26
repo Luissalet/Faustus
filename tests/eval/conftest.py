@@ -14,6 +14,16 @@ import pytest
 from tests.eval.harness import EvalApp
 
 
+@pytest.fixture(autouse=True)
+def project_python_for_task_verify(monkeypatch):
+    """The tasks' verify() runs their tests in THIS process, with this
+    interpreter (it has pytest; the host's PATH python may not). Set per test
+    and undone after it: a session-wide change leaked into every later test
+    of the same worker (test_project_tests_scoping saw it)."""
+    import sys
+    monkeypatch.setenv("FAUSTUS_PROJECT_PYTHON", sys.executable)
+
+
 @pytest.fixture(scope="session")
 def eval_app():
     app = EvalApp()
