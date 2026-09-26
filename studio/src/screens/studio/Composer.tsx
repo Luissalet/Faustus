@@ -584,11 +584,31 @@ export function Composer({
     suggestBatcher.current?.push({ value, caret });
   }, []);
 
+  // PERF: autosize used to read `scrollHeight` (a forced layout) straight
+  // off every keystroke's onChange *and* again in the effect below — on a
+  // long message in a long transcript that double reflow is what froze the
+  // renderer. Coalesce it through the same frameBatcher UX-06 uses for
+  // suggestions: at most one resize per animation frame, and a new
+  // keystroke before that frame fires just replaces the pending element
+  // (no extra frame scheduled), so a burst of input still costs one reflow.
+  const autosizeBatcher = useRef<ReturnType<typeof frameBatcher<HTMLTextAreaElement>> | null>(null);
+  if (!autosizeBatcher.current) {
+    autosizeBatcher.current = frameBatcher((el) => {
+      el.style.blockSize = 'auto';
+      el.style.blockSize = `${Math.min(el.scrollHeight, 220)}px`;
+    });
+  }
+  useEffect(() => () => autosizeBatcher.current?.cancel(), []);
+
+  const scheduleAutosize = useCallback(() => {
+    const el = textareaRef.current;
+    if (el) autosizeBatcher.current?.push(el);
+  }, []);
+
   const onChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
     const el = event.target;
     setDraft(el.value);
-    el.style.blockSize = 'auto';
-    el.style.blockSize = `${Math.min(el.scrollHeight, 220)}px`;
+    scheduleAutosize();
     refreshSuggestions(el.value, el.selectionStart ?? el.value.length);
   };
 
@@ -712,12 +732,8 @@ export function Composer({
     }
     // Text can land without a keystroke (a quote, ↑, a dictation, ?draft=):
     // the box still has to grow to fit it.
-    const el = textareaRef.current;
-    if (el) {
-      el.style.blockSize = 'auto';
-      el.style.blockSize = `${Math.min(el.scrollHeight, 220)}px`;
-    }
-  }, [draft, textareaRef]);
+    scheduleAutosize();
+  }, [draft, textareaRef, scheduleAutosize]);
 
   useEffect(() => {
     // A removed `@file` must not leave a dangling exclusion/pin behind it —

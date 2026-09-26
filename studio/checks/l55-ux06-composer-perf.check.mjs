@@ -125,8 +125,62 @@ function fakeScheduler() {
   check(perCall < 16, `capMentionItems(500 items) stays under 16ms/call over ${iterations} calls (avg ${perCall.toFixed(3)}ms)`);
 }
 
+// ── autosize: the >30s freeze on a long message in a long conversation was
+//    the textarea's blockSize/scrollHeight reflow running on *every*
+//    keystroke (twice — once in onChange, once in the draft effect).
+//    Composer.tsx now pushes the textarea element through the same
+//    frameBatcher instead; a burst of keystrokes in one frame must resize
+//    exactly once, against the LAST element/value pushed. ──
+{
+  let resizes = 0;
+  const { scheduler, runFrame } = fakeScheduler();
+  // A fake textarea: `scrollHeight` reacts to `blockSize` the way the real
+  // DOM does when it is reset to 'auto' first, just enough to prove the
+  // resize function itself ran (and how many times).
+  const fakeTextarea = (content) => {
+    const el = { style: { blockSize: '' }, get scrollHeight() { return Math.min(220, 20 + content.length); } };
+    return el;
+  };
+  const batcher = frameBatcher((el) => {
+    resizes += 1;
+    el.style.blockSize = 'auto';
+    el.style.blockSize = `${Math.min(el.scrollHeight, 220)}px`;
+  }, scheduler);
+
+  // A 700-character message typed in one animation frame (the scenario from
+  // the freeze report) — one push per keystroke, exactly what onChange and
+  // the draft effect do today.
+  let last = null;
+  for (let i = 0; i < 700; i += 1) {
+    last = fakeTextarea('x'.repeat(i + 1));
+    batcher.push(last);
+  }
+  check(resizes === 0, 'nothing resizes before the frame — 700 pushes cost no layout yet');
+  runFrame();
+  check(resizes === 1, `700 keystrokes in one frame resize exactly once, not 700 times (got ${resizes})`);
+  check(last.style.blockSize === '220px', 'the one resize reflects the LAST (longest) content pushed, clamped to the 220px cap');
+
+  // New input before the frame fires replaces the pending element rather
+  // than scheduling a second frame — no extra reflow is ever queued.
+  resizes = 0;
+  batcher.push(fakeTextarea('a'));
+  batcher.push(fakeTextarea('ab'));
+  const finalEl = fakeTextarea('abc');
+  batcher.push(finalEl);
+  runFrame();
+  check(resizes === 1, 'a second burst still resizes once, not once per push');
+  check(finalEl.style.blockSize !== '', 'the delivered element is the last one pushed');
+
+  // cancel() (component unmount) drops a pending resize outright.
+  resizes = 0;
+  batcher.push(fakeTextarea('x'));
+  batcher.cancel();
+  runFrame();
+  check(resizes === 0, 'cancel() before the frame drops the pending autosize — no resize after unmount');
+}
+
 if (failed) {
   console.error(`${failed} check(s) FAILED`);
   process.exit(1);
 }
-console.log('ALL OK: keystroke bursts coalesce to one match pass, 500 candidates render as capped, both within the 16ms budget');
+console.log('ALL OK: keystroke bursts coalesce to one match pass, 500 candidates render as capped, autosize coalesces to one reflow/frame, all within the 16ms budget');
