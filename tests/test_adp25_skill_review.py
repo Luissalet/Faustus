@@ -430,3 +430,17 @@ def test_approved_skill_passes_the_gate_and_proceeds(monkeypatch, tmp_path):
     except Exception:
         pass
     assert bind_calls, "an approved skill must reach past the review gate"
+
+
+def test_discovered_list_is_not_shadowed_by_the_skill_id_route():
+    """Live: GET /api/skills/discovered answered 404 "Skill not found" because
+    the generic `/{skill_id}` GET was declared first."""
+    from routes.skills_routes import setup_skills_routes
+
+    class _Mgr:
+        def __getattr__(self, name):
+            raise AttributeError(name)
+
+    router = setup_skills_routes(_Mgr())
+    paths = [getattr(r, "path", "") for r in router.routes if "GET" in getattr(r, "methods", set())]
+    assert paths.index("/api/skills/discovered") < paths.index("/api/skills/{skill_id}")

@@ -2148,4 +2148,9 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
         found, _manifest, text = match
         return skill_import_review.diff(skill_id=id, manifest_text=text)
 
+    # `/discovered` is declared with the review routes above, after the
+    # generic `/{skill_id}` GET, which would otherwise answer it with
+    # "Skill not found" (seen live). A literal path goes first.
+    router.routes.sort(key=lambda r: 0 if getattr(r, "path", "") == "/api/skills/discovered" else 1)
+
     return router
