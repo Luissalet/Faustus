@@ -105,6 +105,11 @@ _console_h.setFormatter(_formatter)
 _root_logger.addHandler(_console_h)
 
 try:
+    # Under pytest the app is imported by hundreds of tests in the same
+    # checkout the owner runs an instance from: their records filled that
+    # instance's app.log and fought it for the log rotation (WinError 32).
+    if "pytest" in sys.modules:
+        raise RuntimeError("file logging is off under pytest")
     _log_dir = os.path.join(DATA_DIR, "logs")
     os.makedirs(_log_dir, exist_ok=True)
     _log_file = os.path.join(_log_dir, "app.log")
@@ -118,7 +123,8 @@ try:
     _file_h.setFormatter(_formatter)
     _root_logger.addHandler(_file_h)
 except Exception as e:
-    _root_logger.warning(f"Failed to initialize file logging handler (falling back to console-only): {e}")
+    if "pytest" not in sys.modules:
+        _root_logger.warning(f"Failed to initialize file logging handler (falling back to console-only): {e}")
 
 logger = logging.getLogger(__name__)
 
