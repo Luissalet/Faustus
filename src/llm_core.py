@@ -3378,6 +3378,42 @@ def _configured_cached_model_ids(
     return []
 
 
+def _endpoint_id_for_url(url: str) -> Optional[str]:
+    """The saved `ModelEndpoint.id` whose `base_url` matches `url`, or
+    `None` when nothing configured lines up.
+
+    `llm_call`/`_llm_call_async_impl`/`_stream_llm_inner` only ever receive
+    a bare `url`/`model` pair, not a saved endpoint config -- but a saved
+    OpenRouter endpoint's `base_url` IS that same `url` (same normalization
+    `_configured_cached_model_ids` already relies on), so this recovers the
+    real `endpoint_id` for `apply_openrouter_payload` instead of always
+    passing `None` (which silently drops every per-endpoint preference).
+    Best-effort: any DB hiccup yields `None`, same as "no match".
+    """
+    target = _model_list_base(url)
+    if not target:
+        return None
+    try:
+        from src.database import SessionLocal, ModelEndpoint
+    except Exception:
+        return None
+    db = SessionLocal()
+    try:
+        rows = db.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True).all()
+        for ep in rows:
+            if _model_list_base(getattr(ep, "base_url", "")) == target:
+                ep_id = getattr(ep, "id", None)
+                return str(ep_id) if ep_id else None
+    except Exception:
+        return None
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+    return None
+
+
 def list_model_ids(
     base_chat_url: str,
     timeout: int = LLMConfig.DEFAULT_TIMEOUT,
@@ -3563,12 +3599,14 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
             # saved OpenRouter provider preferences, opt-in web search /
             # native fallback, and set usage.include=True so Lote A1's
             # real-cost accounting has something to read back. This sync
-            # call path has no `endpoint_id` to look up (callers here pass a
-            # bare url/model, not a saved endpoint config), so only schema
-            # defaults apply. Never fails the call over an options bug.
+            # call path only ever receives a bare url/model, not a saved
+            # endpoint config, so the real `endpoint_id` is recovered by
+            # matching `url` against a configured endpoint's `base_url`
+            # (see `_endpoint_id_for_url`) -- `None` when nothing matches.
+            # Never fails the call over an options bug.
             try:
                 from src.openrouter_options import apply_openrouter_payload
-                apply_openrouter_payload(payload, provider=provider, endpoint_id=None, model=model)
+                apply_openrouter_payload(payload, provider=provider, endpoint_id=_endpoint_id_for_url(url), model=model)
             except Exception as exc:  # noqa: BLE001 -- an options bug must never break a chat call
                 logger.debug("openrouter_options: apply_openrouter_payload failed for %s: %s", model, exc)
             if _openrouter_anthropic_cache_hints_applicable(provider, model):
@@ -4208,7 +4246,7 @@ async def _llm_call_async_impl(
             # -- see that call site for the full rationale.
             try:
                 from src.openrouter_options import apply_openrouter_payload
-                apply_openrouter_payload(payload, provider=provider, endpoint_id=None, model=model)
+                apply_openrouter_payload(payload, provider=provider, endpoint_id=_endpoint_id_for_url(url), model=model)
             except Exception as exc:  # noqa: BLE001
                 logger.debug("openrouter_options: apply_openrouter_payload failed for %s: %s", model, exc)
             if _openrouter_anthropic_cache_hints_applicable(provider, model):
@@ -5465,7 +5503,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
             # tool-call agentic case, not just a long system prompt.
             try:
                 from src.openrouter_options import apply_openrouter_payload
-                apply_openrouter_payload(payload, provider=provider, endpoint_id=None, model=model)
+                apply_openrouter_payload(payload, provider=provider, endpoint_id=_endpoint_id_for_url(url), model=model)
             except Exception as exc:  # noqa: BLE001
                 logger.debug("openrouter_options: apply_openrouter_payload failed for %s: %s", model, exc)
             if _openrouter_anthropic_cache_hints_applicable(provider, model):
