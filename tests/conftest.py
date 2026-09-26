@@ -103,6 +103,18 @@ def isolated_settings_file(tmp_path_factory, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def isolated_question_store(tmp_path_factory, monkeypatch):
+    """Open questions (`ask_user` cards) live in `DATA_DIR/questions.sqlite3`.
+    A test that drove the agent loop to an `ask_user` card left a real,
+    unanswerable question in the checkout's store, and the instance running
+    from that checkout showed it in its notification tray."""
+    from src import question_store
+    path = tmp_path_factory.mktemp("questions") / "questions.sqlite3"
+    monkeypatch.setattr(question_store, "default_path", lambda: path)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def isolated_managed_objectives(tmp_path_factory):
     from services import objective_locations
     allocated = []
