@@ -98,7 +98,9 @@ _FAST_ASK = _rx(
 # fast when nothing in the message is work ("read these two files and tell me
 # in one line what each does" is still work).
 _BRIEF_ASK = _rx(
-    r"\ben una (?:palabra|frase|l[ií]nea)\b", r"\bin one (?:word|sentence|line)\b",
+    # "Una frase, sin herramientas" asks for brevity as plainly as "en una
+    # frase" (seen 26-09: it fell through to a full 4,096-token think).
+    r"\b(?:en )?una (?:palabra|frase|l[ií]nea)\b", r"\b(?:in )?one (?:word|sentence|line)\b",
 )
 
 # Work that benefits from reasoning, by family (the family names become the
@@ -282,6 +284,12 @@ def _decide(text: str, attachments: int, agent: bool, coding: bool, history_len:
 
     if attachments:
         return _result("think", ["attachments"], "attachments to read", "low")
+
+    # A short question in a chat bound to a folder is not a coding task by
+    # itself: "¿Y la imagen 3?" got the full 4,096-token budget and took
+    # minutes on the local 27B (26-09).
+    if coding and words <= _SHORT_WORDS and stripped.endswith("?"):
+        return _light(["short_question"], "a short question in a coding chat", "medium")
 
     if coding:
         return _result("think", ["coding_context"], "a coding turn", "low")

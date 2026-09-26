@@ -290,3 +290,14 @@ def test_a_short_lookup_gets_a_light_look():
     ov = think_mode.resolve_turn("auto", None, "¿cuál es la capital de Francia?", effort=False,
                                  settings={"think_mode_budget_think": 4096})["overrides"]
     assert ov == {"think": True, "reasoning_budget": 4096}
+
+
+def test_a_short_question_in_a_coding_chat_thinks_lightly():
+    from src.think_mode import decide
+    out = decide("¿Y la imagen 3?", coding=True, agent=True, history_len=6)
+    assert out["mode"] == "think" and out.get("effort") == "low", out
+
+
+def test_una_frase_asks_for_brevity():
+    from src.think_mode import decide
+    assert decide("¿De qué color era? Una frase, sin herramientas.", coding=True)["mode"] == "fast"
