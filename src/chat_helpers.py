@@ -181,17 +181,48 @@ def llamacpp_supports_vision(url: str) -> Optional[bool]:
         return cached[0]
     authority = host if parsed.port is None else f"{host}:{parsed.port}"
     try:
-        r = httpx.get(f"{parsed.scheme or 'http'}://{authority}/props", timeout=1.0)
+        r = httpx.get(f"{parsed.scheme or 'http'}://{authority}/props", timeout=3.0)
     except Exception:
-        return None
+        # A server busy generating can take longer than the probe (live,
+        # exam run 31: the 27B mid-round). What it was a minute ago is a far
+        # better answer than none, which fell through to Ollama's /api/show
+        # on a llama-server and then to the family name ("qwen3.8" reads as
+        # multimodal) and sent images to a text-only model.
+        return cached[0] if cached is not None else None
     try:
         data = r.json() if r.is_success else {}
     except Exception:
         data = {}
+    if isinstance(data, dict) and any(k in data for k in ("default_generation_settings", "modalities", "chat_template")):
+        _llamacpp_identity[key] = True
     modalities = data.get("modalities") if isinstance(data, dict) else None
     answer = bool(modalities.get("vision")) if isinstance(modalities, dict) and "vision" in modalities else None
+    if answer is None and cached is not None:
+        answer = cached[0]
     _llamacpp_props_cache[key] = (answer, now + _PROVIDER_FINGERPRINT_TTL)
     return answer
+
+
+#: host:port pairs that answered llama-server's /props at least once in this
+#: process. A server does not change kind while running, so this is kept.
+_llamacpp_identity: dict = {}
+
+
+def is_known_llamacpp(url: str) -> bool:
+    """Whether this local endpoint has identified itself as a llama-server."""
+    try:
+        parsed = urlparse(url or "")
+    except ValueError:
+        return False
+    if _llamacpp_identity.get((parsed.hostname or "", parsed.port)):
+        return True
+    try:
+        # A managed engine (src.engines) is always a llama-server; known
+        # without any network, so a busy server is still recognised.
+        from src.engine_swap import engine_for_url
+        return engine_for_url(url) is not None
+    except Exception:  # noqa: BLE001
+        return False
 
 
 _llamacpp_effort_cache: dict = {}
@@ -256,6 +287,10 @@ def _is_local_ollama_url(url: str) -> bool:
     path = (parsed.path or "").rstrip("/")
     if parsed.port == 11434:
         return True
+    if is_known_llamacpp(url):
+        # A llama-server on /v1 is not an Ollama: its /api/chat and /api/show
+        # answer 404 (exam run 31: vision calls rewritten to 8081/api/chat).
+        return False
     return path in ("", "/api", "/v1") or path.startswith("/api/") or path.startswith("/v1/")
 
 
@@ -315,6 +350,10 @@ def model_supports_vision(model_name: str, endpoint_url: str = "") -> bool:
             advertised = None
         if advertised is not None:
             return advertised
+        if is_known_llamacpp(endpoint_url):
+            # A llama-server that would not say this time: no projector
+            # confirmed means no images, never the family name's guess.
+            return False
         try:
             advertised = ollama_supports_vision(endpoint_url, model_name or "")
         except Exception:

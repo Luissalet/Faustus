@@ -9497,6 +9497,12 @@ async def _stream_agent_loop_body(
     _harness_execution_recoveries = 0
     _no_action_nudges = 0
     _language_mismatch_nudges = 0
+    # Mid-turn narration in the wrong language (tools also ran): exam run 31
+    # drifted into English after its one nudge and stayed there for two
+    # hours. Up to 3 short notes per turn, at least 5 rounds apart; the
+    # final-answer rewrite keeps its own single budget above.
+    _deferred_lang_nudges = 0
+    _last_lang_nudge_round = -99
     _pending_language_nudge = False
     _todo_nudged = False
     _todo_refresh_nudged = False
@@ -9642,6 +9648,15 @@ async def _stream_agent_loop_body(
     # from the degenerate regime and drop the untrusted-context blocks (the
     # loop is not something more context fixes).
     _degenerate_output_retried = False
+    # Exam run 31 (26-09): a 2 h 38 min turn used its one retry early, and
+    # a reasoning loop at round 30 went straight to the recovery ladder,
+    # which ended the turn. A long turn gets the retry back after a few
+    # clean rounds: up to 3 per turn, at least 4 rounds apart.
+    _degenerate_retries = 0
+    _last_degenerate_retry_round = -99
+    # A reasoning-loop retry thinks at low effort for that one round; the
+    # turn's own settings come back once the round is through.
+    _loop_retry_restore: Optional[Dict[str, Any]] = None
     # The server refused an image (a text-only model behind a server that
     # does not say so): drop the images, retry the round once, and attach no
     # more for the rest of the turn.
@@ -10741,13 +10756,14 @@ async def _stream_agent_loop_body(
                 break
         if round_num > 1 or _approved_result_injected:
             _refresh_language(messages, _reply_language_hint)
-        if _pending_language_nudge and _language_mismatch_nudges < 1 and _required_reply_lang:
+        if _pending_language_nudge and _required_reply_lang:
             # Prior round narrated in the wrong language while also calling
             # tools — keep the tool work, force the next narration into the
             # user's language (Silhouettes: English error reports answered
             # with "Voy a revisar…" after Spanish plan history).
             _pending_language_nudge = False
-            _language_mismatch_nudges += 1
+            _deferred_lang_nudges += 1
+            _last_lang_nudge_round = round_num
             _lang_nudge = _mismatch_nudge_message(str(_required_reply_lang))
             if _lang_nudge:
                 messages.append(_lang_nudge)
@@ -11460,11 +11476,13 @@ async def _stream_agent_loop_body(
                 # turn with a raw HTTP-400 message.
                 if (
                     is_degenerate_output_error(error_data)
-                    and not _degenerate_output_retried
+                    and (not _degenerate_output_retried
+                         or (_degenerate_retries < 3
+                             and round_num - _last_degenerate_retry_round >= 4))
                     and round_num < max_rounds
                 ):
                     _degenerate_output_hit = True
-                    _degenerate_output_reason = str(error_data.get("error") or "")[:200]
+                    _degenerate_output_reason = str(error_data.get("error") or "")[:500]
                     break
                 if (
                     not _images_refused
@@ -12090,6 +12108,8 @@ async def _stream_agent_loop_body(
             # untrusted-context blocks (a loop is not something more context
             # fixes), and retry the same round exactly once.
             _degenerate_output_retried = True
+            _degenerate_retries += 1
+            _last_degenerate_retry_round = round_num
             logger.warning(
                 "[harness] round %s hit a token-repeat collapse (%s) — retrying "
                 "with repeat_penalty raised and untrusted context dropped",
@@ -12125,16 +12145,29 @@ async def _stream_agent_loop_body(
                 # its reasoning, usually trying to recall something (live:
                 # restating which sonnet holds a line, three times, with web
                 # search available). Say so, and point at the tools.
+                _loop_sentence = ""
+                _m_loop = re.search(r"\(\'(.{8,240}?)(?:\'\)|$)", _degenerate_output_reason)
+                if _m_loop:
+                    _loop_sentence = _m_loop.group(1).strip().strip('"').rstrip("…").strip()
                 messages.append({
                     "role": "user", "_harness_note": True,
                     "content": _lang_note(
-                        "Your previous reasoning went round in circles and was stopped. Do not "
-                        "try to recall the same thing again from memory: check it with a tool "
-                        "(web_search/web_fetch for a quotation, source or fact; read_file or "
+                        "Your previous reasoning went round in circles and was stopped"
+                        + (f" (it kept coming back to: \"{_loop_sentence}\")" if _loop_sentence else "")
+                        + ". Do not try to settle the same thing again in your head: check it with a "
+                        "tool (web_search/web_fetch for a quotation, source or fact; read_file or "
                         "inspect_image for the material; python for a calculation), or carry on "
-                        "with what is already established and mark the rest as uncertain."
+                        "with what is already established, write it down, and mark the rest as "
+                        "uncertain."
                     ),
                 })
+                # This round thinks briefly; the turn's own effort returns
+                # after it (see `_loop_retry_restore`).
+                if _loop_retry_restore is None:
+                    _loop_retry_restore = dict(gen_overrides or {})
+                gen_overrides["think"] = True
+                gen_overrides["reasoning_effort"] = "low"
+                gen_overrides["reasoning_budget"] = int(get_setting("think_mode_budget_light", 1024) or 1024)
             yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
             yield (
                 "data: " + json.dumps({
@@ -12365,7 +12398,7 @@ async def _stream_agent_loop_body(
             _harness_enabled
             and _required_reply_lang
             and len(_narr_for_lang) >= 40
-            and _language_mismatch_nudges < 1
+            and (_language_mismatch_nudges < 1 or _deferred_lang_nudges < 3)
         ):
             _observed_wrong_lang = _reply_language_mismatch(
                 str(_required_reply_lang), _narr_for_lang
@@ -12375,7 +12408,8 @@ async def _stream_agent_loop_body(
             # saved twice).
             if _observed_wrong_lang and _observed_wrong_lang == _requested_output_lang:
                 _observed_wrong_lang = None
-            if _observed_wrong_lang and tool_blocks:
+            if (_observed_wrong_lang and tool_blocks and _deferred_lang_nudges < 3
+                    and round_num - _last_lang_nudge_round >= 5):
                 _pending_language_nudge = True
 
         # Per-round instrumentation (what the provider actually returned).
@@ -15638,6 +15672,10 @@ async def _stream_agent_loop_body(
         # tool_blocks but stayed in native_tool_calls, so indexing results by
         # native position mis-attached each result to the wrong tool_call_id
         # (and left the real call answered empty).
+        if _loop_retry_restore is not None:
+            # The low-effort round after a reasoning loop is through.
+            gen_overrides = _loop_retry_restore
+            _loop_retry_restore = None
         _append_tool_results(messages, round_response, converted_calls,
                              tool_results, tool_result_texts, used_native, round_num,
                              round_reasoning=round_reasoning,

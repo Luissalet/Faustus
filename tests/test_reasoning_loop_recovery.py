@@ -159,3 +159,72 @@ def test_a_recall_loop_in_tool_arguments_gets_the_same_note(monkeypatch):
     assert len(seen) == 2
     notes = [m.get("content", "") for m in seen[1] if m.get("_harness_note")]
     assert any("went round in circles" in n for n in notes), notes
+
+
+def test_the_loop_retry_names_the_sentence_and_thinks_briefly_for_one_round(monkeypatch):
+    """Exam run 31: the loop was "navigate the distance indicated by the number
+    of the monks" — the note now quotes it, and the retry round thinks at low
+    effort; the next round is back to the turn's own settings."""
+    _patch_common(monkeypatch)
+    seen, overrides = [], []
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        seen.append([dict(m) for m in messages])
+        overrides.append(dict(kwargs.get("gen_overrides") or {}))
+        n = len(seen)
+        if n == 1:
+            yield _loop_error_chunk()
+        elif n == 2:
+            yield "data: " + json.dumps({"type": "tool_calls", "calls": [
+                {"name": "read_file", "arguments": json.dumps({"path": "a.md"})}]}) + "\n\n"
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "tool_calls"})}\n\n'
+            yield "data: [DONE]\n\n"
+        else:
+            yield f'data: {json.dumps({"delta": "Answer."})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
+            yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+    _collect(al.stream_agent_loop(
+        "http://127.0.0.1:8081/v1", "m",
+        [{"role": "user", "content": "Which sonnet is this line from? Explain in detail."}],
+        max_rounds=5, relevant_tools={"read_file", "web_search"},
+    ))
+    assert len(seen) >= 3, len(seen)
+    notes = [m.get("content", "") for m in seen[1] if m.get("_harness_note")]
+    assert any("pebbled shore" in n for n in notes), notes
+    assert overrides[1].get("reasoning_effort") == "low"
+    assert overrides[2].get("reasoning_effort") != "low"
+
+
+def test_a_long_turn_gets_the_retry_back_after_clean_rounds(monkeypatch):
+    """One retry per turn was not enough for a 30-round exam turn."""
+    _patch_common(monkeypatch)
+    calls = {"n": 0}
+    loops_at = {1, 7}
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        calls["n"] += 1
+        n = calls["n"]
+        if n in loops_at:
+            yield _loop_error_chunk()
+            return
+        if n < 10:
+            yield "data: " + json.dumps({"type": "tool_calls", "calls": [
+                {"name": "read_file", "arguments": json.dumps({"path": f"f{n}.md"})}]}) + "\n\n"
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "tool_calls"})}\n\n'
+        else:
+            yield f'data: {json.dumps({"delta": "Answer."})}\n\n'
+            yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+    raw = _collect(al.stream_agent_loop(
+        "http://127.0.0.1:8081/v1", "m",
+        [{"role": "user", "content": "Read these notes one by one and summarise them."}],
+        max_rounds=14, relevant_tools={"read_file"},
+    ))
+    events = _types(raw)
+    retries = [e for e in events if e.get("type") == "harness_check" and e.get("reason") == "degenerate_output_retry"]
+    assert len(retries) == 2, [e for e in events if e.get("type") == "harness_check"]
+    assert not any(e.get("type") == "harness_check" and e.get("step") == 2 for e in events)
