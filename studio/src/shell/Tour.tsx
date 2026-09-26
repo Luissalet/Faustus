@@ -201,10 +201,10 @@ export function Tour() {
   useEffect(() => {
     if (tourId) return;
     const candidate = tourForPath(location.pathname, location.search);
-    if (!candidate || seenTours().includes(candidate.id)) {
-      setOffered(null);
-      return;
-    }
+    // An offer made for the previous place goes with it: leaving Appearance
+    // for Local models kept "First time in Appearance?" on screen (26-09).
+    setOffered((current) => (current && current === candidate?.id ? current : null));
+    if (!candidate || seenTours().includes(candidate.id)) return;
     const timer = window.setTimeout(() => setOffered(candidate.id), 1800);
     return () => window.clearTimeout(timer);
   }, [location.pathname, location.search, tourId]);
