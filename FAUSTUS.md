@@ -9391,3 +9391,5 @@ Del resto de la lista:
 - Pasan a OBJETIVOS: la búsqueda unificada, las versiones por mensaje y el resumen de uso periódico.
 
 **`/recap`** (17:50): `GET /api/usage/recap?days=N` y `/recap [días]` suman con una consulta a la base de datos las métricas guardadas de todos los chats del dueño en un periodo. Dan turnos, tokens, caché, local frente a nube, modelos, herramientas más usadas, días de más uso y coste. La ruta está abierta a tokens `sessions`.
+
+**Tarjeta «Tus últimos 30 días» en Inicio** (17:55). Lee `GET /api/usage/recap?days=30` y enseña turnos y chats, local frente a nube, tokens, parte del prompt servida desde caché, llamadas a herramientas, coste si lo hay, el modelo más usado y las cuatro herramientas más usadas. No aparece hasta que hay un turno con métricas; «Resumen completo» abre Studio con `/recap 30` escrito. Comprobado en el 7000 con Playwright: 303 turnos en 122 chats, 295 locales, 97,7M tokens, 73,1 % de caché, 1998 llamadas; a 390 px pasa a dos columnas sin desplazamiento horizontal y sin errores de página.

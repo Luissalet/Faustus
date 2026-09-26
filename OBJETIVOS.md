@@ -1082,4 +1082,3 @@ PENDIENTES queda para fallos y comprobaciones; lo que es una mejora o una funci�
 - **Caché explícita de Gemini (`cachedContent`)** (26-09, investigación de APIs): para prompts de sistema y esquemas grandes en sesiones largas, donde la caché implícita de pocos minutos no aguanta los huecos.
 - **Búsqueda unificada con filtros** (26-09, investigación de apps): Ctrl+K sólo busca conversaciones; un agregador que consulte chats, cerebro, tablero de proyecto, galería y artefactos y mezcle resultados, con una fila de filtros por tipo.
 - **Versiones por mensaje con flechas** (26-09, investigación de apps): al regenerar o editar, conservar las respuestas anteriores de ese mensaje y navegar entre ellas con ‹ › en el propio chat (hoy `/versions` restaura el chat entero).
-- **Tarjeta de resumen de uso en Inicio** (26-09, investigación de apps): `/recap` y `GET /api/usage/recap` ya existen; falta la tarjeta mensual en Inicio.
