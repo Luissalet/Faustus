@@ -173,6 +173,67 @@ def test_children_without_ports_are_listed_under_faustus_and_self_never_appears(
     assert pc._base_name("Cursor.exe") == "cursor" and pc._base_name("python3.11") == "python"
 
 
+def test_match_mcp_server_needs_both_command_and_args_to_agree():
+    configs = [
+        {"name": "filesystem", "command": "/usr/bin/npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/data"]},
+        {"name": "no-args-server", "command": "/usr/local/bin/my-mcp-tool", "args": []},
+    ]
+    # command alone (a different npx-based server) is not enough — only a
+    # cmdline carrying BOTH the command and the configured args counts.
+    assert pc._match_mcp_server("npx -y some-other-package", configs) is None
+    assert pc._match_mcp_server(
+        "/usr/bin/npx -y @modelcontextprotocol/server-filesystem /data", configs,
+    ) == "filesystem"
+    # a heal-rewritten path (different absolute prefix) still matches on the
+    # basename + args, exactly what src/mcp_path_heal.py can do to `command`.
+    assert pc._match_mcp_server(
+        "/opt/homebrew/bin/npx -y @modelcontextprotocol/server-filesystem /data", configs,
+    ) == "filesystem"
+    # a server declared with no args matches on command alone.
+    assert pc._match_mcp_server("/usr/local/bin/my-mcp-tool --serve", configs) == "no-args-server"
+    assert pc._match_mcp_server("", configs) is None
+    assert pc._match_mcp_server("anything", []) is None
+
+
+def test_snapshot_labels_an_mcp_child_with_its_configured_server_name(monkeypatch):
+    # No real MCP server is spawned here (that needs a DB + mcp_manager
+    # connection); instead a plain child process stands in and
+    # `_mcp_server_configs` is monkeypatched to describe it as one, proving
+    # `snapshot()` wires the match through end to end: origin, label, and
+    # the new `mcp_server` field on the payload the /processes screen reads.
+    monkeypatch.setattr(pc, "_mcp_server_configs", lambda: [
+        {"name": "My Filesystem Server", "command": sys.executable, "args": ["-c", "time.sleep(30)"]},
+    ])
+    # A port-holding child lands in `snap["ports"]`, not `snap["faustus"]` (a
+    # pid appears in one list only) — use the same no-port child the
+    # existing `test_children_without_ports_are_listed_under_faustus_and_self_never_appears`
+    # test uses, so this one lands in `faustus` where the MCP match is applied.
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        time.sleep(0.5)
+        snap = pc.snapshot(include_watched=False)
+        row = next((r for r in snap["faustus"] if r["pid"] == child.pid), None)
+        assert row is not None, snap["faustus"]
+        assert row["origin"] == "faustus"
+        assert row["mcp_server"] == "My Filesystem Server"
+        assert "My Filesystem Server" in row["label"]
+    finally:
+        child.kill()
+        child.wait(timeout=5)
+
+
+def test_snapshot_leaves_mcp_server_none_when_nothing_configured_matches():
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        time.sleep(0.5)
+        snap = pc.snapshot(include_watched=False)
+        row = next((r for r in snap["faustus"] if r["pid"] == child.pid), None)
+        assert row is not None and row["mcp_server"] is None
+    finally:
+        child.kill()
+        child.wait(timeout=5)
+
+
 def test_routes_stop_is_human_only_and_list_answers():
     from routes.process_center_routes import setup_process_center_routes
     from core.middleware import INTERNAL_TOOL_HEADER, INTERNAL_TOOL_TOKEN

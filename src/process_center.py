@@ -82,6 +82,14 @@ class ProcRow:
     protected_reason: str = ""
     uptime_s: Optional[int] = None
     parent_pid: Optional[int] = None
+    # The configured MCP server (`core.database.McpServer.name`) this row's
+    # cmdline matches, or None. Set only for `faustus`-origin rows — an MCP
+    # child has no pid of its own recorded anywhere (mcp_manager spawns it
+    # through the `mcp` package's stdio_client, which never surfaces the OS
+    # pid back to us), so the only way to tell "the agent's own shell" apart
+    # from "the configured filesystem MCP server" in this list is matching
+    # each candidate's cmdline against the configured servers' command+args.
+    mcp_server: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -162,6 +170,60 @@ def _launch_profile_pids() -> Dict[int, str]:
         if pid:
             out[int(pid)] = names.get(profile_id, profile_id)
     return out
+
+
+def _mcp_server_configs() -> List[Dict[str, Any]]:
+    """The configured stdio MCP servers (`core.database.McpServer`), as
+    ``{"name", "command", "args"}`` — only `transport == "stdio"` rows spawn
+    a local process; an "sse"/http server has no child to attribute here.
+    Best-effort: an unreadable DB (or the table not existing yet in a fresh
+    install) yields an empty list rather than breaking the rest of the
+    snapshot, matching every other lookup in this module.
+    """
+    try:
+        import json as _json
+        from src.database import McpServer, SessionLocal
+        db = SessionLocal()
+        try:
+            rows = db.query(McpServer).filter(McpServer.transport == "stdio").all()
+            out: List[Dict[str, Any]] = []
+            for srv in rows:
+                try:
+                    args = _json.loads(srv.args) if srv.args else []
+                except Exception:  # noqa: BLE001
+                    args = []
+                out.append({"name": srv.name, "command": srv.command or "", "args": args})
+            return out
+        finally:
+            db.close()
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _match_mcp_server(cmdline: str, configs: List[Dict[str, Any]]) -> Optional[str]:
+    """Which configured MCP server (if any) this cmdline is that server's
+    child process — matched by command + args substrings rather than an
+    exact argv comparison, because `src/mcp_path_heal.py` can rewrite the
+    stored `command` to a different (but equivalent) absolute path before
+    the process is actually spawned. The stored args are a much stronger
+    signal (a package name, a server script path) than the bare
+    interpreter/launcher name, so a config only matches when both are
+    present in the observed cmdline."""
+    if not cmdline:
+        return None
+    haystack = cmdline.lower()
+    for cfg in configs:
+        command = str(cfg.get("command") or "").strip()
+        if not command:
+            continue
+        base = os.path.basename(command).lower()
+        if not base or base not in haystack:
+            continue
+        args = [str(a) for a in (cfg.get("args") or ()) if str(a).strip()]
+        if args and not all(a.lower() in haystack for a in args):
+            continue
+        return str(cfg.get("name") or "") or None
+    return None
 
 
 def _connector_ports(connectors: Optional[Iterable[Dict[str, Any]]]) -> Dict[int, str]:
@@ -317,7 +379,8 @@ class _Table:
 
 def _row_for(psutil, proc, *, table: _Table, self_pid: int, self_ancestors: Set[int],
              ports: Dict[int, List[int]], jobs: Dict[int, str], profiles: Dict[int, str],
-             conn_ports: Dict[int, str], now: float, detail: bool = True) -> Optional[ProcRow]:
+             conn_ports: Dict[int, str], now: float, detail: bool = True,
+             mcp_configs: Optional[List[Dict[str, Any]]] = None) -> Optional[ProcRow]:
     try:
         with proc.oneshot():
             name = proc.name()
@@ -371,6 +434,10 @@ def _row_for(psutil, proc, *, table: _Table, self_pid: int, self_ancestors: Set[
     elif self_pid in table.ancestors(proc.pid):
         row.origin = "faustus"
         row.label = "started by Faustus (agent shell, MCP server or tool)"
+        matched = _match_mcp_server(row.cmdline, mcp_configs or [])
+        if matched:
+            row.mcp_server = matched
+            row.label = f"MCP server: {matched}"
     return row
 
 
@@ -390,6 +457,7 @@ def snapshot(*, connectors: Optional[Iterable[Dict[str, Any]]] = None,
     jobs_map = _bg_job_pids()
     profiles = _launch_profile_pids()
     conn_ports = _connector_ports(connectors)
+    mcp_configs = _mcp_server_configs()
     out: Dict[str, Any] = {"available": psutil is not None, "ports": [], "faustus": [], "watched": [],
                            "jobs": _job_records(), "generated_at": now}
     if psutil is None:
@@ -404,7 +472,7 @@ def snapshot(*, connectors: Optional[Iterable[Dict[str, Any]]] = None,
     ports = _ports_by_pid()
     seen: Set[int] = set()
     kw = dict(table=table, self_pid=self_pid, self_ancestors=self_anc, ports=ports, jobs=jobs_map,
-              profiles=profiles, conn_ports=conn_ports, now=now)
+              profiles=profiles, conn_ports=conn_ports, now=now, mcp_configs=mcp_configs)
 
     # 1. whoever holds a listening port
     for pid in sorted(ports):

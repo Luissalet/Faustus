@@ -154,6 +154,11 @@ function ProcessRow({ row, onStopped, onBusyChange }: { row: ProcRow; onStopped:
           <strong>{row.name}</strong> <span className="fs-proc__pid">#{row.pid}</span>
         </span>
         <span className="fs-proc-origin" data-origin={row.origin}>{t(ORIGIN_LABEL[row.origin] ?? ORIGIN_LABEL.other)}</span>
+        {row.mcp_server && (
+          <span className="fs-chip fs-proc__mcp-server" data-testid="process-mcp-server" title={t('Matched to this configured MCP server by its command line')}>
+            {row.mcp_server}
+          </span>
+        )}
       </div>
       {row.label && <p className="fs-set__help">{row.label}</p>}
       <div className="fs-proc__row-detail" title={row.cmdline || undefined}>

@@ -16,6 +16,7 @@ assert.match(adapter, /\/api\/process-center\?watched=/, 'fetchProcesses() calls
 assert.match(adapter, /export const stopProcess/, 'stopProcess() exists');
 assert.match(adapter, /export const stopPort/, 'stopPort() exists');
 assert.match(adapter, /'\/api\/process-center\/stop'/, 'stop calls POST /api/process-center/stop');
+assert.match(adapter, /mcp_server:\s*string\s*\|\s*null/, 'ProcRow carries the matched MCP server name from src/process_center.py');
 
 const screen = readFileSync(new URL('../src/screens/processes/Processes.tsx', import.meta.url), 'utf8');
 assert.match(screen, /export function ProcessesScreen/, 'ProcessesScreen exists');
@@ -33,6 +34,8 @@ assert.doesNotMatch(screen, /window\.confirm/, 'never uses window.confirm');
 assert.match(screen, /available === false/, 'shows the psutil-unavailable banner');
 assert.match(screen, /Not visible in the process list/, 'a bg job whose pid is not in any list says so');
 assert.match(screen, /recycled/, 'handles the recycled stop code');
+assert.match(screen, /row\.mcp_server\s*&&/, 'a row with a matched MCP server renders it');
+assert.match(screen, /data-testid="process-mcp-server"/, 'the MCP server match has its own testid for a "Started by Faustus" row');
 
 const appShell = readFileSync(new URL('../src/shell/AppShell.tsx', import.meta.url), 'utf8');
 assert.match(appShell, /const ProcessesScreen = lazyChunk\(\(\) => import\('\.\.\/screens\/processes\/Processes'\)/, 'AppShell lazy-loads the Processes screen');

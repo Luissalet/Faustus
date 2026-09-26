@@ -55,6 +55,10 @@ export interface ProcRow {
   protected_reason: string;
   uptime_s: number | null;
   parent_pid: number | null;
+  /** The configured MCP server (McpServer.name) this row's cmdline matches
+   * a `faustus`-origin child against, or null when it is not one — an
+   * agent shell/tool child, or no server's command+args matched. */
+  mcp_server: string | null;
 }
 
 export interface BgJobRow {

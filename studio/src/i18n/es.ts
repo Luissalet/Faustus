@@ -3288,6 +3288,7 @@ export const es: Record<string, string> = {
   "Match (leave a field blank to match every call of this event; tool/path accept a | -separated list of globs)": "Coincidencia (deja un campo en blanco para que coincida con toda llamada de este evento; herramienta/ruta aceptan una lista de globs separados por |)",
   "Match colour": "Igualar color",
   "Match colour to surroundings": "Igualar el color al entorno",
+  "Matched to this configured MCP server by its command line": "Asociado a este servidor MCP configurado por su línea de comandos",
   "Matching…": "Igualando…",
   "Material depth": "Profundidad del material",
   "Materials": "Materiales",
