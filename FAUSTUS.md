@@ -9149,3 +9149,17 @@ El Escape anota dónde estaba el foco. Da 38/38 en cuatro corridas seguidas, y e
 
 **«Stopped by user» tras un reinicio.** Actividad mostraba como paradas por el usuario las tareas que cortó el reinicio del 7000 de las 08:43. Ahora quedan como «Interrupted: Faustus was restarting». Al apagar, el programador de tareas se detiene antes de cancelar nada, así que la causa se deduce de ese estado.
 
+**`code_graph_risk` sobre el repositorio real.** Medido en el PC sobre el propio Faustus con un directorio de datos aparte:
+
+| Petición | Tiempo | Resultado |
+|---|---|---|
+| `src/agent_loop.py`, índice en frío | 75,4 s | puntuación 60,9 («medium»); factores `fan_in`, `breadth` y `churn` |
+| El mismo fichero otra vez en el turno | 0,0 s | desde la caché |
+| `src/round_reasoning.py`, índice ya caliente | 6,1 s | 27,3 («low») |
+
+El tope de dos revisiones por turno se cumple: la tercera y la cuarta edición ya no piden revisión.
+
+La prueba destapó un borde. `change_risk` devuelve como diccionario con `error`, sin excepción, una carpeta fuera de las raíces permitidas, y con un umbral «low» ese error contaba como nivel bajo y pedía revisión. Ahora un riesgo que no se pudo calcular nunca pide revisión.
+
+La revisión de dudas viene apagada (`agent_doubt_review`). Quien la encienda en un repositorio grande paga una vez esos 75 s del índice en frío; luego el índice queda guardado.
+
