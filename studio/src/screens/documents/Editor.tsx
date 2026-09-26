@@ -1,4 +1,4 @@
-import { AlertTriangle, Archive, ArrowLeft, Bold, Check, ChevronDown, Code, Copy, Download, Eye, FileCode2, FileText, Heading1, Heading2, Heading3, History as HistoryIcon, Italic, Link2, List, ListChecks, ListOrdered, Mail, Minus, Play, Quote, Redo2, Search, Strikethrough, Table, Trash2, Undo2, X } from 'lucide-react';
+import { AlertTriangle, Archive, ArrowLeft, Bold, Check, ChevronDown, Code, Copy, Download, Eye, FileCode2, FileText, Heading1, Heading2, Heading3, History as HistoryIcon, Italic, Link2, List, ListChecks, ListOrdered, Mail, Minus, Play, Quote, Redo2, Search, SpellCheck, Strikethrough, Table, Trash2, Undo2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { Button, Dialog, EmptyState, IconButton, Menu, Skeleton, Toast } from '../../components';
@@ -14,6 +14,7 @@ import { DiffView } from './DiffView';
 import { baseName, download, toDocx, toHtml } from './exports';
 import { applyMarkdown, parseCsv, PREVIEWABLE, RUNNABLE, type MdAction } from './markdown';
 import { PdfPane } from './PdfPane';
+import { lintProse, proseSummary, type ProseIssue } from '../../lib/proseLint';
 import { ReviewPanel } from './ReviewPanel';
 import { currentText, discardDraft, isDirty, markSaved, redo as sessionRedo, setDraftText, setSelection, sync as syncSession, undo as sessionUndo, useDocSession } from '../../lib/docSession';
 import '../documents.css';
@@ -51,6 +52,8 @@ export function DocumentScreen() {
   const [notice, setNotice] = useState<{ text: string; tone: 'ok' | 'warn' } | null>(null);
   const [view, setView] = useState<'edit' | 'preview' | 'split' | 'pdf'>('edit');
   const [find, setFind] = useState<{ open: boolean; q: string; r: string; at: number }>({ open: false, q: '', r: '', at: 0 });
+  // Style check (lib/proseLint.ts): null = closed; recomputed from the text while open.
+  const [styleOpen, setStyleOpen] = useState(false);
   const [versions, setVersions] = useState<DocVersion[] | null>(null);
   const [compare, setCompare] = useState<DocVersion | null>(null);
   const [run, setRun] = useState<{ out: string; err: boolean; html?: string } | null>(null);
@@ -200,6 +203,16 @@ export function DocumentScreen() {
       const line = text.slice(0, matches[at]).split('\n').length;
       ta.scrollTop = Math.max(0, (line - 4) * lineHeight(ta));
     }
+  };
+
+  const styleIssues = useMemo<ProseIssue[]>(() => (styleOpen ? lintProse(text) : []), [styleOpen, text]);
+  const goToIssue = (issue: ProseIssue) => {
+    const ta = editorRef.current;
+    if (!ta) return;
+    ta.focus();
+    ta.setSelectionRange(issue.start, issue.end);
+    const line = text.slice(0, issue.start).split('\n').length;
+    ta.scrollTop = Math.max(0, (line - 4) * lineHeight(ta));
   };
 
   const replaceOne = () => {
@@ -386,6 +399,7 @@ export function DocumentScreen() {
           </div>
         )}
         {canRun && <Button size="sm" variant="ghost" icon={Play} label={t('Run')} loading={running} onClick={() => void runIt()} title={t('Python and bash run on the server; JavaScript runs in a sandbox here; HTML opens the preview')} />}
+        {view !== 'pdf' && <IconButton icon={SpellCheck} label={t('Style check')} testId="doc-style-check" onClick={() => setStyleOpen((o) => !o)} />}
         {view !== 'pdf' && <IconButton icon={Search} label={t('Find and replace (Ctrl+F)')} onClick={() => { setFind((f) => ({ ...f, open: !f.open })); window.setTimeout(() => document.getElementById('doc-find')?.focus(), 30); }} />}
         {view !== 'pdf' && session && session.undoStack.length > 0 && <IconButton icon={Undo2} label={t('Undo')} onClick={() => doc && sessionUndo(doc.id)} />}
         {view !== 'pdf' && session && session.redoStack.length > 0 && <IconButton icon={Redo2} label={t('Redo')} onClick={() => doc && sessionRedo(doc.id)} />}
@@ -457,6 +471,30 @@ export function DocumentScreen() {
           <Button size="sm" variant="ghost" label={t('Replace')} disabled={!matches.length} onClick={replaceOne} />
           <Button size="sm" variant="ghost" label={t('Replace all')} disabled={!matches.length} onClick={replaceAll} />
           <IconButton icon={X} label={t('Close')} size="sm" onClick={() => setFind((f) => ({ ...f, open: false }))} />
+        </div>
+      )}
+
+      {styleOpen && view !== 'pdf' && (
+        <div className="fs-docs__style" data-testid="doc-style-panel" role="region" aria-label={t('Style check')}>
+          <div className="fs-docs__style-head">
+            <strong>{styleIssues.length ? tn(styleIssues.length, '{n} pattern to look at', '{n} patterns to look at') : t('No patterns found')}</strong>
+            <span className="fs-docs__style-sum">{proseSummary(styleIssues).map((g) => `${t(g.label)} ${g.count}`).join(' · ')}</span>
+            <span className="fs-spacer" />
+            <IconButton icon={X} label={t('Close')} size="sm" onClick={() => setStyleOpen(false)} />
+          </div>
+          <p className="fs-docs__style-hint">{t('It only points: stock phrases, "not only… but", rhetorical questions and the like. Nothing is changed.')}</p>
+          {styleIssues.length > 0 && (
+            <ul className="fs-docs__style-list">
+              {styleIssues.map((issue, i) => (
+                <li key={`${issue.start}-${i}`}>
+                  <button type="button" className="fs-docs__style-item" data-testid="doc-style-issue" onClick={() => goToIssue(issue)}>
+                    <span className="fs-docs__style-rule">{t(issue.label)}</span>
+                    <span className="fs-docs__style-ex">{issue.excerpt}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 

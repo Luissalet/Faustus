@@ -8607,3 +8607,15 @@ For	A favor
 Against	En contra
 Let's go with {name}.	Vamos con {name}.
 Choose	Elegir
+Style check	Revisar estilo
+{n} pattern to look at	{n} patrón que revisar
+{n} patterns to look at	{n} patrones que revisar
+No patterns found	No se ha encontrado ningún patrón
+It only points: stock phrases, "not only… but", rhetorical questions and the like. Nothing is changed.	Sólo señala: frases hechas, «no solo… sino», preguntas retóricas y demás. No cambia nada.
+Stock phrase	Frase hecha
+"Not only… but"	«No solo… sino»
+"It's not X, it's Y"	«No es X, es Y»
+Rhetorical question answered at once	Pregunta retórica respondida al momento
+Chatty opener	Arranque de charla
+Stacked hedges	Cautelas apiladas
+Many dashes in one paragraph	Muchas rayas en un párrafo
