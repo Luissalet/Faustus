@@ -5902,6 +5902,9 @@ def _sticky_toolset(session_id: str, relevant: Set[str], hot: Optional[Set[str]]
                 out_relevant = union
                 if hot is not None:
                     out_hot = (prev_hot or set()) | hot
+    logger.info("[tool-rag] chat tool set: %s (previous %s, weak picks %s, now %s tools)",
+                "new" if prev is None else ("kept" if out_relevant == set(prev[0]) - disabled else "changed"),
+                0 if prev is None else len(prev[0]), sorted(set(optional or ()))[:8], len(out_relevant))
     _SESSION_TOOLSETS[session_id] = (frozenset(out_relevant),
                                      None if out_hot is None else frozenset(out_hot))
     _SESSION_TOOLSETS.move_to_end(session_id)
