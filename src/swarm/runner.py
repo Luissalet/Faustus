@@ -132,6 +132,8 @@ def _perms_from_dict(raw: Optional[Dict[str, Any]]):
         may_delegate=False, depth=int(raw.get("depth") or 1),
         workspace_roots=tuple(raw.get("workspace_roots") or ()),
         workspace=str(raw.get("workspace") or ""),
+        inherited_allowlists=tuple(frozenset(a) for a in raw.get("inherited_allowlists") or ()
+                                   if isinstance(a, (list, tuple))),
     )
 
 

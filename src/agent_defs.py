@@ -334,6 +334,12 @@ def def_path(slug: Any) -> str:
 
 # ── the tool vocabulary a definition may name ───────────────────────────────
 
+#: An MCP entry in ``tools``/``deny``. MCP tools are not in the built-in
+#: vocabulary — they exist once a server connects — so they are checked by
+#: shape instead: ``mcp__<server>__<tool>``, either part a glob.
+_MCP_TOOL_ENTRY = re.compile(r"^mcp__(\*|[A-Za-z0-9_.\-*]+?)(__[A-Za-z0-9_.\-*]+)?$")
+
+
 def known_tools() -> frozenset:
     """Every tool name a definition may put in ``tools``/``deny``.
 
@@ -547,12 +553,20 @@ def parse(text: str, *, slug: str, source: str = SOURCE_USER, path: str = "") ->
     vocabulary = known_tools()
     tools = _as_str_list(fm.get("tools"), "tools")
     deny = _as_str_list(fm.get("deny"), "deny")
+    for name in tools + deny:
+        if name.startswith("mcp__") and not _MCP_TOOL_ENTRY.match(name):
+            raise AgentDefError(f"`{name}` is not an MCP tool entry: write mcp__<server>__<tool>, "
+                                f"with `*` for any part (mcp__github__*, mcp__*)")
     if vocabulary:
         for name in tools:
+            if name.startswith("mcp__"):
+                continue
             if name not in vocabulary:
                 raise AgentDefError(f"tools: `{name}` is not a tool this build has. Dropping it would "
                                     f"grant less than this file asks for, so the file does not load.")
         for name in deny:
+            if name.startswith("mcp__"):
+                continue
             if name not in vocabulary:
                 raise AgentDefError(f"deny: `{name}` is not a tool this build has. Keeping it would "
                                     f"read as a restriction that is not one, so the file does not load.")

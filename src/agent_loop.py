@@ -761,6 +761,7 @@ DENIAL_ORIGIN_PREFLIGHT = "tool_preflight"
 DENIAL_ORIGIN_AVAILABILITY = "runtime_availability"
 DENIAL_ORIGIN_ODY_NO_TOOL = "odysseus_no_tool_clamp"
 DENIAL_ORIGIN_FEATURE_DISABLED = "feature_disabled"
+DENIAL_ORIGIN_AGENT_DEF = "agent_definition"
 # TASK-06: the `read_only` autonomy preset — see src/autonomy_budget.py.
 DENIAL_ORIGIN_AUTONOMY_READ_ONLY = "autonomy_read_only"
 
@@ -7686,6 +7687,24 @@ async def _stream_agent_loop_body(
         for _sid, _names in _mcp_block_map.items():
             _mcp_disabled_map.setdefault(_sid, set()).update(_names)
         disabled_tools.update(_mcp_block_q)
+    if mcp_mgr:
+        # A worker's agent definition governs MCP tools too: `tools:` is an
+        # allowlist (an MCP tool it does not name, e.g. `mcp__github__*`, is
+        # not granted) and `deny:` may name them. Hidden from the schemas and
+        # refused at execution from the same answer, as plan mode does above.
+        try:
+            from src.agent_tools.subagent_tools import _PERMS_CTX
+            _mcp_worker_perms = _PERMS_CTX.get()
+        except Exception:  # pragma: no cover - no worker context
+            _mcp_worker_perms = None
+        if _mcp_worker_perms is not None:
+            _w_map, _w_q = mcp_mgr.blocked_mcp_where(_mcp_worker_perms.tool_denied)
+            for _sid, _names in _w_map.items():
+                _mcp_disabled_map.setdefault(_sid, set()).update(_names)
+            disabled_tools.update(_w_q)
+            _note_denials(_w_q, DENIAL_ORIGIN_AGENT_DEF)
+            if _w_q:
+                logger.info("[agent] worker definition withholds %d MCP tool(s)", len(_w_q))
     prep_timings["request_setup"] = time.time() - _t0
 
     # ── Workspace tool floor for this turn (see WORKSPACE_TOOL_FLOOR) ─────

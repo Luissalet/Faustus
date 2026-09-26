@@ -699,8 +699,8 @@ def _refusal_cause(run: "SubagentRun", names: set, policy: str, origin: str) -> 
     cannot place: an unfamiliar word sends its reader to the source, a
     confident wrong one sends it nowhere.
     """
-    from src.agent_loop import DENIAL_ORIGIN_REQUEST
-    if origin != DENIAL_ORIGIN_REQUEST:
+    from src.agent_loop import DENIAL_ORIGIN_AGENT_DEF, DENIAL_ORIGIN_REQUEST
+    if origin not in (DENIAL_ORIGIN_REQUEST, DENIAL_ORIGIN_AGENT_DEF):
         return f"denied by {origin or policy or 'the request policy'}"
     if names & SUBAGENT_DISABLED_TOOLS:
         return "not available to sub-agents"

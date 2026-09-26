@@ -120,6 +120,7 @@ def tools_sent(
     supports_tools=True,
     messages=None,
     uploaded_files=None,
+    mcp_manager=None,
 ):
     """Drive the real `stream_agent_loop` and return the tool names the model got.
 
@@ -147,7 +148,7 @@ def tools_sent(
     patches = [
         mock.patch.object(agent_loop, "stream_llm_with_fallback", fake_stream),
         mock.patch.object(agent_loop, "execute_tool_block", fake_execute),
-        mock.patch.object(agent_loop, "get_mcp_manager", lambda: None),
+        mock.patch.object(agent_loop, "get_mcp_manager", lambda: mcp_manager),
         mock.patch.object(agent_loop, "estimate_tokens", lambda *a, **k: 10),
         mock.patch.object(agent_loop, "get_setting", fake_get_setting),
         mock.patch.object(

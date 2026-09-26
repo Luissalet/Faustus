@@ -40,6 +40,7 @@ except :class:`DepthExceeded`, which is the answer, not a failure.
 """
 from __future__ import annotations
 
+import fnmatch
 import logging
 import os
 import re
@@ -150,6 +151,19 @@ def normalise_path(path: Any, workspace: Optional[str] = None) -> str:
     return text.replace("\\", "/").lstrip("./") or text.replace("\\", "/")
 
 
+def tool_name_matches(pattern: str, name: str) -> bool:
+    """A tool entry in ``tools``/``deny`` against one tool name.
+
+    Built-in names match exactly. MCP entries may end in a wildcard
+    (``mcp__github__*``, ``mcp__*``), because MCP tools are named by the
+    server that happens to be connected and a definition cannot list what it
+    has not seen yet."""
+    pattern = str(pattern or "")
+    if "*" in pattern:
+        return fnmatch.fnmatchcase(str(name or ""), pattern)
+    return pattern == str(name or "")
+
+
 def path_matches(pattern: str, path: str) -> bool:
     if not pattern:
         return False
@@ -205,20 +219,31 @@ class ChildPermissions:
     workspace_roots: Tuple[str, ...] = ()
     workspace: str = ""
     caveats: Tuple[str, ...] = ()
+    #: Every ancestor's allowlist, nearest first. Built-in tools outside an
+    #: ancestor's allowlist are already in `denied_tools` (``derive`` turns
+    #: them into denies from the vocabulary), but MCP tools are not in that
+    #: vocabulary: they appear when a server connects. Keeping the lists lets
+    #: :meth:`tool_denied` refuse an MCP tool the coordinator was never given.
+    inherited_allowlists: Tuple[FrozenSet[str], ...] = ()
 
     def tool_denied(self, tool: str) -> bool:
         name = str(tool or "")
         if not name:
             return False
-        if name in self.denied_tools:
+        if any(tool_name_matches(p, name) for p in self.denied_tools):
             return True
-        return self.allowed_tools is not None and name not in self.allowed_tools
+        if self.allowed_tools is not None and not any(tool_name_matches(p, name) for p in self.allowed_tools):
+            return True
+        return any(not any(tool_name_matches(p, name) for p in allow)
+                   for allow in self.inherited_allowlists)
 
     def why_tool_denied(self, tool: str) -> str:
         name = str(tool or "")
         who = f"agent `{self.slug}`" if self.slug else "this worker"
-        if name in self.denied_tools:
+        if any(tool_name_matches(p, name) for p in self.denied_tools):
             return f"{name} is on {who}'s deny list"
+        if self.allowed_tools is not None and any(tool_name_matches(p, name) for p in self.allowed_tools):
+            return f"{name} was not granted to the agent that started {who}"
         return f"{who} may only use: " + (", ".join(sorted(self.allowed_tools or ())) or "no tools at all")
 
     def path_denied(self, action: str, path: str) -> bool:
@@ -244,6 +269,7 @@ class ChildPermissions:
             "may_delegate": self.may_delegate,
             "workspace_roots": list(self.workspace_roots),
             "caveats": list(self.caveats),
+            "inherited_allowlists": [sorted(a) for a in self.inherited_allowlists],
         }
 
 
@@ -314,6 +340,12 @@ def derive(parent_rules: Any, child_def: Optional[AgentDef], *, parent_depth: in
     if wants and not parent_lets:
         caveats.append("asks to delegate and cannot: the agent that started it may not delegate either")
 
+    inherited: Tuple[FrozenSet[str], ...] = ()
+    if parent is not None:
+        inherited = tuple(parent.inherited_allowlists)
+        if parent.allowed_tools is not None:
+            inherited = (parent.allowed_tools,) + inherited
+
     roots = tuple(str(r) for r in (workspace_roots if workspace_roots is not None
                                    else (parent.workspace_roots if parent else ())) if r)
     return ChildPermissions(
@@ -327,6 +359,7 @@ def derive(parent_rules: Any, child_def: Optional[AgentDef], *, parent_depth: in
         workspace_roots=roots,
         workspace=str(workspace or (parent.workspace if parent else "")),
         caveats=tuple(caveats),
+        inherited_allowlists=inherited,
     )
 
 
@@ -346,5 +379,5 @@ def coordinator_permissions(rules: Optional[Sequence[Rule]] = None, *,
 __all__ = [
     "DEFAULT_MAX_DEPTH", "DELEGATE_TOOL", "DEPTH_SETTING", "ChildPermissions", "DepthExceeded",
     "coordinator_permissions", "decide", "derive", "matching_rule", "max_depth",
-    "normalise_path", "path_matches",
+    "normalise_path", "path_matches", "tool_name_matches",
 ]

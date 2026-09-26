@@ -2032,6 +2032,27 @@ class McpManager:
         if isinstance(conn, dict):
             conn.update(meta)
 
+    def blocked_mcp_where(self, blocked) -> Tuple[Dict[str, Set[str]], Set[str]]:
+        """Every connected MCP tool whose qualified name ``blocked`` refuses.
+
+        Same return shape as :meth:`plan_mode_blocked_mcp`, so a caller hides
+        the tool from the schemas and rejects it at execution from one answer.
+        Used for a worker whose agent definition allows or denies MCP tools.
+        """
+        disabled_map: Dict[str, Set[str]] = {}
+        qualified: Set[str] = set()
+        for server_id, tools in self._tools.items():
+            for tool in tools:
+                name = f"mcp__{server_id}__{tool['name']}"
+                try:
+                    refuse = bool(blocked(name))
+                except Exception:  # a broken predicate refuses rather than grants
+                    refuse = True
+                if refuse:
+                    disabled_map.setdefault(server_id, set()).add(tool["name"])
+                    qualified.add(name)
+        return disabled_map, qualified
+
     def plan_mode_blocked_mcp(self) -> Tuple[Dict[str, Set[str]], Set[str]]:
         """Plan mode: block every MCP tool that isn't clearly read-only.
 
