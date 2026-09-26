@@ -1052,7 +1052,8 @@ FUNCTION_TOOL_SCHEMAS = [
                         "type": "string",
                         "enum": ["catalog", "schema"],
                         "description": "catalog = name + one-liner; schema = also include the full JSON schema. Default schema when names are given, catalog when only query is given — overridden to schema when you need to call one now."
-                    }
+                    },
+                    "category": {"type": "string", "description": "List every tool of one category (email, files, git, web, mcp:<server>...). Call with no arguments to see the categories."}
                 },
                 "required": []
             }

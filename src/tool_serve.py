@@ -312,6 +312,93 @@ def suggest_close_matches(typo: str, pool: Iterable[str], *, n: int = 6) -> List
     return list(dict.fromkeys(close))[:n]
 
 
+# ── Categories (radar #319) ───────────────────────────────────────────────
+# A hierarchical view of the catalog: `lookup_tools {}` or
+# `{"categories": true}` lists the groups with a count and a few names, and
+# `{"category": "email"}` lists that group. The groups are the agent's own
+# domains (src/agent_loop._DOMAIN_TOOL_MAP), the git_* and board_* families
+# and one group per connected MCP server (`mcp:<server>`), so a new plugin
+# adds one line to the listing instead of its whole catalog.
+_CATEGORY_LIST_LIMIT = 40
+
+
+def _known_builtin(name: str) -> bool:
+    try:
+        from src.tool_index import BUILTIN_TOOL_DESCRIPTIONS
+        if name in BUILTIN_TOOL_DESCRIPTIONS:
+            return True
+    except Exception:
+        pass
+    return schema_for(name) is not None
+
+
+def tool_categories() -> Dict[str, List[str]]:
+    groups: Dict[str, Set[str]] = {}
+    try:
+        from src.agent_loop import _DOMAIN_TOOL_MAP
+        for domain, names in _DOMAIN_TOOL_MAP.items():
+            groups.setdefault(domain, set()).update(names)
+    except Exception:
+        logger.debug("tool catalog: domain map unavailable", exc_info=True)
+    try:
+        from src.tool_index import BUILTIN_TOOL_DESCRIPTIONS
+        for name in BUILTIN_TOOL_DESCRIPTIONS:
+            if name.startswith("git_"):
+                groups.setdefault("git", set()).add(name)
+            elif name.startswith("board_"):
+                groups.setdefault("project_board", set()).add(name)
+    except Exception:
+        pass
+    out: Dict[str, List[str]] = {}
+    for domain, names in groups.items():
+        real = sorted(n for n in names if _known_builtin(n))
+        if real:
+            out[domain] = real
+    for name in connected_mcp_tool_names():
+        parts = name.split("__")
+        if len(parts) >= 3:
+            out.setdefault(f"mcp:{parts[1]}", []).append(name)
+    return {k: sorted(v) for k, v in sorted(out.items())}
+
+
+def serve_categories(*, category: str = "", disabled: Optional[Iterable[str]] = None,
+                     admin: bool = True) -> Dict[str, Any]:
+    blocked = {str(n) for n in (disabled or ()) if n}
+
+    def _usable(n: str) -> bool:
+        return n not in blocked and (admin or not _non_admin_blocked(n))
+
+    cats = {k: [n for n in v if _usable(n)] for k, v in tool_categories().items()}
+    cats = {k: v for k, v in cats.items() if v}
+    wanted = (category or "").strip().lower()
+    if not wanted:
+        return {
+            "categories": [
+                {"name": k, "count": len(v), "examples": v[:4]} for k, v in cats.items()
+            ],
+            "promote": [],
+            "detail": "categories",
+            "hint": 'Pick one with {"category": "<name>"}, or search with {"query": "..."}.',
+        }
+    key = wanted if wanted in cats else next(
+        (k for k in cats if k.lower() == wanted or k.lower() == f"mcp:{wanted}"), "")
+    if not key:
+        return {
+            "tools": [], "promote": [], "detail": _DETAIL_CATALOG,
+            "hint": f"No category {category!r}. Known: " + ", ".join(cats),
+        }
+    names = cats[key][:_CATEGORY_LIST_LIMIT]
+    tools = [catalog_entry(n, detail=_DETAIL_CATALOG) for n in names]
+    return {
+        "category": key,
+        "tools": tools,
+        "promote": [t["name"] for t in tools],
+        "detail": _DETAIL_CATALOG,
+        "more": max(0, len(cats[key]) - len(names)),
+        "hint": "These tools are callable this turn; ask for {\"names\": [...], \"detail\": \"schema\"} to see arguments.",
+    }
+
+
 def serve(
     *,
     query: str = "",
@@ -383,14 +470,8 @@ def execute_lookup(content: str, ctx: Optional[Mapping[str, Any]] = None) -> Tup
     except (TypeError, ValueError):
         k = _DEFAULT_K
 
-    if not query and not names:
-        return f"{LOOKUP_TOOL}: invalid", {
-            "error": (
-                f"{LOOKUP_TOOL} needs `query` (natural language) or `names` "
-                "(list of tool names)."
-            ),
-            "exit_code": 1,
-        }
+    category = str(parsed.get("category") or parsed.get("domain") or "").strip()
+    wants_categories = bool(parsed.get("categories")) or (not query and not names and not category)
 
     admin = True
     try:
@@ -398,6 +479,20 @@ def execute_lookup(content: str, ctx: Optional[Mapping[str, Any]] = None) -> Tup
         admin = bool(owner_is_admin_or_single_user(ctx.get("owner")))
     except Exception:
         admin = True
+
+    if category or (wants_categories and not query and not names):
+        payload = serve_categories(category=category, disabled=ctx.get("disabled_tools"), admin=admin)
+        if category:
+            listed = ", ".join(payload.get("promote") or []) or "none"
+            desc = f"{LOOKUP_TOOL}: {payload.get('category') or category}: {listed}"
+        else:
+            desc = f"{LOOKUP_TOOL}: {len(payload.get('categories') or [])} categories"
+        return desc, {
+            "output": json.dumps(payload, ensure_ascii=False, default=str),
+            "exit_code": 0,
+            LOOKUP_TOOL: payload,
+            "promote": payload.get("promote") or [],
+        }
 
     payload = serve(
         query=query,
