@@ -9137,3 +9137,11 @@ El Escape anota dónde estaba el foco. Da 38/38 en cuatro corridas seguidas, y e
 - Una expectativa sin la marca `engine` nueva.
 - Dos tests que parcheaban un módulo que otro test puede cambiar en `sys.modules`. Ahora parchean por ruta, o la dependencia que usa la propia ruta.
 
+**RAG contra el ChromaDB real.** Probado en el PC contra el servidor de verdad (puerto 8100), con una colección de prueba que se borra al acabar. El documento era un PDF de dos páginas con un correo y un teléfono, indexado con `rag_pii_redaction` activado. Salió un fallo: el índice guardaba 0 fragmentos, porque los recuentos de redacción iban como diccionario en los metadatos y Chroma sólo admite escalares. Ahora van como texto (`EMAIL:1,PHONE:1`) más un total. Tras el arreglo:
+
+- Se indexa el fragmento con `locator` `p1-2#b0`.
+- Las dos búsquedas lo encuentran.
+- Ni el correo ni el teléfono quedan en el índice.
+- El PDF original no cambia (mismo hash).
+- El texto inyectado sigue la forma `[informe_riego.pdf p1-2#b0]` de `chat_processor`.
+
