@@ -9069,3 +9069,33 @@ La causa de los errores de fechas y cuentas era que el modo Auto mandaba las pre
 **PENDIENTES por tipo de trabajo.** Dos subagentes clasificaron las 1.033 líneas: 57 entradas cerradas u obsoletas fuera y el resto en cuatro secciones: decisiones de Luis, código por hacer, verificar en vivo sin modelo, verificar con el modelo local. De la sección de código se resolvieron 19 entradas en esta tanda.
 
 **Investigación.** Ronda 4 (ver `claude/faustus-investigacion-continua.md` del proyecto): MTP ya en llama.cpp (se medirá en el 8081 tras el examen), un fork con cuantizaciones y reparto CPU/GPU finos para comparar, `/compact` y `/status` que Faustus ya tiene como `/compact` y `/stats`.
+
+## 210. Dónde se van los nueve minutos de una ronda, la actividad que mentía y el razonamiento que no se contaba (26-09-2026, mañana)
+
+**Qué cuesta una ronda del examen.** Las trazas del examen 29 dan la respuesta. Cada ronda gasta entero el tope de razonamiento (4.096 tokens) a unos 8,5 tokens/s: son unos 9 minutos. El prefill sólo pesa 25–50 s. Nuevo ajuste `agent_followup_reasoning_budget` (`src/round_reasoning.py`, en Ajustes › Agent): limita el razonamiento de las rondas de continuación que siguen a resultados limpios. Conservan el tope entero la primera ronda y cualquier ronda tras un fallo de herramienta, un bloqueo, un error de argumentos o una nota del arnés. Viene apagado (0): el valor se elegirá con un A/B del arnés de evaluación, no a ojo. La palanca grande sigue siendo el servidor: draft MTP con `-np 1` (ronda 6 de investigación, se medirá tras el examen).
+
+**La actividad que decía «nada en marcha».** El vigilante del examen mandó «continúa» a las 08:52 con el turno generando: `/api/chat/activity` contestó durante más de un minuto sin la sesión. La ruta envolvía en un solo `try` la comprobación de dueño de todas las ejecuciones, y cualquier excepción que no fuera un 404 (una base de datos ocupada, por ejemplo) vaciaba la respuesta entera. Ahora:
+
+- Cada sesión se comprueba por separado y se reintenta una vez.
+- Lo que sigue fallando se cuenta en un campo nuevo, `unverified`.
+- Studio trata una respuesta parcial como una lectura fallida y conserva la última imagen.
+
+El vigilante del examen, fuera del repositorio, tampoco manda «continúa» mientras siga vivo un cliente de esa sesión.
+
+**El razonamiento que no se contaba.** Las plantillas de Qwen3 pintan el razonamiento de cada turno del asistente desde la última pregunta, y el bucle lo conserva a propósito por la caché del prompt. `estimate_tokens` no lo contaba. Una petición del examen llevaba 76.000 caracteres de razonamiento, unos 23k tokens que las puertas de presupuesto no veían. Además, la calibración de tokens de ese modelo se había ido a ×2,2 (recortado a ×1,8), y con eso inflaba cualquier estimación de texto: en texto puro la razón real medida es ~0,85–0,93.
+
+Ahora:
+
+- La estimación cuenta `reasoning_content`.
+- El ledger de contexto lo enseña en su propia línea («Razonamiento del modelo que se conserva»).
+- Las entradas de calibración medidas con el estimador anterior se descartan al cargar (`ESTIMATOR_VERSION = 2`) y se reaprenden.
+
+**agents-office.** Revisado por un subagente. Es una oficina 3D de 35 agentes fijos sobre `claude -p`, con licencia no comercial: se toman ideas, no código. Lo útil ya existe en Faustus:
+
+- Tareas programadas con política de ejecución perdida (`misfire_policy`: una vez, saltar, recuperar hasta k).
+- Instintos que aprenden de correcciones.
+- MCP por agente (§209).
+
+Queda una idea menor: que la síntesis de un reparto entre agentes diga quién hizo qué.
+
+**Suite en Windows.** El `rs53` de la madrugada no llegó a correr los tests. `restart7000.ps1` deja el servidor heredando la salida, así que el `| Out-File` de la misma tarea espera a que el 7000 se cierre. La suite se lanza ahora en su propia tarea (`suite53b`).
