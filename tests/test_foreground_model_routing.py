@@ -2642,7 +2642,7 @@ def test_direct_low_signal_partial_error_emits_terminal_history(
     monkeypatch.setattr(
         agent_loop,
         "_classify_agent_request",
-        lambda messages, latest: {
+        lambda messages, latest, **_kw: {
             "low_signal": True,
             "continuation": False,
             "domains": [],
@@ -2703,7 +2703,7 @@ def test_direct_low_signal_fallback_estimates_winning_route_prompt(
     monkeypatch.setattr(
         agent_loop,
         "_classify_agent_request",
-        lambda messages, latest: {
+        lambda messages, latest, **_kw: {
             "low_signal": True,
             "continuation": False,
             "domains": [],
@@ -2821,7 +2821,7 @@ def test_direct_low_signal_configuration_error_surfaces_without_fake_success(mon
     monkeypatch.setattr(
         agent_loop,
         "_classify_agent_request",
-        lambda messages, latest: {
+        lambda messages, latest, **_kw: {
             "low_signal": True,
             "continuation": False,
             "domains": [],
@@ -2859,7 +2859,7 @@ def test_direct_low_signal_empty_completion_surfaces_without_fake_success(monkey
     monkeypatch.setattr(
         agent_loop,
         "_classify_agent_request",
-        lambda messages, latest: {
+        lambda messages, latest, **_kw: {
             "low_signal": True,
             "continuation": False,
             "domains": [],

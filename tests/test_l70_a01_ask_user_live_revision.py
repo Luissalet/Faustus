@@ -115,7 +115,7 @@ def test_direct_low_signal_ask_user_event_carries_revision(monkeypatch):
     monkeypatch.setattr(agent_loop, "estimate_tokens", lambda *a, **k: 10)
     monkeypatch.setattr(
         agent_loop, "_classify_agent_request",
-        lambda messages, latest: {
+        lambda messages, latest, **_kw: {
             "low_signal": True, "continuation": False, "domains": [], "retrieval_query": latest,
         },
     )

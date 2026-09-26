@@ -62,7 +62,7 @@ def _low_signal_kwargs(monkeypatch, text: str):
     monkeypatch.setattr(
         agent_loop,
         "_classify_agent_request",
-        lambda messages, latest: {
+        lambda messages, latest, **_kw: {
             "low_signal": True,
             "continuation": False,
             "domains": [],
