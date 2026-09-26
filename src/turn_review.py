@@ -59,7 +59,9 @@ def review_turn(md: Dict[str, Any], question: str = "", answer: str = "") -> Dic
     if pc and pc.get("rounds"):
         seen = (pc.get("processed") or 0) + (pc.get("cached") or 0)
         share = (pc.get("cached") or 0) / seen if seen else 0
-        if pc.get("lost_rounds"):
+        # One lost round is usually an image or the tool list changing once;
+        # it is worth a finding when it repeats or when little was reused.
+        if pc.get("lost_rounds") and (pc["lost_rounds"] >= 2 or share < 0.7):
             findings.append(f"the prompt cache was lost in {pc['lost_rounds']} of {pc['rounds']} rounds "
                             f"({round(100 * share)} % reused): something rewrote earlier messages or another chat took the slot")
     if md.get("stop_reason") and md.get("stop_reason") not in ("done", "stop", "answered"):

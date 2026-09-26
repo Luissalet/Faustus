@@ -42,3 +42,9 @@ def test_the_tool_reads_this_chat_and_refuses_someone_elses(monkeypatch):
 
 def test_empty_chat():
     assert "No agent turn" in turn_review.render(turn_review.review([], 3))
+
+
+def test_one_lost_round_with_high_reuse_is_not_a_finding():
+    md = {"agent_rounds": 3, "tool_events": [], "prompt_cache": {"rounds": 3, "processed": 5000, "cached": 58000,
+                                                                 "lost_rounds": 1}}
+    assert not any("cache" in f for f in turn_review.review_turn(md)["findings"])
