@@ -10,6 +10,7 @@ import { t, tn } from '../../i18n';
 import { launchPip, launchServe, processQueue, startDownload, targetFor } from './actions';
 import { CopyButton, Uptime } from './parts';
 import { ReceiptPanel } from './ReceiptPanel';
+import { engineStatuses, listEngines } from '../../adapters/engines';
 
 /**
  * Running: every session the Cookbook started (or found), grouped by the
@@ -79,7 +80,12 @@ export function Running({ say, hwBackend, onEdit, onDeps }: { say: (m: string) =
   };
 
   if (!state.tasks.length) {
-    return <EmptyState icon={Cpu} title={t('Nothing running')} body={t('Launch a model from Models or start a download; every session shows up here with its output.')} headingLevel={3} />;
+    return (
+      <>
+        <EmptyState icon={Cpu} title={t('Nothing running')} body={t('Launch a model from Models or start a download; every session shows up here with its output.')} headingLevel={3} />
+        <EnginesElsewhere />
+      </>
+    );
   }
 
   return (
@@ -370,5 +376,37 @@ function TaskCard({ task, open, onToggle, onStop, onKill, onRemove, onRestart, o
         </div>
       )}
     </li>
+  );
+}
+
+
+/**
+ * "Nothing running" read as "no model is being served" while two engines
+ * were serving from Settings › Local models (seen 26-09: the 27B on 8081 and
+ * the helper on 8082). This list only says so and points there; the engines
+ * are managed on that screen, not here.
+ */
+function EnginesElsewhere() {
+  const [rows, setRows] = useState<{ id: string; name: string; port: number | null }[]>([]);
+  useEffect(() => {
+    let live = true;
+    void Promise.all([listEngines(), engineStatuses()])
+      .then(([engines, statuses]) => {
+        if (!live) return;
+        setRows(engines
+          .filter((e) => statuses[e.id]?.state === 'running')
+          .map((e) => ({ id: e.id, name: e.name, port: e.port })));
+      })
+      .catch(() => { /* not an admin, or engines unavailable: say nothing */ });
+    return () => { live = false; };
+  }, []);
+  if (!rows.length) return null;
+  return (
+    <p className="fs-prose" data-testid="cookbook-engines-elsewhere">
+      {t('Also serving, managed in Settings › Local models:')}{' '}
+      {rows.map((r, i) => (
+        <span key={r.id}>{i ? ', ' : ''}<strong>{r.name}</strong>{r.port != null ? ` (:${r.port})` : ''}</span>
+      ))}
+    </p>
   );
 }
