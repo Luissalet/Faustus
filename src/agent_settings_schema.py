@@ -166,6 +166,11 @@ GROUPS: list[dict[str, Any]] = [
                  "characters, so a slow shared engine is not mistaken for a runaway; three budgets "
                  "cut it regardless.",
                  0, 200000),
+            _int("agent_followup_reasoning_budget", "Follow-up round reasoning budget (tokens)",
+                 "Rounds after the first that follow clean tool results think with at most this many "
+                 "reasoning tokens; a round after a tool failure, a refusal or a harness note keeps the "
+                 "full budget. 0 = every round uses the turn's budget.",
+                 0, 65536, step=256),
             _int("agent_subprocess_idle_timeout_seconds", "Command idle timeout (s)",
                  "A bash / python command that prints nothing for this long is killed with its whole "
                  "process tree (a server left in the foreground, a prompt waiting for input). 0 = never.",

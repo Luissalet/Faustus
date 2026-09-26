@@ -9390,6 +9390,11 @@ async def _stream_agent_loop_body(
     except (TypeError, ValueError):
         _think_min_chars = 6000
     _think_cutoffs = 0
+    # Follow-up rounds after clean tool results may think with a smaller
+    # budget (src/round_reasoning.py); a tool failure keeps the full one.
+    _tool_trouble_since_stream = False
+    _followup_budget_logged = False
+    _think_pinned_for_budget = bool(_think_user_pinned) or _think_mode_info.get("source") == "explicit"
     _thinking_segments: List[Dict[str, Any]] = []
     _open_thought: Optional[Dict[str, Any]] = None
 
@@ -11165,6 +11170,22 @@ async def _stream_agent_loop_body(
             agent_stream_timeout,
         )
         _steer_interrupted: List[Dict[str, Any]] = []
+        _round_overrides = gen_overrides
+        try:
+            from src import round_reasoning as _rr
+            _round_overrides, _followup_cap = _rr.followup_overrides(
+                gen_overrides, round_num=round_num,
+                trouble=_tool_trouble_since_stream or _rr.harness_note_pending(messages),
+                pinned=_think_pinned_for_budget, get_setting=get_setting,
+            )
+            if _followup_cap and not _followup_budget_logged:
+                _followup_budget_logged = True
+                logger.info("[agent] follow-up round %s reasoning budget capped at %s",
+                            round_num, _followup_cap)
+        except Exception as _rr_err:  # noqa: BLE001 - never cost a round
+            logger.debug("[agent] follow-up reasoning budget skipped: %s", _rr_err)
+            _round_overrides = gen_overrides
+        _tool_trouble_since_stream = False
         async for chunk in stream_llm_with_fallback(
             _candidates,
             messages,
@@ -11180,7 +11201,7 @@ async def _stream_agent_loop_body(
             fallback_on_empty=fallback_on_empty,
             candidate_request_factory=_candidate_request,
             candidate_route_descriptors=_candidate_route_descriptors,
-            gen_overrides=gen_overrides or None,
+            gen_overrides=_round_overrides or None,
         ):
             if not _round_first_event_logged:
                 _round_first_event_logged = True
@@ -14656,6 +14677,12 @@ async def _stream_agent_loop_body(
             elif "error" in result:
                 output_text = _truncate(result["error"])
 
+            try:
+                from src.round_reasoning import tool_result_is_trouble as _rr_trouble
+                if _rr_trouble(result):
+                    _tool_trouble_since_stream = True
+            except Exception:  # noqa: BLE001
+                pass
             # Emit tool_output (include ui_event data if present)
             tool_output_data = {"type": "tool_output", "tool": block.tool_type, "command": cmd_display, "output": output_text, "exit_code": result.get("exit_code"), "call_id": _call_id}
             try:

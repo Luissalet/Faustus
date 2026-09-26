@@ -1676,6 +1676,10 @@ DEFAULT_SETTINGS = {
     # Auto on a short question with no sign of work: think at effort "low"
     # with this reasoning budget instead of not thinking (src/think_mode.py).
     "think_mode_budget_light": 1024,
+    # Agent turns: reasoning budget (tokens) for rounds after the first that
+    # follow clean tool results (src/round_reasoning.py). A round after a tool
+    # failure, a refusal or a harness note keeps the full budget. 0 = off.
+    "agent_followup_reasoning_budget": 0,
     # The tool index's own embedder ("" = the app-wide default model).
     "tool_index_embed_model": "jinaai/jina-embeddings-v2-base-es",
     # Foreground calls to the llama-server and model already holding the
