@@ -89,7 +89,7 @@ import { delegationLabel, genFromArgs, helpMarkdown, parseCommand, parseDelegati
 import * as cmd from '../adapters/commands';
 import { egg as makeEgg, type Egg as EggData, type EggKind } from '../lib/fun';
 import { Egg } from './studio/Egg';
-import { Rich } from './rich';
+import { Rich, RichReply } from './rich';
 import { knownGroupParents, stripGroupPrefix } from '../adapters/group';
 import { Composer, type Knobs } from './studio/Composer';
   import { apply, beginApproval, blankTurn, cleanUserText, closeApproval, restoreFromMetadata, appendSteer, type Turn } from './studio/model';
@@ -2496,6 +2496,19 @@ export function StudioScreen() {
   );
 
   /** Selected text from a reply, as a quote at the end of the draft. */
+  // A pick in a ```choices``` / ```decision``` reply block: the answer goes
+  // into the composer (replacing an empty draft, appended otherwise) and the
+  // user sends it — a click never sends on its own.
+  const replyFromBlock = useCallback((text: string) => {
+    setDraft((d) => (d.trim() ? `${d.trimEnd()}\n\n${text}` : text));
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    });
+  }, []);
+
   const quote = useCallback(
     (text: string) => {
       const block = text
@@ -3141,6 +3154,7 @@ export function StudioScreen() {
           )}
 
           {turns && turns.length > 0 && (
+            <RichReply.Provider value={replyFromBlock}>
             <Transcript
               turns={turns}
               busy={busy}
@@ -3177,6 +3191,7 @@ export function StudioScreen() {
               boardKey={boardKey}
               onOpenBoardIssue={(id) => panelDispatch({ type: 'board-issue', id })}
             />
+            </RichReply.Provider>
           )}
         </div>
 

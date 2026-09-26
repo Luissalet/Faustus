@@ -8600,3 +8600,10 @@ GitMCP serves the documentation and code search of one public GitHub repository 
 One server for every public repository: read_wiki_structure, read_wiki_contents and ask_question take the repository as an argument. Remote service: the questions go to DeepWiki.	Un servidor para todos los repositorios públicos: read_wiki_structure, read_wiki_contents y ask_question reciben el repositorio como argumento. Servicio remoto: las preguntas van a DeepWiki.
 Image from {host}	Imagen de {host}
 Loading it tells {host} that you opened it, and anything written in its address.	Cargarla le dice a {host} que la has abierto, y todo lo que lleve escrito en su dirección.
+Answer in a conversation to use these buttons.	Responde en una conversación para usar estos botones.
+Use these ({n})	Usar estas ({n})
+Recommended	Recomendada
+For	A favor
+Against	En contra
+Let's go with {name}.	Vamos con {name}.
+Choose	Elegir

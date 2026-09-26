@@ -8,6 +8,8 @@ import { replaceShortcodesInProse } from '../lib/emoji';
 import { CHART_FENCE_LANGS, parseChartSpec } from '../lib/chartSpec';
 import { ChartBlock } from '../components/ChartBlock';
 import { AppFrame } from '../components/AppFrame';
+import { UI_BLOCK_LANGS, parseUiBlock } from '../lib/uiBlocks';
+import { UiBlock } from '../components/UiBlock';
 
 /**
  * The transcript's reader. Parsing lives in lib/markdown.ts; this turns the
@@ -34,6 +36,18 @@ function Censored({ text }: { text: string }) {
 }
 
 const OpenWorkspaceFile = createContext<((path: string) => void) | undefined>(undefined);
+
+/** Where a pick in a ```choices``` / ```decision``` block goes: the
+ * conversation's composer. Studio provides it around the transcript; every
+ * other reader leaves it unset and the block's buttons stay disabled. */
+export const RichReply = createContext<((text: string) => void) | undefined>(undefined);
+
+function UiFence({ lang, code }: { lang: string; code: string }) {
+  const onReply = useContext(RichReply);
+  const parsed = useMemo(() => parseUiBlock(lang, code), [lang, code]);
+  if (!parsed.ok) return <CodeBlock lang={lang} code={code} />;
+  return <UiBlock spec={parsed.spec} onReply={onReply} />;
+}
 
 /* ── Remote pictures wait for a click ──
  * A reply can carry `![x](https://host/?q=…)`: loading it on sight sends
@@ -229,6 +243,8 @@ function One({ block, k, uid }: { block: Block; k: string; uid: string }) {
         // Invalid chart JSON: never crash, never raw HTML — fall through to
         // the plain code block exactly like any other fenced language.
       }
+      // Invalid block JSON falls back to the plain code block inside UiFence.
+      if (UI_BLOCK_LANGS.has(block.lang.trim().toLowerCase())) return <UiFence lang={block.lang} code={block.code} />;
       return <CodeBlock lang={block.lang} code={block.code} />;
     }
     case 'rule':
