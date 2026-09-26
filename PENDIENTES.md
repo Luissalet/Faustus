@@ -177,7 +177,6 @@ La suite completa acabó por primera vez en el día: **20.766 pasan, 93 fallan, 
 ## 22-09 tarde — sesión de uso real (FAUSTUS.md §161)
 
 - ABIERTO (preexistente, no mío): `test_two_tier_search.py::test_the_tool_index_lexical_floor_ranks_a_known_tool_first_with_no_embedder`. Sin embedder, el suelo léxico no pone `bash` entre los ocho primeros para «run a shell command» ni `web_search` para «search the web for the latest news». Importa más de lo que parece cuando Ollama está cerrado y el embedder cae al de reserva; el suelo de herramientas de workspace tapa el caso en la práctica, que es por lo que nadie lo ha notado.
-- ABIERTO: la suite mata trabajadores de xdist en el tramo final («node down: Not properly terminated», varios seguidos). Es lo que producía el atasco del 97%: muere un trabajador, xdist lo reemplaza, y con suficientes caídas la ejecución se queda parada. Falta identificar qué test mata el proceso (una salida dura: segfault, `os._exit`, `sys.exit`). El timeout de 120 s acota el síntoma pero no la causa.
 - NOTA: las dos entradas de memoria que dieron pie a `volatile_facts.py` siguen en el almacén real. La guarda solo impide archivar nuevas; las que ya están las quita la pasada de auditoría.
 
 - NOTA: la instancia de desarrollo (`Start-Faustus-Dev.ps1`, puerto 7001, `D:\LocalAI\faustus-dev-data`, sin login) es la forma limpia de probar la interfaz sin tocar la instancia real ni credenciales. Muy útil para estas sesiones.
