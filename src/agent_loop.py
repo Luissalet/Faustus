@@ -5897,7 +5897,9 @@ def _sticky_toolset(session_id: str, relevant: Set[str], hot: Optional[Set[str]]
         # one `lookup_tools` away; changing which tools carry full schemas
         # changed the tool block and cost a full re-read (live, 26-09).
         if relevant <= prev_relevant:
-            out_relevant, out_hot = prev_relevant, prev_hot if hot is not None else None
+            # The previous full-schema split too, even when this turn brought
+            # no hot set of its own (the whole set would go out as schemas).
+            out_relevant, out_hot = prev_relevant, prev_hot
         else:
             union = prev_relevant | relevant
             try:
@@ -5909,7 +5911,9 @@ def _sticky_toolset(session_id: str, relevant: Set[str], hot: Optional[Set[str]]
                 if hot is not None:
                     out_hot = (prev_hot or set()) | hot
     logger.info("[tool-rag] chat tool set: %s (previous %s, weak picks %s, now %s tools; added %s, dropped %s)",
-                "new" if prev is None else ("kept" if out_relevant == set(prev[0]) - disabled else "changed"),
+                "new" if prev is None else ("kept" if out_relevant == set(prev[0]) - disabled
+                                            and out_hot == (None if prev[1] is None else set(prev[1]) - disabled)
+                                            else "changed"),
                 0 if prev is None else len(prev[0]), sorted(set(optional or ()))[:8], len(out_relevant),
                 sorted(out_relevant - set(prev[0]))[:10] if prev is not None else [],
                 sorted(set(prev[0]) - out_relevant)[:10] if prev is not None else [])
