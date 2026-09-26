@@ -3780,6 +3780,17 @@ def setup_chat_routes(
                                         _chat_terminal_saved = True
                                         _ce_chat_receipt("error", _saved_id or "")
                                         _stream_set(session, status="error")
+                                        try:
+                                            from src import notifications as _notifications
+                                            _notifications.emit(
+                                                "turn_error",
+                                                owner=getattr(sess, "owner", None),
+                                                title=getattr(sess, "name", "") or "Chat",
+                                                body=_terminal_content,
+                                                session_id=session,
+                                            )
+                                        except Exception:
+                                            logger.debug("notifications.emit(turn_error) failed", exc_info=True)
                                         if _saved_id:
                                             yield f'data: {json.dumps({"type": "message_saved", "id": _saved_id})}\n\n'
                                         yield f'data: {json.dumps({"type": "chat_terminal", "data": _terminal_metrics})}\n\n'
@@ -4362,6 +4373,17 @@ def setup_chat_routes(
                                             _terminal_saved = True
                                             accumulate_token_usage(session, terminal_metadata)
                                             _stream_set(session, status="error")
+                                            try:
+                                                from src import notifications as _notifications
+                                                _notifications.emit(
+                                                    "turn_error",
+                                                    owner=getattr(sess, "owner", None),
+                                                    title=getattr(sess, "name", "") or "Chat",
+                                                    body=terminal_content,
+                                                    session_id=session,
+                                                )
+                                            except Exception:
+                                                logger.debug("notifications.emit(turn_error) failed", exc_info=True)
                                             # ADP-22 §2: fold the failed outcome back into
                                             # MOD-05's history -- no-op unless this turn's
                                             # model came from `_resolve_auto_model_route`.

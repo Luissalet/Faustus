@@ -912,6 +912,100 @@ async def test_chat_stream_persists_partial_terminal_error_with_route_provenance
 
 
 @pytest.mark.asyncio
+async def test_chat_stream_emits_turn_error_on_terminal_failure(monkeypatch):
+    """The chat-mode `event: error` terminal branch pushes a `turn_error`
+    notification the same way `save_assistant_response` pushes
+    `turn_finished` for a normal completion — same bus, same shape, no
+    provider-detail leakage into the notification body."""
+    from src import notifications as notifications_bus
+
+    emitted = []
+    monkeypatch.setattr(
+        notifications_bus, "emit",
+        lambda kind, **kw: emitted.append((kind, kw)) or {"id": 1, **kw},
+    )
+    captured = {}
+    chunks = [
+        'data: {"delta": "visible partial"}\n\n',
+        'event: error\ndata: {"status": 503, "error": "credential-shaped provider detail"}\n\n',
+        "data: [DONE]\n\n",
+    ]
+    endpoint = _chat_stream_endpoint(
+        monkeypatch, "chat", captured, chat_chunks=chunks, capture_completion=True,
+    )
+
+    response = await endpoint(_RouteRequest("chat"))
+    async for _ in response.body_iterator:
+        pass
+
+    assert [kind for kind, _ in emitted] == ["turn_error"]
+    _kind, kw = emitted[0]
+    assert kw["session_id"] == "session-1"
+    assert kw["title"] == "test"
+    assert "Response stopped" in kw["body"]
+    assert "credential-shaped provider detail" not in kw["body"]
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_emits_turn_error_on_agent_terminal_failure(monkeypatch):
+    """Same wiring for the agent-mode `agent_terminal` failure branch."""
+    from src import notifications as notifications_bus
+
+    emitted = []
+    monkeypatch.setattr(
+        notifications_bus, "emit",
+        lambda kind, **kw: emitted.append((kind, kw)) or {"id": 1, **kw},
+    )
+    captured = {}
+    terminal_metadata = {"failed": True, "failure": {"status": 503, "message": "provider detail"}}
+    chunks = [
+        'data: {"delta": "partial answer"}\n\n',
+        f'data: {json.dumps({"type": "agent_terminal", "data": terminal_metadata})}\n\n',
+        'event: error\ndata: {"status": 503, "error": "invalid key"}\n\n',
+    ]
+    endpoint = _chat_stream_endpoint(
+        monkeypatch, "agent", captured, agent_chunks=chunks, capture_completion=True,
+    )
+
+    response = await endpoint(_RouteRequest("agent"))
+    async for _ in response.body_iterator:
+        pass
+
+    assert [kind for kind, _ in emitted] == ["turn_error"]
+    _kind, kw = emitted[0]
+    assert kw["session_id"] == "session-1"
+    assert "Agent stopped" in kw["body"]
+
+
+@pytest.mark.asyncio
+async def test_cancelled_chat_stream_does_not_emit_turn_error(monkeypatch):
+    """A user-cancelled turn (client disconnect / Stop button) must never
+    fire `turn_error` — only a genuine model/provider failure does."""
+    from src import notifications as notifications_bus
+
+    emitted = []
+    monkeypatch.setattr(
+        notifications_bus, "emit",
+        lambda kind, **kw: emitted.append((kind, kw)) or {"id": 1, **kw},
+    )
+    captured = {}
+    chunks = [
+        'data: {"delta": "partial answer"}\n\n',
+        asyncio.CancelledError(),
+    ]
+    endpoint = _chat_stream_endpoint(
+        monkeypatch, "chat", captured, chat_chunks=chunks, capture_completion=True,
+    )
+
+    response = await endpoint(_RouteRequest("chat"))
+    with pytest.raises(asyncio.CancelledError):
+        async for _chunk in response.body_iterator:
+            pass
+
+    assert emitted == []
+
+
+@pytest.mark.asyncio
 async def test_chat_terminal_preserves_real_usage_and_accumulates_once(monkeypatch):
     captured = {}
     endpoint = _chat_stream_endpoint(
