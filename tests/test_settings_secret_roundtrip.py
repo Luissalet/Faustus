@@ -6,17 +6,18 @@ leak an API key. The danger on the way back is silent: if the form that
 received `brave_api_key: ""` posted the whole object again, the stored key
 would be destroyed and nobody would find out until a search failed.
 
-Faustus is safe today because of two facts that belong together, and neither is
-obvious from the code that implements it:
+Credentials are write-only: admins read a mask too (the last four characters,
+so two keys can be told apart), and POST swaps any mask sent back for the
+stored value. That makes the naive "read, then save the whole object" safe for
+every caller, and the key never travels back to a browser after it was typed.
 
-  * the caller who receives a mask is exactly the caller who cannot write —
-    admins read the settings unscrubbed, and POST is admin-only;
-  * POST is a patch, not a replace: a key absent from the body is untouched.
+The guards pinned here:
 
-These pin both. If the GET is ever hardened to scrub for admins too — a very
-reasonable-looking change — `test_an_admin_round_trip_preserves_the_secret`
-fails, which is the point: the destructive version of that change must not be
-able to land quietly.
+  * an admin read is masked, and saving it straight back keeps the key;
+  * the caller who receives a blank (non-admin) still cannot write at all;
+  * POST is a patch: a key absent from the body is untouched;
+  * a new key replaces the old one, and an empty string clears it;
+  * the swap works inside nested values too.
 """
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -24,7 +25,7 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi import HTTPException
 
-from src.settings_scrub import scrub_settings
+from src.settings_scrub import MASK, mask_secrets, restore_masked, scrub_settings
 
 SECRET = "brave-real-key-do-not-lose"
 
@@ -80,10 +81,45 @@ async def test_an_admin_round_trip_preserves_the_secret(settings_api):
     settings_api.as_admin(True)
     read_back = await settings_api.get(settings_api.request)
 
-    assert read_back["brave_api_key"] == SECRET, "an admin form must not be handed a mask"
+    assert read_back["brave_api_key"] != SECRET, "the key must not travel back to the browser"
+    assert read_back["brave_api_key"] == MASK + SECRET[-4:]
+    assert read_back["search_provider"] == "brave"
 
-    await _post(settings_api, dict(read_back))
+    answer = await _post(settings_api, dict(read_back))
     assert settings_api.stored["brave_api_key"] == SECRET
+    assert answer["brave_api_key"] == MASK + SECRET[-4:], "the POST answer is masked too"
+
+
+@pytest.mark.asyncio
+async def test_a_new_key_replaces_and_an_empty_one_clears(settings_api):
+    settings_api.as_admin(True)
+    await _post(settings_api, {"brave_api_key": "another-real-key-1234"})
+    assert settings_api.stored["brave_api_key"] == "another-real-key-1234"
+
+    await _post(settings_api, {"brave_api_key": ""})
+    assert settings_api.stored["brave_api_key"] == ""
+
+
+@pytest.mark.asyncio
+async def test_an_edit_around_the_mask_never_stores_the_mask(settings_api):
+    settings_api.as_admin(True)
+    await _post(settings_api, {"brave_api_key": MASK + "lose" + "x"})
+    assert settings_api.stored["brave_api_key"] == SECRET
+
+
+def test_nested_credentials_are_masked_and_restored():
+    stored = {"external_runtimes_herdr": {"url": "http://h", "token": "tok-abcdefghijkl"}}
+    shown = mask_secrets(stored)
+    assert shown["external_runtimes_herdr"] == {"url": "http://h", "token": MASK + "ijkl"}
+    back = restore_masked("external_runtimes_herdr", {"url": "http://h2", "token": shown["external_runtimes_herdr"]["token"]},
+                          stored["external_runtimes_herdr"])
+    assert back == {"url": "http://h2", "token": "tok-abcdefghijkl"}
+
+
+def test_short_keys_show_no_tail_and_ids_stay_readable():
+    shown = mask_secrets({"serper_api_key": "short", "reminder_webhook_integration_id": "int-42"})
+    assert shown["serper_api_key"] == MASK
+    assert shown["reminder_webhook_integration_id"] == "int-42", "admins pick this id from a list"
 
 
 @pytest.mark.asyncio

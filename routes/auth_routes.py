@@ -18,7 +18,7 @@ from core.middleware import with_asgi_root_path
 from core import oidc as oidc_mod
 from src.constants import DEEP_RESEARCH_DIR, MEMORY_FILE, PASSWORD_MIN_LENGTH, SKILLS_DIR
 from src.rate_limiter import RateLimiter
-from src.settings_scrub import scrub_settings
+from src.settings_scrub import mask_secrets, restore_masked, scrub_settings
 from src.owner_identity import auth_disabled as _auth_disabled
 from src.agent_settings_schema import coerce_setting_value
 from src.settings import (
@@ -891,8 +891,11 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
         # AUTH_ENABLED=false is the documented single-user mode: there is no
         # admin to be, so the one user gets the full set (same rule as
         # core.middleware.require_admin and the memory-engine routes).
+        # Credentials are write-only even for admins: the server is the only
+        # consumer of a stored key, so the form gets a mask with the last four
+        # characters and POST swaps a mask sent back for the stored value.
         if (user and auth_manager.is_admin(user)) or _auth_disabled():
-            return settings
+            return mask_secrets(settings)
         return scrub_settings(settings)
 
     @router.post("/settings")
@@ -957,7 +960,7 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
                     val = coerce_setting_value(key, val)
                 except ValueError as exc:
                     raise HTTPException(400, f"{key} {exc}")
-            current[key] = val
+            current[key] = restore_masked(key, val, current.get(key))
         _save_settings(current)
         if "browser_devtools_mcp" in body:
             # Starts/stops the optional DevTools MCP server the same way a
@@ -966,7 +969,7 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
             # exist at all while off, so a toggle needs an explicit kick
             # rather than waiting for a tool call that can never happen.
             _spawn_devtools_mcp_restart()
-        return without_retired_settings(current)
+        return mask_secrets(without_retired_settings(current))
 
     # ---- Integrations CRUD ----
 
