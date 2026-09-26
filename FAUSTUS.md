@@ -9145,3 +9145,7 @@ El Escape anota dónde estaba el foco. Da 38/38 en cuatro corridas seguidas, y e
 - El PDF original no cambia (mismo hash).
 - El texto inyectado sigue la forma `[informe_riego.pdf p1-2#b0]` de `chat_processor`.
 
+**Panel «Gate a run» con una ejecución real.** En el 7000 no quedaba ninguna: los registros de ejecución se podan a las 48 h y el último chat con agente era del 23-09. Se probó en el 7006 con la ejecución del examen en curso: el panel sacó PASS con «37 steps · running» y cada aserción con su valor esperado, el real y el detalle (`max_error_rate` 0/37, `max_steps` 37 de 300, `max_tool_calls` 14 de 200, `no_repeated_identical_calls`…).
+
+**«Stopped by user» tras un reinicio.** Actividad mostraba como paradas por el usuario las tareas que cortó el reinicio del 7000 de las 08:43. Ahora quedan como «Interrupted: Faustus was restarting». Al apagar, el programador de tareas se detiene antes de cancelar nada, así que la causa se deduce de ese estado.
+
