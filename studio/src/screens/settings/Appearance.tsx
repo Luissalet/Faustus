@@ -1,5 +1,6 @@
 import { Check, Copy, Download, Trash2, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router';
 import { Button, IconButton } from '../../components';
 import { EFFECTS, type EffectName } from '../../shell/effects';
 import {
@@ -40,6 +41,36 @@ export function AppearanceSection({ say }: { say: (t: string) => void }) {
   useEffect(() => {
     loadCustomFonts().then(setFonts).catch(() => {});
   }, []);
+
+  // `/theme <name>` in the composer lands here with ?theme=<name>: apply
+  // that palette (a preset or one of yours, any case) and drop the query.
+  // Nothing read it before, so the command only opened this screen (26-09).
+  const [params, setParams] = useSearchParams();
+  const wantedTheme = params.get('theme');
+  useEffect(() => {
+    if (!wantedTheme) return;
+    const want = wantedTheme.trim().toLowerCase();
+    const next = new URLSearchParams(params);
+    next.delete('theme');
+    setParams(next, { replace: true });
+    if (want === 'studio') {
+      setTheme({ ...theme, name: 'studio', colors: undefined, bgPattern: undefined, bgEffectColor: undefined });
+      say(t('Theme: {name}', { name: 'Studio' }));
+      return;
+    }
+    const preset = Object.keys(PRESETS).find((n) => n.toLowerCase() === want);
+    const mine = Object.keys(custom).find((n) => n.toLowerCase() === want);
+    if (mine) {
+      setTheme({ ...custom[mine], name: mine });
+      say(t('Theme: {name}', { name: mine }));
+    } else if (preset) {
+      setTheme(themeFromPreset(preset));
+      say(t('Theme: {name}', { name: preset }));
+    } else {
+      say(t('No theme called "{name}"', { name: wantedTheme.trim() }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantedTheme]);
 
   const colors: Colors = theme.colors ?? PRESETS.dark;
   const own = theme.name === 'studio' || !theme.colors;

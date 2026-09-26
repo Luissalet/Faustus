@@ -2301,7 +2301,7 @@ export function StudioScreen() {
         case 'theme': {
           const wanted = args.toLowerCase().trim();
           if (!wanted) {
-            navigate('/settings?s=appearance');
+            navigate('/settings?s=general');
             return true;
           }
           if (wanted === 'dark' || wanted === 'light' || wanted === 'system') {
@@ -2309,7 +2309,7 @@ export function StudioScreen() {
             say(t('Appearance: {mode}', { mode: t(wanted === 'dark' ? 'dark' : wanted === 'light' ? 'light' : 'system') }));
             return true;
           }
-          navigate(`/settings?s=appearance&theme=${encodeURIComponent(args.trim())}`);
+          navigate(`/settings?s=general&theme=${encodeURIComponent(args.trim())}`);
           return true;
         }
         case 'shortcuts': {
@@ -2880,7 +2880,7 @@ export function StudioScreen() {
     open_memory: () => navigate('/memory'),
     open_notes: () => navigate('/notes'),
     open_tasks: () => navigate('/automations'),
-    open_theme: () => navigate('/settings?s=appearance'),
+    open_theme: () => navigate('/settings?s=general'),
   };
   useEffect(() => {
     let binds: Record<string, string> | null = null;

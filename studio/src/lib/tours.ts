@@ -102,9 +102,9 @@ export const TOURS: Tour[] = [
   {
     id: 'tour-theme',
     title: 'Appearance',
-    route: '/settings?s=appearance',
+    route: '/settings?s=general',
     steps: [
-      { route: '/settings?s=appearance', target: '.fs-themes', text: 'A palette to start from. Any theme you saved in the previous interface is the same theme here.' },
+      { route: '/settings?s=general', target: '.fs-themes', text: 'A palette to start from. Any theme you saved in the previous interface is the same theme here.' },
       { target: '.fs-colors', text: 'Then every colour on its own. The whole interface follows these tokens, so nothing is left behind.' },
       { target: '.fs-harmony', text: 'Or let it build a palette from one colour, and pick the one you like.' },
     ],
@@ -170,8 +170,8 @@ export function tourById(id: string): Tour | null {
 /** The tour that belongs to a path, for the "first time here?" offer. */
 export function tourForPath(pathname: string, search = ''): Tour | null {
   if (pathname.startsWith('/library') && search.includes('type=imagen')) return byId.get('tour-gallery') ?? null;
-  if (pathname.startsWith('/settings') && search.includes('s=appearance')) return byId.get('tour-theme') ?? null;
-  // A tour whose route carries a query (Appearance is /settings?s=appearance)
+  if (pathname.startsWith('/settings') && search.includes('s=general')) return byId.get('tour-theme') ?? null;
+  // A tour whose route carries a query (Appearance is /settings?s=general)
   // belongs to that query only: matched by path alone it came first in the
   // list and was offered on every Settings section (26-09).
   const exact = TOURS.find((tour) => tour.id !== 'demo' && !tour.route.includes('?') && tour.route === pathname);
