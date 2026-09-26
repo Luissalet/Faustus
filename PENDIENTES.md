@@ -110,7 +110,7 @@ Nada abierto a 26-09 (mañana): lo que era una mejora pasó a OBJETIVOS (OBJ-47)
 
 ## D. Verificar en vivo con el modelo local
 
-- **A/B del razonamiento en rondas de continuación** (26-09, §210): tras el examen, correr el arnés de evaluación (`scripts/daily_eval`) con `agent_followup_reasoning_budget` a 0, 1536 y 2048, comparar aciertos y tiempo por ronda, y fijar el valor por defecto con el resultado.
+- **A/B del razonamiento en rondas de continuación** (26-09, §210): tras el examen, correr `scripts/daily_eval.py --set agent_followup_reasoning_budget=N` con N = 0, 1536 y 2048 (el ajuste se restaura solo al acabar), comparar aciertos y tiempo por ronda, y fijar el valor por defecto con el resultado.
 - **Calibración de tokens reaprendida** (26-09, §210): tras desplegar, comprobar en `GET /api/token-calibration` que `qwen3.8-27b-q8-llamacpp` vuelve a un factor cercano a 0,9 en chats de texto, y que el ledger del turno enseña la línea «Razonamiento del modelo que se conserva» en una tarea larga.
 - **Borrador primero en una tarea larga** (26-09): en el examen 30, comprobar que a la cuarta parte del turno el 27B crea `RESPUESTA.md` con la estructura y lo va completando.
 - **Relevo antes del tope de tiempo** (26-09, §209): en la próxima tarea larga (examen 30), comprobar que al 85 % del tope el 27B deja el plan con resultados y un fichero de notas, y que el turno siguiente arranca desde ahí en vez de releerlo todo.
