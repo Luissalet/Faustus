@@ -192,6 +192,46 @@ def _ports_by_pid() -> Dict[int, List[int]]:
     return out
 
 
+# `_ports_by_pid()` walks every TCP listener AND, for each one, opens the
+# owning `psutil.Process` for its cmdline/cwd — on this box ~2s. PENDIENTES
+# (17-09, §101): `GET /api/launch-profiles/status` pays that full scan once
+# PER CALL, one call per screen render/poll, even though nothing about what
+# is listening changes between two renders a few seconds apart. A short TTL
+# cache fixes the common case (an idle status poll); `invalidate_ports_cache`
+# drops it immediately after a start/stop actually changes the table, so an
+# action never appears to have done nothing because the old scan is still
+# being served.
+_PORTS_CACHE_LOCK = threading.Lock()
+_PORTS_CACHE: Dict[str, Any] = {"at": 0.0, "value": None}
+PORTS_CACHE_TTL_S = 2.5
+
+
+def _ports_by_pid_cached(*, ttl_s: float = PORTS_CACHE_TTL_S) -> Dict[int, List[int]]:
+    """`_ports_by_pid()` at most once per `ttl_s`; concurrent callers within
+    the window share the one cached table instead of each scanning."""
+    now = time.monotonic()
+    cached = _PORTS_CACHE
+    if cached["value"] is not None and now - cached["at"] < ttl_s:
+        return cached["value"]
+    with _PORTS_CACHE_LOCK:
+        cached = _PORTS_CACHE
+        now = time.monotonic()
+        if cached["value"] is not None and now - cached["at"] < ttl_s:
+            return cached["value"]
+        value = _ports_by_pid()
+        _PORTS_CACHE.update({"at": time.monotonic(), "value": value})
+        return value
+
+
+def invalidate_ports_cache() -> None:
+    """Drop the cached port table so the next read re-scans right away —
+    called after a start/stop/restart actually changes what is listening
+    (``src/launch_profiles.py``'s ``launch``/``stop``/``restart``, and this
+    module's own ``stop``/``stop_port``), instead of waiting out the TTL."""
+    with _PORTS_CACHE_LOCK:
+        _PORTS_CACHE.update({"at": 0.0, "value": None})
+
+
 def pid_listening_on(port: int, *, ports_by_pid: Optional[Dict[int, List[int]]] = None) -> Optional[Dict[str, Any]]:
     """Apps wave (F1.4): whatever is listening on `port` right now, as
     ``{"pid", "created_at", "cmdline"}``, or None. `ports_by_pid` lets a
@@ -486,6 +526,8 @@ def stop(pid: int, created_at: Optional[float], *, allow_protected: bool = False
                 from src import bg_jobs
                 rec = bg_jobs.kill(jid) or {}
                 refused = rec.get("kill_refused")
+                if not refused:
+                    invalidate_ports_cache()
                 return {"ok": not refused, "code": "" if not refused else "refused", "reason": refused or "",
                         "signalled": [pid], "refused": [], "bg_job": jid}
             except Exception as exc:  # noqa: BLE001
@@ -502,6 +544,7 @@ def stop(pid: int, created_at: Optional[float], *, allow_protected: bool = False
                     own.pop(prof_id, None)
         except Exception:  # noqa: BLE001
             pass
+        invalidate_ports_cache()
         logger.info("[process-center] stopped %s (pid %s), %d descendant(s)", name, pid,
                     max(0, len(outcome.signalled) - 1))
     return result

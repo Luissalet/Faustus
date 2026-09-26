@@ -139,6 +139,22 @@ def isolated_kv_rate_history(tmp_path_factory, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def fresh_ports_cache():
+    """`process_center._ports_by_pid_cached()` keeps one process-wide, ~2.5s
+    cached scan (PENDIENTES §101). Without a reset, a test that populates it
+    could feed a stale or fake scan to the next test that runs within that
+    window — cross-contamination the same shape as `clean_dead_host_cooldown`
+    above."""
+    import sys as _sys
+    pc = _sys.modules.get("src.process_center")
+    if pc is not None:
+        pc._PORTS_CACHE.update({"at": 0.0, "value": None})
+    yield
+    if pc is not None:
+        pc._PORTS_CACHE.update({"at": 0.0, "value": None})
+
+
+@pytest.fixture(autouse=True)
 def fresh_session_toolsets():
     """The agent loop remembers each chat's last tool set; tests reuse session
     ids freely, so each starts without that memory."""

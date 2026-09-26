@@ -336,6 +336,39 @@ async def test_stop_not_running_when_nothing_found(monkeypatch, tmp_path, execut
     assert result == {"stopped": False, "how": "not_running"}
 
 
+# ── launch()/stop() invalidate the cached port scan (PENDIENTES §101) ───────
+
+async def test_launch_invalidates_the_ports_cache(monkeypatch, tmp_path, executable):
+    profile = launch_profiles.create_profile(
+        owner="t", name="App", kind="process", executable=executable, cwd=str(tmp_path),
+    )
+    _mock_spawn(monkeypatch, pid=os.getpid(), spawned_at=None)
+    monkeypatch.setattr(launch_profiles, "_check_ready_once", _never_ready)
+    calls = {"n": 0}
+    monkeypatch.setattr(process_center, "invalidate_ports_cache", lambda: calls.update(n=calls["n"] + 1))
+    await launch_profiles.launch(profile["id"])
+    assert calls["n"] >= 1, "a fresh launch must invalidate the cached port scan"
+
+
+async def test_stop_via_stop_cmd_invalidates_the_ports_cache(monkeypatch, tmp_path, executable):
+    profile = launch_profiles.create_profile(
+        owner="t", name="App", kind="process", executable=executable, cwd=str(tmp_path),
+        stop_cmd={"executable": executable, "argv": ["--stop"]},
+    )
+
+    class FakeCompleted:
+        returncode = 0
+
+    monkeypatch.setattr(launch_profiles, "subprocess", types.SimpleNamespace(run=lambda *a, **k: FakeCompleted()), raising=False)
+    import subprocess as real_subprocess
+    monkeypatch.setattr(real_subprocess, "run", lambda *a, **k: FakeCompleted())
+    monkeypatch.setattr(launch_profiles, "_status_for", lambda profile, ports_by_pid=None: _ready_false())
+    calls = {"n": 0}
+    monkeypatch.setattr(process_center, "invalidate_ports_cache", lambda: calls.update(n=calls["n"] + 1))
+    await launch_profiles.stop(profile["id"])
+    assert calls["n"] >= 1, "stop_cmd runs outside process_center; the caller must still invalidate"
+
+
 # ── restart(): stop then launch, in order ───────────────────────────────────
 
 async def test_restart_stops_then_launches(monkeypatch, tmp_path, executable):

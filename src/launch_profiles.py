@@ -558,6 +558,15 @@ async def launch(profile_id: str, *, request_client_host: Optional[str] = None) 
             })
             _own_launches[profile_id] = existing
             _persist_own_launches()
+            # A freshly spawned process has not opened its port yet, but the
+            # table this profile's own pid tracking already changed — and a
+            # readiness poll right below must not serve a scan taken before
+            # this launch (process_center.PORTS_CACHE_TTL_S).
+            try:
+                from src import process_center
+                process_center.invalidate_ports_cache()
+            except Exception:  # noqa: BLE001 - a stale cache for a few seconds is not fatal
+                pass
             if kind == "open_exe":
                 # No readiness by design (F1.4: "lanza el ejecutable
                 # aprobado sin readiness") — a desktop GUI app has nothing
@@ -709,11 +718,19 @@ async def status(profile_id: str) -> Dict[str, Any]:
 
 
 async def list_statuses() -> Dict[str, Dict[str, Any]]:
-    """`status()` for every profile, in one `_ports_by_pid()` scan."""
+    """`status()` for every profile, in one `_ports_by_pid()` scan.
+
+    PENDIENTES §101: that scan is ~2s on a machine with a lot listening, and
+    `GET /api/launch-profiles/status` pays it on every poll even though
+    nothing about what is listening changed since the last one a few seconds
+    ago. `_ports_by_pid_cached()` (process_center.py) serves the same table
+    for `PORTS_CACHE_TTL_S`; `launch`/`stop`/`restart` below invalidate it
+    the moment they actually change something, so an action never looks like
+    it did nothing because a stale scan is still being served."""
     from src import process_center
     profiles = list_profiles()
     import asyncio
-    ports_by_pid = await asyncio.to_thread(process_center._ports_by_pid)
+    ports_by_pid = await asyncio.to_thread(process_center._ports_by_pid_cached)
     results = await asyncio.gather(*(_status_for(p, ports_by_pid=ports_by_pid) for p in profiles))
     return {p["id"]: r for p, r in zip(profiles, results)}
 
@@ -773,6 +790,14 @@ async def stop(profile_id: str, *, allow_external: bool = True) -> Dict[str, Any
                 return {"stopped": False, "how": "stop_cmd", "reason": reason}
             loop = asyncio.get_event_loop()
             ran_ok = await loop.run_in_executor(None, _run_stop_cmd_sync, stop_cmd)
+            # `process_center.stop`/`stop_port` below invalidate on their own
+            # path; `stop_cmd` runs outside process_center entirely, so this
+            # is the only place that tells the cache the table just changed.
+            try:
+                from src import process_center
+                process_center.invalidate_ports_cache()
+            except Exception:  # noqa: BLE001 - a stale cache for a few seconds is not fatal
+                pass
             verified = await _wait_until_not_running(profile, 8)
             _forget_own_launch(profile_id)
             stopped = bool(ran_ok) and verified

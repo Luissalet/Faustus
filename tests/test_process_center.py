@@ -105,6 +105,55 @@ def test_stop_port_finds_the_listener_by_port(server):
     proc.wait(timeout=10)
 
 
+# ── _ports_by_pid_cached(): PENDIENTES §101, GET /api/launch-profiles/status
+# paid the full ~2s port/process scan on every call ────────────────────────
+
+def test_ports_by_pid_cached_serves_two_quick_calls_from_one_scan(monkeypatch):
+    calls = {"n": 0}
+
+    def counting_scan():
+        calls["n"] += 1
+        return {1234: [80]}
+
+    monkeypatch.setattr(pc, "_ports_by_pid", counting_scan)
+    first = pc._ports_by_pid_cached()
+    second = pc._ports_by_pid_cached()
+    assert first == {1234: [80]} == second
+    assert calls["n"] == 1, "a second call within the TTL must not re-scan"
+
+
+def test_ports_cache_expires_after_its_ttl(monkeypatch):
+    calls = {"n": 0}
+    monkeypatch.setattr(pc, "_ports_by_pid", lambda: calls.update(n=calls["n"] + 1) or {})
+    pc._ports_by_pid_cached(ttl_s=0.05)
+    time.sleep(0.06)
+    pc._ports_by_pid_cached(ttl_s=0.05)
+    assert calls["n"] == 2
+
+
+def test_invalidate_ports_cache_forces_a_rescan(monkeypatch):
+    calls = {"n": 0}
+    monkeypatch.setattr(pc, "_ports_by_pid", lambda: calls.update(n=calls["n"] + 1) or {})
+    pc._ports_by_pid_cached()
+    pc._ports_by_pid_cached()
+    assert calls["n"] == 1
+    pc.invalidate_ports_cache()
+    pc._ports_by_pid_cached()
+    assert calls["n"] == 2, "a start/stop action must not still see the pre-action scan"
+
+
+def test_stop_invalidates_the_ports_cache(server):
+    """A start/stop action changes what is listening; the next status read
+    must not be served the scan taken before it."""
+    port, proc = server
+    row = _row(port)
+    pc._ports_by_pid_cached()  # warm the cache, as list_statuses() would
+    assert pc._PORTS_CACHE["value"] is not None
+    pc.stop(row["pid"], row["created_at"])
+    proc.wait(timeout=10)
+    assert pc._PORTS_CACHE["value"] is None, "stop() must invalidate the cached scan"
+
+
 def test_children_without_ports_are_listed_under_faustus_and_self_never_appears():
     # A child python that holds no port is still visible (it is what the
     # agent leaves behind); the interpreter itself is `self` and never a row.
