@@ -9393,3 +9393,11 @@ Del resto de la lista:
 **`/recap`** (17:50): `GET /api/usage/recap?days=N` y `/recap [días]` suman con una consulta a la base de datos las métricas guardadas de todos los chats del dueño en un periodo. Dan turnos, tokens, caché, local frente a nube, modelos, herramientas más usadas, días de más uso y coste. La ruta está abierta a tokens `sessions`.
 
 **Tarjeta «Tus últimos 30 días» en Inicio** (17:55). Lee `GET /api/usage/recap?days=30` y enseña turnos y chats, local frente a nube, tokens, parte del prompt servida desde caché, llamadas a herramientas, coste si lo hay, el modelo más usado y las cuatro herramientas más usadas. No aparece hasta que hay un turno con métricas; «Resumen completo» abre Studio con `/recap 30` escrito. Comprobado en el 7000 con Playwright: 303 turnos en 122 chats, 295 locales, 97,7M tokens, 73,1 % de caché, 1998 llamadas; a 390 px pasa a dos columnas sin desplazamiento horizontal y sin errores de página.
+
+**Vigilante de avance del turno** (18:05, `src/progress_watch.py`). Los guardas que había miraban cada uno una forma de atasco: la misma llamada con el mismo resultado (`loop_breaker`), lecturas remotas seguidas, preguntas a imágenes, un paso del plan que no se mueve. Ninguno veía un turno que alterna fuentes durante horas sin fijar nada, que es como acabó el examen 30. Ahora hay una huella de lo que el turno ha fijado:
+
+- una escritura o un efecto con éxito;
+- un paso del plan cerrado;
+- una pregunta al usuario.
+
+Tras `agent_no_progress_rounds` rondas (15) con herramientas y la huella quieta, una nota pide ya una primera versión con los huecos marcados; al doble insiste una vez. No bloquea nada, no actúa en modo plan y, si otro guarda ya habló en esa ronda, espera a la siguiente. Medido sobre los últimos 12 turnos guardados del 7006: se habría disparado en tres (en la ronda 16 de un turno de 30 rondas sin escribir nada, en la 17 de uno de 23 y en tres tramos de uno de 66); ninguno de los turnos cortos o que escribían pronto lo habría notado. Los turnos de los exámenes 29 y 30 no están en la base (el 30 se paró matando el proceso), así que la medida es sobre la batería de uso. 9 pruebas nuevas; 2151 del bucle del agente pasan.
