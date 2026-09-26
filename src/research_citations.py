@@ -1091,6 +1091,33 @@ def _source_text(entry: Dict[str, Any]) -> str:
     return text
 
 
+# Code survives translation the way figures do: a flag, a function name or a
+# config key is written the same in a Spanish report and an English page, so
+# it can be looked for in the cited source just like a number. Found live in
+# the Deep Research comparison of 26-09: both reports named llama.cpp flags
+# that no source had (`--rope-scaling ntk`).
+_CODE_SPAN_RE = re.compile(r"`([^`\n]{2,80})`")
+_BARE_FLAG_RE = re.compile(r"(?<![\w`-])--[A-Za-z][A-Za-z0-9-]{1,40}(?![\w-])")
+
+
+def _fold_code(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").replace("=", " ")).strip().lower()
+
+
+def code_literals(sentence: Any) -> List[str]:
+    """Backticked spans and bare ``--flags`` of a sentence, in order."""
+    text = _as_text(sentence)
+    out: List[str] = []
+    for m in _CODE_SPAN_RE.finditer(text):
+        literal = m.group(1).strip()
+        if literal and not re.fullmatch(r"\[?\d+\]?", literal) and literal not in out:
+            out.append(literal)
+    for m in _BARE_FLAG_RE.finditer(_CODE_SPAN_RE.sub(" ", text)):
+        if m.group(0) not in out:
+            out.append(m.group(0))
+    return out
+
+
 def _verdict_of(result: Dict[str, Any], sentence: str, source: str) -> str:
     """Map one ``claim_verify`` result onto the three outcomes.
 
@@ -1099,11 +1126,18 @@ def _verdict_of(result: Dict[str, Any], sentence: str, source: str) -> str:
     """
     if not (source or "").strip():
         return VERDICT_UNCHECKED
+    literals = code_literals(sentence)
+    if literals:
+        folded = _fold_code(source)
+        if any(_fold_code(lit) not in folded for lit in literals):
+            return VERDICT_REFUTED
     if result.get("supported"):
         return VERDICT_SUPPORTED
     from src.claim_verify import numbers_in  # deferred, as in check_claims
 
     figures = numbers_in(sentence)
+    if not figures and literals:
+        return VERDICT_SUPPORTED
     if not figures:
         # Nothing in the sentence that survives paraphrase, so the ladder's
         # silence is about our reach, not about the claim.
@@ -1366,6 +1400,17 @@ _LEGEND_BREADTH = {
 }
 
 
+# Appended to the last paragraph of the legend (never a fourth block).
+_LEGEND_CODE = {
+    "es": "Lo que va entre comillas invertidas (flags, funciones, claves) se busca igual: el código no se traduce.",
+    "en": "Anything in backticks (flags, functions, keys) is looked for the same way: code is not translated.",
+    "fr": "Ce qui est entre accents graves (options, fonctions, clés) est cherché de la même façon : le code ne se traduit pas.",
+    "de": "Was in Backticks steht (Flags, Funktionen, Schlüssel), wird genauso gesucht: Code wird nicht übersetzt.",
+    "pt": "O que vai entre crases (flags, funções, chaves) procura-se igual: o código não se traduz.",
+    "it": "Ciò che è tra apici inversi (flag, funzioni, chiavi) si cerca allo stesso modo: il codice non si traduce.",
+}
+
+
 _LEGEND_BODY = {
     "es": ("Cada frase con datos lleva un marcador `[n]` que remite a la fuente "
            "numerada en «Fuentes». {cited} de las {total} frases del informe "
@@ -1495,6 +1540,8 @@ def build_legend(coverage: Dict[str, Any], language: str = "en") -> str:
         line = _LEGEND_BREADTH.get((language or "").lower(), _LEGEND_BREADTH["en"])
         head, sep, rest = text.partition("\n\n")
         text = head + " " + line.format(used=used, total=gathered) + sep + rest
+    code_line = _LEGEND_CODE.get((language or "").lower(), _LEGEND_CODE["en"])
+    text = text.rstrip() + " " + code_line
     independence = (coverage or {}).get("independence") or {}
     if independence.get("clusters"):
         # Same technique as the breadth line above: appended to the existing
