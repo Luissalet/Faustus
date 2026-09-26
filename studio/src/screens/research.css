@@ -422,6 +422,22 @@
   color: var(--fs-warning);
 }
 
+/* Citation-check verdict badges (§144's checking pass, per source). */
+.fs-rs__source-flag[data-tone='ok'] {
+  border-color: color-mix(in srgb, var(--fs-success) 55%, var(--fs-border));
+  color: var(--fs-success);
+}
+
+.fs-rs__source-flag[data-tone='danger'] {
+  border-color: color-mix(in srgb, var(--fs-danger) 55%, var(--fs-border));
+  color: var(--fs-danger);
+}
+
+.fs-rs__source-flag[data-tone='info'] {
+  border-color: color-mix(in srgb, var(--fs-accent) 45%, var(--fs-border));
+  color: var(--fs-accent);
+}
+
 .fs-rs__actions {
   display: flex;
   align-items: center;

@@ -37,15 +37,23 @@ export interface ResearchSource {
    *  means "no signal", not "fresh" — same passthrough dependency as above. */
   stale?: boolean;
   ageDays?: number;
+  /** §144's citation checking pass (`src.research_citations.check_claims`,
+   *  attached per source by `src.research_handler._attach_citation_verdicts`):
+   *  whether the sentences citing this source actually check out against it.
+   *  Undefined when unchecked (blind review off, or no checkable figure ever
+   *  cited it) — never guessed. */
+  citationVerdict?: 'supported' | 'not_supported' | 'unverifiable';
 }
 
 function sourceFrom(s: Record<string, unknown>): ResearchSource {
+  const verdict = typeof s.citation_verdict === 'string' ? s.citation_verdict : '';
   return {
     title: String(s.title ?? s.url ?? ''),
     url: typeof s.url === 'string' ? s.url : '',
     duplicateOf: typeof s.duplicate_of === 'string' && s.duplicate_of ? s.duplicate_of : undefined,
     stale: typeof s.stale === 'boolean' ? s.stale : undefined,
     ageDays: typeof s.age_days === 'number' ? s.age_days : undefined,
+    citationVerdict: verdict === 'supported' || verdict === 'not_supported' || verdict === 'unverifiable' ? verdict : undefined,
   };
 }
 

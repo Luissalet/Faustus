@@ -917,6 +917,13 @@ class DeepResearcher:
         # round two still resolves in the report written after round eight.
         self.citations = SourceRegistry()
         self.citation_audit = None
+        # The per-sentence checked claims `_finalize_citations` computes
+        # (`src.research_citations.check_claims`) — kept so a per-CITATION
+        # verdict (not just the aggregate counts `citation_audit.coverage`
+        # already carries) can be attached to each numbered source when the
+        # report is saved (`src.research_handler._save_result`). Empty until
+        # `_finalize_citations` runs, and left empty if it fails.
+        self.citation_checked: List[Any] = []
         # RES-02: why the run actually stopped, filled in at the loop's exit
         # point (see the STOP_REASON_* constants above) -- None until then.
         self.stop_reason: Optional[Dict[str, Any]] = None
@@ -2896,9 +2903,10 @@ class DeepResearcher:
         model wrote and a warning saying its citations went unchecked.
         """
         try:
-            final, audit, _checked = finalize_report(
+            final, audit, checked = finalize_report(
                 report, self.citations, getattr(self, "report_language", "en"))
             self.citation_audit = audit
+            self.citation_checked = checked or []
             coverage = audit.coverage or {}
             logger.info(
                 "Citations: %d of %d sources cited, %d of %d sentences carry one",

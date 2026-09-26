@@ -286,6 +286,16 @@ function ResultCard({ job, formats, onDiscuss, onDelete, onDismiss, say }: { job
                             {s.ageDays != null ? t('stale · {n}d old', { n: Math.round(s.ageDays) }) : t('stale')}
                           </span>
                         )}
+                        {s.citationVerdict && (
+                          <span
+                            className="fs-rs__source-flag"
+                            data-tone={s.citationVerdict === 'supported' ? 'ok' : s.citationVerdict === 'not_supported' ? 'danger' : 'info'}
+                            data-testid="research-citation-verdict"
+                            title={t('From this run\'s own citation-checking pass')}
+                          >
+                            {s.citationVerdict === 'supported' ? t('supported') : s.citationVerdict === 'not_supported' ? t('not supported') : t('unverifiable')}
+                          </span>
+                        )}
                       </li>
                     ))}
                   </ol>

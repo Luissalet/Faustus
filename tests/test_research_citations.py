@@ -13,6 +13,11 @@ from src.research_citations import (
     VERDICT_SUPPORTED,
     VERDICT_UNCHECKED,
     VERDICT_WORDS,
+    CITATION_VERDICT_NOT_SUPPORTED,
+    CITATION_VERDICT_SUPPORTED,
+    CITATION_VERDICT_UNVERIFIABLE,
+    CheckedClaim,
+    per_source_verdicts,
     Claim,
     SourceRegistry,
     audit_citations,
@@ -798,3 +803,46 @@ def test_every_language_can_render_the_breadth_line():
         legend = build_legend(coverage, language)
         assert "{used}" not in legend and "{total}" not in legend
         assert "2" in legend and "5" in legend
+
+
+# ---------------------------------------------------------------------------
+# per_source_verdicts — the per-citation verdict the Studio report view badges
+# each source with (Processes item §144 follow-up: the coverage counts were
+# already there, but nothing said which SOURCE each one belonged to).
+# ---------------------------------------------------------------------------
+
+def _checked(number, verdict):
+    return CheckedClaim(claim=Claim(text=f"claim citing [{number}]", numbers=[number], start=0, end=0),
+                        number=number, verdict=verdict, layer=None, why="")
+
+
+def test_per_source_verdicts_maps_each_source_number_to_the_api_word():
+    checked = [_checked(1, VERDICT_SUPPORTED), _checked(2, VERDICT_REFUTED), _checked(3, VERDICT_UNCHECKED)]
+    out = per_source_verdicts(checked)
+    assert out == {1: CITATION_VERDICT_SUPPORTED, 2: CITATION_VERDICT_NOT_SUPPORTED, 3: CITATION_VERDICT_UNVERIFIABLE}
+
+
+def test_per_source_verdicts_source_zero_is_never_a_real_source():
+    # number=0 is check_claims' catch-all for "no resolvable citation" — it
+    # must never show up as a verdict for a numbered source.
+    out = per_source_verdicts([_checked(0, VERDICT_SUPPORTED)])
+    assert out == {}
+
+
+def test_per_source_verdicts_picks_the_highest_ranked_outcome_for_one_source():
+    # Source 1 is cited by three sentences with three different outcomes —
+    # supported (a figure found in the page) must win over both the refuted
+    # and the unchecked sentence, same rank order check_claims uses per
+    # sentence, now applied per source.
+    checked = [_checked(1, VERDICT_UNCHECKED), _checked(1, VERDICT_REFUTED), _checked(1, VERDICT_SUPPORTED)]
+    assert per_source_verdicts(checked) == {1: CITATION_VERDICT_SUPPORTED}
+    # Order does not matter — same three claims, reversed, same winner.
+    assert per_source_verdicts(list(reversed(checked))) == {1: CITATION_VERDICT_SUPPORTED}
+    # refuted beats unchecked when supported never shows up for that source.
+    checked_no_support = [_checked(2, VERDICT_UNCHECKED), _checked(2, VERDICT_REFUTED)]
+    assert per_source_verdicts(checked_no_support) == {2: CITATION_VERDICT_NOT_SUPPORTED}
+
+
+def test_per_source_verdicts_empty_input():
+    assert per_source_verdicts([]) == {}
+    assert per_source_verdicts(None) == {}

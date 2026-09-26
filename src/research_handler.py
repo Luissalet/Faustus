@@ -941,6 +941,41 @@ class ResearchHandler:
         return sources
 
     @staticmethod
+    def _attach_citation_verdicts(sources: list, researcher: Any) -> None:
+        """Stamp each source dict (in place) with `citation_verdict` — the
+        per-citation supported/not_supported/unverifiable outcome
+        `src.research_citations.check_claims` computed for it during
+        `_finalize_citations`, read from the same numbered registry
+        `citation_registry` already snapshots below.
+
+        Matched by URL, not position: `_extract_sources` dedupes/filters
+        `researcher.findings` into its own order, which does not have to
+        equal the registry's citation numbering — the URL is the one
+        identity both share. Best-effort like every other optional field
+        here (`duplicate_of`, `stale`): no registry, no checked claims, or
+        no match for a source's URL all leave it without the field, never a
+        guessed verdict.
+        """
+        registry = getattr(researcher, "citations", None) if researcher is not None else None
+        checked = getattr(researcher, "citation_checked", None) if researcher is not None else None
+        if not sources or registry is None or not checked:
+            return
+        try:
+            from src.research_citations import per_source_verdicts
+            verdicts_by_number = per_source_verdicts(checked)
+        except Exception:  # noqa: BLE001 - never fail the save over a display extra
+            return
+        if not verdicts_by_number:
+            return
+        for src in sources:
+            url = src.get("url")
+            if not url:
+                continue
+            number = registry.number_for(url)
+            if number and number in verdicts_by_number:
+                src["citation_verdict"] = verdicts_by_number[number]
+
+    @staticmethod
     def _extract_raw_findings(findings: list) -> list:
         """Extract [{url, title, summary}] for per-source findings display, filtering junk."""
         try:
@@ -1068,6 +1103,7 @@ class ResearchHandler:
             if researcher and researcher.findings:
                 sources = self._extract_sources(researcher.findings)
                 raw_findings = self._extract_raw_findings(researcher.findings)
+            self._attach_citation_verdicts(sources, researcher)
             entry["sources"] = sources
 
             data = {

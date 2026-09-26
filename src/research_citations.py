@@ -1148,6 +1148,56 @@ def compute_coverage(audit: CitationAudit,
     }
 
 
+# Stable, English, UI-language-independent identifiers for a per-citation
+# verdict — the API/Studio contract (`src.research_handler`'s persisted
+# "sources", `studio/src/adapters/research.ts::sourceFrom`), decoupled from
+# `VERDICT_SUPPORTED`/`VERDICT_REFUTED`/`VERDICT_UNCHECKED` above, which are
+# Spanish words used as internal constants regardless of report language.
+CITATION_VERDICT_SUPPORTED = "supported"
+CITATION_VERDICT_NOT_SUPPORTED = "not_supported"
+CITATION_VERDICT_UNVERIFIABLE = "unverifiable"
+
+_API_VERDICT_OF = {
+    VERDICT_SUPPORTED: CITATION_VERDICT_SUPPORTED,
+    VERDICT_REFUTED: CITATION_VERDICT_NOT_SUPPORTED,
+    VERDICT_UNCHECKED: CITATION_VERDICT_UNVERIFIABLE,
+}
+# Same ranking as `_VERDICT_RANK`, keyed on the API's own words so
+# `per_source_verdicts` never has to reverse-lookup the internal constant.
+_API_VERDICT_RANK = {CITATION_VERDICT_UNVERIFIABLE: 0, CITATION_VERDICT_NOT_SUPPORTED: 1, CITATION_VERDICT_SUPPORTED: 2}
+
+
+def per_source_verdicts(checked: Sequence["CheckedClaim"]) -> Dict[int, str]:
+    """Which numbered source each checked claim settles on, reduced to one
+    verdict per source number for a reader-facing badge next to that
+    citation.
+
+    A source can be cited by several sentences with different outcomes (one
+    sentence's figure checks out, another's does not) — the same
+    `_VERDICT_RANK` `check_claims` uses to pick one verdict per SENTENCE from
+    several cited numbers is reused here to pick one per SOURCE from several
+    citing sentences: `not_supported` beats `unverifiable`, and `supported`
+    (a figure found in the page) outranks both, so a source is never shown as
+    "unverifiable" while it also demonstrably backs another claim.
+
+    Source `0` (no resolvable citation, `check_claims`' catch-all) is never a
+    real numbered source and is skipped.
+    """
+    best: Dict[int, str] = {}
+    for item in checked or []:
+        number = getattr(item, "number", 0)
+        if not number:
+            continue
+        verdict = getattr(item, "verdict", None)
+        api_verdict = _API_VERDICT_OF.get(verdict)
+        if api_verdict is None:
+            continue
+        current = best.get(number)
+        if current is None or _API_VERDICT_RANK[api_verdict] > _API_VERDICT_RANK[current]:
+            best[number] = api_verdict
+    return best
+
+
 # ---------------------------------------------------------------------------
 # Language
 # ---------------------------------------------------------------------------
