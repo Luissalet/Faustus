@@ -69,6 +69,7 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 
 ## C. Verificar en vivo sin modelo
 
+- **Pantallas nuevas del 26-09 sin datos para verlas llenas** (§209): el desglose por decisión del panel de autonomía (el registro en sombra está vacío mientras el modo sea `off`), los conflictos de memoria sugeridos (hoy no hay ninguno) y «Relaunch with this profile» (sale tras activar un perfil que deja algo pendiente; no se activó con el examen en marcha). Verificadas en vivo: la revisión de skills importadas (proyecto › Reglas, dos skills con su riesgo y el botón Aprobar) y el nombre del servidor MCP en Procesos.
 - **Huecos del calendario y búsqueda en memoria** (25-09, §184): comprobar en el 7006 el hueco ocupado (32) y una búsqueda en memoria por pregunta sobre el usuario (31).
 - **Borrador rechazado en el Studio** (25-09, §184): confirmar que desaparece también ahí vía el evento `response_replace`.
 - **`seen_urls` de alcance amplio** (25-09, §184): vigilar en uso real si conviene limitarlo a resultados de búsqueda y páginas abiertas (hoy recoge cualquier enlace visto en el turno).
@@ -145,6 +146,7 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 
 ## D. Verificar en vivo con el modelo local
 
+- **Tarjeta del guardián de comandos destructivos y línea de estado** (26-09, §209): en un turno real, que la tarjeta nombre el comando y su motivo, y que durante una herramienta larga la línea de estado diga qué herramienta corre. Los veredictos por cita del informe de investigación salen con la siguiente investigación.
 - **Cantidades para N personas** (26-09, `answer_checks.servings_requested`): pedir en el 7006 «lista de la compra para 8: pollo al horno con patatas» y comprobar que el 27B calcula por persona con `python` y que piezas y pesos cuadran.
 - **`context_*` automáticos en una tarea larga** (25-09, §197): ver si el 27B los usa solo, a partir de qué punto, y si el aviso al umbral blando ayuda o estorba.
 - **`swarm_map` en modo `agent`** (25-09, §197): probarlo con el 8081 compartido por otros chats (el modo `llm` ya se probó con 6 ciudades).
