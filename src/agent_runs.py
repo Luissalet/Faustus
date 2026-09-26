@@ -432,6 +432,42 @@ def persistence_enabled() -> bool:
     return bool(_setting("agent_runs_persist", True))
 
 
+# A tiny `<log>.status` next to each run log holds its last status. Opening
+# the log itself to learn that can cost minutes on Windows: the first open of
+# a large file that changed since the last scan is held by the antivirus
+# while it reads the whole thing (26-09: 145 s inside `open()` for the 107 MB
+# log of an exam run). The sidecar is a few bytes, so that scan is instant.
+def _status_sidecar(path: str) -> str:
+    return path + ".status"
+
+
+def _write_status_sidecar(path: str, status: str) -> None:
+    """`<status> <log size>`: the size ties the sidecar to the exact log it
+    describes, and reading a size never opens the log."""
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        size = -1
+    try:
+        with open(_status_sidecar(path), "w", encoding="utf-8") as f:
+            f.write(f"{status} {size}")
+    except OSError:
+        pass
+
+
+def _read_status_sidecar(path: str) -> Optional[str]:
+    """The sidecar's status when the log is still exactly the size it had
+    when the sidecar was written; None when it is missing or stale."""
+    try:
+        with open(_status_sidecar(path), "r", encoding="utf-8") as f:
+            parts = f.read(80).split()
+        if len(parts) != 2 or int(parts[1]) != os.path.getsize(path):
+            return None
+    except (OSError, ValueError):
+        return None
+    return parts[0] or None
+
+
 class _RunLog:
     """Append-only JSONL mirror of a run's replay buffer. Deltas are flushed in
     small batches; every other event (tool cards, harness, status) is flushed
@@ -447,6 +483,10 @@ class _RunLog:
         try:
             os.makedirs(os.path.dirname(self.path), exist_ok=True)
             self._f = open(self.path, "w", encoding="utf-8")
+            try:
+                os.remove(_status_sidecar(self.path))  # it described the previous run
+            except OSError:
+                pass
             self._write({"status": "running", "run_id": run.run_id, "ts": time.time(),
                          "session_id": session_id, "lane": run.lane, "label": run.label}, flush=True)
         except OSError as e:
@@ -499,12 +539,15 @@ class _RunLog:
             line["outcome"] = outcome
         self._write(line, flush=True)
         with self._lock:
+            wrote = self._f is not None and not self._orphaned
             try:
                 if self._f is not None:
                     self._f.close()
             except OSError:
                 pass
             self._f = None
+        if wrote:
+            _write_status_sidecar(self.path, status)
 
 
 def _augment_sse_fields(ev: str, fields: Dict[str, Any]) -> str:
@@ -1962,7 +2005,8 @@ def recover_interrupted_runs(session_manager=None) -> List[Dict[str, Any]]:
         if not name.endswith(".jsonl"):
             continue
         path = os.path.join(d, name)
-        peeked = _peek_status(path)
+        side = _read_status_sidecar(path)
+        peeked = side if side and side != "running" else _peek_status(path)
         if peeked in ("done", "stopped", "error", "interrupted", "unreadable", "waiting_user"):
             info = {"status": peeked}
         else:
@@ -1973,6 +2017,8 @@ def recover_interrupted_runs(session_manager=None) -> List[Dict[str, Any]]:
             try:
                 if now - os.path.getmtime(path) > keep_h * 3600:
                     os.remove(path)
+                    if os.path.exists(_status_sidecar(path)):
+                        os.remove(_status_sidecar(path))
             except OSError:
                 pass
             continue
@@ -2017,6 +2063,7 @@ def recover_interrupted_runs(session_manager=None) -> List[Dict[str, Any]]:
         try:
             with open(path, "a", encoding="utf-8") as f:
                 f.write(json.dumps({"status": "interrupted", "ts": now}) + "\n")
+            _write_status_sidecar(path, "interrupted")
         except OSError:
             pass
         _INTERRUPTED[sid] = entry

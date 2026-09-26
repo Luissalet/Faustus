@@ -42,7 +42,43 @@ def test_recovery_skips_full_reads_of_finished_logs(tmp_path, monkeypatch):
     monkeypatch.setattr(agent_runs, "_setting", lambda key, default=None: default, raising=False)
     read = []
     real = agent_runs._read_log
-    monkeypatch.setattr(agent_runs, "_read_log", lambda path: (read.append(os.path.basename(path)), real(path))[1])
+    monkeypatch.setattr(agent_runs, "_read_log", lambda path, **k: (read.append(os.path.basename(path)), real(path, **k))[1])
     out = agent_runs.recover_interrupted_runs(None)
     assert read == ["run2.jsonl"]
     assert [e["session_id"] for e in out] == ["s2"]
+
+
+def test_a_finished_log_with_a_status_sidecar_is_never_opened(tmp_path, monkeypatch):
+    """The antivirus holds the first open of a big changed file for minutes
+    (26-09: 145 s for a 107 MB exam log); the sidecar answers without it."""
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    big = runs / "exam.jsonl"
+    _log(big, [{"status": "running", "run_id": "r1", "session_id": "s1"}], 50, "done")
+    agent_runs._write_status_sidecar(str(big), "done")
+    monkeypatch.setattr(agent_runs, "_runs_dir", lambda: str(runs))
+    monkeypatch.setattr(agent_runs, "_setting", lambda key, default=None: default, raising=False)
+    opened = []
+    monkeypatch.setattr(agent_runs, "_peek_status", lambda path: opened.append(path) or None)
+    monkeypatch.setattr(agent_runs, "_read_log", lambda path, **k: opened.append(path) or {"status": "running"})
+    assert agent_runs.recover_interrupted_runs(None) == []
+    assert opened == []
+
+
+def test_a_stale_sidecar_falls_back_to_the_log(tmp_path):
+    p = tmp_path / "x.jsonl"
+    _log(p, [{"status": "running", "run_id": "r", "session_id": "s"}], 3, "done")
+    agent_runs._write_status_sidecar(str(p), "done")
+    assert agent_runs._read_status_sidecar(str(p)) == "done"
+    with open(p, "a", encoding="utf-8") as f:
+        f.write('{"seq": 99, "ev": "more"}\n')
+    assert agent_runs._read_status_sidecar(str(p)) is None, "a log that grew after its sidecar is read"
+
+
+def test_the_run_log_keeps_the_sidecar_current(tmp_path, monkeypatch):
+    monkeypatch.setattr(agent_runs, "_runs_dir", lambda: str(tmp_path))
+    run = type("R", (), {"run_id": "r9", "lane": "chat", "label": "t"})()
+    log = agent_runs._RunLog("sess-9", run)
+    assert agent_runs._read_status_sidecar(log.path) is None, "a running log has no sidecar yet"
+    log.finish("done")
+    assert agent_runs._read_status_sidecar(log.path) == "done"
