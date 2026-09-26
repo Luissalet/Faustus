@@ -160,8 +160,12 @@ def probe_llama_cpp(root: str, *, timeout: float = _PROBE_TIMEOUT, force: bool =
 
     props = _get_json(root + "/props", timeout)
     if isinstance(props, dict):
+        # Current llama-server builds (b11040 here) report the window only
+        # under `default_generation_settings.n_ctx`; older ones at the top.
+        dgs = props.get("default_generation_settings")
+        n_ctx = props.get("n_ctx") or (dgs.get("n_ctx") if isinstance(dgs, dict) else 0)
         try:
-            out["context_length"] = int(props.get("n_ctx") or 0)
+            out["context_length"] = int(n_ctx or 0)
         except (TypeError, ValueError):
             out["context_length"] = 0
         size = _gguf_footprint(str(props.get("model_path") or ""))

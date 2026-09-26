@@ -131,3 +131,15 @@ def test_is_same_machine():
     assert rp.is_same_machine("http://127.0.0.1:8081") is True
     assert rp.is_same_machine("http://localhost:8081") is True
     assert rp.is_same_machine("http://192.168.1.20:8081") is False
+
+
+def test_probe_reads_the_window_where_current_builds_report_it(monkeypatch):
+    """llama-server b11040 answers /props with the window only under
+    default_generation_settings.n_ctx; the Vitals row said 0."""
+    _mock_get(monkeypatch, {
+        "/health": (200, {"status": "ok"}),
+        "/v1/models": (200, {"data": [{"id": "qwen3.8-27b-q8-llamacpp"}]}),
+        "/props": (200, {"default_generation_settings": {"n_ctx": 235008}, "model_path": ""}),
+        "/slots": (200, []),
+    })
+    assert rp.probe_llama_cpp(ROOT)["context_length"] == 235008
