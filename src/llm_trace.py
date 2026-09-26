@@ -26,11 +26,23 @@ Hook points: ``src/llm_core.py``'s two public entry points,
 ``llm_call_async`` (non-streaming) and ``stream_llm`` (streaming, which
 accumulates chunks as they pass through and records once at the end/on
 error/on cancel). Both already carry ``session_id`` as an explicit parameter
-— no new ContextVar was needed.
+— no new ContextVar was needed for that.
+
+``run_id`` is different: neither entry point receives it as a parameter (a
+run's `harness_options["run_id"]` is decided far above them, in
+``src/agent_loop.py``'s ``stream_agent_loop`` wrapper), so exact attribution
+of a ``model_call`` record to the run that made it uses ``_CURRENT_RUN_ID``,
+a ``ContextVar`` set for the life of one ``stream_agent_loop`` call
+(alongside ``src.run_model_pin``'s keep-alive pin, same wrapper) and read
+back here in ``record_call``. Absent that context (a call made outside an
+agent run — a judge/router/background call), ``run_id`` stays ``None``,
+exactly the pre-existing behavior; ``src/trajectory_gate.py`` then falls
+back to its clock-window heuristic for those records.
 """
 
 from __future__ import annotations
 
+import contextvars
 import glob
 import hashlib
 import json
@@ -45,6 +57,31 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]")
+
+_CURRENT_RUN_ID: "contextvars.ContextVar[str]" = contextvars.ContextVar(
+    "faustus_llm_trace_run_id", default=""
+)
+
+
+def set_current_run_id(run_id: str) -> "contextvars.Token":
+    """Mark every `record_call` made in this async context (and everything
+    it awaits) as belonging to `run_id`, until `reset_current_run_id` is
+    called with the returned token. Set once, at the top of one
+    `stream_agent_loop` invocation — never called from `record_call` itself,
+    which only ever reads it."""
+    return _CURRENT_RUN_ID.set(str(run_id or ""))
+
+
+def reset_current_run_id(token: "contextvars.Token") -> None:
+    try:
+        _CURRENT_RUN_ID.reset(token)
+    except Exception:
+        logger.debug("[llm_trace] reset_current_run_id failed", exc_info=True)
+
+
+def current_run_id() -> str:
+    """The active run's id, or `""` outside any `stream_agent_loop` call."""
+    return _CURRENT_RUN_ID.get()
 
 # Single background worker: trace writes are small and sequential per
 # process, so one thread is plenty and keeps them strictly ordered without
@@ -305,6 +342,14 @@ def record_call(
     No-op (silently) when ``session_id`` is falsy or tracing is disabled.
     The actual disk write happens on a background thread so a slow disk
     never adds latency to the call this is tracing.
+
+    ``run_id``: neither of ``src/llm_core.py``'s two call sites
+    (``llm_call_async``, ``stream_llm``) has a `run_id` parameter to pass
+    explicitly, so when the caller leaves it ``None`` this falls back to
+    ``current_run_id()`` — the active ``stream_agent_loop`` run, if this call
+    happens inside one. `src/trajectory_gate.py` then attributes a record by
+    exact `run_id` match when one was recorded, falling back to its
+    clock-window heuristic only for older/context-less records.
     """
     if not session_id:
         return
@@ -317,7 +362,7 @@ def record_call(
             "seq": None,  # filled in on the writer thread, ordered there
             "ts": time.time(),
             "session_id": str(session_id),
-            "run_id": run_id,
+            "run_id": run_id or (current_run_id() or None),
             "endpoint": _endpoint_host(endpoint_url),
             "provider": _provider_kind(endpoint_url),
             "model": model,

@@ -305,6 +305,52 @@ def test_cli_requires_run_or_recent(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# _model_call_steps: exact run_id attribution over the clock-window fallback
+# ---------------------------------------------------------------------------
+
+def test_model_call_steps_prefers_exact_run_id_over_the_clock_window(monkeypatch):
+    """The regression this closes: two overlapping runs of the same session
+    (two tabs, an immediate regeneration) used to both fall inside the same
+    clock window and get merged. A record carrying `run_id` is now matched
+    exactly -- and excluded if it names a DIFFERENT run, even though its
+    timestamp sits inside this run's window."""
+    from src import llm_trace
+
+    records = [
+        {"ts": 100.0, "run_id": "run-a", "model": "qwen-a", "duration_ms": 500},
+        # Same window as run-a, but a different run's own record -- must be
+        # excluded now that exact attribution is possible.
+        {"ts": 100.4, "run_id": "run-b", "model": "qwen-b", "duration_ms": 500},
+        # No run_id at all (older trace, or a call made outside any
+        # stream_agent_loop context) -- falls back to the clock window.
+        {"ts": 100.6, "run_id": None, "model": "qwen-legacy-in-window", "duration_ms": 500},
+        {"ts": 500.0, "run_id": None, "model": "qwen-legacy-out-of-window", "duration_ms": 500},
+    ]
+    monkeypatch.setattr(llm_trace, "_iter_records", lambda session_id: iter(records))
+
+    steps = tg._model_call_steps("sess1", "run-a", 99.0, 102.0)
+    tools = sorted(s.tool for s in steps)
+    assert tools == ["qwen-a", "qwen-legacy-in-window"]
+
+
+def test_model_call_steps_falls_back_to_the_window_when_run_id_is_unknown(monkeypatch):
+    """`load_trajectory` always resolves SOME run_id today, but as a
+    defense-in-depth the window fallback still works when the caller has
+    none -- every record with no `run_id` of its own is judged purely by
+    the clock window, same as before this lote."""
+    from src import llm_trace
+
+    records = [
+        {"ts": 100.0, "run_id": None, "model": "qwen-in-window", "duration_ms": 500},
+        {"ts": 500.0, "run_id": None, "model": "qwen-out-of-window", "duration_ms": 500},
+    ]
+    monkeypatch.setattr(llm_trace, "_iter_records", lambda session_id: iter(records))
+
+    steps = tg._model_call_steps("sess1", None, 99.0, 102.0)
+    assert [s.tool for s in steps] == ["qwen-in-window"]
+
+
+# ---------------------------------------------------------------------------
 # route owner scoping
 # ---------------------------------------------------------------------------
 

@@ -16023,12 +16023,11 @@ async def stream_agent_loop(*args, **kwargs) -> AsyncGenerator[str, None]:
     bound.apply_defaults()
     owner = bound.arguments.get("owner")
     session_id = bound.arguments.get("session_id")
-    _pin_run_id = ""
+    _hopts = bound.arguments.get("harness_options") or {}
+    _pin_run_id = str((_hopts.get("run_id") if isinstance(_hopts, dict) else None) or session_id or "")
     _pin_token = None
     try:
         from src import run_model_pin as _run_pin
-        _hopts = bound.arguments.get("harness_options") or {}
-        _pin_run_id = str((_hopts.get("run_id") if isinstance(_hopts, dict) else None) or session_id or "")
         _pin_token = _run_pin.pin_for_run(
             _pin_run_id,
             str(bound.arguments.get("endpoint_url") or ""),
@@ -16036,6 +16035,18 @@ async def stream_agent_loop(*args, **kwargs) -> AsyncGenerator[str, None]:
         )
     except Exception:  # noqa: BLE001
         logger.debug("stream_agent_loop: model pin skipped", exc_info=True)
+    # LLM-TRACE-02: the same run id, but for `src.llm_trace.record_call`'s
+    # exact `model_call` attribution (`src/trajectory_gate.py` otherwise
+    # falls back to a clock-window guess) -- a separate ContextVar from the
+    # keep-alive pin above (different lifetime rules: the pin skips an empty
+    # model, tracing wants the run id regardless of whether a model is
+    # pinned).
+    _trace_run_token = None
+    try:
+        from src import llm_trace as _llm_trace
+        _trace_run_token = _llm_trace.set_current_run_id(_pin_run_id)
+    except Exception:  # noqa: BLE001
+        logger.debug("stream_agent_loop: trace run id propagation skipped", exc_info=True)
     from src import tool_clock as _tool_clock
     _clock_token = _tool_clock.begin_turn()
     _finalizers: List[Callable[[], None]] = []
@@ -16058,6 +16069,12 @@ async def stream_agent_loop(*args, **kwargs) -> AsyncGenerator[str, None]:
             # from another task): the value dies with this wrapper anyway.
             _TURN_FINALIZERS.set(None)
         _tool_clock.end_turn(_clock_token)
+        if _trace_run_token is not None:
+            try:
+                from src import llm_trace as _llm_trace
+                _llm_trace.reset_current_run_id(_trace_run_token)
+            except Exception:  # noqa: BLE001
+                logger.debug("stream_agent_loop: trace run id reset failed", exc_info=True)
         if _pin_token is not None:
             try:
                 from src import run_model_pin as _run_pin

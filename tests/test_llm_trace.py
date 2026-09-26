@@ -116,6 +116,53 @@ def test_record_call_and_list_and_get(isolated_traces_dir, monkeypatch):
     assert llm_trace.get_call("sess-a", 999) is None
 
 
+# ---------------------------------------------------------------------------
+# run_id: explicit kwarg vs. the `stream_agent_loop`-scoped ContextVar
+# ---------------------------------------------------------------------------
+
+def test_record_call_uses_the_explicit_run_id_when_given(isolated_traces_dir, monkeypatch):
+    monkeypatch.setattr(llm_trace, "tracing_enabled", lambda: True)
+    llm_trace.record_call(session_id="sess-run-id", model="m", request={"messages": []},
+                           response_text="r", run_id="run-explicit")
+    llm_trace.flush_for_tests()
+    full = llm_trace.get_call("sess-run-id", 1)
+    assert full["run_id"] == "run-explicit"
+
+
+def test_record_call_falls_back_to_the_current_run_id_contextvar(isolated_traces_dir, monkeypatch):
+    """The two `src/llm_core.py` call sites never pass `run_id` explicitly —
+    `src/agent_loop.py`'s `stream_agent_loop` wrapper sets the ContextVar for
+    the run's whole lifetime instead."""
+    monkeypatch.setattr(llm_trace, "tracing_enabled", lambda: True)
+    token = llm_trace.set_current_run_id("run-from-context")
+    try:
+        llm_trace.record_call(session_id="sess-ctx", model="m", request={"messages": []},
+                               response_text="r")
+    finally:
+        llm_trace.reset_current_run_id(token)
+    llm_trace.flush_for_tests()
+    full = llm_trace.get_call("sess-ctx", 1)
+    assert full["run_id"] == "run-from-context"
+
+
+def test_record_call_run_id_is_none_outside_any_run_context(isolated_traces_dir, monkeypatch):
+    monkeypatch.setattr(llm_trace, "tracing_enabled", lambda: True)
+    assert llm_trace.current_run_id() == ""
+    llm_trace.record_call(session_id="sess-no-ctx", model="m", request={"messages": []},
+                           response_text="r")
+    llm_trace.flush_for_tests()
+    full = llm_trace.get_call("sess-no-ctx", 1)
+    assert full["run_id"] is None
+
+
+def test_reset_current_run_id_restores_the_previous_value(isolated_traces_dir):
+    assert llm_trace.current_run_id() == ""
+    token = llm_trace.set_current_run_id("run-x")
+    assert llm_trace.current_run_id() == "run-x"
+    llm_trace.reset_current_run_id(token)
+    assert llm_trace.current_run_id() == ""
+
+
 def test_seq_is_monotonic_per_session(isolated_traces_dir, monkeypatch):
     monkeypatch.setattr(llm_trace, "tracing_enabled", lambda: True)
     for i in range(3):

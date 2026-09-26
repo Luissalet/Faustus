@@ -249,12 +249,20 @@ def _steps_from_events(events: List[str]) -> Tuple[List[Step], str]:
     return steps, "".join(text_parts)
 
 
-def _model_call_steps(session_id: str, start_ts: Optional[float], finish_ts: Optional[float]) -> List[Step]:
-    """Model-call steps for this run, best-effort scoped by the run's own
-    time window — `src/llm_trace.py`'s per-session log spans every run of
-    that session, and its `record_call` never receives a `run_id` from
-    either call site today (`src/llm_core.py`), so exact attribution is not
-    possible; the window is the honest approximation."""
+def _model_call_steps(
+    session_id: str, run_id: Optional[str], start_ts: Optional[float], finish_ts: Optional[float],
+) -> List[Step]:
+    """Model-call steps for this run.
+
+    `src/llm_trace.py`'s per-session log spans every run of that session, so
+    a record is attributed by an exact `run_id` match when the record HAS
+    one (`record_call` now threads it through `src.llm_trace.current_run_id`
+    — see that module) — a short run that overlaps another run of the same
+    session (two tabs, an immediate regeneration) is no longer misattributed
+    by the clock window alone. Records with no `run_id` (calls made outside
+    a `stream_agent_loop` context, or older traces from before this) still
+    fall back to the run's own time window, the honest approximation for
+    those."""
     from src import llm_trace
 
     lo = start_ts if start_ts is not None else 0.0
@@ -264,8 +272,12 @@ def _model_call_steps(session_id: str, start_ts: Optional[float], finish_ts: Opt
         ts = rec.get("ts")
         if not isinstance(ts, (int, float)):
             continue
-        if not (lo - 1.0 <= ts <= hi + 1.0):
-            continue
+        rec_run_id = rec.get("run_id")
+        if rec_run_id:
+            if not run_id or rec_run_id != run_id:
+                continue  # exact attribution available and it says "not ours"
+        elif not (lo - 1.0 <= ts <= hi + 1.0):
+            continue  # no run_id recorded -> fall back to the clock window
         usage = rec.get("usage") or {}
         tokens = usage.get("total_tokens")
         if not isinstance(tokens, int):
@@ -316,8 +328,21 @@ def load_trajectory(run_id: str) -> Trajectory:
     except OSError:
         pass
 
+    # Read ahead of `_model_call_steps` (moved up from where this used to be
+    # computed, right before the `Trajectory(...)` call below) so the exact
+    # `run_id` this log's own "running" meta line names is available for
+    # exact `model_call` attribution, not just for the returned `Trajectory`.
+    resolved_run_id = None
+    if os.path.isfile(agent_runs._log_path(session_id)):
+        try:
+            with open(agent_runs._log_path(session_id), "r", encoding="utf-8", errors="replace") as f:
+                first = f.readline()
+            resolved_run_id = json.loads(first).get("run_id") if first.strip() else None
+        except (OSError, ValueError):
+            pass
+
     event_steps, final_text = _steps_from_events(log.get("events") or [])
-    model_steps = _model_call_steps(session_id, start_ts, finish_ts)
+    model_steps = _model_call_steps(session_id, resolved_run_id or run_id, start_ts, finish_ts)
 
     # Interleave: event steps keep exact file order (that IS chronological —
     # the log is append-only); each is given a synthetic ts by linear
@@ -336,14 +361,6 @@ def load_trajectory(run_id: str) -> Trajectory:
     all_steps = sorted(event_steps + model_steps, key=lambda s: (s.ts if s.ts is not None else 0.0))
 
     status = log.get("status") or "unknown"
-    resolved_run_id = None
-    if os.path.isfile(agent_runs._log_path(session_id)):
-        try:
-            with open(agent_runs._log_path(session_id), "r", encoding="utf-8", errors="replace") as f:
-                first = f.readline()
-            resolved_run_id = json.loads(first).get("run_id") if first.strip() else None
-        except (OSError, ValueError):
-            pass
 
     return Trajectory(
         run_id=resolved_run_id or run_id, session_id=session_id, status=str(status),
