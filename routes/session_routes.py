@@ -1957,7 +1957,7 @@ def setup_session_routes(
         if not session:
             raise HTTPException(404, "Session not found")
         from src.session_usage import summarize
-        return {"session_id": session_id, **summarize(getattr(session, "messages", []) or [])}
+        return {"session_id": session_id, **summarize(getattr(session, "history", None) or getattr(session, "messages", None) or [])}
 
     @router.get("/session/{session_id}/context_info")
     async def get_context_info(request: Request, session_id: str):
