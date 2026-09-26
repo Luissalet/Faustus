@@ -88,3 +88,6 @@ ast-grep-cli
 # (.onnx + .onnx.json) are downloaded separately, on explicit admin action,
 # from Settings -> Voice; none is bundled.
 piper-tts
+
+# scripts/typos_ab.py: Spanish word frequencies to count invented words per sampler preset
+wordfreq>=3.1
