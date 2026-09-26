@@ -26,12 +26,13 @@ from typing import Any, Dict, List, Optional
 
 # Formats the exporter can produce. `md` stays the default for backwards
 # compatibility with the existing /export?fmt= callers.
-SUPPORTED_FORMATS = ("md", "txt", "json", "html", "pdf", "docx")
+SUPPORTED_FORMATS = ("md", "txt", "json", "jsonl", "html", "pdf", "docx")
 
 MEDIA_TYPES = {
     "md": "text/markdown; charset=utf-8",
     "txt": "text/plain; charset=utf-8",
     "json": "application/json",
+    "jsonl": "application/x-ndjson",
     "html": "text/html; charset=utf-8",
     "pdf": "application/pdf",
     "docx": ("application/vnd.openxmlformats-officedocument"

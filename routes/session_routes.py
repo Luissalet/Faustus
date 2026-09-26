@@ -1246,7 +1246,7 @@ def setup_session_routes(
         return chat_export.render(transcript, fmt, filename=filename)
 
     @router.get("/session/{sid}/export")
-    def export_session(request: Request, sid: str, fmt: str = "md", filename: str = ""):
+    def export_session(request: Request, sid: str, fmt: str = "md", filename: str = "", record: bool = True):
         """Export one conversation as a downloadable file.
 
         Formats: md, txt, json, html, pdf, docx — all rendered by
@@ -1306,10 +1306,13 @@ def setup_session_routes(
         # provenance-keeping, not part of the download contract: any failure
         # here (disk full, artifact store down, …) must never turn a working
         # export into a 500, so it is best-effort and swallowed.
-        try:
-            _record_export_artifact(sid, result, out_name, effective_user(request))
-        except Exception:
-            logger.exception("Could not record artifact manifest for session %s export", sid)
+        # `record=false`: a program reading the transcript (the workers MCP's
+        # `session_events`) is not a person keeping a file; no artifact.
+        if record:
+            try:
+                _record_export_artifact(sid, result, out_name, effective_user(request))
+            except Exception:
+                logger.exception("Could not record artifact manifest for session %s export", sid)
         return Response(
             content=result.content,
             media_type=result.media_type or "application/octet-stream",

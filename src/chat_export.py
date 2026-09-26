@@ -100,6 +100,8 @@ __all__ = [
     "render_md",
     "render_txt",
     "render_json",
+    "render_jsonl",
+    "transcript_events",
     "render_html",
     "normalize_format",
     "sanitize_export_filename",
@@ -1188,6 +1190,98 @@ def render_json(transcript: Transcript) -> str:
 
 
 # ---------------------------------------------------------------------------
+# jsonl renderer: one normalized event per line
+# ---------------------------------------------------------------------------
+#
+# A flat, harness-neutral event stream (radar #333): the same shape other
+# tools use to mine sessions for skills and corrections, so a conversation
+# can be fed to them — or compared with a session from another agent —
+# without parsing Faustus's own JSON. Event types: `session` (first line),
+# `prompt` (user), `response` (assistant), `system`, `tool_call`, and
+# `file_change` for a write/edit tool that names a path.
+
+JSONL_SCHEMA_VERSION = 1
+_FILE_TOOLS = ("write_file", "edit_file", "apply_patch", "create_file", "str_replace")
+_JSONL_RESULT_CHARS = 2000
+
+
+def _tool_path(arguments: str) -> str:
+    """The path a file tool wrote: a JSON argument, or — as the tool events
+    record it — the first line of the command, when it looks like a path."""
+    try:
+        args = _json.loads(arguments or "{}")
+    except (ValueError, TypeError):
+        first = (arguments or "").strip().split("\n", 1)[0].strip()
+        return first if first and " " not in first and len(first) < 400 else ""
+    if not isinstance(args, dict):
+        return ""
+    for key in ("path", "file_path", "filename", "file"):
+        value = args.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def transcript_events(transcript: Transcript) -> List[Dict[str, Any]]:
+    events: List[Dict[str, Any]] = [{
+        "v": JSONL_SCHEMA_VERSION,
+        "type": "session",
+        "session_id": transcript.session_id,
+        "name": transcript.name,
+        "model": transcript.model,
+        "project": transcript.project,
+        "workspace": transcript.workspace,
+        "exported_at": transcript.exported_at.isoformat(),
+        "source": "faustus",
+    }]
+    kinds = {"user": "prompt", "assistant": "response", "system": "system", "tool": "tool_result"}
+    for index, message in enumerate(transcript.messages):
+        event: Dict[str, Any] = {
+            "v": JSONL_SCHEMA_VERSION,
+            "type": kinds.get(message.role, message.role or "message"),
+            "turn": index,
+            "ts": message.timestamp,
+            "role": message.role,
+            "text": message.raw_text,
+        }
+        if message.model:
+            event["model"] = message.model
+        if message.attachments:
+            event["attachments"] = list(message.attachments)
+        events.append(event)
+        for call in message.tool_calls:
+            result = call.result or ""
+            events.append({
+                "v": JSONL_SCHEMA_VERSION,
+                "type": "tool_call",
+                "turn": index,
+                "ts": message.timestamp,
+                "tool": call.name,
+                "args": call.arguments,
+                "status": call.status,
+                "duration_s": call.duration_s,
+                "result": result[:_JSONL_RESULT_CHARS],
+                "result_truncated": len(result) > _JSONL_RESULT_CHARS,
+            })
+            path = _tool_path(call.arguments) if call.name in _FILE_TOOLS else ""
+            if path:
+                events.append({
+                    "v": JSONL_SCHEMA_VERSION,
+                    "type": "file_change",
+                    "turn": index,
+                    "ts": message.timestamp,
+                    "tool": call.name,
+                    "path": path,
+                    "status": call.status,
+                })
+    return events
+
+
+def render_jsonl(transcript: Transcript) -> str:
+    return "\n".join(_json.dumps(e, ensure_ascii=False, default=str) for e in transcript_events(transcript)) + "\n"
+
+
+# ---------------------------------------------------------------------------
 # html renderer
 # ---------------------------------------------------------------------------
 
@@ -1453,6 +1547,7 @@ _FORMAT_ALIASES = {
     "markdown": "md", "md": "md", "mdown": "md",
     "text": "txt", "txt": "txt", "plain": "txt",
     "json": "json",
+    "jsonl": "jsonl", "ndjson": "jsonl", "events": "jsonl",
     "html": "html", "htm": "html",
     "pdf": "pdf",
     "docx": "docx", "word": "docx",
@@ -1462,6 +1557,7 @@ _TEXT_RENDERERS = {
     "md": render_md,
     "txt": render_txt,
     "json": render_json,
+    "jsonl": render_jsonl,
     "html": render_html,
 }
 

@@ -19,7 +19,7 @@ tokens go to planning and review:
     }
 
 Tools: workers_guide (read first), dispatch_workers (start a job),
-session_usage / turn_review / answer_versions (what a chat or a worker's chat used and what
+session_usage / turn_review / answer_versions / session_events (what a chat or a worker's chat used and what
 its last turns did, with findings),
 workers_wait (block until done, then the compact result), workers_wait_for
 (block until ONE condition holds — a phase, a worker state, an event, a file
@@ -451,6 +451,30 @@ def render_answer_versions(alts: Dict[str, Any], chars: int = 400) -> str:
             text = " ".join(str(a.get("answer") or "").split())
             lines += [head, f"   {text[:chars]}{'…' if len(text) > chars else ''}"]
     return "\n".join(lines)
+
+
+def filter_session_events(raw: str, types: Any = None, last: Any = 200) -> str:
+    """Keep the session line, the wanted event types and the newest `last`."""
+    try:
+        keep_n = max(1, min(int(last or 200), 2000))
+    except (TypeError, ValueError):
+        keep_n = 200
+    wanted = {str(t) for t in types} if isinstance(types, list) and types else None
+    head: List[str] = []
+    rows: List[str] = []
+    for line in (raw or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            kind = json.loads(line).get("type")
+        except (ValueError, AttributeError):
+            continue
+        if kind == "session":
+            head.append(line)
+        elif wanted is None or kind in wanted:
+            rows.append(line)
+    return "\n".join(head + rows[-keep_n:]) or "No events."
 
 
 def render_session_usage(data: Dict[str, Any]) -> str:
@@ -994,6 +1018,20 @@ TOOLS: List[Tool] = [
         }, "required": ["session_id"]},
     ),
     Tool(
+        name="session_events",
+        description=(
+            "A Faustus chat as normalized events, one JSON object per line: session, prompt, response, "
+            "tool_call (tool, args, status, duration, result excerpt) and file_change (path). The same "
+            "shape other agents' session logs use, so a worker's run can be mined or compared line by line."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "session_id": {"type": "string", "description": "The chat id"},
+            "types": {"type": "array", "items": {"type": "string"},
+                      "description": "Keep only these event types (e.g. [\"tool_call\", \"file_change\"])"},
+            "last": {"type": "integer", "default": 200, "description": "At most this many events, the newest (1-2000)"},
+        }, "required": ["session_id"]},
+    ),
+    Tool(
         name="objectives_list",
         description=(
             "The objectives dashboard of a Faustus project: every objective with status, priority, "
@@ -1388,6 +1426,13 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
                 chars = 400
             data = await asyncio.to_thread(_request, "GET", f"/api/session/{sid}/alternatives")
             return _text(render_answer_versions((data or {}).get("alternatives") or {}, chars))
+        if name == "session_events":
+            sid = urllib.parse.quote(str(args.get("session_id") or "").strip(), safe="")
+            if not sid:
+                return _text("Error: give the session_id")
+            raw = await asyncio.to_thread(_request, "GET", f"/api/session/{sid}/export?fmt=jsonl&record=false",
+                                          None, _TIMEOUT, 1, True)
+            return _text(filter_session_events(raw, args.get("types"), args.get("last")))
         if name == "models_fit":
             refresh = "true" if args.get("refresh") else "false"
             data = await asyncio.to_thread(_request, "GET", f"/api/models/fit?refresh={refresh}")

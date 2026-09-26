@@ -75,7 +75,7 @@ export async function deleteSession(id: string): Promise<void> {
   );
 }
 
-export const EXPORT_FORMATS = ['md', 'txt', 'json', 'html', 'docx', 'pdf'] as const;
+export const EXPORT_FORMATS = ['md', 'txt', 'json', 'jsonl', 'html', 'docx', 'pdf'] as const;
 export type ExportFormat = (typeof EXPORT_FORMATS)[number];
 
 export function exportUrl(id: string, fmt: ExportFormat): string {
