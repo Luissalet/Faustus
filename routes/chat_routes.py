@@ -5076,22 +5076,41 @@ def setup_chat_routes(
         running: List[str] = []
         runs: Dict[str, str] = {}   # session → opaque run id (needed to Stop from the sidebar)
         details: Dict[str, Dict[str, Any]] = {}
+        # Sessions whose ownership could not be checked this time (a busy
+        # database, say). A client must read "unknown", not "idle": one
+        # failure used to empty the whole answer, and a watcher took a run
+        # that was mid-generation for a finished one.
+        unverified = 0
         try:
             all_details = agent_runs.activity_details()
-            for sid in agent_runs.active_session_ids():
+            active_ids = agent_runs.active_session_ids()
+        except Exception:
+            logger.warning("[activity] could not read the run registry", exc_info=True)
+            all_details, active_ids = {}, []
+            unverified += 1
+        for sid in active_ids:
+            owned = False
+            for attempt in range(2):
                 try:
                     _verify_session_owner(request, sid, session_manager)
+                    owned = True
+                    break
                 except HTTPException:
-                    continue  # another user's run (or a vanished session)
-                running.append(sid)
-                rid = agent_runs.get_run_id(sid)
-                if rid and agent_runs.is_active(sid):
-                    runs[sid] = rid
-                    if sid in all_details:
-                        details[sid] = all_details[sid]
-        except Exception:
-            running = []
-            details = {}
+                    break  # another user's run (or a vanished session)
+                except Exception as exc:
+                    if attempt == 0:
+                        await asyncio.sleep(0.2)
+                        continue
+                    logger.warning("[activity] ownership check failed for %s: %s", sid, exc)
+                    unverified += 1
+            if not owned:
+                continue
+            running.append(sid)
+            rid = agent_runs.get_run_id(sid)
+            if rid and agent_runs.is_active(sid):
+                runs[sid] = rid
+                if sid in all_details:
+                    details[sid] = all_details[sid]
         try:
             awaiting = tool_approval_store.pending_session_ids(owner=owner)
         except Exception:
@@ -5129,7 +5148,8 @@ def setup_chat_routes(
             workers = {}
         return {"running": running, "runs": runs, "details": details,
                 "awaiting_approval": awaiting, "queued": queued,
-                "interrupted": interrupted, "workers": workers, "ts": time.time()}
+                "interrupted": interrupted, "workers": workers,
+                "unverified": unverified, "ts": time.time()}
 
     # ------------------------------------------------------------------ #
     # GET /api/questions — every `ask_user` question still waiting for an

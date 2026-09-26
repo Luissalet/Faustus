@@ -2056,7 +2056,12 @@ export async function chatActivity(signal?: AbortSignal): Promise<ChatActivity> 
     details?: unknown;
     awaiting_approval?: unknown;
     queued?: unknown;
+    unverified?: unknown;
   }>('/api/chat/activity', signal);
+  // The server could not confirm some runs this time (a busy database): the
+  // answer is partial, and "not listed" would read as "finished". Callers
+  // treat a failed read as "keep the last picture".
+  if ((num(raw.unverified) ?? 0) > 0) throw new ApiError('Activity is partial right now', 503);
   const ids = (value: unknown): string[] => asArray<unknown>(value).map(String).filter(Boolean);
   const map = <T>(value: unknown, cast: (v: unknown) => T): Record<string, T> => {
     const out: Record<string, T> = {};
