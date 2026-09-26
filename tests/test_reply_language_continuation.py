@@ -107,7 +107,10 @@ def test_the_reminder_moves_forward_after_a_long_stretch():
 
     refresh_continuation(messages, HINT)
 
-    assert _roles(messages) == ["user", "assistant", "tool", "reply_language_continuity", "assistant", "tool"]
+    # The first copy stays where it was, so the prompt before the new one is
+    # byte-for-byte the previous request's (the server's cache still holds it).
+    assert _roles(messages) == ["user", "reply_language_continuity", "assistant", "tool",
+                                "reply_language_continuity", "assistant", "tool"]
     _assert_every_call_is_answered_next(messages)
 
 

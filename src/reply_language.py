@@ -197,11 +197,11 @@ def conversation_language(messages: Optional[Iterable[Dict[str, Any]]]) -> Optio
 
 
 def refresh_continuation(messages: List[Dict[str, Any]], hint: Optional[Dict[str, str]]) -> None:
-    """One current reminder after tool results, never a growing prompt tail.
+    """A current reminder after tool results.
 
-    It is moved forward only once enough work follows it
-    (`KEEP_REMINDER_CHARS`): every move costs the prompt cache from its old
-    slot on.
+    A new copy is placed only once enough work follows the last one
+    (`KEEP_REMINDER_CHARS`), and the earlier copies stay put: removing one
+    costs the prompt cache from its old slot on.
 
     Placed BEFORE the final message, not after it. This runs at the top of a
     round, when the last thing in the list is whatever the previous round
@@ -222,7 +222,15 @@ def refresh_continuation(messages: List[Dict[str, Any]], hint: Optional[Dict[str
     """
     if hint and _current_reminder_is_recent(messages, hint):
         return
-    messages[:] = [m for m in messages if m.get("_agent_injected") != "reply_language_continuity"]
+    # Earlier copies that say the same thing stay where they are: taking one
+    # out re-read everything after its slot from the prompt cache (live on the
+    # exam, 26-09: 10,400 tokens, 17 s, for a 120-token note). A new copy near
+    # the end costs its own few tokens and nothing else. Only a reminder that
+    # says something else (the user switched language) goes.
+    keep_same = bool(hint)
+    messages[:] = [m for m in messages
+                   if m.get("_agent_injected") != "reply_language_continuity"
+                   or (keep_same and m.get("content") == hint.get("content"))]
     if hint:
         messages.insert(_continuation_slot(messages),
                         {**hint, "_agent_injected": "reply_language_continuity"})
