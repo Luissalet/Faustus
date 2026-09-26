@@ -1892,6 +1892,40 @@ def trace_for_call(call_id: str, *, session_id: Optional[str] = None) -> Dict[st
     }
 
 
+_PEEK_TAIL_BYTES = 64 * 1024
+
+
+def _peek_status(path: str) -> Optional[str]:
+    """The log's last status line, read from its tail only — or None when
+    the tail holds none (then the caller reads the whole log). A finished
+    exam run left 17 MB of events; parsing every line of every such log just
+    to learn it was finished made the 7006 take three minutes to start
+    (26-09). Status lines are the only lines with a "status" key, and the
+    last one wins, exactly as in `_read_log`."""
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - _PEEK_TAIL_BYTES))
+            tail = f.read().decode("utf-8", errors="replace")
+    except OSError:
+        return "unreadable"
+    lines = tail.splitlines()
+    if size > _PEEK_TAIL_BYTES and lines:
+        lines = lines[1:]  # the first one may be cut in half
+    for line in reversed(lines):
+        line = line.strip()
+        if not line.startswith('{"status"'):
+            continue
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(obj, dict) and "status" in obj:
+            return str(obj["status"]) if obj["status"] is not None else None
+    return None
+
+
 def recover_interrupted_runs(session_manager=None) -> List[Dict[str, Any]]:
     """Scan DATA_DIR/runs for logs left in 'running' state by a previous
     process. For each: save what the run had produced as a partial assistant
@@ -1915,7 +1949,11 @@ def recover_interrupted_runs(session_manager=None) -> List[Dict[str, Any]]:
         if not name.endswith(".jsonl"):
             continue
         path = os.path.join(d, name)
-        info = _read_log(path)
+        peeked = _peek_status(path)
+        if peeked in ("done", "stopped", "error", "interrupted", "unreadable", "waiting_user"):
+            info = {"status": peeked}
+        else:
+            info = _read_log(path)
         status = info.get("status")
         if status in ("done", "stopped", "error", "interrupted", "unreadable",
                       "waiting_user", None) and status != "running":
