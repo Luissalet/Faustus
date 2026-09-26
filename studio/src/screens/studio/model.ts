@@ -945,8 +945,15 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
       // The steps keep their "waiting" look until the replayed tool_start
       // turns them back into "running": only the card goes.
       return turn.ask ? { ...turn, ask: undefined } : turn;
-    case 'metrics':
-      return { ...turn, metrics: { ...turn.metrics, ...event.metrics } };
+    case 'metrics': {
+      // A key the event does not carry (undefined) keeps what the turn
+      // already had: a later metrics event without `prompt_cache` or
+      // `execution` used to wipe the ones the saved message brought.
+      const incoming = Object.fromEntries(
+        Object.entries(event.metrics).filter(([, value]) => value !== undefined),
+      ) as typeof event.metrics;
+      return { ...turn, metrics: { ...turn.metrics, ...incoming } };
+    }
     case 'sources': {
       // A turn can call web_search/web_fetch more than once (follow-up
       // queries in the same round trip); each call emits its own sources
