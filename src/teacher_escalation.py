@@ -240,6 +240,12 @@ async def _call_teacher(teacher_model_spec: str, prompt: str,
     except Exception as e:
         logger.warning(f"teacher endpoint not resolvable ({teacher_model_spec!r}): {e}")
         return None
+    # The teacher exists to be the strongest voice in the room: it thinks
+    # at the teacher level (max by default, src/mode_effort.py), with the
+    # clock to match.
+    from src import mode_effort
+    overrides = mode_effort.for_mode("teacher")
+    thinking = bool(overrides and overrides.get("think"))
     try:
         return await llm_call_async(
             url, model,
@@ -248,7 +254,8 @@ async def _call_teacher(teacher_model_spec: str, prompt: str,
                 {"role": "user", "content": prompt},
             ],
             headers=headers,
-            timeout=120,
+            timeout=600 if thinking else 120,
+            gen_overrides=overrides,
         )
     except Exception as e:
         logger.warning(f"teacher call failed: {e}")

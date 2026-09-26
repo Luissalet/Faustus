@@ -397,9 +397,18 @@ class StreamingChatInvoker:
                              "src.llm_core.stream_llm is not available in this build; "
                              "no council intervention can be spoken")
         budget = float(timeout_s or self._timeout_s)
+        # A council member speaks at the council level (high by default,
+        # src/mode_effort.py): the point of a council is each model's
+        # considered view, not its fastest.
+        try:
+            from src import mode_effort
+            member_overrides = mode_effort.for_mode("council")
+        except Exception:  # noqa: BLE001 - the model's own default then
+            member_overrides = None
         stream = stream_llm(url, model_id or result["model"], messages,
                             headers=headers or None, timeout=int(max(1.0, budget)),
-                            session_id=_text(_field(participant, "private_session_id")) or None)
+                            session_id=_text(_field(participant, "private_session_id")) or None,
+                            gen_overrides=member_overrides)
         try:
             content, usage, error = await asyncio.wait_for(_consume_stream(stream), budget)
         except asyncio.TimeoutError:
@@ -462,6 +471,10 @@ async def _consume_stream(stream: Any) -> Tuple[str, Dict[str, Any], str]:
         async for chunk in stream:
             for payload in _sse_payloads(chunk):
                 if "delta" in payload:
+                    # The member's reasoning streams too, marked `thinking`;
+                    # only the answer is what it says to the council.
+                    if payload.get("thinking"):
+                        continue
                     parts.append(str(payload.get("delta") or ""))
                 elif payload.get("type") == "usage" and isinstance(payload.get("data"), dict):
                     usage = dict(payload["data"])

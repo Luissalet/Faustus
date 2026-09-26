@@ -1,7 +1,7 @@
 """Per-task delegation "effort" profiles.
 
 `delegate_agents` (src/agent_tools/subagent_tools.py) lets a task say how hard
-its worker should think: `effort: "low" | "medium" | "high"`. `resolve()` maps
+its worker should think: `effort: "low" | "medium" | "high" | "max"`. `resolve()` maps
 that word to the request options a child run should use — the same
 `gen_overrides` vocabulary src/llm_core.py already understands (`think`,
 `reasoning_effort`, `reasoning_budget`), plus a short system hint appended to
@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-EFFORT_LEVELS = ("low", "medium", "high")
+EFFORT_LEVELS = ("low", "medium", "high", "max")
 
 #: Mirrors `local_openai_reasoning_budget_default`'s own fallback
 #: (src/settings.py) — the budget a self-hosted thinking-capable model gets
@@ -37,10 +37,15 @@ DEFAULT_REASONING_BUDGET = 4096
 #: that knows a specific model's real reasoning-token ceiling can still pass
 #: a tighter `reasoning_budget` of its own — this is only the level's default.
 HIGH_REASONING_BUDGET = 8192
+#: "max": the model's strongest setting (src/provider_reasoning.py fits the
+#: word to each provider) with the deep budget.
+MAX_REASONING_BUDGET = 16384
 
 _HINTS: Dict[str, str] = {
     "low": "Be brief; do the task directly.",
     "high": "Think carefully and verify before answering.",
+    "max": "This is the hardest part of the task: reason it through fully, check every step, "
+           "and verify before answering.",
 }
 
 
@@ -76,6 +81,15 @@ def resolve(effort: Optional[str], model: str = "", endpoint: str = "") -> Dict[
                 "reasoning_budget": 0,
             },
             "hint": _HINTS["low"],
+        }
+    if level == "max":
+        return {
+            "gen_overrides": {
+                "think": True,
+                "reasoning_effort": "max",
+                "reasoning_budget": MAX_REASONING_BUDGET,
+            },
+            "hint": _HINTS["max"],
         }
     # "high"
     return {

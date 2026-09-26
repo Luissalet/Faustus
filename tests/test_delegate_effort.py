@@ -34,11 +34,11 @@ def _delegate_agents_task_schema():
     return schema["parameters"]["properties"]["tasks"]["items"]
 
 
-def test_schema_declares_optional_effort_with_three_levels():
+def test_schema_declares_optional_effort_with_four_levels():
     task_item = _delegate_agents_task_schema()
     effort = task_item["properties"]["effort"]
     assert effort["type"] == "string"
-    assert effort["enum"] == ["low", "medium", "high"]
+    assert effort["enum"] == ["low", "medium", "high", "max"]
     assert isinstance(effort.get("description"), str) and effort["description"]
     # Optional: `instruction` alone is still required, effort is not.
     assert "effort" not in task_item["required"]
