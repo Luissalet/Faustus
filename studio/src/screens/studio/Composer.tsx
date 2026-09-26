@@ -338,6 +338,8 @@ export function Composer({
   const pushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const setDraftPropRef = useRef(setDraftProp);
   setDraftPropRef.current = setDraftProp;
+  const draftPropRef = useRef(draftProp);
+  draftPropRef.current = draftProp;
 
   const flushDraft = useCallback(() => {
     if (pushTimer.current !== null) {
@@ -459,6 +461,18 @@ export function Composer({
     }
     onSend(current);
     if (docContext.length) setDocContext([]);
+    // A parent that clears the draft in the same tick as the flush above (a
+    // slash command: "/temp 0.8" is handled at once) leaves `draftProp` where
+    // it was before the flush, so the sync effect sees no change and the
+    // command stayed in the box. Once that update has rendered, take the
+    // parent's value if it differs from what was pushed.
+    setTimeout(() => {
+      if (draftPropRef.current !== pushedRef.current) {
+        pushedRef.current = draftPropRef.current;
+        draftRef.current = draftPropRef.current;
+        setLocalDraft(draftPropRef.current);
+      }
+    }, 0);
   };
 
   /* ── CMP-09/CMP-12: strategy profile + recipe, persisted server-side per
