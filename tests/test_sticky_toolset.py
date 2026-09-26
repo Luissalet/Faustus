@@ -19,9 +19,9 @@ def test_a_turn_that_needs_more_widens_it_while_small():
 
 
 def test_past_the_cap_the_turn_starts_over():
-    al._sticky_toolset("s", {f"t{i}" for i in range(20)}, None, set())
-    fresh, _ = al._sticky_toolset("s", {f"u{i}" for i in range(20)}, None, set())
-    assert fresh == {f"u{i}" for i in range(20)}
+    al._sticky_toolset("s", {f"t{i}" for i in range(30)}, None, set())
+    fresh, _ = al._sticky_toolset("s", {f"u{i}" for i in range(30)}, None, set())
+    assert fresh == {f"u{i}" for i in range(30)}
 
 
 def test_disabled_tools_never_come_back():

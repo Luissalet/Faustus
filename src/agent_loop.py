@@ -5853,8 +5853,10 @@ def _tool_image_messages(
 _SESSION_TOOLSETS: "OrderedDict[str, Tuple[frozenset, Optional[frozenset]]]" = OrderedDict()
 _SESSION_TOOLSETS_MAX = 256
 #: A turn may widen the previous set up to this many tools; past it, it
-#: starts from its own selection again.
-_STICKY_TOOLSET_MAX = 28
+#: starts from its own selection again. A workspace-bound agent turn alone
+#: selects 30-33 tools, so 28 (the first value) made most follow-up turns
+#: that needed anything new start over and re-read the prompt (26-09).
+_STICKY_TOOLSET_MAX = 48
 
 
 def _sticky_toolset(session_id: str, relevant: Set[str], hot: Optional[Set[str]],

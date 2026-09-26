@@ -215,7 +215,7 @@ DEFAULT_SETTINGS = {
     # start of the prompt, so a new list re-reads it all); a turn that needs
     # more widens it up to this many tools, past that it starts over.
     "agent_sticky_toolset": True,
-    "agent_sticky_toolset_max": 28,
+    "agent_sticky_toolset_max": 48,
     # Mid-turn context pressure (src/context_compactor.apply_midturn_pressure):
     # each agent round spills fat/old tool results to data/context_overflow and
     # folds history so a long overnight turn stays under a soft ceiling instead
