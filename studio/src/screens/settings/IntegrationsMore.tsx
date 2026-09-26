@@ -37,7 +37,7 @@ import {
   type McpServer,
   type McpTool,
 } from '../../adapters/integrations';
-import { MCP_PRESETS, fieldsFor, oauthFilePayload, presetByName, withProvider } from '../../lib/mcpPresets';
+import { MCP_PRESETS, fieldsFor, githubRepo, oauthFilePayload, presetByName, presetUrl, withProvider } from '../../lib/mcpPresets';
 import { locale, t, tn } from '../../i18n';
 import { getGoogleOAuthClient } from '../../adapters/google';
 import { Field, Select, Toggle } from './fields';
@@ -471,10 +471,19 @@ function McpNew({ onClose, onChanged, say }: { onClose: () => void; onChanged: (
   const m = useMsg();
   const isUrl = transport === 'sse' || transport === 'http';
 
+  const [repo, setRepo] = useState('');
   const pickPreset = (chosen: string) => {
     setPresetName(chosen);
     const p = presetByName(chosen);
     if (!p) return;
+    if (p.url) {
+      // A remote server: URL and transport, no command.
+      setTransport(p.transport ?? 'http');
+      setName(p.name);
+      setUrl(p.url.includes('{repo}') ? '' : p.url);
+      setRepo('');
+      return;
+    }
     const f = fieldsFor(p);
     setTransport('stdio');
     setName(f.name);
@@ -584,7 +593,25 @@ function McpNew({ onClose, onChanged, say }: { onClose: () => void; onChanged: (
           />
         </Field>
       )}
-      {preset?.help && <pre className="fs-set__steps">{preset.help}</pre>}
+      {preset?.url?.includes('{repo}') && (
+        <Field label={t('GitHub repository')} htmlFor="mcp-repo" help={t('owner/repo, or paste its GitHub address.')}>
+          <input
+            id="mcp-repo"
+            className="fs-field"
+            value={repo}
+            placeholder="owner/repo"
+            data-testid="mcp-repo"
+            onChange={(e) => {
+              setRepo(e.target.value);
+              const r = githubRepo(e.target.value);
+              const u = preset ? presetUrl(preset, e.target.value) : null;
+              setUrl(u ?? '');
+              if (r) setName(t('Docs: {repo}', { repo: r }));
+            }}
+          />
+        </Field>
+      )}
+      {preset?.help && <pre className="fs-set__steps">{t(preset.help)}</pre>}
       <div className="fs-set__grid2">
         <Field label={t('Name')} htmlFor="mcp-name">
           <input id="mcp-name" className="fs-field" value={name} onChange={(e) => setName(e.target.value)} />

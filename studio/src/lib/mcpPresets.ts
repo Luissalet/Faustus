@@ -46,9 +46,33 @@ export interface McpPreset {
   oauth?: OauthConfig;
   providerDropdown?: ProviderDropdown;
   help?: string;
+  /** A remote server: no command, a URL and its transport. `{repo}` in the
+   *  URL is filled from a GitHub `owner/repo` the form asks for. */
+  url?: string;
+  transport?: 'http' | 'sse';
 }
 
 export const MCP_PRESETS: McpPreset[] = [
+  {
+    // Remote, no key, public repositories: the agent reads a dependency's
+    // own docs and code instead of searching the web for them.
+    name: 'Docs of a GitHub repository',
+    command: '',
+    args: [],
+    env: {},
+    transport: 'http',
+    url: 'https://gitmcp.io/{repo}',
+    help: 'GitMCP serves the documentation and code search of one public GitHub repository (fetch/search tools named after the repo). Type owner/repo or paste its GitHub address. Remote service: the questions the agent asks go to gitmcp.io.',
+  },
+  {
+    name: 'DeepWiki (any public GitHub repository)',
+    command: '',
+    args: [],
+    env: {},
+    transport: 'http',
+    url: 'https://mcp.deepwiki.com/mcp',
+    help: 'One server for every public repository: read_wiki_structure, read_wiki_contents and ask_question take the repository as an argument. Remote service: the questions go to DeepWiki.',
+  },
   {
     name: 'Gmail',
     command: 'npx',
@@ -184,6 +208,24 @@ export const MCP_PRESETS: McpPreset[] = [
     help: '1. Go to todoist.com > Settings > Integrations > Developer\n2. Copy your API token',
   },
 ];
+
+/** `owner/repo` from what a person types or pastes: `owner/repo`,
+ *  `https://github.com/owner/repo(.git)(/tree/…)`. Null when it is not one. */
+export function githubRepo(text: string): string | null {
+  const raw = (text || '').trim().replace(/\.git$/, '');
+  const m = raw.match(/^(?:https?:\/\/)?(?:www\.)?(?:github\.com\/)?([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))\/([A-Za-z0-9._-]{1,100})(?:[/?#].*)?$/);
+  if (!m || m[2] === '.' || m[2] === '..') return null;
+  return `${m[1]}/${m[2]}`;
+}
+
+/** The URL a remote preset connects to, `{repo}` filled (null when the
+ *  preset needs a repository and none was given). */
+export function presetUrl(preset: McpPreset, repo: string): string | null {
+  if (!preset.url) return null;
+  if (!preset.url.includes('{repo}')) return preset.url;
+  const r = githubRepo(repo);
+  return r ? preset.url.replace('{repo}', r) : null;
+}
 
 export function presetByName(name: string): McpPreset | undefined {
   return MCP_PRESETS.find((p) => p.name === name);

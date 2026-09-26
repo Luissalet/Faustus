@@ -8593,3 +8593,8 @@ Pick a working folder first: /review looks at its changes.	Elige antes una carpe
 Reviewing the changes against {base}: diff, static checks, related tests, then the model…	Revisando los cambios respecto a {base}: diff, comprobaciones estáticas, tests relacionados y luego el modelo…
 Could not review	No se pudo revisar
 Review the working folder's changes against a base (HEAD by default) in stages: the diff, static checks on the added lines, the related tests, then the chat's model on what those cannot prove.	Revisa por etapas los cambios de la carpeta de trabajo respecto a una base (HEAD por defecto): el diff, comprobaciones estáticas en las líneas añadidas, los tests relacionados y luego el modelo del chat sobre lo que esas pruebas no demuestran.
+GitHub repository	Repositorio de GitHub
+owner/repo, or paste its GitHub address.	propietario/repo, o pega su dirección de GitHub.
+Docs: {repo}	Docs: {repo}
+GitMCP serves the documentation and code search of one public GitHub repository (fetch/search tools named after the repo). Type owner/repo or paste its GitHub address. Remote service: the questions the agent asks go to gitmcp.io.	GitMCP sirve la documentación y la búsqueda de código de un repositorio público de GitHub (herramientas fetch/search con el nombre del repo). Escribe propietario/repo o pega su dirección de GitHub. Servicio remoto: las preguntas del agente van a gitmcp.io.
+One server for every public repository: read_wiki_structure, read_wiki_contents and ask_question take the repository as an argument. Remote service: the questions go to DeepWiki.	Un servidor para todos los repositorios públicos: read_wiki_structure, read_wiki_contents y ask_question reciben el repositorio como argumento. Servicio remoto: las preguntas van a DeepWiki.
