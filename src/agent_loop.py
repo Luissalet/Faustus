@@ -9489,6 +9489,8 @@ async def _stream_agent_loop_body(
     _think_cutoffs = 0
     # Follow-up rounds after clean tool results may think with a smaller
     # budget (src/round_reasoning.py); a tool failure keeps the full one.
+    _image_views_since_write = 0
+    _image_views_nudge_due = 0
     _tool_trouble_since_stream = False
     _followup_budget_logged = False
     _think_pinned_for_budget = bool(_think_user_pinned) or _think_mode_info.get("source") == "explicit"
@@ -14797,14 +14799,30 @@ async def _stream_agent_loop_body(
             except Exception:  # noqa: BLE001
                 pass
             # A successful write restarts inspect_image's per-image count
-            # (the "write your best answer down" note).
+            # (the "write your best answer down" note) and the turn's count
+            # of images looked at.
             if block.tool_type in ("write_file", "edit_file", "apply_patch", "append_file") \
                     and not result.get("error") and result.get("success", True) is not False:
+                _image_views_since_write = 0
                 try:
                     from src.agent_tools import image_inspect_tool as _iit_w
                     _iit_w.note_written(session_id)
                 except Exception:  # noqa: BLE001 - advisory
                     pass
+            elif not result.get("error") and (block.tool_type == "inspect_image" or result.get("images")):
+                # Any image the model looked at: inspect_image, or a crop it
+                # made and opened with read_file (exam 30 did that, so the
+                # per-image count in inspect_image never reached its note).
+                _image_views_since_write += 1
+                _iv_every = 0
+                try:
+                    _iv_every = max(0, int(get_setting("vision_write_every", 6) or 0)) * 2
+                except (TypeError, ValueError):
+                    _iv_every = 12
+                if _iv_every and _image_views_since_write % _iv_every == 0:
+                    # Sent after this round's tool results, never between a
+                    # call and its result.
+                    _image_views_nudge_due = _image_views_since_write
             # Emit tool_output (include ui_event data if present)
             tool_output_data = {"type": "tool_output", "tool": block.tool_type, "command": cmd_display, "output": output_text, "exit_code": result.get("exit_code"), "call_id": _call_id}
             try:
@@ -15546,6 +15564,22 @@ async def _stream_agent_loop_body(
                         "round": round_num, "streak": _web_read_streak,
                     }) + "\n\n"
                 )
+
+        if _image_views_nudge_due:
+            messages.append({
+                "role": "user",
+                "_harness_note": True,
+                "content": _lang_note(
+                    "[Harness check — automatic message from the runtime, not from the user] "
+                    f"You have looked at {_image_views_nudge_due} images since you last wrote anything "
+                    "to a file. Write your current best answer now, into the file the task asks for "
+                    "(or your notes if it names none): what you have established and what is still "
+                    "uncertain. Then look again only where a specific gap could change that answer."),
+            })
+            _ledger.notes.append(f"image_views_write_nudge@{round_num}:{_image_views_nudge_due}")
+            logger.info("[harness] round %s: %d image views with nothing written — nudging",
+                        round_num, _image_views_nudge_due)
+            _image_views_nudge_due = 0
 
         if _todo_stall_at > 0 and session_id:
             try:
