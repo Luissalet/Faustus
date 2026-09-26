@@ -91,3 +91,6 @@ piper-tts
 
 # scripts/typos_ab.py: Spanish word frequencies to count invented words per sampler preset
 wordfreq>=3.1
+
+# inspect_image / pdf_ops: render a PDF page to an image (pure wheel, no system binaries)
+pypdfium2>=4
