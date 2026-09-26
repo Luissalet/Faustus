@@ -71,7 +71,6 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 - **Migrar a esquema los puntos de decisión de cada turno** (22-09, §160b, OBJ-27): clasificación de intención, enrutado de modelo, selección de herramienta siguen en texto libre; hoy sólo `auto_review`/`doubt_review`/`research_review` piden esquema.
 - **Falta la herramienta de agente `design_canvas_pass.draft`** (22-09, §160b): registrarla y cerrar el ciclo (volver al canvas al acabar la tarea y comprobar que lo hecho cumple lo diseñado).
 - **Razonamiento + salida restringida no conviven** (22-09, §160b): si algún día se quieren juntos, hacerlo en dos llamadas (pensar libre, luego rellenar); el esquema tampoco viaja hoy junto a `tools`.
-- **Tarjeta ambigua de aprobación**: el guardián de comandos destructivos usa el mismo título («Allow this task to continue?») que la de contexto externo (20-09, §90); debería decir qué comando y por qué.
 - **Historial recortado de más entre turnos** (13-15k de 200k) (20-09, §90): el modelo gasta rondas relocalizando el workspace; revisar qué se poda.
 - **Mensaje largo en el compositor congela el renderer** >30 s (20-09, §90): falta agrupar el autoajuste de altura en un `rAF` (un reflow por fotograma) y estudiar la virtualización de la transcripción.
 - **Sin UI para el localizador de una cita** (20-09, §146): hoy sólo viaja en el texto inyectado al modelo.
@@ -79,14 +78,11 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 - **Enrutado de modelo por schema bloqueado** (19-09, §133): no puede aplicarse hasta que exista una herramienta de extracción a schema de cara al usuario.
 - **`local_repeat_penalty_default`/`local_min_p_default` sin campo en Ajustes** (18-09, §108): no llevan prefijo `agent_`/`browser_`/`desktop_`; decidir dónde encajan si se exponen en la UI.
 - **Idea: STT en streaming por WebSocket** con parciales en vez de esperar al silencio (17-09, §105), si la latencia de «oído en» molesta.
-- **`turn_error` sin enganche** (17-09, mobile M-A): declarado en `notifications.KINDS` pero ningún punto de `chat_routes.py` lo dispara; revisar los branches de error hacia la línea 4148.
 - **WS de móvil no reenvía histórico al conectar** (17-09, mobile M-A): sólo manda `hello.last_id`; el cliente Android (lote M-B) debe pedir `since_id` una vez y fiarse del socket después.
 - **`watch_page` no ve stock renderizado sólo con JavaScript** (17-09, §99): decide disponibilidad por palabras clave en el HTML; valorar el navegador integrado para esos casos.
 - **Tarjeta de tarea programada mal etiquetada** (17-09, §99): el modelo eligió «today» para «mañana» a las 8:00; valorar mostrar hoy y mañana a la vez.
 - **Ideas de tarjetas de Inicio sin hacer** (17-09, §99): calendario del día, «candidaturas» (Jobhunter pendientes/entrevistas), vigilancia de precio bajo un umbral, RSS por URL, arrastrar para reordenar.
 - **Ideas de WhatsApp sin hacer** (17-09, §100): reglas automáticas, crear grupos, estados, transcripción en segundo plano de audios largos, `archived` fiable sin re-emparejar.
-- **Texto de receta desactualizado** (17-09, §98): `docs/api/candidature_recipe.md` dice «nunca crear candidaturas» pero la herramienta las crea con `create_missing` por defecto, a propósito.
-- **Estado genérico durante herramienta larga** (17-09, §98): la UI muestra «Loading the model into memory · No server signal» mientras corre `review_candidature_mail`; debería nombrar la herramienta en curso.
 - **`GET /api/launch-profiles/status` tarda ~2 s** (17-09, §101): cachear la tabla 2-3 s en `process_center` si molesta en pantalla.
 - **La extensión de Chrome no acierta a pulsar Start** en la tarjeta de perfil (17-09, §101): un `click()` por JS sí funciona; la rejilla puede desplazar el botón durante el polling de 5 s.
 - **Ideas de Apps sin hacer** (17-09, §101): autostart de perfiles al arrancar Faustus, grupos por proyecto, importar/exportar perfiles, herramienta de solo lectura para el agente, consola en vivo por SSE.
@@ -99,9 +95,6 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 - **Parser de planes heurístico** (17-09, §95): un plan en prosa pura da 0 tareas; valorar un fallback.
 - **`delegation_receipts` con un solo reintento** (17-09, §95): si el segundo intento vuelve vacío no hay tercero; valorar si hace falta.
 
-- **Un test contamina el `settings.json` real** (spec v2, higiene de tests): algún test escribe `disabled_tools` en el `data/settings.json` real del clon; con ese fichero sucio fallan 3 casos de `tests/test_browser_mcp_reconnect.py`. Falta localizar el test y aislarlo en una fixture.
-- **`endpoint_id` no llega a `apply_openrouter_payload`** (11-09): los tres sitios de `llm_core` que la llaman pasan `endpoint_id=None`; las preferencias por endpoint no se aplican desde ahí.
-- **`_usage_bucket` sin `RouteDecision`** (ADP-22): pasar `RouteDecision.to_dict()` como kwargs con default `None` en `src/agent_loop.py::_usage_bucket`, mismo patrón que `cost_usd`.
 - **MOD-05/`execution_router.py` sin reconciliar del todo** (ADP-22): `model_router.choose()` solo decide cuando el modelo pedido es `auto`; una sesión con modelo explícito sigue pasando por `execution_router.py`.
 - **Vista móvil / disposición bajo 1280px** (CMP-01): las tres disposiciones del Studio no tienen efecto de rejilla en pantalla estrecha; el panel sigue siendo una capa superpuesta.
 - **Estimador `local_latency` atascado en `unknown`** (CMP-08): sin GPU medida nunca sale un número; revisar si conviene otra vía de estimación.
@@ -111,11 +104,9 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 - **`KV_RATES` necesita varias observaciones** (spec INF, FAUSTUS §78): el ajuste `fitted` no se dispara hasta acumular varias muestras por modelo; cambio pequeño en `vram_fit.remember_kv_rate`.
 - **Botón "Relaunch with this profile"** (spec INF, §78/§119): `activate_profile` ya prepara el plan de relanzamiento (`deferred`, `requires_restart`), pero el botón en Cookbook › Running no existe.
 - **Rigor del comparador de bancos** (spec INF): usa `p95−mediana` y `n≥3` como proxy de dispersión, no un test estadístico; subir repeticiones si se quiere más rigor.
-- **Arquitectura de un repo GGUF sin `config.json`** (spec INF): hoy sale `unknown`; leer la cabecera GGUF (`general.architecture`, `*.expert_count`) daría `dense|moe` sin red, con su test.
 - **Temperatura 1.0 en vez de 0.6 en chat directo** (w124, 19-09): el slot de una respuesta de chat normal mostró temperatura 1.0 en vez del default configurado; no bloqueante, revisar de dónde sale.
 - **Dos tests rojos preexistentes en `launch_profiles`/`process_center`** (w126, 19-09): `test_already_running_via_readiness_is_not_relaunched` y `test_route_level_relative_executable_is_400`, confirmados sin relación con ese lote; queda investigarlos.
 - **UI para la revisión de skills importadas** (FAUSTUS §147): `GET/POST /api/skills/{id}/review|approve` es solo API hoy; construir una pantalla.
-- **Atribución exacta de `model_call` a una ejecución** (FAUSTUS §149): hoy es por ventana de reloj; pasar `run_id` desde los dos puntos de llamada en `src/llm_core.py` hasta `src/llm_trace.py`.
 - **Desglose por decisión en el panel de autonomía** (FAUSTUS §180): hoy solo se ve el agregado por familia; añadir un desplegable con las últimas N filas de `approval_shadow_log`.
 - **Aviso de cuentas en listas de la compra / recetas escaladas** (uso diario 25-09, §196): el 27B no usa `python` para multiplicar raciones y se equivoca; falta un `answer_check` al estilo de los existentes que detecte "para N personas" con cantidades y pida la cuenta.
 - **Cliente del SDK generado desde OpenAPI** (paridad, TF02): `sdk/ts` sigue escrito a mano; generarlo desde el OpenAPI del servidor en vez de a mano.

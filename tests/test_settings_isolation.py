@@ -16,12 +16,18 @@ from src import constants
 from src import settings as settings_mod
 
 
+def _snapshot(path):
+    """What the real file looks like now: a live instance may keep its own
+    settings there, so the test checks it is left alone, not that it is absent."""
+    if not os.path.exists(path):
+        return None
+    with open(path, "rb") as fh:
+        return os.path.getmtime(path), fh.read()
+
+
 def test_settings_file_is_repointed_away_from_the_real_checkout_path():
     real_path = os.path.join(constants.DATA_DIR, "settings.json")
-    assert settings_mod.SETTINGS_FILE != real_path
-    assert not os.path.exists(real_path), (
-        "a prior test already wrote the real settings.json -- isolation regressed"
-    )
+    assert os.path.abspath(settings_mod.SETTINGS_FILE) != os.path.abspath(real_path)
 
 
 def test_a_real_save_settings_call_never_touches_the_real_checkout_file():
@@ -30,10 +36,11 @@ def test_a_real_save_settings_call_never_touches_the_real_checkout_file():
     extension_manifest, the manage_settings tool, ...). Wherever it comes
     from, it must land in this test's isolated file, never the real one."""
     real_path = os.path.join(constants.DATA_DIR, "settings.json")
+    before = _snapshot(real_path)
 
     settings_mod.save_settings({"disabled_tools": ["some-server"]})
 
-    assert not os.path.exists(real_path)
+    assert _snapshot(real_path) == before
     assert os.path.exists(settings_mod.SETTINGS_FILE)
     assert settings_mod.get_setting("disabled_tools", []) == ["some-server"]
 
