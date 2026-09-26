@@ -36,6 +36,18 @@ if "ODYSSEUS_DATA_DIR" not in os.environ:
     _TEST_DATA_DIR = _tempfile.mkdtemp(prefix="faustus-test-data-")
     os.environ["ODYSSEUS_DATA_DIR"] = _TEST_DATA_DIR
     _atexit.register(_shutil.rmtree, _TEST_DATA_DIR, True)
+    # The tool index embeds every tool description once and keeps the
+    # vectors in DATA_DIR/tool_index_cache.json. A fresh data folder made
+    # every session embed all of them again: minutes per session, and
+    # parallel workers doing it at once ran a small machine out of memory.
+    # Start from a copy of the checkout's cache (read, never written back).
+    _cache = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                          "data", "tool_index_cache.json")
+    if os.path.isfile(_cache):
+        try:
+            _shutil.copy2(_cache, os.path.join(_TEST_DATA_DIR, "tool_index_cache.json"))
+        except OSError:
+            pass
 
 
 @pytest.fixture(autouse=True)
