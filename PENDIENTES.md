@@ -129,6 +129,7 @@ Nada abierto a 26-09 (mañana): lo que era una mejora pasó a OBJETIVOS (OBJ-47)
 
 ## D. Verificar en vivo con el modelo local
 
+- **Relevo antes del tope de tiempo** (26-09, §209): en la próxima tarea larga (examen 30), comprobar que al 85 % del tope el 27B deja el plan con resultados y un fichero de notas, y que el turno siguiente arranca desde ahí en vez de releerlo todo.
 - **«Mañana a las 8» en una tarea programada** (26-09): pedirla en un chat y comprobar que `next_run` cae mañana.
 - **Tarjeta del guardián de comandos destructivos y línea de estado** (26-09, §209): en un turno real, que la tarjeta nombre el comando y su motivo, y que durante una herramienta larga la línea de estado diga qué herramienta corre. Los veredictos por cita del informe de investigación salen con la siguiente investigación.
 - **Cantidades para N personas** (26-09, `answer_checks.servings_requested`): pedir en el 7006 «lista de la compra para 8: pollo al horno con patatas» y comprobar que el 27B calcula por persona con `python` y que piezas y pesos cuadran.
