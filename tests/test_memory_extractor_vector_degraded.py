@@ -123,3 +123,23 @@ def test_healthy_vector_store_still_dedups_normally(monkeypatch):
         # The new fact was deduped against alice's own memory, so only the
         # seeded entry remains (no duplicate added).
         assert [e["text"] for e in mgr.load(owner="alice")] == ["Alice's home city is Lisbon"]
+
+
+def test_audit_reply_without_known_ids_keeps_the_store(monkeypatch):
+    """Seen in the full suite: the audit threshold was reached by earlier
+    tests, the audit asked the same fake model, got a list of facts with no
+    ids, skipped them all and saved an empty store — both new facts gone."""
+    from services.memory import memory_extractor as mx
+
+    async def _fake_llm(url, model, messages, **kwargs):
+        return '[{"text": "Alice lives in Lisbon", "category": "fact"}]'
+
+    monkeypatch.setattr(src.llm_core, "llm_call_async", _fake_llm)
+    monkeypatch.setattr(src.event_bus, "fire_event", lambda *a, **k: None)
+    with tempfile.TemporaryDirectory() as data_dir:
+        mgr = MemoryManager(data_dir)
+        monkeypatch.setattr(mx, "_extractions_since_audit", mx.AUDIT_INTERVAL)
+        _run(extract_and_store(_FakeSession(), mgr, _BrokenVectorStore(),
+                               endpoint_url="http://x", model="m", headers=None))
+        texts = {e["text"] for e in mgr.load(owner="alice")}
+    assert "Alice lives in Lisbon" in texts

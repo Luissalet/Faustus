@@ -630,6 +630,17 @@ async def audit_memories(
 
         after_count = len(final_entries)
 
+        # A reply that names none of the ids it was given is not a tidy-up,
+        # it is a misfire (a model answering another prompt, a list of new
+        # facts). Saving it would empty a small store that the 50% net below
+        # does not cover (it only looks at 8+ entries).
+        if before_count and not final_entries:
+            logger.warning(
+                f"Memory audit returned no known ids for {before_count} entries — "
+                f"refusing as a misfire, keeping originals"
+            )
+            return {"before": before_count, "after": before_count, "error": "no_known_ids"}
+
         # Safety net against catastrophic over-deletion. A conservative tidy
         # should never wipe out half the store in one pass — if the model
         # returned far fewer entries than it was given (over-consolidation, a
