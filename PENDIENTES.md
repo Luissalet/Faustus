@@ -89,7 +89,6 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 - **Code Mode con la pestaña visible** (19-09, §133): repetir la pregunta que se respondió por API porque la pestaña de Chrome estaba oculta.
 - **Ajustes → Tools → «Argument rules» por clics reales** (19-09, §132): alta, edición, borrado y la caja «Test» con una herramienta y JSON real (hoy sólo `curl`/`tsc`).
 - **Bloques ` ```chart ` en el navegador** (19-09, §131): confirmar el SVG, el interruptor «Show/Hide data», el fallback de un JSON roto, y comparar modo oscuro y claro.
-- **Tests aún en rojo sin mirar a fondo** (22-09, §161-165): `test_ui_smoke_audit`, `test_studio_close_dialog_js`, `test_studio_clipboard_js`, `test_l86_source_control_panel_js`, `test_studio_guards`, `test_w3a_composer_js`, `test_sse_catalog`, `test_typed_choice`, `test_tool_policy`, `test_process_center`, `test_tls_overrides_scope`, `test_workflow_waits`, `test_model_warmup`, `test_ollama_structured_output`, `test_h1`, `test_memory_extractor_vector_degraded` — repasar contra la suite actual.
 - **Auditar el almacén real de memoria** (22-09, §161): quitar con la pasada de auditoría las dos entradas que dieron pie a `volatile_facts.py` (siguen ahí).
 - **Historial tras aprobar una tarjeta** (20-09, §90): reproducir gate de contexto externo → aprobar → comprobar que `/api/history/<sid>` guarda la parte posterior (hoy se pierde).
 - **Tiempo del checkpoint del workspace** (20-09, §90): medir en una carpeta con archivos grandes (~91 s vistos).
@@ -124,7 +123,6 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 - **Tope duro del bloque de memoria en pantalla** (FAUSTUS §120 Parte B): provocar el tope en un proyecto real y confirmar que el panel deja ver cuántos ítems se omitieron.
 - **Niveles de skills en el log** (FAUSTUS §120 Parte D): una conversación real con muchas skills instaladas y confirmar en los logs qué nivel aportó cada una.
 - **Sincronía de sampling defaults entre pantallas** (FAUSTUS §120 Parte E): cambiar la temperatura en Ajustes → Local models y confirmar que Ajustes → Default AI la refleja al recargar, y viceversa.
-- **Cuatro tests rojos preexistentes sin investigar** (19-09 tarde): `test_gpu_memory_wiring::test_num_gpu_survives_the_whole_override_path`, `test_two_tier_search` (2), `test_completion_gate::test_red_test_turn_closes_complete_unverified_end_to_end`, `test_l91_domain_synonyms` (2); confirmar con `git stash`/bisect si ya estaban rotos antes de este lote.
 - **Grounding lint contra datos reales** (FAUSTUS §145): insertar un ítem bien respaldado y uno inventado en el store real y comprobar que el panel «Grounding» distingue uno del otro; revisar también la heurística `proper_noun` y las fechas en formato barra (día/mes vs mes/día) con datos reales.
 - **Pre-escaneo de seguridad MCP/skills en pantalla** (FAUSTUS §147): crear un servidor MCP local malicioso (lee una variable `*_KEY`/`*_TOKEN` y la postea, o un `curl | sh`) y comprobar la insignia de riesgo y el aviso con checkbox de override en Ajustes → Integraciones, en un navegador real.
 - **Panel "Gate a run" en Actividad** (FAUSTUS §149): listar `run_id` recientes con `Get-ChildItem "D:\LocalAI\faustus-dev-data\runs\*.jsonl" | Sort-Object LastWriteTime -Descending | Select -First 10`, pegar uno y comprobar que las aserciones del spec por defecto se renderizan con su marca de pasa/falla.
@@ -144,7 +142,6 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 - **Radar de git: tema claro, 420px y tarjeta de Inicio con push real** (FAUSTUS §185/§187): sin probar en el navegador ni con una notificación push real en el móvil.
 - **Vision con un modelo sin proyector** (FAUSTUS §194): con la casilla activada ya se probó (etiqueta «Visión», espera de 180 s); falta el caso con la casilla desactivada.
 - **Arranque lento no reproducido** (uso diario 25-09, §199): el 7006 tardó 4 min 15 s entre «Secret file hardening» y «Background-job monitor started» una vez; si se repite, un `py-spy dump` durante el hueco dirá la causa.
-- **Test intermitente bajo carga en Windows** (13-09 noche, paridad): `test_cookbook_shell_uses_bash_syntax_on_windows_too` falló una vez con `-n 6`; la excepción ahora se nombra en `stderr` — si vuelve a salir, leer esa clase.
 
 ## D. Verificar en vivo con el modelo local
 
