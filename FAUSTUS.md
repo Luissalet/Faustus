@@ -9099,3 +9099,16 @@ Ahora:
 La única idea nueva, que la síntesis de un reparto diga quién hizo qué, ya está: con dos o más trabajadores, el informe de `delegate_agents` pide al modelo que atribuya cada parte por nombre.
 
 **Suite en Windows.** El `rs53` de la madrugada no llegó a correr los tests. `restart7000.ps1` deja el servidor heredando la salida, así que el `| Out-File` de la misma tarea espera a que el 7000 se cierre. La suite se lanza ahora en su propia tarea (`suite53b`).
+
+**Studio a 420 px.** Hecha la comprobación pendiente del radar de git en tema claro y ventana estrecha, con un navegador sin cabeza (Playwright) en el PC. El radar se ve bien: sin scroll lateral, insignias enteras y rutas con puntos suspensivos. La misma pasada destapó tres fallos, ya corregidos:
+
+- **Ajustes:** todas las secciones salían más anchas que la pantalla y cortadas por la derecha. Algunas llegaban a miles de elementos fuera; ahora ninguno en las 22.
+- **Cookbook:** medía 1.209 px de ancho.
+- **Cabecera del chat:** el último botón quedaba cortado.
+
+Dos causas repetidas:
+
+- Una rejilla de pantalla con una pista implícita `auto` que crecía con el hijo más ancho. Ahora `.fs-screen`, `.fs-set__section` y `.fs-set__card` usan `minmax(0, 1fr)`.
+- Filas flexibles que no se partían.
+
+`scripts/ui_narrow_check.py` repite la pasada sobre todas las pantallas y todas las secciones de Ajustes. Puede inyectar CSS para probar un arreglo antes de compilar. No escribe nada: toda petición que no sea GET se contesta en local.
