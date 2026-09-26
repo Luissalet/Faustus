@@ -15122,6 +15122,15 @@ async def _stream_agent_loop_body(
         # question text is already in the streamed response, so it persists.
         if _awaiting_user:
             _ledger.stop_reason = "awaiting_user"
+            # The narration of this round was in the wrong language and the
+            # turn stops here, at a card, so the round that would have been
+            # told to switch language never runs: the user was left with
+            # English narration above a Spanish card. That narration only
+            # announces the call the card is asking about; it is dropped.
+            if _observed_wrong_lang and _narr_for_lang and _narr_for_lang in full_response:
+                full_response = full_response.replace(_narr_for_lang, "", 1).strip()
+                _ledger.notes.append(f"wrong_language_narration_dropped@{round_num}")
+                yield "data: " + json.dumps({"type": "response_replace", "text": full_response}) + "\n\n"
             break
 
         if _doc_stream_create_completed:
