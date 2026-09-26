@@ -2407,6 +2407,23 @@ def _apply_llamacpp_slot(payload: Dict, url: str, session_id: Optional[str] = No
         payload.setdefault("id_slot", slot)
 
 
+def _dump_stream_payload(url: str, payload: Dict) -> None:
+    """Write an outgoing streamed request to `FAUSTUS_DUMP_LLM_PAYLOADS`
+    (a folder) when that variable is set: for comparing what two rounds
+    actually sent when a server's prompt cache misses. Off by default;
+    headers (keys) are never written."""
+    folder = os.environ.get("FAUSTUS_DUMP_LLM_PAYLOADS", "").strip()
+    if not folder:
+        return
+    try:
+        os.makedirs(folder, exist_ok=True)
+        name = f"{time.strftime('%Y%m%d-%H%M%S')}-{int(time.time() * 1000) % 1000:03d}.json"
+        with open(os.path.join(folder, name), "w", encoding="utf-8") as fh:
+            json.dump({"url": url, "payload": payload}, fh, ensure_ascii=False, default=str)
+    except Exception as exc:  # noqa: BLE001 - a debugging aid must never cost a round
+        logger.debug("payload dump skipped: %s", exc)
+
+
 def _apply_parallel_tool_calls(payload: Dict, url: str) -> None:
     """Let a self-hosted server return several tool calls in one round.
 
@@ -5958,6 +5975,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                 availability_only_transport=availability_only_transport,
                 _attempt=next_attempt, _budget=_budget,
             )
+        _dump_stream_payload(target_url, payload)
         try:
             client = _get_http_client()
             async with client.stream('POST', target_url, json=payload, headers=h, timeout=stream_timeout) as r:
@@ -6222,6 +6240,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                 availability_only_transport=availability_only_transport,
                 _attempt=next_attempt, _budget=_budget,
             )
+        _dump_stream_payload(target_url, payload)
         try:
             client = _get_http_client()
             async with client.stream('POST', target_url, json=payload, headers=h, timeout=stream_timeout) as r:
@@ -6528,6 +6547,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                 availability_only_transport=availability_only_transport,
                 _attempt=next_attempt, _budget=_budget,
             )
+        _dump_stream_payload(target_url, payload)
         try:
             client = _get_http_client()
             async with client.stream('POST', target_url, json=payload, headers=h, timeout=stream_timeout) as r:
