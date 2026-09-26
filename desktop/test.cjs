@@ -1,5 +1,5 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');
-const {localNavigation,externalNavigation,permissionCheck,permissionRequest}=require('./policy.cjs');
+const {localNavigation,externalNavigation,permissionCheck,permissionRequest,deepLinkPath,findDeepLink}=require('./policy.cjs');
 test('desktop navigation is origin-bound, without native URL protocols',()=>{
   assert.equal(localNavigation('http://127.0.0.1:7000/studio','http://127.0.0.1:7000'),true);
   for(const url of ['http://127.0.0.1:7001','http://127.0.0.1:7000.evil.test','file:///C:/secret','javascript:alert(1)','http://user@127.0.0.1:7000'])assert.equal(localNavigation(url,'http://127.0.0.1:7000'),false);
@@ -38,4 +38,27 @@ test('main.cjs parks the window in the tray on close and quits from the tray men
   assert.match(src, /Salir \/ Quit/);
   assert.match(src, /--smoke-test.*--no-tray|--no-tray.*--smoke-test/, 'the smoke test keeps close-means-quit');
   assert.ok(require('node:fs').existsSync(require('node:path').join(__dirname, 'tray.ico')), 'tray.ico ships with the desktop app');
+});
+
+test('faustus:// links open reading places only, with the selecting query keys', () => {
+  assert.equal(deepLinkPath('faustus://studio?s=abc'), '/studio?s=abc');
+  assert.equal(deepLinkPath('faustus:///studio?s=abc'), '/studio?s=abc');
+  assert.equal(deepLinkPath('faustus://studio?draft=hola&send=1&image=https://x'), '/studio?draft=hola', 'send and image are dropped');
+  assert.equal(deepLinkPath('faustus://board?issue=FAU-12'), '/board?issue=FAU-12');
+  assert.equal(deepLinkPath('faustus://library/documents'), '/library/documents');
+  assert.equal(deepLinkPath('faustus://'), '/studio');
+  assert.equal(deepLinkPath('faustus://studio/../api'), '/studio/api', 'dot segments never climb out of the first place');
+  for (const bad of ['faustus://api/auth/settings', 'faustus://../api/auth/settings', 'https://studio', 'faustus://user:pw@studio', 'faustus://evil%2F..']) {
+    assert.equal(deepLinkPath(bad), null, bad);
+  }
+  assert.equal(findDeepLink(['electron.exe', '.', 'faustus://home']), '/home');
+  assert.equal(findDeepLink(['electron.exe', '--flag']), null);
+});
+
+test('main.cjs registers faustus:// and routes a link from a second launch', () => {
+  const src = require('node:fs').readFileSync(require('node:path').join(__dirname, 'main.cjs'), 'utf8');
+  assert.match(src, /setAsDefaultProtocolClient\('faustus'/);
+  assert.match(src, /second-instance',\(_event,argv\)=>/);
+  assert.match(src, /openDeepLink\(findDeepLink\(argv\)\)/);
+  assert.match(src, /if\(pendingLink\)/);
 });

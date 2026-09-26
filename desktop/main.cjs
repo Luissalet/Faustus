@@ -3,11 +3,13 @@ const {execFile}=require('node:child_process');
 const {promisify}=require('node:util');
 const {join,resolve}=require('node:path');
 const {existsSync,mkdirSync}=require('node:fs');
-const {localNavigation,externalNavigation,permissionCheck,permissionRequest}=require('./policy.cjs');
+const {localNavigation,externalNavigation,permissionCheck,permissionRequest,deepLinkPath,findDeepLink}=require('./policy.cjs');
 const execute=promisify(execFile),root=resolve(__dirname,'..');
 const python=join(root,'venv',process.platform==='win32'?'Scripts/python.exe':'bin/python');
 const port=Number(process.env.FAUSTUS_PORT||7000),origin=`http://127.0.0.1:${port}`;
 let mainWindow,tray=null,ownedToken='',quitting=false,startup=null,stopDesktopControl=()=>{},stopDictation=()=>{};
+// A faustus:// link waiting for the app to load, and whether it has.
+let pendingLink=findDeepLink(process.argv),appLoaded=false;
 // Closing the window parks Faustus in the tray (hidden icons), like the chat
 // desktop apps do; the tray menu's Quit is what really stops it. The smoke
 // test keeps the old close-means-quit path so it can finish on its own.
@@ -73,6 +75,20 @@ function showMainWindow(){
   if(mainWindow.isMinimized())mainWindow.restore();
   mainWindow.focus();
 }
+function openDeepLink(path){
+  if(!path)return;
+  if(!appLoaded||!alive(mainWindow)){pendingLink=path;return;}
+  showMainWindow();
+  void mainWindow.loadURL(origin+path);
+}
+function registerProtocol(){
+  if(process.argv.includes('--smoke-test'))return;
+  try{
+    // A development checkout runs as `electron .`: the handler has to name the app folder too.
+    if(process.defaultApp&&process.argv.length>=2)app.setAsDefaultProtocolClient('faustus',process.execPath,[resolve(process.argv[1])]);
+    else app.setAsDefaultProtocolClient('faustus');
+  }catch(error){console.error('Faustus protocol:',error.message);}
+}
 function parkInTray(){
   if(!alive(mainWindow))return;
   // Silently: no balloon, no hint. The tray icon is the whole message.
@@ -108,7 +124,9 @@ async function shutdown(){
 if(!Number.isInteger(port)||port<1024||port>65535){app.quit();}
 else if(!app.requestSingleInstanceLock()){app.quit();}
 else{
-  app.on('second-instance',()=>{if(!alive(mainWindow)){if(!quitting)void shutdown();return;}showMainWindow();});
+  app.on('second-instance',(_event,argv)=>{if(!alive(mainWindow)){if(!quitting)void shutdown();return;}showMainWindow();openDeepLink(findDeepLink(argv));});
+  app.on('open-url',(event,url)=>{event.preventDefault();openDeepLink(deepLinkPath(url));});
+  registerProtocol();
   app.on('before-quit',event=>{if(!quitting){event.preventDefault();void shutdown();}});
   app.on('window-all-closed',()=>void shutdown());
   app.whenReady().then(async()=>{
@@ -170,6 +188,8 @@ else{
       if(!mainWindow.isDestroyed()&&!quitting){
         if(!result.started){mainWindow.setTitle('Faustus — shared server / servidor compartido');mainWindow.on('page-title-updated',event=>event.preventDefault());}
         await mainWindow.loadURL(origin+'/studio');
+        appLoaded=true;
+        if(pendingLink){const path=pendingLink;pendingLink=null;openDeepLink(path);}
         if(process.argv.includes('--smoke-test')){
           console.log('FAUSTUS_DESKTOP_LOADED '+(result.started?'owned':'shared'));
           await require('./smoke.cjs').run(mainWindow,root);
