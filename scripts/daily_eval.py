@@ -13,6 +13,7 @@ the answer — never a model judging a model.
         --model qwen3.8-27b-q8-llamacpp --endpoint-url http://127.0.0.1:8081/v1
     python scripts/daily_eval.py --only dates-weekday,iva
     python scripts/daily_eval.py --with-writes      # also the tasks that write (a note)
+    python scripts/daily_eval.py --set agent_followup_reasoning_budget=1536   # one A/B arm
 
 Credentials come from FAUSTUS_USER / FAUSTUS_PASS. The report goes to
 `logs/daily_eval/<timestamp>.json` and `.md` (or `--out PREFIX`).
@@ -94,6 +95,16 @@ class Client:
             with self.opener.open(req, timeout=30) as r:
                 r.read()
 
+    def settings(self) -> Dict[str, Any]:
+        with self.opener.open(self.base + "/api/auth/settings", timeout=30) as r:
+            return json.loads(r.read() or b"{}")
+
+    def save_settings(self, patch: Dict[str, Any]) -> None:
+        req = urllib.request.Request(self.base + "/api/auth/settings", data=json.dumps(patch).encode(),
+                                     method="POST", headers={"Content-Type": "application/json"})
+        with self.opener.open(req, timeout=30) as r:
+            r.read()
+
     def form(self, path: str, data: Dict[str, Any], timeout: float = 30):
         body = urllib.parse.urlencode({k: v for k, v in data.items() if v is not None}).encode()
         req = urllib.request.Request(self.base + path, data=body, method="POST")
@@ -150,10 +161,45 @@ class Client:
                 "seconds": round(time.time() - started, 1)}
 
 
+def parse_overrides(pairs: List[str]) -> Dict[str, Any]:
+    """`--set key=value` pairs → a settings patch. Values are read as JSON
+    when they parse (numbers, true/false, null, quoted strings), else kept
+    as plain text."""
+    out: Dict[str, Any] = {}
+    for pair in pairs or []:
+        key, sep, raw = str(pair).partition("=")
+        key = key.strip()
+        if not sep or not key:
+            raise ValueError(f"--set expects key=value, got {pair!r}")
+        try:
+            out[key] = json.loads(raw)
+        except ValueError:
+            out[key] = raw
+    return out
+
+
 def run(args) -> Dict[str, Any]:
+    client = Client(args.base, os.environ.get("FAUSTUS_USER", ""), os.environ.get("FAUSTUS_PASS", ""))
+    overrides = parse_overrides(getattr(args, "set", None) or [])
+    if not overrides:
+        return _run(args, client)
+    # An A/B arm: apply the settings for this run only and put the previous
+    # values back afterwards, whatever happens in between.
+    before = client.settings()
+    previous = {k: before.get(k) for k in overrides}
+    client.save_settings(overrides)
+    print(f"settings for this run: {overrides} (restored afterwards)", flush=True)
+    try:
+        report = _run(args, client)
+    finally:
+        client.save_settings(previous)
+    report["settings"] = overrides
+    return report
+
+
+def _run(args, client: "Client") -> Dict[str, Any]:
     tasks = json.loads(TASKS_PATH.read_text(encoding="utf-8"))
     only = {t.strip() for t in (args.only or "").split(",") if t.strip()}
-    client = Client(args.base, os.environ.get("FAUSTUS_USER", ""), os.environ.get("FAUSTUS_PASS", ""))
     rows = []
     for task in tasks:
         if only and task["id"] not in only:
@@ -191,7 +237,8 @@ def run(args) -> Dict[str, Any]:
 def markdown(report: Dict[str, Any]) -> str:
     lines = [f"# Batería de uso diario — {report['when']}", "",
              f"{report['passed']}/{report['total']} tareas bien · {report['seconds']:.0f} s · "
-             f"{report['model']} en {report['base']}", "",
+             f"{report['model']} en {report['base']}"
+             + (f" · ajustes: {json.dumps(report['settings'], ensure_ascii=False)}" if report.get("settings") else ""), "",
              "| tarea | resultado | s | herramientas | tarjetas | fallos |", "| --- | --- | --- | --- | --- | --- |"]
     for r in report["tasks"]:
         fails = "; ".join(f"{c['check']} {c['detail']}".strip() for c in r["checks"] if not c["ok"])
@@ -210,6 +257,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--with-writes", action="store_true", help="also run tasks that write data (a note)")
     ap.add_argument("--timeout", type=float, default=900.0)
     ap.add_argument("--out", default="", help="report path prefix (default logs/daily_eval/<timestamp>)")
+    ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                    help="apply a setting for this run only, restored afterwards (repeatable; A/B arms)")
     args = ap.parse_args(argv)
     if not args.model:
         ap.error("--model (or FAUSTUS_MODEL) is required")

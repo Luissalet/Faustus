@@ -38,3 +38,39 @@ def test_the_task_file_is_valid():
     assert len({t["id"] for t in tasks}) == len(tasks) >= 15
     for t in tasks:
         assert t["messages"] and all(isinstance(m, str) and m for m in t["messages"])
+
+
+def test_set_pairs_become_a_typed_settings_patch():
+    de = daily_eval
+    patch = de.parse_overrides(["agent_followup_reasoning_budget=1536", "x=true", "name=plain text", 'q="1"'])
+    assert patch == {"agent_followup_reasoning_budget": 1536, "x": True, "name": "plain text", "q": "1"}
+    import pytest
+    with pytest.raises(ValueError):
+        de.parse_overrides(["no-equals-sign"])
+
+
+def test_an_ab_arm_restores_the_previous_settings_even_when_the_run_fails(monkeypatch):
+    from types import SimpleNamespace
+    de = daily_eval
+    saved = []
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        def settings(self):
+            return {"agent_followup_reasoning_budget": 0, "other": 1}
+
+        def save_settings(self, patch):
+            saved.append(dict(patch))
+
+    monkeypatch.setattr(de, "Client", FakeClient)
+
+    def boom(args, client):
+        raise RuntimeError("engine down")
+    monkeypatch.setattr(de, "_run", boom)
+    args = SimpleNamespace(base="http://x", set=["agent_followup_reasoning_budget=2048"])
+    import pytest
+    with pytest.raises(RuntimeError):
+        de.run(args)
+    assert saved == [{"agent_followup_reasoning_budget": 2048}, {"agent_followup_reasoning_budget": 0}]
