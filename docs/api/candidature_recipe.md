@@ -14,10 +14,16 @@ un job programado — **la receta no se programa ni se ejecuta al instalarse**.
 
 La receta guía a un agente para revisar las respuestas de reclutadores a
 candidaturas de empleo y, cuando corresponde, anotar una entrevista en el
-calendario. Explícitamente **no**:
+calendario. Con `create_missing` (por defecto `true`, a petición de Luis)
+crea en Jobhunter's Hoard la candidatura de un empleador que responde pero
+de quien no había ninguna candidatura registrada — compañía/título leídos
+del correo — dejando esos casos para revisión manual solo si
+`create_missing=false` o no se pudo leer la compañía. Explícitamente **no**:
 
 - marca correos como leídos (ni al listar ni al leer: ver F4.2 más abajo);
-- crea candidaturas nuevas (esa es competencia de Jobhunter, fuera de este lote);
+- crea una candidatura cuando ya existe una que empareje (`match_job` la
+  encuentra por id/URL/hilo o, en su defecto, por empresa+puesto) — ahí
+  solo se actualiza la existente;
 - invita a reclutadores ni envía ningún correo;
 - inventa fecha, hora o zona horaria de una entrevista — un acuse de recibo
   (`ack`) nunca es aceptación ni entrevista, y una entrevista mencionada sin
@@ -140,7 +146,10 @@ empleador" a ciegas.
    5, la siguiente ejecución encuentra el evento por `external_ref` (la
    propia idempotencia de `POST /events` ya lo garantiza) y solo repite el
    paso 5 — nunca crea un segundo evento ni una segunda candidatura.
-7. Nunca crear candidatura, invitar reclutador ni enviar correo.
+7. Si no hay candidatura que empareje y `create_missing` lo permite (con
+   `apply=true` y compañía legible), crear la candidatura en Jobhunter's
+   Hoard desde el correo; en cualquier otro caso, dejarlo para revisión
+   manual. Nunca invitar reclutador ni enviar correo.
 8. Resumen final: candidaturas actualizadas, entrevistas añadidas (con
    enlace al evento) y pendientes de revisión manual (ambiguas o con
    horario no resoluble).
