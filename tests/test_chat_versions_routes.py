@@ -126,3 +126,49 @@ def test_a_capture_failure_never_blocks_the_truncation(env, monkeypatch):
     assert len(sm.get_session("s1").history) == 2
 
 
+
+
+def test_regenerate_twice_gives_three_versions_of_the_answer(env):
+    """‹ 1/3 ›: every regenerate keeps the answer it replaced, by question."""
+    client, sm, cv = env
+    sid = "alt1"
+    sm.sessions[sid] = _FakeSession(sid)
+    s = sm.sessions[sid]
+    s.history = [ChatMessage(role="user", content="first question"),
+                 ChatMessage(role="assistant", content="first answer"),
+                 ChatMessage(role="user", content="second question"),
+                 ChatMessage(role="assistant", content="answer A", metadata={"model": "m-a"})]
+    for new in ("answer B", "answer C"):
+        r = client.post(f"/api/session/{sid}/truncate", json={"keep_count": 2, "reason": "regenerate"})
+        assert r.status_code == 200
+        s.history = s.history[:2] + [ChatMessage(role="user", content="second question"),
+                                     ChatMessage(role="assistant", content=new)]
+    alts = client.get(f"/api/session/{sid}/alternatives").json()["alternatives"]
+    assert list(alts) == ["2"]
+    assert [a["answer"] for a in alts["2"]] == ["answer A", "answer B"]
+    assert alts["2"][0]["model"] == "m-a" and all(a["same_question"] for a in alts["2"])
+    # Using an old one is the existing restore: the current answer becomes a version.
+    r = client.post(f"/api/session/{sid}/versions/{alts['2'][0]['id']}/restore")
+    assert r.status_code == 200
+    assert s.history[-1].content == "answer A"
+    after = client.get(f"/api/session/{sid}/alternatives").json()["alternatives"]["2"]
+    assert sorted(a["answer"] for a in after) == ["answer B", "answer C"]
+
+
+def test_an_edit_further_up_detaches_the_old_versions(env):
+    client, sm, cv = env
+    sid = "alt2"
+    sm.sessions[sid] = _FakeSession(sid)
+    s = sm.sessions[sid]
+    s.history = [ChatMessage(role="user", content="q1"), ChatMessage(role="assistant", content="a1"),
+                 ChatMessage(role="user", content="q2"), ChatMessage(role="assistant", content="a2")]
+    client.post(f"/api/session/{sid}/truncate", json={"keep_count": 2, "reason": "regenerate"})
+    s.history = s.history[:2] + [ChatMessage(role="user", content="q2"), ChatMessage(role="assistant", content="a2 bis")]
+    assert "2" in client.get(f"/api/session/{sid}/alternatives").json()["alternatives"]
+    # Now the first question is edited: what was cut at 2 belonged to another chat.
+    client.post(f"/api/session/{sid}/truncate", json={"keep_count": 0, "reason": "edit"})
+    s.history = [ChatMessage(role="user", content="q1 reworded"), ChatMessage(role="assistant", content="a1'"),
+                 ChatMessage(role="user", content="q2"), ChatMessage(role="assistant", content="a2'")]
+    alts = client.get(f"/api/session/{sid}/alternatives").json()["alternatives"]
+    assert "2" not in alts
+    assert [a["answer"] for a in alts["0"]] == ["a1"] and alts["0"][0]["same_question"] is False

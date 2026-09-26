@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowDown, BookmarkPlus, Check, ChevronDown, Copy, Expand, FileText, FoldVertical, GitBranch, GitBranchPlus, GitCommit, GitFork, Pencil, Quote, RefreshCw, Telescope, Theater, Trash2, UploadCloud, Volume2, VolumeX, X } from 'lucide-react';
+import { AlertTriangle, ArrowDown, BookmarkPlus, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, Expand, FileText, FoldVertical, GitBranch, GitBranchPlus, GitCommit, GitFork, Pencil, Quote, RefreshCw, Telescope, Theater, Trash2, UploadCloud, Volume2, VolumeX, X } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Link } from 'react-router';
 import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
@@ -7,6 +7,7 @@ import { createPortal } from 'react-dom';
 import { Button, describeError, ExecutionTimeline, friendlyError, IconButton } from '../../components';
 import { fetchCompactionEvent, pinCompactionFragment, fetchLlmTraces, forkLlmTrace, faviconStripEntries, type AskUser, type CompactionEvent, type ContextLedger, type ContextReceipt, type DelegationTask, type LlmTraceRow, type WebSource } from '../../adapters/chat';
 import { createRecipeFromRun } from '../../adapters/strategy';
+import type { AnswerVersion } from '../../adapters/sessions';
 import type { EvidenceRef } from '../../adapters/evidence';
 import { attachmentUrl, isImage } from '../../adapters/composer';
 import { Rich } from '../rich';
@@ -108,6 +109,11 @@ export interface TranscriptProps {
   onRegenerate: (turn: Turn) => void;
   onDelete: (turn: Turn) => void;
   onNotice: (text: string, tone?: 'info' | 'warning' | 'danger') => void;
+  /** Earlier answers to each question still in the chat, keyed by the
+   *  question's `historyIndex` (`GET /api/session/{id}/alternatives`). */
+  answerVersions?: Record<string, AnswerVersion[]>;
+  /** Make an earlier answer the current one (the chat's tail from there). */
+  onUseVersion?: (versionId: string) => void;
   /** Side panel hooks: a workspace file, a living document, a worker to re-run. */
   onOpenFile?: (path: string) => void;
   onOpenDoc?: (docId: string) => void;
@@ -1742,6 +1748,8 @@ function AssistantTurn({
   onRegenerate,
   onDelete,
   onNotice,
+  alternatives,
+  onUseVersion,
   onOpenFile,
   onOpenDoc,
   onOpenEvidence,
@@ -1767,6 +1775,9 @@ function AssistantTurn({
   onRegenerate: () => void;
   onDelete: () => void;
   onNotice: TranscriptProps['onNotice'];
+  /** Earlier answers to this turn's question, oldest first. */
+  alternatives?: AnswerVersion[];
+  onUseVersion?: (versionId: string) => void;
   onOpenFile?: TranscriptProps['onOpenFile'];
   onOpenDoc?: TranscriptProps['onOpenDoc'];
   onOpenEvidence?: TranscriptProps['onOpenEvidence'];
@@ -1817,6 +1828,52 @@ function AssistantTurn({
   const body = citeToolResults(linkifyBoardIds(stripExecutedFences(turn.text, fences), boardKey, projectId), turn.steps);
   // A11Y-02: grouped, not per-token — see useGroupedStreamAnnouncement above.
   const streamAnnouncement = useGroupedStreamAnnouncement(body, turn.streaming);
+  // ‹ 2/3 ›: flip between this answer and the ones a regenerate or an edit
+  // replaced. `null` is the current answer (always the last position).
+  const [altView, setAltView] = useState<number | null>(null);
+  const alts = turn.streaming ? [] : (alternatives ?? []);
+  const altIndex = altView !== null && altView < alts.length ? altView : null;
+  const altTotal = alts.length + 1;
+  const altPos = altIndex === null ? altTotal : altIndex + 1;
+  const pager = alts.length > 0 && (
+    <span className="fs-turn__versions" data-testid="turn-versions">
+      <IconButton icon={ChevronLeft} label={t('Previous version')} size="sm" disabled={altPos <= 1}
+        onClick={() => setAltView(altPos - 2)} testId="turn-version-prev" />
+      <span className="fs-turn__versions-pos" aria-live="polite">{altPos}/{altTotal}</span>
+      <IconButton icon={ChevronRight} label={t('Next version')} size="sm" disabled={altPos >= altTotal}
+        onClick={() => setAltView(altPos >= altTotal - 1 ? null : altPos)} testId="turn-version-next" />
+    </span>
+  );
+  if (altIndex !== null) {
+    const alt = alts[altIndex];
+    return (
+      <article className="fs-turn fs-turn--assistant" data-nav-id={turn.id} data-testid="turn-assistant" data-version={altPos}>
+        <span className="fs-turn__node" aria-hidden="true" />
+        <div className="fs-turn__body">
+          <p className="fs-turn__version-note" data-testid="turn-version-note">
+            {t('Earlier answer {pos} of {total}', { pos: altPos, total: altTotal })}
+            {alt.createdAt ? ` · ${new Date(alt.createdAt * 1000).toLocaleString()}` : ''}
+            {alt.model ? ` · ${alt.model}` : ''}
+          </p>
+          {!alt.sameQuestion && alt.question && (
+            <p className="fs-turn__version-q">{t('Asked as: {q}', { q: alt.question.slice(0, 280) })}</p>
+          )}
+          <Rich text={alt.answer} onOpenFile={onOpenFile} />
+          {alt.truncated && <p className="fs-turn__version-q">{t('Shortened here; using this version brings back all of it.')}</p>}
+          <div className="fs-turn__foot">
+            <span className="fs-turn__foot-left">{pager}</span>
+            <span className="fs-turn__actions fs-turn__actions--shown" data-testid="turn-actions">
+              <CopyButton text={alt.answer} label={t('Copy reply')} />
+              {onUseVersion && !busy && (
+                <Button size="sm" label={t('Use this version')} onClick={() => { setAltView(null); onUseVersion(alt.id); }}
+                  testId="turn-version-use" />
+              )}
+            </span>
+          </div>
+        </div>
+      </article>
+    );
+  }
   return (
     <article className="fs-turn fs-turn--assistant" data-enter={enter || undefined} data-nav-id={turn.id} data-db-id={turn.dbId} data-streaming={turn.streaming || undefined} data-testid="turn-assistant">
       <span className="fs-turn__node" aria-hidden="true" />
@@ -1995,6 +2052,7 @@ function AssistantTurn({
         {!turn.streaming && (
           <div className="fs-turn__foot">
             <span className="fs-turn__foot-left">
+              {pager}
               {turn.metrics && (
                 <span className="fs-turn__metrics">
                   {formatMetrics(turn.metrics)}
@@ -2218,7 +2276,20 @@ const ESTIMATED_TURN_HEIGHT = 180;
  *  means without the two files sharing state. */
 const BOTTOM_THRESHOLD = 80;
 
-export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdit, onRegenerate, onDelete, onNotice, onOpenFile, onOpenDoc, onOpenEvidence, onRerun, onFork, onQuote, onExplore, onCondense, onExpandCondensed, onOpenSourceControl, boardKey, projectId, onOpenBoardIssue }: TranscriptProps) {
+/** The earlier answers of the assistant turn at `index`: those of the user
+ *  question just before it, by that question's history index. */
+function versionsFor(turns: Turn[], index: number, map: Record<string, AnswerVersion[]>): AnswerVersion[] | undefined {
+  for (let i = index - 1; i >= 0; i--) {
+    if (turns[i].role === 'user') {
+      const h = turns[i].historyIndex;
+      return h === undefined ? undefined : map[String(h)];
+    }
+    if (turns[i].role === 'assistant') return undefined;
+  }
+  return undefined;
+}
+
+export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdit, onRegenerate, onDelete, onNotice, answerVersions, onUseVersion, onOpenFile, onOpenDoc, onOpenEvidence, onRerun, onFork, onQuote, onExplore, onCondense, onExpandCondensed, onOpenSourceControl, boardKey, projectId, onOpenBoardIssue }: TranscriptProps) {
   const quote = useQuoteSelection(onQuote, Boolean(onExplore));
 
   // CONTRATO_MODOS Lote B: fetched once, read-only — the mode CATALOG is
@@ -2398,6 +2469,8 @@ export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdi
                 }}
                 onDelete={() => onDelete(turn)}
                 onNotice={onNotice}
+                alternatives={answerVersions ? versionsFor(turns, index, answerVersions) : undefined}
+                onUseVersion={onUseVersion}
                 onOpenFile={onOpenFile}
                 onOpenDoc={onOpenDoc}
                 onOpenEvidence={onOpenEvidence}

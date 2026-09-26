@@ -63,6 +63,8 @@ import {
   listVersions,
   renameSession,
   restoreVersion,
+  listAlternatives,
+  type AnswerVersion,
   setSessionImportant,
   truncateSession,
   type ExportFormat,
@@ -2725,6 +2727,39 @@ export function StudioScreen() {
     });
   }, [sessionId, say]);
 
+  /* ── Earlier answers (‹ 1/3 ›): what a regenerate or an edit replaced ── */
+  const [answerVersions, setAnswerVersions] = useState<Record<string, AnswerVersion[]>>({});
+  const turnCount = turns?.length ?? 0;
+  useEffect(() => {
+    if (!sessionId || busy || knobs.incognito) {
+      if (!sessionId) setAnswerVersions({});
+      return;
+    }
+    const controller = new AbortController();
+    listAlternatives(sessionId, controller.signal)
+      .then(setAnswerVersions)
+      .catch(() => {
+        /* no arrows rather than a broken chat */
+      });
+    return () => controller.abort();
+  }, [sessionId, busy, turnCount, knobs.incognito]);
+
+  const adoptVersion = useCallback(
+    async (versionId: string) => {
+      if (!sessionId) return;
+      try {
+        await restoreVersion(sessionId, versionId);
+        const refreshed = await turnsFromHistory(sessionId);
+        setTurns(refreshed.turns);
+        setAnswerVersions(await listAlternatives(sessionId));
+        say(t('Now using that version of the answer.'));
+      } catch (error) {
+        say(`${t('Could not restore')}: ${(error as Error).message}`, 'danger');
+      }
+    },
+    [sessionId, say],
+  );
+
   /* ── Message actions ── */
   const regenerateFrom = useCallback(
     async (turn: Turn, text?: string) => {
@@ -3113,6 +3148,8 @@ export function StudioScreen() {
               onRegenerate={(turn) => void regenerateFrom(turn)}
               onDelete={onDelete}
               onNotice={say}
+              answerVersions={answerVersions}
+              onUseVersion={(id) => void adoptVersion(id)}
               onOpenFile={workspace ? (path) => panelDispatch({ type: 'file', workspace, path }) : undefined}
               onOpenDoc={(docId) => panelDispatch({ type: 'doc', doc: { streaming: false, id: docId, title: '', language: '', content: '', version: 0, suggestions: [] } })}
               onOpenEvidence={setEvidenceRef}

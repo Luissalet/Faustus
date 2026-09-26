@@ -310,6 +310,8 @@ def setup_history_routes(session_manager, upload_handler=None, *, include_compac
                     saved = chat_versions.save(
                         session_id, dropped, keep_count=int(keep_count or 0),
                         reason=str(body.get("reason") or "edit"),
+                        prefix_sig=chat_versions.prefix_signature(
+                            list(getattr(session, "history", []) or [])[:int(keep_count or 0)]),
                     )
             except Exception as ver_err:              # never block the truncation
                 logger.debug("[chat-versions] capture failed for %s: %s", session_id, ver_err)
@@ -347,7 +349,8 @@ def setup_history_routes(session_manager, upload_handler=None, *, include_compac
         keep = max(0, min(int(record.get("keep_count") or 0), len(history)))
         replaced = history[keep:]
         if replaced:
-            chat_versions.save(session_id, replaced, keep_count=keep, reason="replaced")
+            chat_versions.save(session_id, replaced, keep_count=keep, reason="replaced",
+                               prefix_sig=chat_versions.prefix_signature(history[:keep]))
         restored = [
             ChatMessage(role=str(m.get("role") or "assistant"),
                         content=m.get("content"),
@@ -359,6 +362,17 @@ def setup_history_routes(session_manager, upload_handler=None, *, include_compac
         chat_versions.drop(session_id, version_id)
         return {"status": "ok", "restored": len(restored), "kept": keep,
                 "replaced": len(replaced)}
+
+    @router.get("/api/session/{session_id}/alternatives")
+    async def list_answer_alternatives(request: Request, session_id: str):
+        """Earlier answers to the questions still in this chat, by the
+        question's history index (src/chat_versions.py `alternatives`)."""
+        _verify_session_owner(request, session_id)
+        from src import chat_versions
+        session = session_manager.get_session(session_id)
+        if session is None:
+            raise HTTPException(404, "Session not found")
+        return {"alternatives": chat_versions.alternatives(session_id, list(getattr(session, "history", []) or []))}
 
     @router.delete("/api/session/{session_id}/versions")
     async def clear_chat_versions(request: Request, session_id: str):

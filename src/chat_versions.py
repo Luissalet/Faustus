@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import hashlib
 import re
 import threading
 import time
@@ -150,8 +151,30 @@ def _prune(versions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return fresh
 
 
+def _text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = [p.get("text", "") for p in content if isinstance(p, dict) and isinstance(p.get("text"), str)]
+        return "\n".join(parts)
+    return "" if content is None else json.dumps(content, ensure_ascii=False, default=str)
+
+
+def prefix_signature(messages: Any) -> str:
+    """What the chat looked like before the cut: a later edit further up
+    changes it, and an old version of message N no longer belongs there."""
+    h = hashlib.sha1()
+    for m in (messages or []):
+        d = _as_dict(m)
+        h.update(d["role"].encode("utf-8", "replace"))
+        h.update(b"\x00")
+        h.update(_text(d.get("content")).encode("utf-8", "replace"))
+        h.update(b"\x01")
+    return h.hexdigest()[:20]
+
+
 def save(session_id: str, messages: Any, *, keep_count: int = 0,
-         reason: str = "edit") -> Optional[Dict[str, Any]]:
+         reason: str = "edit", prefix_sig: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Set the dropped tail aside. Returns the version summary, or None."""
     if not enabled():
         return None
@@ -167,6 +190,8 @@ def save(session_id: str, messages: Any, *, keep_count: int = 0,
         "preview": _preview(msgs),
         "messages": msgs,
     }
+    if prefix_sig:
+        record["prefix_sig"] = str(prefix_sig)[:40]
     with _LOCK:
         data = _load(session_id)
         data["versions"] = _prune(list(data.get("versions") or []) + [record])
@@ -193,6 +218,59 @@ def get(session_id: str, version_id: str) -> Optional[Dict[str, Any]]:
         if v.get("id") == version_id:
             return v
     return None
+
+
+_MAX_ANSWER = 40_000
+
+
+def _answer_model(md: Dict[str, Any]) -> Optional[str]:
+    for src in (md, md.get("metrics") if isinstance(md.get("metrics"), dict) else {}):
+        if isinstance(src.get("model"), str) and src["model"]:
+            return src["model"]
+    return None
+
+
+def alternatives(session_id: str, history: Any) -> Dict[str, List[Dict[str, Any]]]:
+    """Earlier answers to the questions still in the chat, by the history
+    index of the question: what a regenerate or an edit replaced, so the chat
+    can flip between them (‹ 1/3 ›) instead of only restoring whole tails.
+
+    A version belongs to question N when it was cut at N, starts with a user
+    message, and the chat before N is still the one it was cut from (its
+    `prefix_sig`; versions saved before the signature existed match by
+    position only)."""
+    hist = [_as_dict(m) for m in (history or [])]
+    with _LOCK:
+        data = _load(session_id)
+    out: Dict[str, List[Dict[str, Any]]] = {}
+    sigs: Dict[int, str] = {}
+    for v in data.get("versions") or []:
+        msgs = v.get("messages") or []
+        k = int(v.get("keep_count") or 0)
+        if not msgs or not isinstance(msgs[0], dict) or msgs[0].get("role") != "user":
+            continue
+        if k >= len(hist) or hist[k].get("role") != "user":
+            continue
+        if v.get("prefix_sig"):
+            if k not in sigs:
+                sigs[k] = prefix_signature(hist[:k])
+            if v["prefix_sig"] != sigs[k]:
+                continue
+        answer = next((m for m in msgs[1:] if isinstance(m, dict) and m.get("role") == "assistant"
+                       and _text(m.get("content")).strip()), None)
+        if answer is None:
+            continue
+        md = answer.get("metadata") if isinstance(answer.get("metadata"), dict) else {}
+        question = _text(msgs[0].get("content"))
+        text = _text(answer.get("content"))
+        out.setdefault(str(k), []).append({
+            "id": v.get("id"), "created_at": v.get("created_at"), "reason": v.get("reason"),
+            "question": question[:600], "same_question": question.strip() == _text(hist[k].get("content")).strip(),
+            "answer": text[:_MAX_ANSWER], "truncated": len(text) > _MAX_ANSWER,
+            "model": _answer_model(md),
+            "messages": len(msgs),
+        })
+    return out
 
 
 def drop(session_id: str, version_id: str) -> bool:

@@ -4677,3 +4677,35 @@ aside.fs-panel { position: relative; }
     min-inline-size: 0;
   }
 }
+
+/* ‹ 2/3 ›: earlier answers to the same question (regenerate / edit). Always
+   visible, unlike the hover actions: it says there is more than one answer. */
+.fs-turn__versions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-inline-end: var(--fs-space-2);
+  color: var(--fs-text-2);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.fs-turn__versions-pos {
+  min-inline-size: 2.5em;
+  text-align: center;
+}
+.fs-turn__actions--shown {
+  opacity: 1;
+}
+.fs-turn__version-note {
+  margin: 0 0 var(--fs-space-2);
+  color: var(--fs-text-3);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+.fs-turn__version-q {
+  margin: 0 0 var(--fs-space-2);
+  color: var(--fs-text-2);
+  font-size: 12px;
+  font-style: italic;
+  overflow-wrap: anywhere;
+}

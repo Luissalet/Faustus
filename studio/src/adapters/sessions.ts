@@ -189,6 +189,43 @@ export async function listVersions(id: string): Promise<ChatVersion[]> {
   });
 }
 
+/** An earlier answer to a question still in the chat: what a regenerate or
+ *  an edit replaced (`GET /api/session/{id}/alternatives`, keyed by the
+ *  question's history index). Using one is `restoreVersion(id)`. */
+export interface AnswerVersion {
+  id: string;
+  createdAt: number;
+  reason: string;
+  question: string;
+  sameQuestion: boolean;
+  answer: string;
+  truncated: boolean;
+  model?: string;
+}
+
+export async function listAlternatives(id: string, signal?: AbortSignal): Promise<Record<string, AnswerVersion[]>> {
+  const response = await check(
+    await fetch(`/api/session/${sid(id)}/alternatives`, { credentials: 'same-origin', signal }),
+    'alternatives',
+  );
+  const raw = (await response.json()) as { alternatives?: Record<string, Record<string, unknown>[]> };
+  const out: Record<string, AnswerVersion[]> = {};
+  for (const [k, list] of Object.entries(raw.alternatives ?? {})) {
+    if (!Array.isArray(list)) continue;
+    out[k] = list.map((v) => ({
+      id: String(v.id ?? ''),
+      createdAt: Number(v.created_at ?? 0),
+      reason: String(v.reason ?? ''),
+      question: String(v.question ?? ''),
+      sameQuestion: v.same_question !== false,
+      answer: String(v.answer ?? ''),
+      truncated: Boolean(v.truncated),
+      model: typeof v.model === 'string' ? v.model : undefined,
+    })).filter((v) => v.id && v.answer);
+  }
+  return out;
+}
+
 export async function restoreVersion(id: string, versionId: string): Promise<void> {
   await postJson(`/api/session/${sid(id)}/versions/${encodeURIComponent(versionId)}/restore`, {}, 'restore');
 }
