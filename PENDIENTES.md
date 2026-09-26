@@ -6,7 +6,7 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 
 ## A. Decisiones o acciones de Luis
 
-- **Endpoint del modelo por defecto** (18-09, §114/§118): decidir si vive en Ollama o en el endpoint llama.cpp (hoy sigue `qwen3.8:27b-q8_0` en Ollama); mientras tanto, adoptar el 8081 como motor también en el 7000 (Ajustes → Modelos locales → Añadir motor).
+- **Ollama como hogar del modelo por defecto** (18-09, §114/§118): el 7000 ya usa por defecto `qwen3.8-27b-q8-llamacpp` en el 8081; lo que queda por decidir es si Ollama conserva algún papel (hoy no tiene modelos cargados) o se retira del arranque.
 - **Volver a Ollama tras usar llama-server** (18-09, §114): paso manual — `D:\LocalAI\Stop-LlamaServer.ps1` y reactivar `warm_default_model=true`.
 - **`OLLAMA_KEEP_ALIVE=-1`** como variable de entorno del servicio Ollama (17-09/18-09, §107/§109): para que otra app con `keep_alive` de 5 min no desaloje al 27B entre re-pines.
 - **Umbrales de decisiones tipadas** (23-09, §177): ajustar `typed_decision_min_confidence` (0.7) y `typed_decision_min_mass` (0.5) mirando los cubos de calibración reales.
@@ -68,7 +68,6 @@ Nada abierto a 26-09 (mañana): lo que era una mejora pasó a OBJETIVOS (OBJ-47)
 - **Borrador rechazado en el Studio** (25-09, §184): confirmar que desaparece también ahí vía el evento `response_replace`.
 - **`seen_urls` de alcance amplio** (25-09, §184): vigilar en uso real si conviene limitarlo a resultados de búsqueda y páginas abiertas (hoy recoge cualquier enlace visto en el turno).
 - **Suelo de temperatura en modo chat** (19-09, §117): repetir la sonda `/slots` a mitad de petición en chat llano y confirmar `temperature=0.6`; confirmar que `/temp 0.9` de turno y un preset con temperatura propia siguen ganando al suelo.
-- **Residencia de llama-server visible** (18-09, §118): con el 27B sirviendo en :8081, confirmar Vitals con el nombre del modelo, Ajustes → Modelos locales con «Loaded now · servido por» sin Unload, aviso de admisión si Ollama intenta cargar otro modelo grande a la vez, y que apagar llama-server deja las tres superficies limpias.
 - **Arreglo `--jinja`** (18-09, §114): repetir la conversación que colgaba y confirmar en `/slots` que `enable_thinking` llega en `false` por defecto y que `/think on` sigue funcionando con `reasoning_budget:4096`; comprobar lo mismo si algún día se usa otro motor compatible OpenAI.
 - **Sampler de llama-server** (18-09, §114): repetir la conversación de 7800 tokens y confirmar en `/slots` `max_tokens`/`repeat_penalty`/`min_p`, que el tope de 8192 no corta una respuesta legítima, y que el razonamiento va al panel de pensamiento sin mezclarse con la respuesta.
 - **Recorte del bloque MCP del prompt** (18-09, §110): confirmar la bajada de tokens en un «hola», que un tool MCP concreto sigue siendo llamable, que `lookup_tools` encuentra uno no seleccionado, que el volcado completo se restaura con el ajuste, y probarlo con integraciones reales (Gitea, Linkding, Home Assistant).
@@ -77,7 +76,6 @@ Nada abierto a 26-09 (mañana): lo que era una mejora pasó a OBJETIVOS (OBJ-47)
 - **Recuperación sin `ctx_ack`** (18-09, §108): contra el 27B real, confirmar que ya no aparece «0000…», que no responde sólo `<<faustus_ctx_ack>>` repetidamente con memoria recuperada grande, y que fundir contexto y pregunta en un mensaje no le hace citar la etiqueta.
 - **Escalón de recuperación en pantalla** (18-09, §108): ver renderizado `harness_check status:"recovery"` («Recuperando…») y el mensaje final de los 4 escalones fallidos; confirmar que el endpoint de utilidad responde rápido.
 - **Escalera de recuperación tras w110/w111** (18-09, §108): repetirla con un caso real que degenere (no reproducido desde el cambio) y ver «Recovering…» en Studio; vigilar que el por defecto no se descargue en una pasada larga.
-- **`_fetch_favicon_bytes` contra dominios reales** (18-09, §107): confirmar el fallback favicon.ico → homepage → placeholder contra 2-3 dominios conocidos (hoy sólo mockeado).
 - **Settings → Voz sin ver en pantalla** (18-09/17-09, §106): botón «Instalar motor» y descarga de voz de Piper, y el textarea de frases de parada.
 - **Binario Windows de Piper** (20-09, §153): sólo se probó el de Linux.
 - **RAG con ChromaDB real** (20-09, §146): indexar un PDF real, comprobar los `locator` en los metadatos, buscar con `rag_manager.search()`, confirmar el `[fichero.pdf pN#bM]` inyectado, y activar `rag_pii_redaction` confirmando que el índice queda sanitizado sin tocar el fichero original.
@@ -88,12 +86,10 @@ Nada abierto a 26-09 (mañana): lo que era una mejora pasó a OBJETIVOS (OBJ-47)
 - **Tiempo del checkpoint del workspace** (20-09, §90): medir en una carpeta con archivos grandes (~91 s vistos).
 - **Síntesis real de Piper** (20-09, §153): instalar el paquete, descargar `es_ES-davefx-medium`, sintetizar, comprobar duración del WAV, forzar un timeout corto y confirmar que mata al hijo.
 - **KV cache real del 27B** (17-09, §98): medirla antes de subir `num_ctx` en candidaturas (hoy 65.536, bajado de 199.680 por ir a 2 tok/s).
-- **Modelo por defecto tras reinicio del 7000** (17-09, §101): confirmar `ollama ps` con expiración «Forever» y que sigue cargado tras un chat.
 - **«Seguir a la app» en Conectores** (17-09, §96): arrancar un segundo Jobhunter (cae en 5179), parar el de 5178, pulsar Check y confirmar «Followed the app from … to …».
 - **Perfiles y conector `gepetto` en vivo** (17-09, §101): probar los perfiles reales (Dorian's, Gepetto's, Plato's, Jobhunter's, Writer's) y `connect` con la app arriba.
 - **Harness con plan grande** (17-09, §95): repetir con un plan ≥60 KB / 20+ tareas y un segundo chat sin adjunto («Continua»); probar `ui_smoke` contra un proyecto FastAPI y con `npm start` (sólo Flask probado).
 - **Creator con el flag activado** (16-09, §90-94): comprobar por pantalla `/creator`, la biblioteca, un preflight real contra un motor instalado y el lifecycle de un plugin de principio a fin.
-- **`reach_doctor` con red real** (16-09, §90-94): correr `GET /api/reach/doctor?live=1` una vez con credenciales configuradas y ver cuántos de los 9 canales responden `ready`.
 - **Voz manos libres sin micrófono probado** (17-09, §105): interrupción, guarda de eco, frases de parada, y qué transcribe Whisper al decir «Faustus».
 - **Palabra de activación con pantalla apagada** (17-09, §105): confirmar que sigue sin funcionar en el móvil.
 - **`pushsubscriptionchange` nunca disparado** (17-09, §104): esperar una rotación real de claves de push o forzarlo con flags del navegador.
