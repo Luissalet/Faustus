@@ -3586,6 +3586,17 @@ def _cross_hoard_incident_tools(query: str, available: List[Dict[str, Any]]) -> 
     return {funes[0]["activity_timeline"], cassandra[0]["svc_incidents"], cassandra[0]["svc_why_down"]}
 
 
+def _ledger_recurring_tools(query: str, available: List[Dict[str, Any]]) -> Set[str]:
+    """Offer Ledger's recurrence analysis for payment and price-change questions."""
+    if not re.search(r"\b(recurren\w*|peri[oó]dic\w*|suscrip\w*|cuotas?|recibos?|renewal\w*|subscriptions?|pagos? fijos?|subid\w* de precio)\b", (query or "").casefold()):
+        return set()
+    matches = [str(item.get("qualified_name") or "") for item in available or []
+               if not item.get("is_disabled")
+               and "ledger" in str(item.get("server_name") or "").casefold()
+               and item.get("name") == "recurring_candidates"]
+    return set(matches) if len(matches) == 1 and matches[0] else set()
+
+
 def _is_meeting_board_transfer(query: str) -> bool:
     q = (query or "").casefold()
     return bool(re.search(r"\b(reuni[oó]n|acta|meeting|transferencia|compromisos)\b", q)
@@ -8561,11 +8572,24 @@ async def _stream_agent_loop_body(
         except Exception:  # noqa: BLE001 - tool selection must keep working
             logger.debug("[tool-rag] cross-Hoard incident route unavailable", exc_info=True)
             _incident_tools = set()
-        if _incident_tools:
-            _relevant_tools.update(_incident_tools)
+    if _incident_tools:
+        _relevant_tools.update(_incident_tools)
+        if _hot_seed is not None:
+            _hot_seed |= _incident_tools
+        logger.info("[tool-rag] cross-Hoard incident context tools offered")
+
+    if not guide_only and _relevant_tools is not None and not relevant_tools and mcp_mgr:
+        try:
+            _ledger_tools = _ledger_recurring_tools(
+                _last_user, mcp_mgr.get_all_tools(_mcp_disabled_map)) - disabled_tools
+        except Exception:  # noqa: BLE001 - tool selection must keep working
+            logger.debug("[tool-rag] Ledger recurrence route unavailable", exc_info=True)
+            _ledger_tools = set()
+        if _ledger_tools:
+            _relevant_tools.update(_ledger_tools)
             if _hot_seed is not None:
-                _hot_seed |= _incident_tools
-            logger.info("[tool-rag] cross-Hoard incident context tools offered")
+                _hot_seed |= _ledger_tools
+            logger.info("[tool-rag] Ledger recurrence tool offered")
 
     _meeting_transfer = bool(not guide_only and _is_meeting_board_transfer(_last_user))
     if _meeting_transfer and _relevant_tools is not None and "meeting_actions_to_board" not in disabled_tools:
