@@ -266,6 +266,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                 if not args.approve:
                     stop = "approval_required"
                     break
+                # The paused leg can stream an approval placeholder as plain
+                # text. It is not part of the assistant's final answer after
+                # this headless run grants the card and resumes.
+                turn.text = ""
                 form = base_form()
                 form.update({"message": "", "tool_approval_id": turn.approval.get("approval_id"),
                              "tool_approval_decision": "approve_task"})

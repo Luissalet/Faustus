@@ -74,7 +74,8 @@ LEG_DONE = [{"type": "tool_start", "tool": "edit_file", "round": 2},
 
 
 def test_json_run_with_auto_approval(monkeypatch, capsys):
-    srv, url = _serve([[{"type": "tool_start", "tool": "read_file", "round": 1}, CARD], LEG_DONE])
+    srv, url = _serve([[{"type": "tool_start", "tool": "read_file", "round": 1},
+                        {"delta": "Allow this task to continue?"}, CARD], LEG_DONE])
     try:
         code = fr.main(["-p", "fix it", "--url", url, "--json", "--approve", "--workspace", "."])
     finally:
