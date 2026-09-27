@@ -3597,6 +3597,23 @@ def _ledger_recurring_tools(query: str, available: List[Dict[str, Any]]) -> Set[
     return set(matches) if len(matches) == 1 and matches[0] else set()
 
 
+def _babel_code_tools(query: str, available: List[Dict[str, Any]]) -> Set[str]:
+    """Surface version-exact API checks when a connected Babel can help with code."""
+    if not re.search(r"\b(c[oó]digo|code|snippet|python|typescript|javascript|api|librer[ií]a|package|m[eé]todo|funci[oó]n|implement\w*|arregl\w*|corrig\w*|debug\w*|bug)\b", (query or "").casefold()):
+        return set()
+    by_server: Dict[str, Dict[str, str]] = {}
+    for item in available or []:
+        if item.get("is_disabled") or "babel" not in str(item.get("server_name") or "").casefold():
+            continue
+        name, qualified = str(item.get("name") or ""), str(item.get("qualified_name") or "")
+        if name and qualified:
+            by_server.setdefault(str(item.get("server_id") or item.get("server_name")), {})[name] = qualified
+    capable = [names for names in by_server.values() if "api_check_code" in names]
+    if len(capable) != 1:
+        return set()
+    return {capable[0][name] for name in ("docs_libraries", "api_lookup", "api_check_code") if name in capable[0]}
+
+
 def _is_meeting_board_transfer(query: str) -> bool:
     q = (query or "").casefold()
     return bool(re.search(r"\b(reuni[oó]n|acta|meeting|transferencia|compromisos)\b", q)
@@ -8591,6 +8608,20 @@ async def _stream_agent_loop_body(
                 _hot_seed |= _ledger_tools
             logger.info("[tool-rag] Ledger recurrence tool offered")
 
+    _babel_tools: Set[str] = set()
+    if not guide_only and _relevant_tools is not None and not relevant_tools and mcp_mgr:
+        try:
+            _babel_tools = _babel_code_tools(
+                _last_user, mcp_mgr.get_all_tools(_mcp_disabled_map)) - disabled_tools
+        except Exception:  # noqa: BLE001 - tool selection must keep working
+            logger.debug("[tool-rag] Babel code-check route unavailable", exc_info=True)
+            _babel_tools = set()
+        if _babel_tools:
+            _relevant_tools.update(_babel_tools)
+            if _hot_seed is not None:
+                _hot_seed |= _babel_tools
+            logger.info("[tool-rag] Babel version-exact code tools offered")
+
     _meeting_transfer = bool(not guide_only and _is_meeting_board_transfer(_last_user))
     if _meeting_transfer and _relevant_tools is not None and "meeting_actions_to_board" not in disabled_tools:
         _relevant_tools.add("meeting_actions_to_board")
@@ -9406,6 +9437,17 @@ async def _stream_agent_loop_body(
                 "\nFor saved meeting action items, use meeting_actions_to_board on the current project. "
                 "It reads the meeting and reuses existing issues; do not search the workspace or create "
                 "individual board issues for a repeated transfer. An open question is not an action item."
+            )
+        if (_babel_tools and route_messages and route_messages[0].get("role") == "system"
+                and isinstance(route_messages[0].get("content"), str)):
+            route_messages[0]["content"] += (
+                "\nFor code using installed Python or TypeScript libraries, Babel can check APIs against "
+                "an indexed environment. Use docs_libraries to select the matching project environment "
+                "when one is specified, then api_lookup for uncertain calls and api_check_code on code "
+                "you propose. After fixing an error, re-check the corrected snippet before saying it passes. "
+                "If env was omitted, explicitly "
+                "scope the result to Babel's default interpreter, not the user's project. Do not extend "
+                "a finding to other versions without evidence; mention unchecked areas when relevant."
             )
         if doc_mode and not plan_mode and not approved_plan and not guide_only:
             route_messages = _minimal_odysseus_doc_messages(
