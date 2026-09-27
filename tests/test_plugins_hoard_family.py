@@ -1,5 +1,5 @@
 """The Hoard apps that ship as plugins (ledger, links, people, argus, borges,
-scribe, vulcan, hypatia, echo, nightingale, cassandra, vitruvius).
+vulcan, hypatia, echo, nightingale, cassandra, vitruvius).
 
 Each is a standalone application with its own repository; what ships here is
 Faustus's side of the contract, copied from the `faustus-plugin.json` the app
@@ -20,7 +20,6 @@ FAMILY = {
     "people": ("peoples-hoard", 5182, "people"),
     "argus": ("argus-hoard", 5183, "argus"),
     "borges": ("borges-hoard", 5184, "borges"),
-    "scribe": ("scribe-hoard", 5185, "scribe"),
     "vulcan": ("vulcan-hoard", 5186, "vulcan"),
     "hypatia": ("hypatia-hoard", 5187, "hypatia"),
     "echo": ("echo-hoard", 5188, "echo"),
@@ -34,6 +33,7 @@ def test_the_family_ships_and_loads_clean():
     loaded = plugins.load_all()
     assert loaded.errors == [], loaded.errors
     assert set(FAMILY) <= set(loaded.plugins)
+    assert "scribe" not in loaded.plugins
 
 
 @pytest.mark.parametrize("pid", sorted(FAMILY))
