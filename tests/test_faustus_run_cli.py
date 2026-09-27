@@ -1,6 +1,7 @@
 """scripts/faustus_run.py: a headless turn against a stand-in server."""
 import io
 import json
+import sys
 import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -85,6 +86,20 @@ def test_json_run_with_auto_approval(monkeypatch, capsys):
     assert s["stop"] == "answered" and s["text"] == "Fixed." and s["tools"] == ["read_file", "edit_file"]
     assert s["usage"]["cached_tokens"] == 80 and s["rounds"] == 2
     assert _H.forms[1]["tool_approval_id"] == "A1" and _H.forms[1]["tool_approval_decision"] == "approve_task"
+
+
+def test_json_run_uses_utf8_even_with_windows_code_page(monkeypatch):
+    srv, url = _serve([[{"delta": "A → B"}]])
+    data = io.BytesIO()
+    out = io.TextIOWrapper(data, encoding="cp1252")
+    monkeypatch.setattr(sys, "stdout", out)
+    try:
+        code = fr.main(["-p", "test", "--url", url, "--json", "--model", "test-model"])
+    finally:
+        srv.shutdown()
+    lines = [json.loads(line) for line in data.getvalue().decode("utf-8").splitlines()]
+    assert code == 0
+    assert lines[-1]["text"] == "A → B"
 
 
 def test_stops_on_a_card_without_approve(capsys):

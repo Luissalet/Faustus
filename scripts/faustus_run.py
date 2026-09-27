@@ -197,6 +197,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = ap.parse_args(argv)
 
     out = sys.stdout
+    # Windows pipes inherit the console code page (often cp1252). NDJSON can
+    # contain model/tool Unicode, so keep stdout UTF-8 regardless of locale.
+    if hasattr(out, "reconfigure"):
+        out.reconfigure(encoding="utf-8", errors="replace")
     started = time.time()
     try:
         client = Client(args.url, os.environ.get("FAUSTUS_USER"), os.environ.get("FAUSTUS_PASS"),
