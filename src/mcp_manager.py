@@ -594,6 +594,22 @@ def mcp_tool_is_readonly(tool: Dict) -> bool:
     return name.startswith(_MCP_READONLY_VERBS)
 
 
+def _uncertain_mcp_call_result(qualified_name: str, exc: Exception) -> Dict:
+    """A dispatched MCP write may have committed before its reply was lost."""
+    return {
+        "status": "outcome_unknown",
+        "outcome_unknown": True,
+        "exit_code": 1,
+        "error": (
+            f"MCP response lost for {qualified_name} ({type(exc).__name__}). "
+            "The action may already have happened. Do not repeat this write. "
+            "Read the current state with a read-only tool first; if it cannot "
+            "be verified, tell the user the outcome is uncertain."
+        ),
+        "reconcile_action": "read_current_state_before_retry",
+    }
+
+
 # ── TOOL-05: elicitation, sampling and resources under limits ──────────────
 #
 # The MCP spec lets a SERVER call back into the client for three things: ask
@@ -1660,6 +1676,17 @@ class McpManager:
         # A built-in whose owner task already finished has no live process
         # behind the session: skip the doomed call and go straight to reconnect.
         dead = self.is_builtin(server_id) and not self._stdio_owner_alive(server_id)
+        dispatched = False
+        tool_meta = next((tool for tool in self._tools.get(server_id, [])
+                          if tool.get("name") == tool_name), {"name": tool_name})
+        read_only = mcp_tool_is_readonly(tool_meta)
+        # A dead browser loses its page state. These three recovery actions
+        # are safe to repeat after reconnect; clicks, form submits and script
+        # execution are not. Some browser MCP versions omit annotations.
+        replay_safe = read_only or (
+            server_id == BROWSER_MCP_SERVER_ID
+            and tool_name in {"browser_pid", "browser_snapshot", "browser_navigate"}
+        )
         # TOOL-03: wall-clock around the call(s), recorded against server_id
         # regardless of which branch below returns — `_degraded_reason` reads
         # this history to tell "connected and fine" from "connected but
@@ -1668,6 +1695,7 @@ class McpManager:
         try:
             if dead:
                 raise ConnectionError(f"MCP server process for {server_id} has exited")
+            dispatched = True
             result = await self._do_call(session, tool_name, arguments)
         except asyncio.CancelledError:
             raise
@@ -1678,7 +1706,7 @@ class McpManager:
                     f"MCP call failed for {qualified_name}, attempting reconnect: {type(e).__name__}: {e}"
                 )
                 reconnected = await self._reconnect_builtin(server_id)
-                if reconnected:
+                if reconnected and (not dispatched or replay_safe):
                     session = self._sessions.get(server_id)
                     if session:
                         try:
@@ -1692,13 +1720,20 @@ class McpManager:
                     else:
                         self._record_call_outcome(server_id, False, time.time() - call_started)
                         return {"error": f"Reconnected but no session for {server_id}", "exit_code": 1}
+                elif reconnected and dispatched:
+                    self._record_call_outcome(server_id, False, time.time() - call_started)
+                    return _uncertain_mcp_call_result(qualified_name, e)
                 else:
                     logger.error(f"MCP reconnect failed for {server_id}")
                     self._record_call_outcome(server_id, False, time.time() - call_started)
+                    if dispatched and not replay_safe:
+                        return _uncertain_mcp_call_result(qualified_name, e)
                     return {"error": f"MCP server crashed and reconnect failed: {server_id}", "exit_code": 1}
             else:
                 logger.error(f"MCP tool call failed: {qualified_name}: {e}")
                 self._record_call_outcome(server_id, False, time.time() - call_started)
+                if dispatched and not read_only:
+                    return _uncertain_mcp_call_result(qualified_name, e)
                 return {"error": str(e), "exit_code": 1}
 
         if result.get("exit_code") and _UNKNOWN_TOOL_RE.search(str(result.get("stderr") or "")):
@@ -1837,6 +1872,23 @@ class McpManager:
         }
         if is_error and output:
             result_dict["untrusted_content"] = True
+            try:
+                reported = json.loads(output)
+            except (TypeError, ValueError):
+                reported = None
+            if isinstance(reported, dict) and reported.get("outcome_unknown") is True:
+                # A bridge may have received an error *after* forwarding a
+                # write to its backing app. Preserve that uncertainty through
+                # the normal tool-result adapter; do not recast it as a simple
+                # failed action that the model can repeat.
+                result_dict["status"] = "outcome_unknown"
+                result_dict["outcome_unknown"] = True
+                result_dict["error"] = (
+                    "MCP write outcome unknown: the backing service may have "
+                    "applied it before its response was lost. Read current "
+                    "state before any retry."
+                )
+                result_dict["reconcile_action"] = "read_current_state_before_retry"
         if images:
             result_dict["images"] = images
         return result_dict

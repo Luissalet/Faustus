@@ -88,6 +88,14 @@ def normalize_tool_result(raw: Any, *, call_id: str = "", attempt_id: str = "") 
                 retryable=False, next_action="request_approval"),
         )
 
+    if raw.get("status") == "outcome_unknown" or raw.get("outcome_unknown") is True:
+        return ToolResult(
+            call_id=cid, attempt_id=aid, status="outcome_unknown", output=dict(raw),
+            uncertainty=_uncertainty(
+                str(raw.get("error") or "the tool response was lost after dispatch"),
+                str(raw.get("reconcile_action") or "read_current_state_before_retry")),
+        )
+
     if raw.get("status") == "conflict" or raw.get("error_code") == "BASE_REVISION_MISMATCH":
         subcode = str(raw.get("error_code") or "conflict").lower()
         return ToolResult(
