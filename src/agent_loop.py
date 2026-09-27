@@ -2363,6 +2363,20 @@ def _conversational_turn(text: str) -> bool:
         return False
 
 
+_ANSWER_ONLY_MATH_RE = re.compile(
+    r"^[\s¿\"'`]*(?:(?:por favor|please)[,\s]+)?"
+    r"(?:calcula|calcular|resuelve|eval[úu]a|cu[áa]nto es|"
+    r"calculate|compute|solve|evaluate|what is)\b",
+    re.IGNORECASE,
+)
+
+
+def _answer_only_math_request(text: str) -> bool:
+    """A calculation in chat is complete with its answer, even when a workspace is bound."""
+    text = str(text or "").strip()
+    return bool(_ANSWER_ONLY_MATH_RE.match(text) and not _WORKSPACE_CODE_TARGET_RE.search(text))
+
+
 #: A turn that OPENS by asking to be told something. Anchored at the start on
 #: purpose: "explain why you changed it, then fix Y" is not one of these, and
 #: neither is anything with a change verb anywhere in it.
@@ -13353,6 +13367,7 @@ async def _stream_agent_loop_body(
                 # the round-2 text appended, so the user saw the greeting
                 # answered twice, run together mid-sentence.
                 and not _conversational_turn(_last_user)
+                and not _answer_only_math_request(_last_user)
                 # Same lesson, one step further out: a request to EXPLAIN is
                 # answered in prose, so prose is not a shirked job.
                 and not _explanation_request(_last_user)

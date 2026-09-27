@@ -78,6 +78,30 @@ def test_no_rounds_exhausted_on_normal_finish(monkeypatch):
     assert not any(e.get("type") == "rounds_exhausted" for e in events), events
 
 
+def test_calculation_with_bound_workspace_answers_once(monkeypatch, tmp_path):
+    _patch_common(monkeypatch)
+    rounds = 0
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        nonlocal rounds
+        rounds += 1
+        yield f'data: {json.dumps({"delta": "56"})}\n\n'
+        yield f'data: {json.dumps({"type": "finish", "finish_reason": "stop"})}\n\n'
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+    events = _types(_collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3.8:27b-q8_0",
+        [{"role": "user", "content": "Calcula 7 por 8 y responde solo el resultado."}],
+        workspace=str(tmp_path), max_rounds=3,
+        relevant_tools={"read_file", "bash"},
+    )))
+    assert rounds == 1, events
+    assert not any(e.get("type") == "harness_check" and e.get("status") == "no_action" for e in events)
+    assert al._answer_only_math_request("Calcula 7 por 8 y responde solo el resultado.")
+    assert not al._answer_only_math_request("Calcula el total en datos.csv y guarda el resultado.")
+
+
 def test_workspace_acknowledgement_without_tools_is_forced_to_act(monkeypatch, tmp_path):
     _patch_common(monkeypatch)
     monkeypatch.setattr(al, "blocked_tools_for_owner", lambda owner: set(), raising=False)
