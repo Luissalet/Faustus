@@ -20,6 +20,33 @@ def test_a_right_answer_passes_and_a_wrong_one_does_not():
         r"answer ~ \b45\b", "did not use web_search", "at most 0 approval cards"]
 
 
+def test_live_eval_requires_the_model_that_actually_served_the_turn():
+    selected = "qwen3.8-27b-q8-llamacpp"
+    result = {"answer": "24,84 €", "tools": [], "expected_model": selected,
+              "observed_models": [selected], "fallbacks": []}
+    assert _failed({}, result) == []
+    assert "served by selected model" in _failed({}, {**result, "observed_models": ["qwen2.5-3b-helper"]})
+    assert "served by selected model" in _failed({}, {**result, "observed_models": []})
+    assert "no model fallback" in _failed({}, {**result, "fallbacks": [
+        {"selected_model": selected, "answered_by": "qwen2.5-3b-helper"}]})
+
+
+def test_multiturn_report_keeps_first_turn_cost_and_model_failure():
+    combined = daily_eval.combine_turns([
+        {"answer": "45 días", "seconds": 91.2, "observed_models": ["qwen2.5-3b-helper"],
+         "fallbacks": [{"answered_by": "qwen2.5-3b-helper"}], "error": ""},
+        {"answer": "6 semanas", "seconds": 15.5,
+         "observed_models": ["qwen3.8-27b-q8-llamacpp"], "fallbacks": [], "error": ""},
+    ])
+    assert combined["answer"] == "6 semanas"
+    assert combined["seconds"] == 106.7
+    assert len(combined["turns"]) == 2
+    assert "served by selected model" in _failed({}, {**combined,
+        "expected_model": "qwen3.8-27b-q8-llamacpp"})
+    assert "no model fallback" in _failed({}, {**combined,
+        "expected_model": "qwen3.8-27b-q8-llamacpp"})
+
+
 def test_raw_harness_text_fails_any_task():
     assert _failed({}, {"answer": "AI: No events between x\nok", "tools": []}) == ["no raw text ^AI: "]
     assert _failed({}, {"answer": "Allow this task to continue?\nListo", "tools": []})

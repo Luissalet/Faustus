@@ -5,7 +5,8 @@ Faustus instance.
 `scripts/eval_run.py` drives the agent loop directly; this one goes through
 the HTTP app the way a person does (routes, think-mode rule, freshness,
 approval gates, tool selection, the answer checks), so a change anywhere in
-that path shows up. Every task has a deterministic check — a number, a
+that path shows up. It also verifies the model reported by the live stream and
+fails a turn if inference falls back to another model. Every task has a deterministic check — a number, a
 weekday, the tool that had to run, no approval card, no raw harness text in
 the answer — never a model judging a model.
 
@@ -56,6 +57,13 @@ def check(task: Dict[str, Any], result: Dict[str, Any]) -> List[Dict[str, Any]]:
     if result.get("error"):
         add("no_error", False, str(result["error"])[:200])
     add("answered", bool(answer.strip()), "" if answer.strip() else "empty answer")
+    expected_model = str(result.get("expected_model") or "")
+    if expected_model:
+        observed = [str(model) for model in result.get("observed_models") or []]
+        add("served by selected model", bool(observed) and all(model == expected_model for model in observed),
+            f"expected={expected_model}, observed={observed}")
+        add("no model fallback", not result.get("fallbacks"),
+            str(result.get("fallbacks") or "")[:200])
     for pattern in task.get("answer_all", []):
         add(f"answer ~ {pattern}", re.search(pattern, answer, re.I | re.S) is not None)
     for pattern in task.get("answer_none", []):
@@ -122,6 +130,7 @@ class Client:
         form = {"session": session, "message": message, "mode": mode, "model": model,
                 "allow_web_search": "true" if web else None}
         answer, tools, cards, error = "", [], 0, ""
+        observed_models, fallbacks = [], []
         cache = {"rounds": 0, "processed": 0, "cached": 0, "lost_rounds": 0}
         started = time.time()
         for _leg in range(6):
@@ -141,6 +150,11 @@ class Client:
                     if not isinstance(ev, dict):
                         continue
                     kind = ev.get("type")
+                    if kind == "model_info" and ev.get("model"):
+                        observed_models.append(str(ev["model"]))
+                    if kind == "fallback":
+                        fallbacks.append({"selected_model": ev.get("selected_model"),
+                                          "answered_by": ev.get("answered_by")})
                     if isinstance(ev.get("delta"), str) and not ev.get("thinking"):
                         answer += ev["delta"]
                     if kind == "response_replace" and isinstance(ev.get("text"), str):
@@ -163,7 +177,8 @@ class Client:
             form = {"session": session, "message": "", "mode": mode, "model": model,
                     "tool_approval_id": approval, "tool_approval_decision": "approve_task"}
         return {"answer": answer, "tools": tools, "cards": cards, "error": error,
-                "seconds": round(time.time() - started, 1), "prompt_cache": cache}
+                "seconds": round(time.time() - started, 1), "prompt_cache": cache,
+                "observed_models": observed_models, "fallbacks": fallbacks}
 
 
 def parse_overrides(pairs: List[str]) -> Dict[str, Any]:
@@ -181,6 +196,19 @@ def parse_overrides(pairs: List[str]) -> Dict[str, Any]:
         except ValueError:
             out[key] = raw
     return out
+
+
+def combine_turns(turns: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Keep the final answer while auditing every turn of a conversation."""
+    final = dict(turns[-1])
+    final["seconds"] = round(sum(float(turn.get("seconds") or 0) for turn in turns), 1)
+    final["observed_models"] = [model for turn in turns
+                                for model in turn.get("observed_models") or []]
+    final["fallbacks"] = [fallback for turn in turns
+                          for fallback in turn.get("fallbacks") or []]
+    final["error"] = next((str(turn["error"]) for turn in turns if turn.get("error")), "")
+    final["turns"] = turns
+    return final
 
 
 def run(args) -> Dict[str, Any]:
@@ -213,6 +241,7 @@ def _run(args, client: "Client") -> Dict[str, Any]:
             continue
         session = client.new_session(args.model, args.endpoint_url)
         result: Dict[str, Any] = {"answer": "", "tools": [], "cards": 0, "seconds": 0.0, "error": ""}
+        turns: List[Dict[str, Any]] = []
         for index, message in enumerate(task["messages"]):
             # "new_chat_each": every message in a fresh chat (memory recall
             # across chats); the checks read the last one.
@@ -223,8 +252,13 @@ def _run(args, client: "Client") -> Dict[str, Any]:
                                      bool(task.get("web")), args.timeout, approve=True)
             except Exception as exc:  # noqa: BLE001 - one task's failure is a result
                 result = {"answer": "", "tools": [], "cards": 0, "seconds": 0.0, "error": repr(exc)}
+                turns.append(result)
                 break
-        checks = check(task, result)
+            turns.append(result)
+            if result.get("error"):
+                break
+        result = combine_turns(turns)
+        checks = check(task, {**result, "expected_model": args.model})
         ok = all(c["ok"] for c in checks)
         rows.append({"id": task["id"], "ok": ok, "session": session, **result, "checks": checks})
         print(f"{'PASS' if ok else 'FAIL'} {task['id']:<22} {result['seconds']:>6.0f} s  "
