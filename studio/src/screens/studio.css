@@ -4046,6 +4046,12 @@ aside.fs-panel { position: relative; }
 .fs-media-recipes textarea { min-block-size: 110px; inline-size: 100%; resize: vertical; }
 .fs-media-recipes fieldset { min-inline-size: 0; display: grid; gap: 10px; border: 1px solid var(--fs-border); padding: 12px; }
 .fs-media-recipes .fs-panel__row > label { flex: 1; min-inline-size: 0; }
+.fs-reference-shots { display: grid; gap: var(--fs-space-2); border-block: 1px solid var(--fs-border); padding-block: var(--fs-space-3); }
+.fs-reference-shots ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-block-size: 220px; overflow: auto; }
+.fs-reference-shots li button { inline-size: 100%; display: flex; align-items: center; justify-content: space-between; gap: var(--fs-space-3); padding: 8px 10px; color: var(--fs-text-1); background: var(--fs-surface-1); border: 1px solid var(--fs-border); border-radius: var(--fs-radius-control); text-align: start; font: inherit; cursor: pointer; }
+.fs-reference-shots li button:hover { border-color: var(--fs-border-strong); background: var(--fs-surface-2); }
+.fs-reference-shots li button:focus-visible { outline: 2px solid var(--fs-focus); outline-offset: 2px; }
+.fs-reference-shots li span { color: var(--fs-text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 @media (max-width: 767px) { .fs-media-recipes textarea, .fs-frame-selection textarea, .fs-frame-selection input { font-size: 16px; } }
 
 /* Compact composer: optional controls live in the add popover.

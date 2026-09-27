@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from core.middleware import require_admin
 from src.upload_limits import read_upload_limited
-from services.local_video import DEMUXERS, validate_segments, MAX_DURATION
+from services.local_video import DEMUXERS, validate_segments, MAX_DURATION, reference_shot_map
 from src import media_subtitles
 
 
@@ -97,6 +97,28 @@ def setup_local_video_routes():
         return Response(out["text"], media_type=out["media_type"],
                         headers={"Content-Disposition": f'attachment; filename="{out["filename"]}"',
                                  "Cache-Control": "no-store"})
+
+    @router.post("/reference/shot-map")
+    async def analyze_reference(file: UploadFile = File(...)):
+        suffix = Path(file.filename or "").suffix.lower()
+        if suffix not in DEMUXERS:
+            raise HTTPException(400, "Use an MP4, MOV, WebM or MKV video")
+        data = await read_upload_limited(file, 64*1024*1024, "Video")
+        if not data:
+            raise HTTPException(400, "Choose a non-empty video")
+
+        def _analyze():
+            with tempfile.TemporaryDirectory(prefix="faustus-reference-video-") as directory:
+                source = Path(directory) / ("reference" + suffix)
+                source.write_bytes(data)
+                return reference_shot_map(source)
+
+        try:
+            return await anyio.to_thread.run_sync(_analyze, limiter=limiter)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise HTTPException(408, "Reference video analysis exceeded 90 seconds") from exc
 
     @router.post("/{mode}")
     async def process(mode: str, file: UploadFile = File(...), language: str = Form("auto"), segments: str = Form("[]", max_length=100000)):

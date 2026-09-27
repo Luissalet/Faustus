@@ -10,6 +10,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import wave
@@ -48,6 +49,36 @@ def video_duration(path: Path) -> float:
     if any(int(row.get("width", 0))*int(row.get("height", 0)) > 1920*1080 for row in data.get("streams", [])):
         raise ValueError("Local localization accepts video up to 1080p")
     return duration
+
+
+def reference_shot_map(path: Path) -> dict:
+    """Return a compact, timed edit map for a local reference video.
+
+    FFmpeg's scene score finds visual cuts. This is evidence for pacing and
+    structure, not a semantic description of what appears in each shot.
+    """
+    duration = video_duration(path)
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise ValueError("Install FFmpeg on the server PATH first")
+    proc = subprocess.run(
+        [ffmpeg, "-hide_banner", "-nostdin", *input_args(path), "-an", "-sn",
+         "-vf", "select=gt(scene\\,0.32),showinfo", "-f", "null", "-"],
+        stdin=subprocess.DEVNULL, capture_output=True, timeout=90,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+    )
+    if proc.returncode:
+        raise ValueError("Could not analyze scene changes in the reference video")
+    timestamps = [float(value) for value in re.findall(rb"\bpts_time:([0-9]+(?:\.[0-9]+)?)", proc.stderr)]
+    cuts = sorted({round(t, 3) for t in timestamps if 0.1 < t < duration - 0.1})
+    boundaries = [0.0, *cuts, round(duration, 3)]
+    shots = [{"start": boundaries[i], "end": boundaries[i + 1],
+              "duration": round(boundaries[i + 1] - boundaries[i], 3)}
+             for i in range(len(boundaries) - 1)]
+    return {"duration": round(duration, 3), "cuts": cuts, "shots": shots,
+            "shot_count": len(shots),
+            "average_shot_seconds": round(duration / len(shots), 3),
+            "cuts_per_minute": round(len(cuts) * 60 / duration, 2)}
 
 
 def validate_segments(rows: list, duration: float) -> list[dict]:
