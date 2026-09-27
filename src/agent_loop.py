@@ -9460,6 +9460,41 @@ async def _stream_agent_loop_body(
     _HARNESS_MAX_REJECTIONS = 2
     _HARNESS_MAX_LENGTH_CONTINUES = 2
     _ledger = _harness.TurnLedger(workspace, _last_user)
+    # For an explicit count of the user's Links Hoard library, do the exact
+    # read before the model sees any untrusted tool result. A 3B repeatedly
+    # guessed a count from the tool catalog, while a later retry was blocked
+    # once external data had armed the turn's security gate. Use the normal
+    # dispatcher so connector scope, disabled tools and approvals still win.
+    try:
+        from src import answer_checks as _prefetch_checks
+        if (not guide_only and mcp_mgr is not None
+                and _prefetch_checks.saved_links_count_requested(_last_user or "")):
+            _links_candidates = [t for t in mcp_mgr.get_all_tools(_mcp_disabled_map)
+                                 if str(t.get("server_name") or "").casefold().startswith("links hoard")
+                                 and t.get("name") == "list_links" and not t.get("is_disabled")]
+            if len(_links_candidates) == 1:
+                _links_tool = str(_links_candidates[0]["qualified_name"])
+                _links_args = {"state": "all", "limit": 1}
+                _links_desc, _links_result = await execute_tool_block(
+                    ToolBlock(_links_tool, json.dumps(_links_args)),
+                    session_id=session_id, disabled_tools=disabled_tools,
+                    tool_policy=tool_policy, owner=owner,
+                    workspace=workspace, workspace_roots=workspace_roots,
+                    security_context=run_security)
+                _ledger.record(_links_tool, json.dumps(_links_args), _links_result, 0)
+                _links_event = {"round": 0, "tool": _links_tool,
+                                "desc": _links_desc, "command": json.dumps(_links_args),
+                                "output": str(_links_result.get("stdout") or ""),
+                                "exit_code": _links_result.get("exit_code", 1)}
+                tool_events.append(_links_event)
+                _links_total = _prefetch_checks.saved_links_total(tool_events)
+                if _links_total is not None:
+                    messages.append({"role": "system", "content": _lang_note(
+                        f"Verified Links Hoard saved links total: {_links_total}. "
+                        "Use this observed count in the answer.")})
+                yield f"data: {json.dumps({'type': 'tool_output', 'tool': _links_tool, 'output': _links_event['output'], 'round': 0})}\n\n"
+    except Exception:
+        logger.debug("[harness] saved-links prefetch unavailable", exc_info=True)
     # Architecture drift check (src/drift_check.py) — one instance per turn,
     # same contract as `_rewrite_policy`/`_doubt_review_state` below: no-op
     # unless a workspace is bound, gated by its own setting, never able to
@@ -10311,10 +10346,16 @@ async def _stream_agent_loop_body(
         try:
             from src import answer_checks as _servings_checks
             _people = _servings_checks.servings_requested(_last_user or "")
+            _verified_calc = _servings_checks.verified_calculation(_last_user or "")
         except Exception:  # noqa: BLE001 - a hint never breaks a turn
             _people = None
+            _verified_calc = None
         if _people:
             messages.append({"role": "system", "content": _lang_note(_servings_checks.servings_note(_people))})
+        if _verified_calc:
+            messages.append({"role": "system", "content": _lang_note(
+                "Verified calculation for this question: " + _verified_calc["explanation"] +
+                " Use this exact result in the answer.")})
 
     # Round budget. Hitting the cap mid-task used to end the turn with a
     # "Continue" button the user had to click (the model re-reads "you hit the
@@ -13077,13 +13118,14 @@ async def _stream_agent_loop_body(
                     _aloud = _answer_checks.thinking_aloud(_hc_text)
                     _slot_bad = _answer_checks.slot_conflicts(
                         _hc_text, [str((e or {}).get("output") or "") for e in tool_events])
+                    _calc_bad = _answer_checks.calculation_mismatch(_last_user or "", _hc_text)
                 except Exception as _ac_err:  # a check never breaks a turn
                     logger.debug("[harness] answer checks failed: %s", _ac_err)
-                    _wd_bad, _aloud, _slot_bad = [], [], []
-                if _wd_bad or _aloud or _slot_bad:
+                    _wd_bad, _aloud, _slot_bad, _calc_bad = [], [], [], None
+                if _wd_bad or _aloud or _slot_bad or _calc_bad:
                     _answer_rewrite_used = True
-                    logger.warning("[harness] round %s answer rewrite: weekdays=%s aloud=%s slots=%s",
-                                   round_num, _wd_bad, _aloud, _slot_bad)
+                    logger.warning("[harness] round %s answer rewrite: weekdays=%s aloud=%s slots=%s calculation=%s",
+                                   round_num, _wd_bad, _aloud, _slot_bad, _calc_bad)
                     _ledger.notes.append(f"answer_rewrite@{round_num}")
                     if round_response.strip():
                         messages.append({"role": "assistant", "content": round_response})
@@ -13091,12 +13133,13 @@ async def _stream_agent_loop_body(
                             full_response = full_response[:-len(round_response)]
                             yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
                     messages.append({"role": "user", "_harness_note": True,
-                                     "content": _lang_note(_answer_checks.rewrite_note(_wd_bad, _aloud, _slot_bad))})
+                                     "content": _lang_note(_answer_checks.rewrite_note(_wd_bad, _aloud, _slot_bad, _calc_bad))})
                     yield (
                         "data: " + json.dumps({
                             "type": "harness_check", "status": "rejected",
                             "reasons": (["wrong_weekday"] if _wd_bad else []) + (["thinking_aloud"] if _aloud else [])
-                                       + (["busy_slot"] if _slot_bad else []),
+                                       + (["busy_slot"] if _slot_bad else [])
+                                       + (["wrong_calculation"] if _calc_bad else []),
                             "slots": _slot_bad,
                             "round": round_num, "attempt": 1, "max_attempts": 1,
                             "weekdays": _wd_bad, "phrases": _aloud[:4],
@@ -15714,6 +15757,20 @@ async def _stream_agent_loop_body(
             logger.info("[agent] odysseus completed from deterministic tool output")
             break
 
+        # MCP results do not exist until the call completes. A small local
+        # model can nonetheless stream a guessed result before its tool call
+        # (seen live: "29 links", followed by list_links returning zero).
+        # Keep that text in the model's own tool-call message for protocol
+        # continuity, but remove it from the user-visible answer/history.
+        if (round_response.strip() and converted_calls
+                and any((ev or {}).get("round") == round_num
+                        and str((ev or {}).get("tool") or "").startswith("mcp__")
+                        for ev in tool_events)
+                and full_response.endswith(round_response)):
+            full_response = full_response[:-len(round_response)].rstrip()
+            _ledger.notes.append(f"pre_mcp_narration_dropped@{round_num}")
+            yield "data: " + json.dumps({"type": "response_replace", "text": full_response}) + "\n\n"
+
         # Feed results back to LLM for next round
         # Pass the CONVERTED calls (aligned 1:1 with tool_result_texts), not the
         # raw native_tool_calls: a call that failed to convert is dropped from
@@ -16143,6 +16200,32 @@ async def _stream_agent_loop_body(
         _note_delta = ("\n\n" if full_response.strip() else "") + _harness_final_note
         full_response = (full_response.rstrip() + _note_delta).strip()
         yield f"data: {json.dumps({'delta': _note_delta})}\n\n"
+    # A very small class of answers has a complete, deterministic solution.
+    # If even the one rewrite above ignored it (observed with a local 3B),
+    # show that verified result instead of saving the wrong calculation.
+    if not _harness_final_replacement:
+        try:
+            from src import answer_checks as _final_calculation_checks
+            _remaining_calculation = _final_calculation_checks.calculation_mismatch(
+                _last_user or "", full_response)
+        except Exception:
+            _remaining_calculation = None
+        if _remaining_calculation:
+            full_response = _remaining_calculation["explanation"]
+            _ledger.notes.append("verified_calculation_final")
+            yield f"data: {json.dumps({'type': 'response_replace', 'text': full_response})}\n\n"
+        try:
+            from src import answer_checks as _links_final_checks
+            if _links_final_checks.saved_links_count_requested(_last_user or ""):
+                _links_total = _links_final_checks.saved_links_total(tool_events)
+                _links_answer = (f"Tienes {_links_total} enlaces guardados en Links Hoard."
+                                 if _links_total is not None else
+                                 "No pude consultar el total de enlaces guardados en Links Hoard.")
+                if full_response != _links_answer:
+                    full_response = _links_answer
+                    yield f"data: {json.dumps({'type': 'response_replace', 'text': full_response})}\n\n"
+        except Exception:
+            logger.debug("[harness] saved-links count check failed", exc_info=True)
     _response_before_tool_summary = full_response
     # The formatted listing stands in for the answer only when the model gave
     # none. Seen live: «¿qué día tengo más libre esta semana?» got a good

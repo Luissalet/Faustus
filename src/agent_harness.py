@@ -520,6 +520,10 @@ _PERMISSION_STALL_RES: Tuple[re.Pattern, ...] = (
     ),
     re.compile(r"\bdime y (?:contin[uú]o|sigo)\b", re.IGNORECASE),
     re.compile(r"\bav[ií]same y (?:contin[uú]o|sigo)\b", re.IGNORECASE),
+    # Seen live after lookup_tools exposed list_links: the model asked whether
+    # it should consult the library the user had explicitly asked it to read.
+    re.compile(r"\bte gustar[ií]a hacer eso\b", re.IGNORECASE),
+    re.compile(r"\b(?:quieres|te gustar[ií]a) que (?:lo |la )?(?:consulte|busque|revise|lea|mire)\b", re.IGNORECASE),
     re.compile(r"\bla pregunta (?:sigue abierta|sigue mereciendo|que deber[ií]as)\b", re.IGNORECASE),
 )
 

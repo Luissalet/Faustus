@@ -158,6 +158,7 @@ def test_permission_to_continue_is_a_stall_not_a_question():
     assert h.find_permission_stall(PERMISSION_STALL)
     assert h.find_permission_stall("Ready for task 04 whenever you want it.")
     assert h.find_permission_stall("Dime y continúo con la siguiente tarea.")
+    assert h.find_permission_stall("Para ver tus enlaces tendría que consultarlos. ¿Te gustaría hacer eso?")
     # Real design questions still end a turn.
     assert h.find_permission_stall("Should I edit projects.js or sessions.js?") is None
     assert h.find_permission_stall("¿Quieres que añada el botón en la tarjeta o en el menú?") is None

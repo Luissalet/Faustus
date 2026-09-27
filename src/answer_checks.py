@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import re
+from decimal import Decimal
 from typing import Dict, List, Optional
 
 _ES_MONTHS = {
@@ -234,7 +235,8 @@ def thinking_aloud(text: str) -> List[str]:
 
 
 def rewrite_note(mismatches: List[Dict[str, str]], aloud: List[str],
-                 slots: Optional[List[Dict[str, str]]] = None) -> str:
+                 slots: Optional[List[Dict[str, str]]] = None,
+                 calculation: Optional[Dict[str, str]] = None) -> str:
     """The runtime's request for one clean rewrite of the answer."""
     parts = ["[Harness check — automatic runtime message, not a new user request] "
              "Your last message is not shown to the user yet. Write the complete answer again, "
@@ -253,6 +255,9 @@ def rewrite_note(mismatches: List[Dict[str, str]], aloud: List[str],
         )
     if slots:
         parts.append(slot_note(slots))
+    if calculation:
+        parts.append("A deterministic calculation found: " + calculation["explanation"] +
+                     " Include the correct requested result in the final answer.")
     return " ".join(parts)
 
 
@@ -417,3 +422,83 @@ def servings_note(people: int) -> str:
     return (f"The user needs quantities for {people} people. Work each one out as the portion per "
             f"person times {people} (use the python tool for the arithmetic when you have it), and "
             "keep counts and weights consistent with each other (pieces x weight per piece).")
+
+
+# Small calculations with an unambiguous answer are worth checking outside the
+# model. Keep this deliberately narrow: guessing which number is a price or a
+# headcount in a general finance question would create false corrections.
+_LETTER_COUNT = re.compile(
+    r"(?:cu[aá]ntas?\s+veces|how\s+many\s+times).*?"
+    r"(?:letra|letter)\s+([^\W\d_])\b.*?"
+    r"(?:palabra|word)\s+([^\W\d_]+)\b", re.IGNORECASE | re.DOTALL,
+)
+_TIP_PERCENT = re.compile(r"\bpropina\s+del?\s+(\d{1,2}(?:[,.]\d+)?)\s*%", re.IGNORECASE)
+_TIP_BILL = re.compile(r"\bcuenta\s+de\s+(\d{1,6}(?:[,.]\d{1,2})?)\s*€?", re.IGNORECASE)
+_TIP_PEOPLE = re.compile(r"\bsomos\s+(\d{1,3})\b", re.IGNORECASE)
+_TIP_PER_PERSON = re.compile(r"\b(?:cada\s+uno|por\s+persona)\b", re.IGNORECASE)
+
+
+def verified_calculation(question: str) -> Optional[Dict[str, str]]:
+    """A tiny, exact result for a narrowly phrased count or bill split."""
+    question = str(question or "")
+    if len(question) > 250 or "\n" in question or question.count("?") > 1:
+        return None
+    match = _LETTER_COUNT.search(question)
+    if match:
+        letter, word = match.group(1), match.group(2)
+        return {"kind": "letter_count", "value": str(word.casefold().count(letter.casefold())),
+                "explanation": f"'{word}' contiene {word.casefold().count(letter.casefold())} veces la letra '{letter}'."}
+    pct, bill, people = (_TIP_PERCENT.search(question), _TIP_BILL.search(question),
+                         _TIP_PEOPLE.search(question))
+    if pct and bill and people and _TIP_PER_PERSON.search(question):
+        n = int(people.group(1))
+        if not 1 < n <= 100:
+            return None
+        rate = Decimal(pct.group(1).replace(",", "."))
+        amount = Decimal(bill.group(1).replace(",", "."))
+        value = (amount * (1 + rate / 100) / n).quantize(Decimal("0.01"))
+        return {"kind": "tip_split", "value": str(value),
+                "explanation": f"Cuenta {str(amount).replace('.', ',')} € + {rate} % de propina, entre {n} personas: {str(value).replace('.', ',')} € por persona."}
+    return None
+
+
+def calculation_mismatch(question: str, answer: str) -> Optional[Dict[str, str]]:
+    """Return the verified result when the requested final number is absent."""
+    fact = verified_calculation(question)
+    if not fact or not str(answer or "").strip():
+        return None
+    value = fact["value"]
+    if fact["kind"] == "letter_count":
+        if re.search(rf"(?<!\d){re.escape(value)}(?!\d)", answer):
+            return None
+    else:
+        whole, cents = value.split(".")
+        if re.search(rf"(?<!\d){re.escape(whole)}[,.]{re.escape(cents)}(?!\d)", answer):
+            return None
+    return fact
+
+
+def saved_links_count_requested(question: str) -> bool:
+    """An explicit count of the user's Links Hoard library (not a web fact)."""
+    body = str(question or "").casefold()
+    return ("links hoard" in body and "enlace" in body
+            and re.search(r"\b(?:cu[aá]ntos?|n[uú]mero|total)\b", body) is not None)
+
+
+def saved_links_total(tool_events: List[Dict[str, object]]) -> Optional[int]:
+    """The total from a successful all-state list_links call in this turn."""
+    for event in reversed(tool_events):
+        if not str(event.get("tool") or "").endswith("__list_links") or event.get("exit_code") not in (None, 0):
+            continue
+        try:
+            import json
+            args = json.loads(str(event.get("command") or "{}"))
+            if args.get("state") != "all":
+                continue
+            output = json.loads(str(event.get("output") or "{}"))
+            total = output.get("total")
+            if isinstance(total, int) and total >= 0:
+                return total
+        except (TypeError, ValueError, AttributeError):
+            continue
+    return None

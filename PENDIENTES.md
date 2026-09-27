@@ -16,7 +16,6 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 - **Umbral de gibberish** `local_gibberish_script_threshold` (0.40) (18-09, §114): subirlo o desactivarlo por sesión si aparece un falso positivo real con muchos caracteres no latinos legítimos.
 - **Heurística de Ollama en puerto no estándar** (18-09, §114): decidir si vale la pena sondear `/api/tags` para reconocerlo sin declaración manual en Ajustes.
 - **Encender `agent_context_engine`** en la instancia principal (23-09, §176): sigue `False` por defecto; recomendado tras que Luis pruebe `/brain` unos días.
-- **Descripciones MCP de los Hoards de Node** (Ledger's, Links', People's) (23-09, §179): superan 110 caracteres en primera línea; viven en sus propios repos, no en éste.
 - **Renombrar el prefijo `odysseus_*`** (colecciones vectoriales, columnas `odysseus_kind`/`odysseus_ref`) (18-09, §112): sólo tiene sentido junto a una migración de datos real; decidir cuándo.
 - **Borrar `origin/dev`** en GitHub si ya no sirve (18-09, §112): necesita push de Luis.
 - **Publicar Nightingale's Hoard en GitHub** (23-09, §178): decidir, igual que el resto de la familia.
