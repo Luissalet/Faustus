@@ -3542,7 +3542,7 @@ def _jobhunter_hoard_read_tools(query: str, available: List[Dict[str, Any]]) -> 
 
 
 def _funes_hoard_activity_tools(query: str, available: List[Dict[str, Any]]) -> Set[str]:
-    """Offer bounded-day summary and last context for an explicit Funes request."""
+    """Offer summary, resume context and a bounded timeline for Funes requests."""
     if "funes" not in (query or "").casefold():
         return set()
     by_server: Dict[str, Dict[str, str]] = {}
@@ -3558,7 +3558,32 @@ def _funes_hoard_activity_tools(query: str, available: List[Dict[str, Any]]) -> 
                if {"activity_summary", "activity_where_was_i"} <= names.keys()]
     if len(capable) != 1:
         return set()
-    return {capable[0][name] for name in ("activity_summary", "activity_where_was_i")}
+    return {capable[0][name] for name in ("activity_summary", "activity_where_was_i", "activity_timeline")
+            if name in capable[0]}
+
+
+def _cross_hoard_incident_tools(query: str, available: List[Dict[str, Any]]) -> Set[str]:
+    """Offer the incident and desktop timeline when the user asks for both."""
+    q = (query or "").casefold()
+    if not (re.search(r"\b(inciden\w*|ca[ií]d\w*|cay[oó]|par[oó]|pas[oó]|down|crash\w*|fell|stopp\w*)\b", q)
+            and re.search(r"\b(escritorio|pantalla|actividad|funes|desktop|screen|working)\b", q)):
+        return set()
+    by_server: Dict[str, Dict[str, str]] = {}
+    for item in available or []:
+        if item.get("is_disabled"):
+            continue
+        server = str(item.get("server_name") or "").casefold()
+        if not (server.startswith("funes") or server.startswith("cassandra")):
+            continue
+        name, qualified = str(item.get("name") or ""), str(item.get("qualified_name") or "")
+        if name and qualified:
+            by_server.setdefault(server, {})[name] = qualified
+    funes = [names for server, names in by_server.items() if server.startswith("funes") and "activity_timeline" in names]
+    cassandra = [names for server, names in by_server.items()
+                 if server.startswith("cassandra") and {"svc_incidents", "svc_why_down"} <= names.keys()]
+    if len(funes) != 1 or len(cassandra) != 1:
+        return set()
+    return {funes[0]["activity_timeline"], cassandra[0]["svc_incidents"], cassandra[0]["svc_why_down"]}
 
 
 def _borges_hoard_read_tools(query: str, available: List[Dict[str, Any]]) -> Set[str]:
@@ -8519,6 +8544,23 @@ async def _stream_agent_loop_body(
                 _hot_seed |= _funes_tools
             logger.info("[tool-rag] named Funes activity tools offered")
 
+    # A cross-Hoard incident question needs both service evidence and the
+    # desktop spans. Generic retrieval often picks Funes recall and status,
+    # omitting Cassandra's incident explanation and the bounded timeline.
+    _incident_tools: Set[str] = set()
+    if not guide_only and _relevant_tools is not None and not relevant_tools and mcp_mgr:
+        try:
+            _incident_tools = _cross_hoard_incident_tools(
+                _last_user, mcp_mgr.get_all_tools(_mcp_disabled_map)) - disabled_tools
+        except Exception:  # noqa: BLE001 - tool selection must keep working
+            logger.debug("[tool-rag] cross-Hoard incident route unavailable", exc_info=True)
+            _incident_tools = set()
+        if _incident_tools:
+            _relevant_tools.update(_incident_tools)
+            if _hot_seed is not None:
+                _hot_seed |= _incident_tools
+            logger.info("[tool-rag] cross-Hoard incident context tools offered")
+
     # A named document library can start with search and full-passage read.
     # The live 27B needed a collection listing and lookup_tools before these
     # two read-only calls, despite the user asking for an exact citation.
@@ -9313,6 +9355,15 @@ async def _stream_agent_loop_body(
             session_id=session_id,
             project_id=str(_hopts.get("project_id") or "").strip() or None,
         )
+        if (_incident_tools and route_messages and route_messages[0].get("role") == "system"
+                and isinstance(route_messages[0].get("content"), str)):
+            route_messages[0]["content"] += (
+                "\nFor this cross-Hoard incident reconstruction, distinguish observation from cause. "
+                "A Funes window title proves only which window was foreground, not editing, commands, "
+                "continuous work or a manual stop. Cassandra's 'No clear cause' means cause unknown; "
+                "an empty log cannot establish a clean exit, and a process start time cannot establish "
+                "service uptime. Do not rank a human cause above other unknowns from timing alone."
+            )
         if doc_mode and not plan_mode and not approved_plan and not guide_only:
             route_messages = _minimal_odysseus_doc_messages(
                 route_messages,

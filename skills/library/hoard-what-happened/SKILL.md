@@ -1,7 +1,7 @@
 ---
 name: hoard-what-happened
-description: Reconstruct what happened around one moment or failure — which app went down, what the assistant called before, which rule ran, what logs and GPUs said — from Cassandra's audit and the hub's bus. Use when the user asks "¿qué pasó a las 4?", "¿qué se rompió anoche?", "¿por qué se cayó X?" or "why is X down".
-version: 1.0.0
+description: Reconstruct what happened around one moment or failure — which app went down, what the assistant called, what the user was doing, and what logs and GPUs said — from Cassandra, Funes and the hub. Use when the user asks "¿qué pasó a las 4?", "¿qué se rompió anoche?", "¿por qué se cayó X?" or "why is X down".
+version: 1.1.1
 category: research
 tags: [hoards, cassandra, hub, incidents, audit, forensics, rompio, cayo, caido, fallo, anoche, madrugada, incidente]
 status: published
@@ -37,13 +37,23 @@ One moment or one failure needs a cause, in order, with evidence. For a general 
    at: `logs_search` with the service and the window for tracebacks, OOM,
    "Killed", a port already in use; `gpu_timeline` if VRAM or a model load
    is a suspect. Do not read every log of every app.
-5. **Write the timeline** in the user's language: one line per fact, in
+5. **Add the user's activity when Funes is connected.** `activity_timeline`
+   with `around` set to the incident's `opened` time returns the desktop
+   activity within ±30 minutes. Include only spans that overlap the incident
+   window. Window titles show what was foreground, not whether a file was
+   edited or whether that activity caused the failure. Temporal overlap alone
+   is not a candidate cause.
+6. **Write the timeline** in the user's language: one line per fact, in
    time order, with its source in brackets (`[cassandra]`, `[bus]`,
-   `[log]`), and end with the cause you can defend and the ones you
+   `[log]`, `[funes]`), and end with the cause you can defend and the ones you
    cannot rule out. A rule that fired right before is a fact, not a
-   verdict. If nothing in the window explains it, say so and name what is
-   missing (Cassandra not running then, hub events already pruned, no log).
-6. **Offer the fix, do not apply it.** Restarting (`svc_restart`,
+   verdict. If Cassandra says "No clear cause", keep the cause unknown;
+   do not promote Funes foreground activity into a cause. An empty bus list
+   proves no stored events only: check bus coverage before claiming that an
+   agent made no calls. Process start time is not observed service uptime.
+   If nothing in the window explains it, say so and name what is missing
+   (Cassandra not running then, hub events unavailable, no log).
+7. **Offer the fix, do not apply it.** Restarting (`svc_restart`,
    `hub_start_app`), disabling a rule (`hub_rule_update`) or changing a job
    wait for the user's word in this turn.
 
@@ -55,6 +65,7 @@ Alrededor de las 04:00 (03:45–04:15)
 03:59:40 [bus] agent.call scribe/scribe_transcribe por la regla «Transcript → cards», falló: «CUDA out of memory».
 04:00:02 [cassandra] llama-server 8081 caído (pid 103248 desaparecido); VRAM al 98 % 40 s antes.
 04:00:05 [log] llama-server: «Killed».
+04:01:10 [funes] Estaba en Code.exe con el proyecto Atlas en primer plano; esto no prueba que lo editara.
 Causa defendible: whisper cargó en la GPU compartida durante la copia; no descartable: el reinicio del sistema (arranque 03:57 no, la máquina lleva 3 días).
 ```
 
