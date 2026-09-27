@@ -3489,6 +3489,39 @@ def _scrub_approval_cards_from_replay(messages: List[Dict[str, Any]]) -> int:
     return n
 
 
+_PEOPLE_FACT_REQUEST_RE = re.compile(
+    r"\b(?:apunta|anota|guarda|registra|añade|agrega)\b.*"
+    r"\b(?:agenda|ficha)\b.*\bque\b",
+    re.I | re.S,
+)
+_PEOPLE_EVENT_RE = re.compile(r"\b(?:cita|reuni[oó]n|evento|a\s+las\s+\d)\b", re.I)
+
+
+def _people_hoard_fact_tools(query: str, available: List[Dict[str, Any]]) -> Set[str]:
+    """Offer the connected people CRM for an explicit person-fact request.
+
+    A generic note is the wrong destination for "apunta en mi agenda que Ana
+    tiene alergia": it bypasses duplicate-name resolution entirely. Require
+    both the user's agenda wording and live CRM tools; do not assume that a
+    configured but disconnected Hoard can serve the request.
+    """
+    if not _PEOPLE_FACT_REQUEST_RE.search(query or "") or _PEOPLE_EVENT_RE.search(query or ""):
+        return set()
+    by_server: Dict[str, Dict[str, str]] = {}
+    for item in available or []:
+        server_name = str(item.get("server_name") or "").casefold()
+        if not server_name.startswith("people") or item.get("is_disabled"):
+            continue
+        name = str(item.get("name") or "")
+        qualified = str(item.get("qualified_name") or "")
+        if name and qualified:
+            by_server.setdefault(str(item.get("server_id") or server_name), {})[name] = qualified
+    capable = [names for names in by_server.values() if {"find_people", "add_fact"} <= names.keys()]
+    if len(capable) != 1:
+        return set()
+    return {capable[0][name] for name in ("find_people", "get_person", "add_fact") if name in capable[0]}
+
+
 def _resolved_tool_event_name(event: dict[str, Any]) -> str:
     tool = str(event.get("tool") or "").strip()
     if tool != "mcp":
@@ -8375,6 +8408,26 @@ async def _stream_agent_loop_body(
             if _hot_seed is not None:
                 _hot_seed |= _sticky_mcp
             logger.info("[tool-rag] plugin in use in this conversation; keeping its tools: %s", _sticky_new)
+
+    # A named person fact in the user's agenda belongs in the connected
+    # People's Hoard. Generic notes cannot disambiguate two people with the
+    # same first name, and a live 27B wrote an allergy as a detached note while
+    # the CRM contained two different Anas. Only steer this explicit wording
+    # when the relevant MCP tools are actually connected and enabled.
+    if not guide_only and _relevant_tools is not None and not relevant_tools and mcp_mgr:
+        try:
+            _people_tools = _people_hoard_fact_tools(
+                _last_user, mcp_mgr.get_all_tools(_mcp_disabled_map)) - disabled_tools
+        except Exception:  # noqa: BLE001 - tool selection must keep working
+            logger.debug("[tool-rag] people CRM route unavailable", exc_info=True)
+            _people_tools = set()
+        if _people_tools:
+            _relevant_tools.update(_people_tools)
+            _relevant_tools.difference_update({"manage_notes", "manage_memory", "brain", "manage_contact"})
+            if _hot_seed is not None:
+                _hot_seed |= _people_tools
+                _hot_seed.difference_update({"manage_notes", "manage_memory", "brain", "manage_contact"})
+            logger.info("[tool-rag] person fact in agenda: People's Hoard tools offered")
 
     # Current-turn chat uploads are real files under the upload/data root. Make
     # the read-side file/document tools visible immediately so the agent can
