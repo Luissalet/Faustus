@@ -14,6 +14,13 @@ def test_leaked_qwen_call_and_blank_runs_are_cleaned():
     assert out.startswith("Voy a revisar") and out.endswith("Sigo con el análisis.")
 
 
+def test_the_same_narration_repeated_round_after_round_is_kept_once():
+    raw = "\n\n".join(["Voy a mirar el workspace."] * 10 + ["Hecho."])
+    assert clean_reply_for_save(raw) == "Voy a mirar el workspace.\n\nHecho."
+    apart = "Uno.\n\nDos.\n\nUno."
+    assert clean_reply_for_save(apart) == apart
+
+
 def test_code_fences_and_plain_text_stay():
     raw = "Ejemplo:\n\n```bash\nls -la\n```\n\nListo."
     assert clean_reply_for_save(raw) == raw

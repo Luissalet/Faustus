@@ -1640,4 +1640,12 @@ def clean_reply_for_save(text: str) -> str:
     raw = text or ""
     if not raw.strip():
         return ""
-    return strip_tool_blocks(raw, skip_fenced=True)
+    cleaned = strip_tool_blocks(raw, skip_fenced=True)
+    # The same narration written again round after round ("Voy a mirar el
+    # workspace." ten times, one per round) is kept once. Only consecutive,
+    # identical paragraphs outside code fences are folded.
+    if "```" in cleaned:
+        return cleaned
+    paras = cleaned.split("\n\n")
+    kept = [p for i, p in enumerate(paras) if i == 0 or p.strip() != paras[i - 1].strip()]
+    return "\n\n".join(kept)
