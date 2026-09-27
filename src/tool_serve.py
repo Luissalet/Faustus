@@ -480,7 +480,10 @@ def execute_lookup(content: str, ctx: Optional[Mapping[str, Any]] = None) -> Tup
     except Exception:
         admin = True
 
-    if category or (wants_categories and not query and not names):
+    # A model may include a guessed category alongside a concrete search.
+    # Search intent wins: category labels are only for browsing, and a guess
+    # such as "mcp" or "cookbook" must not hide matching MCP tools.
+    if (category and not query and not names) or (wants_categories and not query and not names):
         payload = serve_categories(category=category, disabled=ctx.get("disabled_tools"), admin=admin)
         if category:
             listed = ", ".join(payload.get("promote") or []) or "none"

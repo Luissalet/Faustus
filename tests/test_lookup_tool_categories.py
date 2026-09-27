@@ -53,3 +53,15 @@ def test_query_still_searches(monkeypatch):
     monkeypatch.setattr(ts, "connected_mcp_tool_names", lambda: [])
     _d, result = ts.execute_lookup(json.dumps({"names": ["read_file"]}), {"owner": None})
     assert "read_file" in result["promote"]
+
+
+def test_query_takes_priority_over_guessed_category(monkeypatch):
+    monkeypatch.setattr(ts, "serve", lambda **kwargs: {
+        "tools": [{"name": "mcp__cook__list_recipes"}],
+        "promote": ["mcp__cook__list_recipes"],
+        "detail": "catalog",
+    })
+    _d, result = ts.execute_lookup(json.dumps({
+        "query": "CookHoard recipes", "category": "cookbook",
+    }), {"owner": None})
+    assert result["promote"] == ["mcp__cook__list_recipes"]
