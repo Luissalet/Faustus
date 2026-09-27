@@ -10,6 +10,8 @@ import logging
 from datetime import datetime
 from typing import Dict, Any, AsyncGenerator, List, Optional, Tuple
 
+from src.tool_parsing import clean_reply_for_save
+
 from fastapi import APIRouter, Request, HTTPException, Form, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import ValidationError
@@ -3267,6 +3269,9 @@ def setup_chat_routes(
 
                 full_response = ""
                 thinking_response = ""
+                # The question a turn ended on (a card with no streamed text):
+                # saved as the reply instead of a bare "Done.".
+                _ended_on_question = ""
                 # When reasoning started and last grew: the saved reply keeps
                 # how long the model thought, or a reloaded chat says "1s".
                 _thinking_span = [0.0, 0.0]
@@ -4223,6 +4228,10 @@ def setup_chat_routes(
                                     data = json.loads(chunk[6:])
                                     if isinstance(data, dict) and data.get("type") == "context_packet":
                                         _agent_packet_seen = True
+                                    if isinstance(data, dict) and data.get("type") == "ask_user":
+                                        _q = (data.get("data") or {}).get("question")
+                                        if isinstance(_q, str) and _q.strip():
+                                            _ended_on_question = _q.strip()
                                     if "delta" in data:
                                         # Reasoning tokens arrive flagged thinking:true.
                                         # Forward them for the live indicator, but keep
@@ -4458,7 +4467,16 @@ def setup_chat_routes(
                             elif chunk == "data: [DONE]\n\n":
                                 _has_tool_events = bool((last_metrics or {}).get("tool_events"))
                                 if full_response or _has_tool_events:
-                                    _response_to_save = full_response or "Done."
+                                    # Leaked tool-call markup and runs of blank
+                                    # lines left by empty rounds are not part of
+                                    # the answer (live, exam 32: a `<tool_call>
+                                    # <function=bash>` block and dozens of blank
+                                    # lines in the saved reply).
+                                    _cleaned = clean_reply_for_save(full_response)
+                                    if _cleaned != full_response:
+                                        full_response = _cleaned
+                                        yield f'data: {json.dumps({"type": "response_replace", "text": full_response})}\n\n'
+                                    _response_to_save = full_response or _ended_on_question or "Done."
                                     _metrics_to_save = dict(last_metrics or {})
                                     if thinking_response.strip() and not _metrics_to_save.get("thinking"):
                                         _metrics_to_save["thinking"] = thinking_response.strip()
@@ -4979,9 +4997,12 @@ def setup_chat_routes(
             if full_response.strip() or last_metrics.get("tool_events"):
                 metrics_to_save = dict(last_metrics)
                 metrics_to_save["regenerated_from"] = regenerated_from
+                _cleaned = clean_reply_for_save(full_response)
+                if _cleaned != full_response.strip():
+                    yield f'data: {json.dumps({"type": "response_replace", "text": _cleaned})}\n\n'
                 saved_id = save_assistant_response(
                     sess, session_manager, sid,
-                    full_response.strip() or "Done.", metrics_to_save,
+                    _cleaned or "Done.", metrics_to_save,
                     wires=_wires_snapshot,
                     behavior_mode=_regen_mode.id,
                 )

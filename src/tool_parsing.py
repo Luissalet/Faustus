@@ -1629,3 +1629,15 @@ def strip_tool_blocks(text: str, skip_fenced: bool = False) -> str:
     cleaned = _strip_qwen_function_markup(cleaned)
     cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
     return cleaned.strip()
+
+
+def clean_reply_for_save(text: str) -> str:
+    """The reply as it should be saved and shown once a turn ends: tool-call
+    markup a model wrote as text (Qwen `<function=…>`, `<tool_call>` blocks,
+    raw call JSON, role markers) removed, and runs of blank lines left by
+    rounds with no prose folded to one. Code fences are left alone, since
+    whether a fence ran as a tool is only known inside the turn."""
+    raw = text or ""
+    if not raw.strip():
+        return ""
+    return strip_tool_blocks(raw, skip_fenced=True)

@@ -4035,7 +4035,7 @@ async def _recovery_step_completion(url, model, headers, messages, temperature, 
 
 
 def _end_turn_with_question(*, reason: str, round_num: int, session_id: Optional[str],
-                             owner: Optional[str], ledger) -> Iterable:
+                             owner: Optional[str], ledger, elapsed_s: float = 0.0) -> Iterable:
     """Build and register a concrete question from the turn's own ledger
     state, and yield the SSE chunk(s) that end the turn asking it — never a
     bare placeholder. Owner requirement, 18-09-2026: a large/repetitive task
@@ -4059,21 +4059,47 @@ def _end_turn_with_question(*, reason: str, round_num: int, session_id: Optional
     _open = [t.get("content") for t in (getattr(ledger, "progress", None) or [])
              if t.get("status") != "completed"]
     _done = len(ledger.mutated_paths()) if hasattr(ledger, "mutated_paths") else 0
-    if _open:
+    _es = str(getattr(ledger, "language", "") or "es").lower().startswith("es")
+    _rounds = max(0, round_num - 1)
+    if reason == "turn_wall_clock_ceiling":
+        # The turn ran out of time, it did not get stuck: saying "I could not
+        # make progress" after three hours of work read as a failure (exam 32).
+        _mins = int(round((elapsed_s or 0) / 60)) if elapsed_s else 0
+        if _es:
+            head = (f"Se acabó el tiempo de este turno ({_mins} min, {_rounds} rondas)." if _mins
+                    else f"Se acabó el tiempo de este turno ({_rounds} rondas).")
+            tail = (f" Lo siguiente pendiente es: {_open[0]}. ¿Sigo por ahí?" if _open
+                    else " ¿Sigo donde lo he dejado?")
+        else:
+            head = (f"This turn ran out of time ({_mins} min, {_rounds} rounds)." if _mins
+                    else f"This turn ran out of time ({_rounds} rounds).")
+            tail = (f" Next open step: {_open[0]}. Shall I carry on with it?" if _open
+                    else " Shall I carry on from where I stopped?")
+        question = head + tail
+    elif _open:
         question = (
-            f"Llevo {_done} elemento(s) completado(s) en {round_num - 1} ronda(s) sin poder "
+            f"Llevo {_done} elemento(s) completado(s) en {_rounds} ronda(s) sin poder "
             f"seguir automáticamente. La siguiente unidad pendiente es: {_open[0]}. "
             "¿Continúo con esta unidad, o prefieres otra prioridad?"
+        ) if _es else (
+            f"{_done} item(s) done in {_rounds} round(s) and I cannot go on on my own. "
+            f"Next open unit: {_open[0]}. Shall I continue with it, or is something else first?"
         )
     elif _done:
         question = (
-            f"Llevo {_done} elemento(s) completado(s) en {round_num - 1} ronda(s) sin poder "
+            f"Llevo {_done} elemento(s) completado(s) en {_rounds} ronda(s) sin poder "
             "seguir automáticamente. ¿Cuál es la siguiente unidad concreta a completar?"
+        ) if _es else (
+            f"{_done} item(s) done in {_rounds} round(s) and I cannot go on on my own. "
+            "What is the next concrete unit to complete?"
         )
     else:
         question = (
-            f"No pude avanzar en {round_num - 1} ronda(s) de esta tarea. "
+            f"No pude avanzar en {_rounds} ronda(s) de esta tarea. "
             "¿Puedes darme una unidad concreta y pequeña por la que empezar?"
+        ) if _es else (
+            f"I could not make progress in {_rounds} round(s) of this task. "
+            "Can you give me one small, concrete unit to start with?"
         )
     question_id = f"qst_{_uuid.uuid4().hex[:20]}"
     auq = {
@@ -10533,7 +10559,7 @@ async def _stream_agent_loop_body(
             for _rk, _rpayload in _end_turn_with_question(
                 reason="turn_wall_clock_ceiling",
                 round_num=round_num, session_id=session_id, owner=owner,
-                ledger=_ledger,
+                ledger=_ledger, elapsed_s=_elapsed_s,
             ):
                 yield _rpayload
             _awaiting_user = True
