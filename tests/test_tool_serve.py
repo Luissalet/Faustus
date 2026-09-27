@@ -78,10 +78,10 @@ def test_serve_returns_promote_list_and_schemas_for_named_tools():
     assert payload["tools"][0]["schema"]["function"]["name"] == "ask_user"
 
 
-def test_execute_lookup_rejects_empty_args():
+def test_execute_lookup_empty_args_lists_categories():
     desc, result = execute_lookup("{}")
-    assert result.get("exit_code") == 1
-    assert "error" in result
+    assert result.get("exit_code") == 0
+    assert result[LOOKUP_TOOL]["categories"]
     assert LOOKUP_TOOL in desc
 
 
@@ -139,3 +139,92 @@ def test_keyword_hits_do_not_depend_on_the_hash_seed():
         seen.add(out.stdout.strip())
     assert len(seen) == 1, seen
     assert seen.pop().split(",")[0] == "send_email"
+
+
+class _LabeledMcp:
+    def __init__(self, schemas):
+        self.schemas = schemas
+
+    def get_all_openai_schemas(self, _disabled):
+        return self.schemas
+
+
+def _mcp_schema(name, label, description):
+    return {"type": "function", "function": {
+        "name": name, "description": f"[MCP:{label}] {description}",
+        "parameters": {"type": "object", "properties": {}},
+    }}
+
+
+def test_explicit_mcp_label_precedes_generic_session_keyword_hints(monkeypatch):
+    target = [
+        _mcp_schema("mcp__gh01__gamer_sessions", "GamerHoard", "Consultar historial de sesiones de juego, tiempo y minutos acumulados."),
+        _mcp_schema("mcp__gh01__gamer_log_session", "GamerHoard", "Registrar o corregir una sesi\u00f3n de juego."),
+        _mcp_schema("mcp__gh01__gamer_get", "GamerHoard", "Consultar ficha de juego y sus datos."),
+    ]
+    generic = [
+        _mcp_schema("mcp__tasks__manage_session", "Task Manager", "Manage task sessions."),
+        _mcp_schema("mcp__tasks__manage_tasks", "Task Manager", "Manage tasks."),
+    ]
+    other = [_mcp_schema(f"mcp__other{i:02d}__tool{i}", f"Other Connector {i}", "Unrelated operation.") for i in range(11)]
+    monkeypatch.setattr("src.tool_utils.get_mcp_manager", lambda: _LabeledMcp(target + generic + other))
+    monkeypatch.setattr("src.tool_index.get_tool_index", lambda: type("Index", (), {"retrieve": lambda self, _q, k=8: ["mcp__gh01__stale_session"]})())
+    monkeypatch.setattr("src.tool_serve._keyword_hits", lambda _q: ["manage_session", "manage_tasks"])
+
+    found = search_catalog(
+        "GamerHoard sesiones aisladas: ficha de juego, registrar sesi\u00f3n, tiempo acumulado", k=8,
+    )
+
+    assert found[0] == "mcp__gh01__gamer_log_session"
+    assert {"mcp__gh01__gamer_sessions", "mcp__gh01__gamer_get"} <= set(found[:3])
+    assert found.index("mcp__gh01__gamer_sessions") < found.index("manage_session")
+    assert found[3:] == ["manage_session", "manage_tasks"]
+    assert "mcp__gh01__stale_session" not in found
+
+
+def test_lowercase_gamerhoard_name_still_matches_schema_label(monkeypatch):
+    schemas = [
+        _mcp_schema("mcp__gh01__gamer_sessions", "GamerHoard isolated", "Consultar sesiones."),
+        _mcp_schema("mcp__gh01__gamer_log_session", "GamerHoard isolated", "Registrar una sesión."),
+    ]
+    monkeypatch.setattr("src.tool_utils.get_mcp_manager", lambda: _LabeledMcp(schemas))
+    monkeypatch.setattr("src.tool_index.get_tool_index", lambda: None)
+    monkeypatch.setattr("src.tool_serve._keyword_hits", lambda _q: ["manage_session"])
+
+    found = search_catalog("gamerhoard: sesiones", k=8)
+
+    assert found[:2] == ["mcp__gh01__gamer_log_session", "mcp__gh01__gamer_sessions"]
+    found_register = search_catalog("gamerhoard: registrar una sesi\u00f3n", k=8)
+    assert found_register[:2] == ["mcp__gh01__gamer_log_session", "mcp__gh01__gamer_sessions"]
+
+
+def test_generic_server_or_session_words_do_not_pin_mcp_tools(monkeypatch):
+    schemas = [_mcp_schema("mcp__local01__manage_session", "Local Session Server", "Manage a local session.")]
+    monkeypatch.setattr("src.tool_utils.get_mcp_manager", lambda: _LabeledMcp(schemas))
+    monkeypatch.setattr("src.tool_index.get_tool_index", lambda: type("Index", (), {"retrieve": lambda self, _q, k=8: ["manage_session"]})())
+    monkeypatch.setattr("src.tool_serve._keyword_hits", lambda _q: ["manage_session"])
+
+    found = search_catalog("local server sessions", k=8)
+
+    assert found == ["manage_session"]
+    assert "mcp__local01__manage_session" not in found
+
+
+def test_explicit_mcp_search_respects_disabled_and_non_admin_filters(monkeypatch):
+    schemas = [
+        _mcp_schema("mcp__gh01__gamer_sessions", "GamerHoard", "Consultar sesiones."),
+        _mcp_schema("mcp__gh01__gamer_log_session", "GamerHoard", "Registrar sesi\u00f3n."),
+    ]
+    monkeypatch.setattr("src.tool_utils.get_mcp_manager", lambda: _LabeledMcp(schemas))
+    monkeypatch.setattr("src.tool_index.get_tool_index", lambda: None)
+    monkeypatch.setattr("src.tool_serve._keyword_hits", lambda _q: [])
+    monkeypatch.setattr("src.tool_serve._non_admin_blocked", lambda name: name == "mcp__gh01__gamer_sessions")
+    query = "GamerHoard registrar sesión"
+
+    disabled = search_catalog(query, disabled={"mcp__gh01__gamer_log_session"})
+    assert "mcp__gh01__gamer_log_session" not in disabled
+    assert "mcp__gh01__gamer_sessions" in disabled
+
+    non_admin = search_catalog(query, admin=False)
+    assert "mcp__gh01__gamer_sessions" not in non_admin
+    assert "mcp__gh01__gamer_log_session" in non_admin

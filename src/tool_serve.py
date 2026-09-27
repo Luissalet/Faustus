@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import unicodedata
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 logger = logging.getLogger(__name__)
@@ -226,6 +227,76 @@ def _keyword_hits(query: str) -> List[str]:
         return []
 
 
+_GENERIC_MCP_LABEL_WORDS = {
+    "mcp", "server", "servers", "servidor", "servidores", "local", "tool", "tools",
+    "sesion", "session", "juego", "game", "games", "plugin", "connector", "conector",
+    "aislado", "aislada", "aislados", "aisladas", "test", "tests", "prueba", "pruebas",
+    "isolated", "instancia", "instance", "library", "biblioteca",
+}
+
+
+def _label_tokens(value: str) -> Set[str]:
+    """Normalize label/operation words while preserving branded camel case."""
+    folded = "".join(ch for ch in unicodedata.normalize("NFKD", str(value or "").casefold()) if not unicodedata.combining(ch))
+    tokens = set(re.findall(r"[a-z0-9]+", folded))
+    # Spanish/English plurals should match the same label operation term.
+    normalized = {token[:-2] if token.endswith("es") and len(token) > 5 else token for token in tokens}
+    if "sesion" in normalized:
+        normalized.remove("sesion")
+        normalized.add("session")
+    return normalized
+
+
+def _explicit_mcp_hits(query: str) -> List[str]:
+    """Find and rank live MCP tools when the query names their schema label.
+
+    The server identity comes from the real ``[MCP:<label>]`` schema prefix,
+    rather than guessing from qualified ids or generic session/server words.
+    """
+    q_tokens = _label_tokens(query)
+    if not q_tokens:
+        return []
+    try:
+        from src.tool_utils import get_mcp_manager
+        manager = get_mcp_manager()
+        schemas = manager.get_all_openai_schemas({}) if manager and hasattr(manager, "get_all_openai_schemas") else []
+    except Exception:
+        logger.debug("tool catalog: explicit MCP label lookup failed", exc_info=True)
+        return []
+
+    targeted: List[Tuple[int, int, str]] = []
+    for entry in schemas or []:
+        fn = entry.get("function") if isinstance(entry, dict) else None
+        name = str((fn or {}).get("name") or "")
+        description = str((fn or {}).get("description") or "")
+        if not name.startswith("mcp__"):
+            continue
+        prefix = re.match(r"^\[MCP:([^\]]+)\]", description, re.IGNORECASE)
+        if not prefix:
+            continue
+        label = prefix.group(1).split("(", 1)[0].strip()
+        label_words = _label_tokens(label) - _GENERIC_MCP_LABEL_WORDS
+        # Requiring a distinctive label token prevents "local", "server" or
+        # "sessions" alone from turning a generic task into an MCP pin.
+        if not label_words or not label_words.issubset(q_tokens):
+            continue
+        tool_name = name.rsplit("__", 1)[-1]
+        body = description[prefix.end():]
+        operation_words = _label_tokens(f"{tool_name.replace('_', ' ')} {body}")
+        operation_query = q_tokens - label_words - (_GENERIC_MCP_LABEL_WORDS - {"sesion", "session"})
+        overlap = len(operation_query & operation_words)
+        name_words = _label_tokens(tool_name.replace("_", " "))
+        if "log" in name_words:
+            name_words.update({"registrar", "register"})
+        if "get" in name_words:
+            name_words.update({"ficha", "consultar", "ver"})
+        if "sessions" in name_words or "session" in name_words:
+            name_words.update({"historial", "history"})
+        name_overlap = len(operation_query & name_words)
+        targeted.append((-name_overlap, -overlap, name))
+    return [name for _, _, name in sorted(targeted)]
+
+
 def search_catalog(
     query: str = "",
     names: Optional[Sequence[str]] = None,
@@ -275,6 +346,11 @@ def search_catalog(
                 live_mcp = set(connected_mcp_tool_names())
             return name in live_mcp
 
+        # An explicit server name in the real schema is stronger intent than
+        # broad keyword hints (for example, "sessions" matching task tools).
+        for name in _explicit_mcp_hits(q):
+            if _callable(name):
+                _add(name)
         for name in _keyword_hits(q):
             if _callable(name):
                 _add(name)
