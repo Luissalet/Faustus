@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 import asyncio
+import json
 import sqlite3
 
 from sqlalchemy import create_engine
@@ -79,6 +80,23 @@ def test_session_search_uses_fts_and_returns_context():
         assert results[0].context_before[0]["message_id"] == "m1"
         assert results[0].context_after[0]["message_id"] == "m3"
         assert "modal" in results[0].content_snippet.lower()
+    finally:
+        db.close()
+
+
+def test_search_omits_approval_placeholder_from_matches_and_context():
+    db = _db(with_fts=True)
+    try:
+        base = datetime(2026, 1, 1, 12, 0, 0)
+        _add_session(db, "s1", owner="alice")
+        _add_message(db, "s1", "m1", "user", "Find recipe target", base)
+        _add_message(db, "s1", "m2", "assistant", "Allow this task to continue?",
+                     base + timedelta(seconds=1))
+        db.commit()
+        found = search_session_messages("recipe target", owner="alice", db=db)
+        assert len(found) == 1
+        assert found[0].context_after == []
+        assert search_session_messages("Allow this task to continue", owner="alice", db=db) == []
     finally:
         db.close()
 
@@ -316,3 +334,30 @@ def test_search_chats_formats_shared_results(monkeypatch):
     assert "Match (assistant): We discussed session search." in out["results"]
     assert "Before (user): Can you find old chats?" in out["results"]
     assert "After (user): That helps." in out["results"]
+
+
+def test_search_chats_includes_imported_history_in_local_mode(tmp_path, monkeypatch):
+    from src import history_import, session_search
+    from src.tool_implementations import do_search_chats
+
+    monkeypatch.setenv("AUTH_ENABLED", "false")
+    monkeypatch.setattr(history_import, "DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(session_search, "search_session_messages", lambda *a, **k: [])
+    path = tmp_path / "rollout.jsonl"
+    path.write_text("\n".join(json.dumps(row) for row in [
+        {"type": "session_meta", "payload": {"id": "imported-test"}},
+        {"type": "response_item", "payload": {"type": "message", "role": "user",
+                                            "content": [{"type": "input_text", "text": "lentejas"}]}},
+        {"type": "response_item", "payload": {"type": "message", "role": "assistant",
+                                            "content": [{"type": "output_text", "text": "receta en CookHoard"}]}},
+    ]) + "\n", encoding="utf-8")
+    history_import.import_path(str(path))
+
+    out = asyncio.run(do_search_chats("receta", owner=""))
+    assert "Imported conversations" in out["results"]
+    assert "receta en CookHoard" in out["results"]
+    assert "No chats found" not in out["results"]
+
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    private = asyncio.run(do_search_chats("receta", owner="alice"))
+    assert "receta en CookHoard" not in private["results"]

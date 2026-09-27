@@ -481,7 +481,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "search_chats",
-            "description": "Search the user's past session transcripts by keyword. Use when the user asks about previous chats, past conversations, or when direct transcript evidence is better than persistent memory. Returns matching sessions with clickable links and nearby context.",
+            "description": "Search the user's past chats by keyword, including imported conversations in local single-user mode. Use when the user asks about previous chats, past conversations or imported history. Returns matches and nearby context.",
             "parameters": {
                 "type": "object",
                 "properties": {

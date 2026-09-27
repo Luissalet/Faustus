@@ -1035,7 +1035,7 @@ DEFAULT_SETTINGS = {
     # truncated — an illegible blob is worse than a partial answer.
     "agent_provenance_max_nodes": 2000,
     # Imported history (src/history_import.py): a ChatGPT / Claude / LM Studio
-    # / Faustus export normalised into DATA_DIR/history.db and searched in two
+    # / Codex / Faustus export normalised into DATA_DIR/history.db and searched in two
     # tiers. Off = the /api/history reads answer with enabled:false and the
     # page hides; nothing already imported is touched, since turning the
     # switch off is a visibility decision, not a delete.

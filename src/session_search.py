@@ -17,6 +17,7 @@ from core.database import SessionLocal
 logger = logging.getLogger(__name__)
 
 SEARCH_ROLES = ("user", "assistant")
+APPROVAL_PLACEHOLDER = "Allow this task to continue?"
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,10 @@ def _message_to_context(msg: DBChatMessage) -> dict[str, Any]:
         "content": msg.content or "",
         "timestamp": _iso(msg.timestamp),
     }
+
+
+def _is_approval_placeholder(msg: DBChatMessage) -> bool:
+    return msg.role == "assistant" and (msg.content or "").strip() == APPROVAL_PLACEHOLDER
 
 
 def _escape_like(value: str) -> str:
@@ -160,14 +165,18 @@ def _context_for_message(db, msg: DBChatMessage, count: int) -> tuple[list[dict[
         .limit(count)
         .all()
     )
-    before = [_message_to_context(row) for row in reversed(before_rows)]
-    after = [_message_to_context(row) for row in after_rows]
+    before = [_message_to_context(row) for row in reversed(before_rows)
+              if not _is_approval_placeholder(row)]
+    after = [_message_to_context(row) for row in after_rows
+             if not _is_approval_placeholder(row)]
     return before, after
 
 
 def _rows_to_results(db, rows: Iterable[tuple[DBChatMessage, str, str]], query: str, context_messages: int) -> list[SessionSearchResult]:
     results: list[SessionSearchResult] = []
     for msg, session_name, snippet in rows:
+        if _is_approval_placeholder(msg):
+            continue
         before, after = _context_for_message(db, msg, context_messages)
         content = msg.content or ""
         results.append(

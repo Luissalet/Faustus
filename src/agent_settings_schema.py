@@ -1146,7 +1146,7 @@ GROUPS: list[dict[str, Any]] = [
     _group(
         "history", "Imported history",
         "Your conversations from somewhere else, brought here. A ChatGPT or Claude data export, an "
-        "LM Studio chat folder or one of Faustus's own JSON exports is normalised into its own "
+        "LM Studio chat folder, Codex sessions or one of Faustus's own JSON exports is normalised into its own "
         "store and searched in two tiers — which needs no model and no network, so a freshly "
         "installed Faustus can search an archive the minute it has imported one.",
         [

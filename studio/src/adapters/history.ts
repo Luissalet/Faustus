@@ -1,13 +1,13 @@
 /**
  * Imported history (`/api/history-import`): somebody else's export — a
- * ChatGPT or Claude `conversations.json`, an LM Studio chat folder, one of
+ * ChatGPT or Claude `conversations.json`, an LM Studio chat folder, Codex rollouts, one of
  * this app's own JSON exports — previewed first, then written, then a
  * normal searchable part of the library.
  */
 import { ApiError, asArray, getJson } from './api';
 
-export const SOURCES = ['chatgpt', 'claude', 'lmstudio', 'faustus'] as const;
-export const SOURCE_LABEL: Record<string, string> = { chatgpt: 'ChatGPT', claude: 'Claude', lmstudio: 'LM Studio', faustus: 'Faustus' };
+export const SOURCES = ['chatgpt', 'claude', 'lmstudio', 'faustus', 'codex'] as const;
+export const SOURCE_LABEL: Record<string, string> = { chatgpt: 'ChatGPT', claude: 'Claude', lmstudio: 'LM Studio', faustus: 'Faustus', codex: 'Codex' };
 
 export interface Conversation {
   id: string;

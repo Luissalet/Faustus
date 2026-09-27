@@ -771,6 +771,7 @@ export const es: Record<string, string> = {
   "Bring a window to the front": "Trae una ventana al frente",
   "Bring back": "Traer de vuelta",
   "Bring your past here: a ChatGPT or Claude conversations.json, a folder of LM Studio chats, or one of this app’s own exports. Nothing is written until you have seen the preview.": "Trae tu pasado aquí: un conversations.json de ChatGPT o Claude, una carpeta de chats de LM Studio o una exportación de esta app. No se escribe nada hasta que hayas visto la vista previa.",
+  "Import ChatGPT, Claude, LM Studio, Codex sessions or this app’s JSON exports. Nothing is written until you have seen the preview.": "Importa ChatGPT, Claude, LM Studio, sesiones de Codex o exportaciones JSON de esta app. No se escribe nada hasta ver la vista previa.",
   "Broken first, then the ones nobody could check, then the ones that held. An unchecked property is never listed amongst the ones that held: \"we did not look\" is not the same answer as \"it is fine\".": "Primero las rotas, luego las que nadie pudo comprobar, y después las que se mantuvieron. Una propiedad sin comprobar nunca se lista entre las que se mantuvieron: «no lo miramos» no es la misma respuesta que «está bien».",
   "Browse": "Examinar",
   "Browse the existing sessions": "Recorre las sesiones existentes",

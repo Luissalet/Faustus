@@ -5,6 +5,7 @@ Holds the search_chats tool.
 ``src.tool_implementations`` re-exports these for backward compatibility.
 """
 import logging
+import os
 from typing import Dict
 
 logger = logging.getLogger(__name__)
@@ -31,7 +32,18 @@ async def do_search_chats(
         if folder:
             kwargs["folder"] = folder
         results = search_session_messages(query, **kwargs)
-        if not results:
+
+        # In local single-user mode the Imported library is the user's chat
+        # history too. Its store is global, so keep it out of project-scoped
+        # and multi-user searches where the caller's ownership is ambiguous.
+        imported = []
+        if not folder:
+            from src.owner_identity import auth_disabled
+            if auth_disabled():
+                from src import history_import
+                if history_import.enabled() and os.path.exists(history_import.db_path()):
+                    imported = history_import.search(query, k=min(limit, 10))["hits"]
+        if not results and not imported:
             return {"results": f"No chats found matching \"{query}\"."}
 
         # Group by session to avoid duplicate links
@@ -40,7 +52,7 @@ async def do_search_chats(
             if result.session_id not in seen_sessions:
                 seen_sessions[result.session_id] = result
 
-        lines = [f"Found {len(seen_sessions)} session(s) matching \"{query}\":\n"]
+        lines = [f"Found {len(seen_sessions)} live chat(s) and {len(imported)} imported message(s) matching \"{query}\":\n"]
         for sid, result in seen_sessions.items():
             lines.append(f"- [**{result.session_name}**](#session-{sid})")
             lines.append(f"  Open: [Open chat](#session-{sid})")
@@ -51,6 +63,14 @@ async def do_search_chats(
             if result.context_after:
                 after = result.context_after[0]
                 lines.append(f"  After ({after['role']}): {after['content'][:180]}")
+            lines.append("")
+
+        if imported:
+            lines.append("Imported conversations (Library → Imported):")
+            for hit in imported:
+                lines.append(
+                    f"- [{hit['source']}] {hit['title'][:120]} — {hit['role']}: {hit['snippet'][:240]}"
+                )
             lines.append("")
 
         return {"results": "\n".join(lines)}

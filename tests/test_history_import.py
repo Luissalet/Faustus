@@ -42,6 +42,71 @@ def _write(path, payload):
     return str(path)
 
 
+def _write_jsonl(path, records):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(json.dumps(record) for record in records) + "\n", encoding="utf-8")
+    return str(path)
+
+
+def test_codex_rollout_imports_visible_turns_and_searches_without_duplicates(store):
+    root = store / "sessions" / "2026" / "09" / "28"
+    path = _write_jsonl(root / "rollout-2026-09-28T00-00-00-session-a.jsonl", [
+        {"timestamp": "2026-09-28T00:00:00Z", "type": "session_meta",
+         "payload": {"id": "session-a", "timestamp": "2026-09-28T00:00:00Z"}},
+        {"timestamp": "2026-09-28T00:00:01Z", "type": "response_item",
+         "payload": {"type": "message", "role": "user",
+                     "content": [{"type": "input_text", "text": "How do I tune llama.cpp?"}]}},
+        {"timestamp": "2026-09-28T00:00:01Z", "type": "event_msg",
+         "payload": {"type": "user_message", "message": "How do I tune llama.cpp?"}},
+        {"timestamp": "2026-09-28T00:00:02Z", "type": "turn_context",
+         "payload": {"model": "qwen3.8-27b-q8-llamacpp"}},
+        {"timestamp": "2026-09-28T00:00:03Z", "type": "response_item",
+         "payload": {"type": "message", "role": "assistant", "channel": "analysis",
+                     "content": [{"type": "output_text", "text": "hidden deliberation"}]}},
+        {"timestamp": "2026-09-28T00:00:04Z", "type": "response_item",
+         "payload": {"type": "message", "role": "assistant", "channel": "final",
+                     "content": [{"type": "output_text", "text": "Set the KV cache size carefully."}]}},
+        {"timestamp": "2026-09-28T00:00:04Z", "type": "event_msg",
+         "payload": {"type": "agent_message", "message": "Set the KV cache size carefully."}},
+        {"timestamp": "2026-09-28T00:00:05Z", "type": "response_item",
+         "payload": {"type": "function_call", "name": "shell_command", "arguments": "secret"}},
+    ])
+    assert history.detect_source(path) == "codex"
+    preview = history.import_path(str(store / "sessions"), dry_run=True)
+    assert preview["conversations"] == 1 and preview["messages"] == 2
+    assert not (store / "data" / "history.db").exists()
+    first = history.import_path(str(store / "sessions"))
+    assert first["created"] == 1 and first["updated"] == 0
+    conv = history.get_conversation(history.conversation_key("codex", "session-a"))
+    assert conv["title"] == "How do I tune llama.cpp?"
+    assert conv["model"] == "qwen3.8-27b-q8-llamacpp"
+    assert [message["role"] for message in conv["messages"]] == ["user", "assistant"]
+    assert [message["content"] for message in conv["messages"]] == [
+        "How do I tune llama.cpp?", "Set the KV cache size carefully."]
+    assert history.search("KV cache", source="codex")["hits"]
+    second = history.import_path(str(store / "sessions"))
+    assert second["created"] == 0 and second["updated"] == 1
+    assert history.stats()["conversations"] == 1
+
+
+def test_codex_rollout_falls_back_to_events_and_skips_unreadable_files(store):
+    root = store / "sessions"
+    path = root / "rollout-events.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(json.dumps(record) for record in [
+        {"type": "session_meta", "payload": {"meta": {"id": "event-only"}}},
+        {"timestamp": "2026-09-28T10:00:00Z", "type": "event_msg",
+         "payload": {"type": "user_message", "message": "Check the total"}},
+        {"timestamp": "2026-09-28T10:00:01Z", "type": "event_msg",
+         "payload": {"type": "agent_message", "message": "The total is 56"}},
+    ]) + "\n{incomplete final line", encoding="utf-8")
+    report = history.import_path(str(root))
+    assert report["messages"] == 2
+    conv = history.get_conversation(history.conversation_key("codex", "event-only"))
+    assert [message["content"] for message in conv["messages"]] == [
+        "Check the total", "The total is 56"]
+
+
 CHATGPT_BRANCHED = [
     {
         "id": "conv-a", "title": "Docker GPU",
@@ -499,7 +564,7 @@ def test_a_missing_path_is_a_clear_error(store, tmp_path):
 
 def test_a_folder_with_no_json_is_a_clear_error(store, tmp_path):
     (tmp_path / "empty").mkdir()
-    with pytest.raises(history.HistoryImportError, match="no .json files"):
+    with pytest.raises(history.HistoryImportError, match=r"no \.json or \.jsonl files"):
         history.import_path(str(tmp_path / "empty"))
 
 
@@ -907,6 +972,20 @@ def test_an_upload_filename_cannot_escape_the_upload_folder(client, exports):
     assert stored == ["passwd.json"], stored
     assert os.path.realpath(os.path.join(history.uploads_dir(), stored[0])).startswith(
         os.path.realpath(history.uploads_dir()))
+
+
+def test_codex_jsonl_upload_preserves_extension_and_imports(client):
+    payload = "\n".join(json.dumps(record) for record in [
+        {"type": "session_meta", "payload": {"id": "uploaded-codex"}},
+        {"type": "response_item", "payload": {"type": "message", "role": "user",
+                                            "content": [{"type": "input_text", "text": "Find a recipe"}]}},
+    ]) + "\n"
+    response = client.post("/api/history-import/import",
+                           files={"file": ("rollout-test.jsonl", payload.encode(), "application/x-ndjson")})
+    assert response.status_code == 200
+    assert response.json()["detected"] == "codex"
+    assert response.json()["messages"] == 1
+    assert os.listdir(history.uploads_dir()) == ["rollout-test.jsonl"]
 
 
 def test_robot_mode_projects_the_reads_and_leaves_the_plain_ones_alone(client, exports):

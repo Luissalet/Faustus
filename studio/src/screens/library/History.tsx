@@ -22,7 +22,7 @@ import { BulkBar, Highlight, SelectToggle, useSelection } from './parts';
 
 /**
  * Imported history (Library → Imported): somebody else's export brought
- * here — ChatGPT, Claude, LM Studio or one of this app's own — previewed
+ * here — ChatGPT, Claude, LM Studio, Codex or one of this app's own — previewed
  * before a single row is written, then a normal searchable archive.
  *
  * The library's search box filters titles; "inside messages" switches to
@@ -220,7 +220,7 @@ export function HistoryLibrary({ query, say }: { query: string; say: (m: string)
       {!(deep && query.trim()) && (
         <>
           {!rows && !error && <Skeleton label={t('Loading the archive')} count={4} height="56px" radius="panel" />}
-          {rows && !rows.length && <EmptyState icon={Archive} title={stats && stats.conversations > 0 ? t('Nothing matches') : t('Nothing imported yet')} body={stats && stats.conversations > 0 ? t('Try another source or a shorter title.') : t('Bring your past here: a ChatGPT or Claude conversations.json, a folder of LM Studio chats, or one of this app’s own exports. Nothing is written until you have seen the preview.')} primaryAction={enabled && !(stats && stats.conversations > 0) ? { label: t('Import an export'), icon: FileUp, onClick: () => setImportOpen(true) } : undefined} />}
+          {rows && !rows.length && <EmptyState icon={Archive} title={stats && stats.conversations > 0 ? t('Nothing matches') : t('Nothing imported yet')} body={stats && stats.conversations > 0 ? t('Try another source or a shorter title.') : t('Import ChatGPT, Claude, LM Studio, Codex sessions or this app’s JSON exports. Nothing is written until you have seen the preview.')} primaryAction={enabled && !(stats && stats.conversations > 0) ? { label: t('Import an export'), icon: FileUp, onClick: () => setImportOpen(true) } : undefined} />}
           {rows && rows.length > 0 && (
             <ul className="fs-lib__list">
               {rows.map((row) => {
@@ -342,7 +342,7 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: (r: Im
         if (!o) onClose();
       }}
       title={t('Import an export')}
-      description={t('A ChatGPT or Claude conversations.json, a folder of LM Studio chats, or one of this app’s own JSON exports. Nothing is written until you have seen the preview.')}
+      description={t('Import ChatGPT, Claude, LM Studio, Codex sessions or this app’s JSON exports. Nothing is written until you have seen the preview.')}
       testId="history-import-dialog"
       footer={
         <>
@@ -378,7 +378,7 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: (r: Im
             <input
               ref={fileRef}
               type="file"
-              accept=".json,application/json"
+              accept=".json,.jsonl,application/json,application/x-ndjson"
               hidden
               onChange={(e) => {
                 setFile(e.target.files?.[0] ?? null);

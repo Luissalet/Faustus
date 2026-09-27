@@ -3,7 +3,7 @@
 A user arriving at Faustus has years of conversation somewhere else. The
 migration feature nobody offers locally is "bring your whole past here" — so
 this module takes a ChatGPT data export, a Claude data export, an LM Studio
-chat folder or one of Faustus's own JSON exports, and normalises all of them
+chat folder, a Codex rollout or one of Faustus's own JSON exports, and normalises all of them
 to one model:
 
     Conversation(source, external_id, title, started_at, ended_at, model)
@@ -54,6 +54,9 @@ Which shapes are verified and which are inferred
 * **Faustus** — its own export, verified in-tree against
   ``src.chat_export.transcript_to_dict``; upstream produces the same shape, so
   an export made before the fork was renamed imports unchanged.
+* **Codex** — local ``sessions/YYYY/MM/DD/rollout-*.jsonl`` files. The
+  ``session_meta`` and ``response_item`` records follow the Codex rollout
+  format; only user and visible assistant text enters the archive.
 * **LM Studio — INFERRED.** LM Studio's own documentation gives the folder
   (``~/.lmstudio/conversations/``) and the fact that the files are JSON, and
   then says in as many words that the structure is not to be relied on. Both
@@ -97,7 +100,8 @@ SOURCE_CHATGPT = "chatgpt"
 SOURCE_CLAUDE = "claude"
 SOURCE_LMSTUDIO = "lmstudio"
 SOURCE_FAUSTUS = "faustus"
-SOURCES: Tuple[str, ...] = (SOURCE_CHATGPT, SOURCE_CLAUDE, SOURCE_LMSTUDIO, SOURCE_FAUSTUS)
+SOURCE_CODEX = "codex"
+SOURCES: Tuple[str, ...] = (SOURCE_CHATGPT, SOURCE_CLAUDE, SOURCE_LMSTUDIO, SOURCE_FAUSTUS, SOURCE_CODEX)
 
 ROLES: Tuple[str, ...] = ("user", "assistant", "system", "tool")
 
@@ -875,12 +879,123 @@ class FaustusParser(Parser):
         )
 
 
+class CodexParser(Parser):
+    """A local Codex rollout, streamed one JSONL record at a time.
+
+    ``event_msg`` mirrors user/assistant text already present in
+    ``response_item``. It is used only as a fallback for older or incomplete
+    rollouts, so the same turn never appears twice in the archive.
+    """
+
+    source = SOURCE_CODEX
+    label = "Codex session"
+
+    def detect(self, path: str) -> bool:
+        if not os.path.isfile(path) or not path.lower().endswith(".jsonl"):
+            return False
+        head = _read_head(path)
+        for line in head.splitlines()[:12]:
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            if (isinstance(record, dict) and record.get("type") == "session_meta"
+                    and isinstance(record.get("payload"), dict)):
+                payload = record["payload"]
+                meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else payload
+                if meta.get("id") or meta.get("session_id"):
+                    return True
+        return False
+
+    @staticmethod
+    def _content(payload: Dict[str, Any]) -> str:
+        chunks = []
+        for block in payload.get("content") or []:
+            if isinstance(block, dict) and block.get("type") in ("input_text", "output_text", "text"):
+                value = block.get("text")
+                if isinstance(value, str) and value.strip():
+                    chunks.append(value)
+        return _clean_content("\n\n".join(chunks))
+
+    def parse(self, path: str) -> Iterator[Parsed]:
+        meta: Dict[str, Any] = {}
+        messages: List[Message] = []
+        fallback: Dict[str, List[Message]] = {"user": [], "assistant": []}
+        stamps: List[str] = []
+        model = ""
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as handle:
+                for line_number, line in enumerate(handle):
+                    try:
+                        record = json.loads(line)
+                    except ValueError:
+                        continue  # an interrupted final write need not erase earlier turns
+                    if not isinstance(record, dict):
+                        continue
+                    kind = record.get("type")
+                    payload = record.get("payload")
+                    if not isinstance(payload, dict):
+                        continue
+                    ts = parse_timestamp(record.get("timestamp"))
+                    if kind == "session_meta":
+                        meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else payload
+                        continue
+                    if kind == "turn_context" and not model:
+                        model = str(payload.get("model") or "").strip()[:120]
+                    if kind == "response_item" and payload.get("type") == "message":
+                        role = payload.get("role")
+                        if role not in ("user", "assistant"):
+                            continue
+                        if role == "assistant" and payload.get("channel") in ("analysis", "summary"):
+                            continue
+                        content = self._content(payload)
+                        if content:
+                            messages.append(Message(role=role, content=content, ts=ts, ordinal=line_number))
+                    elif kind == "event_msg":
+                        event_type = payload.get("type")
+                        role = "user" if event_type == "user_message" else (
+                            "assistant" if event_type == "agent_message" else "")
+                        content = payload.get("message")
+                        if role and isinstance(content, str) and content.strip():
+                            fallback[role].append(Message(role=role, content=_clean_content(content), ts=ts, ordinal=line_number))
+        except OSError as exc:
+            yield Skipped(f"file could not be read: {exc}", os.path.basename(path))
+            return
+
+        if not meta or not (meta.get("id") or meta.get("session_id")):
+            yield Skipped("Codex rollout has no session metadata", os.path.basename(path))
+            return
+        roles = {message.role for message in messages}
+        for role in ("user", "assistant"):
+            if role not in roles:
+                messages.extend(fallback[role])
+        messages.sort(key=lambda message: message.ordinal)
+        for ordinal, message in enumerate(messages):
+            message.ordinal = ordinal
+            if message.ts:
+                stamps.append(message.ts)
+        external = str(meta.get("id") or meta.get("session_id"))
+        where = f"{os.path.basename(path)}#{external}"
+        if not messages:
+            yield Skipped("Codex rollout has no readable messages", where)
+            return
+        first_user = next((message.content for message in messages if message.role == "user"), "")
+        title = _clean_title(first_user.splitlines()[0] if first_user else os.path.basename(path))
+        yield Conversation(
+            source=self.source, external_id=external, title=title,
+            started_at=parse_timestamp(meta.get("timestamp")) or (min(stamps) if stamps else None),
+            ended_at=max(stamps) if stamps else None,
+            model=model or str(meta.get("model_provider") or "").strip()[:120],
+            path=path[:MAX_PATH_CHARS], messages=messages,
+        )
+
+
 # Order matters: the two parsers that both look for "messages" are asked
 # after the two that have unmistakable markers of their own, and Faustus is
 # asked before LM Studio because LM Studio's detect explicitly stands down
 # for a Faustus export.
 PARSERS: Tuple[Parser, ...] = (
-    ChatGPTParser(), ClaudeParser(), FaustusParser(), LMStudioParser(),
+    CodexParser(), ChatGPTParser(), ClaudeParser(), FaustusParser(), LMStudioParser(),
 )
 PARSERS_BY_SOURCE: Dict[str, Parser] = {p.source: p for p in PARSERS}
 
@@ -1078,7 +1193,7 @@ def _walk(path: str) -> List[str]:
         if root.count(os.sep) - root_depth >= MAX_WALK_DEPTH:
             dirs[:] = []
         for name in sorted(names):
-            if name.startswith(".") or not name.lower().endswith(".json"):
+            if name.startswith(".") or not name.lower().endswith((".json", ".jsonl")):
                 continue
             files.append(os.path.join(root, name))
             if len(files) >= MAX_WALK_FILES:
@@ -1121,7 +1236,7 @@ def import_path(path: Any, *, source: Optional[str] = None,
 
     candidates = _walk(target)
     if not candidates:
-        raise HistoryImportError(f"no .json files to import under {target}")
+        raise HistoryImportError(f"no .json or .jsonl files to import under {target}")
 
     # A dry run still has to answer "created or updated?", so it reads the
     # keys already stored — without opening (and therefore creating) a store

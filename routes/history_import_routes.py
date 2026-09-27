@@ -8,8 +8,8 @@ confusing enough without them also colliding in ``sys.modules``; this one is
 the *imported* history, somebody else's export brought here.
 
 The human end of "bring your whole past here": point it at a ChatGPT or
-Claude data export, an LM Studio chat folder, or one of Faustus's own JSON
-exports; see exactly what it *would* do; then let it do it. After that the
+Claude data export, an LM Studio chat folder, Codex rollout files, or a Faustus
+JSON export; see exactly what it *would* do; then let it do it. After that the
 archive is a normal, searchable part of the app.
 
 Admin-only, like the rest of the brain: an import writes somebody's entire
@@ -55,12 +55,12 @@ MAX_UPLOAD_NAME = 180
 
 
 def _safe_upload_name(name: Any) -> str:
-    """A basename that cannot escape the upload folder, always ``.json``."""
+    """A basename that cannot escape the upload folder; JSON or JSONL."""
     base = os.path.basename(str(name or "").strip().replace("\\", "/"))
     base = "".join(ch for ch in base if ch.isalnum() or ch in "._- ").strip(" .")
     if not base:
         base = "import.json"
-    if not base.lower().endswith(".json"):
+    if not base.lower().endswith((".json", ".jsonl")):
         base += ".json"
     return base[:MAX_UPLOAD_NAME]
 
