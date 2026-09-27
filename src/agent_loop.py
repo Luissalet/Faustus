@@ -3561,6 +3561,25 @@ def _funes_hoard_activity_tools(query: str, available: List[Dict[str, Any]]) -> 
     return {capable[0][name] for name in ("activity_summary", "activity_where_was_i")}
 
 
+def _borges_hoard_read_tools(query: str, available: List[Dict[str, Any]]) -> Set[str]:
+    """Offer search and full passage reading for an explicitly named library."""
+    if "borges" not in (query or "").casefold():
+        return set()
+    by_server: Dict[str, Dict[str, str]] = {}
+    for item in available or []:
+        server_name = str(item.get("server_name") or "").casefold()
+        if not server_name.startswith("borges") or item.get("is_disabled"):
+            continue
+        name = str(item.get("name") or "")
+        qualified = str(item.get("qualified_name") or "")
+        if name and qualified:
+            by_server.setdefault(str(item.get("server_id") or server_name), {})[name] = qualified
+    capable = [names for names in by_server.values() if {"library_search", "library_read"} <= names.keys()]
+    if len(capable) != 1:
+        return set()
+    return {capable[0][name] for name in ("library_search", "library_read")}
+
+
 def _resolved_tool_event_name(event: dict[str, Any]) -> str:
     tool = str(event.get("tool") or "").strip()
     if tool != "mcp":
@@ -8499,6 +8518,22 @@ async def _stream_agent_loop_body(
             if _hot_seed is not None:
                 _hot_seed |= _funes_tools
             logger.info("[tool-rag] named Funes activity tools offered")
+
+    # A named document library can start with search and full-passage read.
+    # The live 27B needed a collection listing and lookup_tools before these
+    # two read-only calls, despite the user asking for an exact citation.
+    if not guide_only and _relevant_tools is not None and not relevant_tools and mcp_mgr:
+        try:
+            _borges_tools = _borges_hoard_read_tools(
+                _last_user, mcp_mgr.get_all_tools(_mcp_disabled_map)) - disabled_tools
+        except Exception:  # noqa: BLE001 - tool selection must keep working
+            logger.debug("[tool-rag] Borges library route unavailable", exc_info=True)
+            _borges_tools = set()
+        if _borges_tools:
+            _relevant_tools.update(_borges_tools)
+            if _hot_seed is not None:
+                _hot_seed |= _borges_tools
+            logger.info("[tool-rag] named Borges library read tools offered")
 
     # Current-turn chat uploads are real files under the upload/data root. Make
     # the read-side file/document tools visible immediately so the agent can
