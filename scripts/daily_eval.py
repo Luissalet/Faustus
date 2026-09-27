@@ -174,6 +174,9 @@ class Client:
                         error = str(ev.get("text") or ev.get("error") or "")[:300] or error
             if not (approval and approve):
                 break
+            # The approval card is an intermediate pause, not part of the
+            # answer after the tool runs. Keep tools/models from both legs.
+            answer = ""
             form = {"session": session, "message": "", "mode": mode, "model": model,
                     "tool_approval_id": approval, "tool_approval_decision": "approve_task"}
         return {"answer": answer, "tools": tools, "cards": cards, "error": error,

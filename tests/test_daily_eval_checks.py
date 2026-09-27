@@ -1,5 +1,6 @@
 """The everyday battery's checks are deterministic (scripts/daily_eval.py)."""
 import importlib.util
+import io
 import json
 from pathlib import Path
 
@@ -45,6 +46,26 @@ def test_multiturn_report_keeps_first_turn_cost_and_model_failure():
         "expected_model": "qwen3.8-27b-q8-llamacpp"})
     assert "no model fallback" in _failed({}, {**combined,
         "expected_model": "qwen3.8-27b-q8-llamacpp"})
+
+
+def test_approval_pause_does_not_leak_into_final_eval_answer():
+    class FakeClient(daily_eval.Client):
+        def __init__(self):
+            self.calls = 0
+
+        def form(self, path, data, timeout=30):
+            self.calls += 1
+            events = ([{"type": "model_info", "model": "main"},
+                       {"type": "delta", "delta": "Allow this task to continue?"},
+                       {"type": "ask_user", "data": {"kind": "tool_approval", "approval_id": "a1"}}]
+                      if self.calls == 1 else
+                      [{"type": "model_info", "model": "main"},
+                       {"type": "delta", "delta": "Hecho."}])
+            return io.BytesIO("".join(f"data: {json.dumps(ev)}\n\n" for ev in events).encode())
+
+    result = FakeClient().turn("session", "mark favorite", "agent", "main", False, 30, True)
+    assert result["answer"] == "Hecho."
+    assert result["observed_models"] == ["main", "main"]
 
 
 def test_raw_harness_text_fails_any_task():
