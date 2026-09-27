@@ -33,6 +33,35 @@ export interface MeetingJob {
   warnings?: string[];
 }
 
+export interface MeetingBoardAction {
+  title: string;
+  assignee: string;
+  source_line: number;
+  source_time: string | null;
+  status: 'ready' | 'created' | 'already_on_board';
+  issue_id: string | null;
+}
+
+export interface MeetingBoardResult {
+  meeting_id: string;
+  project_id: string;
+  dry_run: boolean;
+  created: number;
+  actions: MeetingBoardAction[];
+}
+
+export async function meetingActionsToBoard(meetingId: string, projectId: string, commit = false): Promise<MeetingBoardResult> {
+  const res = await fetch(`/api/meetings/${encodeURIComponent(meetingId)}/board`, {
+    method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ project_id: projectId, commit }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { detail?: string | { message?: string } };
+    throw new ApiError(typeof body.detail === 'string' ? body.detail : body.detail?.message || res.statusText, res.status);
+  }
+  return (await res.json()) as MeetingBoardResult;
+}
+
 async function postForm<T>(path: string, fd: FormData): Promise<T> {
   const res = await fetch(path, { method: 'POST', credentials: 'same-origin', body: fd });
   if (!res.ok) {

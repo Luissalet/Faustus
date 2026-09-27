@@ -14,12 +14,18 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Form, HTTPException, Request, UploadFile, File
+from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from src.auth_helpers import require_user
 from src.upload_limits import MEETINGS_MAX_AUDIO_BYTES, read_upload_limited
 
 logger = logging.getLogger(__name__)
+
+
+class MeetingBoardRequest(BaseModel):
+    project_id: str
+    commit: bool = False
 
 
 def setup_meetings_routes() -> APIRouter:
@@ -79,5 +85,23 @@ def setup_meetings_routes() -> APIRouter:
         if item is None:
             raise HTTPException(status_code=404, detail={"message": "Meeting not found"})
         return item
+
+    @router.post("/{meeting_id}/board")
+    async def meeting_actions_to_board(meeting_id: str, body: MeetingBoardRequest, request: Request):
+        user = require_user(request)
+        from services.projects import get_store
+        from src import meeting_board
+
+        project = get_store().get(body.project_id, user)
+        if not project:
+            raise HTTPException(status_code=404, detail={"message": "Project not found"})
+        key = get_store().board_key(project)
+        try:
+            return await run_in_threadpool(
+                meeting_board.actions_to_board, meeting_id, body.project_id,
+                owner=user, key=key, dry_run=not body.commit,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"message": str(exc)}) from exc
 
     return router

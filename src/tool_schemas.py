@@ -2613,6 +2613,21 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "meeting_actions_to_board",
+            "description": "Preview or create board tasks from the explicit Action items of a saved Faustus meeting in the current project. Repeated calls do not duplicate tasks; each task links to the meeting source. Cite returned issue IDs plainly; do not invent issue links.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "meeting_id": {"type": "string", "description": "Saved meeting id"},
+                    "commit": {"type": "boolean", "description": "True creates board issues; false previews them (default)."}
+                },
+                "required": ["meeting_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "board_update",
             "description": "Change an existing issue's title/body/type/status/priority/assignee/labels. Moving `status` to 'done' closes it; a terminal issue (done/wontfix/duplicate) can only move to 'open' or 'in_progress' (reopen) -- any other change from a terminal status is refused (error_class board.invalid_transition).",
             "parameters": {

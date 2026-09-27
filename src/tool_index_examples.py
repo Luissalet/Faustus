@@ -35,7 +35,7 @@ from typing import Dict, List
 # from EXAMPLES, lets the lote 91 benchmark (tests/test_l91_*.py) recognize
 # these rows and skip them from the pass/fail count until they are real.
 BOARD_TOOL_NAMES: frozenset[str] = frozenset({
-    "board_list", "board_ready", "board_get", "board_create",
+    "board_list", "board_ready", "board_get", "board_create", "meeting_actions_to_board",
     "board_update", "board_comment", "board_link", "board_claim",
 })
 
@@ -854,6 +854,11 @@ EXAMPLES: Dict[str, List[str]] = {
         "log a bug about the broken checkout button",
         "esto es una idea, apúntala en el tablero del proyecto",
         "file a task for updating the docs",
+    ],
+    "meeting_actions_to_board": [
+        "pasa los compromisos de esta reunión al tablero del proyecto",
+        "crea tareas de las acciones del acta de la reunión",
+        "turn the saved meeting action items into board issues",
     ],
     "board_update": [
         "marca esa tarea como terminada",

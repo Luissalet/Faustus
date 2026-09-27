@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException, UploadFile
 
-from routes.meetings_routes import setup_meetings_routes
+from routes.meetings_routes import MeetingBoardRequest, setup_meetings_routes
 
 
 def _request(user: str):
@@ -73,6 +73,33 @@ def test_get_meeting_404s_for_a_different_owner():
 
     with pytest.raises(HTTPException) as exc:
         asyncio.run(target(meeting_id="2026-01-01-standup", request=_request("bob")))
+    assert exc.value.status_code == 404
+
+
+def test_meeting_board_route_checks_project_owner_and_passes_commit(monkeypatch):
+    from services import projects
+    from src import meeting_board
+
+    class Store:
+        def get(self, project_id, owner):
+            return {"id": project_id} if project_id == "p1" and owner == "alice" else None
+
+        def board_key(self, project):
+            return "ATL"
+
+    monkeypatch.setattr(projects, "get_store", lambda: Store())
+    observed = {}
+
+    def fake_transfer(meeting_id, project_id, *, owner, key, dry_run):
+        observed.update(meeting_id=meeting_id, project_id=project_id, owner=owner, key=key, dry_run=dry_run)
+        return {"actions": [], "created": 0}
+
+    monkeypatch.setattr(meeting_board, "actions_to_board", fake_transfer)
+    target = _route(setup_meetings_routes(), "/api/meetings/{meeting_id}/board", "POST")
+    asyncio.run(target("meeting-1", MeetingBoardRequest(project_id="p1", commit=True), _request("alice")))
+    assert observed == {"meeting_id": "meeting-1", "project_id": "p1", "owner": "alice", "key": "ATL", "dry_run": False}
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(target("meeting-1", MeetingBoardRequest(project_id="p1"), _request("bob")))
     assert exc.value.status_code == 404
 
 

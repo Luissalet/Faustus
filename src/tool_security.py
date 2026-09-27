@@ -225,6 +225,7 @@ NON_ADMIN_BLOCKED_TOOLS = BUILTIN_EMAIL_TOOLS | {
     "board_ready",
     "board_get",
     "board_create",
+    "meeting_actions_to_board",
     "board_update",
     "board_comment",
     "board_link",
@@ -367,7 +368,7 @@ _PLAN_MODE_KNOWN_MUTATORS = {
     # Project board write tools (Lote 92): plan mode investigates and never
     # changes the board either -- filing/claiming/closing an issue is a
     # durable change, same class as manage_notes/manage_tasks above.
-    "board_create", "board_update", "board_comment", "board_link", "board_claim",
+    "board_create", "meeting_actions_to_board", "board_update", "board_comment", "board_link", "board_claim",
 }
 
 

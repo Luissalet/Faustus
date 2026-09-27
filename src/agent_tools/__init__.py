@@ -53,7 +53,7 @@ from .git_tools import (
 )
 from .board_tools import (
     BoardListTool, BoardReadyTool, BoardGetTool,
-    BoardCreateTool, BoardUpdateTool, BoardCommentTool,
+    BoardCreateTool, MeetingActionsToBoardTool, BoardUpdateTool, BoardCommentTool,
     BoardLinkTool, BoardClaimTool,
 )
 from .requirement_tools import (
@@ -178,6 +178,7 @@ TOOL_HANDLERS = {
     "board_ready": BoardReadyTool().execute,
     "board_get": BoardGetTool().execute,
     "board_create": BoardCreateTool().execute,
+    "meeting_actions_to_board": MeetingActionsToBoardTool().execute,
     "board_update": BoardUpdateTool().execute,
     "board_comment": BoardCommentTool().execute,
     "board_link": BoardLinkTool().execute,
@@ -436,7 +437,7 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "github_issue", "git_open_pr",
              # Project board tools (Lote 92, OBJ-6) -- src/agent_tools/board_tools.py.
              "board_list", "board_ready", "board_get",
-             "board_create", "board_update", "board_comment",
+             "board_create", "meeting_actions_to_board", "board_update", "board_comment",
              "board_link", "board_claim",
              # Versioned requirements tools (ADP-18/19/20) --
              # src/agent_tools/requirement_tools.py.

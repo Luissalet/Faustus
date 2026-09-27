@@ -556,7 +556,7 @@ _register(
     ToolEffect.READ_PRIVATE,
 )
 _register(
-    {"board_create", "board_update", "board_comment", "board_link", "board_claim"},
+    {"board_create", "meeting_actions_to_board", "board_update", "board_comment", "board_link", "board_claim"},
     ToolEffect.WRITE_PRIVATE,
 )
 # Versioned requirements tools (ADP-18/19/20, src/agent_tools/requirement_tools.py)

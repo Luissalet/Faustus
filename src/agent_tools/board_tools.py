@@ -34,7 +34,7 @@ import json
 import logging
 from typing import Any, Dict, Optional
 
-from src import project_board
+from src import meeting_board, project_board
 
 logger = logging.getLogger(__name__)
 
@@ -195,6 +195,31 @@ class BoardCreateTool:
         except project_board.BoardError as exc:
             return _board_error("board_create", exc)
         return {"output": f"Created {issue['id']}: {issue['title']}", "exit_code": 0, "issue": issue}
+
+
+class MeetingActionsToBoardTool:
+    """Preview or file a meeting's explicit action items on the current board."""
+
+    async def execute(self, content: str, ctx: dict) -> dict:
+        args = _args(content)
+        project_id = _project_id(ctx)
+        if not project_id:
+            return _no_project("meeting_actions_to_board")
+        meeting_id = str(args.get("meeting_id") or "").strip()
+        if not meeting_id:
+            return {"error": "meeting_id is required", "exit_code": 1}
+        owner = _owner(ctx)
+        try:
+            result = meeting_board.actions_to_board(
+                meeting_id, project_id, owner=owner, key=_key_for(project_id, owner),
+                dry_run=not (args.get("commit") is True),
+            )
+        except (ValueError, project_board.BoardError) as exc:
+            return {"error": str(exc), "exit_code": 1}
+        created = result["created"]
+        result.update({"output": (f"Created {created} board issue(s)" if args.get("commit") is True
+                                  else f"Previewed {len(result['actions'])} action item(s)"), "exit_code": 0})
+        return result
 
 
 class BoardUpdateTool:

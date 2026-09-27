@@ -785,6 +785,18 @@ class Store:
             row = db.execute("SELECT * FROM refs WHERE id=?", (ref_id,)).fetchone()
         return self._decode_ref(row)
 
+    def find_issue_by_ref(self, project_id: str, kind: str, value: str, label: str) -> Optional[Dict[str, Any]]:
+        """Find a board issue by a source reference within one project."""
+        if not self.path.exists():
+            return None
+        with self._db() as db:
+            row = db.execute(
+                "SELECT i.* FROM issues i JOIN refs r ON r.issue_id=i.id "
+                "WHERE i.project_id=? AND r.kind=? AND r.value=? AND r.label=? LIMIT 1",
+                (project_id, kind, value, label),
+            ).fetchone()
+            return self._decode_issue(row) if row else None
+
     def delete_issue(self, issue_id: str) -> bool:
         with self._db(write=True) as db:
             row = db.execute("SELECT 1 FROM issues WHERE id=?", (issue_id,)).fetchone()
@@ -1127,6 +1139,10 @@ def remove_link(issue_id: str, link_id: str) -> bool:
 
 def add_ref(issue_id: str, kind: str, value: str, *, label: str = "") -> Dict[str, Any]:
     return Store().add_ref(issue_id, kind, value, label=label)
+
+
+def find_issue_by_ref(project_id: str, kind: str, value: str, label: str) -> Optional[Dict[str, Any]]:
+    return Store().find_issue_by_ref(project_id, kind, value, label)
 
 
 def delete_issue(issue_id: str) -> bool:

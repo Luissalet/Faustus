@@ -2,7 +2,8 @@ import { ChevronDown, ChevronUp, Mic, Square, Upload } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, EmptyState, Skeleton } from '../../components';
 import { relativeTime } from '../../adapters/home';
-import { formatMeetingDuration, getMeeting, listMeetings, uploadMeeting, waitForMeetingJob, type MeetingDetail, type MeetingSummary } from '../../adapters/meetings';
+import { formatMeetingDuration, getMeeting, listMeetings, meetingActionsToBoard, uploadMeeting, waitForMeetingJob, type MeetingBoardResult, type MeetingDetail, type MeetingSummary } from '../../adapters/meetings';
+import { listProjects, type Project } from '../../adapters/projects';
 import { Rich } from '../rich';
 import { t, tn } from '../../i18n';
 import { Highlight } from './parts';
@@ -20,6 +21,10 @@ export function MeetingsLibrary({ query, say }: { query: string; say: (m: string
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [boardProject, setBoardProject] = useState<Record<string, string>>({});
+  const [boardPreview, setBoardPreview] = useState<Record<string, MeetingBoardResult>>({});
+  const [boardBusy, setBoardBusy] = useState(false);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const recordedChunks = useRef<Blob[]>([]);
@@ -38,8 +43,24 @@ export function MeetingsLibrary({ query, say }: { query: string; say: (m: string
   useEffect(() => {
     const ac = new AbortController();
     void load(ac.signal);
+    listProjects(ac.signal).then(setProjects).catch(() => setProjects([]));
     return () => ac.abort();
   }, [load]);
+
+  const transferActions = async (item: MeetingSummary, commit: boolean) => {
+    const projectId = boardProject[item.id] || item.project_id || '';
+    if (!projectId) return;
+    setBoardBusy(true);
+    try {
+      const result = await meetingActionsToBoard(item.id, projectId, commit);
+      setBoardPreview((cur) => ({ ...cur, [item.id]: result }));
+      if (commit) say(t('{n} tasks added to the project board').replace('{n}', String(result.created)));
+    } catch (e) {
+      say((e as Error).message);
+    } finally {
+      setBoardBusy(false);
+    }
+  };
 
   const visible = (items ?? []).filter((m) => {
     const needle = query.trim().toLowerCase();
@@ -180,7 +201,37 @@ export function MeetingsLibrary({ query, say }: { query: string; say: (m: string
                   <div className="fs-lib__peek">
                     {typeof d === 'string' && <p className="fs-gal__muted">{d}</p>}
                     {d === undefined && <p className="fs-gal__muted">{t('Loading…')}</p>}
-                    {typeof d === 'object' && <Rich text={d.markdown} />}
+                    {typeof d === 'object' && (
+                      <>
+                        <Rich text={d.markdown} />
+                        {d.model_ok !== false && projects.length > 0 && (
+                          <div className="fs-gal__toolbar">
+                            <label htmlFor={`meeting-board-${item.id}`}>{t('Project board')}</label>
+                            <select id={`meeting-board-${item.id}`} value={boardProject[item.id] || item.project_id || ''}
+                              onChange={(e) => { setBoardProject((cur) => ({ ...cur, [item.id]: e.target.value })); setBoardPreview((cur) => { const next = { ...cur }; delete next[item.id]; return next; }); }}>
+                              <option value="">{t('Choose a project')}</option>
+                              {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                            </select>
+                            <Button variant="ghost" size="sm" label={t('Preview tasks')} disabled={boardBusy || !(boardProject[item.id] || item.project_id)}
+                              onClick={() => void transferActions(item, false)} />
+                          </div>
+                        )}
+                        {boardPreview[item.id] && (
+                          <div className="fs-gal__muted">
+                            <ul>{boardPreview[item.id].actions.map((action) => (
+                              <li key={`${action.source_line}-${action.title}`}>
+                                {action.title}{action.issue_id ? ` → ${action.issue_id}` : ''}
+                              </li>
+                            ))}</ul>
+                            {boardPreview[item.id].actions.length === 0 && <p>{t('No action items in this meeting')}</p>}
+                            {boardPreview[item.id].actions.some((action) => action.status === 'ready') && (
+                              <Button variant="primary" size="sm" label={t('Add tasks to board')} disabled={boardBusy}
+                                onClick={() => void transferActions(item, true)} />
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
                 )}
               </li>

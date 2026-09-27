@@ -681,7 +681,7 @@ _DOMAIN_TOOL_MAP = {
     # ends up a request for a schema that simply does not exist until lote
     # 92 lands, exactly like naming any other not-yet-enabled tool.
     "project_board": {
-        "board_list", "board_ready", "board_get", "board_create",
+        "board_list", "board_ready", "board_get", "board_create", "meeting_actions_to_board",
         "board_update", "board_comment", "board_link", "board_claim",
     },
 }
@@ -3584,6 +3584,12 @@ def _cross_hoard_incident_tools(query: str, available: List[Dict[str, Any]]) -> 
     if len(funes) != 1 or len(cassandra) != 1:
         return set()
     return {funes[0]["activity_timeline"], cassandra[0]["svc_incidents"], cassandra[0]["svc_why_down"]}
+
+
+def _is_meeting_board_transfer(query: str) -> bool:
+    q = (query or "").casefold()
+    return bool(re.search(r"\b(reuni[oó]n|acta|meeting|transferencia|compromisos)\b", q)
+                and re.search(r"\b(tablero|board|issues?|tareas?)\b", q))
 
 
 def _borges_hoard_read_tools(query: str, available: List[Dict[str, Any]]) -> Set[str]:
@@ -8561,6 +8567,12 @@ async def _stream_agent_loop_body(
                 _hot_seed |= _incident_tools
             logger.info("[tool-rag] cross-Hoard incident context tools offered")
 
+    _meeting_transfer = bool(not guide_only and _is_meeting_board_transfer(_last_user))
+    if _meeting_transfer and _relevant_tools is not None and "meeting_actions_to_board" not in disabled_tools:
+        _relevant_tools.add("meeting_actions_to_board")
+        if _hot_seed is not None:
+            _hot_seed.add("meeting_actions_to_board")
+
     # A named document library can start with search and full-passage read.
     # The live 27B needed a collection listing and lookup_tools before these
     # two read-only calls, despite the user asking for an exact citation.
@@ -9363,6 +9375,13 @@ async def _stream_agent_loop_body(
                 "continuous work or a manual stop. Cassandra's 'No clear cause' means cause unknown; "
                 "an empty log cannot establish a clean exit, and a process start time cannot establish "
                 "service uptime. Do not rank a human cause above other unknowns from timing alone."
+            )
+        if (_meeting_transfer and route_messages and route_messages[0].get("role") == "system"
+                and isinstance(route_messages[0].get("content"), str)):
+            route_messages[0]["content"] += (
+                "\nFor saved meeting action items, use meeting_actions_to_board on the current project. "
+                "It reads the meeting and reuses existing issues; do not search the workspace or create "
+                "individual board issues for a repeated transfer. An open question is not an action item."
             )
         if doc_mode and not plan_mode and not approved_plan and not guide_only:
             route_messages = _minimal_odysseus_doc_messages(
