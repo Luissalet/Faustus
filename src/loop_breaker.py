@@ -206,6 +206,24 @@ def hash_result(result: Any) -> str:
     return hashlib.sha256(text[:4000].encode("utf-8", "replace")).hexdigest()[:16]
 
 
+def observation_for_tool(tool: str, args: Any, result: Any) -> Tuple[Any, str]:
+    """Return the call and result fingerprint seen by the loop policy.
+
+    ``update_plan`` assigns a new revision on every call, including when the
+    model writes the identical checklist again. That revision is bookkeeping,
+    not progress; comparing it hid an otherwise exact runaway loop.
+    """
+    if tool == "update_plan" and isinstance(result, dict):
+        update = result.get("plan_update")
+        if isinstance(update, dict) and isinstance(update.get("plan"), str):
+            meaningful = {key: value for key, value in update.items() if key != "revision"}
+            return meaningful, hash_result({
+                "plan_update": meaningful,
+                "exit_code": result.get("exit_code"),
+            })
+    return args, hash_result(result)
+
+
 @dataclass
 class LoopPolicy:
     """One instance per turn (or per worker — a coordinator and its workers

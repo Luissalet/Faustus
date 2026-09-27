@@ -1,7 +1,7 @@
 """src/loop_breaker.py — the A29 deterministic, bounded escalation policy."""
 from __future__ import annotations
 
-from src.loop_breaker import LoopPolicy, hash_result, normalize_args
+from src.loop_breaker import LoopPolicy, hash_result, normalize_args, observation_for_tool
 
 
 def test_normalize_args_ignores_key_order_and_whitespace():
@@ -18,6 +18,39 @@ def test_normalize_args_unparsable_string_is_stable_not_raising():
 def test_hash_result_stable_for_equal_payloads_different_for_different_ones():
     assert hash_result({"output": "ok", "exit_code": 0}) == hash_result({"exit_code": 0, "output": "ok"})
     assert hash_result({"output": "ok"}) != hash_result({"output": "different"})
+
+
+def test_revising_the_same_plan_is_not_progress():
+    policy = LoopPolicy(nudge_after=3, block_after=6, stop_after=10)
+    actions = []
+    for revision in range(1, 20):
+        plan = "- [ ] Inspect the folder\n- [ ] Report findings"
+        result = {"plan_update": {"plan": plan, "steps": [
+            {"id": "step_a", "title": "Inspect the folder", "status": "pending"},
+            {"id": "step_b", "title": "Report findings", "status": "pending"},
+        ], "revision": revision}, "output": "Plan updated (0/2 steps complete).", "exit_code": 0,
+                  "duration_ms": revision}
+        args, fingerprint = observation_for_tool(
+            "update_plan", {"steps": result["plan_update"]["steps"], "revision": revision}, result
+        )
+        actions.append(policy.observe("update_plan", args, fingerprint))
+        if actions[-1] == "stop":
+            break
+    assert len(actions) == 10
+    assert actions[-1] == "stop"
+
+    result["plan_update"]["steps"][0]["status"] = "done"
+    result["plan_update"]["plan"] = "- [x] Inspect the folder\n- [ ] Report findings"
+    args, fingerprint = observation_for_tool("update_plan", {}, result)
+    fresh = LoopPolicy()
+    first_args, first_hash = observation_for_tool("update_plan", {}, {
+        "plan_update": {"plan": plan, "steps": [
+            {"id": "step_a", "title": "Inspect the folder", "status": "pending"},
+            {"id": "step_b", "title": "Report findings", "status": "pending"},
+        ], "revision": 1}, "exit_code": 0})
+    fresh.observe("update_plan", first_args, first_hash)
+    assert fresh.observe("update_plan", args, fingerprint) == "none"
+    assert fresh.streak == 1
 
 
 def test_identical_calls_escalate_none_then_nudge_then_block_then_stop():

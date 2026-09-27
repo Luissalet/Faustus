@@ -9571,7 +9571,7 @@ async def _stream_agent_loop_body(
     # the turn with stop_reason=non_progressing_loop, whatever the model says
     # about itself. Pure counters (src/loop_breaker.py); a different result
     # resets them, so a turn with real progress never trips it.
-    from src.loop_breaker import LoopPolicy as _LoopPolicy, hash_result as _loop_hash_result, STOP_REASON as _LOOP_STOP_REASON
+    from src.loop_breaker import LoopPolicy as _LoopPolicy, observation_for_tool as _loop_observation, STOP_REASON as _LOOP_STOP_REASON
     _loop_policy = _LoopPolicy.from_settings(get_setting)
     _loop_policy_stop = False
     _loop_recovery_blocked_tools: Set[str] = set()
@@ -15665,8 +15665,11 @@ async def _stream_agent_loop_body(
                 if isinstance(result, dict) and result.get("blocked"):
                     _loop_action = "none"  # already counted by observe_skipped
                 else:
+                    _observed_args, _observed_result = _loop_observation(
+                        block.tool_type, block.content or "", result
+                    )
                     _loop_action = _loop_policy.observe(
-                        block.tool_type, block.content or "", _loop_hash_result(result)
+                        block.tool_type, _observed_args, _observed_result
                     )
             except Exception:  # noqa: BLE001
                 _loop_action = "none"
