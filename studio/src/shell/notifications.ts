@@ -103,6 +103,26 @@ export function dedupeKeyForRun(run: ActivityRun): string {
   return `${run.kind}:${run.id}`;
 }
 
+/** Housekeeping tasks whose success is not news: the tray filled up with
+ *  "Chat Sessions Tidy — Cleaned 0 sessions (folder sort skipped)." three
+ *  times in a row. They still notify when they fail. */
+const QUIET_WHEN_DONE = new Set([
+  'tidy_sessions', 'tidy_documents', 'tidy_research', 'consolidate_memory',
+  'test_skills', 'audit_skills', 'learn_sender_signatures',
+]);
+
+/** A task result as one line of plain text: the tray and the desktop
+ *  notification show `detail` as text, so Markdown marks (`**`, `###`,
+ *  backticks, links) read as noise ("**Tiempo en Móstoles** — …"). */
+export function plainDetail(text: string): string {
+  return (text || '')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/(^|\s)#{1,6}\s+/g, '$1')
+    .replace(/\*\*|__|`+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /** Which runs are worth a notification, and what to say about them. Returns
  *  null for a run this feature has no opinion about (a running task, say). */
 export function payloadForRun(run: ActivityRun): EmitPayload | null {
@@ -114,10 +134,11 @@ export function payloadForRun(run: ActivityRun): EmitPayload | null {
     return { type: 'question', dedupe_key: dedupeKeyForRun(run), title: run.title, detail: run.detail ?? '', screen: 'activity', target };
   }
   if (run.kind === 'task' && run.status === 'failed') {
-    return { type: 'task_failed', dedupe_key: dedupeKeyForRun(run), title: run.title, detail: run.error ?? run.detail ?? '', screen: 'activity', target };
+    return { type: 'task_failed', dedupe_key: dedupeKeyForRun(run), title: run.title, detail: plainDetail(run.error ?? run.detail ?? ''), screen: 'activity', target };
   }
   if (run.kind === 'task' && run.status === 'succeeded') {
-    return { type: 'task_done', dedupe_key: dedupeKeyForRun(run), title: run.title, detail: run.detail ?? '', screen: 'activity', target };
+    if (QUIET_WHEN_DONE.has(run.task?.action ?? '')) return null;
+    return { type: 'task_done', dedupe_key: dedupeKeyForRun(run), title: run.title, detail: plainDetail(run.detail ?? ''), screen: 'activity', target };
   }
   return null;
 }

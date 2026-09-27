@@ -31,6 +31,14 @@ assert.equal(payloadForRun(waitingApproval).type, 'approval');
 assert.equal(payloadForRun(failedTask).type, 'task_failed');
 assert.equal(payloadForRun(failedTask).detail, 'boom');
 
+// Housekeeping that succeeded is not news; the same task failing still is.
+const tidyDone = { id: 't3', kind: 'task', status: 'succeeded', title: 'Chat Sessions Tidy', detail: 'Cleaned 0 sessions (folder sort skipped).', repeats: 1, task: { action: 'tidy_sessions' } };
+assert.equal(payloadForRun(tidyDone), null);
+assert.equal(payloadForRun({ ...tidyDone, status: 'failed', error: 'db locked' }).type, 'task_failed');
+// A result's Markdown reads as plain text in the tray and the desktop alert.
+const weather = { id: 't4', kind: 'task', status: 'succeeded', title: 'Tiempo', detail: '**Tiempo en Móstoles** — hoy ### Headline: [AEMET](https://x) `ok`', repeats: 1, task: { action: '' } };
+assert.equal(payloadForRun(weather).detail, 'Tiempo en Móstoles — hoy Headline: AEMET ok');
+
 // The reconnect-storm behaviour, client side: the same run seen on twenty
 // consecutive poll ticks must only ever be handed to emit() once.
 let calls = 0;

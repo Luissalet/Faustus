@@ -21,9 +21,25 @@ from src.task_action_policy import (
 logger = logging.getLogger(__name__)
 
 
+#: Housekeeping whose success is not news (it still notifies on failure).
+QUIET_WHEN_DONE_ACTIONS = frozenset({
+    "tidy_sessions", "tidy_documents", "tidy_research", "consolidate_memory",
+    "test_skills", "audit_skills", "learn_sender_signatures",
+})
+
+
+def _plain_line(text: str) -> str:
+    """One notification line without Markdown marks (a phone shows them)."""
+    import re as _re
+    t = _re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text or "")
+    t = _re.sub(r"(^|\s)#{1,6}\s+", r"\1", t)
+    t = t.replace("**", "").replace("__", "").replace("`", "")
+    return _re.sub(r"\s+", " ", t).strip()
+
+
 def notify_task_finished(
     *, task_name: str, owner: str, task_id: str, status: str,
-    result: str = None, error: str = None,
+    result: str = None, error: str = None, action: str = "",
 ) -> None:
     """Mobile lot M-A: push a `task_finished` event for a just-finalised
     TaskRun. `body` is the result's (or, failing that, the error's) first
@@ -32,10 +48,12 @@ def notify_task_finished(
     the one call site in `run`) so it can be unit-tested without driving the
     full scheduler/DB machinery. Best-effort: never raises.
     """
+    if (action or "") in QUIET_WHEN_DONE_ACTIONS and status not in ("error", "failed"):
+        return
     try:
         from src import notifications as _notifications
         text = (result or error or "").strip()
-        first_line = text.splitlines()[0] if text else status
+        first_line = _plain_line(text.splitlines()[0]) if text else status
         _notifications.emit(
             "task_finished",
             owner=owner,
@@ -2251,6 +2269,7 @@ class TaskScheduler:
             notify_task_finished(
                 task_name=task.name, owner=task.owner, task_id=task_id,
                 status=run.status, result=run.result, error=run.error,
+                action=getattr(task, "action", "") or "",
             )
 
             output = task.output_target or "session"

@@ -200,6 +200,22 @@ def test_task_scheduler_hook_falls_back_to_error_then_status():
     assert rows[-1]["body"] == "success"
 
 
+def test_task_scheduler_hook_skips_quiet_housekeeping_and_strips_markdown():
+    from src.task_scheduler import notify_task_finished
+
+    notify_task_finished(task_name="Chat Sessions Tidy", owner="luis", task_id="t4",
+                         status="success", result="Cleaned 0 sessions (folder sort skipped).",
+                         action="tidy_sessions")
+    rows, _ = N.list_events(owner="luis", since_id=0)
+    assert rows == []
+    notify_task_finished(task_name="Chat Sessions Tidy", owner="luis", task_id="t5",
+                         status="error", error="db locked", action="tidy_sessions")
+    notify_task_finished(task_name="Tiempo", owner="luis", task_id="t6", status="success",
+                         result="**Tiempo en Móstoles** — hoy ### nublado\nmás")
+    rows, _ = N.list_events(owner="luis", since_id=0)
+    assert [r["body"] for r in rows] == ["db locked", "Tiempo en Móstoles — hoy nublado"]
+
+
 def test_task_scheduler_hook_never_raises_on_a_broken_bus(monkeypatch):
     from src import task_scheduler
 
