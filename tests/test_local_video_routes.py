@@ -20,6 +20,19 @@ def client(admin=True):
 
 def test_local_video_admin_gate():
     assert client(False).get('/api/media/local-video/capabilities').status_code == 403
+    assert client(False).post('/api/media/local-video/translate', json={'segments': [], 'target_language': 'es'}).status_code == 403
+
+
+def test_local_video_translation_route_returns_draft(monkeypatch):
+    async def fake_translate(rows, source_language, target_language):
+        assert rows == [{'start': 0, 'end': 2, 'text': 'Hello'}]
+        assert source_language == 'en' and target_language == 'es'
+        return {'segments': [{'start': 0, 'end': 2, 'text': 'Hola', 'long_for_timing': False}], 'model': 'test'}
+    monkeypatch.setattr('services.local_video_translation.translate_segments', fake_translate)
+    with client() as api:
+        response = api.post('/api/media/local-video/translate', json={'segments': [{'start': 0, 'end': 2, 'text': 'Hello'}],
+                                                                        'source_language': 'en', 'target_language': 'es'})
+    assert response.status_code == 200 and response.json()['segments'][0]['text'] == 'Hola'
 
 
 def test_local_video_bad_inputs_never_process(monkeypatch):

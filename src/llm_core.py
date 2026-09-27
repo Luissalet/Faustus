@@ -4642,7 +4642,9 @@ async def _llm_call_async_impl(
     # after coming back fails normally instead of looping.
     _engine_wait_used = False
     _reasoning_steps = 0
-    while attempt < max_retries:
+    # max_retries is the total attempt count here. Zero from a caller means
+    # "do not retry", but must still make the initial request.
+    while attempt < max(1, max_retries):
         attempt += 1
         start = time.time()
         try:

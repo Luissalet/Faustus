@@ -10,6 +10,7 @@ from importlib.util import find_spec
 
 import anyio
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel
 from fastapi.responses import Response
 from core.middleware import require_admin
 from src.upload_limits import read_upload_limited
@@ -74,6 +75,11 @@ def setup_local_video_routes():
     router = APIRouter(prefix="/api/media/local-video", tags=["media"], dependencies=[Depends(require_admin)])
     limiter = anyio.CapacityLimiter(1)
 
+    class TranslationRequest(BaseModel):
+        segments: list[dict]
+        source_language: str = "auto"
+        target_language: str
+
     @router.get("/capabilities")
     def capabilities():
         return {"ffmpeg": bool(shutil.which("ffmpeg") and shutil.which("ffprobe")),
@@ -97,6 +103,16 @@ def setup_local_video_routes():
         return Response(out["text"], media_type=out["media_type"],
                         headers={"Content-Disposition": f'attachment; filename="{out["filename"]}"',
                                  "Cache-Control": "no-store"})
+
+    @router.post("/translate")
+    async def translate(payload: TranslationRequest):
+        from services.local_video_translation import translate_segments
+        try:
+            return await translate_segments(payload.segments, payload.source_language, payload.target_language)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(502, "The translation model failed; original subtitles are unchanged") from exc
 
     @router.post("/reference/shot-map")
     async def analyze_reference(file: UploadFile = File(...)):

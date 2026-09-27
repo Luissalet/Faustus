@@ -83,6 +83,12 @@ def _call(monkeypatch, url, *, max_retries=3, on_outcome_unknown=None):
     ))
 
 
+def test_zero_retries_still_makes_the_initial_request(monkeypatch):
+    calls = _wire_sequence(monkeypatch, [_Response(200)])
+    result = _call(monkeypatch, "https://api.example-zero-attempt.test/v1/chat/completions", max_retries=0)
+    assert result == "ok" and len(calls) == 1
+
+
 # ── Retry-After honoured (seconds and HTTP-date) ──
 
 class TestRetryAfterHonoured:

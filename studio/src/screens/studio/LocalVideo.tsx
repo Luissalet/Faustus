@@ -24,6 +24,7 @@ function download(blob:Blob,name:string){const url=URL.createObjectURL(blob),a=d
 export default function LocalVideo(){return <VideoForm/>;}
 function VideoForm(){
   const [file,setFile]=useState<File|null>(null),[preview,setPreview]=useState(''),[rows,setRows]=useState<Subtitle[]>([]),[language,setLanguage]=useState('auto'),[voice,setVoice]=useState('es');
+  const [targetLanguage,setTargetLanguage]=useState('es'),[draftRows,setDraftRows]=useState<(Subtitle&{long_for_timing:boolean})[]|null>(null);
   const [busy,setBusy]=useState(''),[error,setError]=useState(''),[seconds,setSeconds]=useState(0),[caps,setCaps]=useState<{ffmpeg:boolean;whisper:boolean;system_voice:boolean}|null>(null);
   const [shotMap,setShotMap]=useState<ShotMap|null>(null);
   const active=useRef<AbortController|null>(null),mounted=useRef(true),videoRef=useRef<HTMLVideoElement|null>(null);
@@ -35,8 +36,18 @@ function VideoForm(){
     try{if(mode==='dub')subtitleText(rows,'srt');setBusy(mode);const body=new FormData();body.append('file',file);body.append('language',mode==='dub'?voice:language);body.append('segments',JSON.stringify(rows));
       const response=await fetch('/api/media/local-video/'+mode,{method:'POST',body,credentials:'same-origin',signal:controller.signal});
       if(!response.ok){const result=await response.json();throw new Error(typeof result.detail==='string'?result.detail:t('Local video processing failed.'));}
-      if(mode==='transcribe'){const result=await response.json();if(!Array.isArray(result.segments))throw new Error(t('The transcript response is invalid.'));subtitleText(result.segments,'srt');if(mounted.current)setRows(result.segments);}
+      if(mode==='transcribe'){const result=await response.json();if(!Array.isArray(result.segments))throw new Error(t('The transcript response is invalid.'));subtitleText(result.segments,'srt');if(mounted.current){setRows(result.segments);setDraftRows(null);}}
       else{const blob=await response.blob();if(mounted.current)download(blob,'localized.mp4');}
+    }catch(e){if(!controller.signal.aborted)setError((e as Error).message);}finally{if(mounted.current)setBusy('');}
+  };
+  const translate=async()=>{
+    if(busy||!rows.length)return;setError('');const controller=new AbortController();active.current=controller;
+    try{subtitleText(rows,'srt');setBusy('translate');
+      const response=await fetch('/api/media/local-video/translate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({segments:rows,source_language:language,target_language:targetLanguage}),credentials:'same-origin',signal:controller.signal});
+      if(!response.ok){const result=await response.json();throw new Error(typeof result.detail==='string'?result.detail:t('Translation failed.'));}
+      const result=await response.json();const proposal=result.segments as (Subtitle&{long_for_timing:boolean})[];
+      if(!Array.isArray(proposal)||proposal.length!==rows.length||proposal.some((row,index)=>row.start!==rows[index].start||row.end!==rows[index].end||typeof row.text!=='string'))throw new Error(t('The translation response is invalid.'));
+      subtitleText(proposal,'srt');if(mounted.current)setDraftRows(proposal);
     }catch(e){if(!controller.signal.aborted)setError((e as Error).message);}finally{if(mounted.current)setBusy('');}
   };
   const analyzeReference=async()=>{
@@ -51,9 +62,9 @@ function VideoForm(){
   };
   return <Popover placement="composer" className="fs-media-recipes" trigger={<button type="button" className="fs-studio__chip"><Captions size={13}/>{t('Local video')}{busy?'…':''}</button>}><section aria-label={t('Local video')}><h3>{t('Local video')}</h3>
     <p>{t('Analyze a reference clip, transcribe it or create local narration. Videos can be up to 3 minutes, 1080p and 64 MB.')}</p>
-    <p>{t('Transcribe with existing Whisper weights, then edit or translate the segments yourself. Dubbing uses an installed Windows voice and replaces the original audio; it does not clone voices or synchronize lips.')}</p>
+    <p>{t('Transcribe with existing Whisper weights, then edit the segments or ask the model for a translation draft. Dubbing uses an installed Windows voice and replaces the original audio; it does not clone voices or synchronize lips.')}</p>
     {caps&&<p>{t('Local tools:')} FFmpeg {caps.ffmpeg?t('Available'):t('Unavailable')} · Whisper {caps.whisper?t('Installed'):t('Not installed')} · {t('System voice')} {caps.system_voice?t('Available'):t('Unavailable')}</p>}
-    <label>{t('Video file')}<input type="file" accept=".mp4,.mov,.webm,.mkv" disabled={!!busy} onChange={e=>{const chosen=e.target.files?.[0];if(!chosen)return;if(!/\.(mp4|mov|webm|mkv)$/i.test(chosen.name)||chosen.size>64*1024*1024||!chosen.size){setError(t('Choose a non-empty MP4, MOV, WebM or MKV up to 64 MB.'));return;}setFile(chosen);setRows([]);setShotMap(null);setError('');}}/></label>
+    <label>{t('Video file')}<input type="file" accept=".mp4,.mov,.webm,.mkv" disabled={!!busy} onChange={e=>{const chosen=e.target.files?.[0];if(!chosen)return;if(!/\.(mp4|mov|webm|mkv)$/i.test(chosen.name)||chosen.size>64*1024*1024||!chosen.size){setError(t('Choose a non-empty MP4, MOV, WebM or MKV up to 64 MB.'));return;}setFile(chosen);setRows([]);setDraftRows(null);setShotMap(null);setError('');}}/></label>
     {preview&&<video ref={videoRef} src={preview} controls preload="metadata" style={{width:'100%',maxHeight:220}}/>}
     <Button label={t('Analyze reference cuts')} loading={busy==='reference'} disabled={!!busy||!file||!caps?.ffmpeg} onClick={()=>void analyzeReference()}/>
     {shotMap&&<div className="fs-reference-shots" aria-label={t('Reference shot map')}>
@@ -63,12 +74,14 @@ function VideoForm(){
     </div>}
     <label>{t('Spoken language')}<select value={language} disabled={!!busy} onChange={e=>setLanguage(e.target.value)}><option value="auto">{t('Detect automatically')}</option><option value="en">English</option><option value="es">Español</option></select></label>
     <Button label={t('Transcribe locally')} loading={busy==='transcribe'} disabled={!!busy||!file||!caps?.ffmpeg||!caps.whisper} onClick={()=>void run('transcribe')}/>
-    {rows.map((row,index)=><fieldset key={index} disabled={!!busy}><legend>{t('Segment')} {index+1}</legend><div className="fs-panel__row">{(['start','end'] as const).map(key=><label key={key}>{t(key==='start'?'Start (seconds)':'End (seconds)')}<input type="number" min={0} max={180} step={.01} value={row[key]} onChange={e=>setRows(old=>old.map((value,i)=>i===index?{...value,[key]:Number(e.target.value)}:value))}/></label>)}</div><label>{t('Transcript or translation')}<textarea maxLength={1000} value={row.text} onChange={e=>setRows(old=>old.map((value,i)=>i===index?{...value,text:e.target.value}:value))}/></label><Button label={t('Remove segment')} onClick={()=>setRows(old=>old.filter((_,i)=>i!==index))}/></fieldset>)}
-    <Button label={t('Add segment')} disabled={!!busy||rows.length>=80} onClick={()=>setRows(old=>[...old,{start:old.at(-1)?.end||0,end:Math.min(180,(old.at(-1)?.end||0)+5),text:''}])}/>
+    {rows.length>0&&<div className="fs-panel__row"><label>{t('Translation target')}<select value={targetLanguage} disabled={!!busy||!!draftRows} onChange={e=>setTargetLanguage(e.target.value)}><option value="es">Español</option><option value="en">English</option></select></label><Button label={t('Translate segments')} loading={busy==='translate'} disabled={!!busy||!!draftRows} onClick={()=>void translate()}/></div>}
+    {draftRows&&<div className="fs-reference-shots" aria-label={t('Translation draft')}><p><strong>{t('Translation draft')}</strong> · {t('Review before replacing the original segments.')}</p><ol>{draftRows.map((row,index)=><li key={index}><p>{clock(row.start)}–{clock(row.end)} · {rows[index].text}</p><strong>{row.text}</strong>{row.long_for_timing&&<p role="note">{t('This translation may be too long for its timing.')}</p>}</li>)}</ol><div className="fs-panel__row"><Button label={t('Use translation')} disabled={!!busy} onClick={()=>{setRows(draftRows.map(({start,end,text})=>({start,end,text})));setVoice(targetLanguage);setDraftRows(null);}}/><Button label={t('Keep original')} disabled={!!busy} onClick={()=>setDraftRows(null)}/></div></div>}
+    {rows.map((row,index)=><fieldset key={index} disabled={!!busy||!!draftRows}><legend>{t('Segment')} {index+1}</legend><div className="fs-panel__row">{(['start','end'] as const).map(key=><label key={key}>{t(key==='start'?'Start (seconds)':'End (seconds)')}<input type="number" min={0} max={180} step={.01} value={row[key]} onChange={e=>setRows(old=>old.map((value,i)=>i===index?{...value,[key]:Number(e.target.value)}:value))}/></label>)}</div><label>{t('Transcript or translation')}<textarea maxLength={1000} value={row.text} onChange={e=>setRows(old=>old.map((value,i)=>i===index?{...value,text:e.target.value}:value))}/></label><Button label={t('Remove segment')} onClick={()=>setRows(old=>old.filter((_,i)=>i!==index))}/></fieldset>)}
+    <Button label={t('Add segment')} disabled={!!busy||!!draftRows||rows.length>=80} onClick={()=>setRows(old=>[...old,{start:old.at(-1)?.end||0,end:Math.min(180,(old.at(-1)?.end||0)+5),text:''}])}/>
     <div className="fs-panel__row">{(['srt','vtt'] as const).map(format=><Button key={format} label={'Export '+format.toUpperCase()} disabled={!!busy||!rows.length} onClick={()=>{try{download(new Blob([subtitleText(rows,format)],{type:'text/plain;charset=utf-8'}),'subtitles.'+format);}catch(e){setError((e as Error).message);}}}/>)}</div>
     <label>{t('Narration language')}<select value={voice} disabled={!!busy} onChange={e=>setVoice(e.target.value)}><option value="es">Español</option><option value="en">English</option></select></label>
-    <Button label={t('Create dubbed MP4 locally')} loading={busy==='dub'} disabled={!!busy||!file||!rows.length||!caps?.ffmpeg||!caps.system_voice} onClick={()=>void run('dub')}/>
-    {busy&&<p role="status">{t(busy==='dub'?'Creating local narration and video…':busy==='reference'?'Analyzing reference cuts…':'Transcribing locally…')} {seconds}s · {t('Keep this chat open to receive the result. Maximum processing time: 10 minutes.')}</p>}
+    <Button label={t('Create dubbed MP4 locally')} loading={busy==='dub'} disabled={!!busy||!!draftRows||!file||!rows.length||!caps?.ffmpeg||!caps.system_voice} onClick={()=>void run('dub')}/>
+    {busy&&<p role="status">{t(busy==='dub'?'Creating local narration and video…':busy==='reference'?'Analyzing reference cuts…':busy==='translate'?'Translating segments…':'Transcribing locally…')} {seconds}s · {t('Keep this chat open to receive the result. Maximum processing time: 10 minutes.')}</p>}
     {error&&<p role="alert">{error}</p>}
   </section></Popover>;
 }
