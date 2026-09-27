@@ -1,8 +1,8 @@
-"""Local eval fixture: apply one People's Hoard write, then lose its reply.
+"""Local eval fixture: apply one Hoard write, then lose its reply.
 
 The backing Hoard must use isolated data. The proxy never changes requests;
-it only cuts the first successful ``log_interaction`` response after the
-backing app has committed it. ``GET /__stats`` reports forwarded/dropped calls.
+it cuts the first successful response for the selected tool after the backing
+app has committed it. ``GET /__stats`` reports forwarded/dropped calls.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
-def serve(origin: str, port: int) -> None:
+def serve(origin: str, port: int, drop_tool: str) -> None:
     lock = threading.Lock()
     stats = {"forwarded": 0, "dropped": 0, "names": []}
 
@@ -59,7 +59,7 @@ def serve(origin: str, port: int) -> None:
             with lock:
                 stats["forwarded"] += 1
                 stats["names"].append(name)
-                drop = name == "log_interaction" and status < 400 and stats["dropped"] == 0
+                drop = name == drop_tool and status < 400 and stats["dropped"] == 0
                 if drop:
                     stats["dropped"] += 1
             if drop:
@@ -80,7 +80,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--origin", required=True)
     parser.add_argument("--port", type=int, required=True)
+    parser.add_argument("--drop-tool", required=True)
     args = parser.parse_args()
     if not args.origin.startswith("http://127.0.0.1:"):
         parser.error("--origin must be a loopback HTTP service")
-    serve(args.origin.rstrip("/"), args.port)
+    serve(args.origin.rstrip("/"), args.port, args.drop_tool)
