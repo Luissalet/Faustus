@@ -41,6 +41,7 @@ try:
         _append_tool_results,
         _insert_before_latest_user,
         _MCP_KEYWORDS,
+        _local_mcp_schemas,
     )
     _IMPORTED_AGENT_LOOP = sys.modules.get("src.agent_loop")
 finally:
@@ -62,6 +63,16 @@ def test_import_stubs_do_not_leak_into_later_tests():
 
 def test_mcp_keyword_gate_matches_literal_mcp_requests():
     assert "mcp" in _MCP_KEYWORDS
+
+
+def test_local_model_receives_selected_people_mcp_schema_without_keyword():
+    selected = {"type": "function", "function": {"name": "mcp__people1__prepare_person_chat"}}
+    unrelated = {"type": "function", "function": {"name": "mcp__other__list_items"}}
+    assert _local_mcp_schemas(
+        [selected, unrelated], {"mcp__people1__prepare_person_chat"},
+        "Prepárame para hablar con Ana",
+    ) == [selected]
+    assert _local_mcp_schemas([selected, unrelated], {"ask_user"}, "Hola") == []
 
 
 def test_polish_internet_search_request_classifies_as_web():

@@ -1525,6 +1525,22 @@ _API_HOSTS = frozenset([
 ])
 _MCP_KEYWORDS = frozenset(["mcp", "browse", "browser", "website", "calendar", "event", "email",
                            "gmail", "screenshot", "navigate", "click", "miniflux", "rss", "feed"])
+
+
+def _local_mcp_schemas(mcp_schemas, schema_tools, user_text):
+    """Offer selected MCP schemas to local models even without an MCP keyword.
+
+    Semantic selection already decided which schemas are hot. A literal MCP
+    keyword can still expose the catalog when no MCP schema was selected.
+    """
+    selected = set(schema_tools or ())
+    matched = [schema for schema in mcp_schemas
+               if schema.get("function", {}).get("name") in selected]
+    if matched:
+        return matched
+    if any(keyword in (user_text or "").lower() for keyword in _MCP_KEYWORDS):
+        return mcp_schemas
+    return []
 _ADMIN_SCHEMA_NAMES = frozenset([
     "manage_session", "manage_skills", "manage_tasks",
     "manage_endpoints", "manage_mcp", "manage_webhooks", "manage_tokens",
@@ -3520,6 +3536,34 @@ def _people_hoard_fact_tools(query: str, available: List[Dict[str, Any]]) -> Set
     if len(capable) != 1:
         return set()
     return {capable[0][name] for name in ("find_people", "get_person", "add_fact") if name in capable[0]}
+
+
+_PEOPLE_BRIEF_REQUEST_RE = re.compile(
+    r"(?:\bpeople(?:'s|s)?\s+hoard\b|\bagenda\b|\bficha\b)"
+    r".*(?:prep[aá]r\w*|antes\s+de\s+hablar|puesta\s+al\s+d[ií]a|qu[eé]\s+(?:sabes|recuerdas)|recordatorio|pendiente)"
+    r"|(?:prep[aá]r\w*|antes\s+de\s+hablar|puesta\s+al\s+d[ií]a)"
+    r".*(?:\bpeople(?:'s|s)?\s+hoard\b|\bagenda\b|\bficha\b)",
+    re.I | re.S,
+)
+
+
+def _people_hoard_brief_tools(query: str, available: List[Dict[str, Any]]) -> Set[str]:
+    """Keep a connected person's briefing tool visible for an explicit CRM read."""
+    if not _PEOPLE_BRIEF_REQUEST_RE.search(query or ""):
+        return set()
+    by_server: Dict[str, Dict[str, str]] = {}
+    for item in available or []:
+        server_name = str(item.get("server_name") or "").casefold()
+        if not server_name.startswith("people") or item.get("is_disabled"):
+            continue
+        name = str(item.get("name") or "")
+        qualified = str(item.get("qualified_name") or "")
+        if name and qualified:
+            by_server.setdefault(str(item.get("server_id") or server_name), {})[name] = qualified
+    capable = [names for names in by_server.values() if "prepare_person_chat" in names]
+    if len(capable) != 1:
+        return set()
+    return {capable[0][name] for name in ("prepare_person_chat", "find_people") if name in capable[0]}
 
 
 def _jobhunter_hoard_read_tools(query: str, available: List[Dict[str, Any]]) -> Set[str]:
@@ -8546,6 +8590,21 @@ async def _stream_agent_loop_body(
                 _hot_seed.difference_update({"manage_notes", "manage_memory", "brain", "manage_contact"})
             logger.info("[tool-rag] person fact in agenda: People's Hoard tools offered")
 
+    if not guide_only and _relevant_tools is not None and not relevant_tools and mcp_mgr:
+        try:
+            _people_brief_tools = _people_hoard_brief_tools(
+                _last_user, mcp_mgr.get_all_tools(_mcp_disabled_map)) - disabled_tools
+        except Exception:  # noqa: BLE001 - tool selection must keep working
+            logger.debug("[tool-rag] people briefing route unavailable", exc_info=True)
+            _people_brief_tools = set()
+        if _people_brief_tools:
+            _relevant_tools.update(_people_brief_tools)
+            _relevant_tools.difference_update({"manage_memory", "brain"})
+            if _hot_seed is not None:
+                _hot_seed |= _people_brief_tools
+                _hot_seed.difference_update({"manage_memory", "brain"})
+            logger.info("[tool-rag] person briefing requested: People's Hoard tools offered")
+
     # A user naming their job Hoard can read its catalog and a selected
     # application's dossier directly. The live 27B spent two lookup_tools
     # rounds before finding this path for a simple offer summary.
@@ -10211,8 +10270,7 @@ async def _stream_agent_loop_body(
                 ]
             return _filter_route_tool_schemas(schemas)
 
-        wants_mcp = any(keyword in _last_user.lower() for keyword in _MCP_KEYWORDS)
-        schemas = route_mcp_schemas if wants_mcp and route_mcp_schemas else []
+        schemas = _local_mcp_schemas(route_mcp_schemas, route_schema_tools, _last_user)
         return _filter_route_tool_schemas(schemas)
 
     _approved_result_injected = False

@@ -370,6 +370,7 @@ _ES_STATE_CLAIM_RE = re.compile(
     r"\b(?:ya\s+)?(?:está|están|queda|quedan|ha\s+quedado|han\s+quedado)\s+(?:ya\s+)?(?:completamente\s+|totalmente\s+)?" + _ES_PP,
     re.IGNORECASE,
 )
+_ES_PASSIVE_CLAIM_RE = re.compile(r"\bse\s+(?:ha|han)\s+" + _ES_PP, re.IGNORECASE)
 _RELATIVE_OR_CONDITIONAL_BEFORE_RE = re.compile(
     r"\b(?:lo\s+que|que|donde|cuando|si|aunque|mientras)\s+(?:[\wáéíóúñ]+\s+){0,3}$",
     re.IGNORECASE,
@@ -397,7 +398,7 @@ MUTATION_CLAIM_PATTERNS: List[re.Pattern] = [
     # Spanish — perfect / preterite / passive / "está listo"
     re.compile(r"\b(?:he|hemos)\s+" + _ES_PP, re.IGNORECASE),
     _ES_STATE_CLAIM_RE,
-    re.compile(r"\bse\s+(?:ha|han)\s+" + _ES_PP, re.IGNORECASE),
+    _ES_PASSIVE_CLAIM_RE,
     re.compile(r"\b(?:creé|añadí|agregué|modifiqué|actualicé|implementé|eliminé|borré|cambié|edité|escribí|corregí|arreglé|apliqué|moví|renombré|refactoricé|integré|completé|terminé|finalicé|solucioné|reparé|configuré|instalé|guardé)\b", re.IGNORECASE),
     re.compile(r"\b(?:los\s+)?cambios\s+(?:han\s+sido\s+|fueron\s+|están\s+)?" + _ES_PP, re.IGNORECASE),
     _ES_GENERIC_READY_RE,
@@ -697,6 +698,12 @@ def find_mutation_claims(
             if pat is _ES_STATE_CLAIM_RE and _RELATIVE_OR_CONDITIONAL_BEFORE_RE.search(
                     body[max(0, m.start() - 40):m.start()]):
                 continue
+            if pat is _ES_PASSIVE_CLAIM_RE:
+                # "confirmar si ya se ha movido" asks about a possible change;
+                # it does not report one. Keep a direct "se ha movido el archivo".
+                clause = re.split(r"[.!?\n;]", body[max(0, m.start() - 160):m.start()])[-1]
+                if re.search(r"(?:\bsi\b|¿)[^.!?\n;]*$", clause, re.IGNORECASE):
+                    continue
             key = m.group(0).strip().lower()
             if key in seen:
                 continue

@@ -1010,6 +1010,19 @@ def test_a_state_inside_a_relative_or_conditional_clause_is_not_a_claim():
     assert h.find_mutation_claims("El fichero config.py ya está modificado y el botón está añadido.")
 
 
+def test_indirect_question_about_a_change_is_not_a_mutation_claim():
+    # Live People briefing: the model suggested asking whether Irene had moved
+    # workplaces; the harness mistook that question for an edit it had made.
+    answer = (
+        "Preguntar si Irene sigue en Museo Norte o ya se ha movido a Museo Sur. "
+        "Aprovechar para preguntar por el calendario de Atlas."
+    )
+    assert h.find_mutation_claims(answer) == []
+    assert h.find_mutation_claims("¿Se ha movido el archivo config.py?") == []
+    assert h.find_mutation_claims("Se ha movido el archivo config.py a backup/config.py.")
+    assert h.find_mutation_claims("He movido el archivo config.py a backup/config.py.")
+
+
 # ── python tool: a comparison is not a redirection ─────────────────────────
 # Seen live: a data analysis that only read ventas.csv was recorded as having
 # mutated it (`if u > 100:` matched the shell redirection pattern), and the
