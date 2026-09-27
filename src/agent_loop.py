@@ -13970,7 +13970,13 @@ async def _stream_agent_loop_body(
         # Runaway = the SAME exact call repeated an absurd number of times.
         # Distinct calls to one tool (a real batch) are legitimate work, so we
         # count identical call signatures, not raw per-tool-type totals.
-        _runaway = _detect_runaway_call(_call_freq)
+        # Only a call made in THIS round can be the runaway: the count is kept
+        # for the whole turn, and once one signature passed the threshold the
+        # breaker tripped on every later round whatever it did (live, exam 32
+        # leg 2: rounds 4-6 each hid write_file, web_search or edit_file "for
+        # calling bash", and each hide re-read the whole prompt).
+        _round_sigs = {_tool_call_signature(_b.tool_type, _b.content or "") for _b in tool_blocks}
+        _runaway = _detect_runaway_call({s: n for s, n in _call_freq.items() if s in _round_sigs})
         # Three identical empty-text rounds are already conclusive: the first
         # repeat sets this to 1 and the next repeat to 2. Waiting for five
         # identical rounds was especially expensive on large local models.
@@ -13981,6 +13987,11 @@ async def _stream_agent_loop_body(
                             if _semantic_probe_loop
                             else "repeating the same tool calls without new progress"))
             logger.warning(f"[agent] loop-breaker tripped on round {round_num} ({reason}); sig={_sig[:80]!r}")
+            if _runaway:
+                # Start the runaway count again: a recovered call gets a fresh
+                # allowance instead of tripping the breaker on its next use.
+                for _rs in _round_sigs:
+                    _call_freq.pop(_rs, None)
             _looping_tool_names = {b.tool_type for b in tool_blocks}
             _loop_recovery_active = True
             _loop_recovery_blocked_tools = set(_looping_tool_names)

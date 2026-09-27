@@ -274,3 +274,44 @@ def test_alternating_tool_calls_stop_the_turn_deterministically(tmp_path, monkey
     assert stop_reason == "non_progressing_loop", stop_reason
     if stops:
         assert stops[-1].get("trigger") == "cycle"
+
+
+def test_a_past_runaway_does_not_trip_the_breaker_on_later_rounds(tmp_path, monkeypatch):
+    """Exam 32, leg 2: once one call had been repeated 15 times, the breaker
+    tripped on every later round whatever it called, hiding write_file,
+    web_search and edit_file in turn."""
+    monkeypatch.setattr(al, "get_setting", lambda key, default=None: default, raising=False)
+    monkeypatch.setattr(al, "get_mcp_manager", lambda: None, raising=False)
+    monkeypatch.setattr(al, "estimate_tokens", lambda *a, **k: 10, raising=False)
+    monkeypatch.setattr(al, "blocked_tools_for_owner", lambda owner: set(), raising=False)
+
+    async def _fake_exec(block, *a, **k):
+        return (block.tool_type, {"output": f"ok {block.content!r}", "exit_code": 0})
+    monkeypatch.setattr(al, "execute_tool_block", _fake_exec, raising=False)
+
+    rounds = [
+        "\n".join(["```bash\necho same\n```"] * 15),
+        "```read_file\nb.py\n```",
+        "```read_file\nc.py\n```",
+        "Listo: b.py y c.py leídos.",
+    ]
+    seen = {"n": 0}
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        text = rounds[min(seen["n"], len(rounds) - 1)]
+        seen["n"] += 1
+        yield f'data: {json.dumps({"delta": text})}\n\n'
+        reason = "stop" if seen["n"] >= len(rounds) else "tool_calls"
+        yield f'data: {json.dumps({"type": "finish", "finish_reason": reason})}\n\n'
+        yield "data: [DONE]\n\n"
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fake_stream, raising=False)
+
+    events = _events(_collect(al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": "Lee b.py y c.py"}],
+        max_rounds=10, relevant_tools={"read_file", "bash"}, workspace=str(tmp_path),
+        session_id="sess-runaway", security_gate_bypass=True,
+    )))
+    trips = [e for e in events if e.get("type") == "loop_breaker_triggered"]
+    assert len(trips) <= 1, [t.get("detail") for t in trips]
+    assert all("read_file" not in (t.get("repeated_tools") or []) for t in trips)
