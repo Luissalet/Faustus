@@ -24,6 +24,8 @@ La idea que se repite es que el agente tiene que enseñar su trabajo: de qué co
 
 Local-first significa que eliges dónde se ejecuta la inferencia. Las APIs y los clientes oficiales autenticados consumen la facturación o cuota del proveedor; la inferencia local utiliza tu propio hardware. Elegir un proveedor remoto le envía el contexto necesario para esa petición.
 
+La familia Hoard conectada incluye las herramientas MCP locales de [CookHoard](https://github.com/Luissalet/CookHoard) y [GamerHoard](https://github.com/Luissalet/GamerHoard), [HomeHoard](https://github.com/Luissalet/HomeHoard) para encontrar objetos a partir de una copia local del inventario sin fotos, y [Mercator's Hoard](https://github.com/Luissalet/Mercators-Hoard) como panel local de uso y ventas. El inventario web de HomeHoard actualiza su copia para Faustus tras la primera conexión manual mientras funciona el puente localhost; la copia móvil se transfiere manualmente. Las funciones de audio de Scribe viven en Funes.
+
 ## Inicio rápido
 
 Instala Docker y Docker Compose y, a continuación:

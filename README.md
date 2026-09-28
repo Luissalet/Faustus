@@ -24,6 +24,8 @@ The recurring idea is that the agent has to show its work: which context a turn 
 
 Local-first means you choose where inference happens. Cloud APIs and authenticated official clients use their provider's billing or subscription quota; local inference uses your own hardware. Selecting a remote provider sends it the context needed for that request.
 
+The connected Hoard family includes local [CookHoard](https://github.com/Luissalet/CookHoard) and [GamerHoard](https://github.com/Luissalet/GamerHoard) MCP tools, [HomeHoard](https://github.com/Luissalet/HomeHoard) for finding belongings from a photo-free local inventory snapshot, and [Mercator's Hoard](https://github.com/Luissalet/Mercators-Hoard) for a local usage and sales dashboard. HomeHoard's web inventory refreshes its Faustus snapshot after the first manual connection while its localhost bridge is running; its mobile copy is transferred manually. Scribe's audio capabilities live in Funes.
+
 ## Quick start
 
 Install Docker and Docker Compose, then:
