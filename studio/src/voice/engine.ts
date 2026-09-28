@@ -27,8 +27,10 @@ export class TurnDetector {
     if (!this.started) this.started = now;
     if (level > 0.025) { this.voiced += 50; this.lastVoice = now; }
     if (now - this.started >= this.maximumMs) return 'limit';
-    if (this.voiced >= 250 && now - this.lastVoice > this.silenceMs) return 'silence';
-    if (!this.voiced && now - this.started > 15000) return 'empty';
+    // A short "sí" or "no" may last less than 250 ms. Do not leave the
+    // microphone waiting until the one-minute limit after a brief answer.
+    if (this.voiced >= 100 && now - this.lastVoice > this.silenceMs) return 'silence';
+    if (this.voiced < 100 && now - this.started > 15000) return 'empty';
     return 'continue';
   }
 }
@@ -76,15 +78,15 @@ export function isStopPhrase(text: string, extra?: string[]): boolean {
   return !!extra && extra.some(p => normalizeUtterance(p) === clean);
 }
 
-/** Whisper's well-known silence/no-speech hallucinations, and anything too short to be real. */
-export const HALLUCINATIONS = ['you', 'thank you', 'thanks for watching', 'gracias', 'subtítulos'];
+/** Stock ASR artifacts. Short answers and ordinary acknowledgements are speech. */
+export const HALLUCINATIONS = ['thanks for watching'];
 export function isHallucination(text: string): boolean {
   const clean = normalizeUtterance(text);
-  if (clean.length <= 2) return true;
+  if (!clean.length) return true;
   if (HALLUCINATIONS.some(p => normalizeUtterance(p) === clean)) return true;
   // "Subtítulos realizados por la comunidad de Amara.org" and its many
   // variants: a whole-utterance hallucination that always starts this way.
-  return clean.startsWith('subtitulos');
+  return /^(subtitulos (?:realizados por|por)|subtitles by|captions by)(?:\s|$)/.test(clean);
 }
 
 /** true when a just-heard utterance is really the tail of what Faustus itself was saying (mic re-heard the speaker). */

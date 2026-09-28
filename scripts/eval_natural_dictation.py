@@ -53,6 +53,12 @@ CASES = [
     ("decimal_correction", "dictate", "", "El precio es 15,50, perdón, 16,50 euros, sin IVA.", ["El precio es 16,50 euros sin IVA"]),
     ("revise_draft", "revise", "Nos vemos el martes a las seis. Lleva las notas.", "Cambia martes por jueves y deja lo demás igual.", ["Nos vemos el jueves a las seis Lleva las notas"]),
     ("revise_negation", "revise", "Quiero borrar las notas de HomeHoard.", "No, mejor cambia borrar por conservar.", ["Quiero conservar las notas de HomeHoard"]),
+    ("short_yes", "dictate", "", "Sí.", ["Sí"]),
+    ("short_no", "dictate", "", "No.", ["No"]),
+    ("acknowledgement", "dictate", "", "Gracias.", ["Gracias"]),
+    ("short_number", "dictate", "", "42", ["42"]),
+    ("successive_repairs", "dictate", "", "Reserva para el martes, perdón, el miércoles, no, mejor el jueves a las seis.", ["Reserva para el jueves a las seis"]),
+    ("meaningful_bueno", "dictate", "", "El resultado es bueno, pero no es definitivo.", ["El resultado es bueno pero no es definitivo"]),
 ]
 
 

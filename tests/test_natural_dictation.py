@@ -13,6 +13,15 @@ def resolve(*args, **kwargs):
     return "http://127.0.0.1:8081/v1/chat/completions", "test-main", {}
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("text", ["Sí.", "No", "¡Gracias!", "OK", "42", "Thank you."])
+async def test_short_answers_need_no_model(text):
+    def unavailable(*args, **kwargs):
+        raise AssertionError("Short answer must not resolve or call a model")
+    result = await polish(text, resolve=unavailable)
+    assert result == {"text": text, "raw_text": text, "status": "unchanged"}
+
+
 @pytest.mark.parametrize("raw,edited,accepted", [
     ("Eh compra tres perdón dos litros", "Compra dos litros.", True),
     ("No, no, no quiero borrar nada", "No, no, no quiero borrar nada.", True),

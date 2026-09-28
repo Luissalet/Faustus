@@ -43,7 +43,8 @@ def prepare(directory, corpus="chm150", sample_offset=0):
     disfluent = corpus == "disfluency"
     dataset = "amaai-lab/DisfluencySpeech" if disfluent else DATASET
     source_page = "https://huggingface.co/datasets/" + dataset
-    for offset in ((sample_offset,) if disfluent else (0, 700, 1400, 2100)):
+    offsets = (sample_offset,) if disfluent else tuple(sample_offset + n for n in (0, 700, 1400, 2100))
+    for offset in offsets:
         response = requests.get("https://datasets-server.huggingface.co/rows", params={
             "dataset": dataset, "config": "default" if disfluent else "chm150_asr", "split": "test" if disfluent else "train", "offset": offset, "length": 100}, timeout=30)
         response.raise_for_status()
@@ -71,9 +72,11 @@ def prepare(directory, corpus="chm150", sample_offset=0):
             count += 1
             if count == (4 if disfluent else 2):
                 break
+    if not selected:
+        raise ValueError("No audio samples selected; check dataset split and sample offset")
     manifest = {"source": source_page, "license": "Apache-2.0" if disfluent else "CC-BY-SA-4.0",
                 "attribution": "DisfluencySpeech, Kyra Wang and Dorien Herremans (2024)" if disfluent else "CHM150 CORPUS, Carlos Daniel Hernandez Mena and Abel Herrera (2016)",
-                "selection": f"First four test rows from offset {sample_offset} whose transcript_b differs from transcript_c; exploratory repair subset." if disfluent else "First two distinct speakers with clips >=4 seconds in each 100-row window at offsets 0,700,1400,2100; not a representative test split.",
+                "selection": f"First four test rows from offset {sample_offset} whose transcript_b differs from transcript_c; exploratory repair subset." if disfluent else f"First two distinct speakers with clips >=4 seconds in each 100-row window at offsets {offsets}; not a representative test split.",
                 "samples": selected}
     (directory / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return manifest

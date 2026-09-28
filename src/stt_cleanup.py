@@ -41,8 +41,8 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 # near-silence, normalized (lowercase, punctuation stripped) at match time.
 # A segment is dropped only when its ENTIRE normalized text equals one of
 # these entries — never a substring match, so "gracias por tu ayuda" is
-# left alone while a bare "gracias" (a whole segment on its own, the shape
-# Whisper actually produces on silence) is dropped.
+# left alone. Ordinary acknowledgements such as "gracias" and "thank you"
+# cannot be distinguished from hallucinations using text alone; keep them.
 HALLUCINATION_PHRASES: Tuple[Tuple[str, str], ...] = (
     # English
     ("thanks for watching", "en"),
@@ -54,9 +54,6 @@ HALLUCINATION_PHRASES: Tuple[Tuple[str, str], ...] = (
     ("dont forget to subscribe", "en"),
     ("see you in the next video", "en"),
     ("see you next time", "en"),
-    ("thank you", "en"),
-    ("thanks", "en"),
-    ("you", "en"),
     # Spanish
     ("gracias por ver el video", "es"),
     ("gracias por ver el vídeo", "es"),
@@ -66,7 +63,6 @@ HALLUCINATION_PHRASES: Tuple[Tuple[str, str], ...] = (
     ("dale like y suscribete", "es"),
     ("nos vemos en el proximo video", "es"),
     ("nos vemos en el próximo vídeo", "es"),
-    ("gracias", "es"),
 )
 
 _HALLUCINATION_SET = frozenset(p for p, _lang in HALLUCINATION_PHRASES)

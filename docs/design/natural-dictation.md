@@ -106,6 +106,55 @@ Latest measured results (small exploratory samples, 2026-09-28):
 
 ## Open-source precedents and design decisions
 
+### Follow-up: short turns and independent ASR comparison
+
+The voice frontend previously rejected all normalized utterances of two or fewer
+characters, including Spanish `sí` and `no`. Backend cleanup also discarded
+ordinary acknowledgements (`gracias`, `thank you`, `thanks`, `you`). These rules
+now preserve speech; known stock video-credit artifacts still have separate
+filters. A subtitle request is no longer discarded just because it starts with
+`subtítulos`. Text alone cannot prove that an acknowledgement is hallucinated.
+
+The endpoint detector now accepts a brief answer (100 ms of positive level
+samples); previously a response under 250 ms could leave it waiting up to its
+60-second limit. An isolated positive sample expires at the 15-second empty
+turn timeout. This is a regression fix to the existing energy detector, not a
+claim of semantic endpointing or measured microphone accuracy.
+
+Complete short answers bypass the LLM editor. Actual development HTTP checks
+for `sí`, `no`, `gracias`, and `42` took 7–51 ms instead of the prior 2.4–3.8 s
+editing calls. Audio recognition latency is additional. An 18-case text suite
+with 3.8 also passes, including successive corrections. Backend checks: 57;
+component tests verify short answers reach review and send exactly once.
+
+Following Handy's model choices, an isolated `onnx-asr` 0.12.0 / ONNX Runtime
+1.30.0 CPU experiment evaluated Parakeet V3 INT8. Its
+[runtime](https://github.com/istupakov/onnx-asr) is MIT; the
+[NVIDIA model / ONNX conversion](https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx)
+is CC BY 4.0. No Faustus dependencies or recognizer settings were changed.
+
+| Spanish sample | Whisper small word edits | Parakeet word edits | Median recognition time: small / Parakeet |
+| --- | --- | --- | --- |
+| Original 8 clips, 102 reference words | 25 | 9 | 2.03 / 0.605 seconds |
+| Additional 8 clips, 101 reference words | 14 | 8 | 1.796 / 0.556 seconds |
+
+The second sample uses windows at 200, 900, 1600 and 2300; its eight speakers
+do not overlap the original sample. Results are exploratory central-Mexican
+image descriptions, not broad Spanish validation. One held-out clip worsens
+from 4 to 6 edits with Parakeet. WER includes fillers, accents and number
+formatting. Parakeet output is raw; the Whisper baseline uses Faustus cleanup.
+Parakeet's four English held-out clips have 3 edits / 109 verbatim-reference
+words, which is a different target from the polished-reference editor metric.
+It remains an evaluation candidate, not a shipped Faustus provider. Its startup
+and download time are reported separately; it is not a streaming recognizer.
+
+Reproduce with `scripts/eval_dictation_onnx.py --directory <manifest-directory>
+--output <report.json>` in a separate environment containing `onnx-asr[cpu,hub]`,
+`soundfile` and `requests`. The command explicitly downloads the selected weights
+on first use. Local reports: `parakeet-chm150.json`,
+`parakeet-chm150-heldout.json`, `small-chm150-heldout.json`, `parakeet-heldout.json`
+under the QA directory above. Empty dataset selections now fail visibly.
+
 These are inspected references, not dependencies or claims of code reuse:
 
 | Reference | Concept worth adapting | Faustus decision |

@@ -57,6 +57,10 @@ async def polish(text: str, mode: str = "clean", draft: str = "", *, owner=None,
     result = {"text": baseline, "raw_text": original, "status": "unchanged"}
     if not original:
         return result
+    # There is nothing to rewrite in a complete short acknowledgement/answer.
+    # Avoid several seconds of model latency on the most common voice turns.
+    if mode == "clean" and re.fullmatch(r"[¡¿\s]*(?:sí|si|no|ok|vale|gracias|yes|nope|thanks|thank you|\d+(?:[.,]\d+)?)[.!?\s]*", original, re.IGNORECASE):
+        return result
     try:
         if complete is None:
             from src.llm_core import llm_call_async

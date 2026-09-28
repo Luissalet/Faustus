@@ -39,9 +39,11 @@ assert.equal(isStopPhrase('nonsense', undefined), false);
 
 // --- hallucination list ------------------------------------------------------------
 for (const phrase of HALLUCINATIONS) assert.equal(isHallucination(phrase), true, `expected hallucination: ${phrase}`);
-assert.equal(isHallucination('Thank you.'), true);
+assert.equal(isHallucination('Thank you.'), false);
 assert.equal(isHallucination('Subtítulos realizados por la comunidad de Amara.org'), true);
-assert.equal(isHallucination('ok'), true); // <= 2 chars after normalizing
+for (const phrase of ['ok', 'sí', 'no', '42', 'gracias', 'you', 'subtítulos en español']) {
+  assert.equal(isHallucination(phrase), false, `must preserve speech: ${phrase}`);
+}
 assert.equal(isHallucination('you are right about that'), false);
 assert.equal(isHallucination('what is the weather today'), false);
 
@@ -65,6 +67,12 @@ for (let now = 1000; now <= 1400; now += 50) detector.push(0.1, now);
 assert.equal(detector.push(0, 2200), 'continue'); // 800ms of silence: turn stays open
 assert.equal(detector.push(0, 2350), 'silence'); // 950ms of silence: turn ends
 assert.equal(new TurnDetector().silenceMs, 900); // new default (was 1200)
+const brief = new TurnDetector(900);
+for (const now of [50, 100, 150]) brief.push(0.1, now);
+assert.equal(brief.push(0, 1100), 'silence');
+const click = new TurnDetector(900);
+click.push(0.1, 50);
+assert.equal(click.push(0, 15100), 'empty');
 
 // --- barge-in constants ------------------------------------------------------------
 assert.ok(BARGE_IN_THRESHOLD > 0.025); // stricter than the base VAD threshold

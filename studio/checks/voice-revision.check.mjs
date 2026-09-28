@@ -82,7 +82,24 @@ try {
   await flush(() => finishOpen({ close() { closedLateMic++; } }));
   assert.equal(closedLateMic, 1);
   assert.equal(host.querySelector('textarea').value, 'Meet Friday at noon.'); assert.ok(button('Send message'));
+  // Real panel filtering must preserve useful short replies, not silently
+  // restart listening or discard them as ASR hallucinations.
+  openMicResult = undefined;
+  const shortReplies = ['sí', 'no', 'OK', 'gracias'];
+  for (const utterance of shortReplies) {
+    await flush(() => root.render(React.createElement(MemoryRouter, null,
+      React.createElement(VoicePanel, { key: utterance, busy: false, sessionName: 'Short reply',
+        onSend: text => sent.push(text), onStop() {}, onClose() {} }))));
+    await flush(() => button('Start speaking').click());
+    await flush(() => finishCapture(utterance));
+    assert.equal(host.querySelector('[data-testid="voice-panel"]').dataset.phase, 'review', utterance);
+    assert.equal(host.querySelector('textarea').value, utterance);
+    assert.equal(button('Send message').disabled, false);
+    await flush(() => button('Send message').click());
+    assert.equal(sent.at(-1), utterance);
+  }
+  assert.deepEqual(sent, shortReplies);
   await flush(() => root.unmount());
-  console.log('ALL OK: voice correction, visible draft, finish, review-only, cancel, failure');
+  console.log('ALL OK: voice correction, visible draft, finish, review-only, cancel, failure and short replies sent');
 } finally { unlinkSync(output); await dom.happyDOM.close(); }
 

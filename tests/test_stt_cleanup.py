@@ -30,7 +30,7 @@ def test_hallucination_table_matches_whole_segment_only_en():
 def test_hallucination_table_matches_whole_segment_only_es():
     assert is_hallucination("Gracias por ver el vídeo")
     assert is_hallucination("¡Suscríbete!")
-    assert is_hallucination("¡Gracias!")
+    assert not is_hallucination("¡Gracias!")
     assert not is_hallucination("Gracias por la propuesta, la revisamos mañana")
 
 
@@ -93,7 +93,7 @@ def test_clean_segments_drops_hallucination_only_segments():
 
 
 def test_clean_segments_silence_only_transcript_yields_empty_output():
-    segments = [_seg(0.0, 1.0, "[Music]"), _seg(1.0, 2.0, "you")]
+    segments = [_seg(0.0, 1.0, "[Music]"), _seg(1.0, 2.0, "[Silence]")]
     cleaned, stats = clean_segments(segments)
     assert cleaned == []
     assert stats["segments_out"] == 0
@@ -125,6 +125,13 @@ def test_clean_text_flat_string_provider():
     text2, stats2 = clean_text("the the the the the report is done")
     assert text2 == "the report is done"
     assert stats2["ngram_loops_collapsed"] == 4
+
+
+def test_short_answers_survive_provider_cleanup():
+    for phrase in ["Sí", "No", "OK", "42", "Gracias", "Thank you", "Thanks", "You"]:
+        text, stats = clean_text(phrase)
+        assert text == phrase
+        assert stats["removed_hallucination"] == 0
 
 
 def test_format_timestamp():
