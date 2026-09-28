@@ -95,7 +95,7 @@ function ConnectorRow({
   // connector: with the app off the adapter can still be connected (a stdio
   // bridge answers tools/list on its own), and the honest label then is
   // "Disconnect", not an invitation to connect what already is.
-  const connected = c.status.adapter.mcp_status === 'connected' || c.server.status === 'connected';
+  const connected = c.status.adapter.mcp_status === 'connected' || c.server?.status === 'connected';
 
   const run = async (key: string, fn: () => Promise<unknown>) => {
     setBusy(key);
@@ -116,7 +116,7 @@ function ConnectorRow({
     <li className="fs-conn__row" data-testid="connector-row" data-state={c.status.state}>
       <div className="fs-conn__row-main">
         <span className="fs-conn__identity">
-          <strong>{c.server.name || c.preset?.name || c.id}</strong>
+          <strong>{c.server?.name || c.preset?.name || c.id}</strong>
           {c.preset?.purpose && <span className="fs-set__help">{t(c.preset.purpose)}</span>}
         </span>
         <StateChip state={c.status.state} />
@@ -203,7 +203,7 @@ function ConnectorRow({
         />
         {confirmingRemove && (
           <span className="fs-modes__confirm" data-testid="connector-remove-confirm">
-            {t('Remove "{name}"?', { name: c.server.name })}
+            {t('Remove "{name}"?', { name: c.server?.name || c.preset?.name || c.id })}
             <Button size="sm" variant="danger" label={t('Remove')} loading={busy === 'delete'} onClick={() => void run('delete', () => deleteConnector(c.id))} />
             <Button size="sm" variant="ghost" label={t('Cancel')} disabled={!!busy} onClick={() => setConfirmingRemove(false)} />
           </span>
