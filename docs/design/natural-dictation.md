@@ -101,7 +101,7 @@ Latest measured results (small exploratory samples, 2026-09-28):
 - 36 backend checks, frontend capture/revision checks, TypeScript/build and a
   visual panel smoke check passed. Live microphone capture remains untested.
 - A subsequent full audio-to-editor run through port 7001 reproduced the held-out
-  10-to-9 result. Three repeated editor inputs hit the existing response cache;
+  10-to-9 result. Repeated editor inputs hit the existing response cache;
   that run must not be used to claim uncached end-to-end latency.
 
 ## Open-source precedents and design decisions
