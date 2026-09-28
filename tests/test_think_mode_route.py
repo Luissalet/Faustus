@@ -210,6 +210,16 @@ def test_fast_mode_reaches_llama_server(client, settings):
     assert "reasoning_budget" not in client.payload
 
 
+@pytest.mark.parametrize("effort", ["off", "none"])
+def test_explicit_effort_off_reaches_llama_server(client, settings, effort):
+    from src.reasoning_levels import overrides_for
+
+    _stream(overrides_for(effort), "Calcula los ingredientes de dos recetas")
+    assert client.payload["chat_template_kwargs"] == {"enable_thinking": False}
+    assert "reasoning_budget" not in client.payload
+    assert "reasoning_effort" not in client.payload
+
+
 def test_auto_think_reaches_llama_server(client, settings):
     text = "¿por qué falla este test? AssertionError"
     gen, ev = _resolve("auto", {}, text)

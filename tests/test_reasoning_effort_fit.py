@@ -64,6 +64,8 @@ def test_an_explicit_level_becomes_overrides():
 
     assert overrides_for("auto") == {}
     assert overrides_for("none") == {"think": False}
+    assert overrides_for("off") == {"think": False}
+    assert overrides_for(" OFF ") == {"think": False}
     assert overrides_for("low") == {"think": True, "reasoning_effort": "low", "reasoning_budget": 1024}
     assert overrides_for("medium")["reasoning_budget"] == 4096
     assert overrides_for("xhigh", budgets={"deep": 20000}) == {

@@ -30,13 +30,13 @@ def levels_for(endpoint_url: str) -> Optional[Dict[str, Any]]:
 def overrides_for(effort: str, *, budgets: Optional[Dict[str, int]] = None) -> Dict[str, Any]:
     """``gen_overrides`` for an explicit level picked in the composer.
 
-    "none" turns thinking off; any other level thinks, with the level passed
-    through (``llm_core`` fits it to the template) and a budget that grows
-    with it."""
+    "none" and the CLI alias "off" turn thinking off; any other level thinks,
+    with the level passed through (``llm_core`` fits it to the template) and
+    a budget that grows with it."""
     level = str(effort or "").strip().lower()
     if level in ("", "auto"):
         return {}
-    if level == "none":
+    if level in ("none", "off"):
         return {"think": False}
     b = {"light": 1024, "think": 4096, "deep": 16384}
     b.update(budgets or {})
