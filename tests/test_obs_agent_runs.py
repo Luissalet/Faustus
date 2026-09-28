@@ -62,6 +62,33 @@ def _decode(ev: str):
     return json.loads(ev[6:].rstrip("\n"))
 
 
+@pytest.mark.asyncio
+async def test_stop_reports_cancellation_to_live_and_replay_subscribers():
+    entered = asyncio.Event()
+
+    async def body():
+        entered.set()
+        yield _delta("partial answer")
+        await asyncio.Event().wait()
+
+    run = agent_runs.start("stop-signal", body())
+    await entered.wait()
+
+    async def collect():
+        return [ev async for ev in agent_runs.subscribe("stop-signal", run)]
+
+    live = asyncio.create_task(collect())
+    await asyncio.sleep(0)
+    assert agent_runs.stop("stop-signal", run.run_id)
+    events = await asyncio.wait_for(live, 1)
+    assert run.status == "stopped"
+    assert _decode(events[-1])["type"] == "cancelled"
+    assert _decode(events[-1])["reason"] == "task_cancelled"
+    assert _decode(events[-1])["stream_id"] == run.run_id
+    assert await collect() == events
+    await _quiesce(run)
+
+
 # ── OBS-01: trace_id / step_id / sequence / stream_id on every event ───────
 
 @pytest.mark.asyncio

@@ -1180,6 +1180,12 @@ async def _drain(session_id: str, run: _Run, agen: AsyncGenerator[str, None],
             run.status = "waiting_user" if _ended_paused else "done"
     except asyncio.CancelledError:
         run.status = "stopped"
+        # Closing the stream alone looks like a successful answer to clients.
+        # Publish before cleanup/waking subscribers so replay carries the same
+        # terminal outcome as a client that was connected when Stop arrived.
+        _publish(run, "data: " + json.dumps({
+            "type": "cancelled", "reason": run.cancel_requested or "task_cancelled",
+        }) + "\n\n")
         # Let the wrapped generator's own CancelledError handler run (it saves
         # the partial response to the session).
         try:
