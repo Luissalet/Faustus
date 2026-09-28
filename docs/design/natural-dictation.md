@@ -63,7 +63,63 @@ Human review of names, negations, numbers and added meaning remains necessary.
 
 The real clips exposed what constructed cases missed: ASR can substitute names
 and content words, and a free-form editor can preserve errors or invent a smooth
-connection. Do not enable this prototype as an automatic replacement for speech.
+connection. The initial unrestricted prototype is superseded by the constrained
+editor below; neither can reliably recover words misheard by ASR.
+
+## Integrated experimental editor
+
+Faustus now separates two operations at `/api/stt/polish`:
+
+- `clean`: remove fillers and abandoned alternatives, adjust punctuation; retain
+  the original. Added or reordered words and changes inside literal quotes fall
+  back to the original. This check limits invention, but does not prove semantic
+  equivalence: deleting a word can still change meaning.
+- `revise`: apply an explicit spoken instruction to the current draft. The voice
+  panel keeps the draft visible and returns to review, without sending the edit.
+
+The voice panel exposes natural dictation and original-transcript recovery.
+An undo action restores the draft before the last voice correction, including
+manual edits. Filler-only cleanup produces no message.
+Composer dictation also uses cleanup. The editor uses the configured default chat
+model, not the utility helper. Tests use qwen3.8-27b-q8-llamacpp on port 8081.
+Timeouts preserve text, and cancellation invalidates late replies. Desktop-wide
+dictation and meeting transcription are not yet connected to this editor.
+
+Latest measured results (small exploratory samples, 2026-09-28):
+
+- Production editor: 12/12 constructed cases meet normalized expectations. One
+  quote case succeeds by rejecting an incorrect edit and keeping the original.
+- Actual application endpoint, eight existing English ASR transcripts: 26 to 17
+  word edits against 151 clean-reference words; development subset 16 to 8,
+  held-out subset 10 to 9. The held-out set has one worse result, and recognition
+  errors such as names remain. This is text editing after real-audio ASR, not a
+  fresh end-to-end microphone test.
+- Isolated large-v3-turbo CPU int8, same eight Spanish clips: 21/102 word edits,
+  median about 7.66 seconds versus small's 25/102 and about 2.03 seconds with
+  explicit Spanish. Filler removal and digit formatting affect this metric.
+  No default recognizer change: the latency cost needs further evaluation.
+- 36 backend checks, frontend capture/revision checks, TypeScript/build and a
+  visual panel smoke check passed. Live microphone capture remains untested.
+- A subsequent full audio-to-editor run through port 7001 reproduced the held-out
+  10-to-9 result. Three repeated editor inputs hit the existing response cache;
+  that run must not be used to claim uncached end-to-end latency.
+
+## Open-source precedents and design decisions
+
+These are inspected references, not dependencies or claims of code reuse:
+
+| Reference | Concept worth adapting | Faustus decision |
+| --- | --- | --- |
+| [Academic Rambler](https://github.com/BerkeleyHCI/rambler), [paper](https://arxiv.org/abs/2401.10838) | Speech as editable idea blocks, semantic zoom, merging/splitting and requested edits | Keep original speech and explicit editable drafts. Consider idea-block operations after basic dictation quality is established. This is not Pixel's implementation; repository has no root license listed, so do not copy its code without clarifying permission. |
+| [OpenTypeless pipeline](https://github.com/tover0314-w/opentypeless/blob/main/src-tauri/src/pipeline.rs) (MIT) | Distinct recording/transcription/polishing/output states, selected-text edits, raw and polished text | Separate cleanup from revision, preserve drafts, and measure each stage. Its desktop capture/clipboard infrastructure is not needed inside Faustus. |
+| [OpenWhispr routing](https://github.com/OpenWhispr/openwhispr/blob/main/src/helpers/dictationRouting.js) (MIT) | Explicit cleanup, translation and agent routes; an assistant request does not silently become cleanup | Spoken draft correction has its own route and failure behavior. It must not be submitted as an ordinary message on failure. |
+| [Handy](https://github.com/cjpais/Handy) (MIT) | Hold/toggle capture, Silero VAD, interchangeable Whisper/Parakeet engines | Preserve manual completion; benchmark end-of-turn handling and CPU-friendly ASR before choosing a larger default. VAD filtering is not proof of good conversational endpointing. |
+| [Ramblr](https://github.com/trevornk/ramblr), [cleanup design](https://github.com/trevornk/ramblr/blob/main/docs/adr/0001-cleanup-waterfall.md) (GPL-3.0) | Optional cleanup with raw fallback, bounded foreground latency, segmented transcription | Keep the successful raw result if polishing fails. Investigate segment accumulation to reduce final waiting; avoid adding a multi-provider chain without need. |
+
+Next quality gates: broader Spanish accents and code switching, names and spoken
+numbers, pauses inside corrections, repeated draft edits and undo, and long speech.
+Measure content preservation separately from WER and end-to-end latency. Keep this
+integrated in Faustus until a genuinely reusable standalone component emerges.
 
 ## Reproduce
 
@@ -72,10 +128,12 @@ clips only; neither downloads the whole corpus nor changes Faustus settings.
 
 ```powershell
 python scripts/eval_natural_dictation.py --output D:/LocalAI/qa-natural-dictation/text.json
+python scripts/eval_natural_dictation.py --production-editor --output D:/LocalAI/qa-natural-dictation/production-text.json
 python scripts/eval_dictation_audio.py --prepare --directory D:/LocalAI/qa-natural-dictation/chm150
 python scripts/eval_dictation_audio.py --prepare --corpus disfluency --language en --polish --directory D:/LocalAI/qa-natural-dictation/repairs
 python scripts/eval_dictation_audio.py --prepare --corpus disfluency --sample-offset 100 --language en --polish --directory D:/LocalAI/qa-natural-dictation/heldout
 ./venv/Scripts/python.exe scripts/eval_dictation_audio.py --local-model small --beam-size 5 --language es --directory D:/LocalAI/qa-natural-dictation/chm150
+./venv/Scripts/python.exe scripts/eval_dictation_audio.py --production-editor --language en --directory D:/LocalAI/qa-natural-dictation/heldout --output D:/LocalAI/qa-natural-dictation/production-audio.json
 ```
 
 The initial results are under `D:/LocalAI/qa-natural-dictation-20260928` on the

@@ -6,9 +6,11 @@ Outputs synthetic transcripts, candidate edits and latency for human review.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import re
 import time
+import sys
 import unicodedata
 import urllib.request
 from pathlib import Path
@@ -65,6 +67,7 @@ def main() -> int:
     parser.add_argument("--model", default="qwen3.8-27b-q8-llamacpp")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--limit", type=int, default=len(CASES))
+    parser.add_argument("--production-editor", action="store_true")
     args = parser.parse_args()
     results = []
     for name, mode, draft, transcript, expected in CASES[:args.limit]:
@@ -76,14 +79,23 @@ def main() -> int:
         started = time.perf_counter()
         result = {"case": name, "mode": mode, "draft": draft, "transcript": transcript, "expected": expected}
         try:
-            req = urllib.request.Request(args.url, data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=60) as response:
-                raw = json.load(response)
-            choice = raw["choices"][0]
-            edited = json.loads(choice["message"]["content"])["text"]
-            if not isinstance(edited, str) or choice.get("finish_reason") != "stop":
-                raise ValueError("Non-text or truncated output")
-            result.update(text=edited, exact_normalized_match=normalize(edited) in [normalize(x) for x in expected], usage=raw.get("usage"), served_model=raw.get("model"))
+            if args.production_editor:
+                sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+                from services.stt.natural_dictation import polish
+                value = asyncio.run(polish(transcript, "clean" if mode == "dictate" else mode, draft,
+                    resolve=lambda *a, **kw: (args.url, args.model, {})))
+                edited = value["text"]
+                result.update(text=edited, status=value["status"], reason=value.get("reason"),
+                              exact_normalized_match=normalize(edited) in [normalize(x) for x in expected], served_model=value.get("model"))
+            else:
+                req = urllib.request.Request(args.url, data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"})
+                with urllib.request.urlopen(req, timeout=60) as response:
+                    raw = json.load(response)
+                choice = raw["choices"][0]
+                edited = json.loads(choice["message"]["content"])["text"]
+                if not isinstance(edited, str) or choice.get("finish_reason") != "stop":
+                    raise ValueError("Non-text or truncated output")
+                result.update(text=edited, exact_normalized_match=normalize(edited) in [normalize(x) for x in expected], usage=raw.get("usage"), served_model=raw.get("model"))
         except Exception as exc:
             result.update(error=f"{type(exc).__name__}: {exc}", exact_normalized_match=False)
         result["seconds"] = round(time.perf_counter() - started, 3)

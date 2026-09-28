@@ -1,7 +1,9 @@
 # routes/stt_routes.py
 """STT API routes — multi-provider (local Whisper, API endpoint, browser)."""
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Request
+from pydantic import BaseModel, Field
+from typing import Literal
 from starlette.concurrency import run_in_threadpool
 from services.speech_runtime import capabilities
 import anyio
@@ -12,10 +14,24 @@ from src.upload_limits import read_upload_limited, STT_MAX_AUDIO_BYTES
 logger = logging.getLogger(__name__)
 
 
+class DictationEdit(BaseModel):
+    text: str = Field(max_length=8000)
+    mode: Literal["clean", "revise"] = "clean"
+    draft: str = Field(default="", max_length=8000)
+
+
 def setup_stt_routes(stt_service):
     """Setup STT routes with the provided STT service"""
     router = APIRouter(prefix="/api/stt", tags=["stt"])
     limiter = anyio.CapacityLimiter(1)
+
+    @router.post("/polish")
+    async def polish_dictation(body: DictationEdit, request: Request):
+        from services.stt.natural_dictation import polish
+        from src.auth_helpers import effective_user
+        if body.mode == "revise" and not body.draft.strip():
+            raise HTTPException(422, "A draft is required for spoken revision.")
+        return await polish(body.text, body.mode, body.draft, owner=effective_user(request))
 
     @router.get("/capabilities")
     async def get_capabilities():

@@ -68,3 +68,52 @@ const browser = await capture({ ...config, provider: 'browser', execution: 'brow
 rec.onresult({ results: [[{ transcript: 'Hola Faustus' }]] }); browser.stop();
 assert.equal(await browser.done, 'Hola Faustus'); assert.equal(starts, 1);
 console.log('ALL OK: audio permission, late grant, cancel, one upload, late TTS and browser recognition');
+// Natural dictation runs for browser capture too and preserves its original.
+let polishRequests = 0;
+globalThis.fetch = async (url, options) => {
+  assert.equal(url, '/api/stt/polish'); polishRequests++;
+  assert.deepEqual(JSON.parse(options.body), { text: 'um book Friday no Saturday', mode: 'clean' });
+  return new Response(JSON.stringify({ status: 'edited', text: 'Book Saturday.' }));
+};
+const natural = await capture({ ...config, execution: 'browser' }, { signal: new AbortController().signal, natural: true });
+rec.onresult({ results: [[{ transcript: 'um book Friday no Saturday' }]] }); natural.stop();
+assert.equal(await natural.done, 'Book Saturday.'); assert.equal(natural.rawText, 'um book Friday no Saturday');
+assert.equal(polishRequests, 1);
+// Stop commands must never reach the editor.
+const stopCommand = await capture({ ...config, execution: 'browser' }, { signal: new AbortController().signal, natural: true });
+rec.onresult({ results: [[{ transcript: 'stop' }]] }); stopCommand.stop();
+assert.equal(await stopCommand.done, 'stop'); assert.equal(polishRequests, 1);
+// Network failure preserves speech instead of dropping the user's message.
+globalThis.fetch = async () => { throw new Error('offline'); };
+const fallback = await capture({ ...config, execution: 'browser' }, { signal: new AbortController().signal, natural: true });
+rec.onresult({ results: [[{ transcript: 'keep my words' }]] }); fallback.stop();
+assert.equal(await fallback.done, 'keep my words');
+// Cancelling after ASR prevents a late editor response from being submitted.
+let finishPolish;
+globalThis.fetch = () => new Promise(resolve => { finishPolish = resolve; });
+const cancelledPolish = await capture({ ...config, execution: 'browser' }, { signal: new AbortController().signal, natural: true });
+rec.onresult({ results: [[{ transcript: 'late words' }]] }); cancelledPolish.stop();
+await new Promise(resolve => setTimeout(resolve, 0)); cancelledPolish.cancel();
+finishPolish(new Response(JSON.stringify({ status: 'edited', text: 'Late words.' })));
+await assert.rejects(cancelledPolish.done, { name: 'AbortError' });
+console.log('ALL OK: natural dictation, original, stop command, fallback and cancelled polish');
+// Server ASR uses the same editor after releasing the microphone.
+const paths = [];
+globalThis.fetch = async (url) => {
+  paths.push(url);
+  return new Response(JSON.stringify(url === '/api/stt/transcribe'
+    ? { text: 'eh martes no miércoles', language: 'es' }
+    : { status: 'edited', text: 'Miércoles.' }));
+};
+const localNatural = await capture(config, { signal: new AbortController().signal, natural: true });
+await new Promise(resolve => setTimeout(resolve, 60)); localNatural.stop();
+assert.equal(await localNatural.done, 'Miércoles.');
+assert.equal(localNatural.rawText, 'eh martes no miércoles'); assert.equal(localNatural.language, 'es');
+assert.deepEqual(paths, ['/api/stt/transcribe', '/api/stt/polish']);
+console.log('ALL OK: local ASR and natural dictation pipeline');
+// An all-filler utterance can legitimately clean to no message at all.
+globalThis.fetch = async () => new Response(JSON.stringify({ status: 'edited', text: '' }));
+const fillerOnly = await capture({ ...config, execution: 'browser' }, { signal: new AbortController().signal, natural: true });
+rec.onresult({ results: [[{ transcript: 'umm eeh' }]] }); fillerOnly.stop();
+assert.equal(await fillerOnly.done, ''); assert.equal(fillerOnly.rawText, 'umm eeh');
+console.log('ALL OK: all-filler cleanup yields no message');

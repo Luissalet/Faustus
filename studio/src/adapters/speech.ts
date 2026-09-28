@@ -7,7 +7,7 @@ export async function startDictation(lang = 'auto', signal?: AbortSignal): Promi
   const controller = new AbortController();
   const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
   const config = await capabilities('stt', combined);
-  const recording = await capture(config, { signal: combined, lang, autoStop: false });
+  const recording = await capture(config, { signal: combined, lang, autoStop: false, natural: true });
   return { done: recording.done, stop: recording.stop, cancel: () => controller.abort() };
 }
 

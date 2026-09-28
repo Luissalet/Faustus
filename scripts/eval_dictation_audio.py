@@ -86,6 +86,8 @@ def main():
     parser.add_argument("--corpus", choices=["chm150", "disfluency"], default="chm150")
     parser.add_argument("--sample-offset", type=int, default=0)
     parser.add_argument("--polish", action="store_true", help="Evaluate the 3.8 editor after ASR where a clean reference exists")
+    parser.add_argument("--production-editor", action="store_true", help="Use Faustus's actual /api/stt/polish endpoint instead of the prototype")
+    parser.add_argument("--output", type=Path, help="Separate report path for model/editor comparisons")
     parser.add_argument("--url", default="http://127.0.0.1:7001")
     parser.add_argument("--language", action="append", default=[])
     parser.add_argument("--local-model", help="Compare an already cached faster-whisper model, without changing Faustus settings")
@@ -125,7 +127,19 @@ def main():
                 result.update(text=body["text"], detected_language=body.get("language"), word_errors=distance, reference_words=count,
                               wer=round(distance / max(count, 1), 4), cleanup_stats=body.get("cleanup_stats"))
                 result["asr_seconds"] = round(time.perf_counter() - started, 3)
-                if args.polish and sample.get("clean_reference"):
+                if args.production_editor:
+                    editor_started = time.perf_counter()
+                    edited = requests.post(args.url + "/api/stt/polish", json={"text": body["text"], "mode": "clean"}, timeout=30)
+                    edited.raise_for_status()
+                    edit = edited.json()
+                    result.update(polished=edit["text"], editor_status=edit.get("status"), editor_reason=edit.get("reason"),
+                                  editor_model=edit.get("model"), editor_seconds=round(time.perf_counter() - editor_started, 3))
+                    if sample.get("clean_reference"):
+                        before, clean_words = errors(sample["clean_reference"], body["text"])
+                        after, _ = errors(sample["clean_reference"], edit["text"])
+                        result.update(clean_reference=sample["clean_reference"], clean_reference_words=clean_words,
+                                      before_clean_errors=before, after_clean_errors=after)
+                elif args.polish and sample.get("clean_reference"):
                     from eval_natural_dictation import SYSTEM
                     editor_started = time.perf_counter()
                     edited = requests.post("http://127.0.0.1:8081/v1/chat/completions", json={
@@ -148,7 +162,7 @@ def main():
             results.append(result)
             report = {"source": manifest["source"], "capabilities": caps, "metric": "Case/punctuation-normalized WER; numbers are not expanded; reference includes fillers. Clean-reference comparisons are separate.", "results": results}
             filename = f"asr-beam{args.beam_size}-results.json" if local_model else "asr-results.json"
-            (args.directory / filename).write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            (args.output or args.directory / filename).write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             print(json.dumps(result, ensure_ascii=True), flush=True)
     return int(any("error" in result for result in results))
 

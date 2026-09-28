@@ -372,6 +372,15 @@ Toda transcripción —tanto la voz de entrada como las notas de reunión— pas
 
 App de escritorio de Windows: un atajo global de «dictar en cualquier lugar» (desactivado por defecto; Configuración → Voz) transcribe en la app que tenga el foco —el correo, una terminal, otro programa— no solo en el cuadro de texto de Studio. Captura la ventana objetivo antes de grabar y entrega el texto pegándolo (el portapapeles se guarda y se restaura después) o escribiéndolo directamente, para apps que bloquean el pegado (`src/dictation_paste.py`, `routes/dictation_routes.py`).
 
+**Dictado natural (experimental):** el cuadro de escritura y el panel de voz de
+Studio pueden limpiar muletillas y autocorrecciones usando el modelo principal
+configurado. Para editar el borrador, desactiva el envío automático y elige
+**Corregir con la voz**; el resultado se queda en revisión. El panel permite recuperar
+la transcripción original. Los errores de reconocimiento, sobre todo nombres,
+siguen necesitando revisión. Este editor aún no se usa en el dictado global ni en
+notas de reunión. Consulta la [investigación, referencias abiertas y resultados
+medidos](docs/design/natural-dictation.md).
+
 ## Arquitectura
 
 | Área | Código |

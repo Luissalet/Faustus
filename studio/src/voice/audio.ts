@@ -1,5 +1,5 @@
 import { locale, t } from '../i18n';
-import { BARGE_IN_MS, BARGE_IN_THRESHOLD, TurnDetector, spokenText } from './engine';
+import { BARGE_IN_MS, BARGE_IN_THRESHOLD, TurnDetector, spokenText, isStopPhrase, isHallucination } from './engine';
 
 export interface SpeechCapabilities {
   provider: string;
@@ -37,6 +37,7 @@ function recognitionConstructor() {
 }
 export interface Capture {
   readonly language?: string;
+  readonly rawText?: string;
   done: Promise<string>;
   stop(): void;
   cancel(): void;
@@ -97,6 +98,8 @@ export function watchForSpeech(analyser: AnalyserNode, signal: AbortSignal, onSp
 
 export interface CaptureOptions {
   signal: AbortSignal;
+  /** Clean fillers and spoken self-corrections after recognition. */
+  natural?: boolean;
   deviceId?: string;
   autoStop?: boolean;
   lang?: string;
@@ -110,6 +113,41 @@ export interface CaptureOptions {
 const aborted = () => new DOMException('Cancelled', 'AbortError');
 
 export async function capture(config: SpeechCapabilities, options: CaptureOptions): Promise<Capture> {
+  const controller = new AbortController();
+  const signal = AbortSignal.any([options.signal, controller.signal]);
+  let transcribing = false;
+  const onTranscribing = () => { if (!transcribing) { transcribing = true; options.onTranscribing?.(); } };
+  const recording = await captureRaw(config, { ...options, signal, onTranscribing });
+  let rawText = '';
+  const done = recording.done.then(async text => {
+    signal.throwIfAborted();
+    rawText = text;
+    if (!options.natural || !text || isStopPhrase(text, config.stop_phrases) || isHallucination(text)) return text;
+    onTranscribing();
+    try {
+      const response = await fetch('/api/stt/polish', {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, mode: 'clean' }),
+        signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
+      });
+      signal.throwIfAborted();
+      if (!response.ok) return text;
+      const result = await response.json() as { text?: string; status?: string };
+      signal.throwIfAborted();
+      return ['edited', 'unchanged'].includes(result.status || '') && typeof result.text === 'string' ? result.text.trim() : text;
+    } catch {
+      signal.throwIfAborted();
+      return text;
+    }
+  });
+  done.catch(() => undefined);
+  return {
+    done, stop: recording.stop, cancel: () => { controller.abort(); recording.cancel(); },
+    analyser: recording.analyser, get language() { return recording.language; }, get rawText() { return rawText; },
+  };
+}
+
+async function captureRaw(config: SpeechCapabilities, options: CaptureOptions): Promise<Capture> {
   const { signal } = options;
   signal.throwIfAborted();
   if (!config.configured || !config.dependency_installed) throw new Error(t('Enable a speech recognition provider in Settings → Voice.'));

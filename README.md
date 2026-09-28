@@ -387,6 +387,14 @@ Every transcript — voice input and meeting notes alike — passes through a de
 
 Windows desktop app: a global "dictate anywhere" hotkey (off by default; Settings → Voice) transcribes into whatever app has focus — email, a terminal, another program — not just Studio's own composer. It captures the target window before recording, then delivers the text by simulated paste (clipboard is saved and restored afterward) or direct keystrokes, for apps that block paste (`src/dictation_paste.py`, `routes/dictation_routes.py`).
 
+**Natural dictation (experimental):** Studio's composer and voice panel can clean
+fillers and spoken self-corrections using the configured default chat model.
+For draft editing, turn off automatic sending and choose **Correct by voice**;
+the result stays in review. The panel can restore the original transcription.
+Recognition errors, especially names, still need review. This editor is not yet
+used by desktop-wide dictation or meeting notes. See the [research, open-source
+references and measured results](docs/design/natural-dictation.md).
+
 ## Architecture
 
 | Area | Code |

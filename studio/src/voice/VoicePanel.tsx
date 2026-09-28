@@ -21,13 +21,13 @@ interface Props { busy: boolean; turn?: Turn; sessionName: string; onSend(text: 
    whoever wants to review each transcript; what you choose is kept. */
 const PREFS_KEY = 'faustus_voice_prefs';
 type SilenceMs = 600 | 900 | 1500;
-interface VoicePrefs { continuous: boolean; autoSend: boolean; readAloud: boolean | null; silenceMs: SilenceMs; wakeWord: boolean }
+interface VoicePrefs { continuous: boolean; autoSend: boolean; readAloud: boolean | null; silenceMs: SilenceMs; wakeWord: boolean; natural: boolean }
 function readPrefs(): VoicePrefs {
   try {
     const raw = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') as Partial<VoicePrefs>;
     const silenceMs: SilenceMs = raw.silenceMs === 600 || raw.silenceMs === 1500 ? raw.silenceMs : 900;
-    return { continuous: raw.continuous ?? true, autoSend: raw.autoSend ?? true, readAloud: raw.readAloud ?? null, silenceMs, wakeWord: raw.wakeWord ?? false };
-  } catch { return { continuous: true, autoSend: true, readAloud: null, silenceMs: 900, wakeWord: false }; }
+    return { continuous: raw.continuous ?? true, autoSend: raw.autoSend ?? true, readAloud: raw.readAloud ?? null, silenceMs, wakeWord: raw.wakeWord ?? false, natural: raw.natural ?? true };
+  } catch { return { continuous: true, autoSend: true, readAloud: null, silenceMs: 900, wakeWord: false, natural: true }; }
 }
 // A short pool of the last things Faustus said, so a barge-in (or an
 // utterance heard right after TTS stops) that is actually the mic
@@ -42,8 +42,13 @@ export default function VoicePanel(props: Props) {
   const [configs, setConfigs] = useState<{ stt: SpeechCapabilities; tts: SpeechCapabilities } | null>(null);
   const [error, setError] = useState('');
   const [transcript, setTranscript] = useState('');
+  const [original, setOriginal] = useState('');
+  const [previousDraft, setPreviousDraft] = useState<string | null>(null);
+  const revising = useRef(false);
+  const [revisionInstruction, setRevisionInstruction] = useState('');
   const prefs = useRef(readPrefs());
   const [continuous, setContinuousState] = useState(prefs.current.continuous);
+  const [natural, setNatural] = useState(prefs.current.natural);
   const [autoSend, setAutoSendState] = useState(prefs.current.autoSend);
   const [readAloud, setReadAloud] = useState(prefs.current.readAloud ?? true);
   /* Only the person's own toggles are remembered: the panel also switches
@@ -84,9 +89,13 @@ export default function VoicePanel(props: Props) {
   const timing = useRef({ endOfSpeech: 0, heardMs: 0 });
   const pendingTiming = useRef<{ speechEndAt: number; heardMs: number } | null>(null);
 
-  const ensureMic = useCallback(async (): Promise<OpenMic | null> => {
+  const ensureMic = useCallback(async (signal: AbortSignal): Promise<OpenMic | null> => {
     if (mic.current) return mic.current;
-    try { mic.current = await openMic(deviceId); return mic.current; } catch { return null; }
+    try {
+      const opened = await openMic(deviceId);
+      if (signal.aborted || !alive.current) { opened.close(); return null; }
+      mic.current = opened; return opened;
+    } catch { return null; }
   }, [deviceId]);
 
   const silence = useCallback(() => {
@@ -95,7 +104,7 @@ export default function VoicePanel(props: Props) {
   }, []);
   const pause = useCallback(() => {
     engaged.current = false; input.current?.abort(); input.current = null;
-    recording.current = null; silence(); setPhase('idle'); setContinuous(false);
+    recording.current = null; silence(); setPhase(revising.current ? 'review' : 'idle'); revising.current = false; setRevisionInstruction(''); setContinuous(false);
     mic.current?.close(); mic.current = null;
   }, [silence]);
   useEffect(() => {
@@ -138,12 +147,12 @@ export default function VoicePanel(props: Props) {
     if (!configs || recording.current || phaseRef.current === 'starting' || phaseRef.current === 'transcribing') return;
     silence(); input.current?.abort();
     const controller = new AbortController(); input.current = controller;
-    setError(''); setTranscript(''); setPhase('starting'); setInterrupted(false);
-    const openedMic = await ensureMic();
+    setError(''); setTranscript(''); setOriginal(''); setPreviousDraft(null); setPhase('starting'); setInterrupted(false);
+    const openedMic = await ensureMic(controller.signal);
     try {
       const cap = await capture(configs.stt, {
         signal: controller.signal, deviceId, autoStop: true, lang: language,
-        mic: openedMic ?? undefined, silenceMs,
+        mic: openedMic ?? undefined, silenceMs, natural,
         onPartial: text => { if (!controller.signal.aborted) setTranscript(text); },
         onTranscribing: () => { if (!controller.signal.aborted) { timing.current.endOfSpeech = performance.now(); setPhase('transcribing'); setAnalyser(null); } },
       });
@@ -155,21 +164,23 @@ export default function VoicePanel(props: Props) {
       recording.current = null; setAnalyser(null);
       heardLanguage.current = cap.language || (language === 'auto' ? locale() : language);
       timing.current.heardMs = timing.current.endOfSpeech ? performance.now() - timing.current.endOfSpeech : 0;
+      const rawText = cap.rawText || text;
       if (!text) { setPhase('idle'); setError(t('I did not hear anything. Try again closer to the microphone.')); setContinuous(false); return; }
       // Discard silently and keep listening: Whisper's own silence
       // hallucinations, the mic re-hearing Faustus (echo), and anything
       // that is only a "stop talking" instruction never reach the model.
-      if (isHallucination(text)) { console.debug('[voice] discarded (hallucination):', text); void listen(); return; }
-      if (isEcho(text, lastSpoken.current.text, ECHO_GUARD_MS, performance.now() - lastSpoken.current.at)) {
+      if (isHallucination(rawText)) { console.debug('[voice] discarded (hallucination):', text); void listen(); return; }
+      if (isEcho(rawText, lastSpoken.current.text, ECHO_GUARD_MS, performance.now() - lastSpoken.current.at)) {
         console.debug('[voice] discarded (echo of Faustus’ own speech):', text); void listen(); return;
       }
-      if (isStopPhrase(text, configs.stt.stop_phrases)) { console.debug('[voice] stop phrase, not sent:', text); silence(); void listen(); return; }
+      if (isStopPhrase(rawText, configs.stt.stop_phrases)) { console.debug('[voice] stop phrase, not sent:', text); silence(); void listen(); return; }
       let toSend = text;
       if (wakeWord) {
-        const stripped = stripWakeWord(text);
+        const stripped = stripWakeWord(rawText);
         if (!stripped.matched) { console.debug('[voice] no wake word, discarded:', text); void listen(); return; }
-        toSend = stripped.text || text;
+        toSend = stripWakeWord(text).text || stripped.text || text;
       }
+      setOriginal(wakeWord ? stripWakeWord(rawText).text || rawText : rawText);
       setTranscript(toSend);
       if (latest.current.autoSend && !latest.current.busy) commit(toSend);
       else setPhase('review');
@@ -179,7 +190,48 @@ export default function VoicePanel(props: Props) {
         setError((e as Error).name === 'NotAllowedError' ? t('Microphone permission was denied. Allow it in your browser and retry.') : (e as Error).message);
       }
     }
-  }, [configs, deviceId, language, silence, commit, ensureMic, silenceMs, wakeWord]);
+  }, [configs, deviceId, language, silence, commit, ensureMic, silenceMs, wakeWord, natural]);
+  const revise = useCallback(async () => {
+    if (!configs || !transcript.trim() || recording.current || revising.current) return;
+    const draft = transcript;
+    silence(); input.current?.abort();
+    const controller = new AbortController(); input.current = controller;
+    revising.current = true; setRevisionInstruction(''); setError(''); setPhase('starting');
+    try {
+      const openedMic = await ensureMic(controller.signal);
+      const cap = await capture(configs.stt, {
+        signal: controller.signal, deviceId, autoStop: true, lang: language,
+        mic: openedMic ?? undefined, silenceMs, natural: false,
+        onPartial: text => { if (!controller.signal.aborted) setRevisionInstruction(text); },
+        onTranscribing: () => { if (!controller.signal.aborted) { setPhase('transcribing'); setAnalyser(null); } },
+      });
+      if (controller.signal.aborted) { cap.cancel(); return; }
+      recording.current = cap; setAnalyser(cap.analyser); setPhase('listening');
+      const instruction = await cap.done;
+      controller.signal.throwIfAborted();
+      recording.current = null; setAnalyser(null); setRevisionInstruction(instruction);
+      if (!instruction || isStopPhrase(instruction, configs.stt.stop_phrases) || isHallucination(instruction)) return;
+      setPhase('transcribing');
+      const response = await fetch('/api/stt/polish', {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: instruction, mode: 'revise', draft }),
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]),
+      });
+      if (!response.ok) throw new Error('revision failed');
+      const result = await response.json() as { text?: string; status?: string };
+      controller.signal.throwIfAborted();
+      if (alive.current && ['edited', 'unchanged'].includes(result.status || '') && typeof result.text === 'string' && result.text.trim()) {
+        if (result.text.trim() !== draft) setPreviousDraft(draft);
+        setTranscript(result.text.trim());
+      } else throw new Error('revision unavailable');
+    } catch {
+      if (!controller.signal.aborted && alive.current) setError(t('Could not apply the correction. Your draft is unchanged.'));
+    } finally {
+      if (alive.current && input.current === controller) {
+        recording.current = null; setAnalyser(null); revising.current = false; setRevisionInstruction(''); setPhase('review');
+      }
+    }
+  }, [configs, transcript, silence, ensureMic, deviceId, language, silenceMs]);
   nextListen.current = () => void listen();
   // `listen` closes over `configs`, so the first listen waits for the
   // render that has them.
@@ -303,7 +355,8 @@ export default function VoicePanel(props: Props) {
       </select></label>
       {configs?.stt.execution === 'browser' && language === 'auto' && <p className="fs-voice__hint">{t('Browser recognition needs a fixed language. Choose English or Spanish; automatic detection uses local Whisper.')}</p>}
       <div className="fs-voice__status" role="status"><strong>{interrupted ? t('Go ahead') : t(labels[phase])}</strong>{elapsed > 0 && <span>{elapsed}s</span>}</div>
-      {wakeWord && !interrupted && (phase === 'listening' || phase === 'starting') && <p className="fs-voice__hint">{t('Waiting for “Faustus”')}</p>}
+      {wakeWord && !revising.current && !interrupted && (phase === 'listening' || phase === 'starting') && <p className="fs-voice__hint">{t('Waiting for “Faustus”')}</p>}
+      {revising.current && <p className="fs-voice__hint">{revisionInstruction || t('Say what to change in your draft. It will stay here for review.')}</p>}
       {latency && <p className="fs-voice__hint fs-voice__latency">{latency}</p>}
       {phase === 'thinking' && <p className="fs-voice__hint">{tool ? `${t('Using tool')}: ${tool.label || tool.tool}` : t('The model may need time to load. You can keep using the app.')}</p>}
       {phase === 'approval' && <p>{t('Review the approval in the chat. Spoken answers cannot approve sensitive actions.')}</p>}
@@ -311,6 +364,9 @@ export default function VoicePanel(props: Props) {
       {configs && (!configs.stt.configured || !configs.stt.dependency_installed) && <p className="fs-voice__hint">{t('Enable a speech recognition provider in Settings → Voice.')} <Link to="/settings?s=voice">{t('Open speech settings')}</Link></p>}
       {(transcript || phase === 'review') && <label className="fs-voice__transcript">{t('Your message')}<textarea value={transcript} onChange={e => setTranscript(e.target.value)} readOnly={phase !== 'review'} rows={2} /></label>}
       <div className="fs-voice__actions">
+        {phase === 'review' && <button type="button" disabled={!configs?.stt.configured || !configs.stt.dependency_installed || !transcript.trim()} onClick={() => void revise()}><Mic size={16} />{t('Correct by voice')}</button>}
+        {phase === 'review' && previousDraft !== null && previousDraft !== transcript && <button type="button" onClick={() => { setTranscript(previousDraft); setPreviousDraft(null); }}>{t('Undo voice correction')}</button>}
+        {phase === 'review' && original && original !== transcript && <button type="button" onClick={() => setTranscript(original)}>{t('Use original transcription')}</button>}
         {phase === 'review' ? <button type="button" className="fs-voice__primary" disabled={props.busy || !transcript.trim()} onClick={() => commit(transcript)}><Send size={16} />{t(props.busy ? 'Waiting for the current task' : 'Send message')}</button>
         : <button type="button" className="fs-voice__primary" disabled={!configs || !configs.stt.configured || !configs.stt.dependency_installed || phase === 'starting' || phase === 'transcribing'} onClick={() => recording.current ? recording.current.stop() : void listen()}><Mic size={16} />{t(phase === 'listening' ? 'Finish speaking' : phase === 'speaking' ? 'Interrupt and speak' : 'Start speaking')}</button>}
         {phase === 'speaking' && <button type="button" onClick={() => { silence(); setPhase(props.busy ? 'thinking' : 'idle'); }}><VolumeX size={16} />{t('Silence voice')}</button>}
@@ -320,6 +376,7 @@ export default function VoicePanel(props: Props) {
       <details className="fs-voice__settings"><summary><Settings2 size={14} />{t('Voice options & privacy')}</summary>
         <label><input type="checkbox" checked={readAloud} disabled={!configs?.tts.configured || !configs.tts.dependency_installed} onChange={e => { setReadAloud(e.target.checked); writePrefs({ readAloud: e.target.checked }); if (!e.target.checked) { silence(); if (phaseRef.current === 'speaking') setPhase(props.busy ? 'thinking' : 'idle'); } }} />{t('Read responses aloud')}</label>
         <label><input type="checkbox" checked={continuous} onChange={e => chooseContinuous(e.target.checked)} />{t('Listen again after each response')}</label>
+        <label><input type="checkbox" checked={natural} disabled={captureActive} onChange={e => { setNatural(e.target.checked); writePrefs({ natural: e.target.checked }); }} />{t('Natural dictation · clean fillers and self-corrections')}</label>
         <label><input type="checkbox" checked={autoSend} onChange={e => chooseAutoSend(e.target.checked)} />{t('Send without reviewing transcription')}</label>
         <label><input type="checkbox" checked={wakeWord} onChange={e => chooseWakeWord(e.target.checked)} />{t('Only answer when I say Faustus first')}</label>
         <fieldset className="fs-voice__silence"><legend>{t('Pause that ends your turn')}</legend>
