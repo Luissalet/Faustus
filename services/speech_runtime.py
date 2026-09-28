@@ -7,7 +7,9 @@ def capabilities(settings: dict, kind: str) -> dict:
     provider = settings.get(f"{kind}_provider", "disabled")
     if not isinstance(provider, str) or not settings.get(f"{kind}_enabled", kind == "tts"):
         provider = "disabled"
-    if provider not in ("disabled", "browser", "local", "system", "piper", "command") and not provider.startswith("endpoint:"):
+    if provider not in ("disabled", "browser", "local", "system", "piper", "command", "parakeet") and not provider.startswith("endpoint:"):
+        provider = "disabled"
+    if provider == "parakeet" and kind != "stt":
         provider = "disabled"
     dependency = "faster_whisper" if kind == "stt" else "kokoro"
     installed = provider != "local" or find_spec(dependency) is not None
@@ -18,12 +20,15 @@ def capabilities(settings: dict, kind: str) -> dict:
         installed = active_runtime() is not None and len(list_voices()) > 0
     if provider == "command":
         installed = bool(settings.get(f"{kind}_command_template", "").strip())
+    if provider == "parakeet":
+        from services.stt.parakeet_stt import installed as parakeet_installed
+        installed = parakeet_installed()
     result = {
         "provider": provider,
         "configured": provider != "disabled",
         "dependency_installed": installed,
         "ready": False,  # discovery is not a successful inference/health probe
-        "execution": "local" if provider in ("local", "system", "piper", "command") else "browser" if provider == "browser" else "endpoint" if provider.startswith("endpoint:") else "disabled",
+        "execution": "local" if provider in ("local", "system", "piper", "command", "parakeet") else "browser" if provider == "browser" else "endpoint" if provider.startswith("endpoint:") else "disabled",
         "model": settings.get(f"{kind}_model", ""),
         "language": settings.get("stt_language", ""),
         "voice": settings.get("tts_voice", ""),
@@ -31,6 +36,9 @@ def capabilities(settings: dict, kind: str) -> dict:
         "audio_retention": "temporary-input" if kind == "stt" else "request-controlled-cache",
     }
     if kind == "stt":
+        if provider == "parakeet":
+            from services.stt.parakeet_stt import MODEL
+            result.update(model=MODEL, language="", language_mode="auto", device="cpu")
         stop_phrases = settings.get("voice_stop_phrases")
         result["stop_phrases"] = stop_phrases if isinstance(stop_phrases, list) else []
     return result

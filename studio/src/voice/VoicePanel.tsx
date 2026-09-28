@@ -350,10 +350,11 @@ export default function VoicePanel(props: Props) {
       <div className="fs-voice__heading"><h2>{t('Talk to Faustus')}</h2><button type="button" className="fs-voice__icon" onClick={props.onClose} aria-label={t('Close voice mode')}><X size={18} /></button></div>
       <p className="fs-voice__context">{props.sessionName} · {t('Same chat, same tools')}</p>
       {configs && <p className="fs-voice__hint">{t('Input')}: {providerLabel(configs.stt)} · {t('Output')}: {providerLabel(configs.tts)}</p>}
-      <label className="fs-voice__language">{t('Conversation language')}<select value={language} disabled={captureActive || props.busy || phase === 'speaking'} onChange={e => setLanguage(e.target.value)}>
+      <label className="fs-voice__language">{t('Conversation language')}<select value={configs?.stt.provider === 'parakeet' ? 'auto' : language} disabled={configs?.stt.provider === 'parakeet' || captureActive || props.busy || phase === 'speaking'} onChange={e => setLanguage(e.target.value)}>
         <option value="auto">{t('Automatic · English / Spanish')}</option><option value="es">Español</option><option value="en">English</option>
       </select></label>
-      {configs?.stt.execution === 'browser' && language === 'auto' && <p className="fs-voice__hint">{t('Browser recognition needs a fixed language. Choose English or Spanish; automatic detection uses local Whisper.')}</p>}
+      {configs?.stt.provider === 'parakeet' && <p className="fs-voice__hint">{t('Parakeet detects the language automatically. Very short utterances can be mistaken for another language.')}</p>}
+      {configs?.stt.execution === 'browser' && language === 'auto' && <p className="fs-voice__hint">{t('Browser recognition needs a fixed language. Choose English or Spanish; automatic detection uses local recognition.')}</p>}
       <div className="fs-voice__status" role="status"><strong>{interrupted ? t('Go ahead') : t(labels[phase])}</strong>{elapsed > 0 && <span>{elapsed}s</span>}</div>
       {wakeWord && !revising.current && !interrupted && (phase === 'listening' || phase === 'starting') && <p className="fs-voice__hint">{t('Waiting for “Faustus”')}</p>}
       {revising.current && <p className="fs-voice__hint">{revisionInstruction || t('Say what to change in your draft. It will stay here for review.')}</p>}
@@ -385,7 +386,7 @@ export default function VoicePanel(props: Props) {
           <label><input type="radio" name="fs-voice-silence" checked={silenceMs === 1500} onChange={() => chooseSilenceMs(1500)} />{t('Long')}</label>
         </fieldset>
         {devices.length > 0 && <label>{t('Microphone')}<select value={deviceId} disabled={captureActive} onChange={e => setDeviceId(e.target.value)}><option value="">{t('System default')}</option>{devices.map((d, i) => <option key={d.deviceId || i} value={d.deviceId}>{d.label || `${t('Microphone')} ${i + 1}`}</option>)}</select></label>}
-        {configs?.stt.execution === 'browser' && <p>{t('Browser recognition may send audio to its speech service. Choose Whisper for local transcription.')}</p>}
+        {configs?.stt.execution === 'browser' && <p>{t('Browser recognition may send audio to its speech service. Choose a local provider for local transcription.')}</p>}
         <p>{t('Audio capture is temporary. Voice replies skip the disk cache. Final messages follow this chat’s history settings. Endpoint retention depends on its provider.')}</p>
         <p>{t('Listening pauses while Faustus speaks. Use Interrupt and speak to take your turn. Changing chat or hiding this tab mutes voice; the task continues.')}</p>
         <Link to="/settings?s=voice">{t('Open speech settings')}</Link>

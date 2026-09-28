@@ -595,7 +595,7 @@ function VoiceSection({ settings, endpoints, onSave, say }: { settings: Settings
       <Field label={t('Dictation')}>
         <div className="fs-set__inline">
           <Toggle id="stt-on" checked={bool(draft.stt_enabled)} onChange={(v) => set('stt_enabled', v)} label={t('On')} />
-          <Select id="stt-prov" value={str(draft.stt_provider, 'disabled')} onChange={(v) => set('stt_provider', v)} options={[{ value: 'disabled', label: t('Off') }, { value: 'browser', label: t('Browser') }, { value: 'local', label: 'Local (Whisper)' }, { value: 'command', label: t('Command (advanced)') }, ...apiOpts]} />
+          <Select id="stt-prov" value={str(draft.stt_provider, 'disabled')} onChange={(v) => set('stt_provider', v)} options={[{ value: 'disabled', label: t('Off') }, { value: 'browser', label: t('Browser') }, { value: 'local', label: 'Local (Whisper)' }, { value: 'parakeet', label: t('Local (Parakeet V3 · experimental)') }, { value: 'command', label: t('Command (advanced)') }, ...apiOpts]} />
         </div>
       </Field>
       {str(draft.stt_provider) === 'command' && (
@@ -603,6 +603,7 @@ function VoiceSection({ settings, endpoints, onSave, say }: { settings: Settings
           <Text id="stt-cmd" value={str(draft.stt_command_template)} onChange={(v) => set('stt_command_template', v)} placeholder="mystt --audio {input_path} --lang {language}" />
         </Field>
       )}
+      {str(draft.stt_provider) === 'parakeet' ? <p className="fs-set__help">{t('Parakeet V3 runs on CPU and detects the language automatically. Very short utterances can be mistaken for another language. First use downloads about 670 MB plus a voice activity model. Optional dependencies: requirements-voice-parakeet.txt.')}</p> : <>
       <div className="fs-set__grid2">
         <Field label={t('Dictation model')} htmlFor="stt-model" help={t(t('Local: tiny, base, small, medium, large; API: whisper-1.'))}>
           <Text id="stt-model" value={str(draft.stt_model, 'base')} onChange={(v) => set('stt_model', v)} />
@@ -614,6 +615,7 @@ function VoiceSection({ settings, endpoints, onSave, say }: { settings: Settings
       <Field label={t('Transcription device')} htmlFor="stt-device">
         <Select id="stt-device" value={str(draft.stt_device, 'auto')} onChange={v => set('stt_device', v)} options={[{ value: 'auto', label: t('Automatic') }, { value: 'cpu', label: 'CPU · int8' }, { value: 'cuda', label: 'GPU · CUDA' }]} />
       </Field>
+      </>}
       <Field label={t('Stop phrases')} htmlFor="voice-stop-phrases" help={t('One per line. Said alone, these silence the current reply instead of being sent. Added to the built-in list (stop, para, cállate…), never replacing it.')}>
         <textarea id="voice-stop-phrases" className="fs-field" rows={3} value={linesValue(draft.voice_stop_phrases)} onChange={(e) => set('voice_stop_phrases', fromLines(e.target.value))} />
       </Field>

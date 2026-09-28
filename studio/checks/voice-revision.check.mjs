@@ -99,6 +99,13 @@ try {
     assert.equal(sent.at(-1), utterance);
   }
   assert.deepEqual(sent, shortReplies);
+  config.provider = 'parakeet';
+  await flush(() => root.render(React.createElement(MemoryRouter, null,
+    React.createElement(VoicePanel, { key: 'parakeet', busy: false, sessionName: 'Automatic language',
+      onSend() {}, onStop() {}, onClose() {} }))));
+  const languageSelect = host.querySelector('.fs-voice__language select');
+  assert.equal(languageSelect.disabled, true); assert.equal(languageSelect.value, 'auto');
+  assert.ok(host.textContent.includes('Parakeet detects the language automatically.'));
   await flush(() => root.unmount());
   console.log('ALL OK: voice correction, visible draft, finish, review-only, cancel, failure and short replies sent');
 } finally { unlinkSync(output); await dom.happyDOM.close(); }

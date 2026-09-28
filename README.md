@@ -395,6 +395,15 @@ Recognition errors, especially names, still need review. This editor is not yet
 used by desktop-wide dictation or meeting notes. See the [research, open-source
 references and measured results](docs/design/natural-dictation.md).
 
+**Optional local Parakeet V3:** install `pip install -r requirements-voice-parakeet.txt`
+in Faustus's Python environment, then select **Local (Parakeet V3 · experimental)**
+in Settings → Voice → Dictation. Runs on CPU, keeps the model loaded, and uses
+Silero VAD for long input and silence. First use downloads approximately 670 MB
+of recognition weights plus VAD. Language detection is automatic and can confuse
+very short speech (a synthetic Spanish “sí” was recognized as “See.”). Whisper
+remains available for explicit language selection. Parakeet weights: NVIDIA /
+istupakov ONNX conversion, CC BY 4.0; runtime: onnx-asr, MIT.
+
 ## Architecture
 
 | Area | Code |

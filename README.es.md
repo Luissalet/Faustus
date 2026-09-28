@@ -381,6 +381,15 @@ siguen necesitando revisión. Este editor aún no se usa en el dictado global ni
 notas de reunión. Consulta la [investigación, referencias abiertas y resultados
 medidos](docs/design/natural-dictation.md).
 
+**Parakeet V3 local opcional:** instala `pip install -r requirements-voice-parakeet.txt`
+en el entorno Python de Faustus y selecciona **Local (Parakeet V3 · experimental)**
+en Configuración → Voz → Dictado. Usa CPU, mantiene el modelo cargado y emplea
+Silero VAD para el silencio y los audios largos. El primer uso descarga unos
+670 MB de reconocimiento más VAD. El idioma se detecta automáticamente y puede
+confundirse con palabras muy cortas: un «sí» de voz sintética se reconoció como
+«See.». Whisper sigue disponible para fijar el idioma. Pesos: NVIDIA / conversión
+ONNX de istupakov, CC BY 4.0; motor onnx-asr, MIT.
+
 ## Arquitectura
 
 | Área | Código |

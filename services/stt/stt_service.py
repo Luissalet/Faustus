@@ -23,6 +23,7 @@ class STTService:
       "disabled"        — no STT
       "browser"         — client-side Web Speech API (no server transcription)
       "local"           — faster-whisper on CPU/GPU
+      "parakeet"        — optional Parakeet V3 INT8 on CPU, automatic language
       "endpoint:<id>"   — OpenAI-compatible /audio/transcriptions via ModelEndpoint
     """
 
@@ -58,6 +59,9 @@ class STTService:
             return True  # handled client-side
         if provider == "local":
             return self._get_whisper() is not None
+        if provider == "parakeet":
+            from .parakeet_stt import installed
+            return installed()
         if provider == "command":
             return bool(settings.get("stt_command_template", "").strip())
         if isinstance(provider, str) and provider.startswith("endpoint:"):
@@ -228,6 +232,13 @@ class STTService:
 
         if provider == "local":
             return self._transcribe_local(audio_bytes, language, metadata) if metadata is not None else self._transcribe_local(audio_bytes, language)
+        elif provider == "parakeet":
+            from .parakeet_stt import transcribe_segments
+            raw = transcribe_segments(audio_bytes, metadata)
+            cleaned, stats = self._clean(raw)
+            if metadata is not None:
+                metadata["cleanup_stats"] = stats
+            return stt_cleanup.segments_to_text(cleaned)
         elif provider == "command":
             from .command_stt import transcribe_command
             template = settings.get("stt_command_template", "")
@@ -262,8 +273,8 @@ class STTService:
 
     def transcribe_segments(self, audio_bytes: bytes, *, language: str = "", metadata: Optional[dict] = None) -> Optional[List[Dict[str, Any]]]:
         """Cleaned, timestamped segments — for callers that need timestamps
-        (the meeting-notes pipeline) rather than a flat string. Only the
-        local (faster-whisper) provider has real per-segment timestamps;
+        (the meeting-notes pipeline) rather than a flat string. Local Whisper
+        and Parakeet provide segment timestamps (Parakeet uses VAD boundaries);
         command/endpoint providers return everything as a single segment
         with ``start``/``end`` of ``None``.
         """
@@ -279,6 +290,9 @@ class STTService:
             if raw is None:
                 return None
             cleaned, stats = self._clean(raw)
+        elif provider == "parakeet":
+            from .parakeet_stt import transcribe_segments
+            cleaned, stats = self._clean(transcribe_segments(audio_bytes, metadata))
         elif provider == "command":
             from .command_stt import transcribe_command
             template = settings.get("stt_command_template", "")
@@ -323,6 +337,9 @@ class STTService:
             stats["model_loaded"] = whisper is not None
         elif provider == "browser":
             stats["model"] = "Browser (Web Speech API)"
+        elif provider == "parakeet":
+            from .parakeet_stt import MODEL, loaded
+            stats.update(model=MODEL, model_loaded=loaded(), language="", device="cpu")
         elif provider == "command":
             stats["model"] = "Command (local)"
         elif isinstance(provider, str) and provider.startswith("endpoint:"):

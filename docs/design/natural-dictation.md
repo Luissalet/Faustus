@@ -145,7 +145,7 @@ from 4 to 6 edits with Parakeet. WER includes fillers, accents and number
 formatting. Parakeet output is raw; the Whisper baseline uses Faustus cleanup.
 Parakeet's four English held-out clips have 3 edits / 109 verbatim-reference
 words, which is a different target from the polished-reference editor metric.
-It remains an evaluation candidate, not a shipped Faustus provider. Its startup
+At this evaluation stage it was not yet a Faustus provider (integration below). Its startup
 and download time are reported separately; it is not a streaming recognizer.
 
 Reproduce with `scripts/eval_dictation_onnx.py --directory <manifest-directory>
@@ -154,6 +154,42 @@ Reproduce with `scripts/eval_dictation_onnx.py --directory <manifest-directory>
 on first use. Local reports: `parakeet-chm150.json`,
 `parakeet-chm150-heldout.json`, `small-chm150-heldout.json`, `parakeet-heldout.json`
 under the QA directory above. Empty dataset selections now fail visibly.
+
+### Optional Parakeet integration
+
+`stt_provider=parakeet` now selects an optional native local provider, independent
+of Whisper's model/device settings. Install `requirements-voice-parakeet.txt`;
+discovery checks dependencies without loading or downloading weights. First
+transcription loads CPU INT8 weights and Silero VAD once. A lock serializes the
+shared model. Audio formats are decoded through PyAV into 16 kHz mono PCM.
+VAD uses a 100 ms minimum speech duration, a 20-second maximum segment, and
+200 ms padding. Segment timestamps are coarse speech boundaries, not alignment.
+No language ID is fabricated: responses report automatic language mode and an
+empty language field. It never silently substitutes Whisper on failure.
+
+Actual integrated checks on this machine:
+
+- Eight Spanish clips decoded with the new VAD adapter; warm requests roughly
+  0.63–0.81 seconds. First load plus initial VAD download took 5.68 seconds.
+- Exact digital silence and seeded quiet noise produced zero segments.
+- A constructed 55.51-second fixture alternating two real utterances and
+  one-second silences produced eight correctly ordered segments in 2.66 seconds.
+  This is a composite fixture, not spontaneous continuous speech.
+- Actual development HTTP route → editor passed two human clips and four of
+  five synthetic Spanish probes from Windows Helena. `No`, `Gracias`, `Cuarenta
+  y dos`, and a Tuesday→Thursday correction survived; isolated `Sí` became
+  English `See.`. The editor correctly did not invent a Spanish correction.
+  Automatic language ambiguity is a known limitation; this is not ready to
+  replace explicit-language Whisper for every user.
+- 61 focused backend checks passed; UI typecheck/build and visual settings
+  smoke passed. No user microphone was recorded. Production preference remains
+  unchanged; the temporary development-provider switch was restored to `local`.
+
+Reports: `parakeet-adapter.json`, `parakeet-live-pipeline.json`,
+`parakeet-synthetic-pipeline.json` in the local QA directory. The isolated raw
+benchmark used ONNX Runtime 1.30.0; this integrated adapter used the existing
+Faustus 1.29.0 runtime and onnx-asr 0.12.0, installed without upgrading existing
+dependencies. Synthetic recordings stay outside Git.
 
 These are inspected references, not dependencies or claims of code reuse:
 

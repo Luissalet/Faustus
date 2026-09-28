@@ -1,0 +1,4 @@
+# Optional CPU recognizer. Weights: NVIDIA/istupakov CC BY 4.0 (~670 MB).
+# First explicit use also downloads Silero VAD; no GPU runtime required.
+onnx-asr[cpu,hub]==0.12.0
+av>=14
