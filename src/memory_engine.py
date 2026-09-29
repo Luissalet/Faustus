@@ -1454,8 +1454,23 @@ def touch(ids: Iterable[str], now: Optional[datetime] = None) -> int:
 # ---------------------------------------------------------------------------
 
 
+_LANGUAGE_ALIASES = {"js": "javascript", "ts": "typescript"}
+_PROGRAMMING_CUES = frozenset({
+    "javascript", "typescript", "python", "programming", "code", "coding",
+    "compiler", "compilation", "transpile", "syntax", "indent", "indentation",
+    "lint", "linting", "frontend", "backend", "react", "npm", "async",
+    "programacion", "programación", "codigo", "código", "sangria", "sangría",
+})
+
+
 def _tokens(text: Any) -> List[str]:
-    return [tok.lower() for tok in tokenize(str(text or "")) if tok and tok.strip()]
+    tokens = [tok.lower() for tok in tokenize(str(text or "")) if tok and tok.strip()]
+    # Canonicalize only whole abbreviations in an explicit programming context.
+    # Initials, TS timestamps, Go/R, identifiers and filenames stay literal.
+    # This is BM25-only: persisted hash/neural vectors need no reindexing.
+    if _PROGRAMMING_CUES.intersection(tokens):
+        return [_LANGUAGE_ALIASES.get(token, token) for token in tokens]
+    return tokens
 
 
 def bm25_scores(query: str, docs: Sequence[Tuple[str, str]]) -> Dict[str, float]:
