@@ -527,7 +527,10 @@ def active_worker_ids() -> List[str]:
 
 
 def steer_worker(child_session_id: str, text: str, source: str = "user") -> bool:
-    """Queue a steering message for a live worker. The worker's agent loop
+    """Queue an instruction only while the worker attempt accepts input.
+
+    True confirms queue admission, not injection, reading or persistence.
+    The worker's agent loop
     injects it as a `user` message before its next round (see
     `stream_agent_loop(pending_user_messages=...)`)."""
     text = " ".join(str(text or "").split()).strip()
@@ -535,7 +538,7 @@ def steer_worker(child_session_id: str, text: str, source: str = "user") -> bool
         return False
     task = _ACTIVE_WORKERS.get(child_session_id)
     run = _WORKER_RUNS.get(child_session_id)
-    if task is None or task.done() or run is None:
+    if task is None or task.done() or run is None or not run.accepts_steers:
         return False
     run.steer_queue.append({"text": text[:4000], "source": "supervisor" if source == "supervisor" else "user"})
     return True
@@ -1222,6 +1225,9 @@ class SubagentRun:
         self.stalled = False
         self.stall_reason: Optional[str] = None
         self.steer_queue: List[Dict[str, str]] = []
+        # Per attempt: task liveness includes terminal fanout and cleanup,
+        # neither of which can inject another instruction into the loop.
+        self.accepts_steers = False
         self.steered = 0
         self.supervisor: List[Dict[str, Any]] = []
         self.final_metrics: Dict[str, Any] = {}
@@ -1575,6 +1581,7 @@ async def _run_subagent(
     def _steers() -> List[Dict[str, str]]:
         return pending_steers(child_sid)
 
+    run.accepts_steers = True
     try:
         async for chunk in stream_agent_loop(
             endpoint_url, model, messages,
@@ -1590,6 +1597,7 @@ async def _run_subagent(
             if not chunk.startswith("data: ") or chunk.startswith("data: [DONE]"):
                 if chunk.startswith("event: error"):
                     run.error = _short(chunk, 300)
+                    run.accepts_steers = False
                     await emit({"event": "error", "message": run.error})
                 continue
             try:
@@ -1694,12 +1702,15 @@ async def _run_subagent(
                 await emit({"event": "guard", "kind": et})
             elif et == "agent_terminal":
                 run.error = "model request failed"
+                run.accepts_steers = False
                 await emit({"event": "error", "message": run.error})
     except Exception as e:
         run.error = f"{type(e).__name__}: {e}"[:300]
+        run.accepts_steers = False
         logger.warning("delegate_agents: sub-agent %s crashed: %s", run.name, e, exc_info=True)
         await emit({"event": "error", "message": run.error})
     finally:
+        run.accepts_steers = False
         run.finished = time.time()
         if run.stop_reason == "unknown":
             run.stop_reason = "error" if run.error else "complete"

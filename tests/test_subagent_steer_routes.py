@@ -59,6 +59,7 @@ async def fake_worker():
     run = st.SubagentRun(0, {"name": "w", "instruction": "x"})
     run.session_id = "kid"
     run.parent_session_id = "parent"
+    run.accepts_steers = True  # Fixture represents an attempt inside its loop.
 
     async def _forever():
         await asyncio.Event().wait()
