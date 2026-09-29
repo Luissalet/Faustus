@@ -1,42 +1,20 @@
-"""
-context_engine/wiring.py — the engine beside the hot path, never inside it.
+"""Context-engine wiring for live delivery and optional shadow observation.
 
-Phase 1 of `PLAN_CONTEXT_ENGINE_FAUSTUS.md` (§20) asks for one thing and
-refuses the obvious shortcut: compile the packet the engine *would* have built
-for a turn, put it beside the prompt the app actually sent, and change nothing.
-The exit criterion is "no afecta respuestas y explica de donde saldria cada
-token contextual" — a measurement, not a migration.
+`deliver_round` is connected to the agent loop and returns a context message
+when `agent_context_engine` is enabled (off by default). It budgets against
+the actual prompt, reuses the previous packet when it still fits, and returns
+None on timeout, insufficient room or failure so the caller retains its legacy
+context path. Live delivery can affect answers; it is not a shadow-only probe.
 
-The failure this module is shaped around is not hypothetical.  Every subsystem
-that has reached `agent_loop.py` so far arrived as twenty lines of its own
-bookkeeping inside a four-thousand-line generator, in the round loop, where one
-unexpected `None` ends the turn and the user sees "Model request failed".  The
-context ledger survived that by being a single `try/except` around a single
-call.  So does this: the flags, the deadline, the request and the report shape
-all live here, and what `agent_loop.py` gets is a call it can read in one
-breath.
+`shadow_round`, independently gated by `agent_context_engine_shadow` (also
+off by default), compares a compiled snapshot with the actual prompt without
+changing it. Only this observation is restricted to SHADOW_ROUND. Both paths
+bound compilation with a deadline and assembly allowance; this is not a
+promise that compilation always costs less than a second.
 
-Four rules, each of which is a test in `tests/test_context_engine_wiring.py`:
-
-1. **Nothing here may change an answer.**  `shadow_round` compiles against a
-   snapshot of the messages, never the list itself; it writes no memory, marks
-   nothing as used and records no ledger row.  The packet exists only inside
-   the report.
-2. **Nothing here may end a turn.**  Every entry point is wrapped and returns
-   `None` (or nothing at all).  If the whole engine explodes the chat carries
-   on, and the only trace is a log line.
-3. **Nothing here may cost a second.**  The compile runs under
-   `asyncio.wait_for` against `agent_context_timeout_ms`; a wedged store
-   cancels the observation instead of delaying the answer.
-4. **Once per turn, not once per round.**  Rounds two through nine of an agent
-   turn differ from the first by their tool results, which the engine neither
-   chose nor would have chosen differently.  Nine compilations would cost nine
-   times as much and answer the same question, so `round_index != 0` is `None`.
-
-And one more, which is the whole reason `owner` and `project_id` are arguments
-rather than something parsed out of the conversation: the scope comes from the
-runtime.  A message that says "owner: admin" is a message, and `build_request`
-never reads it as anything else.
+Scope comes from runtime owner/project/session arguments, never instructions
+embedded in conversation text. See tests/test_context_engine_wiring.py for
+shadow behavior and the delivery tests for live-path budgeting and fallback.
 """
 
 from __future__ import annotations

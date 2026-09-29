@@ -1,37 +1,20 @@
-"""Faustus-side half of the Code Mode bridge (T6, A10).
+"""Faustus-side half of the Code Mode tools.call bridge (T6, A10).
 
-Every ``tools.call(name, args)`` the guest subprocess makes is turned into
-the exact ``ToolBlock`` + ``execute_tool_block`` call an ordinary native
-function call from the model would produce, and dispatched through
-``src.tool_execution.execute_tool_block`` -- the SAME dispatcher
-``src/agent_loop.py`` and ``src/agent_tools/subagent_tools.py`` use. A
-disabled tool, a tool blocked by the destructive-command guard, or an
-unknown tool name gets the identical result a direct call would have
-gotten; there is no separate, weaker gate for code-composed calls.
+Guest tools.call requests become ToolBlock calls through the same
+execute_tool_block dispatcher used by the agent loop. The normal run_code
+path forwards the run's ToolRunSecurityContext and ToolPolicy through the
+handler context, RunCodeTool and runner; dispatch_call preserves them for
+child calls and approval pauses. Earlier descriptions of an unwired security
+context no longer describe this path.
 
-``security_context``: ``execute_tool_block`` requires a
-``ToolRunSecurityContext`` (or the explicit ``NO_TOOL_SECURITY_CONTEXT``
-sentinel, which would SKIP the destructive-command gate entirely --
-exactly the bypass A10 forbids). The ``run_code`` native tool is dispatched
-through ``src/agent_tools/__init__.py``'s generic ``TOOL_HANDLERS`` path
-(``_direct_fallback`` in ``src/tool_execution.py``), whose ``ctx`` carries
-``session_id``/``owner``/``disabled_tools`` but not the run's own
-``ToolRunSecurityContext`` object or ``ToolPolicy`` (they are function
-parameters of ``execute_tool_block``, never threaded into that ``ctx`` --
-wiring that would touch ``src/tool_execution.py``, which is outside this
-lot's owned files; see ``T6_wiring.md``). A fresh
-``ToolRunSecurityContext()`` is used instead. This is not a weaker check
-for the case A10 cares about: ``ToolRunSecurityContext.decision_for``
-runs its destructive-command guard (``_command_guard_denial``) BEFORE it
-ever consults ``approval_gate_bypassed`` or ``external_untrusted_context_seen``
-(see that method's own docstring/comments in ``src/tool_capabilities.py``),
-so for a command the guard classifies as destructive/needing approval, a
-fresh context and the run's real context reach the exact same denial --
-the only thing a fresh context could get "wrong" is ALLOWING something the
-real run's context would have blocked for reasons unrelated to the command
-itself (an external-untrusted-context gate that had already armed on
-earlier tool results this turn), which is a strictly narrower gap, not a
-bypass of the destructive-tool gate this case exercises.
+Headless callers that omit security_context receive a fresh
+ToolRunSecurityContext. It runs the command guard but has no earlier run
+history; it does not reconstruct an external-context posture. ToolPolicy is
+forwarded when supplied. Disabled tools and recursive run_code remain gated.
+
+These controls apply to tools.call, not arbitrary Python in the guest.
+The guest is a host process with direct filesystem/network access, as declared
+by the runner's runtime_guarantees. This bridge is not an OS sandbox.
 """
 
 from __future__ import annotations
