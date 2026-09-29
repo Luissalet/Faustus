@@ -27,9 +27,10 @@ def _assigned_value(tree, name):
 
 
 def _schema_tool_names():
+    from src.pdf_tool_contracts import function_schemas
     src = open(os.path.join(ROOT, "src", "tool_schemas.py"), encoding="utf-8").read()
     value = _assigned_value(ast.parse(src), "FUNCTION_TOOL_SCHEMAS")
-    return {item["function"]["name"] for item in ast.literal_eval(value)}
+    return {item["function"]["name"] for item in ast.literal_eval(value) + function_schemas()}
 
 
 def _indexed_tool_names():

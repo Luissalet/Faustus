@@ -3,35 +3,28 @@ pdf_find_section: structural (table-of-contents) navigation of a long PDF,
 over `src.pdf_tree`.
 
 Same shape `code_graph_tools.py` uses for its own thin dispatchers: parse
-args (JSON object, or a bare string for the tool's single required field),
+args through the shared contract (JSON object; outline also accepts a bare path),
 call straight into `src.pdf_tree`, return its result already shaped as
 `{"output", "exit_code", ...}`. Workspace confinement, tree construction and
 the char budget all live in `src.pdf_tree`, once.
 """
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any, Dict
 
 from src import pdf_tree
+from src.pdf_tool_contracts import PdfArgumentsError, parse_content
 
 logger = logging.getLogger(__name__)
 
 
-def _args(content: Any, *, first_key: str) -> Dict[str, Any]:
-    raw = (content or "").strip() if isinstance(content, str) else content
-    if isinstance(raw, dict):
-        return dict(raw)
-    if not raw:
-        return {}
-    if isinstance(raw, str) and raw.startswith("{"):
-        try:
-            data = json.loads(raw)
-        except (TypeError, ValueError):
-            return {first_key: raw}
-        return data if isinstance(data, dict) else {first_key: raw}
-    return {first_key: raw} if isinstance(raw, str) else {}
+def _args(content: Any, tool: str):
+    try:
+        return parse_content(tool, content), None
+    except PdfArgumentsError as exc:
+        # Keep the existing failure envelope for malformed arguments.
+        return None, {"error": f"{tool}: {exc}", "exit_code": 1, "error_class": "pdf_tree.error"}
 
 
 def _catch(fn, *a, tool: str, **kw) -> Dict[str, Any]:
@@ -49,16 +42,15 @@ class PdfOutlineTool:
     and return it as compact indented text plus the structured nodes."""
 
     async def execute(self, content: str, ctx: dict) -> dict:
-        args = _args(content, first_key="path")
-        path = str(args.get("path") or "").strip()
-        if not path:
-            return {"error": "pdf_outline: `path` is required", "exit_code": 1}
+        args, error = _args(content, "pdf_outline")
+        if error:
+            return error
+        path = args["path"]
         max_depth = args.get("max_depth")
 
         def _run() -> Dict[str, Any]:
             tree = pdf_tree.build_tree(path)
-            depth = int(max_depth) if max_depth is not None else None
-            text = pdf_tree.format_outline_text(tree, max_depth=depth)
+            text = pdf_tree.format_outline_text(tree, max_depth=max_depth)
             return {
                 "output": text,
                 "exit_code": 0,
@@ -76,21 +68,13 @@ class PdfReadSectionTool:
     node_id not in the current tree is refused rather than guessed at."""
 
     async def execute(self, content: str, ctx: dict) -> dict:
-        args = _args(content, first_key="path")
-        path = str(args.get("path") or "").strip()
-        node_id = str(args.get("node_id") or "").strip()
-        if not path:
-            return {"error": "pdf_read_section: `path` is required", "exit_code": 1}
-        if not node_id:
-            return {
-                "error": "pdf_read_section: `node_id` is required — call pdf_outline first",
-                "exit_code": 1,
-            }
+        args, error = _args(content, "pdf_read_section")
+        if error:
+            return error
+        path = args["path"]
+        node_id = args["node_id"]
         def _run() -> Dict[str, Any]:
-            kwargs: Dict[str, Any] = {}
-            if args.get("max_chars") is not None:
-                kwargs["max_chars"] = int(args["max_chars"])
-            section = pdf_tree.read_section(path, node_id, **kwargs)
+            section = pdf_tree.read_section(path, node_id, max_chars=args["max_chars"])
             header = f"[{section['id']}] {section['title']} (pp. {section['start_page']}-{section['end_page']})"
             body = header + "\n\n" + section["text"]
             return {
@@ -114,15 +98,13 @@ class PdfFindSectionTool:
     long or the section name is only approximately known."""
 
     async def execute(self, content: str, ctx: dict) -> dict:
-        args = _args(content, first_key="path")
-        path = str(args.get("path") or "").strip()
-        query = str(args.get("query") or "").strip()
-        if not path:
-            return {"error": "pdf_find_section: `path` is required", "exit_code": 1}
-        if not query:
-            return {"error": "pdf_find_section: `query` is required", "exit_code": 1}
+        args, error = _args(content, "pdf_find_section")
+        if error:
+            return error
+        path = args["path"]
+        query = args["query"]
         def _run() -> Dict[str, Any]:
-            limit = int(args["limit"]) if args.get("limit") is not None else 8
+            limit = args["limit"]
             matches = pdf_tree.find_in_tree(path, query, limit=limit)
             if matches:
                 lines = [
