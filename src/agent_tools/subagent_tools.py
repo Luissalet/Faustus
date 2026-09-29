@@ -1185,6 +1185,10 @@ class SubagentRun:
         self.stop_reason_requested: Optional[str] = None
         self.session_id: Optional[str] = None
         self.parent_session_id: Optional[str] = None
+        # Captured by the coordinator before dispatch, never resolved again
+        # when this worker finishes (the parent may already have a new run).
+        self.parent_run_id: Optional[str] = None
+        self.delegation_id: Optional[str] = None
         self.text = ""
         self.tool_calls = 0
         self.failed_calls = 0
@@ -1744,6 +1748,26 @@ def _session_messages(sm: Any, session_id: str) -> List[Dict[str, Any]]:
     return out
 
 
+def _causal_parent_run_id(parent_session_id: Optional[str]) -> Optional[str]:
+    """Only a real run identity; unlike budgets there is no session fallback."""
+    if not parent_session_id:
+        return None
+    try:
+        from src import agent_runs
+        active = agent_runs.get_active_run(parent_session_id)
+        return active.run_id if active is not None else None
+    except Exception:
+        return None
+
+
+def _bind_causal_identity(run: SubagentRun, parent_run_id: Optional[str],
+                          delegation_id: str) -> None:
+    """Pin once per worker invocation, including reviewers and resumed chats."""
+    if run.delegation_id is None:
+        run.parent_run_id = parent_run_id
+        run.delegation_id = delegation_id
+
+
 def _save_transcript(run: SubagentRun, sm: Any) -> None:
     """Persist the worker's transcript into its child chat so it can be
     audited later — also when it was stopped, stalled or timed out: what it
@@ -1760,6 +1784,8 @@ def _save_transcript(run: SubagentRun, sm: Any) -> None:
         meta["tool_events"] = run.tool_events[:60]
         meta["subagent"] = {
             "parent_session": run.parent_session_id, "name": run.name, "role": run.role,
+            "worker_id": run.id, "session_id": run.session_id,
+            "parent_run_id": run.parent_run_id, "delegation_id": run.delegation_id,
             "stop_reason": run.stop_reason, "steered": run.steered,
             "supervisor": list(run.supervisor),
         }
@@ -2118,6 +2144,9 @@ class DelegateAgentsTool:
         # One id per delegate_agents CALL: the board keys its state by it, so
         # a second /agents in the same chat does not pile onto the first.
         delegation_id = uuid.uuid4().hex[:8]
+        parent_run_id = _causal_parent_run_id(parent_sid)
+        for run in runs:
+            _bind_causal_identity(run, parent_run_id, delegation_id)
         locks = FileLockRegistry(workspace)
         harness_options = ctx.get("harness_options") if isinstance(ctx.get("harness_options"), dict) else None
 
@@ -2487,6 +2516,7 @@ class DelegateAgentsTool:
                 from src import agent_defs as _defs
                 _defs.resolve_task(reviewer_task, workspace=workspace)
             reviewer = SubagentRun(len(runs), reviewer_task, role="reviewer")
+            _bind_causal_identity(reviewer, parent_run_id, delegation_id)
             # The reviewer runs after everyone else, so nobody is still writing:
             # this is the ONE place that fact is true, and the one place the
             # bypass is granted.
