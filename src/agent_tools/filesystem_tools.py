@@ -282,10 +282,12 @@ class EditFileTool:
             args = json.loads(content) if content.strip().startswith("{") else {}
         except (json.JSONDecodeError, TypeError):
             args = {}
+        replace_all = args.get("replace_all", False)
+        if type(replace_all) is not bool:
+            return {"error": "edit_file: replace_all must be a boolean", "exit_code": 1}
         raw_path = (args.get("path") or "").strip()
         old = args.get("old_string", "")
         new = args.get("new_string", "")
-        replace_all = bool(args.get("replace_all", False))
         confirm_risky = bool(args.get("confirm_risky", False))
         base_revision = _normalize_base_revision(args.get("base_revision"))
         if not raw_path:
