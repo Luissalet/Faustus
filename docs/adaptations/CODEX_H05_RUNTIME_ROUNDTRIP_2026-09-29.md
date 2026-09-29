@@ -30,3 +30,13 @@ Los nombres no se renombran ni se traducen a aliases. Una invocación conserva e
 **H06 no está implementado por este cambio.** El snapshot no congela de forma profunda schemas anidados ni captura owner, política y revocaciones por paso. Tampoco fija las herramientas MCP de una llamada en vuelo.
 
 El perfil runtime es opt-in: la salida de catálogo no se convierte por ello en un documento conforme al JSON Schema estricto de spec v2. La importación runtime mantiene los límites actuales (por ejemplo descripción ≤4000 caracteres); un MCP que los supere queda fuera de este catálogo, aunque su servidor pueda ofrecerlo por otros caminos. Unificar esa aceptación con el despacho sigue pendiente.
+
+## Seguimiento: robustez de entrada PDF, sin unificación del ejecutor
+
+La inspección posterior confirmó que los handlers dinámicos del catálogo tienen schema nativo. Las herramientas de correo sin handler en el diccionario común se resuelven por su rama de familia: su ausencia de ese diccionario no demuestra que estén rotas.
+
+Sí apareció una divergencia concreta: el schema de `pdf_find_section` declara `limit` entero y el de `pdf_read_section` declara `max_chars` entero; una llamada directa con `"abc"`, lista u objeto podía lanzar una excepción al convertirlos **antes** de entrar en el manejo de errores de la herramienta. La conversión se ha movido dentro del bloque protegido existente. Ahora devuelve un resultado con `exit_code=1`, sin llegar a leer el PDF ni propagar la excepción al llamador.
+
+**58 pruebas correctas** entre los 14 casos nuevos de argumentos PDF, la suite PDF real y el roundtrip del catálogo. Se comprobaron strings no numéricos, listas, objetos, infinito y límites enteros válidos, además de los PDFs generados por la suite existente. El caso infinito usa la interfaz Python directa; no afirma que sea JSON estándar.
+
+Esto endurece únicamente la frontera de error: mantiene las conversiones ya existentes y no añade validación estricta completa en cada handler. La fuente única spec+handler para estas herramientas y la equivalencia de validación entre caminos de llamada siguen pendientes. No se ha tocado el dispatcher ni sus permisos.

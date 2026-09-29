@@ -86,11 +86,10 @@ class PdfReadSectionTool:
                 "error": "pdf_read_section: `node_id` is required — call pdf_outline first",
                 "exit_code": 1,
             }
-        kwargs: Dict[str, Any] = {}
-        if args.get("max_chars") is not None:
-            kwargs["max_chars"] = int(args["max_chars"])
-
         def _run() -> Dict[str, Any]:
+            kwargs: Dict[str, Any] = {}
+            if args.get("max_chars") is not None:
+                kwargs["max_chars"] = int(args["max_chars"])
             section = pdf_tree.read_section(path, node_id, **kwargs)
             header = f"[{section['id']}] {section['title']} (pp. {section['start_page']}-{section['end_page']})"
             body = header + "\n\n" + section["text"]
@@ -122,9 +121,8 @@ class PdfFindSectionTool:
             return {"error": "pdf_find_section: `path` is required", "exit_code": 1}
         if not query:
             return {"error": "pdf_find_section: `query` is required", "exit_code": 1}
-        limit = int(args["limit"]) if args.get("limit") is not None else 8
-
         def _run() -> Dict[str, Any]:
+            limit = int(args["limit"]) if args.get("limit") is not None else 8
             matches = pdf_tree.find_in_tree(path, query, limit=limit)
             if matches:
                 lines = [
