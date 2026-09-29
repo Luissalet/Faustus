@@ -33,6 +33,8 @@ Faustus's own exceptions.
 
 from __future__ import annotations
 
+from copy import deepcopy
+
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, Mapping, Optional, Tuple
@@ -268,8 +270,8 @@ class ToolDescriptor:
             name=name,
             version=text(data, "version", path, max_len=512),
             description=text(data, "description", path, max_len=4000, allow_blank=runtime),
-            input_schema=dict(input_schema),
-            output_schema=dict(output_schema),
+            input_schema=deepcopy(dict(input_schema)),
+            output_schema=deepcopy(dict(output_schema)),
             effect_class=one_of(data, "effect_class", path, choices=EFFECT_CLASSES),
             required_scopes=text_list(data, "required_scopes", path,
                                        max_items=32, max_len=512, unique=False),
@@ -285,8 +287,8 @@ class ToolDescriptor:
     def to_mapping(self) -> Dict[str, Any]:
         return {
             "schema_version": self.schema_version, "name": self.name, "version": self.version,
-            "description": self.description, "input_schema": dict(self.input_schema),
-            "output_schema": dict(self.output_schema), "effect_class": self.effect_class,
+            "description": self.description, "input_schema": deepcopy(dict(self.input_schema)),
+            "output_schema": deepcopy(dict(self.output_schema)), "effect_class": self.effect_class,
             "required_scopes": list(self.required_scopes), "timeout_ms": self.timeout_ms,
             "cancellation": self.cancellation, "idempotency": self.idempotency,
             "retry_policy": self.retry_policy.to_mapping(),
