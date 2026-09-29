@@ -987,6 +987,9 @@ class PowerShellTool:
     foreground servers are refused, idle/hard timeouts, tree kill."""
 
     async def execute(self, content: str, ctx: dict) -> dict:
+        refusal = sandbox_exec.refuse_host_only_tool("powershell")
+        if refusal is not None:
+            return refusal
         # See BashTool.execute: same `raw: true` opt-out of output compression.
         _raw_flag = False
         if isinstance(content, dict):

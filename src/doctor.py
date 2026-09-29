@@ -283,6 +283,14 @@ def _agent_sandbox() -> Finding:
 
     info = sandbox_exec.describe()
     on = info["enabled"]
+    if on and info.get("mode") == "required":
+        blocked = info.get("target") == "not_executed"
+        return Finding(
+            "execution", "agent shell in the sandbox", "absent" if blocked else "ok",
+            "REQUIRED — no compatible native Windows sandbox; commands are refused" if blocked else
+            "REQUIRED — bash/python use a container or refuse; PowerShell cannot run on the host",
+            fix="",
+        )
     try:
         from core.platform_compat import IS_WINDOWS
         windows = bool(IS_WINDOWS)

@@ -22,6 +22,8 @@ What happens when it is **on** and the sandbox cannot serve depends on
   workspace that is not a directory all come back as an error result naming
   the reason — the same refusal the router gives, surfaced where the model
   can read it — and nothing puts the command on the host.
+* `required`: no host fallback on any platform. Native Windows currently
+  refuses because there is no compatible confined Windows backend.
 
 ### The one thing it rewrites, and why
 
@@ -64,7 +66,7 @@ SETTING = "agent_sandbox_execution"
 #:   * ``strict`` — on POSIX, the historical rule: on and unavailable means
 #:     REFUSED, never the host. Windows still takes the host (see above).
 MODE_SETTING = "agent_sandbox_mode"
-MODES = ("auto", "strict")
+MODES = ("auto", "strict", "required")
 IMAGE_SETTING = "agent_sandbox_image"
 TIMEOUT_SETTING = "agent_sandbox_timeout_s"
 NETWORK_SETTING = "agent_sandbox_network"
@@ -87,6 +89,8 @@ DEFAULT_TIMEOUT_S = 900
 DEFAULT_MEMORY_MB = 2048
 
 CONTAINER_WORKSPACE = "/workspace"
+_dispatch_policy: "contextvars.ContextVar[Optional[Tuple[bool, str]]]" = contextvars.ContextVar(
+    "sandbox_dispatch_policy", default=None)
 
 
 def _setting(key: str, default: Any) -> Any:
@@ -103,16 +107,25 @@ def enabled() -> bool:
     typing `agent_sandbox_execution: "no"` must not get a sandbox, and someone
     typing `"yes"` must not get one either — they get to see it did nothing
     and fix the value."""
-    return _setting(SETTING, False) is True
+    captured = _dispatch_policy.get()
+    return captured[0] if captured is not None else _setting(SETTING, False) is True
 
 
 def mode() -> str:
-    """``auto`` unless the operator wrote exactly ``strict``. Any other value
+    """``auto`` unless the operator selected ``strict`` or ``required``. Any other value
     is ``auto`` for the same reason `enabled()` is strict about ``True``: an
     unrecognised word must not quietly buy a behaviour nobody chose — and the
     behaviour that runs the user's command is the one to fall to."""
+    captured = _dispatch_policy.get()
+    if captured is not None:
+        return captured[1]
     raw = str(_setting(MODE_SETTING, "auto") or "auto").strip().lower()
     return raw if raw in MODES else "auto"
+
+
+def confinement_required() -> bool:
+    """Explicit opt-in; never changes the global sandbox switch or defaults."""
+    return enabled() and mode() == "required"
 
 
 def _host_is_windows() -> bool:
@@ -127,13 +140,16 @@ def host_skip_reason() -> Optional[str]:
     """Why `run()` would hand this call to the host WITHOUT probing Docker,
     or None when the sandbox is the place to try first.
 
-    A native Windows host is skipped unconditionally — including ``strict``.
+    A native Windows host is skipped for compatibility modes, including ``strict``.
+    ``required`` never yields to the host; run() refuses without a compatible backend.
     A Linux container cannot run the project's own toolchain (cmd, powershell,
     .bat, winget, the Windows Python), which is what "verify the code" means
     on that machine; asking the user to start Docker does not change that.
     ``strict`` remains the POSIX hard gate. A daemon that does not answer is
     a second, later reason, found by the probe in `run()`."""
     if not enabled():
+        return None
+    if mode() == "required":
         return None
     if _host_is_windows():
         return ("native Windows host: the Linux container cannot run cmd, "
@@ -150,11 +166,14 @@ def describe() -> Dict[str, Any]:
     never touches Docker; `run()` does the probe when it matters."""
     on = enabled()
     skip = host_skip_reason() if on else None
-    if not on:
+    if on and mode() == "required" and _host_is_windows():
+        target = "not_executed"
+        skip = "required confinement: no compatible native Windows sandbox backend"
+    elif not on:
         target = "host"
     elif skip:
         target = "host"
-    elif mode() == "strict":
+    elif mode() in ("strict", "required"):
         target = "container"
     else:
         target = "container_or_host"
@@ -329,7 +348,7 @@ def _refusal(tool: str, reason: str) -> Dict[str, Any]:
     verdict without parsing the rest of the sentence."""
     return {
         "error": f"{tool}: sandbox unavailable: {reason}. The sandbox is on and the "
-                 f"command was NOT run — `{MODE_SETTING}` is `strict`, so Faustus does "
+                 f"command was NOT run — `{MODE_SETTING}` is `{mode()}`, so Faustus does "
                  f"not fall back to running it unsandboxed; start the backend, set "
                  f"`{MODE_SETTING}` to `auto` (host when the container cannot serve) or "
                  f"turn off `{SETTING}`.",
@@ -340,13 +359,29 @@ def _refusal(tool: str, reason: str) -> Dict[str, Any]:
     }
 
 
+def refuse_host_only_tool(tool: str) -> Optional[Dict[str, Any]]:
+    """An explicitly required command sandbox cannot redirect to a host-only tool."""
+    if not confinement_required():
+        return None
+    from src.sandbox_provider import policy_metadata
+    reason = f"required confinement: {tool} has no compatible sandbox backend"
+    return {**_refusal(tool, reason),
+            **policy_metadata("sandbox_required", "not_executed", reason),
+            "execution_target": {"kind": "not_executed", "cwd": "", "shell": ""}}
+
+
 async def run(tool: str, command: str, ctx: Optional[dict] = None) -> Optional[Dict[str, Any]]:
     """Capture requested policy before dispatch and annotate the actual outcome."""
     from src.sandbox_provider import policy_metadata
-    requested = f"sandbox_{mode()}" if enabled() else "host"
+    selected = (enabled(), mode())
+    requested = f"sandbox_{selected[1]}" if selected[0] else "host"
     _requested_policy.set(requested)
     _last_skip.set("")
-    result = await _run(tool, command, ctx)
+    token = _dispatch_policy.set(selected)
+    try:
+        result = await _run(tool, command, ctx)
+    finally:
+        _dispatch_policy.reset(token)
     if result is not None:
         effective = "docker_container" if result.get("sandboxed") else "not_executed"
         reason = "" if effective == "docker_container" else str(
@@ -370,6 +405,8 @@ async def _run(tool: str, command: str, ctx: Optional[dict] = None) -> Optional[
         return None
     if not isinstance(command, str) or not command.strip():
         return {"error": f"{tool}: empty command", "exit_code": 1, "sandboxed": False}
+    if confinement_required() and _host_is_windows():
+        return _refusal(tool, "required confinement: no compatible native Windows sandbox backend")
 
     from src import execution_router, capability_registry as registry
     from src.constants import ARTIFACT_RUNS_DIR, MAX_OUTPUT_CHARS

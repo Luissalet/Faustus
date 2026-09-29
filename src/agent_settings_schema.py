@@ -204,15 +204,17 @@ GROUPS: list[dict[str, Any]] = [
             _bool("agent_sandbox_execution", "Run commands in the sandbox",
                   "On Linux/macOS, bash and python go through the Docker sandbox "
                   "(src/sandbox_exec.py) with the workspace mounted at /workspace. "
-                  "On native Windows this setting is ignored: commands always run on this PC "
-                  "(Git Bash / PowerShell / the project's Python)."),
+                  "On native Windows auto/strict use this PC's tools; required refuses "
+                  "until a compatible confinement backend exists. PowerShell is refused in required mode."),
             _select("agent_sandbox_mode", "When the sandbox cannot serve",
                     "auto = the host runs the command and the result says so — always on native "
                     "Windows (a Linux container has no cmd, powershell, .bat, winget or the "
                     "project's own Python), and elsewhere when the daemon does not answer. "
                     "strict = on POSIX, refuse instead of falling back to the host. Windows "
-                    "still runs on the host.",
-                    ["auto", "strict"]),
+                    "still runs on the host. required = no host fallback on any platform; "
+                    "bash/python need a compatible sandbox and native Windows currently refuses. "
+                    "This applies only while Run commands in the sandbox is on.",
+                    ["auto", "strict", "required"]),
             _bool("agent_sandbox_persistent_session", "Persistent per-session sandbox",
                   "Reuse one long-lived container per session (src/sandbox_provider.py) "
                   "instead of a fresh one per command. Off by default."),

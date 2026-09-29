@@ -1293,6 +1293,15 @@ def _execution_environment_block(tool_names: Optional[set] = None) -> str:
         return ""
     names = set(tool_names or ())
     lines = ["## Execution environment (facts, not guesses)"]
+    if info.get("enabled") and info.get("mode") == "required" and IS_WINDOWS:
+        return "\n".join(lines + [
+            "- This machine is native Windows and command confinement is required. "
+            "There is no compatible native Windows sandbox backend: bash, python and "
+            "powershell commands are refused without running on the host.",
+            "- Report this limitation when verification requires a command. Do not retry "
+            "through another host tool or change the user's execution policy.",
+            "- This command policy is not a universal sandbox for file tools or Code Mode.",
+        ])
     if IS_WINDOWS:
         bash = find_bash() or ""
         lines.append(
