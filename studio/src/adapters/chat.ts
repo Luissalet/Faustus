@@ -463,6 +463,22 @@ export interface DocSuggestion {
 export type SubagentPayload = Record<string, unknown>;
 
 /** Everything the stream can say, narrowed to what the screen renders. */
+export type ToolResultStatus = 'succeeded' | 'failed' | 'cancelled' | 'conflict' | 'denied' | 'outcome_unknown' | 'partial';
+export interface ToolOutcomeFields {
+  resultStatus?: ToolResultStatus;
+  uncertainty?: { reason?: string; reconcileAction?: string };
+}
+
+export function toolOutcomeFrom(raw: Record<string, unknown>): ToolOutcomeFields {
+  const statuses = ['succeeded', 'failed', 'cancelled', 'conflict', 'denied', 'outcome_unknown', 'partial'];
+  const resultStatus = raw.result_status === undefined ? undefined
+    : typeof raw.result_status === 'string' && statuses.includes(raw.result_status) ? raw.result_status as ToolResultStatus : 'outcome_unknown';
+  const u = raw.uncertainty && typeof raw.uncertainty === 'object' ? raw.uncertainty as Record<string, unknown> : {};
+  const reason = typeof u.reason === 'string' ? u.reason.slice(0, 512) : undefined;
+  const reconcileAction = typeof u.reconcile_action === 'string' ? u.reconcile_action.slice(0, 512) : undefined;
+  return { resultStatus, uncertainty: reason || reconcileAction ? { reason, reconcileAction } : undefined };
+}
+
 export type ChatEvent =
   | { type: 'delta'; text: string; thinking: boolean }
   | { type: 'response_replace'; text: string }
@@ -475,6 +491,8 @@ export type ChatEvent =
       command: string;
       output: string;
       exitCode: number | null;
+      resultStatus?: ToolResultStatus;
+      uncertainty?: ToolOutcomeFields['uncertainty'];
       diff?: StepDiff;
       docId?: string;
       /** A validated raster data: URL (desktop_screenshot and browser tools). */
@@ -1386,7 +1404,7 @@ export function summaryFrom(data: Record<string, unknown>): HarnessSummary {
 }
 
 /** A persisted tool call (`metadata.tool_events[i]` of an assistant message). */
-export interface HistoryToolEvent {
+export interface HistoryToolEvent extends ToolOutcomeFields {
   round: number;
   tool: string;
   command: string;
@@ -1414,6 +1432,7 @@ export function toolEventsFrom(meta: Record<string, unknown>): HistoryToolEvent[
       command: str(ev.command),
       output: str(ev.output),
       exitCode: num(ev.exit_code) ?? null,
+      ...toolOutcomeFrom(ev),
       diff: diffFrom(ev.diff),
       screenshot: safeFrameSrc(ev.screenshot) || undefined,
       docId: str(ev.doc_id) || undefined,
@@ -1481,6 +1500,7 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
         command: str(raw.command),
         output: str(raw.output),
         exitCode: num(raw.exit_code) ?? null,
+        ...toolOutcomeFrom(raw),
         diff: diffFrom(raw.diff),
         docId: str(raw.doc_id) || undefined,
         screenshot: safeFrameSrc(raw.screenshot) || undefined,

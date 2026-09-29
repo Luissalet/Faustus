@@ -602,10 +602,22 @@
   border-color: var(--fs-danger);
 }
 
-.fs-trace__step[data-state='waiting'] .fs-trace__node {
+.fs-trace__step[data-state='waiting'] .fs-trace__node,
+.fs-trace__step[data-state='partial'] .fs-trace__node,
+.fs-trace__step[data-state='outcome_unknown'] .fs-trace__node {
   background: var(--fs-warning);
   border-color: var(--fs-warning);
 }
+
+.fs-studio__uncertain {
+  display: flex;
+  gap: var(--fs-space-2, 8px);
+  align-items: flex-start;
+  color: var(--fs-warning);
+  overflow-wrap: anywhere;
+}
+.fs-studio__uncertain > svg { flex-shrink: 0; margin-block-start: 2px; }
+.fs-studio__uncertain-reason { display: block; color: var(--fs-text-2); }
 
 .fs-trace__step[data-state='running'] .fs-trace__node {
   background: var(--fs-brand);

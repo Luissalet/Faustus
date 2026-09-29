@@ -80,6 +80,7 @@ from src.tool_approvals import (
     tool_approval_store,
 )
 from src.tool_utils import _truncate, get_mcp_manager
+from src.tool_presentation import tool_result_fields
 from src import agent_harness as _harness
 from src.agent_tools import (
     parse_tool_blocks,
@@ -10486,6 +10487,7 @@ async def _stream_agent_loop_body(
             "command": approved_display[:240] if approval_matches else "",
             "output": _truncate(approved_output),
             "exit_code": approved_result.get("exit_code"),
+            **tool_result_fields(approved_result),
             "approved": True,
             "call_id": _approved_call_id,
         }
@@ -10567,6 +10569,7 @@ async def _stream_agent_loop_body(
             "command": approved_display[:240] if approval_matches else "",
             "output": _truncate(approved_output),
             "exit_code": approved_result.get("exit_code"),
+            **tool_result_fields(approved_result),
             "approved": True,
             "approval_digest": approved.digest[:16],
             "call_id": _approved_call_id,
@@ -15509,7 +15512,8 @@ async def _stream_agent_loop_body(
                     # call and its result.
                     _image_views_nudge_due = _image_views_since_write
             # Emit tool_output (include ui_event data if present)
-            tool_output_data = {"type": "tool_output", "tool": block.tool_type, "command": cmd_display, "output": output_text, "exit_code": result.get("exit_code"), "call_id": _call_id}
+            _result_fields = tool_result_fields(result)
+            tool_output_data = {"type": "tool_output", "tool": block.tool_type, "command": cmd_display, "output": output_text, "exit_code": result.get("exit_code"), "call_id": _call_id, **_result_fields}
             try:
                 from src.tool_clock import sse_fields as _clock_sse
                 tool_output_data.update(_clock_sse(result))
@@ -15765,6 +15769,7 @@ async def _stream_agent_loop_body(
                 "command": cmd_display,
                 "output": output_text,
                 "exit_code": result.get("exit_code"),
+                **_result_fields,
                 # OBS-01: same call_id the live tool_start/tool_progress/
                 # tool_output events carried, so a history reload can still
                 # link this persisted record back to the exact call that

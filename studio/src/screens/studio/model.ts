@@ -16,6 +16,8 @@ import {
   type TurnMetrics,
   type WebSource,
   type ContextReceipt,
+  type ToolOutcomeFields,
+  type ToolResultStatus,
 } from '../../adapters/chat';
 import type { EvidenceRef } from '../../adapters/evidence';
 import type { Attachment } from '../../adapters/composer';
@@ -33,7 +35,9 @@ export interface Step {
   id: string;
   tool: string;
   label: string;
-  state: RunStatus;
+  state: RunStatus | 'partial' | 'outcome_unknown';
+  resultStatus?: ToolResultStatus;
+  uncertainty?: ToolOutcomeFields['uncertainty'];
   meta?: string;
   command?: string;
   output?: string;
@@ -765,6 +769,19 @@ export function stepMeta(exitCode: number | null, durationMs: number | undefined
   return parts.length ? parts.join(' · ') : undefined;
 }
 
+export function toolStepState(exitCode: number | null, status?: ToolResultStatus): Step['state'] {
+  if (status === 'partial' || status === 'outcome_unknown' || status === 'cancelled') return status;
+  if (status === 'failed' || status === 'denied' || status === 'conflict') return 'failed';
+  return exitCode === null || exitCode === 0 ? 'succeeded' : 'failed';
+}
+
+export function toolStepMeta(exitCode: number | null, durationMs: number | undefined, status?: ToolResultStatus): string | undefined {
+  const label = status === 'partial' ? t('Partially completed')
+    : status === 'outcome_unknown' ? t('Result unconfirmed')
+    : status === 'cancelled' ? t('Cancelled') : '';
+  return [label, stepMeta(exitCode, durationMs)].filter(Boolean).join(' · ') || undefined;
+}
+
 function lastRunning(steps: Step[], tool: string): number {
   for (let i = steps.length - 1; i >= 0; i--) {
     if (steps[i].state === 'running' && steps[i].tool === tool) return i;
@@ -904,8 +921,10 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
         id: index === -1 ? uid('step') : turn.steps[index].id,
         tool: event.tool,
         label: index === -1 ? stepLabel(event.tool, event.command) : turn.steps[index].label,
-        state: event.exitCode === null || event.exitCode === 0 ? 'succeeded' : 'failed',
-        meta: stepMeta(event.exitCode, event.durationMs),
+        state: toolStepState(event.exitCode, event.resultStatus),
+        meta: toolStepMeta(event.exitCode, event.durationMs, event.resultStatus),
+        resultStatus: event.resultStatus,
+        uncertainty: event.uncertainty,
         durationMs: event.durationMs,
         command: index === -1 ? event.command : turn.steps[index].command,
         output: event.output,
@@ -1278,7 +1297,6 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
   let rounds = turn.rounds;
   events.forEach((ev, idx) => {
     const parked = ev.exitCode === null && /^Waiting for an exact user approval/i.test(ev.output.trim());
-    const ok = ev.exitCode === null || ev.exitCode === 0;
     const pending = parked && ev.ask !== undefined && !ev.askResolved;
     const superseded = ev.askResolved && ev.askDecision === 'superseded';
     const repairFields = argumentRepairFields(rawEvents[idx]);
@@ -1286,8 +1304,10 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
       id: uid('step'),
       tool: ev.tool,
       label: stepLabel(ev.tool, ev.command),
-      state: superseded ? 'cancelled' : pending ? 'waiting' : parked ? 'cancelled' : ok ? 'succeeded' : 'failed',
-      meta: superseded ? t('Cancelled') : pending ? t('permission requested') : parked ? (ev.askResolved ? t('permission answered') : t('permission requested')) : !ok ? `exit ${ev.exitCode}` : undefined,
+      state: superseded ? 'cancelled' : pending ? 'waiting' : parked ? 'cancelled' : toolStepState(ev.exitCode, ev.resultStatus),
+      meta: superseded ? t('Cancelled') : pending ? t('permission requested') : parked ? (ev.askResolved ? t('permission answered') : t('permission requested')) : toolStepMeta(ev.exitCode, undefined, ev.resultStatus),
+      resultStatus: ev.resultStatus,
+      uncertainty: ev.uncertainty,
       command: ev.command,
       output: parked ? '' : ev.output,
       round: ev.round,

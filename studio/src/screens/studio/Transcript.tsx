@@ -641,7 +641,7 @@ function ToolRail({
           ) : null
         ))}
         {steps.map((step) =>
-          step.output || step.command || step.diff || step.screenshot ? (
+          step.output || step.command || step.diff || step.screenshot || step.state === 'partial' || step.state === 'outcome_unknown' ? (
             <details
               key={step.id}
               className="fs-trace__step fs-studio__step"
@@ -728,6 +728,16 @@ function ToolRail({
                   >
                     {t('View trace')}
                   </Link>
+                </p>
+              )}
+              {(step.state === 'partial' || step.state === 'outcome_unknown') && (
+                <p className="fs-studio__uncertain" data-testid="tool-outcome-warning">
+                  <AlertTriangle size={14} aria-hidden="true" />
+                  <span>{step.state === 'partial'
+                    ? t('Some changes may have been applied. Check the result before trying again.')
+                    : t('The result could not be confirmed. Check the current state before trying again.')}
+                    {step.uncertainty?.reason && <span className="fs-studio__uncertain-reason">{step.uncertainty.reason}</span>}
+                  </span>
                 </p>
               )}
               {step.output && <pre className="fs-studio__out">{step.output.slice(0, 6000)}</pre>}

@@ -8665,4 +8665,8 @@ export const es: Record<string, string> = {
   "Translating segments…": "Traduciendo segmentos…",
   "Translation failed.": "La traducción ha fallado.",
   "The translation response is invalid.": "La respuesta de traducción no es válida.",
+  "Partially completed": "Completado parcialmente",
+  "Result unconfirmed": "Resultado sin confirmar",
+  "Some changes may have been applied. Check the result before trying again.": "Puede que se hayan aplicado algunos cambios. Revisa el resultado antes de volver a intentarlo.",
+  "The result could not be confirmed. Check the current state before trying again.": "No se pudo confirmar el resultado. Revisa el estado actual antes de volver a intentarlo.",
 };

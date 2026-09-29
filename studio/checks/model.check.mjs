@@ -20,6 +20,10 @@ await build({
   logLevel: 'silent',
 });
 const m = await import(pathToFileURL(out).href);
+const chatOut = join(dirname(out), 'chat.mjs');
+await build({ entryPoints: [join(root, 'studio', 'src', 'adapters', 'chat.ts')], bundle: true,
+  format: 'esm', platform: 'node', outfile: chatOut, logLevel: 'silent' });
+const chat = await import(pathToFileURL(chatOut).href);
 
 let failed = 0;
 const assert = (c, msg) => {
@@ -313,6 +317,34 @@ assert(plain.steps.length === 0 && plain.summary === undefined, 'a chat turn res
   });
   assert(t.todos[0].status === 'completed' && t.todos[1].status === 'in_progress', 'a later progress_update replaces the list');
 }
+
+// H04: outcome authority survives decoding, live state and history reopening.
+for (const status of ['partial', 'outcome_unknown']) {
+  for (const exit of [undefined, 0, 1]) {
+    const raw = { type: 'tool_output', tool: 'write_file', command: 'a.txt', output: 'observed result',
+      result_status: status, exit_code: exit,
+      uncertainty: { reason: 'Connection lost after writing', reconcile_action: 'read_current_state_before_retry' } };
+    const event = chat.decode(raw, null);
+    const live = m.apply(m.blankTurn('assistant'), event).steps[0];
+    const restored = m.restoreFromMetadata(m.blankTurn('assistant'), { tool_events: [{ ...raw, round: 1 }] }).steps[0];
+    for (const step of [live, restored]) {
+      assert(step.state === status, `${status}/${exit}: never shown as succeeded or ordinary failure`);
+      assert(step.meta?.includes(status === 'partial' ? 'Partially completed' : 'Result unconfirmed'), `${status}: explicit visible label`);
+      assert(step.uncertainty.reason === raw.uncertainty.reason && step.uncertainty.reconcileAction === raw.uncertainty.reconcile_action,
+        `${status}: preserve uncertainty and reconciliation`);
+    }
+  }
+}
+for (const [status, exit, wanted] of [
+  ['succeeded', 0, 'succeeded'], ['failed', 0, 'failed'], ['denied', null, 'failed'],
+  ['cancelled', 0, 'cancelled'], [undefined, 0, 'succeeded'], [undefined, 1, 'failed'],
+]) {
+  const raw = { type: 'tool_output', tool: 'bash', output: 'result', result_status: status, exit_code: exit };
+  assert(m.apply(m.blankTurn('assistant'), chat.decode(raw, null)).steps[0].state === wanted, `control ${status}/${exit}`);
+}
+assert(chat.toolOutcomeFrom({result_status: ['partial']}).resultStatus === 'outcome_unknown', 'malformed status is not trusted');
+assert(chat.toolOutcomeFrom({result_status: 'partial', uncertainty: {reason: '<script>' + 'x'.repeat(1000)}}).uncertainty.reason.length === 512,
+  'uncertainty metadata is bounded');
 
 console.log(failed ? `${failed} CHECK(S) FAILED` : 'ALL OK');
 process.exit(failed ? 1 : 0);
