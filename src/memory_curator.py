@@ -61,9 +61,25 @@ def _merge_events(survivor: Dict[str, Any], loser: Dict[str, Any]) -> None:
         survivor[key] = merged[-engine.MAX_EVENTS:]
 
 
+def _window_key(item: Dict[str, Any]) -> tuple:
+    """Preserve declared windows without disabling ordinary repeated inserts.
+
+    add_item defaults valid_from to created_at. The persisted schema does not
+    distinguish that default from an explicitly supplied identical timestamp.
+    Keep the existing dedup policy for that ambiguous, open-ended case only.
+    """
+    start, end = str(item.get("valid_from") or ""), str(item.get("valid_until") or "")
+    provenance = item.get("provenance") or {}
+    state = str(provenance.get("temporal_state") or "") if isinstance(provenance, dict) else ""
+    if not end and not state and start == str(item.get("created_at") or ""):
+        return ("implicit", "", "")
+    return (start, end, state)
+
+
 def _dedupe_key(item: Dict[str, Any]) -> str:
     return "\x00".join((str(item.get("status") or ""), str(item.get("level") or ""),
                         str(item.get("owner") or ""), str(item.get("project") or ""),
+                        *_window_key(item),
                         _norm(item.get("text"))))
 
 
@@ -79,7 +95,10 @@ def _same_scope(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
     return (a.get("status") == b.get("status")
             and a.get("level") == b.get("level")
             and (a.get("owner") or "") == (b.get("owner") or "")
-            and (a.get("project") or "") == (b.get("project") or ""))
+            and (a.get("project") or "") == (b.get("project") or "")
+            # Even overlapping periods carry different historical claims.
+            # Absorption preserves only the winner's period, so require equality.
+            and _window_key(a) == _window_key(b))
 
 
 _NUMBER_RE = re.compile(r"(?<!\w)\d+(?:[.,]\d+)*%?(?!\w)")
@@ -87,15 +106,24 @@ _QUALIFIER_RE = re.compile(
     r"\b(?:always|never|sometimes|only|not|without|no|siempre|nunca|"
     r"jamás|jamas|solo|sólo|sin)\b", re.IGNORECASE,
 )
+_CALENDAR_RE = re.compile(
+    r"\b(?:january|february|march|april|may|june|july|august|september|october|"
+    r"november|december|enero|febrero|marzo|abril|mayo|junio|julio|agosto|"
+    r"septiembre|setiembre|octubre|noviembre|diciembre|monday|tuesday|wednesday|"
+    r"thursday|friday|saturday|sunday|lunes|martes|miércoles|miercoles|jueves|"
+    r"viernes|sábado|sabado|domingo)\b", re.IGNORECASE,
+)
 
 
 def _same_critical_details(a: str, b: str) -> bool:
-    """Keep fuzzy matching from erasing a changed number or rule qualifier.
+    """Keep fuzzy matching from erasing numbers, calendar words or qualifiers.
 
     This is intentionally conservative: a missed merge is cheaper to review
     than deleting a distinct fact along with its provenance.
     """
     return (_NUMBER_RE.findall(a) == _NUMBER_RE.findall(b)
+            and [m.casefold() for m in _CALENDAR_RE.findall(a)]
+            == [m.casefold() for m in _CALENDAR_RE.findall(b)]
             and [m.casefold() for m in _QUALIFIER_RE.findall(a)]
             == [m.casefold() for m in _QUALIFIER_RE.findall(b)])
 
@@ -106,7 +134,7 @@ def _dedupe(items: List[Dict[str, Any]], now: datetime,
     0.85 against what is already kept. Returns the survivors.
 
     Items are walked in id order so the same store always dedupes the same
-    way; only items of the same level and scope are ever compared — a
+    way; only items of the same level, scope and validity window are compared — a
     semantic fact and a procedural rule that happen to read alike are not the
     same memory.
     """
