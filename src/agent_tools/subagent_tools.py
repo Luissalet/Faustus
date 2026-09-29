@@ -1119,6 +1119,17 @@ def _apply_agent_defs(args: Dict[str, Any], reviewer_agent: str, workspace: Opti
     args["reviewer"] = True
 
 
+def _worker_retry_is_uncertain(run) -> bool:
+    """Fence from observed canonical outcomes, never inferred from prose.
+
+    Mirrors effect_state: cancelled also leaves the action outcome unknown.
+    Missing tool results need separate causal start/result tracking.
+    """
+    return any(isinstance(event, dict) and event.get("result_status") in
+               ("partial", "outcome_unknown", "cancelled")
+               for event in getattr(run, "tool_events", ()) or ())
+
+
 class SubagentRun:
     def __init__(self, index: int, task: Dict[str, Any], role: str = "worker"):
         self.index = index
@@ -1321,6 +1332,7 @@ class SubagentRun:
             **({"outcome": outcome} if outcome else {}),
             **({"criteria_check": criteria_check} if criteria_check is not None else {}),
             "stop_reason": self.stop_reason, "error": self.error,
+            **({"retry_blocked_uncertainty": True} if _worker_retry_is_uncertain(self) else {}),
             "tool_calls": self.tool_calls, "failed_calls": self.failed_calls,
             "mutations": self.mutations, "rejections": self.rejections, "rounds": self.rounds,
             "static_checks": self.static_checks, "git": self.git,
@@ -1793,6 +1805,8 @@ def _save_transcript(run: SubagentRun, sm: Any) -> None:
         child.add_message(ChatMessage("user", run.instruction))
         meta = dict(run.final_metrics or {})
         meta["tool_events"] = run.tool_events[:60]
+        if _worker_retry_is_uncertain(run):
+            meta["retry_blocked_uncertainty"] = True
         meta["subagent"] = {
             "parent_session": run.parent_session_id, "name": run.name, "role": run.role,
             "worker_id": run.id, "session_id": run.session_id,
@@ -2380,6 +2394,7 @@ class DelegateAgentsTool:
                                     and int(getattr(run, "failed_calls", 0) or 0)
                                     >= int(getattr(run, "tool_calls", 0) or 0))
                     if (run.role != "reviewer"
+                            and not _worker_retry_is_uncertain(run)
                             and not _all_refused
                             and receipt.verdict in (delegation_receipts.VERDICT_EMPTY,
                                                      delegation_receipts.VERDICT_ACK_ONLY)
