@@ -14236,20 +14236,33 @@ async def _stream_agent_loop_body(
                 logger.debug("[agent] completion engine unavailable", exc_info=True)
                 _ce_decision = None
             if isinstance(_ce_decision, dict) and _ce_decision.get("ok"):
+                _ce_next = list(_ce_decision.get("continue_with") or [])
+                _ce_continuation_granted = bool(_ce_next and _ce_completion_rounds < _CE_MAX_ROUNDS)
+                _ce_round_limit_hit = bool(_ce_next and _ce_completion_rounds >= _CE_MAX_ROUNDS)
+                if _ce_round_limit_hit:
+                    _ledger.stop_reason = "completion_budget_exhausted"
                 yield (
                     "data: "
                     + json.dumps({
                         "type": "completion_decision",
                         "shadow": bool(_ce_decision.get("shadow")),
                         "mode": _ce_decision.get("mode"),
-                        "stop_reason": _ce_decision.get("stop_reason"),
+                        "stop_reason": ("completion_budget_exhausted" if _ce_round_limit_hit
+                                        else _ce_decision.get("stop_reason")),
+                        "engine_stop_reason": _ce_decision.get("stop_reason"),
                         "decision_id": _ce_decision.get("decision_id"),
                         "summary": _ce_decision.get("summary"),
-                        "would_continue": len(_ce_decision.get("continue_with") or []),
+                        "would_continue": len(_ce_next),
+                        "continuation_proposed": bool(_ce_next),
+                        "continuation_granted": _ce_continuation_granted,
+                        "continuation_block_reason": ("completion_round_limit" if _ce_round_limit_hit
+                                                      else "shadow" if _ce_decision.get("shadow")
+                                                      else "" if _ce_continuation_granted else "no_proposal"),
+                        "completion_rounds_used": _ce_completion_rounds,
+                        "completion_rounds_limit": _CE_MAX_ROUNDS,
                     })
                     + "\n\n"
                 )
-                _ce_next = list(_ce_decision.get("continue_with") or [])
                 if _ce_next and _ce_completion_rounds < _CE_MAX_ROUNDS:
                     # Live mode only: `continue_with` is empty in shadow, so
                     # this branch cannot be reached by a measurement.
@@ -14271,8 +14284,9 @@ async def _stream_agent_loop_body(
             # PLAN-06: "ambitious but bounded" closing check. Only runs when a
             # plan exists for this turn (byte-identical behaviour for any turn
             # that never called `update_plan`) and the completion engine above
-            # did not already decide to keep going, so the two gates never
-            # both extend the same round.
+            # has no live continuation proposal. A proposal that exhausted its
+            # own CE quota still suppresses this gate: no extra rounds are
+            # granted through the plan gate to bypass the CE limit.
             if _latest_plan_update and not (isinstance(_ce_decision, dict) and _ce_decision.get("ok")
                                              and _ce_decision.get("continue_with")):
                 _plan_gap = _plan_coverage_gap(_latest_plan_update, _last_user or "")
