@@ -912,6 +912,7 @@ async def _direct_fallback(
     disabled_tools: Optional[set] = None,
     tool_policy: Optional[Any] = None,
     security_context: Optional[Any] = None,
+    pdf_call_binding: Optional[Any] = None,
 ) -> Optional[Dict]:
     _subproc_env = {
         **os.environ,
@@ -982,6 +983,20 @@ async def _direct_fallback(
         }
 
         from src.agent_tools import TOOL_HANDLERS
+        if pdf_call_binding is not None:
+            # Capture stabilizes implementation, never permission. Revocation
+            # of registration or live policy wins immediately before dispatch.
+            if (pdf_call_binding.name != tool or tool not in TOOL_HANDLERS
+                    or pdf_call_binding.handler is None
+                    or (disabled_tools and tool in disabled_tools)
+                    or (tool_policy and tool_policy.blocks(tool))):
+                return {"error": f"Tool '{tool}' registration or policy revoked.",
+                        "exit_code": 1, "blocked": True}
+            ctx["_pdf_call_definition"] = pdf_call_binding.definition()
+            result = await pdf_call_binding.handler(content, ctx)
+            if isinstance(result, dict):
+                result["pdf_call_contract"] = pdf_call_binding.metadata()
+            return result
         if tool in TOOL_HANDLERS:
             return await TOOL_HANDLERS[tool](content, ctx)
 
@@ -1306,6 +1321,11 @@ async def execute_tool_block(
             "NO_TOOL_SECURITY_CONTEXT"
         )
 
+    # Resolve one executable registration and its contract before any await.
+    # This is per-call, not the catalogue snapshot advertised for a model step.
+    from src.pdf_call_binding import capture_pdf_call
+    pdf_call_binding = capture_pdf_call(getattr(block, "tool_type", ""))
+
     approval_claimed = False
     if exact_approval is not None:
         # An always-approve tool (desktop input, FAUSTUS) is sealed and
@@ -1511,6 +1531,7 @@ async def execute_tool_block(
                 else None
             ),
             human_approved=approval_claimed,
+            pdf_call_binding=pdf_call_binding,
         )
         # CALL-05: normalize the tool's own ad hoc result dict into the
         # typed ToolResult contract (src/tool_result.py), at THIS single
@@ -1521,10 +1542,8 @@ async def execute_tool_block(
         # return. Best-effort and read-only: never raises, never touches
         # `output` — a transport-successful call whose dict carries a
         # functional error (`error` set, or a non-zero `exit_code`) is
-        # logged as `status="failed"` here, never as done, even though
-        # nothing downstream of this function reads `_typed_result` yet (the
-        # natural next consumer — folding this into a run's own done/error
-        # state — lives in src/agent_runs.py, outside this lote's files).
+        # logged as `status="failed"` here, never as done. Effect persistence
+        # and TeachMode below consume its status and uncertainty as well.
         # Wall time on the result the model will read (src/tool_clock.py):
         # the one place every caller funnels through, same as CALL-05 below.
         try:
@@ -1628,6 +1647,7 @@ async def _execute_tool_block_impl(
     approved_document_version: Optional[int] = None,
     approved_document_digest: Optional[str] = None,
     human_approved: bool = False,
+    pdf_call_binding: Optional[Any] = None,
 ) -> Tuple[str, Dict]:
     """Execute a single tool block. Returns (description, result_dict).
 
@@ -2341,13 +2361,14 @@ async def _execute_tool_block_impl(
         result = await _direct_fallback(
             tool, content, session_id=session_id, owner=owner, human_approved=human_approved,
         ) or {"error": f"{tool}: execution failed", "exit_code": 1}
-    elif tool in dynamic_handlers:
+    elif tool in dynamic_handlers or pdf_call_binding is not None:
         first_line = content.split(chr(10))[0][:80]
         desc = f"registry: {tool} {first_line}".strip()
         res = await _direct_fallback(
             tool, content, progress_cb=progress_cb,
             session_id=session_id, owner=owner, disabled_tools=disabled_tools,
             tool_policy=tool_policy, security_context=security_context,
+            pdf_call_binding=pdf_call_binding,
         )
 
         if isinstance(res, tuple):

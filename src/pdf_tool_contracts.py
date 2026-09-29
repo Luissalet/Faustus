@@ -30,8 +30,12 @@ def function_schemas() -> list[dict]:
             for definition in _DEFINITIONS.values()]
 
 
-def argument_issues(name: str, args: Any) -> list[ArgumentIssue]:
-    schema = _DEFINITIONS[name]["parameters"]
+def function_definition(name: str) -> dict:
+    return deepcopy(_DEFINITIONS[name])
+
+
+def argument_issues(name: str, args: Any, *, definition: dict | None = None) -> list[ArgumentIssue]:
+    schema = (definition if definition is not None else _DEFINITIONS[name])["parameters"]
     if not isinstance(args, dict):
         return [ArgumentIssue("$", "wrong_type", "expected a JSON object")]
     errors = [ArgumentIssue(key, "missing_required", "required field is missing")
@@ -52,7 +56,7 @@ def argument_issues(name: str, args: Any) -> list[ArgumentIssue]:
     return errors
 
 
-def parse_content(name: str, content: Any) -> dict:
+def parse_content(name: str, content: Any, *, definition: dict | None = None) -> dict:
     """Native objects and JSON fences share validation; outline keeps bare paths."""
     args = content
     if isinstance(content, str):
@@ -64,11 +68,11 @@ def parse_content(name: str, content: Any) -> dict:
                 args = json.loads(raw)
             except (ValueError, TypeError) as exc:
                 raise PdfArgumentsError("expected a JSON object") from exc
-    issues = argument_issues(name, args)
+    issues = argument_issues(name, args, definition=definition)
     if issues:
         raise PdfArgumentsError("; ".join(f"{issue.field}: {issue.detail}" for issue in issues))
     parsed = {key: value.strip() if isinstance(value, str) else value for key, value in args.items()}
-    for key, prop in _DEFINITIONS[name]["parameters"]["properties"].items():
+    for key, prop in (definition if definition is not None else _DEFINITIONS[name])["parameters"]["properties"].items():
         if key not in parsed and "default" in prop:
             parsed[key] = prop["default"]
         elif key in parsed and prop["type"] == "integer":

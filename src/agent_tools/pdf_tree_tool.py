@@ -19,9 +19,9 @@ from src.pdf_tool_contracts import PdfArgumentsError, parse_content
 logger = logging.getLogger(__name__)
 
 
-def _args(content: Any, tool: str):
+def _args(content: Any, tool: str, ctx: dict):
     try:
-        return parse_content(tool, content), None
+        return parse_content(tool, content, definition=ctx.get("_pdf_call_definition")), None
     except PdfArgumentsError as exc:
         # Keep the existing failure envelope for malformed arguments.
         return None, {"error": f"{tool}: {exc}", "exit_code": 1, "error_class": "pdf_tree.error"}
@@ -42,7 +42,7 @@ class PdfOutlineTool:
     and return it as compact indented text plus the structured nodes."""
 
     async def execute(self, content: str, ctx: dict) -> dict:
-        args, error = _args(content, "pdf_outline")
+        args, error = _args(content, "pdf_outline", ctx)
         if error:
             return error
         path = args["path"]
@@ -68,7 +68,7 @@ class PdfReadSectionTool:
     node_id not in the current tree is refused rather than guessed at."""
 
     async def execute(self, content: str, ctx: dict) -> dict:
-        args, error = _args(content, "pdf_read_section")
+        args, error = _args(content, "pdf_read_section", ctx)
         if error:
             return error
         path = args["path"]
@@ -98,7 +98,7 @@ class PdfFindSectionTool:
     long or the section name is only approximately known."""
 
     async def execute(self, content: str, ctx: dict) -> dict:
-        args, error = _args(content, "pdf_find_section")
+        args, error = _args(content, "pdf_find_section", ctx)
         if error:
             return error
         path = args["path"]
