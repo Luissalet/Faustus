@@ -64,6 +64,10 @@ DEFAULT_TIMEOUT_MS = 2000
 #: already made its point in the first forty.
 MAX_REPORT_ROWS = 40
 
+# Private continuity receipts; larger file sets compile again instead of keeping
+# an unbounded list or validating only a prefix while reusing the whole packet.
+MAX_FILE_REUSE_REFS = 40
+
 #: `ContextTask.query`'s own ceiling in the contract.  Clipped here so that a
 #: request built from a very long paste can still be re-parsed from its own
 #: `to_dict()` — a contract that cannot re-read its own output is not one.
@@ -545,6 +549,57 @@ def _reuse_scope(request: ContextRequest) -> str:
                                      separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
+def _captured_file_receipts(packet: ContextPacket):
+    receipts = []
+    for section in packet.sections:
+        if section.kind == "recent_messages":
+            continue
+        for item in section.items:
+            if item.source_type != "file":
+                continue
+            ref, revision = item.source_ref, item.source_revision
+            prefix = "captured_utf8_sha256:"
+            digest = revision[len(prefix):] if revision.startswith(prefix) else ""
+            if (not ref.startswith("file:") or len(digest) != 64
+                    or any(c not in "0123456789abcdef" for c in digest)):
+                return None
+            pair = (ref, revision)
+            if pair not in receipts:
+                receipts.append(pair)
+            if len(receipts) > MAX_FILE_REUSE_REFS:
+                return None
+    return tuple(receipts)
+
+
+async def _file_reuse_is_current(request: ContextRequest, previous: Mapping[str, Any]) -> bool:
+    receipts = previous.get("_file_reuse_receipts")
+    if receipts is None:
+        # Missing/unsupported identity must not be reconstructed from a report
+        # whose public sources list may have been truncated.
+        return False
+    if not isinstance(receipts, tuple) or len(receipts) > MAX_FILE_REUSE_REFS:
+        return False
+    if not receipts:
+        return True
+    from .adapters.files import FileSource
+    from .candidates import RetrievalRequest
+
+    async def validate():
+        source = FileSource()
+        retrieval = RetrievalRequest(request=request)
+        for ref, revision in receipts:
+            candidate = await source.fetch(ref, retrieval)
+            if candidate is None or candidate.source_revision != revision:
+                return False
+        return True
+
+    try:
+        return await asyncio.wait_for(validate(), timeout_s())
+    except Exception:
+        logger.debug("context file reuse validation unavailable", exc_info=True)
+        return False
+
+
 async def deliver_round(*, request: ContextRequest,
                         messages: Sequence[Mapping[str, Any]],
                         tool_schemas: Sequence[Any] = (),
@@ -555,8 +610,9 @@ async def deliver_round(*, request: ContextRequest,
     """Compile and safely deliver one auditable packet for one model call.
 
     ``previous`` is what this function returned on an earlier round of the
-    same turn. When its request identity matches and it still fits the room
-    left, it is delivered again byte for byte instead of compiling a new one:
+    same turn. When its request identity matches, its delivered file projections
+    remain current and it still fits the room left, it is delivered again byte
+    for byte instead of compiling a new one:
     the question is the same all turn
     (see `last_user_text`), and a packet that differs from the last round's
     makes a local server reprocess everything after it -- the person's
@@ -591,7 +647,8 @@ async def deliver_round(*, request: ContextRequest,
                 and isinstance(previous.get("report"), Mapping)):
             prior_report = previous["report"]
             prior_tokens = int(prior_report.get("packet_tokens") or 0)
-            if 0 < prior_tokens <= allowance and previous.get("message"):
+            if (0 < prior_tokens <= allowance and previous.get("message")
+                    and await _file_reuse_is_current(request, previous)):
                 report = dict(prior_report)
                 report.update({
                     "round": max(0, int(round_index or 0)),
@@ -599,7 +656,8 @@ async def deliver_round(*, request: ContextRequest,
                     "reused": True,
                 })
                 return {"message": previous["message"], "report": report,
-                        "_reuse_scope": reuse_scope}
+                        "_reuse_scope": reuse_scope,
+                        "_file_reuse_receipts": previous.get("_file_reuse_receipts", ())}
         bounded = replace(
             request,
             policy=replace(request.policy, token_budget=allowance),
@@ -638,6 +696,7 @@ async def deliver_round(*, request: ContextRequest,
         return {
             "message": message,
             "_reuse_scope": reuse_scope,
+            "_file_reuse_receipts": _captured_file_receipts(packet),
             "report": {
                 "round": max(0, int(round_index or 0)),
                 "delivered": True,
