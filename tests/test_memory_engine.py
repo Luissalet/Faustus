@@ -277,6 +277,32 @@ def test_graph_lane_matches_windows_and_posix_evidence_paths(store):
     assert hits[item["id"]]["graph"] > 0
 
 
+def test_evidence_dependents_are_exact_and_owner_scoped(store):
+    target = _rule("Cart calculation", project="atlas",
+                   evidence=[{"kind": "file", "ref": "src/cart.py"}])
+    other_project = _rule("Cart calculation elsewhere", project="zephyr",
+                          evidence=[{"kind": "file", "ref": "src/cart.py"}])
+    _rule("Different source", project="atlas",
+          evidence=[{"kind": "file", "ref": "tests/src/cart.py"}])
+    _rule("Different evidence kind", project="atlas",
+          evidence=[{"kind": "dispatch", "ref": "src/cart.py"}])
+    _rule("Another owner's source", owner="ana", project="atlas",
+          evidence=[{"kind": "file", "ref": "src/cart.py"}])
+
+    matches = engine.evidence_dependents("src/cart.py", owner="luis",
+                                         project="atlas", kind="file")
+    assert [item["id"] for item in matches] == [target["id"]]
+    all_projects = engine.evidence_dependents("src/cart.py", owner="luis", kind="file")
+    assert {item["id"] for item in all_projects} == {target["id"], other_project["id"]}
+
+
+def test_evidence_dependents_require_explicit_owner_and_ref(store):
+    with pytest.raises(engine.MemoryEngineError):
+        engine.evidence_dependents("src/cart.py", owner="")
+    with pytest.raises(engine.MemoryEngineError):
+        engine.evidence_dependents("", owner="luis")
+
+
 def test_retrieval_touches_only_the_items_it_surfaced(store):
     hit = _rule("Prefer edit_file over rewriting the whole module")
     miss = _rule("Completely different subject matter here")

@@ -1330,6 +1330,34 @@ def add_evidence(item_id: Any, spans: Any) -> Optional[Dict[str, Any]]:
     return item
 
 
+def evidence_dependents(ref: str, *, owner: str, project: Optional[str] = None,
+                        kind: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Active memories citing an exact source ref within one owner's scope.
+
+    This read-only inventory is the first step of source retraction. A shared
+    filename, substring or another owner's evidence must never count as the
+    same source. ``project=None`` checks all projects of the named owner;
+    passing a project selects that exact project, including ``""``.
+    """
+    if not isinstance(ref, str) or not ref.strip():
+        raise MemoryEngineError("evidence ref must be a non-empty string")
+    if not isinstance(owner, str) or not owner.strip():
+        raise MemoryEngineError("evidence owner must be explicit")
+    if kind is not None and kind not in EVIDENCE_KINDS:
+        raise MemoryEngineError(f"evidence kind must be one of {', '.join(EVIDENCE_KINDS)}")
+    where = "owner = ? AND status IN ('active', 'anti_pattern')"
+    params: List[Any] = [owner]
+    if project is not None:
+        where += " AND project = ?"
+        params.append(str(project))
+    with _db() as conn:
+        rows = conn.execute(f"SELECT * FROM items WHERE {where} ORDER BY id", params).fetchall()
+    return [item for item in (_row_to_item(row) for row in rows)
+            if any(isinstance(span, dict) and span.get("ref") == ref
+                   and (kind is None or span.get("kind") == kind)
+                   for span in item.get("evidence") or [])]
+
+
 def touch(ids: Iterable[str], now: Optional[datetime] = None) -> int:
     """Bump last_accessed / access_count for items actually surfaced."""
     ids = [str(i) for i in (ids or []) if i]
