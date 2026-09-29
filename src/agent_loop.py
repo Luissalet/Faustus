@@ -9450,7 +9450,8 @@ async def _stream_agent_loop_body(
 
     async def _build_route_request_state(candidate_url, candidate_model, candidate_headers, source_messages):
         compaction_state: Dict = {}
-        compacted_source = list(source_messages)
+        from src.context_compactor import refresh_compaction_approvals
+        compacted_source = refresh_compaction_approvals(list(source_messages))
         was_compacted = False
         if defer_context_shaping or fallbacks:
             # CTX-02 (lote 18 integration): try the deterministic,

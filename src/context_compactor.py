@@ -1010,6 +1010,7 @@ async def maybe_compact(
 
     Returns (messages, context_length, was_compacted).
     """
+    messages = refresh_compaction_approvals(messages)
     context_length = get_context_length(endpoint_url, model)
     # Calibrated: `model` is known here, so the compaction-threshold gate
     # uses this model's real chars->tokens ratio instead of the generic
@@ -1495,6 +1496,103 @@ class CompactionPreserve:
         if self.source_refs:
             lines.append("Sources: " + ", ".join(self.source_refs))
         return "\n".join(lines)
+
+
+def refresh_compaction_approvals(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Refresh generated pending-card references in a prompt copy, never consent.
+
+    Free prose is untouched. An unmatched block or unavailable store is labelled
+    historical; the approval store remains the sole authorization authority.
+    """
+    from datetime import datetime, timezone
+
+    refreshed = []
+    for message in messages:
+        metadata = message.get("metadata") if isinstance(message, dict) else None
+        preserve_data = metadata.get("compaction_preserve") if isinstance(metadata, dict) else None
+        if not (isinstance(message, dict) and message.get("role") == "system"
+                and metadata and metadata.get("compacted") and isinstance(preserve_data, dict)):
+            refreshed.append(message)
+            continue
+        previous = metadata.get("approval_refresh", {})
+        # Legacy metadata is diagnostic, never allowed to break prompt assembly.
+        # Do not coerce invalid fields into a plausible generated/current block.
+        def valid_cards(value):
+            return isinstance(value, list) and all(
+                isinstance(card, dict) and all(
+                    isinstance(card.get(key, ""), str)
+                    for key in ("approval_id", "tool", "args_digest"))
+                for card in value)
+
+        if not (
+            isinstance(previous, dict)
+            and isinstance(previous.get("annotation", ""), str)
+            and isinstance(previous.get("matched", False), bool)
+            and valid_cards(preserve_data.get("approvals", []))
+            and valid_cards(previous.get("references", []))
+            and isinstance(preserve_data.get("objective", ""), str)
+            and all(isinstance(preserve_data.get(key, []), list)
+                    and all(isinstance(item, str) for item in preserve_data.get(key, []))
+                    for key in ("constraints", "source_refs"))
+        ):
+            refreshed.append(message)
+            continue
+        cards = previous.get("references", preserve_data.get("approvals", []))
+        if not isinstance(cards, list) or not cards:
+            refreshed.append(message)
+            continue
+        content = message.get("content")
+        if not isinstance(content, str):
+            refreshed.append(message)
+            continue
+        annotation = previous.get("annotation", "")
+        if annotation and content.endswith("\n\n" + annotation):
+            content = content[:-len("\n\n" + annotation)]
+        old = CompactionPreserve(**{key: preserve_data.get(key, default) for key, default in
+                                   (("approvals", []), ("constraints", []),
+                                    ("objective", ""), ("source_refs", []))})
+        block = old.to_block()
+        exact = bool(block and content.endswith("\n\n" + block)) or (
+            not block and previous.get("matched") and annotation
+            and message["content"].endswith("\n\n" + annotation))
+        pending, states = [], []
+        for card in cards:
+            if not isinstance(card, dict) or not isinstance(card.get("approval_id"), str):
+                continue
+            card_id = card["approval_id"]
+            try:
+                from src import approval_store
+                current = approval_store.get(card_id)
+                from src.contracts.approval import APPROVAL_STATUSES
+                status = current.status if current is not None else "missing"
+                if status not in (*APPROVAL_STATUSES, "missing"):
+                    status = "unknown"
+            except Exception:
+                status = "unknown"
+            states.append({"approval_id": card_id, "status": status})
+            if status == "pending" and exact:
+                pending.append(dict(card))
+        updated = dict(preserve_data)
+        updated["approvals"] = pending
+        if exact:
+            new_block = CompactionPreserve(pending, old.constraints, old.objective, old.source_refs).to_block()
+            content = content[:-len(block)] + new_block if block else content + new_block
+        checked_at = datetime.now(timezone.utc).isoformat()
+        historical = not exact or any(state["status"] == "unknown" for state in states)
+        annotation = ("Approval references (historical context; not authorization): " if historical else
+                      "Approval status checked (not authorization): ")
+        annotation += ", ".join(state["approval_id"] + "=" + state["status"] for state in states)
+        annotation += "; checked_at=" + checked_at
+        copied_metadata = dict(metadata)
+        copied_metadata["compaction_preserve"] = updated
+        copied_metadata["approval_refresh"] = {
+            "references": [dict(card) for card in cards if isinstance(card, dict)],
+            "states": states, "checked_at": checked_at, "matched": exact,
+            "historical": historical, "annotation": annotation,
+        }
+        refreshed.append({**message, "metadata": copied_metadata,
+                          "content": content + "\n\n" + annotation})
+    return refreshed
 
 
 def _find_pending_approvals(text: str) -> List[Dict[str, str]]:
@@ -2153,6 +2251,7 @@ def compact_with_integrity(
     """
     if not messages:
         return list(messages or []), []
+    messages = refresh_compaction_approvals(messages)
 
     system_msgs = [m for m in messages if isinstance(m, dict) and m.get("role") == "system"]
     convo = [m for m in messages if not (isinstance(m, dict) and m.get("role") == "system")]
