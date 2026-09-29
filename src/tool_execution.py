@@ -1598,13 +1598,13 @@ async def execute_tool_block(
                     except Exception:
                         _arguments = {"content": str(getattr(block, "content", "") or "")}
                     _result = output[1] if len(output) > 1 else {}
-                    _failed = bool(isinstance(_result, dict) and (
-                        _result.get("error") or int(_result.get("exit_code") or 0) != 0
-                    ))
+                    # A partial or uncertain result is not a successful
+                    # demonstration, even when its transport exited cleanly.
+                    _succeeded = bool(_typed_result and _typed_result.status == "succeeded")
                     _capture_teach(
                         owner=str(owner), session_id=str(session_id),
                         project_id=str(_project.get("id") or ""), tool=_captured_tool,
-                        arguments=_arguments, result=_result, success=not _failed,
+                        arguments=_arguments, result=_result, success=_succeeded,
                         duration_ms=max(0, int((time.monotonic() - _tool_started_at) * 1000)),
                     )
             except Exception:
