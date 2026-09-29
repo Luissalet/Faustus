@@ -28,15 +28,18 @@ Prueba decisiva: el runner real escribe un señuelo temporal fuera del cwd del g
 | H11 | `3338166d`: drenaje por bloques UTF-8, salida/progreso acotados y actividad sin LF; 91 pruebas y 3 omitidas. `6305ed06`: Code Mode drena stderr, 26 pruebas; `6b19a2fe`: frames grandes dentro de cuota y rechazo explícito del exceso, 32 pruebas. Manager/stdin/handles durables pendientes |
 | H12 | `906ae3c7`: reparación de llamadas sin respuesta conserva contenido multimodal; 94 pruebas; `d466bf5a`: marcador legacy no borra imágenes, 128 pruebas. `466c01e3`: renderer Anthropic conserva bloques junto a tool_calls, 100 pruebas focales. Proyección canónica y recibos pendientes |
 | H13 | `f22702d9`: función pura compara en shadow ampliación/ciclos/presupuesto sin gobernar el bucle, 75 pruebas y 432 combinaciones. `291907ed`: cierre CE distingue propuesta y continuación concedida al agotar cupo, 56 pruebas; controlador común pendiente |
-| H14 | `ce4df06a`: retries de workers acumulan tokens por intento, sin duplicar métricas finales ni borrar campos ausentes; 49 pruebas. `47cffe37`: uso auxiliar observado en traza y sesión real del compactor, extras válidos sobreviven a overflow ajeno; 146 pruebas finales, 307 amplias agente. Presupuesto transversal pendiente |
+| H14 | `ce4df06a`: retries de workers acumulan tokens por intento; `47cffe37`: uso auxiliar observado en traza. `acb098e0`: compactor carga tokens/gasto observado en ledger del turno y comprueba admisión antes de inferir, incluido fallback y coste sin tokens; 160 pruebas finales. Otros auxiliares, reserva previa y cuentas transversales pendientes |
 | H15 | `30e71fc8`: comentarios históricos de wiring y bridge corregidos contra callers actuales; AST sin docstring idéntico. Alcance de dos módulos completado |
 | H16 | `303d4f63`: estados inciertos y llamadas anunciadas sin resultado no verifican progreso/fuentes; 191 pruebas finales. `2d32937a`: Enseñame registra éxito normalizado, 41 pruebas. `dbdf0987`: worker conserva evidencia hasta SQLite/reapertura, 120 pruebas. `5de909f8`: Code Mode propaga incertidumbre interna con recibos acotados, 23 pruebas. Verificación transversal e incertidumbre de host directo pendientes |
-| H19 | `d7600e54`: steering sin run/sesión resoluble no se difunde a todos los workers; 61 pruebas. Recibos durables/recuperación pendientes |
+| H19 | `d7600e54`: steering sin run/sesión resoluble no se difunde a todos los workers; 61 pruebas. `31f4381e`: recepción por intento cierra antes de done/error terminal y reabre en retry; 46 pruebas finales/2 omisiones. Recibos durables/recuperación y entrada aceptada en última ronda pendientes |
 | H21 | `54fea979`: instrucciones se refrescan por contenido acotado, no mtime; 66 pruebas y 1 POSIX omitida. `b63f1e5b`: recibos L1 ensamblados. `da728abe`: prompt y compactor renderizan los bytes capturados usados por la comprobación de aprobación; 90 pruebas finales coordinador. Jerarquía, reglas/objetivos fuera del digest, transacción de directorio y procedencia completa/entrega de skills pendientes |
 | H24 | `92c6ebee`: elimina contaminación global de imports en fixture de skills; mismo orden integrado 252 pruebas correctas tras timeout previo. Banco pareado con modelos y aislamiento general pendientes |
 | H20 | `42a29971`: identidad de mutación compartida en deduplicación/conflictos; ámbitos y sesiones distintos no se mezclan, origen de sesión en proyecto permite consolidación. 30 pruebas finales de ámbito/vigencia/propietario. Leases y atomicidad concurrente pendientes |
-| H18 | `70974a90`: mutex compartido process-local para edit_file/write_file, lectura/revisión/escritura indivisibles entre esos participantes; 66 correctas/2 omisiones Windows y 33 con rewritepolicy. `9ce4a9ff`: revisión de preview efectiva revalidada dentro del mutex; 130 correctas/2 omisiones. Apply_patch, previews desconocidas, escritores externos y claims generales pendientes |
-| H07, H17, H22–H23 | Pendientes conforme al análisis original; no declarar cerrados por este documento |
+| H18 | `70974a90`: mutex compartido process-local para edit_file/write_file; `9ce4a9ff`: preview efectiva revalidada dentro del mutex. `1290a5c5`: apply_patch valida todas sus revisiones preparadas antes del journal bajo mutex múltiples ordenados, incluida compensación; 157 pruebas conjuntas/4 omisiones. Previews desconocidas, escritores externos y claims generales pendientes |
+| H17 | `03432131`: lookup y categorías filtran permisos antes de anunciar schema/promoción; fallback permitido respeta pool vacío, 42 pruebas finales. Exposición por descriptor/snapshot y ranking después de filtro pendientes |
+| H22 | `639ef1e6`: probes omitidos no borran observaciones booleanas/evidencia/fecha; último intento separado, 58 pruebas finales. Aislamiento endpoint/protocolo, migración de identidad y probes específicos pendientes |
+| H23 | `7575dbc5`: listado de trazas conserva run y uso observado, cero/parcial y coste desconocido sin inventarlo; 53 pruebas finales. Vista y agrupación causal por fase pendientes |
+| H07 | Controlador común pendiente conforme al análisis original |
 
 Los pilotos de reinicio de procesos (`403756a9`) y memoria (`9e0e8e50`) ya aportan evidencia a H11/H20/H24, pero no completan esos cambios transversales.
 
@@ -175,5 +178,19 @@ Esos tramos están implementados: `47cffe37`, `e4970af7` y `9ce4a9ff`, respectiv
   finales en 19,17 s. Pending y terminal siguen en el run original; un writer
   cerrado no entrega el resultado al nuevo. Memoria sin persistencia conservada.
 
-Activos, no completados: H14 cargo de compactor al ledger capturado/admisión,
-H18 preparación de apply_patch y H19 recepción por intento de worker.
+`acb098e0`: [compactor y presupuesto](CODEX_H14_COMPACTION_BUDGET.md),
+160 correctas finales en 142,68 s. Mantiene exclusión del utility local y bypass
+del principal local. No reserva presupuesto antes de cada auxiliar.
+
+`31f4381e`: [recepción de instrucciones](CODEX_H19_STEERING_LIFECYCLE.md),
+9 casos nuevos; selección final 46 correctas y 2 omitidas en 34,97 s.
+La admisión confirma encolado; no equivale a inyección ni persistencia.
+H17 anuncio/permisos implementado en `03432131`; H22 skip probes en `639ef1e6`.
+Identidad endpoint/protocolo H22 en implementación; vigencia de fuentes H09
+y menciones históricas H10 solo evaluación.
+
+`1290a5c5`: [preparación de patches](CODEX_H18_PATCH_PREPARATION.md),
+13 regresiones nuevas; selección conjunta final de archivos/workers:
+157 correctas y 4 omitidas en 39,61 s. Los destinos duplicados canónicos se
+rechazan antes del batch. No proporciona transacción del filesystem ni
+aislamiento frente a procesos externos.
