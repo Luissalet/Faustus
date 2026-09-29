@@ -658,14 +658,17 @@ def strip_images(messages: List[Dict[str, Any]]) -> tuple:
             out.append(msg)
             continue
         new = dict(msg)
+        native_texts = []
         if has_native:
             n_native = len(msg.get("images") or [])
             new.pop("images", None)
             texts = _replacement_texts(msg, n_native)
-            base = new.get("content") if isinstance(new.get("content"), str) else ""
-            new["content"] = "\n".join([t for t in [base, *texts] if t])
+            native_texts = texts
+            if not isinstance(content, list):
+                base = new.get("content") if isinstance(new.get("content"), str) else ""
+                new["content"] = "\n".join([t for t in [base, *texts] if t])
             replaced += n_native
-        if has_blocks:
+        if isinstance(content, list):
             n = sum(1 for b in content if _is_image_block(b))
             texts = iter(_replacement_texts(msg, n))
             blocks = []
@@ -674,6 +677,7 @@ def strip_images(messages: List[Dict[str, Any]]) -> tuple:
                     blocks.append({"type": "text", "text": next(texts)})
                 else:
                     blocks.append(b)
+            blocks.extend({"type": "text", "text": text} for text in native_texts)
             new["content"] = blocks
             replaced += n
         out.append(new)
