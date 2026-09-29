@@ -235,6 +235,24 @@ def _estimate_speed(model, quant, run_mode, system, offload_frac=0.0):
     return k / pb * sm
 
 
+def _speed_estimate_scope(run_mode, system):
+    """Describe what the heuristic does and does not measure.
+
+    Unlike a depth-sampled assessment, this estimator reads bandwidth or a
+    parameter fallback and has no observed decode timings. Keeping that
+    explicit prevents a single tok/s value from masquerading as a guarantee
+    at the requested context length.
+    """
+    if run_mode == "no_fit":
+        return {"basis": "not_estimated", "confidence": "none",
+                "measured": False, "context_depth_modeled": False}
+    bandwidth = _lookup_bandwidth(system)
+    basis = ("bandwidth_heuristic" if bandwidth and run_mode in ("gpu", "cpu_offload")
+             else "parameter_fallback")
+    return {"basis": basis, "confidence": "low", "measured": False,
+            "context_depth_modeled": False}
+
+
 def _architecture_bonus(model):
     name = (model.get("name") or "").lower()
     arch = (model.get("architecture") or "").lower()
@@ -535,6 +553,7 @@ def analyze_model(model, system, target_quant=None, scoring_use_case=None, targe
             "context": ctx,
             "required_gb": round(oversized_required, 1),
             "speed_tps": 0,
+            "speed_estimate": _speed_estimate_scope("no_fit", system),
             "score": 0,
             "scores": {"quality": 0, "speed": 0, "fit": 0, "context": 0},
             "gguf_sources": model.get("gguf_sources", []),
@@ -610,6 +629,7 @@ def analyze_model(model, system, target_quant=None, scoring_use_case=None, targe
         "context": fit_ctx,
         "required_gb": round(required_gb, 1),
         "speed_tps": round(tps, 1),
+        "speed_estimate": _speed_estimate_scope(run_mode, system),
         "score": round(composite, 1),
         "scores": {
             "quality": round(q_score, 1),
