@@ -22,6 +22,7 @@ from typing import Any, Optional
 
 from core.platform_compat import IS_WINDOWS
 from src.code_mode import bridge
+from src.code_mode.outcomes import CallOutcomes
 
 logger = logging.getLogger(__name__)
 
@@ -180,6 +181,7 @@ async def run_code_mode(
     stderr_tail = b""
     wall_clock = _WallClock(timeout_s)
     approvals_log: list = []
+    outcomes = CallOutcomes()
 
     proc.stdin.write((json.dumps({
         "max_calls": max_calls,
@@ -208,6 +210,8 @@ async def run_code_mode(
                 calls_made += 1
                 last_call = str(msg.get("tool") or "")
                 call_id = str(msg.get("call_id") or "")
+                dispatch_id = f"code_mode:{call_id}:{uuid.uuid4().hex[:8]}"
+                outcome_record = outcomes.begin(dispatch_id, last_call)
                 result = await bridge.dispatch_call(
                     msg.get("tool"),
                     msg.get("args"),
@@ -216,12 +220,13 @@ async def run_code_mode(
                     workspace=workspace,
                     workspace_roots=workspace_roots,
                     disabled_tools=disabled_tools,
-                    call_id=f"code_mode:{call_id}:{uuid.uuid4().hex[:8]}",
+                    call_id=dispatch_id,
                     tool_policy=tool_policy,
                     security_context=security_context,
                     wall_clock=wall_clock,
                     approvals_log=approvals_log,
                 )
+                outcomes.finish(outcome_record, result)
                 # "ok" transport-wise means "the tool ran" (even a functional
                 # error, e.g. a bad path or a policy rejection, is `ok=True`
                 # with the error carried inside `result` -- exactly how
@@ -319,6 +324,7 @@ async def run_code_mode(
             "receipt": receipt,
             "stderr": stderr_tail.decode("utf-8", "replace")[-2000:] if stderr_tail else "",
             "approvals": approvals_log,
+            **outcomes.fields(),
         }
 
     # A cooperative finish: the guest itself hit (and reported) a quota, or
@@ -347,6 +353,7 @@ async def run_code_mode(
             "receipt": receipt,
             "output": final_payload.get("output") or "",
             "approvals": approvals_log,
+            **outcomes.fields(),
         }
 
     _output = final_payload.get("output") or ""
@@ -358,4 +365,5 @@ async def run_code_mode(
         "elapsed_ms": elapsed_ms,
         "result_chars": len(_output),
         "approvals": approvals_log,
+        **outcomes.fields(),
     }
