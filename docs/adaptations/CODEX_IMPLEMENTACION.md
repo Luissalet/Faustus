@@ -21,6 +21,7 @@ Prueba decisiva: el runner real escribe un señuelo temporal fuera del cwd del g
 | H03 | `fc435eae`: intención sincronizada antes del correo con call_id y run activo, aliases MCP incluidos; 64 pruebas ampliadas y 29 finales. Outbox independiente, rutas no trazadas e idempotencia externa pendientes |
 | H04 | `0572e1af`: 55 pruebas de normalización→evento→reinicio. `a40b8bcb`: productores propagan timeout real, 71 pruebas y 7 omitidas; exit 124 voluntario no implica timeout. `1b2537c9`: Studio conserva parcial/desconocido en directo e historial, 33 pruebas, tipos/build y render aislado correctos. Errores genéricos e identidad de intentos pendientes |
 | H05 | `7c558eee`: round-trip de 220 herramientas y MCP; `155fad3d`: errores numéricos PDF; `28b2c2b0`: schemas independientes entre origen/snapshot/exportación. `3bfc22e2`: contrato único argumentos/schema/parser PDF, 122 pruebas. `fdce5d9e`: captura ejecutor/contrato PDF por llamada con revocación vigente, 172 pruebas; autoridad común general y snapshot por paso pendientes |
+| H06 | `0f8e6dc4`: recibo shadow del schema preparado por candidato, comparado con binding PDF y propagado a eventos; 56 pruebas finales. Ronda/candidato obsoletos no se comparan. Snapshot de paso y autoridad general pendientes |
 | H08 | `b7089ff5`: compactación de progreso por call_id conserva llamadas distintas, 52 pruebas y recuperación de traza solo desde disco. `db99abd9`: archivos exclusivos por run, recuperación multirun con commit SQLite confirmado y purga/retención, 114 pruebas. Ledger independiente e identidad de subagentes pendientes |
 | H09 | `1a418269`: reutilización exige ámbito/política/solicitud coincidentes, 53 pruebas; `b63f1e5b`: recibos de skills renderizadas/ensambladas y uso solo de cuerpos incluidos, 50 pruebas; versiones universales de fuentes y entrega efectiva pendientes |
 | H10 | `6127bd24`: fuentes externas marcadas no se promueven a restricciones/objetivo preservado. `ebf7a856`: persistencia inmediata/diferida con SQLite y tres compactaciones/reaperturas, 99 pruebas. Checkpoint portable y actualización de menciones históricas de aprobaciones pendientes |
@@ -33,7 +34,7 @@ Prueba decisiva: el runner real escribe un señuelo temporal fuera del cwd del g
 | H19 | `d7600e54`: steering sin run/sesión resoluble no se difunde a todos los workers; 61 pruebas. Recibos durables/recuperación pendientes |
 | H21 | `54fea979`: instrucciones se refrescan por contenido acotado, no mtime; 66 pruebas y 1 POSIX omitida. `b63f1e5b`: recibos L1 ensamblados. Jerarquía, snapshot aprobado atómico y procedencia completa/entrega de skills pendientes |
 | H24 | `92c6ebee`: elimina contaminación global de imports en fixture de skills; mismo orden integrado 252 pruebas correctas tras timeout previo. Banco pareado con modelos y aislamiento general pendientes |
-| H06–H07, H17–H18, H20, H22–H23 | Pendientes conforme al análisis original; no declarar cerrados por este documento |
+| H07, H17–H18, H20, H22–H23 | Pendientes conforme al análisis original; no declarar cerrados por este documento |
 
 Los pilotos de reinicio de procesos (`403756a9`) y memoria (`9e0e8e50`) ya aportan evidencia a H11/H20/H24, pero no completan esos cambios transversales.
 
@@ -104,9 +105,16 @@ La selección conjunta de skills, shadow, plan/cierre, workers y Code Mode fall�
 por contaminación de imports en una prueba histórica. El caso aislado pasó en
 17,08 s; tras corregir la fixture en `92c6ebee`, **252 pruebas correctas en
 65,69 s** en el mismo orden. No se cuenta el intento con timeout como éxito.
-El piloto H06 de identidad de schemas sigue en curso y requiere validación propia.
+El piloto H06 se confirmó después en `0f8e6dc4`, con 56 pruebas del código final;
+la selección amplia de 198 pruebas corresponde a su variante previa, como distingue el informe.
 
 Informes: [aislamiento del banco](CODEX_H24_TEST_IMPORT_ISOLATION.md),
 [cierre por cupo](CODEX_H13_COMPLETION_BUDGET_REASON.md),
 [stderr Code Mode](CODEX_H11_CODE_MODE_STDERR.md),
 [frames Code Mode](CODEX_H11_CODE_MODE_FRAMES.md).
+
+
+[Recibos de schemas H06](CODEX_H06_SCHEMA_RECEIPTS.md): detección de discrepancias
+y versiones del candidato preparado, sin ampliar la autoridad. H20 aislamiento de
+curación y H12 proyección de historia están en revisión con Sol 6.1 desde el
+30-09-2026. No se reabre el radar de 41 proyectos ya completado.
