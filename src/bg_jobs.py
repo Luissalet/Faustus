@@ -289,9 +289,16 @@ def launch(command: str, session_id: str, cwd: Optional[str] = None,
     return rec
 
 
+def _read_job_text(path: Path) -> str:
+    """PowerShell 5 writes UTF-16; pwsh and Bash normally write UTF-8."""
+    raw = path.read_bytes()
+    encoding = "utf-16" if raw.startswith((b"\xff\xfe", b"\xfe\xff")) else "utf-8-sig"
+    return raw.decode(encoding, errors="replace")
+
+
 def _read_output(rec: Dict[str, Any]) -> str:
     try:
-        txt = Path(rec["log_path"]).read_text(encoding="utf-8", errors="replace")
+        txt = _read_job_text(Path(rec["log_path"]))
     except Exception:
         return ""
     if len(txt) > _MAX_OUTPUT_CHARS:
@@ -338,7 +345,7 @@ def refresh() -> Dict[str, Dict[str, Any]]:
         exit_path = Path(rec.get("exit_path", ""))
         if exit_path.exists():
             try:
-                code = int(exit_path.read_text(encoding="utf-8", errors="replace").strip() or "1")
+                code = int(_read_job_text(exit_path).strip() or "1")
             except Exception:
                 code = 1
             rec["exit_code"] = code
