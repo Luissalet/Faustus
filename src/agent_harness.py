@@ -1874,8 +1874,8 @@ class TurnLedger:
         The source-claim check is per turn, so a follow-up answer ("as I
         checked against the edition earlier...") was rejected although the
         check did happen, one turn before. A prior message counts when it
-        records a source tool: stored tool events (`metadata.tool_events`),
-        OpenAI-style `tool_calls`, or a `tool` message naming one."""
+        records a successful source result: stored tool events or a `tool`
+        message naming one. A requested `tool_call` alone proves no read."""
         if not isinstance(message, dict):
             return
         self._note_prior_leg(message)
@@ -1883,17 +1883,27 @@ class TurnLedger:
             return
         from src.source_claims import is_page_tool, is_source_tool
         names: List[str] = []
+        reported_tools = set()
         meta = message.get("metadata")
         if isinstance(meta, dict):
             for ev in meta.get("tool_events") or []:
-                if isinstance(ev, dict) and ev.get("exit_code") in (None, 0) and not ev.get("error"):
-                    names.append(str(ev.get("tool") or ""))
-        for call in message.get("tool_calls") or []:
-            if isinstance(call, dict):
-                fn = call.get("function")
-                names.append(str((fn or {}).get("name") if isinstance(fn, dict) else call.get("name") or ""))
+                if isinstance(ev, dict):
+                    name = str(ev.get("tool") or "")
+                    reported_tools.add(name)
+                    if _result_ok(ev):
+                        names.append(name)
         if message.get("role") == "tool":
-            names.append(str(message.get("name") or ""))
+            name = str(message.get("name") or "")
+            content = message.get("content")
+            if isinstance(content, str):
+                try:
+                    content = json.loads(content)
+                except (ValueError, TypeError):
+                    pass  # legacy plain-text tool output remains evidence
+            if (name not in reported_tools and _result_ok(message)
+                    and (not isinstance(meta, dict) or _result_ok(meta))
+                    and (not isinstance(content, dict) or _result_ok(content))):
+                names.append(name)
         if any(is_source_tool(n) for n in names if n):
             self.prior_sources = True
         if any(is_page_tool(n) for n in names if n):
@@ -2467,7 +2477,18 @@ def _result_ok(result: Optional[Dict[str, Any]]) -> bool:
     code = result.get("exit_code")
     if code not in (None, 0):
         return False
-    return True
+    # Persisted result_status is canonical; raw status also carries legacy
+    # producer vocabulary (ok/ready/etc.) that the shared adapter supports.
+    # Neither malformed canonical data nor partial execution proves success.
+    if "result_status" in result and result["result_status"] != "succeeded":
+        return False
+    if "status" in result and not isinstance(result["status"], str):
+        return False
+    try:
+        from src.tool_result import normalize_tool_result
+        return normalize_tool_result(result).status == "succeeded"
+    except Exception:  # malformed evidence must never verify a claim
+        return False
 
 
 def _result_text(result: Optional[Dict[str, Any]]) -> str:
