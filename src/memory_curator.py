@@ -76,11 +76,27 @@ def _window_key(item: Dict[str, Any]) -> tuple:
     return (start, end, state)
 
 
-def _dedupe_key(item: Dict[str, Any]) -> str:
-    return "\x00".join((str(item.get("status") or ""), str(item.get("level") or ""),
-                        str(item.get("owner") or ""), str(item.get("project") or ""),
-                        *_window_key(item),
-                        _norm(item.get("text"))))
+def _scope_key(item: Dict[str, Any]) -> tuple:
+    """Mutation identity, distinct from visibility in ``scoped_items``.
+
+    A session id is a boundary only for declared session scope; project
+    records may retain a session id merely as their source. Legacy records
+    without a scope inherit the project/global gate, never the source id.
+    Keep both the label and id for session rows so inconsistent declarations
+    cannot silently collapse into another session.
+    """
+    owner, project = str(item.get("owner") or ""), str(item.get("project") or "")
+    scope = str(item.get("scope") or (f"project:{project}" if project else "global"))
+    session = str(item.get("session_id") or "") if scope == "session" or scope.startswith("session:") else ""
+    return owner, project, scope, session
+
+
+def _identity_key(item: Dict[str, Any]) -> tuple:
+    return (_scope_key(item), str(item.get("level") or ""), _window_key(item))
+
+
+def _dedupe_key(item: Dict[str, Any]) -> tuple:
+    return (_identity_key(item), str(item.get("status") or ""), _norm(item.get("text")))
 
 
 def _same_scope(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
@@ -93,12 +109,9 @@ def _same_scope(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
     which is what makes the history readable.
     """
     return (a.get("status") == b.get("status")
-            and a.get("level") == b.get("level")
-            and (a.get("owner") or "") == (b.get("owner") or "")
-            and (a.get("project") or "") == (b.get("project") or "")
             # Even overlapping periods carry different historical claims.
             # Absorption preserves only the winner's period, so require equality.
-            and _window_key(a) == _window_key(b))
+            and _identity_key(a) == _identity_key(b))
 
 
 _NUMBER_RE = re.compile(r"(?<!\w)\d+(?:[.,]\d+)*%?(?!\w)")
@@ -139,7 +152,7 @@ def _dedupe(items: List[Dict[str, Any]], now: datetime,
     same memory.
     """
     kept: List[Dict[str, Any]] = []
-    by_text: Dict[str, int] = {}
+    by_text: Dict[tuple, int] = {}
 
     for item in sorted(items, key=lambda i: str(i.get("id") or "")):
         index = by_text.get(_dedupe_key(item))
@@ -188,9 +201,9 @@ def _absorb(winner: Dict[str, Any], loser: Dict[str, Any],
 
 
 def _resolve_conflicts(items: List[Dict[str, Any]], report: Dict[str, int]) -> None:
-    """An anti-pattern beats the active item it was inverted from."""
+    """An anti-pattern beats its rule only in the same mutation identity."""
     anti_texts = {
-        _norm(item.get("inverted_from")): item
+        (_identity_key(item), _norm(item.get("inverted_from")))
         for item in items
         if item.get("status") == "anti_pattern" and item.get("inverted_from")
     }
@@ -199,7 +212,7 @@ def _resolve_conflicts(items: List[Dict[str, Any]], report: Dict[str, int]) -> N
     for item in items:
         if item.get("status") != "active":
             continue
-        if _norm(item.get("text")) not in anti_texts:
+        if (_identity_key(item), _norm(item.get("text"))) not in anti_texts:
             continue
         item["status"] = "deprecated"
         item["maturity"] = "deprecated"
