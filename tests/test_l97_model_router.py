@@ -114,7 +114,7 @@ def test_requirements_from_dict_filters_unknown_capabilities():
 # ---------------------------------------------------------------------------
 def test_score_candidates_deterministic(monkeypatch):
     _fake_manifests(monkeypatch, {
-        "model-a": {"tested": {model_calibration.TEST_TOOL_CALLING: {"ok": True}}, "announced": {"capabilities": {}}},
+        "model-a": {"tested": {}, "announced": {"capabilities": {"tools": True}}},
         "model-b": {"tested": {model_calibration.TEST_TOOL_CALLING: {"ok": False}}, "announced": {"capabilities": {}}},
     })
     _fake_speeds(monkeypatch, {"model-a": 40.0})
@@ -131,9 +131,9 @@ def test_score_candidates_deterministic(monkeypatch):
 
     a = by_model["model-a"]
     assert a.meets_requirements is True
-    # 3.0 (tool_call proven) + 2.0 (40 tok/s -> min(40/20, 3.0)) + 1.6 (8 ok / 2 fail -> 0.8 * 2.0)
-    assert a.score == pytest.approx(6.6)
-    assert "tool_call probado" in a.why
+    # 1.0 (tool_call declared) + 2.0 (40 tok/s -> min(40/20, 3.0)) + 1.6 (8 ok / 2 fail -> 0.8 * 2.0)
+    assert a.score == pytest.approx(4.6)
+    assert "tool_call declarado (no probado)" in a.why
     assert "40 tok/s medidos" in a.why
     assert "8 ok / 2 fallos recientes" in a.why
     assert not any("último error" in w for w in a.why)
@@ -141,7 +141,7 @@ def test_score_candidates_deterministic(monkeypatch):
     b = by_model["model-b"]
     assert b.meets_requirements is False
     assert b.score == pytest.approx(-1000.0)
-    assert "tool_call probado y falla" in b.why
+    assert "tool_call desconocido" in b.why
     assert "velocidad desconocida" in b.why
     assert "sin historial" in b.why
 
@@ -186,7 +186,8 @@ def test_min_capabilities_and_requirements_union(monkeypatch):
     [scored] = model_router.score_candidates(req, ["m"], config=config)
     # tool_call (from requirements) is neither tested nor declared -> missing
     assert scored.meets_requirements is False
-    assert "json_mode probado" in scored.why
+    # json_mode has no declared fallback; its legacy probe lacks route scope.
+    assert "json_mode desconocido" in scored.why
     assert "tool_call desconocido" in scored.why
 
 
@@ -195,7 +196,7 @@ def test_min_capabilities_and_requirements_union(monkeypatch):
 # ---------------------------------------------------------------------------
 def test_choose_prefers_local_and_never_escalates_when_one_qualifies(monkeypatch):
     _fake_manifests(monkeypatch, {
-        "good": {"tested": {model_calibration.TEST_TOOL_CALLING: {"ok": True}}, "announced": {"capabilities": {}}},
+        "good": {"tested": {}, "announced": {"capabilities": {"tools": True}}},
     })
     _fake_speeds(monkeypatch, {"good": 30.0})
     config = model_router.RouterConfig(allow_paid_escalation=True)  # even armed, it must not fire
@@ -263,7 +264,7 @@ def test_config_enabled_flag_does_not_change_choose_behavior(monkeypatch):
     identical for the same otherwise-equal config -- this is the module's own
     no-regression guarantee in the absence of a wired integration point."""
     _fake_manifests(monkeypatch, {
-        "good": {"tested": {model_calibration.TEST_TOOL_CALLING: {"ok": True}}, "announced": {"capabilities": {}}},
+        "good": {"tested": {}, "announced": {"capabilities": {"tools": True}}},
     })
     _fake_speeds(monkeypatch, {"good": 10.0})
     req = model_router.Requirements(capabilities=("tool_call",))
@@ -278,7 +279,7 @@ def test_config_enabled_flag_does_not_change_choose_behavior(monkeypatch):
 # ---------------------------------------------------------------------------
 def test_explain_variants(monkeypatch):
     _fake_manifests(monkeypatch, {
-        "good": {"tested": {model_calibration.TEST_TOOL_CALLING: {"ok": True}}, "announced": {"capabilities": {}}},
+        "good": {"tested": {}, "announced": {"capabilities": {"tools": True}}},
     })
     _fake_speeds(monkeypatch, {"good": 41.0})
     req = model_router.Requirements(capabilities=("tool_call",))
@@ -397,7 +398,7 @@ def test_put_config_route_validation_error(client):
 
 def test_preview_route_does_not_write_log(client, monkeypatch):
     _fake_manifests(monkeypatch, {
-        "m": {"tested": {model_calibration.TEST_TOOL_CALLING: {"ok": True}}, "announced": {"capabilities": {}}},
+        "m": {"tested": {}, "announced": {"capabilities": {"tools": True}}},
     })
     _fake_speeds(monkeypatch, {"m": 25.0})
     resp = client.post("/api/model-router/preview", json={
@@ -415,7 +416,7 @@ def test_preview_route_discovers_installed_models_when_none_given(client, monkey
     """Seen live: an empty 'installed' box answered 'no candidates installed'
     although Ollama had a dozen models. Empty now means 'ask Ollama'."""
     _fake_manifests(monkeypatch, {
-        "m": {"tested": {model_calibration.TEST_TOOL_CALLING: {"ok": True}}, "announced": {"capabilities": {}}},
+        "m": {"tested": {}, "announced": {"capabilities": {"tools": True}}},
     })
     _fake_speeds(monkeypatch, {"m": 25.0})
     monkeypatch.setattr(model_router, "installed_local_models", lambda **_kw: ["m"])

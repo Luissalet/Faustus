@@ -13,15 +13,13 @@ between LLM models. This module is the piece that was actually absent —
 picking WHICH installed local model answers a turn, from evidence this
 install has actually collected, never from a name heuristic.
 
-Three kinds of fact feed a decision, never blended, same discipline as
+Two kinds of fact feed a decision, never blended, same discipline as
 `src/model_calibration.py`'s own module docstring insists on for
 announced-vs-tested:
 
-  - PROVEN capability (`src.model_calibration.get_manifest(...)["tested"]`) —
-    a real probe against a resident model, weighted highest.
-  - DECLARED capability (`get_manifest(...)["announced"]["capabilities"]`,
-    built by `src.model_capabilities`' vocabulary) — a fallback signal, only
-    consulted when nothing has been tested, weighted lower.
+  - DECLARED capability (`get_effective_manifest(...)["announced"]["capabilities"]`,
+    built by `src.model_capabilities`' vocabulary). This offline API has no
+    endpoint/protocol context and cannot adopt legacy probes as proven facts.
   - THIS INSTALL'S OWN HISTORY (`DATA_DIR/model_router_stats.json`,
     `record_outcome`) — ok/fail counts and an EWMA latency per model, the
     same slow-moving-average discipline `src.llm_core.remember_local_speed`
@@ -342,7 +340,8 @@ def score_candidates(
 ) -> List[Scored]:
     """Score every candidate against `requirements` (unioned with
     `config.min_capabilities`), from manifest evidence
-    (`model_calibration.get_manifest`), measured speed
+    (`model_calibration.get_effective_manifest`, declarations only because
+    these candidates have no endpoint/protocol context), measured speed
     (`src.llm_core.local_speed`) and this install's own outcome history
     (`read_stats`). Sorted best-first (score descending, model name as a
     deterministic tiebreak). No I/O is ever written here -- reads only."""
@@ -357,8 +356,8 @@ def score_candidates(
         score = 0.0
         missing: List[str] = []
 
-        key = model_calibration.manifest_key(vendor="ollama", model_id=model)
-        manifest = model_calibration.get_manifest(key, data_dir=data_dir)
+        manifest = model_calibration.get_effective_manifest(vendor="ollama", model_id=model,
+                                                            data_dir=data_dir)
         for cap in required_caps:
             tested_ok, declared = _capability_status(manifest, cap)
             if tested_ok is True:
