@@ -270,6 +270,13 @@ def test_graph_lane_distinguishes_same_basename_in_different_paths(store):
     assert basename[test["id"]]["graph"] > 0
 
 
+def test_graph_lane_matches_windows_and_posix_evidence_paths(store):
+    item = _rule("Cart implementation", level="semantic",
+                 evidence=[{"kind": "file", "ref": r".\src\cart.py"}])
+    hits = {hit["id"]: hit for hit in engine.search("src/cart.py", "luis", "", now=NOW)}
+    assert hits[item["id"]]["graph"] > 0
+
+
 def test_retrieval_touches_only_the_items_it_surfaced(store):
     hit = _rule("Prefer edit_file over rewriting the whole module")
     miss = _rule("Completely different subject matter here")

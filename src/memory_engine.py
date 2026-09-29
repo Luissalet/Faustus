@@ -1406,9 +1406,11 @@ def graph_keys(text: Any, *, include_path_basenames: bool = True) -> set:
         if not token or len(token) < 3:
             continue
         if "/" in token or "\\" in token or _PATHY_RE.match(token):
-            lowered = token.lower()
+            lowered = token.lower().replace("\\", "/")
+            while lowered.startswith("./"):
+                lowered = lowered[2:]
             keys.add(lowered)
-            base = re.split(r"[/\\]", lowered)[-1]
+            base = lowered.rsplit("/", 1)[-1]
             if base and (include_path_basenames or base == lowered):
                 keys.add(base)
     return keys
