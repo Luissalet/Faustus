@@ -787,6 +787,31 @@ def record_tool_effect(
     if state not in _TOOL_EFFECT_STATES:
         raise ValueError(f"invalid tool_effect state: {state!r}")
     run = _RUNS.get(str(session_id or ""))
+    _record_tool_effect_for_run(run, call_id=call_id, tool=tool,
+        effect_class=effect_class, state=state, result_status=result_status,
+        uncertainty=uncertainty, durable=durable, intent=intent)
+
+
+class _EffectRecorder:
+    """Server-owned holder for one exact run, independent of its session slot."""
+
+    def __init__(self, run: _Run):
+        self._run = run
+
+    def record(self, **fields: Any) -> None:
+        log = self._run.log
+        if not fields.get("durable") and log is not None and (log._f is None or log._orphaned):
+            return  # Best effort never moves a late result into another run.
+        _record_tool_effect_for_run(self._run, **fields)
+
+
+def _record_tool_effect_for_run(
+    run: Optional[_Run], *, call_id: str, tool: str, effect_class: str, state: str,
+    result_status: Optional[str] = None, uncertainty: Optional[Dict[str, Any]] = None,
+    durable: bool = False, intent: Optional[Dict[str, Any]] = None,
+) -> None:
+    if state not in _TOOL_EFFECT_STATES:
+        raise ValueError(f"invalid tool_effect state: {state!r}")
     if durable and (run is None or run.status != "running" or not call_id):
         raise OSError("durable intent requires an active run and call id")
     if run is None:
@@ -1264,7 +1289,7 @@ async def _drain(session_id: str, run: _Run, agen: AsyncGenerator[str, None],
     lane = _lane(run.lane)
     acquired = False
     from src.run_causality import bind_run, reset_run
-    causal_token = bind_run(session_id, run.run_id)
+    causal_token = bind_run(session_id, run.run_id, _effect_recorder=_EffectRecorder(run))
 
     def _wake_subscribers() -> None:
         nonlocal subscribers_woken

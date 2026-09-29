@@ -8,6 +8,7 @@ import pytest
 from src import agent_runs, tool_execution
 from src.agent_tools import ToolBlock
 from src.tool_execution import NO_TOOL_SECURITY_CONTEXT
+from src.run_causality import bind_run, reset_run
 
 
 @pytest.fixture
@@ -17,9 +18,13 @@ def tracked_run(tmp_path, monkeypatch):
     run = agent_runs._Run()
     run.log = agent_runs._RunLog("h03", run)
     monkeypatch.setattr(agent_runs, "_RUNS", {"h03": run})
-    yield run
-    if run.log:
-        run.log.finish("done")
+    token = bind_run("h03", run.run_id, _effect_recorder=agent_runs._EffectRecorder(run))
+    try:
+        yield run
+    finally:
+        reset_run(token)
+        if run.log:
+            run.log.finish("done")
 
 
 async def invoke(name="send_email", content='{"to":"test@example.invalid","body":"secret draft"}'):

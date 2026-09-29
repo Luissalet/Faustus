@@ -1291,7 +1291,7 @@ async def execute_tool_block(
     A05: for a tool whose `effect_class` (src.tool_registry._effect_class_for,
     the same coarse classification the tool catalogue reports) is not
     ``"read"``, a ``tool_effect`` event is recorded into the calling
-    session's active detached run (src.agent_runs) *before* dispatch, state
+    exact detached run captured from its server-owned recorder *before* dispatch, state
     ``"pending"``, and again *after* dispatch returns, state
     ``"confirmed"``/``"failed"``/``"partial"``/``"unknown"``. Partial and
     unknown effects remain unresolved for restart recovery. If this coroutine is cancelled or the
@@ -1303,8 +1303,8 @@ async def execute_tool_block(
     have taken effect and must not be blindly retried. A plain read never
     writes this event: repeating a read cannot change the world, so it is
     not a call whose outcome can go "unknown". No-op when there is no
-    `call_id` (a caller outside the chat-turn call sites below) or no active
-    run for `session_id` (headless/manual callers, tests) — the effect still
+    `call_id` (a caller outside the chat-turn call sites below) or no matching
+    captured recorder (headless/manual callers, tests) — the effect still
     executes, it is simply not tracked for recovery.
     """
     if security_context is _MISSING_TOOL_SECURITY_CONTEXT:
@@ -1322,8 +1322,9 @@ async def execute_tool_block(
         )
 
     # Resolve one executable registration and its contract before any await.
-    from src.run_causality import capture_call
+    from src.run_causality import capture_call, capture_effect_recorder
     causal_call = capture_call(session_id, call_id)
+    effect_recorder = capture_effect_recorder(session_id)
     # This is per-call, not the catalogue snapshot advertised for a model step.
     from src.pdf_call_binding import capture_pdf_call
     pdf_call_binding = capture_pdf_call(getattr(block, "tool_type", ""))
@@ -1482,14 +1483,11 @@ async def execute_tool_block(
     _tracked_effect = bool(((_effect_class and _effect_class != "read") or _email_effect) and call_id)
     _intent_required = False
     _intent_failed = False
-    if _tracked_effect:
+    if _tracked_effect and effect_recorder is not None:
         try:
-            from src import agent_runs as _agent_runs
-            _intent_required = bool(
-                _email_effect
-                and _agent_runs.get_active_run(str(session_id or "")) is not None)
-            _agent_runs.record_tool_effect(
-                session_id, call_id=str(call_id), tool=str(getattr(block, "tool_type", None) or ""),
+            _intent_required = bool(_email_effect)
+            effect_recorder.record(
+                call_id=str(call_id), tool=str(getattr(block, "tool_type", None) or ""),
                 effect_class=_effect_class, state="pending",
                 **({"durable": True, "intent": {
                     "owner": str(owner or ""),
@@ -1579,14 +1577,14 @@ async def execute_tool_block(
             from src.tool_result import effect_state
             _effect_state = effect_state(_typed_result)
             try:
-                from src import agent_runs as _agent_runs
-                _agent_runs.record_tool_effect(
-                    session_id, call_id=str(call_id), tool=str(getattr(block, "tool_type", None) or ""),
-                    effect_class=_effect_class, state=_effect_state,
-                    result_status=_typed_result.status if _typed_result else "outcome_unknown",
-                    uncertainty=(_typed_result.uncertainty.to_mapping()
-                                 if _typed_result and _typed_result.uncertainty else None),
-                )
+                if effect_recorder is not None:
+                    effect_recorder.record(
+                        call_id=str(call_id), tool=str(getattr(block, "tool_type", None) or ""),
+                        effect_class=_effect_class, state=_effect_state,
+                        result_status=_typed_result.status if _typed_result else "outcome_unknown",
+                        uncertainty=(_typed_result.uncertainty.to_mapping()
+                                     if _typed_result and _typed_result.uncertainty else None),
+                    )
             except Exception:
                 logger.debug(
                     "tool_effect %s write failed for call_id=%s", _effect_state, call_id, exc_info=True,
