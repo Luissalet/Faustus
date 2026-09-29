@@ -30,6 +30,7 @@ was created — the opposite of the point.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -81,6 +82,24 @@ def _same_scope(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
             and (a.get("project") or "") == (b.get("project") or ""))
 
 
+_NUMBER_RE = re.compile(r"(?<!\w)\d+(?:[.,]\d+)*%?(?!\w)")
+_QUALIFIER_RE = re.compile(
+    r"\b(?:always|never|sometimes|only|not|without|no|siempre|nunca|"
+    r"jamás|jamas|solo|sólo|sin)\b", re.IGNORECASE,
+)
+
+
+def _same_critical_details(a: str, b: str) -> bool:
+    """Keep fuzzy matching from erasing a changed number or rule qualifier.
+
+    This is intentionally conservative: a missed merge is cheaper to review
+    than deleting a distinct fact along with its provenance.
+    """
+    return (_NUMBER_RE.findall(a) == _NUMBER_RE.findall(b)
+            and [m.casefold() for m in _QUALIFIER_RE.findall(a)]
+            == [m.casefold() for m in _QUALIFIER_RE.findall(b)])
+
+
 def _dedupe(items: List[Dict[str, Any]], now: datetime,
             report: Dict[str, int]) -> List[Dict[str, Any]]:
     """Exact-text match first (a dict lookup), then Jaccard similarity above
@@ -100,8 +119,10 @@ def _dedupe(items: List[Dict[str, Any]], now: datetime,
             for position, candidate in enumerate(kept):
                 if not _same_scope(candidate, item):
                     continue
-                if get_text_similarity(str(candidate.get("text") or ""),
-                                       str(item.get("text") or "")) > engine.DEDUPE_SIMILARITY:
+                candidate_text = str(candidate.get("text") or "")
+                item_text = str(item.get("text") or "")
+                if (_same_critical_details(candidate_text, item_text)
+                        and get_text_similarity(candidate_text, item_text) > engine.DEDUPE_SIMILARITY):
                     index = position
                     break
         if index is None:

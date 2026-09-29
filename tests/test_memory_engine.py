@@ -453,6 +453,20 @@ def test_dedupe_also_catches_near_duplicates_and_is_idempotent(store):
     assert engine.get_item(first["id"]) is not None
 
 
+@pytest.mark.parametrize("before, after", [("5", "3"), ("always", "never")])
+def test_curator_preserves_critical_difference_in_similar_rules(store, before, after):
+    prefix = ("For this project run the integration suite with the documented "
+              "settings before any release because it checks the user data "
+              "boundaries and the linked reports every time the application changes")
+    old = _rule(f"{prefix} {before} times")
+    new = _rule(f"{prefix} {after} times")
+    assert curator.get_text_similarity(old["text"], new["text"]) > engine.DEDUPE_SIMILARITY
+
+    assert curator.curate("luis", "", now=NOW)["deduped"] == 0
+    assert engine.get_item(old["id"]) is not None
+    assert engine.get_item(new["id"]) is not None
+
+
 def test_an_anti_pattern_deprecates_the_active_rule_it_contradicts(store):
     text = "Rewrite whole files with bash heredocs when in a hurry"
     inverted = _rule(text)
