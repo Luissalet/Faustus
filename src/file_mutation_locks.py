@@ -25,11 +25,32 @@ def mutation_lock(path):
     and creation share a guard so concurrent waiters cannot get different locks.
     Call only in synchronous workers; never hold this lock across an await.
     """
-    key = canonical_path(path)
-    with _GUARD:
-        lock = _LOCKS.get(key)
-        if lock is None:
-            lock = threading.RLock()
-            _LOCKS[key] = lock
-    with lock:
+    with mutation_locks([path]):
         yield
+
+
+@contextmanager
+def mutation_locks(paths):
+    """Acquire distinct canonical paths in order, releasing in reverse.
+
+    Do not introduce an outer, differently ordered lock acquisition around this
+    helper. Participating workers acquire their complete set once, without awaits.
+    """
+    keys = sorted({canonical_path(path) for path in paths})
+    with _GUARD:
+        retained = []
+        for key in keys:
+            lock = _LOCKS.get(key)
+            if lock is None:
+                lock = threading.RLock()
+                _LOCKS[key] = lock
+            retained.append(lock)
+    acquired = []
+    try:
+        for lock in retained:
+            lock.acquire()
+            acquired.append(lock)
+        yield
+    finally:
+        for lock in reversed(acquired):
+            lock.release()

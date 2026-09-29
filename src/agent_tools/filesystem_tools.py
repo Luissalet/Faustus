@@ -11,7 +11,7 @@ import time
 from typing import Optional, Dict, Any, Tuple, List
 
 from src import read_plan
-from src.file_mutation_locks import mutation_lock
+from src.file_mutation_locks import canonical_path, mutation_lock, mutation_locks
 from src.constants import MAX_READ_CHARS, MAX_DIFF_LINES, MAX_OUTPUT_CHARS
 
 logger = logging.getLogger(__name__)
@@ -799,13 +799,24 @@ class ApplyPatchTool:
             if not ops:
                 return {"error": "apply_patch: no file operations found", "exit_code": 1}
             prepared = []
+            prepared_revisions = {}
+            prepared_paths = set()
             for op in ops:
                 path = _resolve_tool_path(op["path"])
+                identity = canonical_path(path)
+                if identity in prepared_paths:
+                    return {"error": f"apply_patch: duplicate target path: {op['path']}",
+                            "exit_code": 1, "error_code": "DUPLICATE_PATCH_TARGET"}
+                prepared_paths.add(identity)
                 kind = op["kind"]
                 crlf = False
                 revision_now = None
                 if kind == "add":
-                    if os.path.exists(path):
+                    try:
+                        os.lstat(path)
+                    except FileNotFoundError:
+                        pass
+                    else:
                         return {"error": f"apply_patch: {op['path']}: already exists", "exit_code": 1}
                     old = ""
                     new = op["content"]
@@ -833,6 +844,7 @@ class ApplyPatchTool:
                     if conflict is not None:
                         return conflict
                 prepared.append((kind, path, old, new, crlf))
+                prepared_revisions[path] = revision_now
         except (ValueError, UnicodeDecodeError, PermissionError, OSError) as e:
             return {"error": f"apply_patch: {e}", "exit_code": 1}
 
@@ -871,7 +883,7 @@ class ApplyPatchTool:
             try:
                 with open(p, "rb") as f:
                     return f.read()
-            except OSError:
+            except FileNotFoundError:
                 return None
 
         def _write_bytes(p: str, data: bytes) -> None:
@@ -896,12 +908,34 @@ class ApplyPatchTool:
             written = op["new"].replace("\n", "\r\n") if op["crlf"] else op["new"]
             return written.encode("utf-8")
 
+        def _commit_prepared():
+            with mutation_locks(prepared_revisions):
+                for p, expected in prepared_revisions.items():
+                    data = _read_bytes(p)
+                    current = edit_journal.revision_of(data)
+                    # A dangling symlink is an existing directory entry, not an
+                    # absent add target, even when reading its referent fails.
+                    occupied = expected is None and os.path.lexists(p)
+                    if current != expected or occupied:
+                        return None, {
+                            "error": f"apply_patch: {p} changed since patch preparation",
+                            "exit_code": 1, "status": "conflict",
+                            "error_code": "PATCH_PREPARATION_MISMATCH",
+                            "source": "patch_preparation", "path": p,
+                            "prepared_revision": expected, "current_revision": current,
+                            "current_path_exists": occupied or data is not None,
+                            "next_action": "read_current_and_reconcile",
+                        }
+                return edit_journal.apply_batch(
+                    journal_ops, read_bytes=_read_bytes, write_bytes=_write_bytes,
+                    delete_path=_delete_path, apply_op=_apply_op), None
+
         try:
-            receipt = await asyncio.to_thread(
-                edit_journal.apply_batch, journal_ops, read_bytes=_read_bytes,
-                write_bytes=_write_bytes, delete_path=_delete_path, apply_op=_apply_op)
+            receipt, preparation_conflict = await asyncio.to_thread(_commit_prepared)
         except (PermissionError, OSError) as e:
             return {"error": f"apply_patch: {e}", "exit_code": 1}
+        if preparation_conflict is not None:
+            return preparation_conflict
 
         applied_paths = set(receipt["applied"])
         if receipt["failed_at"] is not None:
