@@ -43,6 +43,8 @@ forward-slashed, so the reference means the same thing on both platforms.
 from __future__ import annotations
 
 import logging
+import hashlib
+from dataclasses import replace
 import os
 from typing import Any, List, Optional, Sequence, Tuple
 
@@ -201,22 +203,28 @@ class FileSource(ThreadedSource):
                 withheld = "unreadable"
 
         body = ""
+        captured = False
         if not withheld:
             if span is not None:
-                body = mentions._window(real_path, span, MAX_FILE_CHARS) or ""
+                projected = mentions._window(real_path, span, MAX_FILE_CHARS)
             elif 0 <= size <= MAX_FILE_CHARS:
-                body = mentions._read_head(real_path, MAX_FILE_CHARS) or ""
+                projected = mentions._read_head(real_path, MAX_FILE_CHARS)
             else:
                 # A 200-character head of a 400 kB file is noise, and the point
                 # of inlining is to save a read_file the model would otherwise
                 # still have to make.
                 withheld = "too_large"
+                projected = None
+            if projected is not None:
+                body, captured = projected, True
+            elif not withheld:
+                withheld = "unreadable_or_binary"
 
         ref = f"{REF_PREFIX}{rel}"
         if span is not None:
             ref += f"#L{span[0]}-L{span[1]}"
         where = f" (lines {span[0]}-{span[1]})" if span else ""
-        return make_candidate(
+        candidate = make_candidate(
             source_type="file",
             source_ref=ref,
             section="code_map",
@@ -225,16 +233,23 @@ class FileSource(ThreadedSource):
             lanes=(lane,),
             trust_class="observed",
             authority="observed_state",
-            source_revision=f"{size}:{int(modified) if modified else 0}",
+            source_revision="",
             # Read now, so "now" is the honest observation time; the file's own
             # mtime lives in meta, where it cannot be mistaken for it.
             observed_at=_now(),
             owner=req.owner,
             project_id=req.project_id,
             meta={"path": rel, "bytes": size, "modified": modified,
+                  "revision_scope": "captured_body" if captured else "unavailable",
                   "lines": list(span) if span else [],
                   **({"withheld": withheld} if withheld else {})},
         )
+        # Hash after candidate construction: it also trims/clips the body.
+        # These are captured projection bytes, not raw bytes or unread portions.
+        if candidate is not None and captured:
+            candidate = replace(candidate, source_revision="captured_utf8_sha256:" +
+                                hashlib.sha256(candidate.body.encode("utf-8")).hexdigest())
+        return candidate
 
     def _fetch(self, source_ref: str,
                req: RetrievalRequest) -> Optional[ContextCandidate]:
