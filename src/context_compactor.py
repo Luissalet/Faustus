@@ -1152,6 +1152,8 @@ def _finish_compaction(session, messages, system_msgs, older, recent, summary, u
         compaction_state.update({
             "split_point": split_point,
             "summary": summary,
+            "preserve_block": preserve_block,
+            "compaction_preserve": summary_msg["metadata"]["compaction_preserve"],
             "system_msg_count": len(system_msgs),
             "history_targets": history_targets,
             "summarized_count": len(older),
@@ -1159,7 +1161,9 @@ def _finish_compaction(session, messages, system_msgs, older, recent, summary, u
         })
     if persist:
         _update_session_history(
-            session, summary, history_targets, summarized_count=len(older)
+            session, summary, history_targets, summarized_count=len(older),
+            preserve_block=preserve_block,
+            compaction_preserve=summary_msg["metadata"]["compaction_preserve"],
         )
         if compaction_state is not None:
             compaction_state["applied"] = True
@@ -1194,6 +1198,8 @@ def apply_compaction_state(session, compaction_state: Optional[Dict[str, Any]]) 
         summary,
         state.get("history_targets") or [],
         summarized_count=summarized_count if isinstance(summarized_count, int) else split_point,
+        preserve_block=state.get("preserve_block", ""),
+        compaction_preserve=state.get("compaction_preserve"),
     )
     state["applied"] = True
     return True
@@ -1219,7 +1225,9 @@ def apply_compaction_state_for_session(
 
 def _update_session_history(session, summary: str,
                             history_targets: Optional[List[Dict[str, Any]]] = None,
-                            summarized_count: int = 0) -> bool:
+                            summarized_count: int = 0, *,
+                            preserve_block: str = "",
+                            compaction_preserve: Optional[Dict[str, Any]] = None) -> bool:
     """Replace the summarized transcript rows with the compaction summary.
 
     ``history_targets`` names each row to delete by its real index in
@@ -1274,10 +1282,15 @@ def _update_session_history(session, summary: str,
         return False
 
     summary = normalize_compaction_summary(summary)
+    if isinstance(preserve_block, str) and preserve_block:
+        summary += "\n\n" + preserve_block
+    metadata = {"compacted": True, "summarized_count": summarized_count or len(doomed)}
+    if isinstance(compaction_preserve, dict):
+        metadata["compaction_preserve"] = compaction_preserve
     summary_msg = ChatMessage(
         role="system",
         content=f"[Conversation summary]\n{summary}",
-        metadata={"compacted": True, "summarized_count": summarized_count or len(doomed)},
+        metadata=metadata,
     )
     new_history = []
     inserted = False
