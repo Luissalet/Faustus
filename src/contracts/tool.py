@@ -174,6 +174,15 @@ IDEMPOTENCY_MODES = ("safe_read", "local_transaction", "provider_key",
 #: top and no required dot) because this is the spec's own pattern, not
 #: Faustus's skill-id one, and the two are not interchangeable.
 _TOOL_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$")
+_FLAT_TOOL_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+_MCP_NAME_PART_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+
+def _runtime_tool_name_valid(name: str) -> bool:
+    if name.startswith("mcp__"):
+        parts = name.split("__", 2)
+        return len(parts) == 3 and all(_MCP_NAME_PART_RE.fullmatch(p) for p in parts[1:])
+    return bool(_FLAT_TOOL_NAME_RE.fullmatch(name) or _TOOL_NAME_RE.fullmatch(name))
 
 
 @dataclass(frozen=True)
@@ -228,22 +237,37 @@ class ToolDescriptor:
 
     @classmethod
     def from_mapping(cls, raw: Any, path: str = "tool_descriptor") -> "ToolDescriptor":
+        return cls._from_mapping(raw, path, runtime=False)
+
+    @classmethod
+    def from_runtime_mapping(cls, raw: Any, path: str = "tool_descriptor") -> "ToolDescriptor":
+        """Explicit Faustus catalogue profile, not relaxed spec-v2 validation.
+
+        Keeps flat/MCP dispatch names and permits a present-but-empty description
+        when the runtime has none. All other contract validation is shared.
+        Parsing a name neither registers it nor authorizes its execution.
+        """
+        return cls._from_mapping(raw, path, runtime=True)
+
+    @classmethod
+    def _from_mapping(cls, raw: Any, path: str, *, runtime: bool) -> "ToolDescriptor":
         data = as_mapping(raw, path)
         reject_unknown(data, cls._KEYS, path)
         version = spec_version(data, path)
         name = text(data, "name", path, max_len=512)
-        if not _TOOL_NAME_RE.fullmatch(name):
+        if not (_runtime_tool_name_valid(name) if runtime else _TOOL_NAME_RE.fullmatch(name)):
             raise ContractError(
                 f"{path}.name",
-                "must be a lowercase dotted tool name like 'fs.apply_patch' "
-                "(letters, digits, underscores; at least one dot)", got=name)
+                ("must be a flat/dotted tool name or mcp__server__tool identifier" if runtime else
+                 "must be a lowercase dotted tool name like 'fs.apply_patch' "
+                 "(letters, digits, underscores; at least one dot)"), got=name)
         input_schema = _require_object(data, "input_schema", path)
         output_schema = _require_object(data, "output_schema", path)
         return cls(
             schema_version=version,
             name=name,
             version=text(data, "version", path, max_len=512),
-            description=text(data, "description", path, max_len=4000),
+            description=text(data, "description", path, max_len=4000, allow_blank=runtime),
             input_schema=dict(input_schema),
             output_schema=dict(output_schema),
             effect_class=one_of(data, "effect_class", path, choices=EFFECT_CLASSES),

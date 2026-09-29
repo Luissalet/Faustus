@@ -17,16 +17,12 @@ setting, and — when handed a live manager — `src.mcp_manager` for MCP
 tools) and emits one `ToolDescriptor` per tool. It reads; it never edits any
 of those modules, and it never executes a tool.
 
-`ToolDescriptor` (`src.contracts.tool`, lote 2) is used purely as an OUTPUT
-shape: `ToolRegistry.snapshot()` constructs instances directly and only
-ever calls `.to_mapping()`/`.fingerprint()` on them, never
-`.from_mapping()`. That matters because the spec's own `name` pattern
-requires a dot (`fs.apply_patch`), and every tool name in this codebase is
-flat (`bash`, `web_search`, `manage_mcp` — no dots). Round-tripping a
-descriptor built here through `ToolDescriptor.from_mapping()` would fail on
-that pattern; nothing here does that, and a caller who wants strict spec
-validation of a THIRD PARTY payload should keep using `from_mapping`
-directly, not this module's descriptors.
+`ToolDescriptor.from_runtime_mapping()` validates the explicit Faustus
+catalogue profile: flat dispatch names, qualified MCP names and potentially
+empty descriptions. `parse_snapshot()` reads serialized catalogues using that
+same profile. The default `ToolDescriptor.from_mapping()` remains the strict
+spec-v2 parser (dotted names, nonempty description); runtime parsing does not
+register tools or confer permission to execute them.
 
 Fields with no existing source of truth are given a documented, narrow
 default rather than a guess:
@@ -62,7 +58,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from src.agent_tools import TOOL_TAGS
 from src.constants import MAX_OUTPUT_CHARS
-from src.contracts.base import fingerprint as _fingerprint_parts
+from src.contracts.base import ContractError, as_mapping, text, fingerprint as _fingerprint_parts
 from src.contracts.tool import RetryPolicy, ToolDescriptor
 from src.settings import get_setting
 from src.tool_capabilities import KNOWN_CAPABILITY_TOOLS, ToolEffect, capabilities_for_tool
@@ -207,16 +203,17 @@ def _descriptor_for_mcp_tool(tool: Mapping[str, Any]) -> ToolDescriptor:
     than re-guessed here."""
     from src.mcp_manager import mcp_tool_is_readonly  # local: mcp_manager is read-only for this module
 
-    name = str(tool.get("qualified_name") or tool.get("name") or "")
-    server_id = str(tool.get("server_id") or "")
+    tool = as_mapping(tool, "mcp_tool")
+    name = text(tool, "qualified_name" if tool.get("qualified_name") else "name", "mcp_tool", max_len=512)
+    server_id = text(tool, "server_id", "mcp_tool", max_len=512)
     readonly = mcp_tool_is_readonly(dict(tool))
     effect_class = "read" if readonly else "write"
     scope = "brokered_network_read" if readonly else "external_side_effect"
     return ToolDescriptor(
         name=name,
         version=DEFAULT_TOOL_VERSION,
-        description=str(tool.get("description") or ""),
-        input_schema=dict(tool.get("input_schema") or {}),
+        description=text(tool, "description", "mcp_tool", required=False, max_len=4000),
+        input_schema=dict(as_mapping(tool.get("input_schema", {}), "mcp_tool.input_schema")),
         output_schema={},
         effect_class=effect_class,
         required_scopes=(scope,),
@@ -275,7 +272,7 @@ def snapshot(owner: Optional[str] = None, mcp_manager: Optional[Any] = None) -> 
 
     native_index = _native_schema_index()
     rows: List[ToolDescriptor] = [
-        _descriptor_for_builtin(name, native_index)
+        ToolDescriptor.from_runtime_mapping(_descriptor_for_builtin(name, native_index).to_mapping())
         for name in _builtin_names()
         if name not in blocked
     ]
@@ -283,13 +280,33 @@ def snapshot(owner: Optional[str] = None, mcp_manager: Optional[Any] = None) -> 
     if mcp_manager is not None:
         seen_names = {d.name for d in rows}
         for tool in mcp_manager.get_all_tools():
-            descriptor = _descriptor_for_mcp_tool(tool)
+            try:
+                descriptor = ToolDescriptor.from_runtime_mapping(_descriptor_for_mcp_tool(tool).to_mapping())
+            except (ContractError, TypeError, ValueError):
+                logger.warning("Skipping invalid MCP catalogue descriptor")
+                continue
             if descriptor.name and descriptor.name not in seen_names:
                 rows.append(descriptor)
                 seen_names.add(descriptor.name)
 
     rows.sort(key=lambda d: d.name)
     return rows
+
+
+def parse_snapshot(raw: Any) -> List[ToolDescriptor]:
+    """Validate a decoded runtime catalogue; do not resolve or execute tools."""
+    if not isinstance(raw, list):
+        raise ContractError("tool_catalogue", "expected a list", got=raw)
+    rows = []
+    seen = set()
+    for i, item in enumerate(raw):
+        path = f"tool_catalogue[{i}]"
+        descriptor = ToolDescriptor.from_runtime_mapping(item, path)
+        if descriptor.name in seen:
+            raise ContractError(f"{path}.name", "duplicate tool name", got=descriptor.name)
+        seen.add(descriptor.name)
+        rows.append(descriptor)
+    return sorted(rows, key=lambda d: d.name)
 
 
 def missing_capability_coverage() -> frozenset:
@@ -326,6 +343,7 @@ class ToolRegistry:
     independently testable module functions above."""
 
     snapshot = staticmethod(snapshot)
+    parse_snapshot = staticmethod(parse_snapshot)
     by_name = staticmethod(by_name)
     catalog_fingerprint = staticmethod(catalog_fingerprint)
     mcp_status_label = staticmethod(mcp_status_label)
@@ -335,6 +353,7 @@ class ToolRegistry:
 __all__ = [
     "ToolRegistry",
     "snapshot",
+    "parse_snapshot",
     "by_name",
     "catalog_fingerprint",
     "mcp_status_label",
