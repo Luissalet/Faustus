@@ -7,6 +7,7 @@ import uuid
 import re
 from typing import List, Dict, Tuple
 from datetime import datetime
+from src.memory_attribution import unquoted_memory_text
 
 logger = logging.getLogger(__name__)
 
@@ -66,12 +67,12 @@ class MemoryManager:
             if not isinstance(msg, dict):
                 continue
             if msg.get("role") == "user":
-                content = str(msg.get("content", ""))
+                content = unquoted_memory_text(str(msg.get("content", "")))
                 lines = content.split('\n')
                 # An assistant's recap is not evidence of what the user said.
                 # Without a model, only an explicit user request to remember
                 # a list is safe enough to offer as memory suggestions.
-                if not re.search(r"\b(?:remember|memorize|memorise|recuerda|memoriza|guarda en memoria)\b",
+                if not re.search(r"^\s*(?:(?:please|por favor)[,\s]+)?(?:remember|memorize|memorise|recuerda|memoriza|guarda en memoria)\b",
                                  lines[0], re.I):
                     continue
                 

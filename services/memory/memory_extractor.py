@@ -18,6 +18,7 @@ import re
 from typing import Optional
 
 from src.memory import MemoryStoreUnreadable
+from src.memory_attribution import unquoted_memory_text
 from services.memory.volatile_facts import volatile_reason
 
 logger = logging.getLogger(__name__)
@@ -209,8 +210,7 @@ def _fallback_memory_candidates(messages) -> list[dict]:
         # A quoted first-person statement can belong to somebody else.  This
         # fallback has no speaker resolution, so do not infer identity or
         # preferences from quoted spans.
-        text = re.sub(r'"[^"\n]*"|“[^”\n]*”|‘[^’\n]*’|(?<!\w)\'[^\'\n]+\'(?!\w)',
-                      " ", text)
+        text = unquoted_memory_text(text)
 
         m = re.search(r"\bmy name is\s+([A-Za-z][A-Za-z0-9 .'\-]{1,50})\b", text, re.I)
         if m:
