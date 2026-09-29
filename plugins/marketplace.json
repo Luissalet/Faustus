@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "plugins": [
+    {"id": "hoardhub", "repository_url": "https://github.com/Luissalet/HoardLink.git", "required": true},
+    {"id": "argus", "repository_url": "https://github.com/Luissalet/ArgusHoard.git", "required": false},
+    {"id": "babel", "repository_url": "https://github.com/Luissalet/BabelsHoard.git", "required": false},
+    {"id": "borges", "repository_url": "https://github.com/Luissalet/BorgesHoard.git", "required": false},
+    {"id": "cassandra", "repository_url": "https://github.com/Luissalet/CassandraHoard.git", "required": false},
+    {"id": "cookhoard", "repository_url": "https://github.com/Luissalet/CookHoard.git", "required": false},
+    {"id": "daguerre", "repository_url": "https://github.com/Luissalet/DaguerresHoard.git", "required": false},
+    {"id": "diskhoard", "repository_url": "https://github.com/Luissalet/DiskHoard.git", "required": false},
+    {"id": "dorian", "repository_url": "https://github.com/Luissalet/DoriansHoard.git", "required": false},
+    {"id": "echo", "repository_url": "https://github.com/Luissalet/EchoHoard.git", "required": false},
+    {"id": "funes", "repository_url": "https://github.com/Luissalet/FunesHoard.git", "required": false},
+    {"id": "gamerhoard", "repository_url": "https://github.com/Luissalet/GamerHoard.git", "required": false},
+    {"id": "gepetto", "repository_url": "https://github.com/Luissalet/GepettosHoard.git", "required": false},
+    {"id": "hypatia", "repository_url": "https://github.com/Luissalet/HypatiaHoard.git", "required": false},
+    {"id": "jobhunter", "repository_url": "https://github.com/Luissalet/Jobhunter-s-Hoard.git", "required": false},
+    {"id": "laplace", "repository_url": "https://github.com/Luissalet/LaplacesHoard.git", "required": false},
+    {"id": "ledger", "repository_url": "https://github.com/Luissalet/LedgersHoard.git", "required": false},
+    {"id": "links", "repository_url": "https://github.com/Luissalet/LinksHoard.git", "required": false},
+    {"id": "mercator", "repository_url": "https://github.com/Luissalet/Mercators-Hoard.git", "required": false},
+    {"id": "nightingale", "repository_url": "https://github.com/Luissalet/NightingalesHoard.git", "required": false},
+    {"id": "people", "repository_url": "https://github.com/Luissalet/PeoplesHoard.git", "required": false},
+    {"id": "platos", "repository_url": "https://github.com/Luissalet/PlatosHoard.git", "required": false},
+    {"id": "prospero", "repository_url": "https://github.com/Luissalet/ProsperosHoard.git", "required": false},
+    {"id": "vitruvius", "repository_url": "https://github.com/Luissalet/VitruviusHoard.git", "required": false},
+    {"id": "vulcan", "repository_url": "https://github.com/Luissalet/VulcanHoard.git", "required": false},
+    {"id": "writer", "repository_url": "https://github.com/Luissalet/Writers-Hoard-Desktop.git", "required": false}
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "id": "daguerre",
+  "name": "Daguerre's Hoard",
+  "purpose": "Lets the assistant search, look at and organize the user's local photo library by content, place and time.",
+  "capabilities": ["photo search", "visual similarity", "duplicate detection", "EXIF and places", "albums", "contact sheets"],
+  "placeholders": ["DAGUERRE_DIR", "APP_URL"],
+  "defaults": {"APP_URL": "http://127.0.0.1:8814"},
+  "app": {
+    "url_default": "http://127.0.0.1:8814",
+    "ui_url": "{APP_URL}",
+    "health": {"path": "/api/health", "expect": {"service": "daguerres-hoard"}},
+    "identify": {"service": ["daguerres-hoard"], "title": ["daguerre's hoard"]},
+    "launch_hint": {
+      "kind": "process",
+      "executable": "{DAGUERRE_DIR}/.venv/Scripts/python.exe",
+      "argv": ["-m", "daguerre_hoard", "--no-browser"],
+      "cwd": "{DAGUERRE_DIR}",
+      "readiness": {"url": "{APP_URL}/api/health", "timeout_s": 30}
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{DAGUERRE_DIR}/.venv/Scripts/python.exe",
+    "args": ["{DAGUERRE_DIR}/daguerre_hoard/mcp_server.py"],
+    "env": {"DAGUERRE_URL": "{APP_URL}"},
+    "optional_env": []
+  },
+  "provides": {"skills": ["skills/find-photos/SKILL.md"]},
+  "notes": "Indexes local photo folders with CLIP embeddings and hands the model compact search results plus contact-sheet images. Never modifies, moves or deletes originals."
+}

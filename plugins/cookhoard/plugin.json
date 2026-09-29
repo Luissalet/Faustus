@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "id": "cookhoard",
+  "name": "CookHoard",
+  "purpose": "Local cooking assistant for recipes, fridge-aware recommendations, a weekly menu and a unified shopping list. No web server or cloud account is required.",
+  "capabilities": ["recipes", "cooking steps", "fridge", "shopping list", "seasonal recommendations", "weekly menu", "daily servings", "scaled menu ingredient totals", "pantry stock deficits"],
+  "placeholders": ["COOKHOARD_DIR"],
+  "mcp": {
+    "transport": "stdio",
+    "command": "node",
+    "args": ["{COOKHOARD_DIR}/apps/mcp/bootstrap.mjs"],
+    "env": {},
+    "optional_env": ["COOKHOARD_DATA_DIR"]
+  },
+  "notes": "Run npm install once in CookHoard. Faustus launches the MCP process directly; kitchen data is saved locally under COOKHOARD_DATA_DIR or the user's local app-data folder. No website, domain or Supabase service is needed."
+}

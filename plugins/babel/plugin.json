@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "id": "babel",
+  "name": "Babel's Hoard",
+  "purpose": "Gives the model the exact, version-installed API signatures and docs for this project instead of its training-data guesses, and can check code it wrote for hallucinated APIs.",
+  "capabilities": ["api-lookup", "code-check", "docs-search", "docsets", "environments", "localization-audit"],
+  "placeholders": ["BABEL_DIR", "APP_URL"],
+  "defaults": { "APP_URL": "http://127.0.0.1:8811" },
+  "app": {
+    "url_default": "http://127.0.0.1:8811",
+    "ui_url": "{APP_URL}",
+    "health": { "path": "/api/health", "expect": { "service": "babels-hoard" } },
+    "identify": { "service": ["babels-hoard"], "title": ["babel's hoard"] },
+    "launch_hint": {
+      "kind": "process",
+      "executable": "{BABEL_DIR}/.venv/Scripts/python.exe",
+      "argv": ["-m", "babels_hoard", "--no-browser"],
+      "cwd": "{BABEL_DIR}",
+      "readiness": { "url": "{APP_URL}/api/health", "timeout_s": 30 }
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{BABEL_DIR}/.venv/Scripts/python.exe",
+    "args": ["{BABEL_DIR}/babels_hoard/mcp_server.py"],
+    "env": { "BABEL_URL": "{APP_URL}" },
+    "optional_env": []
+  },
+  "provides": { "skills": ["skills/version-exact-apis/SKILL.md"] },
+  "notes": "Local, read-mostly documentation index over the interpreters and node_modules folders you register. Runs on 127.0.0.1 only; the docset catalogue/install features are the only ones that touch the network."
+}

@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "id": "mercator",
+  "name": "Mercator's Hoard",
+  "purpose": "Panel local de evolución de WatchHoard y BookHoard, catálogo de productos y ventas importadas de Cults.",
+  "capabilities": ["project-metrics", "user-growth", "worker-traffic", "product-catalog", "sales-import", "catalog-search", "sales-query"],
+  "placeholders": ["MERCATOR_DIR", "APP_URL", "PYTHON"],
+  "defaults": {"APP_URL": "http://127.0.0.1:5195", "PYTHON": "python"},
+  "app": {
+    "url_default": "http://127.0.0.1:5195",
+    "ui_url": "{APP_URL}",
+    "health": {"path": "/api/health", "expect": {"service": "mercator-hoard"}},
+    "identify": {"service": ["mercator-hoard"], "title": ["mercator's hoard"]},
+    "launch_hint": {
+      "kind": "process",
+      "executable": "{PYTHON}",
+      "argv": ["mercator.py"],
+      "cwd": "{MERCATOR_DIR}",
+      "readiness": {"url": "{APP_URL}/api/health", "timeout_s": 20}
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{PYTHON}",
+    "args": ["{MERCATOR_DIR}/mcp_server.py"],
+    "env": {}
+  },
+  "x-family": {"agent_contract": false, "events": false, "stack": "python"},
+  "notes": "Las cifras se leen desde servicios externos al actualizar. El servidor escucha solo en 127.0.0.1 y guarda los históricos en data/."
+}

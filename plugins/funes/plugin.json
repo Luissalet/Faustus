@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "id": "funes",
+  "name": "Funes's Hoard",
+  "purpose": "Gives the assistant a local memory of desktop activity and audio sessions. Records and transcribes meetings and voice notes, searches transcripts, and merges them with screen and clipboard memory in one citable timeline.",
+  "capabilities": ["activity timeline", "day summaries", "resume context", "recent files", "git commits", "activity search", "audio recording", "live and final transcription", "meeting search and notes", "audio import and export", "federated recall (screen, clipboard, audio)"],
+  "placeholders": ["FUNES_DIR", "APP_URL"],
+  "defaults": {"APP_URL": "http://127.0.0.1:8813"},
+  "app": {
+    "url_default": "http://127.0.0.1:8813",
+    "ui_url": "{APP_URL}",
+    "health": {"path": "/api/health", "expect": {"service": "funes-hoard"}},
+    "identify": {"service": ["funes-hoard"], "title": ["funes's hoard"]},
+    "launch_hint": {
+      "kind": "process",
+      "executable": "{FUNES_DIR}/.venv/Scripts/python.exe",
+      "argv": ["-m", "funes_hoard", "--no-browser"],
+      "cwd": "{FUNES_DIR}",
+      "readiness": {"url": "{APP_URL}/api/health", "timeout_s": 30}
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{FUNES_DIR}/.venv/Scripts/python.exe",
+    "args": ["{FUNES_DIR}/funes_hoard/mcp_server.py"],
+    "env": {"FUNES_URL": "{APP_URL}"},
+    "optional_env": ["FUNES_DATA_DIR", "FUNES_AUDIO_TOKEN_FILE"]
+  },
+  "provides": {"skills": ["skills/where-was-i/SKILL.md"]},
+  "notes": "Local episodic memory: foreground app/window, idle/away, files and commits. Audio recording, transcription, session management and search run inside Funes at /audio and share one launcher and one MCP connection. Audio data lives in data/audio and is retained independently of desktop-activity retention. Recall preserves the source id 'scribe' for existing citations, while Argus (screen) and Echo (clipboard) remain external sources."
+}

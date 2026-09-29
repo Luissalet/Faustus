@@ -35,10 +35,19 @@ def test_every_shipped_plugin_can_be_recognised_when_its_app_is_running():
     offered as a one-click connection if something can tell which plugin it
     is; a plugin with no `identify` can never be that."""
     unrecognisable = sorted(
-        pid for pid, plugin in plugins.load_plugins().items() if not plugin.identify
+        pid for pid, plugin in plugins.load_plugins().items()
+        if plugin.app_url_default and not plugin.identify
     )
     assert unrecognisable == [], (
         f"these plugins could never be found by a scan: {unrecognisable}")
+    # A stdio tool pack has no listening app to discover. It must declare a
+    # direct MCP entry point rather than fabricate launch/health metadata.
+    for plugin in plugins.load_plugins().values():
+        if not plugin.app_url_default:
+            assert plugin.transport == "stdio" and plugin.command
+            assert not plugin.ui_url and not plugin.launch_hint
+            assert not plugin.health_path and not plugin.health_expect
+            assert not plugin.identify
 
 
 def test_a_shipped_manifest_never_carries_one_persons_home_directory():

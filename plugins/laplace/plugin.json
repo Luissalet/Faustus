@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "id": "laplace",
+  "name": "Laplace's Hoard",
+  "purpose": "Gives the model exact arithmetic, symbolic math, unit conversion, statistics, date arithmetic and read-only SQL over local files, with every computation logged and citable.",
+  "capabilities": ["arithmetic", "symbolic-math", "units", "statistics", "dates", "sql-over-files"],
+  "placeholders": ["LAPLACE_DIR", "APP_URL"],
+  "defaults": {"APP_URL": "http://127.0.0.1:8812"},
+  "app": {
+    "url_default": "http://127.0.0.1:8812",
+    "ui_url": "{APP_URL}",
+    "health": {"path": "/api/health", "expect": {"service": "laplaces-hoard"}},
+    "identify": {"service": ["laplaces-hoard"], "title": ["laplace's hoard"]},
+    "launch_hint": {
+      "kind": "process",
+      "executable": "{LAPLACE_DIR}/.venv/Scripts/python.exe",
+      "argv": ["-m", "laplaces_hoard", "--no-browser"],
+      "cwd": "{LAPLACE_DIR}",
+      "readiness": {"url": "{APP_URL}/api/health", "timeout_s": 30}
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{LAPLACE_DIR}/.venv/Scripts/python.exe",
+    "args": ["{LAPLACE_DIR}/laplaces_hoard/mcp_server.py"],
+    "env": {"LAPLACE_URL": "{APP_URL}"},
+    "optional_env": []
+  },
+  "provides": {"skills": ["skills/exact-numbers/SKILL.md"]},
+  "notes": "Local-only calculator, symbolic-math and SQL-over-files tool. The model should call its tools rather than compute numbers itself, and cite the returned id."
+}

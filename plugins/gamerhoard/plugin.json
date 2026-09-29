@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "id": "gamerhoard",
+  "name": "GamerHoard",
+  "purpose": "Biblioteca local de videojuegos: sesiones y tiempo jugado, catálogo RAWG opcional, seguimiento, DLC, estadísticas e importación de Steam.",
+  "capabilities": ["games", "library", "backlog", "ratings", "notes", "dlc", "stats", "play-sessions", "playtime-history", "steam-import", "steam-achievements", "json-import-export"],
+  "placeholders": ["GAMERHOARD_DIR"],
+  "mcp": {
+    "transport": "stdio",
+    "command": "node",
+    "args": ["{GAMERHOARD_DIR}/mcp/server.mjs"],
+    "env": {},
+    "optional_env": ["RAWG_API_KEY", "GAMERHOARD_DATA_FILE"]
+  },
+  "notes": "No web app or background service. The MCP server reads and writes one local JSON file in ~/.gamerhoard/library.json by default. RAWG_API_KEY only enables online catalog search; Steam import and achievement sync accept a key per call and never save it."
+}
