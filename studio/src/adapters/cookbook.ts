@@ -858,6 +858,7 @@ export interface FitModel {
   context: number;
   required_gb: number;
   speed_tps: number;
+  speed_estimate?: { basis: string; confidence: string; measured: boolean; context_depth_modeled: boolean };
   score: number;
   scores: { quality: number; speed: number; fit: number; context: number };
   gguf_sources: { repo: string; provider: string; file: string }[];

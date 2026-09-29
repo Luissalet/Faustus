@@ -332,7 +332,9 @@ export function Fit({ server, hwBackend, onSystem, say, onCached }: { server: Se
                     <td>{m.parameter_count || (m.params_b ? `${m.params_b}B` : '—')}</td>
                     <td>{m.quant}</td>
                     <td>{m.context >= 1024 ? `${Math.round(m.context / 1024)}k` : m.context}</td>
-                    <td>{m.speed_tps ? `${m.speed_tps} t/s` : '—'}</td>
+                    <td title={m.speed_tps ? t('Advisory estimate; actual speed varies with context and engine.') : undefined}>
+                      {m.speed_tps ? `≈${m.speed_tps} t/s` : '—'}
+                    </td>
                     <td>{m.score}</td>
                     <td>{eng.label}{m.run_mode === 'cpu_offload' ? ` · ${t('offload')}` : ''}</td>
                   </tr>,
@@ -345,6 +347,9 @@ export function Fit({ server, hwBackend, onSystem, say, onCached }: { server: Se
                             {m.gguf_sources.length ? ` · GGUF: ${m.gguf_sources.map((g) => `${g.repo}${g.file ? ` (${g.file})` : ''}`).join(', ')}` : ''}
                             {m.context_length ? ` · ${t('max context')} ${m.context_length}` : ''}
                           </p>
+                          {m.speed_tps > 0 && m.speed_estimate?.measured === false && (
+                            <p className="fs-muted">{t('Speed is estimated, not measured; context depth and engine overhead are not included.')}</p>
+                          )}
                           <div className="fs-inline">
                             {isCached(m.name) ? (
                               <Button variant="primary" size="sm" icon={Play} label={t('Launch')} onClick={() => onCached(m.name)} />

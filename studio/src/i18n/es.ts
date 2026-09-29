@@ -7856,6 +7856,8 @@ export const es: Record<string, string> = {
   "psutil is not installed on the server; only ports are listed.": "psutil no está instalado en el servidor; solo se listan los puertos.",
   "pulling": "descargando",
   "quality {q} · speed {s} · fit {f} · context {c}": "calidad {q} · velocidad {s} · ajuste {f} · contexto {c}",
+  "Advisory estimate; actual speed varies with context and engine.": "Estimación orientativa; la velocidad real varía con el contexto y el motor.",
+  "Speed is estimated, not measured; context depth and engine overhead are not included.": "Velocidad estimada, no medida; no incluye la profundidad del contexto ni el coste del motor.",
   "questions": "preguntas",
   "queue": "cola",
   "queued": "en cola",
