@@ -16,7 +16,7 @@ compat, appended to the end of the lookup order below).
 
 The block is byte-identical across turns until the file changes (KV-cache
 friendly), capped at `agent_project_instructions_max_chars`, and cached by
-mtime. Stdlib only, never raises.
+content. Stdlib only, never raises.
 
 Trust (FAUSTUS): the sentence above — "the USER's own AGENTS.md" — holds for a
 folder the user wrote and fails for a folder the user cloned, and this is the
@@ -29,6 +29,7 @@ caller that asks it.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import stat
@@ -46,11 +47,10 @@ DEFAULT_FILES = (
     os.path.join(".odysseus", "INSTRUCTIONS.md"),
 )
 DEFAULT_MAX_CHARS = 6000
-# (root, trusted) → (checked_at, path, mtime, block). `trusted` is part of the
-# key because the two answers are different text for the same file: caching one
-# under the other would inject an unapproved file for five seconds, or blank an
-# approved one for five seconds. Both are exactly the bug this feature is about.
-_CACHE: Dict[Tuple[str, bool], Tuple[float, Optional[str], float, str]] = {}
+# (root, trusted) -> (checked_at, selected path/file set, content identity, block).
+# Trusted text is re-read under its existing cap: mtime/size can remain unchanged
+# after an edit or restore. Untrusted notes alone retain the short TTL cache.
+_CACHE: Dict[Tuple[str, bool], Tuple[float, Optional[str], str, str]] = {}
 _LOCK = threading.Lock()
 _TTL_S = 5.0
 
@@ -114,7 +114,7 @@ def found_files(workspace: str) -> List[str]:
 
 
 def read(workspace: str) -> Dict[str, Any]:
-    """{"path", "rel", "text", "truncated", "chars"} or an empty dict."""
+    """Path, rendered text/excerpt SHA-256, truncation and size; or empty dict."""
     p = find_file(workspace)
     if not p:
         return {}
@@ -132,10 +132,13 @@ def read(workspace: str) -> Dict[str, Any]:
     if truncated:
         text = text[:limit]
     root = os.path.realpath(os.path.expanduser(workspace))
+    rendered = text.replace("\r\n", "\n").strip()
     return {
         "path": p,
         "rel": os.path.relpath(p, root).replace(os.sep, "/"),
-        "text": text.replace("\r\n", "\n").strip(),
+        "text": rendered,
+        # Identity of the exact injected excerpt, NOT workspace approval.
+        "text_sha256": hashlib.sha256(rendered.encode("utf-8")).hexdigest(),
         "truncated": truncated,
         "chars": len(text),
     }
@@ -209,7 +212,7 @@ def block(workspace: str, trusted: bool = True) -> str:
     key = (root, trusted)
     with _LOCK:
         cached = _CACHE.get(key)
-    if cached and now - cached[0] < _TTL_S:
+    if not trusted and cached and now - cached[0] < _TTL_S:
         return cached[3]
     if not trusted:
         # The note names every file that exists, so the cache identity is the
@@ -217,30 +220,25 @@ def block(workspace: str, trusted: bool = True) -> str:
         # though the first file's mtime did not.
         found = tuple(found_files(root))
         ident: Optional[str] = "\x00".join(found)
-        mtime = float(len(found))
-        if cached and cached[1] == ident and cached[2] == mtime:
+        file_count = str(len(found))
+        if cached and cached[1] == ident and cached[2] == file_count:
             with _LOCK:
-                _CACHE[key] = (now, ident, mtime, cached[3])
+                _CACHE[key] = (now, ident, file_count, cached[3])
             return cached[3]
         text = untrusted_note(root)
         with _LOCK:
-            _CACHE[key] = (now, ident, mtime, text)
+            _CACHE[key] = (now, ident, file_count, text)
         if text:
             logger.info("[instructions] %s: instruction files present but not approved — "
                         "injecting the note instead of the file", root)
         return text
-    p = find_file(root)
-    mtime = 0.0
-    if p:
-        try:
-            mtime = os.path.getmtime(p)
-        except OSError:
-            mtime = 0.0
-    if cached and cached[1] == p and cached[2] == mtime:
+    info = read(root)
+    p = info.get("path")
+    identity = str(info.get("text_sha256") or "") + ":" + str(bool(info.get("truncated")))
+    if cached and cached[1] == p and cached[2] == identity:
         with _LOCK:
-            _CACHE[key] = (now, p, mtime, cached[3])
+            _CACHE[key] = (now, p, identity, cached[3])
         return cached[3]
-    info = read(root) if p else {}
     text = ""
     if info.get("text"):
         note = " (truncated — read the file for the rest)" if info.get("truncated") else ""
@@ -251,7 +249,7 @@ def block(workspace: str, trusted: bool = True) -> str:
             f"{info['text']}"
         )
     with _LOCK:
-        _CACHE[key] = (now, p, mtime, text)
+        _CACHE[key] = (now, p, identity, text)
     if text:
         logger.debug("[instructions] injecting %s (%d chars)", info.get("rel"), len(info.get("text") or ""))
     return text

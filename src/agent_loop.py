@@ -5181,7 +5181,7 @@ def _build_system_prompt(
             pass
         # Standing instructions kept in the repo itself (AGENTS.md / CLAUDE.md /
         # .faustus/INSTRUCTIONS.md): conventions, how to run the tests, what
-        # not to touch. Cached by mtime — byte-identical until the file changes.
+        # not to touch. Cached by rendered content — identical until its excerpt changes.
         #
         # These files travel with a clone, and this is the one input that reaches
         # the SYSTEM role without going through src/prompt_security.py, so
