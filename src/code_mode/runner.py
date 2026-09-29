@@ -43,6 +43,11 @@ DEFAULT_MAX_OUTPUT_BYTES = 200_000
 # scripts, tight enough that a runaway allocation dies well before it can
 # threaten the host.
 DEFAULT_MAX_MEMORY_BYTES = 512 * 1024 * 1024
+PROTOCOL_FRAME_OVERHEAD = 64 * 1024
+
+
+class _ProtocolFrameLimit(Exception):
+    pass
 
 
 def _settings():
@@ -127,6 +132,8 @@ def _preexec_fn(max_memory_bytes: Optional[int], cpu_seconds: Optional[int]):
 async def _read_line(stream: asyncio.StreamReader) -> Optional[bytes]:
     try:
         line = await stream.readline()
+    except (ValueError, asyncio.LimitOverrunError) as exc:
+        raise _ProtocolFrameLimit("Code Mode protocol frame exceeded its bound") from exc
     except Exception:
         return None
     return line or None
@@ -148,6 +155,9 @@ async def run_code_mode(
     max_calls = max(1, limits["max_calls"])
     max_output_bytes = max(1, limits["max_output_bytes"])
     max_memory_bytes = limits["max_memory_bytes"]
+    # JSON may escape each output byte as six ASCII bytes (e.g. \u0000).
+    # The extra space covers framing fields; this is not a larger output quota.
+    frame_limit = 6 * max_output_bytes + PROTOCOL_FRAME_OVERHEAD
 
     workdir = tempfile.mkdtemp(prefix="faustus_code_mode_")
     user_code_path = os.path.join(workdir, "user_code.py")
@@ -160,6 +170,7 @@ async def run_code_mode(
         stderr=asyncio.subprocess.PIPE,
         cwd=workdir,
         env=_minimal_env(),
+        limit=frame_limit,
     )
     if not IS_WINDOWS:
         popen_kwargs["preexec_fn"] = _preexec_fn(max_memory_bytes, timeout_s + 5)
@@ -195,7 +206,11 @@ async def run_code_mode(
     async def _pump():
         nonlocal calls_made, last_call, terminated_by, final_payload
         while True:
-            raw = await _read_line(proc.stdout)
+            try:
+                raw = await _read_line(proc.stdout)
+            except _ProtocolFrameLimit:
+                terminated_by = "protocol_frame_limit"
+                return
             if raw is None:
                 return
             try:
@@ -278,8 +293,8 @@ async def run_code_mode(
     try:
         while not pump_task.done():
             remaining = wall_clock.remaining()
-            if remaining <= 0:
-                terminated_by = "timeout"
+            if terminated_by is not None or remaining <= 0:
+                terminated_by = terminated_by or "timeout"
                 pump_task.cancel()
                 try:
                     await pump_task
