@@ -528,7 +528,18 @@ class _RunLog:
             except (OSError, ValueError):
                 self._f = None
 
-    def event(self, seq: int, ev: str, replaced: bool) -> None:
+    def event(self, seq: int, ev: str, replaced: bool, *, durable: bool = False) -> None:
+        if durable:
+            # Effect admission must not mistake best-effort _write for a
+            # durable receipt. Failure propagates to the pre-dispatch gate.
+            with self._lock:
+                if self._f is None or self._orphaned:
+                    raise OSError("run log is unavailable")
+                self._f.write(json.dumps({"seq": seq, "ev": ev}, ensure_ascii=False) + "\n")
+                self._f.flush()
+                os.fsync(self._f.fileno())
+                self._pending = 0
+            return
         is_delta = ev.startswith('data: {"delta"')
         self._write({"seq": seq, "ev": ev, "r": replaced} if replaced else {"seq": seq, "ev": ev}, flush=not is_delta)
 
@@ -617,10 +628,11 @@ def _observability_fields(run: _Run, *, sequence: int) -> Dict[str, Any]:
     }
 
 
-def _publish(run: _Run, ev: str) -> None:
+def _publish(run: _Run, ev: str, *, durable: bool = False) -> None:
     """Append one SSE event (or replace the previous progress tick of the same
     tool call) and fan it out to every live subscriber."""
-    _observe_activity(run, ev)
+    if not durable:
+        _observe_activity(run, ev)
     key = _compact_key(ev)
     replaced = key is not None and run.last_key == key and bool(run.buffer)
     # 1-based, growing per stream, and stable across a compacted replace: a
@@ -629,12 +641,20 @@ def _publish(run: _Run, ev: str) -> None:
     # sequence) already expects -- the newer content for the same slot.
     seq = len(run.buffer) if not replaced else len(run.buffer) - 1
     ev = _augment_sse_fields(ev, _observability_fields(run, sequence=seq + 1))
+    if durable:
+        if run.log is None:
+            raise OSError("run has no durable log")
+        if replaced:
+            raise ValueError("durable effect events must not replace replay entries")
+        run.log.event(seq, ev, replaced, durable=True)
+    if durable:
+        _observe_activity(run, ev)
     if replaced:
         run.buffer[-1] = ev
     else:
         run.buffer.append(ev)
     run.last_key = key
-    if run.log is not None:
+    if run.log is not None and not durable:
         run.log.event(seq, ev, replaced)
     for q in list(run.subscribers):
         try:
@@ -665,6 +685,7 @@ _TOOL_EFFECT_STATES = ("pending", "confirmed", "failed", "partial", "unknown")
 def record_tool_effect(
     session_id: Optional[str], *, call_id: str, tool: str, effect_class: str, state: str,
     result_status: Optional[str] = None, uncertainty: Optional[Dict[str, Any]] = None,
+    durable: bool = False, intent: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Append a `tool_effect` event to `session_id`'s active detached run.
 
@@ -679,6 +700,8 @@ def record_tool_effect(
     if state not in _TOOL_EFFECT_STATES:
         raise ValueError(f"invalid tool_effect state: {state!r}")
     run = _RUNS.get(str(session_id or ""))
+    if durable and (run is None or run.status != "running" or not call_id):
+        raise OSError("durable intent requires an active run and call id")
     if run is None:
         return
     idempotency_key = f"{run.run_id}:{call_id}"
@@ -691,8 +714,12 @@ def record_tool_effect(
         "idempotency_key": idempotency_key,
         **({"result_status": result_status} if result_status else {}),
         **({"uncertainty": uncertainty} if uncertainty else {}),
+        **({"intent": intent} if intent else {}),
     }, ensure_ascii=False) + "\n\n"
-    _publish(run, ev)
+    if durable:
+        _publish(run, ev, durable=True)
+    else:
+        _publish(run, ev)
 
 
 UNKNOWN_EFFECTS_SYSTEM_PREFIX = (

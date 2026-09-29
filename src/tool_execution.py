@@ -1453,17 +1453,38 @@ async def execute_tool_block(
         )
     except Exception:
         _effect_class = None
-    _tracked_effect = bool(_effect_class and _effect_class != "read" and call_id)
+    _email_effect = bool({"send_email", "reply_to_email"}.intersection(
+        email_tool_policy_names(str(getattr(block, "tool_type", "")))))
+    if _email_effect and not _effect_class:
+        _effect_class = "write"
+    _tracked_effect = bool(((_effect_class and _effect_class != "read") or _email_effect) and call_id)
+    _intent_required = False
+    _intent_failed = False
     if _tracked_effect:
         try:
             from src import agent_runs as _agent_runs
+            _intent_required = bool(
+                _email_effect
+                and _agent_runs.get_active_run(str(session_id or "")) is not None)
             _agent_runs.record_tool_effect(
                 session_id, call_id=str(call_id), tool=str(getattr(block, "tool_type", None) or ""),
                 effect_class=_effect_class, state="pending",
+                **({"durable": True, "intent": {
+                    "owner": str(owner or ""),
+                    "arguments_sha256": hashlib.sha256(
+                        str(getattr(block, "content", "") or "").encode("utf-8")).hexdigest(),
+                }} if _intent_required else {}),
             )
         except Exception:
+            _intent_failed = _intent_required
             logger.debug("tool_effect pending write failed for call_id=%s", call_id, exc_info=True)
     try:
+        if _intent_failed:
+            return ("Email not dispatched", {
+                "status": "failed", "error_code": "EFFECT_INTENT_NOT_PERSISTED",
+                "error": "The email was not dispatched because its intent could not be persisted.",
+                "effect_not_dispatched": True, "exit_code": 1,
+            })
         _tool_started_at = time.monotonic()
         _tool_started_wall = time.time()
         output = await _execute_tool_block_impl(
