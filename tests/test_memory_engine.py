@@ -630,6 +630,18 @@ def test_outcome_retry_finishes_partial_feedback_without_double_credit(store, mo
         assert len(engine.get_item(item["id"])["helpful"]) == 1
 
 
+def test_two_turns_in_one_session_each_credit_the_rule(store):
+    rule = _rule()
+    for _ in range(2):
+        engine.note_injected("same-session", [rule["id"]])
+        assert engine.record_outcome("same-session", "pass",
+                                     ref="same-session", now=NOW)["applied"] == 1
+    events = engine.get_item(rule["id"])["helpful"]
+    assert len(events) == 2
+    assert all(event["ref"] == "same-session" for event in events)
+    assert events[0]["event_id"] != events[1]["event_id"]
+
+
 def test_an_unmeasured_turn_invents_no_feedback(store):
     rule = _rule()
     engine.note_injected("sess-9", [rule["id"]])

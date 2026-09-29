@@ -680,17 +680,21 @@ def normalize_evidence(spans: Any) -> List[Dict[str, Any]]:
 
 
 def _feedback_event(reason: str = "", ref: str = "", weight: float = 1.0,
-                    now: Optional[datetime] = None) -> Dict[str, Any]:
+                    now: Optional[datetime] = None,
+                    event_id: str = "") -> Dict[str, Any]:
     try:
         weight = float(weight)
     except (TypeError, ValueError):
         weight = 1.0
-    return {
+    event = {
         "ts": _iso(now or _utcnow()),
         "weight": max(0.0, min(10.0, weight)),
         "reason": " ".join(str(reason or "").split())[:MAX_REASON_CHARS],
         "ref": str(ref or "")[:MAX_REF_CHARS],
     }
+    if event_id:
+        event["event_id"] = str(event_id)[:MAX_REF_CHARS]
+    return event
 
 
 # ---------------------------------------------------------------------------
@@ -1302,6 +1306,7 @@ def add_feedback(
     ref: str = "",
     weight: float = 1.0,
     now: Optional[datetime] = None,
+    event_id: str = "",
 ) -> Optional[Dict[str, Any]]:
     """Append one helpful/harmful event. Returns the updated item, or None
     when the item is gone. Does NOT re-evaluate maturity — that is the
@@ -1313,7 +1318,8 @@ def add_feedback(
     if not item:
         return None
     events = list(item.get(kind) or [])
-    events.append(_feedback_event(reason=reason, ref=ref, weight=weight, now=now))
+    events.append(_feedback_event(reason=reason, ref=ref, weight=weight,
+                                  now=now, event_id=event_id))
     item[kind] = events[-MAX_EVENTS:]
     # updated_at is the freshness clock: feedback IS a touch of the item.
     item["updated_at"] = _iso(now or _utcnow())
@@ -1967,7 +1973,8 @@ def note_injected(key: Any, ids: Iterable[str], *, now_ts: Optional[float] = Non
             return
         stamp = float(now_ts if now_ts is not None else time.time())
         with _injected_lock:
-            _INJECTED[key] = {"ids": ids, "ts": stamp}
+            _INJECTED[key] = {"ids": ids, "ts": stamp,
+                              "event_id": uuid.uuid4().hex}
             _INJECTED.move_to_end(key)
             _sweep_injected(stamp)
         # Retrieval is not use. Only after the caller confirms that these ids
@@ -1983,6 +1990,11 @@ def peek_injected(key: Any) -> List[str]:
     with _injected_lock:
         entry = _INJECTED.get(str(key or ""))
         return list(entry.get("ids") or []) if entry else []
+
+
+def _injected_snapshot(key: Any) -> Dict[str, Any]:
+    with _injected_lock:
+        return dict(_INJECTED.get(str(key or "")) or {})
 
 
 def take_injected(key: Any) -> List[str]:
@@ -2042,23 +2054,26 @@ def _record_outcome_unlocked(
             # No signal is not a neutral signal: record nothing at all.
             take_injected(key)
             return result
-        ids = peek_injected(key)
+        injected = _injected_snapshot(key)
+        ids = list(injected.get("ids") or [])
         if not ids:
             return result
         result["kind"] = kind
         applied: List[str] = []
         event_ref = str(ref or key or "")[:MAX_REF_CHARS]
+        event_id = str(injected.get("event_id") or "")
         for item_id in ids:
             item = get_item(item_id)
             if not item or item.get("level") != "procedural":
                 continue
             # The event is stored with the item.  If an earlier attempt wrote
             # it and failed on a later item, retry only the unfinished work.
-            if any(str(event.get("ref") or "") == event_ref
+            if any(event_id and str(event.get("event_id") or "") == event_id
                    for event in item.get(kind, []) if isinstance(event, dict)):
                 continue
             if add_feedback(item_id, kind, reason=reason,
-                            ref=event_ref, weight=weight, now=now):
+                            ref=event_ref, weight=weight, now=now,
+                            event_id=event_id):
                 applied.append(item_id)
                 result["ids"] = list(applied)
                 result["applied"] = len(applied)
