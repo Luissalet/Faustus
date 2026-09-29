@@ -363,6 +363,13 @@ def _candidates(item: Dict[str, Any]) -> List[Dict[str, Any]]:
 def _top_k(text: str, candidates: List[Dict[str, Any]], k: int) -> List[Dict[str, Any]]:
     if len(candidates) <= k:
         return candidates
+    query_tokens = set(tokenize(text.lower()))
+
+    def _overlap(cand: Dict[str, Any]) -> int:
+        cand_tokens = set(tokenize(str(cand.get("text") or "").lower()))
+        return -len(query_tokens & cand_tokens)
+
+    lexical = sorted(candidates, key=_overlap)
     try:
         from src.memory_engine import vector_store
 
@@ -371,19 +378,27 @@ def _top_k(text: str, candidates: List[Dict[str, Any]], k: int) -> List[Dict[str
         store = None
     if store:
         try:
-            hits = store.search(text, k=max(k, DEFAULT_TOP_K)) or []
+            hits = store.search(text, k=max(k * 2, DEFAULT_TOP_K)) or []
             order = {str(h.get("memory_id")): i for i, h in enumerate(hits) if isinstance(h, dict)}
-            ranked = sorted(candidates, key=lambda c: order.get(str(c.get("id")), 10**9))
-            return ranked[:k]
+            semantic = sorted((c for c in candidates if str(c.get("id")) in order),
+                              key=lambda c: order[str(c.get("id"))])
+            if semantic:
+                # A vector hit from another owner/project is ineligible.  Keep
+                # literal matches too, so semantic neighbours cannot consume
+                # the entire comparison budget before a contradiction is seen.
+                reserved = max(1, k // 2)
+                chosen: List[Dict[str, Any]] = []
+                seen: set = set()
+                for pool in (lexical[:reserved], semantic[:reserved], lexical, semantic):
+                    for candidate in pool:
+                        candidate_id = str(candidate.get("id"))
+                        if candidate_id not in seen and len(chosen) < k:
+                            chosen.append(candidate)
+                            seen.add(candidate_id)
+                return chosen
         except Exception:  # noqa: BLE001
             pass
-    query_tokens = set(tokenize(text.lower()))
-
-    def _overlap(cand: Dict[str, Any]) -> int:
-        cand_tokens = set(tokenize(str(cand.get("text") or "").lower()))
-        return -len(query_tokens & cand_tokens)
-
-    return sorted(candidates, key=_overlap)[:k]
+    return lexical[:k]
 
 
 # ---------------------------------------------------------------------------

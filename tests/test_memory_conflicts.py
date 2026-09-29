@@ -70,6 +70,23 @@ def test_different_subjects_are_not_flagged():
         "Luis prefers tabs", "Maria prefers spaces") is None
 
 
+def test_conflict_shortlist_protects_literal_match_from_vector_neighbours(monkeypatch):
+    class VectorStore:
+        def search(self, text, k):
+            return [{"memory_id": "other_owner"}, {"memory_id": "unrelated"},
+                    {"memory_id": "semantic"}]
+
+    monkeypatch.setattr(engine, "vector_store", lambda: VectorStore())
+    candidates = [
+        {"id": "unrelated", "text": "Unrelated neighbour"},
+        {"id": "semantic", "text": "An application preference"},
+        {"id": "literal", "text": "The project uses Python"},
+    ]
+    shortlisted = conflicts._top_k("The project uses Rust", candidates, 2)
+    assert {item["id"] for item in shortlisted} == {"literal", "unrelated"}
+    assert conflicts.classify("The project uses Rust", shortlisted[0]["text"])
+
+
 # ── probability_of (the advisory row's confidence, read back from `detail`) ──
 
 def test_probability_of_reads_the_advisory_detail_text():
