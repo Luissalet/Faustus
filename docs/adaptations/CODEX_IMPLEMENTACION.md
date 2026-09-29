@@ -16,11 +16,13 @@ Prueba decisiva: el runner real escribe un señuelo temporal fuera del cwd del g
 
 | ID | Estado |
 |---|---|
-| H01 | Entregable mínimo de autoridad host completado; confinamiento pendiente |
-| H02 | Pendiente: política solicitada/efectiva y backend verificado |
-| H03 | Pendiente: registro previo obligatorio para efectos no repetibles |
-| H04 | En revisión: preservar resultados inciertos/parciales |
-| H05 | En implementación: round-trip del catálogo; autoridad ejecutable completa pendiente |
+| H01 | `664894a5`: autoridad host explícita, 16 pruebas; confinamiento pendiente |
+| H02 | `5f781023`: política solicitada/efectiva y motivo, 32 pruebas y 5 omitidas sin Docker. Modo obligatorio en preparación; backend Windows pendiente |
+| H03 | En implementación acotada: registro previo durable para envíos de correo dentro de runs rastreados; otras rutas pendientes |
+| H04 | `0572e1af`: 55 pruebas de normalización→evento→reinicio, partial/unknown preservados. UI completa, errores genéricos e identidad de intentos pendientes |
+| H05 | `7c558eee`: 262 pruebas, round-trip de 220 herramientas y MCP; `155fad3d`: 58 pruebas de errores numéricos PDF. Autoridad ejecutable común aún pendiente |
 | H06–H24 | Pendientes conforme al análisis original; no declarar cerrados por este documento |
 
 Los pilotos de reinicio de procesos (`403756a9`) y memoria (`9e0e8e50`) ya aportan evidencia a H11/H20/H24, pero no completan esos cambios transversales.
+
+Informes de entregables: [H02](CODEX_H02_POLICY_METADATA_2026-09-29.md), [H04](CODEX_H04_EFFECT_RESULTS.md), [H05](CODEX_H05_RUNTIME_ROUNDTRIP_2026-09-29.md). Cada uno conserva referencia original, pruebas y límites. No repetir estas inspecciones salvo regresión o pregunta nueva.
