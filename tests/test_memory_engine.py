@@ -604,6 +604,32 @@ def test_a_failing_turn_blames_them(store):
     assert len(engine.get_item(rule["id"])["harmful"]) == 1
 
 
+def test_outcome_retry_finishes_partial_feedback_without_double_credit(store, monkeypatch):
+    first = _rule("Always run project tests")
+    second = _rule("Always check the build")
+    engine.note_injected("run-retry", [first["id"], second["id"]])
+    original = engine.add_feedback
+    failed = False
+
+    def fail_second_once(item_id, *args, **kwargs):
+        nonlocal failed
+        if item_id == second["id"] and not failed:
+            failed = True
+            raise RuntimeError("temporary storage failure")
+        return original(item_id, *args, **kwargs)
+
+    monkeypatch.setattr(engine, "add_feedback", fail_second_once)
+    partial = engine.record_outcome("run-retry", "pass", now=NOW)
+    assert partial["ids"] == [first["id"]]
+    assert engine.peek_injected("run-retry") == [first["id"], second["id"]]
+
+    resumed = engine.record_outcome("run-retry", "pass", now=NOW)
+    assert resumed["ids"] == [second["id"]]
+    assert engine.peek_injected("run-retry") == []
+    for item in (first, second):
+        assert len(engine.get_item(item["id"])["helpful"]) == 1
+
+
 def test_an_unmeasured_turn_invents_no_feedback(store):
     rule = _rule()
     engine.note_injected("sess-9", [rule["id"]])

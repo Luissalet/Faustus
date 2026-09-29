@@ -1944,6 +1944,7 @@ INJECTED_TTL_S = 3600.0
 INJECTED_MAX_KEYS = 256
 
 _injected_lock = threading.Lock()
+_outcome_lock = threading.Lock()
 _INJECTED: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
 
 
@@ -2018,7 +2019,7 @@ def outcome_from_harness(summary: Optional[Dict[str, Any]]) -> Optional[str]:
     return None
 
 
-def record_outcome(
+def _record_outcome_unlocked(
     key: Any,
     outcome: Any,
     *,
@@ -2041,23 +2042,45 @@ def record_outcome(
             # No signal is not a neutral signal: record nothing at all.
             take_injected(key)
             return result
-        ids = take_injected(key)
+        ids = peek_injected(key)
         if not ids:
             return result
         result["kind"] = kind
         applied: List[str] = []
+        event_ref = str(ref or key or "")[:MAX_REF_CHARS]
         for item_id in ids:
             item = get_item(item_id)
             if not item or item.get("level") != "procedural":
                 continue
+            # The event is stored with the item.  If an earlier attempt wrote
+            # it and failed on a later item, retry only the unfinished work.
+            if any(str(event.get("ref") or "") == event_ref
+                   for event in item.get(kind, []) if isinstance(event, dict)):
+                continue
             if add_feedback(item_id, kind, reason=reason,
-                            ref=str(ref or key or ""), weight=weight, now=now):
+                            ref=event_ref, weight=weight, now=now):
                 applied.append(item_id)
-        result["ids"] = applied
-        result["applied"] = len(applied)
+                result["ids"] = list(applied)
+                result["applied"] = len(applied)
+        take_injected(key)
     except Exception as exc:  # noqa: BLE001 - turn-end hook
         logger.debug("memory engine: record_outcome failed: %s", exc)
     return result
+
+
+def record_outcome(
+    key: Any,
+    outcome: Any,
+    *,
+    ref: Optional[str] = None,
+    reason: str = "",
+    weight: float = 1.0,
+    now: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    """Apply one turn's feedback serially so concurrent retries cannot duplicate it."""
+    with _outcome_lock:
+        return _record_outcome_unlocked(
+            key, outcome, ref=ref, reason=reason, weight=weight, now=now)
 
 
 # ---------------------------------------------------------------------------
