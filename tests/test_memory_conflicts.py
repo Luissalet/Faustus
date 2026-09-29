@@ -87,6 +87,22 @@ def test_conflict_shortlist_protects_literal_match_from_vector_neighbours(monkey
     assert conflicts.classify("The project uses Rust", shortlisted[0]["text"])
 
 
+def test_conflict_shortlist_also_keeps_semantic_paraphrase(monkeypatch):
+    class VectorStore:
+        def search(self, text, k):
+            return [{"memory_id": "semantic"}, {"memory_id": "semantic"},
+                    {"memory_id": "lexical"}]
+
+    monkeypatch.setattr(engine, "vector_store", lambda: VectorStore())
+    candidates = [
+        {"id": "lexical", "text": "The project uses Python in tests"},
+        {"id": "filler", "text": "The project uses Java in examples"},
+        {"id": "semantic", "text": "Atlas backend language is Rust"},
+    ]
+    shortlisted = conflicts._top_k("The project uses Rust", candidates, 2)
+    assert {item["id"] for item in shortlisted} == {"lexical", "semantic"}
+
+
 # ── probability_of (the advisory row's confidence, read back from `detail`) ──
 
 def test_probability_of_reads_the_advisory_detail_text():

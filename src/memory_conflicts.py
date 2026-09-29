@@ -379,7 +379,10 @@ def _top_k(text: str, candidates: List[Dict[str, Any]], k: int) -> List[Dict[str
     if store:
         try:
             hits = store.search(text, k=max(k * 2, DEFAULT_TOP_K)) or []
-            order = {str(h.get("memory_id")): i for i, h in enumerate(hits) if isinstance(h, dict)}
+            order: Dict[str, int] = {}
+            for i, hit in enumerate(hits):
+                if isinstance(hit, dict) and hit.get("memory_id"):
+                    order.setdefault(str(hit["memory_id"]), i)
             semantic = sorted((c for c in candidates if str(c.get("id")) in order),
                               key=lambda c: order[str(c.get("id"))])
             if semantic:
