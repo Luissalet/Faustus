@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from core import database, models, session_manager
 from src import agent_runs, ai_interaction, budget_account
 from src.agent_tools import subagent_tools as st
+from src.run_causality import CallOrigin, capture_call
 
 
 @pytest.fixture
@@ -56,7 +57,7 @@ async def test_real_dispatch_freezes_parent_for_workers_and_reviewer(history, mo
     result = await st.DelegateAgentsTool().execute(json.dumps({
         "tasks": [{"name": "one", "instruction": "Inspect a fixture"},
                   {"name": "two", "instruction": "Inspect another fixture"}],
-        "parallel": False, "reviewer": True}), {"session_id": "parent"})
+        "parallel": False, "reviewer": True}), {"session_id": "parent", "_causal_call": CallOrigin("parent", "run-original", "native-call")})
     assert "error" not in result
     assert len(seen) == 3 and seen[-1].role == "reviewer"
     assert len({r.delegation_id for r in seen}) == 1
@@ -66,7 +67,7 @@ async def test_real_dispatch_freezes_parent_for_workers_and_reviewer(history, mo
         assert meta["session_id"] == run.session_id
         assert meta["parent_run_id"] == "run-original"
         assert meta["delegation_id"] == seen[0].delegation_id
-        assert "parent_call_id" not in meta
+        assert meta["parent_call_id"] == "native-call"
 
 
 @pytest.mark.asyncio
@@ -87,7 +88,7 @@ async def test_concurrent_delegations_have_independent_causal_identity(history, 
 
     monkeypatch.setattr(st, "_run_subagent", worker)
     content = json.dumps({"tasks": [{"name": "same", "instruction": "Inspect fixture"}], "reviewer": False})
-    await asyncio.gather(*(st.DelegateAgentsTool().execute(content, {"session_id": "parent"}) for _ in range(2)))
+    await asyncio.gather(*(st.DelegateAgentsTool().execute(content, {"session_id": "parent", "_causal_call": CallOrigin("parent", "real-run", "native-call")}) for _ in range(2)))
     metadata = [reload_metadata(r.id)[-1] for r in seen]
     assert len({m["delegation_id"] for m in metadata}) == 2
     assert len({m["worker_id"] for m in metadata}) == 2
@@ -118,16 +119,16 @@ def test_parent_run_never_falls_back_to_session(history, monkeypatch, parent, re
     monkeypatch.setitem(agent_runs._RUNS, "parent", SimpleNamespace(run_id=result, status="running"))
     run = st.SubagentRun(0, {"name": "same", "instruction": "Fixture"})
     run.session_id = "parent"
-    st._bind_causal_identity(run, st._causal_parent_run_id(parent), "delegation")
+    st._bind_causal_identity(run, capture_call(parent, None).run_id, "delegation")
     st._save_transcript(run, history)
-    assert reload_metadata("parent")[-1]["parent_run_id"] == (result if parent else None)
+    assert reload_metadata("parent")[-1]["parent_run_id"] is None
 
 
 @pytest.mark.parametrize("status", ["done", "error", "cancelled", "interrupted"])
 def test_previous_terminal_run_is_not_causal_parent(history, monkeypatch, status):
     monkeypatch.setitem(agent_runs._RUNS, "parent", SimpleNamespace(run_id="old-run", status=status))
     assert agent_runs.get_run_id("parent") == "old-run"
-    assert st._causal_parent_run_id("parent") is None
+    assert capture_call("parent", None).run_id is None
 
 
 @pytest.mark.asyncio
@@ -149,6 +150,6 @@ async def test_real_retry_keeps_invocation_identity(history, monkeypatch):
     monkeypatch.setattr(st, "_run_subagent", worker)
     await st.DelegateAgentsTool().execute(json.dumps({"tasks": [
         {"name": "writer", "instruction": "Write a file report.md with the report"}],
-        "reviewer": False}), {"session_id": "parent"})
+        "reviewer": False}), {"session_id": "parent", "_causal_call": CallOrigin("parent", "run-before", "native-retry")})
     assert len(observed) == 2 and observed[0] == observed[1]
     assert reload_metadata(observed[0][0])[-1]["parent_run_id"] == "run-before"

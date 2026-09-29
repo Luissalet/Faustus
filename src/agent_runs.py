@@ -1263,6 +1263,8 @@ async def _drain(session_id: str, run: _Run, agen: AsyncGenerator[str, None],
     subscribers_woken = False
     lane = _lane(run.lane)
     acquired = False
+    from src.run_causality import bind_run, reset_run
+    causal_token = bind_run(session_id, run.run_id)
 
     def _wake_subscribers() -> None:
         nonlocal subscribers_woken
@@ -1329,6 +1331,7 @@ async def _drain(session_id: str, run: _Run, agen: AsyncGenerator[str, None],
         )
         _publish(run, "data: [DONE]\n\n")
     finally:
+        reset_run(causal_token)
         if lane is not None and acquired:
             try:
                 await lane.release(run)

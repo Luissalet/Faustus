@@ -913,6 +913,7 @@ async def _direct_fallback(
     tool_policy: Optional[Any] = None,
     security_context: Optional[Any] = None,
     pdf_call_binding: Optional[Any] = None,
+    _causal_call: Optional[Any] = None,
 ) -> Optional[Dict]:
     _subproc_env = {
         **os.environ,
@@ -926,6 +927,7 @@ async def _direct_fallback(
         _turn_opts = get_active_turn_options()
         _harness_options = _turn_opts.get("harness_options") or {}
         ctx = {
+            "_causal_call": _causal_call,
             "progress_cb": progress_cb,
             "subproc_env": _subproc_env,
             "session_id": session_id,
@@ -972,11 +974,9 @@ async def _direct_fallback(
             # from where it already travels rather than re-deriving it from a
             # folder name mid-run (plan §11: one context per run, resolved once).
             "project_id": str(_harness_options.get("project_id") or ""),
-            # `run_id` is NOT carried in turn_options today — the agent loop
-            # keeps it on ToolRunSecurityContext, which never reaches here. Left
-            # empty on purpose: an invented run id in an audit trail is worse
-            # than an absent one. Wiring it needs turn_options to carry it,
-            # which is a change to src/agent_loop.py.
+            # Legacy options may carry a session fallback here. Keep this
+            # compatibility field separate from the server-owned _causal_call
+            # snapshot: it is not authority for causal attribution.
             "run_id": str(_turn_opts.get("run_id") or ""),
             "turn_id": str(_turn_opts.get("turn_id") or ""),
             "disabled_tools": disabled_tools or set(),
@@ -1322,6 +1322,8 @@ async def execute_tool_block(
         )
 
     # Resolve one executable registration and its contract before any await.
+    from src.run_causality import capture_call
+    causal_call = capture_call(session_id, call_id)
     # This is per-call, not the catalogue snapshot advertised for a model step.
     from src.pdf_call_binding import capture_pdf_call
     pdf_call_binding = capture_pdf_call(getattr(block, "tool_type", ""))
@@ -1532,6 +1534,7 @@ async def execute_tool_block(
             ),
             human_approved=approval_claimed,
             pdf_call_binding=pdf_call_binding,
+            _causal_call=causal_call,
         )
         # CALL-05: normalize the tool's own ad hoc result dict into the
         # typed ToolResult contract (src/tool_result.py), at THIS single
@@ -1648,6 +1651,7 @@ async def _execute_tool_block_impl(
     approved_document_digest: Optional[str] = None,
     human_approved: bool = False,
     pdf_call_binding: Optional[Any] = None,
+    _causal_call: Optional[Any] = None,
 ) -> Tuple[str, Dict]:
     """Execute a single tool block. Returns (description, result_dict).
 
@@ -1898,7 +1902,8 @@ async def _execute_tool_block_impl(
         # Multi-agent delegation: needs the parent session (model route, child
         # chats), the owner, and the progress callback for live worker cards.
         desc = "delegate_agents"
-        result = await _direct_fallback(tool, content, progress_cb=progress_cb, session_id=session_id, owner=owner) \
+        result = await _direct_fallback(tool, content, progress_cb=progress_cb, session_id=session_id, owner=owner,
+                                        _causal_call=_causal_call) \
             or {"error": "delegate_agents: execution failed", "exit_code": 1}
         try:
             _n = len((result or {}).get("subagents") or [])
@@ -2369,6 +2374,7 @@ async def _execute_tool_block_impl(
             session_id=session_id, owner=owner, disabled_tools=disabled_tools,
             tool_policy=tool_policy, security_context=security_context,
             pdf_call_binding=pdf_call_binding,
+            _causal_call=_causal_call,
         )
 
         if isinstance(res, tuple):
