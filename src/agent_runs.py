@@ -857,7 +857,9 @@ def unknown_effects_system_block(sess: Any) -> Optional[str]:
         effects = meta.get("unknown_effects") if isinstance(meta, dict) else None
         if not effects:
             return None
-        lines = [UNKNOWN_EFFECTS_SYSTEM_PREFIX]
+        lines = [("A previous turn ended with unresolved tool effects. "
+                  "Do not repeat them without checking first:")
+                 if meta.get("terminal_effect_recovery") else UNKNOWN_EFFECTS_SYSTEM_PREFIX]
         for item in effects:
             if not isinstance(item, dict):
                 continue
@@ -1814,6 +1816,7 @@ def _read_log(path: str, *, for_recovery: bool = False) -> Dict[str, Any]:
     events: Dict[int, str] = {}
     status = None
     meta: Dict[str, Any] = {}
+    effect_recovery = None
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             for line in f:
@@ -1826,6 +1829,8 @@ def _read_log(path: str, *, for_recovery: bool = False) -> Dict[str, Any]:
                     obj = json.loads(line)
                 except ValueError:
                     continue
+                if isinstance(obj.get("effect_recovery"), dict):
+                    effect_recovery = obj["effect_recovery"]
                 if "status" in obj:
                     status = obj["status"]
                     if obj["status"] == "running":
@@ -1837,7 +1842,9 @@ def _read_log(path: str, *, for_recovery: bool = False) -> Dict[str, Any]:
     except OSError:
         return {"status": "unreadable", "events": []}
     ordered = [events[k] for k in sorted(events)]
-    return {"status": status, "events": ordered, **{k: meta.get(k) for k in ("run_id", "ts", "lane", "label", "session_id")}}
+    return {"status": status, "events": ordered,
+            **({"effect_recovery": effect_recovery} if effect_recovery else {}),
+            **{k: meta.get(k) for k in ("run_id", "ts", "lane", "label", "session_id")}}
 
 
 def _partial_from_events(events: List[str]) -> Dict[str, Any]:
@@ -2163,6 +2170,80 @@ def _peek_status(path: str) -> Optional[str]:
     return None
 
 
+def _recover_terminal_effects(path: str, info: Dict[str, Any], effects: List[Dict[str, Any]],
+                              session_manager) -> Tuple[bool, Optional[Dict[str, Any]]]:
+    """Commit an uncertainty notice before acknowledging a terminal journal.
+
+    True permits normal retention; False preserves the journal for retry.
+    Terminal generation status is never rewritten or registered as active.
+    """
+    run_id, sid = info.get("run_id"), info.get("session_id")
+    if not run_id or not sid:
+        return False, None
+    canonical = sorted(effects, key=lambda item: json.dumps(item, sort_keys=True))
+    digest = hashlib.sha256(json.dumps({"run_id": run_id, "status": info["status"],
+                                       "effects": canonical}, sort_keys=True).encode()).hexdigest()
+    receipt = info.get("effect_recovery") or {}
+    if receipt.get("run_id") == run_id and receipt.get("digest") == digest:
+        return True, None
+    if session_manager is None:
+        return False, None
+    try:
+        session = session_manager.get_session(sid)
+        if session is None:
+            purge_session_logs(sid)  # deletion remains authoritative
+            return False, None
+        persist = getattr(session_manager, "persist_recovered_message", None)
+        if not callable(getattr(type(session_manager), "persist_recovered_message", None)):
+            return False, None  # best-effort save_sessions cannot acknowledge a receipt
+        from core.models import ChatMessage
+        history = getattr(session, "history", None) or []
+        existing = next((message for message in history
+                         if getattr(message, "role", None) == "assistant"
+                         and (getattr(message, "metadata", None) or {}).get("run_id") == run_id), None)
+        metadata = dict(getattr(existing, "metadata", None) or {})
+        retained = [dict(item) for item in metadata.get("unknown_effects", []) if isinstance(item, dict)]
+        by_key = {item.get("idempotency_key") or (item.get("run_id"), item.get("call_id")): item
+                  for item in retained}
+        for effect in effects:
+            item = dict(effect, run_id=run_id)
+            key = item.get("idempotency_key") or (run_id, item.get("call_id"))
+            by_key[key] = {**by_key.get(key, {}), **item}
+        metadata.update(run_id=run_id, unknown_effects=list(by_key.values()),
+                        terminal_effect_recovery={"terminal_status": info["status"], "digest": digest})
+        content = existing.content if existing is not None else (
+            "[The turn ended with unresolved tool effects.]\n" + _unknown_effects_note(effects))
+        candidate = ChatMessage("assistant", content, metadata=metadata)
+        if persist(sid, candidate) is not True:
+            raise OSError("terminal effect recovery commit was not confirmed")
+    except Exception as exc:
+        logger.warning("[agent-run] terminal effect recovery preserved %s: %s", sid, exc)
+        return False, None
+    entry = {"session_id": sid, "run_id": run_id, "status": info["status"],
+             "terminal_effects": True, "saved_message": True, "unknown_effects": list(by_key.values())}
+    try:
+        # A failed fsync must not leave an apparently acknowledged receipt in
+        # the current process. SQLite is already committed, so retry is safe.
+        with open(path, "r+", encoding="utf-8") as handle:
+            handle.seek(0, os.SEEK_END)
+            offset = handle.tell()
+            try:
+                handle.write(json.dumps({"effect_recovery": {"run_id": run_id, "digest": digest},
+                                         "ts": time.time()}) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            except Exception:
+                handle.seek(offset)
+                handle.truncate()
+                handle.flush()
+                raise
+    except Exception as exc:
+        logger.warning("[agent-run] terminal effect receipt not confirmed for %s: %s", sid, exc)
+        return False, entry
+    _write_status_sidecar(path, info["status"])  # refresh cache; same terminal truth
+    return True, entry
+
+
 def recover_interrupted_runs(session_manager=None) -> List[Dict[str, Any]]:
     """Scan DATA_DIR/runs for logs left in 'running' state by a previous
     process. For each: save what the run had produced as a partial assistant
@@ -2187,16 +2268,26 @@ def recover_interrupted_runs(session_manager=None) -> List[Dict[str, Any]]:
         if not name.endswith(".jsonl"):
             continue
         path = os.path.join(d, name)
+        try:
+            log_mtime = os.path.getmtime(path)
+        except OSError:
+            continue
         side = _read_status_sidecar(path)
         peeked = side if side and side != "running" else _peek_status(path)
-        if peeked in ("done", "stopped", "error", "interrupted", "unreadable", "waiting_user"):
-            info = {"status": peeked}
-        else:
-            info = _read_log(path, for_recovery=True)
+        if peeked == "unreadable":
+            continue
+        info = _read_log(path, for_recovery=True)
         status = info.get("status")
         if status in ("done", "stopped", "error", "interrupted", "waiting_user"):
+            effects = _partial_from_events(info.get("events") or []).get("unknown_effects") or []
+            if effects:
+                acknowledged, entry = _recover_terminal_effects(path, info, effects, session_manager)
+                if entry:
+                    recovered.append(entry)
+                if not acknowledged:
+                    continue
             try:
-                if now - os.path.getmtime(path) > keep_h * 3600:
+                if now - log_mtime > keep_h * 3600:
                     os.remove(path)
                     if os.path.exists(_status_sidecar(path)):
                         os.remove(_status_sidecar(path))
@@ -2307,7 +2398,7 @@ def recover_interrupted_runs(session_manager=None) -> List[Dict[str, Any]]:
         _INTERRUPTED[sid] = entry
         recovered.append(entry)
     if recovered:
-        logger.warning("[agent-run] %d run(s) were interrupted by the previous restart: %s",
+        logger.warning("[agent-run] recovered interruptions or unresolved effects for %d run(s): %s",
                        len(recovered), ", ".join(r["session_id"] for r in recovered))
     return recovered
 
