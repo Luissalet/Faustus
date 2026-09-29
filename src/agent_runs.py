@@ -406,6 +406,11 @@ def _compact_key(ev: str) -> Optional[str]:
         return None
     if "subagent" in d:
         return None
+    if d.get("call_id"):
+        # Concurrent calls can share tool/round. Replay compaction must not
+        # replace one call's progress with another's trace evidence.
+        return json.dumps(["call", d.get("call_id"), d.get("tool"),
+                           d.get("round"), d.get("approved")], ensure_ascii=True)
     return f"{d.get('tool')}|{d.get('round')}|{d.get('approved')}"
 
 
