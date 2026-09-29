@@ -206,6 +206,11 @@ def _fallback_memory_candidates(messages) -> list[dict]:
         text = _message_text(msg)
         if not text:
             continue
+        # A quoted first-person statement can belong to somebody else.  This
+        # fallback has no speaker resolution, so do not infer identity or
+        # preferences from quoted spans.
+        text = re.sub(r'"[^"\n]*"|“[^”\n]*”|‘[^’\n]*’|(?<!\w)\'[^\'\n]+\'(?!\w)',
+                      " ", text)
 
         m = re.search(r"\bmy name is\s+([A-Za-z][A-Za-z0-9 .'\-]{1,50})\b", text, re.I)
         if m:

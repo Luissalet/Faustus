@@ -29,3 +29,9 @@ def test_negated_like_is_not_stored_as_preference():
 def test_genuine_preference_still_stored():
     texts = _texts("I love spicy ramen noodles")
     assert any("prefers spicy ramen" in t for t in texts)
+
+
+def test_quoted_first_person_claim_is_not_the_users_preference():
+    for quote in ('"I love spicy ramen"', '“I love spicy ramen”', "'I love spicy ramen'"):
+        assert _texts(f"My colleague said {quote}, but I prefer green tea") == [
+            "user prefers green tea"]

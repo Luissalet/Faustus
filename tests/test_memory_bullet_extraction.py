@@ -3,11 +3,8 @@
 The fallback only reads an explicit user-authored memory list. Its bullet
 parser must still handle dashes, stars and numbered items without crashing.
 
-There are two copies of ``MemoryManager``: ``src.memory`` and the
-``services.memory`` package that ``routes/memory_routes.py`` actually imports.
-The fix first landed only in ``src.memory`` while the live route path kept the
-broken copy, and this test imported ``src.memory`` so it stayed green. It now
-exercises both copies so the two cannot drift back apart.
+The service import path is a compatibility re-export of ``src.memory``. Test
+both paths because the route uses the service path.
 """
 import pytest
 
