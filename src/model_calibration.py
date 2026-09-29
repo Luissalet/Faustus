@@ -261,7 +261,9 @@ def save_tested(
 ) -> Dict[str, Any]:
     """Merge freshly-tested keys into whatever was calibrated before — a
     calibration run that skipped `vision` (not resident long enough, or not
-    announced) must not erase an earlier `vision` result.
+    announced) must not erase an earlier `vision` result. A skipped/unknown
+    attempt preserves a previous boolean observation and records only a bounded
+    last_attempt note; tested_at continues to date the observation itself.
 
     `deployment_id` (MOD-02/WP06, `src/model_identity.py`) is optional and
     purely additive: when a caller has already resolved one (from
@@ -277,7 +279,24 @@ def save_tested(
         data = _load_store_locked(data_dir)
         entry = data["manifests"].setdefault(key, {})
         merged = dict(entry.get("tested") or {})
-        merged.update({k: v for k, v in tested.items() if k in TEST_KEYS})
+        for capability, result in tested.items():
+            if capability not in TEST_KEYS:
+                continue
+            previous = merged.get(capability)
+            old_ok = previous.get("ok") if isinstance(previous, Mapping) else None
+            new_ok = result.get("ok") if isinstance(result, Mapping) else None
+            if (old_ok is True or old_ok is False) and new_ok is not True and new_ok is not False:
+                # No observation cannot erase a measured pass/fail. Keep its
+                # evidence and timestamp; note only the latest attempt, without
+                # duplicating prompt/error bodies or claiming revalidation.
+                evidence = result.get("evidence") if isinstance(result, Mapping) else None
+                merged[capability] = dict(previous, last_attempt={
+                    "ok": None,
+                    "attempted_at": str(result.get("tested_at") or "")[:64] if isinstance(result, Mapping) else "",
+                    "status": "skipped" if isinstance(evidence, Mapping) and evidence.get("skipped") else "unknown",
+                })
+            else:
+                merged[capability] = result
         entry["tested"] = merged
         entry["announced"] = dict(announced)
         entry["degraded"] = compute_degraded(announced, merged)
