@@ -1607,7 +1607,36 @@ async def _run_subagent(
                             "tail": _short(ev.get("tail") or ev.get("message"), 200)})
             elif et == "tool_output":
                 run.tool_calls += 1
-                ok = ev.get("exit_code") in (0, None)
+                from src.agent_harness import _result_ok
+                from src.contracts.tool import TOOL_RESULT_STATUSES
+                from src.tool_presentation import tool_result_fields
+                if "result_status" in ev:
+                    # SSE already normalized this outcome. Never feed it back
+                    # as a legacy dict where the canonical field is ignored.
+                    status = ev["result_status"]
+                    fields = {"result_status": status if isinstance(status, str)
+                              and status in TOOL_RESULT_STATUSES else "outcome_unknown"}
+                    uncertainty = ev.get("uncertainty")
+                    if isinstance(uncertainty, dict):
+                        detail = {key: uncertainty[key][:512] for key in ("reason", "reconcile_action")
+                                  if isinstance(uncertainty.get(key), str) and uncertainty[key]}
+                        if detail:
+                            fields["uncertainty"] = detail
+                else:
+                    fields = ({"result_status": "outcome_unknown"}
+                              if "status" in ev and not isinstance(ev["status"], str)
+                              else tool_result_fields(ev))
+                if isinstance(ev.get("call_id"), str) and ev["call_id"]:
+                    fields["call_id"] = ev["call_id"][:512]
+                ok = _result_ok(ev)
+                if not ok and fields["result_status"] == "succeeded":
+                    # Conflicting signals must stay non-verifying after the
+                    # compact transcript drops raw error/policy attributes.
+                    fields["result_status"] = "outcome_unknown"
+                    fields.setdefault("uncertainty", {
+                        "reason": "The tool reported inconsistent completion signals.",
+                        "reconcile_action": "Check the result before retrying.",
+                    })
                 if not ok:
                     run.failed_calls += 1
                 if ev.get("blocked"):
@@ -1620,8 +1649,8 @@ async def _run_subagent(
                     run.note_refusal(ev.get("tool"), policy=ev.get("policy_name"),
                                      origin=ev.get("policy_origin"),
                                      matched=ev.get("policy_matched"))
-                run.tool_events.append({"tool": ev.get("tool"), "command": ev.get("command"), "output": _short(ev.get("output"), 400), "exit_code": ev.get("exit_code")})
-                await emit({"event": "tool", "tool": ev.get("tool"), "ok": ok, "phase": "done", "output": _short(ev.get("output"), 120)})
+                run.tool_events.append({"tool": ev.get("tool"), "command": ev.get("command"), "output": _short(ev.get("output"), 400), "exit_code": ev.get("exit_code"), **fields})
+                await emit({"event": "tool", "tool": ev.get("tool"), "ok": ok, "phase": "done", "output": _short(ev.get("output"), 120), **fields})
             elif et == "round_info":
                 run.rounds = max(run.rounds, int(ev.get("round") or 0))
                 if not _input_from_metrics:
