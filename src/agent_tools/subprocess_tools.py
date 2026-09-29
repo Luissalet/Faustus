@@ -616,6 +616,7 @@ def _idle_result(tool: str, idle_s: float, stdout: str, stderr: str) -> Dict:
             "bound long commands with `timeout N …`, and never run interactive programs."
         ),
         "exit_code": 124,
+        "timed_out": True,
         "stdout": _truncate(stdout, MAX_OUTPUT_CHARS),
         "stderr": _truncate(stderr, MAX_OUTPUT_CHARS),
     }
@@ -818,6 +819,7 @@ class BashTool:
                 return {
                     "error": f"bash: timed out after {DEFAULT_BASH_TIMEOUT}s — sent Ctrl-C to tmux session",
                     "exit_code": 124,
+                    "timed_out": True,
                     "stdout": _truncate(stdout, MAX_OUTPUT_CHARS),
                     "stderr": _truncate(stderr, MAX_OUTPUT_CHARS),
                     "tmux_session": _tmux_session_name(str(session_id)),
@@ -857,7 +859,7 @@ class BashTool:
         if timed_out == "idle":
             return {**_idle_result("bash", idle_s, stdout, stderr), "execution_target": _target}
         if timed_out:
-            return {"error": f"bash: timed out after {DEFAULT_BASH_TIMEOUT}s — process killed", "exit_code": 124, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS), "stderr": _truncate(stderr, MAX_OUTPUT_CHARS), "execution_target": _target}
+            return {"error": f"bash: timed out after {DEFAULT_BASH_TIMEOUT}s — process killed", "exit_code": 124, "timed_out": True, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS), "stderr": _truncate(stderr, MAX_OUTPUT_CHARS), "execution_target": _target}
         output = stdout.rstrip()
         err = stderr.rstrip()
         if err:
@@ -912,7 +914,7 @@ class PythonTool:
         if timed_out == "idle":
             return _mark_sandbox_skip({**_idle_result("python", idle_s, stdout, stderr), "execution_target": _target}, _skip)
         if timed_out:
-            return _mark_sandbox_skip({"error": f"python: timed out after {DEFAULT_PYTHON_TIMEOUT}s — process killed", "exit_code": 124, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS), "stderr": _truncate(stderr, MAX_OUTPUT_CHARS), "execution_target": _target}, _skip)
+            return _mark_sandbox_skip({"error": f"python: timed out after {DEFAULT_PYTHON_TIMEOUT}s — process killed", "exit_code": 124, "timed_out": True, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS), "stderr": _truncate(stderr, MAX_OUTPUT_CHARS), "execution_target": _target}, _skip)
         output = stdout.rstrip()
         err = stderr.rstrip()
         if err:
@@ -1056,7 +1058,7 @@ class PowerShellTool:
             return {**_idle_result("powershell", idle_s, stdout, stderr), "execution_target": _target}
         if timed_out:
             return {"error": f"powershell: timed out after {DEFAULT_POWERSHELL_TIMEOUT}s — process killed",
-                    "exit_code": 124, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS),
+                    "exit_code": 124, "timed_out": True, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS),
                     "stderr": _truncate(stderr, MAX_OUTPUT_CHARS), "execution_target": _target}
         output = stdout.rstrip()
         err = stderr.rstrip()

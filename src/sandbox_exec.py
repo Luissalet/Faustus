@@ -455,6 +455,7 @@ async def _run(tool: str, command: str, ctx: Optional[dict] = None) -> Optional[
         return {**common,
                 "error": f"{tool}: timed out after {spec.limits.seconds}s — the container was killed",
                 "exit_code": 124,
+                "timed_out": True,
                 "stdout": _truncate(stdout, MAX_OUTPUT_CHARS),
                 "stderr": _truncate(stderr, MAX_OUTPUT_CHARS)}
 
@@ -575,7 +576,7 @@ async def _run_in_session(tool: str, command: str, ctx: Optional[dict],
     if exec_result.get("timed_out"):
         return {**common,
                 "error": f"{tool}: timed out after {timeout_s()}s — the session command was killed",
-                "exit_code": 124}
+                "exit_code": 124, "timed_out": True}
 
     return {**common,
             "output": _truncate(output, MAX_OUTPUT_CHARS) or "(no output)",
