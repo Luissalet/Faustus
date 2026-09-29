@@ -18,7 +18,7 @@ Prueba decisiva: el runner real escribe un señuelo temporal fuera del cwd del g
 |---|---|
 | H01 | `664894a5`: autoridad host explícita, 16 pruebas; confinamiento pendiente |
 | H02 | `5f781023`: política solicitada/efectiva. `4fe0d52e`: salida Docker ambigua conserva incertidumbre. `5ad626b9`: modo opt-in required rechaza fallback host para bash/python/powershell, política capturada durante despacho; 124 pruebas y 5 Docker omitidas. Backend Windows y probes reales pendientes |
-| H03 | `fc435eae`: intención sincronizada antes del correo con call_id y run activo, aliases MCP incluidos; 64 pruebas ampliadas y 29 finales. Outbox independiente, rutas no trazadas e idempotencia externa pendientes |
+| H03 | `fc435eae`: intención sincronizada antes del correo con call_id y run activo, aliases MCP incluidos; 64 pruebas ampliadas y 29 finales. `e4970af7`: intención/resultado usan el recorder privado del mismo run, sin migrar al reemplazo; 72 pruebas finales. Outbox independiente, rutas sin recorder e idempotencia externa pendientes |
 | H04 | `0572e1af`: 55 pruebas de normalización→evento→reinicio. `a40b8bcb`: productores propagan timeout real, 71 pruebas y 7 omitidas; exit 124 voluntario no implica timeout. `1b2537c9`: Studio conserva parcial/desconocido en directo e historial, 33 pruebas, tipos/build y render aislado correctos. Errores genéricos e identidad de intentos pendientes |
 | H05 | `7c558eee`: round-trip de 220 herramientas y MCP; `155fad3d`: errores numéricos PDF; `28b2c2b0`: schemas independientes entre origen/snapshot/exportación. `3bfc22e2`: contrato único argumentos/schema/parser PDF, 122 pruebas. `fdce5d9e`: captura ejecutor/contrato PDF por llamada con revocación vigente, 172 pruebas. `a7428aea`: structural_rewrite rechaza apply no booleano antes del backend; 69 pruebas. Autoridad común general y snapshot por paso pendientes |
 | H06 | `0f8e6dc4`: recibo shadow del schema preparado por candidato, comparado con binding PDF y propagado a eventos; 56 pruebas finales. Ronda/candidato obsoletos no se comparan. Snapshot de paso y autoridad general pendientes |
@@ -28,14 +28,14 @@ Prueba decisiva: el runner real escribe un señuelo temporal fuera del cwd del g
 | H11 | `3338166d`: drenaje por bloques UTF-8, salida/progreso acotados y actividad sin LF; 91 pruebas y 3 omitidas. `6305ed06`: Code Mode drena stderr, 26 pruebas; `6b19a2fe`: frames grandes dentro de cuota y rechazo explícito del exceso, 32 pruebas. Manager/stdin/handles durables pendientes |
 | H12 | `906ae3c7`: reparación de llamadas sin respuesta conserva contenido multimodal; 94 pruebas; `d466bf5a`: marcador legacy no borra imágenes, 128 pruebas. `466c01e3`: renderer Anthropic conserva bloques junto a tool_calls, 100 pruebas focales. Proyección canónica y recibos pendientes |
 | H13 | `f22702d9`: función pura compara en shadow ampliación/ciclos/presupuesto sin gobernar el bucle, 75 pruebas y 432 combinaciones. `291907ed`: cierre CE distingue propuesta y continuación concedida al agotar cupo, 56 pruebas; controlador común pendiente |
-| H14 | `ce4df06a`: retries de workers acumulan tokens por intento, sin duplicar métricas finales ni borrar campos ausentes; 49 pruebas. Presupuesto transversal pendiente |
+| H14 | `ce4df06a`: retries de workers acumulan tokens por intento, sin duplicar métricas finales ni borrar campos ausentes; 49 pruebas. `47cffe37`: uso auxiliar observado en traza y sesión real del compactor, extras válidos sobreviven a overflow ajeno; 146 pruebas finales, 307 amplias agente. Presupuesto transversal pendiente |
 | H15 | `30e71fc8`: comentarios históricos de wiring y bridge corregidos contra callers actuales; AST sin docstring idéntico. Alcance de dos módulos completado |
 | H16 | `303d4f63`: estados inciertos y llamadas anunciadas sin resultado no verifican progreso/fuentes; 191 pruebas finales. `2d32937a`: Enseñame registra éxito normalizado, 41 pruebas. `dbdf0987`: worker conserva evidencia hasta SQLite/reapertura, 120 pruebas. `5de909f8`: Code Mode propaga incertidumbre interna con recibos acotados, 23 pruebas. Verificación transversal e incertidumbre de host directo pendientes |
 | H19 | `d7600e54`: steering sin run/sesión resoluble no se difunde a todos los workers; 61 pruebas. Recibos durables/recuperación pendientes |
 | H21 | `54fea979`: instrucciones se refrescan por contenido acotado, no mtime; 66 pruebas y 1 POSIX omitida. `b63f1e5b`: recibos L1 ensamblados. `da728abe`: prompt y compactor renderizan los bytes capturados usados por la comprobación de aprobación; 90 pruebas finales coordinador. Jerarquía, reglas/objetivos fuera del digest, transacción de directorio y procedencia completa/entrega de skills pendientes |
 | H24 | `92c6ebee`: elimina contaminación global de imports en fixture de skills; mismo orden integrado 252 pruebas correctas tras timeout previo. Banco pareado con modelos y aislamiento general pendientes |
 | H20 | `42a29971`: identidad de mutación compartida en deduplicación/conflictos; ámbitos y sesiones distintos no se mezclan, origen de sesión en proyecto permite consolidación. 30 pruebas finales de ámbito/vigencia/propietario. Leases y atomicidad concurrente pendientes |
-| H18 | `70974a90`: mutex compartido process-local para edit_file/write_file, lectura/revisión/escritura indivisibles entre esos participantes; 66 correctas/2 omisiones Windows y 33 con rewritepolicy. Apply_patch, previews obsoletas, escritores externos y claims generales pendientes |
+| H18 | `70974a90`: mutex compartido process-local para edit_file/write_file, lectura/revisión/escritura indivisibles entre esos participantes; 66 correctas/2 omisiones Windows y 33 con rewritepolicy. `9ce4a9ff`: revisión de preview efectiva revalidada dentro del mutex; 130 correctas/2 omisiones. Apply_patch, previews desconocidas, escritores externos y claims generales pendientes |
 | H07, H17, H22–H23 | Pendientes conforme al análisis original; no declarar cerrados por este documento |
 
 Los pilotos de reinicio de procesos (`403756a9`) y memoria (`9e0e8e50`) ya aportan evidencia a H11/H20/H24, pero no completan esos cambios transversales.
@@ -161,5 +161,19 @@ Las cuatro parejas edit/write con la misma base ya no devuelven dos éxitos
 pisándose. No hay locks atravesando awaits; la vigencia de previews previas
 requiere otro incremento. Tampoco son locks de OS o entre procesos.
 
-H14 uso observado auxiliar está en implementación; H03 selección causal del
-recorder y H18 preview obsoleta sólo evaluación. No se declaran terminados.
+Esos tramos están implementados: `47cffe37`, `e4970af7` y `9ce4a9ff`, respectivamente.
+
+### Checkpoint: uso auxiliar, previews y recorder
+
+- [Uso auxiliar](CODEX_H14_AUX_USAGE_TRACE.md) `47cffe37`: 146 correctas finales
+  en 7,51 s; 307 en selección amplia del agente. Se conserva evidencia, sin
+  integrarla aún en el presupuesto; dimensiones ausentes no son cero ficticio.
+- [Preview](CODEX_H18_REVIEW_PREVIEW_REVISION.md) `9ce4a9ff`: 130 correctas,
+  2 omisiones Windows, 4,66 s. Review noop/error/unparsed conserva fail-open;
+  lecturas desconocidas quedan explícitamente fuera de su garantía.
+- [Recorder](CODEX_H03_EFFECT_RECORDER_CAUSALITY.md) `e4970af7`: 72 correctas
+  finales en 19,17 s. Pending y terminal siguen en el run original; un writer
+  cerrado no entrega el resultado al nuevo. Memoria sin persistencia conservada.
+
+Activos, no completados: H14 cargo de compactor al ledger capturado/admisión,
+H18 preparación de apply_patch y H19 recepción por intento de worker.
