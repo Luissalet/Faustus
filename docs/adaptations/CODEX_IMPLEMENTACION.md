@@ -24,10 +24,14 @@ Prueba decisiva: el runner real escribe un señuelo temporal fuera del cwd del g
 | H08 | `b7089ff5`: compactación de progreso por call_id conserva llamadas distintas, 52 pruebas y recuperación de traza solo desde disco. `db99abd9`: archivos exclusivos por run, recuperación multirun con commit SQLite confirmado y purga/retención, 114 pruebas. Ledger independiente e identidad de subagentes pendientes |
 | H09 | `1a418269`: reutilización exige ámbito/política/solicitud coincidentes, 53 pruebas; versiones de fuentes pendientes |
 | H10 | `6127bd24`: fuentes externas marcadas no se promueven a restricciones/objetivo preservado. `ebf7a856`: persistencia inmediata/diferida con SQLite y tres compactaciones/reaperturas, 99 pruebas. Checkpoint portable y actualización de menciones históricas de aprobaciones pendientes |
+| H11 | `3338166d`: drenaje por bloques UTF-8, salida/progreso acotados y actividad sin LF; 91 pruebas y 3 omitidas. Manager/stdin/handles durables pendientes |
+| H12 | `906ae3c7`: reparación de llamadas sin respuesta conserva contenido multimodal; 94 pruebas; `d466bf5a`: marcador legacy no borra imágenes, 128 pruebas. Proyección canónica y recibos pendientes |
+| H14 | `ce4df06a`: retries de workers acumulan tokens por intento, sin duplicar métricas finales ni borrar campos ausentes; 49 pruebas. Presupuesto transversal pendiente |
 | H15 | `30e71fc8`: comentarios históricos de wiring y bridge corregidos contra callers actuales; AST sin docstring idéntico. Alcance de dos módulos completado |
 | H16 | `303d4f63`: estados inciertos y llamadas anunciadas sin resultado no verifican progreso/fuentes; 191 pruebas finales. `2d32937a`: Enseñame registra éxito normalizado, 41 pruebas. No unifica aún toda verificación de workers/Code Mode |
 | H19 | `d7600e54`: steering sin run/sesión resoluble no se difunde a todos los workers; 61 pruebas. Recibos durables/recuperación pendientes |
-| H06–H07, H11–H14, H17–H18, H20–H24 | Pendientes conforme al análisis original; no declarar cerrados por este documento |
+| H21 | `54fea979`: instrucciones se refrescan por contenido acotado, no mtime; 66 pruebas y 1 POSIX omitida. Jerarquía, snapshot aprobado atómico y procedencia de skills pendientes |
+| H06–H07, H13, H17–H18, H20, H22–H24 | Pendientes conforme al análisis original; no declarar cerrados por este documento |
 
 Los pilotos de reinicio de procesos (`403756a9`) y memoria (`9e0e8e50`) ya aportan evidencia a H11/H20/H24, pero no completan esos cambios transversales.
 
@@ -63,6 +67,21 @@ no sustituye las pruebas Docker pendientes ni la suite completa.
 Informes: [H08 por run](CODEX_H08_PER_RUN.md),
 [H09 ámbito](CODEX_H09_LIVE_REUSE_SCOPE.md),
 [H05 binding PDF](CODEX_H05_PDF_CALL_BINDING_2026-09-29.md).
-H21 inspeccionado: caché por mtime puede retener instrucciones antiguas tras TTL
-si cambian bytes conservando mtime. Corrección en curso; jerarquía por directorio
+H21 corregido en `54fea979`: caché por mtime podía retener instrucciones antiguas
+tras TTL si cambiaban bytes conservando mtime. Jerarquía por directorio
 y vinculación de confianza al contenido requieren alcance separado.
+
+Informes posteriores: [H12 multimodal](CODEX_H12_MULTIMODAL_PROJECTION.md),
+[H14 retries](CODEX_H14_RETRY_USAGE.md) y
+[H21 instrucciones](CODEX_H21_INSTRUCTION_CACHE.md). Todos conservan limitaciones
+y procedencia; el backlog transversal sigue abierto.
+
+
+### Checkpoint posterior: procesos, retries e instrucciones
+
+Selección integrada sobre los cambios hasta `d466bf5a`: **313 correctas y 4
+omitidas, 21,37 s**. Cubre H11 procesos/ownership/cancelación/sandbox, H14
+contabilidad de retries/SQLite, H21 instrucciones/trust y H12 saneamiento/compactor.
+Omisiones por entorno POSIX/Docker en Windows; no se ejecutan modelos remotos.
+H16 conservación de estados en workers es un incremento posterior en curso y
+requiere su propia validación. [H11 detallado](CODEX_H11_STREAM_DRAIN.md).
