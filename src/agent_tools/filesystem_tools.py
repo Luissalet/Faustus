@@ -276,6 +276,24 @@ def _replace_text(original_lf: str, old_lf: str, new_lf: str, replace_all: bool
     return "ok", updated
 
 
+def _effective_preview_review(gate: Optional[Dict[str, Any]]) -> bool:
+    """A skipped, failed or unparsed reviewer must retain existing fail-open behavior."""
+    review = gate.get("review") if isinstance(gate, dict) else None
+    return (isinstance(review, dict) and review.get("verdict") in ("ok", "concerns")
+            and not review.get("error") and not review.get("unparsed"))
+
+
+def _review_preview_conflict(tool: str, path: str, expected: Optional[str],
+                             current: Optional[str]) -> Optional[Dict[str, Any]]:
+    """None denotes proven absence only; callers keep unknown reads unarmed."""
+    if expected == current:
+        return None
+    return {"error": f"{tool}: {path} changed since the reviewed preview was read",
+            "exit_code": 1, "status": "conflict", "error_code": "REVIEW_PREVIEW_MISMATCH",
+            "source": "review_preview", "preview_revision": expected,
+            "current_revision": current, "next_action": "read_current_and_reconcile"}
+
+
 class EditFileTool:
     async def execute(self, content: str, ctx: dict) -> dict:
         from src.tool_execution import _resolve_tool_path, _resolve_search_root, _truncate
@@ -314,13 +332,15 @@ class EditFileTool:
         # needs no pre-write pass — it never blocks, so the section is
         # appended after the real write below.
         _dr_gate = None
+        _preview_known, _preview_revision = False, None
         try:
             from src import doubt_review as _doubt_review
         except Exception:  # noqa: BLE001
             _doubt_review = None
         if _doubt_review is not None and _doubt_review.enabled() and _doubt_review.block_mode_enabled():
             try:
-                _preview, _pcrlf, _ = await asyncio.to_thread(_read_text_lf, path)
+                _preview, _pcrlf, _preview_revision = await asyncio.to_thread(_read_text_lf, path)
+                _preview_known = True
                 _pstatus, _pupdated = _replace_text(_preview, old_lf, new_lf, replace_all)
                 if _pstatus == "ok":
                     _pdiff = _unified_diff(_preview, _pupdated, path)
@@ -332,12 +352,24 @@ class EditFileTool:
                 logger.debug("[doubt_review] pre-write gate failed for %s", path, exc_info=True)
         if _dr_gate is not None and not _dr_gate.get("proceed", True):
             return _dr_gate["result"]
+        _review_guard = _preview_known and _effective_preview_review(_dr_gate)
 
         def _apply():
             """Read, check the base_revision precondition (EDIT-01), replace
             and write under the mutex shared with write_file in this process."""
             with mutation_lock(path):
-                original, crlf, revision_now = _read_text_lf(path)
+                try:
+                    original, crlf, revision_now = _read_text_lf(path)
+                except FileNotFoundError:
+                    if _review_guard:
+                        conflict = _review_preview_conflict("edit_file", path, _preview_revision, None)
+                        if conflict is not None:
+                            return "", conflict, "conflict"
+                    raise
+                if _review_guard:
+                    conflict = _review_preview_conflict("edit_file", path, _preview_revision, revision_now)
+                    if conflict is not None:
+                        return original, conflict, "conflict"
                 if base_revision:
                     conflict = _base_revision_conflict(
                         "edit_file", path, base_revision, revision_now,
@@ -612,6 +644,7 @@ class WriteFileTool:
         # WITHOUT writing, so a "concerns" verdict can refuse the write
         # entirely. Advisory mode needs no pre-write pass.
         _dr_gate = None
+        _preview_known, _preview_revision = False, None
         try:
             from src import doubt_review as _doubt_review
         except Exception:  # noqa: BLE001
@@ -620,8 +653,11 @@ class WriteFileTool:
             try:
                 _preview = ""
                 try:
-                    _preview, _pcrlf, _ = await asyncio.to_thread(_read_text_lf, path)
-                except (FileNotFoundError, IsADirectoryError, UnicodeDecodeError, OSError):
+                    _preview, _pcrlf, _preview_revision = await asyncio.to_thread(_read_text_lf, path)
+                    _preview_known = True
+                except FileNotFoundError:
+                    _preview_known, _preview_revision = True, None
+                except (IsADirectoryError, UnicodeDecodeError, OSError):
                     _preview = ""
                 _pdiff = _unified_diff(_preview, body, path)
                 _dr_gate = await _doubt_review.check_edit(ctx, path, raw_path, _pdiff or {},
@@ -630,14 +666,23 @@ class WriteFileTool:
                 logger.debug("[doubt_review] pre-write gate failed for %s", path, exc_info=True)
         if _dr_gate is not None and not _dr_gate.get("proceed", True):
             return _dr_gate["result"]
+        _review_guard = _preview_known and _effective_preview_review(_dr_gate)
         try:
             def _write():
                 with mutation_lock(path):
                     old, crlf, revision_now = "", False, None
+                    current_known = False
                     try:
                         old, crlf, revision_now = _read_text_lf(path)
-                    except (FileNotFoundError, IsADirectoryError, UnicodeDecodeError, OSError):
+                        current_known = True
+                    except FileNotFoundError:
+                        current_known = True
+                    except (IsADirectoryError, UnicodeDecodeError, OSError):
                         old, crlf, revision_now = "", False, None
+                    if _review_guard and current_known:
+                        conflict = _review_preview_conflict("write_file", path, _preview_revision, revision_now)
+                        if conflict is not None:
+                            return conflict, None, "conflict"
                     # H4: a turn-scoped RewritePolicy (src/rewrite_policy.py) —
                     # the 2nd whole-file rewrite of an existing large file is
                     # refused with "use edit_file/apply_patch", the 4th blocked.
