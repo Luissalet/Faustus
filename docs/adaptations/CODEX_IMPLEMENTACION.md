@@ -20,10 +20,13 @@ Prueba decisiva: el runner real escribe un señuelo temporal fuera del cwd del g
 | H02 | `5f781023`: política solicitada/efectiva. `4fe0d52e`: salida Docker ambigua conserva incertidumbre. `5ad626b9`: modo opt-in required rechaza fallback host para bash/python/powershell, política capturada durante despacho; 124 pruebas y 5 Docker omitidas. Backend Windows y probes reales pendientes |
 | H03 | `fc435eae`: intención sincronizada antes del correo con call_id y run activo, aliases MCP incluidos; 64 pruebas ampliadas y 29 finales. Outbox independiente, rutas no trazadas e idempotencia externa pendientes |
 | H04 | `0572e1af`: 55 pruebas de normalización→evento→reinicio. `a40b8bcb`: productores propagan timeout real, 71 pruebas y 7 omitidas; exit 124 voluntario no implica timeout. `1b2537c9`: Studio conserva parcial/desconocido en directo e historial, 33 pruebas, tipos/build y render aislado correctos. Errores genéricos e identidad de intentos pendientes |
-| H05 | `7c558eee`: 262 pruebas, round-trip de 220 herramientas y MCP; `155fad3d`: 58 pruebas de errores numéricos PDF; `28b2c2b0`: schemas anidados independientes entre origen/snapshot/exportación, 118 pruebas. Autoridad ejecutable común aún pendiente |
+| H05 | `7c558eee`: round-trip de 220 herramientas y MCP; `155fad3d`: errores numéricos PDF; `28b2c2b0`: schemas independientes entre origen/snapshot/exportación. `3bfc22e2`: contrato único argumentos/schema/parser PDF, 122 pruebas. Captura ejecutor/contrato por llamada en curso; autoridad común general pendiente |
 | H08 | `b7089ff5`: compactación de progreso por call_id conserva llamadas distintas, 52 pruebas y recuperación de traza solo desde disco. Ledger independiente, retención entre runs e identidad de subagentes pendientes |
+| H10 | `6127bd24`: fuentes externas marcadas no se promueven a restricciones/objetivo preservado. `ebf7a856`: persistencia inmediata/diferida con SQLite y tres compactaciones/reaperturas, 99 pruebas. Checkpoint portable y actualización de menciones históricas de aprobaciones pendientes |
 | H15 | `30e71fc8`: comentarios históricos de wiring y bridge corregidos contra callers actuales; AST sin docstring idéntico. Alcance de dos módulos completado |
-| H06–H07, H09–H14, H16–H24 | Pendientes conforme al análisis original; no declarar cerrados por este documento |
+| H16 | `303d4f63`: estados inciertos y llamadas anunciadas sin resultado no verifican progreso/fuentes; 191 pruebas finales. `2d32937a`: Enseñame registra éxito normalizado, 41 pruebas. No unifica aún toda verificación de workers/Code Mode |
+| H19 | `d7600e54`: steering sin run/sesión resoluble no se difunde a todos los workers; 61 pruebas. Recibos durables/recuperación pendientes |
+| H06–H07, H09, H11–H14, H17–H18, H20–H24 | Pendientes conforme al análisis original; no declarar cerrados por este documento |
 
 Los pilotos de reinicio de procesos (`403756a9`) y memoria (`9e0e8e50`) ya aportan evidencia a H11/H20/H24, pero no completan esos cambios transversales.
 
