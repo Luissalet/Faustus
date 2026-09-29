@@ -10772,6 +10772,8 @@ async def _stream_agent_loop_body(
         _agent_auto_continue_max_rounds = 200
     _no_progress_streak = 0
     _progress_events_at_last_check = len(_ledger.events)
+    _continuation_shadow_reports = 0
+    _continuation_shadow_mismatches = 0
     _progress_unit_count = 0
     _progress_extension_used = False
     if (
@@ -11079,6 +11081,22 @@ async def _stream_agent_loop_body(
             # never penalized" rule loop_breaker.py documents, applied here
             # to the whole-turn budget instead of one tool's call signature.
             _events_now = len(_ledger.events)
+            _extension_shadow = None
+            _extension_budget_before = _rounds_budget
+            try:
+                from src.continuation_decision import RoundExtensionInput, decide_round_extension, matches_legacy
+                _extension_shadow = decide_round_extension(RoundExtensionInput(
+                    round_num=round_num, rounds_budget=_rounds_budget, grant_rounds=max_rounds,
+                    cycles_left=_auto_cycles_left, progress_enabled=_agent_auto_continue_on_progress,
+                    progress_ceiling=_agent_auto_continue_max_rounds, events_now=_events_now,
+                    events_last=_progress_events_at_last_check, no_progress_streak=_no_progress_streak,
+                    recovery_active=_loop_recovery_active,
+                ))
+            except Exception:
+                # Observation failure must not change the existing gate.
+                if _continuation_shadow_mismatches < 3:
+                    logger.debug("[continuation-shadow] observation unavailable", exc_info=True)
+                    _continuation_shadow_mismatches += 1
             if _events_now > _progress_events_at_last_check:
                 _no_progress_streak = 0
             else:
@@ -11098,6 +11116,24 @@ async def _stream_agent_loop_body(
                 if _auto_cycles_left > 0:
                     _auto_cycles_left -= 1
                 _rounds_budget += max_rounds
+                try:
+                    if _extension_shadow is not None:
+                        _extension_matches = matches_legacy(
+                            _extension_shadow, extends=True, rounds_delta=_rounds_budget - _extension_budget_before,
+                            cycles_after=_auto_cycles_left, streak=_no_progress_streak,
+                            progress_gate_open=_progress_gate_open,
+                        )
+                        # Observe actual mutations only; never write ledger/SSE/model context.
+                        if not _extension_matches and _continuation_shadow_mismatches < 3:
+                            logger.warning("[continuation-shadow] transition mismatch: %s", _extension_shadow)
+                            _continuation_shadow_mismatches += 1
+                        elif _extension_matches and _continuation_shadow_reports < 3:
+                            logger.debug("[continuation-shadow] transition matched: %s", _extension_shadow)
+                            _continuation_shadow_reports += 1
+                except Exception:
+                    if _continuation_shadow_mismatches < 3:
+                        logger.debug("[continuation-shadow] comparison unavailable", exc_info=True)
+                        _continuation_shadow_mismatches += 1
                 logger.info("[harness] step limit (%s) reached mid-task — auto-continuing with %s more rounds%s",
                             round_num - 1, max_rounds,
                             " (progress-based extension)" if _used_progress_gate else "")
@@ -11149,6 +11185,24 @@ async def _stream_agent_loop_body(
                     )
                 full_response += "\n\n"
             else:
+                try:
+                    if _extension_shadow is not None:
+                        _extension_matches = matches_legacy(
+                            _extension_shadow, extends=False, rounds_delta=_rounds_budget - _extension_budget_before,
+                            cycles_after=_auto_cycles_left, streak=_no_progress_streak,
+                            progress_gate_open=_progress_gate_open,
+                        )
+                        # Observe actual mutations only; never write ledger/SSE/model context.
+                        if not _extension_matches and _continuation_shadow_mismatches < 3:
+                            logger.warning("[continuation-shadow] transition mismatch: %s", _extension_shadow)
+                            _continuation_shadow_mismatches += 1
+                        elif _extension_matches and _continuation_shadow_reports < 3:
+                            logger.debug("[continuation-shadow] transition matched: %s", _extension_shadow)
+                            _continuation_shadow_reports += 1
+                except Exception:
+                    if _continuation_shadow_mismatches < 3:
+                        logger.debug("[continuation-shadow] comparison unavailable", exc_info=True)
+                        _continuation_shadow_mismatches += 1
                 # Every allowed round ran WITHOUT a "done" break: the agent kept
                 # working until it ran out of rounds — offer Continue instead of
                 # stopping silently. Covers all exhaustion paths (verifier /
