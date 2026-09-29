@@ -205,18 +205,14 @@ def test_required_parameter_unknown_for_remote_endpoint_is_reported_not_raised()
 
 
 def test_required_parameter_checked_against_local_model_calibration(monkeypatch):
-    key = model_calibration.manifest_key(vendor="ollama", model_id="qwen2.5:7b")
-
-    def _fake_get_manifest(k, data_dir=None):
-        if k == key:
-            return {"tested": {model_calibration.TEST_TOOL_CALLING: {"ok": False}}, "announced": {}}
-        return {"tested": {}, "announced": {}}
-
-    monkeypatch.setattr(model_calibration, "get_manifest", _fake_get_manifest)
+    monkeypatch.setattr(model_calibration, "_record_deployment_evidence", lambda *a, **k: None)
+    model_calibration.save_scoped_tested(vendor="ollama", model_id="qwen2.5:7b", endpoint_id="ep",
+        protocol=model_calibration.NATIVE_OLLAMA_PROTOCOL,
+        tested={model_calibration.TEST_TOOL_CALLING: {"ok": False}}, announced={})
     with pytest.raises(provider_policy.ProviderPolicyError) as excinfo:
         provider_policy.resolve_route(
             requested_model="qwen2.5:7b",
-            endpoint={"connection_id": "ep", "base_url": "http://127.0.0.1:11434"},
+            endpoint={"connection_id": "ep", "base_url": "http://127.0.0.1:11434/api/chat"},
             requirements=provider_policy.RouteRequirements(required_parameters=("tool_call",)),
         )
     assert excinfo.value.error_class == "provider.parameter_unsupported"

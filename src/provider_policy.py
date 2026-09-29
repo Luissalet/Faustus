@@ -248,14 +248,47 @@ def _fallback_scope(
     return FALLBACK_PROVIDER
 
 
+def _model_digest(value: Any) -> str:
+    candidate = _get(value, "model_digest") or _get(value, "digest") or ""
+    return candidate.strip() if isinstance(candidate, str) else ""
+
+
+def _contextual_calibration(model: str, endpoint: Any, *, digest: str = "",
+                            supplied: Any = None) -> Mapping[str, Any]:
+    """Local evidence needs an exact route scope; legacy is declarations only.
+
+    Digests must be supplied for this model by the caller, never inferred from
+    a tag or another stored observation. A native URL is explicit transport.
+    """
+    from src import model_calibration as calibration
+
+    endpoint_id = str(_get(endpoint, "connection_id") or _get(endpoint, "endpoint_id")
+                      or _get(endpoint, "id") or "")
+    url = str(_get(endpoint, "base_url") or _get(endpoint, "endpoint_url") or "")
+    protocol = calibration.explicit_native_protocol(url)
+    effective = calibration.get_effective_manifest(vendor="ollama", model_id=model,
+        endpoint_id=endpoint_id, protocol=protocol, digest=digest)
+    if isinstance(supplied, Mapping):
+        # Scope metadata in a supplied dict is not authority for observations.
+        # The store's current exact record wins, including deliberate empties.
+        if effective.get("evidence_scope") == "exact":
+            return effective
+        return {"announced": supplied.get("announced") or {}, "tested": {}}
+    if effective.get("evidence_scope") != "exact" and not effective.get("announced"):
+        # Preserve the previous global declarations fallback, without probes.
+        legacy = calibration.get_effective_manifest(vendor="ollama", model_id=model, digest=digest)
+        effective = {**effective, "announced": legacy.get("announced") or {}}
+    return effective
+
+
 def _fit_candidates_from_endpoint(endpoint: Any) -> Tuple["mc.FitCandidateModel", ...]:
     """Other already-evidenced models `explain_fit` may name as alternatives
     (CMP-11) — read from the caller-supplied, optional
     `endpoint["capability_alternatives"]`: an iterable of
     `{"model_id":, "capabilities": [...]}` (explicit, remote-shaped) or
-    `{"model_id":, "manifest": {...}}` (a `model_calibration.get_manifest`
-    read the caller already did). This module performs no I/O of its own to
-    discover siblings — see the module docstring — so with nothing supplied
+    `{"model_id":, "manifest": {...}, "digest": ...}` (caller-read declarations;
+    observations come only from this endpoint's current scoped store record).
+    This module never discovers siblings — so with nothing supplied
     there are simply no alternatives to offer, never a guess."""
     raw = _get(endpoint, "capability_alternatives", None) or ()
     out = []
@@ -267,7 +300,15 @@ def _fit_candidates_from_endpoint(endpoint: Any) -> Tuple["mc.FitCandidateModel"
         if explicit is not None:
             assertions = mc.assertions_from_endpoint_capabilities(explicit)
         else:
-            assertions = mc.assertions_from_calibration_manifest(_get(item, "manifest", None))
+            supplied = _get(item, "manifest", None)
+            if privacy_policy.is_local_destination(str(_get(endpoint, "base_url") or
+                                                       _get(endpoint, "endpoint_url") or "")):
+                manifest = _contextual_calibration(model_id, endpoint,
+                    digest=_model_digest(item), supplied=supplied)
+            else:
+                # No scoped remote calibration protocol is established here.
+                manifest = {"announced": _get(supplied, "announced", {}) or {}, "tested": {}}
+            assertions = mc.assertions_from_calibration_manifest(manifest)
         out.append(mc.FitCandidateModel(model_id=model_id, assertions=assertions))
     return tuple(out)
 
@@ -316,8 +357,8 @@ def _build_fit(
         return mc.explain_fit(required, model=requested_model, endpoint=str(connection_id or ""),
                                assertions=None, candidates=candidates)
 
-    key = model_calibration.manifest_key(vendor="ollama", model_id=requested_model)
-    manifest = model_calibration.get_manifest(key)
+    manifest = _contextual_calibration(requested_model, endpoint,
+        digest=_model_digest(endpoint))
     assertions = mc.assertions_from_calibration_manifest(manifest)
     return mc.explain_fit(required, model=requested_model, endpoint=str(connection_id or ""),
                            assertions=assertions, candidates=candidates)
