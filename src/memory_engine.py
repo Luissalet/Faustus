@@ -319,6 +319,14 @@ _SCHEMA = (
     """,
     "CREATE INDEX IF NOT EXISTS idx_items_scope ON items(owner, project)",
     "CREATE INDEX IF NOT EXISTS idx_items_status ON items(status, level)",
+    """
+    CREATE TABLE IF NOT EXISTS injected_turns (
+        key TEXT PRIMARY KEY,
+        event_id TEXT NOT NULL,
+        ids TEXT NOT NULL,
+        ts REAL NOT NULL
+    )
+    """,
     # MEM-02: forget()/correct() leave one row here per deleted item so a
     # later reindex, backup restore or consolidation pass can tell "never
     # existed" apart from "the user removed this on purpose" and refuse to
@@ -1965,7 +1973,9 @@ def _sweep_injected(now_ts: float) -> None:
 
 def note_injected(key: Any, ids: Iterable[str], *, now_ts: Optional[float] = None) -> None:
     """Remember that these item ids were put in front of the model for `key`
-    (the session/run id). Never raises."""
+    (the session/run id). The bounded receipt survives restart so the caller
+    can retry a measured outcome; it never invents or replays a result on its
+    own. Never raises."""
     try:
         key = str(key or "").strip()
         ids = [str(i) for i in (ids or []) if i]
@@ -1973,8 +1983,18 @@ def note_injected(key: Any, ids: Iterable[str], *, now_ts: Optional[float] = Non
             return
         stamp = float(now_ts if now_ts is not None else time.time())
         with _injected_lock:
-            _INJECTED[key] = {"ids": ids, "ts": stamp,
-                              "event_id": uuid.uuid4().hex}
+            entry = {"ids": ids, "ts": stamp, "event_id": uuid.uuid4().hex}
+            # Commit the receipt before exposing it to the outcome hook. Its
+            # event id survives a crash after only some feedback was written.
+            with _db() as conn:
+                conn.execute("INSERT OR REPLACE INTO injected_turns VALUES (?, ?, ?, ?)",
+                             (key, entry["event_id"], json.dumps(ids), stamp))
+                conn.execute("DELETE FROM injected_turns WHERE ts < ?",
+                             (stamp - INJECTED_TTL_S,))
+                conn.execute("DELETE FROM injected_turns WHERE key NOT IN "
+                             "(SELECT key FROM injected_turns ORDER BY rowid DESC LIMIT ?)",
+                             (INJECTED_MAX_KEYS,))
+            _INJECTED[key] = entry
             _INJECTED.move_to_end(key)
             _sweep_injected(stamp)
         # Retrieval is not use. Only after the caller confirms that these ids
@@ -1987,26 +2007,51 @@ def note_injected(key: Any, ids: Iterable[str], *, now_ts: Optional[float] = Non
 
 
 def peek_injected(key: Any) -> List[str]:
-    with _injected_lock:
-        entry = _INJECTED.get(str(key or ""))
-        return list(entry.get("ids") or []) if entry else []
+    return list(_injected_snapshot(key).get("ids") or [])
 
 
 def _injected_snapshot(key: Any) -> Dict[str, Any]:
     with _injected_lock:
-        return dict(_INJECTED.get(str(key or "")) or {})
+        key = str(key or "")
+        entry = _INJECTED.get(key)
+        if entry is None:
+            with _db() as conn:
+                row = conn.execute("SELECT * FROM injected_turns WHERE key = ?",
+                                   (key,)).fetchone()
+                if row and time.time() - row["ts"] > INJECTED_TTL_S:
+                    conn.execute("DELETE FROM injected_turns WHERE key = ?", (key,))
+                    row = None
+            if row:
+                entry = {"ids": json.loads(row["ids"]), "ts": row["ts"],
+                         "event_id": row["event_id"]}
+        return dict(entry or {})
 
 
-def take_injected(key: Any) -> List[str]:
+def take_injected(key: Any, *, event_id: Optional[str] = None) -> List[str]:
     """Pop the ids for one turn — an outcome is attributed exactly once."""
     with _injected_lock:
-        entry = _INJECTED.pop(str(key or ""), None)
-        return list(entry.get("ids") or []) if entry else []
+        key = str(key or "")
+        with _db() as conn:
+            row = conn.execute("SELECT * FROM injected_turns WHERE key = ?",
+                               (key,)).fetchone()
+            if row and (event_id is None or row["event_id"] == event_id):
+                conn.execute("DELETE FROM injected_turns WHERE key = ?", (key,))
+            else:
+                row = None
+        entry = _INJECTED.get(key)
+        if entry and (event_id is None or entry.get("event_id") == event_id):
+            _INJECTED.pop(key, None)
+        return json.loads(row["ids"]) if row else []
 
 
 def clear_injected() -> None:
     with _injected_lock:
         _INJECTED.clear()
+        try:
+            with _db() as conn:
+                conn.execute("DELETE FROM injected_turns")
+        except Exception as exc:  # noqa: BLE001 - unavailable store
+            logger.debug("memory engine: clearing durable injections failed: %s", exc)
 
 
 def outcome_from_harness(summary: Optional[Dict[str, Any]]) -> Optional[str]:
@@ -2077,7 +2122,7 @@ def _record_outcome_unlocked(
                 applied.append(item_id)
                 result["ids"] = list(applied)
                 result["applied"] = len(applied)
-        take_injected(key)
+        take_injected(key, event_id=event_id)
     except Exception as exc:  # noqa: BLE001 - turn-end hook
         logger.debug("memory engine: record_outcome failed: %s", exc)
     return result
