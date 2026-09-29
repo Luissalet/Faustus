@@ -22,7 +22,7 @@ Prueba decisiva: el runner real escribe un señuelo temporal fuera del cwd del g
 | H04 | `0572e1af`: 55 pruebas de normalización→evento→reinicio. `a40b8bcb`: productores propagan timeout real, 71 pruebas y 7 omitidas; exit 124 voluntario no implica timeout. `1b2537c9`: Studio conserva parcial/desconocido en directo e historial, 33 pruebas, tipos/build y render aislado correctos. Errores genéricos e identidad de intentos pendientes |
 | H05 | `7c558eee`: round-trip de 220 herramientas y MCP; `155fad3d`: errores numéricos PDF; `28b2c2b0`: schemas independientes entre origen/snapshot/exportación. `3bfc22e2`: contrato único argumentos/schema/parser PDF, 122 pruebas. `fdce5d9e`: captura ejecutor/contrato PDF por llamada con revocación vigente, 172 pruebas. `a7428aea`: structural_rewrite rechaza apply no booleano antes del backend; 69 pruebas. Autoridad común general y snapshot por paso pendientes |
 | H06 | `0f8e6dc4`: recibo shadow del schema preparado por candidato, comparado con binding PDF y propagado a eventos; 56 pruebas finales. Ronda/candidato obsoletos no se comparan. Snapshot de paso y autoridad general pendientes |
-| H08 | `b7089ff5`: compactación de progreso por call_id conserva llamadas distintas, 52 pruebas y recuperación de traza solo desde disco. `db99abd9`: archivos exclusivos por run, recuperación multirun con commit SQLite confirmado y purga/retención, 114 pruebas. `ddbf3a6f`: historial de workers/reviewer conserva identidad de invocación, delegación y run padre activo; 78 pruebas finales. Ledger independiente y contexto causal del caller pendientes |
+| H08 | `b7089ff5`: compactación de progreso por call_id conserva llamadas distintas, 52 pruebas y recuperación de traza solo desde disco. `db99abd9`: archivos exclusivos por run, recuperación multirun con commit SQLite confirmado y purga/retención, 114 pruebas. `ddbf3a6f`: identidad de invocación/delegación en historial. `2e208adf`: origen server-owned del drain y call_id capturados antes del dispatch hacia workers, sin consulta mutable al run padre; 58 pruebas finales. Ledger independiente, origen de workers anidados y aprobación reanudada pendientes |
 | H09 | `1a418269`: reutilización exige ámbito/política/solicitud coincidentes, 53 pruebas; `b63f1e5b`: recibos de skills renderizadas/ensambladas y uso solo de cuerpos incluidos, 50 pruebas; versiones universales de fuentes y entrega efectiva pendientes |
 | H10 | `6127bd24`: fuentes externas marcadas no se promueven a restricciones/objetivo preservado. `ebf7a856`: persistencia inmediata/diferida con SQLite y tres compactaciones/reaperturas, 99 pruebas. Checkpoint portable y actualización de menciones históricas de aprobaciones pendientes |
 | H11 | `3338166d`: drenaje por bloques UTF-8, salida/progreso acotados y actividad sin LF; 91 pruebas y 3 omitidas. `6305ed06`: Code Mode drena stderr, 26 pruebas; `6b19a2fe`: frames grandes dentro de cuota y rechazo explícito del exceso, 32 pruebas. Manager/stdin/handles durables pendientes |
@@ -35,7 +35,8 @@ Prueba decisiva: el runner real escribe un señuelo temporal fuera del cwd del g
 | H21 | `54fea979`: instrucciones se refrescan por contenido acotado, no mtime; 66 pruebas y 1 POSIX omitida. `b63f1e5b`: recibos L1 ensamblados. `da728abe`: prompt y compactor renderizan los bytes capturados usados por la comprobación de aprobación; 90 pruebas finales coordinador. Jerarquía, reglas/objetivos fuera del digest, transacción de directorio y procedencia completa/entrega de skills pendientes |
 | H24 | `92c6ebee`: elimina contaminación global de imports en fixture de skills; mismo orden integrado 252 pruebas correctas tras timeout previo. Banco pareado con modelos y aislamiento general pendientes |
 | H20 | `42a29971`: identidad de mutación compartida en deduplicación/conflictos; ámbitos y sesiones distintos no se mezclan, origen de sesión en proyecto permite consolidación. 30 pruebas finales de ámbito/vigencia/propietario. Leases y atomicidad concurrente pendientes |
-| H07, H17–H18, H22–H23 | Pendientes conforme al análisis original; no declarar cerrados por este documento |
+| H18 | `70974a90`: mutex compartido process-local para edit_file/write_file, lectura/revisión/escritura indivisibles entre esos participantes; 66 correctas/2 omisiones Windows y 33 con rewritepolicy. Apply_patch, previews obsoletas, escritores externos y claims generales pendientes |
+| H07, H17, H22–H23 | Pendientes conforme al análisis original; no declarar cerrados por este documento |
 
 Los pilotos de reinicio de procesos (`403756a9`) y memoria (`9e0e8e50`) ya aportan evidencia a H11/H20/H24, pero no completan esos cambios transversales.
 
@@ -142,6 +143,23 @@ renderer canónico H12 y demás pendientes siguen abiertos.
   en selección amplia previa del agente, diferenciada del conjunto final.
 
 Evaluaciones siguientes: contexto causal del caller→delegación H08,
-`edit_file.replace_all` H05 y consumo observado de auxiliares H14.
+consumo observado de auxiliares H14 y concurrencia de ediciones H18.
+`edit_file.replace_all` corregido en `2ffaec79`: [informe](CODEX_H05_EDIT_FILE_BOOLEAN.md),
+77 correctas y 2 omisiones Windows en 3,81 s; valores inválidos sin operaciones de archivo.
 Numéricos de structural_search evaluados sin cambio: el dispatcher ya normaliza
 errores y el backend tiene coerciones existentes; no se declaran certificados.
+
+### Checkpoint: despacho causal y exclusión de escritores
+
+`2e208adf`: [origen de dispatch](CODEX_H08_DISPATCH_CAUSALITY.md), 58 pruebas
+finales en 19,36 s. Un caller antiguo mantiene su run real aunque se sustituya
+el registro de sesión. Reset probado incluso si falla el finalizador.
+
+`70974a90`: [mutex por archivo](CODEX_H18_FILE_MUTATION_MUTEX.md), 66 correctas
+y 2 omisiones Windows en 3,56 s; 33 con política de reescritura en 1,63 s.
+Las cuatro parejas edit/write con la misma base ya no devuelven dos éxitos
+pisándose. No hay locks atravesando awaits; la vigencia de previews previas
+requiere otro incremento. Tampoco son locks de OS o entre procesos.
+
+H14 uso observado auxiliar está en implementación; H03 selección causal del
+recorder y H18 preview obsoleta sólo evaluación. No se declaran terminados.
