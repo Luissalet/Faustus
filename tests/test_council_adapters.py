@@ -402,6 +402,19 @@ async def test_steer_without_a_worker_registry_reports_failure():
     assert await adapters.DispatchTaskExecutor().steer("run_1", "stop that") is False
 
 
+@pytest.mark.parametrize("failure", ["missing", "no_session", "lookup_error"])
+async def test_steer_without_a_resolved_parent_never_broadcasts(failure):
+    class UnresolvedDispatch:
+        def get(self, run_id):
+            if failure == "lookup_error":
+                raise RuntimeError("lookup unavailable")
+            return None if failure == "missing" else {"id": run_id, "session_id": ""}
+    workers = _FakeWorkers()
+    adapters.use_engines(dispatch=UnresolvedDispatch(), workers=workers)
+    assert await adapters.DispatchTaskExecutor().steer("unresolved", "private instruction") is False
+    assert workers.steered == []
+
+
 async def test_stop_cancels_the_job_through_dispatch():
     engine = _FakeDispatch()
     adapters.use_engines(dispatch=engine)

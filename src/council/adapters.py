@@ -657,6 +657,8 @@ class DispatchTaskExecutor:
             logger.info("council adapters: no worker registry; %r cannot be steered", run_id)
             return False
         parent = self._parent_session(run_id)
+        if not parent:
+            return False
         sent = False
         try:
             cards = dict(board() or {})
@@ -664,7 +666,7 @@ class DispatchTaskExecutor:
             logger.exception("council adapters: the worker board could not be read")
             return False
         for child_id, card in cards.items():
-            if parent and _text(_field(card, "parent")) != parent:
+            if _text(_field(card, "parent")) != parent:
                 continue
             try:
                 sent = bool(steer_worker(child_id, text, "user")) or sent
@@ -733,9 +735,8 @@ class DispatchTaskExecutor:
     def _parent_session(self, run_id: str) -> str:
         """The Workers chat this run's workers hang off, or `""`.
 
-        `""` means "steer every live worker", which is only correct when the
-        run cannot be located at all; it is logged, because a council that
-        steers somebody else's worker is a worse bug than one that steers none.
+        An empty result means the target cannot be resolved. The caller must
+        refuse steering, never widen it to every live worker.
         """
         job = self._job(run_id)
         parent = _text(_field(job, "session_id")) if job is not None else ""
