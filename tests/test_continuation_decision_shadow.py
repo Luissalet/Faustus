@@ -45,6 +45,9 @@ def legacy_gate(*, with_shadow):
             isinstance(child, ast.Name) and ("shadow" in child.id or child.id == "_extension_matches")
             for child in ast.walk(n))]
     branch = copy.deepcopy(branch)
+    if not with_shadow:
+        # Promotion keeps the original condition as an explicit fallback.
+        branch.test = copy.deepcopy(branch.test.orelse)
     branch.body = branch.body[:4 if with_shadow else 3]  # actual mutation plus optional observer
     branch.orelse = branch.orelse[:1] if with_shadow else []
     executable = ast.Module(body=[ast.If(test=copy.deepcopy(gate.test), body=body + [branch], orelse=[])], type_ignores=[])
@@ -82,7 +85,7 @@ def test_shadow_matches_actual_legacy_transition_matrix():
         assert actual["_no_progress_streak"] == predicted.streak_after
 
 
-def test_real_wiring_wrong_shadow_cannot_change_legacy_action_and_logs_are_bounded(monkeypatch):
+def test_real_wiring_valid_controller_action_governs_and_logs_are_bounded(monkeypatch):
     import src.continuation_decision as module
     code = legacy_gate(with_shadow=True)
     incorrect = decide_round_extension(replace(BASE, recovery_active=True))
@@ -92,7 +95,7 @@ def test_real_wiring_wrong_shadow_cannot_change_legacy_action_and_logs_are_bound
     for i in range(6):
         actual["round_num"] = actual["_rounds_budget"] + 1
         exec(code, actual)
-    assert actual["_rounds_budget"] == 70  # six actual configured cycles, despite shadow stop
+    assert actual["_rounds_budget"] == 10  # valid controller stop is now authoritative
     assert actual["_auto_cycles_left"] == -1
     assert actual["_ledger"].events == events
     assert len(actual["logs"]) == 3 and all(level == "warning" for level, _ in actual["logs"])

@@ -11130,9 +11130,10 @@ async def _stream_agent_loop_body(
             # to the whole-turn budget instead of one tool's call signature.
             _events_now = len(_ledger.events)
             _extension_shadow = None
+            _extension_action = None
             _extension_budget_before = _rounds_budget
             try:
-                from src.continuation_decision import RoundExtensionInput, decide_round_extension, matches_legacy
+                from src.continuation_decision import RoundExtensionInput, RoundExtensionDecision, decide_round_extension, matches_legacy
                 _extension_shadow = decide_round_extension(RoundExtensionInput(
                     round_num=round_num, rounds_budget=_rounds_budget, grant_rounds=max_rounds,
                     cycles_left=_auto_cycles_left, progress_enabled=_agent_auto_continue_on_progress,
@@ -11140,8 +11141,16 @@ async def _stream_agent_loop_body(
                     events_last=_progress_events_at_last_check, no_progress_streak=_no_progress_streak,
                     recovery_active=_loop_recovery_active,
                 ))
+                if (isinstance(_extension_shadow, RoundExtensionDecision)
+                        and _extension_shadow.action in ("extend", "stop")
+                        and isinstance(_extension_shadow.reason, str)
+                        and all(type(value) is int for value in (
+                            _extension_shadow.rounds_delta, _extension_shadow.cycles_after,
+                            _extension_shadow.streak_after))
+                        and type(_extension_shadow.progress_gate_open) is bool):
+                    _extension_action = _extension_shadow.action
             except Exception:
-                # Observation failure must not change the existing gate.
+                # A failed controller preserves the existing legacy gate.
                 if _continuation_shadow_mismatches < 3:
                     logger.debug("[continuation-shadow] observation unavailable", exc_info=True)
                     _continuation_shadow_mismatches += 1
@@ -11159,7 +11168,10 @@ async def _stream_agent_loop_body(
             # spin forever. Once the loop breaker has identified a stalled
             # tool family, reaching the current cycle cap must return control
             # instead of granting another identical cycle.
-            if (_auto_cycles_left != 0 or _progress_gate_open) and not _loop_recovery_active:
+            # Promote only the pure action. Legacy grants, mutations and public
+            # stop reasons remain below; unavailable/malformed results fallback.
+            if (_extension_action == "extend" if _extension_action is not None
+                    else (_auto_cycles_left != 0 or _progress_gate_open) and not _loop_recovery_active):
                 _used_progress_gate = _auto_cycles_left == 0 and _progress_gate_open
                 if _auto_cycles_left > 0:
                     _auto_cycles_left -= 1

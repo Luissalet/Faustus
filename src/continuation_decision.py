@@ -1,7 +1,8 @@
-"""Pure shadow description of the legacy round-extension gate.
+"""Pure action controller for the existing round-extension gate.
 
-No settings, application imports, permissions, or actions. The live loop remains
-the authority until comparison evidence supports a separate migration.
+No settings, application imports, permissions, or effects. The live loop uses
+the valid action, keeps its grants and effects, and falls back to the legacy
+condition when this controller fails or returns a malformed result.
 """
 from dataclasses import dataclass
 
