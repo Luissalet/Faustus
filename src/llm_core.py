@@ -82,7 +82,10 @@ def _extract_usage_extras(usage) -> dict:
     def _finite_nonneg(value):
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             return None
-        value = float(value)
+        try:
+            value = float(value)
+        except OverflowError:
+            return None
         if not math.isfinite(value) or value < 0:
             return None
         return value
@@ -4272,6 +4275,46 @@ async def llm_call_async_with_route_fallback(
     raise HTTPException(503, "All fallback candidates failed")
 
 
+def _observed_nonstream_usage(data, provider: str, requested_model: str) -> dict:
+    """Only provider-reported fields; missing/malformed dimensions stay absent."""
+    if not isinstance(data, dict):
+        return {}
+    raw = data if provider == "ollama" else data.get("usage")
+    if not isinstance(raw, dict):
+        return {}
+    fields = (("input_tokens", "prompt_eval_count"), ("output_tokens", "eval_count")) if provider == "ollama" else (
+        ("input_tokens", "input_tokens" if provider == "anthropic" else "prompt_tokens"),
+        ("output_tokens", "output_tokens" if provider == "anthropic" else "completion_tokens"),
+    )
+    usage = {}
+    for normalized, field in fields:
+        if field in raw:
+            # Reuse the strict counter validator one dimension at a time so
+            # an absent/invalid output cannot erase a valid observed input.
+            valid = _normalize_usage_counts(raw[field], 0)
+            if valid is not None:
+                usage[normalized] = valid["input_tokens"]
+    if "total_tokens" in raw:
+        valid_total = _normalize_usage_counts(raw["total_tokens"], 0)
+        if valid_total is not None:
+            # Preserve the reported total independently; do not invent its
+            # input/output split or reconcile inconsistent provider fields.
+            usage["total_tokens"] = valid_total["input_tokens"]
+    try:
+        usage.update(_extract_usage_extras(raw))
+    except (OverflowError, ValueError):
+        # Malformed ancillary cost fields cannot erase valid token counts.
+        pass
+    if not usage:
+        return {}
+    reported_model = data.get("model")
+    actual_model = reported_model.strip() if isinstance(reported_model, str) and reported_model.strip() else requested_model
+    _annotate_usage_model(usage, requested_model, actual_model)
+    usage["usage_source"] = "reported_engine"
+    usage["cost_state"] = "known" if "cost_usd" in usage else "unknown"
+    return usage
+
+
 async def llm_call_async(
     url: str,
     model: str,
@@ -4306,6 +4349,11 @@ async def llm_call_async(
     _err: Optional[str] = None
     _text = ""
     _model_out = model
+    _observed_usage = {}
+
+    def _capture_usage(usage):
+        _observed_usage.update(usage)
+
     try:
         result = await _llm_call_async_impl(
             url, model, messages,
@@ -4316,6 +4364,7 @@ async def llm_call_async(
             return_model_metadata=return_model_metadata,
             response_schema=response_schema, pin_public_dns=pin_public_dns,
             on_outcome_unknown=on_outcome_unknown, gen_overrides=gen_overrides,
+            _on_observed_usage=_capture_usage,
         )
         if isinstance(result, tuple):
             _text, _model_out = result[0], result[1]
@@ -4342,6 +4391,7 @@ async def llm_call_async(
                 response_text=_text if isinstance(_text, str) else "",
                 duration_ms=(time.time() - _t0) * 1000.0,
                 error=_err,
+                usage=dict(_observed_usage),
             )
         except Exception:
             logger.debug("[llm_trace] non-streaming record failed", exc_info=True)
@@ -4365,6 +4415,7 @@ async def _llm_call_async_impl(
     pin_public_dns: bool = False,
     on_outcome_unknown: Optional[Callable[[int, float], None]] = None,
     gen_overrides: Optional[Dict] = None,
+    _on_observed_usage: Optional[Callable[[dict], None]] = None,
 ) -> str | tuple[str, str]:
     """Asynchronous LLM call using httpx with connection pooling, timeout, retry logic, and performance logging.
 
@@ -4729,6 +4780,16 @@ async def _llm_call_async_impl(
             logger.info(f"LLM async call to {target_url} succeeded in {duration:.2f}s (attempt {attempt})")
             _clear_host_dead(target_url)
             data = r.json()
+            # Capture before response-schema parsing: a billed reply can have
+            # valid usage even when its message shape is unusable. Local to
+            # this invocation; cache/CLI paths have no fresh provider receipt.
+            if _on_observed_usage is not None:
+                try:
+                    observed = _observed_nonstream_usage(data, provider, model)
+                    if observed:
+                        _on_observed_usage(observed)
+                except Exception:
+                    logger.debug("non-streaming usage receipt failed", exc_info=True)
             if provider == "ollama" and isinstance(data, dict):
                 # Deep Research is all non-streamed calls; without this the
                 # learned speed would only ever come from the chat.

@@ -911,6 +911,7 @@ async def summarize_rows(
     owner: Optional[str] = None,
     compaction_count: int = 0,
     timeout: int = 30,
+    session_id: Optional[str] = None,
 ) -> str:
     """Summarize a list of `{"role","content"}` rows with the self-summary
     prompt, model resolution and privacy gate `maybe_compact` has always
@@ -978,6 +979,7 @@ async def summarize_rows(
             max_tokens=SUMMARY_MAX_TOKENS,
             headers=compact_headers,
             timeout=timeout,
+            session_id=session_id,
         )
     except Exception as e:
         logger.error(f"Compaction summary failed: {e}")
@@ -1067,6 +1069,7 @@ async def maybe_compact(
             headers=headers,
             owner=owner,
             compaction_count=compaction_count,
+            session_id=(session.get("id") if isinstance(session, dict) else getattr(session, "id", None)),
         )
     except PrivacyPolicyError as e:
         logger.warning(f"Compaction summary blocked by privacy policy: {e.error_info.message}")
