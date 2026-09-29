@@ -2,11 +2,12 @@
 
 Lets the model write a short Python program that composes several Faustus
 tool calls (``tools.call("read_file", {...})``, etc.) in one round instead
-of one model round trip per tool call. The program runs isolated in a
+of one model round trip per tool call. The program runs on the host in a
 subprocess (``src/code_mode/runner.py``); every ``tools.call`` it makes is
 dispatched through the SAME ``src.tool_execution.execute_tool_block`` an
 ordinary tool call goes through (``src/code_mode/bridge.py``), so a
 destructive or disabled tool gets the same rejection either way.
+Direct Python operations bypass that bridge and retain host file/network access.
 
 Gated by the ``agent_code_mode`` setting (default off) -- schema and tool
 are always registered, but the tool refuses to run while the setting is

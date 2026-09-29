@@ -1117,13 +1117,13 @@ GROUPS: list[dict[str, Any]] = [
     ),
     _group(
         "code_mode", "Code Mode",
-        "The model writes a short Python program that composes several tool calls in one isolated "
-        "subprocess round instead of one model round trip per call (run_code tool). Every tool call "
-        "the program makes goes through the same policy gate and approvals an ordinary call would.",
+        "The model writes Python that runs as a process on this computer with access to its files "
+        "and network. Calls through tools.call use the normal policy and approval checks; direct "
+        "Python operations do not pass through those checks. This runtime is not a sandbox.",
         [
             _bool("agent_code_mode", "Code Mode",
-                  "Register and allow the run_code tool. Off by default; the tool refuses to run "
-                  "while this is off."),
+                  "Allow Python execution on this computer through run_code. Off by default. "
+                  "Enabling it permits direct file and network access as the Faustus process user."),
             _int("agent_code_mode_timeout_seconds", "Wall time limit (s)",
                  "A run_code program is killed and returns a diagnostic receipt after this long.",
                  1, 3600),

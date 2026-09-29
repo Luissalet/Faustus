@@ -1,4 +1,4 @@
-"""Code Mode process runner (T6, A11): launches the isolated subprocess,
+"""Code Mode process runner (T6, A11): launches a separate host subprocess,
 services the guest's tool-call requests through ``bridge.py``, and enforces
 wall time / call count / output size / CPU / memory quotas. When a quota is
 hit the process tree is killed and the result carries a diagnostic receipt::
@@ -26,6 +26,14 @@ from src.code_mode import bridge
 logger = logging.getLogger(__name__)
 
 _GUEST_PATH = os.path.join(os.path.dirname(__file__), "guest.py")
+
+# Python -I isolates interpreter configuration, not filesystem or network.
+HOST_RUNTIME_GUARANTEES = {
+    "mode": "host_process",
+    "filesystem_isolated": False,
+    "network_isolated": False,
+    "tool_policy_scope": "tools.call_only",
+}
 
 DEFAULT_TIMEOUT_SECONDS = 60
 DEFAULT_MAX_CALLS = 50
@@ -162,7 +170,8 @@ async def run_code_mode(
         )
     except Exception as e:  # noqa: BLE001
         logger.exception("code_mode: failed to spawn guest process")
-        return {"error": f"Code Mode failed to start: {e}", "exit_code": 1}
+        return {"error": f"Code Mode failed to start: {e}", "exit_code": 1,
+                "runtime_guarantees": dict(HOST_RUNTIME_GUARANTEES)}
 
     calls_made = 0
     last_call: Optional[str] = None
@@ -304,6 +313,7 @@ async def run_code_mode(
         }
         return {
             "error": f"Code Mode terminated: {terminated_by}",
+            "runtime_guarantees": dict(HOST_RUNTIME_GUARANTEES),
             "exit_code": 1,
             "terminated": True,
             "receipt": receipt,
@@ -331,6 +341,7 @@ async def run_code_mode(
         }
         return {
             "error": final_payload.get("error") or f"Code Mode terminated: {status}",
+            "runtime_guarantees": dict(HOST_RUNTIME_GUARANTEES),
             "exit_code": 1,
             "terminated": True,
             "receipt": receipt,
@@ -341,6 +352,7 @@ async def run_code_mode(
     _output = final_payload.get("output") or ""
     return {
         "output": _output,
+        "runtime_guarantees": dict(HOST_RUNTIME_GUARANTEES),
         "exit_code": 0,
         "calls_made": int(final_payload.get("calls_made") or calls_made),
         "elapsed_ms": elapsed_ms,

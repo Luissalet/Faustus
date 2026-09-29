@@ -6,8 +6,8 @@ trips.
   the exact same ``ToolBlock`` + ``execute_tool_block`` call an ordinary
   model tool call would produce, so a destructive/disabled tool gets the
   same rejection either way (A10).
-- ``runner.py``: launches the isolated subprocess (``python -I``, minimal
-  env, temp cwd, no network access granted) and enforces wall time / call
+- ``runner.py``: launches a host subprocess (``python -I``, minimal
+  env, temp cwd, no filesystem/network confinement) and enforces wall time / call
   count / output size / CPU / memory quotas, killing the process tree and
   returning a diagnostic receipt when one is hit (A11).
 - ``guest.py``: the small script injected into the subprocess. Defines the
