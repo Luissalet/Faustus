@@ -811,23 +811,25 @@ def setup_session_routes(
                 from src import model_calibration as mcal
                 from src.llm_core import _detect_provider
 
-                new_key = mcal.manifest_key(
-                    vendor=_detect_provider(endpoint_url) or "",
+                new_vendor = _detect_provider(endpoint_url) or ""
+                new_manifest = mcal.get_effective_manifest(
+                    vendor=new_vendor,
                     model_id=model,
                     endpoint_id=endpoint_id or "",
+                    protocol=mcal.explicit_native_protocol(endpoint_url) if new_vendor == "ollama" else "",
                 )
                 # No endpoint_id is known for the PREVIOUS route (the session
-                # only ever stored its endpoint_url) — manifest_key falls
-                # back to a global scope for it, which is coarser than the
-                # digest/endpoint-scoped key above but still an honest match
-                # by vendor+model, never a guess.
-                previous_key = mcal.manifest_key(
+                # only stored its endpoint_url): global declarations may
+                # explain a loss, but legacy probes never establish a route.
+                previous_manifest = mcal.get_effective_manifest(
                     vendor=_detect_provider(_previous_endpoint_url) or "",
                     model_id=_previous_model,
                 )
-                new_manifest = mcal.capabilities_for(new_key)
-                previous_manifest = mcal.capabilities_for(previous_key)
-                result["capabilities"] = new_manifest
+                # Never-seen routes retain empty hints; unknown is no probe.
+                if new_manifest["evidence_scope"] == "unobserved" and not new_manifest["announced"] and not new_manifest["updated_at"]:
+                    new_manifest["degraded"] = []
+                result["capabilities"] = {key: new_manifest[key]
+                    for key in ("announced", "tested", "degraded", "updated_at")}
                 result["lost"] = _lost_capabilities_on_switch(previous_manifest, new_manifest)
             except Exception:
                 logger.debug("[session] capability recompute on model switch failed", exc_info=True)

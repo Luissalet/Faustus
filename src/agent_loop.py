@@ -1716,6 +1716,8 @@ def recompute_capabilities_on_model_switch(
     new_endpoint_url: str,
     previous_endpoint_id: str = "",
     new_endpoint_id: str = "",
+    previous_digest: str = "",
+    new_digest: str = "",
 ) -> Dict[str, Any]:
     """QA-28 / MOD-06: what this task may still assume once the model
     actually answering it changes mid-task (a foreground fallback — see the
@@ -1740,20 +1742,21 @@ def recompute_capabilities_on_model_switch(
     from src import model_calibration as mcal
     from src.llm_core import _detect_provider
 
-    previous_key = mcal.manifest_key(
-        vendor=_detect_provider(previous_endpoint_url) or "",
-        model_id=previous_model,
-        endpoint_id=previous_endpoint_id,
-    )
-    new_key = mcal.manifest_key(
-        vendor=_detect_provider(new_endpoint_url) or "",
-        model_id=new_model,
-        endpoint_id=new_endpoint_id,
-    )
-    previous_manifest = mcal.capabilities_for(previous_key)
-    new_manifest = mcal.capabilities_for(new_key)
+    def effective(model: str, url: str, endpoint_id: str, digest: str) -> Dict[str, Any]:
+        vendor = _detect_provider(url) or ""
+        manifest = mcal.get_effective_manifest(vendor=vendor, model_id=model, endpoint_id=endpoint_id,
+            protocol=mcal.explicit_native_protocol(url) if vendor == "ollama" else "",
+            digest=digest.strip() if isinstance(digest, str) else "")
+        # A never-seen route keeps the existing empty-hints contract.
+        if manifest["evidence_scope"] == "unobserved" and not manifest["announced"] and not manifest["updated_at"]:
+            manifest["degraded"] = []
+        return manifest
+
+    previous_manifest = effective(previous_model, previous_endpoint_url, previous_endpoint_id, previous_digest)
+    new_manifest = effective(new_model, new_endpoint_url, new_endpoint_id, new_digest)
     return {
-        "capabilities": new_manifest,
+        # Preserve the existing switch payload; scope metadata stays internal.
+        "capabilities": {key: new_manifest[key] for key in ("announced", "tested", "degraded", "updated_at")},
         "lost": mcal.diff(previous_manifest, new_manifest),
     }
 
