@@ -242,6 +242,21 @@ def test_the_graph_lane_joins_on_evidence_refs(store):
     assert plain["id"] not in hits or hits[plain["id"]]["graph"] == 0.0
 
 
+def test_graph_lane_distinguishes_same_basename_in_different_paths(store):
+    source = _rule("Source cart implementation", level="semantic",
+                   evidence=[{"kind": "file", "ref": "src/cart.py"}])
+    test = _rule("Cart test implementation", level="semantic",
+                 evidence=[{"kind": "file", "ref": "tests/cart.py"}])
+
+    exact = {hit["id"]: hit for hit in engine.search("src/cart.py", "luis", "", now=NOW)}
+    assert exact[source["id"]]["graph"] > 0
+    assert test["id"] not in exact or exact[test["id"]]["graph"] == 0.0
+
+    basename = {hit["id"]: hit for hit in engine.search("cart.py", "luis", "", now=NOW)}
+    assert basename[source["id"]]["graph"] > 0
+    assert basename[test["id"]]["graph"] > 0
+
+
 def test_retrieval_touches_only_the_items_it_surfaced(store):
     hit = _rule("Prefer edit_file over rewriting the whole module")
     miss = _rule("Completely different subject matter here")

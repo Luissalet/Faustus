@@ -1396,7 +1396,7 @@ _OBJ_RE = re.compile(r"\bOBJ-\d+\b", re.IGNORECASE)
 _PATHY_RE = re.compile(r"^[\w./\\-]+\.[A-Za-z0-9]{1,6}$")
 
 
-def graph_keys(text: Any) -> set:
+def graph_keys(text: Any, *, include_path_basenames: bool = True) -> set:
     """The OBJ-ids and file-path tokens in a string — the join key between a
     query and an item's evidence refs."""
     raw = str(text or "")
@@ -1409,7 +1409,7 @@ def graph_keys(text: Any) -> set:
             lowered = token.lower()
             keys.add(lowered)
             base = re.split(r"[/\\]", lowered)[-1]
-            if base:
+            if base and (include_path_basenames or base == lowered):
                 keys.add(base)
     return keys
 
@@ -1498,7 +1498,10 @@ def search(
     degraded = not semantic_available
     w_lex = W_LEXICAL_DEGRADED if degraded else W_LEXICAL
     w_sem = 0.0 if degraded else W_SEMANTIC
-    query_keys = graph_keys(query)
+    # A query naming src/cart.py must not match evidence from tests/cart.py
+    # merely because both paths have the same basename. Bare cart.py queries
+    # still match either reference through _item_graph_keys().
+    query_keys = graph_keys(query, include_path_basenames=False)
 
     scored: List[Dict[str, Any]] = []
     for item in items:
