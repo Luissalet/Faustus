@@ -14,7 +14,7 @@ live (pick up where it is).
 Durability
 ----------
 * In memory while the server process runs (tab close / navigation / refresh).
-* On disk as a replay log (DATA_DIR/runs/<session>.jsonl) so a run that the
+* On disk as a replay log (one exclusive JSONL per run in DATA_DIR/runs) so a run that the
   process took down with it (restart, crash) is not lost: at the next startup
   `recover_interrupted_runs()` turns every log that never reached a terminal
   status into a saved, clearly-marked partial assistant message ("interrupted
@@ -32,6 +32,7 @@ through them one by one, each chat notifying when it is done. Stop works on a
 queued run too (it leaves the queue).
 """
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -39,6 +40,7 @@ import re
 import threading
 import time
 import uuid
+import weakref
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 
 from src import api_version
@@ -429,8 +431,94 @@ def _runs_dir() -> str:
     return os.path.join(DATA_DIR, "runs")
 
 
-def _log_path(session_id: str) -> str:
+def _legacy_log_path(session_id: str) -> str:
     return os.path.join(_runs_dir(), _SAFE_NAME_RE.sub("_", str(session_id))[:120] + ".jsonl")
+
+
+def _session_log_prefix(session_id: str) -> str:
+    return "run-" + hashlib.sha256(str(session_id).encode("utf-8")).hexdigest() + "-"
+
+
+def _run_log_path(session_id: str, run_id: str, started_at: float = 0) -> str:
+    if not re.fullmatch(r"[0-9a-f]{32}", run_id):
+        raise ValueError("invalid runtime run id")
+    stamp = max(0, int(started_at * 1_000_000))
+    return os.path.join(_runs_dir(), _session_log_prefix(session_id) + f"{stamp:020d}-" + run_id + ".jsonl")
+
+
+def _session_log_names(session_id: str, *, sidecars: bool = False) -> List[str]:
+    suffix = r"(?:\.status)?" if sidecars else ""
+    pattern = re.compile(re.escape(_session_log_prefix(session_id)) + r"[0-9]{20}-[0-9a-f]{32}\.jsonl" + suffix)
+    try:
+        return sorted((name for name in os.listdir(_runs_dir()) if pattern.fullmatch(name)), reverse=True)
+    except FileNotFoundError:
+        return []
+
+
+def _log_header(path: str) -> Dict[str, Any]:
+    try:
+        with open(path, encoding="utf-8") as handle:
+            header = json.loads(handle.readline(65536))
+        return header if isinstance(header, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _log_order(header: Dict[str, Any]) -> tuple:
+    try:
+        timestamp = float(header.get("ts") or 0)
+    except (TypeError, ValueError):
+        timestamp = 0.0
+    return timestamp, str(header.get("run_id") or "")
+
+
+def _session_log_paths(session_id: str) -> List[str]:
+    """Enumerate by start time without opening historical JSONL bodies."""
+    paths = [os.path.join(_runs_dir(), name) for name in _session_log_names(session_id)]
+    legacy = _legacy_log_path(session_id)
+    if os.path.isfile(legacy):
+        paths.append(legacy)
+    return paths
+
+
+def _log_path(session_id: str) -> str:
+    """Latest only: an invalid current header must never expose an older run."""
+    paths = _session_log_paths(session_id)
+    legacy = _legacy_log_path(session_id)
+    if not paths:
+        return legacy
+    path = paths[0]
+    header = _log_header(path)
+    if header.get("session_id") == session_id or (path == legacy and not header.get("session_id")):
+        return path
+    return os.path.join(_runs_dir(), _session_log_prefix(session_id) + "missing.jsonl")
+
+
+_OPEN_RUN_LOGS = weakref.WeakSet()
+
+
+def purge_session_logs(session_id: str) -> int:
+    """Close all writers before removing this session's logs and sidecars."""
+    for log in list(_OPEN_RUN_LOGS):
+        if log.session_id == session_id:
+            log.orphan()
+    # Purge torn headers and sidecar-only files through the strict namespace.
+    paths = list(dict.fromkeys(_session_log_paths(session_id) + [
+        os.path.join(_runs_dir(), name.removesuffix(".status"))
+        for name in _session_log_names(session_id, sidecars=True)]))
+    removed = 0
+    for path in paths:
+        # An old sanitized filename can collide; never purge another header.
+        header = _log_header(path)
+        if header.get("session_id") not in (None, session_id):
+            continue
+        for target in (path, _status_sidecar(path)):
+            try:
+                os.remove(target)
+            except FileNotFoundError:
+                pass
+        removed += 1
+    return removed
 
 
 def persistence_enabled() -> bool:
@@ -479,34 +567,28 @@ class _RunLog:
     immediately so a crash loses at most a few tokens of prose."""
 
     def __init__(self, session_id: str, run: _Run):
-        self.path = _log_path(session_id)
+        self.path = _run_log_path(session_id, run.run_id, run.started_at)
         self.session_id = session_id
         self._f = None
         self._pending = 0
         self._orphaned = False
         self._lock = threading.Lock()
+        _OPEN_RUN_LOGS.add(self)
         try:
             os.makedirs(os.path.dirname(self.path), exist_ok=True)
-            self._f = open(self.path, "w", encoding="utf-8")
+            self._f = open(self.path, "x", encoding="utf-8")
             try:
-                os.remove(_status_sidecar(self.path))  # it described the previous run
+                os.remove(_status_sidecar(self.path))  # remove an orphan sidecar
             except OSError:
                 pass
-            self._write({"status": "running", "run_id": run.run_id, "ts": time.time(),
+            self._write({"status": "running", "run_id": run.run_id, "ts": run.started_at,
                          "session_id": session_id, "lane": run.lane, "label": run.label}, flush=True)
         except OSError as e:
             logger.debug("[agent-run] log unavailable for %s: %s", session_id, e)
             self._f = None
 
     def orphan(self) -> None:
-        """Detach this log from its file: the run it belongs to was replaced and
-        a NEW _RunLog now owns `self.path` (same session → same file name, and
-        it opened the file with "w"). Anything this one wrote afterwards — its
-        remaining events, and above all its `finish()` status line — landed
-        INSIDE the new run's log, which then read back as terminal (so
-        `recover_interrupted_runs` skipped the live run) or as a mix of both
-        runs' text. Every later write is a no-op and the descriptor is closed.
-        """
+        """Close a purged/deleted writer; later writes cannot recreate its log."""
         with self._lock:
             self._orphaned = True
             try:
@@ -1294,15 +1376,10 @@ def start(session_id: str, agen: AsyncGenerator[str, None], lane: Optional[str] 
             prev_task = prev.task   # new run awaits this before it starts writing
         if prev.evict_task and not prev.evict_task.done():
             prev.evict_task.cancel()
-        # The replay log is named after the SESSION, so the _RunLog built below
-        # truncates the very file `prev` still has open. Retire the old one
-        # first: from here on its writes (including the finish() its cancelled
-        # _drain is about to emit) must not reach the new run's log.
-        if prev.log is not None:
-            try:
-                prev.log.orphan()
-            except Exception as e:      # pragma: no cover - best effort
-                logger.debug("[agent-run] could not orphan the previous log: %s", e)
+        # Distinct run files let the old drain record its own final state.
+        # A task cancelled before entering _drain still needs a terminal log.
+        if prev.log is not None and prev.task is not None:
+            prev.task.add_done_callback(lambda _task, old=prev: old.log.finish(old.status))
     run = _Run(lane=lane, label=label)
     run.model = str(model or "")
     run.endpoint_url = str(endpoint_url or "")
@@ -1829,6 +1906,9 @@ _TRACE_SCAN_MAX_FILES = 200
 
 def _trace_log_paths(session_id: Optional[str]) -> List[str]:
     if session_id:
+        live = _RUNS.get(session_id)
+        if live is not None:
+            return [live.log.path] if live.log and os.path.isfile(live.log.path) else []
         path = _log_path(session_id)
         return [path] if os.path.isfile(path) else []
     d = _runs_dir()
@@ -1843,8 +1923,35 @@ def _trace_log_paths(session_id: Optional[str]) -> List[str]:
         except OSError:
             return 0.0
 
-    names.sort(key=_mtime, reverse=True)
-    return [os.path.join(d, n) for n in names[:_TRACE_SCAN_MAX_FILES]]
+    # Group new names before opening headers, so retained runs do not multiply
+    # expensive Windows antivirus opens. Legacy requires one header per file.
+    latest_names = {}
+    legacy_names = []
+    for name in names:
+        match = re.fullmatch(r"run-([0-9a-f]{64})-([0-9]{20})-([0-9a-f]{32})\.jsonl", name)
+        if match:
+            key = match[1]
+            if key not in latest_names or name > latest_names[key]:
+                latest_names[key] = name
+        else:
+            legacy_names.append(name)
+    candidates = list(latest_names.values()) + legacy_names
+    candidates.sort(key=_mtime, reverse=True)
+    latest = {}
+    for name in candidates[:_TRACE_SCAN_MAX_FILES]:
+        path = os.path.join(d, name)
+        header = _log_header(path)
+        sid = str(header.get("session_id") or name[:-6])
+        namespace = hashlib.sha256(sid.encode("utf-8")).hexdigest()
+        if name.startswith("run-"):
+            if not header.get("session_id") or not name.startswith("run-" + namespace + "-"):
+                continue
+        elif namespace in latest_names:
+            continue  # a newer file exists, even if its header is unreadable
+        rank = _log_order(header)
+        if sid not in latest or rank > latest[sid][0]:
+            latest[sid] = (rank, path)
+    return [entry[1] for entry in latest.values()]
 
 
 def _receipt_for_call_id(call_id: str) -> Optional[Dict[str, Any]]:
@@ -2043,6 +2150,7 @@ def recover_interrupted_runs(session_manager=None) -> List[Dict[str, Any]]:
         keep_h = 48.0
     now = time.time()
     recovered: List[Dict[str, Any]] = []
+    running_logs = []
     try:
         names = sorted(os.listdir(d))
     except OSError:
@@ -2058,8 +2166,7 @@ def recover_interrupted_runs(session_manager=None) -> List[Dict[str, Any]]:
         else:
             info = _read_log(path, for_recovery=True)
         status = info.get("status")
-        if status in ("done", "stopped", "error", "interrupted", "unreadable",
-                      "waiting_user", None) and status != "running":
+        if status in ("done", "stopped", "error", "interrupted", "waiting_user"):
             try:
                 if now - os.path.getmtime(path) > keep_h * 3600:
                     os.remove(path)
@@ -2068,7 +2175,24 @@ def recover_interrupted_runs(session_manager=None) -> List[Dict[str, Any]]:
             except OSError:
                 pass
             continue
-        sid = str(info.get("session_id") or name[:-6])
+        if status != "running":
+            continue  # unreadable/inconclusive is not evidence of termination
+        running_logs.append((path, info))
+    running_logs.sort(key=lambda row: _log_order(row[1]))
+    for path, info in running_logs:
+        if os.path.basename(path).startswith("run-") and not info.get("session_id"):
+            continue  # damaged new header cannot authorize a fabricated session
+        sid = str(info.get("session_id") or os.path.basename(path)[:-6])
+        if session_manager is not None:
+            try:
+                exists = session_manager.get_session(sid)
+            except Exception as exc:
+                logger.warning("[agent-run] session lookup failed for %s; preserving log: %s", sid, exc)
+                continue
+            if exists is None:
+                # Missing is distinct from a lookup failure; never recreate it.
+                purge_session_logs(sid)
+                continue
         partial = _partial_from_events(info.get("events") or [])
         entry = {"session_id": sid, "run_id": info.get("run_id"), "ts": info.get("ts"),
                  "label": info.get("label") or "", "chars": len(partial["text"]),
@@ -2078,17 +2202,36 @@ def recover_interrupted_runs(session_manager=None) -> List[Dict[str, Any]]:
         interrupted_outcome = _outcome_of("interrupted")
         if interrupted_outcome:
             entry["outcome"] = interrupted_outcome
-        _unknown_effects = partial.get("unknown_effects") or []
+        prior = _INTERRUPTED.get(sid) or {}
+        previous = [dict(effect, run_id=effect.get("run_id") or prior.get("run_id"))
+                    for effect in prior.get("unknown_effects") or []]
+        current = [dict(effect, run_id=info.get("run_id")) for effect in partial.get("unknown_effects") or []]
+        _unknown_effects = previous + current
         if _unknown_effects:
             entry["unknown_effects"] = _unknown_effects
         if session_manager is not None and not partial["saved"]:
-            try:
-                sess = session_manager.get_session(sid)
-            except Exception:
-                sess = None
+            sess = exists  # reuse successful lookup; transient DB errors never mean deleted
             if sess is not None:
                 try:
                     from core.models import ChatMessage
+                    history = getattr(sess, "history", None) or getattr(sess, "messages", None) or []
+                    # A previous boot may have saved/marked an earlier run
+                    # before crashing again. Carry its unresolved warnings.
+                    for message in reversed(history):
+                        if getattr(message, "role", None) != "assistant":
+                            continue
+                        previous_meta = getattr(message, "metadata", None) or {}
+                        previous_effects = previous_meta.get("unknown_effects") or []
+                        known = {effect.get("idempotency_key") for effect in _unknown_effects}
+                        retained = [dict(effect, run_id=effect.get("run_id") or previous_meta.get("run_id"))
+                                    for effect in previous_effects if effect.get("idempotency_key") not in known]
+                        if retained:
+                            _unknown_effects = retained + [dict(effect, run_id=effect.get("run_id") or info.get("run_id"))
+                                                          for effect in _unknown_effects]
+                            entry["unknown_effects"] = _unknown_effects
+                        break
+                    already_saved = any((getattr(m, "metadata", None) or {}).get("run_id") == info.get("run_id")
+                                        for m in history if info.get("run_id"))
                     body = partial["text"].strip()
                     note = INTERRUPTED_NOTE
                     if _unknown_effects:
@@ -2101,17 +2244,38 @@ def recover_interrupted_runs(session_manager=None) -> List[Dict[str, Any]]:
                         meta["unknown_effects"] = _unknown_effects
                     if isinstance(partial.get("metrics"), dict):
                         meta.update({k: v for k, v in partial["metrics"].items() if k in ("model", "harness")})
-                    sess.add_message(ChatMessage("assistant", content, metadata=meta))
-                    session_manager.save_sessions()
+                    persist_recovered = (getattr(session_manager, "persist_recovered_message", None)
+                                         if callable(getattr(type(session_manager), "persist_recovered_message", None)) else None)
+                    if callable(persist_recovered):
+                        candidate = ChatMessage("assistant", content, metadata=meta)
+                        if already_saved:
+                            previous = next(m for m in history if (getattr(m, "metadata", None) or {}).get("run_id") == info.get("run_id"))
+                            candidate = ChatMessage("assistant", previous.content, metadata=dict(previous.metadata or {}))
+                            if _unknown_effects:
+                                candidate.metadata["unknown_effects"] = _unknown_effects
+                        if persist_recovered(sid, candidate) is not True:
+                            raise OSError("recovery message commit was not confirmed")
+                    else:
+                        # Compatibility for older managers; production uses the
+                        # confirmed transaction above, not save_sessions' no-op.
+                        if not already_saved:
+                            sess.add_message(ChatMessage("assistant", content, metadata=meta))
+                        elif _unknown_effects:
+                            for message in history:
+                                if (getattr(message, "metadata", None) or {}).get("run_id") == info.get("run_id"):
+                                    message.metadata["unknown_effects"] = _unknown_effects
+                        session_manager.save_sessions()
                     entry["saved_message"] = True
                 except Exception as e:
                     logger.warning("[agent-run] could not save interrupted run for %s: %s", sid, e)
+                    continue  # leave running for a durable retry after store failure
         try:
             with open(path, "a", encoding="utf-8") as f:
                 f.write(json.dumps({"status": "interrupted", "ts": now}) + "\n")
             _write_status_sidecar(path, "interrupted")
         except OSError:
             pass
+        entry["runs"] = list(prior.get("runs") or []) + [{"run_id": entry["run_id"], "ts": entry["ts"]}]
         _INTERRUPTED[sid] = entry
         recovered.append(entry)
     if recovered:

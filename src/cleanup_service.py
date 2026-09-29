@@ -460,8 +460,14 @@ def runs_log_retention(*, older_than_days: float = 60.0, dry_run: bool = True) -
             continue
         if mtime >= cutoff:
             continue
+        from src.agent_runs import _peek_status, _read_status_sidecar
+        status = _read_status_sidecar(path) or _peek_status(path)
+        if status not in {"done", "stopped", "error", "interrupted", "waiting_user"}:
+            continue
         if not dry_run:
             move_to_trash(path, category="runs")
+            if os.path.isfile(path + ".status"):
+                move_to_trash(path + ".status", category="runs")
         trashed.append(name)
         freed_bytes += size
     return {"trashed": trashed, "freed_bytes": freed_bytes, "dry_run": dry_run}

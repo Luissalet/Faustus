@@ -269,6 +269,8 @@ def _stop_runs_for_deleted_sessions(session_ids=None) -> int:
                 stopped += 1
         except Exception as exc:
             logger.warning("Could not stop the run of deleted session %s: %s", sid, exc)
+        # A failed purge must not report a completed deletion of its logs.
+        agent_runs.purge_session_logs(sid)
     return stopped
 
 
@@ -490,6 +492,7 @@ def setup_session_routes(
                 for _g in _ghosts:
                     if active_incognito_id and _g.id == active_incognito_id:
                         continue
+                    _stop_runs_for_deleted_sessions([_g.id])
                     _purge_db.query(_DbMsg).filter(_DbMsg.session_id == _g.id).delete()
                     _purge_db.delete(_g)
                     if hasattr(session_manager, "delete_session"):
@@ -1059,6 +1062,7 @@ def setup_session_routes(
         try:
             from core.database import ChatMessage as DbChatMessage
             session_ids = [row[0] for row in db.query(DbSession.id).all()]
+            _stop_runs_for_deleted_sessions(session_ids)
             count = db.query(DbSession).count()
             image_ids: set[str] = set()
             filenames: set[str] = set()
@@ -1723,6 +1727,7 @@ def setup_session_routes(
                     deleted_throwaway += 1
                     db.delete(row)
                     if hasattr(session_manager, 'delete_session'):
+                        _stop_runs_for_deleted_sessions([row.id])
                         session_manager.delete_session(row.id)
                     continue
                 if is_session_recently_active(row, now=cleanup_now):
@@ -1756,6 +1761,7 @@ def setup_session_routes(
                 if should_delete:
                     db.delete(row)
                     if hasattr(session_manager, 'delete_session'):
+                        _stop_runs_for_deleted_sessions([row.id])
                         session_manager.delete_session(row.id)
             if deleted_empty or deleted_throwaway:
                 db.commit()

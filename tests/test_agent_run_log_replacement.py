@@ -12,7 +12,8 @@ Two failure modes:
     unparsable garbage) and never recovers what it produced;
   * the recovered partial message is rebuilt with text from the CANCELLED run.
 
-The fix orphans the old `_RunLog` at the moment of the replacement.
+The original fix orphaned the old writer. H08 now assigns each run an exclusive
+file, preserving both logs while keeping the same isolation regression.
 
 The tests deliberately push run 2's write offset PAST run 1's before letting
 run 1's cancellation land — that is the real-world shape (the replacement run
@@ -78,6 +79,8 @@ async def _replaced_run_scenario(monkeypatch, old_text: str, new_chunks: list):
 
     # The user sends another message.
     run2 = agent_runs.start("sid", _blocking_gen(gate2))
+    assert run2.log.path != run1.log.path
+    path = run2.log.path
     for chunk in new_chunks:
         agent_runs._publish(run2, _delta(chunk))
         agent_runs._publish(run2, _flushed(chunk))

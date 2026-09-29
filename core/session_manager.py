@@ -314,6 +314,67 @@ class SessionManager:
         finally:
             db.close()
 
+    def persist_recovered_message(self, session_id: str, message: ChatMessage) -> bool:
+        """Commit one recovery message by run identity before marking its log.
+
+        Unlike save_sessions (compatibility no-op), success confirms a database
+        commit. Startup recovery is sequential; this is not a concurrent outbox.
+        """
+        run_id = (message.metadata or {}).get("run_id")
+        if not run_id:
+            raise ValueError("recovery requires a run_id")
+        session = self.get_session(session_id)
+        if session is None:
+            return False
+        db = SessionLocal()
+        try:
+            parent = db.query(DbSession).filter(DbSession.id == session_id).first()
+            if parent is None:
+                return False
+            existing = None
+            for row in db.query(DbChatMessage).filter(
+                DbChatMessage.session_id == session_id, DbChatMessage.role == "assistant"
+            ).all():
+                try:
+                    metadata = json.loads(row.meta_data or "{}")
+                except (TypeError, ValueError):
+                    continue
+                if isinstance(metadata, dict) and metadata.get("run_id") == run_id:
+                    existing = row
+                    break
+            missing_upload = reserve_message_upload_references(
+                getattr(self, "upload_handler", None), parent.owner,
+                message.content, message.metadata,
+            )
+            if missing_upload:
+                raise ValueError("Recovery references an unavailable upload")
+            if existing is None:
+                existing = DbChatMessage(id=str(uuid.uuid4()), session_id=session_id,
+                                         role="assistant", timestamp=utcnow_naive())
+                db.add(existing)
+            message.metadata.setdefault("timestamp", _message_timestamp_iso(existing.timestamp))
+            existing.content = persistable_message_content(message.content, message.metadata)
+            existing.meta_data = json.dumps(message.metadata or {})
+            db.flush()
+            parent.message_count = db.query(DbChatMessage).filter(DbChatMessage.session_id == session_id).count()
+            parent.last_accessed = parent.last_message_at = utcnow_naive()
+            message_id = existing.id
+            db.commit()
+            message.metadata["_db_id"] = message_id
+            for index, old in enumerate(session.history):
+                if (old.metadata or {}).get("run_id") == run_id:
+                    session.history[index] = message
+                    break
+            else:
+                session.history.append(message)
+            session.message_count = len(session.history)
+            return True
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
     def truncate_messages(self, session_id: str, keep_count: int) -> bool:
         """Truncate session history, keeping only the first `keep_count` messages."""
         session = self.get_session(session_id)

@@ -152,7 +152,7 @@ def test_runs_log_retention_trashes_only_old_jsonl_files(tmp_path, _data_dir):
     runs_dir = _data_dir / "runs"
     runs_dir.mkdir()
     old = runs_dir / "old-session.jsonl"
-    old.write_text('{"event": "start"}\n')
+    old.write_text('{"status": "done"}\n')
     new = runs_dir / "new-session.jsonl"
     new.write_text('{"event": "start"}\n')
     old_time = time.time() - (90 * 86400)
@@ -168,7 +168,7 @@ def test_runs_log_retention_dry_run_changes_nothing(tmp_path, _data_dir):
     runs_dir = _data_dir / "runs"
     runs_dir.mkdir()
     old = runs_dir / "old-session.jsonl"
-    old.write_text('{"event": "start"}\n')
+    old.write_text('{"status": "done"}\n')
     old_time = time.time() - (90 * 86400)
     os.utime(old, (old_time, old_time))
 

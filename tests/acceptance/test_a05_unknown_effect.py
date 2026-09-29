@@ -167,7 +167,7 @@ async def test_a_pending_effect_that_never_resolves_recovers_as_unknown_effect_a
     assert [r["session_id"] for r in recovered] == [SESSION_ID]
     assert recovered[0]["unknown_effects"] == [
         {"call_id": CALL_ID, "tool": "write_file",
-         "idempotency_key": f"{run.run_id}:{CALL_ID}"}
+         "idempotency_key": f"{run.run_id}:{CALL_ID}", "run_id": run.run_id}
     ]
     assert sm.saved == 1
     msg = sess.history[0]
