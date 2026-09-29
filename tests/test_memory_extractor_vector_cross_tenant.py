@@ -119,3 +119,49 @@ def test_vector_match_from_other_tenant_does_not_drop_users_fact(monkeypatch):
         "User B's own extracted fact was dropped because the shared vector "
         "store matched user A's memory (cross-tenant dedup)."
     )
+
+
+def test_vector_dedup_checks_later_owned_candidates(monkeypatch):
+    mm = FakeMemoryManager([
+        {"id": "a1", "text": "I live in Lisbon", "owner": "userA"},
+        {"id": "b1", "text": "My residence is Lisbon", "owner": "userB"},
+    ])
+
+    class RankedVector:
+        healthy = True
+
+        def search(self, text, k=8):
+            assert k >= 2
+            return [{"memory_id": "a1", "score": 0.94},
+                    {"memory_id": "b1", "score": 0.88}]
+
+    _install_llm_stub(monkeypatch, '["My home is in Lisbon"]')
+    extractor = _load_extractor()
+    asyncio.run(extractor.extract_and_store(
+        FakeSession(owner="userB"), mm, RankedVector(),
+        endpoint_url="http://x", model="m",
+    ))
+    assert mm.load(owner="userB") == [
+        {"id": "b1", "text": "My residence is Lisbon", "owner": "userB"}
+    ]
+
+
+def test_vector_dedup_ignores_foreign_and_stale_candidates(monkeypatch):
+    mm = FakeMemoryManager([
+        {"id": "a1", "text": "I live in Lisbon", "owner": "userA"},
+    ])
+
+    class RankedVector:
+        healthy = True
+
+        def search(self, text, k=8):
+            return [{"memory_id": "a1", "score": 0.94},
+                    {"memory_id": "deleted", "score": 0.92}]
+
+    _install_llm_stub(monkeypatch, '["My home is in Lisbon"]')
+    extractor = _load_extractor()
+    asyncio.run(extractor.extract_and_store(
+        FakeSession(owner="userB"), mm, RankedVector(),
+        endpoint_url="http://x", model="m",
+    ))
+    assert any(row["text"] == "My home is in Lisbon" for row in mm.load(owner="userB"))

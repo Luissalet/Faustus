@@ -51,6 +51,36 @@ def _memory_dicts(entries):
             yield entry
 
 
+def _vector_duplicate_id(memory_vector, text: str, existing: list, owner) -> Optional[str]:
+    """Find a semantic duplicate among memories this owner may actually use.
+
+    The vector collection is shared and has no owner filter. Its first match
+    may belong to someone else, so inspect a bounded set of ranked candidates
+    before falling back to the older single-hit interface.
+    """
+    allowed = {
+        str(row.get("id")) for row in _memory_dicts(existing)
+        if row.get("id") and (not owner or row.get("owner") in (owner, None))
+    }
+    if not allowed:
+        return None
+    if callable(getattr(memory_vector, "search", None)):
+        hits = memory_vector.search(text, k=min(64, max(8, len(allowed) * 2)))
+        for hit in hits or []:
+            if not isinstance(hit, dict):
+                continue
+            candidate_id = str(hit.get("memory_id") or "")
+            try:
+                score = float(hit.get("score") or 0)
+            except (TypeError, ValueError):
+                continue
+            if candidate_id in allowed and score >= 0.72:
+                return candidate_id
+        return None
+    candidate_id = memory_vector.find_similar(text, threshold=0.72)
+    return str(candidate_id) if candidate_id and str(candidate_id) in allowed else None
+
+
 def _load_tidy_state(memory_manager) -> dict:
     path = _tidy_state_path(memory_manager)
     try:
@@ -429,22 +459,13 @@ async def extract_and_store(
             # it does not catch failures that develop later.)
             if memory_vector and memory_vector.healthy:
                 try:
-                    existing_id = memory_vector.find_similar(fact_text, threshold=0.72)
+                    existing_id = _vector_duplicate_id(memory_vector, fact_text, existing, _owner)
                 except Exception as e:
                     logger.warning(f"Memory dedup (vector) unavailable, using text fallback: {e}")
                     existing_id = None
                 if existing_id:
-                    # The vector store is a single shared collection with no
-                    # owner metadata, so find_similar can return ANOTHER
-                    # tenant's memory. Only treat it as a duplicate when the
-                    # match is this user's own (or a legacy unowned) memory —
-                    # otherwise the user's freshly-extracted fact would be
-                    # silently dropped. Mirror the owner predicate used by the
-                    # text dedup below; cross-tenant/stale matches fall through.
-                    _match = next((e for e in existing if e.get("id") == existing_id), None)
-                    if _match is not None and (_match.get("owner") == _owner or _match.get("owner") is None):
-                        logger.debug(f"Memory dedup (vector): '{fact_text[:50]}' matches {existing_id}")
-                        continue
+                    logger.debug(f"Memory dedup (vector): '{fact_text[:50]}' matches {existing_id}")
+                    continue
 
             # Text dedup fallback: exact match + fuzzy similarity
             user_existing = [e for e in existing if e.get("owner") == _owner or e.get("owner") is None] if _owner else existing
