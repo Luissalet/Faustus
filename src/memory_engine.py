@@ -1358,6 +1358,48 @@ def evidence_dependents(ref: str, *, owner: str, project: Optional[str] = None,
                    for span in item.get("evidence") or [])]
 
 
+def retract_evidence(ref: str, *, owner: str, kind: str,
+                     project: Optional[str] = None,
+                     now: Optional[datetime] = None) -> Dict[str, Any]:
+    """Withdraw one source and forget memories it no longer supports.
+
+    Only exact ref/kind matches for the explicitly named owner are touched.
+    A memory with other evidence survives when that evidence still grounds
+    its checkable specifics; otherwise ``forget`` removes it and blocks
+    automatic resurrection of the same claim through a tombstone.
+    """
+    dependents = evidence_dependents(ref, owner=owner, project=project, kind=kind)
+    from src.memory_grounding import check_item
+
+    retained: List[str] = []
+    forgotten: List[str] = []
+    for item in dependents:
+        remaining = [span for span in item.get("evidence") or []
+                     if not (isinstance(span, dict) and span.get("ref") == ref
+                             and span.get("kind") == kind)]
+        excerpts = [str(span.get("excerpt") or "") for span in remaining
+                    if isinstance(span, dict) and str(span.get("excerpt") or "").strip()]
+        check = check_item(item.get("text"), excerpts)
+        claim = " ".join(str(item.get("text") or "").split()).casefold()
+        exact_excerpt = bool(claim) and any(
+            claim in " ".join(excerpt.split()).casefold() for excerpt in excerpts)
+        # check_item has no specifics to verify for some generic claims; in
+        # that case an unrelated surviving excerpt is not sufficient proof.
+        grounded = bool(excerpts) and (exact_excerpt or
+                                       (check["checked"] > 0 and check["grounded"]))
+        if grounded:
+            item["evidence"] = remaining
+            item["updated_at"] = _iso(now or _utcnow())
+            save_item(item)
+            retained.append(item["id"])
+        else:
+            forget(item["id"], reason=f"evidence retracted: {kind}:{ref}",
+                   ref=ref, now=now)
+            forgotten.append(item["id"])
+    return {"ref": ref, "kind": kind, "owner": owner, "project": project,
+            "retained_ids": retained, "forgotten_ids": forgotten}
+
+
 def touch(ids: Iterable[str], now: Optional[datetime] = None) -> int:
     """Bump last_accessed / access_count for items actually surfaced."""
     ids = [str(i) for i in (ids or []) if i]
