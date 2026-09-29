@@ -155,6 +155,76 @@ def manifest_key(*, vendor: str, model_id: str, endpoint_id: str = "", digest: s
     return stable_model_id_for(vendor, model_id, endpoint_id=endpoint_id)
 
 
+NATIVE_OLLAMA_PROTOCOL = "ollama_native_api_chat"
+
+
+def explicit_native_protocol(endpoint_url: str) -> str:
+    """Only an explicit transport path; a provider/root name is not a protocol."""
+    from urllib.parse import urlsplit
+    try:
+        path = urlsplit(str(endpoint_url or "")).path.rstrip("/")
+    except ValueError:
+        return ""
+    return NATIVE_OLLAMA_PROTOCOL if path in ("/api", "/api/chat") else ""
+
+
+def _calibration_scope(*, vendor: str, model_id: str, endpoint_id: str,
+                       protocol: str, digest: str = "") -> Dict[str, str]:
+    vendor, endpoint_id, protocol = str(vendor or "").strip().lower(), str(endpoint_id or "").strip(), str(protocol or "").strip()
+    if not vendor or not endpoint_id or not protocol:
+        raise ValueError("calibration requires vendor, endpoint and explicit protocol")
+    digest = str(digest or "").strip()
+    if not str(model_id or "").strip() and not (vendor == "ollama" and digest):
+        raise ValueError("calibration requires a model or an Ollama digest")
+    return {"vendor": vendor, "endpoint_id": endpoint_id, "protocol": protocol,
+            "digest": digest if vendor == "ollama" else "",
+            "model_id": "" if vendor == "ollama" and digest else str(model_id or "").strip()}
+
+
+def _scope_key(scope: Mapping[str, str]) -> str:
+    import hashlib
+    encoded = json.dumps(dict(scope), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return "calibration:v2:" + hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def calibration_key(**identity: str) -> str:
+    """Probe identity; unlike legacy weights identity it includes transport."""
+    return _scope_key(_calibration_scope(**identity))
+
+
+def get_effective_manifest(*, vendor: str, model_id: str, endpoint_id: str = "",
+                           protocol: str = "", digest: str = "",
+                           data_dir: Optional[str] = None) -> Dict[str, Any]:
+    """Only exact-scope observations; legacy contributes declarations, never probes."""
+    legacy_key = manifest_key(vendor=vendor, model_id=model_id, endpoint_id=endpoint_id, digest=digest)
+    legacy = get_manifest(legacy_key, data_dir=data_dir)
+    scope, key, scoped = None, None, {}
+    if endpoint_id and protocol:
+        scope = _calibration_scope(vendor=vendor, model_id=model_id, endpoint_id=endpoint_id, protocol=protocol, digest=digest)
+        key = _scope_key(scope)
+        scoped = get_manifest(key, data_dir=data_dir)
+    matched = bool(scope and scoped.get("calibration_scope") == scope)
+    announced = scoped.get("announced") if matched else legacy.get("announced")
+    announced = dict(announced or {})
+    tested = dict(scoped.get("tested") or {}) if matched else {}
+    return {"announced": announced, "tested": tested,
+            "degraded": compute_degraded(announced, tested),
+            "updated_at": scoped.get("updated_at", "") if matched else legacy.get("updated_at", ""),
+            "calibration_key": key, "calibration_scope": scope,
+            "evidence_scope": "exact" if matched else "unobserved",
+            "announcement_manifest_key": key if matched else (legacy_key if legacy.get("announced") else None),
+            "legacy_manifest_key": legacy_key}
+
+
+def save_scoped_tested(*, vendor: str, model_id: str, endpoint_id: str, protocol: str,
+                       tested: Mapping[str, Any], announced: Mapping[str, Any], digest: str = "",
+                       data_dir: Optional[str] = None) -> Dict[str, Any]:
+    scope = _calibration_scope(vendor=vendor, model_id=model_id, endpoint_id=endpoint_id, protocol=protocol, digest=digest)
+    save_tested(_scope_key(scope), tested, announced=announced, data_dir=data_dir, _calibration_scope=scope)
+    return get_effective_manifest(vendor=vendor, model_id=model_id, endpoint_id=endpoint_id,
+                                  protocol=protocol, digest=digest, data_dir=data_dir)
+
+
 def _manifest_view(entry: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
     entry = entry if isinstance(entry, Mapping) else {}
     return {
@@ -162,6 +232,7 @@ def _manifest_view(entry: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
         "tested": dict(entry.get("tested") or {}),
         "degraded": list(entry.get("degraded") or []),
         "updated_at": str(entry.get("updated_at") or ""),
+        **({"calibration_scope": dict(entry["calibration_scope"])} if isinstance(entry.get("calibration_scope"), Mapping) else {}),
     }
 
 
@@ -258,6 +329,7 @@ def save_tested(
     announced: Mapping[str, Any],
     data_dir: Optional[str] = None,
     deployment_id: Optional[str] = None,
+    _calibration_scope: Optional[Mapping[str, str]] = None,
 ) -> Dict[str, Any]:
     """Merge freshly-tested keys into whatever was calibrated before — a
     calibration run that skipped `vision` (not resident long enough, or not
@@ -298,6 +370,8 @@ def save_tested(
             else:
                 merged[capability] = result
         entry["tested"] = merged
+        if _calibration_scope is not None:
+            entry["calibration_scope"] = dict(_calibration_scope)
         entry["announced"] = dict(announced)
         entry["degraded"] = compute_degraded(announced, merged)
         entry["updated_at"] = _utcnow_iso()

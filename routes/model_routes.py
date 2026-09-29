@@ -2305,17 +2305,18 @@ def setup_model_routes(model_discovery):
 
             candidates: List["mc.FitCandidateModel"] = []
             if is_local_ollama:
-                digests = _ollama_digests_for_root(base)
-                key = mcal.manifest_key(vendor="ollama", model_id=model, endpoint_id=endpoint_id,
-                                         digest=digests.get(model, ""))
-                manifest = mcal.get_manifest(key)
+                protocol = mcal.explicit_native_protocol(ep.base_url or "")
+                # normalize_base retains /api; tags are rooted alongside it.
+                digest_root = base[:-4].rstrip("/") if protocol and base.endswith("/api") else base
+                digests = _ollama_digests_for_root(digest_root)
+                manifest = mcal.get_effective_manifest(vendor="ollama", model_id=model,
+                    endpoint_id=endpoint_id, protocol=protocol, digest=digests.get(model, ""))
                 assertions: Dict[str, "mc.CapabilityAssertion"] = mc.assertions_from_calibration_manifest(manifest)
                 for sib in sibling_ids[:25]:
                     if sib == model:
                         continue
-                    sib_key = mcal.manifest_key(vendor="ollama", model_id=sib, endpoint_id=endpoint_id,
-                                                 digest=digests.get(sib, ""))
-                    sib_manifest = mcal.get_manifest(sib_key)
+                    sib_manifest = mcal.get_effective_manifest(vendor="ollama", model_id=sib,
+                        endpoint_id=endpoint_id, protocol=protocol, digest=digests.get(sib, ""))
                     candidates.append(mc.FitCandidateModel(
                         model_id=sib, endpoint_id=endpoint_id,
                         assertions=mc.assertions_from_calibration_manifest(sib_manifest),

@@ -284,16 +284,18 @@ def test_the_fit_explain_route_is_registered_and_authenticated():
 def test_local_ollama_model_explained_against_its_calibration_manifest(monkeypatch, tmp_path):
     router = mr.setup_model_routes(model_discovery=None)
     endpoint = _endpoint_for(router)
-    rows = [_Ep(id="local-ollama", name="Ollama", base_url="http://127.0.0.1:11434/v1",
+    rows = [_Ep(id="local-ollama", name="Ollama", base_url="http://127.0.0.1:11434/api/chat",
                 api_key=None, is_enabled=True, endpoint_kind="local", supports_tools=None,
                 cached_models='["broken-model", "good-model"]', hidden_models=None, pinned_models=None)]
     monkeypatch.setattr(mr, "SessionLocal", lambda: _Db(rows))
     monkeypatch.setattr(mr, "httpx", SimpleNamespace(get=lambda *a, **k: (_ for _ in ()).throw(OSError("no tags"))))
 
-    key = model_calibration.manifest_key(vendor="ollama", model_id="broken-model", endpoint_id="local-ollama")
-    model_calibration.save_tested(key, {model_calibration.TEST_TOOL_CALLING: {"ok": False}}, announced={})
-    good_key = model_calibration.manifest_key(vendor="ollama", model_id="good-model", endpoint_id="local-ollama")
-    model_calibration.save_tested(good_key, {model_calibration.TEST_TOOL_CALLING: {"ok": True}}, announced={})
+    model_calibration.save_scoped_tested(vendor="ollama", model_id="broken-model", endpoint_id="local-ollama",
+        protocol=model_calibration.NATIVE_OLLAMA_PROTOCOL,
+        tested={model_calibration.TEST_TOOL_CALLING: {"ok": False}}, announced={})
+    model_calibration.save_scoped_tested(vendor="ollama", model_id="good-model", endpoint_id="local-ollama",
+        protocol=model_calibration.NATIVE_OLLAMA_PROTOCOL,
+        tested={model_calibration.TEST_TOOL_CALLING: {"ok": True}}, announced={})
 
     data = asyncio.run(endpoint(_request(), model="broken-model", endpoint_id="local-ollama", needs="tools"))
     assert data["ok"] is False

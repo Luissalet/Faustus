@@ -188,12 +188,11 @@ def footprint_for_deployment(
 # ── legacy calibration bridge (read-only) ───────────────────────────────────
 
 def legacy_calibration_for(model_spec: Optional[Mapping[str, Any]], deployment: Optional[Mapping[str, Any]]) -> Optional[Dict[str, Any]]:
-    """Whatever `src/model_calibration.py` has on file for this weights/
-    endpoint pair, by the SAME `manifest_key` it has always used — never
-    rewritten, never reinterpreted (CONTRATO rule 1: "nunca reinterpretes
-    datos guardados"). `None` when there is genuinely nothing on file (an
-    empty dict from `get_manifest` with no announced/tested entries), so a
-    caller can tell "no legacy record" apart from "an empty one exists"."""
+    """Scoped observations plus legacy declarations, without rewriting history.
+
+    A deployment without explicit native transport cannot claim native probes.
+    Raw legacy records remain available through calibration.get_manifest.
+    """
     if not model_spec:
         return None
     vendor = str(model_spec.get("vendor") or "")
@@ -203,7 +202,9 @@ def legacy_calibration_for(model_spec: Optional[Mapping[str, Any]], deployment: 
     if not vendor or not model_id:
         return None
     key = calib.manifest_key(vendor=vendor, model_id=model_id, endpoint_id=endpoint_id, digest=digest)
-    manifest = calib.get_manifest(key)
+    protocol = calib.explicit_native_protocol(str((deployment or {}).get("endpoint_url") or "")) if vendor == "ollama" else ""
+    manifest = calib.get_effective_manifest(vendor=vendor, model_id=model_id,
+        endpoint_id=endpoint_id, protocol=protocol, digest=digest)
     if not manifest.get("announced") and not manifest.get("tested"):
         return None
     return {"manifest_key": key, **manifest}

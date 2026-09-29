@@ -1660,15 +1660,17 @@ def setup_local_models_routes() -> APIRouter:
         announced = mcal.announced_from_ollama(record, context_length=ctx)
         digest = _digest_for(ep["root"], name)
         key = mcal.manifest_key(vendor="ollama", model_id=name, endpoint_id=ep["id"], digest=digest)
-        return announced, key
+        return announced, key, digest
 
     @caps_router.get("/api/models/{name:path}/capabilities")
     async def api_model_capabilities(name: str, request: Request, endpoint_id: Optional[str] = Query(None)):
         require_user(request)
         name = validate_model_name(name)
         ep = _pick_endpoint(endpoint_id, _endpoints_for(request))
-        announced, key = await asyncio.to_thread(_resolve_announced, ep, name)
+        announced, key, digest = await asyncio.to_thread(_resolve_announced, ep, name)
         manifest = mcal.save_announced(key, announced)
+        manifest = mcal.get_effective_manifest(vendor="ollama", model_id=name, endpoint_id=ep["id"],
+            protocol=mcal.NATIVE_OLLAMA_PROTOCOL, digest=digest)
         return {"model": name, "endpoint_id": ep["id"], "stable_model_id": key, **manifest}
 
     @caps_router.post("/api/models/{name:path}/calibrate")
@@ -1676,7 +1678,7 @@ def setup_local_models_routes() -> APIRouter:
         require_admin(request)
         name = validate_model_name(name)
         ep = _pick_endpoint(endpoint_id, _endpoints_for(request))
-        announced, key = await asyncio.to_thread(_resolve_announced, ep, name)
+        announced, key, digest = await asyncio.to_thread(_resolve_announced, ep, name)
         try:
             loaded = await asyncio.to_thread(_ps, ep["root"])
         except Exception as e:  # noqa: BLE001
@@ -1693,7 +1695,9 @@ def setup_local_models_routes() -> APIRouter:
                 return mcal.run_calibration(client, ep["root"], name, announced=announced)
 
         tested = await asyncio.to_thread(_run)
-        manifest = mcal.save_tested(key, tested, announced=announced)
+        manifest = mcal.save_scoped_tested(vendor="ollama", model_id=name, endpoint_id=ep["id"],
+            protocol=mcal.NATIVE_OLLAMA_PROTOCOL, digest=digest,
+            tested=tested, announced=announced)
         return {"model": name, "endpoint_id": ep["id"], "stable_model_id": key, **manifest}
 
     # ── SET-02: cost + privacy, per endpoint (the model picker's informative
