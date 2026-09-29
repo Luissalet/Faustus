@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import json
+import math
 import logging
 import os
 import re
@@ -1551,9 +1552,20 @@ async def _run_subagent(
     # does, once, over everything), and do not need the repo map twice.
     _worker_opts = dict(harness_options or {})
     _worker_opts.update({"checkpoints": False, "run_tests": False, "review_model": "off"})
-    # Tokens: per-round usage arrives in `round_info` while the worker runs
-    # (the tick shows it live); the final `metrics` totals win when present.
-    _tokens_from_metrics = False
+    # A retry reuses this run. Final metrics replace round estimates for
+    # THIS invocation only; prior attempts remain spent and must be billed.
+    _prior_input_tokens = run.input_tokens
+    _prior_output_tokens = run.output_tokens
+    _input_from_metrics = False
+    _output_from_metrics = False
+
+    def _token_count(value) -> Optional[int]:
+        # Provider usage can omit either dimension. Missing/malformed is not
+        # a measured zero and must not erase usage already observed this try.
+        if (not isinstance(value, (int, float)) or isinstance(value, bool)
+                or value < 0 or (isinstance(value, float) and not math.isfinite(value))):
+            return None
+        return int(value)
 
     def _steers() -> List[Dict[str, str]]:
         return pending_steers(child_sid)
@@ -1612,9 +1624,10 @@ async def _run_subagent(
                 await emit({"event": "tool", "tool": ev.get("tool"), "ok": ok, "phase": "done", "output": _short(ev.get("output"), 120)})
             elif et == "round_info":
                 run.rounds = max(run.rounds, int(ev.get("round") or 0))
-                if not _tokens_from_metrics:
-                    run.input_tokens += int(ev.get("input_tokens") or 0)
-                    run.output_tokens += int(ev.get("output_tokens") or 0)
+                if not _input_from_metrics:
+                    run.input_tokens += _token_count(ev.get("input_tokens")) or 0
+                if not _output_from_metrics:
+                    run.output_tokens += _token_count(ev.get("output_tokens")) or 0
                 await emit({"event": "round", "round": run.rounds})
             elif et == "steer":
                 run.steered += 1
@@ -1635,11 +1648,14 @@ async def _run_subagent(
                 run.final_metrics = ev.get("data") or {}
                 if run.stop_reason == "unknown":
                     run.stop_reason = ((run.final_metrics.get("harness") or {}).get("stop_reason")) or "complete"
-                _in, _out = run.final_metrics.get("input_tokens"), run.final_metrics.get("output_tokens")
-                if isinstance(_in, (int, float)) or isinstance(_out, (int, float)):
-                    run.input_tokens = int(_in or 0)
-                    run.output_tokens = int(_out or 0)
-                    _tokens_from_metrics = True
+                _in = _token_count(run.final_metrics.get("input_tokens"))
+                _out = _token_count(run.final_metrics.get("output_tokens"))
+                if _in is not None:
+                    run.input_tokens = _prior_input_tokens + _in
+                    _input_from_metrics = True
+                if _out is not None:
+                    run.output_tokens = _prior_output_tokens + _out
+                    _output_from_metrics = True
             elif et in ("rounds_exhausted", "budget_exceeded", "loop_breaker_triggered", "intent_nudge_exhausted"):
                 await emit({"event": "guard", "kind": et})
             elif et == "agent_terminal":
