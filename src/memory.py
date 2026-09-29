@@ -51,7 +51,7 @@ class MemoryManager:
         
     def extract_memory_from_chat(self, chat_history: List[Dict], session_id: str = None) -> List[Dict]:
         """
-        Extract memory entries from chat history as a fallback when LLM fails.
+        Extract explicit user-authored memory lists when the LLM fails.
         
         Args:
             chat_history: List of chat messages with 'role' and 'content' keys
@@ -65,11 +65,17 @@ class MemoryManager:
         for msg in chat_history:
             if not isinstance(msg, dict):
                 continue
-            if msg.get("role") == "assistant":
+            if msg.get("role") == "user":
                 content = str(msg.get("content", ""))
                 lines = content.split('\n')
+                # An assistant's recap is not evidence of what the user said.
+                # Without a model, only an explicit user request to remember
+                # a list is safe enough to offer as memory suggestions.
+                if not re.search(r"\b(?:remember|memorize|memorise|recuerda|memoriza|guarda en memoria)\b",
+                                 lines[0], re.I):
+                    continue
                 
-                for line in lines:
+                for line in lines[1:]:
                     line = line.strip()
                     # Look for bullet points or numbered lists that might contain memories
                     if re.match(r'^[-*•]|\d+\.', line):
@@ -87,12 +93,6 @@ class MemoryManager:
                                     "timestamp": int(datetime.now().timestamp()),
                                     "session_id": session_id
                                 })
-                    # If we see a heading that suggests memories
-                    elif re.search(r'memory|fact|note|remember', line, re.I):
-                        pass
-                    # If we see a clear separator or end
-                    elif re.match(r'^={3,}|-{3,}|_{3,}', line):
-                        pass
                         
         return memories
         

@@ -252,7 +252,9 @@ def setup_memory_routes(memory_manager: MemoryManager, session_manager: SessionM
                 "useful factual statements, contacts, addresses, phone numbers, or other information that the user "
                 "might want to remember for future interactions. Return each piece of information as a JSON object "
                 "with a 'text' field. For example: [{'text': 'Alice lives at 123 Main St'}, {'text': 'Bob works at Acme Corp'}]. "
-                "Only include information that is specific and likely to be useful later."
+                "Only include information that is specific and likely to be useful later. "
+                "Attribute a fact to the speaker who stated it: assistant responses and quoted claims "
+                "are not evidence that the user believes or owns those facts. Return [] when uncertain."
             ),
         }
         messages = [system_msg] + sess.get_context_messages()

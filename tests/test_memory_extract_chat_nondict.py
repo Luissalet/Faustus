@@ -12,4 +12,4 @@ def test_extract_memory_from_chat_skips_non_dict_messages(tmp_path):
         {"role": "user", "content": "hi"},
     ]
     out = m.extract_memory_from_chat(history)
-    assert any(e["text"] == "remember to buy milk" for e in out)
+    assert out == []
