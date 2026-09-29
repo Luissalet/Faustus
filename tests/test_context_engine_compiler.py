@@ -194,7 +194,9 @@ def test_a_coding_turn_in_a_workspace_asks_for_the_code_lanes():
 
 
 @pytest.mark.parametrize("query,workspace,expected", [
-    ("buenos dias", "", "chat"),
+    ("buenos dias", "", "greeting"),
+    ("hello!", "", "greeting"),
+    ("hola, recuerda mi preferencia", "", "chat"),
     ("what is the capital of France", "/repo", "chat"),
     ("the latest contest results", "/repo", "chat"),      # not "test"
     ("fix the traceback in src/app.py", "/repo", "code_change"),
@@ -209,6 +211,26 @@ def test_the_signal_table_classifies_without_a_model(query, workspace, expected)
                        execution=ContextExecution(owner="luis", session_id="s1",
                                                   workspace=workspace))
     assert planner.classify_intent(request) == expected
+
+
+def test_a_standalone_greeting_skips_optional_search_but_keeps_history():
+    request = _chat_request(task=ContextTask(query="¡Hola!"))
+    plan = planner.plan(request, available=(
+        "memory_engine", "personal_memory", "documents", "code_index", "sessions"))
+
+    assert plan.intent == "greeting"
+    assert "retrieved_memory" not in plan.sections
+    assert "recent_messages" in plan.sections
+    assert plan.source_ids == ("sessions",)
+    assert "memory_engine" in plan.skipped
+    assert "personal_memory" in plan.skipped
+
+
+def test_a_greeting_with_a_request_still_retrieves_memory():
+    request = _chat_request(task=ContextTask(query="Hola, recuerda mi preferencia"))
+    plan = planner.plan(request, available=("memory_engine", "sessions"))
+    assert plan.intent == "chat"
+    assert "memory_engine" in plan.source_ids
 
 
 def test_a_declared_intent_beats_every_signal():

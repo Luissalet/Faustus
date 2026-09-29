@@ -196,7 +196,7 @@ def test_a_casual_chat_does_not_wake_the_delta_store():
     database open nobody asked for."""
     plan = planner.plan(_request(intent="chat", query="buenos dias"),
                         available=tuple(planner.known_sources()))
-    assert plan.intent == "chat"
+    assert plan.intent == "greeting"
     assert "deltas" not in plan.source_ids
     assert plan.skipped["deltas"], "deltas was skipped without a reason"
 

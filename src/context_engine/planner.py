@@ -52,6 +52,7 @@ workspace + REVIEW_SIGNALS   `review`
 workspace + CODE_SIGNALS or  `code_change`
 a path-shaped token
 RESEARCH_SIGNALS             `research`
+standalone greeting in act   `greeting` — history, no optional search
 nothing above                `chat` — and a chat consults neither RAG
                              nor the code index
 ===========================  ==========================================
@@ -130,6 +131,14 @@ RESEARCH_SIGNALS: Tuple[str, ...] = (
     "research", "investiga", "investigar", "investigación", "investigacion",
     "paper", "papers", "bibliografia", "bibliografía", "state of the art",
     "survey", "benchmark", "compara", "comparar", "sources", "fuentes",
+)
+
+# Only a standalone greeting can skip optional retrieval.  A greeting followed
+# by a request ("hola, recuerda mi preferencia") must keep the ordinary plan.
+GREETING_ONLY = re.compile(
+    r"^\s*[¡¿]?(?:hola|hello|hi|hey|buenos d[ií]as|buenas tardes|buenas noches|"
+    r"good morning|good afternoon|good evening)\s*[.!?]*\s*$",
+    re.IGNORECASE,
 )
 
 #: A token that looks like a path or a source file.  Deliberately narrow: the
@@ -262,6 +271,8 @@ SCOPED_SOURCE_IDS: Tuple[str, ...] = ("capsules", "shared_memory")
 BASE_SECTIONS: Tuple[str, ...] = tuple(MANDATORY_SECTIONS) + ("recent_messages",)
 
 INTENT_SECTIONS: Dict[str, Tuple[str, ...]] = {
+    # A pure greeting needs the conversation, not a memory or document search.
+    "greeting": (),
     # A conversation gets history and memory.  No RAG, no code map: this line
     # is the whole of rule 3, and tests/test_context_engine_compiler.py pins it.
     "chat": ("retrieved_memory",),
@@ -389,6 +400,8 @@ def classify_intent(request: ContextRequest, *, hint: str = "") -> str:
             return "code_change"
         if _RESEARCH.search(query):
             return "research"
+        if (request.task.phase or "act") == "act" and GREETING_ONLY.fullmatch(query):
+            return "greeting"
     except Exception:  # noqa: BLE001 - classification may never break a turn
         logger.debug("context intent classification failed; using %r", DEFAULT_INTENT)
     return DEFAULT_INTENT
@@ -552,6 +565,7 @@ __all__ = [
     "DEFAULT_INTENT", "DEFAULT_PROFILE_ID", "TIMEOUT_SETTING",
     "DEFAULT_TIMEOUT_MS", "VOICE_TIMEOUT_FACTOR",
     "MEDIA_SIGNALS", "REVIEW_SIGNALS", "CODE_SIGNALS", "RESEARCH_SIGNALS",
+    "GREETING_ONLY",
     "PATH_HINT", "SOURCE_SECTIONS", "PERSONAL_SOURCE_IDS",
     "PROJECT_SOURCE_IDS", "WORKSPACE_SOURCE_IDS", "SESSION_SOURCE_IDS",
     "SCOPED_SOURCE_IDS",

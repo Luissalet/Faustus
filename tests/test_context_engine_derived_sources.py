@@ -203,7 +203,7 @@ def test_a_casual_chat_wakes_neither_the_code_index_nor_the_recipe_book():
                        workspace="/repo", session_id="s1")
     plan = planner.plan(request, available=tuple(planner.known_sources()))
 
-    assert plan.intent == "chat"
+    assert plan.intent == "greeting"
     for expensive in ("code_index", "multimodal"):
         assert expensive not in plan.source_ids
         assert plan.skipped[expensive], f"{expensive} was skipped without a reason"
