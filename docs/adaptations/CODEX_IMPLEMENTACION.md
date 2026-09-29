@@ -17,12 +17,32 @@ Prueba decisiva: el runner real escribe un señuelo temporal fuera del cwd del g
 | ID | Estado |
 |---|---|
 | H01 | `664894a5`: autoridad host explícita, 16 pruebas; confinamiento pendiente |
-| H02 | `5f781023`: política solicitada/efectiva y motivo, 32 pruebas y 5 omitidas sin Docker. Modo obligatorio en preparación; backend Windows pendiente |
-| H03 | En implementación acotada: registro previo durable para envíos de correo dentro de runs rastreados; otras rutas pendientes |
-| H04 | `0572e1af`: 55 pruebas de normalización→evento→reinicio, partial/unknown preservados. UI completa, errores genéricos e identidad de intentos pendientes |
-| H05 | `7c558eee`: 262 pruebas, round-trip de 220 herramientas y MCP; `155fad3d`: 58 pruebas de errores numéricos PDF. Autoridad ejecutable común aún pendiente |
-| H06–H24 | Pendientes conforme al análisis original; no declarar cerrados por este documento |
+| H02 | `5f781023`: política solicitada/efectiva. `4fe0d52e`: salida Docker ambigua conserva incertidumbre. `5ad626b9`: modo opt-in required rechaza fallback host para bash/python/powershell, política capturada durante despacho; 124 pruebas y 5 Docker omitidas. Backend Windows y probes reales pendientes |
+| H03 | `fc435eae`: intención sincronizada antes del correo con call_id y run activo, aliases MCP incluidos; 64 pruebas ampliadas y 29 finales. Outbox independiente, rutas no trazadas e idempotencia externa pendientes |
+| H04 | `0572e1af`: 55 pruebas de normalización→evento→reinicio. `a40b8bcb`: productores propagan timeout real, 71 pruebas y 7 omitidas; exit 124 voluntario no implica timeout. `1b2537c9`: Studio conserva parcial/desconocido en directo e historial, 33 pruebas, tipos/build y render aislado correctos. Errores genéricos e identidad de intentos pendientes |
+| H05 | `7c558eee`: 262 pruebas, round-trip de 220 herramientas y MCP; `155fad3d`: 58 pruebas de errores numéricos PDF; `28b2c2b0`: schemas anidados independientes entre origen/snapshot/exportación, 118 pruebas. Autoridad ejecutable común aún pendiente |
+| H08 | `b7089ff5`: compactación de progreso por call_id conserva llamadas distintas, 52 pruebas y recuperación de traza solo desde disco. Ledger independiente, retención entre runs e identidad de subagentes pendientes |
+| H15 | `30e71fc8`: comentarios históricos de wiring y bridge corregidos contra callers actuales; AST sin docstring idéntico. Alcance de dos módulos completado |
+| H06–H07, H09–H14, H16–H24 | Pendientes conforme al análisis original; no declarar cerrados por este documento |
 
 Los pilotos de reinicio de procesos (`403756a9`) y memoria (`9e0e8e50`) ya aportan evidencia a H11/H20/H24, pero no completan esos cambios transversales.
 
 Informes de entregables: [H02](CODEX_H02_POLICY_METADATA_2026-09-29.md), [H04](CODEX_H04_EFFECT_RESULTS.md), [H05](CODEX_H05_RUNTIME_ROUNDTRIP_2026-09-29.md). Cada uno conserva referencia original, pruebas y límites. No repetir estas inspecciones salvo regresión o pregunta nueva.
+
+Revisión cruzada: [incertidumbre Docker](CODEX_H02_DISPATCH_UNCERTAINTY_2026-09-29.md), [intención de correo](CODEX_H03_DURABLE_EMAIL_INTENT.md) y [timeouts de comandos](CODEX_H04_COMMAND_TIMEOUTS_2026-09-29.md). Los receptores de correo son sintéticos; no se enviaron correos reales. La salida Docker 126 se probó con un doble que produce un efecto antes de devolverla; falta el daemon para verificar el confinamiento real.
+
+[Presentación Studio](CODEX_H04_UI_OUTCOMES.md): estados inciertos y parciales tienen etiqueta explícita y aviso, también tras restaurar historial y completar aprobaciones. Render de ToolRail con fixtures sin backend a anchura de escritorio y contenedor de 390 px; no equivale a un recorrido completo con SSE real.
+
+Nuevos informes: [modo required](CODEX_H02_REQUIRED_MODE_2026-09-29.md),
+[aislamiento de schemas](CODEX_H05_SCHEMA_SNAPSHOT_ISOLATION.md),
+[identidad en replay](CODEX_H08_REPLAY_CALL_IDENTITY.md) y
+[comentarios actuales](CODEX_H15_CURRENT_WIRING.md). Ningún cambio activa opciones
+en la configuración personal. `required` cubre las herramientas de comandos
+indicadas, no confina Code Mode ni las demás herramientas host.
+
+## Comprobación integrada
+
+Selección conjunta de 19 módulos de pruebas: H01/Code Mode, H02/sandbox,
+H03/intención, H04/normalización/presentación, H05/catálogo, H08/replay y
+persistencia/observabilidad de runs. Resultado: **167 correctas, 5 omitidas por
+Docker, 19,92 s**. No equivale a la suite completa ni a ejecución con un LLM real.
