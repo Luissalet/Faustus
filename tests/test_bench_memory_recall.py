@@ -43,6 +43,8 @@ def test_run_rejects_unknown_embedder():
 def test_lifecycle_probe_covers_correction_resurrection_and_forgetting():
     report = memory_recall.run_lifecycle()
     assert report
+    assert report["future_absent_before_start"]
+    assert report["future_present_after_start"]
     assert all(report.values()), report
     assert memory_recall.run_lifecycle() == report
 

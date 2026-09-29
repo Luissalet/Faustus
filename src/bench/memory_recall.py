@@ -581,7 +581,7 @@ def run(k_values: Sequence[int] = (1, 3, 5), embedder: str = "auto",
 
 
 def run_lifecycle() -> Dict[str, bool]:
-    """Exercise a real correction and forgetting, including vector removal.
+    """Exercise correction, forgetting and future validity through real search.
 
     The static corpus uses pre-deprecated facts; this probe also checks the
     mutation path that produces that state in normal use. It runs in the same
@@ -612,12 +612,29 @@ def run_lifecycle() -> Dict[str, bool]:
             memory_engine.forget(replacement["id"], now=ANCHOR)
         after_forget = recalled_ids()
 
+        future_query = "Alice Atlas on-call rotation"
+        future = memory_engine.add_item(
+            "Alice's Atlas on-call rotation starts next month.",
+            owner=OWNER, project=PROJECT, trust_class="agent_assertion",
+            valid_from=_dt(10).isoformat(), now=ANCHOR,
+        )
+
+        def future_recalled(at: datetime) -> bool:
+            return any(str(hit["id"]) == future["id"] for hit in memory_engine.search(
+                future_query, owner=OWNER, project=PROJECT, k=5, now=at,
+                touch_hits=False))
+
+        future_absent_before_start = not future_recalled(ANCHOR)
+        future_present_after_start = future_recalled(_dt(11))
+
     return {
         "original_recalled_before_correction": before,
         "replacement_recalled_after_correction": bool(replacement and replacement["id"] in after_correction),
         "original_absent_after_correction": old["id"] not in after_correction,
         "original_resurrection_blocked": resurrection_blocked,
         "replacement_absent_after_forget": bool(replacement and replacement["id"] not in after_forget),
+        "future_absent_before_start": future_absent_before_start,
+        "future_present_after_start": future_present_after_start,
     }
 
 
