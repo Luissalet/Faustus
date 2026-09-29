@@ -20,9 +20,9 @@ Prueba decisiva: el runner real escribe un señuelo temporal fuera del cwd del g
 | H02 | `5f781023`: política solicitada/efectiva. `4fe0d52e`: salida Docker ambigua conserva incertidumbre. `5ad626b9`: modo opt-in required rechaza fallback host para bash/python/powershell, política capturada durante despacho; 124 pruebas y 5 Docker omitidas. Backend Windows y probes reales pendientes |
 | H03 | `fc435eae`: intención sincronizada antes del correo con call_id y run activo, aliases MCP incluidos; 64 pruebas ampliadas y 29 finales. Outbox independiente, rutas no trazadas e idempotencia externa pendientes |
 | H04 | `0572e1af`: 55 pruebas de normalización→evento→reinicio. `a40b8bcb`: productores propagan timeout real, 71 pruebas y 7 omitidas; exit 124 voluntario no implica timeout. `1b2537c9`: Studio conserva parcial/desconocido en directo e historial, 33 pruebas, tipos/build y render aislado correctos. Errores genéricos e identidad de intentos pendientes |
-| H05 | `7c558eee`: round-trip de 220 herramientas y MCP; `155fad3d`: errores numéricos PDF; `28b2c2b0`: schemas independientes entre origen/snapshot/exportación. `3bfc22e2`: contrato único argumentos/schema/parser PDF, 122 pruebas. `fdce5d9e`: captura ejecutor/contrato PDF por llamada con revocación vigente, 172 pruebas; autoridad común general y snapshot por paso pendientes |
+| H05 | `7c558eee`: round-trip de 220 herramientas y MCP; `155fad3d`: errores numéricos PDF; `28b2c2b0`: schemas independientes entre origen/snapshot/exportación. `3bfc22e2`: contrato único argumentos/schema/parser PDF, 122 pruebas. `fdce5d9e`: captura ejecutor/contrato PDF por llamada con revocación vigente, 172 pruebas. `a7428aea`: structural_rewrite rechaza apply no booleano antes del backend; 69 pruebas. Autoridad común general y snapshot por paso pendientes |
 | H06 | `0f8e6dc4`: recibo shadow del schema preparado por candidato, comparado con binding PDF y propagado a eventos; 56 pruebas finales. Ronda/candidato obsoletos no se comparan. Snapshot de paso y autoridad general pendientes |
-| H08 | `b7089ff5`: compactación de progreso por call_id conserva llamadas distintas, 52 pruebas y recuperación de traza solo desde disco. `db99abd9`: archivos exclusivos por run, recuperación multirun con commit SQLite confirmado y purga/retención, 114 pruebas. Ledger independiente e identidad de subagentes pendientes |
+| H08 | `b7089ff5`: compactación de progreso por call_id conserva llamadas distintas, 52 pruebas y recuperación de traza solo desde disco. `db99abd9`: archivos exclusivos por run, recuperación multirun con commit SQLite confirmado y purga/retención, 114 pruebas. `ddbf3a6f`: historial de workers/reviewer conserva identidad de invocación, delegación y run padre activo; 78 pruebas finales. Ledger independiente y contexto causal del caller pendientes |
 | H09 | `1a418269`: reutilización exige ámbito/política/solicitud coincidentes, 53 pruebas; `b63f1e5b`: recibos de skills renderizadas/ensambladas y uso solo de cuerpos incluidos, 50 pruebas; versiones universales de fuentes y entrega efectiva pendientes |
 | H10 | `6127bd24`: fuentes externas marcadas no se promueven a restricciones/objetivo preservado. `ebf7a856`: persistencia inmediata/diferida con SQLite y tres compactaciones/reaperturas, 99 pruebas. Checkpoint portable y actualización de menciones históricas de aprobaciones pendientes |
 | H11 | `3338166d`: drenaje por bloques UTF-8, salida/progreso acotados y actividad sin LF; 91 pruebas y 3 omitidas. `6305ed06`: Code Mode drena stderr, 26 pruebas; `6b19a2fe`: frames grandes dentro de cuota y rechazo explícito del exceso, 32 pruebas. Manager/stdin/handles durables pendientes |
@@ -32,7 +32,7 @@ Prueba decisiva: el runner real escribe un señuelo temporal fuera del cwd del g
 | H15 | `30e71fc8`: comentarios históricos de wiring y bridge corregidos contra callers actuales; AST sin docstring idéntico. Alcance de dos módulos completado |
 | H16 | `303d4f63`: estados inciertos y llamadas anunciadas sin resultado no verifican progreso/fuentes; 191 pruebas finales. `2d32937a`: Enseñame registra éxito normalizado, 41 pruebas. `dbdf0987`: worker conserva evidencia hasta SQLite/reapertura, 120 pruebas. `5de909f8`: Code Mode propaga incertidumbre interna con recibos acotados, 23 pruebas. Verificación transversal e incertidumbre de host directo pendientes |
 | H19 | `d7600e54`: steering sin run/sesión resoluble no se difunde a todos los workers; 61 pruebas. Recibos durables/recuperación pendientes |
-| H21 | `54fea979`: instrucciones se refrescan por contenido acotado, no mtime; 66 pruebas y 1 POSIX omitida. `b63f1e5b`: recibos L1 ensamblados. Jerarquía, snapshot aprobado atómico y procedencia completa/entrega de skills pendientes |
+| H21 | `54fea979`: instrucciones se refrescan por contenido acotado, no mtime; 66 pruebas y 1 POSIX omitida. `b63f1e5b`: recibos L1 ensamblados. `da728abe`: prompt y compactor renderizan los bytes capturados usados por la comprobación de aprobación; 90 pruebas finales coordinador. Jerarquía, reglas/objetivos fuera del digest, transacción de directorio y procedencia completa/entrega de skills pendientes |
 | H24 | `92c6ebee`: elimina contaminación global de imports en fixture de skills; mismo orden integrado 252 pruebas correctas tras timeout previo. Banco pareado con modelos y aislamiento general pendientes |
 | H20 | `42a29971`: identidad de mutación compartida en deduplicación/conflictos; ámbitos y sesiones distintos no se mezclan, origen de sesión en proyecto permite consolidación. 30 pruebas finales de ámbito/vigencia/propietario. Leases y atomicidad concurrente pendientes |
 | H07, H17–H18, H22–H23 | Pendientes conforme al análisis original; no declarar cerrados por este documento |
@@ -127,6 +127,21 @@ y límites. Revisión del coordinador: **146 pruebas conjuntas correctas, 16,84 
 y **30 correctas, 2,63 s** de curator/aislamiento/vigencia sobre el código final.
 Ninguna petición real a modelos ni acceso a memoria personal.
 
-Siguiente evaluación: snapshot aprobado de instrucciones H21 e identidad causal
-de subagentes H08. No confundir evaluación con implementación. Leases H20,
-renderer canónico H12 y demás pendientes transversales siguen abiertos.
+Esas evaluaciones dieron lugar a `da728abe` (H21) y `ddbf3a6f` (H08).
+No confundir estos pilotos con cierre transversal. Leases H20,
+renderer canónico H12 y demás pendientes siguen abiertos.
+
+### Checkpoint: contrato booleano, identidad y bytes aprobados
+
+- `a7428aea`: [rewrite estructural](CODEX_H05_STRUCTURAL_REWRITE_BOOLEAN.md),
+  69 pruebas correctas en 2,99 s; `apply="false"` no selecciona escritura.
+- `ddbf3a6f`: [identidad de workers](CODEX_H08_SUBAGENT_CAUSAL_IDENTITY.md),
+  78 correctas en 36,22 s con board, retries y outcomes; sin padre terminal ficticio.
+- `da728abe`: [snapshot aprobado](CODEX_H21_APPROVED_SNAPSHOT.md),
+  90 correctas finales en 7,75 s con reglas/compacción; 171 y 1 omisión POSIX
+  en selección amplia previa del agente, diferenciada del conjunto final.
+
+Evaluaciones siguientes: contexto causal del caller→delegación H08,
+`edit_file.replace_all` H05 y consumo observado de auxiliares H14.
+Numéricos de structural_search evaluados sin cambio: el dispatcher ya normaliza
+errores y el backend tiene coerciones existentes; no se declaran certificados.
