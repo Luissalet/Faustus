@@ -2,7 +2,7 @@
 
 `deliver_round` is connected to the agent loop and returns a context message
 when `agent_context_engine` is enabled (off by default). It budgets against
-the actual prompt, reuses the previous packet when it still fits, and returns
+the actual prompt, reuses a matching previous packet when it still fits, and returns
 None on timeout, insufficient room or failure so the caller retains its legacy
 context path. Live delivery can affect answers; it is not a shadow-only probe.
 
@@ -20,6 +20,7 @@ shadow behavior and the delivery tests for live-path budgeting and fallback.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import time
@@ -529,6 +530,21 @@ def _render_live(packet: ContextPacket, footer: str = "") -> str:
     return "\n".join(lines).strip() if len(lines) > 2 else ""
 
 
+def _reuse_scope(request: ContextRequest) -> str:
+    """Private identity of the request snapshot, never exposed in reports.
+
+    Budget fit is checked separately. IDs/timestamps describe this attempt,
+    whereas execution, actor and policy describe who may receive its data.
+    This is not a source-revision or revocation epoch.
+    """
+    identity = request.to_dict()
+    identity.pop("request_id", None)
+    identity.pop("created_at", None)
+    identity["policy"].pop("token_budget", None)
+    return hashlib.sha256(json.dumps(identity, sort_keys=True, ensure_ascii=True,
+                                     separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
 async def deliver_round(*, request: ContextRequest,
                         messages: Sequence[Mapping[str, Any]],
                         tool_schemas: Sequence[Any] = (),
@@ -539,8 +555,9 @@ async def deliver_round(*, request: ContextRequest,
     """Compile and safely deliver one auditable packet for one model call.
 
     ``previous`` is what this function returned on an earlier round of the
-    same turn. When it still fits the room left, it is delivered again byte
-    for byte instead of compiling a new one: the question is the same all turn
+    same turn. When its request identity matches and it still fits the room
+    left, it is delivered again byte for byte instead of compiling a new one:
+    the question is the same all turn
     (see `last_user_text`), and a packet that differs from the last round's
     makes a local server reprocess everything after it -- the person's
     message and every tool round so far -- on every round.
@@ -569,7 +586,9 @@ async def deliver_round(*, request: ContextRequest,
                         "is below the compiler's %d-token floor", allowance,
                         MIN_INPUT_BUDGET)
             return None
-        if previous and isinstance(previous.get("report"), Mapping):
+        reuse_scope = _reuse_scope(request)
+        if (previous and previous.get("_reuse_scope") == reuse_scope
+                and isinstance(previous.get("report"), Mapping)):
             prior_report = previous["report"]
             prior_tokens = int(prior_report.get("packet_tokens") or 0)
             if 0 < prior_tokens <= allowance and previous.get("message"):
@@ -579,7 +598,8 @@ async def deliver_round(*, request: ContextRequest,
                     "elapsed_ms": int((time.monotonic() - started) * 1000),
                     "reused": True,
                 })
-                return {"message": previous["message"], "report": report}
+                return {"message": previous["message"], "report": report,
+                        "_reuse_scope": reuse_scope}
         bounded = replace(
             request,
             policy=replace(request.policy, token_budget=allowance),
@@ -617,6 +637,7 @@ async def deliver_round(*, request: ContextRequest,
                            if row.get("section") != "recent_messages"]
         return {
             "message": message,
+            "_reuse_scope": reuse_scope,
             "report": {
                 "round": max(0, int(round_index or 0)),
                 "delivered": True,
