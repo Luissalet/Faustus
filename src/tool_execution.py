@@ -1278,7 +1278,8 @@ async def execute_tool_block(
     ``"read"``, a ``tool_effect`` event is recorded into the calling
     session's active detached run (src.agent_runs) *before* dispatch, state
     ``"pending"``, and again *after* dispatch returns, state
-    ``"confirmed"``/``"failed"``. If this coroutine is cancelled or the
+    ``"confirmed"``/``"failed"``/``"partial"``/``"unknown"``. Partial and
+    unknown effects remain unresolved for restart recovery. If this coroutine is cancelled or the
     process dies between those two writes, the run's replay log carries a
     ``pending`` `tool_effect` that never resolved — `agent_runs.
     _partial_from_events`/`recover_interrupted_runs` surface it as an
@@ -1516,7 +1517,8 @@ async def execute_tool_block(
         _typed_result = None
         try:
             from src.tool_result import normalize_tool_result
-            _typed_result = normalize_tool_result(output[1] if len(output) > 1 else None)
+            _typed_result = normalize_tool_result(output[1] if len(output) > 1 else None,
+                                                  call_id=str(call_id or ""))
             if _typed_result.status != "succeeded":
                 logger.debug(
                     "tool_result normalized: tool=%s status=%s%s",
@@ -1529,17 +1531,18 @@ async def execute_tool_block(
                 getattr(block, "tool_type", None), exc_info=True,
             )
         if _tracked_effect:
-            # A05: the call reached a result without the process dying in
-            # between — record it resolved, so recovery never sees this
-            # call_id's `pending` event as an unknown_effect. Reuses CALL-05's
-            # own classifier (`_typed_result`, computed just above) rather
-            # than re-reading exit_code/error a second, independent way.
-            _effect_state = "confirmed" if (_typed_result is not None and _typed_result.status == "succeeded") else "failed"
+            # Receiving a result does not resolve a partial/unknown effect.
+            # Preserve that uncertainty in the event used by restart recovery.
+            from src.tool_result import effect_state
+            _effect_state = effect_state(_typed_result)
             try:
                 from src import agent_runs as _agent_runs
                 _agent_runs.record_tool_effect(
                     session_id, call_id=str(call_id), tool=str(getattr(block, "tool_type", None) or ""),
                     effect_class=_effect_class, state=_effect_state,
+                    result_status=_typed_result.status if _typed_result else "outcome_unknown",
+                    uncertainty=(_typed_result.uncertainty.to_mapping()
+                                 if _typed_result and _typed_result.uncertainty else None),
                 )
             except Exception:
                 logger.debug(

@@ -25,7 +25,9 @@ an ordinary failure: nothing was attempted. A dict carrying `status:
 "conflict"` or `error_code: "BASE_REVISION_MISMATCH"` (EDIT-01/CALL-02's
 stale-precondition refusal — `filesystem_tools.py::_base_revision_conflict`)
 is `"conflict"`: the caller is told to reconcile, not that the tool broke.
-Anything else with no error signal at all is `"succeeded"`.
+Declared partial/cancelled/failed/denied statuses survive normalization.
+Explicit timeouts preserve uncertainty about effects. Other legacy mappings
+with no error signal default to `"succeeded"`.
 
 This module never executes a tool and never mutates the dict it is given —
 pure classification of an already-finished result.
@@ -38,10 +40,9 @@ from src.contracts.errors import ErrorInfo
 from src.contracts.tool import ToolResult
 
 #: Placeholder id used when a caller does not have (or does not care about)
-#: a real `call_id`/`attempt_id` for this normalization — `execute_tool_block`
-#: today has no OBS-01 `call_id` in scope (that lives one layer up, in
-#: `src/agent_runs.py`), so this adapter must work without one rather than
-#: refuse to classify a result for want of an id nobody has yet.
+#: a real `call_id`/`attempt_id` for this normalization. The execution wrapper
+#: forwards its call_id; legacy/headless callers and durable attempt identity
+#: may still be missing, so classification must work without them.
 _UNKNOWN_ID = "unknown"
 
 
@@ -79,7 +80,9 @@ def normalize_tool_result(raw: Any, *, call_id: str = "", attempt_id: str = "") 
                 "inspect the tool's raw output directly"),
         )
 
-    if raw.get("blocked") or raw.get("locked"):
+    uncertain_status = (raw.get("status") in ("outcome_unknown", "timeout", "timed_out")
+                        or raw.get("outcome_unknown") is True or raw.get("timed_out") is True)
+    if not uncertain_status and (raw.get("blocked") or raw.get("locked") or raw.get("status") == "denied"):
         return ToolResult(
             call_id=cid, attempt_id=aid, status="denied", output=dict(raw),
             error=ErrorInfo(
@@ -88,12 +91,14 @@ def normalize_tool_result(raw: Any, *, call_id: str = "", attempt_id: str = "") 
                 retryable=False, next_action="request_approval"),
         )
 
-    if raw.get("status") == "outcome_unknown" or raw.get("outcome_unknown") is True:
+    if uncertain_status:
+        uncertainty = raw.get("uncertainty")
+        uncertainty = uncertainty if isinstance(uncertainty, Mapping) else {}
         return ToolResult(
             call_id=cid, attempt_id=aid, status="outcome_unknown", output=dict(raw),
             uncertainty=_uncertainty(
-                str(raw.get("error") or "the tool response was lost after dispatch"),
-                str(raw.get("reconcile_action") or "read_current_state_before_retry")),
+                str(uncertainty.get("reason") or raw.get("error") or "the tool response was lost after dispatch"),
+                str(uncertainty.get("reconcile_action") or raw.get("reconcile_action") or "read_current_state_before_retry")),
         )
 
     if raw.get("status") == "conflict" or raw.get("error_code") == "BASE_REVISION_MISMATCH":
@@ -106,10 +111,18 @@ def normalize_tool_result(raw: Any, *, call_id: str = "", attempt_id: str = "") 
                 retryable=False, next_action="read_current_and_reconcile"),
         )
 
+    if raw.get("status") in ("partial", "cancelled"):
+        return ToolResult(
+            call_id=cid, attempt_id=aid, status=raw["status"], output=dict(raw),
+            error=(ErrorInfo(code="unknown.tool_error", message=str(raw["error"]),
+                             retryable=False, next_action="read_current_state_before_retry")
+                   if raw.get("error") else None),
+        )
+
     exit_code = raw.get("exit_code")
     nonzero_exit = isinstance(exit_code, (int, float)) and not isinstance(exit_code, bool) and int(exit_code) != 0
     has_error = bool(raw.get("error"))
-    if has_error or nonzero_exit:
+    if raw.get("status") == "failed" or has_error or nonzero_exit:
         # This is the acceptance's own example: transport succeeded (the
         # call reached here, no exception), but the tool's own dict says the
         # ACTION failed — that must never read as "done".
@@ -117,7 +130,7 @@ def normalize_tool_result(raw: Any, *, call_id: str = "", attempt_id: str = "") 
             call_id=cid, attempt_id=aid, status="failed", output=dict(raw),
             error=ErrorInfo(
                 code="unknown.tool_error",
-                message=str(raw.get("error") or f"exit_code {exit_code}"),
+                message=str(raw.get("error") or (f"exit_code {exit_code}" if nonzero_exit else "tool reported failure")),
                 retryable=False, next_action="fix_payload_and_retry"),
         )
 
@@ -129,4 +142,13 @@ def _uncertainty(reason: str, reconcile_action: str):
     return ToolUncertainty(reason=reason, reconcile_action=reconcile_action)
 
 
-__all__ = ["normalize_tool_result"]
+def effect_state(result: Optional[ToolResult]) -> str:
+    """Project execution status without turning uncertainty into no effect."""
+    if result is None or result.status in {"outcome_unknown", "cancelled"}:
+        return "unknown"
+    if result.status == "partial":
+        return "partial"
+    return "confirmed" if result.status == "succeeded" else "failed"
+
+
+__all__ = ["normalize_tool_result", "effect_state"]

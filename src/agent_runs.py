@@ -659,11 +659,12 @@ def _publish(run: _Run, ev: str) -> None:
 # `pending` with no matching `confirmed`/`failed` into an `unknown_effect`
 # once the run is recovered.
 
-_TOOL_EFFECT_STATES = ("pending", "confirmed", "failed")
+_TOOL_EFFECT_STATES = ("pending", "confirmed", "failed", "partial", "unknown")
 
 
 def record_tool_effect(
     session_id: Optional[str], *, call_id: str, tool: str, effect_class: str, state: str,
+    result_status: Optional[str] = None, uncertainty: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Append a `tool_effect` event to `session_id`'s active detached run.
 
@@ -688,6 +689,8 @@ def record_tool_effect(
         "effect_class": str(effect_class or ""),
         "state": state,
         "idempotency_key": idempotency_key,
+        **({"result_status": result_status} if result_status else {}),
+        **({"uncertainty": uncertainty} if uncertainty else {}),
     }, ensure_ascii=False) + "\n\n"
     _publish(run, ev)
 
@@ -1709,6 +1712,8 @@ def _partial_from_events(events: List[str]) -> Dict[str, Any]:
     # seen with state="pending"; popped the moment a "confirmed"/"failed" for
     # the SAME call_id shows up. Whatever remains once every event has been
     # walked reached "pending" and never resolved -- an unknown_effect.
+    # Explicit partial/unknown replies retain the same protection and their
+    # original status; unknown future event states cannot clear that fence.
     _pending_effects: Dict[str, Dict[str, Any]] = {}
     for ev in events:
         if not ev.startswith("data: ") or ev.startswith("data: [DONE]"):
@@ -1746,13 +1751,16 @@ def _partial_from_events(events: List[str]) -> Dict[str, Any]:
             call_id = str(d.get("call_id") or "")
             if not call_id:
                 continue
-            if d.get("state") == "pending":
+            if d.get("state") in {"pending", "partial", "unknown"}:
                 _pending_effects[call_id] = {
                     "call_id": call_id,
                     "tool": d.get("tool"),
                     "idempotency_key": d.get("idempotency_key"),
+                    **({"state": d["state"]} if d["state"] != "pending" else {}),
+                    **({"result_status": d["result_status"]} if d.get("result_status") else {}),
+                    **({"uncertainty": d["uncertainty"]} if d.get("uncertainty") else {}),
                 }
-            else:
+            elif d.get("state") in {"confirmed", "failed"}:
                 _pending_effects.pop(call_id, None)
     unknown_effects = list(_pending_effects.values())
     return {"text": "".join(text_parts), "tool_events": tool_events[:60], "metrics": metrics, "saved": saved,
