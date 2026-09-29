@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 
 import pytest
 
@@ -943,7 +944,15 @@ def test_api_accepts_an_uploaded_file(client, exports):
     done = client.post("/api/history-import/import",
                        files={"file": ("claude.json", payload, "application/json")})
     assert done.json()["created"] == 1 and done.json()["uploaded"] is True
-    assert os.listdir(history.uploads_dir()) == ["claude.json"]
+    stored = list(Path(history.uploads_dir()).glob("*/claude.json"))
+    assert len(stored) == 1
+    # A preview with the same name must neither overwrite nor delete the archive.
+    preview_again = client.post("/api/history-import/import",
+                                files={"file": ("claude.json", b"{}", "application/json")},
+                                data={"dry_run": "1"})
+    assert preview_again.status_code != 500
+    assert stored[0].read_bytes() == payload
+    assert len(list(Path(history.uploads_dir()).iterdir())) == 1
     assert client.get("/api/history-import/stats").json()["conversations"] == 1
 
 
@@ -968,10 +977,9 @@ def test_an_upload_filename_cannot_escape_the_upload_folder(client, exports):
         payload = handle.read()
     client.post("/api/history-import/import",
                 files={"file": ("../../etc/passwd", payload, "application/json")})
-    stored = os.listdir(history.uploads_dir())
-    assert stored == ["passwd.json"], stored
-    assert os.path.realpath(os.path.join(history.uploads_dir(), stored[0])).startswith(
-        os.path.realpath(history.uploads_dir()))
+    stored = list(Path(history.uploads_dir()).glob("*/*"))
+    assert len(stored) == 1 and stored[0].name == "passwd.json", stored
+    assert stored[0].resolve().is_relative_to(Path(history.uploads_dir()).resolve())
 
 
 def test_codex_jsonl_upload_preserves_extension_and_imports(client):
@@ -985,7 +993,7 @@ def test_codex_jsonl_upload_preserves_extension_and_imports(client):
     assert response.status_code == 200
     assert response.json()["detected"] == "codex"
     assert response.json()["messages"] == 1
-    assert os.listdir(history.uploads_dir()) == ["rollout-test.jsonl"]
+    assert len(list(Path(history.uploads_dir()).glob("*/rollout-test.jsonl"))) == 1
 
 
 def test_robot_mode_projects_the_reads_and_leaves_the_plain_ones_alone(client, exports):

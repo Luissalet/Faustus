@@ -38,6 +38,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import tempfile
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -95,6 +96,7 @@ def setup_history_import_routes() -> APIRouter:
 
         content_type = (request.headers.get("content-type") or "").lower()
         upload_path: Optional[str] = None
+        upload_dir: Optional[str] = None
         dry_run = False
         try:
             if content_type.startswith("multipart/"):
@@ -108,8 +110,11 @@ def setup_history_import_routes() -> APIRouter:
                     "1", "true", "yes", "on")
                 target_dir = history.uploads_dir()
                 os.makedirs(target_dir, exist_ok=True)
+                # Keep the original basename (some parsers use it as identity),
+                # but isolate each upload so previews cannot overwrite archives.
+                upload_dir = tempfile.mkdtemp(prefix="upload_", dir=target_dir)
                 upload_path = os.path.join(
-                    target_dir, _safe_upload_name(getattr(upload, "filename", "")))
+                    upload_dir, _safe_upload_name(getattr(upload, "filename", "")))
                 with open(upload_path, "wb") as handle:
                     while True:
                         block = await upload.read(READ_CHUNK_BYTES)
@@ -144,6 +149,9 @@ def setup_history_import_routes() -> APIRouter:
             if upload_path and dry_run:
                 with contextlib.suppress(OSError):
                     os.remove(upload_path)
+                if upload_dir:
+                    with contextlib.suppress(OSError):
+                        os.rmdir(upload_dir)
 
     # ── the conversations ─────────────────────────────────────────────────
 
