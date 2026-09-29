@@ -3037,7 +3037,13 @@ def _build_anthropic_payload(model, messages, temperature, max_tokens, stream=Fa
             # Convert OpenAI assistant tool_calls to Anthropic format
             content = list(_anthropic_thinking_from_tool_calls(m["tool_calls"]))
             if m.get("content"):
-                content.append({"type": "text", "text": m["content"]})
+                # Block content is already structured; wrapping the list in a
+                # text block would send an invalid non-string `text` field.
+                # Use the same conversion as messages without tool calls.
+                if isinstance(m["content"], list):
+                    content.extend(_convert_openai_content_to_anthropic(m["content"]))
+                else:
+                    content.append({"type": "text", "text": m["content"]})
             for tc in m["tool_calls"]:
                 fn = tc.get("function") or {}
                 args_str = fn.get("arguments") or "{}"
