@@ -28,7 +28,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from core.middleware import require_admin
+from core.middleware import require_admin, require_human
 from src import robot_envelope as robot
 from src import robot_projection as lean
 from src.auth_helpers import effective_user
@@ -67,6 +67,12 @@ class CurateBody(BaseModel):
 
 class ForgetBody(BaseModel):
     reason: Optional[str] = None
+
+
+class RetractEvidenceBody(BaseModel):
+    ref: str
+    kind: str
+    project: Optional[str] = None
 
 
 class CorrectBody(BaseModel):
@@ -217,6 +223,34 @@ def setup_memory_engine_routes() -> APIRouter:
             raise HTTPException(status_code=404, detail="no such memory item")
         engine.invalidate_all_snapshots()
         return {"status": "success", "forgotten": True, "id": item_id, "tombstone": tombstone}
+
+    @router.get("/evidence/dependents")
+    async def evidence_dependents(request: Request, ref: str,
+                                  project: Optional[str] = None,
+                                  kind: Optional[str] = None,
+                                  _admin: None = Depends(require_admin)) -> Dict[str, Any]:
+        """Preview active memories citing an exact source before withdrawal."""
+        from src import memory_engine as engine
+        try:
+            items = engine.evidence_dependents(ref, owner=_owner(request),
+                                               project=project, kind=kind)
+        except engine.MemoryEngineError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"status": "success", "items": [engine.public_item(item) for item in items]}
+
+    @router.post("/evidence/retract")
+    async def retract_evidence(request: Request, body: RetractEvidenceBody,
+                               _human: None = Depends(require_human)) -> Dict[str, Any]:
+        """Withdraw a source only from the current owner's matching memories."""
+        from src import memory_engine as engine
+        try:
+            report = engine.retract_evidence(body.ref, owner=_owner(request),
+                                             kind=body.kind, project=body.project)
+        except engine.MemoryEngineError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        if report["retained_ids"] or report["forgotten_ids"]:
+            engine.invalidate_all_snapshots()
+        return {"status": "success", "report": report}
 
     @router.post("/items/{item_id}/correct")
     async def correct_item(item_id: str, body: CorrectBody,

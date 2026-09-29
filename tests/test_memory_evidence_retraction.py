@@ -84,3 +84,41 @@ def test_retraction_does_not_treat_unrelated_excerpt_as_generic_support(store):
 
     report = engine.retract_evidence("guide.md", owner="luis", kind="file")
     assert report["forgotten_ids"] == [item["id"]]
+
+
+def test_admin_route_previews_and_retracts_only_current_owner(store, monkeypatch):
+    from fastapi import FastAPI, HTTPException
+    from fastapi.testclient import TestClient
+    from core.middleware import require_admin, require_human
+    from routes import memory_engine_routes
+
+    monkeypatch.setattr(memory_engine_routes, "effective_user", lambda request: "luis")
+    app = FastAPI()
+    app.include_router(memory_engine_routes.setup_memory_engine_routes())
+    app.dependency_overrides[require_admin] = lambda: None
+    app.dependency_overrides[require_human] = lambda: None
+    client = TestClient(app)
+    source = {"kind": "file", "ref": "src/config.py", "excerpt": "Threshold is 42."}
+    mine = _fact("luis", [source])
+    other = _fact("ana", [source])
+
+    preview = client.get("/api/memory-engine/evidence/dependents",
+                         params={"ref": "src/config.py", "kind": "file"})
+    assert preview.status_code == 200
+    assert [row["id"] for row in preview.json()["items"]] == [mine["id"]]
+
+    def deny_human():
+        raise HTTPException(status_code=403, detail="human required")
+
+    app.dependency_overrides[require_human] = deny_human
+    denied = client.post("/api/memory-engine/evidence/retract",
+                         json={"ref": "src/config.py", "kind": "file"})
+    assert denied.status_code == 403
+    assert engine.get_item(mine["id"]) is not None
+    app.dependency_overrides[require_human] = lambda: None
+
+    response = client.post("/api/memory-engine/evidence/retract",
+                           json={"ref": "src/config.py", "kind": "file"})
+    assert response.status_code == 200
+    assert response.json()["report"]["forgotten_ids"] == [mine["id"]]
+    assert engine.get_item(other["id"]) is not None
