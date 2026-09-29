@@ -78,7 +78,7 @@ from src import hash_embed
 from src import memory_engine
 
 __all__ = [
-    "ANCHOR", "CORPUS", "QUERIES", "run", "compare", "score_ranked",
+    "ANCHOR", "CORPUS", "QUERIES", "run", "run_lifecycle", "compare", "score_ranked",
 ]
 
 # A fixed instant, never wall-clock time — see module docstring.
@@ -577,6 +577,47 @@ def run(k_values: Sequence[int] = (1, 3, 5), embedder: str = "auto",
         "corpus_size": len(CORPUS),
         "aggregate": aggregate,
         "per_query": per_query,
+    }
+
+
+def run_lifecycle() -> Dict[str, bool]:
+    """Exercise a real correction and forgetting, including vector removal.
+
+    The static corpus uses pre-deprecated facts; this probe also checks the
+    mutation path that produces that state in normal use. It runs in the same
+    isolated, deterministic store as :func:`run`.
+    """
+    old_text = "Atlas hosting provider is AWS."
+    new_text = "Atlas hosting provider is Hetzner Cloud."
+    query = "Atlas hosting provider"
+    with _isolated_engine(), _deterministic_ids():
+        old = memory_engine.add_item(old_text, owner=OWNER, project=PROJECT,
+                                     trust_class="agent_assertion", now=ANCHOR)
+
+        def recalled_ids() -> Set[str]:
+            return {str(hit["id"]) for hit in memory_engine.search(
+                query, owner=OWNER, project=PROJECT, k=5, now=ANCHOR,
+                touch_hits=False)}
+
+        before = old["id"] in recalled_ids()
+        replacement = memory_engine.correct(old["id"], new_text, now=ANCHOR)
+        after_correction = recalled_ids()
+        resurrection_blocked = False
+        try:
+            memory_engine.add_item(old_text, owner=OWNER, project=PROJECT,
+                                   trust_class="agent_assertion", now=ANCHOR)
+        except memory_engine.MemoryEngineError:
+            resurrection_blocked = True
+        if replacement:
+            memory_engine.forget(replacement["id"], now=ANCHOR)
+        after_forget = recalled_ids()
+
+    return {
+        "original_recalled_before_correction": before,
+        "replacement_recalled_after_correction": bool(replacement and replacement["id"] in after_correction),
+        "original_absent_after_correction": old["id"] not in after_correction,
+        "original_resurrection_blocked": resurrection_blocked,
+        "replacement_absent_after_forget": bool(replacement and replacement["id"] not in after_forget),
     }
 
 

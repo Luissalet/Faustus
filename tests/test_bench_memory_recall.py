@@ -40,6 +40,13 @@ def test_run_rejects_unknown_embedder():
         memory_recall.run(embedder="openai")
 
 
+def test_lifecycle_probe_covers_correction_resurrection_and_forgetting():
+    report = memory_recall.run_lifecycle()
+    assert report
+    assert all(report.values()), report
+    assert memory_recall.run_lifecycle() == report
+
+
 # ---------------------------------------------------------------------------
 # Metrics math on a tiny hand-made case.
 # ---------------------------------------------------------------------------
