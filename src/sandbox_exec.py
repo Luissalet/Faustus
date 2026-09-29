@@ -298,6 +298,14 @@ def _argv_for(tool: str, command: str) -> list:
 #: never see each other's reason.
 _last_skip: "contextvars.ContextVar[str]" = contextvars.ContextVar(
     "sandbox_exec_last_skip", default="")
+_requested_policy: "contextvars.ContextVar[str]" = contextvars.ContextVar(
+    "sandbox_exec_requested_policy", default="host")
+
+
+def host_policy_metadata(reason: str) -> Dict[str, Any]:
+    """Metadata for the caller's host result using the pre-execution request."""
+    from src.sandbox_provider import policy_metadata
+    return policy_metadata(_requested_policy.get(), "host", reason)
 
 
 def _note_skip(tool: str, reason: str) -> None:
@@ -333,6 +341,23 @@ def _refusal(tool: str, reason: str) -> Dict[str, Any]:
 
 
 async def run(tool: str, command: str, ctx: Optional[dict] = None) -> Optional[Dict[str, Any]]:
+    """Capture requested policy before dispatch and annotate the actual outcome."""
+    from src.sandbox_provider import policy_metadata
+    requested = f"sandbox_{mode()}" if enabled() else "host"
+    _requested_policy.set(requested)
+    _last_skip.set("")
+    result = await _run(tool, command, ctx)
+    if result is not None:
+        effective = "docker_container" if result.get("sandboxed") else "not_executed"
+        reason = "" if effective == "docker_container" else str(
+            result.get("sandbox_unavailable_reason") or result.get("error") or "command not executed")
+        result.update(policy_metadata(requested, effective, reason))
+        if effective == "not_executed":
+            result["execution_target"] = {"kind": "not_executed", "cwd": "", "shell": ""}
+    return result
+
+
+async def _run(tool: str, command: str, ctx: Optional[dict] = None) -> Optional[Dict[str, Any]]:
     """Run a bash/python tool call in the container.
 
     Returns None when the setting is off — the caller then does exactly what

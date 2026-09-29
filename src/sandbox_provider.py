@@ -74,6 +74,17 @@ class Availability:
 SandboxStatus = str  # "exists" | "missing" | "unknown" — see status() below
 
 
+def policy_metadata(requested: str, effective: str, reason: str = "") -> Dict[str, Any]:
+    """Observable route, not a promise of native Windows confinement.
+
+    A refusal has no effective execution environment. Consumers must not infer
+    applied isolation from a preference, backend name or successful probe alone.
+    """
+    return {"requested_policy": requested, "effective_policy": effective,
+            "policy_reason": reason,
+            "fallback_reason": reason if effective == "host" and requested != "host" else ""}
+
+
 @runtime_checkable
 class SandboxProvider(Protocol):
     """What any sandbox backend must answer. No method here talks about
@@ -316,13 +327,16 @@ class DockerSandboxProvider:
         try:
             result = self._run_docker(args, timeout=timeout)
         except subprocess.TimeoutExpired:
-            return {"executed": True, "timed_out": True, "exit_code": 124,
+            return {**policy_metadata("docker_container", "docker_container"),
+                    "executed": True, "timed_out": True, "exit_code": 124,
                     "stdout": "", "stderr": ""}
         if result.returncode == 126 or (
                 result.returncode != 0 and b"No such container" in result.stderr):
-            return {"executed": False, "status": "missing"}
+            return {**policy_metadata("docker_container", "not_executed", "sandbox session missing"),
+                    "executed": False, "status": "missing"}
         _record_touches(session, touches or [])
         return {
+            **policy_metadata("docker_container", "docker_container"),
             "executed": True,
             "exit_code": result.returncode,
             "stdout": result.stdout.decode("utf-8", "replace"),

@@ -725,6 +725,7 @@ def _mark_sandbox_skip(result: dict, skip: str) -> dict:
     been off. No-op when the sandbox simply was off (`skip` empty)."""
     if skip and isinstance(result, dict):
         result.setdefault("sandbox_skipped", skip)
+        result.update(sandbox_exec.host_policy_metadata(skip))
     return result
 
 
