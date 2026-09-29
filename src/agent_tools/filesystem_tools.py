@@ -11,6 +11,7 @@ import time
 from typing import Optional, Dict, Any, Tuple, List
 
 from src import read_plan
+from src.file_mutation_locks import mutation_lock
 from src.constants import MAX_READ_CHARS, MAX_DIFF_LINES, MAX_OUTPUT_CHARS
 
 logger = logging.getLogger(__name__)
@@ -334,21 +335,21 @@ class EditFileTool:
 
         def _apply():
             """Read, check the base_revision precondition (EDIT-01), replace
-            and write — all inside one thread call so nothing else can slip a
-            write in between the check and the write of this process."""
-            original, crlf, revision_now = _read_text_lf(path)
-            if base_revision:
-                conflict = _base_revision_conflict(
-                    "edit_file", path, base_revision, revision_now,
-                    current_text=original, base_text=old_lf, proposed_text=new_lf)
-                if conflict is not None:
-                    return original, conflict, "conflict"
-            status, updated = _replace_text(original, old_lf, new_lf, replace_all)
-            if status != "ok":
-                return original, None, status
-            _write_text_lf(path, updated, crlf)
-            written = updated.replace("\n", "\r\n") if crlf else updated
-            return original, (updated, sha256_revision(written.encode("utf-8"))), "ok"
+            and write under the mutex shared with write_file in this process."""
+            with mutation_lock(path):
+                original, crlf, revision_now = _read_text_lf(path)
+                if base_revision:
+                    conflict = _base_revision_conflict(
+                        "edit_file", path, base_revision, revision_now,
+                        current_text=original, base_text=old_lf, proposed_text=new_lf)
+                    if conflict is not None:
+                        return original, conflict, "conflict"
+                status, updated = _replace_text(original, old_lf, new_lf, replace_all)
+                if status != "ok":
+                    return original, None, status
+                _write_text_lf(path, updated, crlf)
+                written = updated.replace("\n", "\r\n") if crlf else updated
+                return original, (updated, sha256_revision(written.encode("utf-8"))), "ok"
 
         try:
             original, updated, status = await asyncio.to_thread(_apply)
@@ -631,55 +632,56 @@ class WriteFileTool:
             return _dr_gate["result"]
         try:
             def _write():
-                old, crlf, revision_now = "", False, None
-                try:
-                    old, crlf, revision_now = _read_text_lf(path)
-                except (FileNotFoundError, IsADirectoryError, UnicodeDecodeError, OSError):
+                with mutation_lock(path):
                     old, crlf, revision_now = "", False, None
-                # H4: a turn-scoped RewritePolicy (src/rewrite_policy.py) —
-                # the 2nd whole-file rewrite of an existing large file is
-                # refused with "use edit_file/apply_patch", the 4th blocked.
-                # None (no policy in ctx) means "off", never an error.
-                policy = ctx.get("rewrite_policy") if isinstance(ctx, dict) else None
-                if policy is not None:
                     try:
-                        from src.rewrite_policy import deny_result
-                        verdict = policy.observe_lines(path, "write_file", old, body)
-                        if verdict != "ok":
-                            denied = deny_result(raw_path or path, verdict, policy.rewrite_count(path),
-                                                 policy.min_lines)
-                            denied["count"] = policy.rewrite_count(path)
-                            return denied, None, "conflict"
-                    except AttributeError:
-                        pass
-                if base_revision:
-                    conflict = _base_revision_conflict(
-                        "write_file", path, base_revision, revision_now,
-                        current_text=old, base_text=None, proposed_text=body)
-                    if conflict is not None:
-                        return conflict, None, "conflict"
-                d = os.path.dirname(path)
-                if d:
-                    os.makedirs(d, exist_ok=True)
-                # Overwriting keeps the file's existing line-ending convention;
-                # a new file is written exactly as the model produced it (no
-                # platform translation), so the diff shows content changes only.
-                written_lf = body.replace("\r\n", "\n")
-                # EDIT-03: same treatment as crlf just above — a full
-                # overwrite of a file that had a UTF-8 BOM keeps it, unless
-                # the caller's own content already starts with one. `old`
-                # carries the BOM as an ordinary leading U+FEFF character
-                # (encoding="utf-8" never strips it — see _read_text_lf), so
-                # this is the one place that character gets silently dropped
-                # today: edit_file/apply_patch never touch it (their edits
-                # are partial replacements elsewhere in the text), but
-                # write_file replaces the whole body with what the model
-                # produced, which never retypes an invisible character.
-                if old.startswith("\ufeff") and not written_lf.startswith("\ufeff"):
-                    written_lf = "\ufeff" + written_lf
-                _write_text_lf(path, written_lf, crlf)
-                written = written_lf.replace("\n", "\r\n") if crlf else written_lf
-                return old, len(body), sha256_revision(written.encode("utf-8"))
+                        old, crlf, revision_now = _read_text_lf(path)
+                    except (FileNotFoundError, IsADirectoryError, UnicodeDecodeError, OSError):
+                        old, crlf, revision_now = "", False, None
+                    # H4: a turn-scoped RewritePolicy (src/rewrite_policy.py) —
+                    # the 2nd whole-file rewrite of an existing large file is
+                    # refused with "use edit_file/apply_patch", the 4th blocked.
+                    # None (no policy in ctx) means "off", never an error.
+                    policy = ctx.get("rewrite_policy") if isinstance(ctx, dict) else None
+                    if policy is not None:
+                        try:
+                            from src.rewrite_policy import deny_result
+                            verdict = policy.observe_lines(path, "write_file", old, body)
+                            if verdict != "ok":
+                                denied = deny_result(raw_path or path, verdict, policy.rewrite_count(path),
+                                                     policy.min_lines)
+                                denied["count"] = policy.rewrite_count(path)
+                                return denied, None, "conflict"
+                        except AttributeError:
+                            pass
+                    if base_revision:
+                        conflict = _base_revision_conflict(
+                            "write_file", path, base_revision, revision_now,
+                            current_text=old, base_text=None, proposed_text=body)
+                        if conflict is not None:
+                            return conflict, None, "conflict"
+                    d = os.path.dirname(path)
+                    if d:
+                        os.makedirs(d, exist_ok=True)
+                    # Overwriting keeps the file's existing line-ending convention;
+                    # a new file is written exactly as the model produced it (no
+                    # platform translation), so the diff shows content changes only.
+                    written_lf = body.replace("\r\n", "\n")
+                    # EDIT-03: same treatment as crlf just above — a full
+                    # overwrite of a file that had a UTF-8 BOM keeps it, unless
+                    # the caller's own content already starts with one. `old`
+                    # carries the BOM as an ordinary leading U+FEFF character
+                    # (encoding="utf-8" never strips it — see _read_text_lf), so
+                    # this is the one place that character gets silently dropped
+                    # today: edit_file/apply_patch never touch it (their edits
+                    # are partial replacements elsewhere in the text), but
+                    # write_file replaces the whole body with what the model
+                    # produced, which never retypes an invisible character.
+                    if old.startswith("\ufeff") and not written_lf.startswith("\ufeff"):
+                        written_lf = "\ufeff" + written_lf
+                    _write_text_lf(path, written_lf, crlf)
+                    written = written_lf.replace("\n", "\r\n") if crlf else written_lf
+                    return old, len(body), sha256_revision(written.encode("utf-8"))
             old_content, size, status_or_revision = await asyncio.to_thread(_write)
         except PermissionError:
             return {"error": f"write_file: {path}: permission denied", "exit_code": 1}
