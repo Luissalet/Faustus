@@ -22,7 +22,7 @@ import json
 import logging
 import re
 import unicodedata
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -304,6 +304,7 @@ def search_catalog(
     k: int = _DEFAULT_K,
     disabled: Optional[Iterable[str]] = None,
     admin: bool = True,
+    candidate_filter: Optional[Callable[[str], bool]] = None,
 ) -> List[str]:
     """Ranked tool names for a natural-language query and/or exact names."""
     blocked = {str(n) for n in (disabled or ()) if n}
@@ -315,6 +316,8 @@ def search_catalog(
         if not name or name in seen or name in blocked:
             return
         if name != LOOKUP_TOOL and not admin and _non_admin_blocked(name):
+            return
+        if candidate_filter is not None and not candidate_filter(name):
             return
         seen.add(name)
         ordered.append(name)
@@ -493,11 +496,13 @@ def serve(
         mode = _DETAIL_SCHEMA if names else _DETAIL_CATALOG
         if query and not names:
             mode = _DETAIL_SCHEMA
+    from src.tool_discovery import is_permitted
     found = search_catalog(
         query, names, k=k, disabled=disabled, admin=admin,
+        candidate_filter=lambda name: is_permitted(
+            name, disabled_tools=disabled, tool_policy=tool_policy, admin=admin,
+        ),
     )
-    from src.tool_discovery import permitted_names
-    found = permitted_names(found, disabled_tools=disabled, tool_policy=tool_policy, admin=admin)
     tools = [catalog_entry(name, detail=mode) for name in found]
     payload: Dict[str, Any] = {
         "tools": tools,
