@@ -26,7 +26,7 @@ Prueba decisiva: el runner real escribe un señuelo temporal fuera del cwd del g
 | H09 | `1a418269`: reutilización exige ámbito/política/solicitud coincidentes, 53 pruebas; `b63f1e5b`: recibos de skills renderizadas/ensambladas y uso solo de cuerpos incluidos, 50 pruebas; versiones universales de fuentes y entrega efectiva pendientes |
 | H10 | `6127bd24`: fuentes externas marcadas no se promueven a restricciones/objetivo preservado. `ebf7a856`: persistencia inmediata/diferida con SQLite y tres compactaciones/reaperturas, 99 pruebas. Checkpoint portable y actualización de menciones históricas de aprobaciones pendientes |
 | H11 | `3338166d`: drenaje por bloques UTF-8, salida/progreso acotados y actividad sin LF; 91 pruebas y 3 omitidas. `6305ed06`: Code Mode drena stderr, 26 pruebas; `6b19a2fe`: frames grandes dentro de cuota y rechazo explícito del exceso, 32 pruebas. Manager/stdin/handles durables pendientes |
-| H12 | `906ae3c7`: reparación de llamadas sin respuesta conserva contenido multimodal; 94 pruebas; `d466bf5a`: marcador legacy no borra imágenes, 128 pruebas. Proyección canónica y recibos pendientes |
+| H12 | `906ae3c7`: reparación de llamadas sin respuesta conserva contenido multimodal; 94 pruebas; `d466bf5a`: marcador legacy no borra imágenes, 128 pruebas. `466c01e3`: renderer Anthropic conserva bloques junto a tool_calls, 100 pruebas focales. Proyección canónica y recibos pendientes |
 | H13 | `f22702d9`: función pura compara en shadow ampliación/ciclos/presupuesto sin gobernar el bucle, 75 pruebas y 432 combinaciones. `291907ed`: cierre CE distingue propuesta y continuación concedida al agotar cupo, 56 pruebas; controlador común pendiente |
 | H14 | `ce4df06a`: retries de workers acumulan tokens por intento, sin duplicar métricas finales ni borrar campos ausentes; 49 pruebas. Presupuesto transversal pendiente |
 | H15 | `30e71fc8`: comentarios históricos de wiring y bridge corregidos contra callers actuales; AST sin docstring idéntico. Alcance de dos módulos completado |
@@ -34,7 +34,8 @@ Prueba decisiva: el runner real escribe un señuelo temporal fuera del cwd del g
 | H19 | `d7600e54`: steering sin run/sesión resoluble no se difunde a todos los workers; 61 pruebas. Recibos durables/recuperación pendientes |
 | H21 | `54fea979`: instrucciones se refrescan por contenido acotado, no mtime; 66 pruebas y 1 POSIX omitida. `b63f1e5b`: recibos L1 ensamblados. Jerarquía, snapshot aprobado atómico y procedencia completa/entrega de skills pendientes |
 | H24 | `92c6ebee`: elimina contaminación global de imports en fixture de skills; mismo orden integrado 252 pruebas correctas tras timeout previo. Banco pareado con modelos y aislamiento general pendientes |
-| H07, H17–H18, H20, H22–H23 | Pendientes conforme al análisis original; no declarar cerrados por este documento |
+| H20 | `42a29971`: identidad de mutación compartida en deduplicación/conflictos; ámbitos y sesiones distintos no se mezclan, origen de sesión en proyecto permite consolidación. 30 pruebas finales de ámbito/vigencia/propietario. Leases y atomicidad concurrente pendientes |
+| H07, H17–H18, H22–H23 | Pendientes conforme al análisis original; no declarar cerrados por este documento |
 
 Los pilotos de reinicio de procesos (`403756a9`) y memoria (`9e0e8e50`) ya aportan evidencia a H11/H20/H24, pero no completan esos cambios transversales.
 
@@ -115,6 +116,17 @@ Informes: [aislamiento del banco](CODEX_H24_TEST_IMPORT_ISOLATION.md),
 
 
 [Recibos de schemas H06](CODEX_H06_SCHEMA_RECEIPTS.md): detección de discrepancias
-y versiones del candidato preparado, sin ampliar la autoridad. H20 aislamiento de
-curación y H12 proyección de historia están en revisión con Sol 6.1 desde el
-30-09-2026. No se reabre el radar de 41 proyectos ya completado.
+y versiones del candidato preparado, sin ampliar la autoridad. No se reabre el radar de 41 proyectos ya completado.
+
+### Checkpoint Sol 6.1: ámbitos y bloques
+
+H20 aislamiento de curación implementado en `42a29971`; H12 bloques assistant
+junto a llamadas Anthropic en `466c01e3`. Informes [curator](CODEX_H20_CURATOR_SCOPE.md)
+y [Anthropic](CODEX_H12_ANTHROPIC_BLOCK_CONTENT.md) conservan fuentes, reproducciones
+y límites. Revisión del coordinador: **146 pruebas conjuntas correctas, 16,84 s**,
+y **30 correctas, 2,63 s** de curator/aislamiento/vigencia sobre el código final.
+Ninguna petición real a modelos ni acceso a memoria personal.
+
+Siguiente evaluación: snapshot aprobado de instrucciones H21 e identidad causal
+de subagentes H08. No confundir evaluación con implementación. Leases H20,
+renderer canónico H12 y demás pendientes transversales siguen abiertos.
