@@ -15747,9 +15747,10 @@ async def _stream_agent_loop_body(
                 if k in result:
                     tool_output_data[k] = result[k]
             # Forward screenshots from browser tools (base64 images)
-            if result.get("images"):
-                img = result["images"][0]
-                tool_output_data["screenshot"] = f"data:{img['mimeType']};base64,{img['data']}"
+            from src.tool_images import screenshot_data_url
+            _live_screenshot_url = screenshot_data_url(result)
+            if _live_screenshot_url:
+                tool_output_data["screenshot"] = _live_screenshot_url
             # Live browser view (src/browser_view.py): after a browser ACTION
             # take one viewport frame for the UI's Browser panel. UI only —
             # it is not put into the tool result the model reads.
