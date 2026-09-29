@@ -3545,7 +3545,13 @@ def _sanitize_llm_messages(messages: List[Dict], provider: Optional[str] = None)
 
         if not tool_batch:
             plain = {k: v for k, v in msg.items() if k != "tool_calls"}
-            if (plain.get("content") or "").strip():
+            # Repair only the provider projection: block content may include
+            # images, and is not necessarily a string with a strip() method.
+            content = plain.get("content")
+            has_content = bool(content) if isinstance(content, list) else bool(
+                _message_text_content(content).strip()
+            )
+            if has_content:
                 repaired.append(plain)
             else:
                 logger.debug("Dropping unanswered assistant tool_calls before provider request")
