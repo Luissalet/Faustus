@@ -25,12 +25,19 @@ class PdfCallBinding:
 
     def metadata(self) -> dict:
         descriptor = json.loads(self.descriptor_json)
-        return {
+        out = {
             "scope": "call",
             "name": self.name,
             "version": descriptor["version"],
             "descriptor_sha256": hashlib.sha256(self.descriptor_json.encode()).hexdigest(),
         }
+        try:
+            from src.tool_schema_receipts import definition_hashes
+            exact, semantic = definition_hashes(self.definition())
+            out.update(definition_sha256=exact, schema_semantics_sha256=semantic)
+        except Exception:
+            pass  # an optional shadow identity must not change a tool outcome
+        return out
 
 
 def capture_pdf_call(name: str) -> PdfCallBinding | None:

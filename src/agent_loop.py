@@ -11728,6 +11728,16 @@ async def _stream_agent_loop_body(
                     logger.debug("[tool-slim] candidate skipped: %s",
                                  _candidate_slim_err)
             state["tools"] = candidate_tools
+            # Prepared schema receipt only: llm_core may still adapt protocol.
+            try:
+                from src.tool_schema_receipts import capture_candidate
+                state["schema_receipt"] = capture_candidate(
+                    candidate_tools, candidate_index=index, round_num=round_num,
+                    text_only=bool(state.get("text_only_transport")),
+                )
+            except Exception:
+                state.pop("schema_receipt", None)
+                logger.debug("[schema-receipt] capture unavailable", exc_info=True)
             _candidate_request_states[index] = state
             return {
                 "messages": request_messages,
@@ -15210,6 +15220,20 @@ async def _stream_agent_loop_body(
             except Exception:
                 logger.debug("[lifecycle_hooks] post_tool run failed", exc_info=True)
 
+            # Compare only the captured PDF binding against the candidate that
+            # answered. This observation never changes dispatch or authority.
+            _schema_observation = None
+            if isinstance(result, dict) and isinstance(result.get("pdf_call_contract"), dict):
+                try:
+                    from src.tool_schema_receipts import observation_for_answer
+                    _schema_observation = observation_for_answer(
+                        _candidate_request_states, candidate_index, result["pdf_call_contract"],
+                        round_num=round_num,
+                    )
+                    result["schema_receipt_observation"] = _schema_observation
+                except Exception:
+                    logger.debug("[schema-receipt] comparison unavailable", exc_info=True)
+
             # Evidence ledger: record what really ran (success, kind, paths).
             try:
                 _ledger.record(block.tool_type, block.content, result, round_num)
@@ -15593,6 +15617,8 @@ async def _stream_agent_loop_body(
             # Emit tool_output (include ui_event data if present)
             _result_fields = tool_result_fields(result)
             tool_output_data = {"type": "tool_output", "tool": block.tool_type, "command": cmd_display, "output": output_text, "exit_code": result.get("exit_code"), "call_id": _call_id, **_result_fields}
+            if _schema_observation is not None:
+                tool_output_data["schema_receipt_observation"] = dict(_schema_observation)
             try:
                 from src.tool_clock import sse_fields as _clock_sse
                 tool_output_data.update(_clock_sse(result))
@@ -15859,6 +15885,8 @@ async def _stream_agent_loop_body(
             # iteration actually ran a tool (absent — no key at all — for a
             # denied/blocked/approval-pending call, which never executed
             # anything to time).
+            if _schema_observation is not None:
+                tool_event["schema_receipt_observation"] = dict(_schema_observation)
             if _tool_duration_ms is not None:
                 tool_event["duration_ms"] = _tool_duration_ms
             # CALL-02/CALL-03: persist the same argument-check annotation the
