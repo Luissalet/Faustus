@@ -332,8 +332,17 @@ class DockerSandboxProvider:
                     "stdout": "", "stderr": ""}
         if result.returncode == 126 or (
                 result.returncode != 0 and b"No such container" in result.stderr):
-            return {**policy_metadata("docker_container", "not_executed", "sandbox session missing"),
-                    "executed": False, "status": "missing"}
+            # docker exec propagates the child's code, including 126. Even
+            # daemon-looking stderr could have been printed by that child.
+            # After dispatch neither is proof that no effect occurred.
+            reason = "Docker exec returned an ambiguous failure after dispatch; command effects are unknown"
+            return {**policy_metadata("docker_container", "docker_container", reason),
+                    "executed": None, "outcome_unknown": True,
+                    "uncertainty": {"reason": reason,
+                                    "reconcile_action": "read_current_state_before_retry"},
+                    "exit_code": result.returncode,
+                    "stdout": result.stdout.decode("utf-8", "replace"),
+                    "stderr": result.stderr.decode("utf-8", "replace")}
         _record_touches(session, touches or [])
         return {
             **policy_metadata("docker_container", "docker_container"),

@@ -83,7 +83,7 @@ async def test_off_preserves_result_shape_and_clears_stale_skip(settings, monkey
     assert tools._mark_sandbox_skip({"output": "x"}, "") == {"output": "x"}
 
 
-@pytest.mark.parametrize("rc,effective", [(0, "docker_container"), (126, "not_executed")])
+@pytest.mark.parametrize("rc,effective", [(0, "docker_container"), (126, "docker_container")])
 def test_provider_result_preserves_its_effective_environment(monkeypatch, rc, effective):
     instance = provider.DockerSandboxProvider(image="test")
     monkeypatch.setattr(instance, "_run_docker", lambda *args, **kwargs:
@@ -92,3 +92,29 @@ def test_provider_result_preserves_its_effective_environment(monkeypatch, rc, ef
     assert result["requested_policy"] == "docker_container"
     assert result["effective_policy"] == effective
     assert result["fallback_reason"] == ""
+    if rc == 126:
+        assert result["executed"] is None and result["outcome_unknown"] is True
+
+
+@pytest.mark.asyncio
+async def test_exit_126_after_effect_stays_unknown_without_retry(settings, monkeypatch, tmp_path):
+    from src.tool_result import normalize_tool_result
+    settings["agent_sandbox_persistent_session"] = True
+    monkeypatch.setattr(sandbox, "_host_is_windows", lambda: False)
+    instance = provider.DockerSandboxProvider(image="test")
+    monkeypatch.setattr(provider, "get_provider", lambda **kwargs: instance)
+    monkeypatch.setattr(instance, "probe", lambda: provider.Availability(True))
+    monkeypatch.setattr(instance, "status", lambda session: "exists")
+    marker = tmp_path / "effect.txt"
+    calls = []
+    def dispatched(args, **kwargs):
+        calls.append(args)
+        marker.write_text("effect happened")
+        return subprocess.CompletedProcess(args, 126, b"effect written", b"child returned 126")
+    monkeypatch.setattr(instance, "_run_docker", dispatched)
+    result = await tools.PythonTool().execute("opaque command", {"session_id": "test"})
+    assert marker.read_text() == "effect happened" and len(calls) == 1
+    assert result["exit_code"] == 126 and result["outcome_unknown"] is True
+    assert result["effective_policy"] == "docker_container"
+    assert "sandbox_refused" not in result
+    assert normalize_tool_result(result).status == "outcome_unknown"

@@ -536,7 +536,7 @@ async def _run_in_session(tool: str, command: str, ctx: Optional[dict],
     exec_result = await asyncio.to_thread(
         provider.exec, session_id, argv, timeout=timeout_s(), touches=touches)
 
-    if not exec_result.get("executed"):
+    if not exec_result.get("executed") and not exec_result.get("outcome_unknown"):
         # Removed between the status check above and this exec — a narrow
         # race, still never allowed to look like success.
         return {
@@ -562,6 +562,9 @@ async def _run_in_session(tool: str, command: str, ctx: Optional[dict],
         "network": False,
         "sandbox_session": session_id,
     }
+    if exec_result.get("outcome_unknown"):
+        common["outcome_unknown"] = True
+        common["uncertainty"] = exec_result.get("uncertainty") or {}
     if rewrites:
         common["workspace_paths_rewritten"] = rewrites
     if note:
