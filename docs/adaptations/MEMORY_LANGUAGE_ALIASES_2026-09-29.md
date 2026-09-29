@@ -34,9 +34,10 @@ identificadores, benchmark completo y motor de memoria.
 venv/Scripts/python.exe -m pytest tests/test_memory_search_language_aliases.py tests/test_bench_memory_recall.py tests/test_memory_engine.py -q
 ```
 
-**Matiz nuevo, pendiente de otro cambio:** Python todavía ocupa la primera
-posición porque la carga del corpus marca la preferencia JavaScript como
-contradicha por la posterior regla de sangría Python. El BM25 corregido puntúa
-mejor JavaScript, pero la penalización por conflicto permanece. Los lenguajes
-son calificadores distintos; arreglar esa detección es una corrección separada,
-no un motivo para subir pesos artificialmente.
+**Matiz resuelto en un cambio posterior:** Python todavía ocupaba la primera
+posición porque la carga del corpus penalizaba la preferencia JavaScript.
+La inspección de la fila de conflicto precisó que el otro recuerdo era
+«Alice prefers pytest over unittest for Python tests», no la regla de sangría
+Python. El BM25 corregido puntuaba mejor JavaScript, pero persistía esa
+penalización. La corrección separada se documenta en
+[ámbitos de preferencias](MEMORY_PREFERENCE_SCOPES_2026-09-29.md).

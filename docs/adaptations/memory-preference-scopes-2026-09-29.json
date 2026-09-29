@@ -1,0 +1,1276 @@
+{
+  "suite": "memory_recall",
+  "embedder": "hash_fallback",
+  "embedder_note": "no real embedding model is used by this suite by design; the semantic lane is src.hash_embed, deterministic and offline (see module docstring)",
+  "k_values": [
+    1,
+    3,
+    5
+  ],
+  "corpus_size": 56,
+  "aggregate": {
+    "n_queries": 36,
+    "n_scored_queries": 32,
+    "mrr": 0.916667,
+    "forbidden_leak_count": 0,
+    "latency_p50_ms": 70.385,
+    "latency_p95_ms": 82.171,
+    "per_k": {
+      "1": {
+        "hit_at_k": 0.84375,
+        "recall_at_k": 0.768229
+      },
+      "3": {
+        "hit_at_k": 1.0,
+        "recall_at_k": 0.973958
+      },
+      "5": {
+        "hit_at_k": 1.0,
+        "recall_at_k": 0.984375
+      }
+    }
+  },
+  "per_query": [
+    {
+      "key": "q_editor",
+      "query": "What code editor does Alice prefer?",
+      "owner": "alice",
+      "project": "",
+      "expected": [
+        "pref_editor"
+      ],
+      "forbidden": [
+        "other_editor"
+      ],
+      "ranked_keys": [
+        "pref_editor",
+        "pref_notifications",
+        "pref_lang_response",
+        "fact_language_pref",
+        "fact_company"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 1.0,
+      "latency_ms": 22.964,
+      "per_k": {
+        "1": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_theme",
+      "query": "Which theme does Alice like, dark or light?",
+      "owner": "alice",
+      "project": "",
+      "expected": [
+        "pref_theme"
+      ],
+      "forbidden": [
+        "other_pref_theme"
+      ],
+      "ranked_keys": [
+        "pref_notifications",
+        "pref_theme",
+        "fact_language_pref",
+        "pref_lang_response",
+        "fact_company"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 0.5,
+      "latency_ms": 21.142,
+      "per_k": {
+        "1": {
+          "hit": 0,
+          "recall": 0.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_notify",
+      "query": "Does Alice want notifications late at night?",
+      "owner": "alice",
+      "project": "",
+      "expected": [
+        "es_pref_notify",
+        "pref_notifications"
+      ],
+      "forbidden": [],
+      "ranked_keys": [
+        "pref_notifications",
+        "fact_company",
+        "es_pref_notify",
+        "pref_lang_response",
+        "fact_language_pref"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 1.0,
+      "latency_ms": 22.692,
+      "per_k": {
+        "1": {
+          "hit": 1,
+          "recall": 0.5
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_indent",
+      "query": "How many spaces does Alice use for JS indentation?",
+      "owner": "alice",
+      "project": "atlas",
+      "expected": [
+        "pref_indent"
+      ],
+      "forbidden": [],
+      "ranked_keys": [
+        "pref_indent",
+        "contra_new_style",
+        "pref_test_runner",
+        "dec_auth",
+        "dec_monitoring"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 1.0,
+      "latency_ms": 68.514,
+      "per_k": {
+        "1": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_test_runner",
+      "query": "What test runner does Alice use for Python?",
+      "owner": "alice",
+      "project": "atlas",
+      "expected": [
+        "pref_test_runner"
+      ],
+      "forbidden": [],
+      "ranked_keys": [
+        "pref_test_runner",
+        "conv_lint",
+        "dec_auth",
+        "dec_monitoring",
+        "contra_new_style"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 1.0,
+      "latency_ms": 55.898,
+      "per_k": {
+        "1": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_resumen_es",
+      "query": "Que resumen le gusta recibir a Alice los viernes?",
+      "owner": "alice",
+      "project": "",
+      "expected": [
+        "pref_spanish"
+      ],
+      "forbidden": [],
+      "ranked_keys": [
+        "pref_spanish",
+        "fact_company",
+        "es_pref_notify",
+        "pref_lang_response",
+        "fact_language_pref"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 1.0,
+      "latency_ms": 23.134,
+      "per_k": {
+        "1": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_timezone",
+      "query": "What is Alice's timezone?",
+      "owner": "alice",
+      "project": "",
+      "expected": [
+        "fact_timezone"
+      ],
+      "forbidden": [],
+      "ranked_keys": [
+        "fact_timezone",
+        "fact_manager",
+        "fact_birthday",
+        "es_pref_notify",
+        "es_fact_holiday"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 1.0,
+      "latency_ms": 13.695,
+      "per_k": {
+        "1": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_birthday",
+      "query": "When is Alice's birthday?",
+      "owner": "alice",
+      "project": "",
+      "expected": [
+        "fact_birthday"
+      ],
+      "forbidden": [],
+      "ranked_keys": [
+        "fact_birthday",
+        "fact_timezone",
+        "fact_manager",
+        "fact_company"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 1.0,
+      "latency_ms": 13.004,
+      "per_k": {
+        "1": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_company",
+      "query": "What company does Alice work at?",
+      "owner": "alice",
+      "project": "",
+      "expected": [
+        "fact_company"
+      ],
+      "forbidden": [],
+      "ranked_keys": [
+        "fact_company",
+        "pref_notifications",
+        "pref_lang_response",
+        "fact_language_pref",
+        "fact_family_es"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 1.0,
+      "latency_ms": 22.222,
+      "per_k": {
+        "1": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_manager",
+      "query": "Who is Alice's manager?",
+      "owner": "alice",
+      "project": "",
+      "expected": [
+        "fact_manager"
+      ],
+      "forbidden": [],
+      "ranked_keys": [
+        "fact_manager",
+        "fact_timezone",
+        "fact_birthday"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 1.0,
+      "latency_ms": 10.322,
+      "per_k": {
+        "1": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_db",
+      "query": "What database does the Atlas project use?",
+      "owner": "alice",
+      "project": "atlas",
+      "expected": [
+        "dec_db_choice",
+        "dup_db_a",
+        "dup_db_b",
+        "fact_db"
+      ],
+      "forbidden": [
+        "other_db"
+      ],
+      "ranked_keys": [
+        "dup_db_b",
+        "fact_db",
+        "fact_role",
+        "dec_queue",
+        "dec_auth"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 1.0,
+      "latency_ms": 76.479,
+      "per_k": {
+        "1": {
+          "hit": 1,
+          "recall": 0.25
+        },
+        "3": {
+          "hit": 1,
+          "recall": 0.5
+        },
+        "5": {
+          "hit": 1,
+          "recall": 0.5
+        }
+      }
+    },
+    {
+      "key": "q_stack",
+      "query": "What backend framework and language does Atlas use?",
+      "owner": "alice",
+      "project": "atlas",
+      "expected": [
+        "fact_stack"
+      ],
+      "forbidden": [],
+      "ranked_keys": [
+        "dec_monitoring",
+        "fact_role",
+        "fact_stack",
+        "pref_indent",
+        "contra_new_lead"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 0.333333,
+      "latency_ms": 79.26,
+      "per_k": {
+        "1": {
+          "hit": 0,
+          "recall": 0.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_family_es",
+      "query": "Cuantos hijos tiene Alice y donde vive?",
+      "owner": "alice",
+      "project": "",
+      "expected": [
+        "fact_family_es"
+      ],
+      "forbidden": [],
+      "ranked_keys": [
+        "fact_family_es",
+        "es_pref_notify",
+        "pref_lang_response",
+        "fact_language_pref",
+        "fact_company"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 1.0,
+      "latency_ms": 22.316,
+      "per_k": {
+        "1": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_branch",
+      "query": "What is the branch naming convention on Atlas?",
+      "owner": "alice",
+      "project": "atlas",
+      "expected": [
+        "conv_branch"
+      ],
+      "forbidden": [
+        "other_conv_branch"
+      ],
+      "ranked_keys": [
+        "fact_role",
+        "conv_branch",
+        "contra_new_hosting",
+        "dup_db_b",
+        "fact_birthday"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 0.5,
+      "latency_ms": 82.171,
+      "per_k": {
+        "1": {
+          "hit": 0,
+          "recall": 0.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_pr_review",
+      "query": "How many approvals does a pull request need on Atlas?",
+      "owner": "alice",
+      "project": "atlas",
+      "expected": [
+        "conv_pr_review"
+      ],
+      "forbidden": [],
+      "ranked_keys": [
+        "conv_pr_review",
+        "dup_review_b",
+        "dec_deploy",
+        "conv_deploy_window",
+        "dup_standup_a"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 1.0,
+      "latency_ms": 77.554,
+      "per_k": {
+        "1": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_lint",
+      "query": "What linter does Atlas use for Python and what line length?",
+      "owner": "alice",
+      "project": "atlas",
+      "expected": [
+        "conv_lint"
+      ],
+      "forbidden": [],
+      "ranked_keys": [
+        "conv_lint",
+        "dec_monitoring",
+        "pref_indent",
+        "pref_test_runner",
+        "dec_auth"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 1.0,
+      "latency_ms": 77.492,
+      "per_k": {
+        "1": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_test_cov",
+      "query": "What test coverage percentage does Atlas require?",
+      "owner": "alice",
+      "project": "atlas",
+      "expected": [
+        "conv_test_cov"
+      ],
+      "forbidden": [],
+      "ranked_keys": [
+        "conv_test_cov",
+        "pref_notifications",
+        "fact_role",
+        "conv_deploy_window",
+        "contra_new_lead"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 1.0,
+      "latency_ms": 70.742,
+      "per_k": {
+        "1": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_commit_lang",
+      "query": "What language should Atlas commit messages be written in?",
+      "owner": "alice",
+      "project": "atlas",
+      "expected": [
+        "conv_commit_lang"
+      ],
+      "forbidden": [],
+      "ranked_keys": [
+        "conv_commit_lang",
+        "dup_review_a",
+        "fact_stack",
+        "pref_commit_style",
+        "conv_secrets"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 1.0,
+      "latency_ms": 67.741,
+      "per_k": {
+        "1": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_secrets",
+      "query": "Where does Atlas store its secrets?",
+      "owner": "alice",
+      "project": "atlas",
+      "expected": [
+        "conv_secrets"
+      ],
+      "forbidden": [],
+      "ranked_keys": [
+        "fact_db",
+        "conv_secrets",
+        "pref_notifications",
+        "conv_deploy_window",
+        "dec_deploy"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 0.5,
+      "latency_ms": 70.494,
+      "per_k": {
+        "1": {
+          "hit": 0,
+          "recall": 0.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_deploy_window",
+      "query": "When does Atlas deploy to production?",
+      "owner": "alice",
+      "project": "atlas",
+      "expected": [
+        "conv_deploy_window"
+      ],
+      "forbidden": [],
+      "ranked_keys": [
+        "conv_deploy_window",
+        "dec_deploy",
+        "conv_secrets",
+        "dec_auth",
+        "dec_monitoring"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 1.0,
+      "latency_ms": 69.63,
+      "per_k": {
+        "1": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_db_choice_why",
+      "query": "Why did the Atlas team choose PostgreSQL over MySQL?",
+      "owner": "alice",
+      "project": "atlas",
+      "expected": [
+        "dec_db_choice"
+      ],
+      "forbidden": [],
+      "ranked_keys": [
+        "dec_db_choice",
+        "fact_db",
+        "dec_frontend",
+        "dup_standup_a",
+        "dup_standup_b"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 1.0,
+      "latency_ms": 70.385,
+      "per_k": {
+        "1": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_queue",
+      "query": "What task queue did the Atlas team decide to use?",
+      "owner": "alice",
+      "project": "atlas",
+      "expected": [
+        "dec_queue"
+      ],
+      "forbidden": [],
+      "ranked_keys": [
+        "dec_queue",
+        "dec_auth",
+        "dec_monitoring",
+        "dec_db_choice",
+        "dec_frontend"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 1.0,
+      "latency_ms": 72.532,
+      "per_k": {
+        "1": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_auth",
+      "query": "How does Atlas authenticate API requests?",
+      "owner": "alice",
+      "project": "atlas",
+      "expected": [
+        "dec_auth"
+      ],
+      "forbidden": [
+        "other_dec_auth"
+      ],
+      "ranked_keys": [
+        "dec_auth",
+        "dup_review_b",
+        "pref_notifications",
+        "conv_deploy_window",
+        "conv_branch"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 1.0,
+      "latency_ms": 69.63,
+      "per_k": {
+        "1": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_k8s",
+      "query": "Does Atlas deploy on Kubernetes?",
+      "owner": "alice",
+      "project": "atlas",
+      "expected": [
+        "dec_deploy"
+      ],
+      "forbidden": [],
+      "ranked_keys": [
+        "dec_deploy",
+        "conv_deploy_window",
+        "conv_pr_review",
+        "conv_test_cov",
+        "fact_role"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 1.0,
+      "latency_ms": 75.1,
+      "per_k": {
+        "1": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_frontend",
+      "query": "Which frontend framework did Atlas choose, React or Vue?",
+      "owner": "alice",
+      "project": "atlas",
+      "expected": [
+        "dec_frontend"
+      ],
+      "forbidden": [],
+      "ranked_keys": [
+        "dec_frontend",
+        "conv_deploy_window",
+        "dec_db_choice",
+        "dec_monorepo_es",
+        "conv_branch"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 1.0,
+      "latency_ms": 88.062,
+      "per_k": {
+        "1": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_monorepo_es",
+      "query": "Por que decidio el equipo de Atlas usar un monorepo?",
+      "owner": "alice",
+      "project": "atlas",
+      "expected": [
+        "dec_monorepo_es"
+      ],
+      "forbidden": [],
+      "ranked_keys": [
+        "dec_monorepo_es",
+        "es_conv_standup",
+        "es_fact_holiday",
+        "es_pref_notify",
+        "contra_new_hosting"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 1.0,
+      "latency_ms": 76.787,
+      "per_k": {
+        "1": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_monitoring",
+      "query": "What monitoring stack does Atlas use?",
+      "owner": "alice",
+      "project": "atlas",
+      "expected": [
+        "dec_monitoring"
+      ],
+      "forbidden": [],
+      "ranked_keys": [
+        "dec_monitoring",
+        "dec_auth",
+        "dec_db_choice",
+        "dec_queue",
+        "pref_notifications"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 1.0,
+      "latency_ms": 72.997,
+      "per_k": {
+        "1": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_standup",
+      "query": "What time does the Atlas team's daily standup happen?",
+      "owner": "alice",
+      "project": "atlas",
+      "expected": [
+        "dup_standup_a",
+        "dup_standup_b",
+        "es_conv_standup"
+      ],
+      "forbidden": [],
+      "ranked_keys": [
+        "dup_standup_a",
+        "dup_standup_b",
+        "conv_deploy_window",
+        "es_conv_standup",
+        "fact_role"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 1.0,
+      "latency_ms": 72.832,
+      "per_k": {
+        "1": {
+          "hit": 1,
+          "recall": 0.333333
+        },
+        "3": {
+          "hit": 1,
+          "recall": 0.666667
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_review_turnaround",
+      "query": "How quickly should Atlas pull requests be reviewed?",
+      "owner": "alice",
+      "project": "atlas",
+      "expected": [
+        "dup_review_a",
+        "dup_review_b"
+      ],
+      "forbidden": [],
+      "ranked_keys": [
+        "dup_review_a",
+        "dup_review_b",
+        "conv_commit_lang",
+        "conv_pr_review",
+        "dec_auth"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 1.0,
+      "latency_ms": 66.324,
+      "per_k": {
+        "1": {
+          "hit": 1,
+          "recall": 0.5
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_hosting_now",
+      "query": "Where is the Atlas project hosted right now?",
+      "owner": "alice",
+      "project": "atlas",
+      "expected": [
+        "contra_new_hosting"
+      ],
+      "forbidden": [
+        "contra_old_hosting"
+      ],
+      "ranked_keys": [
+        "contra_new_hosting",
+        "dup_db_b",
+        "fact_role",
+        "contra_new_lead",
+        "fact_db"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 1.0,
+      "latency_ms": 78.038,
+      "per_k": {
+        "1": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_lead_now",
+      "query": "Who is the current Atlas backend lead?",
+      "owner": "alice",
+      "project": "atlas",
+      "expected": [
+        "contra_new_lead"
+      ],
+      "forbidden": [
+        "contra_old_lead"
+      ],
+      "ranked_keys": [
+        "fact_role",
+        "contra_new_lead",
+        "fact_stack",
+        "dup_db_b",
+        "contra_new_hosting"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 0.5,
+      "latency_ms": 77.149,
+      "per_k": {
+        "1": {
+          "hit": 0,
+          "recall": 0.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_indent_now",
+      "query": "How does Atlas indent Python code now?",
+      "owner": "alice",
+      "project": "atlas",
+      "expected": [
+        "contra_new_style"
+      ],
+      "forbidden": [
+        "contra_old_style"
+      ],
+      "ranked_keys": [
+        "contra_new_style",
+        "dup_review_a",
+        "contra_new_lead",
+        "fact_stack",
+        "conv_lint"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 1.0,
+      "latency_ms": 74.044,
+      "per_k": {
+        "1": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "3": {
+          "hit": 1,
+          "recall": 1.0
+        },
+        "5": {
+          "hit": 1,
+          "recall": 1.0
+        }
+      }
+    },
+    {
+      "key": "q_oncall_probe",
+      "query": "Is Alice on call for Atlas this week?",
+      "owner": "alice",
+      "project": "atlas",
+      "expected": [],
+      "forbidden": [
+        "exp_oncall"
+      ],
+      "ranked_keys": [
+        "fact_role",
+        "dup_db_b",
+        "pref_indent",
+        "fact_birthday",
+        "contra_new_hosting"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 0.0,
+      "latency_ms": 89.943,
+      "per_k": {
+        "1": {
+          "hit": 0,
+          "recall": 0.0
+        },
+        "3": {
+          "hit": 0,
+          "recall": 0.0
+        },
+        "5": {
+          "hit": 0,
+          "recall": 0.0
+        }
+      }
+    },
+    {
+      "key": "q_promo_probe",
+      "query": "Is there a discount promo running right now?",
+      "owner": "alice",
+      "project": "",
+      "expected": [],
+      "forbidden": [
+        "exp_promo"
+      ],
+      "ranked_keys": [
+        "fact_timezone",
+        "fact_manager",
+        "fact_birthday",
+        "fact_company",
+        "pref_spanish"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 0.0,
+      "latency_ms": 16.877,
+      "per_k": {
+        "1": {
+          "hit": 0,
+          "recall": 0.0
+        },
+        "3": {
+          "hit": 0,
+          "recall": 0.0
+        },
+        "5": {
+          "hit": 0,
+          "recall": 0.0
+        }
+      }
+    },
+    {
+      "key": "q_cross_tenant_a",
+      "query": "What database does Zephyr use?",
+      "owner": "alice",
+      "project": "atlas",
+      "expected": [],
+      "forbidden": [
+        "other_db"
+      ],
+      "ranked_keys": [
+        "dup_db_a",
+        "fact_db",
+        "dup_db_b",
+        "dec_queue",
+        "dec_auth"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 0.0,
+      "latency_ms": 25.676,
+      "per_k": {
+        "1": {
+          "hit": 0,
+          "recall": 0.0
+        },
+        "3": {
+          "hit": 0,
+          "recall": 0.0
+        },
+        "5": {
+          "hit": 0,
+          "recall": 0.0
+        }
+      }
+    },
+    {
+      "key": "q_cross_tenant_b",
+      "query": "What editor does Alice use?",
+      "owner": "bob",
+      "project": "zephyr",
+      "expected": [],
+      "forbidden": [
+        "pref_editor"
+      ],
+      "ranked_keys": [
+        "other_dec_auth",
+        "other_editor"
+      ],
+      "leaked_keys": [],
+      "reciprocal_rank": 0.0,
+      "latency_ms": 8.635,
+      "per_k": {
+        "1": {
+          "hit": 0,
+          "recall": 0.0
+        },
+        "3": {
+          "hit": 0,
+          "recall": 0.0
+        },
+        "5": {
+          "hit": 0,
+          "recall": 0.0
+        }
+      }
+    }
+  ]
+}

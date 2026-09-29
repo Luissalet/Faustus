@@ -311,9 +311,27 @@ def _same_subject_different_value(a: str, b: str) -> Optional[str]:
     subject_b, pred_b, obj_b = svo_b
     if subject_a != subject_b or pred_a != pred_b:
         return None
+    if pred_a in {"prefers", "prefiere"}:
+        scope_a, scope_b = _preference_scope(obj_a), _preference_scope(obj_b)
+        # A person's preferences are not a single-valued field across contexts.
+        # Different explicit qualifiers are insufficient evidence of conflict;
+        # uncertain/overlapping contexts remain eligible for advisory review.
+        if scope_a and scope_b and scope_a != scope_b:
+            return None
     if _norm_text(obj_a) == _norm_text(obj_b):
         return None
     return f"{subject_a!r} {pred_a!r}: {obj_a!r} vs {obj_b!r}"
+
+
+def _preference_scope(obj: str) -> str:
+    """Literal trailing `for`/`para` qualifier, not an inferred preference type."""
+    match = re.search(r"\b(?:for|para)\s+(.+)$", obj)
+    if not match:
+        return ""
+    scope = match.group(1).strip(" .!?;:")
+    # These abbreviations name the same scope, not a reason to suppress a real
+    # contradiction. No rewriting of identifiers, substrings or bare Go/R.
+    return re.sub(r"\b(?:js|ts)\b", lambda m: {"js": "javascript", "ts": "typescript"}[m[0]], scope)
 
 
 def classify(text_a: Any, text_b: Any) -> Optional[Tuple[str, str]]:
