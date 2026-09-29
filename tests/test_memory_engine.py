@@ -231,6 +231,19 @@ def test_the_semantic_lane_is_used_at_full_weight_when_present(store):
     assert hits[0]["relevance"] == pytest.approx(expected)
 
 
+def test_semantic_lane_keeps_best_score_for_duplicate_vector_hits(store):
+    item = _rule("A note with duplicate vector matches", level="semantic")
+
+    class DuplicateVectors(FakeVectors):
+        def search(self, query, k=8):
+            return [{"memory_id": item["id"], "score": 0.9},
+                    {"memory_id": item["id"], "score": 0.2}]
+
+    engine.set_vector_store(DuplicateVectors())
+    hits = engine.search("duplicate vector matches", "luis", "", now=NOW)
+    assert hits[0]["semantic"] == 0.9
+
+
 def test_the_graph_lane_joins_on_evidence_refs(store):
     plain = _rule("Nothing to do with anything", level="semantic")
     linked = _rule("The cart total is computed in cart.py", level="semantic",

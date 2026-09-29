@@ -1445,7 +1445,7 @@ def _semantic_scores(query: str, ids: Sequence[str]) -> Tuple[Dict[str, float], 
             score = float(hit.get("score") or 0.0)
         except (TypeError, ValueError):
             score = 0.0
-        scores[mid] = max(0.0, min(1.0, score))
+        scores[mid] = max(scores.get(mid, 0.0), max(0.0, min(1.0, score)))
     return scores, True
 
 
