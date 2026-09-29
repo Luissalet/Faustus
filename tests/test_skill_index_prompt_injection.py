@@ -21,21 +21,13 @@ import json
 import sys
 import types
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 
 
-# ── module-load stubbing ─────────────────────────────────────────────────
-for _mod in [
-    "sqlalchemy", "sqlalchemy.orm", "sqlalchemy.ext", "sqlalchemy.ext.declarative",
-    "sqlalchemy.ext.hybrid", "sqlalchemy.sql", "sqlalchemy.sql.expression",
-    "src.database",
-    "src.agent_tools",
-    "core.models", "core.database",
-]:
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
+# Use real imports; dependencies and prefs are patched per test below.
+# Global module stubs poisoned agent_loop's imported parsing functions for
+# later full-turn tests, turning string operations into endless mock chains.
 
 
 MALICIOUS_INDEX_DESC = (
