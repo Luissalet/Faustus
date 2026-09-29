@@ -1,4 +1,5 @@
 import asyncio
+import codecs
 import logging
 import os
 import re
@@ -7,7 +8,6 @@ import signal
 import subprocess
 import sys
 import time
-import collections
 from typing import Optional, Callable, Awaitable, Tuple, Dict, Mapping
 from core.platform_compat import IS_WINDOWS, find_bash
 from src import process_ownership, sandbox_exec
@@ -493,6 +493,32 @@ def _clean_tmux_command_output(text: str, wrapped_command: str) -> str:
         cleaned.append(raw)
     return "\n".join(cleaned).strip()
 
+_STREAM_CHUNK_BYTES = 8192
+_STREAM_TAIL_CHARS = 4096
+_STREAM_TRUNCATION = "\n[output truncated while draining process]"
+
+
+class _BoundedStreamText:
+    """Retain a prefix without ever stopping pipe drainage."""
+
+    def __init__(self, limit: int = MAX_OUTPUT_CHARS):
+        self.limit = limit
+        self.text = ""
+        self.truncated = False
+
+    def append(self, text: str) -> None:
+        available = self.limit - len(self.text)
+        if len(text) > available:
+            self.truncated = True
+        self.text += text[:available]
+
+    def result(self) -> str:
+        if self.truncated:
+            return self.text[:self.limit - len(_STREAM_TRUNCATION)] + _STREAM_TRUNCATION
+        # Match the previous line reader: omit exactly the final LF.
+        return self.text.removesuffix("\n")
+
+
 async def _run_subprocess_streaming(
     proc: asyncio.subprocess.Process,
     *,
@@ -506,9 +532,9 @@ async def _run_subprocess_streaming(
     # Record the spawn so a kill can tell a live child from a recycled pid.
     process_ownership.note_started(proc)
     started = time.time()
-    stdout_full: list[str] = []
-    stderr_full: list[str] = []
-    tail = collections.deque(maxlen=PROGRESS_TAIL_LINES)
+    stdout_full = _BoundedStreamText()
+    stderr_full = _BoundedStreamText()
+    tail = [""]
     last_activity = [time.time()]
     idle_hit = [False]
     if idle_timeout is None:
@@ -517,17 +543,19 @@ async def _run_subprocess_streaming(
     async def _reader(stream, full_buf, label: str):
         if stream is None:
             return
+        decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
         while True:
-            line = await stream.readline()
-            if not line:
-                break
-            last_activity[0] = time.time()
-            decoded = line.decode("utf-8", errors="replace").rstrip("\n")
+            chunk = await stream.read(_STREAM_CHUNK_BYTES)
+            if chunk:
+                # Bytes are activity even without LF or a complete UTF-8 codepoint.
+                last_activity[0] = time.time()
+            decoded = decoder.decode(chunk, final=not chunk)
             full_buf.append(decoded)
-            if label == "err":
-                tail.append(f"! {decoded}")
-            else:
-                tail.append(decoded)
+            if decoded:
+                fragment = ("! " if label == "err" else "") + decoded
+                tail[0] = (tail[0] + fragment)[-_STREAM_TAIL_CHARS:]
+            if not chunk:
+                break
 
     async def _idle_watchdog():
         if not idle_timeout:
@@ -546,7 +574,7 @@ async def _run_subprocess_streaming(
                 try:
                     await progress_cb({
                         "elapsed_s": round(time.time() - started, 1),
-                        "tail": "\n".join(list(tail)),
+                        "tail": "\n".join(tail[0].splitlines()[-PROGRESS_TAIL_LINES:]),
                     })
                 except Exception:
                     pass
@@ -594,13 +622,13 @@ async def _run_subprocess_streaming(
         for t in (rd_out, rd_err):
             try:
                 await asyncio.wait_for(t, timeout=1)
-            except Exception:
+            except (asyncio.CancelledError, Exception):
                 pass
         process_ownership.forget(proc)
 
     return (
-        "\n".join(stdout_full),
-        "\n".join(stderr_full),
+        stdout_full.result(),
+        stderr_full.result(),
         proc.returncode,
         timed_out,
     )
