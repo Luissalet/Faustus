@@ -3483,7 +3483,9 @@ def _sanitize_llm_messages(messages: List[Dict], provider: Optional[str] = None)
             # teach the next completion to emit it again.
             content = item.get("content")
             text = _message_text_content(content).strip()
-            if text in _REFERENCE_CONTEXT_BOUNDARY_ALIASES and not item.get("tool_calls"):
+            # The legacy poison was a whole prose answer. A text marker inside
+            # a block list does not authorize discarding its images or media.
+            if isinstance(content, str) and text in _REFERENCE_CONTEXT_BOUNDARY_ALIASES and not item.get("tool_calls"):
                 item = dict(item)
                 item["content"] = _REFERENCE_CONTEXT_BOUNDARY
             # Re-add an explicit content=None when the message is tool-calls-only
