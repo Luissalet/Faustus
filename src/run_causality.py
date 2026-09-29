@@ -9,6 +9,7 @@ class RunOrigin:
     session_id: str
     run_id: str
     _effect_recorder: Any = field(default=None, repr=False, compare=False)
+    _require_durable_email_intent: bool = field(default=False, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -21,14 +22,23 @@ class CallOrigin:
 _ORIGIN: ContextVar[Optional[RunOrigin]] = ContextVar("server_run_origin", default=None)
 
 
-def bind_run(session_id: str, run_id: str, *, _effect_recorder: Any = None) -> Token:
-    return _ORIGIN.set(RunOrigin(session_id, run_id, _effect_recorder))
+def bind_run(session_id: str, run_id: str, *, _effect_recorder: Any = None,
+             _require_durable_email_intent: bool = False) -> Token:
+    return _ORIGIN.set(RunOrigin(session_id, run_id, _effect_recorder,
+                                 _require_durable_email_intent))
 
 
 def capture_effect_recorder(session_id: Optional[str]) -> Any:
     """Private execution capability; never part of the exported CallOrigin."""
     origin = _ORIGIN.get()
     return origin._effect_recorder if origin and origin.session_id == str(session_id or "") else None
+
+
+def capture_email_intent_requirement(session_id: Optional[str]) -> bool:
+    """Private server policy for this invocation, never model-provided options."""
+    origin = _ORIGIN.get()
+    return bool(origin and origin.session_id == str(session_id or "")
+                and origin._require_durable_email_intent)
 
 
 def reset_run(token: Token) -> None:

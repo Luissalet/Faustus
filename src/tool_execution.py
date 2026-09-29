@@ -1305,7 +1305,8 @@ async def execute_tool_block(
     not a call whose outcome can go "unknown". No-op when there is no
     `call_id` (a caller outside the chat-turn call sites below) or no matching
     captured recorder (headless/manual callers, tests) — the effect still
-    executes, it is simply not tracked for recovery.
+    executes, it is simply not tracked for recovery. Worker invocations explicitly
+    require durable email intent and reject email when that recorder is absent.
     """
     if security_context is _MISSING_TOOL_SECURITY_CONTEXT:
         raise TypeError(
@@ -1322,9 +1323,11 @@ async def execute_tool_block(
         )
 
     # Resolve one executable registration and its contract before any await.
-    from src.run_causality import capture_call, capture_effect_recorder
+    from src.run_causality import (capture_call, capture_effect_recorder,
+                                   capture_email_intent_requirement)
     causal_call = capture_call(session_id, call_id)
     effect_recorder = capture_effect_recorder(session_id)
+    require_email_intent = capture_email_intent_requirement(session_id)
     # This is per-call, not the catalogue snapshot advertised for a model step.
     from src.pdf_call_binding import capture_pdf_call
     pdf_call_binding = capture_pdf_call(getattr(block, "tool_type", ""))
@@ -1482,7 +1485,10 @@ async def execute_tool_block(
         _effect_class = "write"
     _tracked_effect = bool(((_effect_class and _effect_class != "read") or _email_effect) and call_id)
     _intent_required = False
-    _intent_failed = False
+    # Workers have causal identity but no durable recorder. That identity
+    # must not allow an email to bypass their required durable-intent gate.
+    _intent_failed = bool(_email_effect and require_email_intent
+                          and (effect_recorder is None or not call_id))
     if _tracked_effect and effect_recorder is not None:
         try:
             _intent_required = bool(_email_effect)

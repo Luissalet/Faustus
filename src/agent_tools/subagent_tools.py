@@ -1188,6 +1188,7 @@ class SubagentRun:
         self.stop_reason_requested: Optional[str] = None
         self.session_id: Optional[str] = None
         self.parent_session_id: Optional[str] = None
+        self.invocation_run_ids: List[str] = []
         # Captured by the coordinator before dispatch, never resolved again
         # when this worker finishes (the parent may already have a new run).
         self.parent_run_id: Optional[str] = None
@@ -1581,6 +1582,14 @@ async def _run_subagent(
     def _steers() -> List[Dict[str, str]]:
         return pending_steers(child_sid)
 
+    from src.run_causality import bind_run, reset_run
+    # One server UUID per stream invocation (including retries), shared with
+    # trace/harness. Worker/session/delegation IDs remain separate identities.
+    invocation_run_id = uuid.uuid4().hex
+    _worker_opts["run_id"] = invocation_run_id
+    run.invocation_run_ids = (run.invocation_run_ids + [invocation_run_id])[-8:]
+    origin_token = bind_run(child_sid, invocation_run_id,
+                            _require_durable_email_intent=True)
     run.accepts_steers = True
     try:
         async for chunk in stream_agent_loop(
@@ -1710,6 +1719,7 @@ async def _run_subagent(
         logger.warning("delegate_agents: sub-agent %s crashed: %s", run.name, e, exc_info=True)
         await emit({"event": "error", "message": run.error})
     finally:
+        reset_run(origin_token)
         run.accepts_steers = False
         run.finished = time.time()
         if run.stop_reason == "unknown":
@@ -1788,6 +1798,7 @@ def _save_transcript(run: SubagentRun, sm: Any) -> None:
             "worker_id": run.id, "session_id": run.session_id,
             "parent_run_id": run.parent_run_id, "delegation_id": run.delegation_id,
             "parent_call_id": run.parent_call_id,
+            "invocation_run_ids": list(run.invocation_run_ids),
             "stop_reason": run.stop_reason, "steered": run.steered,
             "supervisor": list(run.supervisor),
         }
