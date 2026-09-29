@@ -1358,6 +1358,40 @@ def evidence_dependents(ref: str, *, owner: str, project: Optional[str] = None,
                    for span in item.get("evidence") or [])]
 
 
+def _retraction_decision(item: Dict[str, Any], ref: str,
+                         kind: str) -> Tuple[List[Dict[str, Any]], str]:
+    """The same support rule for a read-only preview and the actual write."""
+    from src.memory_grounding import check_item
+
+    remaining = [span for span in item.get("evidence") or []
+                 if not (isinstance(span, dict) and span.get("ref") == ref
+                         and span.get("kind") == kind)]
+    excerpts = [str(span.get("excerpt") or "") for span in remaining
+                if isinstance(span, dict) and str(span.get("excerpt") or "").strip()]
+    check = check_item(item.get("text"), excerpts)
+    claim = " ".join(str(item.get("text") or "").split()).casefold()
+    exact_excerpt = bool(claim) and any(
+        claim in " ".join(excerpt.split()).casefold() for excerpt in excerpts)
+    # check_item has no specifics to verify for some generic claims; in that
+    # case an unrelated surviving excerpt is not sufficient proof.
+    grounded = bool(excerpts) and (exact_excerpt or
+                                   (check["checked"] > 0 and check["grounded"]))
+    return remaining, "retain" if grounded else "forget"
+
+
+def plan_evidence_retraction(ref: str, *, owner: str, kind: str,
+                             project: Optional[str] = None) -> Dict[str, Any]:
+    """Read-only preview of which memories a source withdrawal would affect."""
+    dependents = evidence_dependents(ref, owner=owner, project=project, kind=kind)
+    entries = []
+    for item in dependents:
+        remaining, action = _retraction_decision(item, ref, kind)
+        entries.append({"id": item["id"], "action": action,
+                        "remaining_evidence_count": len(remaining)})
+    return {"ref": ref, "kind": kind, "owner": owner, "project": project,
+            "entries": entries}
+
+
 def retract_evidence(ref: str, *, owner: str, kind: str,
                      project: Optional[str] = None,
                      now: Optional[datetime] = None) -> Dict[str, Any]:
@@ -1369,25 +1403,11 @@ def retract_evidence(ref: str, *, owner: str, kind: str,
     automatic resurrection of the same claim through a tombstone.
     """
     dependents = evidence_dependents(ref, owner=owner, project=project, kind=kind)
-    from src.memory_grounding import check_item
-
     retained: List[str] = []
     forgotten: List[str] = []
     for item in dependents:
-        remaining = [span for span in item.get("evidence") or []
-                     if not (isinstance(span, dict) and span.get("ref") == ref
-                             and span.get("kind") == kind)]
-        excerpts = [str(span.get("excerpt") or "") for span in remaining
-                    if isinstance(span, dict) and str(span.get("excerpt") or "").strip()]
-        check = check_item(item.get("text"), excerpts)
-        claim = " ".join(str(item.get("text") or "").split()).casefold()
-        exact_excerpt = bool(claim) and any(
-            claim in " ".join(excerpt.split()).casefold() for excerpt in excerpts)
-        # check_item has no specifics to verify for some generic claims; in
-        # that case an unrelated surviving excerpt is not sufficient proof.
-        grounded = bool(excerpts) and (exact_excerpt or
-                                       (check["checked"] > 0 and check["grounded"]))
-        if grounded:
+        remaining, action = _retraction_decision(item, ref, kind)
+        if action == "retain":
             item["evidence"] = remaining
             item["updated_at"] = _iso(now or _utcnow())
             save_item(item)

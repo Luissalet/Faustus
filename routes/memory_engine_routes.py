@@ -225,18 +225,20 @@ def setup_memory_engine_routes() -> APIRouter:
         return {"status": "success", "forgotten": True, "id": item_id, "tombstone": tombstone}
 
     @router.get("/evidence/dependents")
-    async def evidence_dependents(request: Request, ref: str,
+    async def evidence_dependents(request: Request, ref: str, kind: str,
                                   project: Optional[str] = None,
-                                  kind: Optional[str] = None,
                                   _admin: None = Depends(require_admin)) -> Dict[str, Any]:
         """Preview active memories citing an exact source before withdrawal."""
         from src import memory_engine as engine
         try:
             items = engine.evidence_dependents(ref, owner=_owner(request),
                                                project=project, kind=kind)
+            plan = engine.plan_evidence_retraction(ref, owner=_owner(request),
+                                                   project=project, kind=kind)
         except engine.MemoryEngineError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
-        return {"status": "success", "items": [engine.public_item(item) for item in items]}
+        return {"status": "success", "items": [engine.public_item(item) for item in items],
+                "plan": plan}
 
     @router.post("/evidence/retract")
     async def retract_evidence(request: Request, body: RetractEvidenceBody,

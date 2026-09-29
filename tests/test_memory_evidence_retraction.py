@@ -47,6 +47,20 @@ def test_retraction_keeps_independently_supported_claim(store):
     assert [span["ref"] for span in surviving["evidence"]] == ["session-2"]
 
 
+def test_plan_is_read_only_and_agrees_with_retraction(store):
+    item = _fact("luis", [
+        {"kind": "file", "ref": "src/config.py", "excerpt": "Threshold is 42."},
+        {"kind": "chat", "ref": "session-2", "excerpt": "Threshold is 42."},
+    ])
+    before = engine.get_item(item["id"])
+    plan = engine.plan_evidence_retraction("src/config.py", owner="luis", kind="file")
+    assert plan["entries"] == [{"id": item["id"], "action": "retain",
+                                "remaining_evidence_count": 1}]
+    assert engine.get_item(item["id"]) == before
+    applied = engine.retract_evidence("src/config.py", owner="luis", kind="file")
+    assert applied["retained_ids"] == [item["id"]]
+
+
 def test_retraction_does_not_touch_other_project_or_evidence_kind(store):
     source = {"kind": "file", "ref": "src/config.py", "excerpt": "Threshold is 42."}
     other_project = _fact("luis", [source], project="zephyr")
@@ -106,6 +120,8 @@ def test_admin_route_previews_and_retracts_only_current_owner(store, monkeypatch
                          params={"ref": "src/config.py", "kind": "file"})
     assert preview.status_code == 200
     assert [row["id"] for row in preview.json()["items"]] == [mine["id"]]
+    assert preview.json()["plan"]["entries"] == [
+        {"id": mine["id"], "action": "forget", "remaining_evidence_count": 0}]
 
     def deny_human():
         raise HTTPException(status_code=403, detail="human required")
