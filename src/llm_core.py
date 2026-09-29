@@ -4333,6 +4333,7 @@ async def llm_call_async(
     pin_public_dns: bool = False,
     on_outcome_unknown: Optional[Callable[[int, float], None]] = None,
     gen_overrides: Optional[Dict] = None,
+    _usage_observer: Optional[Callable] = None,
 ) -> str | tuple[str, str]:
     """Traced wrapper around ``_llm_call_async_impl`` (LLM-TRACE-01).
 
@@ -4351,8 +4352,10 @@ async def llm_call_async(
     _model_out = model
     _observed_usage = {}
 
-    def _capture_usage(usage):
+    def _capture_usage(usage, *, endpoint_local=False):
         _observed_usage.update(usage)
+        if _usage_observer is not None:
+            _usage_observer(dict(usage), endpoint_local=endpoint_local)
 
     try:
         result = await _llm_call_async_impl(
@@ -4787,7 +4790,7 @@ async def _llm_call_async_impl(
                 try:
                     observed = _observed_nonstream_usage(data, provider, model)
                     if observed:
-                        _on_observed_usage(observed)
+                        _on_observed_usage(observed, endpoint_local=is_local_endpoint(target_url))
                 except Exception:
                     logger.debug("non-streaming usage receipt failed", exc_info=True)
             if provider == "ollama" and isinstance(data, dict):
@@ -7695,13 +7698,8 @@ async def stream_llm_with_fallback(candidates, messages, **kwargs):
                 status = _nonstream_error_status(error)
                 eligibility_override = getattr(error, "fallback_eligible", None)
                 eligible = (
-                    True
-                    if eligible_statuses is None
-                    else (
-                        eligibility_override
-                        if isinstance(eligibility_override, bool)
-                        else status in eligible_statuses
-                    )
+                    eligibility_override if isinstance(eligibility_override, bool)
+                    else (True if eligible_statuses is None else status in eligible_statuses)
                 )
                 error_chunk = _request_factory_error_chunk(error, status)
                 if not is_last and eligible:

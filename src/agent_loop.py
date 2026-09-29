@@ -7405,6 +7405,40 @@ async def _stream_agent_loop_body(
         else autonomy_budget.resolve_budget(_autonomy_preset, get_setting=get_setting)
     )
     _budget_ledger = autonomy_budget.Ledger()
+    _compaction_usage_receipts: List[Dict] = []
+
+    def _charge_compaction_usage(usage, *, endpoint_local=False):
+        # Fresh observed usage only, separate from main-stream round buckets.
+        # The effective summarizer endpoint determines local billing policy.
+        if endpoint_local or usage.get("usage_source") != "reported_engine":
+            return
+        def _observed_count(value):
+            valid = _normalize_usage_counts(value, 0)
+            return valid["input_tokens"] if valid is not None else None
+        total = _observed_count(usage.get("total_tokens"))
+        lower_bound = total is None
+        if total is None:
+            known = [_observed_count(usage.get(key)) for key in ("input_tokens", "output_tokens")]
+            if any(n is not None for n in known):
+                total = sum(n for n in known if n is not None)
+        cost = usage.get("cost_usd")
+        if total is None and cost is None:
+            return
+        receipt = {**usage, "phase": "compaction"}
+        if total is not None:
+            _budget_ledger.add_tokens(total)
+            receipt.update(charged_tokens=total, tokens_lower_bound=lower_bound)
+        # Same spend-unit policy as the main stream, with reported cost taking
+        # precedence. Its token proxy uses only observed counts, never a token
+        # estimate or an invented USD price in the receipt.
+        spend = autonomy_budget.remote_spend_units(
+            endpoint_cost_tracked=True, input_tokens=total or 0,
+            output_tokens=0, provider_cost_usd=cost,
+        )
+        _budget_ledger.add_remote_spend(spend)
+        receipt["charged_remote_spend_units"] = spend
+        receipt["remote_spend_source"] = "provider_cost" if cost is not None else "observed_token_proxy"
+        _compaction_usage_receipts.append(receipt)
     # The tool-call dimension is merged into the pre-existing
     # `max_tool_calls`/`total_tool_calls` mechanism below (one counter, not
     # two) — see `Budget.without_tool_calls`.
@@ -9477,6 +9511,7 @@ async def _stream_agent_loop_body(
                     owner=owner,
                     persist=False,
                     compaction_state=compaction_state,
+                    _usage_observer=_charge_compaction_usage,
                 )
         (
             is_ody,
@@ -10935,6 +10970,9 @@ async def _stream_agent_loop_body(
         except Exception as _dd_err:
             logger.debug("[harness] dependency drift check skipped: %s", _dd_err)
     round_num = 0
+    # Preparation can exhaust the turn before the first model round exists.
+    round_response = ""
+    round_reasoning = ""
     # BUG-STOP-01/item 4: hard wall-clock ceiling, independent of round
     # count -- the backstop for a turn whose individual rounds are each
     # cheap enough that neither the round-budget nor the progress-gate
@@ -11690,9 +11728,10 @@ async def _stream_agent_loop_body(
                 else {}
             )
         _candidate_request_states = {0: _active_route_state}
+        _compaction_budget_exhaustion = None
 
         async def _candidate_request(index, candidate_url, candidate_model, candidate_headers):
-            nonlocal _last_route_request_messages, _last_route_context_length
+            nonlocal _last_route_request_messages, _last_route_context_length, _compaction_budget_exhaustion
             if index == 0:
                 state = _active_route_state
             else:
@@ -11705,6 +11744,15 @@ async def _stream_agent_loop_body(
                     candidate_headers,
                     candidate_source_messages,
                 )
+            _compaction_budget_exhaustion = (
+                None if _local_completion_unbounded
+                else _budget_ledger.check(_round_loop_budget)
+            )
+            if _compaction_budget_exhaustion is not None:
+                from fastapi import HTTPException
+                error = HTTPException(409, "Turn budget exhausted during context preparation")
+                error.fallback_eligible = False
+                raise error
             request_messages = state.get("request_messages")
             if request_messages is None:
                 request_messages = _trim_route_request_messages(
@@ -11967,6 +12015,10 @@ async def _stream_agent_loop_body(
                 break
             # Forward error events from stream_llm to the frontend
             if chunk.startswith("event: error"):
+                if _compaction_budget_exhaustion is not None:
+                    _ledger.stop_reason = "budget_exhausted"
+                    yield _budget_exhausted_event(_compaction_budget_exhaustion)
+                    break
                 logger.warning(
                     "[agent-timing] stream_error round=%s elapsed=%.3fs chunk=%r",
                     round_num,
@@ -12517,6 +12569,9 @@ async def _stream_agent_loop_body(
                 logger.info("[steer] interrupting round %s mid-generation (%d message(s))",
                             round_num, len(_steer_interrupted))
                 break
+
+        if _compaction_budget_exhaustion is not None:
+            break
 
         if _steer_interrupted:
             # Keep what was already said, then the user's words, then ask
@@ -17003,6 +17058,8 @@ async def _stream_agent_loop_body(
         engine=_turn_engine_identity,
     )
     metrics["requested_model"] = requested_model
+    if _compaction_usage_receipts:
+        metrics["compaction_usage"] = list(_compaction_usage_receipts)
     metrics["endpoint_id"] = actual_endpoint_id
     metrics["endpoint_label"] = actual_endpoint_label
     if isinstance(actual_endpoint_cost_tracked, bool):
