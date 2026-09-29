@@ -71,7 +71,9 @@ class StructuralRewriteTool:
             return {"error": "structural_rewrite: pattern is required", "exit_code": 1}
         if rewrite is None:
             return {"error": "structural_rewrite: rewrite is required", "exit_code": 1}
-        apply = bool(args.get("apply"))
+        apply = args.get("apply", False)
+        if type(apply) is not bool:
+            return {"error": "structural_rewrite: apply must be a boolean", "exit_code": 1}
         fn = structural_search.rewrite_apply if apply else structural_search.rewrite_preview
         return _catch(
             fn, pattern, str(rewrite), lang, str(args.get("path") or ""),
