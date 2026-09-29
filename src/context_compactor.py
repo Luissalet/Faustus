@@ -1090,7 +1090,7 @@ def _finish_compaction(session, messages, system_msgs, older, recent, summary, u
     # when that very message is the one being folded.
     objective_text = ""
     for msg in (older + recent):
-        if isinstance(msg, dict) and msg.get("role") == "user":
+        if _is_user_instruction_message(msg):
             objective_text = _content_as_text(msg.get("content"))[:300]
             break
     preserve = build_compaction_preserve(older, objective=objective_text)
@@ -1506,6 +1506,24 @@ def _extract_constraints(text: str) -> List[str]:
     return _dedupe_preserve_order(found)
 
 
+def _is_user_instruction_message(msg: Any) -> bool:
+    """Synthetic user-role source rows are data, not user constraints/goals.
+
+    This filters explicit provenance only; it does not infer authorization
+    from arbitrary user text or treat quoted instructions as consent.
+    """
+    if not isinstance(msg, dict) or msg.get("role") != "user":
+        return False
+    metadata = msg.get("metadata")
+    if not isinstance(metadata, dict):
+        return True
+    source = metadata.get("source")
+    return not (
+        metadata.get("trusted") is False
+        or (isinstance(source, str) and source.startswith(TOOL_IMAGE_SOURCE_PREFIX))
+    )
+
+
 def build_compaction_preserve(
     messages: List[Dict[str, Any]],
     *,
@@ -1534,7 +1552,7 @@ def build_compaction_preserve(
             if a["approval_id"] not in seen_approval_ids:
                 seen_approval_ids.add(a["approval_id"])
                 approvals.append(a)
-        if msg.get("role") == "user":
+        if _is_user_instruction_message(msg):
             constraints.extend(_extract_constraints(text))
             last_user_text = text
         refs.extend(extract_protected_strings(text))
@@ -2161,7 +2179,7 @@ def compact_with_integrity(
     # message is folded away.
     objective_text = ""
     for msg in convo:
-        if isinstance(msg, dict) and msg.get("role") == "user":
+        if _is_user_instruction_message(msg):
             objective_text = _content_as_text(msg.get("content"))[:300]
             break
     preserve = build_compaction_preserve(older, objective=objective_text)
