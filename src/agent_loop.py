@@ -5376,34 +5376,22 @@ def _build_system_prompt(
                     max_items=_skill_max_injected,
                     min_confidence=_skill_min_conf,
                 ) if _skill_max_injected > 0 else []
-                try:
-                    _skill_selector.remember_surfaced(
-                        session_id, owner, [s.get("name") for s in relevant_skills if s.get("name")]
-                    )
-                except Exception:
-                    pass
                 lines = [""]
+                level1 = None
                 if relevant_skills:
-                    # Bump the "uses" counter on every skill we actually surface
-                    # to the agent — otherwise every skill shows "0 times" no
-                    # matter how often it's been matched and applied.
-                    for _sk in relevant_skills:
-                        try:
-                            sm.record_use(_sk.get('name', ''), owner=owner)
-                        except Exception:
-                            pass
                     # Job D, level 1: the procedure body, pulled ONLY for
                     # these already-selected skills, under its own budget —
                     # never for the whole index (that stays level 0, above).
                     from src.skills_runtime.disclosure import (
-                        DEFAULT_LEVEL1_BUDGET_TOKENS, render_level1,
+                        DEFAULT_LEVEL1_BUDGET_TOKENS, render_level1, message_receipt,
                     )
                     try:
                         _level1_budget = int(get_setting("skill_body_budget_tokens",
                                                           DEFAULT_LEVEL1_BUDGET_TOKENS))
                     except Exception:
                         _level1_budget = DEFAULT_LEVEL1_BUDGET_TOKENS
-                    level1 = render_level1(relevant_skills, budget_tokens=_level1_budget)
+                    level1 = render_level1(relevant_skills, budget_tokens=_level1_budget,
+                                           source_root=sm.skills_root)
                     lines.append("## Relevant skills for this request")
                     lines.append("These skills are matched to your current request. Each is a "
                                  "procedure proven to work. Follow them step by step. To see "
@@ -5434,8 +5422,22 @@ def _build_system_prompt(
                         "skills",
                         _skills_text,
                     )
+                    if level1 is not None:
+                        _skills_message["metadata"]["skill_disclosure"] = message_receipt(_skills_message, level1)
                 else:
                     _skills_message = None
+                # Selection is not disclosure: dropped bodies did not reach
+                # this assembled message and must not receive usage/outcomes.
+                _surfaced_names = level1.included if level1 is not None and _skills_message else []
+                try:
+                    _skill_selector.remember_surfaced(session_id, owner, _surfaced_names)
+                except Exception:
+                    pass
+                for _skill_name in _surfaced_names:
+                    try:
+                        sm.record_use(_skill_name, owner=owner)
+                    except Exception:
+                        pass
         except Exception as _sk_err:
             logger.debug(f"skill injection failed (non-fatal): {_sk_err}")
 

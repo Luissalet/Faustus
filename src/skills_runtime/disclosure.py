@@ -34,7 +34,10 @@ a render call actually used, for the caller to log.
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import os
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Sequence
 
@@ -65,12 +68,60 @@ class DisclosureResult:
     dropped: List[str] = field(default_factory=list)
     tokens: int = 0
     level: int = 0
+    receipts: List[Dict[str, Any]] = field(default_factory=list)
 
     def log_line(self) -> str:
         parts = [f"level {self.level}: {len(self.included)} skill(s) ~{self.tokens} tok"]
         if self.dropped:
             parts.append(f"{len(self.dropped)} dropped for budget ({', '.join(self.dropped)})")
         return "; ".join(parts)
+
+
+def source_reference(entry: Mapping[str, Any], source_root: str | None = None) -> str | None:
+    """Relative skill-store path only; never export raw absolute paths/URLs."""
+    relative = entry.get("source_ref")
+    if source_root and entry.get("path"):
+        try:
+            root = os.path.normcase(os.path.realpath(source_root))
+            path = os.path.normcase(os.path.realpath(str(entry["path"])))
+            if os.path.commonpath([root, path]) != root:
+                return None
+            relative = os.path.relpath(path, root).replace("\\", "/")
+        except (OSError, ValueError, TypeError):
+            return None
+    if not isinstance(relative, str) or len(relative) > 240:
+        return None
+    parts = relative.split("/")
+    if not parts or any(part in ("", ".", "..") or not re.fullmatch(r"[A-Za-z0-9_.-]+", part) for part in parts):
+        return None
+    return relative
+
+
+def _receipt(entry: Mapping[str, Any], fragment: str, level: int,
+             source_root: str | None = None) -> Dict[str, Any]:
+    raw_name = str(entry.get("name") or "?")
+    name = raw_name if re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", raw_name) else "sha256:" + hashlib.sha256(raw_name.encode()).hexdigest()
+    result = {"skill": name, "level": level, "stage": "rendered",
+              "fragment_sha256": hashlib.sha256(fragment.encode("utf-8")).hexdigest(),
+              "chars": len(fragment)}
+    reference = source_reference(entry, source_root)
+    if reference:
+        result["source_ref"] = reference
+    version = entry.get("version")
+    if isinstance(version, str) and re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?", version) and len(version) <= 96:
+        result["version"] = version
+    source = entry.get("source")
+    if source in ("learned", "taught", "imported", "manual", "teacher-escalation", "library", "git"):
+        result["source"] = source
+    return result
+
+
+def message_receipt(message: Mapping[str, Any], result: DisclosureResult) -> Dict[str, Any]:
+    """Assembly receipt, not proof of later provider delivery or execution."""
+    content = str(message.get("content") or "")
+    return {"stage": "assembled", "wrapped_message_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+            "fragments": [dict(receipt) for receipt in result.receipts],
+            "dropped_count": len(result.dropped)}
 
 
 def _level0_line(entry: Mapping[str, Any]) -> str:
@@ -88,6 +139,7 @@ def render_level0(
     index: Sequence[Mapping[str, Any]],
     *,
     budget_tokens: int = DEFAULT_LEVEL0_BUDGET_TOKENS,
+    source_root: str | None = None,
 ) -> DisclosureResult:
     """Level 0: the always-injected candidate list — name, one-line
     description and when-to-use trigger, grouped by category exactly as
@@ -102,6 +154,7 @@ def render_level0(
     lines: List[str] = []
     included: List[str] = []
     dropped: List[str] = []
+    receipts: List[Dict[str, Any]] = []
     used = 0
     for cat in sorted(by_cat):
         header = f"\n**{cat}**"
@@ -115,6 +168,7 @@ def render_level0(
                 dropped.append(str(entry.get("name") or "?"))
                 continue
             cat_lines.append(line)
+            receipts.append(_receipt(entry, line, 0, source_root))
             cat_names.append(str(entry.get("name") or "?"))
         if not cat_lines:
             continue
@@ -125,7 +179,7 @@ def render_level0(
 
     text = "\n".join(lines)
     result = DisclosureResult(text=text, included=included, dropped=dropped,
-                              tokens=_tokens(text) if text else 0, level=0)
+                              tokens=_tokens(text) if text else 0, level=0, receipts=receipts)
     if dropped:
         logger.info("skills disclosure: %s", result.log_line())
     return result
@@ -157,6 +211,7 @@ def render_level1(
     skills: Sequence[Mapping[str, Any]],
     *,
     budget_tokens: int = DEFAULT_LEVEL1_BUDGET_TOKENS,
+    source_root: str | None = None,
 ) -> DisclosureResult:
     """Level 1: the procedure body, for the skills a turn actually selected
     (`SkillsManager.get_relevant_skills`) — never for the whole index. Whole
@@ -167,6 +222,7 @@ def render_level1(
     sections: List[str] = []
     included: List[str] = []
     dropped: List[str] = []
+    receipts: List[Dict[str, Any]] = []
     used = 0
     for skill in skills or ():
         section = _level1_section(skill)
@@ -177,11 +233,12 @@ def render_level1(
             dropped.append(str(skill.get("name") or "?"))
             continue
         sections.append(section)
+        receipts.append(_receipt(skill, section, 1, source_root))
         included.append(str(skill.get("name") or "?"))
         used += cost
     text = "\n\n".join(sections)
     result = DisclosureResult(text=text, included=included, dropped=dropped,
-                              tokens=_tokens(text) if text else 0, level=1)
+                              tokens=_tokens(text) if text else 0, level=1, receipts=receipts)
     if dropped:
         logger.info("skills disclosure: %s", result.log_line())
     return result

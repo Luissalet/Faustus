@@ -651,6 +651,10 @@ class SkillsManager:
     # Index — the lightweight summary injected into the system prompt
     # ----------------------------------------------------------------------
 
+    def _disclosure_source_ref(self, skill: Dict) -> Optional[str]:
+        from src.skills_runtime.disclosure import source_reference
+        return source_reference(skill, self.skills_root)
+
     def index_for(
         self,
         owner: Optional[str] = None,
@@ -706,6 +710,9 @@ class SkillsManager:
                 # trigger the agent uses to decide whether to pull level 1
                 # in, without reading the procedure body itself.
                 "when_to_use": s.get("when_to_use") or "",
+                "version": s.get("version"),
+                "source": s.get("source"),
+                "source_ref": self._disclosure_source_ref(s),
             })
         out.sort(key=lambda x: (x["category"], x["name"]))
         return out
