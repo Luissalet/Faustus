@@ -174,7 +174,7 @@ def nearest_by_name_or_capability(
     bounded fallback" is built from when nothing in the index actually
     matched.
     """
-    names = sorted({str(x) for x in (pool or _all_known_tool_names()) if x})
+    names = sorted({str(x) for x in (_all_known_tool_names() if pool is None else pool) if x})
     if not names:
         return []
     if not query.strip():
@@ -249,6 +249,7 @@ def audit_selection(
     always a subset of `raw_candidates`, and `fallback` is always a subset
     of the known catalog (`nearest_by_name_or_capability`).
     """
+    disabled_tools = tuple(disabled_tools or ())
     candidates = [str(c) for c in raw_candidates if c]
     resolved = permitted_names(
         candidates, disabled_tools=disabled_tools, tool_policy=tool_policy, admin=admin,
@@ -259,7 +260,11 @@ def audit_selection(
             reason="exact permitted schema loaded for the resolved tool(s)",
         )
 
-    near = nearest_by_name_or_capability(query, pool=fallback_pool, n=FALLBACK_N)
+    fallback_candidates = _all_known_tool_names() if fallback_pool is None else fallback_pool
+    permitted_fallback = permitted_names(
+        fallback_candidates, disabled_tools=disabled_tools, tool_policy=tool_policy, admin=admin,
+    )
+    near = nearest_by_name_or_capability(query, pool=permitted_fallback, n=FALLBACK_N)
     unknown = [c for c in candidates if not is_known_tool(c)]
     denied = [c for c in candidates if c not in unknown]
     if unknown and not denied:

@@ -438,11 +438,12 @@ def tool_categories() -> Dict[str, List[str]]:
 
 
 def serve_categories(*, category: str = "", disabled: Optional[Iterable[str]] = None,
-                     admin: bool = True) -> Dict[str, Any]:
-    blocked = {str(n) for n in (disabled or ()) if n}
+                     admin: bool = True, tool_policy: Any = None) -> Dict[str, Any]:
+    from src.tool_discovery import is_permitted
+    blocked = tuple(disabled or ())
 
     def _usable(n: str) -> bool:
-        return n not in blocked and (admin or not _non_admin_blocked(n))
+        return is_permitted(n, disabled_tools=blocked, tool_policy=tool_policy, admin=admin)
 
     cats = {k: [n for n in v if _usable(n)] for k, v in tool_categories().items()}
     cats = {k: v for k, v in cats.items() if v}
@@ -483,8 +484,10 @@ def serve(
     k: int = _DEFAULT_K,
     disabled: Optional[Iterable[str]] = None,
     admin: bool = True,
+    tool_policy: Any = None,
 ) -> Dict[str, Any]:
     """Search/index result the model can act on. Never executes the listed tools."""
+    disabled = tuple(disabled or ())
     mode = (detail or "").strip().lower()
     if mode not in (_DETAIL_SCHEMA, _DETAIL_CATALOG):
         mode = _DETAIL_SCHEMA if names else _DETAIL_CATALOG
@@ -493,6 +496,8 @@ def serve(
     found = search_catalog(
         query, names, k=k, disabled=disabled, admin=admin,
     )
+    from src.tool_discovery import permitted_names
+    found = permitted_names(found, disabled_tools=disabled, tool_policy=tool_policy, admin=admin)
     tools = [catalog_entry(name, detail=mode) for name in found]
     payload: Dict[str, Any] = {
         "tools": tools,
@@ -560,7 +565,8 @@ def execute_lookup(content: str, ctx: Optional[Mapping[str, Any]] = None) -> Tup
     # Search intent wins: category labels are only for browsing, and a guess
     # such as "mcp" or "cookbook" must not hide matching MCP tools.
     if (category and not query and not names) or (wants_categories and not query and not names):
-        payload = serve_categories(category=category, disabled=ctx.get("disabled_tools"), admin=admin)
+        payload = serve_categories(category=category, disabled=ctx.get("disabled_tools"), admin=admin,
+                                   tool_policy=ctx.get("tool_policy"))
         if category:
             listed = ", ".join(payload.get("promote") or []) or "none"
             desc = f"{LOOKUP_TOOL}: {payload.get('category') or category}: {listed}"
@@ -580,6 +586,7 @@ def execute_lookup(content: str, ctx: Optional[Mapping[str, Any]] = None) -> Tup
         k=k,
         disabled=ctx.get("disabled_tools"),
         admin=admin,
+        tool_policy=ctx.get("tool_policy"),
     )
     listed = ", ".join(payload.get("promote") or []) or "none"
     desc = f"{LOOKUP_TOOL}: {listed}"
