@@ -26,7 +26,7 @@ a file digest instead of a command string:
   * ``digest_for(workspace)`` hashes the CONTENT of every instruction file that
     exists, in a stable order, **length-prefixing each part** before
     concatenating (the anti-collision rule of §26.2). Reordering the candidate
-    list cannot change the digest; editing one byte of one file must.
+    list cannot change the digest; edits within the byte cap or size changes do.
   * ``state_for(workspace)`` answers with one of four states. ``changed`` — a
     folder that WAS trusted and whose files have since been edited — is a
     distinct state from ``unapproved`` on purpose, because it is the interesting
@@ -34,13 +34,16 @@ a file digest instead of a command string:
   * ``trust(workspace, digest, by)`` refuses a digest that is not the current
     one, so an edit that lands between the user reading the files and clicking
     approve cannot ride in on that approval.
+  * ``instructions_snapshot(workspace)`` checks the same digest over captured
+    bytes and supplies those bytes to the prompt and compaction reminder.
 
 Store: ``DATA_DIR/workspace_trust.json``, atomic write, corrupt file moved aside
 to ``.corrupt`` and recreated empty. Stdlib only.
 
 **Nothing here raises.** Every public function is wrapped, and the one the agent
-loop calls (``instructions_trusted``) answers **True** — today's behaviour, the
-block is injected — on any failure at all. That direction is deliberate and is
+loop calls (``instructions_snapshot``) preserves a trusted fallback — today's
+behaviour, the block is injected — on failure. The boolean compatibility API
+(``instructions_trusted``) keeps the same policy. That direction is deliberate and is
 the same discipline `src/tool_preflight.py` states for a different mechanism: a
 wrong removal is far worse than a missed check. Silently blanking a user's own
 standing instructions because a JSON file would not parse is a bug that looks
@@ -64,6 +67,7 @@ import os
 import tempfile
 import threading
 import time
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -142,7 +146,7 @@ def normalise(workspace: Any) -> str:
         return ""
 
 
-def instruction_files(workspace: str) -> List[str]:
+def instruction_files(workspace: str, *, _candidates=None) -> List[str]:
     """Every instruction file that exists in `workspace`, sorted by rel path.
 
     Sorted rather than in candidate order so that reordering
@@ -154,7 +158,7 @@ def instruction_files(workspace: str) -> List[str]:
         return []
     try:
         from src.project_instructions import candidate_files
-        rels = candidate_files()
+        rels = candidate_files() if _candidates is None else _candidates
     except Exception:  # noqa: BLE001 - fall back to the documented default set
         rels = ["AGENTS.md", "CLAUDE.md", os.path.join(".faustus", "INSTRUCTIONS.md"),
                 "FAUSTUS.md", ".cursorrules", "CONVENTIONS.md",
@@ -193,13 +197,13 @@ def _file_part(root: str, path: str) -> Optional[Dict[str, Any]]:
     }
 
 
-def file_parts(workspace: str) -> List[Dict[str, Any]]:
+def file_parts(workspace: str, *, _candidates=None) -> List[Dict[str, Any]]:
     """``[{path, rel, bytes, sha256}]`` for the instruction files that exist."""
     root = normalise(workspace)
     if not root:
         return []
     out: List[Dict[str, Any]] = []
-    for path in instruction_files(root):
+    for path in instruction_files(root, _candidates=_candidates):
         part = _file_part(root, path)
         if part is not None:
             out.append(part)
@@ -320,7 +324,7 @@ def _entry_for(root: str) -> Dict[str, Any]:
 
 # ── state ─────────────────────────────────────────────────────────────────
 
-def state_for(workspace: str) -> Dict[str, Any]:
+def state_for(workspace: str, *, _parts=None) -> Dict[str, Any]:
     """``{"state", "digest", "files", "previous_digest", "workspace", ...}``.
 
     A pure read: it never writes, never prompts and never raises. ``none`` when
@@ -341,7 +345,7 @@ def state_for(workspace: str) -> Dict[str, Any]:
         result["workspace"] = root
         if not root:
             return result
-        parts = file_parts(root)
+        parts = file_parts(root) if _parts is None else _parts
         if not parts:
             return result
         digest = _digest_from_parts(parts)
@@ -462,7 +466,7 @@ def revoke(workspace: str) -> Dict[str, Any]:
         return {"ok": False, "error": "could not revoke the approval"}
 
 
-def resolve(workspace: str) -> Dict[str, Any]:
+def resolve(workspace: str, *, _parts=None) -> Dict[str, Any]:
     """The state as the turn sees it, applying the auto-trust rule of ``ask``.
 
     In ``ask`` a folder Faustus has already checkpointed is approved on first
@@ -470,7 +474,7 @@ def resolve(workspace: str) -> Dict[str, Any]:
     see — and revoke — every folder that was ever trusted, including the ones
     nobody was asked about. In ``strict`` nothing is auto-trusted.
     """
-    out = state_for(workspace)
+    out = state_for(workspace) if _parts is None else state_for(workspace, _parts=_parts)
     out["mode"] = mode()
     out["auto_trusted"] = False
     # `degraded` means "the auto-trust step could not do its job". It is treated
@@ -520,6 +524,68 @@ def instructions_trusted(workspace: str) -> bool:
     except Exception as exc:  # noqa: BLE001
         logger.debug("[trust] instructions_trusted(%s) failed: %s", workspace, exc)
         return True
+
+
+@dataclass(frozen=True)
+class InstructionFileSnapshot:
+    path: str
+    rel: str
+    size: int
+    data: bytes
+
+
+@dataclass(frozen=True)
+class InstructionSnapshot:
+    """Bytes checked for this use, not an atomic directory transaction.
+
+    `legacy_read` explicitly marks off/failure compatibility: those paths do
+    not claim that the returned trust verdict seals subsequently read bytes.
+    The digest retains v1's per-file byte cap and size, not a full-file hash.
+    """
+    workspace: str
+    trusted: bool
+    digest: str = ""
+    state: str = STATE_NONE
+    mode: str = DEFAULT_MODE
+    degraded: bool = False
+    legacy_read: bool = False
+    files: tuple = ()
+    selected: Optional[InstructionFileSnapshot] = None
+
+
+def instructions_snapshot(workspace: str) -> InstructionSnapshot:
+    """Resolve trust against the exact captured bytes used for rendering.
+
+    Freeze both candidate priority and all digest parts before resolving the
+    stored approval. No instruction file is reopened after that verdict.
+    Keep the historical off/degraded/fail-open policy explicit.
+    """
+    root = normalise(workspace)
+    try:
+        current_mode = mode()
+        if current_mode == "off":
+            return InstructionSnapshot(root, True, mode="off", legacy_read=True)
+        from src.project_instructions import candidate_files
+        candidates = tuple(candidate_files())
+        parts = file_parts(root, _candidates=candidates)
+        files = tuple(InstructionFileSnapshot(
+            p["path"], p["rel"], int(p["bytes"]), bytes(p["_data"])
+        ) for p in parts)
+        by_path = {p.path: p for p in files}
+        selected = next((by_path[os.path.join(root, rel)] for rel in candidates
+                         if os.path.join(root, rel) in by_path), None)
+        state = resolve(root, _parts=parts)
+        degraded = bool(state.get("degraded")) or bool(parts and state.get("state") == STATE_NONE)
+        trusted = degraded or state.get("state") in (STATE_NONE, STATE_TRUSTED)
+        return InstructionSnapshot(
+            workspace=root, trusted=trusted,
+            digest=_digest_from_parts(parts) if parts else "",
+            state=state.get("state", STATE_NONE), mode=current_mode,
+            degraded=degraded, files=files, selected=selected,
+        )
+    except Exception as exc:  # noqa: BLE001 - preserve the existing fail-open policy
+        logger.debug("[trust] instructions_snapshot(%s) failed: %s", workspace, exc)
+        return InstructionSnapshot(root, True, degraded=True, legacy_read=True)
 
 
 def list_trusted() -> List[Dict[str, Any]]:

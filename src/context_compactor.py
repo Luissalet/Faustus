@@ -861,24 +861,29 @@ def post_compact_reminder(session, owner: Optional[str] = None) -> Optional[Dict
                 # Defaults to trusted on any failure — never blank the user's own
                 # rules because a config file would not parse.
                 _trusted = True
+                _snapshot = None
                 try:
                     from src import workspace_trust as _wtrust
-                    _trusted = _wtrust.instructions_trusted(workspace)
+                    _snapshot = _wtrust.instructions_snapshot(workspace)
+                    _trusted = _snapshot.trusted
                 except Exception:  # noqa: BLE001 - import-time only
                     _trusted = True
-                info = _pinstr.read(workspace) if _trusted else {}
+                info = (_pinstr.read_snapshot(_snapshot) if _snapshot is not None
+                        else _pinstr.read(workspace) if _trusted else {})
                 if info.get("text"):
                     pointer = (
                         f"The project's standing rules in {info.get('rel')} still apply "
                         "after this compaction."
                     )
-                    rules = _pinstr.block(workspace).strip()
+                    rules = (_pinstr.block_from_snapshot(_snapshot) if _snapshot is not None
+                             else _pinstr.block(workspace)).strip()
                     if rules and len(rules) <= 1500:
                         parts.append(pointer + "\n" + rules)
                     else:
                         parts.append(pointer)
                 elif not _trusted:
-                    note = _pinstr.block(workspace, trusted=False).strip()
+                    note = (_pinstr.block_from_snapshot(_snapshot) if _snapshot is not None
+                            else _pinstr.block(workspace, trusted=False)).strip()
                     if note:
                         parts.append(note)
             except Exception:  # noqa: BLE001 - best effort

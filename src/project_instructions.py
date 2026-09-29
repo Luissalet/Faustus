@@ -24,8 +24,8 @@ one input that reaches the system role without going through
 `src/prompt_security.py`. `block()` therefore takes `trusted`, and when it is
 False it returns a short neutral note that NAMES the files and never carries a
 byte of their text. The default is True so every existing caller keeps today's
-behaviour; `src/workspace_trust.py` decides, and `src/agent_loop.py` is the only
-caller that asks it.
+behaviour. The system prompt and post-compaction reminder instead render a
+`src/workspace_trust.py` snapshot so the bytes checked are the bytes injected.
 """
 from __future__ import annotations
 
@@ -128,6 +128,11 @@ def read(workspace: str) -> Dict[str, Any]:
             text = f.read(limit + 1)
     except OSError:
         return {}
+    return _read_info(p, workspace, text, limit)
+
+
+def _read_info(p: str, workspace: str, text: str, limit: int) -> Dict[str, Any]:
+    """The existing excerpt contract, shared by live reads and captured bytes."""
     truncated = len(text) > limit
     if truncated:
         text = text[:limit]
@@ -142,6 +147,49 @@ def read(workspace: str) -> Dict[str, Any]:
         "truncated": truncated,
         "chars": len(text),
     }
+
+
+def read_snapshot(snapshot) -> Dict[str, Any]:
+    """Render only the selected captured bytes; never discover a newer file."""
+    if not snapshot.trusted:
+        return {}
+    if snapshot.legacy_read:
+        return read(snapshot.workspace)
+    selected = snapshot.selected
+    if selected is None:
+        return {}
+    try:
+        limit = int(_setting("agent_project_instructions_max_chars", DEFAULT_MAX_CHARS) or DEFAULT_MAX_CHARS)
+    except (TypeError, ValueError):
+        limit = DEFAULT_MAX_CHARS
+    limit = max(500, min(limit, 60_000))
+    # Match TextIOWrapper's UTF-8 replacement and universal-newline reading.
+    text = selected.data.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
+    return _read_info(selected.path, snapshot.workspace, text[:limit + 1], limit)
+
+
+def _render_info(info: Dict[str, Any]) -> str:
+    if not info.get("text"):
+        return ""
+    note = " (truncated — read the file for the rest)" if info.get("truncated") else ""
+    return (
+        f"\n\n## Project instructions from {info['rel']}{note}\n"
+        "These are the project's standing rules, written by its maintainers. Follow them "
+        "(conventions, how to run tests, what not to touch) unless the user says otherwise.\n"
+        f"{info['text']}"
+    )
+
+
+def block_from_snapshot(snapshot) -> str:
+    """Instruction prompt from checked bytes; off/error paths stay explicit."""
+    if not snapshot.workspace or not bool(_setting("agent_project_instructions", True)):
+        return ""
+    if snapshot.legacy_read:
+        return block(snapshot.workspace, trusted=snapshot.trusted)
+    if not snapshot.trusted:
+        # The note names the captured files, but never reads their content.
+        return _untrusted_note_names([_safe_rel(snapshot.workspace, p.path) for p in snapshot.files])
+    return _render_info(read_snapshot(snapshot))
 
 
 def _safe_rel(root: str, path: str) -> str:
@@ -178,6 +226,10 @@ def untrusted_note(workspace: str) -> str:
     except Exception:  # noqa: BLE001
         return ""
     names = [_safe_rel(root, p) for p in found_files(root)]
+    return _untrusted_note_names(names)
+
+
+def _untrusted_note_names(names) -> str:
     names = [n for n in names if n]
     if not names:
         return ""
@@ -239,15 +291,7 @@ def block(workspace: str, trusted: bool = True) -> str:
         with _LOCK:
             _CACHE[key] = (now, p, identity, cached[3])
         return cached[3]
-    text = ""
-    if info.get("text"):
-        note = " (truncated — read the file for the rest)" if info.get("truncated") else ""
-        text = (
-            f"\n\n## Project instructions from {info['rel']}{note}\n"
-            "These are the project's standing rules, written by its maintainers. Follow them "
-            "(conventions, how to run tests, what not to touch) unless the user says otherwise.\n"
-            f"{info['text']}"
-        )
+    text = _render_info(info)
     with _LOCK:
         _CACHE[key] = (now, p, identity, text)
     if text:

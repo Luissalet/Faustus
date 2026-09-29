@@ -187,7 +187,7 @@ def test_an_unwritable_store_does_not_blank_an_auto_trusted_folder(ws, store, ov
 
 
 def test_the_loops_own_except_is_a_second_floor_under_the_module(ws, store, overrides, monkeypatch):
-    """`instructions_trusted` cannot raise — and if it ever did, the loop holds.
+    """The snapshot API cannot raise — and if it ever did, the loop holds.
 
     The gate is behind two independent try/excepts on purpose: the module's own
     (which is what today's code relies on) and the loop's. Break the module's
@@ -199,7 +199,7 @@ def test_the_loops_own_except_is_a_second_floor_under_the_module(ws, store, over
     def boom(*args, **kwargs):
         raise RuntimeError("contract violated")
 
-    monkeypatch.setattr(wt, "instructions_trusted", boom)
+    monkeypatch.setattr(wt, "instructions_snapshot", boom)
     assert PAYLOAD in _system_text(ws)
 
 
@@ -213,14 +213,19 @@ def test_instructions_trusted_never_raises_and_fails_open(ws, store, overrides, 
 
 # ── wiring contract ───────────────────────────────────────────────────────
 
-def test_the_loop_asks_the_trust_module_and_passes_the_answer_through():
-    """Pin the shape, so a future edit cannot quietly drop `trusted=`."""
-    src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                       "src", "agent_loop.py")
-    with open(src, encoding="utf-8") as fh:
-        body = fh.read()
-    assert "_wtrust.instructions_trusted(workspace)" in body
-    assert "_pinstr.block(workspace, trusted=_instr_trusted)" in body
-    # The default must be True at the assignment, so an exception on the import
-    # or the call leaves today's behaviour standing.
-    assert "_instr_trusted = True" in body
+def test_the_loop_uses_the_snapshot_bytes_after_the_verdict(ws, store, overrides, monkeypatch):
+    """Pin the actual bytes in the prompt, rather than source spellings."""
+    overrides["agent_workspace_trust"] = "strict"
+    assert wt.trust(str(ws), wt.digest_for(str(ws)), by="test")["ok"]
+    capture = wt.instructions_snapshot
+
+    def replace_after_capture(workspace):
+        snapshot = capture(workspace)
+        (ws / "AGENTS.md").write_text("UNAPPROVED replacement", encoding="utf-8")
+        return snapshot
+
+    monkeypatch.setattr(wt, "instructions_snapshot", replace_after_capture)
+    text = _system_text(ws)
+    assert PAYLOAD in text
+    assert "UNAPPROVED replacement" not in text
+    assert wt.state_for(str(ws))["state"] == "changed"

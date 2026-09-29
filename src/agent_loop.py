@@ -5186,7 +5186,8 @@ def _build_system_prompt(
         # These files travel with a clone, and this is the one input that reaches
         # the SYSTEM role without going through src/prompt_security.py, so
         # src/workspace_trust.py gates them per folder and per content digest
-        # (FAUSTUS). `instructions_trusted` never raises and answers True on any
+        # (FAUSTUS). The snapshot binds approved bytes to this render. It keeps
+        # the legacy off/fail-open policy explicit and answers trusted on any
         # failure, and the `True` below is a second floor under that: a wrong
         # removal here silently blanks the user's OWN standing instructions,
         # which is worse than a missed check — the discipline src/tool_preflight.py
@@ -5195,13 +5196,18 @@ def _build_system_prompt(
         try:
             from src import project_instructions as _pinstr
             _instr_trusted = True
+            _instr_snapshot = None
             try:
                 from src import workspace_trust as _wtrust
-                _instr_trusted = _wtrust.instructions_trusted(workspace)
+                _instr_snapshot = _wtrust.instructions_snapshot(workspace)
+                _instr_trusted = _instr_snapshot.trusted
             except Exception as _wt_err:      # pragma: no cover - import-time only
                 logger.debug("[instructions] trust check unavailable: %s", _wt_err)
                 _instr_trusted = True
-            agent_prompt += _pinstr.block(workspace, trusted=_instr_trusted)
+            agent_prompt += (
+                _pinstr.block_from_snapshot(_instr_snapshot) if _instr_snapshot is not None
+                else _pinstr.block(workspace, trusted=_instr_trusted)
+            )
         except Exception as _pi_err:
             logger.debug("[instructions] injection failed: %s", _pi_err)
         # Project rules (src/project_rules.py): the repo's own `.faustus/rules/`
