@@ -47,6 +47,7 @@ import glob
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 import threading
@@ -508,6 +509,24 @@ def _iter_records(session_id: str):
         return
 
 
+def _summary_usage(value: Any) -> Dict[str, Any]:
+    """Only observed scalar metrics; absent values remain absent."""
+    if not isinstance(value, dict):
+        return {}
+    out = {}
+    for key in ("input_tokens", "output_tokens", "total_tokens", "prompt_tokens",
+                "completion_tokens", "cached_tokens", "reasoning_tokens", "cost_usd"):
+        number = value.get(key)
+        if (isinstance(number, (int, float)) and not isinstance(number, bool)
+                and number >= 0 and (not isinstance(number, float) or math.isfinite(number))):
+            out[key] = number
+    if value.get("cost_state") in ("known", "unknown"):
+        out["cost_state"] = value["cost_state"]
+    if value.get("usage_source") in ("reported_engine", "real", "estimated", "mixed", "cache"):
+        out["usage_source"] = value["usage_source"]
+    return out
+
+
 def list_calls(session_id: str) -> List[Dict[str, Any]]:
     """Summary rows for GET /api/llm-traces/{session_id}."""
     out: List[Dict[str, Any]] = []
@@ -515,11 +534,13 @@ def list_calls(session_id: str) -> List[Dict[str, Any]]:
         text = rec.get("response_text") or ""
         out.append({
             "seq": rec.get("seq"),
+            "run_id": rec.get("run_id"),
             "ts": rec.get("ts"),
             "model": rec.get("model"),
             "endpoint": rec.get("endpoint"),
             "provider": rec.get("provider"),
             "duration_ms": rec.get("duration_ms"),
+            "usage": _summary_usage(rec.get("usage")),
             "response_chars": len(text),
             "response_preview": text[:200],
             "finish_reason": rec.get("finish_reason"),
