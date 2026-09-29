@@ -254,8 +254,11 @@ async def run_code_mode(
     async def _drain_stderr():
         nonlocal stderr_tail
         try:
-            data = await proc.stderr.read(8192)
-            stderr_tail = data or b""
+            while True:
+                data = await proc.stderr.read(8192)
+                if not data:
+                    break
+                stderr_tail = (stderr_tail + data)[-8192:]
         except Exception:
             pass
 
