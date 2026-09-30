@@ -1036,7 +1036,7 @@ async def do_ui_control(content: str, session_id: Optional[str] = None, owner: O
 # Image generation
 # ---------------------------------------------------------------------------
 
-async def do_generate_image(content: str, session_id: Optional[str] = None, owner: Optional[str] = None) -> Dict:
+async def do_generate_image(content: str, session_id: Optional[str] = None, owner: Optional[str] = None, *, request_id: Optional[str] = None) -> Dict:
     """Generate an image using an image-capable model (e.g. gpt-image-1).
 
     Content format:
@@ -1059,6 +1059,11 @@ async def do_generate_image(content: str, session_id: Optional[str] = None, owne
 
     if not prompt:
         return {"error": "Image prompt is required (line 1)"}
+
+    from src.settings import get_user_setting
+    if get_user_setting("image_execution_backend", owner or "", "configured") == "prospero":
+        from src.prospero_images import run_image
+        return await run_image(prompt, session_id, owner, request_id=request_id)
 
     # Load admin settings for defaults
     try:
@@ -1289,6 +1294,7 @@ async def do_edit_image(
     size: str = "1024x1024",
     quality: str = "medium",
     progress_callback: Optional[Callable[[Dict[str, Any]], Awaitable[None]]] = None,
+    request_id: Optional[str] = None,
 ) -> Dict:
     """Edit an uploaded image using the configured image endpoint."""
     import base64
@@ -1304,6 +1310,11 @@ async def do_edit_image(
     path = Path(image_path)
     if not path.exists() or not path.is_file():
         return {"error": "Attached image file was not found"}
+
+    from src.settings import get_user_setting
+    if get_user_setting("image_execution_backend", owner or "", "configured") == "prospero":
+        from src.prospero_images import run_image
+        return await run_image(prompt, session_id, owner, image_path=str(path), request_id=request_id)
 
     try:
         from src.settings import load_settings

@@ -6,6 +6,7 @@ import json
 import os
 import re
 import time
+import uuid
 import logging
 from datetime import datetime
 from typing import Dict, Any, AsyncGenerator, List, Optional, Tuple
@@ -1294,6 +1295,19 @@ def _endpoint_cache_contains_model(endpoint, model: str) -> bool:
         return True
     wanted = (model or "").strip()
     return wanted in {str(item).strip() for item in models}
+
+
+def _image_result_event(result: Dict[str, Any], tool: str, command: str) -> Dict[str, Any]:
+    """Keep result and recovery identity together in live and persisted events."""
+    event = {"tool": tool, "command": command[:100],
+             "output": result.get("results", result.get("error", "")),
+             "exit_code": 0 if "error" not in result else 1}
+    for key in ("image_url", "image_id", "image_prompt", "image_model", "image_size", "image_quality",
+                "request_id", "prospero_job_id", "prospero_project_id", "prospero_asset_id",
+                "state", "status", "result_status", "uncertainty"):
+        if key in result:
+            event[key] = result[key]
+    return event
 
 
 def _is_image_generation_session(sess, owner: str | None = None) -> bool:
@@ -3359,6 +3373,7 @@ def setup_chat_routes(
                     _user_msg = message or ""
                     _image_upload = _first_image_attachment(chat_handler, att_ids, owner=_user)
                     _image_tool_name = "edit_image" if _image_upload else "generate_image"
+                    _image_request_id = client_message_id or uuid.uuid4().hex
                     yield f'data: {json.dumps({"type": "tool_start", "tool": _image_tool_name, "command": _user_msg[:100]})}\n\n'
                     yield ": heartbeat\n\n"
                     _progress_queue: asyncio.Queue = asyncio.Queue()
@@ -3378,9 +3393,10 @@ def setup_chat_routes(
                             owner=_user,
                             size="1024x1024",
                             progress_callback=_image_progress_callback,
+                            request_id=_image_request_id,
                         ))
                     else:
-                        _img_task = asyncio.create_task(do_generate_image(f"{_user_msg}\n{sess.model}\n512x512", session, owner=_user))
+                        _img_task = asyncio.create_task(do_generate_image(f"{_user_msg}\n{sess.model}\n512x512", session, owner=_user, request_id=_image_request_id))
                     _img_started = time.time()
                     _img_tick = 0
                     while not _img_task.done():
@@ -3406,10 +3422,7 @@ def setup_chat_routes(
                         yield f'data: {json.dumps(_progress_data)}\n\n'
                     _img_result = await _img_task
                     _img_output = _img_result.get("results", _img_result.get("error", ""))
-                    _img_tool_data = {"type": "tool_output", "tool": _image_tool_name, "command": _user_msg[:100], "output": _img_output, "exit_code": 0 if "error" not in _img_result else 1}
-                    for _k in ("image_url", "image_id", "image_prompt", "image_model", "image_size", "image_quality"):
-                        if _k in _img_result:
-                            _img_tool_data[_k] = _img_result[_k]
+                    _img_tool_data = {"type": "tool_output", **_image_result_event(_img_result, _image_tool_name, _user_msg)}
                     if _image_upload:
                         _img_tool_data["source_image"] = {
                             "id": _image_upload.get("id"),
@@ -3427,10 +3440,7 @@ def setup_chat_routes(
                     yield f'data: {json.dumps({"delta": _desc})}\n\n'
                     # Save to session history
                     if not incognito:
-                        _ev = {"round": 1, "tool": _image_tool_name, "command": _user_msg[:100], "output": _img_output, "exit_code": 0 if "error" not in _img_result else 1}
-                        for _ek in ("image_url", "image_id", "image_prompt", "image_model", "image_size", "image_quality"):
-                            if _img_result.get(_ek):
-                                _ev[_ek] = _img_result[_ek]
+                        _ev = {"round": 1, **_image_result_event(_img_result, _image_tool_name, _user_msg)}
                         if _image_upload:
                             _ev["source_image_id"] = _image_upload.get("id")
                             _ev["source_image_name"] = _image_upload.get("name") or _image_upload.get("original_name")

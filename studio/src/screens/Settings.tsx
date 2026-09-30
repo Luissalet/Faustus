@@ -329,7 +329,7 @@ const DEFAULT_KEYS = [
   'vision_enabled', 'vision_endpoint_id', 'vision_model', 'vision_model_fallbacks',
   'dispatch_endpoint_id', 'dispatch_model',
   'research_endpoint_id', 'research_model', 'research_search_provider', 'research_max_tokens',
-  'image_gen_enabled', 'image_model', 'image_quality',
+  'image_gen_enabled', 'image_model', 'image_quality', 'image_execution_backend',
   'teacher_enabled', 'teacher_model', 'teacher_tier2_enabled',
   'local_structured_output', 'document_writing_style',
   'chat_versions', 'chat_versions_keep', 'chat_versions_keep_hours',
@@ -491,13 +491,18 @@ function DefaultsSection({ settings, endpoints, onSave, say }: { settings: Setti
       <Field label={t('Images')} help={t('Image generation from the chat.')}>
         <div className="fs-set__inline">
           <Toggle id="img-on" checked={bool(draft.image_gen_enabled)} onChange={(v) => set('image_gen_enabled', v)} label={t('On')} />
+          <Select id="img-backend" aria-label={t('Image studio')} value={str(draft.image_execution_backend, 'configured')} onChange={(v) => set('image_execution_backend', v)} options={[{ value: 'configured', label: t('Configured image model') }, { value: 'prospero', label: "Prospero" }]} />
+          {str(draft.image_execution_backend, 'configured') !== 'prospero' && <>
           <Text id="img-model" value={str(draft.image_model)} onChange={(v) => set('image_model', v)} placeholder={t('image model')} />
           <Select id="img-quality" value={str(draft.image_quality, 'medium')} onChange={(v) => set('image_quality', v)} options={[{ value: 'low', label: t('Low (fast)') }, { value: 'medium', label: t('Medium') }, { value: 'high', label: t('High') }]} />
+          </>}
         </div>
         {/* SET-06: why image generation might not actually work yet, sourced
          *  from the same doctor check the Health section reads — never a
          *  silent grey toggle. */}
-        <WhatsMissing area="media" name="engines" />
+        {str(draft.image_execution_backend, 'configured') === 'prospero'
+          ? <p className="fs-set__help">{t('Uses your connected Prospero studio. Results appear in the chat and gallery.')}</p>
+          : <WhatsMissing area="media" name="engines" />}
       </Field>
       <Field label={t('Teacher')} help={t('A big model that reviews and teaches the small one when needed.')}>
         <div className="fs-set__inline">

@@ -900,6 +900,10 @@ def build_user_content(
         display_name = upload_info.get("name") or upload_info.get("original_name") or path
 
         if upload_handler.is_image_file(display_name, mime):
+            from src.attachment_refs import gallery_image_reference
+            reference = gallery_image_reference(upload_info)
+            if reference:
+                content[0]["text"] += "\n\n" + reference
             try:
                 with open(path, "rb") as image_file:
                     encoded_string = base64.b64encode(image_file.read()).decode("utf-8")

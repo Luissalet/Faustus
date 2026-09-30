@@ -40,7 +40,8 @@ def _owned_image(image_id: str, owner: str):
         return _png(path.read_bytes())
 
 
-async def do_edit_image(content: str, owner: Optional[str] = None) -> Dict:
+async def do_edit_image(content: str, owner: Optional[str] = None, *,
+                        session_id: Optional[str] = None, request_id: Optional[str] = None) -> Dict:
     import httpx
     from src.owner_identity import effective_storage_owner
     from src.tool_implementations import _INTERNAL_BASE
@@ -50,8 +51,8 @@ async def do_edit_image(content: str, owner: Optional[str] = None) -> Dict:
         if not owner:
             raise ValueError("An authenticated owner is required to edit gallery images")
         action = args.get("action")
-        if not isinstance(action, str) or action not in _ROUTES:
-            raise ValueError("Choose upscale, rembg, inpaint or harmonize")
+        if not isinstance(action, str) or action not in {*_ROUTES, "instruction"}:
+            raise ValueError("Choose instruction, upscale, rembg, inpaint or harmonize")
         image_id = args.get("image_id")
         if not isinstance(image_id, str) or not image_id:
             raise ValueError("image_id must be a gallery image ID")
@@ -60,6 +61,16 @@ async def do_edit_image(content: str, owner: Optional[str] = None) -> Dict:
         prompt = args.get("prompt", "")
         if not isinstance(prompt, str) or len(prompt) > 20_000:
             raise ValueError("prompt must be text up to 20000 characters")
+        if action == "instruction":
+            from src.settings import get_user_setting
+            if get_user_setting("image_execution_backend", owner, "legacy") != "prospero":
+                raise ValueError("Instruction edits require the Prospero image backend")
+            if not prompt.strip():
+                raise ValueError("Instruction edits require a prompt")
+            from src.prospero_images import run_image
+            result = await run_image(prompt, session_id, owner,
+                                     request_id=request_id, image_bytes=source)
+            return {**result, "source_image_id": image_id}
         payload["prompt"] = prompt
         if action == "inpaint":
             mask_id = args.get("mask_id")

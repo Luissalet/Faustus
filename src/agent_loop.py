@@ -15755,7 +15755,8 @@ async def _stream_agent_loop_body(
                         tool_output_data[k] = result[k]
             # Forward image data from image tools so the frontend can render it
             # immediately instead of waiting for a history reload.
-            for k in ("image_url", "image_id", "image_prompt", "image_model", "image_size", "image_quality"):
+            for k in ("image_url", "image_id", "image_prompt", "image_model", "image_size", "image_quality",
+                      "request_id", "prospero_job_id", "prospero_project_id", "prospero_asset_id"):
                 if k in result:
                     tool_output_data[k] = result[k]
             # Forward screenshots from browser tools (base64 images)
@@ -15977,10 +15978,10 @@ async def _stream_agent_loop_body(
             # carried, so a history reload shows where a bash/python call ran.
             if result.get("execution_target"):
                 tool_event["execution_target"] = result["execution_target"]
-            if result.get("image_url"):
-                for ik in ("image_url", "image_prompt", "image_model", "image_size", "image_quality"):
-                    if result.get(ik):
-                        tool_event[ik] = result[ik]
+            for ik in ("image_url", "image_id", "image_prompt", "image_model", "image_size", "image_quality",
+                       "request_id", "prospero_job_id", "prospero_project_id", "prospero_asset_id"):
+                if ik in result:
+                    tool_event[ik] = result[ik]
             if result.get("doc_id"):
                 tool_event["doc_id"] = result["doc_id"]
                 tool_event["doc_title"] = result.get("title", "")

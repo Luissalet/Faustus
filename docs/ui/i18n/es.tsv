@@ -8684,3 +8684,7 @@ Translating segments…	Traduciendo segmentos…
 Translation failed.	La traducción ha fallado.
 The translation response is invalid.	La respuesta de traducción no es válida.
 Plugin preset not available. Refresh connectors and try again.	El plugin aún no aparece en los conectores. Actualiza la lista y vuelve a intentarlo.
+
+Image studio	Estudio de imágenes
+Configured image model	Modelo de imagen configurado
+Uses your connected Prospero studio. Results appear in the chat and gallery.	Usa tu estudio Prospero conectado. Los resultados aparecen en el chat y la galería.

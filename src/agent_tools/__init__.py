@@ -31,7 +31,7 @@ from .code_history_tools import CodeHistoryTool
 from .document_tools import CreateDocumentTool, UpdateDocumentTool, EditDocumentTool, SuggestDocumentTool, ManageDocumentTool
 from .interaction_tools import AskUserTool, UpdatePlanTool, LookupToolsTool
 from .model_interaction_tools import ChatWithModelTool, AskTeacherTool, ListModelsTool
-from .media_tools import InspectMediaTool, MediaTransformTool
+from .media_tools import InspectMediaTool, MediaTransformTool, ImageJobTool
 from .bg_job_tools import ManageBgJobsTool
 from .session_tools import CreateSessionTool, ListSessionsTool, SendToSessionTool, ManageSessionTool
 from .admin_tools import (
@@ -103,6 +103,7 @@ TOOL_HANDLERS = {
     "web_fetch": WebFetchTool().execute,
     "read_file": ReadFileTool().execute,
     "inspect_media": InspectMediaTool().execute,
+    "image_job": ImageJobTool().execute,
     # Targeted look at ONE image/PDF page: ask a specific question about a
     # region, crop/rotate/zoom/enhance, overlay a grid, detect shapes locally,
     # or compare two images -- src/image_inspection.py + this module's own
@@ -418,7 +419,7 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "list_serve_presets", "serve_preset", "adopt_served_model",
              "list_cookbook_servers",
              # Other tools the agent reaches for that were also missing.
-             "edit_image", "trigger_research", "manage_research",
+             "edit_image", "image_job", "trigger_research", "manage_research",
              # Goal with completion by evidence (WP27, Creator):
              # src/agent_tools/goal_tools.py.
              "goal_define", "goal_status", "goal_evaluate", "goal_evidence",

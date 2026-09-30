@@ -14,6 +14,29 @@ clear_fake_endpoint_resolver_modules("routes.chat_routes")
 from routes import chat_routes
 
 
+def test_pending_image_event_preserves_recovery_identity_and_uncertainty():
+    from src.prospero_images import _unknown
+    result = _unknown('existing-request', 'still pending', job_id='job-1', state='pending')
+    event = chat_routes._image_result_event(result, 'edit_image', 'put on a hat')
+    # The same event is streamed and stored in tool_events for later recovery.
+    restored = json.loads(json.dumps(event))
+    assert restored['request_id'] == 'existing-request'
+    assert restored['prospero_job_id'] == 'job-1'
+    assert restored['result_status'] == restored['status'] == 'outcome_unknown'
+    assert restored['uncertainty']['reconcile_action']
+    assert restored['exit_code'] == 1 and 'image_url' not in restored
+
+
+def test_successful_image_event_preserves_image_and_remote_receipt():
+    result = {'image_url': '/api/generated-image/own.png', 'image_id': 'own',
+              'request_id': 'req', 'prospero_asset_id': 'asset', 'results': 'done',
+              'private_internal_field': 'not a public event'}
+    event = chat_routes._image_result_event(result, 'generate_image', 'draw')
+    assert event['exit_code'] == 0 and event['image_url'] == result['image_url']
+    assert event['request_id'] == 'req' and event['prospero_asset_id'] == 'asset'
+    assert 'private_internal_field' not in event
+
+
 class _FakeQuery:
     def __init__(self, rows):
         self.rows = rows

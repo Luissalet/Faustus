@@ -122,6 +122,30 @@ def test_screenshot_persists_in_tool_event_and_reaches_vision_model(loop):
     assert image_msgs[0]["metadata"]["source"] == "tool result: desktop_screenshot"
 
 
+@pytest.mark.parametrize("pending", [False, True])
+def test_image_request_receipt_survives_live_event_history_and_model_text(loop, monkeypatch, pending):
+    from src.prospero_images import _unknown
+    result = (_unknown('prior-request', 'still rendering', job_id='prior-job', state='pending')
+              if pending else {"results": "Generated image. Gallery image ID: own-image. Image request ID: prior-request",
+                               "image_url": "/api/generated-image/own.png", "image_id": "own-image",
+                               "request_id": "prior-request", "prospero_job_id": "prior-job"})
+    async def execute(block, *args, **kwargs):
+        return block.tool_type, dict(result)
+    monkeypatch.setattr(al, "execute_tool_block", execute)
+    events, seen, _ = loop("synthetic-text-model", vision=False)
+    live = next(event for event in events if event.get("type") == "tool_output")
+    history = next(event for event in events if event.get("type") == "metrics")["data"]["tool_events"][0]
+    for event in (live, history):
+        assert event["request_id"] == "prior-request" and event["prospero_job_id"] == "prior-job"
+        assert "prior-request" in event["output"]
+        if pending:
+            assert event["result_status"] == "outcome_unknown" and "image_url" not in event
+        else:
+            assert event["image_id"] == "own-image"
+    if seen["n"] > 1:
+        assert "prior-request" in json.dumps(seen["messages"][1])
+
+
 def test_text_only_model_gets_a_note_not_an_image(loop):
     events, seen, b64 = loop("qwen2.5:3b", vision=False)
     second = seen["messages"][1]

@@ -79,6 +79,8 @@ def _ref_line(ref: dict[str, Any]) -> str:
     parts = [f"Attachment: {ref.get('name') or ref.get('attachment_id') or 'upload'}"]
     if ref.get("attachment_id"):
         parts.append(f"id={ref['attachment_id']}")
+    if gallery_image_reference(ref):
+        parts.append(f"gallery_id={ref['gallery_id']}")
     if ref.get("mime"):
         parts.append(f"mime={ref['mime']}")
     if ref.get("size"):
@@ -89,6 +91,12 @@ def _ref_line(ref: dict[str, Any]) -> str:
     if ref.get("vision"):
         line += f"\n[Attachment description: {str(ref['vision']).strip()}]"
     return line
+
+
+def gallery_image_reference(info: dict[str, Any]) -> str:
+    """Expose the server's gallery ID, never a path or arbitrary metadata text."""
+    value = info.get("gallery_id")
+    return f"[Gallery image ID: {value}]" if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value) else ""
 
 
 def _text_from_blocks(blocks: Iterable[Any]) -> str:

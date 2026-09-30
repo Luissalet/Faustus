@@ -153,6 +153,7 @@ DEFAULT_SETTINGS = {
     "creator_music_max_concurrent": 1,
     "image_gen_enabled": False,
     "image_model": "",
+    "image_execution_backend": "configured",
     "image_quality": "medium",
     "vision_model": "",
     # Endpoint the Vision model is resolved on ("" = any endpoint; with no
@@ -2044,7 +2045,7 @@ def is_setting_overridden(key: str) -> bool:
 # resolved by FastAPI deps; an empty/None owner falls through to the global.
 _PER_USER_KEYS = {
     "vision_model", "vision_enabled", "vision_model_fallbacks", "vision_endpoint_id",
-    "image_model", "image_gen_enabled", "image_quality",
+    "image_model", "image_gen_enabled", "image_quality", "image_execution_backend",
     # Default chat endpoint / model — without per-user resolution every new
     # account inherited whatever the most-recent admin picked, which then
     # got injected into the chat composer on first open.

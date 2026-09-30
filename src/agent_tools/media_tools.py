@@ -2,6 +2,20 @@
 import json
 
 
+class ImageJobTool:
+    """Check an owned image request without submitting a new render."""
+
+    async def execute(self, content: str, ctx: dict) -> dict:
+        try:
+            args = json.loads(content)
+            if not isinstance(args, dict) or set(args) != {'request_id'} or not isinstance(args['request_id'], str):
+                raise ValueError('Expected only an image request_id')
+        except (ValueError, TypeError):
+            return {'error': 'image_job requires {"request_id":"the previous image request ID"}', 'exit_code': 1}
+        from src.prospero_images import resume_image
+        return await resume_image(args['request_id'], ctx.get('session_id'), ctx.get('owner'))
+
+
 class InspectMediaTool:
     async def execute(self, content: str, ctx: dict) -> dict:
         from src.media_inspection import inspect_media, MediaInspectionError

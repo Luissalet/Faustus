@@ -1642,6 +1642,16 @@ async def execute_tool_block(
         _active_workspace.reset(token)
 
 
+def _image_request_id(origin):
+    """Namespace provider call IDs by the actual server run when available."""
+    call_id = getattr(origin, "call_id", None)
+    run_id = getattr(origin, "run_id", None)
+    if not call_id or not run_id:
+        return call_id
+    import hashlib
+    return "tool-" + hashlib.sha256(json.dumps([run_id, call_id]).encode()).hexdigest()
+
+
 async def _execute_tool_block_impl(
     block: Any,
     session_id: Optional[str] = None,
@@ -1880,7 +1890,14 @@ async def _execute_tool_block_impl(
     # Route MCP-extracted tools through the MCP manager. Forward
     # the progress callback so long-running subprocess tools
     # (bash, python) can stream `tool_progress` events to the UI.
-    if tool in _MCP_TOOL_MAP:
+    from src.settings import get_user_setting
+    if tool == "generate_image" and get_user_setting("image_execution_backend", owner or "", "legacy") == "prospero":
+        from src.prospero_images import run_image
+        args = _build_mcp_args(tool, content)
+        desc = "generate_image"
+        result = await run_image(args.get("prompt", ""), session_id, owner,
+                                 request_id=_image_request_id(_causal_call))
+    elif tool in _MCP_TOOL_MAP:
         first_line = content.split(chr(10))[0][:80]
         desc = f"{tool}: {first_line}"
         result = await _call_mcp_tool(tool, content, progress_cb=progress_cb)
@@ -2259,7 +2276,8 @@ async def _execute_tool_block_impl(
         result = await do_list_cookbook_servers(content, owner=owner)
     elif tool == "edit_image":
         desc = "edit_image"
-        result = await do_edit_image(content, owner=owner)
+        result = await do_edit_image(content, owner=owner, session_id=session_id,
+                                     request_id=_image_request_id(_causal_call))
     elif tool == "edit_file":
         result = await _direct_fallback(tool, content) or {"error": "edit failed", "exit_code": 1}
         desc = result.get("output") or result.get("error") or "edit_file"

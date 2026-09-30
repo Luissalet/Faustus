@@ -1835,14 +1835,43 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "generate_image",
+            "description": "Generate an image from a text prompt using the configured image backend. Prospero handles generation directly; the legacy backend retains its image-generation MCP bridge.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string", "description": "Describe the image to generate"},
+                    "model": {"type": "string", "description": "Optional model for the legacy image backend"},
+                    "size": {"type": "string", "description": "Optional size for the legacy image backend"},
+                    "quality": {"type": "string", "description": "Optional quality for the legacy image backend"}
+                },
+                "required": ["prompt"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "image_job",
+            "description": "Check or collect an existing Prospero image request after a timeout or restart. Use the request_id returned by generate_image or edit_image. This never starts another render.",
+            "parameters": {
+                "type": "object",
+                "properties": {"request_id": {"type": "string", "description": "Request ID returned by the earlier image operation"}},
+                "required": ["request_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "edit_image",
-            "description": "Edit a gallery image: upscale, remove background, inpaint, or harmonize.",
+            "description": "Edit an owned gallery image. Use instruction with prompt for a natural-language edit through the configured Prospero backend; upscale, rembg, inpaint and harmonize retain their existing edit services.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "image_id": {"type": "string", "description": "Gallery image ID"},
-                    "action": {"type": "string", "enum": ["upscale", "rembg", "inpaint", "harmonize"], "description": "Edit action"},
-                    "prompt": {"type": "string", "description": "For inpaint: what to fill the masked area with"},
+                    "action": {"type": "string", "enum": ["instruction", "upscale", "rembg", "inpaint", "harmonize"], "description": "Edit action"},
+                    "prompt": {"type": "string", "description": "Required for instruction: desired changes to the image. For inpaint: what to fill the masked area with"},
                     "scale": {"type": "number", "description": "For upscale: scale factor (default 2)"},
                     "mask_id": {"type": "string", "description": "Required for inpaint: owned gallery mask ID, same dimensions as source; white redraws, black preserves"},
                     "strength": {"type": "number", "minimum": 0, "maximum": 1, "description": "Inpaint/harmonize edit strength"},
