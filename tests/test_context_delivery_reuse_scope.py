@@ -20,6 +20,8 @@ def delivery(monkeypatch):
         # This synthetic compiler deliberately does not query objectives.
         from src.context_engine.objective_reuse import record_query
         record_query(None, (), False)
+        from src.context_engine.personal_memory_reuse import record_query as record_personal_query
+        record_personal_query(None, (), False)
         calls.append(request)
         return ContextPacket(
             packet_id=f"ctxpkt_{len(calls)}", request_id=request.request_id,

@@ -29,6 +29,8 @@ def live(tmp_path, monkeypatch):
         # This synthetic compiler deliberately does not query objectives.
         from src.context_engine.objective_reuse import record_query
         record_query(None, (), False)
+        from src.context_engine.personal_memory_reuse import record_query as record_personal_query
+        record_personal_query(None, (), False)
         calls.append(req)
         candidate = await FileSource().fetch(req.explicit_refs[0], RetrievalRequest(request=req))
         item = ContextItem(item_id="file", source_type="file", source_ref=req.explicit_refs[0],

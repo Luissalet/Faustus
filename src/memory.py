@@ -46,9 +46,10 @@ def get_text_similarity(text1: str, text2: str) -> float:
     return len(intersection) / len(union)
 
 class MemoryManager:
-    def __init__(self, data_dir: str):
+    def __init__(self, data_dir: str, *, create_if_missing: bool = True):
         self.memory_file = os.path.join(data_dir, "memory.json")
-        self.ensure_file_exists()
+        if create_if_missing:
+            self.ensure_file_exists()
         
     def extract_memory_from_chat(self, chat_history: List[Dict], session_id: str = None) -> List[Dict]:
         """
@@ -123,7 +124,7 @@ class MemoryManager:
             with open(self.memory_file, 'w', encoding='utf-8') as f:
                 json.dump([], f, ensure_ascii=False, indent=2)
     
-    def _read_entries(self) -> List[Dict]:
+    def _read_entries(self, *, migrate_legacy: bool = True) -> List[Dict]:
         """Parse the store, or raise :class:`MemoryStoreUnreadable`.
 
         Returns ``[]`` only when the file genuinely does not exist. Every other
@@ -151,7 +152,7 @@ class MemoryManager:
             # Preserved behaviour: a corrupt store still gets one shot at the
             # pre-JSON memory.txt migration. Only raise when that finds nothing,
             # so we never report "empty" for a store we simply failed to parse.
-            legacy = self._migrate_from_legacy()
+            legacy = self._migrate_from_legacy() if migrate_legacy else []
             if legacy:
                 return legacy
             raise MemoryStoreUnreadable(
@@ -193,6 +194,15 @@ class MemoryManager:
         if owner is None:
             return entries
         return [e for e in entries if e.get("owner") == owner]
+
+    def load_context_snapshot(self, owner: str) -> List[Dict]:
+        """Strict owner-filtered read, without legacy migration or writes.
+
+        Missing JSON is genuinely empty; unreadable/corrupt JSON is unknown.
+        Display/writer load methods retain their historical migration behavior.
+        """
+        return [entry for entry in self._read_entries(migrate_legacy=False)
+                if entry.get("owner") == owner]
 
     def claim_ownerless(self, owner: str):
         """Assign all ownerless memory entries to the given owner."""

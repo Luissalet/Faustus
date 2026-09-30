@@ -543,6 +543,8 @@ async def test_a_later_round_reuses_the_packet_while_it_fits(flags, monkeypatch)
             # This synthetic compiler deliberately does not query objectives.
             from src.context_engine.objective_reuse import record_query
             record_query(None, (), False)
+            from src.context_engine.personal_memory_reuse import record_query as record_personal_query
+            record_personal_query(None, (), False)
             compiled.append(request.request_id)
             return ContextPacket(
                 packet_id=f"ctxpkt_{len(compiled)}", request_id=request.request_id,

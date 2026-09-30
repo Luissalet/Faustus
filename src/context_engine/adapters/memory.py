@@ -293,7 +293,9 @@ class PersonalMemorySource(ThreadedSource):
         if self._manager is None:
             from src.constants import DATA_DIR
             from src.memory import MemoryManager
-            self._manager = MemoryManager(self._data_dir or DATA_DIR)
+            from ..personal_memory_reuse import validating
+            self._manager = (MemoryManager(self._data_dir or DATA_DIR, create_if_missing=False)
+                             if validating() else MemoryManager(self._data_dir or DATA_DIR))
         return self._manager
 
     def _search(self, req: RetrievalRequest) -> Sequence[ContextCandidate]:
@@ -301,7 +303,21 @@ class PersonalMemorySource(ThreadedSource):
         store = self._store()
         # `load(owner)` filters on the owner column; `load(None)` returns
         # everything, so the argument is always passed and never defaulted.
-        entries = list(store.load(owner) or [])
+        from ..personal_memory_reuse import capturing, validating
+        snapshot_unknown = False
+        if capturing():
+            try:
+                entries = list(store.load_context_snapshot(owner) or [])
+            except Exception:
+                if validating():
+                    raise
+                # Initial compilation keeps the legacy rendering/migration path.
+                entries = list(store.load(owner) or [])
+                if not entries:
+                    raise
+                snapshot_unknown = True
+        else:
+            entries = list(store.load(owner) or [])
         if not entries:
             return ()
         limit = req.top()
@@ -316,9 +332,14 @@ class PersonalMemorySource(ThreadedSource):
         else:
             return ()
 
+        if snapshot_unknown and not chosen:
+            raise ValueError("Personal memory snapshot is unavailable")
         out: List[ContextCandidate] = []
         for entry in chosen or []:
             candidate = self._candidate(entry, req, owner, lanes)
+            if candidate is not None and snapshot_unknown:
+                from dataclasses import replace
+                candidate = replace(candidate, degraded=True)
             if candidate is not None:
                 out.append(candidate)
         return tuple(out[:limit])

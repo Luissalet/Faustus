@@ -610,6 +610,16 @@ async def _objective_reuse_is_current(request: ContextRequest, previous: Mapping
         return False
 
 
+async def _personal_memory_reuse_is_current(request: ContextRequest, previous: Mapping[str, Any]) -> bool:
+    from .personal_memory_reuse import revalidate
+    try:
+        return await asyncio.wait_for(revalidate(previous.get("_personal_memory_reuse_receipts"),
+            request, _reuse_scope, timeout_s()), timeout_s())
+    except Exception:
+        logger.debug("context personal memory reuse validation unavailable", exc_info=True)
+        return False
+
+
 async def deliver_round(*, request: ContextRequest,
                         messages: Sequence[Mapping[str, Any]],
                         tool_schemas: Sequence[Any] = (),
@@ -659,7 +669,8 @@ async def deliver_round(*, request: ContextRequest,
             prior_tokens = int(prior_report.get("packet_tokens") or 0)
             if (0 < prior_tokens <= allowance and previous.get("message")
                     and await _file_reuse_is_current(request, previous)
-                    and await _objective_reuse_is_current(request, previous)):
+                    and await _objective_reuse_is_current(request, previous)
+                    and await _personal_memory_reuse_is_current(request, previous)):
                 report = dict(prior_report)
                 report.update({
                     "round": max(0, int(round_index or 0)),
@@ -669,13 +680,15 @@ async def deliver_round(*, request: ContextRequest,
                 return {"message": previous["message"], "report": report,
                         "_reuse_scope": reuse_scope,
                         "_file_reuse_receipts": previous.get("_file_reuse_receipts", ()),
-                        "_objective_reuse_receipts": previous.get("_objective_reuse_receipts")}
+                        "_objective_reuse_receipts": previous.get("_objective_reuse_receipts"),
+                        "_personal_memory_reuse_receipts": previous.get("_personal_memory_reuse_receipts")}
         bounded = replace(
             request,
             policy=replace(request.policy, token_budget=allowance),
         )
         from .objective_reuse import capture_queries, captured
-        with capture_queries() as objective_capture:
+        from .personal_memory_reuse import capture_queries as capture_personal, captured as captured_personal
+        with capture_queries() as objective_capture, capture_personal() as personal_capture:
             packet, omitted = await asyncio.wait_for(
                 _compile_live(
                     bounded,
@@ -712,6 +725,7 @@ async def deliver_round(*, request: ContextRequest,
             "_reuse_scope": reuse_scope,
             "_file_reuse_receipts": _captured_file_receipts(packet),
             "_objective_reuse_receipts": captured(objective_capture, packet),
+            "_personal_memory_reuse_receipts": captured_personal(personal_capture, packet),
             "report": {
                 "round": max(0, int(round_index or 0)),
                 "delivered": True,
