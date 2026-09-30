@@ -4351,7 +4351,8 @@ def _recovery_usage_snapshot(raw):
 
 
 async def _recovery_step_completion(url, model, headers, messages, temperature, max_tokens,
-                                     gen_overrides, session_id, agent_stream_timeout, *, _usage_observer=None, _trace_step=None):
+                                     gen_overrides, session_id, agent_stream_timeout, *, _usage_observer=None, _trace_step=None,
+                                     _active_observer=None):
     """One tools-off, no-harness completion for a recovery-ladder step.
 
     Returns ``(text, reasoning, degenerate, error)``: ``text``/``reasoning``
@@ -4369,7 +4370,7 @@ async def _recovery_step_completion(url, model, headers, messages, temperature, 
     try:
         from src.llm_trace import call_phase
         with call_phase("recovery", step=_trace_step):
-            async for chunk in stream_llm_with_fallback(
+            stream = stream_llm_with_fallback(
                 [(url, model, headers)],
                 messages,
                 temperature=temperature,
@@ -4379,7 +4380,12 @@ async def _recovery_step_completion(url, model, headers, messages, temperature, 
                 session_id=session_id,
                 gen_overrides=gen_overrides,
                 fallback_on_empty=False,
-            ):
+            )
+            if _active_observer is not None:
+                # Same span as the main stream: provider awaits only, so the
+                # next step's admission sees this step's measured duration.
+                stream = _observe_main_inference_awaits(stream, _active_observer)
+            async for chunk in stream:
                 if chunk.startswith("event: error"):
                     error = True
                     try:
@@ -4521,7 +4527,8 @@ async def _recovery_ladder(*, reason: str, endpoint_url: str, model: str, header
                             owner: Optional[str], agent_stream_timeout: int,
                             skip_same_model_retry: bool = False,
                             pending_cancel: Optional[Callable[[], Optional[str]]] = None,
-                            _usage_observer=None, _admission_check=None):
+                            _usage_observer=None, _admission_check=None,
+                            _active_observer=None):
     """Steps 2-3 of the "never end a degenerate/ctx_ack round with an error"
     recovery ladder (the owner: "If a model is loaded, the person gets an
     answer, however long it takes"). Step 1 — bumped `repeat_penalty`/
@@ -4610,6 +4617,7 @@ async def _recovery_ladder(*, reason: str, endpoint_url: str, model: str, header
             endpoint_url, model, headers, step_messages, step_temperature, step_max_tokens,
             step2_overrides, session_id, agent_stream_timeout, _trace_step=2,
             **({"_usage_observer": functools.partial(_usage_observer, step=2)} if _usage_observer is not None else {}),
+            **({"_active_observer": _active_observer} if _active_observer is not None else {}),
         )
         if text.strip() and not degenerate and not is_reference_context_echo(text.strip()):
             yield ("result", {
@@ -4649,6 +4657,7 @@ async def _recovery_ladder(*, reason: str, endpoint_url: str, model: str, header
             util_url, util_model, util_headers or {}, step_messages, step_temperature,
             step_max_tokens, step3_overrides, session_id, agent_stream_timeout, _trace_step=3,
             **({"_usage_observer": functools.partial(_usage_observer, step=3)} if _usage_observer is not None else {}),
+            **({"_active_observer": _active_observer} if _active_observer is not None else {}),
         )
         if text3.strip() and not degenerate3 and not is_reference_context_echo(text3.strip()):
             note = f"(answered by {util_model} after the default model looped)"
@@ -12420,6 +12429,10 @@ async def _stream_agent_loop_body(
                         pending_cancel=pending_cancel,
                         _usage_observer=_charge_recovery_usage,
                         _admission_check=_recovery_admission,
+                        # Recovery awaits join this round's pending measured
+                        # span; the round's legacy wall credit settles them.
+                        _active_observer=functools.partial(
+                            _pending_main_active_observe, _pending_main_usage, round_num),
                     ):
                         if _rk == "event":
                             yield _rpayload
@@ -13468,6 +13481,10 @@ async def _stream_agent_loop_body(
                         pending_cancel=pending_cancel,
                         _usage_observer=_charge_recovery_usage,
                         _admission_check=_recovery_admission,
+                        # Recovery awaits join this round's pending measured
+                        # span; the round's legacy wall credit settles them.
+                        _active_observer=functools.partial(
+                            _pending_main_active_observe, _pending_main_usage, round_num),
                     ):
                         if _rk == "event":
                             yield _rpayload
