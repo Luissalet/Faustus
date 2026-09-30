@@ -208,6 +208,47 @@ async def test_worker_checks_expected_identity_before_encoding(live, monkeypatch
     assert client.calls == before
 
 
+@pytest.mark.parametrize('owner', ['qa', 'other-owner'])
+async def test_original_source_manager_swap_invalidates(live, owner):
+    collection, _, request, source = live
+    add(collection, 'hat previous manager')
+    first = await deliver(request)
+    replacement = Collection()
+    add(replacement, 'hat newly active manager', owner=owner)
+    source._manager = manager(replacement)
+    second = await deliver(request, first)
+    assert not second['report'].get('reused')
+    assert 'previous manager' not in str(second['message'])
+    assert ('newly active manager' in str(second['message'])) == (owner == 'qa')
+
+
+async def test_original_source_swap_in_worker_never_queries_old_manager(live, monkeypatch):
+    collection, runtime, request, source = live
+    add(collection)
+    first = await deliver(request)
+    client = runtime.vector_rag._lanes[0].client
+    before = client.calls
+    def swap_before_query(validation_source):
+        source._manager = manager(Collection())
+        return runtime
+    monkeypatch.setattr(DocumentSource, '_store', swap_before_query)
+    assert not await wiring._document_reuse_is_current(request, first)
+    assert client.calls == before
+
+
+async def test_original_source_swap_after_encode_discards_result(live, monkeypatch):
+    collection, runtime, request, source = live
+    add(collection)
+    first = await deliver(request)
+    client = runtime.vector_rag._lanes[0].client
+    encode = client.encode
+    def change_during_query(*args, **kwargs):
+        source._manager = manager(Collection())
+        return encode(*args, **kwargs)
+    monkeypatch.setattr(client, 'encode', change_during_query)
+    assert not await wiring._document_reuse_is_current(request, first)
+
+
 async def test_strict_failure_preserves_legacy_render_but_unknown(live):
     collection, runtime, request, _ = live
     add(collection)

@@ -57,6 +57,7 @@ class DocumentQueryReceipt:
     digest: str
     manager: object
     identity: RuntimeIdentity
+    source: object
 
 
 def identity(manager):
@@ -115,9 +116,9 @@ def record_query(retrieval, results, planned):
     digest = projection_digest(result)
     receipt = None
     if bundle and digest:
-        manager, before, after, strict_ok = bundle
-        if strict_ok and before == after:
-            receipt = DocumentQueryReceipt(copy.deepcopy(retrieval), digest, manager, before)
+        manager, before, after, strict_ok, source = bundle
+        if strict_ok and before == after and source._manager is manager:
+            receipt = DocumentQueryReceipt(copy.deepcopy(retrieval), digest, manager, before, source)
     state['receipts'].append(receipt)
 
 
@@ -145,13 +146,17 @@ async def revalidate(receipts, request, scope_identity, timeout):
             return False
         if identity(receipt.manager) != receipt.identity:
             return False
+        if receipt.source._manager is not receipt.manager:
+            return False
         retrieval = copy.deepcopy(receipt.retrieval)
         with capture_queries(validation=True) as state:
             source = DocumentSource(manager=receipt.manager)
             source._expected_query_identity = receipt.identity
+            source._expected_query_source = receipt.source
             results = await gather([source], retrieval, timeout_s=timeout)
             record_query(retrieval, results, True)
         current = captured(state)
-        if not current or current[0].identity != receipt.identity or current[0].digest != receipt.digest:
+        if (receipt.source._manager is not receipt.manager or not current
+                or current[0].identity != receipt.identity or current[0].digest != receipt.digest):
             return False
     return True

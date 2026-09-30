@@ -104,6 +104,8 @@ class DocumentSource(ThreadedSource):
         if self._gate(req):
             return ()
         candidates, bundle = await asyncio.to_thread(self._search_bundle, req, strict=True)
+        if bundle is not None:
+            bundle = (*bundle, self)
         completed(req, bundle)
         return candidates
 
@@ -124,8 +126,13 @@ class DocumentSource(ThreadedSource):
                 expected = getattr(self, '_expected_query_identity', None)
                 if expected is not None and before != expected:
                     raise ValueError('document query runtime changed before search')
+                expected_source = getattr(self, '_expected_query_source', None)
+                if expected_source is not None and expected_source._manager is not store:
+                    raise ValueError('document source manager changed before search')
                 hits = list(store.search(str(req.query or ""), k=limit, owner=owner, strict=True) or [])
                 after = identity(store)
+                if expected_source is not None and expected_source._manager is not store:
+                    raise ValueError('document source manager changed during search')
                 bundle = (store, before, after, True)
             except Exception:
                 if validating():
