@@ -31,7 +31,10 @@ def load() -> list[tuple[str, str]]:
             line = line.rstrip("\n")
             if "\t" in line:
                 k, v = line.split("\t", 1)
-                rows.append((k, v))
+                # A line break inside a string is written `\n` in the table
+                # (one row per line); the key the interface looks up has a
+                # real line break, as the source literal does at run time.
+                rows.append((k.replace("\\n", "\n"), v.replace("\\n", "\n")))
     rows.sort()
     return rows
 
@@ -46,9 +49,9 @@ def used_keys() -> set[str]:
                 continue
             s = io.open(os.path.join(base, name), encoding="utf-8").read()
             for m in re.finditer(r"(?<![A-Za-z_.])t\(\s*'((?:[^'\\]|\\.)*)'", s):
-                keys.add(m.group(1).replace("\\'", "'"))
+                keys.add(m.group(1).replace("\\'", "'").replace("\\n", "\n"))
             for m in re.finditer(r'(?<![A-Za-z_.])t\(\s*"((?:[^"\\]|\\.)*)"', s):
-                keys.add(m.group(1))
+                keys.add(m.group(1).replace("\\n", "\n"))
             for m in re.finditer(r"tn\([^,]+,\s*'((?:[^'\\]|\\.)*)',\s*'((?:[^'\\]|\\.)*)'", s):
                 keys.add(m.group(1).replace("\\'", "'"))
                 keys.add(m.group(2).replace("\\'", "'"))
