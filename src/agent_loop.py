@@ -4232,14 +4232,32 @@ def _pending_main_usage_residual(receipt):
             max(0, spend - receipt["settled_remote_units"]))
 
 
-def _pending_main_usage_settle(pending, epoch, *, tokens, remote_units):
+def _pending_main_active_observe(pending, epoch, seconds):
+    """Record only measured provider awaits for this outer invocation."""
+    import math
+    if not isinstance(seconds, (int, float)) or isinstance(seconds, bool):
+        return
+    if not math.isfinite(seconds) or seconds <= 0:
+        return
+    receipt = pending.setdefault(epoch, {"usage": {}, "settled_tokens": 0,
+                                         "settled_remote_units": 0})
+    receipt["active_seconds_observed"] = receipt.get("active_seconds_observed", 0) + seconds
+
+
+def _pending_main_active_residual(receipt):
+    return max(0, receipt.get("active_seconds_observed", 0)
+               - receipt.get("settled_active_seconds", 0))
+
+
+def _pending_main_usage_settle(pending, epoch, *, tokens, remote_units, active_seconds=0):
     """Credit only actual legacy ledger additions, separately by dimension."""
     receipt = pending.get(epoch)
     if receipt is None:
         return
     receipt["settled_tokens"] += tokens
     receipt["settled_remote_units"] += remote_units
-    if _pending_main_usage_residual(receipt) == (0, 0):
+    receipt["settled_active_seconds"] = receipt.get("settled_active_seconds", 0) + active_seconds
+    if _pending_main_usage_residual(receipt) == (0, 0) and not _pending_main_active_residual(receipt):
         pending.pop(epoch)
 
 
@@ -4250,6 +4268,7 @@ def _pending_main_admission_view(ledger, pending):
         tokens, spend = _pending_main_usage_residual(receipt)
         view.add_tokens(tokens)
         view.add_remote_spend(spend)
+        view.add_active_seconds(_pending_main_active_residual(receipt))
     return view
 
 
@@ -4257,6 +4276,7 @@ def _flush_pending_main_usage(ledger, pending):
     """Settle observed residuals into this turn's in-memory ledger, once."""
     for epoch in list(pending):
         tokens, spend = _pending_main_usage_residual(pending[epoch])
+        active_seconds = _pending_main_active_residual(pending[epoch])
         # Credit each successful addition immediately, so a later dimension's
         # failure cannot make a repeated finalizer charge the first one again.
         if tokens:
@@ -4265,7 +4285,41 @@ def _flush_pending_main_usage(ledger, pending):
         if spend:
             ledger.add_remote_spend(spend)
             _pending_main_usage_settle(pending, epoch, tokens=0, remote_units=spend)
+        if active_seconds:
+            ledger.add_active_seconds(active_seconds)
+            _pending_main_usage_settle(pending, epoch, tokens=0, remote_units=0,
+                                       active_seconds=active_seconds)
         _pending_main_usage_settle(pending, epoch, tokens=0, remote_units=0)
+
+
+async def _observe_main_inference_awaits(source, observer=None):
+    """Measure provider __anext__ waits; yielding/closing is outside the span."""
+    iterator = source.__aiter__()
+    try:
+        while True:
+            started = time.monotonic() if observer is not None else None
+            try:
+                chunk = await iterator.__anext__()
+            except StopAsyncIteration:
+                return
+            finally:
+                if started is not None:
+                    try:
+                        observer(max(0, time.monotonic() - started))
+                    except Exception:
+                        logger.debug("main inference timing observer failed", exc_info=True)
+            yield chunk
+    finally:
+        import sys
+        primary_error = sys.exc_info()[1]
+        close = getattr(iterator, "aclose", None)
+        if close is not None:
+            try:
+                await close()
+            except Exception:
+                if primary_error is None:
+                    raise
+                logger.debug("main inference stream close also failed")
 
 
 def _recovery_usage_snapshot(raw):
@@ -12190,7 +12244,7 @@ async def _stream_agent_loop_body(
             logger.debug("[agent] follow-up reasoning budget skipped: %s", _rr_err)
             _round_overrides = gen_overrides
         _tool_trouble_since_stream = False
-        async for chunk in stream_llm_with_fallback(
+        async for chunk in _observe_main_inference_awaits(stream_llm_with_fallback(
             _candidates,
             messages,
             temperature=temperature,
@@ -12206,7 +12260,7 @@ async def _stream_agent_loop_body(
             candidate_request_factory=_candidate_request,
             candidate_route_descriptors=_candidate_route_descriptors,
             gen_overrides=_round_overrides or None,
-        ):
+        ), functools.partial(_pending_main_active_observe, _pending_main_usage, round_num)):
             if not _round_first_event_logged:
                 _round_first_event_logged = True
                 logger.info(
@@ -16474,9 +16528,9 @@ async def _stream_agent_loop_body(
         # cost-tracked endpoint) remote spend to the autonomy-budget ledger —
         # once, after this round's model call AND its tools have both run,
         # so `active_seconds` reflects real inference+tool work. A round that
-        # `continue`d earlier (an empty-round nudge, the loop breaker) never
-        # reaches this line and so never charges it — the ledger only ever
-        # grows from work that actually happened.
+        # `continue`d earlier never reaches this line; its measured provider
+        # awaits remain pending for admission and finalization. Credit this
+        # actual legacy span against this round only, avoiding overlap.
         if usage_buckets and usage_buckets[-1].get("round") == round_num:
             _round_usage_bucket = usage_buckets[-1]
             _round_in = int(_round_usage_bucket.get("input_tokens") or 0)
@@ -16493,7 +16547,10 @@ async def _stream_agent_loop_body(
             _budget_ledger.add_remote_spend(_main_remote_units)
             _pending_main_usage_settle(_pending_main_usage, round_num,
                 tokens=_round_in + _round_out, remote_units=_main_remote_units)
-        _budget_ledger.add_active_seconds(time.time() - _round_start)
+        _main_active_credit = time.time() - _round_start
+        _budget_ledger.add_active_seconds(_main_active_credit)
+        _pending_main_usage_settle(_pending_main_usage, round_num, tokens=0, remote_units=0,
+                                   active_seconds=max(0, _main_active_credit))
 
         # BUG-STOP-01: a mid-round cancellation (scope=task/work) ends the
         # turn immediately -- checked before the budget/loop-breaker
