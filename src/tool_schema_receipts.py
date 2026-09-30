@@ -110,3 +110,57 @@ def observation_for_answer(states: Mapping[int, Mapping[str, Any]], candidate_in
         return {"stage": "candidate_prepared", "shadow": True,
                 "status": "not_comparable", "reason": "stale_candidate_receipt"}
     return compare_pdf_binding(receipt if isinstance(receipt, CandidateSchemaReceipt) else None, binding)
+
+
+@dataclass(frozen=True)
+class CandidateArgumentSnapshot:
+    """Private prepared parameter projections; not permission or dispatch authority.
+
+    JSON strings freeze nested containers without exposing them in observations.
+    Decoding returns a fresh projection for one validation/repair operation.
+    """
+    candidate_index: int
+    round_num: int
+    catalogue_sha256: str
+    parameters: tuple[tuple[str, str], ...]
+    text_only: bool = False
+
+    def parameters_for(self, name: str):
+        matches = [data for tool, data in self.parameters if tool == name]
+        return json.loads(matches[0]) if len(matches) == 1 else None
+
+
+def capture_argument_schemas(schemas: Any, *, candidate_index: int, round_num: int,
+                             text_only: bool = False) -> CandidateArgumentSnapshot:
+    entries = []
+    for entry in schemas or ():
+        fn = entry.get("function") if isinstance(entry, dict) else None
+        if not isinstance(fn, dict) or not isinstance(fn.get("name"), str):
+            continue
+        params = fn.get("parameters")
+        if isinstance(params, dict):
+            entries.append((fn["name"], json.dumps(params, ensure_ascii=False,
+                            sort_keys=True, separators=(",", ":"), allow_nan=False)))
+    return CandidateArgumentSnapshot(candidate_index, round_num, _digest(schemas or []),
+                                     tuple(entries), text_only)
+
+
+def argument_snapshot_for_answer(states: Mapping[int, Mapping[str, Any]], candidate_index: Any,
+                                 *, round_num: int):
+    """Never substitute a primary candidate or an old round for the answer."""
+    status = {"stage": "candidate_prepared", "scope": "argument_validation",
+              "status": "legacy", "reason": "candidate_snapshot_missing"}
+    state = states.get(candidate_index, {}) if isinstance(candidate_index, int) and not isinstance(candidate_index, bool) else {}
+    snapshot = state.get("argument_snapshot")
+    if not isinstance(snapshot, CandidateArgumentSnapshot):
+        return None, status
+    if snapshot.candidate_index != candidate_index or snapshot.round_num != round_num:
+        return None, {**status, "reason": "stale_candidate_snapshot"}
+    if snapshot.text_only:
+        return None, {**status, "reason": "text_only_candidate"}
+    names = [name for name, _ in snapshot.parameters]
+    if len(names) != len(set(names)):
+        return None, {**status, "reason": "duplicate_schema_name"}
+    return snapshot, {**status, "status": "captured", "reason": "answering_candidate",
+                      "candidate_index": candidate_index, "round_num": round_num,
+                      "catalogue_sha256": snapshot.catalogue_sha256}

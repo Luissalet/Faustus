@@ -5830,7 +5830,8 @@ def _tool_arg_validation_mode() -> str:
 
 
 def _validate_native_tool_call(tc_name: str, tc_args, block: ToolBlock,
-                               path_roots: Optional[Sequence[str]] = None):
+                               path_roots: Optional[Sequence[str]] = None, *,
+                               argument_snapshot=None, schema_receipt=None):
     """CALL-02/CALL-03: check one converted native call's arguments against
     its FUNCTION_TOOL_SCHEMAS entry, right where the call becomes a
     ToolBlock (the one place `function_call_to_tool_call` — text-fenced
@@ -5860,20 +5861,35 @@ def _validate_native_tool_call(tc_name: str, tc_args, block: ToolBlock,
     if not isinstance(args, dict):
         return block, None
 
-    from src.tool_schemas import repair_tool_arguments, validate_tool_arguments
+    from src.tool_schemas import repair_tool_arguments, validate_tool_arguments, _BUILTIN_ARGUMENT_SCHEMA_NAMES
+    from src.pdf_tool_contracts import tool_names as _pdf_names
+    schema_kwargs = {}
+    receipt = dict(schema_receipt) if schema_receipt is not None else None
+    # Only the existing builtin validation surface adopts prepared schemas.
+    # MCP and PDF retain their separate execution/contract paths.
+    if (argument_snapshot is not None and tc_name in _BUILTIN_ARGUMENT_SCHEMA_NAMES
+            and tc_name not in _pdf_names()):
+        captured_schema = argument_snapshot.parameters_for(tc_name)
+        if captured_schema is not None:
+            schema_kwargs["_schema"] = captured_schema
+        elif receipt is not None:
+            receipt.update(status="legacy", reason="tool_not_in_prepared_schemas")
+    elif receipt is not None and argument_snapshot is not None:
+        receipt.update(status="legacy", reason="separate_tool_contract")
 
-    errors = validate_tool_arguments(tc_name, args, path_roots=path_roots)
+    errors = validate_tool_arguments(tc_name, args, path_roots=path_roots, **schema_kwargs)
     if not errors:
-        return block, None
+        return block, ({"errors": [], "repairs": [], "blocked": False,
+                        "schema_validation_receipt": receipt} if receipt is not None else None)
 
     blocking = [e for e in errors if e.kind in _BLOCKING_ARG_ERROR_KINDS]
     applied: list = []
     remaining = blocking
     if blocking:
-        repaired_args, applied = repair_tool_arguments(tc_name, args, blocking)
+        repaired_args, applied = repair_tool_arguments(tc_name, args, blocking, **schema_kwargs)
         if applied:
             remaining = [
-                e for e in validate_tool_arguments(tc_name, repaired_args, path_roots=path_roots)
+                e for e in validate_tool_arguments(tc_name, repaired_args, path_roots=path_roots, **schema_kwargs)
                 if e.kind in _BLOCKING_ARG_ERROR_KINDS
             ]
             if not remaining:
@@ -5896,6 +5912,8 @@ def _validate_native_tool_call(tc_name: str, tc_args, block: ToolBlock,
         "repairs": applied,
         "blocked": blocked,
     }
+    if receipt is not None:
+        meta["schema_validation_receipt"] = receipt
     return block, meta
 
 
@@ -5930,6 +5948,8 @@ def _resolve_tool_blocks(
     arg_validation: Optional[Dict[int, Dict[str, Any]]] = None,
     path_roots: Optional[Sequence[str]] = None,
     round_reasoning: str = "",
+    argument_snapshot=None,
+    schema_receipt=None,
 ):
     """Choose native function calls or fenced code block parsing. Returns
     (tool_blocks, used_native, converted_calls) — the same three values it
@@ -5951,7 +5971,9 @@ def _resolve_tool_blocks(
             block = function_call_to_tool_block(tc_name, tc_args)
             if block:
                 block, arg_meta = _validate_native_tool_call(tc_name, tc_args, block,
-                                                             path_roots=path_roots)
+                                                             path_roots=path_roots,
+                                                             argument_snapshot=argument_snapshot,
+                                                             schema_receipt=schema_receipt)
                 if arg_meta is not None:
                     arg_validation[id(block)] = arg_meta
                 tool_blocks.append(block)
@@ -11813,16 +11835,25 @@ async def _stream_agent_loop_body(
                 except Exception as _candidate_slim_err:
                     logger.debug("[tool-slim] candidate skipped: %s",
                                  _candidate_slim_err)
+            # Detach prepared schemas even when slimming is off/a no-op. The
+            # request and its argument snapshot must not follow source mutations.
+            from copy import deepcopy as _copy_prepared_tools
+            candidate_tools = _copy_prepared_tools(candidate_tools)
             state["tools"] = candidate_tools
             # Prepared schema receipt only: llm_core may still adapt protocol.
             try:
-                from src.tool_schema_receipts import capture_candidate
+                from src.tool_schema_receipts import capture_candidate, capture_argument_schemas
+                state["argument_snapshot"] = capture_argument_schemas(
+                    candidate_tools, candidate_index=index, round_num=round_num,
+                    text_only=bool(state.get("text_only_transport")),
+                )
                 state["schema_receipt"] = capture_candidate(
                     candidate_tools, candidate_index=index, round_num=round_num,
                     text_only=bool(state.get("text_only_transport")),
                 )
             except Exception:
                 state.pop("schema_receipt", None)
+                state.pop("argument_snapshot", None)
                 logger.debug("[schema-receipt] capture unavailable", exc_info=True)
             _candidate_request_states[index] = state
             return {
@@ -12825,6 +12856,10 @@ async def _stream_agent_loop_body(
             else round_response
         )
         _arg_validation: Dict[int, Dict[str, Any]] = {}
+        from src.tool_schema_receipts import argument_snapshot_for_answer
+        _answer_argument_snapshot, _answer_schema_receipt = argument_snapshot_for_answer(
+            _candidate_request_states, candidate_index, round_num=round_num,
+        )
         tool_blocks, used_native, converted_calls = _resolve_tool_blocks(
             _normalized_doc_round,
             native_tool_calls,
@@ -12838,6 +12873,8 @@ async def _stream_agent_loop_body(
             # inside the workspace (14-09-2026).
             path_roots=[r for r in [workspace, *(workspace_roots or [])] if r],
             round_reasoning=round_reasoning,
+            argument_snapshot=_answer_argument_snapshot,
+            schema_receipt=_answer_schema_receipt,
         )
         if _ody_doc_stream_create_mode and tool_blocks:
             create_idx = next(
@@ -15288,6 +15325,8 @@ async def _stream_agent_loop_body(
             # the blocked branch above already crafted its own result and
             # must not be second-guessed by this generic pass.
             if _arg_meta:
+                if _arg_meta.get("schema_validation_receipt"):
+                    result["schema_validation_receipt"] = dict(_arg_meta["schema_validation_receipt"])
                 if _arg_meta.get("errors"):
                     result.setdefault("argument_errors", _arg_meta["errors"])
                 if _arg_meta.get("repairs"):
@@ -15723,6 +15762,8 @@ async def _stream_agent_loop_body(
             tool_output_data = {"type": "tool_output", "tool": block.tool_type, "command": cmd_display, "output": output_text, "exit_code": result.get("exit_code"), "call_id": _call_id, **_result_fields}
             if _schema_observation is not None:
                 tool_output_data["schema_receipt_observation"] = dict(_schema_observation)
+            if result.get("schema_validation_receipt"):
+                tool_output_data["schema_validation_receipt"] = dict(result["schema_validation_receipt"])
             try:
                 from src.tool_clock import sse_fields as _clock_sse
                 tool_output_data.update(_clock_sse(result))
@@ -15993,6 +16034,8 @@ async def _stream_agent_loop_body(
             # anything to time).
             if _schema_observation is not None:
                 tool_event["schema_receipt_observation"] = dict(_schema_observation)
+            if result.get("schema_validation_receipt"):
+                tool_event["schema_validation_receipt"] = dict(result["schema_validation_receipt"])
             if _tool_duration_ms is not None:
                 tool_event["duration_ms"] = _tool_duration_ms
             # CALL-02/CALL-03: persist the same argument-check annotation the

@@ -4417,8 +4417,17 @@ class ArgumentError:
         return f"{self.field}: {self.detail}"
 
 
+# The existing builtin validation surface is fixed independently of later
+# catalogue edits; advertised MCP/unknown names do not acquire a new validator.
+_BUILTIN_ARGUMENT_SCHEMA_NAMES = frozenset(
+    entry.get("function", {}).get("name") for entry in FUNCTION_TOOL_SCHEMAS
+)
+_LIVE_ARGUMENT_SCHEMA = object()
+
+
 def validate_tool_arguments(tool_name: str, args: Any,
-                            path_roots: Optional[Sequence[str]] = None) -> List[ArgumentError]:
+                            path_roots: Optional[Sequence[str]] = None, *,
+                            _schema=_LIVE_ARGUMENT_SCHEMA) -> List[ArgumentError]:
     """Validate a fully-parsed tool-call `arguments` object against its
     schema in FUNCTION_TOOL_SCHEMAS. Checks (CALL-02): wrong type, unknown
     field, enum value out of range, a numeric/string/array value outside its
@@ -4434,7 +4443,7 @@ def validate_tool_arguments(tool_name: str, args: Any,
     if tool_name in _pdf_names():
         return [ArgumentError(issue.field, issue.code, issue.detail, issue.value)
                 for issue in _pdf_issues(tool_name, args)]
-    schema = _schema_for_tool(tool_name)
+    schema = _schema_for_tool(tool_name) if _schema is _LIVE_ARGUMENT_SCHEMA else _schema
     if schema is None:
         return errors
     if not isinstance(args, dict):
@@ -4521,7 +4530,8 @@ def _range_violation(key: str, value: Any, prop_schema: dict) -> Optional["Argum
 
 
 def repair_tool_arguments(
-    tool_name: str, args: Dict[str, Any], errors: List[ArgumentError]
+    tool_name: str, args: Dict[str, Any], errors: List[ArgumentError], *,
+    _schema=_LIVE_ARGUMENT_SCHEMA,
 ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """Bounded repair (CALL-03): fix only the *form* of a value the schema
     already accepts, never its meaning. That includes a
@@ -4547,7 +4557,7 @@ def repair_tool_arguments(
     """
     repaired = dict(args)
     applied: List[Dict[str, Any]] = []
-    schema = _schema_for_tool(tool_name)
+    schema = _schema_for_tool(tool_name) if _schema is _LIVE_ARGUMENT_SCHEMA else _schema
     if schema is None:
         return repaired, applied
 
