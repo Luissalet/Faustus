@@ -518,20 +518,26 @@ def memory_conflict_detection_enabled() -> bool:
         return True
 
 
-def _open_conflict(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def _open_conflict(item: Dict[str, Any], *, connection=None) -> Optional[Dict[str, Any]]:
     """The open conflict in which `item` is the OLDER side, or None. Never
     raises: a broken conflicts table must cost the marker, not the read."""
     if not memory_conflict_detection_enabled():
         return None
     try:
         from src import memory_conflicts
+        if connection is not None:
+            return memory_conflicts.open_conflict_for(item.get("id"), item.get("owner"),
+                                                      connection=connection, strict=True)
         return memory_conflicts.open_conflict_for(item.get("id"), item.get("owner"))
     except Exception as exc:  # noqa: BLE001
+        if connection is not None:
+            raise
         logger.debug("memory engine: conflict lookup failed (%s)", exc)
         return None
 
 
-def public_item(item: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, Any]:
+def public_item(item: Dict[str, Any], now: Optional[datetime] = None, *,
+                _conflict_connection=None) -> Dict[str, Any]:
     """The item as the API/tool/UI sees it: stored fields plus the COMPUTED
     score fields (never stored — they are a function of the clock).
 
@@ -544,7 +550,10 @@ def public_item(item: Dict[str, Any], now: Optional[datetime] = None) -> Dict[st
     out = dict(item)
     out["id8"] = str(item.get("id") or "")[:8]
     score = effective_score(item, now)
-    conflict = _open_conflict(item)
+    if _conflict_connection is not None:
+        conflict = _open_conflict(item, connection=_conflict_connection)
+    else:
+        conflict = _open_conflict(item)
     out["open_conflict"] = conflict
     if conflict:
         from src.memory_conflicts import RANKING_PENALTY
@@ -1278,6 +1287,48 @@ def list_items(
     if as_of is not None:
         items = [item for item in items if is_valid_now(item, as_of)]
     return items
+
+
+def context_snapshot(
+    owner: str, project: str,
+    statuses: Sequence[str] = ("active", "anti_pattern"),
+    *, now: Optional[datetime] = None,
+) -> List[Dict[str, Any]]:
+    """Strict read of scoped rows and their conflict projections in one snapshot.
+
+    This does not initialize, repair, migrate or touch the store. Missing or
+    incompatible stores and conflict tables raise rather than certify absence.
+    SQLite may create/use operational WAL/SHM sidecars in read-only mode; this
+    promises no application-state writes, not zero filesystem activity.
+    The caller can select standing rules from these normal public projections;
+    this API does not query or initialize the semantic/vector lane.
+    """
+    from pathlib import Path
+    if not isinstance(owner, str) or not isinstance(project, str):
+        raise ValueError("context snapshot requires explicit owner and project strings")
+    path = Path(db_path()).absolute()
+    connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=10.0)
+    connection.row_factory = sqlite3.Row
+    try:
+        connection.execute("PRAGMA query_only=ON")
+        connection.execute("BEGIN")
+        # Even an empty scoped result must not certify a missing/incompatible
+        # schema. These probes are SELECT-only and share the read transaction.
+        connection.execute("SELECT " + ",".join(_COLUMNS) + " FROM items LIMIT 0")
+        if memory_conflict_detection_enabled():
+            from src import memory_conflicts
+            connection.execute("SELECT " + ",".join(memory_conflicts._COLUMNS) +
+                               " FROM memory_conflicts LIMIT 0")
+        where = ["(owner = ? OR owner = '')", "(project = ? OR project = '')"]
+        params = [owner, project]
+        if statuses:
+            where.append("status IN (%s)" % ", ".join("?" for _ in statuses))
+            params.extend(str(status) for status in statuses)
+        rows = connection.execute("SELECT * FROM items WHERE " + " AND ".join(where), params).fetchall()
+        instant = now or _utcnow()
+        return [public_item(_row_to_item(row), instant, _conflict_connection=connection) for row in rows]
+    finally:
+        connection.close()
 
 
 def scoped_items(

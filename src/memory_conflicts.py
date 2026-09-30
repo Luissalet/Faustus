@@ -674,24 +674,31 @@ def get_conflict(conflict_id: Any) -> Optional[Dict[str, Any]]:
     return _row_to_dict(row) if row else None
 
 
-def open_conflict_for(item_id: Any, owner: Any = "") -> Optional[Dict[str, Any]]:
+def open_conflict_for(item_id: Any, owner: Any = "", *, connection=None,
+                      strict: bool = False) -> Optional[Dict[str, Any]]:
     """The open conflict, if any, in which `item_id` is the OLDER (losing
     ranking) side. Used by `memory_engine.public_item` to apply the ranking
     penalty and the "contradicted by a newer memory" marker. Owner-scoped
     the same way `scoped_items` is: the caller's own rows plus unscoped
-    (global) ones — never raises."""
+    (global) ones. The default never raises; strict mode uses the supplied
+    connection and preserves failures without initializing a store."""
     item_id = str(item_id or "")
     if not item_id:
         return None
     owner = str(owner or "")
+    if strict and connection is None:
+        raise ValueError("strict conflict reads require a caller-owned connection")
+    sql = (f"SELECT * FROM {_TABLE} WHERE old_id = ? AND status = 'open' "
+           f"AND (owner = ? OR owner = '') LIMIT 1")
     try:
-        with _db() as conn:
-            row = conn.execute(
-                f"SELECT * FROM {_TABLE} WHERE old_id = ? AND status = 'open' "
-                f"AND (owner = ? OR owner = '') LIMIT 1",
-                (item_id, owner),
-            ).fetchone()
+        if connection is not None:
+            row = connection.execute(sql, (item_id, owner)).fetchone()
+        else:
+            with _db() as conn:
+                row = conn.execute(sql, (item_id, owner)).fetchone()
     except Exception as exc:  # noqa: BLE001
+        if strict:
+            raise
         logger.debug("memory_conflicts: open_conflict_for failed (%s)", exc)
         return None
     return _row_to_dict(row) if row else None
