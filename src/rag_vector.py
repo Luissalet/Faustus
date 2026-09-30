@@ -28,6 +28,7 @@ from src.embedding_lanes import (
     lane_count,
     migrate_legacy_collection,
     query_lanes,
+    query_lanes_strict,
 )
 
 logger = logging.getLogger(__name__)
@@ -373,12 +374,16 @@ class VectorRAG:
     # Search — hybrid: vector similarity + keyword overlap
     # ------------------------------------------------------------------
 
-    def search(self, query: str, k: int = 5, owner: Optional[str] = None) -> List[Dict[str, Any]]:
+    def search(self, query: str, k: int = 5, owner: Optional[str] = None, *, strict: bool = False) -> List[Dict[str, Any]]:
         if not self.healthy:
+            if strict:
+                raise RuntimeError("strict document search is unavailable")
             return []
         if not query or not isinstance(query, str):
+            if strict:
+                raise ValueError("strict document search requires a query")
             return []
-        if lane_count(self._lanes) == 0:
+        if not strict and lane_count(self._lanes) == 0:
             return []
 
         try:
@@ -386,18 +391,26 @@ class VectorRAG:
             query_words = set(query.lower().split())
             candidates = []
 
-            for lane, results in query_lanes(
-                self._lanes,
-                query,
-                n_results=lambda lane: min(
-                    (k * 6 if owner else k * 3),
-                    max(k, 20),
-                    lane.count(),
-                ),
-                where=where_filter,
-                include=["documents", "metadatas", "distances"],
-                raise_if_all_failed=True,
-            ):
+            if strict:
+                queried = query_lanes_strict(
+                    self._lanes, query,
+                    n_results=lambda lane, count: min(k * 6 if owner else k * 3, max(k, 20), count),
+                    where=where_filter, include=["documents", "metadatas", "distances"],
+                )
+            else:
+                queried = query_lanes(
+                    self._lanes,
+                    query,
+                    n_results=lambda lane: min(
+                        (k * 6 if owner else k * 3),
+                        max(k, 20),
+                        lane.count(),
+                    ),
+                    where=where_filter,
+                    include=["documents", "metadatas", "distances"],
+                    raise_if_all_failed=True,
+                )
+            for lane, results in queried:
                 for idx in range(len(results["ids"][0])):
                     doc_id = results["ids"][0][idx]
                     distance = results["distances"][0][idx]
@@ -427,6 +440,8 @@ class VectorRAG:
             return top
 
         except Exception as e:
+            if strict:
+                raise
             logger.error(f"search failed: {e}")
             return self._keyword_search_fallback(query, k, owner=owner)
 

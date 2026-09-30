@@ -8,10 +8,12 @@ different embedding models must never share one collection.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import logging
 import os
+import copy
+import math
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
 logger = logging.getLogger(__name__)
@@ -372,6 +374,62 @@ def dedupe_results(results: Iterable[Dict[str, Any]], id_key: str = "id", limit:
         out.append(row)
         if limit is not None and len(out) >= limit:
             break
+    return out
+
+
+def query_lanes_strict(
+    lanes: Sequence[EmbeddingLane],
+    query: str,
+    n_results: Callable[[EmbeddingLane, int], int],
+    include: Sequence[str],
+    where: Optional[Dict[str, Any]] = None,
+) -> List[tuple[EmbeddingLane, Dict[str, Any]]]:
+    """Query captured lanes without interpreting a failure as an empty corpus.
+
+    Collection/client references are fixed for this call, not transactionally
+    frozen across count and query. No constructor, migration or fallback runs.
+    """
+    captured = tuple(replace(lane) for lane in tuple(lanes))
+    if not captured:
+        raise RuntimeError("strict document search has no embedding lanes")
+    wanted = tuple(include)
+    scope = copy.deepcopy(where)
+    out = []
+    for lane in captured:
+        if not lane.healthy:
+            raise RuntimeError("strict document search has an unavailable lane")
+        count = lane.collection.count()
+        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+            raise ValueError("invalid collection count")
+        if count == 0:
+            continue
+        n = n_results(lane, count)
+        if isinstance(n, bool) or not isinstance(n, int) or n <= 0:
+            raise ValueError("invalid strict query limit")
+        results = lane.collection.query(
+            query_embeddings=lane.encode([query]), n_results=min(n, count),
+            where=copy.deepcopy(scope), include=list(wanted),
+        )
+        if not isinstance(results, dict):
+            raise ValueError("invalid strict query result")
+        keys = ("ids",) + wanted
+        for key in keys:
+            rows = results.get(key)
+            if not isinstance(rows, list) or len(rows) != 1 or not isinstance(rows[0], list):
+                raise ValueError("invalid strict query result shape")
+        size = len(results["ids"][0])
+        if size > min(n, count) or any(len(results[key][0]) != size for key in keys):
+            raise ValueError("inconsistent strict query result lengths")
+        for key in keys:
+            for value in results[key][0]:
+                if key in ("ids", "documents") and not isinstance(value, str):
+                    raise ValueError("invalid strict query text")
+                if key == "metadatas" and not isinstance(value, dict):
+                    raise ValueError("invalid strict query metadata")
+                if key == "distances" and (isinstance(value, bool) or
+                        not isinstance(value, (int, float)) or not math.isfinite(value)):
+                    raise ValueError("invalid strict query distance")
+        out.append((lane, results))
     return out
 
 
