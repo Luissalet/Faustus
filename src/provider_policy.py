@@ -253,6 +253,18 @@ def _model_digest(value: Any) -> str:
     return candidate.strip() if isinstance(candidate, str) else ""
 
 
+def _calibration_endpoint_snapshot(endpoint: Any) -> Dict[str, str]:
+    """Freeze caller-resolved route identity; never discover a newer DB row."""
+    revision = _get(endpoint, "connection_revision") or _get(endpoint, "endpoint_revision") or ""
+    return {
+        "connection_id": str(_get(endpoint, "connection_id") or _get(endpoint, "endpoint_id")
+                             or _get(endpoint, "id") or ""),
+        "base_url": str(_get(endpoint, "base_url") or _get(endpoint, "endpoint_url") or ""),
+        "connection_revision": revision.strip() if isinstance(revision, str) else "",
+        "model_digest": _model_digest(endpoint),
+    }
+
+
 def _contextual_calibration(model: str, endpoint: Any, *, digest: str = "",
                             supplied: Any = None) -> Mapping[str, Any]:
     """Local evidence needs an exact route scope; legacy is declarations only.
@@ -262,12 +274,12 @@ def _contextual_calibration(model: str, endpoint: Any, *, digest: str = "",
     """
     from src import model_calibration as calibration
 
-    endpoint_id = str(_get(endpoint, "connection_id") or _get(endpoint, "endpoint_id")
-                      or _get(endpoint, "id") or "")
-    url = str(_get(endpoint, "base_url") or _get(endpoint, "endpoint_url") or "")
+    snapshot = _calibration_endpoint_snapshot(endpoint)
+    endpoint_id, url = snapshot["connection_id"], snapshot["base_url"]
     protocol = calibration.explicit_native_protocol(url)
     effective = calibration.get_effective_manifest(vendor="ollama", model_id=model,
-        endpoint_id=endpoint_id, protocol=protocol, digest=digest)
+        endpoint_id=endpoint_id, protocol=protocol, digest=digest,
+        endpoint_revision=snapshot["connection_revision"])
     if isinstance(supplied, Mapping):
         # Scope metadata in a supplied dict is not authority for observations.
         # The store's current exact record wins, including deliberate empties.
@@ -281,7 +293,7 @@ def _contextual_calibration(model: str, endpoint: Any, *, digest: str = "",
     return effective
 
 
-def _fit_candidates_from_endpoint(endpoint: Any) -> Tuple["mc.FitCandidateModel", ...]:
+def _fit_candidates_from_endpoint(endpoint: Any, *, _calibration_endpoint: Any = None) -> Tuple["mc.FitCandidateModel", ...]:
     """Other already-evidenced models `explain_fit` may name as alternatives
     (CMP-11) — read from the caller-supplied, optional
     `endpoint["capability_alternatives"]`: an iterable of
@@ -291,6 +303,8 @@ def _fit_candidates_from_endpoint(endpoint: Any) -> Tuple["mc.FitCandidateModel"
     This module never discovers siblings — so with nothing supplied
     there are simply no alternatives to offer, never a guess."""
     raw = _get(endpoint, "capability_alternatives", None) or ()
+    snapshot = (_calibration_endpoint if _calibration_endpoint is not None
+                else _calibration_endpoint_snapshot(endpoint))
     out = []
     for item in raw:
         model_id = str(_get(item, "model_id") or _get(item, "model") or "").strip()
@@ -301,9 +315,8 @@ def _fit_candidates_from_endpoint(endpoint: Any) -> Tuple["mc.FitCandidateModel"
             assertions = mc.assertions_from_endpoint_capabilities(explicit)
         else:
             supplied = _get(item, "manifest", None)
-            if privacy_policy.is_local_destination(str(_get(endpoint, "base_url") or
-                                                       _get(endpoint, "endpoint_url") or "")):
-                manifest = _contextual_calibration(model_id, endpoint,
+            if privacy_policy.is_local_destination(snapshot["base_url"]):
+                manifest = _contextual_calibration(model_id, snapshot,
                     digest=_model_digest(item), supplied=supplied)
             else:
                 # No scoped remote calibration protocol is established here.
@@ -330,7 +343,8 @@ def _build_fit(
     if not required:
         return mc.Fit(ok=True, model=requested_model, endpoint=str(connection_id or ""))
 
-    candidates = _fit_candidates_from_endpoint(endpoint)
+    snapshot = _calibration_endpoint_snapshot(endpoint)
+    candidates = _fit_candidates_from_endpoint(endpoint, _calibration_endpoint=snapshot)
 
     explicit = _get(endpoint, "capabilities", None)
     if explicit is not None:
@@ -357,8 +371,8 @@ def _build_fit(
         return mc.explain_fit(required, model=requested_model, endpoint=str(connection_id or ""),
                                assertions=None, candidates=candidates)
 
-    manifest = _contextual_calibration(requested_model, endpoint,
-        digest=_model_digest(endpoint))
+    manifest = _contextual_calibration(requested_model, snapshot,
+        digest=snapshot["model_digest"])
     assertions = mc.assertions_from_calibration_manifest(manifest)
     return mc.explain_fit(required, model=requested_model, endpoint=str(connection_id or ""),
                            assertions=assertions, candidates=candidates)
