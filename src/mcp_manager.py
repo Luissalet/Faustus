@@ -13,6 +13,7 @@ import stat
 import asyncio
 import time
 import httpx
+from copy import deepcopy
 from collections import deque
 from contextlib import contextmanager
 from typing import Any, Callable, Deque, Dict, List, Optional, Set, TextIO, Tuple
@@ -1662,6 +1663,46 @@ class McpManager:
             suffix = f" ({detail})" if detail else ""
             return {"error": f"MCP server not connected: {server_id}{suffix}", "exit_code": 1}
 
+        # Bind executable and replay authority before OAuth can yield. These
+        # private copies never appear in errors/logs (connection metadata may
+        # contain credentials). Missing legacy metadata stays missing: it must
+        # not acquire a replacement tool's annotations during this call.
+        def current_tool():
+            return next((t for t in self._tools.get(server_id, [])
+                         if t.get("name") == tool_name), None)
+
+        def connection_scope():
+            volatile = {"status", "error", "tool_count", "discovery_truncated", "stderr_log"}
+            return {k: v for k, v in self._connections.get(server_id, {}).items()
+                    if k not in volatile}
+
+        captured_tool = deepcopy(current_tool())
+        captured_connection = deepcopy(connection_scope())
+        captured_connection_present = server_id in self._connections
+        captured_oauth = self._oauth_providers.get(server_id)
+        captured_owner_task = self._owner_tasks.get(server_id)
+        read_only = mcp_tool_is_readonly(captured_tool or {"name": tool_name})
+
+        def scope_current(*, after_reconnect=False):
+            if not after_reconnect and self._sessions.get(server_id) is not session:
+                return False
+            if not after_reconnect and self._owner_tasks.get(server_id) is not captured_owner_task:
+                return False
+            if self._oauth_providers.get(server_id) is not captured_oauth:
+                return False
+            if (current_tool() != captured_tool or connection_scope() != captured_connection
+                    or (server_id in self._connections) != captured_connection_present):
+                return False
+            if _is_browser_connection(server_id) and _browser_tool_denied(
+                    tool_name, builtin_browser_policy_disabled()):
+                return False
+            return True
+
+        def changed_before_dispatch():
+            return {"error": "MCP call registration or policy changed before dispatch.",
+                    "error_code": "MCP_CALL_BINDING_CHANGED", "status": "denied",
+                    "blocked": True, "effect_not_dispatched": True, "exit_code": 1}
+
         # A18: preflight OAuth token check — no-op for a non-OAuth server, a
         # single bounded refresh+retry for an expired one, a fast typed
         # error (no secrets) with a background reauthorization kicked off
@@ -1673,13 +1714,13 @@ class McpManager:
             self._record_call_outcome(server_id, False, 0.0)
             return oauth_err
 
+        if not scope_current():
+            return changed_before_dispatch()
+
         # A built-in whose owner task already finished has no live process
         # behind the session: skip the doomed call and go straight to reconnect.
         dead = self.is_builtin(server_id) and not self._stdio_owner_alive(server_id)
         dispatched = False
-        tool_meta = next((tool for tool in self._tools.get(server_id, [])
-                          if tool.get("name") == tool_name), {"name": tool_name})
-        read_only = mcp_tool_is_readonly(tool_meta)
         # A dead browser loses its page state. These three recovery actions
         # are safe to repeat after reconnect; clicks, form submits and script
         # execution are not. Some browser MCP versions omit annotations.
@@ -1702,11 +1743,24 @@ class McpManager:
         except Exception as e:
             # Auto-reconnect for builtin servers whose subprocess may have died
             if self.is_builtin(server_id):
+                # A stale failed call must not tear down a replacement session
+                # or obtain replay authority from its newer registration.
+                if not scope_current():
+                    self._record_call_outcome(server_id, False, time.time() - call_started)
+                    return (_uncertain_mcp_call_result(qualified_name, e) if dispatched
+                            else changed_before_dispatch())
+                if dispatched and not replay_safe:
+                    self._record_call_outcome(server_id, False, time.time() - call_started)
+                    return _uncertain_mcp_call_result(qualified_name, e)
                 logger.warning(
-                    f"MCP call failed for {qualified_name}, attempting reconnect: {type(e).__name__}: {e}"
+                    f"MCP call failed for {qualified_name}, attempting reconnect: {type(e).__name__}"
                 )
                 reconnected = await self._reconnect_builtin(server_id)
                 if reconnected and (not dispatched or replay_safe):
+                    if not scope_current(after_reconnect=True):
+                        self._record_call_outcome(server_id, False, time.time() - call_started)
+                        return (_uncertain_mcp_call_result(qualified_name, e) if dispatched
+                                else changed_before_dispatch())
                     session = self._sessions.get(server_id)
                     if session:
                         try:
