@@ -592,3 +592,15 @@ Final127 correctas44,89s en8 suites,7 nuevas (selección previa42 correctas2,18s
 Repro previo gather/SQLite real lanes=('lexical',): vectorstore.search1 y resultado no degradado pese vía no permitida. Final183 correctas17,76s,0omitidas: semanticpolicy7+sources+fetch12+standingfreshness16+engine. Coordinador19 correctas1,43s (7nuevas+12fetch). Recordingstore/failgetters reales de prueba comprueban cero consultas/inicialización cuando deshabilitado, positivo semantic/default, absent/error legacy y gateincognito. Sin modelos/DB personal enpytest aislado. Híbrido readonly/freshness aún pendiente; primitivastrictc051 no certifica APIengine completa.
 
 Fuente original ya visitada https://github.com/openai/codex/tree/b1e72963c3b71a9265a551e54beff078384efed9 y contratos locales del planificador; adaptación propia, no revisiónradar repetida. Piloto lexical-only visitado/cerrado. Checkpoint98272203. Uso99% pero ordinaryUsageAllowed=true; sigue autorizado, automatización activa.
+
+
+### VISITADO / IMPLEMENTADO — run capturado antes de trazado diferido
+
+Nueva pregunta análoga a phase: stream real iniciado run-A/session-A, cerrado en contexto run-B, persistía run-B/session-A. `33c845da`: ambos wrappers capturan currentrun al entrar y pasan snapshot privado explícito al registrar. Ausencia capturada no adopta run futuro; record_call directo conserva currentcontext por defecto y explicit run_id tiene precedencia legacy. No añade validación nueva de run_ids legacy ni autoridad de ejecución.
+
+Final95 correctas4,10s en7suites,14 nuevas; coordinador14 correctas0,91s. JSONL real flush/reopen/list/detail, earlyclose y shutdown_asyncgens sobre error/partial; knownA→B, unknown→B, wrapper nonstream con contextos diferentes. Sesión explícita permanece correcta y otra sesión no recibe registros. Sin modelos ni facturas reconstruidas. Fuente original ya visitada https://github.com/openai/codex/tree/b1e72963c3b71a9265a551e54beff078384efed9; adaptación propia. Piloto run diferido visitado/cerrado, H23generalpartial.
+
+
+### VISITADO / EVALUADO — H05 prepared→builder de proveedor
+
+Builders reales con schema nested boolean/array/required/additionalProperties: Harmony conserva parameters y nombres con roundtrip; Ollama conserva contrato; Anthropic input_schema igual; OpenAIchat tools sin rewrite. Original sin mutación. No se encontró bug nuevo de tipo/required para corregir. Smalltalk puede omitir tools; subscriptionResponses también: omisión deliberada, no wireauthority certificada. Recibo actual declara candidate_prepared/shadow/notcomparable; no promesa request_sent. Sin fakePOST benchmark ni nueva implementación. Autoridad de schemas efectivamente enviados requiere piloto distinto y sigue pendiente. Fuente https://github.com/openai/codex/tree/b1e72963c3b71a9265a551e54beff078384efed9 y builderslocales ya visitados. No repetir esta comparación sin nueva pregunta/version.
