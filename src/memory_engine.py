@@ -1292,8 +1292,8 @@ def list_items(
 def context_snapshot(
     owner: str, project: str,
     statuses: Sequence[str] = ("active", "anti_pattern"),
-    *, now: Optional[datetime] = None,
-) -> List[Dict[str, Any]]:
+    *, now: Optional[datetime] = None, include_items: bool = False,
+) -> list:
     """Strict read of scoped rows and their conflict projections in one snapshot.
 
     This does not initialize, repair, migrate or touch the store. Missing or
@@ -1326,7 +1326,12 @@ def context_snapshot(
             params.extend(str(status) for status in statuses)
         rows = connection.execute("SELECT * FROM items WHERE " + " AND ".join(where), params).fetchall()
         instant = now or _utcnow()
-        return [public_item(_row_to_item(row), instant, _conflict_connection=connection) for row in rows]
+        out = []
+        for row in rows:
+            item = _row_to_item(row)
+            projection = public_item(item, instant, _conflict_connection=connection)
+            out.append((item, projection) if include_items else projection)
+        return out
     finally:
         connection.close()
 
@@ -1621,6 +1626,119 @@ def _semantic_scores(query: str, ids: Sequence[str]) -> Tuple[Dict[str, float], 
     return scores, True
 
 
+def _query_fields(items, query, lexical, semantic, degraded, semantic_enabled):
+    """Pure relevance fields, shared by legacy and strict retrieval."""
+    w_lex = W_LEXICAL_DEGRADED if (degraded or not semantic_enabled) else W_LEXICAL
+    w_sem = 0.0 if (degraded or not semantic_enabled) else W_SEMANTIC
+    query_keys = graph_keys(query, include_path_basenames=False)
+    out = []
+    for item in items:
+        lex = lexical.get(item['id'], 0.0)
+        sem = semantic.get(item['id'], 0.0)
+        graph = len(query_keys & _item_graph_keys(item)) / len(query_keys) if query_keys else 0.0
+        relevance = w_lex * lex + w_sem * sem + W_GRAPH * graph
+        if relevance <= 0:
+            continue
+        out.append((item, {'relevance': round(relevance, 6), 'lexical': round(lex, 6),
+            'semantic': round(sem, 6), 'graph': round(graph, 6), 'degraded': degraded,
+            '_unrounded_relevance': relevance}))
+    return out
+
+
+def _rank_projections(rows, k):
+    """Pure final ranking; score uses unrounded relevance as legacy did."""
+    for row in rows:
+        relevance = row.pop('_unrounded_relevance')
+        row['score'] = round(relevance * max(row['effective_score'], SCORE_FLOOR), 6)
+    rows.sort(key=lambda row: (-row['score'], row['id']))
+    return rows[:max(1, min(100, int(k or 8)))]
+
+
+def _installed_semantic_store():
+    from src.memory_vector import MemoryVectorStore
+    store = _vector_state.get('store')
+    if not _vector_state.get('tried') or not isinstance(store, MemoryVectorStore) or not store.healthy:
+        raise MemoryEngineError('strict query requires an installed healthy memory vector store')
+    return store
+
+
+def _context_semantic_scores(query, ids, expected_store, expected_identity):
+    from src.embedding_runtime_identity import vector_identity
+    store = _installed_semantic_store()
+    before = vector_identity(store)
+    if store is not expected_store or before != expected_identity:
+        raise MemoryEngineError('memory vector runtime changed before strict query')
+    hits = store.search(query, k=max(8, min(64, len(ids) * 2)), strict=True)
+    if _installed_semantic_store() is not store or vector_identity(store) != before:
+        raise MemoryEngineError('memory vector runtime changed during strict query')
+    if not isinstance(hits, list):
+        raise MemoryEngineError('malformed strict memory vector result')
+    wanted = set(ids)
+    scores = {}
+    for hit in hits:
+        if not isinstance(hit, dict) or not isinstance(hit.get('memory_id'), str):
+            raise MemoryEngineError('malformed strict memory vector identity')
+        score = hit.get('score')
+        if isinstance(score, bool) or not isinstance(score, (int, float)) or not math.isfinite(score):
+            raise MemoryEngineError('malformed strict memory vector score')
+        mid = hit['memory_id']
+        if mid in wanted:
+            scores[mid] = max(scores.get(mid, 0.0), max(0.0, min(1.0, score)))
+    return scores
+
+
+def context_search(query: str, owner: str, project: str, k: int = 8, *,
+                   now: Optional[datetime] = None, as_of: Optional[datetime] = None,
+                   levels: Optional[Sequence[str]] = None,
+                   statuses: Sequence[str] = ('active', 'anti_pattern'),
+                   semantic_enabled: bool = True) -> List[Dict[str, Any]]:
+    """Strict read-only hybrid query; no lazy construction or legacy fallback.
+
+    SQLite rows/conflicts share a snapshot. Chroma is an independently queried,
+    already installed runtime, guarded by field/reference identity; there is no
+    atomic transaction across stores or universal configuration epoch here.
+    SQLite may create its operational WAL/SHM sidecars as in context_snapshot.
+    """
+    from pathlib import Path
+    if not isinstance(query, str) or not query.strip():
+        raise ValueError('strict memory query requires a nonempty string')
+    if isinstance(k, bool) or not isinstance(k, int) or k <= 0:
+        raise ValueError('strict memory query requires a positive integer limit')
+    path = str(Path(db_path()).absolute())
+    instant = now or _utcnow()
+    semantic_store = semantic_identity = None
+    if semantic_enabled:
+        # Capture before the SQL snapshot without invoking the lazy getter.
+        # An unavailable identity remains unknown for nonempty SQL scopes,
+        # while actual SQL absence still requires no semantic provider.
+        from src.embedding_runtime_identity import vector_identity
+        try:
+            semantic_store = _installed_semantic_store()
+            semantic_identity = vector_identity(semantic_store)
+        except Exception:
+            pass
+    pairs = context_snapshot(owner, project, tuple(statuses), now=instant, include_items=True)
+    if str(Path(db_path()).absolute()) != path:
+        raise MemoryEngineError('memory database path changed during strict snapshot')
+    validity = as_of if as_of is not None else instant
+    wanted_levels = {str(level) for level in levels} if levels else None
+    pairs = [(item, projection) for item, projection in pairs
+             if is_valid_now(item, validity) and item.get('sensitivity') != 'secret'
+             and (wanted_levels is None or item.get('level') in wanted_levels)]
+    if not pairs:
+        return []  # Actual SQL absence needs no semantic query, as in legacy.
+    items = [item for item, _ in pairs]
+    lexical = bm25_scores(query, [(item['id'], item['text']) for item in items])
+    semantic = _context_semantic_scores(query, [item['id'] for item in items],
+                                       semantic_store, semantic_identity) if semantic_enabled else {}
+    if str(Path(db_path()).absolute()) != path:
+        raise MemoryEngineError('memory database path changed during strict query')
+    projections = {item['id']: projection for item, projection in pairs}
+    rows = [dict(projections[item['id']], **fields) for item, fields in
+            _query_fields(items, query, lexical, semantic, False, semantic_enabled)]
+    return _rank_projections(rows, k)
+
+
 def search(
     query: Any,
     owner: Optional[str] = None,
@@ -1679,35 +1797,12 @@ def search(
         # resolve the lazy vector store: doing so can initialize embeddings.
         semantic = {}
         degraded = False
-    w_lex = W_LEXICAL_DEGRADED if (degraded or not semantic_enabled) else W_LEXICAL
-    w_sem = 0.0 if (degraded or not semantic_enabled) else W_SEMANTIC
-    # A query naming src/cart.py must not match evidence from tests/cart.py
-    # merely because both paths have the same basename. Bare cart.py queries
-    # still match either reference through _item_graph_keys().
-    query_keys = graph_keys(query, include_path_basenames=False)
-
     scored: List[Dict[str, Any]] = []
-    for item in items:
-        lex = lexical.get(item["id"], 0.0)
-        sem = semantic.get(item["id"], 0.0)
-        graph = 0.0
-        if query_keys:
-            overlap = query_keys & _item_graph_keys(item)
-            graph = len(overlap) / len(query_keys)
-        relevance = w_lex * lex + w_sem * sem + W_GRAPH * graph
-        if relevance <= 0:
-            continue
+    for item, fields in _query_fields(items, query, lexical, semantic, degraded, semantic_enabled):
         row = public_item(item, now)
-        row["relevance"] = round(relevance, 6)
-        row["lexical"] = round(lex, 6)
-        row["semantic"] = round(sem, 6)
-        row["graph"] = round(graph, 6)
-        row["degraded"] = degraded
-        row["score"] = round(relevance * max(row["effective_score"], SCORE_FLOOR), 6)
+        row.update(fields)
         scored.append(row)
-
-    scored.sort(key=lambda row: (-row["score"], row["id"]))
-    hits = scored[:max(1, min(100, int(k or 8)))]
+    hits = _rank_projections(scored, k)
     if touch_hits and hits:
         with contextlib.suppress(Exception):
             touch([row["id"] for row in hits], now)
