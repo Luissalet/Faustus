@@ -803,6 +803,12 @@ _register(
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
 _register(
+    # check_score (src/agent_tools/check_score_tool.py): arithmetic over a list
+    # the caller passes in; it reads and writes nothing.
+    {"check_score"},
+    ToolEffect.READ_PRIVATE,
+)
+_register(
     # PDF operations (R4, Reach wave, src/agent_tools/pdf_ops_tool.py): every
     # op reads an input PDF from the workspace/uploads allowlist and (except
     # page_count/metadata-read) writes a NEW file back into it -- same class

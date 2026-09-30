@@ -1161,6 +1161,11 @@ EXAMPLES: Dict[str, List[str]] = {
         "does this page mention a refund policy",
         "localiza el botón de pagar en la web abierta",
     ],
+    "check_score": [
+        "puntúa esta revisión de despliegue con los checks que hemos hecho",
+        "how healthy is this release given which checks passed and which could not run",
+        "give the review a score but tell me how much was actually covered",
+    ],
     "page_window": [
         "muéstrame el siguiente trozo de la página",
         "show me the next part of this page",

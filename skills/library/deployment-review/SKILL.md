@@ -65,6 +65,10 @@ agents independently notice about the *same* file or symptom.
 
 - The Collaboration hub names all four specialists explicitly, even when
   one of them found nothing (a clean report is still evidence it ran).
+- The hub ends its findings with a Scorecard from `check_score` that states
+  coverage, not only health; a "no score" or "provisional" result is
+  reported as such, and a failed high-severity check blocks the deploy
+  whatever the number is.
 - At least one correlated finding is checked by hand against both
   specialists' raw reports before the action list is trusted, the first
   few times this is used, to confirm the coordinator is actually reading

@@ -175,6 +175,7 @@ class Report:
     kept_tests_path: Optional[str]
     generated_at: float
     notes: List[str] = field(default_factory=list)
+    score: Optional[Dict[str, Any]] = None   # src/check_scoring.py result
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -204,6 +205,9 @@ class Report:
                 lines.append(f"- **{f.test_name}** [{f.severity}] — {f.root_cause}")
                 if f.fix_suggestion:
                     lines.append(f"  - fix: {f.fix_suggestion}")
+            lines.append("")
+        if self.score:
+            lines.append(f"Score: {self.score.get('summary', '')}")
             lines.append("")
         if self.kept_tests_path:
             lines.append(f"Regression tests kept at `{self.kept_tests_path}`.")
@@ -965,7 +969,8 @@ _STATIC_BUG_CODES = ("F821", "F811", "F822", "F823", "F841", "F632", "E9", "E999
 _STATIC_MAX_PER_FILE = 10
 
 
-def _static_prepass(workspace: str, targets: List["Target"], notes: List[str]) -> List["Finding"]:
+def _static_prepass(workspace: str, targets: List["Target"], notes: List[str],
+                    checked: Optional[set] = None) -> List["Finding"]:
     """Run `src/static_checks.py` over the files the hunt targets and turn
     correctness findings into `Finding`s (verdict "bug", source "static").
     Whole files, not only changed lines: a hunt asks what is wrong with the
@@ -986,6 +991,8 @@ def _static_prepass(workspace: str, targets: List["Target"], notes: List[str]) -
     tools = set()
     for res in results:
         tools.add(str(res.get("tool") or "linter"))
+        if checked is not None and res.get("path"):
+            checked.add(str(res.get("path")))
         errors = [e for e in (res.get("errors") or []) if isinstance(e, dict)]
         for err in errors[:_STATIC_MAX_PER_FILE]:
             code = str(err.get("code") or "")
@@ -1001,6 +1008,54 @@ def _static_prepass(workspace: str, targets: List["Target"], notes: List[str]) -
             ))
     notes.append(f"static pre-pass ({', '.join(sorted(tools))}): {len(out)} finding(s)")
     return out
+
+
+_FINDING_SEVERITY = {"high": "high", "medium": "medium", "low": "low"}
+
+
+def _score_checks(targets: List["Target"], outcomes: Dict[str, Any],
+                  findings: List["Finding"], static_checked: set) -> Dict[str, Any]:
+    """Turn what a hunt did into coverage-aware checks (src/check_scoring.py).
+
+    One check per scanned target: `fail` when a real bug was found (severity of
+    the worst finding), `unknown` when the suite could not run, was
+    inconclusive, or only produced test-side or unclear verdicts (the code is
+    neither cleared nor convicted), `pass` when the suite ran and nothing
+    failed. One check per file the static pre-pass actually read."""
+    from src import check_scoring
+    checks: List[Dict[str, Any]] = []
+    for t in targets:
+        name = f"tests: {t.qualname}"
+        mine = [f for f in findings if f.target == t.qualname and not f.test_name.startswith("static:")]
+        bugs = [f for f in mine if f.verdict == "bug"]
+        result = outcomes.get(t.qualname)
+        if bugs:
+            worst = max(bugs, key=lambda f: check_scoring.SEVERITY_WEIGHTS.get(
+                _FINDING_SEVERITY.get(f.severity, "medium"), 3))
+            checks.append({"name": name, "status": "fail",
+                           "severity": _FINDING_SEVERITY.get(worst.severity, "medium"),
+                           "note": worst.root_cause[:200]})
+        elif result is None or not result.ran or result.inconclusive:
+            checks.append({"name": name, "status": "unknown", "severity": "medium",
+                           "note": (result.summary if result is not None else "suite did not run")[:200]})
+        elif mine:
+            checks.append({"name": name, "status": "unknown", "severity": "medium",
+                           "note": "failing tests without a confirmed bug"})
+        else:
+            checks.append({"name": name, "status": "pass", "severity": "medium", "note": ""})
+    if static_checked:
+        static = [f for f in findings if f.test_name.startswith("static:")]
+        for path in sorted(static_checked):
+            mine = [f for f in static if f.target == path]
+            if any(f.verdict == "bug" for f in mine):
+                checks.append({"name": f"static: {path}", "status": "fail", "severity": "medium",
+                               "note": next(f.root_cause for f in mine if f.verdict == "bug")[:200]})
+            elif mine:
+                checks.append({"name": f"static: {path}", "status": "unknown", "severity": "low",
+                               "note": "only unclear linter findings"})
+            else:
+                checks.append({"name": f"static: {path}", "status": "pass", "severity": "low", "note": ""})
+    return check_scoring.score_checks(checks)
 
 
 async def hunt(workspace: str, target: str, *, owner: str = "", keep_tests: bool = False,
@@ -1024,12 +1079,15 @@ async def hunt(workspace: str, target: str, *, owner: str = "", keep_tests: bool
     # Static pre-pass: what a correctness linter proves (names that do not
     # exist, syntax, redefinitions) costs a fraction of a second and no
     # model call, so it goes first and its findings stand on their own.
-    all_findings.extend(_static_prepass(workspace, targets[:MAX_TARGETS_PER_HUNT], notes))
+    _static_checked: set = set()
+    all_findings.extend(_static_prepass(workspace, targets[:MAX_TARGETS_PER_HUNT], notes, _static_checked))
+    outcomes: Dict[str, Any] = {}
 
     for t in targets[:MAX_TARGETS_PER_HUNT]:
         suite = await generate_tests(t, owner=owner, model=model, max_cases=max_cases)
         suite_sources.append(suite.source)
         result = run_suite(workspace, suite, timeout_s=timeout_s, slug_hint=t.qualname)
+        outcomes[t.qualname] = result
         if result.ran:
             tests_run += len(result.tests)
             tests_failed += len([x for x in result.tests if x.get("outcome") in ("failed", "error")])
@@ -1051,12 +1109,17 @@ async def hunt(workspace: str, target: str, *, owner: str = "", keep_tests: bool
             notes.append(f"{t.qualname}: {result.summary}")
 
     suite_source = "model" if "model" in suite_sources else ("fallback" if suite_sources else "none")
+    try:
+        score = _score_checks(targets[:MAX_TARGETS_PER_HUNT], outcomes, all_findings, _static_checked) if targets else None
+    except Exception as exc:  # noqa: BLE001 - a score never breaks a report
+        notes.append(f"score skipped: {exc}"[:200])
+        score = None
     report = Report(
         workspace=_norm_root(workspace), target=target, owner=owner,
         suite_source=suite_source, targets_scanned=[t.to_dict() for t in targets[:MAX_TARGETS_PER_HUNT]],
         findings=all_findings, tests_run=tests_run, tests_failed=tests_failed,
         kept_tests_path=kept_paths[0] if kept_paths else None,
-        generated_at=time.time(), notes=notes,
+        generated_at=time.time(), notes=notes, score=score,
     )
     _persist_report(owner, _slug(target), report)
     return report

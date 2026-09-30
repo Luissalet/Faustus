@@ -3438,6 +3438,34 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "check_score",
+            "description": "Score a review from the checks it made. Each check has a status (pass, fail, unknown = could not be checked, not_applicable) and a severity (high weighs 5, medium 3, low 1, info 0). Returns health (share of the assessed weight that passed), coverage (share of the applicable weight that was assessed), a verdict -- score when coverage is at least 80 %, provisional from 60 %, no_score below that -- the failed high-severity checks as blockers (a score never overrides them) and the checks that were not made. Use it to close a deployment review or any audit so a clean-looking number never hides what was not checked. Pure calculation; reads and writes nothing.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "checks": {
+                        "type": "array",
+                        "minItems": 1,
+                        "description": "Every check the review considered, including the ones that could not be made.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string", "description": "What was checked (a file, a package, a job)."},
+                                "status": {"type": "string", "enum": ["pass", "fail", "unknown", "not_applicable"]},
+                                "severity": {"type": "string", "enum": ["high", "medium", "low", "info"], "description": "How much it matters if it fails. Default medium."},
+                                "note": {"type": "string", "description": "Optional short evidence."}
+                            },
+                            "required": ["name", "status"]
+                        }
+                    }
+                },
+                "required": ["checks"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "page_window",
             "description": "Read another window of the latest browser snapshot when a snapshot result ended with a `[window: chars A-B of N ... Next window: page_window {\"offset\": B}]` line. The window size is the browser snapshot max-chars setting; the page's navigation links are repeated at the end of each window. Takes no new browser snapshot.",
             "parameters": {

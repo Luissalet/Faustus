@@ -90,6 +90,7 @@ from .prune_tools import PagePruneTool
 from .turn_review_tool import TurnReviewTool
 from .pdf_ops_tool import PdfOpsTool
 from .page_snapshot_tools import PageFindTool, PageWindowTool
+from .check_score_tool import CheckScoreTool
 from .pdf_tree_tool import PdfOutlineTool, PdfReadSectionTool, PdfFindSectionTool
 from .image_inspect_tool import InspectImageTool
 from .goal_tools import GoalDefineTool, GoalStatusTool, GoalEvaluateTool, GoalEvidenceTool
@@ -267,6 +268,8 @@ TOOL_HANDLERS = {
     # Search / window the stored browser snapshot. src/agent_tools/page_snapshot_tools.py.
     "page_find": PageFindTool().execute,
     "page_window": PageWindowTool().execute,
+    # Coverage-aware score for a list of checks. src/agent_tools/check_score_tool.py.
+    "check_score": CheckScoreTool().execute,
     # Structural PDF navigation (tree-index RAG, src/pdf_tree.py): a
     # deterministic outline/bookmark or heading tree with EXACT page ranges,
     # read one section at a time instead of chunking by embedding similarity.
@@ -487,6 +490,8 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "pdf_ops",
              # Stored browser snapshot search/windows -- src/agent_tools/page_snapshot_tools.py.
              "page_find", "page_window",
+             # Coverage-aware review score -- src/agent_tools/check_score_tool.py.
+             "check_score",
              # Structural PDF navigation -- src/agent_tools/pdf_tree_tool.py.
              "pdf_outline", "pdf_read_section", "pdf_find_section",
              # Lot I: instincts -- src/agent_tools/instinct_tools.py.

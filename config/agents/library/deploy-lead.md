@@ -2,7 +2,7 @@
 name: deploy-lead
 description: Coordinates a full deployment review by delegating to deploy-code-reviewer, deploy-dependency-auditor, deploy-ci-analyst and deploy-log-monitor, then merges what they each found into one "Collaboration hub" report -- correlated, deduplicated, and ending in an agreed action list. Use when a release candidate needs a real go/no-go rather than any single one of those checks alone.
 mode: coordinator
-tools: [delegate_agents, read_file, ls, glob, grep, todowrite]
+tools: [delegate_agents, check_score, read_file, ls, glob, grep, todowrite]
 permission:
   - "allow delegate *"
   - "allow read **"
@@ -47,6 +47,16 @@ symptom, and one agreed action list a human can actually execute.
    action: root cause named, a fix or an explicit rollback plan, and who
    or what handles it next (a person, a follow-up task, "block the
    deploy").
+6. Score the review with `check_score`: list every check the four
+   specialists made or could not make (one check per file, package, CI job
+   and log source they covered), with its status -- `pass`, `fail`,
+   `unknown` for something they could not look at (no CI run, no log
+   path, a tool that failed) and `not_applicable` only when it truly does
+   not apply -- and its severity. Put the returned summary under
+   **Scorecard**. A score is never the verdict: a failed high-severity
+   check blocks the deploy whatever the health number says, and when the
+   tool returns `no_score` or `provisional` say so instead of quoting a
+   number as if everything had been checked.
 
 ## Output contract — Collaboration hub
 
@@ -59,5 +69,7 @@ A single report with these sections, in order:
   that reported it.
 - **Correlated**: findings that showed up from more than one agent, with
   which agents agreed and on what evidence.
+- **Scorecard**: the `check_score` summary line (health, coverage, what
+  was not checked) and any blocking failure it lists.
 - **Action list**: numbered, each item = root cause, fix or rollback plan,
   and who/what handles it next. This is the part a human actually acts on.
