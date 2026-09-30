@@ -161,9 +161,12 @@ class MemoryEngineSource(ThreadedSource):
         degraded = False
 
         if query and req.allows("lexical"):
+            # Omit the new option for the default enabled path, preserving
+            # legacy injected engines while enforcing an explicit policy veto.
+            semantic_options = {} if req.allows("semantic") else {"semantic_enabled": False}
             rows = engine.search(query, owner=owner, project=project, k=limit,
                                  statuses=("active", "anti_pattern"),
-                                 touch_hits=False)
+                                 touch_hits=False, **semantic_options)
         elif req.allows("mandatory"):
             if strict:
                 from ..memory_engine_reuse import database_path, validating

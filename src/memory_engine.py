@@ -1632,6 +1632,7 @@ def search(
     levels: Optional[Sequence[str]] = None,
     statuses: Sequence[str] = ("active", "anti_pattern"),
     touch_hits: bool = True,
+    semantic_enabled: bool = True,
 ) -> List[Dict[str, Any]]:
     """Hybrid retrieval: lexical 0.45 + semantic 0.45 + evidence graph 0.10,
     multiplied by the item's own ``max(effective_score, 0.05)``.
@@ -1639,6 +1640,10 @@ def search(
     With no vector store the lexical lane is renormalised to 0.90 and every
     row carries ``degraded: True`` — the caller can SEE the lane is missing
     instead of silently getting worse answers.
+
+    ``semantic_enabled=False`` skips the semantic getter entirely and gives
+    lexical the same 0.90 weight. This is a policy choice, so it is not marked
+    degraded; the default preserves the existing provider-failure behavior.
 
     MEM-TEMPORAL: ``now`` is the CLOCK (it drives scoring/decay and defaults
     to the real time); ``as_of`` is the separate, optional instant the
@@ -1666,10 +1671,16 @@ def search(
         return []
     ids = [item["id"] for item in items]
     lexical = bm25_scores(str(query or ""), [(item["id"], item["text"]) for item in items])
-    semantic, semantic_available = _semantic_scores(str(query or ""), ids)
-    degraded = not semantic_available
-    w_lex = W_LEXICAL_DEGRADED if degraded else W_LEXICAL
-    w_sem = 0.0 if degraded else W_SEMANTIC
+    if semantic_enabled:
+        semantic, semantic_available = _semantic_scores(str(query or ""), ids)
+        degraded = not semantic_available
+    else:
+        # A policy-disabled lane is not an unavailable provider. Do not even
+        # resolve the lazy vector store: doing so can initialize embeddings.
+        semantic = {}
+        degraded = False
+    w_lex = W_LEXICAL_DEGRADED if (degraded or not semantic_enabled) else W_LEXICAL
+    w_sem = 0.0 if (degraded or not semantic_enabled) else W_SEMANTIC
     # A query naming src/cart.py must not match evidence from tests/cart.py
     # merely because both paths have the same basename. Bare cart.py queries
     # still match either reference through _item_graph_keys().
