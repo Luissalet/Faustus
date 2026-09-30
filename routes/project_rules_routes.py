@@ -9,6 +9,13 @@ the bundled rule library (`src/project_rules.py`, lot C).
                                              inject
     POST /api/rules/install   {workspace, ids}   -> {"results": [...]}
     POST /api/rules/uninstall {workspace, ids}   -> {"results": [...]}
+    POST /api/rules/paths {workspace, id, paths}  -> {"status": "updated", "paths": [...]}
+                                             sets the path patterns of one of
+                                             the folder's own .md rule files
+                                             (`paths:` in its frontmatter): the
+                                             rule is then delivered with the
+                                             first read/edit of a matching
+                                             file instead of on every turn
 
 `workspace` goes through the same trust-on-first-use check
 (`src.workspace_trust.instructions_trusted`) `src/agent_loop.py` applies
@@ -48,6 +55,13 @@ class UninstallRequest(BaseModel):
     ids: List[str] = Field(default_factory=list)
 
 
+class PathsRequest(BaseModel):
+    workspace: str
+    id: str
+    origin: str = ""
+    paths: List[str] = Field(default_factory=list)
+
+
 def setup_project_rules_routes() -> APIRouter:
     router = APIRouter(prefix="/api/rules", tags=["project-rules"])
 
@@ -85,6 +99,13 @@ def setup_project_rules_routes() -> APIRouter:
     @router.post("/uninstall")
     async def uninstall(body: UninstallRequest) -> Dict[str, Any]:
         result = project_rules.uninstall(body.workspace, body.ids)
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return result
+
+    @router.post("/paths")
+    async def set_paths(body: PathsRequest) -> Dict[str, Any]:
+        result = project_rules.set_rule_paths(body.workspace, body.id, body.paths, origin=body.origin)
         if "error" in result:
             raise HTTPException(status_code=400, detail=result["error"])
         return result

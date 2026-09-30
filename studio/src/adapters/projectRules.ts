@@ -15,6 +15,8 @@ export interface ProjectRule {
   bytes: number;
   error: string;
   text: string;
+  /** Globs the rule is scoped to (`paths:` in its frontmatter); absent or empty = every turn. */
+  paths?: string[];
 }
 
 export interface LibraryRule {
@@ -79,4 +81,9 @@ export function installProjectRules(workspace: string, ids: string[]): Promise<{
 
 export function uninstallProjectRules(workspace: string, ids: string[]): Promise<{ results: RuleActionRow[] }> {
   return postJson('/api/rules/uninstall', { workspace, ids });
+}
+
+/** Sets the path patterns of one of the folder's own .md rules; `[]` makes it a rule for every turn again. */
+export function setProjectRulePaths(workspace: string, id: string, paths: string[], origin = ''): Promise<{ status: string; paths: string[] }> {
+  return postJson('/api/rules/paths', { workspace, id, origin, paths });
 }

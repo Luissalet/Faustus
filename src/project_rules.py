@@ -507,8 +507,12 @@ def block(workspace: str, *, trusted: bool = True, languages: Optional[Sequence[
 # Path-scoped rules: delivered with the first matching file touch
 # ---------------------------------------------------------------------------
 
-#: The tools whose target file arms a path-scoped rule.
-PATH_RULE_TOOLS = frozenset({"read_file", "write_file", "edit_file", "apply_patch"})
+#: The tools whose target file arms a path-scoped rule...
+FILE_RULE_TOOLS = frozenset({"read_file", "write_file", "edit_file", "apply_patch"})
+#: ...and the listing/search tools, whose target is a folder: a rule armed by
+#: a folder listing is one that names files inside it (see `rule_matches_dir`).
+DIR_RULE_TOOLS = frozenset({"ls", "glob", "grep"})
+PATH_RULE_TOOLS = FILE_RULE_TOOLS | DIR_RULE_TOOLS
 #: Most text one tool result gets from path-scoped rules (tokens); the rest is
 #: named, not dropped silently.
 PATH_RULE_BUDGET_TOKENS = 1200
@@ -568,20 +572,41 @@ def glob_regex(pattern: str):
     return rx
 
 
+def _rel_to_root(rule: ProjectRule, path: str) -> Optional[str]:
+    """`path` relative to the rule's root with forward slashes, or None when it
+    lies outside. Windows (`C:\\x\\y`, `C:/x/y`) and POSIX spellings are both
+    understood whatever platform this runs on: a drive-letter path is compared
+    as text, case-insensitively; anything else goes through the real paths."""
+    p = str(path).strip().replace("\\", "/")
+    root = str(rule.root).strip().replace("\\", "/").rstrip("/")
+    drive = lambda v: len(v) > 1 and v[1] == ":" and v[0].isalpha()  # noqa: E731
+    if drive(p) or drive(root):
+        if not drive(p):
+            rel = os.path.normpath(p).replace(os.sep, "/")
+        else:
+            if not p.lower().startswith(root.lower() + "/") and p.lower() != root.lower():
+                return None
+            rel = os.path.normpath(p[len(root):].lstrip("/") or ".").replace(os.sep, "/")
+    else:
+        try:
+            if p.startswith("/"):
+                rel = os.path.relpath(os.path.realpath(p), os.path.realpath(rule.root)).replace(os.sep, "/")
+            else:
+                rel = os.path.normpath(p).replace(os.sep, "/")
+        except (ValueError, OSError):
+            return None
+    if rel == ".." or rel.startswith("../"):
+        return None
+    return rel
+
+
 def rule_matches(rule: ProjectRule, path: str) -> bool:
     """Whether `path` (absolute, or relative to the rule's root) is one the
     rule is scoped to. A path outside the rule's root never matches."""
     if not rule.paths or not path:
         return False
-    try:
-        p = str(path).replace("\\", "/")
-        if os.path.isabs(path) or (len(p) > 1 and p[1] == ":"):
-            rel = os.path.relpath(os.path.realpath(path), os.path.realpath(rule.root)).replace(os.sep, "/")
-        else:
-            rel = os.path.normpath(p).replace(os.sep, "/")
-    except (ValueError, OSError):
-        return False
-    if rel.startswith("../") or rel == "..":
+    rel = _rel_to_root(rule, path)
+    if rel is None:
         return False
     for pattern in rule.paths:
         try:
@@ -592,44 +617,144 @@ def rule_matches(rule: ProjectRule, path: str) -> bool:
     return False
 
 
+def _delivered_file() -> str:
+    try:
+        from src.constants import DATA_DIR
+    except Exception:  # pragma: no cover - standalone use
+        DATA_DIR = os.path.join(os.getcwd(), "data")
+    return os.path.join(DATA_DIR, "project_rules_delivered.json")
+
+
+#: Most keys remembered for one conversation, and in the file overall.
+_KEYS_PER_CONVERSATION = 200
+
+
+def rule_matches_dir(rule: ProjectRule, path: str) -> bool:
+    """Whether a listing/search of folder `path` touches files the rule is
+    scoped to: some pattern is anchored (names a folder) and that folder lies
+    inside `path` or `path` lies inside it. A pattern with no folder part
+    (`*.py`) says nothing about a folder, so it never matches one."""
+    if not rule.paths or not path:
+        return False
+    rel = _rel_to_root(rule, path)
+    if rel is None:
+        return False
+    rel = "" if rel == "." else rel.strip("/")
+    for pattern in rule.paths:
+        pat = pattern.strip().replace("\\", "/")
+        if pat.startswith("./"):
+            pat = pat[2:]
+        pat = pat.lstrip("/")
+        if "/" not in pat.rstrip("/"):
+            continue
+        literal: List[str] = []
+        for seg in pat.split("/")[:-1]:
+            if any(ch in seg for ch in "*?["):
+                break
+            literal.append(seg)
+        lit = "/".join(literal)
+        if not lit:
+            continue
+        if rel == "" or rel == lit or lit.startswith(rel + "/") or rel.startswith(lit + "/"):
+            return True
+    return False
+
+
 class _Delivered:
-    """Which path-scoped rules each conversation has already been given."""
+    """Which path-scoped rules each conversation has already been given.
+
+    Kept in memory and mirrored to a small JSON file under the data folder, so
+    a restart does not hand the same rule to the same conversation again. The
+    file is bounded (the most recent `_CONVERSATION_LIMIT` conversations) and
+    every read or write of it is best-effort: a broken file means "nothing
+    delivered yet", never an error in a tool result.
+    """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._by_conversation: "Dict[str, set]" = {}
+        self._by_conversation: "Dict[str, List[str]]" = {}
+        self._loaded = False
 
+    # -- persistence (caller holds the lock) --------------------------------
+    def _load(self) -> None:
+        if self._loaded:
+            return
+        self._loaded = True
+        try:
+            import json
+            with open(_delivered_file(), "r", encoding="utf-8") as fh:
+                raw = json.load(fh)
+            if isinstance(raw, dict):
+                for conv, keys in list(raw.items())[-_CONVERSATION_LIMIT:]:
+                    if isinstance(conv, str) and isinstance(keys, list):
+                        self._by_conversation[conv] = [k for k in keys if isinstance(k, str)][-_KEYS_PER_CONVERSATION:]
+        except (OSError, ValueError):
+            pass
+
+    def _save(self) -> None:
+        try:
+            import json
+            path = _delivered_file()
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            tmp = f"{path}.{os.getpid()}.tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(self._by_conversation, fh)
+            os.replace(tmp, path)
+        except OSError:
+            logger.debug("project_rules: could not persist delivered rules", exc_info=True)
+
+    # -- API ----------------------------------------------------------------
     def claim(self, conversation: str, key: str) -> bool:
-        """True exactly once per (conversation, key)."""
+        """True exactly once per (conversation, key), across restarts."""
         with self._lock:
+            self._load()
             seen = self._by_conversation.get(conversation)
             if seen is None:
                 if len(self._by_conversation) >= _CONVERSATION_LIMIT:
                     self._by_conversation.pop(next(iter(self._by_conversation)))
-                seen = self._by_conversation[conversation] = set()
-            if key in seen:
+                seen = self._by_conversation[conversation] = []
+            elif key in seen:
+                # most recently used conversation moves to the end
+                self._by_conversation[conversation] = self._by_conversation.pop(conversation)
                 return False
-            seen.add(key)
+            seen.append(key)
+            del seen[:-_KEYS_PER_CONVERSATION]
+            self._by_conversation[conversation] = self._by_conversation.pop(conversation)
+            self._save()
             return True
+
+    def seen(self, conversation: str, key: str) -> bool:
+        with self._lock:
+            self._load()
+            return key in self._by_conversation.get(conversation, ())
 
     def reset(self, conversation: Optional[str] = None) -> None:
         with self._lock:
+            self._load()
             if conversation is None:
                 self._by_conversation.clear()
             else:
                 self._by_conversation.pop(conversation, None)
+            self._save()
+
+    def forget_memory(self) -> None:
+        """Drop the in-memory copy only (what a restart does); the file stays."""
+        with self._lock:
+            self._by_conversation.clear()
+            self._loaded = False
 
 
 DELIVERED = _Delivered()
 
 
 def path_rule_note(conversation: str, rules: Sequence[ProjectRule], paths: Sequence[str], *,
-                   budget_tokens: Optional[int] = None) -> str:
-    """The text to append to the result of a tool that touched `paths`: every
+                   budget_tokens: Optional[int] = None, dirs: Sequence[str] = ()) -> str:
+    """The text to append to the result of a tool that touched `paths` (files)
+    or listed/searched `dirs` (folders): every
     not-yet-delivered, readable, path-scoped rule matching one of them, once
     per `conversation`. '' when there is nothing new. Never raises."""
     try:
-        if not conversation or not paths or not bool(_setting("project_rules_enabled", True)):
+        if not conversation or not (paths or dirs) or not bool(_setting("project_rules_enabled", True)):
             return ""
         budget = int(budget_tokens if budget_tokens is not None
                      else _setting("project_rules_budget_tokens", _DEFAULT_BUDGET_TOKENS))
@@ -638,16 +763,23 @@ def path_rule_note(conversation: str, rules: Sequence[ProjectRule], paths: Seque
         over: List[str] = []
         used = 0
         for r in rules:
-            if not r.paths or r.error or not r.text or not any(rule_matches(r, p) for p in paths):
+            if (not r.paths or r.error or not r.text
+                    or not (any(rule_matches(r, p) for p in paths) or any(rule_matches_dir(r, d) for d in dirs))):
                 continue
             key = f"{r.path}:{hashlib.sha256(r.text.encode('utf-8')).hexdigest()[:16]}"
-            if not DELIVERED.claim(conversation, key):
+            if DELIVERED.seen(conversation, key):
                 continue
             rel = os.path.relpath(r.path, r.root).replace(os.sep, "/")
             piece = f"### Project rule: {rel}\n\n{r.text}"
             cost = _estimate_tokens(piece)
             if used + cost > budget and parts:
+                # Not claimed: it is shown the next time a matching file is touched.
                 over.append(rel)
+                continue
+            if cost > budget:
+                piece = piece[: budget * 4].rstrip() + "\n[rule cut at the budget; read the file for the rest]"
+                cost = budget
+            if not DELIVERED.claim(conversation, key):
                 continue
             parts.append(piece)
             used += cost
@@ -677,6 +809,74 @@ def _valid_id(rule_id: str) -> Optional[Tuple[str, str]]:
     if any(c in (area + topic) for c in ("..", "/", "\\", "\x00")):
         return None
     return area, topic
+
+
+def _with_paths_line(text: str, paths: Sequence[str]) -> str:
+    """`text` (a whole rule file) with its frontmatter `paths:` replaced by
+    `paths` (removed when empty). Every other frontmatter line and the body
+    are kept as they are."""
+    lines = text.split("\n")
+    body_start = 0
+    front: List[str] = []
+    if lines and lines[0].strip() == "---":
+        for i in range(1, len(lines)):
+            if lines[i].strip() == "---":
+                front, body_start = lines[1:i], i + 1
+                break
+    kept: List[str] = []
+    skipping = False
+    for line in front:
+        if skipping and (line.startswith((" ", "\t")) or line.lstrip().startswith("- ")):
+            continue          # a YAML list item of the `paths:` being replaced
+        skipping = False
+        if line.split(":", 1)[0].strip() == "paths" and ":" in line:
+            skipping = True
+            continue
+        kept.append(line)
+    if paths:
+        kept.append("paths: " + ", ".join(paths))
+    body = "\n".join(lines[body_start:])
+    if not kept:
+        return body.lstrip("\n")
+    sep = "" if body_start or body.startswith("\n") or not body else "\n"
+    return "---\n" + "\n".join(kept) + "\n---\n" + sep + body
+
+
+def set_rule_paths(workspace: str, rule_id: str, paths: Sequence[str], *, origin: str = "") -> Dict[str, Any]:
+    """Set the path patterns (`paths:` in the frontmatter) of one of the
+    workspace's own `.md` rule files; an empty list makes it a rule for every
+    turn again. Returns `{"status": "updated", "paths": [...]}` or
+    `{"error": ...}`. Only files inside the workspace are touched."""
+    try:
+        root = os.path.realpath(os.path.expanduser(workspace or ""))
+    except Exception:  # noqa: BLE001
+        return {"error": "invalid workspace"}
+    if not root or not os.path.isdir(root):
+        return {"error": "workspace is not a folder"}
+    raw = [str(p) for p in (paths or [])]
+    cleaned = _glob_list(raw)
+    if len(raw) > MAX_RULE_PATHS or any(len(p.strip()) > MAX_GLOB_CHARS for p in raw):
+        return {"error": f"at most {MAX_RULE_PATHS} patterns of {MAX_GLOB_CHARS} characters each"}
+    if any(c in p for p in raw for c in (",", "\n", "\r", "\x00")):
+        return {"error": "a pattern cannot contain a comma or a line break"}
+    for rule in discover_project_rules(root):
+        if rule.id != rule_id or (origin and rule.origin != origin):
+            continue
+        if not rule.path.lower().endswith(".md"):
+            return {"error": "only .md rule files can be edited here"}
+        if not _contained(rule.path, root) or os.path.islink(rule.path):
+            return {"error": "the rule file is outside the workspace"}
+        if rule.error:
+            return {"error": rule.error}
+        try:
+            with open(rule.path, "r", encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
+            from core.atomic_io import atomic_write_text
+            atomic_write_text(rule.path, _with_paths_line(text, cleaned))
+        except Exception as exc:  # noqa: BLE001
+            return {"error": str(exc)[:200]}
+        return {"status": "updated", "id": rule.id, "paths": list(cleaned)}
+    return {"error": "rule not found"}
 
 
 def install(workspace: str, ids: List[str]) -> Dict[str, Any]:
@@ -759,8 +959,9 @@ def uninstall(workspace: str, ids: List[str]) -> Dict[str, Any]:
 __all__ = [
     "LIBRARY_DIR", "RULE_DIR_NAMES", "MAX_RULE_BYTES", "MAX_RULE_FILES",
     "discover_project_rules", "project_rules", "library", "languages_for",
-    "untrusted_note", "block", "install", "uninstall",
-    "PATH_RULE_TOOLS", "DELIVERED", "glob_regex", "path_rule_note", "rule_matches",
+    "untrusted_note", "block", "install", "uninstall", "set_rule_paths",
+    "PATH_RULE_TOOLS", "FILE_RULE_TOOLS", "DIR_RULE_TOOLS", "DELIVERED", "glob_regex", "path_rule_note",
+    "rule_matches", "rule_matches_dir",
 ]
 
 

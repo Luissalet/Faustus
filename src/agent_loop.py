@@ -10230,7 +10230,7 @@ async def _stream_agent_loop_body(
     from src.loop_breaker import CONTEXT_ERROR_STOP_REASON as _CONTEXT_STOP_REASON, MONOLOGUE_STOP_REASON as _MONOLOGUE_STOP_REASON, StuckWatch as _StuckWatch, is_context_length_error as _is_ctx_error, is_failed_result as _is_failed_call
     _stuck = _StuckWatch.from_settings(get_setting)
     _stuck_events: list = []   # what the watch did this turn, for the trace
-    _monologue_pending = False
+    _monologue_pending = ""   # "nudge" / "stop": decided at the top of the next round
     # The advisor (src/advisor.py): a second model that reads the whole
     # session at three moments decided HERE, in code -- the first round that
     # plans or writes, the loop breaker's nudge step, and the final answer of
@@ -10295,9 +10295,11 @@ async def _stream_agent_loop_body(
                 pth if os.path.isabs(pth) else os.path.join(workspace, pth)
                 for pth in _harness._paths_from_args(block_.tool_type, block_.content or "")
             ]
+            _is_dir = block_.tool_type in _project_rules_mod.DIR_RULE_TOOLS
             return _project_rules_mod.path_rule_note(
                 str(session_id or (_hopts or {}).get("run_id") or ""),
-                _path_rule_ctx["rules"], _paths)
+                _path_rule_ctx["rules"], [] if _is_dir else _paths,
+                dirs=_paths if _is_dir else ())
         except Exception:  # noqa: BLE001 - a rule note never costs a tool result
             logger.debug("[project_rules] path rule note failed", exc_info=True)
             return ""
@@ -11481,11 +11483,34 @@ async def _stream_agent_loop_body(
                     "message": "Detenido por el usuario.",
                 }) + "\n\n"
                 break
-        if _monologue_pending:
+        if _monologue_pending == "nudge":
             # StuckWatch: this many assistant rounds in a row talked without
-            # calling a tool and the turn is still open (something kept it
-            # going). Stop with what was said rather than nudge again.
-            _monologue_pending = False
+            # calling a tool and the turn is still open. The first time the
+            # advisor is asked what to do (or the model is told itself to act
+            # or finish); the watch then starts counting again.
+            _monologue_pending = ""
+            _stuck_events.append({"event": "monologue_nudge", "round": round_num})
+            _ledger.notes.append(f"monologue_nudge@{round_num}")
+            _mono_note, _mono_evt = None, None
+            try:
+                _mono_note, _mono_evt = await _advisor_ask(
+                    _advisor.TRIGGER_LOOP,
+                    extra=("Loop detector: the agent has answered several rounds in a row "
+                           "without calling any tool, and the turn is still open. Say whether it "
+                           "should act (which tool, on what) or give its final answer."))
+            except Exception:  # noqa: BLE001 - the advisor never costs a turn
+                logger.debug("[advisor] monologue trigger failed", exc_info=True)
+            if _mono_evt:
+                yield "data: " + json.dumps(_mono_evt) + "\n\n"
+            messages.append({"role": "user", "_harness_note": True, "content": _lang_note(
+                _mono_note or (
+                    "[Runtime loop recovery — not a new user request] You have answered several "
+                    "rounds in a row without calling a tool. Either take the next concrete action "
+                    "with a tool, or give your final answer now."))})
+            logger.info("[loop-breaker] monologue nudge at round %d", round_num)
+        elif _monologue_pending == "stop":
+            # Nudged once already and it happened again: stop with what was said.
+            _monologue_pending = ""
             _ledger.stop_reason = _MONOLOGUE_STOP_REASON
             _ledger.notes.append(f"monologue_stop@{round_num}")
             _stuck_events.append({"event": "monologue_stop", "round": round_num,
@@ -13649,12 +13674,13 @@ async def _stream_agent_loop_body(
             _mono_text = bool(_strip_think_blocks(cleaned_round).strip()) and _round_finish_reason != "length"
         except Exception:  # noqa: BLE001
             _mono_text = False
-        if (not _force_answer and _stuck.observe_round(
-                tool_calls=len(tool_blocks or []), has_text=_mono_text) == "stop"):
+        if not _force_answer:
             # Decided at the top of the NEXT round, so the turn's own bounded
             # mechanisms (the intent supervisor's exhaustion, the harness's
             # rejections) get to end it first with their own, clearer event.
-            _monologue_pending = True
+            _mono_action = _stuck.observe_round(tool_calls=len(tool_blocks or []), has_text=_mono_text)
+            if _mono_action != "none":
+                _monologue_pending = _mono_action
 
         if not tool_blocks and _harness_enabled and _force_answer and not plan_mode:
             # Forced final answer (loop-breaker / memory clamp): the model has
@@ -14353,7 +14379,7 @@ async def _stream_agent_loop_body(
                         # correction loop (capped above, and it ends itself
                         # with its verdict): not a monologue.
                         _stuck.monologue_streak = 0
-                        _monologue_pending = False
+                        _monologue_pending = ""
                         if "intent_without_action" in _check["reasons"] or "asked_instead_of_continuing" in _check["reasons"]:
                             _ledger.intent_nudges += 1
                             # Share the cap with the legacy intent supervisor

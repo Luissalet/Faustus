@@ -20,6 +20,9 @@ def test_monologue_stops_after_three_text_only_rounds_and_a_tool_resets():
     assert w.observe_round(tool_calls=0, has_text=True) == "none"
     assert w.observe_round(tool_calls=1, has_text=True) == "none"      # reset
     assert w.monologue_streak == 0
+    assert [w.observe_round(tool_calls=0, has_text=True) for _ in range(3)] == ["none", "none", "nudge"]
+    # the nudge starts the count again; a second run of the same length stops the turn
+    assert w.monologue_streak == 0
     assert [w.observe_round(tool_calls=0, has_text=True) for _ in range(3)] == ["none", "none", "stop"]
 
 
@@ -184,27 +187,56 @@ def _drive(monkeypatch, script, tmp_path, *, max_rounds=8, user="Implement the f
 INTENT = "Let me check the logs"
 
 
-def test_loop_stops_at_the_next_round_when_the_watch_says_stop(monkeypatch, tmp_path):
+def test_loop_nudges_then_stops_when_the_watch_says_so(monkeypatch, tmp_path):
     # Every continuing no-tool path the loop has is capped by its own
     # mechanism (one nudge each, two rejections, the intent supervisor), so a
     # real monologue of three rounds is rare; this drives the WIRING with the
-    # counter forced: the first text-only round is nudged (the turn goes on),
-    # and the watch's "stop" is honoured at the top of the next round.
+    # counter forced: the first verdict is a nudge (the turn goes on with a
+    # runtime note), the second a stop honoured at the top of the next round.
     _patch(monkeypatch)
-    calls = []
+    verdicts = iter(["nudge", "stop"])
     real = lb.StuckWatch.observe_round
 
     def _observe(self, *, tool_calls, has_text):
-        calls.append((tool_calls, has_text))
         real(self, tool_calls=tool_calls, has_text=has_text)
-        return "stop" if len(calls) == 1 and not tool_calls else "none"
+        return next(verdicts, "none") if not tool_calls else "none"
     monkeypatch.setattr(lb.StuckWatch, "observe_round", _observe)
     seen, events = _drive(monkeypatch, [_text("Reference context received.")], tmp_path, max_rounds=8)
     stops = [e for e in events if e.get("type") == "loop_breaker_stop" and e.get("trigger") == "monologue"]
-    assert stops and stops[0]["round"] == 2, [e.get("type") for e in events]
-    assert len(seen) == 1, "no second model call: stopped at the top of round 2"
+    assert stops and stops[0]["round"] == 3, [e.get("type") for e in events]
+    assert len(seen) == 2, "the nudged round ran, the stop came before a third model call"
+    assert any("without calling a tool" in str(m.get("content")) for m in seen[1]), "round 2 carries the nudge"
     metrics = [e for e in events if e.get("type") == "metrics"][-1]["data"]
-    assert metrics["stuck_watch"]["events"][0]["event"] == "monologue_stop"
+    assert [e["event"] for e in metrics["stuck_watch"]["events"]] == ["monologue_nudge", "monologue_stop"]
+
+
+def test_monologue_nudge_asks_the_advisor_when_it_is_on(monkeypatch, tmp_path):
+    from src import advisor
+    _patch(monkeypatch)
+    monkeypatch.setattr(advisor, "_setting", lambda key: True if key == "advisor_enabled" else advisor.DEFAULTS.get(key))
+    asked = []
+
+    async def _resolve(owner):
+        return "spec", "http://adv/v1", "adv-model", {}
+
+    async def _complete(url, model, messages, headers, *, max_tokens, overrides, on_usage=None):
+        asked.append(messages)
+        return "Do call read_file on the failing module, not another summary, because nothing has been read."
+    monkeypatch.setattr(advisor, "_resolve", _resolve)
+    monkeypatch.setattr(advisor, "_complete", _complete)
+    verdicts = iter(["nudge"])
+    real = lb.StuckWatch.observe_round
+
+    def _observe(self, *, tool_calls, has_text):
+        real(self, tool_calls=tool_calls, has_text=has_text)
+        return next(verdicts, "none") if not tool_calls else "none"
+    monkeypatch.setattr(lb.StuckWatch, "observe_round", _observe)
+    seen, events = _drive(monkeypatch, [_text("Reference context received.")], tmp_path, max_rounds=3)
+    adv = [e for e in events if e.get("type") == "advisor_advice" and e["trigger"] == "loop"]
+    assert len(adv) == 1 and len(asked) == 1
+    assert "without calling any tool" in json.dumps(asked[0])
+    assert any("Runtime advisor note" in str(m.get("content")) for m in seen[1])
+    assert not any("without calling a tool" in str(m.get("content")) for m in seen[1]), "advice replaces the generic nudge"
 
 
 def test_a_long_answer_continued_after_a_token_cut_is_not_a_monologue(monkeypatch, tmp_path):

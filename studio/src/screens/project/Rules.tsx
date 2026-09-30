@@ -5,10 +5,12 @@ import {
   getLibraryRules,
   getProjectRules,
   installProjectRules,
+  setProjectRulePaths,
   uninstallProjectRules,
   type LibraryRule,
   type ProjectRulesData,
 } from '../../adapters/projectRules';
+import { Text } from '../settings/fields';
 import { t, tn } from '../../i18n';
 import '../settings.css';
 
@@ -30,6 +32,8 @@ export function ProjectRules({ workspace, say }: { workspace: string; say: (m: s
   const [busy, setBusy] = useState('');
   const [previewOpen, setPreviewOpen] = useState(false);
   const [language, setLanguage] = useState('');
+  // The path patterns being typed, per rule; absent = what the server has.
+  const [pathDrafts, setPathDrafts] = useState<Record<string, string>>({});
 
   const reload = () => {
     if (!workspace) {
@@ -65,6 +69,25 @@ export function ProjectRules({ workspace, say }: { workspace: string; say: (m: s
       const out = await installProjectRules(workspace, [id]);
       const row = out.results[0];
       say(row?.status === 'installed' ? t('Installed {id}', { id }) : row?.reason || t('Could not install {id}', { id }));
+      reload();
+    } catch (e) {
+      say((e as Error).message);
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const savePaths = async (r: { id: string; origin: string }) => {
+    const key = `${r.origin}/${r.id}`;
+    const paths = (pathDrafts[key] ?? '').split(',').map((p) => p.trim()).filter(Boolean);
+    setBusy(`paths:${key}`);
+    try {
+      await setProjectRulePaths(workspace, r.id, paths, r.origin);
+      say(paths.length ? t('{id} now applies to: {paths}', { id: r.id, paths: paths.join(', ') }) : t('{id} applies on every turn again', { id: r.id }));
+      setPathDrafts((d) => {
+        const { [key]: _gone, ...rest } = d;
+        return rest;
+      });
       reload();
     } catch (e) {
       say((e as Error).message);
@@ -124,18 +147,33 @@ export function ProjectRules({ workspace, say }: { workspace: string; say: (m: s
         ) : (
           <ul className="fs-set__list">
             {data.project_rules.map((r) => (
-              <li key={`${r.origin}/${r.id}`} className="fs-set__row" data-testid={`project-rule-${r.id}`}>
+              <li key={`${r.origin}/${r.id}`} className="fs-set__row" data-testid={`project-rule-${r.id}`} style={{ flexWrap: 'wrap' }}>
                 <span className="fs-tools__text">
                   <strong>{r.id}</strong>
                   <span className="fs-set__help">
                     <code className="fs-tools__id">{r.origin}</code>
                     {r.distance > 0 ? ` · ${tn(r.distance, '{n} folder up', '{n} folders up')}` : ''}
                     {r.error ? ` · ${r.error}` : ''}
+                    {(r.paths ?? []).length ? ` · ${t('only for')} ${(r.paths ?? []).join(', ')}` : ` · ${t('every turn')}`}
                   </span>
                 </span>
                 {installedIds.has(r.id) && (
                   <Button variant="ghost" size="sm" icon={Trash2} label={t('Remove')} loading={busy === r.id} onClick={() => void uninstall(r.id)} />
                 )}
+                {r.path.toLowerCase().endsWith('.md') && !r.error && (() => {
+                  const key = `${r.origin}/${r.id}`;
+                  const current = (r.paths ?? []).join(', ');
+                  const value = pathDrafts[key] ?? current;
+                  return (
+                    <div className="fs-set__row-end" style={{ flexBasis: '100%' }}>
+                      <label className="fs-set__help" htmlFor={`rule-paths-${key}`}>
+                        {t('Path patterns (comma separated; empty = every turn). The rule is shown once, with the first file read or edited that matches.')}
+                      </label>
+                      <Text id={`rule-paths-${key}`} value={value} placeholder="src/api/**/*.py, tests/*.py" onChange={(v) => setPathDrafts((d) => ({ ...d, [key]: v }))} />
+                      <Button variant="secondary" size="sm" label={t('Save patterns')} loading={busy === `paths:${key}`} disabled={value === current} onClick={() => void savePaths(r)} />
+                    </div>
+                  );
+                })()}
               </li>
             ))}
           </ul>

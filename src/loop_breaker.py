@@ -588,7 +588,9 @@ class LoopPolicy:
 #                 turn that simply answers ends at its first such round, so a
 #                 second and a third can only happen when something -- a
 #                 nudge, an open plan -- kept it going). Nothing is moving:
-#                 stop with what was said instead of nudging a fourth time.
+#                 the first time the caller asks the advisor (or nudges) to
+#                 act or finish; if it happens again the turn stops with what
+#                 was said instead of nudging forever.
 #   context       the provider refused the request as too long. The first
 #                 time the caller compacts (harder than usual) and redoes the
 #                 round; a second one in a row means compaction did not help,
@@ -655,6 +657,7 @@ class StuckWatch:
     failed_path_limit: int = DEFAULT_FAILED_PATH_LIMIT
 
     monologue_streak: int = field(default=0, repr=False)
+    monologue_nudges: int = field(default=0, repr=False)
     context_error_streak: int = field(default=0, repr=False)
     _failures: Dict[Tuple[str, str], int] = field(default_factory=dict, repr=False)
     _closed: Set[Tuple[str, str]] = field(default_factory=set, repr=False)
@@ -690,10 +693,12 @@ class StuckWatch:
 
     # -- monologue ---------------------------------------------------------
     def observe_round(self, *, tool_calls: int, has_text: bool) -> str:
-        """Feed one finished model round. ``"stop"`` when the limit of
-        consecutive text-only rounds is reached, else ``"none"``. A round with
-        a tool call resets the count; an empty round (no text, no call) neither
-        counts nor resets it -- the caller has its own handling for silence."""
+        """Feed one finished model round. At the limit of consecutive
+        text-only rounds the first answer is ``"nudge"`` (the caller asks the
+        advisor, or says so itself, and the count starts again); reaching the
+        limit a second time is ``"stop"``. A round with a tool call resets the
+        count; an empty round (no text, no call) neither counts nor resets it
+        -- the caller has its own handling for silence."""
         if tool_calls > 0:
             self.monologue_streak = 0
             return "none"
@@ -701,6 +706,10 @@ class StuckWatch:
             return "none"
         self.monologue_streak += 1
         if self.monologue_rounds and self.monologue_streak >= self.monologue_rounds:
+            if self.monologue_nudges == 0:
+                self.monologue_nudges += 1
+                self.monologue_streak = 0
+                return "nudge"
             return "stop"
         return "none"
 
@@ -756,6 +765,7 @@ class StuckWatch:
     def snapshot(self) -> Dict[str, Any]:
         return {
             "monologue_streak": self.monologue_streak,
+            "monologue_nudges": self.monologue_nudges,
             "context_error_streak": self.context_error_streak,
             "closed_paths": self.closed_paths_total,
             "monologue_rounds": self.monologue_rounds,
