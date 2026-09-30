@@ -253,6 +253,11 @@ def external_runner_snapshot(*, owner: str = "", is_admin: bool = True,
         row = dict(probe)
         row["endpoint_id"] = ep["id"]
         row["endpoint_name"] = ep["name"]
+        row["root"] = ep["root"]
+        try:
+            row["same_machine"] = bool(is_same_machine(ep["root"]))
+        except Exception:  # noqa: BLE001
+            row["same_machine"] = False
         row["engine"] = "llama.cpp"
         row["unloadable"] = False
         out.append(row)

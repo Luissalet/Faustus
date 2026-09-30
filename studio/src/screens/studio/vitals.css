@@ -408,3 +408,39 @@
 .fs-vt__act .fs-vt__muted {
   margin: 0;
 }
+
+/* Models in memory: one card per model, then the other GPU processes. */
+.fs-vitals__more {
+  margin-inline-start: 2px;
+  color: var(--fs-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.fs-vt__residents {
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.fs-vt__sub {
+  margin: 10px 0 2px;
+  font-size: var(--fs-label-size);
+  font-weight: 600;
+  color: var(--fs-text-2);
+}
+
+.fs-vitals__models {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  max-inline-size: 20em;
+  white-space: nowrap;
+}
+
+.fs-vitals__mname {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

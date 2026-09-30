@@ -2,6 +2,7 @@ import { EyeOff, RefreshCw } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Button, IconButton, Popover } from '../../components';
 import {
+  cardsText,
   fmtCtx,
   firstModel,
   gb,
@@ -15,7 +16,9 @@ import {
   poolOf,
   releaseOrphan,
   refreshUsage,
+  residentModels,
   setUsageVisible,
+  shortModelName,
   shortGpuName,
   spilling,
   untilText,
@@ -23,6 +26,7 @@ import {
   useUsage,
   worstLevel,
   type Gpu,
+  type ResidentModel,
   type Usage,
 } from '../../adapters/usage';
 import { reconnectServices, SERVICE_LABEL, useServiceHealth, type ServiceState } from '../../adapters/services';
@@ -51,6 +55,8 @@ export function Vitals({ busy }: { busy: boolean }) {
   const pool = poolOf(last);
   const gpus = last?.gpu ?? [];
   const model = firstModel(last);
+  const residents = residentModels(last);
+  const top = residents[0];
   const spill = spilling(last);
   const lvl = worstLevel(last);
   const util = pool.util;
@@ -101,6 +107,13 @@ export function Vitals({ busy }: { busy: boolean }) {
           )}
           {spill ? (
             <span className="fs-vitals__spill">{t('PCIe spill')}</span>
+          ) : top ? (
+            <span className="fs-vitals__model fs-vitals__models" title={residents.map((m) => residentLine(m, last)).join('\n')} data-testid="vitals-models">
+              <span className="fs-vitals__mname">{shortModelName(top.model)}</span>
+              {top.bytes != null && <span className="fs-vitals__of"> {gb(top.bytes)} GB</span>}
+              {top.gpu_pct != null && top.gpu_pct < 100 && <span className="fs-vitals__of"> {top.gpu_pct}% GPU</span>}
+              {residents.length > 1 && <span className="fs-vitals__more"> +{residents.length - 1}</span>}
+            </span>
           ) : model ? (
             <span className="fs-vitals__model" title={model.name}>
               {model.name.split(':')[0]}
@@ -232,6 +245,7 @@ function Panel({ d, intervalMs, busy }: { d: Usage | null; intervalMs: number; b
         <p className="fs-vt__muted">{t('No usage data: the server did not answer /api/system/usage.')}</p>
       ) : (
         <>
+          <ModelsSection d={d} />
           <HealthSection d={d} />
           <ServicesSection />
           <GpuSection d={d} />
@@ -456,6 +470,77 @@ function OrphansSection({ d }: { d: Usage }) {
           {t('{size} that every other gauge counts as "other". Ollama restarted without its runners; releasing them is safe — the next request loads the model again.', { size: total ? `${gb(total)} GB` : t('VRAM') })}
         </p>
       </div>
+    </Section>
+  );
+}
+
+/** One line per model for the header tooltip: name, size, cards, owner. */
+function residentLine(m: ResidentModel, d: Usage | null): string {
+  const size = m.bytes != null ? `${gb(m.bytes)} GB${m.measured ? '' : ` (${t('weights')})`}` : '';
+  const cards = cardsText(m.gpus, d);
+  const who = m.loaded_by ? t('loaded by {who}', { who: m.loaded_by }) : '';
+  return [m.model, size, cards, who].filter(Boolean).join(' · ');
+}
+
+/** Every model in memory: which one, who loaded it, what it holds and on
+ * which cards — then the other processes holding GPU memory. */
+function ModelsSection({ d }: { d: Usage }) {
+  const models = residentModels(d);
+  const others = d.resident?.others ?? [];
+  const total = models.reduce((a, m) => a + (m.measured ? m.bytes ?? 0 : 0), 0);
+  return (
+    <Section title={t('Models in memory')} aside={models.length ? tn(models.length, '{n} model', '{n} models') + (total ? ` · ${gb(total)} GB` : '') : undefined}>
+      {models.length ? (
+        <ul className="fs-vt__residents" data-testid="vitals-residents">
+          {models.map((m) => (
+            <li key={`${m.engine}:${m.port ?? ''}:${m.model}`} className="fs-vt__card">
+              <h4 className="fs-vt__card-h">
+                <span title={m.model}>{shortModelName(m.model)}</span>
+                <span className="fs-vt__aside">
+                  {m.engine ?? ''}
+                  {m.port ? ` :${m.port}` : ''}
+                  {m.generating ? ` · ${t('generating')}` : ''}
+                </span>
+              </h4>
+              <Row
+                label={t('Loaded by')}
+                value={m.loaded_by || t('unknown')}
+                muted={!m.loaded_by}
+                title={m.pid ? `pid ${m.pid}${m.endpoint ? ` · ${m.endpoint}` : ''}` : m.endpoint || undefined}
+              />
+              <Row
+                label={t('Size in memory')}
+                value={m.bytes != null ? (m.measured ? `${gb(m.bytes)} GB` : t('{n} GB of weights (in memory not measured)', { n: gb(m.bytes) })) : '—'}
+                muted={!m.measured}
+              />
+              <Row label={t('GPUs')} value={cardsText(m.gpus, d) || (m.measured === false ? t('not measured') : '—')} muted={!m.gpus?.length} />
+              {m.context_length ? <Row label={t('Context')} value={t('{n} tokens', { n: fmtCtx(m.context_length) })} /> : null}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="fs-vt__muted">{t('No model in memory.')}</p>
+      )}
+      {others.length > 0 && (
+        <>
+          <h4 className="fs-vt__sub">{t('Other processes on the GPUs')}</h4>
+          <ul className="fs-vt__residents" data-testid="vitals-gpu-others">
+            {others.map((o) => (
+              <li key={o.pid} className="fs-vt__row" data-wide="">
+                <span className="fs-vt__label" title={`pid ${o.pid}`}>
+                  {o.name || `pid ${o.pid}`}
+                  {o.hint ? ` · ${o.hint}` : ''}
+                </span>
+                <span className="fs-vt__val">
+                  {o.bytes != null ? `${gb(o.bytes)} GB` : '—'}
+                  {o.gpus?.length ? ` · ${cardsText(o.gpus.map((g) => ({ index: g.index })), d)}` : ''}
+                  {o.loaded_by ? ` · ${o.loaded_by}` : ''}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </Section>
   );
 }

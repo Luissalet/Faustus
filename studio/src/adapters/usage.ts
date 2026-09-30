@@ -71,6 +71,36 @@ export interface ExternalRunnerModel {
   unloadable?: boolean;
 }
 
+/** One model in memory, from `resident.models` (src/model_residency.py). */
+export interface ResidentModel {
+  model: string;
+  engine?: string;
+  loaded_by?: string;
+  loaded_by_kind?: 'faustus' | 'profile' | 'ollama' | 'external' | 'unknown';
+  endpoint?: string;
+  port?: number | null;
+  pid?: number | null;
+  /** What it holds in GPU memory when `measured`, else the weights file. */
+  bytes?: number | null;
+  measured?: boolean;
+  weights_bytes?: number | null;
+  gpus?: { index: number; bytes?: number | null }[];
+  gpu_pct?: number | null;
+  context_length?: number | null;
+  generating?: boolean | null;
+  expires_at?: string | null;
+}
+
+/** A process holding GPU memory that is not one of the models above. */
+export interface GpuProcess {
+  pid: number;
+  name?: string;
+  hint?: string;
+  loaded_by?: string;
+  bytes?: number | null;
+  gpus?: { index: number; bytes?: number | null }[];
+}
+
 export interface HealthComponent {
   name: string;
   label?: string;
@@ -102,6 +132,8 @@ export interface Usage {
    * have a model resident, which `ollama.models` never sees — additive,
    * see routes/system_usage_routes.py and src/runner_providers.py. */
   external_runners?: ExternalRunnerModel[];
+  /** Every model in memory with who loaded it, what it holds and where. */
+  resident?: { models?: ResidentModel[]; others?: GpuProcess[]; error?: string };
   gpu?: Gpu[];
   gpu_pool?: Partial<GpuPool> & { name?: string };
   orphans?: Orphan[];
@@ -213,6 +245,41 @@ export function firstModel(d: Usage | null): LoadedModel | null {
   const ext = d?.external_runners?.[0];
   return ext ? asLoadedModel(ext) : null;
 }
+/** Every resident model, biggest first; falls back to the older fields when
+ * the server does not send `resident` yet. */
+export function residentModels(d: Usage | null): ResidentModel[] {
+  const own = d?.resident?.models;
+  if (own && own.length) return own;
+  const rows: ResidentModel[] = [];
+  for (const m of d?.ollama?.models ?? []) {
+    rows.push({ model: m.name, engine: 'ollama', loaded_by: 'Ollama', loaded_by_kind: 'ollama', bytes: m.size_vram ?? null,
+      measured: m.size_vram != null, weights_bytes: m.size ?? null, gpus: m.per_gpu ?? [], context_length: m.context_length ?? null });
+  }
+  for (const r of d?.external_runners ?? []) {
+    rows.push({ model: r.model, engine: r.engine ?? 'llama.cpp', endpoint: r.endpoint_name, bytes: r.footprint_bytes ?? null,
+      measured: false, weights_bytes: r.footprint_bytes ?? null, gpus: [], context_length: r.context_length ?? null, generating: r.generating ?? null });
+  }
+  return rows.sort((a, b) => (b.bytes ?? 0) - (a.bytes ?? 0));
+}
+
+/** "GPU 0 12.3 GB + GPU 1 11.9 GB", or "GPU 2" when the bytes are unknown. */
+export function cardsText(gpus: { index: number; bytes?: number | null }[] | undefined, d: Usage | null): string {
+  if (!gpus || !gpus.length) return '';
+  const many = (d?.gpu?.length ?? 0) > 1;
+  return gpus
+    .map((g) => {
+      const card = d?.gpu?.find((x) => x.index === g.index);
+      const name = !many && card?.name ? ` (${shortGpuName(card.name)})` : '';
+      return `GPU ${g.index}${name}${g.bytes != null ? ` ${gb(g.bytes)} GB` : ''}`;
+    })
+    .join(' + ');
+}
+
+/** The model name without its tag or path, for the header. */
+export function shortModelName(name: string): string {
+  return String(name ?? '').split(/[\\/]/).pop()!.split(':')[0].replace(/\.gguf$/i, '');
+}
+
 export function spilling(d: Usage | null): boolean {
   return !!d?.gpu_mem?.ollama?.spilling;
 }

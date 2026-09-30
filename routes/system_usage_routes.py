@@ -16,6 +16,12 @@ GET /api/system/usage
                          "generating", "unloadable": false}],  # src/runner_providers.py —
                         # self-hosted OpenAI-compatible runners (llama.cpp's llama-server)
                         # holding a model, which `ollama.*` above never sees
+  "resident": {"models": [{"model", "engine", "loaded_by", "loaded_by_kind", "endpoint", "port",
+                           "pid", "bytes", "measured", "weights_bytes",
+                           "gpus": [{"index", "bytes"|null}], "context_length", "generating"}],
+               "others": [{"pid", "name", "hint", "loaded_by", "bytes", "gpus"}]},
+               # src/model_residency.py: every model in memory, who loaded it,
+               # what it holds and where; other processes holding >= 256 MB
   "gpu": [{"index", "name", "util", "mem_used", "mem_total", "temp",
            "power", "power_limit",              # MiB / °C / W, from nvidia-smi
            "uuid", "bus_id", "mem_free",
@@ -91,6 +97,7 @@ from fastapi import APIRouter, HTTPException, Request
 from src import gpu_placement, nvidia_drs, vram_fit
 from src import gpu_shared_memory
 from src import health
+from src import model_residency
 from src import runner_providers
 from src import robot_envelope as robot
 from src import robot_projection as lean
@@ -281,6 +288,8 @@ def _merge_placement(ollama: Dict[str, Any], gpus: List[Dict[str, Any]], report:
         m["gpus"] = list(info.get("gpus") or [])
         m["placement"] = info.get("placement") or ("cpu" if not int(m.get("size_vram") or 0) else "unknown")
         m["per_gpu"] = [dict(p) for p in (info.get("per_gpu") or [])]
+        if info.get("pid") is not None:
+            m["pid"] = info.get("pid")
     per_gpu = (report or {}).get("gpus") or {}
     for g in gpus:
         slot = per_gpu.get(g.get("index")) or {}
@@ -552,9 +561,14 @@ async def _collect_usage_uncached() -> Dict[str, Any]:
         errors.append(f"ollama: {ollama['error']}")
     if host.get("error"):
         errors.append(host["error"])
+    # Every model in memory with who loaded it, how much it holds and on
+    # which cards, plus the other processes holding GPU memory
+    # (src/model_residency.py). Additive; the fields above keep their shape.
+    resident = await asyncio.to_thread(model_residency.snapshot, ollama, external_runners, gpus)
     now = time.time()
     data = {
         "ts": now,
+        "resident": resident,
         "ollama": ollama,
         # Residency is not Ollama-only (src/runner_providers.py): a
         # self-hosted OpenAI-compatible runner (llama.cpp's llama-server)
