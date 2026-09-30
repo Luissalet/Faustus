@@ -273,6 +273,8 @@ def resolve_runtime_credentials(auth_id: str, owner: Optional[str] = None, *, fo
                 refresh_token = row.refresh_token or ""
                 if force_refresh or access_token_is_expiring(access_token):
                     refreshed = refresh_oauth_tokens(access_token, refresh_token)
+                    from core.database import _mark_provider_auth_oauth_refresh
+                    _mark_provider_auth_oauth_refresh(row)
                     row.access_token = refreshed["access_token"]
                     if refreshed.get("refresh_token"):
                         row.refresh_token = refreshed["refresh_token"]

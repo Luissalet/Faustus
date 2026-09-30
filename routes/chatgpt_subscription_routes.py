@@ -7,7 +7,8 @@ from typing import Dict, Optional
 
 from fastapi import HTTPException, Request
 
-from core.database import ModelEndpoint, ProviderAuthSession, SessionLocal, utcnow_naive
+from core.database import (ModelEndpoint, ProviderAuthSession, SessionLocal, utcnow_naive,
+                           _mark_provider_auth_reauthenticated)
 from routes.device_flow import (
     DeviceFlowPoll,
     DeviceFlowStart,
@@ -52,6 +53,7 @@ def _provision_endpoint(tokens: Dict, owner: Optional[str]) -> Dict:
                 auth_mode="chatgpt",
             )
             db.add(auth)
+        _mark_provider_auth_reauthenticated(auth)
         auth.base_url = base
         auth.access_token = access_token
         auth.refresh_token = refresh_token

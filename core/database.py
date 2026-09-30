@@ -9,6 +9,8 @@ from urllib.parse import unquote, urlparse
 from sqlalchemy import DDL, event, create_engine, Column, String, Text, Boolean, DateTime, Integer, ForeignKey, JSON, Index, func, inspect, text
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.types import TypeDecorator
+from sqlalchemy.orm import Session as OrmSession
+from sqlalchemy.orm.attributes import flag_dirty
 from sqlalchemy.orm import declarative_base, declared_attr, relationship, sessionmaker, backref
 
 from src.runtime_paths import get_app_root
@@ -1121,7 +1123,7 @@ class ModelEndpoint(TimestampMixin, Base):
 
 
 # Configuration identity is server-owned and changes in the same ORM transaction.
-# Bulk SQL and mutations inside a linked ProviderAuthSession are outside this hook.
+# Bulk SQL is outside these ORM hooks.
 @event.listens_for(ModelEndpoint, "before_insert")
 def _new_endpoint_connection_revision(mapper, connection, endpoint):
     endpoint.connection_revision = uuid.uuid4().hex
@@ -1148,6 +1150,53 @@ class ProviderAuthSession(TimestampMixin, Base):
     refresh_token = Column(EncryptedText, nullable=True)
     last_refresh = Column(DateTime, nullable=True)
     auth_mode = Column(String, nullable=True)
+
+# These markers are trusted call-site intent, not persisted credentials or a
+# request parameter. A refresh exemption applies to one flush and tokens only.
+_AUTHORIZED_OAUTH_REFRESH = object()
+_EXPLICIT_PROVIDER_REAUTH = object()
+
+
+def _mark_provider_auth_oauth_refresh(auth):
+    auth._connection_refresh_intent = _AUTHORIZED_OAUTH_REFRESH
+    flag_dirty(auth)
+
+
+def _mark_provider_auth_reauthenticated(auth):
+    auth._connection_reauth_intent = _EXPLICIT_PROVIDER_REAUTH
+    flag_dirty(auth)
+
+
+@event.listens_for(OrmSession, "before_flush")
+def _invalidate_linked_endpoint_revisions(session, flush_context, instances):
+    for auth in list(session.dirty) + list(session.new):
+        if not isinstance(auth, ProviderAuthSession):
+            continue
+        refresh = auth.__dict__.pop("_connection_refresh_intent", None) is _AUTHORIZED_OAUTH_REFRESH
+        reauth = auth.__dict__.pop("_connection_reauth_intent", None) is _EXPLICIT_PROVIDER_REAUTH
+        state = inspect(auth)
+        if state.pending:
+            continue
+        semantic_change = any(state.attrs[field].history.has_changes() for field in
+                              ("provider", "owner", "base_url", "auth_mode"))
+        token_change = any(state.attrs[field].history.has_changes() for field in
+                           ("access_token", "refresh_token"))
+        if not (reauth or semantic_change or (token_change and not refresh)):
+            continue
+        # Every linked endpoint shares these credentials, across owners. Use
+        # ORM objects so loaded rows and rollback stay consistent with the DB.
+        for endpoint in session.query(ModelEndpoint).filter(
+                ModelEndpoint.provider_auth_id == auth.id).all():
+            endpoint.connection_revision = uuid.uuid4().hex
+
+
+@event.listens_for(OrmSession, "after_rollback")
+def _clear_provider_auth_revision_intents(session):
+    for auth in session.identity_map.values():
+        if isinstance(auth, ProviderAuthSession):
+            auth.__dict__.pop("_connection_refresh_intent", None)
+            auth.__dict__.pop("_connection_reauth_intent", None)
+
 
 class McpServer(TimestampMixin, Base):
     """Admin-configured MCP (Model Context Protocol) tool servers."""
