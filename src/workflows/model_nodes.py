@@ -44,7 +44,8 @@ from .templating import TemplateError, render
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["agent_handler", "classify_handler", "extract_handler", "model_node_handlers"]
+__all__ = ["agent_handler", "classify_handler", "extract_handler", "guard_handler",
+           "model_node_handlers"]
 
 _MAX_PROMPT_CHARS = 100_000
 
@@ -497,8 +498,225 @@ def extract_handler(models: Optional[ModelCalls] = None) -> Callable:
     return handle
 
 
+# ── guard ────────────────────────────────────────────────────────────────
+
+MAX_GUARD_CHARS = 200_000
+MAX_CHECKS = 12
+PII_KINDS = ("EMAIL", "PHONE", "IBAN", "CARD", "ID", "IP")
+DEFAULT_PII_KINDS = ("EMAIL", "PHONE", "IBAN")
+_URL_RE = re.compile(r"\b(?:https?|ftp)://[^\s<>\"'`)\]}]+", re.IGNORECASE)
+_CHECK_TYPES = ("secrets", "pii", "urls", "injection", "model")
+
+
+def _host_matches(host: str, pattern: str) -> bool:
+    """`example.com` matches itself and its subdomains; `*.example.com` only
+    subdomains; a leading-dot or bare form is the same as the first."""
+    host = host.lower().rstrip(".")
+    pat = pattern.strip().lower().rstrip(".")
+    if not pat:
+        return False
+    if pat.startswith("*."):
+        return host.endswith(pat[1:]) and host != pat[2:]
+    pat = pat.lstrip(".")
+    return host == pat or host.endswith("." + pat)
+
+
+def _host_list(value: Any, name: str) -> Tuple[List[str], str]:
+    if value is None:
+        return [], ""
+    if not isinstance(value, (list, tuple)) or not all(isinstance(v, str) and v.strip() for v in value):
+        return [], f"{name} must be a list of host names"
+    return [v.strip() for v in value], ""
+
+
+def _guard_checks(config: Mapping[str, Any]) -> Tuple[List[Dict[str, Any]], str]:
+    raw = config.get("checks")
+    if not isinstance(raw, (list, tuple)) or not raw:
+        return [], "a guard needs `config.checks`, a non-empty list (secrets, pii, urls, injection, model)"
+    if len(raw) > MAX_CHECKS:
+        return [], f"a guard runs at most {MAX_CHECKS} checks"
+    checks: List[Dict[str, Any]] = []
+    for index, item in enumerate(raw):
+        spec = {"type": item} if isinstance(item, str) else item
+        if not isinstance(spec, Mapping) or spec.get("type") not in _CHECK_TYPES:
+            return [], f"config.checks[{index}] must be one of {list(_CHECK_TYPES)} (or an object with that `type`)"
+        spec = dict(spec)
+        kind = spec["type"]
+        spec["id"] = str(spec.get("id") or f"{kind}" + (f"_{index}" if sum(1 for c in checks if c["type"] == kind) else ""))
+        if any(c["id"] == spec["id"] for c in checks):
+            spec["id"] = f"{spec['id']}_{index}"
+        if kind == "pii":
+            kinds = spec.get("kinds", list(DEFAULT_PII_KINDS))
+            if (not isinstance(kinds, (list, tuple)) or not kinds
+                    or any(str(k).upper() not in PII_KINDS for k in kinds)):
+                return [], f"config.checks[{index}].kinds must be a non-empty subset of {list(PII_KINDS)}"
+            spec["kinds"] = [str(k).upper() for k in kinds]
+        elif kind == "urls":
+            spec["allow"], problem = _host_list(spec.get("allow"), f"config.checks[{index}].allow")
+            if problem:
+                return [], problem
+            spec["deny"], problem = _host_list(spec.get("deny"), f"config.checks[{index}].deny")
+            if problem:
+                return [], problem
+            if not spec["allow"] and not spec["deny"]:
+                return [], f"config.checks[{index}] (urls) needs an `allow` or a `deny` list"
+        elif kind == "model":
+            question = spec.get("question")
+            if not isinstance(question, str) or not question.strip() or len(question) > 500:
+                return [], f"config.checks[{index}].question must be a yes/no question (up to 500 characters)"
+            threshold, problem = _number(spec, "threshold", DEFAULT_THRESHOLD, 0.0, 1.0)
+            if problem:
+                return [], problem.replace("config.", f"config.checks[{index}].")
+            spec["threshold"] = threshold
+        checks.append(spec)
+    return checks, ""
+
+
+def _check_secrets(text: str, spec: Mapping[str, Any]) -> Dict[str, Any]:
+    from src.security_scan import find_secrets
+    found = find_secrets(text)
+    return {"status": "fail" if found else "pass",
+            "evidence": [{"kind": f["kind"], "line": f["line"]} for f in found[:10]],
+            "count": len(found)}
+
+
+def _check_pii(text: str, spec: Mapping[str, Any]) -> Dict[str, Any]:
+    from src.pii_redaction import redact_pii
+    _, counts = redact_pii(text)
+    hits = {k: v for k, v in counts.items() if k in spec["kinds"]}
+    return {"status": "fail" if hits else "pass", "evidence": hits, "count": sum(hits.values())}
+
+
+def _check_urls(text: str, spec: Mapping[str, Any]) -> Dict[str, Any]:
+    from urllib.parse import urlsplit
+    allow, deny = spec["allow"], spec["deny"]
+    bad: List[Dict[str, str]] = []
+    seen = 0
+    for match in _URL_RE.finditer(text):
+        seen += 1
+        url = match.group(0).rstrip(".,;:!?")
+        try:
+            host = (urlsplit(url).hostname or "").lower()
+        except ValueError:
+            host = ""
+        if not host:
+            bad.append({"url": url[:120], "why": "no readable host"})
+        elif any(_host_matches(host, d) for d in deny):
+            bad.append({"url": url[:120], "why": "host is on the deny list"})
+        elif allow and not any(_host_matches(host, a) for a in allow):
+            bad.append({"url": url[:120], "why": "host is not on the allow list"})
+    return {"status": "fail" if bad else "pass", "evidence": bad[:10], "count": len(bad), "urls_seen": seen}
+
+
+def _check_injection(text: str, spec: Mapping[str, Any]) -> Dict[str, Any]:
+    from src.security_scan import scan_text
+    hits = [f for f in scan_text(text, kind="generic").findings if f.category == "prompt_injection"]
+    return {"status": "fail" if hits else "pass",
+            "evidence": [{"rule": f.rule_id, "line": f.line} for f in hits[:10]], "count": len(hits)}
+
+
+_DETERMINISTIC = {"secrets": _check_secrets, "pii": _check_pii, "urls": _check_urls,
+                  "injection": _check_injection}
+
+
+def guard_handler(models: Optional[ModelCalls] = None) -> Callable:
+    """`guard`: deterministic checks, plus optional yes/no model checks, then
+    two branches, `pass` and `fail`.
+
+    Config: `text` (template), `checks` (list; each a type name or an object):
+
+    * `secrets` — credential-shaped strings (`security_scan.find_secrets`);
+    * `pii` — `kinds` from EMAIL, PHONE, IBAN, CARD, ID, IP (default the first
+      three), validated (IBAN mod-97, card Luhn) by `pii_redaction`;
+    * `urls` — `allow` and/or `deny` host lists (`*.host` for subdomains only);
+    * `injection` — instruction-hijack phrases (`security_scan`);
+    * `model` — `question` whose answer "yes" means the text is NOT acceptable,
+      and a `threshold` (default 0.7) the model's confidence must reach.
+
+    `on_unknown` (`fail` default, or `pass`) decides a check the model could not
+    settle: a guard is a gate, so it fails closed unless told otherwise.
+    Output: `{branch, passed, checks: [{id, type, status: pass|fail|unknown,
+    evidence...}], failed, unknown}`. Evidence never contains the matched
+    secret or address itself, only what kind it was and where."""
+
+    def handle(node: WorkflowNode, context: Mapping[str, Any]) -> Dict[str, Any]:
+        config = node.config or {}
+        text_template, problem = _text_config(config, "text")
+        if problem:
+            return _failed(problem)
+        checks, problem = _guard_checks(config)
+        if problem:
+            return _failed(problem)
+        on_unknown = config.get("on_unknown", "fail")
+        if on_unknown not in ("fail", "pass"):
+            return _failed("config.on_unknown must be 'fail' or 'pass'")
+        timeout_s, problem = _number(config, "timeout_s", 30, 1, 600)
+        if problem:
+            return _failed(problem)
+        model_checks = [c for c in checks if c["type"] == "model"]
+        if model_checks and models is None:
+            return _failed(
+                "no model is wired to the 'guard' node type, and this guard has a model check; "
+                "no verdict was given. Pass `models=` to default_handlers")
+        try:
+            text = render(text_template, context)
+        except TemplateError as exc:
+            return _failed(str(exc))
+        truncated = len(text) > MAX_GUARD_CHARS
+        if truncated:
+            text = text[:MAX_GUARD_CHARS]
+
+        results: Dict[str, Dict[str, Any]] = {}
+        for spec in checks:
+            if spec["type"] in _DETERMINISTIC:
+                outcome = _DETERMINISTIC[spec["type"]](text, spec)
+                results[spec["id"]] = {"id": spec["id"], "type": spec["type"], **outcome}
+
+        if model_checks:
+            from src.typed_decision import Field            # noqa: PLC0415
+            fields = [Field(name=c["id"], question=c["question"].strip(), choices="bool")
+                      for c in model_checks]
+            owner = str(context.get("owner") or "")
+            purpose = str(config.get("purpose") or "utility")
+            try:
+                decisions = models.decide(
+                    text[:12000], fields, owner=owner or None, purpose=purpose,
+                    instructions=str(config.get("instructions") or ""), timeout_s=timeout_s,
+                    min_confidence=min(c["threshold"] for c in model_checks),
+                    caller="workflow.guard") or {}
+                error = ""
+            except ModelUnavailable as exc:
+                decisions, error = {}, str(exc)
+            for spec in model_checks:
+                decision = decisions.get(spec["id"])
+                value = getattr(decision, "value", None) if decision is not None else None
+                confidence = getattr(decision, "confidence", None) if decision is not None else None
+                if value in ("yes", "no") and isinstance(confidence, (int, float)) \
+                        and confidence >= spec["threshold"]:
+                    status = "fail" if value == "yes" else "pass"
+                else:
+                    status = "unknown"
+                results[spec["id"]] = {
+                    "id": spec["id"], "type": "model", "status": status,
+                    "evidence": {"answer": value, "best": getattr(decision, "best", None),
+                                 "confidence": confidence, "threshold": spec["threshold"],
+                                 "model": str(getattr(decision, "model", "") or ""),
+                                 "reason": error or str(getattr(decision, "reason", "") or "")}}
+
+        ordered = [results[c["id"]] for c in checks]
+        failed = [r["id"] for r in ordered if r["status"] == "fail"]
+        unknown = [r["id"] for r in ordered if r["status"] == "unknown"]
+        passed = not failed and (not unknown or on_unknown == "pass")
+        return {"branch": "pass" if passed else "fail", "passed": passed, "checks": ordered,
+                "failed": failed, "unknown": unknown, "on_unknown": on_unknown,
+                "input_truncated": truncated}
+
+    return handle
+
+
 def model_node_handlers(*, agent: Optional[Callable] = None,
                         models: Optional[ModelCalls] = None) -> Dict[str, Callable]:
     return {"agent": agent_handler(agent, models=models),
             "classify": classify_handler(models),
-            "extract": extract_handler(models)}
+            "extract": extract_handler(models),
+            "guard": guard_handler(models)}

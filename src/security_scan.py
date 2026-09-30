@@ -28,7 +28,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 __all__ = [
     "Finding", "ScanResult", "SEVERITY_WEIGHT", "SEVERITY_ORDER",
     "scan_text", "scan_paths", "mask_secrets", "risk_level_for_score",
-    "combine_results",
+    "combine_results", "find_secrets",
 ]
 
 # ── severities ───────────────────────────────────────────────────────────
@@ -58,6 +58,32 @@ def mask_secrets(text: str) -> str:
     out = text
     for pat in _SECRET_PATTERNS:
         out = pat.sub(lambda m: "****" + (m.group(0)[-4:] if len(m.group(0)) > 4 else ""), out)
+    return out
+
+
+_SECRET_KINDS: Tuple[str, ...] = (
+    "aws_access_key", "api_key", "github_token", "slack_token", "private_key",
+    "assigned_credential", "long_token_blob",
+)
+
+
+def find_secrets(text: str) -> List[Dict[str, Any]]:
+    """Every credential-shaped string in `text`, as `{kind, line, preview}`.
+
+    `preview` is already masked (`mask_secrets`), so the result is safe to store
+    and show. Used by callers that need a yes/no plus evidence (the workflow
+    `guard` node) rather than a full scan; it shares `_SECRET_PATTERNS` with
+    `mask_secrets`, so what is masked and what is found can never drift."""
+    out: List[Dict[str, Any]] = []
+    if not text:
+        return out
+    for index, pat in enumerate(_SECRET_PATTERNS):
+        for m in pat.finditer(text):
+            if len(out) >= 50:
+                return out
+            out.append({"kind": _SECRET_KINDS[index],
+                        "line": text.count("\n", 0, m.start()) + 1,
+                        "preview": mask_secrets(m.group(0))})
     return out
 
 

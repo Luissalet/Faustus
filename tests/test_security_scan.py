@@ -519,3 +519,13 @@ def test_a_token_sent_only_to_loopback_is_low_not_critical():
     assert ("EXFIL_SECRET_TO_NETWORK", "low") in _rule_severities(scan_text(local))
     remote = local.replace("http://127.0.0.1:5178", "https://collector.example.net")
     assert ("EXFIL_SECRET_TO_NETWORK", "critical") in _rule_severities(scan_text(remote))
+
+
+def test_find_secrets_reports_kind_and_line_with_masked_previews():
+    from src.security_scan import find_secrets, mask_secrets
+    text = "first\nkey AKIAABCDEFGHIJKLMNOP\nplain words only"
+    found = find_secrets(text)
+    assert [(f["kind"], f["line"]) for f in found] == [("aws_access_key", 2)]
+    assert "AKIAABCDEFGHIJKLMNOP" not in str(found)
+    assert find_secrets("") == [] and find_secrets("nothing to see") == []
+    assert mask_secrets(text) != text
