@@ -1,5 +1,5 @@
 """The Hoard apps that ship as plugins (ledger, links, people, argus, borges,
-vulcan, hypatia, echo, nightingale, cassandra, vitruvius, cicero).
+vulcan, hypatia, echo, nightingale, cassandra, vitruvius, cicero, tantalus).
 
 Each is a standalone application with its own repository; what ships here is
 Faustus's side of the contract, copied from the `faustus-plugin.json` the app
@@ -27,6 +27,7 @@ FAMILY = {
     "cassandra": ("cassandra-hoard", 5190, "cassandra"),
     "vitruvius": ("vitruvius-hoard", 5191, "vitruvius"),
     "cicero": ("cicero-hoard", 5194, "cicero"),
+    "tantalus": ("tantalus-hoard", 5197, "tantalus"),
 }
 
 
