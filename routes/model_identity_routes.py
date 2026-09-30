@@ -76,7 +76,7 @@ def _resolve_endpoint(endpoint: str) -> Dict[str, str]:
         raise HTTPException(400, "endpoint is required")
     parsed = urlparse(endpoint)
     if parsed.scheme and parsed.hostname:
-        return {"id": endpoint, "root": _ollama_root(endpoint)}
+        return {"id": endpoint, "root": _ollama_root(endpoint), "revision": "", "scope_url": endpoint}
     db = SessionLocal()
     try:
         row = db.query(ModelEndpoint).filter(ModelEndpoint.id == endpoint).first()
@@ -87,7 +87,9 @@ def _resolve_endpoint(endpoint: str) -> Dict[str, str]:
     root = _ollama_root(str(getattr(row, "base_url", "") or ""))
     if not root:
         raise HTTPException(400, f"Endpoint {endpoint} has no usable base_url")
-    return {"id": endpoint, "root": root}
+    return {"id": endpoint, "root": root,
+            "revision": str(getattr(row, "connection_revision", "") or ""),
+            "scope_url": str(getattr(row, "base_url", "") or "")}
 
 
 def setup_model_identity_routes() -> APIRouter:
@@ -106,7 +108,8 @@ def setup_model_identity_routes() -> APIRouter:
         if not model:
             raise HTTPException(400, "model is required")
         try:
-            resolution = await _to_thread_resolve(ep["root"], model, ep["id"])
+            resolution = await _to_thread_resolve(ep["root"], model, ep["id"],
+                                                  endpoint_revision=ep["revision"], endpoint_scope_url=ep["scope_url"])
         except ValueError as e:
             raise HTTPException(400, str(e))
         store = mi.default_store()
@@ -163,6 +166,11 @@ def setup_model_identity_routes() -> APIRouter:
     return router
 
 
-async def _to_thread_resolve(root: str, model: str, endpoint_id: str) -> mi.Resolution:
+async def _to_thread_resolve(root: str, model: str, endpoint_id: str, *, endpoint_revision: str = "",
+                             endpoint_scope_url: str = "") -> mi.Resolution:
     import asyncio
-    return await asyncio.to_thread(mi.resolve_deployment, root, model, endpoint_id=endpoint_id)
+    import copy
+    saved_options = copy.deepcopy(mi._effective_configuration(endpoint_id, root, model, {}))
+    return await asyncio.to_thread(mi.resolve_deployment, root, model, endpoint_id=endpoint_id,
+                                   endpoint_revision=endpoint_revision, endpoint_scope_url=endpoint_scope_url,
+                                   _saved_options=saved_options)

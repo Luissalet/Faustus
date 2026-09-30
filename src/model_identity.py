@@ -35,6 +35,7 @@ capability evidence appends).
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
@@ -184,7 +185,10 @@ class DeploymentManifest:
     loaded, and the effective configuration): change the engine, its build,
     or a config knob that affects behaviour (num_ctx, num_gpu, dtype,
     keep_alive, chat template…) and this is a *different* deployment,
-    on purpose — old evidence must not silently carry over."""
+    on purpose — old evidence must not silently carry over. When captured,
+    endpoint revision also scopes the deployment; revisionless identities keep
+    their historical algorithm. endpoint_scope_url preserves the configured
+    transport separately from endpoint_url (the operational Ollama root)."""
 
     deployment_id: str
     model_spec_id: str
@@ -196,6 +200,8 @@ class DeploymentManifest:
     configuration_fingerprint: str = ""
     resources: Dict[str, Any] = field(default_factory=dict)
     availability: str = "unknown"
+    endpoint_revision: str = ""
+    endpoint_scope_url: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -205,6 +211,8 @@ class DeploymentManifest:
             "engine": self.engine.to_dict(),
             "endpoint_id": self.endpoint_id,
             "endpoint_url": self.endpoint_url,
+            "endpoint_revision": self.endpoint_revision,
+            "endpoint_scope_url": self.endpoint_scope_url,
             "configuration": dict(self.configuration),
             "configuration_fingerprint": self.configuration_fingerprint,
             "resources": dict(self.resources),
@@ -218,12 +226,15 @@ def configuration_fingerprint(configuration: Mapping[str, Any]) -> str:
 
 def deployment_id_for(
     *, engine_kind: str, engine_version: str, model_digest: str, configuration: Mapping[str, Any],
+    endpoint_id: str = "", endpoint_revision: str = "",
 ) -> str:
-    """Same digest, same engine, same effective config → same id, every
+    """Same digest, engine, effective config and endpoint scope → same id, every
     time (an idempotent CAS key, not a random uuid). Any of the three inputs
     changing changes the id — MOD-02's acceptance criterion: "cambiar el
     motor o template invalida pruebas incompatibles sin perder la ficha de
-    pesos" (the ModelSpec survives; only the deployment row is a new one)."""
+    pesos" (the ModelSpec survives; only the deployment row is a new one).
+    Without an endpoint revision, the historical key remains unchanged."""
+    # Unknown revisions retain the exact pre-snapshot ID, without upgrading evidence.
     fp = configuration_fingerprint(configuration)
     payload = "|".join([
         str(engine_kind or "").strip().lower(),
@@ -231,6 +242,9 @@ def deployment_id_for(
         str(model_digest or "").strip(),
         fp,
     ])
+    if endpoint_revision:
+        payload = _canonical_json({"version": 2, "legacy_identity": payload,
+                                   "endpoint_id": endpoint_id, "endpoint_revision": endpoint_revision})
     return _sha256_hex(payload)
 
 
@@ -305,7 +319,7 @@ def _find_tag(tags_payload: Mapping[str, Any], model: str) -> Dict[str, Any]:
     return {}
 
 
-def _effective_configuration(endpoint_id: str, endpoint_url: str, model: str, show_summary: Mapping[str, Any]) -> Dict[str, Any]:
+def _effective_configuration(endpoint_id: str, endpoint_url: str, model: str, show_summary: Mapping[str, Any], *, saved_options: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
     """The knobs that actually change what a deployment can do: saved
     per-model options (num_ctx/num_gpu/keep_alive/main_gpu — MOD-04's own
     settings-only reader, no network) layered under whatever `/api/show`
@@ -316,7 +330,7 @@ def _effective_configuration(endpoint_id: str, endpoint_url: str, model: str, sh
     configuration: Dict[str, Any] = {}
     try:
         from src import model_load_options as mlo
-        saved = mlo.resolve_for_request(endpoint_url, model)
+        saved = saved_options if saved_options is not None else mlo.resolve_for_request(endpoint_url, model)
         configuration.update({k: v for k, v in dict(saved or {}).items() if v not in (None, "")})
     except Exception:  # noqa: BLE001 — settings I/O, never worth failing identity resolution over
         pass
@@ -327,7 +341,9 @@ def _effective_configuration(endpoint_id: str, endpoint_url: str, model: str, sh
     return configuration
 
 
-def resolve_deployment(endpoint_url: str, model: str, *, endpoint_id: str = "") -> "Resolution":
+def resolve_deployment(endpoint_url: str, model: str, *, endpoint_id: str = "", endpoint_revision: str = "",
+                       endpoint_scope_url: str = "",
+                       _saved_options: Optional[Mapping[str, Any]] = None) -> "Resolution":
     """ModelSpec + DeploymentManifest for `model` on the Ollama at
     `endpoint_url`, from what `/api/tags` and `/api/show` say right now — no
     model load, no mutation, no store write, no evidence write (the caller
@@ -340,12 +356,18 @@ def resolve_deployment(endpoint_url: str, model: str, *, endpoint_id: str = "") 
     answering "what is this deployment" needs the ModelSpec too (MOD-01),
     and `DeploymentManifest` itself only carries `model_spec_id` — by design,
     matching `contracts/deployment-manifest.schema.json`, which has no room
-    for the full spec inline."""
+    for the full spec inline. Caller-supplied scope/revision are captured facts;
+    this resolver never reconstructs them from the current endpoints table.
+    Saved options freeze before I/O, but tags/show/version are separate reads
+    and do not constitute an atomic provider snapshot."""
     endpoint_url = str(endpoint_url or "").rstrip("/")
     model = str(model or "").strip()
     if not endpoint_url or not model:
         raise ValueError("resolve_deployment needs both endpoint_url and model")
 
+    # Freeze saved options before provider I/O; provider reads themselves are not atomic.
+    saved_options = copy.deepcopy(_saved_options if _saved_options is not None else
+                                  _effective_configuration(endpoint_id, endpoint_url, model, {}))
     try:
         tags_payload = _fetch_tags(endpoint_url)
     except Exception:  # noqa: BLE001 — an unreachable endpoint still resolves an identity, minus the digest
@@ -391,11 +413,11 @@ def resolve_deployment(endpoint_url: str, model: str, *, endpoint_id: str = "") 
     )
 
     show_summary = {"context_length": context_tokens}
-    configuration = _effective_configuration(endpoint_id, endpoint_url, model, show_summary)
+    configuration = _effective_configuration(endpoint_id, endpoint_url, model, show_summary, saved_options=saved_options)
     engine_version = _fetch_version(endpoint_url) or "unknown"
     dep_id = deployment_id_for(
         engine_kind="ollama", engine_version=engine_version, model_digest=digest or spec_id,
-        configuration=configuration,
+        configuration=configuration, endpoint_id=endpoint_id, endpoint_revision=endpoint_revision,
     )
     manifest = DeploymentManifest(
         deployment_id=dep_id,
@@ -404,6 +426,7 @@ def resolve_deployment(endpoint_url: str, model: str, *, endpoint_id: str = "") 
         engine=EngineInfo(kind="ollama", version=engine_version),
         endpoint_id=endpoint_id,
         endpoint_url=endpoint_url,
+        endpoint_revision=endpoint_revision, endpoint_scope_url=endpoint_scope_url,
         configuration=configuration,
         configuration_fingerprint=configuration_fingerprint(configuration),
         resources={},
@@ -486,6 +509,17 @@ class ModelIdentityStore:
                     updated_at TEXT NOT NULL
                 )
             """)
+            # BEGIN IMMEDIATE also serializes migrations across store instances.
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                columns = {row["name"] for row in conn.execute("PRAGMA table_info(deployments)")}
+                for column in ("endpoint_revision", "endpoint_scope_url"):
+                    if column not in columns:
+                        conn.execute(f"ALTER TABLE deployments ADD COLUMN {column} TEXT")
+                conn.execute("COMMIT")
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS capability_evidence (
                     evidence_id TEXT PRIMARY KEY,
@@ -531,11 +565,11 @@ class ModelIdentityStore:
             conn.execute(
                 "INSERT OR REPLACE INTO deployments "
                 "(deployment_id, model_spec_id, endpoint_id, endpoint_url, engine_kind, engine_version, "
-                " configuration_fingerprint, manifest_json, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " configuration_fingerprint, manifest_json, created_at, updated_at, endpoint_revision, endpoint_scope_url) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (manifest.deployment_id, manifest.model_spec_id, manifest.endpoint_id, manifest.endpoint_url,
                  manifest.engine.kind, manifest.engine.version, manifest.configuration_fingerprint,
-                 _canonical_json(manifest.to_dict()), created_at, now),
+                 _canonical_json(manifest.to_dict()), created_at, now, manifest.endpoint_revision, manifest.endpoint_scope_url),
             )
 
     def get_model_spec(self, model_spec_id: str) -> Optional[Dict[str, Any]]:

@@ -191,7 +191,10 @@ def legacy_calibration_for(model_spec: Optional[Mapping[str, Any]], deployment: 
     """Scoped observations plus legacy declarations, without rewriting history.
 
     A deployment without explicit native transport cannot claim native probes.
-    Raw legacy records remain available through calibration.get_manifest.
+    Scope URL and revision come only from the stored deployment, never the
+    current endpoint database. Old records fall back to their stored endpoint
+    URL without acquiring a revision. Raw legacy records remain available
+    through calibration.get_manifest.
     """
     if not model_spec:
         return None
@@ -202,9 +205,10 @@ def legacy_calibration_for(model_spec: Optional[Mapping[str, Any]], deployment: 
     if not vendor or not model_id:
         return None
     key = calib.manifest_key(vendor=vendor, model_id=model_id, endpoint_id=endpoint_id, digest=digest)
-    protocol = calib.explicit_native_protocol(str((deployment or {}).get("endpoint_url") or "")) if vendor == "ollama" else ""
+    protocol = calib.explicit_native_protocol(str((deployment or {}).get("endpoint_scope_url") or (deployment or {}).get("endpoint_url") or "")) if vendor == "ollama" else ""
     manifest = calib.get_effective_manifest(vendor=vendor, model_id=model_id,
-        endpoint_id=endpoint_id, protocol=protocol, digest=digest)
+        endpoint_id=endpoint_id, protocol=protocol, digest=digest,
+        endpoint_revision=str((deployment or {}).get("endpoint_revision") or ""))
     if not manifest.get("announced") and not manifest.get("tested"):
         return None
     return {"manifest_key": key, **manifest}
