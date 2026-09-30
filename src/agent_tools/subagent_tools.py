@@ -527,11 +527,13 @@ def active_worker_ids() -> List[str]:
     return [sid for sid, t in _ACTIVE_WORKERS.items() if not t.done()]
 
 
-def _record_steering_receipt(run, receipt, state, *, drained_attempt_run_id=None):
+def _record_steering_receipt(run, receipt, state, *, drained_attempt_run_id=None, applied_attempt_run_id=None):
     receipt["state"] = state
     receipt["durability"] = "unknown"
     if drained_attempt_run_id:
         receipt["drained_attempt_run_id"] = drained_attempt_run_id
+    if applied_attempt_run_id:
+        receipt["applied_attempt_run_id"] = applied_attempt_run_id
     recorder = run._steering_recorder
     if recorder is not None:
         try:
@@ -539,7 +541,8 @@ def _record_steering_receipt(run, receipt, state, *, drained_attempt_run_id=None
                 child_session_id=run.session_id, worker_id=run.id,
                 delegation_id=run.delegation_id or "",
                 accepted_attempt_run_id=receipt["accepted_attempt_run_id"],
-                source=receipt["source"], drained_attempt_run_id=drained_attempt_run_id)
+                source=receipt["source"], drained_attempt_run_id=receipt.get("drained_attempt_run_id"),
+                applied_attempt_run_id=applied_attempt_run_id)
             receipt["durability"] = "durable"
         except Exception:
             pass  # Queue admission survives; never claim a durable receipt.
@@ -573,17 +576,35 @@ def steer_worker(child_session_id: str, text: str, source: str = "user") -> bool
     return steer_worker_receipt(child_session_id, text, source) is not None
 
 
-def pending_steers(child_session_id: str) -> List[Dict[str, str]]:
+def pending_steers(child_session_id: str, *, _include_receipt_ids: bool = False) -> List[Dict[str, str]]:
     """Drain exact queue entries; observe removal without claiming application."""
     run = _WORKER_RUNS.get(child_session_id)
     if run is None:
         return []
     out, run.steer_queue = list(run.steer_queue), []
+    delivered = []
     for entry in out:
         receipt = run._steering_entry_receipts.pop(id(entry), None)
         if receipt is not None:
             _record_steering_receipt(run, receipt, "drained", drained_attempt_run_id=run._steering_attempt_id)
-    return out
+            if _include_receipt_ids:
+                run._steering_inflight_receipts[receipt["receipt_id"]] = receipt
+                entry = dict(entry, _steering_receipt_id=receipt["receipt_id"])
+        delivered.append(entry)
+    return delivered
+
+
+def _observe_steering_applied(run, event):
+    receipt_id = event.get("steering_receipt_id")
+    if not isinstance(receipt_id, str):
+        return
+    receipt = run._steering_inflight_receipts.get(receipt_id)
+    if (receipt is None or receipt["state"] != "drained"
+            or not run._steering_attempt_id
+            or receipt.get("drained_attempt_run_id") != run._steering_attempt_id):
+        return
+    run._steering_inflight_receipts.pop(receipt_id, None)
+    _record_steering_receipt(run, receipt, "applied", applied_attempt_run_id=run._steering_attempt_id)
 
 
 def _drop_pending_steering(run):
@@ -1283,6 +1304,7 @@ class SubagentRun:
         self._steering_attempt_id = None
         self._steering_entry_receipts = {}
         self._steering_receipts = {}
+        self._steering_inflight_receipts = {}
         # Per attempt: task liveness includes terminal fanout and cleanup,
         # neither of which can inject another instruction into the loop.
         self.accepts_steers = False
@@ -1638,7 +1660,7 @@ async def _run_subagent(
         return int(value)
 
     def _steers() -> List[Dict[str, str]]:
-        return pending_steers(child_sid)
+        return pending_steers(child_sid, _include_receipt_ids=True)
 
     from src.run_causality import bind_run, reset_run
     # One server UUID per stream invocation (including retries), shared with
@@ -1740,6 +1762,7 @@ async def _run_subagent(
                     run.output_tokens += _token_count(ev.get("output_tokens")) or 0
                 await emit({"event": "round", "round": run.rounds})
             elif et == "steer":
+                _observe_steering_applied(run, ev)
                 run.steered += 1
                 await emit({"event": "steer", "text": _short(ev.get("text"), 300),
                             "source": "supervisor" if ev.get("source") == "supervisor" else "user"})
@@ -1782,6 +1805,9 @@ async def _run_subagent(
         logger.warning("delegate_agents: sub-agent %s crashed: %s", run.name, e, exc_info=True)
         await emit({"event": "error", "message": run.error})
     finally:
+        # Drained but unobserved entries remain uncertain in the journal; do
+        # not call them applied/dropped or carry proof into a new attempt.
+        run._steering_inflight_receipts.clear()
         reset_run(origin_token)
         run.accepts_steers = False
         run.finished = time.time()

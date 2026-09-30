@@ -193,7 +193,9 @@ async def test_terminal_guard_rejects_late_input_preserves_queue_and_retry(worke
             yield "data: " + json.dumps({"type": terminal}) + "\n\n"
         else:
             pending = kw["pending_user_messages"]()
-            assert pending == [{"text": "Previously accepted", "source": "user"}]
+            assert [{key: value for key, value in entry.items() if key != "_steering_receipt_id"}
+                    for entry in pending] == [{"text": "Previously accepted", "source": "user"}]
+            assert len(pending[0]["_steering_receipt_id"]) == 32
             injected, *_ = agent_loop._apply_steers_to_messages([], pending)
             for ev in injected:
                 yield "data: " + json.dumps(ev) + "\n\n"
@@ -209,6 +211,7 @@ async def test_terminal_guard_rejects_late_input_preserves_queue_and_retry(worke
     assert observed_guards == [terminal]
     assert worker.steered == 0 and len(worker.steer_queue) == 1
     await attempt(worker, emit)
+    assert worker.error is None
     assert worker.steered == 1 and worker.steer_queue == []
 
 

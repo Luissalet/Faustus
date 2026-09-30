@@ -179,7 +179,10 @@ async def test_real_worker_attempt_retry_preserves_entry_identity_and_attempt_pr
             accepted.append(st.steer_worker_receipt(worker.session_id, "Retry instruction"))
             yield 'data: {"type":"rounds_exhausted"}\n\n'
         else:
-            assert kw["pending_user_messages"]() == [{"text": "Retry instruction", "source": "user"}]
+            pending = kw["pending_user_messages"]()
+            assert [{key: value for key, value in entry.items() if key != "_steering_receipt_id"}
+                    for entry in pending] == [{"text": "Retry instruction", "source": "user"}]
+            assert pending[0]["_steering_receipt_id"] == accepted[0]["receipt_id"]
         yield 'data: [DONE]\n\n'
     async def emit(event):
         pass
@@ -188,6 +191,8 @@ async def test_real_worker_attempt_retry_preserves_entry_identity_and_attempt_pr
     assert len(worker.steer_queue) == 1
     assert [event["state"] for event in events(parent)] == ["queued"]
     await attempt(worker, emit)
+    assert worker.error is None
+    assert worker._steering_inflight_receipts == {}
     assert attempts[0] != attempts[1]
     observed = events(parent)
     assert observed[0]["accepted_attempt_run_id"] == attempts[0]
@@ -240,3 +245,93 @@ async def test_missing_real_attempt_never_claims_durable_receipt(journal):
     assert receipt["state"] == "queued" and receipt["durability"] == "unknown"
     assert receipt["accepted_attempt_run_id"] == ""
     assert events(run) == []
+
+
+@pytest.mark.parametrize("internal_id", [None, 3, "bad", "f" * 33, "F" * 32])
+def test_helper_preserves_legacy_shape_and_does_not_leak_invalid_ids(internal_id):
+    from src import agent_loop
+    entry = {"text": "Synthetic", "source": "user"}
+    if internal_id is not None:
+        entry["_steering_receipt_id"] = internal_id
+    messages = []
+    injected, *_ = agent_loop._apply_steers_to_messages(messages, [entry])
+    assert messages == [{"role": "user", "content": "Synthetic"}]
+    assert injected == [{"type": "steer", "round": 1, "text": "Synthetic", "source": "user", "interrupt": False}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("durable_failure", [False, True])
+async def test_real_worker_callback_helper_sse_records_applied_after_append(journal, worker, monkeypatch, durable_failure):
+    from src import agent_loop
+    parent = journal()
+    worker._steering_recorder = agent_runs._EffectRecorder(parent)
+    worker.delegation_id = "delegation"
+    accepted = []
+    async def stream(*a, **kw):
+        register(worker)
+        accepted.append(st.steer_worker_receipt(worker.session_id, "Private synthetic body"))
+        pending = kw["pending_user_messages"]()
+        messages = []
+        injected, *_ = agent_loop._apply_steers_to_messages(messages, pending, interrupt=True)
+        assert messages == [{"role": "user", "content": "Private synthetic body"}]
+        assert injected[0]["steering_receipt_id"] == accepted[0]["receipt_id"]
+        if durable_failure:
+            parent.log.orphan()
+        for event in injected:
+            yield "data: " + json.dumps(event) + "\n\n"
+    async def emit(event):
+        if event["event"] == "steer":
+            observed = worker._steering_receipts[accepted[0]["receipt_id"]]
+            assert observed["state"] == "applied"
+            assert observed["durability"] == ("unknown" if durable_failure else "durable")
+    monkeypatch.setattr(agent_loop, "stream_agent_loop", stream)
+    await attempt(worker, emit)
+    assert worker.error is None and worker.steered == 1
+    observed = events(parent)
+    assert [event["state"] for event in observed] == (["queued", "drained"] if durable_failure else ["queued", "drained", "applied"])
+    if not durable_failure:
+        assert observed[-1]["applied_attempt_run_id"] == worker.invocation_run_ids[-1]
+        assert observed[-1]["drained_attempt_run_id"] == observed[-1]["applied_attempt_run_id"]
+    assert "Private synthetic body" not in json.dumps(observed)
+    assert worker._steering_inflight_receipts == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("invalid", ["unknown", "queued", "other_worker", "old_attempt", "legacy"])
+async def test_applied_rejects_unowned_or_undrained_ids(journal, invalid):
+    parent = journal()
+    worker = live(agent_runs._EffectRecorder(parent))
+    receipt = st.steer_worker_receipt("child", "Synthetic")
+    if invalid != "queued":
+        st.pending_steers("child", _include_receipt_ids=True)
+    target = worker
+    if invalid == "other_worker":
+        target = st.SubagentRun(1, {"name": "other", "instruction": "Synthetic"})
+        target._steering_attempt_id = worker._steering_attempt_id
+    if invalid == "old_attempt":
+        worker._steering_attempt_id = "attempt-b"
+    event = {} if invalid == "legacy" else {"steering_receipt_id": receipt["receipt_id"] if invalid != "unknown" else "f" * 32}
+    st._observe_steering_applied(target, event)
+    assert not any(event["state"] == "applied" for event in events(parent))
+
+
+@pytest.mark.asyncio
+async def test_applied_is_once_only_and_survives_live_history_eviction(journal):
+    parent = journal()
+    worker = live(agent_runs._EffectRecorder(parent))
+    receipt = st.steer_worker_receipt("child", "Synthetic")
+    st.pending_steers("child", _include_receipt_ids=True)
+    worker._steering_receipts.clear()  # Live history is not identity authority.
+    event = {"steering_receipt_id": receipt["receipt_id"]}
+    st._observe_steering_applied(worker, event)
+    st._observe_steering_applied(worker, event)
+    assert [event["state"] for event in events(parent)] == ["queued", "drained", "applied"]
+    assert worker._steering_inflight_receipts == {}
+
+
+@pytest.mark.asyncio
+async def test_public_pending_entries_keep_exact_legacy_shape(journal):
+    worker = live()
+    st.steer_worker("child", "legacy public")
+    assert st.pending_steers("child") == [{"text": "legacy public", "source": "user"}]
+    assert worker._steering_inflight_receipts == {}

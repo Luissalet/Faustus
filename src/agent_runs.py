@@ -805,17 +805,23 @@ class _EffectRecorder:
     def record_steering(self, *, receipt_id: str, state: str,
                         child_session_id: str, worker_id: str, delegation_id: str,
                         accepted_attempt_run_id: str, source: str,
-                        drained_attempt_run_id: Optional[str] = None) -> None:
+                        drained_attempt_run_id: Optional[str] = None,
+                        applied_attempt_run_id: Optional[str] = None) -> None:
         """Durable observation for this exact run; never a restored queue."""
-        if (state not in {"queued", "drained", "dropped"} or not receipt_id
+        if (state not in {"queued", "drained", "applied", "dropped"} or not receipt_id
                 or not child_session_id or not accepted_attempt_run_id):
             raise ValueError("invalid steering receipt")
+        if state == "applied" and (not applied_attempt_run_id
+                or applied_attempt_run_id != drained_attempt_run_id):
+            raise ValueError("applied receipt requires the drained attempt")
         event = {"type": "steering_receipt", "receipt_id": receipt_id, "state": state,
                  "parent_run_id": self._run.run_id, "child_session_id": child_session_id,
                  "worker_id": worker_id, "delegation_id": delegation_id,
                  "accepted_attempt_run_id": accepted_attempt_run_id, "source": source}
         if drained_attempt_run_id:
             event["drained_attempt_run_id"] = drained_attempt_run_id
+        if applied_attempt_run_id:
+            event["applied_attempt_run_id"] = applied_attempt_run_id
         _publish(self._run, "data: " + json.dumps(event, ensure_ascii=False) + "\n\n", durable=True)
 
     def record(self, **fields: Any) -> None:

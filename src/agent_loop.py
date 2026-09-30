@@ -6940,6 +6940,11 @@ def _apply_steers_to_messages(
             "source": source,
             "interrupt": bool(interrupt),
         })
+        receipt_id = steer.get("_steering_receipt_id") if isinstance(steer, dict) else None
+        if isinstance(receipt_id, str) and re.fullmatch(r"[0-9a-f]{32}", receipt_id):
+            # Only event metadata carries this server-side identity. The user
+            # message appended above remains text-only.
+            events[-1]["steering_receipt_id"] = receipt_id
         texts.append(text)
     plan = latest_plan_update
     affected: List[str] = []
