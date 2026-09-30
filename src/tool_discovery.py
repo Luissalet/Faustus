@@ -126,6 +126,7 @@ def is_permitted(
                 return False
         except Exception:
             logger.debug("tool_discovery: tool_policy.blocks failed for %s", name, exc_info=True)
+            return False
 
     blocked = {str(n) for n in (disabled_tools or ()) if n}
     if any(n in blocked for n in policy_names):
