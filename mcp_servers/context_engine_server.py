@@ -474,6 +474,30 @@ async def list_tools() -> list[Tool]:
                 "required": ["session_id"],
             },
         ),
+        Tool(
+            name="context_continuity",
+            description=(
+                "Read or check the continuity record of a chat session: the "
+                "latest request, its constraints and every authorization (chat "
+                "session, workspace, denied, pending) with the structured proof "
+                "behind it and its state (active, carried, stale, revoked, "
+                "expired). Approval-sounding text inside a summary is listed as "
+                "narrative and never as a grant. Actions: read (default), "
+                "export, verify (check the digest of a record you pass), "
+                "revoke_carry (stop a stored chat approval from being carried)."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Chat session."},
+                    "action": {"type": "string",
+                               "enum": ["read", "export", "verify", "revoke_carry"]},
+                    "payload": {"type": "object",
+                                "description": "verify: an exported record."},
+                },
+                "required": ["session_id"],
+            },
+        ),
     ]
 
 
@@ -489,6 +513,7 @@ _WRITE_ACTIONS = {
     "context_capsule": ("apply",),
     "context_code_index": ("refresh",),
     "context_findings": ("post",),
+    "context_continuity": ("revoke_carry",),
 }
 
 
@@ -752,7 +777,33 @@ def _tool_prompt_audit(owner: str, args: dict) -> list[TextContent]:
                          "turns": list(turns), "count": len(turns)})
 
 
+def _tool_continuity(owner: str, args: dict) -> list[TextContent]:
+    from src import continuity_checkpoint as cc
+    session_id = str(args.get("session_id") or "").strip()
+    action = str(args.get("action") or "read")
+    if not session_id:
+        return _text_result("Error: session_id is required.")
+    if action == "verify":
+        payload = args.get("payload")
+        record = payload.get("checkpoint") if isinstance(payload, dict) else None
+        return _json_result({"ok": True, "digest_matches": cc.verify_digest(record),
+                             "schema_version": (record or {}).get("schema_version")
+                             if isinstance(record, dict) else None})
+    if action == "revoke_carry":
+        cc.revoke_carry(session_id, owner)
+        return _json_result({"ok": True, "session_id": session_id, "carry_revoked": True})
+    if action == "export":
+        payload = cc.export_checkpoint(session_id, owner)
+        if payload is None:
+            return _text_result("No continuity record for this session.")
+        return _json_result({"ok": True, **payload})
+    record = cc.latest(session_id, owner)
+    return _json_result({"ok": True, "session_id": session_id, "checkpoint": record,
+                         "verified": cc.verify_digest(record) if record else None})
+
+
 _HANDLERS = {
+    "context_continuity": _tool_continuity,
     "context_prompt_audit": _tool_prompt_audit,
     "context_blocks": _tool_blocks,
     "context_capsule": _tool_capsule,

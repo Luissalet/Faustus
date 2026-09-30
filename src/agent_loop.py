@@ -7680,6 +7680,14 @@ async def _stream_agent_loop_body(
         workspace=str(workspace or ""),
         owner=str(owner or ""),
     )
+    # Portable continuity record (src/continuity_checkpoint.py). The grant it
+    # may add comes only from structured evidence or, behind its setting, a
+    # verified record of this same chat; never from summary prose.
+    from src import continuity_checkpoint as _continuity
+    _continuity_report = _continuity.observe_run(
+        messages, session_id=session_id, owner=owner, workspace=workspace)
+    if _continuity_report.get("carried") and _continuity_report.get("chat_session_granted"):
+        run_security.approval_gate_bypassed = True
     if run_security.user_delegation is not None:
         logger.info("[gate] user-dictated delegation in this turn: %d task(s)",
                     len((run_security.user_delegation.get("tasks") or [])) if isinstance(run_security.user_delegation.get("tasks"), list) else 0)
@@ -9872,6 +9880,8 @@ async def _stream_agent_loop_body(
         compaction_state: Dict = {}
         from src.context_compactor import refresh_compaction_approvals
         compacted_source = refresh_compaction_approvals(list(source_messages))
+        if _continuity.settings_mode() == _continuity.MODE_ANNOTATE:
+            compacted_source = _continuity.annotate_narrative_consent(compacted_source)
         was_compacted = False
         if defer_context_shaping or fallbacks:
             # CTX-02 (lote 18 integration): try the deterministic,
@@ -18169,6 +18179,10 @@ async def _stream_agent_loop_body(
             )
     metrics["requested_endpoint_id"] = requested_endpoint_id
     metrics["requested_endpoint_label"] = requested_endpoint_label
+    if _continuity_report.get("recorded"):
+        metrics["continuity"] = {k: _continuity_report.get(k) for k in (
+            "revision", "authorization_version", "authorization_seq", "carried",
+            "narrative_consent_claims", "authorization_counts")}
     if _prompt_audit.rounds:
         # Hashes only, bounded: rides onto the saved message like the receipts.
         metrics["prompt_audit"] = _prompt_audit.summary()

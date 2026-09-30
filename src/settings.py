@@ -911,6 +911,17 @@ DEFAULT_SETTINGS = {
     # back to injecting the block: blanking the user's own rules is worse than a
     # missed check.
     "agent_workspace_trust": "ask",
+    # Portable continuity record (src/continuity_checkpoint.py): the latest
+    # request, its constraints and every authorization with the structured
+    # proof it rests on. "record" keeps it (default, prompt unchanged);
+    # "annotate" also labels consent-looking prose inside an old summary as
+    # narrative; "off" keeps nothing. Prose never grants anything in any mode.
+    "agent_continuity_checkpoint": "record",
+    # Off by default: when on, a chat-session approval recorded by THIS
+    # installation for THIS chat keeps applying even if the stored messages no
+    # longer carry the approval event (for example a client that resends the
+    # conversation without metadata). Revocable per chat.
+    "agent_continuity_carry_session_grant": False,
     # The agent's shell in the Docker sandbox (src/sandbox_exec.py), and what
     # happens when the container cannot serve this host. On native Windows the
     # host always runs it (Git Bash / PowerShell / the project's Python) — a

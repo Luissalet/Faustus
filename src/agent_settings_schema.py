@@ -396,6 +396,16 @@ GROUPS: list[dict[str, Any]] = [
                     "(a folder Faustus already has checkpoints for is approved automatically); "
                     "'strict' approves nothing automatically; 'off' always injects the file.",
                     ["off", "ask", "strict"]),
+            _select("agent_continuity_checkpoint", "Continuity checkpoint",
+                    "Keep a verifiable record of the latest request, its constraints and every approval with "
+                    "the proof behind it, so a restart, a compaction or a model switch cannot invent consent. "
+                    "'record' only keeps it; 'annotate' also labels approval-sounding text inside an old "
+                    "summary as narrative; 'off' keeps nothing.",
+                    ["off", "record", "annotate"]),
+            _bool("agent_continuity_carry_session_grant", "Carry chat approval across resends",
+                  "Keep a chat-session approval given in this chat alive when the resent conversation no "
+                  "longer carries the approval event. Only for approvals this installation recorded; it can "
+                  "be revoked per chat."),
             _bool("agent_repo_map", "Repository map",
                   "Files + symbols of the workspace before the user's message, so the model does not "
                   "spend rounds on ls / grep."),

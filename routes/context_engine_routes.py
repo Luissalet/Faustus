@@ -337,6 +337,54 @@ def setup_context_engine_routes():
         return {"ok": True, "session_id": session_id, "turns": list(turns),
                 "count": len(turns)}
 
+    @router.get("/sessions/{session_id}/continuity")
+    def get_continuity(session_id: str, request: Request, limit: int = 5):
+        """The continuity record of a chat: latest request, constraints and every
+        authorization with its proof, plus the recent revisions. Structured
+        evidence only; a consent-looking sentence in a summary is listed as
+        narrative, not as a grant."""
+        from src import continuity_checkpoint as cc
+        owner = _owner(request)
+        record = cc.latest(session_id, owner)
+        revisions = cc.history(session_id, owner, limit=_limit(limit))
+        return {"ok": True, "session_id": session_id, "checkpoint": record,
+                "verified": cc.verify_digest(record) if record else None,
+                "revisions": [{"revision": r.get("revision"), "created_at": r.get("created_at"),
+                               "authorization_version": r.get("authorization_version"),
+                               "authorization_seq": r.get("authorization_seq"),
+                               "origin": r.get("origin"), "digest": r.get("digest")}
+                              for r in revisions]}
+
+    @router.get("/sessions/{session_id}/continuity/export")
+    def export_continuity(session_id: str, request: Request):
+        from src import continuity_checkpoint as cc
+        payload = cc.export_checkpoint(session_id, _owner(request))
+        if payload is None:
+            raise HTTPException(status_code=404, detail="No continuity record for this session")
+        return {"ok": True, **payload}
+
+    @router.post("/sessions/{session_id}/continuity/import")
+    async def import_continuity(session_id: str, request: Request):
+        """Store a record from elsewhere. It is verified (digest, schema, owner)
+        and every authorization in it comes in as stale: nothing is granted
+        until the live approvals back it."""
+        require_admin(request)
+        from src import continuity_checkpoint as cc
+        payload = await _json_body(request)
+        try:
+            stored = cc.import_checkpoint(payload, owner=_owner(request), session_id=session_id)
+        except cc.CheckpointError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        return {"ok": True, "checkpoint": stored}
+
+    @router.post("/sessions/{session_id}/continuity/revoke-carry")
+    def revoke_continuity_carry(session_id: str, request: Request):
+        """Stop a stored chat-session approval from being carried any further."""
+        require_admin(request)
+        from src import continuity_checkpoint as cc
+        cc.revoke_carry(session_id, _owner(request))
+        return {"ok": True, "session_id": session_id, "carry_revoked": True}
+
     @router.get("/packets/{packet_id}")
     def get_packet(packet_id: str, request: Request):
         """One ledger row: how big, how degraded, what was left out — never
