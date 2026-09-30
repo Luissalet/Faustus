@@ -95,6 +95,12 @@ def world(tmp_path, monkeypatch):
             job = "job_" + str(len(jobs) + 1)
             jobs[job] = {"id": job, "project_id": project, "payload": json.loads(request.content)}
             return httpx.Response(200, json={"job": {"id": job, "project_id": project}})
+        if path.startswith("/api/jobs/") and path.endswith("/cancel"):
+            assert method == "POST"
+            job = jobs[path.split("/")[3]]
+            config.setdefault("cancelled", []).append(job["id"])
+            return httpx.Response(200, json={"id": job["id"], "state": config.get("cancel_state", "cancelled"),
+                "project_id": config.get("cancel_project", job["project_id"])})
         if path.startswith("/api/jobs/"):
             if config.get("revoke_on_poll"):
                 config["enabled"] = False
@@ -564,3 +570,105 @@ def test_img2img_request_id_cannot_be_reused_with_changed_strength(world):
     before = list(world.calls)
     assert "different input" in run(operation="img2img", image_bytes=png(), strength=0.5)["error"]
     assert world.calls == before
+
+
+def posts(world):
+    return [call for call in world.calls if call[0] == "POST" and not call[1].endswith("/cancel")]
+
+
+def cancel(request_id="request-one", session="session-one", owner="alice"):
+    return asyncio.run(adapter.cancel_image(request_id, session, owner))
+
+
+def test_cancel_queued_job_closes_receipt_without_new_work(world):
+    world.config["job_state"] = "queued"
+    assert run()["state"] == "pending"
+    before = posts(world)
+    result = cancel()
+    assert result["state"] == "cancelled" and result["exit_code"] == 0
+    assert world.config["cancelled"] == ["job_1"] and posts(world) == before
+    assert rows(world)[0]["state"] == "cancelled"
+    calls = list(world.calls)
+    again = asyncio.run(adapter.resume_image("request-one", "session-one", "alice"))
+    assert again["state"] == "cancelled" and world.calls == calls  # closed locally, no HTTP
+
+
+def test_cancel_running_job_is_requested_then_observed(world):
+    world.config["job_state"] = "running"
+    run()
+    world.config["cancel_state"] = "running"
+    requested = cancel()
+    assert requested["state"] == "cancel_requested" and rows(world)[0]["state"] == "waiting"
+    world.config["job_state"] = "cancelled"
+    observed = asyncio.run(adapter.resume_image("request-one", "session-one", "alice"))
+    assert "cancelled" in observed["error"] and observed["state"] == "cancelled"
+    assert rows(world)[0]["state"] == "cancelled"
+    assert len(world.jobs) == 1
+
+
+def test_cancel_after_studio_finished_collects_the_image(world):
+    world.config["job_state"] = "running"
+    run()
+    world.config["job_state"] = world.config["cancel_state"] = "done"
+    result = cancel()
+    assert result["image_url"].startswith("/api/generated-image/") and rows(world)[0]["state"] == "done"
+    assert cancel()["cancel"] == "already_done" and len(world.jobs) == 1
+
+
+def test_cancel_is_scoped_to_owner_session_and_job_identity(world):
+    world.config["job_state"] = "queued"
+    run()
+    before = list(world.calls)
+    other = cancel(session="session-two", owner="bob")
+    assert "No image request" in other["error"] and world.calls == before
+    world.config["cancel_project"] = "someone_else"
+    mismatch = cancel()
+    assert "does not match" in mismatch["error"] and rows(world)[0]["state"] == "waiting"
+
+
+def test_cancel_without_submitted_job_reports_unknown_without_http(world):
+    world.config["post_timeout"] = True
+    run()
+    before = list(world.calls)
+    assert cancel()["result_status"] == "outcome_unknown" and world.calls == before
+
+
+def test_reconcile_collects_finished_leaves_running_and_never_resubmits(world):
+    world.config["job_state"] = "running"
+    run("request-one")
+    run("request-two")
+    before = posts(world)
+    finished = {"job_1"}
+    handler_state = world.config
+
+    # Only the first studio job has finished while this process was down.
+    original = adapter._json
+
+    async def selective(client, method, path, **kwargs):
+        if method == "GET" and path.startswith("/api/jobs/"):
+            handler_state["job_state"] = "done" if path.rsplit("/", 1)[-1] in finished else "running"
+        return await original(client, method, path, **kwargs)
+
+    adapter._json = selective
+    try:
+        summary = asyncio.run(adapter.reconcile_pending_images(poll_timeout=0))
+    finally:
+        adapter._json = original
+    assert summary["checked"] == 2 and summary["done"] == 1 and summary["pending"] == 1
+    assert posts(world) == before
+    states = {row["request_id"]: row["state"] for row in rows(world)}
+    assert states == {"request-one": "done", "request-two": "waiting"}
+    assert list(world.images.glob("*.png"))
+
+
+def test_reconcile_skips_changed_connection_and_missing_store(world, tmp_path, monkeypatch):
+    world.config["job_state"] = "running"
+    run()
+    world.connection["app_url"] = "http://127.0.0.1:8816"
+    before = list(world.calls)
+    summary = asyncio.run(adapter.reconcile_pending_images(poll_timeout=0))
+    assert summary["checked"] == 1 and summary["skipped"] == 1 and world.calls == before
+    empty = tmp_path / "fresh"
+    monkeypatch.setattr(adapter, "DATA_DIR", str(empty))
+    assert asyncio.run(adapter.reconcile_pending_images())["checked"] == 0
+    assert not (empty / "prospero_images.db").exists()

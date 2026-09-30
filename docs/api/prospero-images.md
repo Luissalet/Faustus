@@ -33,6 +33,11 @@ existente en Prospero y necesita su checkpoint SDXL configurado. La imagen y
 la máscara se importan al proyecto privado de esa sesión. Se conserva el
 servicio anterior cuando el estudio seleccionado es `configured`.
 
+La acción `harmonize` (integrar un recorte o suavizar un montaje) también pasa
+por Prospero con el estudio seleccionado: es el img2img SDXL existente
+(`operation=img2img`) con `strength` como fracción redibujada (0.4 por defecto)
+y un prompt de armonización por defecto si no se da otro.
+
 ## Recuperación sin repetir generación
 
 Cada petición conserva `request_id`, conexión, propietario, sesión, proyecto,
@@ -42,7 +47,10 @@ recupera su trabajo; otra llamada intencional puede generar otra imagen igual.
 
 `image_job({"request_id":"…"})` consulta una petición existente de la misma
 sesión/usuario y recoge su resultado, sin crear proyecto, importar referencia ni
-enviar una nueva generación. Comprueba permisos y conexión actuales. Un resultado
+enviar una nueva generación. `image_job({"request_id":"…","action":"cancel"})`
+cancela solo ese trabajo: en cola se cancela al momento; en ejecución queda
+`cancel_requested` y Prospero lo para en su siguiente punto de control; si ya
+había terminado, se recoge la imagen en vez de perderla. Comprueba permisos y conexión actuales. Un resultado
 pendiente/incierto lleva `outcome_unknown` y una instrucción de reconciliación,
 para evitar que el worker lo convierta en un reintento automático.
 
@@ -59,15 +67,19 @@ galería y recibo usan recuperación idempotente, no una única transacción con
 - Entrada PNG/JPEG/WebP y salida PNG, hasta 32 MiB y 40 millones de píxeles.
   Una petición produce una imagen. Descargas confinadas a assets verificados;
   no se usan URLs de resultado suministradas por el motor.
-- No se expone cancelación remota: el interrupt de ComfyUI puede afectar otro
-  trabajo. Cancelar la espera no implica cancelar ni repetir el trabajo remoto.
-- Prospero registra el envío a ComfyUI y retiene los trabajos inciertos al
-  reiniciar. La recolección automática del resultado de esos trabajos GPU
-  interrumpidos y un journal completo de batches aún no están implementados.
-- OpenAI-compatible `images/generations`, `images/edits`, upscale, rembg y
-  harmonize anteriores continúan en Faustus. Inpaint anterior se conserva como
-  alternativa al estudio Prospero. El traslado de los demás servicios es
-  pendiente; no afirmar extracción completa de procesamiento.
+- La cancelación es acotada: Prospero lee la cola de ComfyUI y solo interrumpe
+  el prompt de ese trabajo si es el que se ejecuta, o lo saca de la cola si
+  espera; nunca el interrupt global. Parar el turno del chat no cancela el
+  trabajo remoto (la imagen se recoge luego); cancelar es explícito.
+- Al arrancar, Faustus recoge los trabajos que el proceso anterior dejó en
+  `waiting` con job conocido (`reconcile_pending_images`), bajo su propio
+  propietario, sesión y conexión; nunca reenvía. Los envíos sin job conocido
+  siguen necesitando reconciliación manual. No hay journal completo de batches.
+- OpenAI-compatible `images/generations`, `images/edits`, upscale y rembg
+  anteriores continúan en Faustus. BLOQUEADO: upscale/rembg en Prospero
+  necesitan modelos que no están instalados (RealESRGAN y un modelo de recorte);
+  su descarga requiere autorización. Inpaint anterior se conserva como
+  alternativa al estudio Prospero.
 
 ## Referencias y comprobación
 
@@ -145,3 +157,23 @@ aunque herramienta y SSE devolvieron correctamente /api/generated-image/{id}.png
 Dos renders Qwen consecutivos y SDXL terminaron sin /free ni liberación manual
 con el perfil dedicado --disable-smart-memory. No garantía universal de memoria.
 Servicios QA cerrados después; configuraciones/datos personales preservados.
+
+### Chat completo en navegador, cancelación y reinicio, 30-09-2026
+
+Studio real con Qwen2.5-3B q8, Prospero y ComfyUI 0.37 con Qwen-Image 2.1:
+adjunto arrastrado, petición en castellano, aprobación, render de ~80 s y
+resultado en directo y al reabrir. Se corrigieron nueve fallos (entrega SSE del
+evento `generated_image`, IDs UUID de galería, restauración con `exit_code`
+nulo, enlaces con host inventado, ID de galería del adjunto sin visión, aviso de
+visión que activaba herramientas de administración, `edit_image` diferido al
+catálogo, render duplicado en rondas posteriores y afirmación de edición sin
+herramienta). Commits `a756c1f5` y `3cb3f911`; armonizar `bcfe6e8e`.
+
+Cancelación acotada real: con un prompt ajeno ejecutándose en el mismo ComfyUI
+y el de Faustus esperando detrás, `cancel_image` dejó la cola sin el prompt
+propio; el ajeno terminó con `execution_success` y el trabajo quedó `cancelled`.
+Recolección tras reinicio real: petición enviada, Faustus reiniciado a mitad de
+render, y el arranque registró `reconciled studio image receipts: checked 1,
+done 1`; la imagen apareció en Biblioteca → Imágenes (comprobado en navegador)
+y la cancelada no. Prospero: `tests/test_scoped_comfy_cancel.py`; Faustus: 8
+pruebas nuevas de cancelación/reconciliación y de la acción de herramienta.

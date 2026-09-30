@@ -56,7 +56,8 @@ async def test_image_job_uses_server_owner_and_session_without_generation(monkey
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("args", [{"request_id": "previous", "owner": "forged"}, {}, {"request_id": 5}])
+@pytest.mark.parametrize("args", [{"request_id": "previous", "owner": "forged"}, {}, {"request_id": 5},
+                                  {"request_id": "previous", "action": "delete"}])
 async def test_image_job_rejects_extra_or_invalid_arguments(monkeypatch, args):
     async def resume(*args):
         pytest.fail("Invalid image lookup must not reach Prospero")
@@ -284,3 +285,19 @@ async def test_harmonize_with_configured_backend_keeps_the_existing_service(back
     monkeypatch.setattr(image_tool, '_internal_headers', legacy_headers)
     _, result = await dispatch('edit_image', {'action': 'harmonize', 'image_id': 'source'})
     assert backend == [] and reached == ['alice'] and result['exit_code'] == 1
+
+
+@pytest.mark.asyncio
+async def test_image_job_cancel_uses_server_identity_and_never_generates(monkeypatch):
+    calls = []
+    async def cancel(request_id, session_id, owner):
+        calls.append((request_id, session_id, owner))
+        return {"output": "cancelled", "state": "cancelled", "exit_code": 0}
+    async def forbidden(*args, **kwargs):
+        pytest.fail("Cancelling must not check-and-collect or generate")
+    monkeypatch.setattr(prospero_images, "cancel_image", cancel)
+    monkeypatch.setattr(prospero_images, "resume_image", forbidden)
+    monkeypatch.setattr(prospero_images, "run_image", forbidden)
+    _, result = await dispatch("image_job", {"request_id": "previous-request", "action": "cancel"})
+    assert result["state"] == "cancelled"
+    assert calls == [("previous-request", "server-session", "alice")]

@@ -2217,6 +2217,19 @@ async def _startup_event():
         _supervisor.spawn(run_auto_backups(), name="auto-backups")
     except Exception as _e:
         logger.warning("Failed to start automatic backups: %s", _e)
+    # Studio image jobs the previous process submitted and never collected:
+    # poll each owned receipt once more and publish what finished. Nothing is
+    # resubmitted (src/prospero_images.py).
+    if "PYTEST_CURRENT_TEST" not in os.environ:
+        async def _reconcile_studio_images():
+            try:
+                from src.prospero_images import reconcile_pending_images
+                _summary = await reconcile_pending_images()
+                if _summary.get("checked"):
+                    logger.info("[image] reconciled studio image receipts: %s", _summary)
+            except Exception as e:  # noqa: BLE001 - never a startup failure
+                logger.warning(f"Studio image reconciliation skipped: {e}")
+        _supervisor.spawn(_reconcile_studio_images(), name="image-reconcile")
     # MCP servers can be slow or blocked by local tooling. Connect them after
     # the web server is accepting traffic instead of delaying the whole UI.
     async def _startup_mcp_connections():

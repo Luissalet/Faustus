@@ -1853,10 +1853,11 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "image_job",
-            "description": "Check or collect an existing Prospero image request after a timeout or restart. Use the request_id returned by generate_image or edit_image. This never starts another render.",
+            "description": "Check, collect or cancel an existing Prospero image request after a timeout or restart. Use the request_id returned by generate_image or edit_image. This never starts another render; action=cancel stops a queued or running render of that request only.",
             "parameters": {
                 "type": "object",
-                "properties": {"request_id": {"type": "string", "description": "Request ID returned by the earlier image operation"}},
+                "properties": {"request_id": {"type": "string", "description": "Request ID returned by the earlier image operation"},
+                               "action": {"type": "string", "enum": ["status", "cancel"], "description": "status (default) checks or collects; cancel stops this request's render"}},
                 "required": ["request_id"]
             }
         }
@@ -1865,7 +1866,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "edit_image",
-            "description": "Edit an owned gallery image. Use instruction with prompt for a natural-language edit through Prospero. Inpaint uses the selected Prospero studio or existing edit service, with an owned same-size mask; white redraws, black preserves. Upscale, rembg and harmonize retain their existing services.",
+            "description": "Edit an owned gallery image. Use instruction with prompt for a natural-language edit through Prospero. Inpaint uses the selected Prospero studio or existing edit service, with an owned same-size mask; white redraws, black preserves. Harmonize runs as a light img2img redraw in the selected Prospero studio (strength 0.4 by default). Upscale and rembg retain their existing services.",
             "parameters": {
                 "type": "object",
                 "properties": {

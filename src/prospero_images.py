@@ -570,4 +570,127 @@ async def resume_image(request_id: str, session_id: str | None, owner: str | Non
         message = str(exc) if isinstance(exc, AdapterError) else "Prospero image status could not be read"
         if row and row["job_id"] and row["state"] not in ("done", "failed", "cancelled"):
             return _unknown(request_id, message, job_id=row["job_id"])
-        return {"error": message, "state": "failed", "request_id": request_id}
+        # A job observed as cancelled reports that, not a generic failure.
+        return {"error": message, "state": "cancelled" if row and row["state"] == "cancelled" else "failed",
+                "request_id": request_id}
+
+
+async def cancel_image(request_id: str, session_id: str | None, owner: str | None) -> dict:
+    """Cancel one owned, submitted image job; never creates or repeats work.
+
+    Queued work is cancelled at once; a running render is flagged and stops at
+    the studio's next checkpoint. A job that already finished is collected
+    instead, so the produced image is never lost to a late cancel.
+    """
+    key = None
+    try:
+        if not isinstance(request_id, str) or not request_id or len(request_id) > 256:
+            raise AdapterError("Invalid image request ID")
+        if (owner is not None and not isinstance(owner, str)) or (session_id is not None and not isinstance(session_id, str)):
+            raise AdapterError("Invalid image owner or session")
+        from src.owner_identity import effective_storage_owner
+        owner = effective_storage_owner(owner)
+        _authorize(owner, session_id)
+        connector_id, origin = _connection(owner)
+        key = _digest(owner or "", session_id or "", request_id)
+        row = _read(key)
+        if not row or row["owner"] != (owner or "") or row["session_id"] != (session_id or ""):
+            raise AdapterError("No image request exists for this account and session")
+        if row["connector_id"] != connector_id or row["origin"] != origin:
+            raise AdapterError("The image request is bound to a different Prospero connection")
+        if row["state"] == "done":
+            return {**_result(row, row["prompt"] or ""), "cancel": "already_done"}
+        if row["state"] in ("failed", "cancelled"):
+            return {"output": "Image request already " + row["state"], "state": row["state"],
+                    "request_id": request_id, "exit_code": 0}
+        if not row["job_id"]:
+            return _unknown(request_id, "Prospero submission outcome is unresolved; there is no job to cancel")
+        async with httpx.AsyncClient(base_url=origin, follow_redirects=False,
+                timeout=httpx.Timeout(30, read=60), trust_env=False) as client:
+            health = await _json(client, "GET", "/api/health")
+            if health.get("service") != "prosperos-hoard":
+                raise AdapterError("The connection did not identify itself as Prospero")
+            _authorize(owner, session_id)
+            job = await _json(client, "POST", f"/api/jobs/{_identifier(row['job_id'])}/cancel")
+            if job.get("id") != row["job_id"] or job.get("project_id") != row["project_id"]:
+                raise AdapterError("Prospero job identity does not match this image request")
+            state = job.get("state")
+            if state == "cancelled":
+                _update(key, state="cancelled")
+                return {"output": "Image request cancelled; no image was produced.", "state": "cancelled",
+                        "request_id": request_id, "prospero_job_id": row["job_id"], "exit_code": 0}
+            if state in ("done", "failed"):
+                # Finished before the cancel landed: collect or record it.
+                return await _poll(client, key, row["prompt"] or "", poll_timeout=0)
+            if state == "running":
+                return {"output": "Cancellation requested; the running render stops at its next checkpoint. "
+                                  "Check it with image_job.", "state": "cancel_requested",
+                        "request_id": request_id, "prospero_job_id": row["job_id"], "exit_code": 0}
+            raise AdapterError("Prospero returned an unknown job state")
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        try:
+            row = _read(key) if key else None
+        except Exception:
+            row = None
+        message = str(exc) if isinstance(exc, AdapterError) else "Prospero image cancellation failed"
+        return {"error": message, "state": row["state"] if row else "failed", "request_id": request_id,
+                **({"prospero_job_id": row["job_id"]} if row and row["job_id"] else {})}
+
+
+def _waiting_receipts(limit):
+    if not (Path(DATA_DIR) / "prospero_images.db").is_file():
+        return []
+    conn = _db()
+    try:
+        return [dict(row) for row in conn.execute(
+            "SELECT * FROM requests WHERE state='waiting' AND job_id IS NOT NULL AND prompt IS NOT NULL"
+            " ORDER BY rowid LIMIT ?", (int(limit),))]
+    finally:
+        conn.close()
+
+
+async def reconcile_pending_images(*, poll_timeout: float | None = None, limit: int = 50) -> dict:
+    """Collect submitted jobs a previous process left waiting (run at startup).
+
+    Only receipts with a recorded studio job are polled, under their own owner,
+    session and connection; nothing is created, imported or resubmitted, and a
+    receipt whose connection changed is left for its owner to inspect.
+    """
+    summary = {"checked": 0, "done": 0, "pending": 0, "closed": 0, "skipped": 0}
+    try:
+        rows = _waiting_receipts(limit)
+    except Exception:
+        return {**summary, "error": "image receipts could not be read"}
+    for row in rows:
+        summary["checked"] += 1
+        try:
+            owner = row["owner"] or None
+            _authorize(owner, row["session_id"] or None)
+            connector_id, origin = _connection(owner)
+            if row["connector_id"] != connector_id or row["origin"] != origin:
+                summary["skipped"] += 1
+                continue
+            async with httpx.AsyncClient(base_url=origin, follow_redirects=False,
+                    timeout=httpx.Timeout(30, read=60), trust_env=False) as client:
+                health = await _json(client, "GET", "/api/health")
+                if health.get("service") != "prosperos-hoard":
+                    raise AdapterError("The connection did not identify itself as Prospero")
+                result = await _poll(client, row["key"], row["prompt"],
+                    poll_timeout=POLL_TIMEOUT_S if poll_timeout is None else poll_timeout)
+            if result.get("image_url"):
+                summary["done"] += 1
+            elif result.get("state") == "unknown":
+                summary["closed"] += 1
+            else:
+                summary["pending"] += 1
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            try:
+                state = (_read(row["key"]) or {}).get("state")
+            except Exception:
+                state = None
+            summary["closed" if state in ("failed", "cancelled") else "skipped"] += 1
+    return summary

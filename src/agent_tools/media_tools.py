@@ -3,15 +3,21 @@ import json
 
 
 class ImageJobTool:
-    """Check an owned image request without submitting a new render."""
+    """Check or cancel an owned image request without submitting a new render."""
 
     async def execute(self, content: str, ctx: dict) -> dict:
         try:
             args = json.loads(content)
-            if not isinstance(args, dict) or set(args) != {'request_id'} or not isinstance(args['request_id'], str):
-                raise ValueError('Expected only an image request_id')
+            if (not isinstance(args, dict) or 'request_id' not in args or set(args) - {'request_id', 'action'}
+                    or not isinstance(args['request_id'], str)
+                    or args.get('action', 'status') not in ('status', 'cancel')):
+                raise ValueError('Expected an image request_id and an optional status/cancel action')
         except (ValueError, TypeError):
-            return {'error': 'image_job requires {"request_id":"the previous image request ID"}', 'exit_code': 1}
+            return {'error': 'image_job requires {"request_id":"the previous image request ID",'
+                             ' "action":"status"|"cancel"}', 'exit_code': 1}
+        if args.get('action') == 'cancel':
+            from src.prospero_images import cancel_image
+            return await cancel_image(args['request_id'], ctx.get('session_id'), ctx.get('owner'))
         from src.prospero_images import resume_image
         return await resume_image(args['request_id'], ctx.get('session_id'), ctx.get('owner'))
 
