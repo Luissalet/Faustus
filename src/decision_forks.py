@@ -275,15 +275,10 @@ _ERROR_SKIP_TOOLS = frozenset({"ask_user", "update_plan", "todowrite", "lookup_t
 
 def is_failed_result(result: Any) -> bool:
     """True for a tool result that is a genuine failure (not a policy block,
-    not an approval card, not a question to the user)."""
-    if not isinstance(result, dict):
-        return False
-    if result.get("blocked") or result.get("approval_required") or result.get("ask_user"):
-        return False
-    if result.get("error"):
-        return True
-    code = result.get("exit_code")
-    return isinstance(code, int) and not isinstance(code, bool) and code != 0
+    not an approval card, not a question to the user); the same test the loop
+    breaker's failed-path counter uses."""
+    from src.loop_breaker import is_failed_result as _failed
+    return _failed(result)
 
 
 def failure_text(result: Dict[str, Any], limit: int = 500) -> str:

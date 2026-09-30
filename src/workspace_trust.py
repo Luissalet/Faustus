@@ -234,12 +234,17 @@ def _digest_from_parts(parts: List[Dict[str, Any]]) -> str:
     for part in parts:
         if with_rules:
             rule = part.get("_rule")
-            metadata = json.dumps([part.get("kind", "instruction"),
-                                   part.get("error", ""),
-                                   part.get("origin", ""),
-                                   getattr(rule, "distance", None),
-                                   getattr(rule, "id", None),
-                                   part.get("rule_root", "")], ensure_ascii=False).encode("utf-8")
+            fields = [part.get("kind", "instruction"),
+                      part.get("error", ""),
+                      part.get("origin", ""),
+                      getattr(rule, "distance", None),
+                      getattr(rule, "id", None),
+                      part.get("rule_root", "")]
+            if getattr(rule, "paths", ()):
+                # Which files a rule is scoped to is part of what was approved;
+                # appended only when present so every existing digest is unchanged.
+                fields.append(list(rule.paths))
+            metadata = json.dumps(fields, ensure_ascii=False).encode("utf-8")
             h.update(str(len(metadata)).encode("ascii") + b"\x00")
             h.update(metadata)
         rel = str(part.get("rel") or "").encode("utf-8", "replace")

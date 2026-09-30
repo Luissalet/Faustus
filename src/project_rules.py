@@ -93,10 +93,18 @@ class ProjectRule:
     text: str = ""
     bytes: int = 0
     error: str = ""
+    #: Globs (relative to `root`) that scope this rule to files it is about. A
+    #: rule without any is injected at the start of every turn, as always; one
+    #: with them is delivered once per conversation, appended to the result of
+    #: the first read/edit/write of a matching file (see `path_rule_note`).
+    paths: Tuple[str, ...] = ()
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"id": self.id, "origin": self.origin, "root": self.root, "path": self.path,
-                "distance": self.distance, "bytes": self.bytes, "error": self.error}
+        out = {"id": self.id, "origin": self.origin, "root": self.root, "path": self.path,
+               "distance": self.distance, "bytes": self.bytes, "error": self.error}
+        if self.paths:
+            out["paths"] = list(self.paths)
+        return out
 
 
 def _rule_files(folder: str, ext: str) -> List[str]:
@@ -112,7 +120,7 @@ def _strip_mdc_frontmatter(text: str) -> str:
     alwaysApply). We only want the body, so parse and discard it with the
     same generic frontmatter parser the rest of this app's Markdown formats
     use — `.mdc` is `---\\n...\\n---` just like a SKILL.md, it just declares
-    different keys, none of which this module reads."""
+    different keys. Its `globs` / `alwaysApply` are read by `_rule_paths`."""
     try:
         _fm, body = parse_frontmatter(text)
         return body
@@ -120,21 +128,66 @@ def _strip_mdc_frontmatter(text: str) -> str:
         return text
 
 
-def _read_rule_file(path: str, *, is_mdc: bool) -> Tuple[str, int, str]:
+#: A rule can name at most this many globs, each at most this long.
+MAX_RULE_PATHS = 20
+MAX_GLOB_CHARS = 200
+
+
+def _glob_list(raw: Any) -> Tuple[str, ...]:
+    """Globs from a frontmatter value: a list, or one string that may hold
+    several separated by commas. Quotes and blanks are dropped; bounded."""
+    if raw is None or raw is False:
+        return ()
+    items = raw if isinstance(raw, (list, tuple)) else str(raw).split(",")
+    out: List[str] = []
+    for item in items:
+        g = str(item).strip().strip("'\"").strip().replace("\\", "/")
+        if g and len(g) <= MAX_GLOB_CHARS and g not in out:
+            out.append(g)
+        if len(out) >= MAX_RULE_PATHS:
+            break
+    return tuple(out)
+
+
+def _rule_paths(fm: Dict[str, Any], *, is_mdc: bool) -> Tuple[str, ...]:
+    """The globs a rule is scoped to: `paths:` in its frontmatter (either
+    dialect), or `globs:` in a `.mdc` file unless it says `alwaysApply: true`.
+    Empty = the rule applies on every turn."""
+    if not isinstance(fm, dict):
+        return ()
+    if is_mdc and fm.get("alwaysApply") is True:
+        return ()
+    paths = _glob_list(fm.get("paths"))
+    if not paths and is_mdc:
+        paths = _glob_list(fm.get("globs"))
+    return paths
+
+
+def _read_rule_file(path: str, *, is_mdc: bool) -> Tuple[str, int, str, Tuple[str, ...]]:
     try:
         size = os.path.getsize(path)
     except OSError as exc:
-        return "", 0, f"unreadable: {exc}"
+        return "", 0, f"unreadable: {exc}", ()
     if size > MAX_RULE_BYTES:
-        return "", size, f"larger than {MAX_RULE_BYTES} bytes; not loaded"
+        return "", size, f"larger than {MAX_RULE_BYTES} bytes; not loaded", ()
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as fh:
             text = fh.read(MAX_RULE_BYTES + 1)
     except OSError as exc:
-        return "", size, f"unreadable: {exc}"
-    if is_mdc:
-        text = _strip_mdc_frontmatter(text)
-    return text.strip(), size, ""
+        return "", size, f"unreadable: {exc}", ()
+    paths: Tuple[str, ...] = ()
+    if text.startswith("---"):
+        try:
+            fm, body = parse_frontmatter(text)
+        except Exception:  # noqa: BLE001 - a malformed file keeps its raw text
+            fm, body = {}, text
+        paths = _rule_paths(fm, is_mdc=is_mdc)
+        # `.mdc` always loses its frontmatter; a `.md` rule only when it
+        # declared `paths` (frontmatter is then configuration, not content) so
+        # every existing rule keeps its exact text.
+        if is_mdc or paths:
+            text = body
+    return text.strip(), size, "", paths
 
 
 def discover_project_rules(workspace: str, *, max_files: int = MAX_RULE_FILES) -> List[ProjectRule]:
@@ -165,9 +218,12 @@ def discover_project_rules(workspace: str, *, max_files: int = MAX_RULE_FILES) -
                 if os.path.islink(path) or not _contained(path, root):
                     continue
                 rel_id = os.path.splitext(name)[0]
-                text, size, error = _read_rule_file(path, is_mdc=is_mdc)
+                read = _read_rule_file(path, is_mdc=is_mdc)
+                text, size, error = read[:3]
+                paths = read[3] if len(read) > 3 else ()
                 out.append(ProjectRule(id=rel_id, origin=origin, root=root, path=path,
-                                       distance=distance, text=text, bytes=size, error=error))
+                                       distance=distance, text=text, bytes=size, error=error,
+                                       paths=paths))
     return out
 
 
@@ -185,7 +241,8 @@ def _project_rules_signature(workspace: str, *,
     """
     rules = _rules if _rules is not None else discover_project_rules(workspace)
     return tuple((r.path, r.root, r.origin, r.distance, r.id, r.bytes, r.error,
-                  hashlib.sha256(r.text.encode("utf-8")).hexdigest()) for r in rules)
+                  hashlib.sha256(r.text.encode("utf-8")).hexdigest(),
+                  *((r.paths,) if r.paths else ())) for r in rules)
 
 
 # ---------------------------------------------------------------------------
@@ -392,11 +449,17 @@ def block(workspace: str, *, trusted: bool = True, languages: Optional[Sequence[
     used = 0
     more: List[str] = []
 
+    scoped: List[str] = []
     if trusted:
         for r in captured_rules:
             if r.error or not r.text:
                 continue
             rel = os.path.relpath(r.path, r.root).replace(os.sep, "/")
+            if r.paths:
+                # Path-scoped: delivered with the result of the first read or
+                # edit of a matching file, not on every turn (`path_rule_note`).
+                scoped.append(f"{rel} ({', '.join(r.paths[:3])}{', …' if len(r.paths) > 3 else ''})")
+                continue
             piece = f"### Project rule: {rel}\n\n{r.text}"
             cost = _estimate_tokens(piece)
             if used + cost > budget:
@@ -422,6 +485,9 @@ def block(workspace: str, *, trusted: bool = True, languages: Optional[Sequence[
             parts.append(piece)
             used += cost
 
+    if scoped:
+        parts.append("Path-scoped rules (their text appears the first time you read or edit a "
+                     "matching file): " + "; ".join(scoped[:12]) + (", …" if len(scoped) > 12 else "") + ".")
     if not parts and not more:
         text = ""
     else:
@@ -435,6 +501,166 @@ def block(workspace: str, *, trusted: bool = True, languages: Optional[Sequence[
     with _BLOCK_LOCK:
         _BLOCK_CACHE[key] = (sig, text)
     return text
+
+
+# ---------------------------------------------------------------------------
+# Path-scoped rules: delivered with the first matching file touch
+# ---------------------------------------------------------------------------
+
+#: The tools whose target file arms a path-scoped rule.
+PATH_RULE_TOOLS = frozenset({"read_file", "write_file", "edit_file", "apply_patch"})
+#: Most text one tool result gets from path-scoped rules (tokens); the rest is
+#: named, not dropped silently.
+PATH_RULE_BUDGET_TOKENS = 1200
+_CONVERSATION_LIMIT = 128
+
+_GLOB_CACHE: Dict[str, Any] = {}
+
+
+def glob_regex(pattern: str):
+    """A compiled regex for a gitignore-ish glob: `*` and `?` stay inside one
+    path segment, `**` crosses segments (`**/` also matches none), `[...]` is a
+    class. A pattern with no `/` matches at any depth."""
+    import re
+    cached = _GLOB_CACHE.get(pattern)
+    if cached is not None:
+        return cached
+    pat = pattern.strip().replace("\\", "/")
+    if pat.startswith("./"):
+        pat = pat[2:]
+    if pat.endswith("/"):
+        pat += "**"          # a folder: everything under it
+    anchored = "/" in pat.strip("/")
+    pat = pat.lstrip("/")
+    out: List[str] = []
+    i = 0
+    while i < len(pat):
+        c = pat[i]
+        if c == "*":
+            if pat[i:i + 3] == "**/":
+                out.append("(?:.*/)?")
+                i += 3
+                continue
+            if pat[i:i + 2] == "**":
+                out.append(".*")
+                i += 2
+                continue
+            out.append("[^/]*")
+        elif c == "?":
+            out.append("[^/]")
+        elif c == "[":
+            j = pat.find("]", i + 2)
+            if j < 0:
+                out.append(re.escape(c))
+            else:
+                cls = pat[i + 1:j]
+                if cls.startswith("!"):
+                    cls = "^" + cls[1:]
+                out.append("[" + cls.replace("\\", "\\\\") + "]")
+                i = j
+        else:
+            out.append(re.escape(c))
+        i += 1
+    body = "".join(out)
+    rx = re.compile(("^" if anchored else "^(?:.*/)?") + body + "$")
+    if len(_GLOB_CACHE) < 512:
+        _GLOB_CACHE[pattern] = rx
+    return rx
+
+
+def rule_matches(rule: ProjectRule, path: str) -> bool:
+    """Whether `path` (absolute, or relative to the rule's root) is one the
+    rule is scoped to. A path outside the rule's root never matches."""
+    if not rule.paths or not path:
+        return False
+    try:
+        p = str(path).replace("\\", "/")
+        if os.path.isabs(path) or (len(p) > 1 and p[1] == ":"):
+            rel = os.path.relpath(os.path.realpath(path), os.path.realpath(rule.root)).replace(os.sep, "/")
+        else:
+            rel = os.path.normpath(p).replace(os.sep, "/")
+    except (ValueError, OSError):
+        return False
+    if rel.startswith("../") or rel == "..":
+        return False
+    for pattern in rule.paths:
+        try:
+            if glob_regex(pattern).match(rel):
+                return True
+        except Exception:  # noqa: BLE001 - a bad glob matches nothing
+            continue
+    return False
+
+
+class _Delivered:
+    """Which path-scoped rules each conversation has already been given."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._by_conversation: "Dict[str, set]" = {}
+
+    def claim(self, conversation: str, key: str) -> bool:
+        """True exactly once per (conversation, key)."""
+        with self._lock:
+            seen = self._by_conversation.get(conversation)
+            if seen is None:
+                if len(self._by_conversation) >= _CONVERSATION_LIMIT:
+                    self._by_conversation.pop(next(iter(self._by_conversation)))
+                seen = self._by_conversation[conversation] = set()
+            if key in seen:
+                return False
+            seen.add(key)
+            return True
+
+    def reset(self, conversation: Optional[str] = None) -> None:
+        with self._lock:
+            if conversation is None:
+                self._by_conversation.clear()
+            else:
+                self._by_conversation.pop(conversation, None)
+
+
+DELIVERED = _Delivered()
+
+
+def path_rule_note(conversation: str, rules: Sequence[ProjectRule], paths: Sequence[str], *,
+                   budget_tokens: Optional[int] = None) -> str:
+    """The text to append to the result of a tool that touched `paths`: every
+    not-yet-delivered, readable, path-scoped rule matching one of them, once
+    per `conversation`. '' when there is nothing new. Never raises."""
+    try:
+        if not conversation or not paths or not bool(_setting("project_rules_enabled", True)):
+            return ""
+        budget = int(budget_tokens if budget_tokens is not None
+                     else _setting("project_rules_budget_tokens", _DEFAULT_BUDGET_TOKENS))
+        budget = max(200, min(budget, 20_000))
+        parts: List[str] = []
+        over: List[str] = []
+        used = 0
+        for r in rules:
+            if not r.paths or r.error or not r.text or not any(rule_matches(r, p) for p in paths):
+                continue
+            key = f"{r.path}:{hashlib.sha256(r.text.encode('utf-8')).hexdigest()[:16]}"
+            if not DELIVERED.claim(conversation, key):
+                continue
+            rel = os.path.relpath(r.path, r.root).replace(os.sep, "/")
+            piece = f"### Project rule: {rel}\n\n{r.text}"
+            cost = _estimate_tokens(piece)
+            if used + cost > budget and parts:
+                over.append(rel)
+                continue
+            parts.append(piece)
+            used += cost
+        if not parts and not over:
+            return ""
+        text = ("[Project rule for the file(s) you just touched -- the project's own standing "
+                "instructions, shown once per conversation]\n\n" + "\n\n".join(parts))
+        if over:
+            text += "\n\nMore rules for these files (not shown, over budget): " + ", ".join(over[:8]) + "."
+        return text
+    except Exception:  # noqa: BLE001 - a rule note never costs a tool result
+        logger.debug("project_rules: path rule note failed", exc_info=True)
+        return ""
 
 
 # ---------------------------------------------------------------------------
@@ -534,6 +760,7 @@ __all__ = [
     "LIBRARY_DIR", "RULE_DIR_NAMES", "MAX_RULE_BYTES", "MAX_RULE_FILES",
     "discover_project_rules", "project_rules", "library", "languages_for",
     "untrusted_note", "block", "install", "uninstall",
+    "PATH_RULE_TOOLS", "DELIVERED", "glob_regex", "path_rule_note", "rule_matches",
 ]
 
 

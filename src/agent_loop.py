@@ -6227,6 +6227,9 @@ def _reasoning_ends_with_tool_call(reasoning: str) -> bool:
 
 
 from src import self_declared_risk as _self_risk
+from src import project_rules as _project_rules_mod
+
+
 def _resolve_tool_blocks(
     round_response: str,
     native_tool_calls: list,
@@ -10222,6 +10225,12 @@ async def _stream_agent_loop_body(
     from src.loop_breaker import LoopPolicy as _LoopPolicy, observation_for_tool as _loop_observation, STOP_REASON as _LOOP_STOP_REASON
     _loop_policy = _LoopPolicy.from_settings(get_setting)
     _loop_policy_stop = False
+    # Three more ways a turn gets stuck (monologue, repeated "request too
+    # long" errors, a call that keeps failing); counters in src/loop_breaker.py.
+    from src.loop_breaker import CONTEXT_ERROR_STOP_REASON as _CONTEXT_STOP_REASON, MONOLOGUE_STOP_REASON as _MONOLOGUE_STOP_REASON, StuckWatch as _StuckWatch, is_context_length_error as _is_ctx_error, is_failed_result as _is_failed_call
+    _stuck = _StuckWatch.from_settings(get_setting)
+    _stuck_events: list = []   # what the watch did this turn, for the trace
+    _monologue_pending = False
     # The advisor (src/advisor.py): a second model that reads the whole
     # session at three moments decided HERE, in code -- the first round that
     # plans or writes, the loop breaker's nudge step, and the final answer of
@@ -10262,6 +10271,36 @@ async def _stream_agent_loop_body(
         _ledger.notes.append(f"advisor:{trigger}@{round_num}" + ("" if _adv_result.ok else ":failed"))
         _adv_note = _advisor.advice_note(_adv_result.text, trigger) if _adv_result.text else None
         return _adv_note, _adv_event
+    _path_rule_ctx: Dict[str, Any] = {"loaded": False, "rules": (), "trusted": True}
+
+    def _path_rules_note(block_) -> str:
+        """Rule text to append to the result of a read/edit/write of a file a
+        path-scoped project rule names (src/project_rules.py): once per
+        conversation, only for an approved folder, never raises."""
+        try:
+            if not workspace or block_.tool_type not in _project_rules_mod.PATH_RULE_TOOLS:
+                return ""
+            if not _path_rule_ctx["loaded"]:
+                _path_rule_ctx["loaded"] = True
+                from src import workspace_trust as _wt
+                _snap = _wt.instructions_snapshot(workspace)
+                _path_rule_ctx["trusted"] = bool(_snap.trusted)
+                _path_rule_ctx["rules"] = tuple(
+                    r for r in (_project_rules_mod.discover_project_rules(workspace)
+                                if _snap.legacy_read else _snap.project_rules)
+                    if getattr(r, "paths", ()))
+            if not _path_rule_ctx["trusted"] or not _path_rule_ctx["rules"]:
+                return ""
+            _paths = [
+                pth if os.path.isabs(pth) else os.path.join(workspace, pth)
+                for pth in _harness._paths_from_args(block_.tool_type, block_.content or "")
+            ]
+            return _project_rules_mod.path_rule_note(
+                str(session_id or (_hopts or {}).get("run_id") or ""),
+                _path_rule_ctx["rules"], _paths)
+        except Exception:  # noqa: BLE001 - a rule note never costs a tool result
+            logger.debug("[project_rules] path rule note failed", exc_info=True)
+            return ""
     _loop_recovery_blocked_tools: Set[str] = set()
     _loop_recovery_temporarily_disabled: Set[str] = set()
     # Supervisor: how many times we've nudged the model after it announced
@@ -11442,6 +11481,23 @@ async def _stream_agent_loop_body(
                     "message": "Detenido por el usuario.",
                 }) + "\n\n"
                 break
+        if _monologue_pending:
+            # StuckWatch: this many assistant rounds in a row talked without
+            # calling a tool and the turn is still open (something kept it
+            # going). Stop with what was said rather than nudge again.
+            _monologue_pending = False
+            _ledger.stop_reason = _MONOLOGUE_STOP_REASON
+            _ledger.notes.append(f"monologue_stop@{round_num}")
+            _stuck_events.append({"event": "monologue_stop", "round": round_num,
+                                  "rounds": _stuck.monologue_streak})
+            logger.info("[loop-breaker] stopping turn: %d rounds of talk without a tool call",
+                        _stuck.monologue_streak)
+            yield "data: " + json.dumps({
+                "type": "loop_breaker_stop", "round": round_num, "trigger": "monologue",
+                "streak": _stuck.monologue_streak,
+                "reason": f"{_stuck.monologue_streak} assistant rounds in a row without a tool call",
+            }) + "\n\n"
+            break
         # BUG-STOP-01/item 4: wall-clock ceiling, checked right after the
         # cancellation check above (a Stop always takes priority over the
         # ceiling's own end-of-turn question) and before this round spends
@@ -12288,6 +12344,7 @@ async def _stream_agent_loop_body(
         _degenerate_output_hit = False
         _degenerate_output_reason = ""
         _engine_lost_hit = False
+        _context_overflow_hit = False
         _image_input_refused_now = False
         _round_actual_model = model
         _round_actual_endpoint_id = actual_endpoint_id
@@ -12521,6 +12578,14 @@ async def _stream_agent_loop_body(
                 ):
                     _image_input_refused_now = True
                     break
+                # "The request is too long for the model": the first one
+                # compacts harder and redoes the round; a second in a row
+                # means that did not help, so the turn stops with a clear
+                # message instead of asking the provider the same thing again.
+                _ctx_action = _stuck.observe_provider_error(error_data) if _is_ctx_error(error_data) else "none"
+                if _ctx_action == "compact" and round_num < max_rounds and not _force_answer:
+                    _context_overflow_hit = True
+                    break
                 # A clean empty completion is not a transport failure. The
                 # harness already nudges silent give-ups; treating this 502 as
                 # fatal is what killed Silhouettes turns after a tool round
@@ -12659,6 +12724,25 @@ async def _stream_agent_loop_body(
                         "message": "The model looped; try rephrasing or another model",
                         "status": terminal_status,
                     }
+                elif _is_ctx_error(error_data):
+                    terminal_error = {
+                        "message": (
+                            "The request is longer than the model's context window, even after "
+                            "compacting the conversation. Start a new chat, shorten the input, "
+                            "or use a model with a larger window."
+                        ),
+                        "status": terminal_status,
+                    }
+                    _ledger.stop_reason = _CONTEXT_STOP_REASON
+                    # The person reads the raw error event: say it in plain
+                    # words and keep what the provider said next to it.
+                    chunk = "event: error\ndata: " + json.dumps({
+                        **(error_data if isinstance(error_data, dict) else {}),
+                        "error": terminal_error["message"],
+                        "error_class": _CONTEXT_STOP_REASON,
+                        "provider_error": str((error_data or {}).get("error") or "")[:500],
+                        "retryable": False,
+                    }) + "\n\n"
                 else:
                     terminal_error = {
                         "message": (
@@ -13143,6 +13227,43 @@ async def _stream_agent_loop_body(
             yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
             continue
 
+        if _context_overflow_hit:
+            # The provider refused the request as too long. Drop this round's
+            # partial output, compact harder than the usual pressure check
+            # (whatever our estimate said, the real window is smaller) and
+            # redo the round once; a second refusal in a row stops the turn.
+            if round_response and full_response.endswith(round_response):
+                full_response = full_response[:-len(round_response)]
+            _ledger.notes.append(f"context_overflow_compact@{round_num}")
+            _stuck_events.append({"event": "context_overflow_compact", "round": round_num})
+            try:
+                messages, _ctx_report = await apply_midturn_pressure(
+                    messages,
+                    endpoint_url=endpoint_url,
+                    model=model,
+                    session_id=session_id or "",
+                    owner=owner,
+                    headers=headers,
+                    round_num=round_num,
+                    run_id=str(_hopts.get("run_id") or ""),
+                    durable_overflow=not bool(_hopts.get("incognito") or _hopts.get("no_memory")),
+                    force=True,
+                )
+                if _ctx_report.get("changed"):
+                    yield "data: " + json.dumps({
+                        "type": "context_compacted", "round": round_num, "data": _ctx_report,
+                    }) + "\n\n"
+            except Exception as _ctx_err:  # noqa: BLE001 - the retry then fails the same way and stops
+                logger.warning("[agent] forced compaction after a context-length error failed: %s", _ctx_err)
+            _rounds_budget += 1  # the retry must not eat the task's step budget
+            yield "data: " + json.dumps({
+                "type": "harness_check", "status": "auto_continue",
+                "reason": "context_overflow_compact", "round": round_num,
+            }) + "\n\n"
+            yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
+            yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+            continue
+
         if _engine_lost_hit:
             # The engine was already restarted and confirmed healthy (above,
             # before the break). Discard whatever partial text this round
@@ -13517,6 +13638,23 @@ async def _stream_agent_loop_body(
                 "reasoning_chars": len(round_reasoning),
             }) + "\n\n"
         )
+
+        # A round the provider accepted ends any streak of "too long" errors;
+        # a streak of rounds that only talked (while the loop held the turn
+        # open) ends the turn instead of a fourth nudge.
+        _stuck.observe_provider_ok()
+        try:
+            # A round cut off at the token limit and continued is one long answer,
+            # not a monologue.
+            _mono_text = bool(_strip_think_blocks(cleaned_round).strip()) and _round_finish_reason != "length"
+        except Exception:  # noqa: BLE001
+            _mono_text = False
+        if (not _force_answer and _stuck.observe_round(
+                tool_calls=len(tool_blocks or []), has_text=_mono_text) == "stop"):
+            # Decided at the top of the NEXT round, so the turn's own bounded
+            # mechanisms (the intent supervisor's exhaustion, the harness's
+            # rejections) get to end it first with their own, clearer event.
+            _monologue_pending = True
 
         if not tool_blocks and _harness_enabled and _force_answer and not plan_mode:
             # Forced final answer (loop-breaker / memory clamp): the model has
@@ -14211,6 +14349,11 @@ async def _stream_agent_loop_body(
                 if not _check["ok"]:
                     if _ledger.rejections < _HARNESS_MAX_REJECTIONS:
                         _ledger.rejections += 1
+                        # A rejected answer is the harness's own bounded
+                        # correction loop (capped above, and it ends itself
+                        # with its verdict): not a monologue.
+                        _stuck.monologue_streak = 0
+                        _monologue_pending = False
                         if "intent_without_action" in _check["reasons"] or "asked_instead_of_continuing" in _check["reasons"]:
                             _ledger.intent_nudges += 1
                             # Share the cap with the legacy intent supervisor
@@ -15587,6 +15730,24 @@ async def _stream_agent_loop_body(
                     _arg_policy_decision.rule_id, block.tool_type,
                     _arg_policy_decision.arg, _arg_policy_decision.op,
                 )
+            elif i not in _prefetched and _stuck.path_closed(block.tool_type, block.content or ""):
+                # The same tool with the same arguments already failed
+                # `failed_path_limit` times: that path is closed. Refuse
+                # without running and say what to change instead.
+                desc = f"{block.tool_type}: BLOCKED"
+                result = {
+                    "error": (
+                        f"This exact {block.tool_type} call has already failed "
+                        f"{_stuck.failures_for(block.tool_type, block.content or '')} times in this turn, "
+                        "so it was not run again. Change the arguments or the approach, use another "
+                        "tool, or tell the user what is blocking you."
+                    ),
+                    "exit_code": 1,
+                    "blocked": True,
+                    "policy": "repeated_failure",
+                }
+                _stuck_events.append({"event": "failed_path_refused", "round": round_num, "tool": block.tool_type})
+                logger.info("[loop-breaker] closed path refused: %s", block.tool_type)
             elif (i not in _prefetched and (_repeated_media := _repeated_media_result(
                     block.tool_type, block.content or "", tool_events, round_num)) is not None):
                 desc = f"{block.tool_type}: ALREADY DONE"
@@ -16628,6 +16789,19 @@ async def _stream_agent_loop_body(
                     )
             except Exception:  # noqa: BLE001
                 _loop_action = "none"
+            try:
+                if isinstance(result, dict) and not result.get("blocked") and _stuck.observe_call(
+                        block.tool_type, block.content or "", _is_failed_call(result)):
+                    _stuck_events.append({"event": "failed_path_closed", "round": round_num, "tool": block.tool_type})
+                    messages.append({"role": "user", "_harness_note": True, "content": _lang_note(
+                        "[Runtime loop recovery — not a new user request] "
+                        f"This exact {block.tool_type} call has now failed {_stuck.failed_path_limit} times. "
+                        "That path is closed: the same call will be refused. Change the arguments or "
+                        "the approach, use another tool, or tell the user what is blocking you.")})
+                    logger.info("[loop-breaker] path closed after %d failures: %s",
+                                _stuck.failed_path_limit, block.tool_type)
+            except Exception:  # noqa: BLE001
+                logger.debug("[loop-breaker] failed-path counter failed", exc_info=True)
             if _fork_error_on:
                 try:
                     if _fork_pending is not None:
@@ -16788,6 +16962,16 @@ async def _stream_agent_loop_body(
             if isinstance(_model_result, dict):
                 _model_result.pop("_shell_tool", None)
                 _model_result.pop("_shell_command", None)
+            if (isinstance(result, dict) and block.tool_type in _project_rules_mod.PATH_RULE_TOOLS
+                    and not _is_failed_call(result) and not result.get("blocked")
+                    and not result.get("approval_required")):
+                # Project rules scoped to this file's path (`paths:` in the
+                # rule's frontmatter): appended to what the MODEL reads, once
+                # per conversation, instead of riding every turn's prompt.
+                _path_note = _path_rules_note(block)
+                if _path_note:
+                    formatted = f"{formatted}\n\n{_path_note}"
+                    _ledger.notes.append(f"path_rule@{round_num}:{block.tool_type}")
             tool_results.append(formatted)
             tool_result_texts.append(formatted)
             _record = {
@@ -17778,6 +17962,10 @@ async def _stream_agent_loop_body(
         # message's metadata with the rest of the trace.
         metrics["decision_receipts"] = list(_fork_trace.receipts)[:60]
     _fork_restore()
+    if _stuck_events:
+        # What the stuck watch did this turn (monologue stop, forced
+        # compaction after a context-length error, closed failing paths).
+        metrics["stuck_watch"] = {**_stuck.snapshot(), "events": _stuck_events[:40]}
     if _risk_records:
         # Declared vs policy risk per state-changing call, so disagreements
         # can be counted from history too (GET /api/agent/risk/stats is the

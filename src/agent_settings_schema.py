@@ -634,6 +634,20 @@ GROUPS: list[dict[str, Any]] = [
             _int("agent_loop_breaker_cycle_min_repeats_long", "Loop breaker: 3-4 step cycle repeats",
                  "Full repetitions of a 3- or 4-call cycle before it is nudged.",
                  2, 50),
+            # StuckWatch (src/loop_breaker.py): monologue, context-length
+            # errors and a failing path; 0 switches a detector off.
+            _int("agent_loop_breaker_monologue_rounds", "Loop breaker: rounds of talk without a tool",
+                 "Assistant rounds in a row that said something, called no tool and were kept "
+                 "going by the loop; at this many the turn stops with what was said. 0 = off.",
+                 0, 20),
+            _int("agent_loop_breaker_context_error_limit", "Loop breaker: consecutive context-length errors",
+                 "The first 'request too long' error compacts harder and redoes the round; this "
+                 "many in a row stops the turn with a clear message. 0 = off.",
+                 0, 10),
+            _int("agent_loop_breaker_failed_path_limit", "Loop breaker: failures of the same call",
+                 "The same tool with the same arguments returning an error this many times closes "
+                 "that path: the next identical attempt is refused without running. 0 = off.",
+                 0, 20),
             # The advisor (src/advisor.py). Its three triggers are decided in
             # code: the first round that makes a plan or writes, the loop
             # breaker's nudge step, and the final answer of a turn that wrote files.

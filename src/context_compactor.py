@@ -1007,8 +1007,13 @@ async def maybe_compact(
     persist: bool = True,
     compaction_state: Optional[Dict[str, Any]] = None,
     _usage_observer=None,
+    force: bool = False,
 ) -> tuple:
     """Check context usage and compact if above threshold.
+
+    ``force`` skips the threshold check: the provider itself just refused the
+    request as too long, so the window the model really has is smaller than
+    the one we believed.
 
     Returns (messages, context_length, was_compacted).
     """
@@ -1020,7 +1025,7 @@ async def maybe_compact(
     used = estimate_tokens_for(messages, model)
     pct = (used / context_length) * 100 if context_length else 0
 
-    if pct < COMPACT_THRESHOLD * 100:
+    if pct < COMPACT_THRESHOLD * 100 and not force:
         return messages, context_length, False
 
     logger.info(
@@ -2097,9 +2102,11 @@ async def apply_midturn_pressure(
     round_num: int = 0,
     run_id: str = "",
     durable_overflow: bool = True,
+    force: bool = False,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Keep a long agent turn under the soft context ceiling.
 
+    ``force`` runs every stage whatever the pressure reads (and keeps fewer
     recent tool rounds verbatim): the provider refused the request as too
     long, which is better evidence of the real window than our estimate.
 
@@ -2167,6 +2174,11 @@ async def apply_midturn_pressure(
     # Calibrated: `model` is a required kwarg here, so every pressure gate
     # below uses this model's real chars->tokens ratio (src/token_calibration.py)
     # instead of the generic chars*0.3 guess.
+    if force:
+        soft_pct = 0.0
+        keep_rounds = max(1, keep_rounds // 3)
+        report["keep_tool_rounds"] = keep_rounds
+        report["forced"] = True
     used = estimate_tokens_for(messages, model)
     report["tokens_before"] = used
     if used < soft_pct * context_length:
@@ -2225,6 +2237,7 @@ async def apply_midturn_pressure(
                 headers,
                 owner=owner,
                 persist=False,
+                force=force,
             )
             if was:
                 current = compacted

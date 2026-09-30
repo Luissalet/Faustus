@@ -129,6 +129,9 @@ def test_groups_follow_the_requested_layout():
             # group -- see src/loop_breaker.py's module docstring.
             "agent_loop_breaker_cycle_detection", "agent_loop_breaker_cycle_min_repeats_p2",
             "agent_loop_breaker_cycle_min_repeats_long",
+            # StuckWatch (src/loop_breaker.py).
+            "agent_loop_breaker_monologue_rounds", "agent_loop_breaker_context_error_limit",
+            "agent_loop_breaker_failed_path_limit",
             # The advisor (src/advisor.py): a second model that reads the
             # session at three code-decided moments, one of which is the
             # loop breaker's nudge step.

@@ -573,3 +573,192 @@ class LoopPolicy:
             "cycle_repeats": self.last_cycle_repeats,
             "cycle_reason": self.last_cycle_reason,
         }
+
+
+# ---------------------------------------------------------------------------
+# Three more ways a turn gets stuck (StuckWatch)
+#
+# LoopPolicy above sees TOOL CALLS go by. These three never look like a
+# repeated call, so they get their own counters, bounded and deterministic
+# like the rest of this module -- never read off what the model says about
+# itself:
+#
+#   monologue     3 assistant rounds in a row that said something and called
+#                 no tool, while the loop was still holding the turn open (a
+#                 turn that simply answers ends at its first such round, so a
+#                 second and a third can only happen when something -- a
+#                 nudge, an open plan -- kept it going). Nothing is moving:
+#                 stop with what was said instead of nudging a fourth time.
+#   context       the provider refused the request as too long. The first
+#                 time the caller compacts (harder than usual) and redoes the
+#                 round; a second one in a row means compaction did not help,
+#                 so stop with a clear message instead of retrying forever.
+#   failed path   the same call (tool + arguments) returned an error three
+#                 times: that path is closed, the fourth identical attempt is
+#                 refused without running and the model is told to change the
+#                 arguments or the approach. LoopPolicy nudges at three
+#                 IDENTICAL results and only blocks the whole tool at six;
+#                 this closes the one failing path earlier and leaves the tool
+#                 (and any other arguments) alone.
+# ---------------------------------------------------------------------------
+
+MONOLOGUE_STOP_REASON = "monologue"
+CONTEXT_ERROR_STOP_REASON = "context_length_exceeded"
+DEFAULT_MONOLOGUE_ROUNDS = 3
+DEFAULT_CONTEXT_ERROR_LIMIT = 2
+DEFAULT_FAILED_PATH_LIMIT = 3
+#: Bounded: a path table never grows past this many distinct failing calls.
+MAX_TRACKED_PATHS = 64
+
+_CONTEXT_ERROR_PATTERNS = (
+    "context length", "context_length", "context window", "maximum context",
+    "exceeds the context", "exceeded the context", "exceed the context",
+    "prompt is too long", "prompt too long", "input is too long", "input too long",
+    "too many tokens", "maximum prompt length", "max_model_len", "reduce the length",
+    "request too large", "request_too_large", "tokens exceed", "token limit",
+    "n_ctx", "exceeds available context", "context size", "longer than the maximum",
+    "demasiado larg", "ventana de contexto",
+)
+
+
+def is_context_length_error(error: Any, status: Any = None) -> bool:
+    """True when a provider error reads like "the request does not fit the
+    context window": wording from the message (or the error class / code), not
+    the bare HTTP status -- a 400 or 413 alone says nothing about why."""
+    if isinstance(error, dict):
+        text = " ".join(str(error.get(k) or "") for k in ("error", "message", "error_class", "code", "detail", "type"))
+    else:
+        text = str(error or "")
+    text = text.lower()
+    return any(p in text for p in _CONTEXT_ERROR_PATTERNS)
+
+
+def is_failed_result(result: Any) -> bool:
+    """True for a tool result that is a genuine failure: an error or a
+    non-zero exit code. A policy block, an approval card and a question to the
+    user are not failures of the call."""
+    if not isinstance(result, dict):
+        return False
+    if result.get("blocked") or result.get("approval_required") or result.get("ask_user"):
+        return False
+    if result.get("error"):
+        return True
+    code = result.get("exit_code")
+    return isinstance(code, int) and not isinstance(code, bool) and code != 0
+
+
+@dataclass
+class StuckWatch:
+    """One instance per turn, like :class:`LoopPolicy`."""
+    monologue_rounds: int = DEFAULT_MONOLOGUE_ROUNDS
+    context_error_limit: int = DEFAULT_CONTEXT_ERROR_LIMIT
+    failed_path_limit: int = DEFAULT_FAILED_PATH_LIMIT
+
+    monologue_streak: int = field(default=0, repr=False)
+    context_error_streak: int = field(default=0, repr=False)
+    _failures: Dict[Tuple[str, str], int] = field(default_factory=dict, repr=False)
+    _closed: Set[Tuple[str, str]] = field(default_factory=set, repr=False)
+    closed_paths_total: int = field(default=0, repr=False)
+
+    def __post_init__(self) -> None:
+        # 0 (or less) switches a detector off; anything else is clamped to a
+        # sane floor so a typo cannot make the watch fire on the first event.
+        self.monologue_rounds = 0 if int(self.monologue_rounds or 0) <= 0 else max(2, int(self.monologue_rounds))
+        self.context_error_limit = 0 if int(self.context_error_limit or 0) <= 0 else max(2, int(self.context_error_limit))
+        self.failed_path_limit = 0 if int(self.failed_path_limit or 0) <= 0 else max(2, int(self.failed_path_limit))
+
+    @classmethod
+    def from_settings(cls, get_setting=None) -> "StuckWatch":
+        if get_setting is None:
+            try:
+                from src.settings import get_setting as _get_setting
+                get_setting = _get_setting
+            except Exception:
+                get_setting = lambda key, default=None: default  # noqa: E731
+
+        def _num(key: str, default: int) -> int:
+            try:
+                value = get_setting(key, default)
+                return default if value is None else int(value)
+            except (TypeError, ValueError):
+                return default
+        return cls(
+            monologue_rounds=_num("agent_loop_breaker_monologue_rounds", DEFAULT_MONOLOGUE_ROUNDS),
+            context_error_limit=_num("agent_loop_breaker_context_error_limit", DEFAULT_CONTEXT_ERROR_LIMIT),
+            failed_path_limit=_num("agent_loop_breaker_failed_path_limit", DEFAULT_FAILED_PATH_LIMIT),
+        )
+
+    # -- monologue ---------------------------------------------------------
+    def observe_round(self, *, tool_calls: int, has_text: bool) -> str:
+        """Feed one finished model round. ``"stop"`` when the limit of
+        consecutive text-only rounds is reached, else ``"none"``. A round with
+        a tool call resets the count; an empty round (no text, no call) neither
+        counts nor resets it -- the caller has its own handling for silence."""
+        if tool_calls > 0:
+            self.monologue_streak = 0
+            return "none"
+        if not has_text:
+            return "none"
+        self.monologue_streak += 1
+        if self.monologue_rounds and self.monologue_streak >= self.monologue_rounds:
+            return "stop"
+        return "none"
+
+    # -- provider errors ---------------------------------------------------
+    def observe_provider_error(self, error: Any) -> str:
+        """Feed a provider error. ``"none"`` for any other kind of error,
+        ``"compact"`` for the first context-length one, ``"stop"`` once
+        ``context_error_limit`` of them came in a row."""
+        if not is_context_length_error(error):
+            self.context_error_streak = 0
+            return "none"
+        self.context_error_streak += 1
+        if self.context_error_limit and self.context_error_streak >= self.context_error_limit:
+            return "stop"
+        return "compact"
+
+    def observe_provider_ok(self) -> None:
+        """A round the provider accepted breaks the context-error streak."""
+        self.context_error_streak = 0
+
+    # -- a failing path ----------------------------------------------------
+    @staticmethod
+    def _key(tool: str, args: Any) -> Tuple[str, str]:
+        return str(tool or ""), normalize_args(args)
+
+    def observe_call(self, tool: str, args: Any, failed: bool) -> bool:
+        """Feed one executed call. True exactly when this call closed its
+        path (the limit-th failure of the same tool + arguments). A success of
+        the same call reopens it."""
+        if not self.failed_path_limit:
+            return False
+        key = self._key(tool, args)
+        if not failed:
+            self._failures.pop(key, None)
+            self._closed.discard(key)
+            return False
+        if len(self._failures) >= MAX_TRACKED_PATHS and key not in self._failures:
+            self._failures.pop(next(iter(self._failures)))
+        count = self._failures.get(key, 0) + 1
+        self._failures[key] = count
+        if count >= self.failed_path_limit and key not in self._closed:
+            self._closed.add(key)
+            self.closed_paths_total += 1
+            return True
+        return False
+
+    def path_closed(self, tool: str, args: Any) -> bool:
+        return bool(self._closed) and self._key(tool, args) in self._closed
+
+    def failures_for(self, tool: str, args: Any) -> int:
+        return self._failures.get(self._key(tool, args), 0)
+
+    def snapshot(self) -> Dict[str, Any]:
+        return {
+            "monologue_streak": self.monologue_streak,
+            "context_error_streak": self.context_error_streak,
+            "closed_paths": self.closed_paths_total,
+            "monologue_rounds": self.monologue_rounds,
+            "context_error_limit": self.context_error_limit,
+            "failed_path_limit": self.failed_path_limit,
+        }

@@ -1240,6 +1240,17 @@ DEFAULT_SETTINGS = {
     "agent_loop_breaker_cycle_detection": True,
     "agent_loop_breaker_cycle_min_repeats_p2": 3,
     "agent_loop_breaker_cycle_min_repeats_long": 2,
+    # StuckWatch (src/loop_breaker.py): three more ways a turn gets stuck that
+    # never look like a repeated call. Each limit is a count; 0 switches that
+    # detector off. Monologue: this many assistant rounds in a row that said
+    # something and called no tool while the loop held the turn open -> stop.
+    # Context: this many consecutive "request too long" provider errors -> stop
+    # with a clear message (the first one compacts harder and redoes the round).
+    # Failed path: the same tool + arguments returning an error this many
+    # times closes that path (the next identical attempt is refused unrun).
+    "agent_loop_breaker_monologue_rounds": 3,
+    "agent_loop_breaker_context_error_limit": 2,
+    "agent_loop_breaker_failed_path_limit": 3,
     # H4: src/rewrite_policy.py — discourages repeated whole-file `write_file`
     # rewrites of the same existing, non-trivial file within one turn ("off"
     # disables it entirely). From the require_edit-th qualifying rewrite the
