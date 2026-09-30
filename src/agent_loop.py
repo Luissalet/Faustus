@@ -11750,6 +11750,7 @@ async def _stream_agent_loop_body(
             )
         _candidate_request_states = {0: _active_route_state}
         _compaction_budget_exhaustion = None
+        _recovery_cancelled = False
 
         async def _candidate_request(index, candidate_url, candidate_model, candidate_headers):
             nonlocal _last_route_request_messages, _last_route_context_length, _compaction_budget_exhaustion
@@ -12183,6 +12184,7 @@ async def _stream_agent_loop_body(
                     if _recovery_result and _recovery_result.get("cancelled"):
                         # BUG-STOP-01: a Stop landed mid-recovery-ladder.
                         _ledger.stop_reason = "cancelled"
+                        _recovery_cancelled = True
                         _ledger.notes.append(f"cancelled_during_recovery@{round_num}")
                         yield "data: " + json.dumps({
                             "type": "cancelled", "round": round_num,
@@ -12599,7 +12601,9 @@ async def _stream_agent_loop_body(
                             round_num, len(_steer_interrupted))
                 break
 
-        if _compaction_budget_exhaustion is not None:
+        if _compaction_budget_exhaustion is not None or _recovery_cancelled:
+            # A stop observed by recovery ends this invocation even if the
+            # caller clears its cancellation store while consuming the event.
             break
 
         if _steer_interrupted:
