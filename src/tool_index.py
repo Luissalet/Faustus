@@ -777,30 +777,49 @@ class ToolIndex:
                 count = lane.count()
                 if count == 0:
                     continue
-                results = lane.collection.query(
-                    query_embeddings=lane.encode([query]),
-                    n_results=min(max(k * 3, 24) if k > 0 else k, count),
-                    include=["metadatas", "distances"],
-                )
-                if not results or not results.get("metadatas"):
-                    continue
-                distances = results.get("distances") or []
-                for list_idx, meta_list in enumerate(results["metadatas"]):
-                    distance_list = distances[list_idx] if list_idx < len(distances) else []
-                    for idx, meta in enumerate(meta_list):
-                        name = meta.get("tool_name", "")
-                        if name:
-                            distance = distance_list[idx] if idx < len(distance_list) else 1.0
-                            if 1.0 - distance < TOOL_SCORE_FLOOR.get(getattr(lane, "model", ""), -1.0):
-                                floored = True
-                                continue
-                            rows.append({
-                                "tool_name": name,
-                                "score": round(1.0 - distance, 4),
-                                "embedding_lane": lane.name,
-                            })
+                embeddings = lane.encode([query])
             except Exception as e:
                 logger.warning("Tool retrieval failed in %s lane: %s", lane.name, e)
+                continue
+            initial = max(k * 3, 24) if k > 0 else k
+            # Permission-aware widening has an absolute 256-row lane ceiling;
+            # legacy queries are unchanged, including their requested window.
+            ceiling = min(count, 256) if candidate_filter is not None and k > 0 else min(initial, count)
+            window = min(initial, ceiling)
+            lane_rows = []
+            while True:
+                try:
+                    results = lane.collection.query(
+                        query_embeddings=embeddings, n_results=window,
+                        include=["metadatas", "distances"],
+                    )
+                    distances = (results or {}).get("distances") or []
+                    lane_rows = []
+                    returned = 0
+                    hit_floor = False
+                    for list_idx, meta_list in enumerate((results or {}).get("metadatas") or []):
+                        returned += len(meta_list)
+                        distance_list = distances[list_idx] if list_idx < len(distances) else []
+                        for idx, meta in enumerate(meta_list):
+                            name = meta.get("tool_name", "")
+                            if name:
+                                distance = distance_list[idx] if idx < len(distance_list) else 1.0
+                                if 1.0 - distance < TOOL_SCORE_FLOOR.get(getattr(lane, "model", ""), -1.0):
+                                    floored = hit_floor = True
+                                    continue
+                                lane_rows.append({"tool_name": name,
+                                    "score": round(1.0 - distance, 4), "embedding_lane": lane.name})
+                except Exception as e:
+                    logger.warning("Tool retrieval failed in %s lane: %s", lane.name, e)
+                    break
+                if candidate_filter is None or k <= 0:
+                    break
+                allowed = {row["tool_name"] for row in lane_rows if candidate_filter(row["tool_name"])}
+                target = max(k * 3, 24) if getattr(self, "backend", "") in (BACKEND_MEMORY, BACKEND_CHROMA) else k
+                if len(allowed) >= target or window >= ceiling or returned < window or hit_floor:
+                    break
+                window = min(ceiling, max(window + 1, window * 2))
+            rows.extend(lane_rows)
         if not rows and floored:
             # Nothing close enough (a recipe, a translation): no candidates
             # beyond a tool the request nearly names outright.
@@ -823,7 +842,8 @@ class ToolIndex:
             # esto?» with git_init and a code-graph «¿de qué partes se
             # compone?» with ask_teacher/design_canvas.
             deep = [row["tool_name"] for row in
-                    dedupe_results(rows, id_key="tool_name", limit=max(k * 3, 24))]
+                    dedupe_results(rows, id_key="tool_name",
+                                   limit=len(rows) if candidate_filter is not None else max(k * 3, 24))]
             return self._with_lexical_lane(query, deep, k, **filter_options)
         if candidate_filter is not None:
             rows = [row for row in rows if candidate_filter(row["tool_name"])]
@@ -860,7 +880,8 @@ class ToolIndex:
         except Exception:  # noqa: BLE001 - never fail a turn over ranking
             return permitted_order(vector_order)[:max(0, int(k))]
         try:
-            lexical = self.lexical_retrieve(query, k=max(k * 3, 24))
+            lexical = self.lexical_retrieve(query, k=max(k * 3, 24),
+                **({"candidate_filter": candidate_filter} if candidate_filter is not None else {}))
         except Exception as exc:  # noqa: BLE001
             logger.debug("tool index: lexical lane unavailable (%s)", exc)
             return permitted_order(vector_order)[:max(0, int(k))]

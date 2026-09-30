@@ -1,4 +1,4 @@
-"""Narrow finished rankings without changing scores, query depth, or policy."""
+"""Narrow finished rankings without changing scores or policy."""
 import asyncio
 import json
 import pytest
@@ -43,10 +43,10 @@ def test_vector_finished_order_filters_before_k_without_deeper_query():
     assert lane.requests == [3, 3]
 
 
-def test_vector_pool_outside_query_window_is_still_not_recovered():
+def test_vector_pool_outside_original_window_is_recovered():
     lane = Lane([(f"denied_{i}", .99-i*.001) for i in range(24)] + [("ask_user", .8)])
-    assert index([lane]).retrieve("synthetic", k=1, candidate_filter=lambda n: n == "ask_user") == []
-    assert lane.requests == [24]
+    assert index([lane]).retrieve("synthetic", k=1, candidate_filter=lambda n: n == "ask_user") == ["ask_user"]
+    assert lane.requests == [24, 25]
 
 
 def test_lexical_filter_keeps_scores_and_full_scoring_corpus(monkeypatch):
@@ -78,7 +78,7 @@ def test_fusion_keeps_original_rrf_inputs_and_filters_final_order(monkeypatch):
     lexical = ["read_file", "ask_user", "write_file"]
     vector = ["read_file", "write_file", "ask_user"]
     requests, votes = [], []
-    monkeypatch.setattr(idx, "lexical_retrieve", lambda q, k: requests.append(k) or lexical)
+    monkeypatch.setattr(idx, "lexical_retrieve", lambda q, k, **kwargs: requests.append(k) or lexical)
     monkeypatch.setattr(idx, "_strong_lexical_anchor", lambda q: "read_file")
     original = search.rrf
     def rrf(*rankings, **kwargs):
