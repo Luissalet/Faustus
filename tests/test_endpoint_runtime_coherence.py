@@ -122,14 +122,20 @@ def test_model_search_does_not_probe_next_endpoint(store, monkeypatch):
         ai._resolve_model("model", owner="alice")
 
 
-def test_fanout_does_not_dispatch_coordinator(monkeypatch):
+@pytest.mark.parametrize("mode", ["configuration", "credential_cas"])
+def test_fanout_does_not_dispatch_coordinator(store, monkeypatch, mode):
     from src.fanout import runner as f
     manifest = {"plan": {"prompt": "fixture", "workspace": "", "candidates": [{"label": "one", "model": "model", "endpoint_id": "a"}]},
                 "exp_id": "fixture", "candidates": [{"label": "one", "model": "model", "endpoint_id": "a"}]}
     monkeypatch.setattr(f, "_manifest_or_error", lambda *a: manifest)
     monkeypatch.setattr(f, "_save_manifest", lambda *a: None)
     monkeypatch.setattr(f.budget_account, "open", lambda *a, **kw: None)
-    monkeypatch.setattr(r, "resolve_endpoint_by_id", fail)
+    if mode == "configuration":
+        monkeypatch.setattr(r, "resolve_endpoint_by_id", fail)
+    else:
+        def conflict(*a, **kw):
+            raise auth.ChatGPTSubscriptionCredentialConflict("synthetic credential conflict")
+        monkeypatch.setattr(auth, "resolve_runtime_credentials", conflict)
     async def no_dispatch(*a, **kw):
         pytest.fail("coordinator dispatch must not happen")
     monkeypatch.setattr(f, "_run_one_candidate", no_dispatch)
@@ -210,6 +216,37 @@ def test_real_producer_drift_and_credential_error_do_not_dispatch(store, monkeyp
             db.commit()
         raise ValueError("synthetic old auth unavailable")
     monkeypatch.setattr(auth, "resolve_runtime_credentials", failed_credentials)
+    with pytest.raises(r.EndpointConfigurationChanged):
+        if producer == "worker":
+            st._route_for(SimpleNamespace(endpoint_id="a", model_override="model", team_bound=False, agent_def={}),
+                          "https://coordinator.invalid", "alice")
+        elif producer == "vision":
+            v.list_vision_endpoints("alice")
+        else:
+            ai._resolve_model("model", owner="alice")
+
+
+@pytest.mark.parametrize("path", ["utility", "id", "chain", "descriptor", "descriptor_chain"])
+def test_stable_endpoint_credential_cas_conflict_never_falls_back(store, monkeypatch, path):
+    with store() as db:
+        before = db.get(d.ModelEndpoint, "a").connection_revision
+    def conflict(*a, **kw):
+        raise auth.ChatGPTSubscriptionCredentialConflict("synthetic credential conflict")
+    monkeypatch.setattr(auth, "resolve_runtime_credentials", conflict)
+    with pytest.raises(r.EndpointConfigurationChanged, match="credentials changed concurrently"):
+        invoke(path)
+    with store() as db:
+        assert db.get(d.ModelEndpoint, "a").connection_revision == before
+
+
+@pytest.mark.parametrize("producer", ["worker", "vision", "search"])
+def test_stable_endpoint_credential_cas_conflict_stops_producer(store, monkeypatch, producer):
+    from src import database, ai_interaction as ai, vision_routing as v
+    from src.agent_tools import subagent_tools as st
+    monkeypatch.setattr(database, "SessionLocal", store)
+    def conflict(*a, **kw):
+        raise auth.ChatGPTSubscriptionCredentialConflict("synthetic credential conflict")
+    monkeypatch.setattr(auth, "resolve_runtime_credentials", conflict)
     with pytest.raises(r.EndpointConfigurationChanged):
         if producer == "worker":
             st._route_for(SimpleNamespace(endpoint_id="a", model_override="model", team_bound=False, agent_def={}),

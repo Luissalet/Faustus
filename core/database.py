@@ -1142,6 +1142,11 @@ class ProviderAuthSession(TimestampMixin, Base):
     __tablename__ = "provider_auth_sessions"
 
     id = Column(String, primary_key=True, index=True)
+    credential_revision = Column(String, nullable=False, default=lambda: uuid.uuid4().hex)
+    __mapper_args__ = {
+        "version_id_col": credential_revision,
+        "version_id_generator": lambda previous: uuid.uuid4().hex,
+    }
     provider = Column(String, nullable=False, index=True)
     owner = Column(String, nullable=True, index=True)
     label = Column(String, nullable=True)
@@ -1163,6 +1168,8 @@ def _mark_provider_auth_oauth_refresh(auth):
 
 
 def _mark_provider_auth_reauthenticated(auth):
+    # Force a real versioned UPDATE even when reconnecting identical tokens.
+    auth.credential_revision = uuid.uuid4().hex
     auth._connection_reauth_intent = _EXPLICIT_PROVIDER_REAUTH
     flag_dirty(auth)
 
@@ -1883,6 +1890,22 @@ def _migrate_add_model_type_column():
             conn.close()
         except Exception:
             pass
+
+def _migrate_add_provider_credential_revision():
+    """Backfill optimistic credential versions without reading credentials."""
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    with sqlite3.connect(db_path) as conn:
+        columns = [row[1] for row in conn.execute("PRAGMA table_info(provider_auth_sessions)")]
+        if not columns:
+            return
+        if "credential_revision" not in columns:
+            conn.execute("ALTER TABLE provider_auth_sessions ADD COLUMN credential_revision TEXT")
+        rows = conn.execute("SELECT id FROM provider_auth_sessions WHERE credential_revision IS NULL OR credential_revision = ''").fetchall()
+        conn.executemany("UPDATE provider_auth_sessions SET credential_revision = ? WHERE id = ?",
+                         [(uuid.uuid4().hex, row[0]) for row in rows])
+
 
 def _migrate_add_endpoint_connection_revision():
     """Assign opaque identities once; do not derive them from credentials."""
@@ -3205,6 +3228,7 @@ def _formal_migration_steps() -> "list[tuple[str, object]]":
         ("add_endpoint_connection_revision", _migrate_add_endpoint_connection_revision),
         ("add_model_endpoint_owner_column", _migrate_add_model_endpoint_owner_column),
         ("add_provider_auth_id_column", _migrate_add_provider_auth_id_column),
+        ("add_provider_credential_revision", _migrate_add_provider_credential_revision),
         ("add_supports_tools_column", _migrate_add_supports_tools_column),
         ("add_task_run_model_column", _migrate_add_task_run_model_column),
         ("add_owner_column", _migrate_add_owner_column),

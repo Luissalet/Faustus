@@ -186,10 +186,18 @@ def resolve_endpoint_runtime(ep, owner: Optional[str] = None) -> Tuple[str, Opti
     api_key = getattr(ep, "api_key", None)
     auth_id = getattr(ep, "provider_auth_id", None)
     if auth_id:
-        from src.chatgpt_subscription import resolve_runtime_credentials
+        from src.chatgpt_subscription import (
+            ChatGPTSubscriptionCredentialConflict, resolve_runtime_credentials,
+        )
 
         try:
             creds = resolve_runtime_credentials(auth_id, owner=owner)
+        except ChatGPTSubscriptionCredentialConflict:
+            # A concurrent credential writer won even when the endpoint revision
+            # stayed stable (ordinary refresh). Never turn this into fallback.
+            raise EndpointConfigurationChanged(
+                "Endpoint credentials changed concurrently; resolve it again."
+            ) from None
         except Exception:
             # Configuration drift also wins over credential failures: otherwise
             # a generic caller catch could silently choose an unrelated route.

@@ -49,6 +49,10 @@ class ChatGPTSubscriptionError(RuntimeError):
     """Base error for ChatGPT subscription provider failures."""
 
 
+class ChatGPTSubscriptionCredentialConflict(ChatGPTSubscriptionError):
+    """Credentials changed while refresh was in flight; no result was saved."""
+
+
 class ChatGPTSubscriptionReauthRequired(ChatGPTSubscriptionError):
     """Stored OAuth credentials are invalid or expired beyond refresh."""
 
@@ -279,7 +283,14 @@ def resolve_runtime_credentials(auth_id: str, owner: Optional[str] = None, *, fo
                     if refreshed.get("refresh_token"):
                         row.refresh_token = refreshed["refresh_token"]
                     row.last_refresh = utcnow_naive()
-                    db.commit()
+                    from sqlalchemy.orm.exc import StaleDataError
+                    try:
+                        db.commit()
+                    except StaleDataError:
+                        db.rollback()
+                        raise ChatGPTSubscriptionCredentialConflict(
+                            "Credentials changed during refresh; the stale refresh was discarded."
+                        ) from None
                     db.refresh(row)
             access_token = row.access_token or ""
 
@@ -294,6 +305,8 @@ def resolve_runtime_credentials(auth_id: str, owner: Optional[str] = None, *, fo
 
 
 def to_http_exception(exc: Exception) -> HTTPException:
+    if isinstance(exc, ChatGPTSubscriptionCredentialConflict):
+        return HTTPException(409, str(exc))
     if isinstance(exc, ChatGPTSubscriptionRateLimited):
         return HTTPException(429, str(exc))
     if isinstance(exc, (ChatGPTSubscriptionReauthRequired, ChatGPTSubscriptionAuthNotFound)):
