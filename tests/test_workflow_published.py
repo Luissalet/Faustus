@@ -556,3 +556,50 @@ def test_a_token_with_the_dispatch_scope_may_reach_published_workflows_and_nothi
     assert authz.api_rule_for("GET", "/api/workflows/published/runs/wfr_1") is not None
     assert authz.api_rule_for("POST", "/api/workflows/library") is None
     assert authz.api_rule_for("POST", "/api/workflows/runs") is None
+
+
+def test_tools_list_and_tools_call_over_a_real_mcp_session_against_the_routes(client, monkeypatch):
+    """The whole path in one process: an MCP client session talks the protocol to
+    the server module, which forwards to the real routes (through the test
+    client), which start a real run."""
+    from mcp.shared.memory import create_connected_server_and_client_session
+    from mcp_servers import workflows_server as srv
+
+    def forward(method, path, body=None, timeout=30.0):
+        response = client.request(method, path, json=body)
+        if response.status_code >= 400:
+            raise RuntimeError(f"Faustus answered HTTP {response.status_code} for {method} {path}: {response.text}")
+        return response.json()
+
+    monkeypatch.setattr(srv, "_request", forward)
+    save(client, enabled=True)
+
+    async def session():
+        async with create_connected_server_and_client_session(srv.server) as mcp_client:
+            listed = await mcp_client.list_tools()
+            by_name = {t.name: t for t in listed.tools}
+            assert set(by_name) == {"wf_research_brief", "workflow_run_status"}
+            tool = by_name["wf_research_brief"]
+            assert tool.inputSchema["required"] == ["topic"]
+            assert set(tool.inputSchema["properties"]) == {"topic", "depth", "wait_seconds", "idempotency_key", "overrides"}
+            called = await mcp_client.call_tool(
+                "wf_research_brief",
+                {"topic": "tides", "overrides": {"think": {"prompt": "Write two lines on {{ inputs.topic }}"}},
+                 "wait_seconds": 20, "idempotency_key": "k1"})
+            first = json.loads(called.content[0].text)
+            again = json.loads((await mcp_client.call_tool(
+                "wf_research_brief", {"topic": "tides", "idempotency_key": "k1"})).content[0].text)
+            status = json.loads((await mcp_client.call_tool(
+                "workflow_run_status", {"run_id": first["run_id"]})).content[0].text)
+            refused = await mcp_client.call_tool("wf_research_brief", {"topic": "x", "overrides": {"send": {"skill": "evil"}}})
+            return first, again, status, refused
+
+    first, again, status, refused = asyncio.run(session())
+    assert first["finished"] is True and first["status"] == "completed"
+    assert first["overrides_applied"] == [{"node": "think", "field": "prompt", "from": "Brief on {{ inputs.topic }}",
+                                           "to": "Write two lines on {{ inputs.topic }}"}]
+    assert "BRIEF: Write two lines on tides" in first["run"]["result"]["send"]["brief"]
+    assert again["run_id"] == first["run_id"] and again["duplicate"] is True
+    assert status["status"] == "completed" and status["run_id"] == first["run_id"]
+    assert refused.isError and "'send' was unexpected" in refused.content[0].text, "the tool's own schema refuses it first"
+    assert len(client.mail.calls) == 1, "the duplicate and the refused call started nothing"

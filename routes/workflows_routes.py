@@ -22,7 +22,9 @@ from fastapi import APIRouter, HTTPException, Request
 from core.middleware import require_admin
 from src.contracts import ContractError, WorkflowDefinition
 from src.contracts.base import now_iso
-from src.workflows import WorkflowEngine, WorkflowStore, default_handlers, published, ready_nodes
+from src.workflows import WorkflowEngine, WorkflowStore, default_handlers, evaluation, published, ready_nodes
+from src.workflows.dry_run import dry_run
+from src.workflows.evaluation import EvaluationError, EvaluationStore
 from src.workflows.library import LibraryError, WorkflowLibrary
 
 logger = logging.getLogger(__name__)
@@ -734,7 +736,124 @@ def setup_workflows_routes():
         owner = _owner_of(request)
         if not WorkflowLibrary().delete(owner, name):
             raise HTTPException(404, f"no saved workflow named {name!r}")
+        EvaluationStore().delete_sets_of(owner, name)
         return {"ok": True, "deleted": name}
+
+    # ── evaluation: example inputs per saved workflow, scored ─────────────
+
+    def _saved_or_404(owner: str, name: str):
+        found = WorkflowLibrary().get(owner, name)
+        if found is None:
+            raise HTTPException(404, f"no saved workflow named {name!r}")
+        return found
+
+    def _evaluation_error(exc: EvaluationError) -> HTTPException:
+        code = {"not_found": 404, "real_not_confirmed": 400, "unavailable": 503}.get(exc.code, 400)
+        return HTTPException(code, {"code": exc.code, "message": str(exc), "problems": exc.problems})
+
+    @router.post("/dry-run")
+    async def dry_run_definition(request: Request):
+        """What a run with these inputs would hand back, with no model, skill,
+        sender or store behind it. `mocks: {node_id: {...}}` picks a classify's
+        label, fails a guard, or overrides a node's result."""
+        require_admin(request)
+        payload = await _json_object(request)
+        definition = _definition_or_400(payload.get("definition", payload))
+        inputs = payload.get("inputs", {})
+        mocks = payload.get("mocks", {})
+        if not isinstance(inputs, dict) or not isinstance(mocks, dict):
+            raise HTTPException(400, "inputs and mocks must be objects")
+        try:
+            return {"ok": True, "result": dry_run(definition, inputs, mocks=mocks)}
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+    @router.get("/library/{name}/eval-sets")
+    def eval_sets_list(name: str, request: Request):
+        require_admin(request)
+        owner = _owner_of(request)
+        _saved_or_404(owner, name)
+        return {"ok": True, "sets": EvaluationStore().list_sets(owner, name),
+                "model_judge": bool(evaluation.judge_is_enabled())}
+
+    @router.get("/library/{name}/eval-sets/{set_name}")
+    def eval_sets_get(name: str, set_name: str, request: Request):
+        require_admin(request)
+        owner = _owner_of(request)
+        _saved_or_404(owner, name)
+        found = EvaluationStore().get_set(owner, name, set_name)
+        if found is None:
+            raise HTTPException(404, f"no evaluation set named {set_name!r}")
+        return {"ok": True, "set": found}
+
+    @router.put("/library/{name}/eval-sets/{set_name}")
+    async def eval_sets_put(name: str, set_name: str, request: Request):
+        """Create or replace a set: `{cases: [{id, inputs, mocks?, scorers?}], scorers?: [...]}`."""
+        require_admin(request)
+        owner = _owner_of(request)
+        saved = _saved_or_404(owner, name)
+        payload = await _json_object(request)
+        try:
+            body = evaluation.validate_set(payload, WorkflowDefinition.parse(saved["definition"]))
+            return {"ok": True, "set": EvaluationStore().save_set(owner, name, set_name, body)}
+        except EvaluationError as exc:
+            raise _evaluation_error(exc)
+
+    @router.delete("/library/{name}/eval-sets/{set_name}")
+    def eval_sets_delete(name: str, set_name: str, request: Request):
+        require_admin(request)
+        owner = _owner_of(request)
+        _saved_or_404(owner, name)
+        if not EvaluationStore().delete_set(owner, name, set_name):
+            raise HTTPException(404, f"no evaluation set named {set_name!r}")
+        return {"ok": True, "deleted": set_name}
+
+    @router.post("/library/{name}/evaluate")
+    async def evaluate_workflow(name: str, request: Request):
+        """Run a set against the saved workflow. `mode` is `simulate` (default: no
+        model or skill runs) or `real` (needs `allow_real: true`). Answers with the
+        report if it finishes within `wait_seconds`, otherwise with its id and
+        `status: running`; read it back from `/evaluations/{id}`."""
+        require_admin(request)
+        owner = _owner_of(request)
+        _saved_or_404(owner, name)
+        payload = await _json_object(request)
+        wait = payload.get("wait_seconds", 20)
+        if isinstance(wait, bool) or not isinstance(wait, (int, float)) or not 0 <= wait <= 120:
+            raise HTTPException(400, "wait_seconds must be a number from 0 to 120")
+        cases = payload.get("cases")
+        if cases is not None and (not isinstance(cases, list) or not all(isinstance(c, str) for c in cases)):
+            raise HTTPException(400, "cases must be a list of case ids")
+        from src.workflows import model_calls
+        try:
+            report_id, future = evaluation.start_evaluation(
+                owner, name, set_name=str(payload.get("set") or ""), mode=str(payload.get("mode") or "simulate"),
+                allow_real=payload.get("allow_real") is True, case_ids=cases,
+                timeout_s=payload.get("timeout_s", evaluation.DEFAULT_CASE_TIMEOUT_S),
+                store=store, engine=_engine(store), models=model_calls.production())
+        except EvaluationError as exc:
+            raise _evaluation_error(exc)
+        finished = await asyncio.to_thread(published.wait_for, future, float(wait))
+        report = EvaluationStore().get_report(owner, report_id) or {}
+        return {"ok": True, "report_id": report_id, "finished": bool(finished and report.get("status") != "running"),
+                "report": report}
+
+    @router.get("/library/{name}/evaluations")
+    def evaluations_list(name: str, request: Request):
+        require_admin(request)
+        owner = _owner_of(request)
+        _saved_or_404(owner, name)
+        evals = EvaluationStore()
+        evals.fail_stale(owner)
+        return {"ok": True, "reports": evals.list_reports(owner, name)}
+
+    @router.get("/evaluations/{report_id}")
+    def evaluation_get(report_id: str, request: Request):
+        require_admin(request)
+        found = EvaluationStore().get_report(_owner_of(request), report_id)
+        if found is None:
+            raise HTTPException(404, f"no evaluation report {report_id}")
+        return {"ok": True, "report": found}
 
     @router.get("/published")
     def published_list(request: Request):

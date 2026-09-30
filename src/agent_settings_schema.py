@@ -49,7 +49,8 @@ EXTRA_KEYS: tuple[str, ...] = ("tool_path_extra_roots", "vision_enabled", "visio
                                "typed_decision_error_fork", "typed_decision_tool_tie",
                                "typed_decision_tool_tie_tolerance", "typed_decision_compaction_keep",
                                "self_declared_risk",
-                               "mode_effort_bug_hunt", "mode_effort_ci_analysis")
+                               "mode_effort_bug_hunt", "mode_effort_ci_analysis",
+                               "workflow_eval_model_judge")
 
 FIELD_TYPES: tuple[str, ...] = ("bool", "int", "float", "text", "select", "list", "secret")
 _NUMERIC_TYPES = ("int", "float")
@@ -1162,6 +1163,16 @@ GROUPS: list[dict[str, Any]] = [
             _bool("agent_immune_system", "Immune System",
                   "Allow health assessments, containment and repair lifecycle changes. Existing health "
                   "and incident history remains readable while disabled."),
+        ],
+    ),
+    _group(
+        "workflow_evaluation", "Workflow evaluation",
+        "Checking a saved workflow against a set of example inputs.",
+        [
+            _bool("workflow_eval_model_judge", "Model judge scorer",
+                  "Let an evaluation's 'judge' scorer ask the utility model to grade a workflow's output "
+                  "against written criteria. Off = that scorer reports itself unavailable and its case "
+                  "fails; the other scorers (exact, contains, regex, JSON schema, numeric) never use a model."),
         ],
     ),
     _group(

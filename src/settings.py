@@ -1059,6 +1059,11 @@ DEFAULT_SETTINGS = {
     # containment and governed repair promotion. Off prevents new assessments
     # and repairs; recorded health remains readable by diagnostics.
     "agent_immune_system": False,
+    # Workflow evaluations (src/workflows/evaluation.py): let a `judge` scorer
+    # ask a model to grade a workflow's output against written criteria. Off:
+    # every other scorer is deterministic, and a judge scorer reports itself
+    # unavailable (and the case fails) instead of passing on nothing.
+    "workflow_eval_model_judge": False,
     # Branching Futures (src/branching_futures/): isolated alternatives with a
     # shared base snapshot. Off prevents new futures/results/commits; history
     # remains inspectable.
