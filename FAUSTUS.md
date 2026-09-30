@@ -9671,3 +9671,9 @@ Prueba real: `notify_status` por la MCP de Tantalus mostró la cuenta de Faustus
 
 La prueba sacó un fallo de Faustus: la cuenta guardada tenía `smtp_security = ssl` con el puerto 587, y con eso `SMTP_SSL` contra 587 no puede conectar (587 es STARTTLS). `routes/email_helpers._smtp_security_mode` y `mcp_servers/email_server._smtp_connect` ahora confían en el puerto cuando el modo lo contradice (ssl en 587 pasa a STARTTLS, starttls en 465 pasa a TLS implícito); `tests/test_email_smtp_security.py` lo cubre.
 
+## 232. Tantalus en el catálogo de plugins, conectado en Faustus y con regla en Hoard Hub (30-09-2026)
+
+`plugins/marketplace.json` lista Tantalus's Hoard (`https://github.com/Luissalet/TantalusHoard.git`, opcional); el test del catálogo pasa a 30 entradas y fija la de Tantalus. En la instancia principal (7000) se añadió desde Conectores → «Apps cercanas» → Añadir: conector `tantalus` en `http://127.0.0.1:5197`, servidor MCP conectado con sus 44 herramientas y estado «Disponible». Se probó con un turno real en Studio (modo agente, 27B en llama.cpp) que pidió `tantalus_overview`.
+
+Hoard Hub ya lo descubría por su manifiesto (arranque, parada, ventana de escritorio, proxy y contrato `shared`). Nuevo en HoardLink: una cuarta regla recomendada, `rule-watcher-alert-digest`, que convierte cada `tantalus.alert` (reposición, bajada de precio, preventa o producto nuevo confirmados) en un `digest.item` con `title, url, watch, kind` para el resumen diario, junto a los enlaces vigilados. Instalada en el hub del PC y probada: `notify_test hub` en Tantalus → `digest.item` «Novedad: Prueba de notificación» con `_via_rule`. La auditoría de familia del hub marcaba 13 herramientas de Tantalus con primera línea de más de 110 caracteres (la recuperación de herramientas corta ahí): acortadas, y el test del manifiesto de Tantalus exige ya 110.
+
