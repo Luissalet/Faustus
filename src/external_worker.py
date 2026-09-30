@@ -968,6 +968,16 @@ def _spawn(runner: Any, key: str, task: str, *, argv: List[str], shown: str,
         "unguarded": not bool(ledger.get("gated")),
         "guard_note": reg.gate_note(runner) if ledger.get("gated") else reg.GUARD_NOTE,
     }
+    try:
+        # What this run, by itself, lets Faustus say: an unguarded agent's
+        # effects are `uncertain` whatever its exit code; a gated one that
+        # exited 0 is `verified` as far as the worker's own report goes. The
+        # dispatcher adds the diff and its own verification on top.
+        from src import outcome_verification
+        if outcome_verification.enabled():
+            out["outcome_verification"] = outcome_verification.verify_worker(out)
+    except Exception:  # noqa: BLE001 - a report about the run never breaks it
+        pass
     if events is not None and events.session_id:
         # Only ever present when the runner's own stream reported one, so a
         # runner that reports nothing leaves the caller on its fresh-worker

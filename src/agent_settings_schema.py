@@ -965,6 +965,12 @@ GROUPS: list[dict[str, Any]] = [
                   "Record success / expected_error / cancelled / panic for worker runs, tool results and "
                   "scorecard turns. A worker YOU stopped counts as cancelled, not as a failure. "
                   "Off = anything that did not finish counts as an error."),
+            _bool("agent_outcome_verification", "Verified / unverified / uncertain",
+                  "Classify a turn, a Code Mode run or a worker result with one verification step that reads "
+                  "exit codes, test runs, process states and change diffs: verified, unverified (a failure or "
+                  "a claim the evidence contradicts, or no evidence) or uncertain (cancelled, timed out, an "
+                  "unguarded agent, or Code Mode effects that ran directly on the host). Adds an "
+                  "`outcome_verification` block beside the existing fields; the completion gate is unchanged."),
             _bool("agent_mcp_stdio_guard", "Protect the MCP stdio stream",
                   "While a built-in MCP server is serving, stdout writes from app code in the same process "
                   "go to stderr instead. One stray print() on stdout corrupts the JSON-RPC stream and "

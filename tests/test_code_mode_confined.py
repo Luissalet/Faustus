@@ -270,9 +270,14 @@ async def test_workspace_is_read_only_by_default_and_writable_when_granted(use_i
 
 
 async def test_no_workspace_grant_means_no_files_at_all(use_image, workspace):
-    result = await run_code_mode("import os\nprint(os.path.exists('/workspace'))",
-                                 workspace=str(workspace), workspace_access="none")
-    assert result["output"].strip() == "False"
+    # An image may ship an empty /workspace (the container's working directory
+    # is created when it is missing): what matters is that none of the host
+    # workspace's files are there.
+    result = await run_code_mode(
+        "import os\nprint(os.listdir('/workspace') if os.path.isdir('/workspace') else [])",
+        workspace=str(workspace), workspace_access="none")
+    assert result["exit_code"] == 0, result
+    assert result["output"].strip() == "[]"
 
 
 async def test_faustus_environment_and_host_files_are_not_visible(use_image, workspace, monkeypatch):

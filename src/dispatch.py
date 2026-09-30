@@ -686,6 +686,32 @@ def _seed_progress(job: DispatchJob) -> Dict[str, Dict[str, Any]]:
     return latest
 
 
+def _attach_outcome_verification(job: DispatchJob, res: Dict[str, Any]) -> None:
+    """The one verified / unverified / uncertain answer for a finished job
+    (src/outcome_verification.py), fed by what Faustus observed -- the diff,
+    `claimed_only`, its own verification run, the proof -- and by each worker
+    row's status and whether an external agent ran outside the command guard.
+    Additive; `agent_outcome_verification` off leaves the payload as it was."""
+    try:
+        from src import outcome_verification
+        if not outcome_verification.enabled():
+            return
+        rows: List[Dict[str, Any]] = [{
+            "runner": "job", "status": job.status, "exit_code": res.get("exit_code"),
+            "claimed_only": res.get("claimed_only"), "changes": res.get("changes"),
+            "verification": res.get("verification"), "proof": res.get("proof"),
+        }]
+        for w in res.get("workers") or []:
+            if isinstance(w, dict):
+                rows.append({"runner": str(w.get("name") or w.get("runner") or "worker"),
+                             "status": w.get("status"), "error": w.get("error"),
+                             "unguarded": w.get("unguarded") if w.get("runner") else None,
+                             "cancelled": w.get("outcome") == "cancelled"})
+        res["outcome_verification"] = outcome_verification.verify_outcome(workers=rows)
+    except Exception:  # noqa: BLE001 - a report about the job never breaks it
+        pass
+
+
 def compact(job: DispatchJob) -> Dict[str, Any]:
     d = job.to_dict(include_result=False)
     res = compact_from_result(job.result)
@@ -709,6 +735,7 @@ def compact(job: DispatchJob) -> Dict[str, Any]:
         res["proof"] = job.proof
     if job.status not in _LIVE:
         res["exit_code"] = 0 if job.status == "done" else 1
+        _attach_outcome_verification(job, res)
     d["result"] = res
     # a running job: the board's latest tick per worker, so a poller sees
     # progress without the event stream

@@ -14878,6 +14878,9 @@ async def _stream_agent_loop_body(
                             "gate": _harness.completion_gate(
                                 {"stop_reason": "complete", "tests": _ledger.tests,
                                  "ui_smoke": _ledger.ui_smoke, "mutations": _ledger.mutated_paths()}, None),
+                            # The one verified / unverified / uncertain answer
+                            # for the evidence so far (src/outcome_verification.py).
+                            "verification": _ledger.verify_outcome(_check),
                             "review": _ledger.review,
                             "checkpoint": (_ledger.checkpoint or {}).get("sha") if isinstance(_ledger.checkpoint, dict) else None,
                             "review_mode": bool(_hopts.get("review_mode")) and bool(_ledger.mutations),
@@ -17919,6 +17922,15 @@ async def _stream_agent_loop_body(
         except Exception as _gate_err:
             logger.debug("[harness] completion gate skipped: %s", _gate_err)
 
+        try:
+            # The single verified / unverified / uncertain classification of the
+            # finished turn (src/outcome_verification.py): every tool result with
+            # its exit code, the test run, process states, Code Mode receipts and
+            # the judged changeset, in one answer.
+            if _ledger.events:
+                _hsum["verification"] = _ledger.verify_outcome(changeset=_hsum.get("changeset"))
+        except Exception as _vo_err:
+            logger.debug("[harness] outcome verification skipped: %s", _vo_err)
         if (_ledger.events or _ledger.rejections or _ledger.length_continues or _ledger.notes
                 or _hsum.get("changeset") or _hsum["stop_reason"] != "complete"):
             yield f"data: {json.dumps({'type': 'harness_summary', 'data': _hsum})}\n\n"

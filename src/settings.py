@@ -1375,6 +1375,7 @@ DEFAULT_SETTINGS = {
     # `cancelled` and no longer counts as a failed one. Off = the old arithmetic,
     # where anything that did not finish was an error.
     "agent_tool_outcomes": True,
+    "agent_outcome_verification": True,
     # Which card Ollama fills first: -1 = Auto (the freest card, split when
     # nothing fits one), N = pin every model that fits card N to it (a model
     # pinned to a card it does not fit goes to the CPU, so bigger ones stay

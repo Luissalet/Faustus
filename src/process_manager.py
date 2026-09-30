@@ -543,7 +543,8 @@ class ProcessManager:
                 while True:
                     start = live.buffer.base if cursor is None else cursor
                     has_new = live.buffer.total > max(start, live.buffer.base)
-                    finished = rec["state"] in FINISHED_STATES
+                    with self._lock:        # _finish sets the state and persists under this lock
+                        finished = rec["state"] in FINISHED_STATES
                     if finished or (has_new and not until_exit) or time.monotonic() >= deadline:
                         break
                     live.changed.wait(timeout=min(0.05, max(0.0, deadline - time.monotonic())))

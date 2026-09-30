@@ -240,9 +240,24 @@ async def run_code_mode(
                   workspace=workspace, workspace_roots=workspace_roots,
                   tool_policy=tool_policy, security_context=security_context)
     if mode == "host":
-        return _with_policy(await _run_host(code, **kwargs), "host", "host_process")
-    return await _run_confined(code, network=network, workspace_access=workspace_access,
-                               image=image, **kwargs)
+        return _with_outcome(_with_policy(await _run_host(code, **kwargs), "host", "host_process"))
+    return _with_outcome(await _run_confined(code, network=network, workspace_access=workspace_access,
+                                             image=image, **kwargs))
+
+
+def _with_outcome(result: dict) -> dict:
+    """Attach the single verified / unverified / uncertain classification
+    (src/outcome_verification.py). Only bridged `tools.call` invocations are
+    receipted, so code that ran directly on the host is always `uncertain`
+    about its own effects; a confined run is only as uncertain as its grants
+    (workspace write, network) make it."""
+    try:
+        from src import outcome_verification
+        if isinstance(result, dict) and outcome_verification.enabled():
+            result["outcome_verification"] = outcome_verification.verify_code_mode(result)
+    except Exception:  # noqa: BLE001 - a report about the run never breaks it
+        pass
+    return result
 
 
 async def _run_confined(code: str, *, network: Optional[bool], workspace_access: Optional[str],

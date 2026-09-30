@@ -1573,6 +1573,18 @@ class TurnLedger:
         }
         if (result or {}).get('approval_required') is True:
             ev['approval_required'] = True
+        if isinstance(result, dict):
+            # Evidence the single outcome verifier (src/outcome_verification.py)
+            # reads back: Code Mode's runtime/receipts and a process handle's state.
+            if tool == "run_code":
+                ev["code_mode"] = {k: result[k] for k in ("exit_code", "error", "refused", "runtime_guarantees",
+                                                          "runtime_policy", "tool_outcomes", "receipt")
+                                   if k in result}
+            elif tool.startswith("process_") and result.get("handle") and result.get("state"):
+                ev["process"] = {k: result.get(k) for k in ("handle", "state", "exit_code", "termination_reason")}
+            for _k in ("exit_code", "result_status", "status"):
+                if _k in result and isinstance(result[_k], (int, str)) and not isinstance(result[_k], bool):
+                    ev[_k] = result[_k]
         self.events.append(ev)
         if ok and tool in _TEXT_WRITING_TOOLS:
             self._note_written_text(content)
@@ -2119,7 +2131,7 @@ class TurnLedger:
                     reasons.append("plan_without_action")
             except Exception:  # noqa: BLE001
                 pass
-        return {
+        check = {
             "ok": not reasons,
             "reasons": reasons,
             "claims": claims,
@@ -2131,6 +2143,25 @@ class TurnLedger:
             "intent": intent,
             "permission": permission,
         }
+        try:
+            check["verification"] = self.verify_outcome(check)
+        except Exception:  # noqa: BLE001 - the classification never breaks a check
+            pass
+        return check
+
+    def verify_outcome(self, check: Optional[Dict[str, Any]] = None,
+                       changeset: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """The single verified / unverified / uncertain classification of this
+        turn (src/outcome_verification.py), fed by everything the ledger holds:
+        every tool result with its exit code, the test run, the UI smoke, the
+        process states, Code Mode's runtime receipts and (when given) the
+        completion check and the judged changeset."""
+        from src.outcome_verification import verify_outcome
+        events = [e for e in self.events if isinstance(e, dict)]
+        return verify_outcome(
+            tool_results=events, tests=self.tests, ui_smoke=self.ui_smoke,
+            completion=check, changeset=changeset,
+        )
 
     @staticmethod
     def check_is_stall_only(check: Dict[str, Any]) -> bool:
@@ -2504,20 +2535,17 @@ def completion_gate(summary: Dict[str, Any], changeset: Optional[Dict[str, Any]]
     try:
         if str(summary.get("stop_reason") or "") != "complete":
             return None
-        tests = summary.get("tests") if isinstance(summary.get("tests"), dict) else None
-        if (tests and tests.get("ran") and tests.get("ok") is False
-                and not tests.get("inconclusive") and not tests.get("pre_existing_only")):
-            return "tests_failed"
-        smoke = summary.get("ui_smoke") if isinstance(summary.get("ui_smoke"), dict) else None
-        if smoke and smoke.get("ran") and smoke.get("ok") is False:
-            return "ui_smoke_failed"
-        if isinstance(changeset, dict):
-            verdict = str(changeset.get("verdict") or "")
-            claims = changeset.get("unsupported_claims") or []
-            if verdict == "contradicted":
-                return "changeset_contradicted"
-            if verdict == "unproved" and claims:
-                return "changeset_unproved"
+        # One verifier (src/outcome_verification.py) reads the same evidence
+        # the rest of the turn is judged on; only its hard, positive findings
+        # of failure gate a `complete`.
+        from src.outcome_verification import verify_outcome
+        verdict = verify_outcome(
+            tests=summary.get("tests"), ui_smoke=summary.get("ui_smoke"),
+            changeset=changeset if isinstance(changeset, dict) else None)
+        kinds = {row["kind"] for row in verdict.get("reasons") or []}
+        for kind in ("tests_failed", "ui_smoke_failed", "changeset_contradicted", "changeset_unproved"):
+            if kind in kinds:
+                return kind
     except Exception:  # noqa: BLE001 - a report about the turn never breaks it
         return None
     return None
