@@ -527,31 +527,72 @@ def active_worker_ids() -> List[str]:
     return [sid for sid, t in _ACTIVE_WORKERS.items() if not t.done()]
 
 
-def steer_worker(child_session_id: str, text: str, source: str = "user") -> bool:
-    """Queue an instruction only while the worker attempt accepts input.
+def _record_steering_receipt(run, receipt, state, *, drained_attempt_run_id=None):
+    receipt["state"] = state
+    receipt["durability"] = "unknown"
+    if drained_attempt_run_id:
+        receipt["drained_attempt_run_id"] = drained_attempt_run_id
+    recorder = run._steering_recorder
+    if recorder is not None:
+        try:
+            recorder.record_steering(receipt_id=receipt["receipt_id"], state=state,
+                child_session_id=run.session_id, worker_id=run.id,
+                delegation_id=run.delegation_id or "",
+                accepted_attempt_run_id=receipt["accepted_attempt_run_id"],
+                source=receipt["source"], drained_attempt_run_id=drained_attempt_run_id)
+            receipt["durability"] = "durable"
+        except Exception:
+            pass  # Queue admission survives; never claim a durable receipt.
 
-    True confirms queue admission, not injection, reading or persistence.
-    The worker's agent loop
-    injects it as a `user` message before its next round (see
-    `stream_agent_loop(pending_user_messages=...)`)."""
+
+def steer_worker_receipt(child_session_id: str, text: str, source: str = "user") -> Optional[dict]:
+    """Queue admission receipt; drained means dequeued, never applied/read."""
     text = " ".join(str(text or "").split()).strip()
     if not text:
-        return False
+        return None
     task = _ACTIVE_WORKERS.get(child_session_id)
     run = _WORKER_RUNS.get(child_session_id)
     if task is None or task.done() or run is None or not run.accepts_steers:
-        return False
-    run.steer_queue.append({"text": text[:4000], "source": "supervisor" if source == "supervisor" else "user"})
-    return True
+        return None
+    entry = {"text": text[:4000], "source": "supervisor" if source == "supervisor" else "user"}
+    receipt = {"receipt_id": uuid.uuid4().hex, "state": "queued", "durability": "unknown",
+               "accepted_attempt_run_id": run._steering_attempt_id or "", "source": entry["source"]}
+    run.steer_queue.append(entry)
+    run._steering_entry_receipts[id(entry)] = receipt
+    run._steering_receipts[receipt["receipt_id"]] = receipt
+    while len(run._steering_receipts) > 1024:
+        # The pending entry sidecar still owns its receipt; only the live
+        # observation history is bounded. The durable journal is unchanged.
+        run._steering_receipts.pop(next(iter(run._steering_receipts)))
+    _record_steering_receipt(run, receipt, "queued")
+    return dict(receipt)
+
+
+def steer_worker(child_session_id: str, text: str, source: str = "user") -> bool:
+    """True confirms queue admission, not injection, reading or persistence."""
+    return steer_worker_receipt(child_session_id, text, source) is not None
 
 
 def pending_steers(child_session_id: str) -> List[Dict[str, str]]:
-    """Drain the steering queue of a worker (what the loop injects next)."""
+    """Drain exact queue entries; observe removal without claiming application."""
     run = _WORKER_RUNS.get(child_session_id)
     if run is None:
         return []
     out, run.steer_queue = list(run.steer_queue), []
+    for entry in out:
+        receipt = run._steering_entry_receipts.pop(id(entry), None)
+        if receipt is not None:
+            _record_steering_receipt(run, receipt, "drained", drained_attempt_run_id=run._steering_attempt_id)
     return out
+
+
+def _drop_pending_steering(run):
+    """Only coordinator final cleanup calls this, after all attempts/retries."""
+    pending, run.steer_queue = list(run.steer_queue), []
+    for entry in pending:
+        receipt = run._steering_entry_receipts.pop(id(entry), None)
+        if receipt is not None:
+            _record_steering_receipt(run, receipt, "dropped")
 
 
 def worker_board() -> Dict[str, Dict[str, Any]]:
@@ -1238,6 +1279,10 @@ class SubagentRun:
         self.stalled = False
         self.stall_reason: Optional[str] = None
         self.steer_queue: List[Dict[str, str]] = []
+        self._steering_recorder = None
+        self._steering_attempt_id = None
+        self._steering_entry_receipts = {}
+        self._steering_receipts = {}
         # Per attempt: task liveness includes terminal fanout and cleanup,
         # neither of which can inject another instruction into the loop.
         self.accepts_steers = False
@@ -1601,6 +1646,7 @@ async def _run_subagent(
     invocation_run_id = uuid.uuid4().hex
     _worker_opts["run_id"] = invocation_run_id
     run.invocation_run_ids = (run.invocation_run_ids + [invocation_run_id])[-8:]
+    run._steering_attempt_id = invocation_run_id
     origin_token = bind_run(child_sid, invocation_run_id,
                             _require_durable_email_intent=True)
     run.accepts_steers = True
@@ -2178,14 +2224,18 @@ class DelegateAgentsTool:
         # One id per delegate_agents CALL: the board keys its state by it, so
         # a second /agents in the same chat does not pile onto the first.
         delegation_id = uuid.uuid4().hex[:8]
-        from src.run_causality import CallOrigin
+        from src.run_causality import CallOrigin, capture_effect_recorder
         causal = ctx.get("_causal_call")
         if not isinstance(causal, CallOrigin) or causal.session_id != str(parent_sid or ""):
             causal = None
         parent_run_id = causal.run_id if causal else None
         parent_call_id = causal.call_id if causal else None
+        steering_recorder = capture_effect_recorder(parent_sid) if causal else None
+        if steering_recorder is not None and (not parent_run_id or getattr(steering_recorder, "run_id", None) != parent_run_id):
+            steering_recorder = None
         for run in runs:
             _bind_causal_identity(run, parent_run_id, delegation_id, parent_call_id)
+            run._steering_recorder = steering_recorder
         locks = FileLockRegistry(workspace)
         harness_options = ctx.get("harness_options") if isinstance(ctx.get("harness_options"), dict) else None
 
@@ -2496,6 +2546,7 @@ class DelegateAgentsTool:
                 # The transcript is saved HERE, after the stop reason is final
                 # (stopped / stalled / timeout), not in _run_subagent's finally.
                 _save_transcript(run, sm)
+                _drop_pending_steering(run)
                 if run.session_id:
                     _ACTIVE_WORKERS.pop(run.session_id, None)
                     _WORKER_RUNS.pop(run.session_id, None)
@@ -2557,6 +2608,7 @@ class DelegateAgentsTool:
                 _defs.resolve_task(reviewer_task, workspace=workspace)
             reviewer = SubagentRun(len(runs), reviewer_task, role="reviewer")
             _bind_causal_identity(reviewer, parent_run_id, delegation_id, parent_call_id)
+            reviewer._steering_recorder = steering_recorder
             # The reviewer runs after everyone else, so nobody is still writing:
             # this is the ONE place that fact is true, and the one place the
             # bypass is granted.

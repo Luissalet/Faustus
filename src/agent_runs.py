@@ -798,6 +798,26 @@ class _EffectRecorder:
     def __init__(self, run: _Run):
         self._run = run
 
+    @property
+    def run_id(self) -> str:
+        return self._run.run_id
+
+    def record_steering(self, *, receipt_id: str, state: str,
+                        child_session_id: str, worker_id: str, delegation_id: str,
+                        accepted_attempt_run_id: str, source: str,
+                        drained_attempt_run_id: Optional[str] = None) -> None:
+        """Durable observation for this exact run; never a restored queue."""
+        if (state not in {"queued", "drained", "dropped"} or not receipt_id
+                or not child_session_id or not accepted_attempt_run_id):
+            raise ValueError("invalid steering receipt")
+        event = {"type": "steering_receipt", "receipt_id": receipt_id, "state": state,
+                 "parent_run_id": self._run.run_id, "child_session_id": child_session_id,
+                 "worker_id": worker_id, "delegation_id": delegation_id,
+                 "accepted_attempt_run_id": accepted_attempt_run_id, "source": source}
+        if drained_attempt_run_id:
+            event["drained_attempt_run_id"] = drained_attempt_run_id
+        _publish(self._run, "data: " + json.dumps(event, ensure_ascii=False) + "\n\n", durable=True)
+
     def record(self, **fields: Any) -> None:
         log = self._run.log
         if not fields.get("durable") and log is not None and (log._f is None or log._orphaned):
