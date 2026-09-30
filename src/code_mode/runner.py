@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -27,6 +28,7 @@ from src.code_mode.outcomes import CallOutcomes
 logger = logging.getLogger(__name__)
 
 _GUEST_PATH = os.path.join(os.path.dirname(__file__), "guest.py")
+_WINDOWS_BOOTSTRAP_PATH = os.path.join(os.path.dirname(__file__), "windows_job_bootstrap.py")
 
 # Python -I isolates interpreter configuration, not filesystem or network.
 HOST_RUNTIME_GUARANTEES = {
@@ -139,6 +141,63 @@ async def _read_line(stream: asyncio.StreamReader) -> Optional[bytes]:
     return line or None
 
 
+class _WindowsProcessScope:
+    def __init__(self, job):
+        self.job = job
+        self.proc = None
+        self.spawn_task = None
+        self.pump_task = None
+        self.assigned = False
+
+    def close_job(self):
+        self.job.close()
+
+    async def cleanup(self):
+        # Close the native handle first: descendants are killed without walking
+        # recorded parent PIDs, including when cancellation precedes spawn ACK.
+        self.close_job()
+        if self.spawn_task is not None:
+            await asyncio.wait({self.spawn_task}, timeout=5)
+            if self.spawn_task.done():
+                try:
+                    self.proc = self.spawn_task.result()
+                except (Exception, asyncio.CancelledError):
+                    pass
+        if self.proc is None:
+            return
+        if self.pump_task is not None and not self.pump_task.done():
+            self.pump_task.cancel()
+            await asyncio.wait({self.pump_task}, timeout=5)
+        if self.pump_task is not None and self.pump_task.done():
+            await asyncio.gather(self.pump_task, return_exceptions=True)
+        if self.proc.returncode is None:
+            try:
+                self.proc.kill()  # Owned direct handle, possibly not assigned yet.
+            except ProcessLookupError:
+                pass
+        if self.proc.stdin is not None:
+            self.proc.stdin.close()
+
+        async def discard(reader):
+            while await reader.read(8192):
+                pass
+
+        # Resume paused pipe readers without retaining output; a killed process
+        # can otherwise wait forever for its transport to report EOF.
+        drains = [asyncio.create_task(discard(reader)) for reader in
+                  (self.proc.stdout, self.proc.stderr) if reader is not None]
+        done, pending = await asyncio.wait(drains, timeout=5) if drains else (set(), set())
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*done, *pending, return_exceptions=True)
+        try:
+            await asyncio.wait_for(self.proc.wait(), timeout=5)
+            if self.proc.stdin is not None:
+                await asyncio.wait_for(self.proc.stdin.wait_closed(), timeout=1)
+        except (Exception, asyncio.CancelledError):
+            pass
+
+
 async def run_code_mode(
     code: str,
     *,
@@ -149,6 +208,38 @@ async def run_code_mode(
     workspace_roots: Optional[list] = None,
     tool_policy: Any = None,
     security_context: Any = None,
+) -> dict:
+    kwargs = dict(session_id=session_id, owner=owner, disabled_tools=disabled_tools,
+                  workspace=workspace, workspace_roots=workspace_roots,
+                  tool_policy=tool_policy, security_context=security_context)
+    if not IS_WINDOWS:
+        return await _run_code_mode_impl(code, **kwargs)
+    from src.code_mode.windows_job_bootstrap import create_owned_job, WindowsJobError
+    try:
+        scope = _WindowsProcessScope(create_owned_job())
+    except WindowsJobError as error:
+        return {"error": "Code Mode containment could not start", "error_code": error.code,
+                "exit_code": 1, "runtime_guarantees": dict(HOST_RUNTIME_GUARANTEES)}
+    try:
+        result = await _run_code_mode_impl(code, _process_scope=scope, **kwargs)
+        if scope.assigned:
+            result["process_containment"] = {"mechanism": "windows_job_object", "assigned": True}
+        return result
+    finally:
+        await scope.cleanup()
+
+
+async def _run_code_mode_impl(
+    code: str,
+    *,
+    session_id: Optional[str] = None,
+    owner: Optional[str] = None,
+    disabled_tools: Optional[set] = None,
+    workspace: Optional[str] = None,
+    workspace_roots: Optional[list] = None,
+    tool_policy: Any = None,
+    security_context: Any = None,
+    _process_scope=None,
 ) -> dict:
     limits = _limits()
     timeout_s = max(1, limits["timeout_seconds"])
@@ -174,12 +265,21 @@ async def run_code_mode(
     )
     if not IS_WINDOWS:
         popen_kwargs["preexec_fn"] = _preexec_fn(max_memory_bytes, timeout_s + 5)
+    else:
+        popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
 
     t0 = time.monotonic()
     try:
-        proc = await asyncio.create_subprocess_exec(
-            sys.executable, "-I", _GUEST_PATH, user_code_path, **popen_kwargs
-        )
+        command = [sys.executable, "-I", _GUEST_PATH, user_code_path]
+        if _process_scope is not None:
+            command = [sys.executable, "-I", _WINDOWS_BOOTSTRAP_PATH, _process_scope.job.name,
+                       _GUEST_PATH, user_code_path]
+            _process_scope.spawn_task = asyncio.create_task(
+                asyncio.create_subprocess_exec(*command, **popen_kwargs))
+            proc = await asyncio.shield(_process_scope.spawn_task)
+            _process_scope.proc = proc
+        else:
+            proc = await asyncio.create_subprocess_exec(*command, **popen_kwargs)
     except Exception as e:  # noqa: BLE001
         logger.exception("code_mode: failed to spawn guest process")
         return {"error": f"Code Mode failed to start: {e}", "exit_code": 1,
@@ -193,6 +293,24 @@ async def run_code_mode(
     wall_clock = _WallClock(timeout_s)
     approvals_log: list = []
     outcomes = CallOutcomes()
+
+    if _process_scope is not None:
+        # No configuration is released to the guest until assignment is ACKed.
+        try:
+            raw = await asyncio.wait_for(_read_line(proc.stdout), timeout=min(timeout_s, 5))
+            ack = json.loads(raw.decode("utf-8")) if raw is not None else {}
+        except Exception:
+            ack = {}
+        if (not isinstance(ack, dict) or type(ack.get("protocol")) is not int
+                or ack != {"type": "containment_ready", "protocol": 1,
+                           "mechanism": "windows_job_object"}):
+            code = ack.get("error_code") if isinstance(ack, dict) else None
+            if code not in {"windows_job_open_failed", "windows_job_assign_failed",
+                            "windows_job_bootstrap_close_failed", "windows_job_unavailable"}:
+                code = "windows_job_protocol_failed"
+            return {"error": "Code Mode containment could not start", "error_code": code,
+                    "exit_code": 1, "runtime_guarantees": dict(HOST_RUNTIME_GUARANTEES)}
+        _process_scope.assigned = True
 
     proc.stdin.write((json.dumps({
         "max_calls": max_calls,
@@ -264,6 +382,8 @@ async def run_code_mode(
                     return
             elif msg_type == "final":
                 final_payload = msg
+                if _process_scope is not None:
+                    _process_scope.close_job()
                 return
 
     async def _drain_stderr():
@@ -290,11 +410,15 @@ async def run_code_mode(
     # so this loop's own timeout check simply never fires while a human is
     # being asked, and still fires promptly for a script that is just slow.
     pump_task = asyncio.ensure_future(_wait_pump())
+    if _process_scope is not None:
+        _process_scope.pump_task = pump_task
     try:
         while not pump_task.done():
             remaining = wall_clock.remaining()
             if terminated_by is not None or remaining <= 0:
                 terminated_by = terminated_by or "timeout"
+                if _process_scope is not None:
+                    _process_scope.close_job()
                 pump_task.cancel()
                 try:
                     await pump_task
@@ -308,6 +432,8 @@ async def run_code_mode(
             except asyncio.TimeoutError:
                 continue
     except asyncio.CancelledError:
+        if _process_scope is not None:
+            _process_scope.close_job()
         # Cancellation must not bypass the reap below or leave the shielded
         # protocol/stderr pump running. Only terminate our direct child;
         # descendant containment is a separate runtime guarantee.
@@ -342,7 +468,10 @@ async def run_code_mode(
             # treat it as its own diagnostic reason when known, else "error".
             terminated_by = terminated_by or "error"
         from src.agent_tools.subprocess_tools import _kill_tree_async
-        await _kill_tree_async(proc)
+        if _process_scope is not None:
+            _process_scope.close_job()
+        else:
+            await _kill_tree_async(proc)
         try:
             await asyncio.wait_for(proc.wait(), timeout=5)
         except Exception:
@@ -366,13 +495,16 @@ async def run_code_mode(
         }
 
     # A cooperative finish: the guest itself hit (and reported) a quota, or
-    # finished normally. Either way it is exiting on its own; reap it rather
-    # than force-killing a process that is already on its way out.
+    # finished normally. Windows has closed the job after its final frame;
+    # on POSIX the cooperative child exits on its own. Reap the direct child.
     try:
         await asyncio.wait_for(proc.wait(), timeout=5)
     except Exception:
         from src.agent_tools.subprocess_tools import _kill_tree_async
-        await _kill_tree_async(proc)
+        if _process_scope is not None:
+            _process_scope.close_job()
+        else:
+            await _kill_tree_async(proc)
 
     status = final_payload.get("status") or "ok"
     if status != "ok":
