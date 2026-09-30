@@ -24,6 +24,7 @@ import type { Attachment } from '../../adapters/composer';
 import type { VramBlocked } from '../../adapters/vramAdmission';
 import type { ModeCheckResult } from '../../adapters/behaviorModes';
 import { t } from '../../i18n';
+import { generatedImageUrl } from '../../lib/generated-image-url';
 
 /**
  * The transcript's data model and the one reducer that applies a stream
@@ -1010,7 +1011,8 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
         },
       };
     case 'image':
-      return { ...turn, images: [...turn.images, event.url] };
+      return generatedImageUrl(event.url) && !turn.images.includes(event.url)
+        ? { ...turn, images: [...turn.images, event.url] } : turn;
     case 'fallback':
       return {
         ...turn,
@@ -1290,6 +1292,11 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
   // array below — same fix, same reason: `events[i]` and `rawEvents[i]` are
   // the same persisted `tool_events` entry, 1:1 in order.
   const rawEvents = Array.isArray(meta.tool_events) ? (meta.tool_events as Record<string, unknown>[]) : [];
+  const images = [...new Set([...turn.images, ...rawEvents.flatMap((event) => {
+    if (!event || (event.exit_code !== 0 && event.exit_code !== undefined)) return [];
+    const url = generatedImageUrl(event.image_url);
+    return url ? [url] : [];
+  })])];
   const steps: Step[] = [];
   const workers: Worker[] = [];
   let ask: AskUser | undefined;
@@ -1355,6 +1362,7 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
     thinking: restoredThoughts.thinking || turn.thinking,
     thoughts: restoredThoughts.thoughts.length ? restoredThoughts.thoughts : turn.thoughts,
     steps: steps.length ? steps : turn.steps,
+    images,
     workers: workers.length ? workers : turn.workers,
     rounds: Math.max(rounds, Math.max(0, Math.trunc(n(harness?.round_count) ?? 0))),
     ask: ask ?? (approval ? undefined : turn.ask),
