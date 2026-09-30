@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -38,6 +39,11 @@ from src.memory import get_text_similarity
 from src import memory_engine as engine
 
 logger = logging.getLogger(__name__)
+
+# Different visible scopes may share global rows. Serialize the full pass,
+# not individual mutations or per-owner calls. External writers/processes
+# do not participate in this lock; this is not a database transaction.
+_CURATION_LOCK = threading.RLock()
 
 
 def _norm(text: Any) -> str:
@@ -311,6 +317,13 @@ def curate(owner: Optional[str] = None, project: Optional[str] = None,
     total_active}``. Raises only if the store itself is unusable — callers on
     a hot path should use :func:`safe_curate`.
     """
+    with _CURATION_LOCK:
+        return _curate(owner, project, now)
+
+
+def _curate(owner: Optional[str], project: Optional[str],
+            now: Optional[datetime]) -> Dict[str, Any]:
+    """Run the passes while the process-wide curator lock is held."""
     now = now or engine._utcnow()
     report = {"deduped": 0, "conflicts": 0, "inverted": 0,
               "promoted": 0, "demoted": 0, "pruned": 0, "total_active": 0}
