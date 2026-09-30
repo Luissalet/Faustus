@@ -1,0 +1,84 @@
+{
+  "schema": 1,
+  "id": "cicero",
+  "name": "Cicero's Hoard",
+  "purpose": "A local workspace that turns a brief and source documents into an editable presentation: outline, slides with speaker notes, per-slide review and revisions, themes, and export to PPTX (native text and charts), PDF, HTML and Markdown, for assistants over MCP.",
+  "capabilities": [
+    "presentation-decks",
+    "source-documents",
+    "outline-generation",
+    "slide-generation",
+    "per-slide-review",
+    "slide-revisions",
+    "number-check-against-sources",
+    "native-pptx-export",
+    "pdf-export",
+    "html-export",
+    "markdown-export",
+    "themes",
+    "image-studio"
+  ],
+  "placeholders": [
+    "CICERO_DIR",
+    "APP_URL",
+    "TOKEN_FILE",
+    "PYTHON"
+  ],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:5194",
+    "TOKEN_FILE": "{CICERO_DIR}/data/mcp-token",
+    "PYTHON": "{CICERO_DIR}/venv/Scripts/python.exe"
+  },
+  "app": {
+    "url_default": "http://127.0.0.1:5194",
+    "ui_url": "{APP_URL}",
+    "health": {
+      "path": "/api/health",
+      "expect": {
+        "service": "cicero-hoard"
+      }
+    },
+    "identify": {
+      "service": [
+        "cicero-hoard"
+      ],
+      "title": [
+        "cicero's hoard",
+        "presentaciones"
+      ]
+    },
+    "launch_hint": {
+      "kind": "process",
+      "executable": "{PYTHON}",
+      "argv": [
+        "-m",
+        "cicero_hoard"
+      ],
+      "cwd": "{CICERO_DIR}",
+      "env": {
+        "PORT_STRICT": "1",
+        "CICERO_PORT": "5194"
+      },
+      "readiness": {
+        "url": "{APP_URL}/api/health",
+        "timeout_s": 30
+      }
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{PYTHON}",
+    "args": [
+      "{CICERO_DIR}/mcp_server.py"
+    ],
+    "env": {
+      "CICERO_URL": "{APP_URL}",
+      "CICERO_TOKEN_FILE": "{TOKEN_FILE}"
+    },
+    "optional_env": [
+      "CICERO_BRIDGE_AUTOSTART",
+      "CICERO_DATA_DIR"
+    ]
+  },
+  "notes": "Keep the app running (python -m cicero_hoard): the MCP bridge proxies every call to the local server, never opens the database, and starts the app itself when it is not answering. Tools that change or delete something: deck_create, deck_update, deck_delete, source_add, source_remove, outline_generate, outline_update, slides_generate, slide_update, slide_regenerate, slide_approve, slide_revert, slide_add, slide_delete, slides_reorder, deck_theme (with a theme), deck_export (writes a file), slide_image. Deletes need confirm=true and only when the user asks; outline_generate, outline_update and slides_generate replace what the outline or the draft slides held. Figures on slides must come from the sources; deck_check lists the ones that do not. Approving a slide is the person's decision. PDF export needs Chromium (python -m playwright install chromium); without it deck_export with format pdf fails with pdf_unavailable and the other formats still work. slide_image needs the family image studio and fails with image_studio_unavailable otherwise."
+}
