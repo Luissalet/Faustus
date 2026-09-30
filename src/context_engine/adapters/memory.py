@@ -140,8 +140,8 @@ class MemoryEngineSource(ThreadedSource):
         return self._search_bundle(req, strict=False)[0]
 
     async def search(self, req: RetrievalRequest) -> Sequence[ContextCandidate]:
-        from ..memory_engine_reuse import capturing, completed, standing
-        if not capturing() or not standing(req):
+        from ..memory_engine_reuse import capturing, completed, hybrid, standing
+        if not capturing() or not (standing(req) or hybrid(req)):
             return await super().search(req)
         if self._gate(req):
             return ()
@@ -161,12 +161,22 @@ class MemoryEngineSource(ThreadedSource):
         degraded = False
 
         if query and req.allows("lexical"):
-            # Omit the new option for the default enabled path, preserving
-            # legacy injected engines while enforcing an explicit policy veto.
-            semantic_options = {} if req.allows("semantic") else {"semantic_enabled": False}
-            rows = engine.search(query, owner=owner, project=project, k=limit,
-                                 statuses=("active", "anti_pattern"),
-                                 touch_hits=False, **semantic_options)
+            rows = None
+            if strict:
+                from ..memory_engine_reuse import validating
+                try:
+                    rows, bundle = self._strict_query(engine, query, owner, project, limit, req)
+                except Exception:
+                    if validating():
+                        raise
+                    rows, bundle = None, None
+            if rows is None:
+                # Omit the new option for the default enabled path, preserving
+                # legacy injected engines while enforcing an explicit policy veto.
+                semantic_options = {} if req.allows("semantic") else {"semantic_enabled": False}
+                rows = engine.search(query, owner=owner, project=project, k=limit,
+                                     statuses=("active", "anti_pattern"),
+                                     touch_hits=False, **semantic_options)
         elif req.allows("mandatory"):
             if strict:
                 from ..memory_engine_reuse import database_path, validating
@@ -195,6 +205,39 @@ class MemoryEngineSource(ThreadedSource):
             if candidate is not None:
                 out.append(candidate)
         return tuple(out[:limit]), bundle
+
+    def _strict_query(self, engine: Any, query: str, owner: str, project: str,
+                      limit: int, req: RetrievalRequest):
+        """Read-only strict hybrid query through ``context_search``.
+
+        Captures the database path and the installed vector runtime identity
+        before and after (``None`` when the semantic lane is vetoed) plus the
+        scoring clock.  Revalidation pins that clock through
+        ``_scoring_clock`` while validity is always evaluated now, so a
+        capture certifies data/runtime, not the passage of time.  Any failure
+        raises: the caller degrades to the legacy search without a receipt.
+        """
+        from ..memory_engine_reuse import database_path
+        from src.embedding_runtime_identity import vector_identity
+
+        semantic = req.allows("semantic")
+        before = database_path()
+        expected = getattr(self, "_expected_database_path", None)
+        if expected is not None and expected != before:
+            raise ValueError("learned memory database changed before query")
+        identity_before = (vector_identity(engine._installed_semantic_store())
+                           if semantic else None)
+        if (hasattr(self, "_expected_vector_identity")
+                and self._expected_vector_identity != identity_before):
+            raise ValueError("memory vector runtime changed before query")
+        current = datetime.now(timezone.utc)
+        clock = getattr(self, "_scoring_clock", None) or current
+        rows = engine.context_search(query, owner, project, k=limit, now=clock, as_of=current,
+                                     statuses=("active", "anti_pattern"),
+                                     semantic_enabled=semantic)
+        identity_after = (vector_identity(engine._installed_semantic_store())
+                          if semantic else None)
+        return rows, (before, database_path(), identity_before, identity_after, clock)
 
     @staticmethod
     def _standing(engine: Any, owner: str, project: str,
