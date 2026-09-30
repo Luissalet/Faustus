@@ -181,9 +181,10 @@ async def test_terminal_stream_event_closes_before_error_fanout_and_retry_reopen
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("terminal", ["rounds_exhausted", "budget_exceeded", "intent_nudge_exhausted"])
+@pytest.mark.parametrize("terminal", ["rounds_exhausted", "budget_exceeded", "intent_nudge_exhausted", "budget_exhausted"])
 async def test_terminal_guard_rejects_late_input_preserves_queue_and_retry(worker, monkeypatch, terminal):
     attempts = []
+    observed_guards = []
     async def stream(*a, **kw):
         register(worker)
         attempts.append(True)
@@ -199,11 +200,13 @@ async def test_terminal_guard_rejects_late_input_preserves_queue_and_retry(worke
         yield "data: [DONE]\n\n"
     async def emit(event):
         if event["event"] == "guard":
+            observed_guards.append(event["kind"])
             assert not asyncio.current_task().done()
             assert not worker.accepts_steers
             assert not st.steer_worker(worker.session_id, "Late terminal input")
     monkeypatch.setattr(agent_loop, "stream_agent_loop", stream)
     await attempt(worker, emit)
+    assert observed_guards == [terminal]
     assert worker.steered == 0 and len(worker.steer_queue) == 1
     await attempt(worker, emit)
     assert worker.steered == 1 and worker.steer_queue == []
@@ -255,3 +258,58 @@ def test_real_guard_callsites_end_rounds_instead_of_recovering(terminal):
             budget_exit = next(node for node in ast.walk(tree) if isinstance(node, ast.If)
                 and isinstance(node.test, ast.Name) and node.test.id == "budget_hit")
             assert isinstance(budget_exit.body[-1], ast.Break)
+
+
+@pytest.mark.asyncio
+async def test_nonterminal_budget_metrics_leave_admission_open(worker, monkeypatch):
+    async def stream(*a, **kw):
+        register(worker)
+        yield 'data: {"type":"metrics","data":{"budget":{"used":1,"limit":10}}}\n\n'
+        assert worker.accepts_steers
+        assert st.steer_worker(worker.session_id, "Budget remains available")
+        assert kw["pending_user_messages"]()[0]["text"] == "Budget remains available"
+    async def emit(event):
+        pass
+    monkeypatch.setattr(agent_loop, "stream_agent_loop", stream)
+    await attempt(worker, emit)
+
+
+def test_all_real_budget_exhausted_callsites_stop_instead_of_recovering():
+    import ast
+    from pathlib import Path
+    tree = ast.parse(Path(agent_loop.__file__).read_text(encoding="utf-8"))
+    parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
+    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Yield)
+        and isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name)
+        and node.value.func.id == "_budget_exhausted_event"]
+    assert len(calls) == 4
+    guards = []
+    for node in calls:
+        while node in parents:
+            node = parents[node]
+            if isinstance(node, ast.If):
+                guards.append(node)
+                break
+    assert all(isinstance(guard.body[-1], ast.Break) for guard in guards)
+    flags = []
+    for guard in guards:
+        loop = guard
+        while loop in parents and not isinstance(loop, (ast.For, ast.AsyncFor, ast.While)):
+            loop = parents[loop]
+        if isinstance(loop, ast.For):
+            assert any(isinstance(node, ast.Assign) and any(isinstance(target, ast.Name)
+                and target.id == "budget_hit" for target in node.targets)
+                and isinstance(node.value, ast.Constant) and node.value.value is True for node in guard.body)
+            flags.append("budget_hit")
+        elif isinstance(loop, ast.AsyncFor):
+            assert isinstance(guard.test, ast.Compare)
+            assert isinstance(guard.test.left, ast.Name)
+            assert guard.test.left.id == "_compaction_budget_exhaustion"
+            flags.append("_compaction_budget_exhaustion")
+    assert sorted(flags) == ["_compaction_budget_exhaustion", "budget_hit", "budget_hit"]
+    for flag in set(flags):
+        exits = [node for node in ast.walk(tree) if isinstance(node, ast.If)
+            and ((isinstance(node.test, ast.Name) and node.test.id == flag)
+                or (isinstance(node.test, ast.Compare) and isinstance(node.test.left, ast.Name)
+                    and node.test.left.id == flag)) and isinstance(node.body[-1], ast.Break)]
+        assert any(isinstance(parents[node], ast.While) for node in exits)
