@@ -6,6 +6,7 @@
     {"id": "babel", "repository_url": "https://github.com/Luissalet/BabelsHoard.git", "required": false},
     {"id": "borges", "repository_url": "https://github.com/Luissalet/BorgesHoard.git", "required": false},
     {"id": "cassandra", "repository_url": "https://github.com/Luissalet/CassandraHoard.git", "required": false},
+    {"id": "cicero", "repository_url": "https://github.com/Luissalet/CiceroHoard.git", "required": false},
     {"id": "cookhoard", "repository_url": "https://github.com/Luissalet/CookHoard.git", "required": false},
     {"id": "daguerre", "repository_url": "https://github.com/Luissalet/DaguerresHoard.git", "required": false},
     {"id": "diskhoard", "repository_url": "https://github.com/Luissalet/DiskHoard.git", "required": false},

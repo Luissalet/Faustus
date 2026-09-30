@@ -75,11 +75,15 @@ galería y recibo usan recuperación idempotente, no una única transacción con
   `waiting` con job conocido (`reconcile_pending_images`), bajo su propio
   propietario, sesión y conexión; nunca reenvía. Los envíos sin job conocido
   siguen necesitando reconciliación manual. No hay journal completo de batches.
-- OpenAI-compatible `images/generations`, `images/edits`, upscale y rembg
-  anteriores continúan en Faustus. BLOQUEADO: upscale/rembg en Prospero
-  necesitan modelos que no están instalados (RealESRGAN y un modelo de recorte);
-  su descarga requiere autorización. Inpaint anterior se conserva como
-  alternativa al estudio Prospero.
+- `upscale` (`scale` 2 o 4) y `remove_background` van a
+  `POST /api/assets/{id}/edit` del estudio con el mismo recibo durable; la
+  huella incluye la operación y la escala, así que x2 y x4 son peticiones
+  distintas. Necesitan `RealESRGAN_x4plus.safetensors` y `birefnet.safetensors`
+  en ComfyUI; sin ellos el estudio responde `model_missing`. Un recorte
+  ampliado conserva su canal alfa (el estudio elige la plantilla con alfa).
+- OpenAI-compatible `images/generations`, `images/edits`, y upscale/rembg sin el
+  estudio seleccionado continúan en Faustus con sus servicios anteriores.
+  Inpaint anterior se conserva como alternativa al estudio Prospero.
 
 ## Referencias y comprobación
 
