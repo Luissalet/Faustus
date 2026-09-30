@@ -29,3 +29,10 @@ H23 sigue parcial: no añade interfaz ni agrupación por fase. No inventa la fas
 de llamadas históricas ni representa duración de llamadas como latencia causal
 total del turno. La cobertura de auxiliares y la exactitud del coste dependen de
 los recibos realmente disponibles; sin métricas permanecen desconocidas.
+
+
+### VISITADO / IMPLEMENTADO — fase explícita de auxiliares en trazas
+
+`8889446f`: ContextVar limitado a compaction/recovery y step2/3 identifica únicamente llamadas efectivamente realizadas. Scope alrededor de inferencia; reset ante excepción/cancel, anidación y concurrencia. JSONL, listado y detalle conservan phase/step opcionales. Históricos sin fase quedan desconocidos; no se infiere foreground ni se inventan llamadas para compactación determinista. Uso/coste no se suman aquí ni se copian arrays por turno a todas las trazas.
+
+13 nuevas correctas1,02s; selección final65 correctas43,52s con las13; coordinador13 correctas1,23s. Selección previa168 correctas78,64s incluía11 nuevas antes de las2 últimas: no se declara final congelada. JSONL flush/reopen real; compactador/ladder reales con inferencias sintéticas. Evaluación previa SQLite confirma que recovery_usage/compaction_usage persisten en metadata del chat; no se encontró truncamiento de esos arrays. Vista/agrupación causal y facturación universal siguen pendientes. Fuente original ya visitada: https://github.com/openai/codex/tree/b1e72963c3b71a9265a551e54beff078384efed9; adaptación propia.
