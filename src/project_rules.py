@@ -375,7 +375,14 @@ def block(workspace: str, *, trusted: bool = True, languages: Optional[Sequence[
 
     key = (root, trusted, langs, budget)
     captured_rules = tuple(discover_project_rules(root))
-    sig = _project_rules_signature(root, _rules=captured_rules)
+    library_enabled = bool(_setting("project_rules_library_enabled", True))
+    # Consult the library TTL before returning a rendered block. Capture once:
+    # both identity and output below use this same parsed projection.
+    captured_library = tuple(_library_rules()) if library_enabled else ()
+    library_sig = tuple((r.id, r.title, r.applies_to, r.priority,
+                         hashlib.sha256(r.body.encode("utf-8")).hexdigest())
+                        for r in captured_library)
+    sig = (_project_rules_signature(root, _rules=captured_rules), library_enabled, library_sig)
     with _BLOCK_LOCK:
         cached = _BLOCK_CACHE.get(key)
     if cached and cached[0] == sig:
@@ -402,8 +409,8 @@ def block(workspace: str, *, trusted: bool = True, languages: Optional[Sequence[
         if note:
             parts.append(note.strip())
 
-    if bool(_setting("project_rules_library_enabled", True)):
-        for r in _library_rules():
+    if library_enabled:
+        for r in captured_library:
             if r.applies_to:
                 if not langs or not (set(r.applies_to) & set(langs)):
                     continue
