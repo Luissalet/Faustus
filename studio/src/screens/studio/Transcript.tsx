@@ -4,7 +4,7 @@ import { Link } from 'react-router';
 import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { lazyChunk } from '../../shell/lazyChunk';
 import { createPortal } from 'react-dom';
-import { Button, describeError, ExecutionTimeline, friendlyError, IconButton } from '../../components';
+import { Button, describeError, ExecutionTimeline, friendlyError, IconButton, TurnCostBreakdown } from '../../components';
 import { fetchCompactionEvent, pinCompactionFragment, fetchLlmTraces, forkLlmTrace, faviconStripEntries, type AdvisorAdvice, type AskUser, type CompactionEvent, type ContextLedger, type ContextReceipt, type DelegationTask, type LlmTraceRow, type WebSource } from '../../adapters/chat';
 import { createRecipeFromRun } from '../../adapters/strategy';
 import type { AnswerVersion } from '../../adapters/sessions';
@@ -2169,6 +2169,7 @@ function AssistantTurn({
           </div>
         )}
         {!turn.streaming && turn.metrics?.execution && <ExecutionTimeline execution={turn.metrics.execution} promptCache={turn.metrics.prompt_cache} />}
+        {!turn.streaming && sessionId && turn.metrics?.runId && <TurnCostBreakdown sessionId={sessionId} runId={turn.metrics.runId} />}
       </div>
     </article>
   );

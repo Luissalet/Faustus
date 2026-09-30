@@ -26,6 +26,7 @@ import {
   routeForSession,
 } from '../adapters/chat';
 import { ApiError } from '../adapters/api';
+import { acknowledgeQueuedSend, claimQueuedSends } from '../adapters/runReport';
 import { listProjects, type Project } from '../adapters/projects';
 import { createDoc } from '../adapters/documents';
 import type { EvidenceRef } from '../adapters/evidence';
@@ -2752,6 +2753,38 @@ export function StudioScreen() {
       );
     });
   }, [sessionId, say]);
+
+  // H19: a "send after" message is handed to the client once its turn has
+  // ended (the server never starts a turn by itself). The client sends it as
+  // a normal turn and only then acknowledges it; until that acknowledgement
+  // the server does not call it delivered, and a restart in between drops it
+  // with a reason and carries it into the next turn's context.
+  const claimingSends = useRef(false);
+  const busyNow = useRef(false);
+  busyNow.current = busy;
+  useEffect(() => {
+    if (!sessionId || busy || claimingSends.current || knobs.incognito) return;
+    claimingSends.current = true;
+    void (async () => {
+      try {
+        const { messages } = await claimQueuedSends(sessionId);
+        if (messages.length === 0) return;
+        // Everything held for this turn goes out as one new turn, in the
+        // order it was typed; each receipt is acknowledged once it has gone.
+        const joined = messages.map((m) => m.text).join('\n\n');
+        if (busyNow.current) {
+          // The user started another turn while we were asking: hold the text
+          // again behind that one instead of interleaving two turns.
+          if (!(await steerChat(sessionId, joined, { runId: runIdRef.current, mode: 'queue' }))) return;
+        } else {
+          void run(sessionId, joined);
+        }
+        for (const m of messages) await acknowledgeQueuedSend(m.receiptId);
+      } finally {
+        claimingSends.current = false;
+      }
+    })();
+  }, [busy, sessionId, run, knobs.incognito]);
 
   /* ── Earlier answers (‹ 1/3 ›): what a regenerate or an edit replaced ── */
   const [answerVersions, setAnswerVersions] = useState<Record<string, AnswerVersion[]>>({});

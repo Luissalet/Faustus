@@ -1224,3 +1224,133 @@
 .fs-timeline__tokens dd {
   margin: 0;
 }
+
+/* ══ TurnCostBreakdown — where one turn's time and tokens went ═════════
+   Same disclosure shape as .fs-timeline. A value nobody reported reads
+   "unknown" in the muted tone, never as a zero. */
+
+.fs-turncost {
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: color-mix(in srgb, var(--fs-surface-1) 55%, transparent);
+  font-size: var(--fs-label-size);
+}
+
+.fs-turncost > summary {
+  cursor: pointer;
+  list-style: none;
+  color: var(--fs-text-2);
+}
+
+.fs-turncost > summary::-webkit-details-marker {
+  display: none;
+}
+
+.fs-turncost__title {
+  font-weight: var(--fs-label-weight);
+  letter-spacing: 0.02em;
+}
+
+.fs-turncost__total,
+.fs-turncost__empty {
+  margin: var(--fs-space-2) 0 0;
+  color: var(--fs-text-2);
+}
+
+.fs-turncost__error {
+  margin: var(--fs-space-2) 0 0;
+  color: var(--fs-danger, var(--fs-warning));
+}
+
+.fs-turncost__phases,
+.fs-turncost__items,
+.fs-turncost__notes {
+  display: grid;
+  gap: var(--fs-space-2);
+  margin: var(--fs-space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fs-turncost__phase-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--fs-space-2);
+}
+
+.fs-turncost__label {
+  font-weight: var(--fs-label-weight);
+  color: var(--fs-text-1, inherit);
+}
+
+.fs-turncost__calls {
+  color: var(--fs-text-3);
+}
+
+.fs-turncost__figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-1) var(--fs-space-4);
+  margin: var(--fs-space-1) 0 0;
+  color: var(--fs-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.fs-turncost__figures > div {
+  display: flex;
+  gap: var(--fs-space-1);
+}
+
+.fs-turncost__figures dt,
+.fs-turncost__figures dd {
+  margin: 0;
+}
+
+.fs-turncost__figures dt {
+  color: var(--fs-text-3);
+}
+
+.fs-turncost__figures dt::after {
+  content: ':';
+}
+
+.fs-turncost__figures dd[data-unknown] {
+  color: var(--fs-text-3);
+  font-style: italic;
+}
+
+.fs-turncost__items {
+  margin-inline-start: var(--fs-space-3);
+  gap: var(--fs-space-1);
+  color: var(--fs-text-3);
+}
+
+.fs-turncost__items li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+  align-items: baseline;
+}
+
+.fs-turncost__badge {
+  padding-inline: var(--fs-space-2);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-3);
+  color: var(--fs-text-3);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.fs-turncost__badge[data-kind='error'],
+.fs-turncost__badge[data-kind='unknown-effect'] {
+  color: var(--fs-warning);
+}
+
+.fs-turncost__notes {
+  color: var(--fs-warning);
+  line-height: 1.45;
+}

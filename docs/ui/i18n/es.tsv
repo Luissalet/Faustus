@@ -8871,3 +8871,18 @@ simulated	simulada
 {n} nodes	{n} nodos
 {n} pass(es)	{n} pasada(s)
 {p} passed, {f} failed, {e} errored of {n}	{p} superados, {f} fallidos, {e} con error de {n}
+Advisor	Asesor
+Attempt	Intento
+Compaction	Compactación
+Model rounds	Rondas del modelo
+No cost record was kept for this turn.	No se guardó ningún registro de coste de este turno.
+Other model calls	Otras llamadas al modelo
+Recovery	Recuperación
+Retries	Reintentos
+This failed, but it may already have taken effect. Check the destination before trying again.	Esto falló, pero puede que ya haya surtido efecto. Comprueba el destino antes de volver a intentarlo.
+Turn time	Duración del turno
+Where did the cost go?	¿Dónde se fue el coste?
+effect unknown	efecto desconocido
+not attributed to a phase: {n}	sin atribuir a una fase: {n}
+unnamed	sin nombre
+{n} calls	{n} llamadas

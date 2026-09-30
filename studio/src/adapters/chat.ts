@@ -204,6 +204,9 @@ export interface TurnMetrics {
    *  tokens processed, tokens reused, and rounds whose cache stopped short
    *  of the previous request. */
   prompt_cache?: PromptCacheUse;
+  /** The detached run that produced this reply: the key of its cost view
+   *  (`GET /api/runs/{session}/turn-cost?run_id=`). Absent on older history. */
+  runId?: string;
 }
 
 export interface AskOption {
@@ -823,6 +826,7 @@ export function metricsFrom(meta: Record<string, unknown>): TurnMetrics {
     contextPercent: num(meta.context_percent),
     execution: executionMetricsFrom(meta.execution),
     prompt_cache: promptCacheFrom(meta.prompt_cache),
+    runId: str(meta.run_id) || str(meta.trace_id) || undefined,
   };
 }
 
@@ -1670,8 +1674,11 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
         budget: num(data.budget) ?? null,
       };
     }
-    case 'metrics':
-      return { type: 'metrics', metrics: metricsFrom(data) };
+    case 'metrics': {
+      const metrics = metricsFrom(data);
+      // The run id travels on the outer envelope (every event carries it).
+      return { type: 'metrics', metrics: { ...metrics, runId: metrics.runId || str(raw.trace_id) || undefined } };
+    }
     case 'web_sources':
     case 'research_sources':
       return {

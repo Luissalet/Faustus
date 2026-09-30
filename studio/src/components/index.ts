@@ -17,6 +17,7 @@ export {
   ExecutionTimeline,
   type ExecutionTimelineProps,
 } from './ExecutionTimeline';
+export { TurnCostBreakdown, type TurnCostBreakdownProps } from './TurnCostBreakdown';
 export { Toast } from './Toast';
 export { MermaidView, type MermaidViewProps } from './MermaidView';
 export { ChartBlock, type ChartBlockProps } from './ChartBlock';
