@@ -644,6 +644,12 @@ STOP_REASON_SATURATED = "novelty_saturated"  # max_empty_rounds consecutive roun
 STOP_REASON_SEARCH_DOWN = "search_unavailable"
 STOP_REASON_LLM_COVERAGE = "coverage_judged_sufficient"  # the model's own _should_stop
 STOP_REASON_MAX_ROUNDS = "max_rounds_reached"
+# Measured stops (src/research_saturation.py): decided from the evidence itself,
+# with no model call. "saturated" is a measurement (the round added almost no
+# new facts and no new source); STOP_REASON_SATURATED above is the older
+# "the search returned nothing new" path.
+STOP_REASON_MEASURED_SATURATION = "saturated"
+STOP_REASON_CONFIDENCE = "confidence_reached"
 
 _STOP_REASON_TEXT: Dict[str, str] = {
     STOP_REASON_CANCELLED: "the run was cancelled",
@@ -653,6 +659,8 @@ _STOP_REASON_TEXT: Dict[str, str] = {
     STOP_REASON_SEARCH_DOWN: "the search provider stopped returning usable results",
     STOP_REASON_LLM_COVERAGE: "the question's coverage was judged sufficient",
     STOP_REASON_MAX_ROUNDS: "the maximum number of rounds was reached",
+    STOP_REASON_MEASURED_SATURATION: "the evidence stopped growing (saturated)",
+    STOP_REASON_CONFIDENCE: "the measured confidence reached its target",
 }
 
 
@@ -663,6 +671,8 @@ def classify_stop_reason(
     max_rounds: int,
     urls_fetched: int,
     findings: int,
+    reason: Optional[str] = None,
+    detail: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     """A stable, explainable record of why a research run stopped.
 
@@ -671,14 +681,17 @@ def classify_stop_reason(
     the explicit, visible shape RES-02 asks for -- it does not decide
     whether to stop (the loop's own conditions, unchanged, still do that).
     """
-    text = _STOP_REASON_TEXT.get(code, code)
-    return {
+    text = reason or _STOP_REASON_TEXT.get(code, code)
+    info = {
         "code": code,
         "reason": text,
         "rounds_completed": f"{round_num} of {max_rounds}",
         "sources_gathered": urls_fetched,
         "findings_gathered": findings,
     }
+    if detail:
+        info["detail"] = dict(detail)
+    return info
 
 
 def stop_rationale_text(stop_reason: Optional[Mapping[str, Any]]) -> str:
@@ -840,6 +853,13 @@ class DeepResearcher:
         research_perspectives: bool = False,
         research_perspectives_max: int = DEFAULT_PERSPECTIVES_MAX,
         effort: Optional[str] = None,
+        prune_pages: bool = False,
+        prune_max_chars: int = 6000,
+        prune_threshold: float = 0.48,
+        saturation_stop: bool = False,
+        saturation_min_new_facts: int = 2,
+        saturation_patience: int = 1,
+        confidence_stop: float = 0.0,
     ):
         self.llm_endpoint = llm_endpoint
         # How hard the model thinks (src/mode_effort.py). The stages that
@@ -951,6 +971,27 @@ class DeepResearcher:
             (quality_profile or "general").strip().lower(), DEFAULT_QUALITY_PROFILES["general"]
         )
         self.evidence_quality: Optional[Dict[str, Any]] = None
+        # Page pruning (src/research_prune.py): when on, a page reaches the
+        # extraction prompt as the blocks that score well and match the
+        # question, not as the whole page. Off keeps the original path.
+        self.prune_pages: bool = bool(prune_pages)
+        self.prune_max_chars: int = max(500, int(prune_max_chars or 6000))
+        self.prune_threshold: float = min(1.0, max(0.0, float(prune_threshold if prune_threshold is not None else 0.48)))
+        # Measured stopping (src/research_saturation.py). `saturation_stop`
+        # stops after `saturation_patience` rounds that each added fewer than
+        # `saturation_min_new_facts` new facts and no new source;
+        # `confidence_stop` (0 = off) stops once the confidence signal
+        # reaches it. `max_time` stays the ceiling either way.
+        self.saturation_stop: bool = bool(saturation_stop)
+        self.saturation_min_new_facts: int = max(0, int(saturation_min_new_facts))
+        self.saturation_patience: int = max(1, int(saturation_patience or 1))
+        self.confidence_stop: float = max(0.0, float(confidence_stop or 0.0))
+        self.saturation: Optional[Any] = None
+        # What the run measured: one row per page read with the pruning
+        # numbers, one per round with the saturation and confidence numbers.
+        self.research_trace: Dict[str, List[Dict[str, Any]]] = {"pages": [], "rounds": []}
+        # url -> the search query that returned it (the pruning focus).
+        self._url_query: Dict[str, str] = {}
 
     def cancel(self):
         """Request cooperative cancellation of the research loop."""
@@ -1046,6 +1087,7 @@ class DeepResearcher:
             self.queries_used.update(prior_queries)
         self.findings = findings  # expose for handler
         consecutive_empty_rounds = 0
+        tracker = self._make_saturation_tracker(question, findings)
 
         for round_num in range(1, self.max_rounds + 1):
             self.round_count = round_num
@@ -1093,10 +1135,12 @@ class DeepResearcher:
 
             # SEARCH + EXTRACT
             round_findings = await self._search_and_extract(queries, question)
+            round_measure: Optional[Dict[str, Any]] = None
             if round_findings:
                 findings.extend(round_findings)
                 for finding in round_findings:
                     self.citations.add(finding)
+                round_measure = self._measure_round(tracker, round_num, round_findings)
                 consecutive_empty_rounds = 0
                 self._consecutive_empty_rounds = 0
                 logger.info(f"Round {round_num}: extracted {len(round_findings)} findings")
@@ -1154,7 +1198,8 @@ class DeepResearcher:
                 self._emit(phase="analyzing", round=round_num,
                            total_sources=len(self.urls_fetched),
                            total_findings=len(findings),
-                           coverage=self._coverage_snapshot(findings))
+                           coverage=self._coverage_snapshot(findings),
+                           **({"saturation": round_measure} if round_measure else {}))
                 report = await self._synthesize(question, findings, report)
 
             # CHECKPOINT: this round's work is confirmed (queries issued, pages
@@ -1164,6 +1209,23 @@ class DeepResearcher:
             # leaves the previous round's checkpoint as the resume point.
             self.findings = findings
             self._checkpoint(findings=findings, report=report)
+
+            # MEASURED STOP: decided from the evidence, no model call. Only a
+            # round that read pages counts (an empty round is the search's
+            # problem, handled above), and the clock is checked at the top of
+            # the next iteration exactly as before.
+            if round_measure is not None:
+                verdict = tracker.should_stop()
+                if verdict:
+                    logger.info(f"Measured stop after round {round_num}: {verdict['reason']}")
+                    self.stop_reason = classify_stop_reason(
+                        STOP_REASON_MEASURED_SATURATION if verdict["code"] == STOP_REASON_MEASURED_SATURATION
+                        else STOP_REASON_CONFIDENCE,
+                        round_num=round_num, max_rounds=self.max_rounds,
+                        urls_fetched=len(self.urls_fetched), findings=len(findings),
+                        reason=verdict["reason"], detail=round_measure,
+                    )
+                    break
 
             # DECIDE
             if round_num >= self.min_rounds:
@@ -1222,6 +1284,81 @@ class DeepResearcher:
             f"{elapsed:.1f}s"
         )
         return final
+
+    def _make_saturation_tracker(self, question: str, prior_findings: List[Dict]):
+        """The run's evidence ledger. Always built (its numbers go into the
+        trace); it only ever ends the run when `saturation_stop` or
+        `confidence_stop` is on."""
+        from src.research_saturation import SaturationTracker
+
+        subs = list(getattr(self, "subquestions", None) or []) or [question]
+        tracker = SaturationTracker(
+            subs,
+            min_new_facts=getattr(self, "saturation_min_new_facts", 2),
+            patience=getattr(self, "saturation_patience", 1),
+            confidence_threshold=getattr(self, "confidence_stop", 0.0),
+            saturation_stop=getattr(self, "saturation_stop", False),
+        )
+        try:
+            tracker.seed(prior_findings)
+        except Exception:  # noqa: BLE001 - a ledger problem must not stop a run
+            logger.debug("saturation seeding failed", exc_info=True)
+        self.saturation = tracker
+        return tracker
+
+    def _measure_round(self, tracker, round_num: int, round_findings: List[Dict]) -> Optional[Dict[str, Any]]:
+        """Account for a round in the ledger and record its row in the trace."""
+        try:
+            row = tracker.add_round(round_num, round_findings)
+        except Exception:  # noqa: BLE001 - measuring never breaks the round
+            logger.debug("saturation accounting failed", exc_info=True)
+            return None
+        self.__dict__.setdefault("research_trace", {"pages": [], "rounds": []}).setdefault("rounds", []).append(row)
+        return row
+
+    def _prune_focus(self, url: str, question: str) -> str:
+        """What a page is pruned against: the search query that surfaced it
+        plus the sub-question that query is about (the one sharing the most
+        words with it); the whole question only when neither is known."""
+        from src.research_prune import tokenize
+
+        query = getattr(self, "_url_query", {}).get(url, "")
+        sub = ""
+        subs = getattr(self, "subquestions", None) or []
+        if query and subs:
+            q_tokens = set(tokenize(query))
+            best = 0
+            for candidate in subs:
+                overlap = len(q_tokens & set(tokenize(candidate)))
+                if overlap > best:
+                    best, sub = overlap, candidate
+        focus = " ".join(x for x in (query, sub) if x).strip()
+        return focus or (question or "")[:600]
+
+    def _prune_content(self, page: Dict, content: str, url: str, title: str,
+                       question: str) -> Tuple[str, Optional[Dict[str, Any]]]:
+        """The page text the extraction prompt should carry, plus its trace
+        row. Any failure returns the original content untouched."""
+        raw_html = page.pop("raw_html", None)
+        try:
+            from src.research_prune import PruneConfig, prune_page
+
+            focus = self._prune_focus(url, question)
+            cfg = PruneConfig(threshold=getattr(self, "prune_threshold", 0.48),
+                              max_chars=min(getattr(self, "prune_max_chars", 6000), max(500, self.max_content_chars)))
+            result = prune_page(focus, html=raw_html or None, text=content,
+                                title=title or page.get("title", "") or "",
+                                original_chars=len(content), config=cfg)
+        except Exception:  # noqa: BLE001 - pruning is an optimisation, never load-bearing
+            logger.warning("Page pruning failed for %s; reading the full page", url, exc_info=True)
+            return content, None
+        if not result.text.strip():
+            return content, None
+        row = {"url": url, **result.trace(), "focus": focus[:200]}
+        self.__dict__.setdefault("research_trace", {"pages": [], "rounds": []}).setdefault("pages", []).append(row)
+        logger.info("Pruned %s: %d -> %d chars (%d blocks kept, top bm25 %.2f)", url, row["original_chars"],
+                    row["pruned_chars"], row["blocks_kept"], row["top_bm25"])
+        return result.text, row
 
     def _explain_empty_run(self) -> str:
         """Why a run ended with nothing, in one sentence a person can act on.
@@ -1883,7 +2020,7 @@ class DeepResearcher:
         urls_to_fetch = []
         seen_again = 0
         returned = 0
-        for result in search_results:
+        for query_text, result in zip(queries, search_results):
             if isinstance(result, Exception):
                 logger.warning(f"Search error: {result}")
                 continue
@@ -1897,6 +2034,7 @@ class DeepResearcher:
                 if url and url not in self.urls_fetched:
                     urls_to_fetch.append(r)
                     self.urls_fetched.add(url)
+                    self.__dict__.setdefault("_url_query", {}).setdefault(url, str(query_text or ""))
                     self.analyzed_urls.append({
                         "url": url,
                         "title": r.get("title", "") or url,
@@ -2148,7 +2286,16 @@ class DeepResearcher:
 
         if not page or not page.get("success") or not page.get("content"):
             try:
-                page = await asyncio.to_thread(fetch_webpage_content, url, 10)
+                if getattr(self, "prune_pages", False):
+                    # Ask for the raw markup too, so the DOM can be scored; a
+                    # fetcher that does not know the option just returns the
+                    # extracted text, which is pruned as Markdown instead.
+                    try:
+                        page = await asyncio.to_thread(fetch_webpage_content, url, 10, keep_html=True)
+                    except TypeError:
+                        page = await asyncio.to_thread(fetch_webpage_content, url, 10)
+                else:
+                    page = await asyncio.to_thread(fetch_webpage_content, url, 10)
             except Exception as e:
                 logger.warning(f"Failed to fetch {url}: {e}")
                 return None
@@ -2157,6 +2304,8 @@ class DeepResearcher:
             return None
 
         content = page["content"]
+        if getattr(self, "prune_pages", False):
+            content, _prune_row = self._prune_content(page, content, url, title, question)
         # Truncate to avoid blowing up context, preferring paragraph boundary
         if len(content) > self.max_content_chars:
             truncated = content[:self.max_content_chars]
@@ -2985,6 +3134,18 @@ class DeepResearcher:
         used = sorted({str(i.get("perspective")) for i in plan if i.get("perspective") not in (None, "general")})
         if used:
             stats["Perspectives"] = ", ".join(used)
+        trace = getattr(self, "research_trace", None) or {}
+        pages = trace.get("pages") or []
+        if pages:
+            before = sum(int(p.get("original_chars") or 0) for p in pages)
+            after = sum(int(p.get("pruned_chars") or 0) for p in pages)
+            stats["Pruned"] = f"{len(pages)} page(s), {before} -> {after} chars"
+        rounds = trace.get("rounds") or []
+        if rounds:
+            stats["Confidence"] = f"{rounds[-1].get('confidence', 0):.2f}"
+        stop = getattr(self, "stop_reason", None)
+        if stop and stop.get("code"):
+            stats["Stopped"] = f"{stop.get('code')}: {stop.get('reason')}"
         audit = getattr(self, "citation_audit", None)
         registry = getattr(self, "citations", None)
         if audit is not None and registry is not None:

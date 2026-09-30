@@ -451,6 +451,24 @@ DEFAULT_SETTINGS = {
     "research_perspectives": False,
     "research_perspectives_max": 3,
     "research_extraction_concurrency": 3,
+    # Page pruning (src/research_prune.py): before the model reads a page for
+    # a research run, keep only the blocks that look like content (text
+    # density, link density, tag and class hints) and rank them against the
+    # question with BM25, up to `research_prune_max_chars`. Off restores
+    # reading the whole extracted page.
+    "research_prune_pages": True,
+    "research_prune_max_chars": 6000,
+    "research_prune_threshold": 0.48,
+    # Measured stop (src/research_saturation.py): end the run, without asking
+    # the model, after `research_saturation_patience` rounds in a row that
+    # each added fewer than `research_saturation_min_new_facts` new facts and
+    # no new source. `research_confidence_stop` (0 = off) also stops once the
+    # confidence signal (coverage, corroboration, saturation) reaches it.
+    # `research_run_timeout_seconds` stays the hard ceiling.
+    "research_saturation_stop": True,
+    "research_saturation_min_new_facts": 2,
+    "research_saturation_patience": 1,
+    "research_confidence_stop": 0.7,
     # Hard wall-clock cap on a single deep-research run. The previous 600s
     # (10 min) default cut off slow local / edge LLMs mid-synthesis; 1800s
     # (30 min) is comfortable for most local setups while still bounding

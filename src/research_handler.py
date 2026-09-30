@@ -1133,6 +1133,10 @@ class ResearchHandler:
                     if researcher and getattr(researcher, "citations", None) is not None else None),
                 "blind_review": entry.get("blind_review"),
                 "stats": entry.get("stats"),
+                # Why the run stopped and what it measured (per-page pruning
+                # numbers, per-round saturation/confidence), when known.
+                "stop_reason": getattr(researcher, "stop_reason", None) if researcher else None,
+                "trace": getattr(researcher, "research_trace", None) if researcher else None,
                 "category": entry.get("category"),
                 "started_at": entry["started_at"],
                 "completed_at": time.time(),
@@ -1435,6 +1439,23 @@ class ResearchHandler:
                 maximum=6,
             )
 
+            _prune_pages = bool(get_setting("research_prune_pages", True))
+            _prune_max_chars = _bounded_int(
+                get_setting("research_prune_max_chars", 6000), default=6000, minimum=500, maximum=60000)
+            try:
+                _prune_threshold = min(1.0, max(0.0, float(get_setting("research_prune_threshold", 0.48))))
+            except (TypeError, ValueError):
+                _prune_threshold = 0.48
+            _saturation_stop = bool(get_setting("research_saturation_stop", True))
+            _saturation_min_new = _bounded_int(
+                get_setting("research_saturation_min_new_facts", 2), default=2, minimum=0, maximum=50)
+            _saturation_patience = _bounded_int(
+                get_setting("research_saturation_patience", 1), default=1, minimum=1, maximum=10)
+            try:
+                _confidence_stop = min(1.0, max(0.0, float(get_setting("research_confidence_stop", 0.7))))
+            except (TypeError, ValueError):
+                _confidence_stop = 0.7
+
             researcher = DeepResearcher(
                 llm_endpoint=llm_endpoint,
                 llm_model=llm_model,
@@ -1455,6 +1476,13 @@ class ResearchHandler:
                 research_perspectives=_research_perspectives,
                 research_perspectives_max=_research_perspectives_max,
                 effort=effort,
+                prune_pages=_prune_pages,
+                prune_max_chars=_prune_max_chars,
+                prune_threshold=_prune_threshold,
+                saturation_stop=_saturation_stop,
+                saturation_min_new_facts=_saturation_min_new,
+                saturation_patience=_saturation_patience,
+                confidence_stop=_confidence_stop,
             )
             if _task_entry is not None:
                 _task_entry["researcher"] = researcher
@@ -1549,7 +1577,7 @@ class ResearchHandler:
             f"**Queries:** {stats.get('Queries', stats.get('Searches', '?'))}",
             f"**URLs Analyzed:** {stats.get('URLs', '?')}",
         ]
-        for key in ('Citations', 'Claims cited'):
+        for key in ('Citations', 'Claims cited', 'Pruned', 'Confidence', 'Stopped'):
             if stats.get(key) is not None:
                 summary_lines.append(f"**{key}:** {stats[key]}")
         summary_text = " | ".join(summary_lines)
