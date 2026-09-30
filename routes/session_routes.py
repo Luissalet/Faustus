@@ -271,6 +271,11 @@ def _stop_runs_for_deleted_sessions(session_ids=None) -> int:
             logger.warning("Could not stop the run of deleted session %s: %s", sid, exc)
         # A failed purge must not report a completed deletion of its logs.
         agent_runs.purge_session_logs(sid)
+        try:  # the session's causal ledger (and the steering text in it) goes with it
+            from src import exec_ledger
+            exec_ledger.purge_session(sid)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not purge the execution ledger of deleted session %s: %s", sid, exc)
     return stopped
 
 

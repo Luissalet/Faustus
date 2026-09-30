@@ -235,6 +235,10 @@ class PendingToolApproval:
     # in "active" mode for a call that was NOT auto-approved outright, so the
     # person reviewing it sees why the check leaned the way it did.
     autonomy_note: str = ""
+    # The tool call the card was created for (its call id in the run that
+    # parked it). Not part of the digest and never shown in the card; the
+    # execution ledger links the later grant and execution back to it.
+    call_id: str = ""
 
     def public_payload(self, *, reason: str | None = None) -> dict[str, Any]:
         question = _approval_card_question(reason, self.content)
@@ -498,6 +502,35 @@ def _finalize_autonomy_shadow(*, approval_id: str, scope: Any, normalized_decisi
         logger.warning("approval_autonomy finalize failed", exc_info=True)
 
 
+def _ledger_approval_requested(pending: "PendingToolApproval") -> None:
+    try:
+        from src import exec_ledger
+        from src.run_causality import capture_call
+        # The run the ledger knows is the detached run that parked the card
+        # (same id its tool calls are recorded under); the security context's
+        # own id is only the fallback for callers outside a detached run.
+        run_id = capture_call(pending.session_id, None).run_id or pending.origin_run_id
+        exec_ledger.approval_requested(
+            run_id, pending.session_id, pending.call_id or pending.approval_id, pending.approval_id,
+            tool=pending.tool_name, args_sha256=exec_ledger.sha256_of(pending.content), digest=pending.digest,
+            expires_at=pending.expires_at, owner=pending.owner)
+    except Exception:  # noqa: BLE001 - the ledger records, it never blocks an approval
+        logger.debug("exec ledger: approval_requested skipped", exc_info=True)
+
+
+def _ledger_approval_decided(pending: "PendingToolApproval", decision: str, scope: Any) -> None:
+    try:
+        from src import exec_ledger
+        granted = scope is not None and decision != DENY_APPROVAL_DECISION
+        target = exec_ledger.resume_target(pending.approval_id)
+        exec_ledger.approval_decided(
+            target["run_id"] if target else pending.origin_run_id, pending.session_id, pending.call_id or pending.approval_id, pending.approval_id,
+            granted=granted, scope=getattr(scope, "value", str(scope or "")), owner=pending.owner,
+            reason="" if granted else (decision or "invalid_decision"))
+    except Exception:  # noqa: BLE001
+        logger.debug("exec ledger: approval decision skipped", exc_info=True)
+
+
 class ToolApprovalStore:
     """Thread-safe pending approval registry with destructive consumption."""
 
@@ -628,6 +661,7 @@ class ToolApprovalStore:
         continuation_query: Any = None,
         external_untrusted_context_seen: bool,
         capabilities: ToolCapabilities,
+        call_id: Any = None,
     ) -> PendingToolApproval:
         now = time.time()
         effects = tuple(sorted(effect.value for effect in capabilities.effects))
@@ -676,6 +710,7 @@ class ToolApprovalStore:
             selected_tools=tuple(payload["selected_tools"]),
             continuation_query=payload["continuation_query"],
             autonomy_note=autonomy_note,
+            call_id=str(call_id or ""),
         )
         with self._lock:
             self._purge_expired_locked(now)
@@ -705,6 +740,7 @@ class ToolApprovalStore:
                 self._pending.pop(oldest_id, None)
             self._pending[pending.approval_id] = pending
             self._persist_locked()
+        _ledger_approval_requested(pending)
         return pending
 
     def consume(
@@ -796,6 +832,7 @@ class ToolApprovalStore:
             self._persist_locked()
         normalized_decision = str(decision or "").strip().lower()
         scope = scope_for_decision(normalized_decision)
+        _ledger_approval_decided(pending, normalized_decision, scope)
         _finalize_autonomy_shadow(
             approval_id=approval_key, scope=scope, normalized_decision=normalized_decision,
         )

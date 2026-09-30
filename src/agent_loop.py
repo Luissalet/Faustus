@@ -16036,6 +16036,7 @@ async def _stream_agent_loop_body(
                             block.tool_type,
                             block.content,
                         ),
+                        call_id=_call_id,
                     )
                     desc = f"{block.tool_type}: APPROVAL REQUIRED"
                     result = {

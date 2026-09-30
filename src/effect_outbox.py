@@ -173,7 +173,27 @@ def current_context() -> Optional[EffectContext]:
     return _CONTEXT.get()
 
 
+_ATTEMPT_OVERRIDE: "contextvars.ContextVar[str]" = contextvars.ContextVar("effect_attempt_id", default="")
+
+
+def bind_attempt(attempt_id: str):
+    """Fix the attempt id of the tool call running in this context, so the
+    execution ledger and the outbox name the same attempt."""
+    return _ATTEMPT_OVERRIDE.set(str(attempt_id or ""))
+
+
+def reset_attempt(token) -> None:
+    try:
+        _ATTEMPT_OVERRIDE.reset(token)
+    except ValueError:
+        pass
+
+
 def new_attempt_id() -> str:
+    return _ATTEMPT_OVERRIDE.get() or ("att_" + uuid.uuid4().hex[:24])
+
+
+def fresh_attempt_id() -> str:
     return "att_" + uuid.uuid4().hex[:24]
 
 

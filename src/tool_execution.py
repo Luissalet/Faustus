@@ -1289,6 +1289,19 @@ async def _verify_claim_action(content: str) -> Dict:
 # Dispatcher
 # ---------------------------------------------------------------------------
 
+def _ledger_status(result: Any) -> str:
+    if not isinstance(result, dict):
+        return "succeeded"
+    status = str(result.get("status") or "")
+    if status:
+        return status
+    if result.get("approval_required"):
+        return "waiting_approval"
+    if result.get("error") or result.get("exit_code") not in (0, None):
+        return "failed"
+    return "succeeded"
+
+
 async def execute_tool_block(
     block: Any,
     session_id: Optional[str] = None,
@@ -1307,6 +1320,95 @@ async def execute_tool_block(
     turn_options: Optional[dict] = None,
     call_id: Optional[str] = None,
     step_snapshot: Optional[Any] = None,
+) -> Tuple[str, Dict]:
+    """Execute a single tool block and leave its causal trace in the execution
+    ledger (``src/exec_ledger.py``): the call, the attempt, and a reference to
+    the result. An approved call that is executed (possibly after a restart) is
+    recorded under the run and call id its card was created for, so the ledger
+    shows that exact call resuming and not a new one.
+
+    The body is ``_execute_tool_block_core``; this wrapper never changes what a
+    call does or returns."""
+    from src import effect_outbox as _eo, exec_ledger as _xl
+    _kwargs = dict(
+        session_id=session_id, disabled_tools=disabled_tools, owner=owner, progress_cb=progress_cb,
+        workspace=workspace, workspace_roots=workspace_roots, tool_policy=tool_policy,
+        security_context=security_context, exact_approval=exact_approval, turn_options=turn_options,
+        call_id=call_id)
+    if not _xl.enabled() or security_context is _MISSING_TOOL_SECURITY_CONTEXT:
+        return await _execute_tool_block_core(block, **_kwargs)
+    tool = str(getattr(block, "tool_type", None) or "")
+    args_sha = _xl.sha256_of(str(getattr(block, "content", "") or ""))
+    try:
+        from src.run_causality import capture_call
+        _run = capture_call(session_id, call_id).run_id
+    except Exception:  # noqa: BLE001
+        _run = None
+    _run_id, _call_key = _run or "", str(call_id or "")
+    _resumed = None
+    if exact_approval is not None:
+        _p = exact_approval.pending
+        _target = _xl.resume_target(_p.approval_id)
+        _run_id = (_target["run_id"] if _target else _p.origin_run_id) or _run_id
+        _call_key = (_target["call_id"] if _target else _p.call_id) or _p.approval_id
+        _resumed = {"approval_id": _p.approval_id, "executed_in_run": _run or "", "executed_call_id": str(call_id or ""),
+                    "args_match": (_target["args_sha256"] == args_sha) if _target else None}
+    _sid = str(session_id or "")
+    _owner = str(owner or "")
+    if not (_run_id or _sid) or not _call_key:
+        return await _execute_tool_block_core(block, **_kwargs)
+    _attempt = _eo.fresh_attempt_id()
+    if _resumed is not None:
+        _xl.call_resumed(_run_id, _sid, _call_key, owner=_owner, **_resumed)
+    else:
+        _xl.call_requested(_run_id, _sid, _call_key, tool=tool, args_sha256=args_sha, owner=_owner)
+    _xl.attempt_started(_run_id, _sid, _call_key, _attempt, owner=_owner)
+    _t0 = time.monotonic()
+    _token = _eo.bind_attempt(_attempt)
+    try:
+        output = await _execute_tool_block_core(block, **_kwargs)
+    except BaseException as exc:
+        _cancelled = isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt, SystemExit))
+        _xl.attempt_result(
+            _run_id, _sid, _call_key, _attempt, status="cancelled" if _cancelled else "failed",
+            effect_certainty="unknown", duration_ms=int((time.monotonic() - _t0) * 1000), owner=_owner,
+            error=f"{type(exc).__name__}: {exc}")
+        raise
+    finally:
+        _eo.reset_attempt(_token)
+    try:
+        _res = output[1] if isinstance(output, tuple) and len(output) > 1 else {}
+        _status = _ledger_status(_res)
+        if _status != "waiting_approval":
+            _xl.attempt_result(
+                _run_id, _sid, _call_key, _attempt, status=_status,
+                effect_certainty=str((_res or {}).get("effect_certainty") or "none") if isinstance(_res, dict) else "none",
+                result=_res, exit_code=(_res or {}).get("exit_code") if isinstance(_res, dict) else None,
+                duration_ms=int((time.monotonic() - _t0) * 1000), effect_id=str((_res or {}).get("effect_id") or "")
+                if isinstance(_res, dict) else "", owner=_owner,
+                error=str((_res or {}).get("error") or "") if isinstance(_res, dict) else "")
+    except Exception:  # noqa: BLE001 - the ledger never changes a result
+        logger.debug("exec ledger result skipped", exc_info=True)
+    return output
+
+
+async def _execute_tool_block_core(
+    block: Any,
+    session_id: Optional[str] = None,
+    disabled_tools: Optional[set] = None,
+    owner: Optional[str] = None,
+    progress_cb: Optional[Callable[[Dict], Awaitable[None]]] = None,
+    workspace: Optional[str] = None,
+    workspace_roots: Optional[list[str]] = None,
+    tool_policy: Optional[Any] = None,
+    security_context: (
+        ToolRunSecurityContext
+        | _NoToolSecurityContext
+        | _MissingToolSecurityContext
+    ) = _MISSING_TOOL_SECURITY_CONTEXT,
+    exact_approval: Optional[ExactToolApproval] = None,
+    turn_options: Optional[dict] = None,
+    call_id: Optional[str] = None,
 ) -> Tuple[str, Dict]:
     """Execute a single tool block. Returns (description, result_dict).
 
