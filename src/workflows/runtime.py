@@ -6,6 +6,7 @@ def production_handlers():
     from src.workflows.artifacts import save
     from src.workflows.delivery import send
     from src.workflows.skills import run
+    from src.workflows import agent_turn, model_calls
 
     # WP22 (creator/production_plan.py): a plan step compiles to a 'skill'
     # node marked `config.creator_plan_step`. The background
@@ -20,4 +21,5 @@ def production_handlers():
             return creator_step_handler(node, context)
         return run(node, context)
 
-    return default_handlers(artifact_store=save, deliver=send, skill=skill)
+    return default_handlers(artifact_store=save, deliver=send, skill=skill,
+                            agent=agent_turn.run, models=model_calls.production())

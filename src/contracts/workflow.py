@@ -32,11 +32,22 @@ from .base import (
 #: What a node can be. Closed: a node type nothing can execute is a comment.
 NODE_TYPES = ("manual", "schedule", "webhook", "skill", "condition", "wait",
               "wait_until", "wait_for_event",
-              "human_approval", "artifact_store", "deliver")
+              "human_approval", "artifact_store", "deliver",
+              "agent", "classify", "extract", "guard")
 
 #: Types that reach outside — the ones where running twice is the real damage
 #: and the idempotency key has to be honoured by whatever performs them.
-EFFECTFUL_TYPES = ("skill", "artifact_store", "deliver")
+#: `agent` is here because an agent turn may call tools (write a file, send a
+#: message): a second run of the same turn is not a harmless re-read.
+EFFECTFUL_TYPES = ("skill", "artifact_store", "deliver", "agent")
+
+#: Nodes whose result names the branch that was taken (`result.branch`). A node
+#: that lists one of these in `needs` may say `branch: {that_node: label}` and
+#: then only runs when that label was chosen.
+BRANCHING_TYPES = ("classify", "guard")
+
+#: The two outcomes of a `guard` node.
+GUARD_BRANCHES = ("pass", "fail")
 
 WORKFLOW_STATUSES = ("pending", "running", "paused", "completed", "failed", "cancelled")
 
@@ -59,9 +70,15 @@ class WorkflowNode:
     config: Mapping[str, Any] = field(default_factory=dict)
     max_attempts: int = 1
     continue_on_failure: bool = False
+    #: `{needs_id: (label, ...)}` — run this node only when the named
+    #: branching node (`classify`/`guard`) chose one of these labels. Empty
+    #: for every node that has no branch gate, and then absent from
+    #: `to_dict()` so a definition written before this field existed keeps
+    #: the same fingerprint.
+    branch: Mapping[str, Tuple[str, ...]] = field(default_factory=dict)
 
     _KEYS = ("id", "type", "title", "needs", "config", "max_attempts",
-             "continue_on_failure")
+             "continue_on_failure", "branch")
 
     @classmethod
     def parse(cls, raw: Any, path: str = "node") -> "WorkflowNode":
@@ -72,7 +89,9 @@ class WorkflowNode:
         if config is not None and not isinstance(config, Mapping):
             raise ContractError(f"{path}.config", "expected an object", got=config)
         attempts = whole(data, "max_attempts", path, default=1, minimum=1, maximum=10)
-        if node_type in EFFECTFUL_TYPES and attempts > 1 and not (config or {}).get("idempotent"):
+        if (node_type in EFFECTFUL_TYPES and attempts > 1
+                and not (config or {}).get("idempotent")
+                and not is_pure_reasoning(node_type, config)):
             # Retrying something that reaches outside is exactly how a
             # publication happens twice. It is allowed, but only when the
             # author says the effect can take it.
@@ -91,13 +110,72 @@ class WorkflowNode:
             config=dict(config or {}),
             max_attempts=attempts,
             continue_on_failure=flag(data, "continue_on_failure", path, default=False),
+            branch=_parse_branch(data.get("branch"), f"{path}.branch"),
         )
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"id": self.id, "type": self.type, "title": self.title,
-                "needs": list(self.needs), "config": dict(self.config),
-                "max_attempts": self.max_attempts,
-                "continue_on_failure": self.continue_on_failure}
+        out = {"id": self.id, "type": self.type, "title": self.title,
+               "needs": list(self.needs), "config": dict(self.config),
+               "max_attempts": self.max_attempts,
+               "continue_on_failure": self.continue_on_failure}
+        if self.branch:
+            out["branch"] = {dep: list(labels) for dep, labels in self.branch.items()}
+        return out
+
+
+def is_pure_reasoning(node_type: str, config: Optional[Mapping[str, Any]]) -> bool:
+    """An `agent` node that was given an explicit empty tool list can only
+    think and answer: it reaches nothing outside Faustus, so running it twice
+    costs tokens, not a second email. Everything else of an effectful type is
+    treated as reaching outside."""
+    tools = (config or {}).get("tools")
+    return node_type == "agent" and isinstance(tools, (list, tuple)) and not tools
+
+
+def node_is_effectful(node: "WorkflowNode") -> bool:
+    return node.type in EFFECTFUL_TYPES and not is_pure_reasoning(node.type, node.config)
+
+
+def _parse_branch(raw: Any, path: str) -> Dict[str, Tuple[str, ...]]:
+    """`{"classify-id": "billing"}` or `{"classify-id": ["billing", "refund"]}`
+    → `{"classify-id": ("billing", "refund")}`. Shape only: whether the keys
+    are real `needs` and the labels are declared is checked against the whole
+    graph in `WorkflowDefinition.parse`."""
+    if raw is None:
+        return {}
+    if not isinstance(raw, Mapping):
+        raise ContractError(path, "expected an object of {needs_id: label or [labels]}", got=raw)
+    out: Dict[str, Tuple[str, ...]] = {}
+    for dep, labels in raw.items():
+        if not isinstance(dep, str) or not dep:
+            raise ContractError(path, "keys must be node ids", got=dep)
+        values = [labels] if isinstance(labels, str) else labels
+        if (not isinstance(values, (list, tuple)) or not values
+                or any(not isinstance(v, str) or not v.strip() or len(v) > 120 for v in values)):
+            raise ContractError(f"{path}.{dep}", "expected a label or a non-empty list of labels",
+                                got=labels)
+        out[dep] = tuple(dict.fromkeys(v.strip() for v in values))
+    return out
+
+
+def declared_branches(node: "WorkflowNode") -> Tuple[str, ...]:
+    """The labels a branching node can choose between: a `classify` node's
+    declared `config.labels`, or `pass`/`fail` for a `guard`. Empty for a node
+    that does not branch — and for a `classify` whose labels are malformed,
+    which is then reported where a branch names one of them."""
+    if node.type == "guard":
+        return GUARD_BRANCHES
+    if node.type != "classify":
+        return ()
+    labels = (node.config or {}).get("labels")
+    names = []
+    if isinstance(labels, (list, tuple)):
+        for item in labels:
+            if isinstance(item, str) and item.strip():
+                names.append(item.strip())
+            elif isinstance(item, Mapping) and isinstance(item.get("name"), str) and item["name"].strip():
+                names.append(item["name"].strip())
+    return tuple(dict.fromkeys(names))
 
 
 @dataclass(frozen=True)
@@ -143,6 +221,7 @@ class WorkflowDefinition:
             if node.id in node.needs:
                 raise ContractError(f"{path}.nodes[{node.id}].needs",
                                     "a node cannot depend on itself")
+            _check_branch(node, {n.id: n for n in nodes}, f"{path}.nodes[{node.id}].branch")
         cycle = _find_cycle(nodes)
         if cycle:
             raise ContractError(
@@ -176,6 +255,28 @@ class WorkflowDefinition:
     def fingerprint(self) -> str:
         return fingerprint([("id", self.id), ("version", self.version),
                             ("nodes", [n.to_dict() for n in self.nodes])])
+
+
+def _check_branch(node: "WorkflowNode", by_id: Mapping[str, "WorkflowNode"], path: str) -> None:
+    """A branch gate has to point at a real, branching dependency and name a
+    label that dependency can actually produce — otherwise the node would sit
+    behind a door nothing can ever open, and say nothing about why."""
+    for dep, labels in node.branch.items():
+        if dep not in node.needs:
+            raise ContractError(f"{path}.{dep}",
+                                f"a branch can only refer to a node listed in `needs`; "
+                                f"{dep!r} is not one of {list(node.needs)}")
+        source = by_id[dep]
+        if source.type not in BRANCHING_TYPES:
+            raise ContractError(f"{path}.{dep}",
+                                f"{dep!r} is a '{source.type}' node and does not branch; only "
+                                f"{', '.join(BRANCHING_TYPES)} nodes choose a label")
+        known = declared_branches(source)
+        unknown = [label for label in labels if label not in known]
+        if unknown:
+            raise ContractError(f"{path}.{dep}",
+                                f"{source.type} node {dep!r} declares the branches {list(known)}; "
+                                f"{unknown} is not one of them")
 
 
 def _find_cycle(nodes: Sequence[WorkflowNode]) -> Tuple[str, ...]:

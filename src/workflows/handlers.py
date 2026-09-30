@@ -756,13 +756,22 @@ def default_handlers(*, approvals: Any = None, owner: str = "",
                      media: Optional[Callable] = None,
                      artifact_store: Optional[Callable] = None,
                      event_sources: Optional[Mapping[str, Callable]] = None,
-                     ttl_seconds: Optional[int] = None) -> Dict[str, Callable]:
+                     ttl_seconds: Optional[int] = None,
+                     agent: Optional[Callable] = None,
+                     models: Optional[Any] = None) -> Dict[str, Callable]:
     """Every node type the contract allows, wired or honestly refusing.
 
     A missing entry would make the engine fail the node with "no handler for
     node type", which reads like a bug in Faustus. A handler that refuses by
-    name reads like what it is: a capability nobody connected yet."""
+    name reads like what it is: a capability nobody connected yet.
+
+    `agent` is the runner for `agent` nodes (`workflows.agent_turn.run` in
+    production) and `models` the `ModelCalls` the `classify`/`extract`/`guard`
+    nodes and the structured-output repair use; with neither, those nodes
+    refuse by name."""
+    from .model_nodes import model_node_handlers        # noqa: PLC0415 - avoids an import cycle
     return {
+        **model_node_handlers(agent=agent, models=models),
         "manual": trigger_handler,
         "schedule": trigger_handler,
         "webhook": trigger_handler,

@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
 from src.agent_profiles import catalog
-from src.contracts.workflow import EFFECTFUL_TYPES, WorkflowDefinition, WorkflowNode
+from src.contracts.workflow import EFFECTFUL_TYPES, WorkflowDefinition, WorkflowNode, node_is_effectful
 
 __all__ = ["Finding", "lint_profile", "lint_all", "lint_workflow", "find_cycles"]
 
@@ -373,7 +373,7 @@ def lint_workflow(definition: Any) -> List[Finding]:
             ))
 
     for node in wf.nodes:
-        if node.type not in EFFECTFUL_TYPES:
+        if not node_is_effectful(node):
             continue
         if bool((node.config or {}).get("idempotent")):
             continue
