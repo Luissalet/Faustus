@@ -46,6 +46,8 @@ export interface McpPreset {
   oauth?: OauthConfig;
   providerDropdown?: ProviderDropdown;
   help?: string;
+  /** Needs hardware or software most people do not have: shown as optional in the picker. */
+  optional?: boolean;
   /** A remote server: no command, a URL and its transport. `{repo}` in the
    *  URL is filled from a GitHub `owner/repo` the form asks for. */
   url?: string;
@@ -184,6 +186,28 @@ export const MCP_PRESETS: McpPreset[] = [
     args: ['-y', '@playwright/mcp@latest', '--headless'],
     env: {},
     help: 'Browser automation via Playwright: navigate, click, fill forms and read pages.\nHeadless by default — remove --headless from the arguments to watch it work.\nThe first run installs Chromium on its own.',
+  },
+  {
+    // Optional: drives a physical Android phone or an emulator through adb.
+    // The version is pinned exactly (checked against the npm registry when
+    // this preset was written) so a new release cannot change what the agent
+    // can do on a real device without anyone noticing. ANDROID_HOME is left
+    // empty on purpose: the server then looks for adb in the standard
+    // Windows SDK folder (%LOCALAPPDATA%/Android/Sdk/platform-tools/adb.exe)
+    // and otherwise on PATH, which is what most installs need. Fill it in
+    // only when the SDK lives somewhere else.
+    name: 'Android device (adb)',
+    optional: true,
+    command: 'npx',
+    args: ['-y', '@mobilenext/mobile-mcp@1.0.6'],
+    env: { ANDROID_HOME: '' },
+    help: `Optional. Lets the agent see and tap a connected Android phone or an emulator: screenshots, UI elements, tap, swipe, type, open apps.
+Needs Node 20 or newer and adb (Android platform-tools).
+1. On the phone: Settings > About phone > tap "Build number" 7 times, then Developer options > enable USB debugging
+2. Connect it by USB and accept the "Allow USB debugging" prompt
+3. Check that "adb devices" lists it as "device"
+adb is found on its own in %LOCALAPPDATA%\\Android\\Sdk\\platform-tools\\adb.exe (Windows) or on PATH. Only if the SDK is elsewhere, set ANDROID_HOME to that SDK folder (the one that contains platform-tools); leave it empty otherwise.
+The agent acts on the real device with your accounts: keep the approval prompts on for this server.`,
   },
   {
     name: 'Filesystem',

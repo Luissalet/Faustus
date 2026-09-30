@@ -576,7 +576,7 @@ function McpNew({ onClose, onChanged, say }: { onClose: () => void; onChanged: (
         <Select
           id="mcp-preset"
           value={presetName}
-          options={[{ value: '', label: t('Nothing — I will fill it in') }, ...MCP_PRESETS.map((p) => ({ value: p.name, label: p.name }))]}
+          options={[{ value: '', label: t('Nothing — I will fill it in') }, ...MCP_PRESETS.map((p) => ({ value: p.name, label: p.optional ? `${p.name} — ${t('optional')}` : p.name }))]}
           onChange={pickPreset}
         />
       </Field>
