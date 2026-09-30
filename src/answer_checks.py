@@ -236,7 +236,8 @@ def thinking_aloud(text: str) -> List[str]:
 
 def rewrite_note(mismatches: List[Dict[str, str]], aloud: List[str],
                  slots: Optional[List[Dict[str, str]]] = None,
-                 calculation: Optional[Dict[str, str]] = None) -> str:
+                 calculation: Optional[Dict[str, str]] = None,
+                 grounding: Optional[str] = None) -> str:
     """The runtime's request for one clean rewrite of the answer."""
     parts = ["[Harness check — automatic runtime message, not a new user request] "
              "Your last message is not shown to the user yet. Write the complete answer again, "
@@ -258,7 +259,23 @@ def rewrite_note(mismatches: List[Dict[str, str]], aloud: List[str],
     if calculation:
         parts.append("A deterministic calculation found: " + calculation["explanation"] +
                      " Include the correct requested result in the final answer.")
+    if grounding:
+        parts.append(grounding)
     return " ".join(parts)
+
+
+def grounding_review(answer: str, question: str = "", tool_outputs: Optional[List[str]] = None, *,
+                     retry_used: bool = False, enabled: Optional[bool] = None,
+                     lang: Optional[str] = None) -> Dict[str, object]:
+    """The figure-grounding decision for a final answer (see src/grounding_ledger.py).
+
+    Returns {"action": "none" | "retry" | "mark", "note", "answer", "ledger", "trace"}. "retry"
+    means: pass `note` as `rewrite_note(..., grounding=note)`; "mark" means: replace the answer
+    with `answer` (unsupported figures struck through). Always "none" while the setting
+    `agent_answer_grounding_ledger` is off."""
+    from src import grounding_ledger
+    return grounding_ledger.grounding_review(
+        answer, question, list(tool_outputs or []), retry_used=retry_used, enabled=enabled, lang=lang)
 
 
 _ASKS_WEEKDAY = re.compile(

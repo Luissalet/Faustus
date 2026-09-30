@@ -592,6 +592,10 @@ DEFAULT_SETTINGS = {
     # ── Reliability harness (src/agent_harness.py and friends) ──
     # Claims-vs-evidence checks, syntax check, fabricated-path detection.
     "agent_harness_checks": True,
+    # Label every significant figure of a tool-backed answer (observed / cited /
+    # derived / count / unsupported), ask once for a correction, then strike
+    # unsupported figures through (src/grounding_ledger.py). Off by default.
+    "agent_answer_grounding_ledger": False,
     # Shadow snapshot of the workspace before the first change of a turn
     # (src/workspace_checkpoints.py): "restore to before this turn" + per-file
     # diffs without the user's git. Repo size cap and per-file size cap in MB.

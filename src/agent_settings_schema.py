@@ -154,6 +154,10 @@ GROUPS: list[dict[str, Any]] = [
                  60, 86400),
             _bool("agent_harness_checks", "Reliability harness",
                   "Claims-vs-evidence check, syntax check and fabricated-path detection after each turn."),
+            _bool("agent_answer_grounding_ledger", "Grounding ledger for figures",
+                  "After a tool-backed answer, check every significant figure against the tool results and "
+                  "your message. Unsupported figures trigger one correction request, then are struck through "
+                  "with a note. Off by default."),
             _bool("agent_tool_rerank", "Rerank tool candidates",
                   "Send your query and public built-in tool descriptions to your configured reranker "
                   "to improve tool selection. Private connector descriptions are never sent. Adds up "
