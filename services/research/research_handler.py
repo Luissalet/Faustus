@@ -43,7 +43,7 @@ class ResearchHandler(SharedResearchHandler):
             f"**Queries:** {stats.get('Queries', stats.get('Searches', '?'))}",
             f"**URLs Analyzed:** {stats.get('URLs', '?')}",
         ]
-        for key in ('Citations', 'Claims cited'):
+        for key in ('Citations', 'Claims cited', 'Pruned', 'Confidence', 'Stopped'):
             if stats.get(key) is not None:
                 summary_lines.append(f"**{key}:** {stats[key]}")
         summary_text = " | ".join(summary_lines)

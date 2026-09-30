@@ -1,0 +1,31 @@
+{
+  "whiplash_es.html": {
+    "query": "clasificaci\u00f3n de los WAD y criterios de derivaci\u00f3n m\u00e9dica",
+    "gold": [
+      "La clasificaci\u00f3n m\u00e1s utilizada en consulta distingue cinco grados",
+      "Se debe derivar ante sospecha de fractura o inestabilidad",
+      "exige derivaci\u00f3n inmediata a un servicio m\u00e9dico"
+    ]
+  },
+  "whiplash_en.html": {
+    "query": "prognostic factors and red flags that need urgent referral",
+    "gold": [
+      "Psychological and social factors matter at least as much as the physical findings",
+      "Red flags that call for urgent medical referral include suspected fracture"
+    ]
+  },
+  "rate_limit_en.html": {
+    "query": "how a token bucket works and how clients should retry",
+    "gold": [
+      "A token bucket holds a fixed number of tokens that refill at a constant rate",
+      "exponential backoff with random jitter"
+    ]
+  },
+  "caching_guide_en.html": {
+    "query": "what happens when cache entries expire: eviction policies and a stampede of requests",
+    "gold": [
+      "When a popular entry expires, many requests may miss at once and all rush to recompute it",
+      "A bounded cache must decide what to drop when it is full"
+    ]
+  }
+}

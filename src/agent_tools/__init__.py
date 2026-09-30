@@ -86,6 +86,7 @@ from .code_graph_tools import (
 )
 from .structural_search_tools import StructuralSearchTool, StructuralRewriteTool
 from .doc_claims_tool import DocClaimsCheckTool
+from .prune_tools import PagePruneTool
 from .turn_review_tool import TurnReviewTool
 from .pdf_ops_tool import PdfOpsTool
 from .pdf_tree_tool import PdfOutlineTool, PdfReadSectionTool, PdfFindSectionTool
@@ -249,6 +250,9 @@ TOOL_HANDLERS = {
     # settings keys, routes, tool names) in code evidence and flags stale
     # sections. See src/doc_claims.py.
     "doc_claims_check": DocClaimsCheckTool().execute,
+    # Query-aware page pruning (src/research_prune.py): url/html/text + query
+    # -> the blocks worth reading, with scores. See src/agent_tools/prune_tools.py.
+    "page_prune": PagePruneTool().execute,
     # R3 (Reach wave): fan one prompt across N candidate models/endpoints,
     # each isolated via src.alternatives, ranked by src.fanout.score. See
     # src/fanout/ and src/agent_tools/fanout_tools.py.
@@ -469,6 +473,8 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "structural_search", "structural_rewrite",
              # Doc-claim drift checker -- src/agent_tools/doc_claims_tool.py.
              "doc_claims_check",
+             # Query-aware page pruning -- src/agent_tools/prune_tools.py.
+             "page_prune",
              # Review of a chat's recent turns -- src/agent_tools/turn_review_tool.py.
              "turn_review",
              # R3 (Reach wave): fan-out -- src/agent_tools/fanout_tools.py.

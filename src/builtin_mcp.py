@@ -99,6 +99,9 @@ _BUILTIN_SERVERS = {
     # no owner-scoped data (its only outbound calls are read-only GETs to
     # api.github.com), so unlike brain/context/memory it needs no owner env.
     "prior_art":  ("mcp_servers/prior_art_server.py", "Built-in: Prior art"),
+    # Page pruning (src/research_prune.py): url/html/text + a question -> the
+    # blocks worth reading, with scores. No owner-scoped data, no writes.
+    "research_prune": ("mcp_servers/research_prune_server.py", "Built-in: Page pruning"),
 }
 
 # Built-in servers whose every tool is a 1:1 twin of a native agent tool
@@ -107,7 +110,7 @@ _BUILTIN_SERVERS = {
 # their tools: indexing both put two copies of each answer in the top-k and
 # pushed other relevant tools out of the turn (seen live: `code_graph_*` next
 # to `mcp__code_graph__code_graph_*` for one question).
-NATIVE_TWIN_SERVERS = frozenset({"code_graph", "prior_art"})
+NATIVE_TWIN_SERVERS = frozenset({"code_graph", "prior_art", "research_prune"})
 
 # NPX-based built-in servers (run via npx, not Python).
 #

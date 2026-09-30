@@ -266,6 +266,7 @@ PLAN_MODE_READONLY_TOOLS = {
     "desktop_list_windows",
     "web_search",
     "web_fetch",
+    "page_prune",
     "search_chats",
     "search_project_chats",
     # The READ half of the project's context. Its mutating sibling

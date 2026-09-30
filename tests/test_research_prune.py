@@ -190,6 +190,15 @@ def test_char_cap_is_respected_and_title_always_kept():
     assert res.blocks_kept >= 1
 
 
+@pytest.mark.parametrize("cap", [500, 1000, 2500, 6000])
+def test_output_never_exceeds_the_cap(cap):
+    for name, query in [("whiplash_es.html", "tratamiento ejercicio derivación"),
+                        ("caching_guide_en.html", "cache eviction stampede expire"),
+                        ("whiplash_en.html", "exercise evidence")]:
+        res = prune_page(query, html=_page(name), config=PruneConfig(max_chars=cap))
+        assert res.pruned_chars <= cap, (name, cap, res.pruned_chars)
+
+
 def test_best_match_block_is_kept_even_when_larger_than_the_cap():
     big = "Quarterly metrics explain the churn pattern. " * 40
     html = f"<body><main><p>{big}</p><p>{'Something else entirely unrelated here. ' * 10}</p></main></body>"

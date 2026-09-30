@@ -781,7 +781,7 @@ def _select(blocks: List[Block], query: str, title: str, cfg: PruneConfig, candi
     note = ""
 
     def cost(b: Block, have: set) -> int:
-        c = len(b.text) + 2
+        c = len(b.text) + 2 + (2 if b.tag == "li" else 8 if b.tag == "pre" else 0)
         for _level, idx in b.headings:
             if idx not in have and idx in by_index:
                 c += len(by_index[idx].text) + 6
@@ -796,7 +796,11 @@ def _select(blocks: List[Block], query: str, title: str, cfg: PruneConfig, candi
         for _level, idx in b.headings:
             have_headings.add(idx)
 
-    total_cost = sum(len(b.text) + 2 for b in docs)
+    total_cost = 0
+    simulated: set = set()
+    for b in docs:                       # what rendering every passing block would cost, headings included
+        total_cost += cost(b, simulated)
+        simulated.update(idx for _level, idx in b.headings)
     if not docs:
         return _render(clean_title, [], blocks), [], 0.0, "empty"
     if total_cost <= budget:

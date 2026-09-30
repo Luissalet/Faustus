@@ -3306,6 +3306,27 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "page_prune",
+            "description": "Cut a web page down to what answers a question, without a model. Give a url (fetched like web_fetch), or raw html, or already extracted text, plus the query the page is being read for. Each block (paragraph, heading, list item, table row) is scored by text density, link density, tag and class/id hints; blocks above the threshold are ranked against the query with BM25 (accents folded, Spanish and English) and the best are returned in document order under a character cap, with the page title and the best match always kept. Returns the pruned text, original vs pruned characters, blocks kept, the top BM25 score and (optionally) every block's score.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "The question or topic the page is read for (required)"},
+                    "url": {"type": "string", "description": "Page to fetch and prune (http/https)"},
+                    "html": {"type": "string", "description": "Raw HTML to prune instead of fetching a url"},
+                    "text": {"type": "string", "description": "Already extracted Markdown/plain text to prune instead of a url"},
+                    "title": {"type": "string", "description": "Page title to keep (defaults to the page's own title)"},
+                    "max_chars": {"type": "integer", "description": "Character cap for the pruned text (default 6000, 500-60000)"},
+                    "threshold": {"type": "number", "description": "Minimum block score in [0, 1] (default 0.48)"},
+                    "include_blocks": {"type": "boolean", "description": "List every block's score and whether it was kept (default true)"}
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "doc_claims_check",
             "description": "Ground backticked claims in Markdown docs (file paths, dotted symbols, settings keys, API routes, tool names) in the actual code -- reports which ones are broken (the thing no longer exists) and which sections are stale (the code they cite changed after the doc section was last edited, with the commits in between). Use before closing a docs-writing task to catch stale references, or when asked 'is this doc still accurate'.",
             "parameters": {

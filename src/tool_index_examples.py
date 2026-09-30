@@ -1103,6 +1103,12 @@ EXAMPLES: Dict[str, List[str]] = {
         "review what you did in the previous turn before retrying",
         "qué herramientas usaste y cuáles fallaron en la última respuesta",
     ],
+    "page_prune": [
+        "léeme solo la parte relevante de esta página sobre el tratamiento",
+        "strip the menus and cookie banners and keep only what answers my question",
+        "why does this page give me so little useful text",
+        "shrink this long article to the paragraphs about pricing",
+    ],
     "doc_claims_check": [
         "check if the README still matches the code",
         "revisa si FAUSTUS.md tiene referencias rotas al código",

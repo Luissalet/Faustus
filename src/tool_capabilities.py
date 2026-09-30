@@ -670,6 +670,15 @@ _register(
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
 _register(
+    # page_prune (src/research_prune.py): given a url it fetches through the
+    # same guarded fetcher as web_fetch; given html/text it only computes. Its
+    # result is page text either way, so it is classed with web_fetch.
+    {"page_prune"},
+    ToolEffect.BROKERED_NETWORK_READ,
+    ToolEffect.NETWORK_EGRESS,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+_register(
     # Reach (R1): reach_read/reach_search fetch attacker-reachable content
     # from arbitrary channels (web, youtube, github, reddit, x, hackernews,
     # rss, arxiv, wikipedia) -- same class as web_fetch/web_search.

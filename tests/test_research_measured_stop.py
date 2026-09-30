@@ -568,3 +568,12 @@ def test_summary_shows_stop_reason_confidence_and_pruning(monkeypatch):
              "Confidence": "0.81", "Stopped": "saturated: the evidence stopped growing (saturated)"}
     text = handler._format_research_report("q", "body", stats, 12.0)
     assert "**Stopped:** saturated" in text and "**Confidence:** 0.81" in text and "**Pruned:** 3 page(s)" in text
+
+
+def test_visual_report_shows_the_stop_code_and_confidence():
+    from src.visual_report import generate_visual_report
+
+    out = generate_visual_report("Query", "# Report", stats={
+        "Confidence": "0.81", "Stopped": "saturated: the evidence stopped growing (saturated)"})
+    assert "0.81" in out and "Confidence" in out
+    assert ">saturated<" in out and "stopped growing" not in out

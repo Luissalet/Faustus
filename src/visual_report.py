@@ -1902,8 +1902,10 @@ def generate_visual_report(
 
     # Build stats bar
     stat_items = []
-    for key, label in [("Duration", "Duration"), ("Rounds", "Rounds"), ("Queries", "Queries"), ("URLs", "URLs Analyzed"), ("Model", "Model"), ("Search", "Search"), ("Citations", "Citations"), ("Claims cited", "Claims cited")]:
+    for key, label in [("Duration", "Duration"), ("Rounds", "Rounds"), ("Queries", "Queries"), ("URLs", "URLs Analyzed"), ("Model", "Model"), ("Search", "Search"), ("Citations", "Citations"), ("Claims cited", "Claims cited"), ("Confidence", "Confidence"), ("Stopped", "Stopped")]:
         val = stats.get(key)
+        if key == "Stopped" and val is not None:
+            val = str(val).split(":", 1)[0]          # the code; the full sentence is in the summary
         if val is not None:
             stat_items.append(
                 f'<div class="stat"><span class="stat-value">{html.escape(str(val))}</span> {html.escape(label)}</div>'
