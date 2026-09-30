@@ -207,6 +207,17 @@ def file_parts(workspace: str, *, _candidates=None) -> List[Dict[str, Any]]:
         part = _file_part(root, path)
         if part is not None:
             out.append(part)
+    # Capture the exact bounded projection rendered by project_rules, including
+    # ancestor sources. Library rules belong to the application, not this approval.
+    from src.project_rules import discover_project_rules
+    for rule in discover_project_rules(root):
+        data = rule.text.encode("utf-8")
+        out.append({"path": rule.path,
+                    "rel": os.path.relpath(rule.path, root).replace(os.sep, "/"),
+                    "bytes": rule.bytes, "sha256": hashlib.sha256(data).hexdigest(),
+                    "_data": data, "_rule": rule, "kind": "project_rule",
+                    "rule_root": rule.root, "origin": rule.origin,
+                    "error": rule.error, "text": rule.text})
     return out
 
 
@@ -217,9 +228,20 @@ def _digest_from_parts(parts: List[Dict[str, Any]]) -> str:
     which is exactly the collision §26.2 spells out for `prove`'s identity.
     """
     h = hashlib.sha256()
-    h.update(b"faustus.workspace_trust.v1\x00")
+    with_rules = any(p.get("kind") == "project_rule" for p in parts)
+    h.update(b"faustus.workspace_trust.v2\x00" if with_rules else b"faustus.workspace_trust.v1\x00")
     h.update(str(len(parts)).encode("ascii") + b"\x00")
     for part in parts:
+        if with_rules:
+            rule = part.get("_rule")
+            metadata = json.dumps([part.get("kind", "instruction"),
+                                   part.get("error", ""),
+                                   part.get("origin", ""),
+                                   getattr(rule, "distance", None),
+                                   getattr(rule, "id", None),
+                                   part.get("rule_root", "")], ensure_ascii=False).encode("utf-8")
+            h.update(str(len(metadata)).encode("ascii") + b"\x00")
+            h.update(metadata)
         rel = str(part.get("rel") or "").encode("utf-8", "replace")
         data = part.get("_data")
         if data is None:
@@ -245,10 +267,17 @@ def digest_for(workspace: str) -> str:
 
 
 def _public_parts(parts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    return [
-        {"path": p["path"], "rel": p["rel"], "bytes": p["bytes"], "sha256": p["sha256"]}
-        for p in parts
-    ]
+    out = []
+    with_rules = any(p.get("kind") == "project_rule" for p in parts)
+    for p in parts:
+        row = {"path": p["path"], "rel": p["rel"], "bytes": p["bytes"], "sha256": p["sha256"]}
+        if p.get("kind") == "project_rule":
+            row.update({key: p[key] for key in ("kind", "rule_root", "origin", "error", "text")})
+        elif with_rules:
+            # Joint review uses the same capped instruction bytes as its digest.
+            row["text"] = p["_data"].decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
+        out.append(row)
+    return out
 
 
 # ── store ─────────────────────────────────────────────────────────────────
@@ -487,6 +516,10 @@ def resolve(workspace: str, *, _parts=None) -> Dict[str, Any]:
             return out
         if out.get("state") != STATE_UNAPPROVED:
             return out
+        # Historical known-folder auto-approval only covers v1 instructions.
+        # Project rules introduce additional coverage requiring explicit approval.
+        if any(p.get("kind") == "project_rule" for p in out.get("files", [])):
+            return out
         root = out.get("workspace") or workspace
         if not has_checkpoint_history(root):
             return out
@@ -540,7 +573,8 @@ class InstructionSnapshot:
 
     `legacy_read` explicitly marks off/failure compatibility: those paths do
     not claim that the returned trust verdict seals subsequently read bytes.
-    The digest retains v1's per-file byte cap and size, not a full-file hash.
+    Without rules the digest retains v1 exactly. Joint v2 includes bounded
+    rule projections; neither version claims a full-file or directory transaction.
     """
     workspace: str
     trusted: bool
@@ -551,6 +585,7 @@ class InstructionSnapshot:
     legacy_read: bool = False
     files: tuple = ()
     selected: Optional[InstructionFileSnapshot] = None
+    project_rules: tuple = ()
 
 
 def instructions_snapshot(workspace: str) -> InstructionSnapshot:
@@ -570,7 +605,8 @@ def instructions_snapshot(workspace: str) -> InstructionSnapshot:
         parts = file_parts(root, _candidates=candidates)
         files = tuple(InstructionFileSnapshot(
             p["path"], p["rel"], int(p["bytes"]), bytes(p["_data"])
-        ) for p in parts)
+        ) for p in parts if p.get("kind") != "project_rule")
+        captured_rules = tuple(p["_rule"] for p in parts if p.get("kind") == "project_rule")
         by_path = {p.path: p for p in files}
         selected = next((by_path[os.path.join(root, rel)] for rel in candidates
                          if os.path.join(root, rel) in by_path), None)
@@ -581,7 +617,7 @@ def instructions_snapshot(workspace: str) -> InstructionSnapshot:
             workspace=root, trusted=trusted,
             digest=_digest_from_parts(parts) if parts else "",
             state=state.get("state", STATE_NONE), mode=current_mode,
-            degraded=degraded, files=files, selected=selected,
+            degraded=degraded, files=files, selected=selected, project_rules=captured_rules,
         )
     except Exception as exc:  # noqa: BLE001 - preserve the existing fail-open policy
         logger.debug("[trust] instructions_snapshot(%s) failed: %s", workspace, exc)

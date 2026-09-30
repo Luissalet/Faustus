@@ -5221,9 +5221,14 @@ def _build_system_prompt(
         # with the same trust verdict as the instructions block above.
         try:
             from src import project_rules as _prules
-            agent_prompt += _prules.block(
-                workspace, trusted=_instr_trusted, languages=_prules.languages_for(workspace)
-            )
+            if _instr_snapshot is not None:
+                agent_prompt += _prules.block_from_snapshot(
+                    _instr_snapshot, languages=_prules.languages_for(workspace)
+                )
+            else:
+                agent_prompt += _prules.block(
+                    workspace, trusted=_instr_trusted, languages=_prules.languages_for(workspace)
+                )
         except Exception as _pr_err:
             logger.debug("[project_rules] injection failed: %s", _pr_err)
         try:

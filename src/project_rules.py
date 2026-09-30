@@ -349,7 +349,7 @@ _BLOCK_LOCK = threading.Lock()
 
 
 def block(workspace: str, *, trusted: bool = True, languages: Optional[Sequence[str]] = None,
-          budget_tokens: Optional[int] = None) -> str:
+          budget_tokens: Optional[int] = None, _captured_rules=None) -> str:
     """The system-prompt section. '' when the feature is off or there is
     nothing to say.
 
@@ -374,7 +374,7 @@ def block(workspace: str, *, trusted: bool = True, languages: Optional[Sequence[
     budget = max(200, min(budget, 20_000))
 
     key = (root, trusted, langs, budget)
-    captured_rules = tuple(discover_project_rules(root))
+    captured_rules = tuple(discover_project_rules(root) if _captured_rules is None else _captured_rules)
     library_enabled = bool(_setting("project_rules_library_enabled", True))
     # Consult the library TTL before returning a rendered block. Capture once:
     # both identity and output below use this same parsed projection.
@@ -535,3 +535,13 @@ __all__ = [
     "discover_project_rules", "project_rules", "library", "languages_for",
     "untrusted_note", "block", "install", "uninstall",
 ]
+
+
+def block_from_snapshot(snapshot, *, languages=None, budget_tokens=None) -> str:
+    """Render the projection sealed by the joint instruction/rule approval.
+
+    Off/degraded compatibility keeps its historical live reads explicit.
+    """
+    return block(snapshot.workspace, trusted=snapshot.trusted, languages=languages,
+                 budget_tokens=budget_tokens,
+                 _captured_rules=None if snapshot.legacy_read else snapshot.project_rules)

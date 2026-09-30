@@ -84,7 +84,11 @@ def setup_workspace_trust_routes() -> APIRouter:
     def _file_texts(files: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Each tracked file with its text, so the user reads what they approve."""
         out: List[Dict[str, Any]] = []
-        for entry in list(files)[:_MAX_FILES]:
+        entries = list(files)
+        # A joint approval must display every captured source, including ancestors.
+        if not any(p.get("kind") == "project_rule" for p in entries):
+            entries = entries[:_MAX_FILES]
+        for entry in entries:
             row = {
                 "rel": entry.get("rel", ""),
                 "path": entry.get("path", ""),
@@ -94,6 +98,14 @@ def setup_workspace_trust_routes() -> APIRouter:
                 "truncated": False,
                 "error": "",
             }
+            if "text" in entry:
+                text = str(entry.get("text") or "")
+                row.update(text=text[:_MAX_TEXT_CHARS], truncated=len(text) > _MAX_TEXT_CHARS)
+                if entry.get("kind") == "project_rule":
+                    row.update(kind="project_rule", rule_root=entry.get("rule_root", ""),
+                               origin=entry.get("origin", ""), error=entry.get("error", ""))
+                out.append(row)
+                continue
             path = str(entry.get("path") or "")
             try:
                 with open(path, "r", encoding="utf-8", errors="replace") as fh:
