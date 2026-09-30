@@ -21,8 +21,10 @@ _CODENAV_SKIP_DIRS = frozenset({
     ".mypy_cache", ".pytest_cache", ".ruff_cache", "dist", "build",
     ".next", ".cache", "site-packages", ".idea", ".tox",
 })
-_CODENAV_MAX_HITS = 200
-_CODENAV_MAX_LINE = 400
+# The numbers the tool authority declares for grep/glob/ls: one source, so the
+# limit a descriptor states is the limit this module applies.
+from src.tool_authority_specs import CODENAV_MAX_HITS as _CODENAV_MAX_HITS
+from src.tool_authority_specs import CODENAV_MAX_LINE_CHARS as _CODENAV_MAX_LINE
 
 
 def _glob_to_regex(pat: str) -> "re.Pattern":

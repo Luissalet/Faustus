@@ -62,6 +62,7 @@ from src.contracts.base import ContractError, as_mapping, text, fingerprint as _
 from src.contracts.tool import RetryPolicy, ToolDescriptor
 from src.settings import get_setting
 from src.tool_capabilities import KNOWN_CAPABILITY_TOOLS, ToolEffect, capabilities_for_tool
+from src.tool_authority import AUTHORITY
 from src.tool_index import BUILTIN_TOOL_DESCRIPTIONS
 from src.tool_schemas import FUNCTION_TOOL_SCHEMAS
 
@@ -154,7 +155,12 @@ def _cancellation_for(name: str) -> str:
 
 
 def _timeout_ms_for(name: str) -> int:
-    setting_key = _LIVE_TIMEOUT_SETTINGS.get(name)
+    # The tool authority names the live setting that bounds a tool when the
+    # tool's registration declares one; the table above is the fallback for
+    # tools that are not registered.
+    registered = AUTHORITY.get(name)
+    setting_key = (registered.limits.get("idle_timeout_setting") if registered else None) \
+        or _LIVE_TIMEOUT_SETTINGS.get(name)
     if not setting_key:
         return DEFAULT_TIMEOUT_MS
     try:
@@ -170,6 +176,14 @@ def _builtin_names() -> List[str]:
     any native-only schema name, deduped, sorted for a stable snapshot."""
     names = set(TOOL_TAGS) | set(_native_schema_index())
     return sorted(names)
+
+
+def _max_output_for(name: str) -> int:
+    """The output cap the tool's handler applies, when its registration
+    declares one; the shared catalogue default otherwise."""
+    registered = AUTHORITY.get(name)
+    declared = registered.limits.get("max_output_chars") if registered else None
+    return int(declared) if isinstance(declared, int) and declared > 0 else DEFAULT_MAX_OUTPUT_BYTES
 
 
 def _descriptor_for_builtin(name: str, native_index: Mapping[str, Tuple[str, Mapping[str, Any]]]) -> ToolDescriptor:
@@ -191,7 +205,7 @@ def _descriptor_for_builtin(name: str, native_index: Mapping[str, Tuple[str, Map
         cancellation=_cancellation_for(name),
         idempotency=_idempotency_for(effect_class),
         retry_policy=RetryPolicy(),
-        max_output_bytes=DEFAULT_MAX_OUTPUT_BYTES,
+        max_output_bytes=_max_output_for(name),
         executor=executor,
     )
 

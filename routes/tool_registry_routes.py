@@ -18,6 +18,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from core.middleware import require_admin
 from src.contracts.base import now_iso
+from src.tool_authority import AUTHORITY
 from src.tool_registry import by_name, catalog_fingerprint, mcp_status_label, snapshot
 from src.tool_schemas import repair_tool_arguments, validate_tool_arguments
 from src.tool_utils import get_mcp_manager
@@ -111,6 +112,48 @@ def setup_tool_registry_routes():
             "tool": descriptor.to_mapping(),
             "mcp": _mcp_meta_for(descriptor, mcp_manager),
         }
+
+    @router.get("/authority")
+    def authority(request: Request, family: str = "", origin: str = "", exposure: str = ""):
+        """The tool authority (H05/H17): one descriptor per core tool with its
+        canonical id, aliases, limits, resources, effects and exposure
+        (direct | deferred | code_only). Read-only. MCP tools get their
+        descriptors when a server is discovered and are not listed here."""
+        require_admin(request)
+        import src.agent_tools  # noqa: F401  (registers the built-in tools)
+        rows = []
+        for name in AUTHORITY.names(family=family.strip() or None, origin=origin.strip() or None):
+            summary = AUTHORITY.get(name).summary()
+            if exposure.strip() and summary["exposure"] != exposure.strip():
+                continue
+            summary.pop("parameters", None)
+            rows.append(summary)
+        by_exposure: dict = {}
+        for row in rows:
+            by_exposure[row["exposure"]] = by_exposure.get(row["exposure"], 0) + 1
+        return {"checked_at": now_iso(), "count": len(rows), "by_exposure": by_exposure, "tools": rows}
+
+    @router.get("/authority/parity")
+    def authority_parity(request: Request):
+        """The machine-checkable statements the authority makes about itself
+        (emitted schema equals what the parser accepts, declared limits are
+        applied). An empty `issues` list means every statement holds."""
+        require_admin(request)
+        import src.agent_tools  # noqa: F401
+        from src.agent_tools import TOOL_HANDLERS
+        issues = [{"tool": i.tool, "check": i.check, "detail": i.detail}
+                  for i in AUTHORITY.parity_report(TOOL_HANDLERS)]
+        return {"checked_at": now_iso(), "ok": not issues, "issues": issues}
+
+    @router.get("/authority/{name}")
+    def authority_entry(name: str, request: Request):
+        """One descriptor by wire name, canonical id or alias."""
+        require_admin(request)
+        import src.agent_tools  # noqa: F401
+        resolution = AUTHORITY.resolve(name)
+        if resolution is None:
+            raise HTTPException(404, f"No tool named {name!r} in the authority")
+        return {"checked_at": now_iso(), "resolved_via": resolution.via, "tool": resolution.tool.summary()}
 
     @router.post("/catalog/{name}/dry-run")
     async def dry_run(name: str, request: Request):

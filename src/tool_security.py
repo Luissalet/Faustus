@@ -414,18 +414,31 @@ def email_tool_policy_names(tool_name: str) -> frozenset:
     them either way — plan mode and the MCP settings toggle write qualified
     names into denylists, chat-level toggles write bare ones. Every gate must
     match against the full alias set, or a call in one spelling slips past a
-    denylist entry written in the other. Non-email names alias only to
-    themselves.
+    denylist entry written in the other.
+
+    A tool the tool authority knows (src/tool_authority.py) is also the same
+    decision under its canonical id and its registered aliases: a denylist
+    written as `bash` covers a call made as `shell`, and the other way round.
+    Names neither email nor registered alias only to themselves.
     """
     if not isinstance(tool_name, str):
         return frozenset((tool_name,))
+    names = {tool_name}
+    registered = tool_name
     if tool_name in BUILTIN_EMAIL_TOOLS:
-        return frozenset((tool_name, f"mcp__email__{tool_name}"))
-    if tool_name.startswith("mcp__email__"):
+        names.add(f"mcp__email__{tool_name}")
+    elif tool_name.startswith("mcp__email__"):
         bare = tool_name[len("mcp__email__"):]
         if bare in BUILTIN_EMAIL_TOOLS:
-            return frozenset((tool_name, bare))
-    return frozenset((tool_name,))
+            names.add(bare)
+            registered = bare
+    try:
+        from src.tool_authority import AUTHORITY
+        import src.tool_authority_specs  # noqa: F401  (registers the migrated families)
+        names |= AUTHORITY.spellings(registered)
+    except Exception:  # noqa: BLE001 - the registry can only widen a denial, never remove one
+        logger.debug("tool authority spellings unavailable for %r", tool_name, exc_info=True)
+    return frozenset(names)
 
 
 def is_public_blocked_tool(tool_name: Optional[str]) -> bool:

@@ -253,7 +253,7 @@ def test_dry_run_never_calls_the_real_tool_handler(monkeypatch):
 
 def test_dry_run_on_a_fence_only_tool_says_no_schema_to_check(monkeypatch):
     r = _client(monkeypatch).post(
-        "/api/tools/catalog/generate_image/dry-run", json={"arguments": {"prompt": "a cat"}}
+        "/api/tools/catalog/manage_research/dry-run", json={"arguments": {"action": "list"}}
     )
     assert r.status_code == 200
     assert r.json()["schema_available"] is False

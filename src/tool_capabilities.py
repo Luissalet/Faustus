@@ -321,7 +321,7 @@ _register(
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
 _register(
-    {"edit_image", "generate_image", "trigger_research"},
+    {"edit_image", "generate_image", "image_job", "trigger_research"},
     ToolEffect.NETWORK_EGRESS,
     ToolEffect.WRITE_PRIVATE,
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
@@ -1990,6 +1990,11 @@ class ToolRunSecurityContext:
     # The bypass affects only this automatic gate; current tool policy, ownership,
     # workspace confinement, and execution/sandbox restrictions still apply.
     approval_gate_bypassed: bool = False
+    # True while `approval_gate_bypassed` rests on the remembered workspace
+    # grant alone (src/tool_approval_grants.py). That grant is re-read at every
+    # decision: revoking it in the middle of a run takes effect on the next
+    # call, instead of the run carrying the answer it read when it started.
+    workspace_grant_bypass: bool = False
     # "Trusted workspace" (a project flag): file writes whose target resolves
     # inside this folder skip the post-external-context approval gate. Shell,
     # deletions, private/admin/external effects keep the gate. Empty = off.
@@ -2246,6 +2251,8 @@ class ToolRunSecurityContext:
             for message in message_list
         ):
             self.approval_gate_bypassed = True
+            # Chat scope is its own answer; it does not depend on the folder grant.
+            self.workspace_grant_bypass = False
         for message in message_list:
             if isinstance(message, dict):
                 self._note_urls(message.get("content"))
@@ -2311,7 +2318,26 @@ class ToolRunSecurityContext:
             logger.debug("approval_autonomy check failed", exc_info=True)
             return None
 
+    def revalidate_workspace_grant(self) -> bool:
+        """Drop a bypass that rests only on a workspace grant that no longer
+        exists. Returns True when the bypass was withdrawn. A store that cannot
+        be read withdraws it too: revocation wins over an older grant."""
+        if not (self.approval_gate_bypassed and self.workspace_grant_bypass):
+            return False
+        try:
+            from src import tool_approval_grants
+            live = bool(tool_approval_grants.is_granted(self.owner, self.workspace))
+        except Exception:  # noqa: BLE001 - unreadable means not granted
+            live = False
+        if live:
+            return False
+        self.approval_gate_bypassed = False
+        self.workspace_grant_bypass = False
+        logger.info("[gate] workspace approval was revoked during the run; the gate applies again")
+        return True
+
     def decision_for(self, tool_name: Any, content: Any = None) -> ToolGateDecision:
+        self.revalidate_workspace_grant()
         mode = tool_approval_mode()
         # This controls the approval gate only. Tool availability, account,
         # workspace and execution restrictions are enforced separately.

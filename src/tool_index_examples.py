@@ -259,6 +259,13 @@ EXAMPLES: Dict[str, List[str]] = {
         "what models can I use right now",
         "enséñame la lista de modelos y sus endpoints",
     ],
+    "image_job": [
+        "cómo va la imagen que pedí antes",
+        "check whether my earlier image request has finished",
+        "recupera la imagen que se quedó pendiente tras el reinicio",
+        "cancel that render that is still running",
+        "cancela la imagen que se está generando",
+    ],
     "edit_image": [
         "quítale el fondo a esta imagen",
         "upscale this photo, it's too low-res",
