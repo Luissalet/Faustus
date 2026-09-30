@@ -8962,4 +8962,6 @@ export const es: Record<string, string> = {
   "not attributed to a phase: {n}": "sin atribuir a una fase: {n}",
   "unnamed": "sin nombre",
   "{n} calls": "{n} llamadas",
+  "version": "versión",
+  "unversioned": "sin versión",
 };

@@ -2415,6 +2415,13 @@ def _dump_stream_payload(url: str, payload: Dict) -> None:
     (a folder) when that variable is set: for comparing what two rounds
     actually sent when a server's prompt cache misses. Off by default;
     headers (keys) are never written."""
+    try:
+        # H09: the final request body is the exact prompt; the turn's audit
+        # (src/context_engine/prompt_audit.py) compares it with the loop's view.
+        from src.context_engine.prompt_audit import observe_wire
+        observe_wire(payload)
+    except Exception:  # noqa: BLE001 - an observation never costs a round
+        pass
     folder = os.environ.get("FAUSTUS_DUMP_LLM_PAYLOADS", "").strip()
     if not folder:
         return

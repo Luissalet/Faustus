@@ -116,6 +116,63 @@ def persisted_history(session_id: str, owner: str, *,
                 pass
 
 
+def persisted_prompt_audits(session_id: str, owner: str, *, limit: int = 5
+                            ) -> Sequence[Mapping[str, Any]]:
+    """The hash-only prompt audits saved with the last assistant turns.
+
+    Same owner-before-read rule as :func:`persisted_history`; a turn saved
+    before the audit existed simply has none."""
+    wanted = str(session_id or "").strip()
+    if not wanted:
+        return ()
+    try:
+        cap = max(1, min(int(limit or 5), 20))
+    except (TypeError, ValueError):
+        cap = 5
+    try:
+        import json
+        from core.database import ChatMessage as DbChatMessage
+        from core.database import Session as DbSession
+        from core.database import SessionLocal
+    except Exception:  # noqa: BLE001
+        return ()
+    db = None
+    try:
+        db = SessionLocal()
+        row = db.query(DbSession.id, DbSession.owner).filter(DbSession.id == wanted).first()
+        if row is None or not owner_may_read(row.owner, owner):
+            return ()
+        rows = (db.query(DbChatMessage.id, DbChatMessage.meta_data, DbChatMessage.timestamp)
+                .filter(DbChatMessage.session_id == wanted)
+                .filter(DbChatMessage.role == "assistant")
+                .order_by(DbChatMessage.timestamp.desc())
+                .limit(200).all())
+        out: List[Dict[str, Any]] = []
+        for message_id, raw, stamp in rows:
+            if not raw or "prompt_audit" not in raw:
+                continue
+            try:
+                meta = json.loads(raw)
+            except (TypeError, ValueError):
+                continue
+            audit = meta.get("prompt_audit") if isinstance(meta, dict) else None
+            if isinstance(audit, dict):
+                out.append({"message_id": str(message_id), "timestamp": _timestamp(stamp),
+                            "prompt_audit": audit})
+            if len(out) >= cap:
+                break
+        return tuple(out)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("context audit: could not read session %s: %s", wanted, exc)
+        return ()
+    finally:
+        if db is not None:
+            try:
+                db.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
 def install_default_history_provider() -> bool:
     """Install :func:`persisted_history` as the process-wide provider.
 
@@ -132,4 +189,5 @@ def install_default_history_provider() -> bool:
 
 
 __all__ = ["MAX_PERSISTED_MESSAGES", "CONVERSATION_ROLES", "owner_may_read",
-           "persisted_history", "install_default_history_provider"]
+           "persisted_history", "persisted_prompt_audits",
+           "install_default_history_provider"]

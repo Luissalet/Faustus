@@ -10217,6 +10217,11 @@ async def _stream_agent_loop_body(
     # below (see the "Context receipts" block near the final metrics).
     _context_receipts_summary: List[Dict[str, str]] = []
     _context_receipt_refs_seen: Set[Tuple[str, str]] = set()
+    # H09: per-round fingerprints of the EXACT prompt handed to the route, the
+    # compiled manifest reconciled against it, and the diff from the previous
+    # round (src/context_engine/prompt_audit.py). Observation only.
+    from src.context_engine.prompt_audit import PromptAuditRecorder as _PromptAuditRecorder
+    _prompt_audit = _PromptAuditRecorder(turn_id=_context_turn_id, session_id=session_id or "")
     # CMP-09/CMP-12 (W3-A): the SAME dict the round-1 `strategy` SSE event
     # sends as its `data`, kept here so it can also ride onto the turn's
     # persisted metadata (see the "Context receipts" block near the final
@@ -12155,6 +12160,10 @@ async def _stream_agent_loop_body(
                             "ref": _ctx_ref,
                             "why": (f"incluido en el contexto del turno (sección {_ctx_section})"
                                     if _ctx_section else "incluido en el contexto del turno"),
+                            **({"sha256": str(_ctx_src_row["body_sha256"])[:16],
+                                "revision": str(_ctx_src_row.get("revision") or ""),
+                                "revision_state": str(_ctx_src_row.get("revision_state") or "")}
+                               if _ctx_src_row.get("body_sha256") else {}),
                         })
                     # Learned rules are marked as used only after their packet
                     # really entered the model request, never when retrieved.
@@ -12359,6 +12368,8 @@ async def _stream_agent_loop_body(
             from copy import deepcopy as _copy_prepared_tools
             candidate_tools = _copy_prepared_tools(candidate_tools)
             state["tools"] = candidate_tools
+            _prompt_audit.observe_round(round_num, request_messages, candidate_tools,
+                                        delivery=_ce_live_previous, candidate=index)
             # Prepared schema receipt only: llm_core may still adapt protocol.
             try:
                 from src.tool_schema_receipts import capture_candidate, capture_argument_schemas
@@ -18158,6 +18169,9 @@ async def _stream_agent_loop_body(
             )
     metrics["requested_endpoint_id"] = requested_endpoint_id
     metrics["requested_endpoint_label"] = requested_endpoint_label
+    if _prompt_audit.rounds:
+        # Hashes only, bounded: rides onto the saved message like the receipts.
+        metrics["prompt_audit"] = _prompt_audit.summary()
     if _context_receipts_summary:
         # Same persistence path as `harness` below: `metrics` becomes
         # `last_metrics` -> `md` in `save_assistant_response`, so this rides

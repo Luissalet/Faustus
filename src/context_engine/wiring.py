@@ -705,7 +705,8 @@ async def deliver_round(*, request: ContextRequest,
                         "_objective_reuse_receipts": previous.get("_objective_reuse_receipts"),
                         "_personal_memory_reuse_receipts": previous.get("_personal_memory_reuse_receipts"),
                         "_document_reuse_receipts": previous.get("_document_reuse_receipts"),
-                        "_standing_memory_reuse_receipts": previous.get("_standing_memory_reuse_receipts")}
+                        "_standing_memory_reuse_receipts": previous.get("_standing_memory_reuse_receipts"),
+                        "_audit": previous.get("_audit", {})}
         bounded = replace(
             request,
             policy=replace(request.policy, token_budget=allowance),
@@ -746,15 +747,38 @@ async def deliver_round(*, request: ContextRequest,
         manifest = packet.manifest()
         delivered_items = [row for row in manifest
                            if row.get("section") != "recent_messages"]
-        return {
-            "message": message,
+        from . import prompt_audit
+        private = {
             "_reuse_scope": reuse_scope,
             "_file_reuse_receipts": _captured_file_receipts(packet),
             "_objective_reuse_receipts": captured(objective_capture, packet),
             "_personal_memory_reuse_receipts": captured_personal(personal_capture, packet),
             "_document_reuse_receipts": captured_documents(document_capture, packet),
             "_standing_memory_reuse_receipts": captured_standing(standing_capture, packet),
+        }
+        try:
+            # Versions and hashes of what was delivered, and the identities
+            # (never the text) of the queries that produced it. The private
+            # bodies stay out of the report and are used only to check that
+            # each source is still in the final prompt.
+            audit_sources = prompt_audit.source_receipts(packet)
+            audit_queries = prompt_audit.query_receipts(private)
+            audit = {"message_sha256": prompt_audit.message_sha256(message),
+                     "sources": audit_sources}
+        except Exception:  # noqa: BLE001 - an audit never ends a round
+            logger.debug("context engine audit receipts skipped", exc_info=True)
+            audit_sources, audit_queries, audit = [], {}, {}
+        _receipt_index = {(r.get("section"), r.get("source_ref")): r
+                          for r in audit_sources}
+        return {
+            "message": message,
+            **private,
+            "_audit": audit,
             "report": {
+                "source_receipts": prompt_audit.public_source_receipts(
+                    audit_sources, MAX_REPORT_ROWS),
+                "query_receipts": audit_queries,
+                "message_sha256": audit.get("message_sha256", ""),
                 "round": max(0, int(round_index or 0)),
                 "delivered": True,
                 "elapsed_ms": int((time.monotonic() - started) * 1000),
@@ -771,6 +795,9 @@ async def deliver_round(*, request: ContextRequest,
                     "source_type": row.get("source_type"),
                     "source_ref": row.get("source_ref"),
                     "tokens": row.get("tokens"),
+                    **{k: v for k, v in _receipt_index.get(
+                        (row.get("section"), row.get("source_ref")), {}).items()
+                       if k in ("revision", "revision_state", "body_sha256")},
                 } for row in delivered_items[:MAX_REPORT_ROWS]],
                 "history_carried_by_prompt": packet.section("recent_messages") is not None,
                 "degraded": packet.degraded,
@@ -865,13 +892,18 @@ def receipt_rows(report: Mapping[str, Any]) -> List[Dict[str, str]]:
             continue
         seen.add((kind, ref))
         section = str(source.get("section") or "")
-        rows.append({
+        row = {
             "source": section or kind,
             "kind": kind,
             "ref": ref,
             "why": (f"incluido en el contexto del turno (sección {section})"
                     if section else "incluido en el contexto del turno"),
-        })
+        }
+        if source.get("body_sha256"):
+            row["sha256"] = str(source["body_sha256"])[:16]
+            row["revision"] = str(source.get("revision") or "")
+            row["revision_state"] = str(source.get("revision_state") or "")
+        rows.append(row)
     return rows[:MAX_REPORT_ROWS]
 
 

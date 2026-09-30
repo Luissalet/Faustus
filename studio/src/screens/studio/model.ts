@@ -1,6 +1,7 @@
 import type { RunStatus } from '../../components';
 import {
   summaryFrom,
+  toContextReceipt,
   adviceFrom,
   toolEventsFrom,
   domainOf,
@@ -1399,7 +1400,7 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
     summary: approval?.decision === 'superseded' && !ask ? undefined : harness ? summaryFrom(harness) : turn.summary,
     sources,
     contextReceipts: Array.isArray(meta.context_receipts)
-      ? (meta.context_receipts as Record<string, unknown>[]).map((x) => ({ source: s(x.source), kind: s(x.kind), ref: s(x.ref), why: s(x.why) }))
+      ? (meta.context_receipts as Record<string, unknown>[]).map(toContextReceipt)
       : turn.contextReceipts,
     strategy: strategyFromMeta(meta) ?? turn.strategy,
     advice: adviceFromMeta(meta) ?? turn.advice,

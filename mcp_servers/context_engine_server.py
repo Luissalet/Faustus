@@ -450,6 +450,30 @@ async def list_tools() -> list[Tool]:
                 "properties": {**_SCOPE_PROPS},
             },
         ),
+        Tool(
+            name="context_prompt_audit",
+            description=(
+                "Read the hash-only audit saved with the last turns of a chat "
+                "session: for each model round the hash of the exact prompt, "
+                "the compiled manifest reconciled with that prompt (which "
+                "sources made it, which blocks the loop added after the "
+                "compiler, which were lost), the diff from the previous round "
+                "and the first place the prompt prefix changed, and the hash "
+                "of the context configuration. Use it to explain why a turn "
+                "behaved differently from the one before it, or why a server "
+                "re-read a long prompt. Prompt text is never returned."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string",
+                                   "description": "Chat session to read."},
+                    "limit": {"type": "integer",
+                              "description": "Newest turns to return (1-20, default 3)."},
+                },
+                "required": ["session_id"],
+            },
+        ),
     ]
 
 
@@ -718,7 +742,18 @@ def _tool_diagnostics(owner: str, args: dict) -> list[TextContent]:
     return _json_result(out)
 
 
+def _tool_prompt_audit(owner: str, args: dict) -> list[TextContent]:
+    from src.context_engine.adapters.session_store import persisted_prompt_audits
+    session_id = str(args.get("session_id") or "").strip()
+    if not session_id:
+        return _text_result("Error: session_id is required.")
+    turns = persisted_prompt_audits(session_id, owner, limit=_limit(args.get("limit"), 3, 20))
+    return _json_result({"ok": True, "session_id": session_id,
+                         "turns": list(turns), "count": len(turns)})
+
+
 _HANDLERS = {
+    "context_prompt_audit": _tool_prompt_audit,
     "context_blocks": _tool_blocks,
     "context_capsule": _tool_capsule,
     "context_code_index": _tool_code_index,

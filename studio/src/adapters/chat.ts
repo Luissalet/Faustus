@@ -342,6 +342,20 @@ export interface ContextReceipt {
   kind: string;
   ref: string;
   why: string;
+  /** First hex digits of the delivered text's hash (H09). Absent on turns saved before receipts carried one. */
+  sha256?: string;
+  /** Source-declared version, empty when the source declares none (`revisionState` says which). */
+  revision?: string;
+  revisionState?: string;
+}
+
+/** One receipt row from either wire shape (live event or saved metadata). */
+export function toContextReceipt(r: Record<string, unknown>): ContextReceipt {
+  const out: ContextReceipt = { source: str(r.source), kind: str(r.kind), ref: str(r.ref), why: str(r.why) };
+  if (str(r.sha256)) out.sha256 = str(r.sha256);
+  if (str(r.revision)) out.revision = str(r.revision);
+  if (str(r.revision_state)) out.revisionState = str(r.revision_state);
+  return out;
 }
 
 export interface Todo {
@@ -1700,7 +1714,7 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
       return {
         type: 'context_receipts',
         receipts: asArray<Record<string, unknown>>(raw.data)
-          .map((r) => ({ source: str(r.source), kind: str(r.kind), ref: str(r.ref), why: str(r.why) }))
+          .map(toContextReceipt)
           .filter((r) => r.ref),
       };
     case 'research_progress':

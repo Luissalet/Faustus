@@ -326,6 +326,17 @@ def setup_context_engine_routes():
                                           limit=_limit(limit))
         return {"ok": True, "owner": owner, "packets": rows, "count": len(rows)}
 
+    @router.get("/sessions/{session_id}/prompt-audit")
+    def get_prompt_audit(session_id: str, request: Request, limit: int = 3):
+        """What was compiled versus what was sent, for the last turns of a
+        session: prompt and block hashes, the compiled manifest reconciled with
+        the exact final prompt, the diff from the previous round, and the
+        context configuration hash. Hashes only; no prompt text."""
+        from src.context_engine.adapters.session_store import persisted_prompt_audits
+        turns = persisted_prompt_audits(session_id, _owner(request), limit=limit)
+        return {"ok": True, "session_id": session_id, "turns": list(turns),
+                "count": len(turns)}
+
     @router.get("/packets/{packet_id}")
     def get_packet(packet_id: str, request: Request):
         """One ledger row: how big, how degraded, what was left out — never

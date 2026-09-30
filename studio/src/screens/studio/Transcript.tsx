@@ -1752,6 +1752,13 @@ function ContextReceiptCard({ turn }: { turn: Turn }) {
               ) : (
                 <code>{r.ref}</code>
               )}
+              {r.sha256 && (
+                <span className="fs-ctx__note" data-testid="context-receipt-version">
+                  {' · '}
+                  {r.revision ? `${t('version')} ${r.revision} · ` : `${t('unversioned')} · `}
+                  <code>{r.sha256.slice(0, 8)}</code>
+                </span>
+              )}
             </li>
           );
         })}
