@@ -98,3 +98,23 @@ contador de memoria activa de PyTorch. Fue necesario liberar manualmente la
 caché del ComfyUI dedicado a la prueba. La admisión de memoria sigue pendiente
 de corrección; esto no certifica una secuencia desatendida de múltiples ediciones.
 No se alteraron ajustes/datos del usuario ni se descargaron modelos nuevos.
+
+Corrección posterior: Prospero `1fefe06` mide el acelerador primario y añade
+admisión explícita para un endpoint dedicado fijado en `backend.json`:
+`{"comfy":{"url":"http://127.0.0.1:8189","manage_memory":true}}`.
+Exige capacidad suficiente y cola vacía del mismo endpoint; no inventa memoria
+libre ni envía `/free`. Esa opción por sí sola evitó la espera, pero la segunda
+edición falló por OOM con ComfyUI 0.37/aimdo 0.5.5.
+
+La secuencia real posterior arrancó el ComfyUI propio con
+`--disable-smart-memory`, manteniendo DynamicVRAM activo. Sombrero azul y anime
+terminaron consecutivamente en 98,03 y 81,96 s, sin liberación manual ni `/free`.
+Ambos PNG fueron inspeccionados; jobs done con recibos/prompt_id y galería propia.
+Antes del segundo render había 15.844.507.644 bytes libres: esa secuencia no
+necesitó la excepción de memoria baja. La admisión tiene pruebas sintéticas;
+no es garantía universal contra OOM. No se cambió el arranque/configuración de
+servicios personales. Los servicios propios de QA quedaron cerrados.
+454 pruebas completas Prospero correctas (220,38 s), build correcto y 26 pruebas
+focales del coordinador correctas (4,04 s). Fuente y límites detallados en
+[Prospero](https://github.com/Luissalet/ProsperosHoard),
+`docs/COMFY_MEMORY_ADMISSION.md`. Evidencia: directorio QA citado anteriormente.
