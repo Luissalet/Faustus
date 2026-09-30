@@ -507,6 +507,25 @@ def render_session_usage(data: Dict[str, Any]) -> str:
     return "\n".join(out)
 
 
+def render_run_spend(data: Dict[str, Any]) -> str:
+    """One run's spend per purpose (GET /api/runs/{id}/spend)."""
+    rows = (data or {}).get("purposes") or []
+    if not rows:
+        return "No model spend recorded for that run."
+    cost = data.get("consumed_cost")
+    head = (f"total: {data.get('consumed_tokens', 0)} tokens, cost "
+            f"{'unknown' if cost == 'unknown' else f'${cost}'}")
+    if data.get("unknown_usage_calls"):
+        head += f", {data['unknown_usage_calls']} call(s) never reported usage"
+    out = [head]
+    for row in rows:
+        c = row.get("cost")
+        cost_text = "unknown" if c == "unknown" else f"${c:.4f}"
+        out.append(f"  {row.get('purpose')}: {row.get('consumed_tokens', 0)} tokens, "
+                   f"{row.get('calls', 0)} call(s), {row.get('attempts', 0)} attempt(s), cost {cost_text}")
+    return "\n".join(out)
+
+
 def render_models_fit(data: Dict[str, Any]) -> str:
     """What this machine can actually run, and at what speed.
 
@@ -994,6 +1013,18 @@ TOOLS: List[Tool] = [
         }, "required": ["session_id"]},
     ),
     Tool(
+        name="run_spend",
+        description=(
+            "Where one agent run's model spend went, per purpose: main rounds, compaction, recovery, advisor, "
+            "verifier, research, memory upkeep, workers. Tokens per purpose, how many calls never reported "
+            "usage, and cost that stays 'unknown' when a remote provider gave no price. Use it to see which "
+            "auxiliary call is eating a run's budget."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "run_id": {"type": "string", "description": "The run id (the chat session id when the run has none)"},
+        }, "required": ["run_id"]},
+    ),
+    Tool(
         name="turn_review",
         description=(
             "What the last turns of a Faustus chat actually did, from what they saved: tools, failures with "
@@ -1426,6 +1457,12 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
                 return _text("Error: give the session_id")
             data = await asyncio.to_thread(_request, "GET", f"/api/session/{sid}/usage")
             return _text(render_session_usage(data))
+        if name == "run_spend":
+            rid = urllib.parse.quote(str(args.get("run_id") or "").strip(), safe="")
+            if not rid:
+                return _text("Error: give the run_id")
+            data = await asyncio.to_thread(_request, "GET", f"/api/runs/{rid}/spend")
+            return _text(render_run_spend(data))
         if name == "turn_review":
             sid = urllib.parse.quote(str(args.get("session_id") or "").strip(), safe="")
             if not sid:

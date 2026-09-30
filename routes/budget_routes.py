@@ -32,4 +32,15 @@ def setup_budget_routes() -> APIRouter:
         from src import budget_account
         return budget_account.snapshot(run_id)
 
+    @router.get("/{run_id}/spend")
+    def get_spend(request: Request, run_id: str):
+        """Where the run's model spend went, per purpose (src/turn_spend.py).
+
+        Main rounds, compaction, recovery, advisor, verifier, research, memory
+        upkeep and workers share one account. A purpose whose provider never
+        reported usage or a price reads as unknown, not as zero."""
+        require_user(request)
+        from src import turn_spend
+        return turn_spend.explain(run_id)
+
     return router

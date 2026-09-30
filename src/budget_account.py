@@ -46,7 +46,7 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-VERSION = 1
+VERSION = 2
 
 
 def default_path() -> Path:
@@ -85,6 +85,13 @@ def _db(path: Path, *, write: bool = False):
                 raise RuntimeError("unrecognized budget_accounts database")
             _create_schema(conn)
             conn.execute(f"PRAGMA user_version={VERSION}")
+        elif version == 1:
+            # v1 -> v2 is additive: a purpose label, a flag for usage the
+            # provider never reported, and an attempt count. Reading a v1 file
+            # never writes; a write upgrades it in place.
+            if write:
+                _upgrade_v1(conn)
+                conn.execute(f"PRAGMA user_version={VERSION}")
         elif version != VERSION and version != 0:
             raise RuntimeError("unsupported budget_accounts database version")
         yield conn
@@ -117,9 +124,23 @@ def _create_schema(conn: sqlite3.Connection) -> None:
         consumed_cost REAL,
         unpriced INTEGER NOT NULL DEFAULT 0,
         created_at REAL NOT NULL,
-        updated_at REAL NOT NULL)""")
+        updated_at REAL NOT NULL,
+        purpose TEXT NOT NULL DEFAULT '',
+        usage_unknown INTEGER NOT NULL DEFAULT 0,
+        attempts INTEGER NOT NULL DEFAULT 1)""")
     conn.execute("CREATE INDEX reservations_run ON reservations(run_id, status)")
     conn.execute("CREATE INDEX reservations_child ON reservations(run_id, child_id)")
+
+
+def _upgrade_v1(conn: sqlite3.Connection) -> None:
+    have = {r[1] for r in conn.execute("PRAGMA table_info(reservations)")}
+    for column, ddl in (
+        ("purpose", "TEXT NOT NULL DEFAULT ''"),
+        ("usage_unknown", "INTEGER NOT NULL DEFAULT 0"),
+        ("attempts", "INTEGER NOT NULL DEFAULT 1"),
+    ):
+        if column not in have:
+            conn.execute(f"ALTER TABLE reservations ADD COLUMN {column} {ddl}")
 
 
 @dataclass
@@ -202,7 +223,8 @@ def _outstanding_tokens(conn: sqlite3.Connection, run_id: str) -> int:
     return reserved + int(consumed_row["consumed"] or 0)
 
 
-def reserve(run_id: str, child_id: str, tokens: int, cost: Optional[float] = None):
+def reserve(run_id: str, child_id: str, tokens: int, cost: Optional[float] = None,
+            *, purpose: str = ""):
     """Reserve up to ``tokens`` (and, if known, ``cost``) for ``child_id``
     before it is launched. Returns the :class:`Reservation` on success, or a
     :class:`BudgetExceeded` (never raised — the caller decides what to do)
@@ -241,9 +263,9 @@ def reserve(run_id: str, child_id: str, tokens: int, cost: Optional[float] = Non
                 )
         cur = conn.execute(
             "INSERT INTO reservations (run_id, child_id, status, reserved_tokens, reserved_cost, "
-            "consumed_tokens, consumed_cost, unpriced, created_at, updated_at) "
-            "VALUES (?, ?, 'reserved', ?, ?, 0, NULL, 0, ?, ?)",
-            (run_id, child_id, tokens, cost, now, now),
+            "consumed_tokens, consumed_cost, unpriced, created_at, updated_at, purpose) "
+            "VALUES (?, ?, 'reserved', ?, ?, 0, NULL, 0, ?, ?, ?)",
+            (run_id, child_id, tokens, cost, now, now, str(purpose or "")),
         )
         reservation_id = int(cur.lastrowid)
         conn.execute("UPDATE runs SET updated_at=? WHERE run_id=?", (now, run_id))
@@ -252,7 +274,8 @@ def reserve(run_id: str, child_id: str, tokens: int, cost: Optional[float] = Non
 
 
 def reconcile(run_id: str, child_id: str, used_tokens: int,
-              used_cost: Optional[float] = None) -> Dict[str, Any]:
+              used_cost: Optional[float] = None, *, purpose: str = "",
+              usage_unknown: bool = False, attempts: int = 1) -> Dict[str, Any]:
     """Record what ``child_id`` actually used, closing its most recent open
     reservation (if any) so the surplus between reserved and used is freed
     back to the run. ``used_cost=None`` means the provider gave no price —
@@ -262,13 +285,20 @@ def reconcile(run_id: str, child_id: str, used_tokens: int,
     A child that consumes without ever having been reserved for (a caller
     that skipped ``reserve``, or a retry counted purely for accounting)
     still gets a row here — reconciling into nothing would lose the usage
-    from every future ``snapshot``."""
+    from every future ``snapshot``.
+
+    ``usage_unknown`` marks a call whose usage the provider never reported (or
+    whose outcome is uncertain): it adds no tokens, but the run's cost can no
+    longer read as a known total. ``attempts`` counts the provider attempts the
+    row stands for, retries included."""
     if not run_id:
         raise ValueError("budget_account.reconcile: run_id is required")
     if not child_id:
         raise ValueError("budget_account.reconcile: child_id is required")
     used_tokens = max(0, int(used_tokens or 0))
-    unpriced = 1 if used_cost is None else 0
+    unknown = 1 if usage_unknown else 0
+    unpriced = 1 if (used_cost is None and not unknown) else 0
+    attempts = max(1, int(attempts or 1))
     now = time.time()
     path = default_path()
     with _db(path, write=True) as conn:
@@ -279,16 +309,20 @@ def reconcile(run_id: str, child_id: str, used_tokens: int,
         if row is not None:
             conn.execute(
                 "UPDATE reservations SET status='reconciled', consumed_tokens=?, consumed_cost=?, "
-                "unpriced=?, updated_at=? WHERE id=?",
-                (used_tokens, used_cost, unpriced, now, int(row["id"])),
+                "unpriced=?, updated_at=?, usage_unknown=?, attempts=?, "
+                "purpose=CASE WHEN ?<>'' THEN ? ELSE purpose END WHERE id=?",
+                (used_tokens, used_cost, unpriced, now, unknown, attempts,
+                 str(purpose or ""), str(purpose or ""), int(row["id"])),
             )
             reservation_id = int(row["id"])
         else:
             cur = conn.execute(
                 "INSERT INTO reservations (run_id, child_id, status, reserved_tokens, reserved_cost, "
-                "consumed_tokens, consumed_cost, unpriced, created_at, updated_at) "
-                "VALUES (?, ?, 'reconciled', ?, NULL, ?, ?, ?, ?, ?)",
-                (run_id, child_id, used_tokens, used_tokens, used_cost, unpriced, now, now),
+                "consumed_tokens, consumed_cost, unpriced, created_at, updated_at, purpose, "
+                "usage_unknown, attempts) "
+                "VALUES (?, ?, 'reconciled', ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (run_id, child_id, used_tokens, used_tokens, used_cost, unpriced, now, now,
+                 str(purpose or ""), unknown, attempts),
             )
             reservation_id = int(cur.lastrowid)
         conn.execute(
@@ -297,7 +331,8 @@ def reconcile(run_id: str, child_id: str, used_tokens: int,
             (run_id, now, now),
         )
     return {"reservation_id": reservation_id, "run_id": run_id, "child_id": child_id,
-            "consumed_tokens": used_tokens, "consumed_cost": used_cost, "unpriced": bool(unpriced)}
+            "consumed_tokens": used_tokens, "consumed_cost": used_cost, "unpriced": bool(unpriced),
+            "usage_unknown": bool(unknown), "attempts": attempts}
 
 
 def snapshot(run_id: str) -> Dict[str, Any]:
@@ -321,7 +356,13 @@ def snapshot(run_id: str) -> Dict[str, Any]:
                            if r["status"] == "reconciled" and r["unpriced"])
     known_cost = sum(float(r["consumed_cost"]) for r in rows
                       if r["status"] == "reconciled" and r["consumed_cost"] is not None)
-    has_unpriced = unpriced_tokens > 0
+    def _col(row: sqlite3.Row, name: str, default: Any) -> Any:
+        # A v1 file read without upgrading has no such column.
+        return row[name] if name in row.keys() else default
+
+    unknown_calls = sum(1 for r in rows if r["status"] == "reconciled"
+                        and _col(r, "usage_unknown", 0))
+    has_unpriced = unpriced_tokens > 0 or unknown_calls > 0
     outstanding = reserved_tokens + consumed_tokens
     children = [
         {
@@ -331,9 +372,34 @@ def snapshot(run_id: str) -> Dict[str, Any]:
             "consumed_tokens": int(r["consumed_tokens"] or 0),
             "consumed_cost": r["consumed_cost"],
             "unpriced": bool(r["unpriced"]),
+            "purpose": _col(r, "purpose", "") or "",
+            "usage_unknown": bool(_col(r, "usage_unknown", 0)),
+            "attempts": int(_col(r, "attempts", 1) or 1),
         }
         for r in rows
     ]
+    purposes: Dict[str, Dict[str, Any]] = {}
+    for child in children:
+        if child["status"] != "reconciled":
+            continue
+        label = child["purpose"] or "unlabelled"
+        entry = purposes.setdefault(label, {
+            "calls": 0, "attempts": 0, "consumed_tokens": 0, "known_cost": 0.0,
+            "unpriced_calls": 0, "unknown_usage_calls": 0})
+        entry["calls"] += 1
+        entry["attempts"] += child["attempts"]
+        entry["consumed_tokens"] += child["consumed_tokens"]
+        if child["consumed_cost"] is not None:
+            entry["known_cost"] += float(child["consumed_cost"])
+        if child["usage_unknown"]:
+            entry["unknown_usage_calls"] += 1
+        elif child["unpriced"]:
+            entry["unpriced_calls"] += 1
+    for entry in purposes.values():
+        # Same rule as the run total: a purpose with any unpriced or unknown
+        # usage has an unknown cost, not a known sum.
+        entry["cost"] = ("unknown" if entry["unpriced_calls"] or entry["unknown_usage_calls"]
+                         else entry["known_cost"])
     return {
         "run_id": run_id,
         "opened": run_row is not None,
@@ -345,24 +411,29 @@ def snapshot(run_id: str) -> Dict[str, Any]:
         # price — a provider that gives no price is not free.
         "consumed_cost": ("unknown" if has_unpriced else (known_cost if rows else 0.0)),
         "unpriced_usage_tokens": unpriced_tokens,
+        "unknown_usage_calls": unknown_calls,
+        "purposes": purposes,
         "remaining_tokens": (ceiling_tokens - outstanding) if ceiling_tokens > 0 else None,
         "children": children,
     }
 
 
-def release(run_id: str, child_id: str) -> None:
+def release(run_id: str, child_id: str) -> bool:
     """Cancel an outstanding reservation with nothing consumed (the child
     never ran — e.g. a sibling's reservation already exhausted the budget
     and this one was withdrawn before launch). Distinct from ``reconcile``
     with ``used_tokens=0``: this leaves no unpriced/priced usage record at
     all, because none was ever incurred."""
     if not run_id or not child_id:
-        return
+        return False
     now = time.time()
     path = default_path()
     with _db(path, write=True) as conn:
-        conn.execute(
+        cur = conn.execute(
             "UPDATE reservations SET status='released', reserved_tokens=0, updated_at=? "
             "WHERE run_id=? AND child_id=? AND status='reserved'",
             (now, run_id, child_id),
         )
+        # True only for the call that actually released something: a second
+        # release of the same reservation frees nothing.
+        return cur.rowcount > 0

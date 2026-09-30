@@ -1268,6 +1268,12 @@ DEFAULT_SETTINGS = {
     # after the fact). 0 = no ceiling — the ledger still tracks reserved vs.
     # consumed tokens per run, it just never refuses a reservation for it.
     "agent_budget_tokens_per_run": 0,
+    # Every model call a turn makes outside the main stream (advisor, typed
+    # decisions, grounding retries, research extraction, memory upkeep, ...) is
+    # booked per attempt under a purpose (src/turn_spend.py). "record" books it
+    # and charges the turn's ledger; "enforce" also refuses a call once the
+    # turn is over budget; "off" books nothing.
+    "agent_turn_spend": "record",
     # R3 (Reach wave): src/fanout/ -- how many fan-out candidates (each its
     # own worker in its own isolated alternative) run their worker at the
     # same time. Two big LOCAL models rarely fit one card's VRAM at once, so

@@ -516,7 +516,7 @@ async def _complete(url: str, model: str, messages: List[Dict[str, Any]],
             url, model, messages, headers=headers, temperature=0.2,
             max_tokens=max_tokens, timeout=timeout, max_retries=1,
             workload="foreground", gen_overrides=overrides,
-            _usage_observer=on_usage,
+            _usage_observer=on_usage, _spend_purpose="advisor",
         ),
         timeout=timeout + 15,
     )

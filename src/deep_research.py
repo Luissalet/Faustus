@@ -1473,6 +1473,7 @@ class DeepResearcher:
             headers=self.llm_headers,
             timeout=timeout,
             gen_overrides=overrides,
+            _spend_purpose="deep_research",
         )
         return strip_thinking(response)
 

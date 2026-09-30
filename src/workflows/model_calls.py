@@ -94,7 +94,8 @@ def complete_text(messages: List[Dict[str, str]], *, owner: str = "",
         raw = await llm_call_async(
             url=url, model=model, messages=messages, headers=headers,
             temperature=temperature, max_tokens=max_tokens,
-            timeout=max(1, int(timeout_s)), max_retries=1, workload="background")
+            timeout=max(1, int(timeout_s)), max_retries=1, workload="background",
+            _spend_purpose="workflow_model")
         return raw[0] if isinstance(raw, tuple) else raw
 
     try:

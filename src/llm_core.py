@@ -4341,8 +4341,12 @@ async def llm_call_async(
     on_outcome_unknown: Optional[Callable[[int, float], None]] = None,
     gen_overrides: Optional[Dict] = None,
     _usage_observer: Optional[Callable] = None,
+    _spend_purpose: Optional[str] = None,
 ) -> str | tuple[str, str]:
     """Traced wrapper around ``_llm_call_async_impl`` (LLM-TRACE-01).
+
+    ``_spend_purpose`` names what the call is for in the turn's spend account
+    (src/turn_spend.py); without it the calling module names it.
 
     This is the narrowest point that sees BOTH the final request this
     caller is making (url/model/messages/temperature/max_tokens — the
@@ -4361,9 +4365,32 @@ async def llm_call_async(
     _text = ""
     _model_out = model
     _observed_usage = {}
+    # One account per agent turn (src/turn_spend.py): every attempt of this call
+    # is booked under a purpose, unknown usage stays unknown, and in enforce
+    # mode an over-budget turn refuses the call here, before it is sent.
+    _spend = None
+    _spend_outcome = "ok"
+    from src import turn_spend as _turn_spend
+    _spend_account = _turn_spend.current()
+    if _spend_account is not None:
+        # The loop charges compaction and recovery itself (their own usage
+        # observer); everything else is charged by the account.
+        _loop_phase = _trace_phase_snapshot[0] if _trace_phase_snapshot else None
+        _spend = _spend_account.begin(
+            url=url, observer_charged=_loop_phase in ("compaction", "recovery"),
+            purpose=_spend_purpose or _loop_phase,
+            estimate_tokens=_turn_spend.estimate_call_tokens(messages, max_tokens))
+        _outcome_unknown_user = on_outcome_unknown
+
+        def on_outcome_unknown(attempt, elapsed):  # noqa: F811 - wraps the caller's hook
+            _spend.note_unknown_attempt()
+            if _outcome_unknown_user is not None:
+                _outcome_unknown_user(attempt, elapsed)
 
     def _capture_usage(usage, *, endpoint_local=False):
         _observed_usage.update(usage)
+        if _spend is not None:
+            _spend.observe(usage, endpoint_local=endpoint_local)
         if _usage_observer is not None:
             _usage_observer(dict(usage), endpoint_local=endpoint_local)
 
@@ -4384,10 +4411,19 @@ async def llm_call_async(
         else:
             _text = result
         return result
+    except asyncio.CancelledError:
+        _spend_outcome = "cancelled"
+        raise
     except Exception as exc:
         _err = str(exc)
+        _spend_outcome = "error"
         raise
     finally:
+        if _spend is not None:
+            try:
+                _spend.settle(_spend_outcome)
+            except Exception:  # noqa: BLE001 - bookkeeping never changes the call
+                logger.debug("[turn_spend] settle failed", exc_info=True)
         try:
             from src import llm_trace
             llm_trace.record_call(

@@ -640,6 +640,12 @@ GROUPS: list[dict[str, Any]] = [
                  "launched if it would not fit under what remains. 0 = no ceiling, accounting only "
                  "— GET /api/runs/{run_id}/budget still reports reserved vs. consumed tokens.",
                  0, 50_000_000),
+            _select("agent_turn_spend", "Auxiliary call accounting",
+                    "Book every model call a turn makes besides the main stream (advisor, decisions, "
+                    "retries, research extraction, memory upkeep) under its purpose, and charge it to the "
+                    "turn's budget. 'enforce' also refuses such a call once the turn is over budget; "
+                    "'off' books nothing. Usage a provider never reports stays unknown, never zero.",
+                    ["off", "record", "enforce"]),
             # R3 (Reach wave): src/fanout/ -- one prompt raced across N
             # candidate models, each in its own isolated alternative.
             _int("agent_fanout_max_parallel", "Fan-out: max parallel candidates",

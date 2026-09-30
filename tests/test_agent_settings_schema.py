@@ -123,7 +123,7 @@ def test_groups_follow_the_requested_layout():
             # A31/A29 (lot T7): run budget ceiling and the loop-breaker's
             # escalation thresholds — kept in this group rather than a new
             # one so the group order/prefix asserted above is untouched.
-            "agent_budget_tokens_per_run", "agent_loop_breaker_nudge_after",
+            "agent_budget_tokens_per_run", "agent_turn_spend", "agent_loop_breaker_nudge_after",
             "agent_loop_breaker_block_after", "agent_loop_breaker_stop_after",
             # Cycle (oscillation) detection inside the same loop-breaker
             # group -- see src/loop_breaker.py's module docstring.

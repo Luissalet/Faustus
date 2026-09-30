@@ -7347,6 +7347,7 @@ async def _run_verifier_subagent(
             url=endpoint_url, model=model,
             messages=[{"role": "user", "content": prompt}],
             headers=headers, temperature=0.0, max_tokens=600, timeout=60,
+            _spend_purpose="completion_verifier",
         )
     except Exception as e:
         logger.warning(f"[agent] verifier subagent failed: {e}")
@@ -7769,6 +7770,7 @@ async def _stream_agent_loop_body(
     _compaction_usage_receipts: List[Dict] = []
 
     _recovery_usage_receipts: List[Dict] = []
+    _other_aux_usage_receipts: List[Dict] = []
 
     def _charge_auxiliary_usage(usage, *, phase, endpoint_local=False, step=None):
         # Fresh observed usage only, separate from main-stream round buckets.
@@ -7803,7 +7805,9 @@ async def _stream_agent_loop_body(
         _budget_ledger.add_remote_spend(spend)
         receipt["charged_remote_spend_units"] = spend
         receipt["remote_spend_source"] = "provider_cost" if cost is not None else "observed_token_proxy"
-        (_compaction_usage_receipts if phase == "compaction" else _recovery_usage_receipts).append(receipt)
+        (_compaction_usage_receipts if phase == "compaction"
+         else _recovery_usage_receipts if phase == "recovery"
+         else _other_aux_usage_receipts).append(receipt)
 
     def _charge_compaction_usage(usage, *, endpoint_local=False):
         _charge_auxiliary_usage(usage, phase="compaction", endpoint_local=endpoint_local)
@@ -7818,6 +7822,21 @@ async def _stream_agent_loop_body(
         return (None if _local_completion_unbounded or is_local_endpoint(url)
                 else _pending_main_admission_view(
                     _budget_ledger, _pending_main_usage).check(_round_loop_budget))
+    # Every other model call of the turn (advisor, typed decisions, grounding
+    # retries, research extraction, memory upkeep, ...) is booked by the turn
+    # account; its usage lands in the same ledger, and an enforcing account
+    # refuses a call once the turn is over budget.
+    from src import turn_spend as _turn_spend
+    _turn_spend_account = _turn_spend.current()
+    if _turn_spend_account is not None:
+        def _admit_turn_spend(url):
+            _exhausted = _recovery_admission(url)
+            return None if _exhausted is None else (
+                f"turn budget reached: {_exhausted.kind} {_exhausted.used}/{_exhausted.limit}")
+        _turn_spend_account.bind(
+            charge=lambda usage, *, purpose, endpoint_local=False: _charge_auxiliary_usage(
+                usage, phase=purpose, endpoint_local=endpoint_local),
+            admit=_admit_turn_spend)
     # The tool-call dimension is merged into the pre-existing
     # `max_tool_calls`/`total_tool_calls` mechanism below (one counter, not
     # two) — see `Budget.without_tool_calls`.
@@ -13636,6 +13655,7 @@ async def _stream_agent_loop_body(
                     _raw = await llm_call_async(
                         url=endpoint_url, model=model, messages=_synth_messages,
                         headers=headers, temperature=0.3, max_tokens=max_tokens, timeout=180,
+                        _spend_purpose="grace_synthesis",
                     )
                     _raw_text = _raw or ""
                     _synth = _strip_think_blocks(strip_tool_blocks(_raw_text)).strip()
@@ -17263,6 +17283,11 @@ async def _stream_agent_loop_body(
             _budget_ledger.add_remote_spend(_main_remote_units)
             _pending_main_usage_settle(_pending_main_usage, round_num,
                 tokens=_round_in + _round_out, remote_units=_main_remote_units)
+            if _turn_spend_account is not None:
+                _turn_spend_account.record_main(
+                    round_num=round_num, input_tokens=_round_in, output_tokens=_round_out,
+                    cost_usd=_round_usage_bucket.get("cost_usd"),
+                    endpoint_local=_local_completion_unbounded)
         _main_active_credit = time.time() - _round_start
         _budget_ledger.add_active_seconds(_main_active_credit)
         _pending_main_usage_settle(_pending_main_usage, round_num, tokens=0, remote_units=0,
@@ -17732,6 +17757,7 @@ async def _stream_agent_loop_body(
                 # always timed out and the user got the canned line.
                 headers=_answering[2], temperature=0.3, max_tokens=max_tokens,
                 timeout=(300 if _cap_needs_answer else 60),
+                _spend_purpose="final_synthesis",
             )
             _raw_text = _raw or ""
             _synth = _strip_think_blocks(strip_tool_blocks(_raw_text)).strip()
@@ -18179,6 +18205,12 @@ async def _stream_agent_loop_body(
             )
     metrics["requested_endpoint_id"] = requested_endpoint_id
     metrics["requested_endpoint_label"] = requested_endpoint_label
+    if _turn_spend_account is not None:
+        try:
+            metrics["turn_spend"] = {**_turn_spend.explain(_turn_spend_account.run_id),
+                                     "mode": _turn_spend_account.mode}
+        except Exception:  # noqa: BLE001
+            logger.debug("turn spend summary unavailable", exc_info=True)
     if _continuity_report.get("recorded"):
         metrics["continuity"] = {k: _continuity_report.get(k) for k in (
             "revision", "authorization_version", "authorization_seq", "carried",
@@ -18412,6 +18444,15 @@ async def stream_agent_loop(*args, **kwargs) -> AsyncGenerator[str, None]:
         _trace_run_token = _llm_trace.set_current_run_id(_pin_run_id)
     except Exception:  # noqa: BLE001
         logger.debug("stream_agent_loop: trace run id propagation skipped", exc_info=True)
+    # One account for every model call the turn makes (src/turn_spend.py).
+    _spend_token = None
+    try:
+        from src import agent_runs as _spend_runs
+        from src import turn_spend as _turn_spend_mod
+        _spend_run_id = (_spend_runs.get_run_id(session_id) if session_id else None) or _pin_run_id
+        _spend_token = _turn_spend_mod.install(str(_spend_run_id or ""))
+    except Exception:  # noqa: BLE001
+        logger.debug("stream_agent_loop: turn spend account skipped", exc_info=True)
     from src import tool_clock as _tool_clock
     _clock_token = _tool_clock.begin_turn()
     _finalizers: List[Callable[[], None]] = []
@@ -18444,6 +18485,11 @@ async def stream_agent_loop(*args, **kwargs) -> AsyncGenerator[str, None]:
                 # from another task): the value dies with this wrapper anyway.
                 _TURN_FINALIZERS.set(None)
             _tool_clock.end_turn(_clock_token)
+            if _spend_token is not None:
+                try:
+                    _turn_spend_mod.uninstall(_spend_token)
+                except Exception:  # noqa: BLE001
+                    logger.debug("stream_agent_loop: turn spend close failed", exc_info=True)
             if _trace_run_token is not None:
                 try:
                     from src import llm_trace as _llm_trace

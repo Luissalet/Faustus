@@ -603,6 +603,7 @@ async def action_consolidate_memory(owner: str, **kwargs) -> Tuple[str, bool]:
                     temperature=0.0,
                     max_tokens=4096,
                     timeout=120,
+                    _spend_purpose="memory_consolidation",
                 )
                 from src.text_helpers import strip_think
 
