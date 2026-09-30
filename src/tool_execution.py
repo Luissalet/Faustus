@@ -2701,6 +2701,9 @@ _FORMATTER_HANDLED_KEYS = {
     # H03/H04 identity of the attempt and what it did to the world; shown by
     # the dedicated effect line below, not as raw JSON.
     "attempt_id", "effect_certainty", "effect_id",
+    # Identity of a skill file the model just read (version, hash): kept for the
+    # audit trail, not something the model needs echoed back.
+    "skill_receipt",
 }
 
 

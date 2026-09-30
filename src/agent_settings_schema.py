@@ -390,6 +390,10 @@ GROUPS: list[dict[str, Any]] = [
             _int("agent_project_instructions_max_chars", "Instructions max chars",
                  "Longer instruction files are cut at this size.",
                  0, 200_000),
+            _bool("agent_instruction_hierarchy", "Instructions per directory",
+                  "Also honour instruction files inside subdirectories: each one is shown once per chat "
+                  "when a tool first touches its directory, the closest directory wins, and the folder "
+                  "approval covers them."),
             _select("agent_workspace_trust", "Instruction file trust",
                     "AGENTS.md travels with a cloned repo and goes into the system prompt. "
                     "'ask' holds an unknown folder's instruction files back until you approve them "

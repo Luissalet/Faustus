@@ -901,6 +901,11 @@ DEFAULT_SETTINGS = {
     # user's message (src/project_instructions.py, src/repo_map.py).
     "agent_project_instructions": True,
     "agent_project_instructions_max_chars": 6000,
+    # Instruction files in subdirectories (src/instruction_hierarchy.py): the
+    # root file stays in the system prompt, a nested file is delivered once per
+    # chat with the first tool result that touches its directory, the closest
+    # directory wins, and nested files are covered by the folder approval.
+    "agent_instruction_hierarchy": False,
     # Trust-on-first-use for those instruction files (src/workspace_trust.py).
     # AGENTS.md travels with a clone and lands in the SYSTEM prompt, so an
     # unapproved folder gets a neutral note naming the files instead of their

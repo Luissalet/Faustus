@@ -86,7 +86,7 @@ def setup_workspace_trust_routes() -> APIRouter:
         out: List[Dict[str, Any]] = []
         entries = list(files)
         # A joint approval must display every captured source, including ancestors.
-        if not any(p.get("kind") == "project_rule" for p in entries):
+        if not any(p.get("kind") in ("project_rule", "nested_instruction") for p in entries):
             entries = entries[:_MAX_FILES]
         for entry in entries:
             row = {
@@ -145,6 +145,20 @@ def setup_workspace_trust_routes() -> APIRouter:
             "auto_trust_eligible": wt.has_checkpoint_history(root),
             "files": _file_texts(state.get("files") or []),
         }
+
+    @router.get("/instructions")
+    def read_instruction_chain(request: Request, workspace: str = Query(default=""),
+                               path: str = Query(default="")) -> Dict[str, Any]:
+        """The instruction chain that applies to ``path`` (or the folder root): which
+        files, in which order of precedence, from where, with what hash and how they
+        reach the model. Text is included only when the folder's instruction files
+        are approved. A pure read, like the state route."""
+        _admin_only(request)
+        from src import instruction_hierarchy as ih, workspace_trust as wt
+        root = wt.normalise(workspace)
+        if not root or not os.path.isdir(root):
+            raise HTTPException(status_code=400, detail="workspace is not a valid folder")
+        return {"status": "success", **ih.instructions_for(root, path)}
 
     @router.get("/list")
     def list_state(request: Request) -> Dict[str, Any]:

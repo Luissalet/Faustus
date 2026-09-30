@@ -218,6 +218,10 @@ def file_parts(workspace: str, *, _candidates=None) -> List[Dict[str, Any]]:
                     "_data": data, "_rule": rule, "kind": "project_rule",
                     "rule_root": rule.root, "origin": rule.origin,
                     "error": rule.error, "text": rule.text})
+    # Nested instruction files (off by default): they travel with a clone like the
+    # root file, so with the hierarchy on they are part of what the approval covers.
+    from src.instruction_hierarchy import nested_parts
+    out.extend(nested_parts(root))
     return out
 
 
@@ -276,6 +280,8 @@ def _public_parts(parts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     with_rules = any(p.get("kind") == "project_rule" for p in parts)
     for p in parts:
         row = {"path": p["path"], "rel": p["rel"], "bytes": p["bytes"], "sha256": p["sha256"]}
+        if p.get("kind") == "nested_instruction":
+            row["kind"] = "nested_instruction"
         if p.get("kind") == "project_rule":
             row.update({key: p[key] for key in ("kind", "rule_root", "origin", "error", "text")})
         elif with_rules:
@@ -570,6 +576,7 @@ class InstructionFileSnapshot:
     rel: str
     size: int
     data: bytes
+    kind: str = ""
 
 
 @dataclass(frozen=True)
@@ -604,12 +611,18 @@ def instructions_snapshot(workspace: str) -> InstructionSnapshot:
     try:
         current_mode = mode()
         if current_mode == "off":
-            return InstructionSnapshot(root, True, mode="off", legacy_read=True)
+            # Nothing is withheld in `off`; nested instruction files (only with the
+            # hierarchy on, otherwise none) still need captured bytes to be delivered.
+            from src.instruction_hierarchy import nested_parts
+            nested = tuple(InstructionFileSnapshot(
+                p["path"], p["rel"], int(p["bytes"]), bytes(p["_data"]), str(p.get("kind") or "")
+            ) for p in nested_parts(root))
+            return InstructionSnapshot(root, True, mode="off", legacy_read=True, files=nested)
         from src.project_instructions import candidate_files
         candidates = tuple(candidate_files())
         parts = file_parts(root, _candidates=candidates)
         files = tuple(InstructionFileSnapshot(
-            p["path"], p["rel"], int(p["bytes"]), bytes(p["_data"])
+            p["path"], p["rel"], int(p["bytes"]), bytes(p["_data"]), str(p.get("kind") or "")
         ) for p in parts if p.get("kind") != "project_rule")
         captured_rules = tuple(p["_rule"] for p in parts if p.get("kind") == "project_rule")
         by_path = {p.path: p for p in files}

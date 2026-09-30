@@ -21,6 +21,17 @@ logger = logging.getLogger(__name__)
 # Skills management tool
 # ---------------------------------------------------------------------------
 
+def _skill_file_receipt(sm, name, owner, text, level, reference=""):
+    """Version and hash of the skill file just read (levels 1 and 2), for the audit
+    trail. Never raises: a receipt is never worth a skill read."""
+    try:
+        from src.skills_runtime.disclosure import file_receipt
+        entry = next((s for s in sm.load(owner=owner) if s.get("name") == name), {"name": name})
+        return file_receipt(entry, text, level, reference, getattr(sm, "skills_root", None))
+    except Exception:  # noqa: BLE001
+        return {"skill": name, "level": level, "stage": "read"}
+
+
 async def do_manage_skills(content: str, owner: Optional[str] = None) -> Dict:
     """Handle manage_skills tool calls.
 
@@ -80,7 +91,7 @@ async def do_manage_skills(content: str, owner: Optional[str] = None) -> Dict:
         md = sm.read_skill_md(name, owner=owner)
         if md is None:
             return {"error": f"Skill {name!r} not found", "exit_code": 1}
-        return {"results": md}
+        return {"results": md, "skill_receipt": _skill_file_receipt(sm, name, owner, md, 1)}
 
     if action == "view_ref":
         if not name:
@@ -96,7 +107,7 @@ async def do_manage_skills(content: str, owner: Optional[str] = None) -> Dict:
             log_level2_use(name, ref)
         except Exception:
             pass  # logging must never block a level-2 read
-        return {"results": text}
+        return {"results": text, "skill_receipt": _skill_file_receipt(sm, name, owner, text, 2, ref)}
 
     if action == "add":
         if not name:

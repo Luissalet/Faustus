@@ -116,12 +116,48 @@ def _receipt(entry: Mapping[str, Any], fragment: str, level: int,
     return result
 
 
-def message_receipt(message: Mapping[str, Any], result: DisclosureResult) -> Dict[str, Any]:
-    """Assembly receipt, not proof of later provider delivery or execution."""
+class DisclosedText(str):
+    """Rendered text that remembers the receipts of what it contains.
+
+    A plain ``str`` everywhere it is used; the level-0 index travels through
+    ``_build_base_prompt`` as one so its identity reaches the message receipt
+    without changing that function's return shape.
+    """
+
+    receipts: List[Dict[str, Any]]
+
+    def __new__(cls, text: str, receipts: Sequence[Mapping[str, Any]] = ()):
+        obj = super().__new__(cls, text)
+        obj.receipts = [dict(r) for r in receipts]
+        return obj
+
+
+def message_receipt(message: Mapping[str, Any], result: DisclosureResult,
+                    extra: Sequence[Mapping[str, Any]] = ()) -> Dict[str, Any]:
+    """Assembly receipt, not proof of later provider delivery or execution.
+
+    ``extra`` are fragments of the same message that another render produced
+    (the level-0 index travels in the same wrapped message as the level-1 bodies).
+    """
     content = str(message.get("content") or "")
+    fragments = [dict(receipt) for receipt in extra] + [dict(receipt) for receipt in result.receipts]
     return {"stage": "assembled", "wrapped_message_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
-            "fragments": [dict(receipt) for receipt in result.receipts],
-            "dropped_count": len(result.dropped)}
+            "fragments": fragments, "dropped_count": len(result.dropped)}
+
+
+def file_receipt(entry: Mapping[str, Any], text: str, level: int, reference: str = "",
+                 source_root: str | None = None) -> Dict[str, Any]:
+    """Identity of a skill file the model read on demand: ``view`` (level 1, the
+    whole SKILL.md) or ``view_ref`` (level 2, one referenced file). Same shape as
+    the prompt receipts, with ``stage: "read"`` and the relative file read."""
+    receipt = _receipt(entry, text, level, source_root)
+    receipt["stage"] = "read"
+    if reference:
+        parts = reference.replace("\\", "/").split("/")
+        if len(reference) <= 240 and parts and all(
+                p not in ("", ".", "..") and re.fullmatch(r"[A-Za-z0-9_. -]+", p) for p in parts):
+            receipt["file"] = "/".join(parts)
+    return receipt
 
 
 def _level0_line(entry: Mapping[str, Any]) -> str:

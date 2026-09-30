@@ -498,6 +498,28 @@ async def list_tools() -> list[Tool]:
                 "required": ["session_id"],
             },
         ),
+        Tool(
+            name="context_instructions",
+            description=(
+                "Which instruction files apply to a path inside a workspace, in order "
+                "of precedence (what the user says, then the file in the closest "
+                "directory, then the directories above it up to the root): each with "
+                "its relative path, scope, hash, size, trust state and how it reaches "
+                "the model (system prompt for the root file, the first tool result "
+                "that touches the directory for a nested one). Text is included only "
+                "when the folder's instruction files are approved. Nested files only "
+                "count when the setting agent_instruction_hierarchy is on."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "workspace": {"type": "string", "description": "Workspace folder."},
+                    "path": {"type": "string",
+                             "description": "File or directory inside it (default: the root)."},
+                },
+                "required": ["workspace"],
+            },
+        ),
     ]
 
 
@@ -802,7 +824,16 @@ def _tool_continuity(owner: str, args: dict) -> list[TextContent]:
                          "verified": cc.verify_digest(record) if record else None})
 
 
+def _tool_instructions(owner: str, args: dict) -> list[TextContent]:
+    from src import instruction_hierarchy as ih, workspace_trust as wt
+    root = wt.normalise(str(args.get("workspace") or ""))
+    if not root or not os.path.isdir(root):
+        return _text_result("Error: workspace is not a valid folder.")
+    return _json_result({"ok": True, **ih.instructions_for(root, str(args.get("path") or ""))})
+
+
 _HANDLERS = {
+    "context_instructions": _tool_instructions,
     "context_continuity": _tool_continuity,
     "context_prompt_audit": _tool_prompt_audit,
     "context_blocks": _tool_blocks,

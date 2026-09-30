@@ -5468,6 +5468,7 @@ def _build_system_prompt(
         except Exception:
             pass
 
+    _instr_provenance: List[Dict[str, Any]] = []
     if workspace and not suppress_local_context:
         agent_prompt += _workspace_coding_rules(workspace)
         try:  # R2: background code-graph auto-index; never blocks/fails the turn.
@@ -5504,6 +5505,12 @@ def _build_system_prompt(
                 _pinstr.block_from_snapshot(_instr_snapshot) if _instr_snapshot is not None
                 else _pinstr.block(workspace, trusted=_instr_trusted)
             )
+            # Nested instruction files (agent_instruction_hierarchy, off by default):
+            # an index here, the text with the first tool result that touches the directory.
+            from src import instruction_hierarchy as _ihier
+            if _instr_snapshot is not None and _ihier.enabled():
+                agent_prompt += _ihier.index_block(_instr_snapshot)
+                _instr_provenance = _ihier.provenance(_instr_snapshot)
         except Exception as _pi_err:
             logger.debug("[instructions] injection failed: %s", _pi_err)
         # Project rules (src/project_rules.py): the repo's own `.faustus/rules/`
@@ -5730,7 +5737,13 @@ def _build_system_prompt(
                         _skills_text,
                     )
                     if level1 is not None:
-                        _skills_message["metadata"]["skill_disclosure"] = message_receipt(_skills_message, level1)
+                        _skills_message["metadata"]["skill_disclosure"] = message_receipt(
+                            _skills_message, level1, getattr(_skill_index_block, "receipts", ()))
+                    elif getattr(_skill_index_block, "receipts", None):
+                        from src.skills_runtime.disclosure import (
+                            DisclosureResult as _DR, message_receipt as _message_receipt)
+                        _skills_message["metadata"]["skill_disclosure"] = _message_receipt(
+                            _skills_message, _DR(text="", level=1), _skill_index_block.receipts)
                 else:
                     _skills_message = None
                 # Selection is not disclosure: dropped bodies did not reach
@@ -5833,6 +5846,8 @@ def _build_system_prompt(
         "content": agent_prompt,
         "_agent_injected": "prompt",
     }
+    if _instr_provenance:
+        agent_msg["metadata"] = {"instruction_provenance": _instr_provenance}
     insert_idx = 0
     for i, msg in enumerate(messages):
         if msg.get("role") == "system":
@@ -5856,6 +5871,8 @@ def _build_system_prompt(
                 "_agent_injected": "merged_prompt",
                 "_agent_base_message": base_message,
             }
+            if msg.get("metadata"):
+                merged[-1]["metadata"] = msg["metadata"]
         elif (msg.get("role") == "system"
             and not msg.get("_protected")
             and not msg.get("_agent_injected")
@@ -6049,7 +6066,8 @@ def _build_base_prompt(
                          "is correct."]
                 level0 = render_level0(skill_idx, budget_tokens=_level0_budget)
                 lines.append(level0.text)
-                skill_index_block = "\n\n" + "\n".join(lines)
+                from src.skills_runtime.disclosure import DisclosedText
+                skill_index_block = DisclosedText("\n\n" + "\n".join(lines), level0.receipts)
         except Exception as _e:
             # Skill index is a soft enhancement — never fail prompt assembly on it.
             logger.debug(f"Skill-index injection skipped: {_e}")
@@ -6231,6 +6249,7 @@ def _reasoning_ends_with_tool_call(reasoning: str) -> bool:
 
 from src import self_declared_risk as _self_risk
 from src import project_rules as _project_rules_mod
+from src import instruction_hierarchy as _instruction_hierarchy_mod
 
 
 def _resolve_tool_blocks(
@@ -10351,21 +10370,36 @@ async def _stream_agent_loop_body(
                 from src import workspace_trust as _wt
                 _snap = _wt.instructions_snapshot(workspace)
                 _path_rule_ctx["trusted"] = bool(_snap.trusted)
+                _path_rule_ctx["snapshot"] = _snap
                 _path_rule_ctx["rules"] = tuple(
                     r for r in (_project_rules_mod.discover_project_rules(workspace)
                                 if _snap.legacy_read else _snap.project_rules)
                     if getattr(r, "paths", ()))
-            if not _path_rule_ctx["trusted"] or not _path_rule_ctx["rules"]:
+            _hier = _instruction_hierarchy_mod.enabled()
+            if not _path_rule_ctx["trusted"] or not (_path_rule_ctx["rules"] or _hier):
                 return ""
             _paths = [
                 pth if os.path.isabs(pth) else os.path.join(workspace, pth)
                 for pth in _harness._paths_from_args(block_.tool_type, block_.content or "")
             ]
             _is_dir = block_.tool_type in _project_rules_mod.DIR_RULE_TOOLS
-            return _project_rules_mod.path_rule_note(
-                str(session_id or (_hopts or {}).get("run_id") or ""),
-                _path_rule_ctx["rules"], [] if _is_dir else _paths,
-                dirs=_paths if _is_dir else ())
+            _conv = str(session_id or (_hopts or {}).get("run_id") or "")
+            _notes = []
+            if _hier:
+                # Nested instruction files for the directory just touched: root side
+                # first, the closest directory last (src/instruction_hierarchy.py).
+                _nested_note, _path_rule_ctx["receipts"] = _instruction_hierarchy_mod.path_note(
+                    _conv, _path_rule_ctx.get("snapshot"), [] if _is_dir else _paths,
+                    dirs=_paths if _is_dir else ())
+                if _nested_note:
+                    _notes.append(_nested_note)
+            if _path_rule_ctx["rules"]:
+                _rule_note = _project_rules_mod.path_rule_note(
+                    _conv, _path_rule_ctx["rules"], [] if _is_dir else _paths,
+                    dirs=_paths if _is_dir else ())
+                if _rule_note:
+                    _notes.append(_rule_note)
+            return "\n\n".join(_notes)
         except Exception:  # noqa: BLE001 - a rule note never costs a tool result
             logger.debug("[project_rules] path rule note failed", exc_info=True)
             return ""
@@ -16931,6 +16965,9 @@ async def _stream_agent_loop_body(
                 tool_event["schema_validation_receipt"] = dict(result["schema_validation_receipt"])
             if _tool_duration_ms is not None:
                 tool_event["duration_ms"] = _tool_duration_ms
+            if isinstance(result.get("skill_receipt"), dict):
+                # Which skill file (version, hash) the model read on demand: level 1 or 2.
+                tool_event["skill_receipt"] = dict(result["skill_receipt"])
             # CALL-02/CALL-03: persist the same argument-check annotation the
             # live tool_output carried, so a history reload shows it too.
             if result.get("argument_errors"):
@@ -17215,10 +17252,14 @@ async def _stream_agent_loop_body(
                 # Project rules scoped to this file's path (`paths:` in the
                 # rule's frontmatter): appended to what the MODEL reads, once
                 # per conversation, instead of riding every turn's prompt.
+                _path_rule_ctx["receipts"] = []
                 _path_note = _path_rules_note(block)
                 if _path_note:
                     formatted = f"{formatted}\n\n{_path_note}"
                     _ledger.notes.append(f"path_rule@{round_num}:{block.tool_type}")
+                    if _path_rule_ctx["receipts"]:
+                        # Which nested instruction files this result carried (identity, not text).
+                        tool_event["instruction_delivery"] = list(_path_rule_ctx["receipts"])
             tool_results.append(formatted)
             tool_result_texts.append(formatted)
             _record = {
