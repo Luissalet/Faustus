@@ -10223,6 +10223,16 @@ async def _stream_agent_loop_body(
     _advisor_state = _advisor.AdvisorState.from_settings(
         available=not _is_teacher_run and not guide_only)
     _tool_names_sent: list = []
+    # Typed decisions at the loop's forks (src/decision_forks.py): every fork
+    # is its own setting, off by default. The trace collects one receipt per
+    # decision (options, choice, confidence, mass, fallback, outcome); a
+    # teacher takeover nests its own and restores this one on the way out.
+    from src import decision_forks as _forks
+    _fork_trace, _fork_restore = _forks.begin_turn()
+    _fork_error_on = (not _is_teacher_run and not guide_only
+                      and _forks.fork_enabled(_forks.FORK_TOOL_ERROR))
+    _fork_failed: Optional[tuple] = None    # (tool, args, result) of this round's last failure
+    _fork_pending: Optional[tuple] = None   # (receipt, choice, tool, args) awaiting the next call
 
     async def _advisor_ask(trigger: str, *, extra: str = ""):
         """(note, event) for one advisor use, or (None, None) when the
@@ -15693,6 +15703,7 @@ async def _stream_agent_loop_body(
                         await _progress_q.put(payload)
 
                     async def _run_tool():
+                        _forks.adopt(_fork_trace)  # the tie fork records into this turn's trace
                         try:
                             return await execute_tool_block(
                                 block,
@@ -16583,6 +16594,21 @@ async def _stream_agent_loop_body(
                     )
             except Exception:  # noqa: BLE001
                 _loop_action = "none"
+            if _fork_error_on:
+                try:
+                    if _fork_pending is not None:
+                        # The call after a hint: did it do what the hint said?
+                        _fk_receipt, _fk_choice, _fk_tool, _fk_args = _fork_pending
+                        _forks.update_outcome(_fk_receipt, (
+                            "followed" if _forks.followed_choice(
+                                _fk_choice, _fk_tool, _fk_args, block.tool_type, block.content or "")
+                            else "ignored"))
+                        _fork_pending = None
+                    if (isinstance(result, dict) and _forks.is_failed_result(result)
+                            and not _forks.skips_error_fork(block.tool_type)):
+                        _fork_failed = (block.tool_type, block.content or "", result)
+                except Exception:  # noqa: BLE001 - a receipt never costs a turn
+                    logger.debug("[decision-forks] capture failed", exc_info=True)
             # A cycle (A→B→A→B... oscillation, no two consecutive calls
             # identical) is counted on its own track inside LoopPolicy and
             # surfaced through the exact same nudge/block/stop actions; only
@@ -17174,6 +17200,29 @@ async def _stream_agent_loop_body(
             if _adv_note:
                 messages.append({"role": "user", "_harness_note": True, "content": _lang_note(_adv_note)})
 
+        # Typed decision after a failed tool call: which of retry / change
+        # arguments / other tool / stop. Above the threshold it lands as an
+        # advisory hint after the round's tool results; below it nothing new
+        # happens. The working model still acts.
+        if _fork_failed is not None:
+            _ff_tool, _ff_args, _ff_result = _fork_failed
+            _fork_failed = None
+            if (_fork_trace.error_forks < _forks.MAX_ERROR_FORKS_PER_TURN
+                    and not _loop_policy_stop and not _force_answer):
+                _fork_trace.error_forks += 1
+                try:
+                    _ff_hint, _ff_receipt = await _forks.decide_after_error(
+                        user_request=_user_request_text(messages),
+                        tool=_ff_tool, args=_ff_args, error=_forks.failure_text(_ff_result),
+                        owner=owner, round_num=round_num, trace=_fork_trace)
+                except Exception:  # noqa: BLE001 - the fork never costs a turn
+                    logger.debug("[decision-forks] error fork failed", exc_info=True)
+                    _ff_hint, _ff_receipt = None, None
+                if _ff_hint and _ff_receipt:
+                    messages.append({"role": "user", "_harness_note": True, "content": _lang_note(_ff_hint)})
+                    _fork_pending = (_ff_receipt, str(_ff_receipt.get("choice")), _ff_tool, _ff_args)
+                    _ledger.notes.append(f"error_fork:{_ff_receipt.get('choice')}@{round_num}")
+
         # Emit agent_step event
         yield (
             f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
@@ -17681,6 +17730,20 @@ async def _stream_agent_loop_body(
         # `last_metrics` -> `md` in `save_assistant_response`, so this rides
         # onto the saved message's metadata with no separate write.
         metrics["context_receipts"] = _context_receipts_summary[:40]
+    try:
+        _compaction_receipts = (_route_state.get("compaction_state") or {}).pop("decision_receipts", None)
+        if _compaction_receipts:
+            _fork_trace.receipts.extend(_compaction_receipts)
+    except Exception:  # noqa: BLE001
+        pass
+    if _fork_pending is not None:
+        _forks.update_outcome(_fork_pending[0], "no_further_call")
+        _fork_pending = None
+    if _fork_trace.receipts:
+        # One receipt per typed decision of this turn: rides onto the saved
+        # message's metadata with the rest of the trace.
+        metrics["decision_receipts"] = list(_fork_trace.receipts)[:60]
+    _fork_restore()
     if _advisor_state.receipts:
         # One entry per advisor use (trigger, model, tokens, latency, the
         # advice itself): rides onto the saved message like the receipts.

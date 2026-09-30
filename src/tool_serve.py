@@ -376,7 +376,34 @@ def search_catalog(
                 if needle in hay or any(tok in hay for tok in needle.split() if len(tok) > 3):
                     _add(name)
 
+    if q and len(ordered) > 1:
+        ordered = _break_lexical_tie(q, ordered, candidate_filter)
+
     return ordered[: max(1, min(int(k or _DEFAULT_K), _MAX_RETURN))]
+
+
+def _break_lexical_tie(query: str, ordered: List[str],
+                       candidate_filter: Optional[Callable[[str], bool]]) -> List[str]:
+    """When the top three lexical scores tie, let a typed decision pick which
+    tied tool is offered first (``typed_decision_tool_tie``, off by default).
+    Only reorders; never adds or removes a tool. Any failure keeps the order."""
+    try:
+        from src import decision_forks
+        if not decision_forks.fork_enabled(decision_forks.FORK_TOOL_TIE):
+            return ordered
+        from src.tool_index import get_tool_index, BUILTIN_TOOL_DESCRIPTIONS
+        idx = get_tool_index()
+        if idx is None or not hasattr(idx, "lexical_scores"):
+            return ordered
+        scored = idx.lexical_scores(query, k=3, candidate_filter=candidate_filter)
+        tied = [n for n in decision_forks.tie_group(scored) if n in ordered]
+        if len(tied) < 2:
+            return ordered
+        chosen = decision_forks.choose_first_sync(query, tied, BUILTIN_TOOL_DESCRIPTIONS)
+        return decision_forks.apply_tie_choice(ordered, tied, chosen)
+    except Exception:  # noqa: BLE001
+        logger.debug("tool catalog: tie fork failed", exc_info=True)
+        return ordered
 
 
 def _non_admin_blocked(name: str) -> bool:

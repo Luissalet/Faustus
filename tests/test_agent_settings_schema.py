@@ -134,6 +134,9 @@ def test_groups_follow_the_requested_layout():
             # loop breaker's nudge step.
             "advisor_enabled", "advisor_model", "advisor_max_uses",
             "advisor_max_tokens", "advisor_context_tokens",
+            # Typed decisions at the loop's forks.
+            "typed_decision_error_fork", "typed_decision_tool_tie",
+            "typed_decision_tool_tie_tolerance", "typed_decision_compaction_keep",
             # R3 (Reach wave): src/fanout/ -- fan-out candidate concurrency
             # and its optional extra model pool, kept in this group for the
             # same reason as above.

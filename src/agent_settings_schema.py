@@ -46,6 +46,8 @@ EXTRA_KEYS: tuple[str, ...] = ("tool_path_extra_roots", "vision_enabled", "visio
                                "mode_effort_advisor",
                                "advisor_enabled", "advisor_model", "advisor_max_uses",
                                "advisor_max_tokens", "advisor_context_tokens",
+                               "typed_decision_error_fork", "typed_decision_tool_tie",
+                               "typed_decision_tool_tie_tolerance", "typed_decision_compaction_keep",
                                "mode_effort_bug_hunt", "mode_effort_ci_analysis")
 
 FIELD_TYPES: tuple[str, ...] = ("bool", "int", "float", "text", "select", "list", "secret")
@@ -652,6 +654,21 @@ GROUPS: list[dict[str, Any]] = [
                  "How much of the session the advisor reads; older tool results are shortened "
                  "first, then the middle of the transcript is dropped.",
                  1000, 200000, step=1000),
+            # Typed decisions at three forks of the loop (src/decision_forks.py),
+            # each with a receipt in the turn trace.
+            _bool("typed_decision_error_fork", "Typed decision after a failed tool call",
+                  "A quick single-token classifier reads the failure and picks retry / change "
+                  "arguments / other tool / stop; above the confidence threshold the choice is "
+                  "injected as an advisory hint and the model still acts. Off by default."),
+            _bool("typed_decision_tool_tie", "Typed decision on a tool-search tie",
+                  "When the top three lexical scores of the tool catalogue tie, the classifier "
+                  "picks which tied tool is offered first. Off by default."),
+            _float("typed_decision_tool_tie_tolerance", "Tool-search tie tolerance",
+                   "Relative gap to the best lexical score within which two tools count as tied.",
+                   0.0, 0.5, step=0.01),
+            _bool("typed_decision_compaction_keep", "Typed decision in extractive compaction",
+                  "Per old tool result, the classifier decides whether to keep it verbatim in the "
+                  "digest; the last six messages are never folded. Off by default."),
             # Handoff lanes (src/handoff_lanes.py): permissions-as-topology,
             # which agent may delegate to which, with which tools. The
             # dedicated Studio panel (GET/PUT /api/handoff-lanes) is the

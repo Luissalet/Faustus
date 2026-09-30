@@ -5,6 +5,11 @@ GET /api/agent/advisor/stats
     -> process-wide counters of the advisor (src/advisor.py): calls, per-trigger
        counts, tokens, mean latency and the last few uses WITHOUT their text.
 
+GET /api/agent/decision-forks/stats
+    -> counters of the typed decisions at the loop's forks (src/decision_forks.py):
+       per fork how often it was asked, decided, fell back, what it chose, what
+       came of it, plus the last receipts and which forks are switched on.
+
 Nothing here changes anything; it only reports what the loop already did.
 """
 from __future__ import annotations
@@ -23,6 +28,11 @@ def setup_agent_loop_stats_routes() -> APIRouter:
     async def get_advisor_stats(_u: str = Depends(require_user)) -> Dict[str, Any]:
         from src import advisor
         return advisor.stats()
+
+    @router.get("/decision-forks/stats")
+    async def get_decision_fork_stats(_u: str = Depends(require_user)) -> Dict[str, Any]:
+        from src import decision_forks
+        return decision_forks.stats()
 
     return router
 

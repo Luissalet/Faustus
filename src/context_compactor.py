@@ -1058,8 +1058,37 @@ async def maybe_compact(
     # `was_compacted=False`, and let `trim_for_context` handle length.
     if compaction_summary_mode() == "extract":
         from src.compaction_guard import guard_compaction_summary
+        kept_receipts: List[Dict[str, Any]] = []
+        verbatim = ""
+        try:
+            from src import decision_forks
+            if decision_forks.fork_enabled(decision_forks.FORK_COMPACTION):
+                # The last messages are pinned: the fold never reaches them.
+                pinned = len(convo_msgs) - decision_forks.PINNED_TAIL_MESSAGES
+                if 2 <= pinned < split_point:
+                    split_point = pinned
+                    older = convo_msgs[:split_point]
+                    recent = convo_msgs[split_point:]
+                goal = next((_content_as_text(m.get("content")) for m in reversed(older + recent)
+                             if m.get("role") == "user"), "")
+                _trace, _restore = decision_forks.begin_turn()
+                try:
+                    kept = await decision_forks.choose_verbatim(
+                        older, _content_as_text, goal=goal, owner=owner)
+                    kept_receipts = list(_trace.receipts)
+                finally:
+                    _restore()
+                verbatim = decision_forks.verbatim_block(older, kept, _content_as_text)
+        except Exception:  # noqa: BLE001 - the fork is optional; the digest below is the old behaviour
+            logger.debug("compaction keep fork failed", exc_info=True)
+            verbatim = ""
         convo_text = "\n".join(_content_as_text(r.get("content")) for r in older)
-        summary, _report = guard_compaction_summary(extractive_digest(older), convo_text)
+        digest = extractive_digest(older)
+        if verbatim:
+            digest = f"{digest}\n\n{verbatim}"
+        summary, _report = guard_compaction_summary(digest, convo_text)
+        if kept_receipts and isinstance(compaction_state, dict):
+            compaction_state["decision_receipts"] = kept_receipts
         return _finish_compaction(
             session, messages, system_msgs, older, recent, summary, used,
             context_length, owner, persist, compaction_state, split_point,
@@ -2070,6 +2099,9 @@ async def apply_midturn_pressure(
     durable_overflow: bool = True,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Keep a long agent turn under the soft context ceiling.
+
+    recent tool rounds verbatim): the provider refused the request as too
+    long, which is better evidence of the real window than our estimate.
 
     Pipeline: spill fat/old tool results → ``compact_with_integrity`` →
     ``maybe_compact`` if still hot. Never raises; on failure returns the

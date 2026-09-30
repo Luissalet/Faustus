@@ -969,6 +969,26 @@ class ToolIndex:
                          "%d tools (tier=%s)", len(names), found.get("tier"))
         return names
 
+    def lexical_scores(self, query: str, k: int = 3, *,
+                       candidate_filter: Optional[Callable[[str], bool]] = None) -> List[tuple]:
+        """The best ``k`` ``(tool name, BM25-lite score 0..1)`` pairs, best first.
+
+        The raw lexical evidence behind ``lexical_retrieve``, for callers that
+        need to know whether the top of the ranking was decided or a tie (the
+        typed-decision tie fork, ``src.decision_forks``). Ties are listed in
+        name order. Never raises; ``[]`` when nothing matches.
+        """
+        try:
+            from src import two_tier_search
+            docs = [(str(r.get("id")), str(r.get("text") or "")) for r in self.corpus_rows()
+                    if r.get("id") and (candidate_filter is None or candidate_filter(str(r.get("id"))))]
+            scores = two_tier_search.bm25_scores(query, docs)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("tool index: lexical scores unavailable (%s)", exc)
+            return []
+        ranked = sorted(scores.items(), key=lambda kv: (-kv[1], kv[0]))
+        return ranked[:max(0, int(k))]
+
     #: A single near-literal keyword for a tool's own job, checked only when
     #: nothing else answers below. The two-meaningful-terms rule below exists
     #: so a generic word like "run" cannot force a tool by itself, but a

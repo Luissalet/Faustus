@@ -730,6 +730,17 @@ DEFAULT_SETTINGS = {
     "typed_decision_freshness": True,
     "typed_decision_entity_types": True,
     "typed_decision_memory_conflicts": True,
+    # Typed decisions at three forks of the agent loop (src/decision_forks.py),
+    # each off by default and each writing a receipt into the turn trace:
+    # after a failed tool call (retry / change arguments / other tool / stop,
+    # injected as an advisory hint); when the top tool-index scores tie (which
+    # tied tool to offer first); and in extractive compaction (which old tool
+    # results to keep verbatim, the last messages stay pinned).
+    "typed_decision_error_fork": False,
+    "typed_decision_tool_tie": False,
+    # Relative gap to the best lexical score within which two tools tie.
+    "typed_decision_tool_tie_tolerance": 0.03,
+    "typed_decision_compaction_keep": False,
     # Per-model load defaults for Ollama models (Settings → Local models →
     # Options…, src/model_load_options.py): {"<endpoint_id>|<model>":
     # {"num_ctx", "num_gpu", "keep_alive"}}. Applied under explicit
