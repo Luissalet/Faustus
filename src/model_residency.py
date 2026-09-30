@@ -155,34 +155,61 @@ def _describe_origin(pid: int, *, self_pid: int, profiles: Dict[int, str]) -> Di
             return {"kind": "external", "label": chain[0].name() or ""}
         except Exception:  # noqa: BLE001
             pass
-    return {"kind": "external", "label": "started by hand (its parent process has ended)"}
+    return {"kind": "external", "label": "started outside Faustus (its parent process has ended)"}
+
+
+_INTERPRETERS = ("python", "pythonw", "node", "java", "javaw", "ruby", "deno", "bun")
+#: Per-card bytes below this are a driver context on a card the process does
+#: not really use; they are left out of the card list.
+CARD_MIN_BYTES = 64 * _MIB
+
+
+def _name_of(psutil, pid: int) -> str:
+    """The process name, also for processes `Process(pid).name()` refuses
+    (protected system processes): the process list still names them."""
+    try:
+        return psutil.Process(pid).name() or ""
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        for proc in psutil.process_iter(["pid", "name"]):
+            if proc.info.get("pid") == pid:
+                return proc.info.get("name") or ""
+    except Exception:  # noqa: BLE001
+        pass
+    return ""
 
 
 def _process_label(pid: int) -> Dict[str, str]:
-    """Name and a short hint (script or working folder) for a process."""
+    """Name and, for an interpreter, what it runs: the script with its folder
+    (``ComfyUI/main.py``), so two ``python.exe`` rows can be told apart."""
     psutil = _psutil()
     if psutil is None:
         return {"name": "", "hint": ""}
+    name = _name_of(psutil, pid)
+    base = os.path.splitext(name)[0].lower()
+    if base not in _INTERPRETERS:
+        return {"name": name, "hint": ""}
     try:
         proc = psutil.Process(pid)
-        name = proc.name() or ""
         cmd = proc.cmdline() or []
     except Exception:  # noqa: BLE001
-        return {"name": "", "hint": ""}
+        return {"name": name, "hint": ""}
     hint = _script_of(cmd)
-    if hint:
-        for tok in cmd[1:]:
-            if tok.strip('"').endswith(hint):
-                folder = _dirname(tok.strip('"'))
-                if folder:
-                    hint = f"{folder}/{hint}"
-                break
-    else:
+    folder = ""
+    for tok in cmd[1:]:
+        if hint and tok.strip('"').endswith(hint):
+            folder = _dirname(tok.strip('"'))
+            break
+    if not folder:
         try:
-            cwd = proc.cwd() or ""
-            hint = _basename(cwd)
+            folder = _basename(proc.cwd() or "")
         except Exception:  # noqa: BLE001
-            hint = ""
+            folder = ""
+    if hint and folder:
+        hint = f"{folder}/{hint}"
+    elif not hint:
+        hint = folder
     return {"name": name, "hint": hint}
 
 
@@ -199,7 +226,10 @@ def _port_of(root: str) -> Optional[int]:
 
 
 def _per_gpu_rows(per: Dict[int, Optional[int]]) -> List[Dict[str, Any]]:
-    return [{"index": int(i), "bytes": per[i]} for i in sorted(per)]
+    """Cards the process really uses: unknown bytes are kept (nvidia-smi saw
+    it there), a few KB of driver context on another card are not."""
+    return [{"index": int(i), "bytes": per[i]} for i in sorted(per)
+            if per[i] is None or per[i] >= CARD_MIN_BYTES]
 
 
 def build(ollama: Dict[str, Any], external_runners: List[Dict[str, Any]], gpus: List[Dict[str, Any]],

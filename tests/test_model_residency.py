@@ -74,3 +74,11 @@ def test_snapshot_never_raises(monkeypatch):
     out = mr.snapshot({}, [], [])
     assert out["models"] == [] and "boom" in out["error"]
     mr.reset_cache()
+
+
+def test_driver_contexts_on_other_cards_are_not_listed_as_cards():
+    out = _build(runners=[{"model": "m", "root": "http://127.0.0.1:8081"}], listening={8081: 7},
+                 per_pid={7: {0: 24576, 2: 11 * GB, 3: 10 * GB}})
+    row, = out["models"]
+    assert [g["index"] for g in row["gpus"]] == [2, 3]
+    assert row["bytes"] == 21 * GB + 24576  # the total is still everything it holds
