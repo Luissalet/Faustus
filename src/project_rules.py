@@ -23,6 +23,7 @@ silently, so the model can ask to see it.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import threading
@@ -174,18 +175,17 @@ def project_rules(workspace: str) -> List[Dict[str, Any]]:
     return [r.to_dict() | {"text": r.text} for r in discover_project_rules(workspace)]
 
 
-def _project_rules_signature(workspace: str) -> Tuple[Tuple[str, float], ...]:
-    """`(path, mtime)` per discovered file — the cache key's fingerprint.
-    Cheap to recompute (a handful of `os.listdir` + `os.path.getmtime`
-    calls), so `block()` can call it on every invocation rather than trust a
-    TTL."""
-    sig = []
-    for r in discover_project_rules(workspace):
-        try:
-            sig.append((r.path, os.path.getmtime(r.path)))
-        except OSError:
-            sig.append((r.path, -1.0))
-    return tuple(sorted(sig))
+def _project_rules_signature(workspace: str, *,
+                             _rules: Optional[Sequence[ProjectRule]] = None) -> Tuple[Tuple[Any, ...], ...]:
+    """Identity of the bounded, decoded rule projection used for rendering.
+
+    Metadata alone cannot detect an edit with preserved size/mtime. Preserve
+    discovery order and failures too; unreadable content cannot reuse a prior
+    readable block. This is cache identity, not an approval digest.
+    """
+    rules = _rules if _rules is not None else discover_project_rules(workspace)
+    return tuple((r.path, r.root, r.origin, r.distance, r.id, r.bytes, r.error,
+                  hashlib.sha256(r.text.encode("utf-8")).hexdigest()) for r in rules)
 
 
 # ---------------------------------------------------------------------------
@@ -317,12 +317,12 @@ def languages_for(workspace: str) -> List[str]:
 # The system-prompt block
 # ---------------------------------------------------------------------------
 
-def untrusted_note(workspace: str) -> str:
+def untrusted_note(workspace: str, *, _rules: Optional[Sequence[ProjectRule]] = None) -> str:
     """The stand-in for an unapproved workspace's own project rules: names
     the files, carries none of their text. Mirrors
     `project_instructions.untrusted_note` on purpose — same failure mode,
     same fix."""
-    rules = discover_project_rules(workspace)
+    rules = _rules if _rules is not None else discover_project_rules(workspace)
     if not rules:
         return ""
     names = sorted({os.path.relpath(r.path, r.root).replace(os.sep, "/") for r in rules})
@@ -354,8 +354,8 @@ def block(workspace: str, *, trusted: bool = True, languages: Optional[Sequence[
     nothing to say.
 
     Deterministic and byte-stable for a given `(workspace, languages)` until
-    a file changes — the project rules' `(path, mtime)` signature is the
-    cache key's fingerprint, and the library is re-read at most every
+    a captured rule changes — its content and discovery metadata identify
+    the cached block, and the library is re-read at most every
     `_LIBRARY_TTL_S` seconds. Never raises.
     """
     if not workspace or not bool(_setting("project_rules_enabled", True)):
@@ -374,7 +374,8 @@ def block(workspace: str, *, trusted: bool = True, languages: Optional[Sequence[
     budget = max(200, min(budget, 20_000))
 
     key = (root, trusted, langs, budget)
-    sig = _project_rules_signature(root)
+    captured_rules = tuple(discover_project_rules(root))
+    sig = _project_rules_signature(root, _rules=captured_rules)
     with _BLOCK_LOCK:
         cached = _BLOCK_CACHE.get(key)
     if cached and cached[0] == sig:
@@ -385,7 +386,7 @@ def block(workspace: str, *, trusted: bool = True, languages: Optional[Sequence[
     more: List[str] = []
 
     if trusted:
-        for r in discover_project_rules(root):
+        for r in captured_rules:
             if r.error or not r.text:
                 continue
             rel = os.path.relpath(r.path, r.root).replace(os.sep, "/")
@@ -397,7 +398,7 @@ def block(workspace: str, *, trusted: bool = True, languages: Optional[Sequence[
             parts.append(piece)
             used += cost
     else:
-        note = untrusted_note(root)
+        note = untrusted_note(root, _rules=captured_rules)
         if note:
             parts.append(note.strip())
 
