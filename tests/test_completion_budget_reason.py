@@ -29,6 +29,12 @@ def closeout_code():
     return compile(ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[])), "real_closeout", "exec")
 
 
+def _extra_rounds():
+    """The loop's single extra-round policy, in its default mode."""
+    from src.extra_round_policy import ExtraRounds
+    return ExtraRounds("enforce")
+
+
 def run_case(used, *, proposed=True, shadow=False, plan=True, plan_used=0):
     plan_checks = []
     state = dict(json=json, _ce_decision={"ok": True, "shadow": shadow, "mode": "greedy",
@@ -37,7 +43,8 @@ def run_case(used, *, proposed=True, shadow=False, plan=True, plan_used=0):
                  _plan_coverage_rounds=plan_used, _PLAN_COVERAGE_MAX_ROUNDS=1,
                  _last_user="finish test", round_num=8, messages=[],
                  _ledger=SimpleNamespace(stop_reason="completion_continue"), _lang_note=lambda t: t,
-                 _plan_coverage_gap=lambda *a: plan_checks.append(True) or ["finish test"])
+                 _plan_coverage_gap=lambda *a: plan_checks.append(True) or ["finish test"],
+                 _xr=_extra_rounds())
     exec(closeout_code(), state)
     generator = state["run"]()
     events = []

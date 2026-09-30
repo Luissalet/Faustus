@@ -194,7 +194,8 @@ async def test_reads_are_not_admitted_and_certainty_is_none(monkeypatch):
     _impl(monkeypatch, handler)
     _, result = await invoke("read_file", '{"path":"a.txt"}')
     assert eo.list_effects(owner="alice") == []
-    assert result["effect_certainty"] == "none" and result["attempt_id"].startswith("att_")
+    # A read with no effect stays byte-for-byte as the tool returned it.
+    assert "effect_certainty" not in result and "attempt_id" not in result
 
 
 def test_certainty_rules():

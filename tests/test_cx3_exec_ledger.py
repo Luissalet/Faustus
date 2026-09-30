@@ -54,7 +54,8 @@ async def test_a_tool_call_leaves_call_attempt_and_result_reference(monkeypatch)
     call, = state["calls"]
     assert call["call_id"] == "c1" and call["tool"] == "read_file" and call["state"] == "succeeded"
     attempt, = call["attempts"]
-    assert attempt["attempt_id"] == res["attempt_id"]  # the ledger and the result name the same attempt
+    assert attempt["attempt_id"].startswith("att_")
+    assert "attempt_id" not in res  # a read's result is returned as the tool gave it
     assert attempt["result_sha256"] and "done" not in json.dumps(state)  # a reference, not the body
     assert [e["kind"] for e in xl.events("run-a")] == ["call_requested", "attempt_started", "attempt_result"]
 

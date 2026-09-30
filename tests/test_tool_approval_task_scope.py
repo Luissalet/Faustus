@@ -333,7 +333,8 @@ def test_route_context_agent_frontend_and_cache_bust_wire_the_contract():
     assert "_without_latest_matching_user_message(" not in helpers
     assert "selected_tools=approval_selected_tools" in agent
     assert "continuation_query=_retrieval_query or _last_user" in agent
-    assert "approval_gate_bypassed=bool(" in agent
+    assert "approval_gate_bypassed=_gate_explicit_bypass or _gate_workspace_grant" in agent
+    assert "_gate_explicit_bypass = bool(" in agent or "_gate_explicit_bypass=bool(" in agent
     # The three decisions the route accepts are the three the interface offers,
     # and the answer travels as an approval id — never as a message typed into
     # the composer on the user's behalf, which is what made "Approve" look

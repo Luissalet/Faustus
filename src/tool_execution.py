@@ -1820,14 +1820,17 @@ async def _execute_tool_block_core(
                 "normalize_tool_result failed for tool=%s",
                 getattr(block, "tool_type", None), exc_info=True,
             )
-        # H04: every result carries the attempt it came from and how sure we
-        # are about its effect (none / confirmed / partial / unknown).
+        # H04: a result that can have touched the world carries the attempt it
+        # came from and how sure we are about its effect (confirmed / partial /
+        # unknown). A read-only result with no effect stays byte-for-byte as the
+        # tool returned it (CALL-05).
         try:
             if isinstance(output, tuple) and len(output) > 1 and isinstance(output[1], dict):
                 from src.tool_result import effect_certainty as _certainty
-                output[1].setdefault("attempt_id", _attempt_id)
-                output[1]["effect_certainty"] = _certainty(
-                    _typed_result, effect_class=_effect_class or "", raw=output[1])
+                _cert = _certainty(_typed_result, effect_class=_effect_class or "", raw=output[1])
+                if (_effect_class not in (None, "", "read")) or _cert not in ("", "none"):
+                    output[1].setdefault("attempt_id", _attempt_id)
+                    output[1]["effect_certainty"] = _cert
         except Exception:  # noqa: BLE001
             logger.debug("effect certainty stamp skipped", exc_info=True)
         if _tracked_effect:

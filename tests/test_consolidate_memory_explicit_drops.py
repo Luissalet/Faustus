@@ -23,6 +23,10 @@ class _FakeMM:
             {"id": "c", "owner": "alice", "text": "Lives in Cairo", "category": "fact"},
         ]
 
+    def load_all_for_update(self):
+        # Consolidation re-reads the store under its lease before writing.
+        return self.load_all()
+
     def save(self, entries):
         _FakeMM.saved = list(entries)
 
