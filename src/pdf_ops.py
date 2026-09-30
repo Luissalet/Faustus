@@ -528,8 +528,58 @@ def ocr(input_path: str, output: Optional[str] = None, *, language: str = "eng",
             "stdout": (proc.stdout or "").strip()[:2000]}
 
 
+# ---------------------------------------------------------------------------
+# Redaction (real removal + verification) and word-level comparison
+# ---------------------------------------------------------------------------
+
+def redact(input_path: str, output: Optional[str] = None, *, patterns: Any = None,
+           regex: Any = None, rects: Any = None, case_sensitive: bool = False,
+           dpi: int = 200, engine: Optional[str] = None,
+           overwrite: bool = False) -> Dict[str, Any]:
+    """Remove text matching `patterns` (literals) / `regex`, or covering
+    `rects` (PDF points, bottom-left origin), from the PDF for real, then
+    re-read the result to prove it. See `src/pdf_redact.py`."""
+    from src import pdf_redact
+    path = resolve_path(input_path)
+    out_path = _resolve_output(output, default_input=path, suffix="redacted",
+                               overwrite=overwrite, inputs=[path])
+    if isinstance(patterns, str):
+        patterns = [patterns]
+    if isinstance(regex, str):
+        regex = [regex]
+    try:
+        report = pdf_redact.redact(path, out_path, patterns=patterns, regex=regex, rects=rects,
+                                   case_sensitive=case_sensitive, dpi=dpi, engine=engine)
+    except pdf_redact.RedactError as exc:
+        raise PdfOpsError(f"redact: {exc}") from exc
+    return {"input": path, **report}
+
+
+def compare(input_path: str, other_path: str, html_output: Optional[str] = None,
+            *, overwrite: bool = False) -> Dict[str, Any]:
+    """Word-by-word diff of two PDFs, per page, with a summary; optionally an
+    HTML report. See `src/pdf_compare.py`."""
+    from src import pdf_compare
+    path_a = resolve_path(input_path)
+    path_b = resolve_path(other_path)
+    try:
+        result = pdf_compare.compare(path_a, path_b)
+    except pdf_compare.CompareError as exc:
+        raise PdfOpsError(f"compare: {exc}") from exc
+    result["input"] = path_a
+    if html_output:
+        out_path = _resolve_output(html_output, default_input=path_a, suffix="compare",
+                                   overwrite=overwrite, inputs=[path_a, path_b])
+        os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+        with open(out_path, "w", encoding="utf-8") as fh:
+            fh.write(pdf_compare.render_html(result))
+        result["report"] = out_path
+    return result
+
+
 __all__ = [
     "PdfOpsError", "resolve_path", "parse_page_ranges",
     "page_count", "merge", "split", "extract_pages", "rotate", "reorder",
     "delete_pages", "metadata", "compress", "watermark_text", "to_images", "ocr",
+    "redact", "compare",
 ]

@@ -3420,11 +3420,11 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "pdf_ops",
-            "description": "PDF operations: merge several PDFs into one, split a PDF by page ranges, extract a subset of pages, rotate pages, reorder every page, delete pages, read/write metadata (title/author/subject/keywords), compress (re-encode content streams, dedupe objects, reports bytes before/after), watermark_text (diagonal text stamp on every page), page_count, to_images (rasterize pages to PNG -- needs pypdfium2 or pdf2image), ocr (add a searchable text layer -- needs the ocrmypdf CLI). Every path is confined to the active workspace / uploads folder. A generated file is written NEXT TO its source and never overwrites an input unless `overwrite: true`.",
+            "description": "PDF operations: merge several PDFs into one, split a PDF by page ranges, extract a subset of pages, rotate pages, reorder every page, delete pages, read/write metadata (title/author/subject/keywords), compress (re-encode content streams, dedupe objects, reports bytes before/after), watermark_text (diagonal text stamp on every page), page_count, to_images (rasterize pages to PNG -- needs pypdfium2 or pdf2image), ocr (add a searchable text layer -- needs the ocrmypdf CLI), redact (REALLY remove text matching `patterns`/`regex` or covering page `rects`, flatten the affected pages, then re-read the output to verify no match remains; returns the verification result and never echoes the removed text), compare (word-by-word diff of `input` against `other`, per page, with inserted/deleted/changed runs and a summary; optional `html_output` report). Every path is confined to the active workspace / uploads folder. A generated file is written NEXT TO its source and never overwrites an input unless `overwrite: true`.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "op": {"type": "string", "enum": ["merge", "split", "extract_pages", "rotate", "reorder", "delete_pages", "metadata", "compress", "watermark_text", "page_count", "to_images", "ocr"], "description": "Which operation to run"},
+                    "op": {"type": "string", "enum": ["merge", "split", "extract_pages", "rotate", "reorder", "delete_pages", "metadata", "compress", "watermark_text", "page_count", "to_images", "ocr", "redact", "compare"], "description": "Which operation to run"},
                     "input": {"type": "string", "description": "Path to the source PDF (all ops except merge)"},
                     "inputs": {"type": "array", "items": {"type": "string"}, "description": "merge only: two or more PDF paths, in the order they should be joined"},
                     "output": {"type": "string", "description": "Destination path for a single-file result. Defaults to a new file next to the input (e.g. report.merged.pdf)"},
@@ -3440,6 +3440,13 @@ FUNCTION_TOOL_SCHEMAS = [
                     "angle": {"type": "number", "description": "watermark_text only: rotation angle in degrees (default 45)"},
                     "dpi": {"type": "integer", "description": "to_images only: render resolution (default 150)"},
                     "language": {"type": "string", "description": "ocr only: Tesseract language code (default eng)"},
+                    "patterns": {"type": "array", "items": {"type": "string"}, "description": "redact only: literal strings to remove (case-insensitive unless case_sensitive; a space matches any whitespace)"},
+                    "regex": {"type": "array", "items": {"type": "string"}, "description": "redact only: regular expressions to remove (e.g. an ID-number shape)"},
+                    "rects": {"type": "array", "items": {"type": "object", "properties": {"page": {"type": "integer"}, "rect": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4}}, "required": ["page", "rect"]}, "description": "redact only: page areas to blank, each {page (1-based), rect [x0,y0,x1,y1]} in PDF points with the origin at the bottom-left. Needs pypdfium2"},
+                    "case_sensitive": {"type": "boolean", "description": "redact only: match `patterns`/`regex` case-sensitively. Default false"},
+                    "engine": {"type": "string", "enum": ["flatten", "stream"], "description": "redact only: flatten (render affected pages to images, needs pypdfium2, default when available) or stream (rewrite text operators, pypdf only, patterns only)"},
+                    "other": {"type": "string", "description": "compare only: path of the second PDF (compared against `input`)"},
+                    "html_output": {"type": "string", "description": "compare only: path for an optional HTML report"},
                     "overwrite": {"type": "boolean", "description": "Allow the output to replace an input file. Default false"}
                 },
                 "required": ["op"]

@@ -1163,6 +1163,10 @@ EXAMPLES: Dict[str, List[str]] = {
         "shrink this PDF, it's too big to email",
         "ponle una marca de agua que diga BORRADOR",
         "cuántas páginas tiene este documento",
+        "redacta los nombres y DNI de este PDF antes de enviarlo",
+        "black out every email address in this document for real",
+        "compara las dos versiones del contrato y dime qué cambió",
+        "what changed between these two PDFs, word by word",
     ],
 
     # ── Structural PDF navigation (tree-index RAG) ──────────────────────────

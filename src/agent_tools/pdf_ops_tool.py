@@ -41,7 +41,8 @@ def _one_input(args: Dict[str, Any], op: str) -> str:
 class PdfOpsTool:
     """`pdf_ops`: merge, split, extract_pages, rotate, reorder, delete_pages,
     metadata (read or write), compress, watermark_text, page_count, to_images
-    (optional dependency), ocr (optional external CLI)."""
+    (optional dependency), ocr (optional external CLI), redact (real text
+    removal, verified), compare (word-level diff of two PDFs)."""
 
     async def execute(self, content: str, ctx: dict) -> dict:
         args = _args(content)
@@ -55,6 +56,9 @@ class PdfOpsTool:
         except Exception as exc:  # noqa: BLE001 — a bad PDF is data, not a crash
             logger.warning("pdf_ops(%s) failed: %s", op, exc)
             return {"error": f"pdf_ops({op}): {exc}", "exit_code": 1, "error_class": "pdf_ops.error"}
+        if op == "redact" and result.get("verified") is False:
+            return {"error": f"pdf_ops(redact): {result.get('note') or 'verification failed'}",
+                    "exit_code": 1, "error_class": "pdf_ops.redact_unverified", **result}
         output_line = result.get("output") or result.get("outputs") or result.get("input") or ""
         return {"output": f"pdf_ops {op}: {output_line}", "exit_code": 0, **result}
 
@@ -118,7 +122,23 @@ class PdfOpsTool:
             if args.get("language"):
                 kwargs["language"] = str(args["language"])
             return pdf_ops.ocr(_one_input(args, op), args.get("output"), overwrite=overwrite, **kwargs)
+        if op == "redact":
+            kwargs = {}
+            if args.get("dpi") is not None:
+                kwargs["dpi"] = int(args["dpi"])
+            return pdf_ops.redact(_one_input(args, op), args.get("output"),
+                                  patterns=args.get("patterns"), regex=args.get("regex"),
+                                  rects=args.get("rects"),
+                                  case_sensitive=bool(args.get("case_sensitive")),
+                                  engine=args.get("engine"), overwrite=overwrite, **kwargs)
+        if op == "compare":
+            other = str(args.get("other") or "").strip()
+            if not other:
+                raise pdf_ops.PdfOpsError("compare: `other` (the second PDF) is required")
+            return pdf_ops.compare(_one_input(args, op), other, args.get("html_output"),
+                                   overwrite=overwrite)
         raise pdf_ops.PdfOpsError(
             f"unknown op '{op}' — one of merge, split, extract_pages, rotate, reorder, "
-            f"delete_pages, metadata, compress, watermark_text, page_count, to_images, ocr"
+            f"delete_pages, metadata, compress, watermark_text, page_count, to_images, ocr, "
+            f"redact, compare"
         )
