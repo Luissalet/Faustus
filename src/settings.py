@@ -552,6 +552,20 @@ DEFAULT_SETTINGS = {
     # own wall-time budget (agent_code_mode_timeout_seconds) -- that clock is
     # paused for exactly this long while waiting.
     "agent_code_mode_approval_wait_seconds": 300,
+    # Where run_code executes (src/code_mode/confined.py): "confined" runs the
+    # program in a container with only the workspace mounted, no network unless
+    # granted and none of this process's environment; if the container backend
+    # is unavailable the call is refused. "host" is the explicit opt-in to a
+    # host process with this user's full file and network authority.
+    "agent_code_mode_runtime": "confined",
+    # Confined runtime: how the workspace root is mounted. "read_only" (default)
+    # means writes must go through tools.call, where policy and approval apply.
+    "agent_code_mode_workspace_access": "read_only",
+    # Confined runtime: allow network from inside the container. Off by default.
+    "agent_code_mode_network": False,
+    # Confined runtime limits: memory (MB, no swap) and process count.
+    "agent_code_mode_memory_mb": 512,
+    "agent_code_mode_max_processes": 128,
     # Server-shaped commands (python app.py, flask, uvicorn, …) never inherit
     # the adaptive idle trained on long pytest/compiles. 0 = no extra cap.
     "agent_server_idle_timeout_seconds": 45,

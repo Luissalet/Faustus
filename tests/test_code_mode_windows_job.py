@@ -10,7 +10,8 @@ import pytest
 
 from src.code_mode import runner, bridge, windows_job_bootstrap as jobs
 
-pytestmark = pytest.mark.skipif(os.name != "nt", reason="Windows JobObject native fixture")
+pytestmark = [pytest.mark.skipif(os.name != "nt", reason="Windows JobObject native fixture"),
+ pytest.mark.usefixtures("code_mode_host_runtime")]
 
 
 def kernel():

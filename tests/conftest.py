@@ -409,3 +409,49 @@ def fresh_llama_slots():
     llama_slots.reset()
     yield
     llama_slots.reset()
+
+
+@pytest.fixture
+def code_mode_host_runtime(monkeypatch):
+    """Tests of the host runtime ask for it explicitly: the default Code Mode
+    runtime is the confined (container) one."""
+    from src.code_mode import confined
+    real = confined.resolve_runtime
+    monkeypatch.setattr(confined, "resolve_runtime",
+                        lambda explicit=None, default=None: real(explicit or "host"))
+
+
+def _container_test_image():
+    """An image that can run real container tests here, or None.
+
+    ``FAUSTUS_TEST_CONTAINER_IMAGE`` overrides; otherwise the sandbox image
+    Faustus builds, then a plain Python image, whichever is already on the
+    machine. Nothing is pulled: a machine without a reachable Docker daemon or
+    without one of these images skips the container tests instead of failing.
+    """
+    import shutil
+    import subprocess
+    if shutil.which("docker") is None:
+        return None
+    candidates = [os.environ.get("FAUSTUS_TEST_CONTAINER_IMAGE"), "faustus-sandbox:1",
+                  "python:3.12-slim"]
+    try:
+        if subprocess.run(["docker", "version", "--format", "{{.Server.Version}}"],
+                          capture_output=True, timeout=20).returncode != 0:
+            return None
+        for image in filter(None, candidates):
+            if subprocess.run(["docker", "image", "inspect", image],
+                              capture_output=True, timeout=20).returncode == 0:
+                return image
+    except Exception:
+        return None
+    return None
+
+
+@pytest.fixture(scope="session")
+def container_test_image():
+    image = _container_test_image()
+    if image is None:
+        pytest.skip("no reachable Docker daemon with a usable image (set "
+                    "FAUSTUS_TEST_CONTAINER_IMAGE to one that has python3)")
+    return image

@@ -3,6 +3,8 @@ import json
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("code_mode_host_runtime")
+
 from src.code_mode.runner import run_code_mode
 
 

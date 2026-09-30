@@ -14,7 +14,8 @@ Protocol (one JSON object per line):
                      {"call_id", "type": "list"}
                      {"type": "final", "status", "error", "output",
                       "calls_made", "last_call"}
-  parent -> child : first line: {"max_calls", "max_output_bytes"} (config)
+  parent -> child : first line: {"max_calls", "max_output_bytes"[, "code"]} (config;
+                     "code" only with the ``--inline`` argument)
                      then, per request: {"call_id", "ok", "result"|"error"}
 """
 
@@ -161,11 +162,17 @@ def _install_cpu_guard():
 
 
 def main() -> int:
+    # ``--inline``: the confined runtime (src/code_mode/confined.py) mounts no
+    # Faustus file into the container, so the user's code arrives in the config
+    # line instead of being read from a path.
+    inline = len(sys.argv) >= 2 and sys.argv[1] == "--inline"
     if len(sys.argv) < 2:
-        sys.stderr.write("usage: guest.py <user_code_path>\n")
+        sys.stderr.write("usage: guest.py <user_code_path> | --inline\n")
         return 2
-    with open(sys.argv[1], "r", encoding="utf-8") as f:
-        user_code = f.read()
+    user_code = None
+    if not inline:
+        with open(sys.argv[1], "r", encoding="utf-8") as f:
+            user_code = f.read()
 
     channel = _ProtocolChannel()
 
@@ -174,6 +181,11 @@ def main() -> int:
         config = json.loads(config_line) if config_line.strip() else {}
     except Exception:  # noqa: BLE001
         config = {}
+    if inline:
+        user_code = config.get("code") if isinstance(config, dict) else None
+        if not isinstance(user_code, str):
+            sys.stderr.write("guest: no inline code received\n")
+            return 2
     max_calls = config.get("max_calls")
     max_output_bytes = config.get("max_output_bytes")
 

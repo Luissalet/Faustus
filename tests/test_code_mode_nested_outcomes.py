@@ -2,6 +2,8 @@ import asyncio
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("code_mode_host_runtime")
+
 from src.code_mode import bridge, runner
 from src.code_mode.outcomes import MAX_RECEIPTS
 from src.agent_harness import TurnLedger

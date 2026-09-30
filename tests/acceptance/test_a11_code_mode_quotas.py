@@ -23,7 +23,7 @@ import pytest
 
 from tests.acceptance.conftest import record_evidence
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.usefixtures("code_mode_host_runtime")]
 
 
 def _patch_limits(monkeypatch, **overrides):

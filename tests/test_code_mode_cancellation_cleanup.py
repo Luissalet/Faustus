@@ -3,6 +3,8 @@ import gc
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("code_mode_host_runtime")
+
 from src.code_mode import bridge, runner
 
 

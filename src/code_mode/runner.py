@@ -22,7 +22,7 @@ import uuid
 from typing import Any, Optional
 
 from core.platform_compat import IS_WINDOWS
-from src.code_mode import bridge
+from src.code_mode import bridge, confined
 from src.code_mode.outcomes import CallOutcomes
 
 logger = logging.getLogger(__name__)
@@ -37,6 +37,10 @@ HOST_RUNTIME_GUARANTEES = {
     "network_isolated": False,
     "tool_policy_scope": "tools.call_only",
 }
+
+# Runtime used when neither the caller nor the settings choose one. Confined is
+# the safe default; the host runtime must be selected explicitly.
+DEFAULT_RUNTIME = confined.DEFAULT_RUNTIME
 
 DEFAULT_TIMEOUT_SECONDS = 60
 DEFAULT_MAX_CALLS = 50
@@ -198,6 +202,16 @@ class _WindowsProcessScope:
             pass
 
 
+def _host_guarantees() -> dict:
+    return dict(HOST_RUNTIME_GUARANTEES)
+
+
+def _with_policy(result: dict, requested: str, effective: str, reason: str = "") -> dict:
+    result.setdefault("runtime_policy", {"requested": requested, "effective": effective,
+                                          "reason": reason})
+    return result
+
+
 async def run_code_mode(
     code: str,
     *,
@@ -208,10 +222,64 @@ async def run_code_mode(
     workspace_roots: Optional[list] = None,
     tool_policy: Any = None,
     security_context: Any = None,
+    runtime: Optional[str] = None,
+    network: Optional[bool] = None,
+    workspace_access: Optional[str] = None,
 ) -> dict:
+    """Run ``code`` in the requested runtime.
+
+    ``runtime`` (default: the ``agent_code_mode_runtime`` setting, itself
+    ``confined``) is ``confined`` (container, no host fallback) or ``host``
+    (explicit opt-in; a host process with the Faustus user's authority).
+    ``network`` / ``workspace_access`` are the confined-runtime grants and
+    default to their settings (no network, workspace read-only).
+    """
+    mode = confined.resolve_runtime(runtime, default=DEFAULT_RUNTIME)
     kwargs = dict(session_id=session_id, owner=owner, disabled_tools=disabled_tools,
                   workspace=workspace, workspace_roots=workspace_roots,
                   tool_policy=tool_policy, security_context=security_context)
+    if mode == "host":
+        return _with_policy(await _run_host(code, **kwargs), "host", "host_process")
+    return await _run_confined(code, network=network, workspace_access=workspace_access, **kwargs)
+
+
+async def _run_confined(code: str, *, network: Optional[bool], workspace_access: Optional[str],
+                        **kwargs) -> dict:
+    from src.container_mounts import MountError
+    limits = _limits()
+    image = confined._sandbox_image()
+    if not confined.valid_image_name(image):
+        return confined.refusal("the configured sandbox image name is not valid")
+    ready = await asyncio.to_thread(confined.probe, image)
+    if not ready.get("ok"):
+        return confined.refusal(str(ready.get("reason") or "backend_unavailable"),
+                                str(ready.get("detail") or ""))
+    try:
+        plan = confined.build_plan(
+            workspace=kwargs.get("workspace"), workspace_roots=kwargs.get("workspace_roots"),
+            workspace_access=workspace_access, network=network,
+            timeout_seconds=max(1, limits["timeout_seconds"]), image=image)
+    except MountError as exc:
+        return confined.refusal("the workspace root cannot be mounted", str(exc))
+    try:
+        result = await _run_code_mode_impl(code, _confined=plan, **kwargs)
+        receipt = result.get("receipt")
+        if isinstance(receipt, dict) and receipt.get("terminated_by") == "error" \
+                and await plan.oom_killed():
+            receipt["terminated_by"] = "memory"
+            result["error"] = "Code Mode terminated: memory"
+        result["runtime_guarantees"] = dict(plan.guarantees)
+        return _with_policy(result, "confined", "container")
+    finally:
+        await plan.cleanup()
+
+
+async def _run_host(code: str, **kwargs) -> dict:
+    from src import sandbox_exec
+    if sandbox_exec.confinement_required():
+        return confined.refusal(
+            "required confinement (`agent_sandbox_mode` = `required`) does not allow the host runtime",
+            requested="host")
     if not IS_WINDOWS:
         return await _run_code_mode_impl(code, **kwargs)
     from src.code_mode.windows_job_bootstrap import create_owned_job, WindowsJobError
@@ -219,7 +287,7 @@ async def run_code_mode(
         scope = _WindowsProcessScope(create_owned_job())
     except WindowsJobError as error:
         return {"error": "Code Mode containment could not start", "error_code": error.code,
-                "exit_code": 1, "runtime_guarantees": dict(HOST_RUNTIME_GUARANTEES)}
+                "exit_code": 1, "runtime_guarantees": _host_guarantees()}
     try:
         result = await _run_code_mode_impl(code, _process_scope=scope, **kwargs)
         if scope.assigned:
@@ -240,6 +308,7 @@ async def _run_code_mode_impl(
     tool_policy: Any = None,
     security_context: Any = None,
     _process_scope=None,
+    _confined=None,
 ) -> dict:
     limits = _limits()
     timeout_s = max(1, limits["timeout_seconds"])
@@ -250,36 +319,54 @@ async def _run_code_mode_impl(
     # The extra space covers framing fields; this is not a larger output quota.
     frame_limit = 6 * max_output_bytes + PROTOCOL_FRAME_OVERHEAD
 
-    workdir = tempfile.mkdtemp(prefix="faustus_code_mode_")
-    user_code_path = os.path.join(workdir, "user_code.py")
-    with open(user_code_path, "w", encoding="utf-8") as f:
-        f.write(code)
+    if _confined is None:
+        workdir = tempfile.mkdtemp(prefix="faustus_code_mode_")
+        user_code_path = os.path.join(workdir, "user_code.py")
+        with open(user_code_path, "w", encoding="utf-8") as f:
+            f.write(code)
 
-    popen_kwargs: dict[str, Any] = dict(
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        cwd=workdir,
-        env=_minimal_env(),
-        limit=frame_limit,
-    )
-    if not IS_WINDOWS:
-        popen_kwargs["preexec_fn"] = _preexec_fn(max_memory_bytes, timeout_s + 5)
+        popen_kwargs: dict[str, Any] = dict(
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=workdir,
+            env=_minimal_env(),
+            limit=frame_limit,
+        )
+        if not IS_WINDOWS:
+            popen_kwargs["preexec_fn"] = _preexec_fn(max_memory_bytes, timeout_s + 5)
+        else:
+            popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
     else:
-        popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        # The docker client gets the host's ordinary environment (it needs
+        # DOCKER_HOST and friends); nothing of it is forwarded INTO the
+        # container, because the plan never passes -e / --env-file.
+        from src.native_env import native_host_environment
+        popen_kwargs = dict(
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=native_host_environment(),
+            limit=frame_limit,
+        )
+        if IS_WINDOWS:
+            popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
 
     t0 = time.monotonic()
     try:
-        command = [sys.executable, "-I", _GUEST_PATH, user_code_path]
-        if _process_scope is not None:
-            command = [sys.executable, "-I", _WINDOWS_BOOTSTRAP_PATH, _process_scope.job.name,
-                       _GUEST_PATH, user_code_path]
-            _process_scope.spawn_task = asyncio.create_task(
-                asyncio.create_subprocess_exec(*command, **popen_kwargs))
-            proc = await asyncio.shield(_process_scope.spawn_task)
-            _process_scope.proc = proc
+        if _confined is not None:
+            proc = await asyncio.create_subprocess_exec(*_confined.argv, **popen_kwargs)
         else:
-            proc = await asyncio.create_subprocess_exec(*command, **popen_kwargs)
+            command = [sys.executable, "-I", _GUEST_PATH, user_code_path]
+            if _process_scope is not None:
+                command = [sys.executable, "-I", _WINDOWS_BOOTSTRAP_PATH, _process_scope.job.name,
+                           _GUEST_PATH, user_code_path]
+                _process_scope.spawn_task = asyncio.create_task(
+                    asyncio.create_subprocess_exec(*command, **popen_kwargs))
+                proc = await asyncio.shield(_process_scope.spawn_task)
+                _process_scope.proc = proc
+            else:
+                proc = await asyncio.create_subprocess_exec(*command, **popen_kwargs)
     except Exception as e:  # noqa: BLE001
         logger.exception("code_mode: failed to spawn guest process")
         return {"error": f"Code Mode failed to start: {e}", "exit_code": 1,
@@ -293,6 +380,11 @@ async def _run_code_mode_impl(
     wall_clock = _WallClock(timeout_s)
     approvals_log: list = []
     outcomes = CallOutcomes()
+    # Bytes the guest (or a child that inherited its stdout) wrote to the
+    # protocol channel that are not protocol frames. Bounded like captured
+    # output: a child printing forever must not be able to keep the run alive
+    # or feed the parent unbounded data.
+    stray_bytes = 0
 
     if _process_scope is not None:
         # No configuration is released to the guest until assignment is ACKed.
@@ -312,17 +404,17 @@ async def _run_code_mode_impl(
                     "exit_code": 1, "runtime_guarantees": dict(HOST_RUNTIME_GUARANTEES)}
         _process_scope.assigned = True
 
-    proc.stdin.write((json.dumps({
-        "max_calls": max_calls,
-        "max_output_bytes": max_output_bytes,
-    }) + "\n").encode("utf-8"))
+    config_line = {"max_calls": max_calls, "max_output_bytes": max_output_bytes}
+    if _confined is not None:
+        config_line["code"] = code
+    proc.stdin.write((json.dumps(config_line) + "\n").encode("utf-8"))
     try:
         await proc.stdin.drain()
     except Exception:
         pass
 
     async def _pump():
-        nonlocal calls_made, last_call, terminated_by, final_payload
+        nonlocal calls_made, last_call, terminated_by, final_payload, stray_bytes
         while True:
             try:
                 raw = await _read_line(proc.stdout)
@@ -334,6 +426,12 @@ async def _run_code_mode_impl(
             try:
                 msg = json.loads(raw.decode("utf-8", "replace"))
             except Exception:
+                msg = None
+            if not isinstance(msg, dict) or msg.get("type") not in ("call", "list", "final"):
+                stray_bytes += len(raw)
+                if stray_bytes > max_output_bytes:
+                    terminated_by = "output"
+                    return
                 continue
             msg_type = msg.get("type")
             if msg_type == "call":
@@ -438,6 +536,8 @@ async def _run_code_mode_impl(
         # protocol/stderr pump running. Only terminate our direct child;
         # descendant containment is a separate runtime guarantee.
         pump_task.cancel()
+        if _confined is not None:
+            await _confined.kill()
         if proc.returncode is None:
             try:
                 proc.kill()
@@ -468,7 +568,14 @@ async def _run_code_mode_impl(
             # treat it as its own diagnostic reason when known, else "error".
             terminated_by = terminated_by or "error"
         from src.agent_tools.subprocess_tools import _kill_tree_async
-        if _process_scope is not None:
+        if _confined is not None:
+            await _confined.kill()
+            if proc.returncode is None:
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    pass
+        elif _process_scope is not None:
             _process_scope.close_job()
         else:
             await _kill_tree_async(proc)
@@ -501,7 +608,14 @@ async def _run_code_mode_impl(
         await asyncio.wait_for(proc.wait(), timeout=5)
     except Exception:
         from src.agent_tools.subprocess_tools import _kill_tree_async
-        if _process_scope is not None:
+        if _confined is not None:
+            await _confined.kill()
+            if proc.returncode is None:
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    pass
+        elif _process_scope is not None:
             _process_scope.close_job()
         else:
             await _kill_tree_async(proc)

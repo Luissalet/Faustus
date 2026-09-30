@@ -1203,13 +1203,32 @@ GROUPS: list[dict[str, Any]] = [
     ),
     _group(
         "code_mode", "Code Mode",
-        "The model writes Python that runs as a process on this computer with access to its files "
-        "and network. Calls through tools.call use the normal policy and approval checks; direct "
-        "Python operations do not pass through those checks. This runtime is not a sandbox.",
+        "The model writes Python that composes tool calls. By default the program runs in a "
+        "container that can see only the workspace folder, with no network and none of Faustus's "
+        "environment; if the container backend is not available the run is refused. Calls through "
+        "tools.call use the normal policy and approval checks. The host runtime is a separate, "
+        "explicit choice: it runs Python directly on this computer with no confinement.",
         [
             _bool("agent_code_mode", "Code Mode",
-                  "Allow Python execution on this computer through run_code. Off by default. "
-                  "Enabling it permits direct file and network access as the Faustus process user."),
+                  "Allow run_code. Off by default. With the confined runtime the code runs in a "
+                  "container; with the host runtime it has direct file and network access as the "
+                  "Faustus process user."),
+            _select("agent_code_mode_runtime", "Runtime",
+                    "confined = container with only the workspace mounted, refused when the "
+                    "container backend is unavailable. host = Python directly on this computer, "
+                    "no filesystem or network confinement (also refused when the sandbox mode is "
+                    "required).",
+                    ["confined", "host"]),
+            _select("agent_code_mode_workspace_access", "Workspace access (confined)",
+                    "How the workspace folder is mounted into the container. Read only means file "
+                    "changes have to go through tools.call, where policy and approval apply.",
+                    ["read_only", "read_write", "none"]),
+            _bool("agent_code_mode_network", "Network (confined)",
+                  "Allow network access from inside the container. Off by default."),
+            _int("agent_code_mode_memory_mb", "Memory limit (MB, confined)",
+                 "Memory available to the container, without swap.", 64, 65536, step=64),
+            _int("agent_code_mode_max_processes", "Process limit (confined)",
+                 "Maximum number of processes inside the container.", 8, 4096),
             _int("agent_code_mode_timeout_seconds", "Wall time limit (s)",
                  "A run_code program is killed and returns a diagnostic receipt after this long.",
                  1, 3600),

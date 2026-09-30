@@ -6,10 +6,14 @@ trips.
   the exact same ``ToolBlock`` + ``execute_tool_block`` call an ordinary
   model tool call would produce, so a destructive/disabled tool gets the
   same rejection either way (A10).
-- ``runner.py``: launches a host subprocess (``python -I``, minimal
-  env, temp cwd, no filesystem/network confinement) and enforces wall time / call
-  count / output size / CPU / memory quotas, killing the process tree and
-  returning a diagnostic receipt when one is hit (A11).
+- ``runner.py``: launches the guest and enforces wall time / call count /
+  output size / CPU / memory quotas, killing the process tree and returning a
+  diagnostic receipt when one is hit (A11). Two runtimes: ``confined`` (default;
+  ``confined.py``: a container with only the declared workspace mounted, no
+  network unless granted, none of the host environment, refused when the
+  container backend is unavailable) and ``host`` (explicit opt-in: ``python -I``
+  in a host subprocess with a minimal env and temp cwd, no filesystem/network
+  confinement).
 - ``guest.py``: the small script injected into the subprocess. Defines the
   ``tools`` object the generated code calls (``tools.call(name, args)``,
   ``tools.list()``), talking to the parent over stdin/stdout as
