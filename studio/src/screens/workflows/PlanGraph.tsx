@@ -26,6 +26,14 @@ export interface PlanGraphNode {
   type: string;
   title: string;
   needs: string[];
+  /** The loop this node is the body of. Drawn dashed and one column right of
+   *  the loop, with an edge from the loop, because a body node is never
+   *  scheduled on its own and so has no `needs` edge that says where it sits. */
+  loop?: string;
+  /** A short tag on the node's corner, e.g. how many passes a loop made. */
+  badge?: string;
+  /** What this node is gated on, in words, for the list view. */
+  branch?: string;
 }
 
 /** What colours a node/edge. `undefined` is the neutral "not marked"
@@ -59,8 +67,14 @@ export interface PlanGraphProps {
    *  every pointer-move, so a caller that persists this (localStorage,
    *  W3-F) is not hammered mid-drag. */
   onNodeMove?: (id: string, pos: { x: number; y: number }) => void;
+  /** Words on an edge, keyed `"from->to"`: the option or pass/fail a branch
+   *  node is gated on, or what a loop repeats. */
+  edgeLabels?: Record<string, string>;
+  /** Overrides the colour of one edge (keyed `"from->to"`); without it an edge
+   *  takes the mark of the node it leads to. A run uses this to show which
+   *  way a classify or guard actually sent it. */
+  edgeMarks?: Record<string, NodeMark>;
 }
-
 /** Client (pointer) coordinates -> the SVG's own user-unit coordinate
  *  space, via its screen CTM — correct regardless of how the `viewBox`
  *  scales the element on screen (responsive width), no extra library. */
@@ -79,6 +93,11 @@ function toSvgPoint(svg: SVGSVGElement, clientX: number, clientY: number): { x: 
  *  already refuses both) never hangs the drawing: a node mid-cycle is
  *  simply pinned at depth 0 the moment it is revisited, same defensive
  *  posture `src/workflows/simulate.py` takes on the backend. */
+function effectiveNeeds(node: PlanGraphNode | undefined): string[] {
+  if (!node) return [];
+  return node.loop && !node.needs.includes(node.loop) ? [...node.needs, node.loop] : node.needs;
+}
+
 function layerDepths(nodes: PlanGraphNode[]): Map<string, number> {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const depth = new Map<string, number>();
@@ -88,7 +107,7 @@ function layerDepths(nodes: PlanGraphNode[]): Map<string, number> {
     if (visiting.has(id)) return 0;
     visiting.add(id);
     const node = byId.get(id);
-    const needs = (node?.needs ?? []).filter((d) => byId.has(d) && d !== id);
+    const needs = effectiveNeeds(node).filter((d) => byId.has(d) && d !== id);
     const value = needs.length === 0 ? 0 : 1 + Math.max(...needs.map(depthOf));
     visiting.delete(id);
     depth.set(id, value);
@@ -98,12 +117,12 @@ function layerDepths(nodes: PlanGraphNode[]): Map<string, number> {
   return depth;
 }
 
-const COL_WIDTH = 216;
+const COL_WIDTH = 280;
 const ROW_HEIGHT = 72;
 const NODE_W = 176;
 const NODE_H = 48;
 
-export function PlanGraph({ nodes, marks, selectedNodeId, onSelectNode, emptyLabel, layout, onNodeMove }: PlanGraphProps) {
+export function PlanGraph({ nodes, marks, selectedNodeId, onSelectNode, emptyLabel, layout, onNodeMove, edgeLabels, edgeMarks }: PlanGraphProps) {
   const nodeRefs = useRef(new Map<string, SVGGElement>());
   const svgRef = useRef<SVGSVGElement>(null);
   const dragOffset = useRef({ x: 0, y: 0 });
@@ -226,23 +245,34 @@ export function PlanGraph({ nodes, marks, selectedNodeId, onSelectNode, emptyLab
           </marker>
         </defs>
         {nodes.flatMap((n) =>
-          n.needs.filter((dep) => byId.has(dep)).map((dep) => {
+          effectiveNeeds(n).filter((dep) => byId.has(dep)).map((dep) => {
             const from = positions.get(dep);
             const to = positions.get(n.id);
             if (!from || !to) return null;
+            const key = `${dep}->${n.id}`;
             const x1 = from.x + NODE_W;
             const y1 = from.y + NODE_H / 2;
             const x2 = to.x;
             const y2 = to.y + NODE_H / 2;
             const mid = (x1 + x2) / 2;
+            const label = edgeLabels?.[key];
+            const shown = label && label.length > 19 ? `${label.slice(0, 18)}…` : label;
             return (
-              <path
-                key={`${dep}->${n.id}`}
-                d={`M${x1},${y1} C${mid},${y1} ${mid},${y2} ${x2},${y2}`}
-                className="fs-plan__edge"
-                data-mark={marks?.[n.id]}
-                markerEnd="url(#fs-plan-arrow)"
-              />
+              <g key={key} data-testid={`plan-edge-${dep}-${n.id}`}>
+                <path
+                  d={`M${x1},${y1} C${mid},${y1} ${mid},${y2} ${x2},${y2}`}
+                  className="fs-plan__edge"
+                  data-mark={edgeMarks?.[key] ?? marks?.[n.id]}
+                  data-kind={n.loop === dep && !n.needs.includes(dep) ? 'body' : undefined}
+                  markerEnd="url(#fs-plan-arrow)"
+                />
+                {shown && (
+                  <text x={mid} y={(y1 + y2) / 2 - 4} textAnchor="middle" className="fs-plan__edge-label" data-testid={`plan-edge-label-${dep}-${n.id}`}>
+                    <title>{label}</title>
+                    {shown}
+                  </text>
+                )}
+              </g>
             );
           }),
         )}
@@ -262,6 +292,7 @@ export function PlanGraph({ nodes, marks, selectedNodeId, onSelectNode, emptyLab
               data-mark={marks?.[n.id]}
               data-selected={selectedNodeId === n.id || undefined}
               data-draggable={onNodeMove ? true : undefined}
+              data-loop-body={n.loop || undefined}
               tabIndex={0}
               role="button"
               aria-label={`${n.title || n.id} (${n.type})`}
@@ -276,6 +307,7 @@ export function PlanGraph({ nodes, marks, selectedNodeId, onSelectNode, emptyLab
               <rect width={NODE_W} height={NODE_H} rx={8} className="fs-plan__rect" />
               <text x={10} y={19} className="fs-plan__type">{n.type}</text>
               <text x={10} y={36} className="fs-plan__title">{(n.title || n.id).slice(0, 28)}</text>
+              {n.badge && <text x={NODE_W - 8} y={19} textAnchor="end" className="fs-plan__badge" data-testid={`plan-badge-${n.id}`}>{n.badge}</text>}
             </g>
           );
         })}
@@ -289,6 +321,7 @@ export function PlanGraph({ nodes, marks, selectedNodeId, onSelectNode, emptyLab
               <th>{t('Node')}</th>
               <th>{t('Type')}</th>
               <th>{t('Needs')}</th>
+              <th>{t('Branch')}</th>
               <th>{t('State')}</th>
             </tr>
           </thead>
@@ -306,8 +339,9 @@ export function PlanGraph({ nodes, marks, selectedNodeId, onSelectNode, emptyLab
                   </button>
                 </td>
                 <td>{n.type}</td>
-                <td>{n.needs.join(', ') || t('none — a root node')}</td>
-                <td>{marks?.[n.id] ?? '—'}</td>
+                <td>{n.needs.join(', ') || (n.loop ? t('body of {loop}', { loop: n.loop }) : t('none — a root node'))}</td>
+                <td>{n.branch || '—'}</td>
+                <td>{marks?.[n.id] ?? '—'}{n.badge ? ` · ${n.badge}` : ''}</td>
               </tr>
             ))}
           </tbody>

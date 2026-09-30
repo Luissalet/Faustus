@@ -8688,3 +8688,186 @@ Plugin preset not available. Refresh connectors and try again.	El plugin aún no
 Image studio	Estudio de imágenes
 Configured image model	Modelo de imagen configurado
 Uses your connected Prospero studio. Results appear in the chat and gallery.	Usa tu estudio Prospero conectado. Los resultados aparecen en el chat y la galería.
+(required)	(obligatorio)
+A guard needs at least one check.	Un guardia necesita al menos una comprobación.
+A loop needs at least one node to repeat.	Un bucle necesita al menos un nodo que repetir.
+A path such as results.review.passed, or a literal.	Una ruta como results.review.passed, o un valor literal.
+A run input or an upstream output, for example {{ results.fetch.text }}.	Una entrada de la ejecución o la salida de un nodo anterior, por ejemplo {{ results.fetch.text }}.
+A template, for example {{ inputs.ticket }}.	Una plantilla, por ejemplo {{ inputs.ticket }}.
+A template, for example {{ results.draft.text }}.	Una plantilla, por ejemplo {{ results.draft.text }}.
+Add a node	Añadir un nodo
+Add an agent, classify, extract or guard node first; a loop repeats nodes that already exist.	Añade antes un nodo de agente, clasificar, extraer o guardia; un bucle repite nodos que ya existen.
+Add case	Añadir caso
+Add scorer	Añadir evaluador
+Add {check}	Añadir {check}
+Agent profile	Perfil de agente
+Allow per-run overrides	Permitir ajustes por ejecución
+Allowed hosts	Hosts permitidos
+Allowed tools	Herramientas permitidas
+An object schema. A field the text does not give is left out, never invented.	Un esquema de objeto. Un campo que el texto no da se omite, nunca se inventa.
+Arguments (input schema)	Argumentos (esquema de entrada)
+Ask the model once more	Preguntar otra vez al modelo
+Below this the node is uncertain and takes the fallback.	Por debajo de este valor el nodo duda y toma la opción de respaldo.
+Branch	Rama
+Build	Construir
+Build, save and publish	Construir, guardar y publicar
+Case	Caso
+Case id	Id del caso
+Cases	Casos
+Checks	Comprobaciones
+Choose one	Elige una
+Classify	Clasificar
+Client configuration	Configuración del cliente
+Compare two values and pass or fail.	Compara dos valores y pasa o falla.
+Confidence threshold	Umbral de confianza
+Contains	Contiene
+Criteria	Criterios
+Declare an inputs schema and save again to publish this workflow.	Declara un esquema de entradas y vuelve a guardar para publicar este flujo.
+Declares inputs: it can be published.	Declara entradas: se puede publicar.
+Delete set	Borrar conjunto
+Delete this saved workflow?	¿Borrar este flujo guardado?
+Deliver	Entregar
+Denied hosts	Hosts denegados
+Deterministic checks plus an optional model check; branches pass or fail.	Comprobaciones deterministas y una comprobación opcional con modelo; se ramifica en pasa o falla.
+Earlier evaluations	Evaluaciones anteriores
+Empty or 0 means no time limit. Time spent waiting on a person does not count.	Vacío o 0 significa sin límite de tiempo. El tiempo esperando a una persona no cuenta.
+Equals	Es igual a
+Evaluate	Evaluar
+Evaluation mode	Modo de evaluación
+Evaluation runs a saved workflow. Save this one to the library first, from the Design tab.	La evaluación ejecuta un flujo guardado. Guarda este en la biblioteca primero, desde la pestaña Diseño.
+Evaluation sets	Conjuntos de evaluación
+Exit condition	Condición de salida
+Expected number	Número esperado
+Expected value	Valor esperado
+Fail the guard	Hacer fallar el guardia
+Fail the loop	Hacer fallar el bucle
+Fallback option (uncertain)	Opción de respaldo (incierto)
+Fill in template	Rellenar la plantilla
+Fits a JSON schema	Cumple un esquema JSON
+Guard	Guardia
+Hide tool details	Ocultar detalles de la herramienta
+Human approval	Aprobación humana
+I understand this reaches models, skills and senders, and can have real effects.	Entiendo que esto llega a modelos, skills y remitentes, y puede tener efectos reales.
+Inputs (JSON)	Entradas (JSON)
+Inputs a run takes (JSON schema)	Entradas de una ejecución (esquema JSON)
+It is removed from the library, and from the tools it published. Runs already started are not touched.	Se quita de la biblioteca y de las herramientas que publicaba. Las ejecuciones ya iniciadas no se tocan.
+Kinds of personal data	Tipos de datos personales
+Leave all unchecked to run whichever way the node above went.	Déjalas todas sin marcar para ejecutarse vaya como vaya el nodo anterior.
+Left value	Valor izquierdo
+Let it pass	Dejar pasar
+Library and tools	Biblioteca y herramientas
+Loading evaluation sets	Cargando conjuntos de evaluación
+Loop	Bucle
+Loop step	Paso del bucle
+Lowercase letters, digits, - and _, up to 48 characters.	Minúsculas, dígitos, - y _, hasta 48 caracteres.
+Matches pattern	Coincide con un patrón
+Max rounds	Rondas máximas
+Maximum active seconds	Segundos activos máximos
+Maximum passes	Pasadas máximas
+Maximum tool calls	Llamadas a herramientas máximas
+Mocked node results (JSON)	Resultados simulados de nodos (JSON)
+Model judge	Juez con modelo
+Model question	Pregunta al modelo
+Model-driven	Con modelo
+Name in the library	Nombre en la biblioteca
+New blank workflow	Nuevo flujo en blanco
+New set	Nuevo conjunto
+New workflow	Nuevo flujo
+No inputs declared: it cannot be published yet.	Sin entradas declaradas: todavía no se puede publicar.
+No templates are available.	No hay plantillas disponibles.
+Nodes it repeats	Nodos que repite
+None: it only thinks	Ninguna: solo piensa
+Not published	No publicado
+Not published, so no client sees it as a tool.	No está publicado, así que ningún cliente lo ve como herramienta.
+Nothing saved yet.	Todavía no hay nada guardado.
+Number within tolerance	Número dentro de una tolerancia
+One agent turn: a prompt, the tools it may call, and an optional output schema.	Un turno de agente: una instrucción, las herramientas que puede llamar y un esquema de salida opcional.
+One host per line; *.host matches subdomains only. Empty means any host not denied.	Un host por línea; *.host solo cubre subdominios. Vacío significa cualquier host no denegado.
+One per line, at least two. Add a description after a colon: billing: invoices and refunds.	Una por línea, al menos dos. Añade una descripción tras dos puntos: facturación: facturas y reembolsos.
+One tool name per line. Nothing outside this list can be called.	Un nombre de herramienta por línea. Nada fuera de esta lista se puede llamar.
+Only the ones listed	Solo las de la lista
+Operator	Operador
+Optional. A profile contributes its prompt and its tool permissions.	Opcional. Un perfil aporta su prompt y sus permisos de herramientas.
+Optional. The reply is checked against it, with one repair attempt.	Opcional. La respuesta se comprueba contra él, con un intento de reparación.
+Optional. {"node_id": {...}} makes a simulated node answer this way, to drive one path.	Opcional. {"node_id": {...}} hace que un nodo simulado responda así, para recorrer un camino concreto.
+Output schema (JSON)	Esquema de salida (JSON)
+Overrides are off for this workflow.	Los ajustes por ejecución están desactivados en este flujo.
+Passes of {loop}	Pasadas de {loop}
+Path into the outputs	Ruta dentro de las salidas
+Pause for a person to extend or stop it	Pausar para que una persona lo amplíe o lo detenga
+Pause until a person approves or denies.	Pausa hasta que una persona apruebe o deniegue.
+Per-run overrides	Ajustes por ejecución
+Personal data	Datos personales
+Pick a recent run, open a saved workflow, start a template or paste a definition to see its plan.	Elige una ejecución reciente, abre un flujo guardado, empieza una plantilla o pega una definición para ver su plan.
+Prompt injection	Inyección de instrucciones
+Publish as a tool	Publicar como herramienta
+Pull structured fields out of a text, checked against a schema.	Extrae campos estructurados de un texto, comprobados contra un esquema.
+Question	Pregunta
+Question (yes means the text is not acceptable)	Pregunta (sí significa que el texto no es aceptable)
+Real: start a real run for every case	Real: inicia una ejecución real por cada caso
+Relative	Relativa
+Remove node	Quitar nodo
+Repeat a few nodes, at most a fixed number of times, until a condition holds.	Repite unos nodos, como máximo un número fijo de veces, hasta que se cumpla una condición.
+Required. The loop never runs more often than this.	Obligatorio. El bucle nunca se ejecuta más veces que esto.
+Right value	Valor derecho
+Route to one of several branches, with a confidence and a fallback.	Enruta a una de varias ramas, con una confianza y una opción de respaldo.
+Run an installed skill script.	Ejecuta el script de una skill instalada.
+Run cases through {name} and score what comes back. Simulation uses placeholders and proves the wiring; a real run reaches models and tools.	Pasa casos por {name} y puntúa lo que devuelve. La simulación usa marcadores y prueba las conexiones; una ejecución real llega a modelos y herramientas.
+Run for real	Ejecutar de verdad
+Run only on this branch	Ejecutar solo en esta rama
+Save an upstream result as a file.	Guarda como archivo el resultado de un nodo anterior.
+Save set	Guardar conjunto
+Save the set before running it.	Guarda el conjunto antes de ejecutarlo.
+Save to library	Guardar en la biblioteca
+Saved as {name}. It is not published.	Guardado como {name}. No está publicado.
+Schema (JSON)	Esquema (JSON)
+Schema of the fields to extract (JSON)	Esquema de los campos a extraer (JSON)
+Scorer type	Tipo de evaluador
+Scorers for every case	Evaluadores para todos los casos
+Scorers for this case only (JSON list)	Evaluadores solo para este caso (lista JSON)
+Scores	Puntuaciones
+Secrets	Secretos
+Send a result to a recipient.	Envía un resultado a un destinatario.
+Set name	Nombre del conjunto
+Set saved.	Conjunto guardado.
+Simulate: no model, skill or sender is touched	Simular: no se toca ningún modelo, skill ni remitente
+Start a blank workflow or a template, then add nodes.	Empieza un flujo en blanco o una plantilla y añade nodos.
+Start from a template	Empezar desde una plantilla
+Stop early when a condition holds	Parar antes cuando se cumpla una condición
+Store artifact	Guardar artefacto
+System instructions	Instrucciones de sistema
+Take the fallback option	Tomar la opción de respaldo
+Templates	Plantillas
+Templates may read {{ inputs.name }} and {{ results.node.field }}.	Las plantillas pueden leer {{ inputs.name }} y {{ results.node.field }}.
+Text to classify	Texto a clasificar
+Text to read	Texto a leer
+The agent default	El valor por defecto del agente
+The evaluation is still running; open it from the history below when it finishes.	La evaluación sigue en marcha; ábrela desde el historial de abajo cuando termine.
+The model judge is off in settings, so a judge scorer will fail.	El juez con modelo está desactivado en los ajustes, así que un evaluador de juez fallará.
+The server did not return a definition.	El servidor no devolvió una definición.
+This is not valid JSON yet.	Esto todavía no es JSON válido.
+This must be a JSON object.	Esto debe ser un objeto JSON.
+Tool details	Detalles de la herramienta
+Tool name	Nombre de la herramienta
+Tools the agent may call	Herramientas que el agente puede llamar
+What a caller must pass. A workflow needs this before it can be published as a tool.	Lo que debe pasar quien llama. Un flujo lo necesita antes de poder publicarse como herramienta.
+When a check cannot be settled	Cuando una comprobación no se puede resolver
+When a limit is reached before the exit condition	Cuando se alcanza un límite antes de la condición de salida
+When uncertain	Cuando hay duda
+attempt {n}	intento {n}
+body of {loop}	cuerpo de {loop}
+config (JSON)	config (JSON)
+each pass	cada pasada
+fail	falla
+met	cumplida
+not met	no cumplida
+pass	pasa
+real run	ejecución real
+simulated	simulada
+{avg} average, {p95} slowest 5%	{avg} de media, {p95} el 5% más lento
+{label} (uncertain)	{label} (incierto)
+{node} went to {label}	{node} fue a {label}
+{n} case(s) have no scorer: they only check that the run completes.	{n} caso(s) sin evaluador: solo comprueban que la ejecución termina.
+{n} nodes	{n} nodos
+{n} pass(es)	{n} pasada(s)
+{p} passed, {f} failed, {e} errored of {n}	{p} superados, {f} fallidos, {e} con error de {n}

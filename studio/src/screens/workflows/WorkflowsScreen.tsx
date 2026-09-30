@@ -12,9 +12,14 @@ import {
   type Preflight,
   type SimulationResult,
 } from '../../adapters/topology';
+import { loadAgentProfiles } from '../../adapters/agents';
 import { PlanGraph, type NodeMark, type PlanGraphNode } from './PlanGraph';
-import { NodeInspector, type InspectorNode } from './NodeInspector';
+import { NodeInspector, type InspectorNode, type NodePatch } from './NodeInspector';
 import { RunOverlay } from './RunOverlay';
+import { BuildPanel } from './BuildPanel';
+import { LibraryPanel } from './LibraryPanel';
+import { EvaluatePanel } from './EvaluatePanel';
+import { bodyEdgesOf, branchSummary, edgeLabelsOf, loopOwners, removeNode, type RawNode } from './nodeKinds';
 import './workflows.css';
 
 /**
@@ -31,24 +36,20 @@ import './workflows.css';
  * what actually runs.
  */
 
-type Mode = 'design' | 'simulate' | 'execute';
-
-interface RawNode {
-  id: string;
-  type: string;
-  title?: string;
-  needs?: string[];
-  config?: Record<string, unknown>;
-}
+type Mode = 'design' | 'simulate' | 'execute' | 'evaluate';
 
 function rawNodesOf(definition: Record<string, unknown> | null): RawNode[] {
   return Array.isArray(definition?.nodes) ? (definition!.nodes as RawNode[]) : [];
 }
 
 function planNodesOf(definition: Record<string, unknown> | null): PlanGraphNode[] {
-  return rawNodesOf(definition).map((n) => ({
+  const raw = rawNodesOf(definition);
+  const owners = loopOwners(raw);
+  return raw.map((n) => ({
     id: String(n.id), type: String(n.type), title: String(n.title || n.id),
     needs: Array.isArray(n.needs) ? n.needs.map(String) : [],
+    loop: owners[n.id],
+    branch: branchSummary(n) || undefined,
   }));
 }
 
@@ -56,7 +57,9 @@ function findInspectorNode(definition: Record<string, unknown> | null, nodeId: s
   if (!nodeId) return null;
   const node = rawNodesOf(definition).find((n) => n.id === nodeId);
   if (!node) return null;
-  return { id: node.id, type: node.type, title: node.title || node.id, needs: node.needs ?? [], config: node.config ?? {} };
+  const branch: Record<string, string[]> = {};
+  for (const [dep, labels] of Object.entries(node.branch ?? {})) branch[dep] = Array.isArray(labels) ? labels.map(String) : [String(labels)];
+  return { id: node.id, type: node.type, title: node.title || node.id, needs: node.needs ?? [], config: node.config ?? {}, branch };
 }
 
 // ---------------------------------------------------------------------------
@@ -128,6 +131,10 @@ export function WorkflowsScreen() {
   const [mode, setMode] = useState<Mode>('design');
   const [definition, setDefinition] = useState<Record<string, unknown> | null>(null);
   const [boundRunId, setBoundRunId] = useState<string | null>(null);
+  // The library name of the definition on screen, once it has been saved or
+  // opened from there. Evaluation runs saved workflows, so it needs this.
+  const [savedName, setSavedName] = useState<string | null>(null);
+  const [profiles, setProfiles] = useState<string[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   const [recentRuns, setRecentRuns] = useState<ActivityRun[] | null>(null);
@@ -173,6 +180,14 @@ export function WorkflowsScreen() {
     };
   }, []);
 
+  useEffect(() => {
+    const ctl = new AbortController();
+    loadAgentProfiles(ctl.signal)
+      .then((found) => setProfiles([...found.keys()].sort()))
+      .catch(() => { /* the profile field still takes a typed slug */ });
+    return () => ctl.abort();
+  }, []);
+
   // W3-F: a definition's hand-adjusted layout is loaded once per fingerprint
   // (a new definition — pasted, imported, or loaded from a different run —
   // starts from whatever this browser saved for THAT content before, or the
@@ -194,6 +209,7 @@ export function WorkflowsScreen() {
 
   const nodes = useMemo(() => planNodesOf(definition), [definition]);
   const rawNodes = useMemo(() => rawNodesOf(definition), [definition]);
+  const edgeLabels = useMemo(() => ({ ...edgeLabelsOf(rawNodes), ...bodyEdgesOf(rawNodes) }), [rawNodes]);
   const gateNodeIds = useMemo(
     () => rawNodes.filter((n) => n.type === 'condition' || n.type === 'human_approval').map((n) => n.id),
     [rawNodes],
@@ -229,6 +245,7 @@ export function WorkflowsScreen() {
     getWorkflowRunDefinition(runId)
       .then((def) => {
         setDefinition(def);
+        setSavedName(null);
         setBoundRunId(runId);
         setSelectedNodeId(null);
         setMode('execute');
@@ -295,6 +312,7 @@ export function WorkflowsScreen() {
     }
     if (parsed && typeof parsed === 'object' && Array.isArray((parsed as Record<string, unknown>).nodes)) {
       setDefinition(parsed as Record<string, unknown>);
+      setSavedName(null);
       setBoundRunId(null);
       setSelectedNodeId(null);
       setMode('design');
@@ -305,6 +323,7 @@ export function WorkflowsScreen() {
       .then((result) => {
         if (result.definition) {
           setDefinition(result.definition);
+          setSavedName(null);
           setBoundRunId(null);
           setSelectedNodeId(null);
           setMode('design');
@@ -320,12 +339,50 @@ export function WorkflowsScreen() {
   }, [paste, clearRunParam]);
 
   const applyNodeConfig = useCallback(
-    (nodeId: string, config: Record<string, unknown>) => {
+    (nodeId: string, config: Record<string, unknown>, patch?: NodePatch) => {
       if (!definition) return;
-      setDefinition({ ...definition, nodes: rawNodes.map((n) => (n.id === nodeId ? { ...n, config } : n)) });
+      setDefinition({
+        ...definition,
+        nodes: rawNodes.map((n) => {
+          if (n.id !== nodeId) return n;
+          const next: RawNode = { ...n, config };
+          if (patch) {
+            next.title = patch.title;
+            next.needs = patch.needs;
+            if (Object.keys(patch.branch).length) next.branch = patch.branch;
+            else delete next.branch;
+          }
+          return next;
+        }),
+      });
     },
     [definition, rawNodes],
   );
+
+  // Editing the plan (palette, inspector, library) always starts a new design:
+  // a run the screen was bound to no longer describes what is on screen.
+  const editDefinition = useCallback((next: Record<string, unknown>, select?: string | null) => {
+    setDefinition(next);
+    setBoundRunId(null);
+    clearRunParam();
+    if (select !== undefined) setSelectedNodeId(select);
+  }, [clearRunParam]);
+
+  const replaceDefinition = useCallback((next: Record<string, unknown>, name: string | null = null) => {
+    setDefinition(next);
+    setSavedName(name);
+    setBoundRunId(null);
+    setSelectedNodeId(null);
+    setMode('design');
+    setLoadError(null);
+    setLoadNotice(null);
+    clearRunParam();
+  }, [clearRunParam]);
+
+  const removeSelected = useCallback((nodeId: string) => {
+    if (!definition) return;
+    editDefinition(removeNode(definition, nodeId), null);
+  }, [definition, editDefinition]);
 
   // W3-F: the canonical envelope from `exportWorkflowDefinition` (round-trips
   // through `/import` unchanged — `docs/api/topology.md` §Interchange),
@@ -386,7 +443,7 @@ export function WorkflowsScreen() {
           </p>
         </div>
         <div className="fs-workflows__modes" role="tablist" aria-label={t('Mode')}>
-          {(['design', 'simulate', 'execute'] as const).map((m) => (
+          {(['design', 'simulate', 'execute', 'evaluate'] as const).map((m) => (
             <button
               key={m}
               type="button"
@@ -397,7 +454,7 @@ export function WorkflowsScreen() {
               onClick={() => setMode(m)}
               data-testid={`workflows-mode-${m}`}
             >
-              {m === 'design' ? t('Design') : m === 'simulate' ? t('Structural simulation') : t('Authorized real execution')}
+              {m === 'design' ? t('Design') : m === 'simulate' ? t('Structural simulation') : m === 'execute' ? t('Authorized real execution') : t('Evaluate')}
             </button>
           ))}
         </div>
@@ -454,11 +511,27 @@ export function WorkflowsScreen() {
         </div>
       </div>
 
+      {(mode === 'design' || !definition) && (
+        <details className="fs-workflows__tools" open data-testid="workflows-build-section">
+          <summary>{t('Build, save and publish')}</summary>
+          <div className="fs-workflows__tools-body">
+            <BuildPanel definition={definition} selectedNodeId={selectedNodeId} onChange={editDefinition} onReplace={(next) => replaceDefinition(next)} />
+            <LibraryPanel
+              definition={definition}
+              savedName={savedName}
+              onDefinitionChange={(next) => editDefinition(next)}
+              onLoad={(next, name) => replaceDefinition(next, name)}
+              onSaved={setSavedName}
+            />
+          </div>
+        </details>
+      )}
+
       {!definition && (
         <EmptyState
           icon={Compass}
           title={t('Nothing loaded yet')}
-          body={t('Pick a recent run, or paste a definition, to see its plan.')}
+          body={t('Pick a recent run, open a saved workflow, start a template or paste a definition to see its plan.')}
         />
       )}
 
@@ -467,7 +540,7 @@ export function WorkflowsScreen() {
           <div className="fs-workflows__canvas">
             {mode === 'design' && (
               <>
-                <PlanGraph nodes={nodes} selectedNodeId={selectedNodeId} onSelectNode={setSelectedNodeId} layout={layout} onNodeMove={onNodeMove} />
+                <PlanGraph nodes={nodes} edgeLabels={edgeLabels} selectedNodeId={selectedNodeId} onSelectNode={setSelectedNodeId} layout={layout} onNodeMove={onNodeMove} />
                 <div className="fs-workflows__preflight">
                   {preflightBusy && <Skeleton label={t('Running preflight')} count={2} height="28px" />}
                   {preflightError && <p className="fs-workflows__error" role="alert">{preflightError}</p>}
@@ -541,7 +614,7 @@ export function WorkflowsScreen() {
                   <Button variant="primary" size="sm" icon={Play} label={t('Run simulation')} onClick={runSimulation} loading={simBusy} testId="workflows-run-simulation" />
                 </div>
                 {simError && <p className="fs-workflows__error" role="alert">{simError}</p>}
-                <PlanGraph nodes={nodes} marks={simMarks} selectedNodeId={selectedNodeId} onSelectNode={setSelectedNodeId} layout={layout} />
+                <PlanGraph nodes={nodes} marks={simMarks} edgeLabels={edgeLabels} selectedNodeId={selectedNodeId} onSelectNode={setSelectedNodeId} layout={layout} />
                 {simulation && (
                   <div className="fs-workflows__simresult" data-testid="workflows-simulation-result">
                     <p>
@@ -562,6 +635,8 @@ export function WorkflowsScreen() {
               </>
             )}
 
+            {mode === 'evaluate' && <EvaluatePanel savedName={savedName} />}
+
             {mode === 'execute' && (
               <RunOverlay
                 definition={definition}
@@ -575,9 +650,12 @@ export function WorkflowsScreen() {
 
           <NodeInspector
             node={selectedInspectorNode}
+            nodes={rawNodes}
+            profiles={profiles}
             warnings={preflight?.warnings ?? []}
             onClose={() => setSelectedNodeId(null)}
             onApplyConfig={applyNodeConfig}
+            onRemove={mode === 'design' ? removeSelected : undefined}
             busy={preflightBusy}
           />
         </div>

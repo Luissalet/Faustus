@@ -532,3 +532,362 @@
 .fs-inspector__hint {
   color: var(--fs-text-3);
 }
+
+/* ── model-driven nodes: labels on edges, loop bodies, badges ── */
+
+.fs-plan__edge-label {
+  font-size: 0.66rem;
+  fill: var(--fs-text-2);
+  paint-order: stroke;
+  stroke: var(--fs-surface-2);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.fs-plan__edge[data-kind='body'] {
+  stroke-dasharray: 4 3;
+}
+
+.fs-plan__node[data-loop-body] .fs-plan__rect {
+  stroke-dasharray: 5 3;
+}
+
+.fs-plan__badge {
+  font-size: 0.66rem;
+  fill: var(--fs-brand);
+}
+
+/* ── forms inside the inspector and the side panels ── */
+
+.fs-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-2);
+}
+
+.fs-form__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-1);
+  min-width: 0;
+}
+
+.fs-form__label {
+  font-size: 0.78rem;
+  color: var(--fs-text-2);
+}
+
+.fs-form__req {
+  color: var(--fs-warning);
+}
+
+.fs-form__control {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--fs-space-1) var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-3);
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.fs-form__control[data-code] {
+  font-family: var(--fs-font-code, monospace);
+  font-size: 0.76rem;
+}
+
+.fs-form__control[aria-invalid='true'] {
+  border-color: var(--fs-danger);
+}
+
+.fs-form__hint {
+  color: var(--fs-text-3);
+  font-size: 0.74rem;
+  margin: 0;
+}
+
+.fs-form__error {
+  color: var(--fs-danger);
+  font-size: 0.78rem;
+  margin: 0;
+}
+
+.fs-form__row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: var(--fs-space-2);
+  align-items: end;
+}
+
+.fs-form__group {
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  padding: var(--fs-space-2);
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-2);
+  min-width: 0;
+}
+
+.fs-form__group legend {
+  font-size: 0.78rem;
+  color: var(--fs-text-2);
+  padding-inline: var(--fs-space-1);
+}
+
+.fs-form__inline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-1);
+  font-size: 0.8rem;
+  color: var(--fs-text-1);
+}
+
+.fs-form__kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+  align-items: center;
+}
+
+.fs-form__adds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-1);
+}
+
+.fs-form__check {
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  padding: var(--fs-space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-2);
+  background: var(--fs-surface-2);
+}
+
+.fs-form__check-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+.fs-inspector__actions {
+  display: flex;
+  gap: var(--fs-space-2);
+  flex-wrap: wrap;
+}
+
+.fs-inspector__raw summary {
+  cursor: pointer;
+  font-size: 0.78rem;
+  color: var(--fs-text-2);
+}
+
+/* ── build, library and evaluate ── */
+
+.fs-workflows__tools {
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-2);
+  padding: var(--fs-space-3);
+  margin-bottom: var(--fs-space-4);
+}
+
+.fs-workflows__tools > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.fs-workflows__tools-body {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(280px, 1.4fr);
+  gap: var(--fs-space-4);
+  margin-top: var(--fs-space-3);
+}
+
+@media (max-width: 900px) {
+  .fs-workflows__tools-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.fs-build,
+.fs-library,
+.fs-eval {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-2);
+  min-width: 0;
+}
+
+.fs-build__head,
+.fs-library__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+}
+
+.fs-build__head {
+  justify-content: space-between;
+}
+
+.fs-build__heading {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--fs-text-2);
+}
+
+.fs-build__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-1);
+}
+
+.fs-build__group-name {
+  font-size: 0.74rem;
+  color: var(--fs-text-3);
+}
+
+.fs-build__entries {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-1);
+}
+
+.fs-build__notes {
+  margin: 0;
+  padding-left: var(--fs-space-4);
+}
+
+.fs-library__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-2);
+}
+
+.fs-library__row {
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  padding: var(--fs-space-2);
+  background: var(--fs-surface-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-2);
+}
+
+.fs-library__line,
+.fs-library__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+.fs-library__state {
+  font-size: 0.74rem;
+  color: var(--fs-text-3);
+}
+
+.fs-library__state[data-on] {
+  color: var(--fs-success);
+}
+
+.fs-library__details h4,
+.fs-eval__history h4,
+.fs-runoverlay__loop h4 {
+  margin: var(--fs-space-2) 0 var(--fs-space-1);
+  font-size: 0.8rem;
+  color: var(--fs-text-2);
+}
+
+.fs-library__pre {
+  margin: 0;
+  padding: var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-1);
+  font-family: var(--fs-font-code, monospace);
+  font-size: 0.74rem;
+  overflow-x: auto;
+  max-height: 260px;
+}
+
+.fs-eval__sets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-1);
+}
+
+.fs-eval__modes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-1);
+}
+
+.fs-eval__confirm {
+  color: var(--fs-warning);
+}
+
+.fs-eval__summary {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.fs-eval__byscorer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-3);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.78rem;
+  color: var(--fs-text-2);
+}
+
+.fs-eval__status[data-status='passed'],
+.fs-eval__score[data-passed='true'] {
+  color: var(--fs-success);
+}
+
+.fs-eval__status[data-status='failed'],
+.fs-eval__status[data-status='error'],
+.fs-eval__score[data-passed='false'] {
+  color: var(--fs-danger);
+}
+
+.fs-eval__score {
+  font-size: 0.78rem;
+}
+
+.fs-eval__history ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.fs-runoverlay__branches {
+  margin: 0;
+  padding-left: var(--fs-space-4);
+  font-size: 0.8rem;
+  color: var(--fs-text-2);
+}
+
+.fs-runoverlay__loop span[data-status='failed'] {
+  color: var(--fs-danger);
+}
+
+.fs-runoverlay__loop span[data-status='completed'] {
+  color: var(--fs-success);
+}

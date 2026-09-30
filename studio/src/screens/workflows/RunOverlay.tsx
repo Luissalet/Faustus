@@ -3,7 +3,9 @@ import { Button, Dialog, EmptyState, Skeleton } from '../../components';
 import { getJson } from '../../adapters/api';
 import { changeWorkflow } from '../../adapters/activity';
 import { t } from '../../i18n';
+import { runDetailFrom, type RunDetail } from '../../adapters/workflows';
 import { PlanGraph, type NodeMark, type PlanGraphNode } from './PlanGraph';
+import { bodyEdgesOf, branchSummary, edgeLabelsOf, loopOwners, type RawNode } from './nodeKinds';
 
 /**
  * W2-E (CMP-07) — "Ejecución real autorizada": the same `PlanGraph` design
@@ -19,25 +21,30 @@ interface RunState {
   status: string;
   reason: string;
   definitionNodes: PlanGraphNode[];
+  rawNodes: RawNode[];
   nodeStatus: Record<string, string>;
+  detail: RunDetail;
 }
 
 async function fetchRunState(runId: string, signal?: AbortSignal): Promise<RunState> {
-  const body = await getJson<{
-    ok?: boolean;
-    run?: Record<string, unknown>;
-    definition?: { nodes?: Record<string, unknown>[] };
-    nodes?: Record<string, Record<string, unknown>>;
-  }>(`/api/workflows/runs/${encodeURIComponent(runId)}`, signal);
-  const rawNodes = Array.isArray(body.definition?.nodes) ? (body.definition!.nodes as Record<string, unknown>[]) : [];
+  const body = await getJson<Record<string, unknown> & { definition?: { nodes?: Record<string, unknown>[] } }>(
+    `/api/workflows/runs/${encodeURIComponent(runId)}`, signal);
+  const rawNodes = (Array.isArray(body.definition?.nodes) ? body.definition!.nodes : []) as unknown as RawNode[];
+  const detail = runDetailFrom(body);
   const nodeStatus: Record<string, string> = {};
-  for (const [id, row] of Object.entries(body.nodes ?? {})) nodeStatus[id] = String(row.status ?? '');
+  for (const [id, row] of Object.entries(detail.nodes)) nodeStatus[id] = row.status;
+  const owners = loopOwners(rawNodes);
   return {
-    status: String(body.run?.status ?? ''),
-    reason: String(body.run?.reason ?? ''),
+    status: detail.status,
+    reason: detail.reason,
+    rawNodes,
+    detail,
     definitionNodes: rawNodes.map((n) => ({
       id: String(n.id), type: String(n.type), title: String(n.title || n.id),
       needs: Array.isArray(n.needs) ? n.needs.map(String) : [],
+      loop: owners[n.id],
+      branch: branchSummary(n) || undefined,
+      badge: n.type === 'loop' && detail.loops[n.id]?.length ? t('{n} pass(es)', { n: detail.loops[n.id].length }) : undefined,
     })),
     nodeStatus,
   };
@@ -98,6 +105,15 @@ export function RunOverlay({ definition, runId, onRunStarted, selectedNodeId, on
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // A run that is still going refreshes itself; a paused, finished or failed
+  // one is read once and on the Refresh button, so an idle page makes no calls.
+  const running = state?.status === 'running';
+  useEffect(() => {
+    if (!running) return undefined;
+    const timer = window.setInterval(() => void refresh(), 3000);
+    return () => window.clearInterval(timer);
+  }, [running, refresh]);
 
   async function confirmStart() {
     if (!definition) return;
@@ -169,6 +185,29 @@ export function RunOverlay({ definition, runId, onRunStarted, selectedNodeId, on
 
   const marks: Record<string, NodeMark> = {};
   for (const [id, status] of Object.entries(state.nodeStatus)) marks[id] = RUN_STATUS_MARK[status];
+  // Body nodes of a loop have no row of their own; their colour is the last
+  // pass's state for them.
+  const owners = loopOwners(state.rawNodes);
+  for (const [bodyId, loopId] of Object.entries(owners)) {
+    const passes = state.detail.loops[loopId] ?? [];
+    const last = passes.length ? passes[passes.length - 1].nodes.find((x) => x.id === bodyId) : undefined;
+    if (last) marks[bodyId] = RUN_STATUS_MARK[last.status];
+  }
+  // Which way a classify or guard sent the run: the edge it took is green,
+  // the ones it did not take are grey, and an edge whose source has not
+  // decided yet keeps the colour of the node it leads to.
+  const edgeMarks: Record<string, NodeMark> = {};
+  for (const n of state.rawNodes) {
+    for (const [dep, raw] of Object.entries(n.branch ?? {})) {
+      const chosen = state.detail.nodes[dep]?.label;
+      if (!chosen) continue;
+      const labels = Array.isArray(raw) ? raw : [raw];
+      edgeMarks[`${dep}->${n.id}`] = labels.includes(chosen) ? 'activated' : 'not_taken';
+    }
+  }
+  const edgeLabels = { ...edgeLabelsOf(state.rawNodes), ...bodyEdgesOf(state.rawNodes) };
+  const chosenBranches = Object.entries(state.detail.nodes).filter(([, row]) => row.label);
+  const loopIds = Object.keys(state.detail.loops).filter((id) => state.detail.loops[id].length > 0);
   const waitingNode = Object.entries(state.nodeStatus).find(([, s]) => s === 'paused')?.[0];
 
   return (
@@ -187,7 +226,39 @@ export function RunOverlay({ definition, runId, onRunStarted, selectedNodeId, on
           <Button variant="danger" size="sm" label={t('Cancel run')} onClick={() => void act('cancel')} loading={busy} testId="run-overlay-cancel" />
         </div>
       </header>
-      <PlanGraph nodes={state.definitionNodes} marks={marks} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} />
+      <PlanGraph nodes={state.definitionNodes} marks={marks} edgeLabels={edgeLabels} edgeMarks={edgeMarks} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} />
+      {chosenBranches.length > 0 && (
+        <ul className="fs-runoverlay__branches" data-testid="run-branches">
+          {chosenBranches.map(([id, row]) => (
+            <li key={id}>{t('{node} went to {label}', { node: id, label: row.label })}</li>
+          ))}
+        </ul>
+      )}
+      {loopIds.map((id) => (
+        <section key={id} className="fs-runoverlay__loop" data-testid={`run-loop-${id}`} aria-label={t('Passes of {loop}', { loop: id })}>
+          <h4>{t('Passes of {loop}', { loop: id })}</h4>
+          <table className="fs-plan__table">
+            <thead>
+              <tr><th>{t('Pass')}</th><th>{t('State')}</th><th>{t('Steps')}</th><th>{t('Exit condition')}</th><th>{t('Seconds')}</th></tr>
+            </thead>
+            <tbody>
+              {state.detail.loops[id].map((pass) => (
+                <tr key={pass.iteration} data-testid={`run-loop-${id}-pass-${pass.iteration}`}>
+                  <td>{pass.iteration}</td>
+                  <td><span data-status={pass.status}>{pass.status}</span>{pass.reason && <div className="fs-form__hint">{pass.reason}</div>}</td>
+                  <td>
+                    {pass.nodes.map((x) => (
+                      <div key={x.id}><code>{x.id}</code> <span data-status={x.status}>{x.status}</span>{x.attempt > 1 ? ` (${t('attempt {n}', { n: x.attempt })})` : ''}{x.reason ? `: ${x.reason}` : ''}</div>
+                    ))}
+                  </td>
+                  <td>{pass.untilPassed === null ? '—' : pass.untilPassed ? t('met') : t('not met')}</td>
+                  <td>{Math.round(pass.seconds * 10) / 10}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ))}
     </div>
   );
 }
