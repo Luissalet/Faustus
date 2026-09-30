@@ -242,18 +242,33 @@ def render(result: Dict[str, Any]) -> str:
 
 
 def _fetch_pages(urls: List[str], pages_dir: Path) -> None:
-    from src.search.content import fetch_webpage_content
+    import tempfile
+
+    from services.search import content as content_mod
 
     pages_dir.mkdir(parents=True, exist_ok=True)
     qfile = pages_dir / "queries.json"
     queries = json.loads(qfile.read_text(encoding="utf-8")) if qfile.exists() else {}
-    for i, url in enumerate(urls, 1):
-        page = fetch_webpage_content(url, 15, keep_html=True)
+    taken = {p.name for p in pages_dir.glob("page_*.html")}
+    # A cached page comes back without its markup, so fetch through an empty
+    # cache of our own: the saved page is always what the site serves now.
+    saved_cache_dir = content_mod.CONTENT_CACHE_DIR
+    with tempfile.TemporaryDirectory() as fresh:
+        content_mod.CONTENT_CACHE_DIR = Path(fresh)
+        try:
+            pages = [(url, content_mod.fetch_webpage_content(url, 15, keep_html=True)) for url in urls]
+        finally:
+            content_mod.CONTENT_CACHE_DIR = saved_cache_dir
+    for url, page in pages:
         html = page.get("raw_html")
         if not page.get("success") or not html:
-            print(f"skip {url}: {page.get('error') or 'no markup (cached or non-HTML)'}", file=sys.stderr)
+            print(f"skip {url}: {page.get('error') or 'no markup (non-HTML)'}", file=sys.stderr)
             continue
+        i = 1
+        while f"page_{i:02d}.html" in taken:
+            i += 1
         name = f"page_{i:02d}.html"
+        taken.add(name)
         (pages_dir / name).write_text(html, encoding="utf-8")
         queries.setdefault(name, {"query": page.get("title") or url, "gold": [], "source": url})
         print(f"saved {name} <- {url}")
