@@ -503,6 +503,49 @@ def setup_connector_routes(mcp_manager: McpManager) -> APIRouter:
             raise HTTPException(404, "Connector not found")
         return _mcp_list_server_tools(server_id=entry["server_id"], request=request)
 
+    @router.post("/api/app-connectors/{connector_id}/refresh-tools")
+    async def refresh_connector_tools_route(connector_id: str, request: Request):
+        """Re-read the connector's tool list. With `{"reconnect": true}` the
+        bridge process is stopped and started again first, which is what
+        picks up tools added by new code (a process keeps serving the list it
+        started with). Without it the live session is asked again and the
+        result names what was added, removed or modified."""
+        require_admin(request)
+        entry = connector_sidecar.get_connector(connector_id, redact=False)
+        if entry is None:
+            raise HTTPException(404, "Connector not found")
+        try:
+            payload = await request.json()
+        except Exception:  # noqa: BLE001 - an empty body is the plain refresh
+            payload = {}
+        reconnect = bool(payload.get("reconnect")) if isinstance(payload, dict) else False
+        db = SessionLocal()
+        try:
+            server = db.query(McpServer).filter(McpServer.id == entry["server_id"]).first()
+        finally:
+            db.close()
+        if server is None:
+            raise HTTPException(404, "Underlying MCP server not found")
+        before = mcp_manager.get_server_status(server.id).get("tool_count", 0)
+        if reconnect:
+            await mcp_manager.disconnect_server(server.id)
+            args = json.loads(server.args) if server.args else []
+            env = json.loads(server.env) if server.env else {}
+            connected = await mcp_manager.connect_server(
+                server_id=server.id, name=server.name, transport=server.transport, command=server.command,
+                args=args, env=env, url=server.url, inherit_env=server_inherits_env(server),
+            )
+            status = mcp_manager.get_server_status(server.id)
+            return {
+                "ok": bool(connected), "reconnected": True, "server_id": server.id,
+                "previous_count": before, "tool_count": status.get("tool_count", 0),
+                "error": status.get("error"),
+            }
+        result = await mcp_manager.refresh_server_tools(server.id)
+        if not result.get("ok"):
+            raise HTTPException(409, result.get("error") or "Refresh failed")
+        return {**result, "reconnected": False}
+
     @router.post("/api/app-connectors/{connector_id}/launch")
     async def launch_connector_route(connector_id: str, request: Request):
         # F1.4 / principle 4: launching a local process is a `require_human`

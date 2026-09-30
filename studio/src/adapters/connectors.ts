@@ -192,6 +192,21 @@ export interface ConnectorTool {
 }
 export const listConnectorTools = (id: string) => getJson<ConnectorTool[]>(`/api/app-connectors/${encodeURIComponent(id)}/tools`);
 
+export interface RefreshToolsResult {
+  ok: boolean;
+  reconnected: boolean;
+  changed?: boolean;
+  previous_count?: number | null;
+  tool_count: number;
+  added?: string[];
+  removed?: string[];
+  modified?: string[];
+  error?: string | null;
+}
+/** Re-read a connector's tool list; `reconnect` restarts the bridge process first. */
+export const refreshConnectorTools = (id: string, reconnect = false) =>
+  post<RefreshToolsResult>(`/api/app-connectors/${encodeURIComponent(id)}/refresh-tools`, { reconnect }, 'connectors/refresh-tools');
+
 export interface LaunchResult {
   launched: boolean;
   already_running?: boolean;

@@ -699,3 +699,79 @@ async def test_concurrent_find_app_calls_share_one_scan(monkeypatch):
     calls.clear()
     assert (await cd.find_app(job, ports=ports)).port == 41002
     assert calls == []  # answered from the shared probes
+
+
+# ── refresh-tools: re-read one connector's tool list ──────────────────────
+
+class _ToolSession:
+    def __init__(self, names):
+        self.names = names
+
+    async def list_tools(self, cursor=None):
+        import mcp.types as mcp_types
+        tools = [mcp_types.Tool(name=n, description="d", inputSchema={"type": "object", "properties": {}}) for n in self.names]
+        return mcp_types.ListToolsResult(tools=tools, nextCursor=None)
+
+
+async def _make_connector(routes, bridge_dir):
+    body = {"preset_id": "jobhunter", "values": {"JOBHUNT_DIR": bridge_dir, "APP_URL": "http://127.0.0.1:5178"}}
+    return await routes[("POST", "/api/app-connectors")](request=FakeRequest(body=body))
+
+
+async def test_refresh_tools_route_picks_up_a_new_tool(routes, db, manager, bridge_dir):
+    created = await _make_connector(routes, bridge_dir)
+    sid = created["server"]["id"]
+    session = _ToolSession(["wh_read"])
+    manager._sessions[sid] = session
+    manager._connections[sid] = {"status": "connected", "name": "x", "tool_count": 1}
+    manager._tools[sid] = (await manager._discover_tools_paginated(session, sid, "1"))[0]
+
+    session.names = ["wh_read", "wh_bibliography"]
+    result = await routes[("POST", "/api/app-connectors/{connector_id}/refresh-tools")](
+        connector_id=created["id"], request=FakeRequest(body={}))
+    assert result["ok"] and result["changed"] and result["reconnected"] is False
+    assert result["added"] == ["wh_bibliography"] and result["tool_count"] == 2
+    assert manager.calls["disconnect"] == [], "a plain refresh keeps the session"
+
+
+async def test_refresh_tools_route_with_reconnect_restarts_the_bridge(routes, db, manager, bridge_dir):
+    created = await _make_connector(routes, bridge_dir)
+    sid = created["server"]["id"]
+    manager.tool_count = 141
+    manager.calls["disconnect"].clear()
+    manager.calls["connect"].clear()
+    result = await routes[("POST", "/api/app-connectors/{connector_id}/refresh-tools")](
+        connector_id=created["id"], request=FakeRequest(body={"reconnect": True}))
+    assert result["ok"] and result["reconnected"] is True and result["tool_count"] == 141
+    assert manager.calls["disconnect"] == [sid] and manager.calls["connect"] == [sid]
+
+
+async def test_refresh_tools_route_errors(routes, db, manager, bridge_dir):
+    from fastapi import HTTPException
+    route = routes[("POST", "/api/app-connectors/{connector_id}/refresh-tools")]
+    with pytest.raises(HTTPException) as unknown:
+        await route(connector_id="nope", request=FakeRequest())
+    assert unknown.value.status_code == 404
+    created = await _make_connector(routes, bridge_dir)
+    with pytest.raises(HTTPException) as not_connected:
+        await route(connector_id=created["id"], request=FakeRequest(body={}))
+    assert not_connected.value.status_code == 409
+
+
+async def test_generic_server_refresh_route(routes, db, manager, bridge_dir):
+    from fastapi import HTTPException
+    created = await _make_connector(routes, bridge_dir)
+    sid = created["server"]["id"]
+    by_path = {}
+    for r in mcp_routes.setup_mcp_routes(manager).routes:
+        for method in getattr(r, "methods", ()) or ():
+            by_path[(method, r.path)] = r.endpoint
+    route = by_path[("POST", "/api/mcp/servers/{server_id}/refresh-tools")]
+    with pytest.raises(HTTPException) as exc:
+        await route(server_id="ghost", request=FakeRequest())
+    assert exc.value.status_code == 404
+    session = _ToolSession(["a"])
+    manager._sessions[sid] = session
+    manager._connections[sid] = {"status": "connected", "name": "x", "tool_count": 0}
+    result = await route(server_id=sid, request=FakeRequest())
+    assert result["ok"] and result["added"] == ["a"]

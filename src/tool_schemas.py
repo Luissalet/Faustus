@@ -1555,12 +1555,12 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "manage_mcp",
-            "description": "Manage MCP (Model Context Protocol) tool servers: list servers and their tools, add new servers, delete, enable/disable, reconnect, or list all available tools.",
+            "description": "Manage MCP (Model Context Protocol) tool servers: list servers and their tools, add new servers, delete, enable/disable, reconnect, refresh_tools (re-read one server's tool list without restarting it), or list all available tools.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "action": {"type": "string", "enum": ["list", "add", "delete", "enable", "disable", "reconnect", "list_tools"]},
-                    "server_id": {"type": "string", "description": "Server ID (for delete/enable/disable/reconnect)"},
+                    "action": {"type": "string", "enum": ["list", "add", "delete", "enable", "disable", "reconnect", "refresh_tools", "list_tools"]},
+                    "server_id": {"type": "string", "description": "Server ID (for delete/enable/disable/reconnect/refresh_tools)"},
                     "name": {"type": "string", "description": "Server name (for add)"},
                     "command": {"type": "string", "description": "Command to run e.g. npx (for add)"},
                     "args": {"type": "array", "items": {"type": "string"}, "description": "Command arguments (for add)"},

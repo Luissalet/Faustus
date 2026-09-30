@@ -217,7 +217,7 @@ def _validate_mcp_command(command, args, env) -> Optional[str]:
 
 
 async def do_manage_mcp(content: str, owner: Optional[str] = None) -> Dict:
-    """Manage MCP servers: list, add, delete, enable, disable, reconnect."""
+    """Manage MCP servers: list, add, delete, enable, disable, reconnect, refresh_tools."""
     try:
         args = _parse_tool_args(content)
     except ValueError:
@@ -350,6 +350,25 @@ async def do_manage_mcp(content: str, owner: Optional[str] = None) -> Dict:
                 db2.close()
         except Exception as e:
             return {"error": str(e), "exit_code": 1}
+
+    elif action == "refresh_tools":
+        sid = args.get("server_id", "")
+        mcp = get_mcp_manager()
+        if not mcp:
+            return {"error": "MCP manager not available", "exit_code": 1}
+        if not sid:
+            return {"error": "server_id is required", "exit_code": 1}
+        result = await mcp.refresh_server_tools(sid)
+        if not result.get("ok"):
+            return {"error": f"Could not refresh tools of {sid}: {result.get('error')}", "exit_code": 1}
+        if result["changed"]:
+            summary = (f"Tool list of '{sid}' changed: {result['previous_count']} -> {result['tool_count']} tools "
+                       f"(added: {', '.join(result['added']) or 'none'}; removed: {', '.join(result['removed']) or 'none'}; "
+                       f"modified: {', '.join(result['modified']) or 'none'})")
+        else:
+            summary = (f"Tool list of '{sid}' is unchanged ({result['tool_count']} tools). A server process that was "
+                       f"started before its code changed keeps its old list; use action reconnect to restart it.")
+        return {"response": summary, "refresh": result, "exit_code": 0}
 
     elif action in ("enable", "disable"):
         sid = args.get("server_id", "")

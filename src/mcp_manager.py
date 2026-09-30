@@ -980,6 +980,10 @@ class McpManager:
         # cancel it explicitly (it checks `self._sessions.get(server_id)`
         # is still alive before touching any state).
         self._tools_refresh_tasks: Dict[str, Any] = {}
+        # server_id -> `serverInfo.version` seen at the last initialize, so a
+        # re-discovery on the live session keys the cache the same way the
+        # connect did instead of falling back to "unknown".
+        self._server_versions: Dict[str, Optional[str]] = {}
 
     async def connect_server(
         self,
@@ -1341,6 +1345,7 @@ class McpManager:
 
     async def disconnect_server(self, server_id: str):
         """Disconnect from an MCP server."""
+        self._server_versions.pop(server_id, None)
         # Cancel any in-flight HTTP/OAuth background connect so it stops
         # publishing status for a server that may be getting deleted.
         task = self._connect_tasks.pop(server_id, None)
@@ -1458,6 +1463,11 @@ class McpManager:
         """
         from src.mcp_tool_cache import compute_version_key, put as _cache_put
 
+        if server_version is None:
+            server_version = self._server_versions.get(server_id)
+        else:
+            self._server_versions[server_id] = server_version
+
         try:
             from src.settings import get_setting
             max_pages = int(get_setting("mcp_discovery_max_pages", 20) or 20)
@@ -1500,6 +1510,73 @@ class McpManager:
         version_key = compute_version_key(server_version, tools)
         _cache_put(server_id, version_key, tools)
         return tools, truncated
+
+    async def refresh_server_tools(self, server_id: str, timeout: float = 30.0) -> Dict[str, Any]:
+        """Re-read `tools/list` from a connected server right now, without
+        dropping the session, and report what changed.
+
+        This is the manual counterpart of `notifications/tools/list_changed`
+        for servers that add or change tools without announcing it. It swaps
+        the live catalog and the version-keyed cache only when discovery
+        succeeded; on failure both keep what they held. The generation (which
+        the prompt cache and the tool index follow) moves only when the
+        catalog really differs.
+
+        A server process started before its code changed still answers with
+        the old list; picking up new code needs a reconnect, which
+        `McpManager.connect_server` already does with a fresh discovery.
+        """
+        from src.mcp_tool_cache import compute_catalog_hash, compute_version_key, get as _cache_get, put as _cache_put
+
+        session = self._sessions.get(server_id)
+        if session is None:
+            return {"ok": False, "server_id": server_id, "error": "not connected", "changed": False}
+        before_tools = list(self._tools.get(server_id, []))
+        before_cache = _cache_get(server_id)
+        before_hash = compute_catalog_hash(before_tools)
+        try:
+            tools, truncated = await asyncio.wait_for(
+                self._discover_tools_paginated(session, server_id), timeout=timeout,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001 - report, keep the old catalog
+            if before_cache is not None:
+                _cache_put(server_id, before_cache["version_key"], before_cache["tools"])
+            logger.warning(f"MCP tool refresh failed for {server_id}: {e}")
+            return {
+                "ok": False, "server_id": server_id, "error": str(e) or type(e).__name__,
+                "changed": False, "tool_count": len(before_tools),
+            }
+        if self._sessions.get(server_id) is not session:
+            # Disconnected or replaced while we were reading: do not write a
+            # catalog for a session that no longer exists.
+            return {"ok": False, "server_id": server_id, "error": "disconnected during refresh", "changed": False}
+
+        old = {t.get("name"): (t.get("description", ""), t.get("input_schema") or {}) for t in before_tools}
+        new = {t.get("name"): (t.get("description", ""), t.get("input_schema") or {}) for t in tools}
+        added = sorted(n for n in new if n not in old)
+        removed = sorted(n for n in old if n not in new)
+        modified = sorted(n for n in new if n in old and new[n] != old[n])
+        changed = compute_catalog_hash(tools) != before_hash
+        self._tools[server_id] = tools
+        conn = self._connections.get(server_id)
+        if isinstance(conn, dict):
+            conn["tool_count"] = len(tools)
+            conn["discovery_truncated"] = truncated
+        if changed:
+            self._generation += 1
+            logger.info(
+                f"MCP server {server_id}: manual refresh - {len(tools)} tools "
+                f"(+{len(added)} -{len(removed)} ~{len(modified)})"
+            )
+        return {
+            "ok": True, "server_id": server_id, "changed": changed,
+            "previous_count": len(before_tools), "tool_count": len(tools),
+            "added": added, "removed": removed, "modified": modified,
+            "truncated": truncated,
+            "version_key": compute_version_key(self._server_versions.get(server_id), tools),
+        }
 
     def _on_tools_list_changed(self, server_id: str) -> None:
         """A19: `notifications/tools/list_changed` handler — invalidate the

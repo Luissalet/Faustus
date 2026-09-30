@@ -641,6 +641,28 @@ def setup_mcp_routes(mcp_manager: McpManager):
         finally:
             db.close()
 
+    @router.post("/servers/{server_id}/refresh-tools")
+    async def refresh_server_tools_route(server_id: str, request: Request):
+        """Re-read one connected server's tool list without reconnecting it.
+
+        Reports the tools added, removed and modified, and moves the catalog
+        the agent prompt and the tool index follow only when it changed. A
+        server process that has not been restarted since its code changed
+        still answers with its old list; use `/reconnect` to start it again.
+        """
+        require_admin(request)
+        db = SessionLocal()
+        try:
+            srv = db.query(McpServer).filter(McpServer.id == server_id).first()
+        finally:
+            db.close()
+        if srv is None and mcp_manager.get_server_status(server_id).get("status") == "disconnected":
+            raise HTTPException(404, "Server not found")
+        result = await mcp_manager.refresh_server_tools(server_id)
+        if not result.get("ok"):
+            raise HTTPException(409, result.get("error") or "Refresh failed")
+        return result
+
     @router.post("/builtin_browser/restart")
     async def restart_builtin_browser_route(request: Request):
         """Restart the built-in Playwright browser server with the current

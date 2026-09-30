@@ -147,6 +147,39 @@ still goes through the existing encrypted column.
   `WH_BRIDGE_GROUPS` env var without inventing a second preset shape. All of
   F1.1's named fields are present and unchanged in meaning.
 
+## Refreshing a connector's tool list
+
+An app bridge keeps serving the tool list it started with. When the app gains
+tools, the list Faustus holds must be re-read.
+
+What exists, in order of cost:
+
+- Automatic: `notifications/tools/list_changed` from the server re-runs
+  discovery on the live session; a call that the server answers with
+  "unknown tool" refreshes the list and tells the model what is offered now;
+  every connect or reconnect runs discovery again and overwrites the
+  version-keyed cache (`src/mcp_tool_cache.py`, key = server version plus a
+  hash of names, descriptions and schemas), so a reconnect can never be
+  served the list a previous process had. The tool index follows the
+  manager's generation and re-embeds only the tools that differ.
+- Manual, session kept: `POST /api/app-connectors/{id}/refresh-tools` (or
+  `POST /api/mcp/servers/{server_id}/refresh-tools` for any server) asks the
+  live session for `tools/list` again and returns `changed`,
+  `previous_count`, `tool_count`, `added`, `removed`, `modified`. The catalog
+  and the generation move only when the list really differs, and a failed read
+  (HTTP 409) keeps everything as it was. The agent tool `manage_mcp` has the
+  same operation as `action: "refresh_tools"` with a `server_id`.
+- Manual, bridge restarted: `POST /api/app-connectors/{id}/refresh-tools` with
+  `{"reconnect": true}`, or `POST /api/mcp/servers/{server_id}/reconnect`, or
+  `manage_mcp` with `action: "reconnect"`. A bridge process that started
+  before its code changed still answers with its old list, so picking up
+  tools added by new code needs this form (and the app itself restarted if the
+  app, not only the bridge, changed).
+
+In Studio, open Connectors, choose View tools on the connector and use
+Refresh tools (session kept) or Restart and refresh (bridge restarted). The
+dialog reports how many tools were added, removed or changed.
+
 ## Not yet implemented (F2/F3 territory)
 
 - Per-task/session/project connector allow-lists and dispatcher enforcement

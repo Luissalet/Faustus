@@ -222,7 +222,7 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "manage_skills": "Skill management: add, update, publish, or search reusable skills/presets.",
     "manage_tasks": "Scheduled task management: list, create, edit, delete, pause, resume, or run cron tasks. Recurring reports and watches as Home cards: daily weather for a place (qué tiempo hace, el tiempo, weather), news briefings on a topic (briefing, noticias), watch a shop page for stock (avísame cuando, stock, disponible, reposición), mail digests (resúmeme el correo), 'que se repita cada día', 'cada mañana', 'every hour'.",
     "manage_endpoints": "Endpoint management: list, add, delete, enable, or disable model API endpoints.",
-    "manage_mcp": "MCP server management: list, add, delete, reconnect servers, or list available tools.",
+    "manage_mcp": "MCP server management: list, add, delete, reconnect servers, refresh one server's tool list, or list available tools.",
     "manage_webhooks": "Webhook management: list, add, delete, enable, or disable webhooks.",
     "api_call": "Call a configured API integration by name (Home Assistant, Miniflux, Gitea, Linkding, Jellyfin, RSS reader, git forge, bookmark manager, smart home, or any other registered service). Make a GET/POST/PUT/PATCH/DELETE request to the integration's endpoint path, with an optional JSON body. Use whenever the user asks to query or control one of their connected integrations/services.",
     "manage_tokens": "API token management: list, create, or delete API access tokens.",
