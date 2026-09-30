@@ -4304,6 +4304,16 @@ def setup_chat_routes(
                                         # and yielded by the loop but silently
                                         # dropped right here, never reaching the UI.
                                         "capabilities_changed",
+                                        # An image a tool produced (generate/edit via
+                                        # the Prospero studio or a provider). Missing
+                                        # here, every agent-mode image reached the chat
+                                        # only after a reload (seen live, 30-09-2026).
+                                        "generated_image",
+                                        # Emitted by the loop and decoded by Studio
+                                        # (adapters/chat.ts), but dropped here until
+                                        # an audit of the two lists (30-09-2026).
+                                        "strategy", "context_receipts", "plan_tracker",
+                                        "rewrite_policy_triggered", "system_notice",
                                         # UX-04: live steer / pause of the main turn.
                                         # `steer` is also persisted as a user message
                                         # so the transcript keeps it after reload.

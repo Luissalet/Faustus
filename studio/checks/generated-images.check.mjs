@@ -19,6 +19,10 @@ try {
     assert.deepEqual(restoreFromMetadata(blankTurn('assistant'), {tool_events:[{...meta.tool_events[0],image_url:unsafe}]}).images, []);
   }
   assert.deepEqual(restoreFromMetadata(blankTurn('assistant'), {tool_events:[{...meta.tool_events[0],exit_code:1}]}).images, []);
+  // The Prospero studio reports no exit code: its saved result still reopens.
+  assert.deepEqual(restoreFromMetadata(blankTurn('assistant'), {tool_events:[{...meta.tool_events[0],exit_code:null}]}).images, [url]);
+  // A parked approval carries no image and adds none.
+  assert.deepEqual(restoreFromMetadata(blankTurn('assistant'), {tool_events:[{tool:'edit_image',round:0,command:'x',output:'Waiting for an exact user approval.',exit_code:null}]}).images, []);
   assert.deepEqual(restoreFromMetadata(blankTurn('assistant'), {tool_events:[{tool:'read_file',round:1,command:'x',output:'x',exit_code:0}]}).images, []);
   console.log('ALL OK: image result live/reopen, dedupe, source preserved, unsafe URLs and failures excluded');
 } finally {stop();}

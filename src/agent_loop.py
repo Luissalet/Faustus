@@ -10818,6 +10818,7 @@ async def _stream_agent_loop_body(
             )
         yield "data: " + json.dumps(approved_event) + "\n\n"
         if approved_result.get("image_url"):
+            logger.info("[image] generated_image event (approved) %s", approved_result.get("image_url"))
             yield (
                 "data: "
                 + json.dumps(
@@ -10875,11 +10876,14 @@ async def _stream_agent_loop_body(
             "approved": True,
             "approval_digest": approved.digest[:16],
             "call_id": _approved_call_id,
+            **({"media_job_key": _media_job_key(approved.tool_name, approved.content or "")}
+               if approved.tool_name in _ONCE_PER_TURN_MEDIA_TOOLS else {}),
             # INF-03: this call's own observed wall-clock duration.
             "duration_ms": _approved_tool_duration_ms,
         }
         for key in (
             "image_url",
+            "image_id",
             "image_prompt",
             "image_model",
             "image_size",
@@ -16097,6 +16101,7 @@ async def _stream_agent_loop_body(
                 for k in ("image_url", "image_id", "image_prompt", "image_model", "image_size", "image_quality"):
                     if k in result:
                         generated_image_data[k] = result[k]
+                logger.info("[image] generated_image event %s", generated_image_data.get("url"))
                 yield f'data: {json.dumps(generated_image_data)}\n\n'
 
             if block.tool_type == "manage_notes":
@@ -17099,6 +17104,20 @@ async def _stream_agent_loop_body(
                     yield f"data: {json.dumps({'type': 'response_replace', 'text': full_response})}\n\n"
         except Exception:
             logger.debug("[harness] saved-links count check failed", exc_info=True)
+    # A link to an image a tool produced this turn must use the URL that tool
+    # returned; small models keep the ID but invent a host (seen live with a
+    # 3B model after a Prospero edit), which renders as a broken image.
+    if tool_events and full_response:
+        try:
+            from src import answer_checks as _image_link_checks
+            _canonical_images = _image_link_checks.canonical_generated_image_links(
+                full_response, tool_events)
+            if _canonical_images != full_response:
+                full_response = _canonical_images
+                _ledger.notes.append("generated_image_links_canonical")
+                yield f"data: {json.dumps({'type': 'response_replace', 'text': full_response})}\n\n"
+        except Exception:
+            logger.debug("[harness] generated image link check failed", exc_info=True)
     _response_before_tool_summary = full_response
     # The formatted listing stands in for the answer only when the model gave
     # none. Seen live: «¿qué día tengo más libre esta semana?» got a good

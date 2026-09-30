@@ -8,8 +8,12 @@ from src.constants import GENERATED_IMAGES_DIR
 
 
 GENERATED_IMAGE_DIR = Path(GENERATED_IMAGES_DIR)
+# Hex names, or a canonical lowercase UUID: the Prospero studio names its
+# gallery results after their gallery ID (str(uuid4())), and those files were
+# refused with 400 here while the chat showed a broken image for every edit.
 GENERATED_IMAGE_RE = re.compile(
-    r"^[a-f0-9]{8,64}\.(png|jpg|jpeg|webp|gif|mp4|mov|webm|mkv|m4v)$"
+    r"^(?:[a-f0-9]{8,64}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+    r"\.(png|jpg|jpeg|webp|gif|mp4|mov|webm|mkv|m4v)$"
 )
 GENERATED_IMAGE_HEADERS = {
     "Cache-Control": "public, max-age=31536000, immutable",

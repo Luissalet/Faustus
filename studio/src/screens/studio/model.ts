@@ -1293,7 +1293,10 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
   // the same persisted `tool_events` entry, 1:1 in order.
   const rawEvents = Array.isArray(meta.tool_events) ? (meta.tool_events as Record<string, unknown>[]) : [];
   const images = [...new Set([...turn.images, ...rawEvents.flatMap((event) => {
-    if (!event || (event.exit_code !== 0 && event.exit_code !== undefined)) return [];
+    // A failed call has a nonzero exit code. Image tools that report no exit
+    // code at all (null — the Prospero studio does) still produced this
+    // image; dropping them hid every edit the moment the chat reloaded.
+    if (!event || (typeof event.exit_code === 'number' && event.exit_code !== 0)) return [];
     const url = generatedImageUrl(event.image_url);
     return url ? [url] : [];
   })])];

@@ -70,3 +70,32 @@ def test_generated_image_route_uses_confining_resolver():
     assert 'Path("data/generated_images") / filename' not in source
     assert "resolve_generated_image_path(filename)" in source
     assert "headers=GENERATED_IMAGE_HEADERS" in source
+
+
+def test_gallery_id_named_results_are_served(tmp_path, monkeypatch):
+    # The Prospero studio names results after their gallery ID (str(uuid4())).
+    generated_images = _generated_images_module()
+    image_dir = tmp_path / "generated_images"
+    image_dir.mkdir()
+    filename = "f14e5735-da83-4d6d-b541-abeff9f0dacc.png"
+    (image_dir / filename).write_bytes(b"png")
+    monkeypatch.setattr(generated_images, "GENERATED_IMAGE_DIR", image_dir)
+
+    assert generated_images.resolve_generated_image_path(filename) == image_dir / filename
+
+
+@pytest.mark.parametrize("filename", [
+    "F14E5735-DA83-4D6D-B541-ABEFF9F0DACC.png",   # not the canonical lowercase form
+    "f14e5735-da83-4d6d-b541.png",                  # truncated UUID
+    "f14e5735--da83-4d6d-b541-abeff9f0dacc.png",
+    "f14e5735-da83-4d6d-b541-abeff9f0dacc.png.exe",
+    "../f14e5735-da83-4d6d-b541-abeff9f0dacc.png",
+])
+def test_uuid_shaped_lookalikes_stay_rejected(tmp_path, monkeypatch, filename):
+    generated_images = _generated_images_module()
+    image_dir = tmp_path / "generated_images"
+    image_dir.mkdir()
+    monkeypatch.setattr(generated_images, "GENERATED_IMAGE_DIR", image_dir)
+    with pytest.raises(HTTPException) as exc:
+        generated_images.resolve_generated_image_path(filename)
+    assert exc.value.status_code == 400

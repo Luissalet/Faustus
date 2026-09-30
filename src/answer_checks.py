@@ -502,3 +502,65 @@ def saved_links_total(tool_events: List[Dict[str, object]]) -> Optional[int]:
         except (TypeError, ValueError, AttributeError):
             continue
     return None
+
+
+_MARKDOWN_TARGET = re.compile(r'(!?\[[^\]\n]*\]\()[ \t]*<?([^()\s<>]+)>?([ \t]+"[^"\n]*")?[ \t]*\)')
+_BARE_IMAGE_URL = re.compile(r'(?<![(<"\w])((?:https?|sandbox|file):/{1,3}[^\s()<>"\]]+?\.(?:png|jpe?g|webp))(?![\w/])',
+                             re.IGNORECASE)
+
+
+def _produced_generated_images(tool_events: List[Dict[str, object]]) -> Dict[str, str]:
+    """image_id -> the gallery URL a tool of THIS turn actually returned."""
+    produced: Dict[str, str] = {}
+    for event in tool_events or []:
+        if not isinstance(event, dict) or event.get("exit_code") not in (None, 0):
+            continue
+        url = event.get("image_url")
+        if not isinstance(url, str) or not url.startswith("/api/generated-image/"):
+            continue
+        stem = url.rsplit("/", 1)[-1].split(".", 1)[0]
+        image_id = event.get("image_id")
+        # An approved call's saved event carries the URL but not the ID; the
+        # gallery file is named after its ID, so the stem identifies it.
+        if stem and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", stem) and image_id in (None, "", stem):
+            produced[stem] = url
+    return produced
+
+
+def _produced_url_for(target: str, produced: Dict[str, str]) -> Optional[str]:
+    if target in produced.values():
+        return None
+    from urllib.parse import urlsplit
+    try:
+        stem = urlsplit(target).path.rsplit("/", 1)[-1].split(".", 1)[0]
+    except ValueError:
+        return None
+    return produced.get(stem)
+
+
+def canonical_generated_image_links(answer: str, tool_events: List[Dict[str, object]]) -> str:
+    """Point links to a just-produced gallery image at the URL its tool returned.
+
+    Small models copy the right image ID into an invented host
+    (``https://api.gallery.example.com/generated-image/<id>.png``), which the
+    chat then renders as a broken image. Only targets whose file stem is an
+    image ID a successful tool of this turn produced are rewritten, to that
+    tool's own relative URL; every other link is left exactly as written.
+    """
+    produced = _produced_generated_images(tool_events)
+    text = str(answer or "")
+    if not produced or not text:
+        return text
+
+    def markdown(match: "re.Match[str]") -> str:
+        url = _produced_url_for(match.group(2), produced)
+        if url is None:
+            return match.group(0)
+        return f"{match.group(1)}{url}{match.group(3) or ''})"
+
+    def bare(match: "re.Match[str]") -> str:
+        url = _produced_url_for(match.group(1), produced)
+        return match.group(0) if url is None else url
+
+    text = _MARKDOWN_TARGET.sub(markdown, text)
+    return _BARE_IMAGE_URL.sub(bare, text)
