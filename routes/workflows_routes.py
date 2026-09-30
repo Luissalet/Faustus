@@ -22,7 +22,8 @@ from fastapi import APIRouter, HTTPException, Request
 from core.middleware import require_admin
 from src.contracts import ContractError, WorkflowDefinition
 from src.contracts.base import now_iso
-from src.workflows import WorkflowEngine, WorkflowStore, default_handlers, ready_nodes
+from src.workflows import WorkflowEngine, WorkflowStore, default_handlers, published, ready_nodes
+from src.workflows.library import LibraryError, WorkflowLibrary
 
 logger = logging.getLogger(__name__)
 
@@ -667,6 +668,109 @@ def setup_workflows_routes():
             status = 404 if result.get("reason") == "not_found" else 409
             raise HTTPException(status_code=status, detail=result.get("reason"))
         return result
+
+    # ── saved workflows, and the tools they publish ───────────────────────
+
+    def _owner_of(request: Request) -> str:
+        """Whose library this is: the caller, never a name in the body (a saved
+        workflow and the tool it publishes belong to whoever is asking)."""
+        from core import middleware
+        from src.owner_identity import effective_storage_owner
+        owner = effective_storage_owner(getattr(request.state, "current_user", None),
+                                        auth_is_disabled=middleware.auth_disabled())
+        if not owner:
+            raise HTTPException(400, "A saved workflow needs an owner")
+        return owner
+
+    @router.get("/library")
+    def library_list(request: Request):
+        require_admin(request)
+        return {"ok": True, "workflows": WorkflowLibrary().list(_owner_of(request))}
+
+    @router.post("/library")
+    async def library_save(request: Request):
+        """Keep a definition under a name. `enabled: true` publishes it as a tool
+        (only possible when it declares `inputs`); off by default."""
+        require_admin(request)
+        payload = await _json_object(request)
+        definition = _definition_or_400(payload.get("definition", payload))
+        try:
+            saved = WorkflowLibrary().save(
+                _owner_of(request), definition, name=str(payload.get("name") or ""),
+                enabled=payload.get("enabled") if isinstance(payload.get("enabled"), bool) else None,
+                allow_overrides=payload.get("allow_overrides") if isinstance(payload.get("allow_overrides"), bool) else None)
+        except LibraryError as exc:
+            raise HTTPException(400, str(exc))
+        return {"ok": True, "workflow": saved}
+
+    @router.get("/library/{name}")
+    def library_get(name: str, request: Request):
+        require_admin(request)
+        found = WorkflowLibrary().get(_owner_of(request), name)
+        if found is None:
+            raise HTTPException(404, f"no saved workflow named {name!r}")
+        return {"ok": True, "workflow": found}
+
+    @router.patch("/library/{name}")
+    async def library_update(name: str, request: Request):
+        require_admin(request)
+        payload = await _json_object(request)
+        unknown = sorted(set(payload) - {"enabled", "allow_overrides"})
+        if unknown:
+            raise HTTPException(400, f"unknown field(s) {unknown}")
+        for key in payload:
+            if not isinstance(payload[key], bool):
+                raise HTTPException(400, f"{key} must be true or false")
+        try:
+            updated = WorkflowLibrary().update(_owner_of(request), name, enabled=payload.get("enabled"),
+                                               allow_overrides=payload.get("allow_overrides"))
+        except LibraryError as exc:
+            raise HTTPException(404 if "no saved workflow" in str(exc) else 400, str(exc))
+        return {"ok": True, "workflow": updated}
+
+    @router.delete("/library/{name}")
+    def library_delete(name: str, request: Request):
+        require_admin(request)
+        owner = _owner_of(request)
+        if not WorkflowLibrary().delete(owner, name):
+            raise HTTPException(404, f"no saved workflow named {name!r}")
+        return {"ok": True, "deleted": name}
+
+    @router.get("/published")
+    def published_list(request: Request):
+        """The tools this owner's enabled workflows publish: name, description,
+        and an input schema made of the workflow's declared inputs plus the
+        reserved `overrides`, `wait_seconds` and `idempotency_key`."""
+        require_admin(request)
+        return {"ok": True, "tools": published.tool_specs(_owner_of(request))}
+
+    @router.post("/published/{tool}/call")
+    async def published_call(tool: str, request: Request):
+        """Start a run of a published workflow and answer with its run id — and
+        its result, if it finishes (or stops for somebody) within the wait."""
+        require_admin(request)
+        payload = await _json_object(request)
+        owner = _owner_of(request)
+        try:
+            prepared = published.prepare_call(owner, tool, payload.get("arguments") or {})
+        except published.PublishError as exc:
+            code = {"unknown_tool": 404, "overrides_disabled": 403}.get(exc.code, 400)
+            raise HTTPException(code, {"code": exc.code, "message": str(exc), "problems": exc.problems})
+        engine = _engine(store)
+        started = published.start_run(store, engine, owner, prepared)
+        await asyncio.to_thread(published.wait_for, started["future"], prepared["wait_seconds"])
+        status = published.run_status(store, owner, started["run_id"]) or {}
+        return {"ok": True, "run_id": started["run_id"], "duplicate": started["duplicate"],
+                "finished": bool(status.get("finished")), "status": status.get("status", ""),
+                "overrides_applied": prepared["applied_overrides"], "run": status}
+
+    @router.get("/published/runs/{run_id}")
+    def published_run_status(run_id: str, request: Request):
+        require_admin(request)
+        status = published.run_status(store, _owner_of(request), run_id)
+        if status is None:
+            raise HTTPException(404, f"no run {run_id}")
+        return {"ok": True, **status}
 
     @router.post("/runs/{run_id}/cancel")
     async def cancel(run_id: str, request: Request):

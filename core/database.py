@@ -950,6 +950,68 @@ class LoopStateRow(TimestampMixin, Base):
     )
 
 
+class SavedWorkflowRow(TimestampMixin, Base):
+    """A workflow definition kept under a name, per owner.
+
+    Runs snapshot the definition they start from, so editing this row never
+    changes a run in flight. `enabled` is the switch that publishes the
+    workflow as a tool for outside callers (only when it declares an input
+    schema); it is off until somebody turns it on, because publishing is what
+    lets another assistant start real work.
+    """
+    __tablename__ = "workflow_library"
+
+    id          = Column(String, primary_key=True, index=True)
+    owner       = Column(String, nullable=False, index=True)
+    name        = Column(String, nullable=False)
+    title       = Column(String, nullable=True)
+    description = Column(Text, nullable=True)
+    workflow_id = Column(String, nullable=False, index=True)
+    workflow_version = Column(String, nullable=False)
+    definition_json = Column(Text, nullable=False)
+    enabled     = Column(Boolean, nullable=False, default=False)
+    allow_overrides = Column(Boolean, nullable=False, default=True)
+    schema_version = Column(Integer, nullable=False, default=1)
+
+    __table_args__ = (
+        Index("ix_workflow_library_owner_name", "owner", "name", unique=True),
+    )
+
+
+class WorkflowEvalSetRow(TimestampMixin, Base):
+    """A saved set of input cases to run a workflow against, with the checks
+    that decide whether each output is acceptable."""
+    __tablename__ = "workflow_eval_sets"
+
+    id          = Column(String, primary_key=True, index=True)
+    owner       = Column(String, nullable=False, index=True)
+    workflow_name = Column(String, nullable=False, index=True)
+    name        = Column(String, nullable=False)
+    cases_json  = Column(Text, nullable=False)
+    schema_version = Column(Integer, nullable=False, default=1)
+
+    __table_args__ = (
+        Index("ix_workflow_eval_sets_owner_wf_name", "owner", "workflow_name", "name", unique=True),
+    )
+
+
+class WorkflowEvalReportRow(TimestampMixin, Base):
+    """What one evaluation run found: a summary and a verdict per case."""
+    __tablename__ = "workflow_eval_reports"
+
+    id          = Column(String, primary_key=True, index=True)
+    owner       = Column(String, nullable=False, index=True)
+    workflow_name = Column(String, nullable=False, index=True)
+    set_id      = Column(String, nullable=True, index=True)
+    set_name    = Column(String, nullable=True)
+    status      = Column(String, nullable=False, default="running", index=True)
+    started_at  = Column(String, nullable=True)
+    ended_at    = Column(String, nullable=True)
+    summary_json = Column(Text, nullable=True)
+    report_json = Column(Text, nullable=True)
+    schema_version = Column(Integer, nullable=False, default=1)
+
+
 class MediaRunRow(TimestampMixin, Base):
     """One render on a media engine, and everything needed to do it again.
 

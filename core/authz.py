@@ -148,6 +148,12 @@ API_TOKEN_RULES: Tuple[Rule, ...] = (
     # owner to be an admin, because this starts processes on the machine.
     Rule(ANY_METHOD, "/api/dispatch", ("agents:dispatch",), prefix=True,
          effect="external", note="starts real work on this machine"),
+    # Saved workflows the owner has enabled, offered as tools to an outside
+    # coordinator (`mcp_servers/workflows_server.py`): list them, start a run
+    # with the declared inputs, read a run back. Saving, enabling and editing
+    # the library stay with a person (no token rule for `/api/workflows/library`).
+    Rule(ANY_METHOD, "/api/workflows/published", ("agents:dispatch",), prefix=True,
+         effect="external", note="start a run of an owner-enabled saved workflow, or read one back"),
     _read("/api/changesets/from-dispatch/", "agents:dispatch", prefix=True,
           note="the diff a dispatched job produced, for the coordinator that asked for it"),
 

@@ -201,7 +201,14 @@ class WorkflowDefinition:
     description: str = ""
     schema_version: int = SCHEMA_VERSION
 
-    _KEYS = ("id", "version", "title", "nodes", "description", "schema_version")
+    #: An optional JSON schema (`type: object`) for the inputs a run takes. A
+    #: workflow that declares it can be checked before it starts and published
+    #: as a tool that takes those inputs as arguments. Absent from `to_dict()`
+    #: and from the fingerprint when empty, so every definition written before
+    #: this field existed keeps its fingerprint.
+    inputs: Mapping[str, Any] = field(default_factory=dict)
+
+    _KEYS = ("id", "version", "title", "nodes", "description", "schema_version", "inputs")
 
     @classmethod
     def parse(cls, raw: Any, path: str = "workflow") -> "WorkflowDefinition":
@@ -246,6 +253,7 @@ class WorkflowDefinition:
             nodes=nodes,
             schema_version=whole(data, "schema_version", path,
                                  default=SCHEMA_VERSION, minimum=1),
+            inputs=_parse_inputs(data.get("inputs"), f"{path}.inputs"),
         )
 
 
@@ -256,14 +264,20 @@ class WorkflowDefinition:
         return tuple(n.id for n in self.nodes if not n.needs)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"schema_version": self.schema_version, "id": self.id,
-                "version": self.version, "title": self.title,
-                "description": self.description,
-                "nodes": [n.to_dict() for n in self.nodes]}
+        out = {"schema_version": self.schema_version, "id": self.id,
+               "version": self.version, "title": self.title,
+               "description": self.description,
+               "nodes": [n.to_dict() for n in self.nodes]}
+        if self.inputs:
+            out["inputs"] = dict(self.inputs)
+        return out
 
     def fingerprint(self) -> str:
-        return fingerprint([("id", self.id), ("version", self.version),
-                            ("nodes", [n.to_dict() for n in self.nodes])])
+        parts = [("id", self.id), ("version", self.version),
+                 ("nodes", [n.to_dict() for n in self.nodes])]
+        if self.inputs:
+            parts.append(("inputs", dict(self.inputs)))
+        return fingerprint(parts)
 
 
 def _check_branch(node: "WorkflowNode", by_id: Mapping[str, "WorkflowNode"], path: str) -> None:
@@ -286,6 +300,30 @@ def _check_branch(node: "WorkflowNode", by_id: Mapping[str, "WorkflowNode"], pat
             raise ContractError(f"{path}.{dep}",
                                 f"{source.type} node {dep!r} declares the branches {list(known)}; "
                                 f"{unknown} is not one of them")
+
+
+def _parse_inputs(raw: Any, path: str) -> Dict[str, Any]:
+    """The declared run inputs: a JSON schema for an object. Only its shape is
+    checked here (an object with `type: object`, and `properties` if present is
+    an object of objects); which keywords the validator honours is the job of
+    `workflows.schema_check`, which the library applies when a workflow is
+    saved."""
+    if raw is None or raw == {}:
+        return {}
+    if not isinstance(raw, Mapping):
+        raise ContractError(path, "expected a JSON schema object", got=raw)
+    if raw.get("type") != "object":
+        raise ContractError(f"{path}.type", "the inputs schema has to describe an object "
+                            "(`type: object`), since a run takes named inputs", got=raw.get("type"))
+    props = raw.get("properties", {})
+    if not isinstance(props, Mapping) or any(not isinstance(v, Mapping) for v in props.values()):
+        raise ContractError(f"{path}.properties", "expected an object mapping each input name to its schema")
+    required = raw.get("required", [])
+    if not isinstance(required, (list, tuple)) or any(r not in props for r in required):
+        raise ContractError(f"{path}.required", "names an input that `properties` does not declare")
+    if len(props) > 64:
+        raise ContractError(f"{path}.properties", "a workflow takes at most 64 inputs")
+    return dict(raw)
 
 
 def loop_body_ids(nodes: Sequence[WorkflowNode]) -> Dict[str, str]:
