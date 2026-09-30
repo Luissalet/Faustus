@@ -285,7 +285,7 @@ def test_all_real_budget_exhausted_callsites_stop_instead_of_recovering():
     calls = [node for node in ast.walk(tree) if isinstance(node, ast.Yield)
         and isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name)
         and node.value.func.id == "_budget_exhausted_event"]
-    assert len(calls) == 4
+    assert len(calls) == 6
     guards = []
     for node in calls:
         while node in parents:
@@ -299,7 +299,20 @@ def test_all_real_budget_exhausted_callsites_stop_instead_of_recovering():
         loop = guard
         while loop in parents and not isinstance(loop, (ast.For, ast.AsyncFor, ast.While)):
             loop = parents[loop]
-        if isinstance(loop, ast.For):
+        recovery_assignments = [node for node in guard.body if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "_recovery_budget_exhaustion"
+                    for target in node.targets)]
+        if recovery_assignments:
+            assignment, = recovery_assignments
+            assert isinstance(assignment.value, ast.Subscript)
+            assert isinstance(assignment.value.value, ast.Name)
+            assert assignment.value.value.id == "_recovery_result"
+            assert isinstance(assignment.value.slice, ast.Constant)
+            assert assignment.value.slice.value == "budget_exhaustion"
+            assert assignment.lineno < next(node.lineno for node in guard.body if isinstance(node, ast.Expr)
+                and isinstance(node.value, ast.Yield))
+            flags.append("_recovery_budget_exhaustion")
+        elif isinstance(loop, ast.For):
             assert any(isinstance(node, ast.Assign) and any(isinstance(target, ast.Name)
                 and target.id == "budget_hit" for target in node.targets)
                 and isinstance(node.value, ast.Constant) and node.value.value is True for node in guard.body)
@@ -309,7 +322,8 @@ def test_all_real_budget_exhausted_callsites_stop_instead_of_recovering():
             assert isinstance(guard.test.left, ast.Name)
             assert guard.test.left.id == "_compaction_budget_exhaustion"
             flags.append("_compaction_budget_exhaustion")
-    assert sorted(flags) == ["_compaction_budget_exhaustion", "budget_hit", "budget_hit"]
+    assert sorted(flags) == ["_compaction_budget_exhaustion", "_recovery_budget_exhaustion",
+                             "_recovery_budget_exhaustion", "budget_hit", "budget_hit"]
     for flag in set(flags):
         exits = [node for node in ast.walk(tree) if isinstance(node, ast.If)
             and any(isinstance(name, ast.Name) and name.id == flag for name in ast.walk(node.test))

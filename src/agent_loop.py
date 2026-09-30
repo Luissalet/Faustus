@@ -4207,8 +4207,36 @@ def _is_untrusted_context_message(message: dict) -> bool:
 _RECOVERY_STEP2_MAX_TOKENS = 1024
 
 
+def _recovery_usage_snapshot(raw):
+    """Keep observed stream fields only; no estimates or missing-count zeroes."""
+    if not isinstance(raw, dict):
+        return {}
+    usage = {}
+    for key in ("input_tokens", "output_tokens", "total_tokens"):
+        if key in raw:
+            valid = _normalize_usage_counts(raw[key], 0)
+            if valid is not None:
+                usage[key] = valid["input_tokens"]
+    import math
+    cost = raw.get("cost_usd")
+    try:
+        valid_cost = (not isinstance(cost, bool) and isinstance(cost, (int, float))
+                      and math.isfinite(cost) and cost >= 0)
+    except OverflowError:
+        valid_cost = False
+    if valid_cost:
+        usage.update(cost_usd=float(cost), cost_source="provider")
+    if not usage:
+        return {}
+    usage.update(usage_source="reported_engine", cost_state="known" if valid_cost else "unknown")
+    for key in ("model", "requested_model"):
+        if isinstance(raw.get(key), str) and raw[key]:
+            usage[key] = raw[key]
+    return usage
+
+
 async def _recovery_step_completion(url, model, headers, messages, temperature, max_tokens,
-                                     gen_overrides, session_id, agent_stream_timeout):
+                                     gen_overrides, session_id, agent_stream_timeout, *, _usage_observer=None):
     """One tools-off, no-harness completion for a recovery-ladder step.
 
     Returns ``(text, reasoning, degenerate, error)``: ``text``/``reasoning``
@@ -4222,39 +4250,59 @@ async def _recovery_step_completion(url, model, headers, messages, temperature, 
     reasoning = ""
     degenerate = False
     error = False
-    async for chunk in stream_llm_with_fallback(
-        [(url, model, headers)],
-        messages,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        tools=None,
-        timeout=agent_stream_timeout,
-        session_id=session_id,
-        gen_overrides=gen_overrides,
-        fallback_on_empty=False,
-    ):
-        if chunk.startswith("event: error"):
-            error = True
+    usage = {}
+    try:
+        async for chunk in stream_llm_with_fallback(
+            [(url, model, headers)],
+            messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            tools=None,
+            timeout=agent_stream_timeout,
+            session_id=session_id,
+            gen_overrides=gen_overrides,
+            fallback_on_empty=False,
+        ):
+            if chunk.startswith("event: error"):
+                error = True
+                try:
+                    error_line = next(
+                        line[6:] for line in chunk.splitlines() if line.startswith("data: ")
+                    )
+                    error_data = json.loads(error_line)
+                except Exception:
+                    error_data = {}
+                if is_degenerate_output_error(error_data):
+                    degenerate = True
+                break
+            if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
+                try:
+                    data = json.loads(chunk[6:])
+                except Exception:
+                    continue
+                if data.get("type") == "usage":
+                    observed = _recovery_usage_snapshot(data.get("data"))
+                    if observed:
+                        # A later partial snapshot does not erase dimensions
+                        # already reported. Replace each present valid field,
+                        # never sum cumulative snapshots from this invocation.
+                        usage.update(observed)
+                        usage["cost_state"] = "known" if "cost_usd" in usage else "unknown"
+                if "delta" in data:
+                    if data.get("thinking"):
+                        reasoning += data.get("delta") or ""
+                    else:
+                        text += data.get("delta") or ""
+    finally:
+        # One snapshot of latest valid fields per invocation, also after cancel.
+        # Streaming snapshots are cumulative, not token increments. Internal
+        # transport retry identities remain unavailable; this is not a bill.
+        if usage and _usage_observer is not None:
             try:
-                error_line = next(
-                    line[6:] for line in chunk.splitlines() if line.startswith("data: ")
-                )
-                error_data = json.loads(error_line)
+                from src.model_context import is_local_endpoint
+                _usage_observer(dict(usage), endpoint_local=is_local_endpoint(url))
             except Exception:
-                error_data = {}
-            if is_degenerate_output_error(error_data):
-                degenerate = True
-            break
-        if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
-            try:
-                data = json.loads(chunk[6:])
-            except Exception:
-                continue
-            if "delta" in data:
-                if data.get("thinking"):
-                    reasoning += data.get("delta") or ""
-                else:
-                    text += data.get("delta") or ""
+                logger.debug("recovery usage observer failed", exc_info=True)
     return text, reasoning, degenerate, error
 
 
@@ -4355,7 +4403,8 @@ async def _recovery_ladder(*, reason: str, endpoint_url: str, model: str, header
                             gen_overrides: Optional[Dict], session_id: Optional[str],
                             owner: Optional[str], agent_stream_timeout: int,
                             skip_same_model_retry: bool = False,
-                            pending_cancel: Optional[Callable[[], Optional[str]]] = None):
+                            pending_cancel: Optional[Callable[[], Optional[str]]] = None,
+                            _usage_observer=None, _admission_check=None):
     """Steps 2-3 of the "never end a degenerate/ctx_ack round with an error"
     recovery ladder (the owner: "If a model is loaded, the person gets an
     answer, however long it takes"). Step 1 — bumped `repeat_penalty`/
@@ -4436,9 +4485,14 @@ async def _recovery_ladder(*, reason: str, endpoint_url: str, model: str, header
             "type": "harness_check", "status": "recovery", "step": 2,
             "reason": reason, "model": model,
         }) + "\n\n")
+        exhaustion = _admission_check(endpoint_url) if _admission_check is not None else None
+        if exhaustion is not None:
+            yield ("result", {"ok": False, "budget_exhaustion": exhaustion})
+            return
         text, reasoning, degenerate, _error = await _recovery_step_completion(
             endpoint_url, model, headers, step_messages, step_temperature, step_max_tokens,
             step2_overrides, session_id, agent_stream_timeout,
+            **({"_usage_observer": functools.partial(_usage_observer, step=2)} if _usage_observer is not None else {}),
         )
         if text.strip() and not degenerate and not is_reference_context_echo(text.strip()):
             yield ("result", {
@@ -4470,9 +4524,14 @@ async def _recovery_ladder(*, reason: str, endpoint_url: str, model: str, header
         }) + "\n\n")
         step3_overrides = dict(step_overrides)
         step3_overrides["seed"] = random.randint(1, 2**31 - 1)
+        exhaustion = _admission_check(util_url) if _admission_check is not None else None
+        if exhaustion is not None:
+            yield ("result", {"ok": False, "budget_exhaustion": exhaustion})
+            return
         text3, reasoning3, degenerate3, _error3 = await _recovery_step_completion(
             util_url, util_model, util_headers or {}, step_messages, step_temperature,
             step_max_tokens, step3_overrides, session_id, agent_stream_timeout,
+            **({"_usage_observer": functools.partial(_usage_observer, step=3)} if _usage_observer is not None else {}),
         )
         if text3.strip() and not degenerate3 and not is_reference_context_echo(text3.strip()):
             note = f"(answered by {util_model} after the default model looped)"
@@ -7447,9 +7506,11 @@ async def _stream_agent_loop_body(
     _budget_ledger = autonomy_budget.Ledger()
     _compaction_usage_receipts: List[Dict] = []
 
-    def _charge_compaction_usage(usage, *, endpoint_local=False):
+    _recovery_usage_receipts: List[Dict] = []
+
+    def _charge_auxiliary_usage(usage, *, phase, endpoint_local=False, step=None):
         # Fresh observed usage only, separate from main-stream round buckets.
-        # The effective summarizer endpoint determines local billing policy.
+        # The effective auxiliary endpoint determines local billing policy.
         if endpoint_local or usage.get("usage_source") != "reported_engine":
             return
         def _observed_count(value):
@@ -7464,7 +7525,9 @@ async def _stream_agent_loop_body(
         cost = usage.get("cost_usd")
         if total is None and cost is None:
             return
-        receipt = {**usage, "phase": "compaction"}
+        receipt = {**usage, "phase": phase}
+        if step is not None:
+            receipt["step"] = step
         if total is not None:
             _budget_ledger.add_tokens(total)
             receipt.update(charged_tokens=total, tokens_lower_bound=lower_bound)
@@ -7478,7 +7541,20 @@ async def _stream_agent_loop_body(
         _budget_ledger.add_remote_spend(spend)
         receipt["charged_remote_spend_units"] = spend
         receipt["remote_spend_source"] = "provider_cost" if cost is not None else "observed_token_proxy"
-        _compaction_usage_receipts.append(receipt)
+        (_compaction_usage_receipts if phase == "compaction" else _recovery_usage_receipts).append(receipt)
+
+    def _charge_compaction_usage(usage, *, endpoint_local=False):
+        _charge_auxiliary_usage(usage, phase="compaction", endpoint_local=endpoint_local)
+
+    def _charge_recovery_usage(usage, *, endpoint_local=False, step=None):
+        _charge_auxiliary_usage(usage, phase="recovery", endpoint_local=endpoint_local, step=step)
+
+    def _recovery_admission(url):
+        from src.model_context import is_local_endpoint
+        # Preserve the existing unlimited policy of a turn started locally;
+        # do not recalculate a new grant for its remote utility fallback.
+        return (None if _local_completion_unbounded or is_local_endpoint(url)
+                else _budget_ledger.check(_round_loop_budget))
     # The tool-call dimension is merged into the pre-existing
     # `max_tool_calls`/`total_tool_calls` mechanism below (one counter, not
     # two) — see `Budget.without_tool_calls`.
@@ -11783,6 +11859,7 @@ async def _stream_agent_loop_body(
         _candidate_request_states = {0: _active_route_state}
         _compaction_budget_exhaustion = None
         _recovery_cancelled = False
+        _recovery_budget_exhaustion = None
 
         async def _candidate_request(index, candidate_url, candidate_model, candidate_headers):
             nonlocal _last_route_request_messages, _last_route_context_length, _compaction_budget_exhaustion
@@ -12217,11 +12294,18 @@ async def _stream_agent_loop_body(
                             "reasoning loop" not in str(error_data.get("error") or "")
                         ),
                         pending_cancel=pending_cancel,
+                        _usage_observer=_charge_recovery_usage,
+                        _admission_check=_recovery_admission,
                     ):
                         if _rk == "event":
                             yield _rpayload
                         else:
                             _recovery_result = _rpayload
+                    if _recovery_result and _recovery_result.get("budget_exhaustion") is not None:
+                        _recovery_budget_exhaustion = _recovery_result["budget_exhaustion"]
+                        _ledger.stop_reason = "budget_exhausted"
+                        yield _budget_exhausted_event(_recovery_budget_exhaustion)
+                        break
                     if _recovery_result and _recovery_result.get("cancelled"):
                         # BUG-STOP-01: a Stop landed mid-recovery-ladder.
                         _ledger.stop_reason = "cancelled"
@@ -12642,7 +12726,8 @@ async def _stream_agent_loop_body(
                             round_num, len(_steer_interrupted))
                 break
 
-        if _compaction_budget_exhaustion is not None or _recovery_cancelled:
+        if (_compaction_budget_exhaustion is not None or _recovery_cancelled
+                or _recovery_budget_exhaustion is not None):
             # A stop observed by recovery ends this invocation even if the
             # caller clears its cancellation store while consuming the event.
             break
@@ -13255,11 +13340,18 @@ async def _stream_agent_loop_body(
                         session_id=session_id, owner=owner,
                         agent_stream_timeout=agent_stream_timeout,
                         pending_cancel=pending_cancel,
+                        _usage_observer=_charge_recovery_usage,
+                        _admission_check=_recovery_admission,
                     ):
                         if _rk == "event":
                             yield _rpayload
                         else:
                             _recovery_result = _rpayload
+                    if _recovery_result and _recovery_result.get("budget_exhaustion") is not None:
+                        _recovery_budget_exhaustion = _recovery_result["budget_exhaustion"]
+                        _ledger.stop_reason = "budget_exhausted"
+                        yield _budget_exhausted_event(_recovery_budget_exhaustion)
+                        break
                     if _recovery_result and _recovery_result.get("cancelled"):
                         # BUG-STOP-01: a Stop landed mid-recovery-ladder.
                         _ledger.stop_reason = "cancelled"
@@ -17146,6 +17238,8 @@ async def _stream_agent_loop_body(
         engine=_turn_engine_identity,
     )
     metrics["requested_model"] = requested_model
+    if _recovery_usage_receipts:
+        metrics["recovery_usage"] = list(_recovery_usage_receipts)
     if _compaction_usage_receipts:
         metrics["compaction_usage"] = list(_compaction_usage_receipts)
     metrics["endpoint_id"] = actual_endpoint_id
