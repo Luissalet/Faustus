@@ -2885,6 +2885,121 @@ aside.fs-panel {
   margin: 0;
 }
 
+.fs-sa__name--link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: start;
+  cursor: pointer;
+}
+
+.fs-sa__name--link:hover,
+.fs-sa__name--link:focus-visible {
+  text-decoration: underline;
+}
+
+.fs-sa__tok {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Tokens of this sub-agent relative to the heaviest sibling. */
+.fs-sa__heat {
+  display: block;
+  block-size: 3px;
+  min-inline-size: 2px;
+  border-radius: 2px;
+  background: var(--fs-brand);
+}
+
+.fs-sa__heat[data-heat='1'] { opacity: 0.35; }
+.fs-sa__heat[data-heat='2'] { opacity: 0.55; }
+.fs-sa__heat[data-heat='3'] { opacity: 0.8; }
+.fs-sa__heat[data-heat='4'] { opacity: 1; }
+
+/* Read-only transcript of one sub-agent. */
+.fs-sat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-3);
+  min-inline-size: 0;
+}
+
+.fs-sat__head,
+.fs-sat__usage,
+.fs-sat__msg-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-2);
+}
+
+.fs-sat__bars {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  align-items: flex-end;
+}
+
+.fs-sat__bar {
+  inline-size: 8px;
+  block-size: 18px;
+  border-radius: 2px;
+  background: var(--fs-surface-2);
+  border: 1px solid var(--fs-border);
+}
+
+.fs-sat__bar[data-heat='1'] { background: color-mix(in srgb, var(--fs-brand) 25%, var(--fs-surface-2)); }
+.fs-sat__bar[data-heat='2'] { background: color-mix(in srgb, var(--fs-brand) 45%, var(--fs-surface-2)); }
+.fs-sat__bar[data-heat='3'] { background: color-mix(in srgb, var(--fs-brand) 70%, var(--fs-surface-2)); }
+.fs-sat__bar[data-heat='4'] { background: var(--fs-brand); }
+
+.fs-sat__msg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fs-space-2);
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  background: var(--fs-surface-1);
+  min-inline-size: 0;
+}
+
+.fs-sat__msg[data-role='user'] {
+  background: var(--fs-surface-2);
+}
+
+.fs-sat__text {
+  margin: 0;
+  max-block-size: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.fs-sat__tool summary {
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.fs-sat__cmd {
+  font-family: var(--fs-font-code);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.fs-sat__bad {
+  color: var(--fs-danger, #c0392b);
+}
+
 .fs-sa__foot {
   display: flex;
   flex-wrap: wrap;

@@ -344,3 +344,139 @@ export async function resolveEffective(
     ignoredFields: asList(body.ignored_fields),
   };
 }
+
+/* ── sub-agent transcript (GET /api/chat/subagent/transcript/{id}) ─────────
+ *
+ * Read-only: what one delegate_agents worker said and did — messages, every
+ * tool call with its result — plus its token use, per recorded model call
+ * when call tracing kept them. Ownership is checked server-side exactly like
+ * stop/steer; another user's worker answers 404.
+ */
+
+export interface TranscriptToolEvent {
+  tool: string;
+  round: number | null;
+  input: string;
+  inputTruncated: boolean;
+  output: string;
+  outputTruncated: boolean;
+  outputChars: number;
+  exitCode: number | null;
+  durationMs: number | null;
+  model: string | null;
+}
+
+export interface TranscriptMessage {
+  index: number;
+  role: string;
+  content: string;
+  contentTruncated: boolean;
+  contentChars: number;
+  timestamp: string | null;
+  toolEvents: TranscriptToolEvent[];
+  toolEventsOmitted: number;
+  tokens: { input: number; output: number } | null;
+  model: string | null;
+}
+
+export interface TranscriptCall {
+  seq: number | null;
+  model: string | null;
+  durationMs: number | null;
+  input: number;
+  output: number;
+  cached: number;
+  /** 0..1, this call's total tokens relative to the heaviest call. */
+  heat: number;
+}
+
+export interface SubagentTranscript {
+  sessionId: string;
+  name: string;
+  model: string;
+  offset: number;
+  total: number;
+  hasMoreAfter: boolean;
+  messages: TranscriptMessage[];
+  usage: {
+    source: 'trace' | 'messages' | 'none';
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    calls: TranscriptCall[];
+  };
+}
+
+const tNum = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+const tStr = (v: unknown): string => (typeof v === 'string' ? v : v == null ? '' : String(v));
+const tRec = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' ? (v as Record<string, unknown>) : {});
+
+export function subagentTranscriptFrom(raw: Record<string, unknown>): SubagentTranscript {
+  const messages = (Array.isArray(raw.messages) ? raw.messages : []).map((m): TranscriptMessage => {
+    const r = tRec(m);
+    const tok = tRec(r.tokens);
+    return {
+      index: tNum(r.index) ?? 0,
+      role: tStr(r.role),
+      content: tStr(r.content),
+      contentTruncated: Boolean(r.content_truncated),
+      contentChars: tNum(r.content_chars) ?? 0,
+      timestamp: r.timestamp == null ? null : tStr(r.timestamp),
+      toolEvents: (Array.isArray(r.tool_events) ? r.tool_events : []).map((e): TranscriptToolEvent => {
+        const ev = tRec(e);
+        return {
+          tool: tStr(ev.tool),
+          round: tNum(ev.round),
+          input: tStr(ev.input),
+          inputTruncated: Boolean(ev.input_truncated),
+          output: tStr(ev.output),
+          outputTruncated: Boolean(ev.output_truncated),
+          outputChars: tNum(ev.output_chars) ?? 0,
+          exitCode: tNum(ev.exit_code),
+          durationMs: tNum(ev.duration_ms),
+          model: ev.model == null ? null : tStr(ev.model),
+        };
+      }).filter((e) => e.tool || e.input),
+      toolEventsOmitted: tNum(r.tool_events_omitted) ?? 0,
+      tokens: r.tokens ? { input: tNum(tok.input) ?? 0, output: tNum(tok.output) ?? 0 } : null,
+      model: r.model == null ? null : tStr(r.model),
+    };
+  });
+  const u = tRec(raw.usage);
+  const src = tStr(u.source);
+  return {
+    sessionId: tStr(raw.session_id),
+    name: tStr(raw.name),
+    model: tStr(raw.model),
+    offset: tNum(raw.offset) ?? 0,
+    total: tNum(raw.total) ?? messages.length,
+    hasMoreAfter: Boolean(raw.has_more_after),
+    messages,
+    usage: {
+      source: src === 'trace' || src === 'messages' ? src : 'none',
+      inputTokens: tNum(u.input_tokens) ?? 0,
+      outputTokens: tNum(u.output_tokens) ?? 0,
+      totalTokens: tNum(u.total_tokens) ?? 0,
+      calls: (Array.isArray(u.per_call) ? u.per_call : []).map((c): TranscriptCall => {
+        const r = tRec(c);
+        return {
+          seq: tNum(r.seq),
+          model: r.model == null ? null : tStr(r.model),
+          durationMs: tNum(r.duration_ms),
+          input: tNum(r.input) ?? 0,
+          output: tNum(r.output) ?? 0,
+          cached: tNum(r.cached) ?? 0,
+          heat: Math.max(0, Math.min(1, tNum(r.heat) ?? 0)),
+        };
+      }),
+    },
+  };
+}
+
+export async function fetchSubagentTranscript(childSessionId: string, offset = 0, signal?: AbortSignal): Promise<SubagentTranscript> {
+  const raw = await getJson<Record<string, unknown>>(
+    `/api/chat/subagent/transcript/${encodeURIComponent(childSessionId)}?offset=${Math.max(0, Math.floor(offset))}`,
+    signal,
+  );
+  return subagentTranscriptFrom(raw);
+}

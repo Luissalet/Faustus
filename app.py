@@ -1431,6 +1431,9 @@ from routes.agent_progress_routes import setup_agent_progress_routes
 app.include_router(setup_agent_progress_routes())
 from routes.llm_trace_routes import setup_llm_trace_routes
 app.include_router(setup_llm_trace_routes())
+# Read-only transcript of one delegate_agents worker (Agents panel).
+from routes.subagent_transcript_routes import setup_subagent_transcript_routes
+app.include_router(setup_subagent_transcript_routes())
 # Per-model estimate_tokens() calibration state (admin) — src/token_calibration.py.
 from routes.token_calibration_routes import setup_token_calibration_routes
 app.include_router(setup_token_calibration_routes())

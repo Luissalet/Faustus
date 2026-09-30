@@ -1,10 +1,11 @@
-import { ExternalLink, Pencil, RotateCcw, Square } from 'lucide-react';
+import { ExternalLink, FileText, Pencil, RotateCcw, Square } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { Button, StatusBadge, type RunStatus } from '../../components';
 import { steerWorker, stopWorker } from '../../adapters/agents';
 import type { DelegationTask } from '../../adapters/chat';
 import { workerLive, type Worker } from './model';
+import SubagentTranscript, { heatLevel } from './SubagentTranscript';
 import { t, tn } from '../../i18n';
 
 /**
@@ -84,7 +85,7 @@ function pill(w: Worker, now: number): { status: RunStatus; label: string } {
 
 const fmtTok = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v));
 
-function WorkerCard({ w, live, now, onRerun, onNotice }: { w: Worker; live: boolean; now: number; onRerun: SubagentBoardProps['onRerun']; onNotice: SubagentBoardProps['onNotice'] }) {
+function WorkerCard({ w, live, now, heat, onOpen, onRerun, onNotice }: { w: Worker; live: boolean; now: number; heat: number; onOpen: () => void; onRerun: SubagentBoardProps['onRerun']; onNotice: SubagentBoardProps['onNotice'] }) {
   const [form, setForm] = useState<'steer' | 'rerun' | null>(null);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -143,7 +144,11 @@ function WorkerCard({ w, live, now, onRerun, onNotice }: { w: Worker; live: bool
   return (
     <article className="fs-sa" data-status={w.status} data-live={alive || undefined} data-stalled={w.stalled || undefined}>
       <header className="fs-sa__head">
-        <strong className="fs-sa__name">{name}</strong>
+        {w.sessionId ? (
+          <button type="button" className="fs-sa__name fs-sa__name--link" onClick={onOpen} title={t('Open the transcript')}>{name}</button>
+        ) : (
+          <strong className="fs-sa__name">{name}</strong>
+        )}
         <span className="fs-sa__role" data-role={w.role}>{w.role}</span>
         {w.model && <code className="fs-sa__model" title={t('model')}>{w.model}</code>}
         <StatusBadge status={p.status} label={p.label} />
@@ -162,7 +167,12 @@ function WorkerCard({ w, live, now, onRerun, onNotice }: { w: Worker; live: bool
           {tn(w.toolCalls, '{n} tool', '{n} tools')}
           {w.failedCalls ? ` (${t('{n} failed', {n:w.failedCalls})})` : ''}
         </span>
-        {(w.inTok !== null || w.outTok !== null) && <span title="tokens">{fmtTok(w.inTok ?? 0)} in · {fmtTok(w.outTok ?? 0)} out</span>}
+        {(w.inTok !== null || w.outTok !== null) && (
+          <span title={t('tokens (the bar compares it with the heaviest sub-agent)')} className="fs-sa__tok">
+            {fmtTok(w.inTok ?? 0)} in · {fmtTok(w.outTok ?? 0)} out
+            <span className="fs-sa__heat" data-heat={heatLevel(heat)} style={{ inlineSize: `${Math.round(heat * 100)}%` }} aria-hidden="true" />
+          </span>
+        )}
         {!alive && w.mutations.length > 0 && <span>{tn(w.mutations.length, '{n} file changed', '{n} files changed')}</span>}
         {!alive && w.mutations.length === 0 && w.status !== 'queued' && <span className="fs-sa__muted">{t('no file changes')}</span>}
       </p>
@@ -203,6 +213,7 @@ function WorkerCard({ w, live, now, onRerun, onNotice }: { w: Worker; live: bool
             <Button size="sm" icon={Pencil} label={t('Steer…')} onClick={() => setForm(form === 'steer' ? null : 'steer')} />
           </>
         )}
+        {w.sessionId && <Button size="sm" icon={FileText} label={t('Transcript')} onClick={onOpen} />}
         {w.sessionId && (
           <Link className="fs-btn" data-size="sm" to={`/studio?s=${encodeURIComponent(w.sessionId)}`} title={w.sessionId}>
             <ExternalLink size={13} aria-hidden="true" /> <span>{t('Open its chat')}</span>
@@ -256,6 +267,20 @@ export default function SubagentBoard({ workers, live, onRerun, onNotice }: Suba
     return () => window.clearInterval(id);
   }, [anyLive]);
 
+  const [open, setOpen] = useState<string | null>(null);
+  const tokenTotal = (w: Worker) => (w.inTok ?? 0) + (w.outTok ?? 0);
+  const heaviest = Math.max(0, ...workers.map(tokenTotal));
+  const opened = open ? workers.find((w) => w.sessionId === open) : undefined;
+  if (opened) {
+    return (
+      <SubagentTranscript
+        sessionId={opened.sessionId}
+        title={opened.role === 'reviewer' ? `${t('Reviewer')} · ${opened.name || 'reviewer'}` : `${(opened.index ?? 0) + 1}. ${opened.name || 'worker'}`}
+        onBack={() => setOpen(null)}
+      />
+    );
+  }
+
   const done = workers.filter((w) => !workerLive(w)).length;
   const running = workers.filter((w) => w.status === 'running').length;
   const queued = workers.filter((w) => w.status === 'queued').length;
@@ -271,7 +296,7 @@ export default function SubagentBoard({ workers, live, onRerun, onNotice }: Suba
       </header>
       <div className="fs-sa-board__cards">
         {workers.map((w) => (
-          <WorkerCard key={`${w.delegation}|${w.id}`} w={w} live={live} now={now} onRerun={onRerun} onNotice={onNotice} />
+          <WorkerCard key={`${w.delegation}|${w.id}`} w={w} live={live} now={now} heat={heaviest ? tokenTotal(w) / heaviest : 0} onOpen={() => setOpen(w.sessionId)} onRerun={onRerun} onNotice={onNotice} />
         ))}
       </div>
     </section>
