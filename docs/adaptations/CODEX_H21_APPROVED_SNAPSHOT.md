@@ -35,3 +35,16 @@ Casos nuevos: edición posterior a captura, nuevo archivo prioritario, cambio de
 ```text
 venv/Scripts/python.exe -m pytest tests/test_instruction_approved_snapshot.py tests/test_agent_loop_workspace_trust.py tests/test_workspace_trust.py tests/test_codex_h21_instruction_cache.py tests/test_project_instructions_remember.py tests/test_project_instructions_atomic_remember.py tests/test_context_compactor.py tests/test_context_compactor_nonstring.py tests/test_context_compactor_regressions.py -q
 ```
+
+## Extensión conjunta de reglas (a327ccd3)
+
+La limitación anterior de rules fuera del digest queda corregida para la
+proyección descubierta/capturada. Digestv2 cuando hay reglas, v1exacto sinellas;
+v1previo no eleva cobertura. Rules-only y ask requieren aprobación explícita de
+esa cobertura. Prompt usa block_from_snapshot sin releer reglas; biblioteca app
+fuera de aprobación. Compactor hereda verdictconjunto para instrucciones.
+Revisiónv2 usa capturas también de instrucciones y muestra ancestros sincorte16;
+truncación32k visible, no todo contenido. off/degraded/failopen previos intactos.
+137 pruebas correctas5,54s, coordinador12 nuevas1,20s; no modelos/GPU.
+Aprobaciónproyección64KiB/máx40reglas no archivoíntegro ni directorioatómico;
+jerarquía completa y objetivosmutableapp siguen fuera alcance.
