@@ -54,3 +54,21 @@ requieren un lote posterior. La selección visible puede seguir procesando
 filas globales: su maduración/poda independiente conserva el comportamiento
 anterior. El aislamiento de recuperación por sesión y las identidades de
 tombstones están fuera de este cambio.
+
+## Evaluación posterior de carrera (sin implementación)
+
+2026-09-30: SQLite temporal y dos threads curator reprodujeron pérdida total de
+dos duplicados del mismo propietario/proyecto. Una lectura anterior a feedback
+eligió el superviviente A; otra posterior eligió B. Pausar ambos threads después
+de sus saves reales y antes de sus deletes permitió que cada uno borrase el
+superviviente del otro. Ambos informes devolvieron deduped=1 y total_active=1;
+al reabrir el almacén quedaron cero filas, sin excepciones.
+
+`memory_engine._db` protege y confirma cada operación mediante un RLock y una
+conexión corta, pero no hace atómica la selección/fusión/borrado del curator.
+`save_item` usa INSERT OR REPLACE. Un primer bloqueo compartido de toda curación
+podría serializar curators del mismo proceso; no sería una transacción durable
+ni cubriría varios procesos o todos los read/write externos. Una solución
+transaccional requiere conexión compartida durante BEGIN IMMEDIATE y diferir
+la desindexación hasta commit, además de revisar writers con snapshots previos.
+La implementación queda pendiente; esta evaluación no modifica el store.
