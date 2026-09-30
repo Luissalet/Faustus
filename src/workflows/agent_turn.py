@@ -114,11 +114,26 @@ async def _consume(stream, *, deadline: float, cancelled: Callable[[], bool]) ->
     error = ""
     stop_reason = ""
     approvals = 0
-    it = stream.__aiter__()
-    # One pending read at a time, never cancelled by the periodic wake-up: a
-    # model that thinks for minutes before its first token must not have its
-    # stream torn down (cancelling `__anext__` closes the agent generator).
-    pending: Optional[asyncio.Future] = None
+    # The stream is consumed by ONE task for its whole life: the agent loop
+    # sets and resets context variables across its steps, so every step must
+    # run in the same context (a task per `__anext__` gives each step its own
+    # copy and the reset fails). The reader here only waits on a queue, and
+    # its periodic wake-up never touches the stream.
+    queue: asyncio.Queue = asyncio.Queue()
+    _END = object()
+
+    async def _pump() -> None:
+        try:
+            async for item in stream:
+                await queue.put(item)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - surfaced as the turn's error
+            await queue.put(("__error__", f"{type(exc).__name__}: {exc}"))
+        finally:
+            await queue.put(_END)
+
+    pump = asyncio.ensure_future(_pump())
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -127,16 +142,15 @@ async def _consume(stream, *, deadline: float, cancelled: Callable[[], bool]) ->
         if cancelled():
             stop_reason = "cancelled"
             break
-        if pending is None:
-            pending = asyncio.ensure_future(it.__anext__())
-        done, _ = await asyncio.wait({pending}, timeout=min(remaining, _WAKE_S))
-        if not done:
-            continue                       # re-check the deadline and the lease
-        fut, pending = pending, None
         try:
-            chunk = fut.result()
-        except StopAsyncIteration:
+            chunk = await asyncio.wait_for(queue.get(), timeout=min(remaining, _WAKE_S))
+        except asyncio.TimeoutError:
+            continue                       # re-check the deadline and the lease
+        if chunk is _END:
             break
+        if isinstance(chunk, tuple) and len(chunk) == 2 and chunk[0] == "__error__":
+            error = str(chunk[1])[:300]
+            continue
         if not isinstance(chunk, str):
             continue
         if chunk.startswith("event: error"):
@@ -169,12 +183,12 @@ async def _consume(stream, *, deadline: float, cancelled: Callable[[], bool]) ->
                                     **({"needs_approval": True} if asked else {})})
         elif event.get("type") == "error" and event.get("message"):
             error = str(event.get("message"))[:300]
-    if pending is not None:              # deadline or cancel with a read in flight
-        pending.cancel()
-        try:
-            await pending
-        except (asyncio.CancelledError, StopAsyncIteration, Exception):  # noqa: BLE001
-            pass
+    if not pump.done():                  # deadline or cancel: stop the producer
+        pump.cancel()
+    try:
+        await pump
+    except (asyncio.CancelledError, Exception):  # noqa: BLE001
+        pass
     try:
         await stream.aclose()
     except Exception:  # noqa: BLE001 - closing a finished generator is best-effort

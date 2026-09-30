@@ -1074,3 +1074,26 @@ def test_busy_means_no_idle_slot(monkeypatch):
     assert bjg.no_free_slot("http://127.0.0.1:8081/v1") is False
     monkeypatch.setattr(va, "_get", lambda root, path, t: [{"is_processing": True}, {"is_processing": True}])
     assert bjg.no_free_slot("http://127.0.0.1:8081/v1") is True
+
+
+def test_the_agent_stream_keeps_one_context_across_its_steps(monkeypatch):
+    """The agent loop sets a context variable in one step and resets it in a
+    later one; every step must run in the same context."""
+    import asyncio
+    import contextvars
+    import json as _json
+    import time as _time
+    from src.workflows import agent_turn
+
+    var = contextvars.ContextVar("step_owner", default=None)
+
+    async def stream():
+        token = var.set("run")
+        yield "data: " + _json.dumps({"delta": "a"}) + "\n\n"
+        await asyncio.sleep(0.15)                # the reader wakes up in between
+        yield "data: " + _json.dumps({"delta": "b"}) + "\n\n"
+        var.reset(token)                         # raises if the context changed
+
+    monkeypatch.setattr(agent_turn, "_WAKE_S", 0.05)
+    out = asyncio.run(agent_turn._consume(stream(), deadline=_time.monotonic() + 5, cancelled=lambda: False))
+    assert out["text"] == "ab" and out["error"] == ""
