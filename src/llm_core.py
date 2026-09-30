@@ -4346,6 +4346,8 @@ async def llm_call_async(
     handled it, and a bug in tracing can never affect the call itself
     (record happens after the real work is done, in its own try/except).
     """
+    from src import llm_trace
+    _trace_phase_snapshot = llm_trace._capture_call_phase()
     _t0 = time.time()
     _err: Optional[str] = None
     _text = ""
@@ -4381,6 +4383,7 @@ async def llm_call_async(
         try:
             from src import llm_trace
             llm_trace.record_call(
+                _phase_snapshot=_trace_phase_snapshot,
                 session_id=session_id,
                 endpoint_url=url,
                 model=_model_out,
@@ -5718,6 +5721,7 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
     the finally so cancellation still records what was seen so far).
     """
     from src import llm_trace
+    _trace_phase_snapshot = llm_trace._capture_call_phase()
     if not llm_trace.tracing_enabled() or not session_id:
         async for chunk in _stream_llm_traced_source(
             url, model, messages, temperature=temperature, max_tokens=max_tokens,
@@ -5751,6 +5755,7 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
     finally:
         try:
             llm_trace.record_call(
+                _phase_snapshot=_trace_phase_snapshot,
                 session_id=session_id,
                 endpoint_url=url,
                 model=model,

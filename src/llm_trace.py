@@ -68,6 +68,14 @@ _CURRENT_RUN_ID: "contextvars.ContextVar[str]" = contextvars.ContextVar(
 _CURRENT_CALL_PHASE = contextvars.ContextVar("faustus_llm_trace_call_phase", default=(None, None))
 
 
+_CALL_PHASE_UNSET = object()
+
+
+def _capture_call_phase():
+    """Immutable invocation identity, including explicitly unknown phase."""
+    return _CURRENT_CALL_PHASE.get()
+
+
 @contextmanager
 def call_phase(phase, *, step=None):
     """Label only explicitly scoped auxiliary calls; never infer old phases."""
@@ -353,6 +361,7 @@ def record_call(
     usage: Optional[Dict[str, Any]] = None,
     duration_ms: Optional[float] = None,
     error: Optional[str] = None,
+    _phase_snapshot=_CALL_PHASE_UNSET,
 ) -> None:
     """Best-effort, fire-and-forget trace of one model call.
 
@@ -392,10 +401,10 @@ def record_call(
             "duration_ms": duration_ms,
             "error": error,
         }
-        phase, step = _CURRENT_CALL_PHASE.get()
-        if phase is not None:
+        phase, step = (_capture_call_phase() if _phase_snapshot is _CALL_PHASE_UNSET else _phase_snapshot)
+        if phase in ("compaction", "recovery"):
             record["phase"] = phase
-        if step is not None:
+        if phase == "recovery" and type(step) is int and step in (2, 3):
             record["step"] = step
         _EXECUTOR.submit(_record_on_thread, str(session_id), record)
         try:
