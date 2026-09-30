@@ -13,7 +13,10 @@
    (`~~12 %~~`) and a short note is appended (Spanish or English, following the answer).
 4. The ledger is returned as a compact trace entry (`trace_entry`) to record with the turn.
 
-## Wiring contract for the agent loop
+## Wiring in the agent loop
+
+Both call sites below are wired in `src/agent_loop.py` (the answer-check block and the step right
+after it); `tests/test_grounding_ledger_loop.py` drives a whole turn through them.
 
 `answer_checks.grounding_review(answer, question, tool_outputs, retry_used=..., lang=...)` returns
 `{"action": "none" | "retry" | "mark", "note", "answer", "ledger", "trace"}` and is always `none`

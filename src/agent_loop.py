@@ -10630,6 +10630,7 @@ async def _stream_agent_loop_body(
     # One clean rewrite per turn when the final answer names a weekday the
     # calendar contradicts or thinks aloud (src/answer_checks.py).
     _answer_rewrite_used = False
+    _grounding_marked = False  # figure ledger: unsupported figures struck through once
     _project_objective_nudges = 0
     _project_objective_unavailable_nudges = 0
 
@@ -14295,7 +14296,22 @@ async def _stream_agent_loop_body(
                 except Exception as _ac_err:  # a check never breaks a turn
                     logger.debug("[harness] answer checks failed: %s", _ac_err)
                     _wd_bad, _aloud, _slot_bad, _calc_bad = [], [], [], None
-                if _wd_bad or _aloud or _slot_bad or _calc_bad:
+                # Figure ledger (off by default): every figure of a tool-backed
+                # answer must come from the turn's tools/sources or be derivable
+                # from them; the first time it is not, ask for one correction.
+                _grounding_note = None
+                try:
+                    if tool_events:
+                        _gr = _answer_checks.grounding_review(
+                            _hc_text, _last_user or "",
+                            [str((e or {}).get("output") or "") for e in tool_events], retry_used=False)
+                        if _gr.get("trace"):
+                            _ledger.notes.append("grounding:" + json.dumps(_gr["trace"], ensure_ascii=False)[:600])
+                        if _gr.get("action") == "retry":
+                            _grounding_note = str(_gr.get("note") or "") or None
+                except Exception as _gl_err:  # never let the ledger break a turn
+                    logger.debug("[harness] grounding ledger failed: %s", _gl_err)
+                if _wd_bad or _aloud or _slot_bad or _calc_bad or _grounding_note:
                     _answer_rewrite_used = True
                     logger.warning("[harness] round %s answer rewrite: weekdays=%s aloud=%s slots=%s calculation=%s",
                                    round_num, _wd_bad, _aloud, _slot_bad, _calc_bad)
@@ -14306,13 +14322,15 @@ async def _stream_agent_loop_body(
                             full_response = full_response[:-len(round_response)]
                             yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
                     messages.append({"role": "user", "_harness_note": True,
-                                     "content": _lang_note(_answer_checks.rewrite_note(_wd_bad, _aloud, _slot_bad, _calc_bad))})
+                                     "content": _lang_note(_answer_checks.rewrite_note(_wd_bad, _aloud, _slot_bad, _calc_bad,
+                                                                                         grounding=_grounding_note))})
                     yield (
                         "data: " + json.dumps({
                             "type": "harness_check", "status": "rejected",
                             "reasons": (["wrong_weekday"] if _wd_bad else []) + (["thinking_aloud"] if _aloud else [])
                                        + (["busy_slot"] if _slot_bad else [])
-                                       + (["wrong_calculation"] if _calc_bad else []),
+                                       + (["wrong_calculation"] if _calc_bad else [])
+                                       + (["ungrounded_figure"] if _grounding_note else []),
                             "slots": _slot_bad,
                             "round": round_num, "attempt": 1, "max_attempts": 1,
                             "weekdays": _wd_bad, "phrases": _aloud[:4],
@@ -14320,6 +14338,28 @@ async def _stream_agent_loop_body(
                     )
                     yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
                     continue
+            # Figure ledger, second chance used (or no rewrite left): strike
+            # through what is still unsupported instead of letting it pass.
+            if (_hc_text and tool_events and not plan_mode and not _grounding_marked
+                    and (_answer_rewrite_used or round_num >= max_rounds)):
+                try:
+                    from src import answer_checks as _answer_checks_gl
+                    _gr2 = _answer_checks_gl.grounding_review(
+                        _hc_text, _last_user or "",
+                        [str((e or {}).get("output") or "") for e in tool_events], retry_used=True)
+                    if _gr2.get("action") == "mark" and _gr2.get("answer"):
+                        _grounding_marked = True
+                        _marked = str(_gr2["answer"])
+                        if round_response.strip() and full_response.endswith(round_response):
+                            full_response = full_response[:-len(round_response)] + _marked
+                            round_response = _marked
+                            _hc_text = _marked
+                            yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
+                        _ledger.notes.append("grounding_marked:" + json.dumps(_gr2.get("trace") or {}, ensure_ascii=False)[:600])
+                        yield ("data: " + json.dumps({"type": "harness_check", "status": "figures_marked",
+                                                      "round": round_num}) + "\n\n")
+                except Exception as _gl2_err:
+                    logger.debug("[harness] grounding mark failed: %s", _gl2_err)
             # H1 before the claims check: when the turn touched UI files and
             # no browser evidence exists, run the harness's own smoke crawl
             # NOW, so `ui_unverified` only fires when the smoke could not
