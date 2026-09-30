@@ -274,8 +274,8 @@ class WorkflowStore:
         tool_calls = 0
         active_seconds = 0.0
         for node_id, run in states.items():
-            if run.status not in TERMINAL_NODE:
-                continue
+            if run.status not in TERMINAL_NODE or run.status == "skipped":
+                continue            # a node that never ran spent nothing
             if types.get(node_id) not in EFFECTFUL_TYPES:
                 continue
             tool_calls += 1

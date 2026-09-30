@@ -44,8 +44,7 @@ from .templating import TemplateError, render
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["agent_handler", "classify_handler", "extract_handler", "guard_handler",
-           "model_node_handlers"]
+__all__ = ["agent_handler", "classify_handler", "extract_handler", "model_node_handlers"]
 
 _MAX_PROMPT_CHARS = 100_000
 
@@ -266,8 +265,240 @@ def agent_handler(run_turn: Optional[Callable[[Dict[str, Any]], Mapping[str, Any
     return handle
 
 
-# The other three node types are added alongside their own tests; until then
-# they are simply absent from the table.
+# ── classify ─────────────────────────────────────────────────────────────
+
+DEFAULT_THRESHOLD = 0.7
+MAX_LABELS = 20
+_LABEL_RE = re.compile(r"[^A-Za-z0-9]+")
+
+
+def _labels(config: Mapping[str, Any]) -> Tuple[List[Tuple[str, str]], str]:
+    raw = config.get("labels")
+    if not isinstance(raw, (list, tuple)):
+        return [], "a classify node needs `config.labels`, a list of at least two labels"
+    out: List[Tuple[str, str]] = []
+    for item in raw:
+        if isinstance(item, str) and item.strip():
+            out.append((item.strip(), ""))
+        elif isinstance(item, Mapping) and isinstance(item.get("name"), str) and item["name"].strip():
+            out.append((item["name"].strip(), str(item.get("description") or "").strip()))
+        else:
+            return [], "each label is a non-empty string or {name, description}"
+    names = [n for n, _ in out]
+    if len(names) < 2:
+        return [], "a classify node needs at least two labels to choose between"
+    if len(names) > MAX_LABELS:
+        return [], f"a classify node takes at most {MAX_LABELS} labels"
+    if len(set(names)) != len(names):
+        return [], "labels must be unique"
+    return out, ""
+
+
+def _match_label(reply: str, names: Sequence[str]) -> Optional[str]:
+    """The one label a free-text answer names, or None when it names none or
+    several. Exact (case/punctuation-insensitive) first, then as a whole word —
+    never a guess between two."""
+    flat = _LABEL_RE.sub(" ", str(reply or "")).strip().lower()
+    if not flat:
+        return None
+    for name in names:
+        if flat == _LABEL_RE.sub(" ", name).strip().lower():
+            return name
+    hits = [n for n in names
+            if re.search(rf"(?<![a-z0-9]){re.escape(_LABEL_RE.sub(' ', n).strip().lower())}(?![a-z0-9])", flat)]
+    return hits[0] if len(hits) == 1 else None
+
+
+def classify_handler(models: Optional[ModelCalls] = None) -> Callable:
+    """`classify`: route to exactly one branch among declared labels.
+
+    Config: `text` (template; what to classify), `labels` (2–20, strings or
+    `{name, description}`), `question`, `instructions`, `threshold` (default
+    0.7), `fallback` (a label), `on_uncertain` (`fallback` | `ask`; default
+    `fallback` when a fallback is set, else `ask`), `purpose`, `timeout_s`.
+
+    The choice is one token read as a probability (`typed_decision`), so it
+    comes with a confidence. Below `threshold` — or when the server gave no
+    usable answer — the node either takes `fallback`, or asks the model once
+    in plain words; if that settles nothing and there is a `fallback`, it is
+    used, otherwise the node fails rather than pick a branch at random. The
+    outcome, with its receipt, is `{branch, label, receipt}`; downstream nodes
+    opt into a label with `branch: {this_node: label}`."""
+
+    def handle(node: WorkflowNode, context: Mapping[str, Any]) -> Dict[str, Any]:
+        config = node.config or {}
+        labels, problem = _labels(config)
+        if problem:
+            return _failed(problem)
+        names = [n for n, _ in labels]
+        text_template, problem = _text_config(config, "text")
+        if problem:
+            return _failed(problem)
+        question, problem = _text_config(config, "question", required=False, limit=500)
+        if problem:
+            return _failed(problem)
+        instructions, problem = _text_config(config, "instructions", required=False, limit=2000)
+        if problem:
+            return _failed(problem)
+        threshold, problem = _number(config, "threshold", DEFAULT_THRESHOLD, 0.0, 1.0)
+        if problem:
+            return _failed(problem)
+        timeout_s, problem = _number(config, "timeout_s", 30, 1, 600)
+        if problem:
+            return _failed(problem)
+        fallback = config.get("fallback")
+        if fallback is not None and fallback not in names:
+            return _failed(f"config.fallback {fallback!r} is not one of the labels {names}")
+        mode = config.get("on_uncertain") or ("fallback" if fallback else "ask")
+        if mode not in ("fallback", "ask"):
+            return _failed("config.on_uncertain must be 'fallback' or 'ask'")
+        if mode == "fallback" and not fallback:
+            return _failed("config.on_uncertain is 'fallback' but no `config.fallback` label is set")
+        if models is None:
+            return _failed(
+                "no model is wired to the 'classify' node type; no branch was chosen. Pass "
+                "`models=` to default_handlers — Faustus will not route on a guess")
+        try:
+            text = render(text_template, context)
+        except TemplateError as exc:
+            return _failed(str(exc))
+        if not text.strip():
+            return _failed("there is nothing to classify: the text rendered to nothing")
+
+        purpose = str(config.get("purpose") or "utility")
+        owner = str(context.get("owner") or "")
+        from src.typed_decision import Field            # noqa: PLC0415 - heavy import, only here
+        fld = Field(name="label", question=question or "Which category best describes the text?",
+                    choices=names, descriptions=[d for _, d in labels] if any(d for _, d in labels) else None)
+        decisions = models.decide(text, [fld], owner=owner or None, purpose=purpose,
+                                  instructions=instructions, timeout_s=timeout_s,
+                                  min_confidence=threshold, caller="workflow.classify") or {}
+        decision = decisions.get("label")
+        receipt: Dict[str, Any] = {
+            "options": names, "threshold": threshold, "fallback": fallback,
+            "on_uncertain": mode, "fallback_used": False, "asked": False,
+            "choice": None, "confidence": None, "method": "", "distribution": {},
+            "uncertain_reason": "", "model": "",
+        }
+        if decision is not None:
+            receipt.update(confidence=getattr(decision, "confidence", None),
+                           distribution=dict(getattr(decision, "distribution", None) or {}),
+                           model=str(getattr(decision, "model", "") or ""),
+                           method=str(getattr(decision, "method", "") or ""),
+                           best=getattr(decision, "best", None))
+        value = getattr(decision, "value", None) if decision is not None else None
+        if value in names:
+            receipt["choice"] = value
+            return {"branch": value, "label": value, "receipt": receipt}
+
+        receipt["uncertain_reason"] = (getattr(decision, "reason", "") if decision is not None
+                                       else "") or "no_decision"
+        if mode == "ask":
+            receipt["asked"] = True
+            listing = "\n".join(f"- {n}" + (f": {d}" if d else "") for n, d in labels)
+            try:
+                reply = models.complete(
+                    [{"role": "system", "content": (
+                        "You classify text. Reply with exactly one of the labels given, "
+                        "spelled exactly as given, and nothing else.")},
+                     {"role": "user", "content": (
+                         (question or "Which label best describes the text?") +
+                         "\n\nLabels:\n" + listing + "\n\nText:\n" + text[:6000])}],
+                    owner=owner, purpose=purpose, timeout_s=timeout_s, max_tokens=24,
+                    temperature=0.0)
+            except ModelUnavailable as exc:
+                receipt["ask_error"] = str(exc)
+                reply = ""
+            picked = _match_label(reply, names)
+            receipt["ask_reply"] = str(reply or "")[:200]
+            if picked:
+                receipt.update(choice=picked, method="ask")
+                return {"branch": picked, "label": picked, "receipt": receipt}
+        if fallback:
+            receipt.update(choice=fallback, method="fallback", fallback_used=True)
+            return {"branch": fallback, "label": fallback, "receipt": receipt}
+        return _failed(
+            "the model was not sure enough to choose a label "
+            f"({receipt['uncertain_reason']}) and there is no `fallback`; nothing was routed",
+            receipt=receipt)
+
+    return handle
+
+
+# ── extract ──────────────────────────────────────────────────────────────
+
+MAX_EXTRACT_CHARS = 20_000
+
+_EXTRACT_SYSTEM = (
+    "You extract structured parameters from a text. Reply with ONE JSON object that "
+    "satisfies the given schema and nothing else: no prose, no code fence. Use only "
+    "what the text says; never invent a value. When the text does not give a value "
+    "and the schema allows it, leave the field out or use null.")
+
+
+def extract_handler(models: Optional[ModelCalls] = None) -> Callable:
+    """`extract`: pull the parameters a JSON schema describes out of a text.
+
+    Config: `text` (template — a run input or an upstream output), `schema`
+    (object schema), `instructions`, `purpose`, `timeout_s` (default 60).
+    The model's answer is parsed and validated; one repair call with the exact
+    errors, then the node fails. Output: `{data, repaired, input_truncated}`."""
+
+    def handle(node: WorkflowNode, context: Mapping[str, Any]) -> Dict[str, Any]:
+        config = node.config or {}
+        text_template, problem = _text_config(config, "text")
+        if problem:
+            return _failed(problem)
+        schema, problem = _schema_config(config, "schema", required=True)
+        if problem:
+            return _failed(problem)
+        if schema.get("type") != "object":
+            return _failed("config.schema must describe an object (`\"type\": \"object\"`): an "
+                           "extract node returns named parameters")
+        instructions, problem = _text_config(config, "instructions", required=False, limit=2000)
+        if problem:
+            return _failed(problem)
+        timeout_s, problem = _number(config, "timeout_s", 60, 1, 600)
+        if problem:
+            return _failed(problem)
+        if models is None:
+            return _failed(
+                "no model is wired to the 'extract' node type; nothing was extracted. Pass "
+                "`models=` to default_handlers")
+        try:
+            text = render(text_template, context)
+        except TemplateError as exc:
+            return _failed(str(exc))
+        if not text.strip():
+            return _failed("there is nothing to extract from: the text rendered to nothing")
+        truncated = len(text) > MAX_EXTRACT_CHARS
+        body = text[:MAX_EXTRACT_CHARS]
+        purpose = str(config.get("purpose") or "utility")
+        owner = str(context.get("owner") or "")
+        task = ("Schema:\n" + json.dumps(schema, ensure_ascii=False, sort_keys=True) +
+                (("\n\nInstructions:\n" + instructions) if instructions else "") +
+                "\n\nText:\n\"\"\"\n" + body + "\n\"\"\"")
+        try:
+            reply = models.complete(
+                [{"role": "system", "content": _EXTRACT_SYSTEM}, {"role": "user", "content": task}],
+                owner=owner, purpose=purpose, timeout_s=timeout_s, max_tokens=1500, temperature=0.0)
+        except ModelUnavailable as exc:
+            return _failed(f"the model could not be reached: {exc}")
+        verdict = structured(reply, schema, models=models, owner=owner, purpose=purpose,
+                             task=task, timeout_s=min(timeout_s, 120.0))
+        if not verdict["ok"]:
+            return _failed("the extracted parameters do not satisfy `schema`: "
+                           + "; ".join(verdict["errors"][:6])
+                           + (f" ({verdict['repair']})" if verdict.get("repair") else ""),
+                           raw=str(reply)[:2000])
+        return {"data": verdict["data"], "repaired": bool(verdict["repaired"]),
+                "input_truncated": truncated}
+
+    return handle
+
+
 def model_node_handlers(*, agent: Optional[Callable] = None,
                         models: Optional[ModelCalls] = None) -> Dict[str, Callable]:
-    return {"agent": agent_handler(agent, models=models)}
+    return {"agent": agent_handler(agent, models=models),
+            "classify": classify_handler(models),
+            "extract": extract_handler(models)}

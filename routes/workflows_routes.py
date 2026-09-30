@@ -303,16 +303,19 @@ def setup_workflows_routes():
         choices: dict = {}
         if raw_choices is not None:
             if not isinstance(raw_choices, dict):
-                raise HTTPException(status_code=400, detail="choices must be an object of {node_id: bool}")
+                raise HTTPException(status_code=400, detail="choices must be an object of {node_id: bool or branch label}")
             for node_id, value in raw_choices.items():
-                if not isinstance(value, bool):
-                    raise HTTPException(status_code=400, detail=f"choices.{node_id} must be true or false")
+                if not isinstance(value, (bool, str)):
+                    raise HTTPException(status_code=400, detail=f"choices.{node_id} must be true or false, or a branch label for a classify/guard node")
                 choices[str(node_id)] = value
         raw_rounds = payload.get("rounds_max", 25)
         if isinstance(raw_rounds, bool) or not isinstance(raw_rounds, int) or not 1 <= raw_rounds <= 200:
             raise HTTPException(status_code=400, detail="rounds_max must be an integer from 1 to 200")
         from src.workflows.simulate import simulate as compute_simulation
-        result = compute_simulation(definition, choices=choices, rounds_max=raw_rounds)
+        try:
+            result = compute_simulation(definition, choices=choices, rounds_max=raw_rounds)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
         return {"ok": True, "simulation": result.to_dict()}
 
     @router.post("/mermaid")

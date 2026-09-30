@@ -15,18 +15,20 @@ read-only, so a test can spy on "nothing was ever called" the same way
 `src/workflows/preflight.py`'s tests do.
 
 **`needs` are AND dependencies, never control branches.** A node with
-several `needs` only activates once EVERY one of them is satisfied. This
-schema has no second edge type — no "true"/"false" edge, no "else" —  so a
-node's only way past a `human_approval` or an undecided `condition` in its
-ancestry is for that ancestor to actually resolve. A "visual path" in a
+several `needs` only activates once EVERY one of them is satisfied. The one
+control edge this schema has is a node's `branch` gate behind a `classify` or
+`guard` (the node runs only when that dependency chose one of the gate's
+labels); everything else about a node's ancestry is a plain AND. A node's only
+way past a `human_approval` or an undecided `condition` in its ancestry is for
+that ancestor to actually resolve. A "visual path" in a
 drawn graph that appears to go around one is not a real path this contract
 expresses; `simulate()` never lets one through, and always says so in
 `SimulationResult.warnings` so a reader does not mistake "this node is
 technically reachable" for "this node can run without that gate" — exactly
 the confusion INFORME §3.6 calls out by name.
 
-**A `condition`'s outcome and a `human_approval`'s decision are guesses the
-caller supplies, never computed.** `simulate()` never calls
+**A `condition`'s outcome, a `human_approval`'s decision and a `classify`/
+`guard` node's chosen label are guesses the caller supplies, never computed.** `simulate()` never calls
 `src/workflows/handlers.py::evaluate` — that reads a real run's live
 inputs, and this module intentionally touches none (no `WorkflowStore`, no
 `inputs` argument at all). `choices: Mapping[str, bool]` lets a caller say
@@ -63,7 +65,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
-from src.contracts.workflow import WorkflowDefinition
+from src.contracts.workflow import WorkflowDefinition, declared_branches
 
 __all__ = ["SimulationResult", "simulate"]
 
@@ -72,7 +74,8 @@ __all__ = ["SimulationResult", "simulate"]
 _AND_NOT_BRANCH_WARNING = (
     "`needs` are AND dependencies: a node with several `needs` only activates "
     "once every one of them is satisfied. This schema has no separate "
-    "true/false edge, so a drawn path that looks like it goes around a "
+    "true/false edge (the only control edge is a `branch` gate behind a "
+    "classify/guard node), so a drawn path that looks like it goes around a "
     "human_approval or an undecided condition is not a path this contract "
     "expresses — simulate() never lets a node through on that basis, and "
     "respects `needs` exactly as a real run would."
@@ -87,6 +90,16 @@ def _as_workflow_definition(definition: Any) -> WorkflowDefinition:
     if isinstance(definition, Mapping):
         return WorkflowDefinition.parse(definition)
     raise TypeError("simulate expects a WorkflowDefinition or a mapping")
+
+
+def _branch_label(node: Any, value: Any) -> Optional[str]:
+    """The label a caller's `choices` entry means for a branching node, or
+    None when it means none of this node's labels. A bool is accepted for a
+    `guard` only (`True` = pass)."""
+    known = declared_branches(node)
+    if node.type == "guard" and isinstance(value, bool):
+        return "pass" if value else "fail"
+    return value if isinstance(value, str) and value in known else None
 
 
 @dataclass(frozen=True)
@@ -123,7 +136,7 @@ class SimulationResult:
 def simulate(
     definition: Any,
     *,
-    choices: Optional[Mapping[str, bool]] = None,
+    choices: Optional[Mapping[str, Any]] = None,
     rounds_max: int = DEFAULT_ROUNDS_MAX,
 ) -> SimulationResult:
     """A structural walk of `definition`, `rounds_max` layers deep at most.
@@ -135,9 +148,11 @@ def simulate(
     is refused with the same `ContractError` that route would raise, rather
     than being "simulated" as if it could run.
 
-    `choices` only ever narrows a `condition`/`human_approval` node's own
-    outcome for THIS call; every other node type has no outcome to choose —
-    it activates once its dependencies do, or it does not.
+    `choices` only ever narrows a gate node's own outcome for THIS call:
+    `True`/`False` for a `condition`/`human_approval` (and `True` = `pass` for
+    a `guard`), a label for a `classify` (or `"pass"`/`"fail"` for a `guard`).
+    Every other node type has no outcome to choose — it activates once its
+    dependencies do, or it does not.
     """
     if isinstance(rounds_max, bool) or not isinstance(rounds_max, int) or rounds_max < 1:
         raise ValueError("rounds_max must be a positive integer")
@@ -145,6 +160,17 @@ def simulate(
     choices = dict(choices or {})
 
     by_id = {n.id: n for n in wf.nodes}
+    chosen: Dict[str, str] = {}           # branching node id -> the label this call assumes
+    for node_id, value in list(choices.items()):
+        node = by_id.get(node_id)
+        if node is None or node.type not in ("classify", "guard"):
+            continue
+        label = _branch_label(node, value)
+        if label is None:
+            raise ValueError(
+                f"choices[{node_id!r}] must be one of {list(declared_branches(node))} "
+                f"for this {node.type} node, got {value!r}")
+        chosen[node_id] = label
     outcome: Dict[str, str] = {}          # node_id -> "activated" | "not_taken"
     undecided: Dict[str, Dict[str, str]] = {}  # node_id -> {kind, blocked_by}
     human_waits: List[str] = []
@@ -184,8 +210,30 @@ def simulate(
             if not all(outcome.get(dep) == "activated" for dep in node.needs):
                 continue
 
+            # A branch gate: every gated dependency has resolved (they are
+            # all activated by now) — the node runs only when each chose one
+            # of its labels.
+            if node.branch and any(chosen.get(dep) not in labels
+                                   for dep, labels in node.branch.items()):
+                resolved_this_round[node_id] = "not_taken"
+                made_progress = True
+                continue
+
             if node.type == "human_approval":
                 human_this_round.append(node_id)
+
+            if node.type in ("classify", "guard"):
+                if node_id not in chosen:
+                    undecided_this_round[node_id] = {
+                        "kind": node.type, "blocked_by": node_id,
+                        "reason": f"no `choices[{node_id!r}]` was given, so which branch this "
+                                  f"{node.type} takes cannot be assumed",
+                    }
+                    made_progress = True
+                    continue
+                resolved_this_round[node_id] = "activated"
+                made_progress = True
+                continue
 
             if node.type in ("condition", "human_approval"):
                 choice = choices.get(node_id)

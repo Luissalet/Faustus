@@ -80,6 +80,52 @@ class NodeHandler(Protocol):
         ...
 
 
+def branch_gate(node: WorkflowNode, states: Mapping[str, NodeRun]) -> Optional[bool]:
+    """Whether a node's branch gate lets it run: `True` (no gate, or every
+    gated dependency chose one of the node's labels), `False` (some dependency
+    chose another label, or did not complete), `None` (a gated dependency has
+    not finished, so the answer does not exist yet).
+
+    The label is read from the dependency's recorded result (`result.branch`),
+    which is exactly what a restart would read — the gate never depends on
+    anything held in memory."""
+    if not node.branch:
+        return True
+    for dep, labels in node.branch.items():
+        state = states.get(dep)
+        if state is None or state.status not in TERMINAL_NODE:
+            return None
+        if state.status != "completed":
+            return False
+        if (state.result or {}).get("branch") not in labels:
+            return False
+    return True
+
+
+def branch_closed(definition: WorkflowDefinition,
+                  states: Mapping[str, NodeRun]) -> List[WorkflowNode]:
+    """Nodes that could start, except that the branch they sit behind was not
+    chosen. The engine records each as `skipped`, the same outcome a `condition`
+    that is not met has, so everything downstream of them stops the same way
+    and the run says which half of the graph did not happen."""
+    stopped = _stopping(definition, states)
+    out: List[WorkflowNode] = []
+    for node in definition.nodes:
+        if not node.branch:
+            continue
+        state = states.get(node.id)
+        if state is not None and state.status in TERMINAL_NODE:
+            continue
+        deps = [states.get(dep) for dep in node.needs]
+        if any(d is None or d.status not in TERMINAL_NODE for d in deps):
+            continue
+        if any(dep in stopped for dep in node.needs):
+            continue
+        if branch_gate(node, states) is False:
+            out.append(node)
+    return out
+
+
 def ready_nodes(definition: WorkflowDefinition,
                 states: Mapping[str, NodeRun]) -> Tuple[List[WorkflowNode], List[WorkflowNode]]:
     """`(runnable, blocked)`.
@@ -102,6 +148,11 @@ def ready_nodes(definition: WorkflowDefinition,
             continue                                   # simply not its turn yet
         if any(dep in stopped for dep in node.needs):
             blocked.append(node)
+            continue
+        gate = branch_gate(node, states)
+        if gate is not True:
+            # Closed gates are recorded as skips by the engine
+            # (`branch_closed`); until then they are simply not runnable.
             continue
         runnable.append(node)
     return runnable, blocked
@@ -195,6 +246,11 @@ class WorkflowEngine:
             if terminal:
                 return terminal
             states = self.store.node_runs(run_id)
+            closed = branch_closed(definition, states)
+            if closed:
+                for node in closed:
+                    self._skip_branch(run_id, node, states)
+                continue
             runnable, blocked = ready_nodes(definition, states)
             if not runnable:
                 return self._settle(run_id, definition, states, blocked, ran)
@@ -244,6 +300,25 @@ class WorkflowEngine:
                 "status": "running", "ran": ran,
                 "detail": f"stopped after {max_nodes} nodes in one pass; call advance() again"}
 
+
+    def _skip_branch(self, run_id: str, node: WorkflowNode, states: Mapping[str, NodeRun]) -> None:
+        """Record that a node's branch was not taken. Durable like any other
+        outcome (a restart reads the row), and never a handler call: nothing
+        here can reach outside."""
+        worker_id = uuid.uuid4().hex
+        claim = self.store.start_node(run_id, node, attempt=1, worker_id=worker_id)
+        if not claim.get("claimed"):
+            return
+        chosen = {dep: (states[dep].result or {}).get("branch") for dep in node.branch
+                  if dep in states}
+        reason = "branch not taken: " + ", ".join(
+            f"{dep} chose {chosen.get(dep)!r}, this node runs on {list(labels)}"
+            for dep, labels in node.branch.items())
+        self.store.finish_node(run_id, node.id, status="skipped", worker_id=worker_id,
+                               reason=reason, result={"branch_not_taken": True,
+                                                      "chosen": chosen})
+        self._emit("workflow.node", run_id=run_id, node=node.id, type=node.type,
+                   attempt=1, status="skipped", reason=reason)
 
     def _check_budget(self, run_id: str, definition: WorkflowDefinition) -> Optional[Dict[str, Any]]:
         """AUTO-02: this run's own declared budget, checked before every
@@ -511,7 +586,9 @@ class WorkflowEngine:
         # directly. Reporting one level deep answers "why did `write` not run?"
         # and leaves "and what about `send`?" hanging — which is the question
         # someone asks next.
-        unreached = _unreachable(definition, states)
+        unreached = sorted(set(_unreachable(definition, states)) | {
+            nid for nid, st in states.items()
+            if st.status == "skipped" and (st.result or {}).get("branch_not_taken")})
         if failures:
             detail = f"failed: {sorted(failures)}"
             if unreached:

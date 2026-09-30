@@ -375,3 +375,443 @@ def test_the_production_runner_refuses_before_starting_when_no_model_is_configur
     with pytest.raises(agent_turn.AgentTurnUnavailable):
         agent_turn.run({"prompt": "x", "begin_effect": lambda: started.append(1) or True})
     assert started == [], "an effect was claimed for a turn that never began"
+
+
+# ═════════════════════════ classify ══════════════════════════════════════
+
+from src.typed_decision import Decision  # noqa: E402
+
+
+def decision(value, confidence=0.95, *, best=None, reason="", method="logprobs", dist=None):
+    return Decision(field="label", value=value, confidence=confidence, mass=0.99,
+                    distribution=dist or {}, method=method, reason=reason,
+                    best=best or value, model="local-3b")
+
+
+def classify_flow(**config):
+    cfg = {"text": "{{ inputs.ticket }}", "labels": ["billing", "support", "sales"]}
+    cfg.update(config)
+    return flow(
+        START,
+        {"id": "route", "type": "classify", "needs": ["start"], "config": cfg},
+        {"id": "bill", "type": "skill", "needs": ["route"], "branch": {"route": "billing"},
+         "config": {"skill": "billing.reply"}},
+        {"id": "help", "type": "skill", "needs": ["route"], "branch": {"route": ["support", "sales"]},
+         "config": {"skill": "support.reply"}},
+    )
+
+
+class Skills:
+    def __init__(self):
+        self.ran: List[str] = []
+
+    def __call__(self, node, context):
+        self.ran.append(node.id)
+        return {"done": node.id}
+
+
+def test_a_confident_label_takes_its_branch_and_skips_the_other(store):
+    models = FakeModels(decisions={"label": decision("billing", 0.93)})
+    skills = Skills()
+    handlers = default_handlers(models=models.as_calls(), skill=skills)
+    run_id, result = run_flow(store, classify_flow(), handlers, inputs={"ticket": "I was charged twice"})
+    assert result["status"] == "completed"
+    assert skills.ran == ["bill"]
+    assert result["not_taken"] == ["help"]
+    nodes = store.node_runs(run_id)
+    assert nodes["help"].status == "skipped" and "branch not taken" in nodes["help"].reason
+    receipt = nodes["route"].result["receipt"]
+    assert nodes["route"].result["branch"] == "billing" == nodes["route"].result["label"]
+    assert receipt["options"] == ["billing", "support", "sales"]
+    assert receipt["choice"] == "billing" and receipt["confidence"] == 0.93
+    assert receipt["fallback_used"] is False and receipt["method"] == "logprobs"
+    assert receipt["model"] == "local-3b" and receipt["threshold"] == 0.7
+    sent = models.decide_calls[0]
+    assert sent["context"] == "I was charged twice" and sent["min_confidence"] == 0.7
+    assert [f.options() for f in sent["fields"]] == [["billing", "support", "sales"]]
+
+
+def test_one_branch_can_accept_several_labels(store):
+    models = FakeModels(decisions={"label": decision("sales", 0.9)})
+    skills = Skills()
+    run_id, result = run_flow(store, classify_flow(), default_handlers(models=models.as_calls(), skill=skills),
+                              inputs={"ticket": "do you ship to Spain?"})
+    assert skills.ran == ["help"] and result["not_taken"] == ["bill"]
+
+
+def test_below_the_threshold_the_configured_fallback_is_used_and_recorded(store):
+    weak = decision(None, 0.41, best="billing", reason="low_confidence",
+                    dist={"billing": 0.41, "support": 0.39, "sales": 0.2})
+    models = FakeModels(decisions={"label": weak})
+    skills = Skills()
+    run_id, result = run_flow(store, classify_flow(fallback="support", threshold=0.8),
+                              default_handlers(models=models.as_calls(), skill=skills),
+                              inputs={"ticket": "hmm"})
+    assert result["status"] == "completed" and skills.ran == ["help"]
+    receipt = store.node_runs(run_id)["route"].result["receipt"]
+    assert receipt["fallback_used"] is True and receipt["method"] == "fallback"
+    assert receipt["choice"] == "support" and receipt["best"] == "billing"
+    assert receipt["uncertain_reason"] == "low_confidence" and receipt["confidence"] == 0.41
+    assert receipt["distribution"]["billing"] == 0.41
+    assert models.complete_calls == [], "the fallback mode must not make a second call"
+    assert models.decide_calls[0]["min_confidence"] == 0.8
+
+
+def test_below_the_threshold_it_can_ask_the_model_once_in_plain_words(store):
+    models = FakeModels(decisions={"label": decision(None, 0.3, best="sales", reason="low_confidence")},
+                        completions=["Billing."])
+    skills = Skills()
+    run_id, result = run_flow(store, classify_flow(on_uncertain="ask"),
+                              default_handlers(models=models.as_calls(), skill=skills),
+                              inputs={"ticket": "charge"})
+    assert result["status"] == "completed" and skills.ran == ["bill"]
+    receipt = store.node_runs(run_id)["route"].result["receipt"]
+    assert receipt["asked"] is True and receipt["method"] == "ask"
+    assert receipt["choice"] == "billing" and receipt["fallback_used"] is False
+    assert len(models.complete_calls) == 1
+    assert "billing" in json.dumps(models.complete_calls[0]["messages"])
+
+
+def test_an_unusable_answer_with_no_fallback_fails_instead_of_guessing(store):
+    models = FakeModels(decisions={"label": decision(None, None, reason="unavailable")},
+                        completions=["I am not sure, maybe billing or support"])
+    skills = Skills()
+    run_id, result = run_flow(store, classify_flow(on_uncertain="ask"),
+                              default_handlers(models=models.as_calls(), skill=skills),
+                              inputs={"ticket": "?"})
+    assert result["status"] == "failed" and skills.ran == []
+    node = store.node_runs(run_id)["route"]
+    assert "nothing was routed" in node.reason
+    assert node.result["receipt"]["asked"] is True and node.result["receipt"]["choice"] is None
+
+
+def test_asking_then_failing_to_settle_falls_back_when_a_fallback_exists(store):
+    models = FakeModels(decisions={}, completions=["no idea"])
+    skills = Skills()
+    run_id, result = run_flow(store, classify_flow(on_uncertain="ask", fallback="sales"),
+                              default_handlers(models=models.as_calls(), skill=skills),
+                              inputs={"ticket": "?"})
+    assert result["status"] == "completed" and skills.ran == ["help"]
+    receipt = store.node_runs(run_id)["route"].result["receipt"]
+    assert receipt["asked"] is True and receipt["fallback_used"] is True and receipt["choice"] == "sales"
+
+
+def test_a_classify_with_no_model_wired_refuses_by_name(store):
+    skills = Skills()
+    run_id, result = run_flow(store, classify_flow(), default_handlers(skill=skills),
+                              inputs={"ticket": "x"})
+    assert result["status"] == "failed" and skills.ran == []
+    assert "no model is wired" in store.node_runs(run_id)["route"].reason
+
+
+@pytest.mark.parametrize("bad,needle", [
+    ({"labels": ["only-one"]}, "at least two"),
+    ({"labels": ["a", "a"]}, "unique"),
+    ({"labels": "a,b"}, "labels"),
+    ({"labels": [f"l{i}" for i in range(21)]}, "at most"),
+    ({"fallback": "nope"}, "not one of the labels"),
+    ({"on_uncertain": "shrug"}, "on_uncertain"),
+    ({"on_uncertain": "fallback"}, "no `config.fallback`"),
+    ({"threshold": 2}, "threshold"),
+    ({"text": ""}, "config.text"),
+    ({"text": "{{ results.ghost.text }}"}, "results.ghost.text"),
+])
+def test_a_badly_configured_classify_fails_with_the_reason_before_any_model_call(store, bad, needle):
+    models = FakeModels(decisions={"label": decision("billing")})
+    d = flow(START, {"id": "route", "type": "classify", "needs": ["start"],
+                     "config": {"text": "{{ inputs.ticket }}", "labels": ["billing", "support"], **bad}})
+    run_id, result = run_flow(store, d, default_handlers(models=models.as_calls()),
+                              inputs={"ticket": "t"})
+    assert result["status"] == "failed" and models.decide_calls == []
+    assert needle in store.node_runs(run_id)["route"].reason
+
+
+def test_label_descriptions_reach_the_model(store):
+    models = FakeModels(decisions={"label": decision("support")})
+    d = classify_flow(labels=[{"name": "billing", "description": "money questions"},
+                              {"name": "support", "description": "broken things"},
+                              {"name": "sales", "description": "buying"}])
+    run_flow(store, d, default_handlers(models=models.as_calls(), skill=Skills()),
+             inputs={"ticket": "x"})
+    fld = models.decide_calls[0]["fields"][0]
+    assert fld.descriptions == ["money questions", "broken things", "buying"]
+
+
+def test_a_decision_survives_a_restart_and_is_not_asked_again(store):
+    models = FakeModels(decisions={"label": decision("billing")})
+    skills = Skills()
+    run_id, _ = run_flow(store, classify_flow(), default_handlers(models=models.as_calls(), skill=skills),
+                         inputs={"ticket": "x"})
+    again = FakeModels(decisions={"label": decision("support")})
+    result = WorkflowEngine(default_handlers(models=again.as_calls(), skill=skills), WorkflowStore()).advance(run_id)
+    assert result["reason"] == "already_completed" and again.decide_calls == []
+    assert store.node_runs(run_id)["route"].result["branch"] == "billing"
+
+
+def test_a_restart_between_the_decision_and_its_branch_reads_the_recorded_label(store):
+    """The classify result is written before anything downstream starts, so a
+    run killed right after it resumes on the same branch — even if the model
+    would answer differently now."""
+    models = FakeModels(decisions={"label": decision("billing")})
+    skills = Skills()
+    run_id = store.create_run(classify_flow(), owner="luis", inputs={"ticket": "x"})["run_id"]
+    first = WorkflowEngine(default_handlers(models=models.as_calls(), skill=skills), store)
+    first.advance(run_id, max_nodes=2)                 # start + classify only
+    assert store.node_runs(run_id)["route"].status == "completed"
+    assert skills.ran == []
+    flipped = FakeModels(decisions={"label": decision("support")})
+    WorkflowEngine(default_handlers(models=flipped.as_calls(), skill=skills), WorkflowStore()).advance(run_id)
+    assert skills.ran == ["bill"] and flipped.decide_calls == []
+
+
+def test_the_real_typed_decision_path_routes_on_the_servers_logprobs(monkeypatch, store):
+    import math
+    from src.workflows import model_calls
+    from tests.test_typed_decision import openai_body, serve, LLAMA_URL, MODEL
+    import tests.test_typed_decision as ttd
+
+    state = {}
+    monkeypatch.setattr("src.settings.get_setting", lambda key, default=None: default)
+    monkeypatch.setattr("src.endpoint_resolver.resolve_endpoint", lambda *a, **k: (LLAMA_URL, MODEL, {}))
+    monkeypatch.setattr("src.background_job_guard._resident_model_names", lambda url: [MODEL])
+    monkeypatch.setattr("src.background_job_guard.model_busy", lambda url: False)
+    server = serve(monkeypatch, lambda p: (200, openai_body(
+        [{"token": "B", "logprob": math.log(0.92)}, {"token": "A", "logprob": math.log(0.05)},
+         {"token": "C", "logprob": math.log(0.02)}], content="B")))
+    calls = ModelCalls(complete=model_calls.complete_text, decide=model_calls.decide)
+    skills = Skills()
+    run_id, result = run_flow(store, classify_flow(), default_handlers(models=calls, skill=skills),
+                              inputs={"ticket": "my app crashes"})
+    assert result["status"] == "completed" and skills.ran == ["help"]
+    receipt = store.node_runs(run_id)["route"].result["receipt"]
+    assert receipt["choice"] == "support" and receipt["method"] == "logprobs"
+    assert receipt["confidence"] > 0.9
+    assert len(server.requests) == 1
+    assert server.requests[0]["payload"]["max_tokens"] == 1
+
+
+# ── the branch gate in the contract and the engine ───────────────────────
+
+def test_a_branch_must_point_at_a_dependency_that_really_branches():
+    with pytest.raises(ContractError) as err:
+        flow(START, {"id": "x", "type": "skill", "needs": ["start"], "branch": {"start": "a"}})
+    assert "does not branch" in err.value.message
+    with pytest.raises(ContractError) as err:
+        flow(START, {"id": "x", "type": "skill", "branch": {"start": "a"}})
+    assert "needs" in err.value.message
+
+
+def test_a_branch_must_name_a_label_the_classifier_declares():
+    with pytest.raises(ContractError) as err:
+        flow(START,
+             {"id": "route", "type": "classify", "needs": ["start"],
+              "config": {"labels": ["a", "b"], "text": "x"}},
+             {"id": "x", "type": "skill", "needs": ["route"], "branch": {"route": "c"}})
+    assert "declares the branches" in err.value.message and "'c'" in err.value.message
+
+
+def test_branch_gates_round_trip_through_to_dict_and_keep_old_fingerprints():
+    d = classify_flow()
+    again = WorkflowDefinition.parse(d.to_dict())
+    assert again.fingerprint() == d.fingerprint()
+    assert again.node("bill").branch == {"route": ("billing",)}
+    plain = flow(START, {"id": "x", "type": "skill", "needs": ["start"]})
+    assert "branch" not in plain.to_dict()["nodes"][1]
+
+
+def test_a_failed_classifier_leaves_its_branches_blocked_not_skipped(store):
+    models = FakeModels(decisions={})
+    run_id, result = run_flow(store, classify_flow(), default_handlers(models=models.as_calls(), skill=Skills()),
+                              inputs={"ticket": "x"})
+    assert result["status"] == "failed"
+    assert set(result["never_reached"]) == {"bill", "help"}
+    assert "bill" not in store.node_runs(run_id)
+
+
+# ── simulation of branches ───────────────────────────────────────────────
+
+def test_a_simulation_needs_a_label_for_a_classify_and_follows_it():
+    from src.workflows.simulate import simulate
+    d = classify_flow()
+    undecided = simulate(d)
+    assert "route" in undecided.awaiting_choice
+    assert set(undecided.awaiting_choice) >= {"route", "bill", "help"}
+    billing = simulate(d, choices={"route": "billing"})
+    assert "bill" in billing.activated and "help" in billing.not_taken
+    sales = simulate(d, choices={"route": "sales"})
+    assert "help" in sales.activated and "bill" in sales.not_taken
+    with pytest.raises(ValueError) as err:
+        simulate(d, choices={"route": "refunds"})
+    assert "must be one of" in str(err.value)
+
+
+def test_a_guard_accepts_pass_fail_or_a_bool_in_a_simulation():
+    from src.workflows.simulate import simulate
+    d = flow(START,
+             {"id": "safe", "type": "guard", "needs": ["start"], "config": {"text": "x", "checks": []}},
+             {"id": "ship", "type": "artifact_store", "needs": ["safe"], "branch": {"safe": "pass"}},
+             {"id": "hold", "type": "artifact_store", "needs": ["safe"], "branch": {"safe": "fail"}})
+    assert "ship" in simulate(d, choices={"safe": True}).activated
+    assert "hold" in simulate(d, choices={"safe": "fail"}).activated
+    assert "ship" in simulate(d, choices={"safe": "fail"}).not_taken
+
+
+def test_the_simulate_route_takes_a_label_and_refuses_a_wrong_one(tmp_path, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from core import middleware
+    from routes.workflows_routes import setup_workflows_routes
+    monkeypatch.setattr(middleware, "auth_disabled", lambda: True)
+    app = FastAPI()
+    app.include_router(setup_workflows_routes())
+    client = TestClient(app)
+    d = classify_flow().to_dict()
+    ok = client.post("/api/workflows/simulate", json={"definition": d, "choices": {"route": "billing"}})
+    assert ok.status_code == 200 and "bill" in ok.json()["simulation"]["activated"]
+    bad = client.post("/api/workflows/simulate", json={"definition": d, "choices": {"route": "nope"}})
+    assert bad.status_code == 400 and "must be one of" in bad.json()["detail"]
+
+
+# ═════════════════════════ extract ═══════════════════════════════════════
+
+ORDER_SCHEMA = {"type": "object", "required": ["order_id", "quantity"],
+                "properties": {"order_id": {"type": "string", "pattern": "^A-[0-9]+$"},
+                               "quantity": {"type": "integer", "minimum": 1},
+                               "gift": {"type": "boolean"}},
+                "additionalProperties": False}
+
+
+def extract_flow(**config):
+    cfg = {"text": "{{ inputs.email }}", "schema": ORDER_SCHEMA}
+    cfg.update(config)
+    return flow(START, {"id": "pull", "type": "extract", "needs": ["start"], "config": cfg},
+                {"id": "use", "type": "skill", "needs": ["pull"],
+                 "config": {"skill": "orders.lookup"}})
+
+
+def test_extract_reads_parameters_out_of_a_run_input(store):
+    models = FakeModels(completions=['{"order_id": "A-1042", "quantity": 3}'])
+    seen = {}
+
+    def skill(node, context):
+        seen["data"] = context["results"]["pull"]["data"]
+        return {"ok": True}
+
+    run_id, result = run_flow(store, extract_flow(), default_handlers(models=models.as_calls(), skill=skill),
+                              inputs={"email": "Please ship 3 of order A-1042"})
+    assert result["status"] == "completed"
+    assert seen["data"] == {"order_id": "A-1042", "quantity": 3}
+    out = store.node_runs(run_id)["pull"].result
+    assert out["repaired"] is False and out["input_truncated"] is False
+    sent = json.dumps(models.complete_calls[0]["messages"])
+    assert "Please ship 3 of order A-1042" in sent and "order_id" in sent
+
+
+def test_extract_can_read_an_upstream_nodes_output(store):
+    models = FakeModels(completions=['{"order_id": "A-7", "quantity": 1}'])
+    d = flow(START,
+             {"id": "fetch", "type": "skill", "needs": ["start"], "config": {"skill": "mail.read"}},
+             {"id": "pull", "type": "extract", "needs": ["fetch"],
+              "config": {"text": "{{ results.fetch.body }}", "schema": ORDER_SCHEMA}})
+    run_id, result = run_flow(store, d, default_handlers(
+        models=models.as_calls(), skill=lambda n, c: {"body": "order A-7, one unit"}))
+    assert result["status"] == "completed"
+    assert "order A-7, one unit" in json.dumps(models.complete_calls[0]["messages"])
+
+
+def test_extract_repairs_once_with_the_exact_errors_then_succeeds(store):
+    models = FakeModels(completions=['{"order_id": "1042", "quantity": 0}',
+                                     '{"order_id": "A-1042", "quantity": 1}'])
+    run_id, result = run_flow(store, extract_flow(), default_handlers(models=models.as_calls(),
+                              skill=lambda n, c: {}), inputs={"email": "order A-1042"})
+    assert result["status"] == "completed"
+    out = store.node_runs(run_id)["pull"].result
+    assert out["data"]["quantity"] == 1 and out["repaired"] is True
+    repair = json.dumps(models.complete_calls[1]["messages"])
+    assert "pattern" in repair and "minimum" in repair
+
+
+def test_extract_fails_after_one_failed_repair_and_keeps_the_raw_answer(store):
+    models = FakeModels(completions=["I could not find anything", '{"order_id": "zzz"}'])
+    ran = []
+    run_id, result = run_flow(store, extract_flow(), default_handlers(models=models.as_calls(),
+                              skill=lambda n, c: ran.append(1) or {}), inputs={"email": "hello"})
+    assert result["status"] == "failed" and ran == []
+    node = store.node_runs(run_id)["pull"]
+    assert "do not satisfy `schema`" in node.reason and "tried once" in node.reason
+    assert node.result["raw"] == "I could not find anything"
+    assert len(models.complete_calls) == 2
+
+
+def test_extract_reports_an_unreachable_model_as_the_nodes_failure(store):
+    models = FakeModels(completions=[ModelUnavailable("no model endpoint is configured")])
+    run_id, result = run_flow(store, extract_flow(), default_handlers(models=models.as_calls()),
+                              inputs={"email": "x"})
+    assert result["status"] == "failed"
+    assert "could not be reached" in store.node_runs(run_id)["pull"].reason
+
+
+@pytest.mark.parametrize("bad,needle", [
+    ({"schema": None}, "config.schema"),
+    ({"schema": {"type": "array"}}, "must describe an object"),
+    ({"schema": {"type": "object", "$ref": "#/defs/x"}}, "cannot be enforced"),
+    ({"text": ""}, "config.text"),
+    ({"timeout_s": 0}, "timeout_s"),
+])
+def test_a_badly_configured_extract_fails_before_calling_the_model(store, bad, needle):
+    models = FakeModels(completions=["{}"])
+    cfg = {"text": "{{ inputs.email }}", "schema": ORDER_SCHEMA, **bad}
+    if cfg.get("schema") is None:
+        cfg.pop("schema")
+    d = flow(START, {"id": "pull", "type": "extract", "needs": ["start"], "config": cfg})
+    run_id, result = run_flow(store, d, default_handlers(models=models.as_calls()),
+                              inputs={"email": "x"})
+    assert result["status"] == "failed" and models.complete_calls == []
+    assert needle in store.node_runs(run_id)["pull"].reason
+
+
+def test_extract_with_no_model_wired_refuses_by_name(store):
+    run_id, result = run_flow(store, extract_flow(), default_handlers(), inputs={"email": "x"})
+    assert result["status"] == "failed"
+    assert "no model is wired" in store.node_runs(run_id)["pull"].reason
+
+
+def test_extract_clips_a_huge_input_and_says_so(store):
+    models = FakeModels(completions=['{"order_id": "A-1", "quantity": 1}'])
+    big = "x" * 30_000
+    run_id, _ = run_flow(store, extract_flow(), default_handlers(models=models.as_calls(),
+                         skill=lambda n, c: {}), inputs={"email": big})
+    assert store.node_runs(run_id)["pull"].result["input_truncated"] is True
+    assert len(json.dumps(models.complete_calls[0]["messages"])) < 25_000
+
+
+def test_the_schema_checker_enforces_what_it_claims_and_names_what_it_does_not():
+    from src.workflows import schema_check as sc
+    schema = {"type": "object", "required": ["a"], "additionalProperties": False,
+              "properties": {"a": {"type": "array", "items": {"type": "integer"}, "minItems": 1,
+                                  "maxItems": 2},
+                             "b": {"anyOf": [{"type": "string", "maxLength": 3}, {"type": "null"}]}}}
+    assert sc.validate({"a": [1, 2]}, schema) == []
+    bad = sc.validate({"a": [1, "x", 3], "b": "long!", "c": 1}, schema)
+    text = " | ".join(bad)
+    assert "$.a[1]: expected integer" in text and "at most 2" in text
+    assert "does not match any" in text and "unexpected field" in text
+    assert sc.validate({}, schema) == ["$: missing required field 'a'"]
+    assert sc.unsupported_keywords({"type": "object", "properties": {"x": {"$ref": "#"}}}) == ["$.x: $ref"]
+    assert sc.schema_problems({}) and sc.schema_problems({"type": "thing"})
+    assert sc.extract_json('text ```json\n{"a": 1}\n``` more')[0] == {"a": 1}
+    assert sc.extract_json("no json")[0] is None
+    assert sc.extract_json('prefix {"a": [1, 2]} suffix')[0] == {"a": [1, 2]}
+
+
+def test_templates_fill_dotted_paths_and_refuse_missing_ones():
+    from src.workflows.templating import render, references, TemplateError
+    ctx = {"inputs": {"n": 3, "who": "Ana"}, "results": {"a": {"rows": [1, 2]}}}
+    assert render("{{ inputs.who }} has {{inputs.n}}; rows={{ results.a.rows }}", ctx) == \
+        'Ana has 3; rows=[1, 2]'
+    assert render("{{ inputs.who | json }}", ctx) == '"Ana"'
+    assert references("{{ inputs.who }} {{ inputs.who }} {{ results.a }}") == ["inputs.who", "results.a"]
+    with pytest.raises(TemplateError) as err:
+        render("{{ results.b.x }} and {{ inputs.q }}", ctx)
+    assert "results.b.x" in str(err.value) and "inputs.q" in str(err.value)
+
