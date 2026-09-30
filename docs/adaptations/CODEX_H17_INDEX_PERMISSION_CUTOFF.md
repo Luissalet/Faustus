@@ -79,3 +79,12 @@ en1,27s (overfetch y cutoff), incluyendo query legacy, denegación total,
 cap con k100/count400, encode único, respuesta corta, floor y filtro lexical.
 Fuente original sigue registry.rs fijado arriba, sin revisión repetida.
 Commit del incremento: `17b6bc8a`. Selección amplia:231 correctas/2 fallos de categorías MCP, reproducidos también en baseline previo cargado sólo en proceso; no suite amplia verde. Fixtures de categorías pendientes fuera de este lote.
+
+Fixtures de categorías reparadas en `2cc9f2ab`: manager MCP sintético con
+schemas y listado coherentes, comprobado por tool_registry.snapshot real.
+Pruebas adicionales preservan rechazo por disabled/policy, usuario no admin
+y nombre anunciado sin schema. Sentinel confirma que lookup no ejecuta
+conectores. Sin cambios producción. Categorías10 correctas1,05s;
+misma selección amplia H17 ahora237 correctas10,77s. Coordinador32 correctas
+1,73s (categorías+overfetch+cutoff). Los2fallos previos de fixture quedan
+resueltos; no implica suite completa de Faustus ni prueba con LLM/GPU.

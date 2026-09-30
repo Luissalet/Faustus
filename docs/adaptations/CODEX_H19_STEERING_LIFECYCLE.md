@@ -53,3 +53,22 @@ reconciliación tras reinicio ni recuperación de un worker eliminado. Se mantie
 el contador steered como señal de inyección observada, sin confundirlo con éxito
 de la tarea ni lectura del modelo. La ruta HTTP conserva su respuesta existente
 de aceptación/404; no se añade un estado durable ni un canal de notificaciones.
+
+## Cierre de recepción antes de guards terminales, 30-09-2026
+
+Nuevo residual reproducido con _run_subagent real: durante fanout de un guard
+rounds_exhausted, la tarea sigue viva y steer_worker aceptaba una instrucción
+que nunca se consumía (steered0 y cola1). La recepción ahora se cierra antes
+del await de guard para rounds_exhausted, budget_exceeded e intent_nudge_exhausted.
+loop_breaker_triggered conserva recepción: la recuperación puede continuar.
+No borra la cola previa y el siguiente intento/retry vuelve a abrirla.
+
+Coordinador:16 pruebas lifecycle correctas en2,16s; incluyen rechazo durante
+fanout terminal con tarea viva, conservación de cola, retry y recuperación
+no terminal con inyección. Usa worker/cola reales, LLM fixture; no inferencia
+GPU ni servicios personales. Scope acotado: no arregla toda entrada aceptada
+antes del último drain, recibos durables, reinicio ni guards distintos como
+budget_exhausted/cancelled. No concede rondas ni cambia presupuestos/permisos.
+Fuente original del análisis sigue https://github.com/openai/codex/tree/b1e72963c3b71a9265a551e54beff078384efed9,
+sin revisión repetida; adaptación propia al lifecycle actual de Faustus.
+Commit `2b5b6a3f`; selección final86 correctas46,87s lifecycle/rutas/board/retries/causal/dispatch. No sumar suites focales solapadas.
