@@ -47,6 +47,7 @@ reference is not provenance.
 """
 
 from __future__ import annotations
+from datetime import datetime, timezone
 
 import logging
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -167,7 +168,12 @@ class MemoryEngineSource(ThreadedSource):
         and the warning is the entire reason it was kept.
         """
         items = engine.scoped_items(owner, project, ("active", "anti_pattern"))
-        rows = [engine.public_item(item) for item in items]
+        instant = datetime.now(timezone.utc)
+        items = [item for item in items
+                 if item.get("sensitivity") != "secret"
+                 and (not (item.get("valid_from") or item.get("valid_until"))
+                      or engine.is_valid_now(item, instant))]
+        rows = [engine.public_item(item, now=instant) for item in items]
         rules = [r for r in rows
                  if r.get("status") == "active"
                  and r.get("level") in _STANDING_LEVELS
