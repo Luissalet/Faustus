@@ -8138,6 +8138,7 @@ export const es: Record<string, string> = {
   "output": "salida",
   "outro": "outro",
   "outside": "fuera",
+  "outside Faustus (the program that started it has closed)": "fuera de Faustus (el programa que lo arrancó ya se cerró)",
   "outside the envelope": "fuera del sobre",
   "over": "sobre",
   "override": "sobrescrito",

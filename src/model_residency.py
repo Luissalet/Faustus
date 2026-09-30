@@ -115,7 +115,8 @@ def _describe_origin(pid: int, *, self_pid: int, profiles: Dict[int, str]) -> Di
 
     kind: ``faustus`` (this server or something it spawned), ``profile`` (a
     launch profile / engine Faustus started), ``ollama``, ``external`` (a
-    program outside Faustus; the label names it), ``unknown``."""
+    program outside Faustus; the label names it), ``external_gone`` (started
+    outside Faustus by a program that has since closed), ``unknown``."""
     psutil = _psutil()
     if pid in profiles:
         return {"kind": "profile", "label": f"Faustus: {profiles[pid]}"}
@@ -155,7 +156,9 @@ def _describe_origin(pid: int, *, self_pid: int, profiles: Dict[int, str]) -> Di
             return {"kind": "external", "label": chain[0].name() or ""}
         except Exception:  # noqa: BLE001
             pass
-    return {"kind": "external", "label": "started outside Faustus (its parent process has ended)"}
+    # Nothing left to name: the launcher closed after starting it. The
+    # interface words this in the reader's language.
+    return {"kind": "external_gone", "label": ""}
 
 
 _INTERPRETERS = ("python", "pythonw", "node", "java", "javaw", "ruby", "deno", "bun")

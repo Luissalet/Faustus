@@ -76,7 +76,7 @@ export interface ResidentModel {
   model: string;
   engine?: string;
   loaded_by?: string;
-  loaded_by_kind?: 'faustus' | 'profile' | 'ollama' | 'external' | 'unknown';
+  loaded_by_kind?: 'faustus' | 'profile' | 'ollama' | 'external' | 'external_gone' | 'unknown';
   endpoint?: string;
   port?: number | null;
   pid?: number | null;
@@ -97,8 +97,16 @@ export interface GpuProcess {
   name?: string;
   hint?: string;
   loaded_by?: string;
+  loaded_by_kind?: string;
   bytes?: number | null;
   gpus?: { index: number; bytes?: number | null }[];
+}
+
+/** Who loaded it, in the reader's language when the server could not name it. */
+export function ownerText(label: string | undefined, kind: string | undefined): string {
+  if (label) return label;
+  if (kind === 'external_gone') return t('outside Faustus (the program that started it has closed)');
+  return '';
 }
 
 export interface HealthComponent {

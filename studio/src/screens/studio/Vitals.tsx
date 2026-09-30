@@ -18,6 +18,7 @@ import {
   refreshUsage,
   residentModels,
   setUsageVisible,
+  ownerText,
   shortModelName,
   shortGpuName,
   spilling,
@@ -478,7 +479,8 @@ function OrphansSection({ d }: { d: Usage }) {
 function residentLine(m: ResidentModel, d: Usage | null): string {
   const size = m.bytes != null ? `${gb(m.bytes)} GB${m.measured ? '' : ` (${t('weights')})`}` : '';
   const cards = cardsText(m.gpus, d);
-  const who = m.loaded_by ? t('loaded by {who}', { who: m.loaded_by }) : '';
+  const owner = ownerText(m.loaded_by, m.loaded_by_kind);
+  const who = owner ? t('loaded by {who}', { who: owner }) : '';
   return [m.model, size, cards, who].filter(Boolean).join(' · ');
 }
 
@@ -505,7 +507,7 @@ function ModelsSection({ d }: { d: Usage }) {
               <dl className="fs-vt__res-dl">
                 <dt>{t('Loaded by')}</dt>
                 <dd title={m.pid ? `pid ${m.pid}${m.endpoint ? ` · ${m.endpoint}` : ''}` : m.endpoint || undefined} data-muted={!m.loaded_by || undefined}>
-                  {m.loaded_by || t('unknown')}
+                  {ownerText(m.loaded_by, m.loaded_by_kind) || t('unknown')}
                 </dd>
                 <dt>{t('Size in memory')}</dt>
                 <dd data-muted={!m.measured || undefined}>
@@ -539,7 +541,11 @@ function ModelsSection({ d }: { d: Usage }) {
                 <span className="fs-vt__res-meta">
                   {o.bytes != null ? `${gb(o.bytes)} GB` : '—'}
                   {o.gpus?.length ? ` · ${o.gpus.map((g) => `GPU ${g.index}`).join(' + ')}` : ''}
-                  {o.loaded_by ? ` · ${t('loaded by {who}', { who: o.loaded_by })}` : ''}
+                  {(() => {
+                    const who = ownerText(o.loaded_by, o.loaded_by_kind);
+                    // "python.exe loaded by main.py (python.exe)" says nothing new.
+                    return who && !(o.name && who.includes(o.name)) ? ` · ${t('loaded by {who}', { who })}` : '';
+                  })()}
                 </span>
               </li>
             ))}
