@@ -22,18 +22,27 @@ ADP-17 (aigraphstudio §6.2, "importación y exportación de gráficos"):
   this lot's final report for the entry text to add there). Only six of its
   node types are translated into a Faustus node whose
   handler is a real, checked one in `src/workflows/handlers.py::
-  default_handlers` — `Start`/`Input` → `manual`, `Output` → `artifact_store`,
-  `Tool` → `skill`, `Human Approval` → `human_approval`, `Router` → `condition`
-  (and only when its branch is a single `left`/`op`/`right` comparison this
-  schema's own `condition_handler` can evaluate — see `_router_condition`).
-  Every other named type (`Agent`, `LLM`, `Code`, `RAG`, `Memory`, `Parallel`,
-  `Merge`, `Loop`, `Retry`, `Evaluator`) becomes a `design_only` entry: kept
-  for a human to look at, never translated into something that executes.
+  default_handlers`. The plain ones: `Start`/`Input` → `manual`, `Output` →
+  `artifact_store`, `Tool` → `skill`, `Human Approval` → `human_approval`,
+  `Router` → `condition` (and only when its branch is a single `left`/`op`/
+  `right` comparison this schema's own `condition_handler` can evaluate — see
+  `_router_condition`). The model-driven ones, each only when the payload
+  carries what the real node needs and never with a parameter nobody
+  supplied: `Agent` → `agent` (needs a `prompt`), `LLM` → an `agent` that may
+  use no tools (needs a `prompt`), `Evaluator` → `guard` (needs `text` and a
+  list of deterministic `checks`), `Loop` → `loop` (needs `body` — node ids
+  that themselves translate to an allowed body type — and a positive
+  `max_iterations`; an optional `until` must be a single comparison). Every
+  other named type (`Code`, `RAG`, `Memory`, `Parallel`, `Merge`, `Retry`), and
+  any of the above missing what its node needs, becomes a `design_only` entry:
+  kept for a human to look at, never translated into something that executes.
   A node whose declared predecessor did not itself survive translation is
   demoted to `design_only` too, cascading — see `_cascade_predecessors` —
   because giving an effectful node a `needs` list that silently drops its
   real prerequisite is exactly the "apariencia de ejecución a lo que no se
-  soporta" ADP-17 exists to refuse.
+  soporta" ADP-17 exists to refuse. The same goes for the members of a `Loop`
+  that could not be translated: they are not left behind as nodes that would
+  run once, outside the loop that owned them.
 
 **The assumed aigraphstudio JSON shape, and why it is assumed rather than
 verified.** No fetch of `gcjordi/aigraphstudio`'s source was made for this
@@ -101,17 +110,18 @@ _AIGS_MAPPABLE_TYPES: Dict[str, str] = {
     "Router": "condition",
 }
 
-#: Named in the INFORME's §6.2 table as "diseño no ejecutable hasta disponer
-#: de un contrato explícito de iteración" (Loop/Retry) or as concurrency this
-#: engine's contract does not model (Parallel/Merge — the engine "advances on
-#: nodes that are ready" and the inspected fragment picks the first one, per
-#: `src/contracts/workflow.py`'s own docstring; drawing two arrows out of one
-#: node is not proof two run at once). Agent/LLM/Code/RAG/Memory have no
-#: single Faustus node type they translate to without guessing parameters
-#: nobody supplied.
+#: Model-driven and iterative types that DO have a Faustus node now, but only
+#: when the payload supplies what that node requires (see `_model_node`,
+#: `_resolve_loops`); without it they fall back to `design_only`.
+_AIGS_MODEL_TYPES = frozenset({"Agent", "LLM", "Evaluator", "Loop"})
+
+#: No Faustus node type to translate to: `Retry` is a per-node `max_attempts`
+#: (not a node), `Parallel`/`Merge` are concurrency this engine's contract does
+#: not model (the engine "advances on nodes that are ready"; drawing two arrows
+#: out of one node is not proof two run at once), and `Code`/`RAG`/`Memory` have
+#: no single node that means them without guessing parameters nobody supplied.
 _AIGS_DESIGN_ONLY_TYPES = frozenset({
-    "Agent", "LLM", "Code", "RAG", "Memory", "Parallel", "Merge", "Loop",
-    "Retry", "Evaluator",
+    "Code", "RAG", "Memory", "Parallel", "Merge", "Retry",
 })
 
 _SAFE_ID_RE = re.compile(r"[^a-z0-9]+")
@@ -279,6 +289,140 @@ def _router_condition(data: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
     return when
 
 
+def _model_node(ext_type: str, data: Mapping[str, Any]):
+    """`(faustus_type, config, "")` for an Agent/LLM/Evaluator that carries what
+    the real node needs, or `(None, {}, reason)`."""
+    from src.workflows import schema_check
+    if ext_type in ("Agent", "LLM"):
+        prompt = data.get("prompt")
+        if not isinstance(prompt, str) or not prompt.strip():
+            return None, {}, (f"this '{ext_type}' has no `prompt`; an agent node runs one prompt and "
+                              "guessing one would be inventing what it does")
+        config: Dict[str, Any] = {"prompt": prompt.strip()[:20000]}
+        if ext_type == "LLM":
+            config["tools"] = []
+        else:
+            profile = data.get("agent") or data.get("profile")
+            if isinstance(profile, str) and profile.strip():
+                config["agent"] = profile.strip()[:120]
+            tools = data.get("tools")
+            if isinstance(tools, list) and all(isinstance(t, str) and t.strip() for t in tools):
+                config["tools"] = [t.strip() for t in tools]
+        schema = data.get("output_schema") or data.get("schema")
+        if isinstance(schema, Mapping) and not schema_check.schema_problems(schema):
+            config["output_schema"] = dict(schema)
+        rounds = data.get("max_rounds")
+        if isinstance(rounds, int) and not isinstance(rounds, bool) and 1 <= rounds <= 50:
+            config["max_rounds"] = rounds
+        return "agent", config, ""
+    # Evaluator
+    text = data.get("text")
+    checks = data.get("checks")
+    known = ("secrets", "pii", "urls", "injection")
+    if not isinstance(text, str) or not text.strip():
+        return None, {}, "this 'Evaluator' has no `text` to check"
+    if not isinstance(checks, list) or not checks or not all(isinstance(c, str) and c in known for c in checks):
+        return None, {}, (f"this 'Evaluator' has no `checks` from {list(known)}; a guard checks something "
+                          "specific, not a free-text rubric")
+    return "guard", {"text": text.strip()[:20000], "checks": list(checks)}, ""
+
+
+def _loop_spec(data: Mapping[str, Any]):
+    """`(body external ids, config without body, "")` or `(None, {}, reason)`."""
+    body = data.get("body")
+    if not isinstance(body, list) or not body or not all(isinstance(b, (str, int)) for b in body):
+        return None, {}, "this 'Loop' names no `body` (the ids of the nodes it repeats)"
+    ceiling = data.get("max_iterations")
+    if isinstance(ceiling, bool) or not isinstance(ceiling, int) or ceiling < 1:
+        return None, {}, ("this 'Loop' has no positive `max_iterations`; a loop without a ceiling is the "
+                          "one thing Faustus refuses")
+    config: Dict[str, Any] = {"budget": {"max_iterations": ceiling}}
+    if data.get("until") is not None:
+        when = _router_condition({"condition": data.get("until")})
+        if when is None:
+            return None, {}, "this 'Loop' has an `until` that is not a single left/op/right comparison"
+        config["until"] = when
+    return [str(b) for b in body], config, ""
+
+
+def _resolve_loops(loop_specs: Dict[str, Any], dead_loops: Mapping[str, Any], used_ids: Mapping[str, str],
+                   classify: Dict[str, str],
+                   mapped_type: Dict[str, str], mapped_config: Dict[str, Dict[str, Any]],
+                   predecessors: Dict[str, set], external_of: Mapping[str, Dict[str, str]],
+                   mapped_title: Mapping[str, str], design_only_entries: List[Dict[str, Any]]) -> None:
+    """Give each translatable Loop its body, and demote a Loop (and its body)
+    that cannot have one. Body members wait on what the loop waits for plus
+    their siblings; whatever waited on a member waits on the loop."""
+    from src.contracts.workflow import LOOP_BODY_TYPES
+    claimed: Dict[str, str] = {}
+    body_of: Dict[str, List[str]] = {}
+    failed: Dict[str, str] = {}
+    body_ext: Dict[str, List[str]] = {safe: spec[0] for safe, spec in loop_specs.items()}
+    body_ext.update({safe: list(ids) for safe, ids in dead_loops.items()})
+    for safe, (ext_body, config) in loop_specs.items():
+        members: List[str] = []
+        why = ""
+        for ext in ext_body:
+            member = used_ids.get(ext)
+            if member is None or member == safe:
+                why = f"its body names {ext!r}, which is not a node of this graph"
+            elif classify.get(member) != "executable":
+                why = f"its body node {ext!r} was not translated into an executable node"
+            elif mapped_type.get(member) not in LOOP_BODY_TYPES:
+                why = (f"its body node {ext!r} became a '{mapped_type.get(member)}' node; a loop body may "
+                       f"only use {', '.join(LOOP_BODY_TYPES)}")
+            elif member in claimed:
+                why = f"its body node {ext!r} already belongs to another loop"
+            if why:
+                break
+            members.append(member)
+        if why:
+            failed[safe] = why
+            continue
+        for member in members:
+            claimed[member] = safe
+        body_of[safe] = members
+        config["body"] = members
+    def demote_body(safe: str) -> None:
+        for ext in body_ext.get(safe, ()):
+            member = used_ids.get(ext)
+            if member and classify.get(member) == "executable" and member not in claimed:
+                classify[member] = "design_only"
+                inner = external_of.get(member, {"id": member, "type": ""})
+                design_only_entries.append({
+                    "id": member, "external_id": inner["id"], "type": inner["type"],
+                    "label": mapped_title.get(member, member),
+                    "reason": f"belongs to the loop {safe}, which could not be translated; left alone it "
+                              "would run once, outside the loop that owned it"})
+                mapped_type.pop(member, None)
+                mapped_config.pop(member, None)
+
+    for safe, why in failed.items():
+        classify[safe] = "design_only"
+        ext = external_of.get(safe, {"id": safe, "type": "Loop"})
+        design_only_entries.append({"id": safe, "external_id": ext["id"], "type": ext["type"],
+                                    "label": mapped_title.get(safe, safe),
+                                    "reason": f"this loop cannot run as drawn: {why}"})
+        mapped_type.pop(safe, None)
+        mapped_config.pop(safe, None)
+        demote_body(safe)
+    for safe in dead_loops:
+        demote_body(safe)
+    for loop_id, members in body_of.items():
+        roots = set(predecessors.get(loop_id, ())) - set(members)
+        for member in members:
+            inside = {p for p in predecessors.get(member, ()) if p in members}
+            predecessors[member] = set(roots) | inside
+        for node_id, preds in list(predecessors.items()):
+            if node_id in members:
+                continue
+            if preds & set(members):
+                preds.difference_update(members)
+                if node_id != loop_id:
+                    preds.add(loop_id)
+        predecessors[loop_id] = roots
+
+
 def _import_aigraphstudio(payload: Mapping[str, Any]) -> Dict[str, Any]:
     raw_nodes = payload.get("nodes")
     if not isinstance(raw_nodes, list) or not raw_nodes:
@@ -295,6 +439,8 @@ def _import_aigraphstudio(payload: Mapping[str, Any]) -> Dict[str, Any]:
     design_only_entries: List[Dict[str, Any]] = []
     rejected_entries: List[Dict[str, Any]] = []
     has_unknown_type = False
+    loop_specs: Dict[str, Any] = {}
+    dead_loops: Dict[str, List[str]] = {}
 
     seen_external_ids: set = set()
     for i, raw in enumerate(raw_nodes):
@@ -317,6 +463,29 @@ def _import_aigraphstudio(payload: Mapping[str, Any]) -> Dict[str, Any]:
         data = raw.get("data") if isinstance(raw.get("data"), Mapping) else {}
         label = _trunc(str(data.get("label") or raw.get("label") or ext_id) or ext_id, 200)
         mapped_title[safe] = label
+
+        if ext_type in _AIGS_MODEL_TYPES:
+            if ext_type == "Loop":
+                ext_body, loop_config, why = _loop_spec(data)
+                if ext_body is not None:
+                    loop_specs[safe] = (ext_body, loop_config)
+                    classify[safe] = "executable"
+                    mapped_type[safe] = "loop"
+                    mapped_config[safe] = loop_config
+                    continue
+                if isinstance(data.get("body"), list):
+                    dead_loops[safe] = [str(b) for b in data["body"] if isinstance(b, (str, int))]
+            else:
+                model_type, model_config, why = _model_node(ext_type, data)
+                if model_type is not None:
+                    classify[safe] = "executable"
+                    mapped_type[safe] = model_type
+                    mapped_config[safe] = model_config
+                    continue
+            classify[safe] = "design_only"
+            design_only_entries.append({"id": safe, "external_id": ext_id, "type": ext_type, "label": label,
+                                        "reason": why})
+            continue
 
         if ext_type in _AIGS_DESIGN_ONLY_TYPES:
             classify[safe] = "design_only"
@@ -373,6 +542,8 @@ def _import_aigraphstudio(payload: Mapping[str, Any]) -> Dict[str, Any]:
             continue
         predecessors.setdefault(dst_safe, set()).add(src_safe)
 
+    _resolve_loops(loop_specs, dead_loops, used_ids, classify, mapped_type, mapped_config, predecessors,
+                   external_of, mapped_title, design_only_entries)
     _cascade_predecessors(mapped_type, mapped_config, classify, predecessors,
                           external_of, mapped_title, design_only_entries)
 
