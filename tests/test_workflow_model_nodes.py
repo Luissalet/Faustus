@@ -24,6 +24,7 @@ from sqlalchemy.orm import sessionmaker
 from core import database as db_mod
 from core.database import Base
 from src.contracts import ContractError, WorkflowDefinition
+from src.contracts.workflow import WorkflowNode
 from src.workflows import WorkflowEngine, WorkflowStore, default_handlers
 from src.workflows.model_calls import ModelCalls, ModelUnavailable
 
@@ -574,7 +575,7 @@ def test_the_real_typed_decision_path_routes_on_the_servers_logprobs(monkeypatch
     monkeypatch.setattr("src.settings.get_setting", lambda key, default=None: default)
     monkeypatch.setattr("src.endpoint_resolver.resolve_endpoint", lambda *a, **k: (LLAMA_URL, MODEL, {}))
     monkeypatch.setattr("src.background_job_guard._resident_model_names", lambda url: [MODEL])
-    monkeypatch.setattr("src.background_job_guard.model_busy", lambda url: False)
+    monkeypatch.setattr("src.background_job_guard.no_free_slot", lambda url: False)
     server = serve(monkeypatch, lambda p: (200, openai_body(
         [{"token": "B", "logprob": math.log(0.92)}, {"token": "A", "logprob": math.log(0.05)},
          {"token": "C", "logprob": math.log(0.02)}], content="B")))
@@ -1019,3 +1020,57 @@ def test_a_model_that_thinks_long_before_its_first_token_is_not_cut(monkeypatch)
     out = asyncio.run(agent_turn._consume(slow_stream(), deadline=_time.monotonic() + 5,
                                           cancelled=lambda: False))
     assert out["text"] == "hola" and not closed["early"] and out["stop_reason"] == ""
+
+
+# ═════════════════════════ busy model ═════════════════════════════════════
+
+class _D:
+    def __init__(self, value=None, reason="", confidence=None):
+        self.value, self.reason, self.confidence = value, reason, confidence
+        self.distribution, self.model, self.method, self.best = {}, "m", "logprobs", value
+
+
+def test_a_busy_model_is_waited_out_before_routing(monkeypatch):
+    from src.workflows import model_nodes
+    monkeypatch.setattr(model_nodes, "_WAIT_STEP_S", 0.01)
+    answers = [{"label": _D(reason="model_busy")}, {"label": _D(reason="model_busy")},
+               {"label": _D(value="billing", confidence=0.95)}]
+    calls = ModelCalls(complete=lambda *a, **k: "", decide=lambda *a, **k: answers.pop(0))
+    handler = model_nodes.classify_handler(calls)
+    node = WorkflowNode(id="route", type="classify", config={
+        "text": "charged twice", "labels": ["billing", "support"], "fallback": "support",
+        "timeout_s": 5})
+    out = handler(node, {"owner": "o"})
+    assert out["branch"] == "billing" and not answers
+
+
+def test_a_model_that_stays_busy_fails_the_node_instead_of_guessing(monkeypatch):
+    from src.workflows import model_nodes
+    monkeypatch.setattr(model_nodes, "_WAIT_STEP_S", 0.01)
+    calls = ModelCalls(complete=lambda *a, **k: "",
+                       decide=lambda *a, **k: {"label": _D(reason="model_busy")})
+    node = WorkflowNode(id="route", type="classify", config={
+        "text": "charged twice", "labels": ["billing", "support"], "fallback": "support",
+        "timeout_s": 1})
+    out = model_nodes.classify_handler(calls)(node, {"owner": "o"})
+    assert out["status"] == "failed" and "model_busy" in out["reason"]
+
+
+def test_low_confidence_still_takes_the_fallback(monkeypatch):
+    from src.workflows import model_nodes
+    calls = ModelCalls(complete=lambda *a, **k: "",
+                       decide=lambda *a, **k: {"label": _D(reason="low_confidence", confidence=0.4)})
+    node = WorkflowNode(id="route", type="classify", config={
+        "text": "hmm", "labels": ["billing", "support"], "fallback": "support", "timeout_s": 1})
+    out = model_nodes.classify_handler(calls)(node, {"owner": "o"})
+    assert out["branch"] == "support" and out["receipt"]["fallback_used"]
+
+
+def test_busy_means_no_idle_slot(monkeypatch):
+    from src import background_job_guard as bjg
+    import src.vram_admission as va
+    monkeypatch.setattr(bjg, "_loopback_root", lambda url: "http://127.0.0.1:8081")
+    monkeypatch.setattr(va, "_get", lambda root, path, t: [{"is_processing": True}, {"is_processing": False}])
+    assert bjg.no_free_slot("http://127.0.0.1:8081/v1") is False
+    monkeypatch.setattr(va, "_get", lambda root, path, t: [{"is_processing": True}, {"is_processing": True}])
+    assert bjg.no_free_slot("http://127.0.0.1:8081/v1") is True

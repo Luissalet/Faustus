@@ -469,7 +469,9 @@ def residency_reason(url: str, model: str) -> str:
         return "model_not_resident"
     try:
         from src import background_job_guard
-        if background_job_guard.model_busy(url):
+        # Busy means no idle slot: on a multi-slot server a decision goes to
+        # a free slot (see `helper_slot`) and queues behind nobody.
+        if background_job_guard.no_free_slot(url):
             return "model_busy"
     except Exception:  # noqa: BLE001
         pass

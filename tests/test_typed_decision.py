@@ -85,7 +85,7 @@ def endpoint(monkeypatch, settings):
 
     monkeypatch.setattr("src.endpoint_resolver.resolve_endpoint", _resolve)
     monkeypatch.setattr("src.background_job_guard._resident_model_names", _resident)
-    monkeypatch.setattr("src.background_job_guard.model_busy", lambda url: False)
+    monkeypatch.setattr("src.background_job_guard.no_free_slot", lambda url: False)
     td._reset_stats()
     yield state
     td._TRANSPORT = None
@@ -269,7 +269,7 @@ def test_may_load_setting_skips_the_residency_check(monkeypatch, endpoint, setti
 
 
 def test_busy_runner_is_unavailable(monkeypatch, endpoint):
-    monkeypatch.setattr("src.background_job_guard.model_busy", lambda url: True)
+    monkeypatch.setattr("src.background_job_guard.no_free_slot", lambda url: True)
     server = serve(monkeypatch, lambda p: (200, openai_body([{"token": "A", "logprob": -0.01}])))
     d = run(td.decide("ctx", [BOOL]))["needs_web"]
     assert d.reason == "model_busy" and server.requests == []

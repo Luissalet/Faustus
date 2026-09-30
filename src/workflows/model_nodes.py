@@ -310,6 +310,32 @@ def _match_label(reply: str, names: Sequence[str]) -> Optional[str]:
     return hits[0] if len(hits) == 1 else None
 
 
+#: Reasons a typed decision gave no answer that say nothing about the text:
+#: the model was busy, not loaded or slow. A workflow waits them out (it is not
+#: in front of a person) instead of routing on a fallback.
+TRANSIENT_REASONS = frozenset({"model_busy", "timeout", "residency_unknown", "model_not_resident", "error"})
+_WAIT_STEP_S = 2.0
+
+
+def _decide_waiting(models: "ModelCalls", text: str, fields: list, *, timeout_s: float,
+                    **kwargs: Any) -> Dict[str, Any]:
+    """`models.decide`, repeated while every field came back for a transient
+    reason, until `timeout_s` is spent. Returns the last decisions."""
+    import time as _time                                 # noqa: PLC0415
+    deadline = _time.monotonic() + float(timeout_s)
+    while True:
+        remaining = deadline - _time.monotonic()
+        decisions = models.decide(text, fields, timeout_s=max(1.0, remaining), **kwargs) or {}
+        reasons = [str(getattr(d, "reason", "") or "") for d in decisions.values()
+                   if getattr(d, "value", None) is None]
+        answered = any(getattr(d, "value", None) is not None for d in decisions.values())
+        if answered or not reasons or not all(r in TRANSIENT_REASONS for r in reasons):
+            return decisions
+        if deadline - _time.monotonic() <= _WAIT_STEP_S:
+            return decisions
+        _time.sleep(_WAIT_STEP_S)
+
+
 def classify_handler(models: Optional[ModelCalls] = None) -> Callable:
     """`classify`: route to exactly one branch among declared labels.
 
@@ -344,7 +370,7 @@ def classify_handler(models: Optional[ModelCalls] = None) -> Callable:
         threshold, problem = _number(config, "threshold", DEFAULT_THRESHOLD, 0.0, 1.0)
         if problem:
             return _failed(problem)
-        timeout_s, problem = _number(config, "timeout_s", 30, 1, 600)
+        timeout_s, problem = _number(config, "timeout_s", 120, 1, 600)
         if problem:
             return _failed(problem)
         fallback = config.get("fallback")
@@ -371,10 +397,16 @@ def classify_handler(models: Optional[ModelCalls] = None) -> Callable:
         from src.typed_decision import Field            # noqa: PLC0415 - heavy import, only here
         fld = Field(name="label", question=question or "Which category best describes the text?",
                     choices=names, descriptions=[d for _, d in labels] if any(d for _, d in labels) else None)
-        decisions = models.decide(text, [fld], owner=owner or None, purpose=purpose,
-                                  instructions=instructions, timeout_s=timeout_s,
-                                  min_confidence=threshold, caller="workflow.classify") or {}
+        decisions = _decide_waiting(models, text, [fld], timeout_s=timeout_s, owner=owner or None,
+                                    purpose=purpose, instructions=instructions,
+                                    min_confidence=threshold, caller="workflow.classify")
         decision = decisions.get("label")
+        if (decision is not None and getattr(decision, "value", None) is None
+                and str(getattr(decision, "reason", "") or "") in TRANSIENT_REASONS):
+            # The model never looked at the text: routing now would be a guess.
+            return _failed(f"the model could not answer within {int(timeout_s)} s "
+                           f"({getattr(decision, 'reason', '')}); no branch was chosen",
+                           retryable=True)
         receipt: Dict[str, Any] = {
             "options": names, "threshold": threshold, "fallback": fallback,
             "on_uncertain": mode, "fallback_used": False, "asked": False,
@@ -650,7 +682,7 @@ def guard_handler(models: Optional[ModelCalls] = None) -> Callable:
         on_unknown = config.get("on_unknown", "fail")
         if on_unknown not in ("fail", "pass"):
             return _failed("config.on_unknown must be 'fail' or 'pass'")
-        timeout_s, problem = _number(config, "timeout_s", 30, 1, 600)
+        timeout_s, problem = _number(config, "timeout_s", 120, 1, 600)
         if problem:
             return _failed(problem)
         model_checks = [c for c in checks if c["type"] == "model"]
@@ -679,11 +711,11 @@ def guard_handler(models: Optional[ModelCalls] = None) -> Callable:
             owner = str(context.get("owner") or "")
             purpose = str(config.get("purpose") or "utility")
             try:
-                decisions = models.decide(
-                    text[:12000], fields, owner=owner or None, purpose=purpose,
-                    instructions=str(config.get("instructions") or ""), timeout_s=timeout_s,
+                decisions = _decide_waiting(
+                    models, text[:12000], fields, timeout_s=timeout_s, owner=owner or None,
+                    purpose=purpose, instructions=str(config.get("instructions") or ""),
                     min_confidence=min(c["threshold"] for c in model_checks),
-                    caller="workflow.guard") or {}
+                    caller="workflow.guard")
                 error = ""
             except ModelUnavailable as exc:
                 decisions, error = {}, str(exc)

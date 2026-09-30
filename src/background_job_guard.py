@@ -112,6 +112,25 @@ def model_busy(url: str) -> bool:
     return any(isinstance(s, dict) and s.get("is_processing") for s in (slots or []))
 
 
+def no_free_slot(url: str) -> bool:
+    """True when every slot of a loopback llama-server behind `url` is serving
+    a request (a single-slot server with a chat in it included). A request
+    sent now would queue behind someone; with an idle slot it would not.
+    Ollama and anything that cannot answer: False."""
+    root = _loopback_root(url)
+    if not root:
+        return False
+    try:
+        from src import vram_admission
+        slots = vram_admission._get(root, "/slots", 1.5)
+    except Exception:
+        return False
+    if isinstance(slots, dict):
+        slots = slots.get("slots") or []
+    slots = [s for s in (slots or []) if isinstance(s, dict)]
+    return bool(slots) and all(s.get("is_processing") for s in slots)
+
+
 def would_require_load(url: str, model: str) -> bool:
     """True if calling `model` at `url` right now would make Ollama load it
     fresh (or if we simply cannot tell — see `_resident_model_names`).
