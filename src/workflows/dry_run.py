@@ -260,7 +260,9 @@ def _simulate_node(node: WorkflowNode, context: Mapping[str, Any], mock: Mapping
         human_waits.append(node.id)
         return {"approved": True, "simulated": True, "detail": "treated as granted; a real run waits for a person",
                 **body}
-    if kind in ("wait", "wait_until", "wait_for_event"):
+    if kind == "wait_for_event":
+        return {"simulated": True, "settled": True, "timed_out": False, "events": [], "count": 0, **body}
+    if kind in ("wait", "wait_until"):
         return {"simulated": True, "waited": True, "timed_out": False, **body}
     if kind == "deliver":
         return {"delivered": False, "simulated": True, "detail": "nothing was sent", **body}

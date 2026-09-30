@@ -22,7 +22,7 @@ from fastapi import APIRouter, HTTPException, Request
 from core.middleware import require_admin
 from src.contracts import ContractError, WorkflowDefinition
 from src.contracts.base import now_iso
-from src.workflows import WorkflowEngine, WorkflowStore, default_handlers, evaluation, published, ready_nodes
+from src.workflows import WorkflowEngine, WorkflowStore, default_handlers, evaluation, published, ready_nodes, templates
 from src.workflows.dry_run import dry_run
 from src.workflows.evaluation import EvaluationError, EvaluationStore
 from src.workflows.library import LibraryError, WorkflowLibrary
@@ -767,6 +767,34 @@ def setup_workflows_routes():
             return {"ok": True, "result": dry_run(definition, inputs, mocks=mocks)}
         except ValueError as exc:
             raise HTTPException(400, str(exc))
+
+    @router.get("/templates")
+    def templates_list(request: Request):
+        """Starting points with parameters; filling one in builds nothing that runs."""
+        require_admin(request)
+        return {"ok": True, "templates": templates.list_templates()}
+
+    @router.post("/templates/{template_id}/instantiate")
+    async def templates_instantiate(template_id: str, request: Request):
+        """Fill a template's parameters in and return the validated definition.
+        `save: true` also keeps it in the library (unpublished) under `name`."""
+        require_admin(request)
+        payload = await _json_object(request)
+        parameters = payload.get("parameters", {})
+        if not isinstance(parameters, dict):
+            raise HTTPException(400, "parameters must be an object")
+        try:
+            definition = templates.instantiate(template_id, parameters)
+        except templates.TemplateError as exc:
+            code = 404 if str(exc).startswith("no template named") else 400
+            raise HTTPException(code, {"message": str(exc), "problems": exc.problems})
+        out: dict = {"ok": True, "definition": definition.to_dict(), "fingerprint": definition.fingerprint()}
+        if payload.get("save") is True:
+            try:
+                out["saved"] = WorkflowLibrary().save(_owner_of(request), definition, name=str(payload.get("name") or ""))
+            except LibraryError as exc:
+                raise HTTPException(400, str(exc))
+        return out
 
     @router.get("/library/{name}/eval-sets")
     def eval_sets_list(name: str, request: Request):
