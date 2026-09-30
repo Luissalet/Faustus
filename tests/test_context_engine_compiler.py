@@ -271,13 +271,18 @@ def test_policy_removes_a_source_from_the_plan_and_says_why():
         "memory_engine", "personal_memory", "project_memory", "files",
         "code_index", "documents"))
 
-    for gated in ("memory_engine", "personal_memory"):
+    for gated in ("memory_engine", "personal_memory", "documents"):
         assert gated not in plan.source_ids
         assert "personal memory is off" in plan.skipped[gated]
     for gated in ("project_memory", "files", "code_index"):
         assert gated not in plan.source_ids
         assert "project sources are off" in plan.skipped[gated]
-    assert "documents" in plan.source_ids
+    # Documents are the owner's personal indexed corpus, so incognito must
+    # exclude them too; project-source permission alone does not govern them.
+    permitted = planner.plan(_request(policy=ContextPolicy(allow_personal_memory=True,
+                                                          allow_project_sources=False)),
+                             available=("documents",))
+    assert "documents" in permitted.source_ids
 
 
 def test_a_source_with_no_workspace_or_session_is_not_woken():

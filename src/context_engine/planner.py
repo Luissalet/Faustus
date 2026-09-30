@@ -225,7 +225,7 @@ SOURCE_SECTIONS: Dict[str, Tuple[str, ...]] = {
 
 #: Gated by ``policy.allow_personal_memory``.  Narrow on purpose: a flag that
 #: blocks more than it names turns incognito into "no context at all".
-PERSONAL_SOURCE_IDS: Tuple[str, ...] = ("memory_engine", "personal_memory", "brain")
+PERSONAL_SOURCE_IDS: Tuple[str, ...] = ("memory_engine", "personal_memory", "brain", "documents")
 
 #: Gated by ``policy.allow_project_sources``.  ``code_index`` belongs here and
 #: ``blocks``, ``experiences`` and ``multimodal`` deliberately do not, for the

@@ -72,6 +72,11 @@ class DocumentSource(ThreadedSource):
         return True
 
     def _gate(self, req: RetrievalRequest) -> str:
+        if not req.policy.allow_personal_memory:
+            return "policy.allow_personal_memory is false"
+        # A falsy owner would drop rag_vector's owner filter entirely.
+        if not str(req.owner or ""):
+            return "no owner on the request"
         if not req.wants("retrieved_documents"):
             return "retrieved_documents not requested"
         if not str(req.query or "").strip():
@@ -89,14 +94,13 @@ class DocumentSource(ThreadedSource):
             return self._manager
 
     def _search(self, req: RetrievalRequest) -> Sequence[ContextCandidate]:
-        store = self._store()
+        # Keep the guard here too: direct synchronous callers must not open
+        # Chroma before policy and owner have been checked.
+        if self._gate(req):
+            return ()
         owner = str(req.owner or "")
         limit = req.top()
-        # `owner=""` would be falsy inside rag_vector and drop the `where`
-        # filter, so an ownerless request must not reach the collection at all.
-        if not owner:
-            logger.debug("documents: refusing an unscoped search")
-            return ()
+        store = self._store()
         hits = list(store.search(str(req.query or ""), k=limit, owner=owner) or [])
         degraded = not bool(getattr(getattr(store, "vector_rag", None), "healthy", True))
         out: List[ContextCandidate] = []
