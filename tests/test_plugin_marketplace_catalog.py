@@ -14,7 +14,7 @@ CATALOG = json.loads((ROOT / "marketplace.json").read_text(encoding="utf-8"))
 def test_catalog_schema_unique_ids_and_public_clone_urls():
     assert CATALOG["schema"] == 1
     entries = CATALOG["plugins"]
-    assert len(entries) == 26
+    assert len(entries) == 28
     assert len({entry["id"] for entry in entries}) == len(entries)
     for entry in entries:
         assert set(entry) == {"id", "repository_url", "required"}
@@ -49,8 +49,21 @@ def test_new_manifests_load_via_real_loader_without_user_data(tmp_path, monkeypa
     assert {entry["id"] for entry in CATALOG["plugins"]} <= set(loaded.plugins)
 
 
-def test_unverified_extra_repositories_are_not_announced_in_catalog():
-    assert {"homehoard", "scheherazade"}.isdisjoint({entry["id"] for entry in CATALOG["plugins"]})
+def test_verified_home_and_story_repositories_are_optional_catalog_entries():
+    entries = {entry["id"]: entry for entry in CATALOG["plugins"]}
+    assert entries["homehoard"] == {"id": "homehoard",
+        "repository_url": "https://github.com/Luissalet/HomeHoard.git", "required": False}
+    assert entries["scheherazade"] == {"id": "scheherazade",
+        "repository_url": "https://github.com/Luissalet/ScheherazadesHoard.git", "required": False}
+
+
+def test_independent_watch_and_book_repositories_are_excluded():
+    entries = CATALOG["plugins"]
+    independent = {"watch", "watchhoard", "book", "bookhoard", "mybookhoard"}
+    assert independent.isdisjoint({entry["id"].casefold() for entry in entries})
+    repository_names = {urlsplit(entry["repository_url"]).path.rsplit("/", 1)[-1]
+        .removesuffix(".git").casefold() for entry in entries}
+    assert independent.isdisjoint(repository_names)
 
 
 @pytest.mark.parametrize("plugin_id,entrypoint", [("cookhoard", "apps/mcp/bootstrap.mjs"),

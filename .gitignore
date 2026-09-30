@@ -141,6 +141,10 @@ compound.config.json
 _scratch/
 /odysseus/
 
+# Marketplace: ship manifests and the catalogue, recreate source checkouts.
+/plugins/*/repository/
+/plugins/*/.repository-stage-*/
+
 # Snapshots de data/ (scripts/odysseus-backup y src/backup_service) — pueden ser cientos de MB.
 backups/
 

@@ -14,6 +14,9 @@
 
 ![Faustus Studio](assets/screens/studio.png)
 
+
+**Marketplace de plugins:** en Conectores puedes descargar los hoards con un botón o enlazar los que ya tienes. HoardLink es obligatorio y se descarga primero si falta. El catálogo se comparte con Faustus; las copias de código quedan en `plugins/<id>/repository/`, fuera de Git. Watch y Book siguen siendo independientes. [Uso y clonación para colaboradores](docs/api/plugin-marketplace.md).
+
 ## Qué es Faustus
 
 Faustus reúne chat, agentes de programación, investigación, escritura, flujos de imagen y vídeo, voz y conocimiento de proyectos en un solo espacio. Es un fork personal de [Odysseus](https://github.com/odysseus-dev/odysseus), con backend Python/FastAPI e interfaz React/TypeScript.

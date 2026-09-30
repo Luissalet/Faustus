@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "id": "scheherazade",
+  "name": "Scheherazade's Hoard",
+  "purpose": "Keeps a story world's state (entities, facts, threads, dice) outside the model and hands the narrator exactly the slice it needs for the next scene.",
+  "capabilities": ["storytelling", "world-state", "continuity", "dice", "tabletop", "narration"],
+  "placeholders": ["SCHEHERAZADE_DIR", "APP_URL"],
+  "defaults": {"APP_URL": "http://127.0.0.1:8816"},
+  "app": {
+    "url_default": "http://127.0.0.1:8816",
+    "ui_url": "{APP_URL}",
+    "health": {"path": "/api/health", "expect": {"service": "scheherazades-hoard"}},
+    "identify": {"service": ["scheherazades-hoard"], "title": ["scheherazade's hoard"]},
+    "launch_hint": {
+      "kind": "process",
+      "executable": "{SCHEHERAZADE_DIR}/.venv/Scripts/python.exe",
+      "argv": ["-m", "scheherazades_hoard", "--no-browser"],
+      "cwd": "{SCHEHERAZADE_DIR}",
+      "readiness": {"url": "{APP_URL}/api/health", "timeout_s": 30}
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{SCHEHERAZADE_DIR}/.venv/Scripts/python.exe",
+    "args": ["{SCHEHERAZADE_DIR}/scheherazades_hoard/mcp_server.py"],
+    "env": {"SCHEHERAZADE_URL": "{APP_URL}"},
+    "optional_env": []
+  },
+  "provides": {"skills": ["skills/narrator-loop/SKILL.md"]},
+  "notes": "A world-state and continuity keeper for interactive fiction and tabletop play. Can narrate on its own with the shared local model, or hand its tools to Faustus so Faustus narrates while this app remembers everything."
+}

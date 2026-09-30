@@ -1479,6 +1479,8 @@ logger.info("MCP routes initialized")
 # above, never a second aggregator (see routes/connector_routes.py docstring).
 from routes.connector_routes import setup_connector_routes
 app.include_router(setup_connector_routes(mcp_manager))
+from routes.plugin_marketplace_routes import setup_plugin_marketplace_routes
+app.include_router(setup_plugin_marketplace_routes())
 
 # Control center (17-09): what runs because of Faustus — ports, bg jobs,
 # launched profiles, MCP children, watched apps — and a human-only Stop.

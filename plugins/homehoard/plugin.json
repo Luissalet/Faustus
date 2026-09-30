@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "id": "homehoard",
+  "name": "HomeHoard",
+  "purpose": "Inventario doméstico local para encontrar objetos y responder dónde están guardados.",
+  "capabilities": ["household-inventory", "item-location", "local-search"],
+  "placeholders": ["HOMEHOARD_DIR", "APP_URL", "PYTHON"],
+  "defaults": {"APP_URL": "http://127.0.0.1:5196", "PYTHON": "python"},
+  "app": {
+    "url_default": "http://127.0.0.1:5196",
+    "ui_url": "{APP_URL}",
+    "health": {"path": "/api/health", "expect": {"service": "homehoard-bridge"}},
+    "identify": {"service": ["homehoard-bridge"], "title": ["homehoard"]},
+    "launch_hint": {
+      "kind": "process",
+      "executable": "{PYTHON}",
+      "argv": ["bridge/server.py"],
+      "cwd": "{HOMEHOARD_DIR}",
+      "readiness": {"url": "{APP_URL}/api/health", "timeout_s": 20}
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{PYTHON}",
+    "args": ["{HOMEHOARD_DIR}/bridge/mcp_server.py"],
+    "env": {},
+    "optional_env": []
+  },
+  "notes": "Faustus consulta una copia JSON local sin fotos. Abre el puente local y carga una exportación de HomeHoard después de cada cambio. El servidor escucha solo en 127.0.0.1."
+}

@@ -1,5 +1,10 @@
 # Plugins
 
+The [plugin marketplace](plugin-marketplace.md) ships repository references
+with Faustus. From Connectors, download a Hoard into `plugins/<id>/repository/`
+or link an existing folder. HoardLink is acquired first when missing;
+downloaded repositories and personal paths stay outside Faustus's Git history.
+
 A plugin is an application you already use, connected to Faustus. Jobhunter's
 Hoard is a job-search app; Writer's Hoard is where manuscripts live; Dorian's
 Hoard holds credentials and what is known about you. You run them on their
