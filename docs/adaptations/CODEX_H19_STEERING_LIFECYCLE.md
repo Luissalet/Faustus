@@ -113,3 +113,12 @@ interno exacto worker/intento drenado; nunca modelread/success. Publicpending
 legacyshape idéntica, IDnoenprompt. Rechaza forged/crossworker/duplicate/oldattempt.
 Final104 correctas46,09s; coordinador28receipt2,89s, catálogoSSE6 correctas0,79s.
 No HTTPnuevo ni restorequeue, durablefailure appliedobservado quedaunknown.
+
+
+### VISITADO / IMPLEMENTADO — H19 consulta de recibos tras reinicio, 30-09-2026
+
+Commit `ca616048`: POST de steering acepta `return_receipt: true` para devolver el locator capturado antes del dispatch; el cuerpo legacy mantiene exactamente `{ok: true}`. GET `/api/chat/subagent/steering-receipts/{child_session_id}/{receipt_id}?parent_session_id=...&parent_run_id=...` verifica propietarios de sesión hija y padre antes de leer archivos. Consulta el journal del run exacto mediante prefijo de sesión y UUID, sin depender de `_RUNS`, seleccionar el más reciente ni adivinar desde transcripciones.
+
+El lector limita a 8 MiB/100000 líneas y valida cabecera, IDs, secuencia queued→drained→applied o queued→dropped e identidad de worker/delegación/attempt. Archivo ausente, error, cola JSONL truncada, incoherencia o exceso devuelve `unknown`. Un recibo ajeno devuelve 404 sólo tras validar el journal completo. Evidencia `journal` y durabilidad `unknown`: bytes presentes no demuestran fsync. Applied significa añadido a mensajes, nunca lectura del modelo o éxito de efecto. No restaura colas, reenvía ni añade UI.
+
+Pruebas finales: 101 correctas en 32,90 s, incluyendo 30 casos nuevos de API/lector con TestClient, propietarios SQLite reales y archivos reabiertos; autenticación antes de IO, aislamiento, pérdida/corrupción, límites y compatibilidad. Coordinador repite 30 nuevas: correctas en 2,57 s. Sin inferencia ni GPU. Fuente original https://github.com/openai/codex/tree/b1e72963c3b71a9265a551e54beff078384efed9 y contrato local de `_RunLog`; no revisión upstream repetida. Este piloto queda visitado/cerrado; aceptación antes del último drain y recuperación operativa siguen pendientes. Uso 93% consumido, todavía permitido; automatización activa. Consolidación total de imágenes y restantes fuentes H09/H05 siguen parciales; cambios ajenos preservados.
