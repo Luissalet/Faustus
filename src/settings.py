@@ -557,6 +557,11 @@ DEFAULT_SETTINGS = {
     # granted and none of this process's environment; if the container backend
     # is unavailable the call is refused. "host" is the explicit opt-in to a
     # host process with this user's full file and network authority.
+    # Process handles (src/process_manager.py): the process_* tools.
+    "agent_process_manager": True,
+    "agent_process_max_handles": 16,
+    "agent_process_max_runtime_seconds": 14400,
+    "agent_process_buffer_bytes": 262144,
     "agent_code_mode_runtime": "confined",
     # Confined runtime: how the workspace root is mounted. "read_only" (default)
     # means writes must go through tools.call, where policy and approval apply.

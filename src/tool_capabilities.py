@@ -670,6 +670,20 @@ _register(
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
 _register(
+    # process_* (src/process_manager.py): starting a process and writing to its
+    # stdin run code on the host; stopping one is part of the same authority.
+    # sandbox_probe starts containers and a throw-away local server.
+    {"process_start", "process_write_stdin", "process_stop", "sandbox_probe"},
+    ToolEffect.EXECUTE_CODE,
+)
+_register(
+    # process_read / process_list only read back what a process printed or the
+    # handle records; the output is whatever the process wrote: untrusted.
+    {"process_read", "process_list"},
+    ToolEffect.READ_WORKSPACE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
+_register(
     # page_prune (src/research_prune.py): given a url it fetches through the
     # same guarded fetcher as web_fetch; given html/text it only computes. Its
     # result is page text either way, so it is classed with web_fetch.

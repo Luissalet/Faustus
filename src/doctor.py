@@ -287,7 +287,7 @@ def _agent_sandbox() -> Finding:
         blocked = info.get("target") == "not_executed"
         return Finding(
             "execution", "agent shell in the sandbox", "absent" if blocked else "ok",
-            "REQUIRED — no compatible native Windows sandbox; commands are refused" if blocked else
+            "REQUIRED — commands are refused" if blocked else
             "REQUIRED — bash/python use a container or refuse; PowerShell cannot run on the host",
             fix="",
         )

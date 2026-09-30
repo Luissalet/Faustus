@@ -1103,6 +1103,32 @@ EXAMPLES: Dict[str, List[str]] = {
         "review what you did in the previous turn before retrying",
         "qué herramientas usaste y cuáles fallaron en la última respuesta",
     ],
+    "process_start": [
+        "start the dev server and keep it running while I check the page",
+        "arranca este script que me va pidiendo datos y déjalo abierto",
+        "run the build in the background and tell me how it is going",
+    ],
+    "process_read": [
+        "what has the server printed since the last time you looked",
+        "lee la salida nueva del proceso",
+    ],
+    "process_write_stdin": [
+        "answer yes to the installer prompt",
+        "escribe la contraseña de prueba en el proceso que espera entrada",
+    ],
+    "process_stop": [
+        "stop the server you started",
+        "para el proceso que lanzaste hace un rato",
+    ],
+    "process_list": [
+        "which processes did you start in this chat",
+        "qué procesos tienes en marcha",
+    ],
+    "sandbox_probe": [
+        "check that the sandbox really confines files and network",
+        "comprueba qué aísla de verdad el sandbox en Windows",
+        "is Code Mode able to read files outside the workspace",
+    ],
     "page_prune": [
         "léeme solo la parte relevante de esta página sobre el tratamiento",
         "strip the menus and cookie banners and keep only what answers my question",

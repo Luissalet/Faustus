@@ -63,6 +63,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
+from src import container_mounts
 from src.contracts import ExecutionResult, ExecutionSpec
 from src.contracts.base import now_iso
 
@@ -224,6 +225,14 @@ class DockerWorkspaceBackend:
         if not spec.workspace or not os.path.isdir(spec.workspace):
             return {"ok": False, "reason": "policy",
                     "detail": f"workspace {spec.workspace!r} is not a directory on this host"}
+        for label, path in (("workspace", spec.workspace), ("artifacts", spec.artifacts_dir)):
+            if not path:
+                continue
+            try:
+                container_mounts.bind_mount_args(path, "/" + label)
+            except container_mounts.MountError as exc:
+                return {"ok": False, "reason": "policy",
+                        "detail": f"the {label} path cannot be mounted unambiguously: {exc}"}
         return ready
 
     def _docker(self, args: Sequence[str], *, timeout: float = 60) -> subprocess.CompletedProcess:
@@ -255,10 +264,12 @@ class DockerWorkspaceBackend:
             args += ["--memory", f"{limits.memory_mb}m", "--memory-swap", f"{limits.memory_mb}m"]
         if limits.cpus:
             args += ["--cpus", str(limits.cpus)]
+        # `--mount` instead of `-v SRC:DST`: a Windows drive letter contains the
+        # `:` that `-v` uses to separate its halves (src/container_mounts.py).
         if spec.workspace:
-            args += ["-v", f"{_host_path(spec.workspace)}:/workspace"]
+            args += container_mounts.bind_mount_args(spec.workspace, "/workspace")
         if spec.artifacts_dir:
-            args += ["-v", f"{_host_path(spec.artifacts_dir)}:/artifacts"]
+            args += container_mounts.bind_mount_args(spec.artifacts_dir, "/artifacts")
         if env_file:
             args += ["--env-file", env_file]
         args.append(self.image)

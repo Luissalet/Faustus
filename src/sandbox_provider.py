@@ -291,7 +291,11 @@ class DockerSandboxProvider:
             "--pids-limit", "512", "--network", "none", "-w", "/workspace",
         ]
         if self.workspace:
-            args += ["-v", f"{os.path.abspath(self.workspace)}:/workspace"]
+            from src import container_mounts
+            try:
+                args += container_mounts.bind_mount_args(self.workspace, "/workspace")
+            except container_mounts.MountError as exc:
+                return {"created": False, "reason": f"the workspace cannot be mounted: {exc}"}
         args += [self.image, "sleep", "infinity"]
         result = self._run_docker(args, timeout=60)
         ok = result.returncode == 0

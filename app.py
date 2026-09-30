@@ -1489,6 +1489,8 @@ app.include_router(setup_plugin_marketplace_routes())
 # launched profiles, MCP children, watched apps — and a human-only Stop.
 from routes.process_center_routes import setup_process_center_routes
 app.include_router(setup_process_center_routes())
+from routes.execution_routes import setup_execution_routes
+app.include_router(setup_execution_routes())
 
 # Local inference engines (llama.cpp's llama-server) managed from the UI —
 # built on the launch-profile machinery above, never a second process

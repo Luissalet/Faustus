@@ -102,6 +102,10 @@ _BUILTIN_SERVERS = {
     # Page pruning (src/research_prune.py): url/html/text + a question -> the
     # blocks worth reading, with scores. No owner-scoped data, no writes.
     "research_prune": ("mcp_servers/research_prune_server.py", "Built-in: Page pruning"),
+    # Execution: process handles (start/read/write_stdin/stop/list) and the
+    # sandbox probe (src/process_manager.py, src/sandbox_probe.py). The server
+    # process holds its own handles in its own store; it is not owner-scoped.
+    "execution": ("mcp_servers/execution_server.py", "Built-in: Execution"),
 }
 
 # Built-in servers whose every tool is a 1:1 twin of a native agent tool
@@ -110,7 +114,7 @@ _BUILTIN_SERVERS = {
 # their tools: indexing both put two copies of each answer in the top-k and
 # pushed other relevant tools out of the turn (seen live: `code_graph_*` next
 # to `mcp__code_graph__code_graph_*` for one question).
-NATIVE_TWIN_SERVERS = frozenset({"code_graph", "prior_art", "research_prune"})
+NATIVE_TWIN_SERVERS = frozenset({"code_graph", "prior_art", "research_prune", "execution"})
 
 # NPX-based built-in servers (run via npx, not Python).
 #

@@ -87,6 +87,10 @@ from .code_graph_tools import (
 from .structural_search_tools import StructuralSearchTool, StructuralRewriteTool
 from .doc_claims_tool import DocClaimsCheckTool
 from .prune_tools import PagePruneTool
+from .process_tools import (
+    ProcessListTool, ProcessReadTool, ProcessStartTool, ProcessStopTool, ProcessWriteStdinTool,
+)
+from .sandbox_probe_tool import SandboxProbeTool
 from .turn_review_tool import TurnReviewTool
 from .pdf_ops_tool import PdfOpsTool
 from .page_snapshot_tools import PageFindTool, PageWindowTool
@@ -255,6 +259,15 @@ TOOL_HANDLERS = {
     # Query-aware page pruning (src/research_prune.py): url/html/text + query
     # -> the blocks worth reading, with scores. See src/agent_tools/prune_tools.py.
     "page_prune": PagePruneTool().execute,
+    # H11: one lifecycle for a process, its stdin and its output, addressed by
+    # opaque handles (src/process_manager.py). H02: real allowed/forbidden
+    # access checks per operation (src/sandbox_probe.py).
+    "process_start": ProcessStartTool().execute,
+    "process_read": ProcessReadTool().execute,
+    "process_write_stdin": ProcessWriteStdinTool().execute,
+    "process_stop": ProcessStopTool().execute,
+    "process_list": ProcessListTool().execute,
+    "sandbox_probe": SandboxProbeTool().execute,
     # R3 (Reach wave): fan one prompt across N candidate models/endpoints,
     # each isolated via src.alternatives, ranked by src.fanout.score. See
     # src/fanout/ and src/agent_tools/fanout_tools.py.
@@ -482,6 +495,10 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "doc_claims_check",
              # Query-aware page pruning -- src/agent_tools/prune_tools.py.
              "page_prune",
+             # Process handles and the sandbox probe -- src/agent_tools/process_tools.py,
+             # src/agent_tools/sandbox_probe_tool.py.
+             "process_start", "process_read", "process_write_stdin", "process_stop", "process_list",
+             "sandbox_probe",
              # Review of a chat's recent turns -- src/agent_tools/turn_review_tool.py.
              "turn_review",
              # R3 (Reach wave): fan-out -- src/agent_tools/fanout_tools.py.

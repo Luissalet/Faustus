@@ -225,6 +225,7 @@ async def run_code_mode(
     runtime: Optional[str] = None,
     network: Optional[bool] = None,
     workspace_access: Optional[str] = None,
+    image: Optional[str] = None,
 ) -> dict:
     """Run ``code`` in the requested runtime.
 
@@ -240,14 +241,15 @@ async def run_code_mode(
                   tool_policy=tool_policy, security_context=security_context)
     if mode == "host":
         return _with_policy(await _run_host(code, **kwargs), "host", "host_process")
-    return await _run_confined(code, network=network, workspace_access=workspace_access, **kwargs)
+    return await _run_confined(code, network=network, workspace_access=workspace_access,
+                               image=image, **kwargs)
 
 
 async def _run_confined(code: str, *, network: Optional[bool], workspace_access: Optional[str],
-                        **kwargs) -> dict:
+                        image: Optional[str] = None, **kwargs) -> dict:
     from src.container_mounts import MountError
     limits = _limits()
-    image = confined._sandbox_image()
+    image = image or confined._sandbox_image()
     if not confined.valid_image_name(image):
         return confined.refusal("the configured sandbox image name is not valid")
     ready = await asyncio.to_thread(confined.probe, image)

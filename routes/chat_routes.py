@@ -4838,6 +4838,13 @@ def setup_chat_routes(
             cleanup["bg_jobs_cancelled"] = [
                 str(rec.get("id")) for rec in bg_jobs.cancel_for_session(session_id)
             ]
+            try:
+                from src import process_manager
+                cleanup["process_handles_stopped"] = [
+                    row["handle"] for row in process_manager.manager().cancel_for_session(session_id)
+                ]
+            except Exception:
+                logger.debug("[chat-stop] could not stop process handles for %s", session_id, exc_info=True)
         out = {
             "scope": _scope,
             "stopped": stopped,

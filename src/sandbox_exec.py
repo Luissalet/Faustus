@@ -22,8 +22,12 @@ What happens when it is **on** and the sandbox cannot serve depends on
   workspace that is not a directory all come back as an error result naming
   the reason — the same refusal the router gives, surfaced where the model
   can read it — and nothing puts the command on the host.
-* `required`: no host fallback on any platform. Native Windows currently
-  refuses because there is no compatible confined Windows backend.
+* `required`: no host fallback on any platform. bash and python run in the
+  Linux container (Docker Desktop on Windows; the host workspace path is
+  mounted with `--mount`, see `src/container_mounts.py`) or are refused when
+  the daemon/image is unavailable. PowerShell has no container backend and is
+  refused. `sandbox_probe` (src/sandbox_probe.py) checks what each operation
+  really confines.
 
 ### The one thing it rewrites, and why
 
@@ -141,7 +145,7 @@ def host_skip_reason() -> Optional[str]:
     or None when the sandbox is the place to try first.
 
     A native Windows host is skipped for compatibility modes, including ``strict``.
-    ``required`` never yields to the host; run() refuses without a compatible backend.
+    ``required`` never yields to the host; run() refuses when the container cannot serve.
     A Linux container cannot run the project's own toolchain (cmd, powershell,
     .bat, winget, the Windows Python), which is what "verify the code" means
     on that machine; asking the user to start Docker does not change that.
@@ -166,10 +170,7 @@ def describe() -> Dict[str, Any]:
     never touches Docker; `run()` does the probe when it matters."""
     on = enabled()
     skip = host_skip_reason() if on else None
-    if on and mode() == "required" and _host_is_windows():
-        target = "not_executed"
-        skip = "required confinement: no compatible native Windows sandbox backend"
-    elif not on:
+    if not on:
         target = "host"
     elif skip:
         target = "host"
@@ -405,9 +406,6 @@ async def _run(tool: str, command: str, ctx: Optional[dict] = None) -> Optional[
         return None
     if not isinstance(command, str) or not command.strip():
         return {"error": f"{tool}: empty command", "exit_code": 1, "sandboxed": False}
-    if confinement_required() and _host_is_windows():
-        return _refusal(tool, "required confinement: no compatible native Windows sandbox backend")
-
     from src import execution_router, capability_registry as registry
     from src.constants import ARTIFACT_RUNS_DIR, MAX_OUTPUT_CHARS
     from src.execution_backends import DockerWorkspaceBackend

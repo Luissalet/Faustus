@@ -20,8 +20,11 @@ def configured(monkeypatch, tmp_path):
     (tools.PythonTool, "open('required-sentinel.txt', 'w').write('unsafe')"),
     (tools.PowerShellTool, "Set-Content required-sentinel.txt unsafe"),
 ])
-async def test_required_windows_refuses_before_process_creation(configured, monkeypatch, tmp_path, tool, command):
+async def test_required_windows_without_a_container_refuses_before_process_creation(
+        configured, monkeypatch, tmp_path, tool, command):
     monkeypatch.setattr(sandbox, "_host_is_windows", lambda: True)
+    monkeypatch.setattr(DockerWorkspaceBackend, "probe", lambda self:
+                        {"ok": False, "reason": "backend_unavailable", "detail": "daemon down"})
     async def forbidden(*args, **kwargs):
         pytest.fail("required must not create a host process")
     monkeypatch.setattr(tools.asyncio, "create_subprocess_exec", forbidden)
@@ -30,8 +33,47 @@ async def test_required_windows_refuses_before_process_creation(configured, monk
     assert result["requested_policy"] == "sandbox_required"
     assert result["effective_policy"] == "not_executed"
     assert result["sandbox_refused"] and result["exit_code"] == 126
-    assert "required" in result["error"]
+    assert "required" in result["error"] or "unavailable" in result["error"]
     assert not (tmp_path / "required-sentinel.txt").exists()
+
+
+@pytest.mark.asyncio
+async def test_required_windows_powershell_is_refused_even_with_a_working_container(
+        configured, monkeypatch, tmp_path):
+    monkeypatch.setattr(sandbox, "_host_is_windows", lambda: True)
+    monkeypatch.setattr(DockerWorkspaceBackend, "probe", lambda self:
+                        {"ok": True, "reason": "", "detail": "fake"})
+    result = await tools.PowerShellTool().execute("Set-Content required-sentinel.txt unsafe", {})
+    assert result["effective_policy"] == "not_executed" and result["sandbox_refused"]
+    assert not (tmp_path / "required-sentinel.txt").exists()
+
+
+@pytest.mark.asyncio
+async def test_required_windows_bash_uses_the_container_with_windows_workspace_paths(
+        configured, monkeypatch, tmp_path):
+    from src.contracts import ExecutionResult
+    monkeypatch.setattr(sandbox, "_host_is_windows", lambda: True)
+    workspace = "C:\\Users\\someone\\proj"
+    monkeypatch.setattr("src.tool_execution.agent_cwd", lambda: workspace)
+    monkeypatch.setattr(sandbox.os.path, "isdir", lambda p: True)
+    monkeypatch.setattr(DockerWorkspaceBackend, "probe", lambda self:
+                        {"ok": True, "reason": "", "detail": "fake"})
+    seen = {}
+
+    def fake_run(self, spec, argv, **kwargs):
+        seen["argv"] = argv
+        seen["docker_args"] = self.docker_args(spec, "n")
+        return ExecutionResult.parse({"run_id": "r", "backend": "docker_workspace",
+                                      "status": "completed", "exit_code": 0,
+                                      "stdout_tail": "/workspace/out.txt", "stderr_tail": "",
+                                      "started_at": "2026-01-01T00:00:00Z",
+                                      "ended_at": "2026-01-01T00:00:01Z"})
+    monkeypatch.setattr(DockerWorkspaceBackend, "run", fake_run)
+    result = await tools.BashTool().execute("cat C:\\Users\\someone\\proj\\out.txt", {})
+    assert result["effective_policy"] == "docker_container"
+    assert seen["argv"][-1] == "cat /workspace/out.txt"
+    assert "type=bind,source=C:/Users/someone/proj,target=/workspace" in seen["docker_args"]
+    assert result["output"] == "C:\\Users\\someone\\proj/out.txt"
 
 
 @pytest.mark.asyncio
@@ -99,8 +141,8 @@ def test_windows_prompt_and_doctor_do_not_claim_host_execution(configured, monke
     from src import agent_loop, doctor
     monkeypatch.setattr(sandbox, "_host_is_windows", lambda: True)
     monkeypatch.setattr("core.platform_compat.IS_WINDOWS", True)
-    assert sandbox.describe()["target"] == "not_executed"
+    assert sandbox.describe()["target"] == "container"
     prompt = agent_loop._execution_environment_block({"bash", "python", "powershell"})
-    assert "commands are refused" in prompt
+    assert "refused" in prompt and "/workspace" in prompt
     assert "every command runs directly" not in prompt
-    assert doctor._agent_sandbox().state == "absent"
+    assert doctor._agent_sandbox().state == "ok"

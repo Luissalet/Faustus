@@ -1883,6 +1883,9 @@ async def _execute_tool_block_impl(
                 ),
                 "exit_code": 0,
                 "bg_job_id": rec["id"],
+                # The same job, addressed through the process handles
+                # (process_read / process_stop accept it).
+                "process_handle": f"bg:{rec['id']}",
             }
             logger.info(f"Tool executed: {desc} -> bg job {rec['id']}")
             return desc, result

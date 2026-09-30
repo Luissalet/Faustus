@@ -3306,6 +3306,102 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "process_start",
+            "description": "Start a process on this computer and get an opaque handle for it. Returns the output produced within `yield_ms` (or all of it if the process finished), plus a handle and a cursor when it is still running. The process keeps running if the chat stream or the UI closes; it is stopped only by process_stop, its max runtime, or the owner cancelling the session's work. A silent process stays valid (no idle kill). Use this, not bash, for programs that must be fed input, for servers, and for anything long. Refused, never run elsewhere, when command confinement is required.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "Shell command line (bash by default)."},
+                    "argv": {"type": "array", "items": {"type": "string"}, "description": "Alternative to `command`: an exact argument list, no shell."},
+                    "shell": {"type": "string", "enum": ["bash", "sh", "powershell"], "description": "Shell for `command` (default bash)."},
+                    "cwd": {"type": "string", "description": "Working directory (default: the workspace)."},
+                    "yield_ms": {"type": "integer", "description": "How long to wait for output or exit before returning the handle (default 1500, max 30000)."},
+                    "max_runtime_seconds": {"type": "integer", "description": "Stop the process after this long (default 4 hours)."},
+                    "env": {"type": "object", "description": "Extra non-secret environment variables (name -> value)."}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "process_read",
+            "description": "Read new output of a process started with process_start (or a background job, handle `bg:<id>`). Pass the `next_cursor` of the previous read to get only what is new; the buffer keeps the last 256 KiB and reports `dropped_bytes` when the cursor fell behind. `wait_ms` waits for new output or exit. Reading never affects the process.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "handle": {"type": "string", "description": "Handle returned by process_start."},
+                    "cursor": {"type": "integer", "description": "next_cursor of the previous read (omit to read from the oldest retained output)."},
+                    "max_bytes": {"type": "integer", "description": "Maximum bytes to return (default 16384, max 65536)."},
+                    "wait_ms": {"type": "integer", "description": "Wait up to this long for new output or exit (max 30000)."}
+                },
+                "required": ["handle"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "process_write_stdin",
+            "description": "Write text to the stdin of a running process started with process_start. The handle's session and owner and the current permissions are checked on every write; a finished, lost or orphaned process is refused. Include the newline yourself. `close_stdin` sends end-of-input.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "handle": {"type": "string", "description": "Handle returned by process_start."},
+                    "data": {"type": "string", "description": "Text to write (max 64 KiB)."},
+                    "close_stdin": {"type": "boolean", "description": "Close stdin after writing."}
+                },
+                "required": ["handle"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "process_stop",
+            "description": "Stop a process by handle. Only the process tree that process_start created is signalled, and only while its pid and creation time still match; an application the user started is never reachable from here, and there is no stop by name or pid. Also stops a background job by its `bg:<id>` handle.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "handle": {"type": "string", "description": "Handle returned by process_start."},
+                    "reason": {"type": "string", "description": "Optional reason recorded as the termination reason."}
+                },
+                "required": ["handle"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "process_list",
+            "description": "List this session's process handles (managed processes and background jobs) with state, exit code and termination reason. States: running, exited, stopped, timed_out, failed_to_start, lost (server restarted and the process is gone), orphaned (server restarted, process still alive, output unreachable), uncertain (remote runner disconnected).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "include_finished": {"type": "boolean", "description": "Include finished handles (default true)."}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "sandbox_probe",
+            "description": "Check what each kind of execution really confines, by trying accesses that must work and accesses that must fail on throw-away fixtures: reading inside the granted root, a decoy outside it, a sibling folder sharing its prefix, a symlink or directory link pointing out, writing, a local network server, a child process, the host environment. Operations: shell, python, code_mode, files, descendants. Returns per-operation status (verified, failed, unavailable, inconclusive) with each check's expected and observed result, what real calls currently route to, and what each operation covers on this host (Windows included). A backend that cannot be reached is reported unavailable, never verified.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "operations": {"type": "array", "items": {"type": "string", "enum": ["shell", "python", "code_mode", "files", "descendants"]}, "description": "Which operations to probe (default all)."}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "page_prune",
             "description": "Cut a web page down to what answers a question, without a model. Give a url (fetched like web_fetch), or raw html, or already extracted text, plus the query the page is being read for. Each block (paragraph, heading, list item, table row) is scored by text density, link density, tag and class/id hints; blocks above the threshold are ranked against the query with BM25 (accents folded, Spanish and English) and the best are returned in document order under a character cap, with the page title and the best match always kept. Returns the pruned text, original vs pruned characters, blocks kept, the top BM25 score and (optionally) every block's score.",
             "parameters": {

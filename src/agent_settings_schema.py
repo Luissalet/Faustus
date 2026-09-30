@@ -215,17 +215,32 @@ GROUPS: list[dict[str, Any]] = [
             _bool("agent_sandbox_execution", "Run commands in the sandbox",
                   "On Linux/macOS, bash and python go through the Docker sandbox "
                   "(src/sandbox_exec.py) with the workspace mounted at /workspace. "
-                  "On native Windows auto/strict use this PC's tools; required refuses "
-                  "until a compatible confinement backend exists. PowerShell is refused in required mode."),
+                  "On native Windows auto/strict use this PC's tools; required runs bash and python "
+                  "in the Linux container (Docker Desktop) or refuses. PowerShell is refused in "
+                  "required mode."),
             _select("agent_sandbox_mode", "When the sandbox cannot serve",
                     "auto = the host runs the command and the result says so — always on native "
                     "Windows (a Linux container has no cmd, powershell, .bat, winget or the "
                     "project's own Python), and elsewhere when the daemon does not answer. "
                     "strict = on POSIX, refuse instead of falling back to the host. Windows "
                     "still runs on the host. required = no host fallback on any platform; "
-                    "bash/python need a compatible sandbox and native Windows currently refuses. "
+                    "bash/python run in the container (Docker Desktop on Windows) or are refused, "
+                    "and Code Mode's host runtime and process_start are refused too. "
                     "This applies only while Run commands in the sandbox is on.",
                     ["auto", "strict", "required"]),
+            _bool("agent_process_manager", "Process handles",
+                  "process_start / process_read / process_write_stdin / process_stop / process_list: "
+                  "start a process and drive it through an opaque handle with a bounded output "
+                  "buffer and a stdin channel. Runs on the host; refused while command confinement "
+                  "is required."),
+            _int("agent_process_max_handles", "Running processes per session",
+                 "Maximum live process handles one chat session may hold.", 1, 256),
+            _int("agent_process_max_runtime_seconds", "Process max runtime (s)",
+                 "A managed process is stopped after this long (0 = never). Silent processes are not "
+                 "stopped earlier.", 0, 604800),
+            _int("agent_process_buffer_bytes", "Process output buffer (bytes)",
+                 "Output kept per handle; older output is dropped and reported through the cursor.",
+                 1024, 4194304, step=1024),
             _bool("agent_sandbox_persistent_session", "Persistent per-session sandbox",
                   "Reuse one long-lived container per session (src/sandbox_provider.py) "
                   "instead of a fresh one per command. Off by default."),
