@@ -1436,6 +1436,14 @@ DEFAULT_SETTINGS = {
     "teacher_model": "",
     "teacher_enabled": False,
     "teacher_tier2_enabled": False,
+    # The advisor (src/advisor.py): a second model reads the whole session at
+    # three moments the loop decides in code and writes a short "do X, not Y,
+    # because Z" note. Off by default. The model falls back to teacher_model.
+    "advisor_enabled": False,
+    "advisor_model": "",
+    "advisor_max_uses": 3,
+    "advisor_max_tokens": 1024,
+    "advisor_context_tokens": 16000,
     # Skills: minimum self-reported confidence for an auto-written (LLM-authored)
     # DRAFT skill to be injected into the agent prompt. Published skills always
     # qualify. Keeps low-confidence auto-skills out of context until they're
@@ -1774,6 +1782,7 @@ DEFAULT_SETTINGS = {
     "mode_effort_research_reading": "auto",
     "mode_effort_council": "auto",
     "mode_effort_teacher": "auto",
+    "mode_effort_advisor": "auto",
     "mode_effort_consult": "auto",
     "mode_effort_tournament": "auto",
     "mode_effort_bug_hunt": "auto",

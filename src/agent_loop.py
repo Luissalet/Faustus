@@ -10214,6 +10214,35 @@ async def _stream_agent_loop_body(
     from src.loop_breaker import LoopPolicy as _LoopPolicy, observation_for_tool as _loop_observation, STOP_REASON as _LOOP_STOP_REASON
     _loop_policy = _LoopPolicy.from_settings(get_setting)
     _loop_policy_stop = False
+    # The advisor (src/advisor.py): a second model that reads the whole
+    # session at three moments decided HERE, in code -- the first round that
+    # plans or writes, the loop breaker's nudge step, and the final answer of
+    # a turn that wrote files. Off unless `advisor_enabled`; never acts, never
+    # runs inside a teacher takeover.
+    from src import advisor as _advisor
+    _advisor_state = _advisor.AdvisorState.from_settings(
+        available=not _is_teacher_run and not guide_only)
+    _tool_names_sent: list = []
+
+    async def _advisor_ask(trigger: str, *, extra: str = ""):
+        """(note, event) for one advisor use, or (None, None) when the
+        trigger may not fire. `note` is None when the advisor had nothing to
+        say or failed; `event` is always set once a call was made."""
+        if not _advisor_state.allows(trigger):
+            return None, None
+        _adv_result = await _advisor.advise(
+            trigger=trigger, messages=messages,
+            tool_names=[n for n in (_tool_names_sent or []) if n],
+            owner=owner, extra=extra,
+        )
+        _adv_receipt = _advisor_state.record(_adv_result, round_num=round_num)
+        if _adv_receipt is None:
+            return None, None
+        _adv_event = {"type": "advisor_advice", "round": round_num,
+                      **{k: v for k, v in _adv_receipt.items() if k != "round"}}
+        _ledger.notes.append(f"advisor:{trigger}@{round_num}" + ("" if _adv_result.ok else ":failed"))
+        _adv_note = _advisor.advice_note(_adv_result.text, trigger) if _adv_result.text else None
+        return _adv_note, _adv_event
     _loop_recovery_blocked_tools: Set[str] = set()
     _loop_recovery_temporarily_disabled: Set[str] = set()
     # Supervisor: how many times we've nudged the model after it announced
@@ -14577,6 +14606,27 @@ async def _stream_agent_loop_body(
                             _note = "review_defects:" + str(len(_rev_errors))
                             if _note not in _ledger.notes:
                                 _ledger.notes.append(_note)
+                    # Advisor, third trigger: the model is about to give its
+                    # final answer after writing files. One bounded extra
+                    # round when the advisor has something to correct.
+                    if _ledger.mutations and not _force_answer and _advisor_state.allows(_advisor.TRIGGER_FINAL):
+                        try:
+                            _adv_note, _adv_evt = await _advisor_ask(
+                                _advisor.TRIGGER_FINAL,
+                                extra="The answer the agent is about to give:\n" + (round_response or "")[:2500],
+                            )
+                        except Exception:  # noqa: BLE001 - the advisor never costs a turn
+                            logger.debug("[advisor] final trigger failed", exc_info=True)
+                            _adv_note, _adv_evt = None, None
+                        if _adv_evt:
+                            yield "data: " + json.dumps(_adv_evt) + "\n\n"
+                        if _adv_note:
+                            if round_response.strip():
+                                messages.append({"role": "assistant", "content": round_response})
+                            messages.append({"role": "user", "_harness_note": True, "content": _lang_note(_adv_note)})
+                            full_response += "\n\n"
+                            yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                            continue
                     yield (
                         "data: " + json.dumps({
                             "type": "harness_check", "status": "verified", "round": round_num,
@@ -16540,6 +16590,29 @@ async def _stream_agent_loop_body(
             # pattern instead of "this exact call" (which would be false —
             # no single call repeated, the pair/triple did).
             _loop_is_cycle = _loop_policy.last_trigger == "cycle"
+            if _loop_action == "nudge" and _advisor_state.allows(_advisor.TRIGGER_LOOP):
+                # The nudge step asks the advisor what to try instead of
+                # saying "try something else". Whatever it cannot answer
+                # (off, failed, nothing to add) keeps the generic nudge below.
+                try:
+                    _nudge_why = (
+                        _loop_policy.last_cycle_reason if _loop_is_cycle and _loop_policy.last_cycle_reason
+                        else f"the same {block.tool_type} call with the same result {_loop_policy.streak} times"
+                    )
+                    _adv_note, _adv_evt = await _advisor_ask(
+                        _advisor.TRIGGER_LOOP,
+                        extra=(f"Loop detector: the agent is {_nudge_why}.\nLatest call: {block.tool_type} "
+                               f"{(block.content or '')[:400]}\nLatest result: "
+                               f"{json.dumps(result, ensure_ascii=False, default=str)[:600]}"),
+                    )
+                except Exception:  # noqa: BLE001 - the advisor never costs a turn
+                    logger.debug("[advisor] loop trigger failed", exc_info=True)
+                    _adv_note, _adv_evt = None, None
+                if _adv_evt:
+                    yield "data: " + json.dumps(_adv_evt) + "\n\n"
+                if _adv_note:
+                    messages.append({"role": "user", "_harness_note": True, "content": _lang_note(_adv_note)})
+                    _loop_action = "advised_nudge"
             if _loop_action == "nudge" and _loop_policy.last_trigger == "revisit":
                 messages.append({"role": "user", "_harness_note": True, "content": (
                     _lang_note("[Runtime loop recovery — not a new user request] You have made "
@@ -17086,6 +17159,21 @@ async def _stream_agent_loop_body(
             messages.append({"role": "user", "_harness_note": True, "content": _lang_note(TODOWRITE_REFRESH_NUDGE)})
             logger.info("[harness] todowrite refresh injected on round %s (stale completed list)", round_num)
 
+        # Advisor, first trigger: the first round of the turn that made a plan
+        # or called a tool that writes. The note lands after the round's tool
+        # results, so the next model call reads it with them.
+        if (_advisor_state.allows(_advisor.TRIGGER_PLAN_OR_WRITE)
+                and _advisor.is_plan_or_write_round(b.tool_type for b in (tool_blocks or []))):
+            try:
+                _adv_note, _adv_evt = await _advisor_ask(_advisor.TRIGGER_PLAN_OR_WRITE)
+            except Exception:  # noqa: BLE001 - the advisor never costs a turn
+                logger.debug("[advisor] plan/write trigger failed", exc_info=True)
+                _adv_note, _adv_evt = None, None
+            if _adv_evt:
+                yield "data: " + json.dumps(_adv_evt) + "\n\n"
+            if _adv_note:
+                messages.append({"role": "user", "_harness_note": True, "content": _lang_note(_adv_note)})
+
         # Emit agent_step event
         yield (
             f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
@@ -17593,6 +17681,10 @@ async def _stream_agent_loop_body(
         # `last_metrics` -> `md` in `save_assistant_response`, so this rides
         # onto the saved message's metadata with no separate write.
         metrics["context_receipts"] = _context_receipts_summary[:40]
+    if _advisor_state.receipts:
+        # One entry per advisor use (trigger, model, tokens, latency, the
+        # advice itself): rides onto the saved message like the receipts.
+        metrics["advisor"] = list(_advisor_state.receipts)
     if _strategy_event_summary:
         # CMP-09/CMP-12 (W3-A): same persistence path as `context_receipts`
         # right above — a reload restores the collapsible "Estrategia: ..."

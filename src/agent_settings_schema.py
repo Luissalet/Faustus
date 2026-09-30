@@ -43,6 +43,9 @@ EXTRA_KEYS: tuple[str, ...] = ("tool_path_extra_roots", "vision_enabled", "visio
                                "mode_effort_research", "mode_effort_research_reading",
                                "mode_effort_council", "mode_effort_teacher",
                                "mode_effort_consult", "mode_effort_tournament",
+                               "mode_effort_advisor",
+                               "advisor_enabled", "advisor_model", "advisor_max_uses",
+                               "advisor_max_tokens", "advisor_context_tokens",
                                "mode_effort_bug_hunt", "mode_effort_ci_analysis")
 
 FIELD_TYPES: tuple[str, ...] = ("bool", "int", "float", "text", "select", "list", "secret")
@@ -628,6 +631,27 @@ GROUPS: list[dict[str, Any]] = [
             _int("agent_loop_breaker_cycle_min_repeats_long", "Loop breaker: 3-4 step cycle repeats",
                  "Full repetitions of a 3- or 4-call cycle before it is nudged.",
                  2, 50),
+            # The advisor (src/advisor.py). Its three triggers are decided in
+            # code: the first round that makes a plan or writes, the loop
+            # breaker's nudge step, and the final answer of a turn that wrote files.
+            _bool("advisor_enabled", "Advisor: a second model reads the session",
+                  "At three moments (the first plan or write of a turn, the loop breaker's nudge, "
+                  "the final answer after files were written) a second model reads the whole "
+                  "transcript and writes advice of at most 300 words, injected as a note marked "
+                  "advisory. It never acts. Needs advisor_model or teacher_model. Off by default."),
+            _text("advisor_model", "Advisor: model",
+                  "The model that advises (endpoint/model as in the teacher setting). Empty = use "
+                  "the teacher model."),
+            _int("advisor_max_uses", "Advisor: uses per turn",
+                 "Most times the advisor is asked in one turn, across its three triggers.",
+                 0, 20),
+            _int("advisor_max_tokens", "Advisor: answer length (tokens)",
+                 "Token limit of one piece of advice; the text is also cut to about 300 words.",
+                 64, 8192, step=64),
+            _int("advisor_context_tokens", "Advisor: transcript budget (tokens)",
+                 "How much of the session the advisor reads; older tool results are shortened "
+                 "first, then the middle of the transcript is dropped.",
+                 1000, 200000, step=1000),
             # Handoff lanes (src/handoff_lanes.py): permissions-as-topology,
             # which agent may delegate to which, with which tools. The
             # dedicated Studio panel (GET/PUT /api/handoff-lanes) is the
@@ -758,6 +782,8 @@ GROUPS: list[dict[str, Any]] = [
                     "Each member's answer in a council. Auto = high.", ["auto", "off", "low", "medium", "high", "max"]),
             _select("mode_effort_teacher", "Teacher (escalation)",
                     "The stronger model asked when a turn gets stuck, and the ask_teacher tool. Auto = max.", ["auto", "off", "low", "medium", "high", "max"]),
+            _select("mode_effort_advisor", "Advisor",
+                    "The second model that reads a whole session and writes a short note (src/advisor.py). Auto = medium.", ["auto", "off", "low", "medium", "high", "max"]),
             _select("mode_effort_consult", "Asking another model",
                     "chat_with_model: the agent consults another model. Auto = high.", ["auto", "off", "low", "medium", "high", "max"]),
             _select("mode_effort_tournament", "Tournaments and blind rounds",

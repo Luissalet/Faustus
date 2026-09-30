@@ -32,6 +32,10 @@ MODE_DEFAULTS: Dict[str, str] = {
     "research_reading": "off",
     "council": "high",
     "teacher": "max",
+    # The advisor (src/advisor.py) reads a whole session and writes a short
+    # note at most three times a turn: it reasons, but not at the teacher's
+    # depth, because the turn is waiting for it.
+    "advisor": "medium",
     # Asking another model a question (`chat_with_model`): a consultation is
     # for its considered answer.
     "consult": "high",

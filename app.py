@@ -1567,6 +1567,7 @@ from routes.doc_claims_routes import setup_doc_claims_routes
 from routes.project_concepts_routes import setup_project_concepts_routes
 from routes.typed_choice_routes import setup_typed_choice_routes
 from routes.typed_decision_routes import setup_typed_decision_routes
+from routes.agent_loop_stats_routes import setup_agent_loop_stats_routes
 from routes.prior_art_routes import setup_prior_art_routes
 app.include_router(setup_contacts_routes())
 app.include_router(setup_code_graph_routes())
@@ -1574,6 +1575,7 @@ app.include_router(setup_doc_claims_routes())
 app.include_router(setup_project_concepts_routes())
 app.include_router(setup_typed_choice_routes())
 app.include_router(setup_typed_decision_routes())
+app.include_router(setup_agent_loop_stats_routes())
 app.include_router(setup_prior_art_routes())
 
 # Autonomous engineering wave: bug hunter, CI failure analyzer, fix memory,
