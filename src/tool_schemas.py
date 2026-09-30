@@ -1866,7 +1866,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "edit_image",
-            "description": "Edit an owned gallery image. Use instruction with prompt for a natural-language edit through Prospero. Inpaint uses the selected Prospero studio or existing edit service, with an owned same-size mask; white redraws, black preserves. Harmonize runs as a light img2img redraw in the selected Prospero studio (strength 0.4 by default). Upscale and rembg retain their existing services.",
+            "description": "Edit an owned gallery image. Use instruction with prompt for a natural-language edit through Prospero. Inpaint uses the selected Prospero studio or existing edit service, with an owned same-size mask; white redraws, black preserves. Harmonize runs as a light img2img redraw in the selected Prospero studio (strength 0.4 by default). With that studio selected, upscale (scale 2 or 4, an ESRGAN model) and rembg (a BiRefNet cut-out with a transparent background) also run there; otherwise they use the configured services.",
             "parameters": {
                 "type": "object",
                 "properties": {

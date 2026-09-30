@@ -94,6 +94,17 @@ async def do_edit_image(content: str, owner: Optional[str] = None, *,
             if isinstance(strength, bool) or not isinstance(strength, (int, float)) or not math.isfinite(strength) or not 0 <= strength <= 1:
                 raise ValueError("strength must be between 0 and 1")
             payload["strength"] = strength
+        if action in {"upscale", "rembg"}:
+            from src.settings import get_user_setting
+            if get_user_setting("image_execution_backend", owner, "configured") == "prospero":
+                # The selected studio runs the model edit (ESRGAN / BiRefNet in
+                # ComfyUI), so no separate local service or package is needed.
+                from src.prospero_images import run_image
+                operation = "upscale" if action == "upscale" else "remove_background"
+                label = f"Upscale x{payload['scale']}" if action == "upscale" else "Remove background"
+                result = await run_image(label, session_id, owner, request_id=request_id, image_bytes=source,
+                                         operation=operation, scale=payload.get("scale"))
+                return {**result, "source_image_id": image_id}
         if action == "harmonize":
             from src.settings import get_user_setting
             if get_user_setting("image_execution_backend", owner, "configured") == "prospero":

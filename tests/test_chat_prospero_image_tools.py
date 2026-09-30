@@ -301,3 +301,25 @@ async def test_image_job_cancel_uses_server_identity_and_never_generates(monkeyp
     _, result = await dispatch("image_job", {"request_id": "previous-request", "action": "cancel"})
     assert result["state"] == "cancelled"
     assert calls == [("previous-request", "server-session", "alice")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("args, operation, scale, label", [
+    ({"action": "upscale"}, "upscale", 2, "Upscale x2"),
+    ({"action": "upscale", "scale": 4}, "upscale", 4, "Upscale x4"),
+    ({"action": "rembg"}, "remove_background", None, "Remove background"),
+])
+async def test_model_edits_run_in_the_selected_studio(backend, owned_gallery, args, operation, scale, label):
+    _, result = await dispatch("edit_image", {**args, "image_id": "source", "owner": "forged"})
+    assert result["source_image_id"] == "source"
+    sent_prompt, session, owner, kwargs = backend[0]
+    assert (sent_prompt, session, owner) == (label, "server-session", "alice")
+    assert kwargs == {"request_id": "server-call", "image_bytes": image_tool._png(owned_gallery)[0],
+                      "operation": operation, "scale": scale}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changes", [{"image_id": "private"}, {"scale": 3}, {"scale": True}])
+async def test_model_edit_invalid_or_foreign_input_never_reaches_the_studio(backend, owned_gallery, changes):
+    _, result = await dispatch("edit_image", {"action": "upscale", "image_id": "source", **changes})
+    assert result["exit_code"] == 1 and not backend

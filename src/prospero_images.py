@@ -256,7 +256,7 @@ async def _import_reference(client, key, project_id, content, *, mask=False):
     return reference
 
 
-async def _prepare(client, key, scope, prompt, content, *, operation="generate", mask_bytes=None, strength=None):
+async def _prepare(client, key, scope, prompt, content, *, operation="generate", mask_bytes=None, strength=None, scale=None):
     row = _read(key)
     _authorize(row["owner"] or None, row["session_id"] or None)
     project_id = await _project(client, scope)
@@ -281,6 +281,14 @@ async def _prepare(client, key, scope, prompt, content, *, operation="generate",
         payload.update(operation="img2img", asset_id=reference)
         if strength is not None:
             payload["strength"] = strength
+        path = f"/api/assets/{reference}/edit"
+    elif operation in ("upscale", "remove_background"):
+        # The studio's model edits (ESRGAN upscale, BiRefNet cut-out) on the
+        # imported source; one output, recorded like any other edit.
+        payload.pop("reference_asset_id")
+        payload.update(operation=operation, asset_id=reference)
+        if operation == "upscale":
+            payload["scale"] = scale
         path = f"/api/assets/{reference}/edit"
     # Persist and fsync the intent before the non-idempotent job POST.
     _authorize(row["owner"] or None, row["session_id"] or None)
@@ -436,7 +444,8 @@ async def _poll(client, key, prompt, *, poll_timeout=None):
 async def run_image(prompt: str, session_id: str | None, owner: str | None,
                     image_path: str | None = None, *, request_id: str | None = None,
                     image_bytes: bytes | None = None, operation: str = "generate",
-                    mask_bytes: bytes | None = None, strength: float | None = None) -> dict:
+                    mask_bytes: bytes | None = None, strength: float | None = None,
+                    scale: int | None = None) -> dict:
     """Generate/edit one owned image; stable request IDs recover without resubmit."""
     key = None
     request_id = str(uuid.uuid4()) if request_id is None else request_id
@@ -463,8 +472,10 @@ async def run_image(prompt: str, session_id: str | None, owner: str | None,
             if not isinstance(content, bytes):
                 raise AdapterError("Reference image must be bytes")
             _validate_image(content)
-        if operation not in ("generate", "inpaint", "img2img"):
+        if operation not in ("generate", "inpaint", "img2img", "upscale", "remove_background"):
             raise AdapterError("Unsupported image operation")
+        if operation != "upscale" and scale is not None:
+            raise AdapterError("Scale is only supported for upscale")
         if operation == "inpaint":
             if content is None or not isinstance(mask_bytes, bytes):
                 raise AdapterError("Inpaint requires source image bytes and mask bytes")
@@ -479,6 +490,12 @@ async def run_image(prompt: str, session_id: str | None, owner: str | None,
             if strength is not None and (isinstance(strength, bool) or not isinstance(strength, (int, float))
                     or not 0 <= strength <= 1 or not math.isfinite(strength)):
                 raise AdapterError("img2img strength must be a finite number between 0 and 1")
+        elif operation in ("upscale", "remove_background"):
+            # Model edits in the studio: no prompt reaches a model, no mask or strength.
+            if content is None or mask_bytes is not None or strength is not None:
+                raise AdapterError(f"{operation} requires source image bytes and no mask or strength")
+            if operation == "upscale" and (isinstance(scale, bool) or scale not in (2, 4)):
+                raise AdapterError("Upscale scale must be 2 or 4")
         elif mask_bytes is not None or strength is not None:
             raise AdapterError("Mask and strength are only supported for inpaint")
         connector_id, origin = _connection(owner)
@@ -490,6 +507,8 @@ async def run_image(prompt: str, session_id: str | None, owner: str | None,
         elif operation == "img2img":
             fingerprint = _digest(prompt, hashlib.sha256(content).hexdigest(), operation,
                 float(strength) if strength is not None else None)
+        elif operation in ("upscale", "remove_background"):
+            fingerprint = _digest(prompt, hashlib.sha256(content).hexdigest(), operation, scale)
         created = _reserve(key, request_id, owner, session_id, connector_id, origin, fingerprint, prompt, operation)
         row = _read(key)
         if not created and row["state"] == "done":
@@ -506,7 +525,7 @@ async def run_image(prompt: str, session_id: str | None, owner: str | None,
             if created:
                 try:
                     await _prepare(client, key, _digest(owner or "", session_id or "", connector_id, origin), prompt, content,
-                        operation=operation, mask_bytes=mask_bytes, strength=strength)
+                        operation=operation, mask_bytes=mask_bytes, strength=strength, scale=scale)
                 except BaseException:
                     _update(key, state="unknown")
                     raise

@@ -672,3 +672,51 @@ def test_reconcile_skips_changed_connection_and_missing_store(world, tmp_path, m
     monkeypatch.setattr(adapter, "DATA_DIR", str(empty))
     assert asyncio.run(adapter.reconcile_pending_images())["checked"] == 0
     assert not (empty / "prospero_images.db").exists()
+
+
+
+def rgba_png(width=3, height=2):
+    stream = io.BytesIO()
+    Image.new("RGBA", (width, height), (10, 20, 30, 0)).save(stream, format="PNG")
+    return stream.getvalue()
+
+
+@pytest.mark.parametrize("operation, scale", [("upscale", 2), ("upscale", 4), ("remove_background", None)])
+def test_model_edits_use_the_studio_edit_route(world, operation, scale):
+    result = run(operation=operation, image_bytes=png(), scale=scale)
+    assert "error" not in result, result
+    payload = next(iter(world.jobs.values()))["payload"]
+    expected = {"prompt": "A blue bird", "operation": operation, "asset_id": "reference_1", "count": 1, "wait_s": 0}
+    if scale is not None:
+        expected["scale"] = scale
+    assert payload == expected
+    assert ("POST", "/api/assets/reference_1/edit") in world.calls
+    assert rows(world)[0]["operation"] == operation
+
+
+def test_cut_out_keeps_its_transparency_in_the_gallery(world):
+    world.config["output"] = rgba_png()
+    result = run(operation="remove_background", image_bytes=png())
+    assert "error" not in result, result
+    saved = world.images / (result["image_id"] + ".png")
+    with Image.open(saved) as image:
+        assert image.mode == "RGBA" and image.getpixel((0, 0))[3] == 0
+
+
+@pytest.mark.parametrize("changes", [
+    {"operation": "upscale", "scale": 3}, {"operation": "upscale", "scale": True}, {"operation": "upscale"},
+    {"operation": "upscale", "scale": 2, "image_bytes": None},
+    {"operation": "remove_background", "mask_bytes": png()}, {"operation": "remove_background", "strength": 0.5},
+    {"operation": "remove_background", "scale": 2}, {"operation": "img2img", "scale": 2},
+])
+def test_model_edit_arguments_are_refused_before_any_request(world, changes):
+    args = {"image_bytes": png(), **changes}
+    result = run(**args)
+    assert "error" in result and world.calls == []
+    assert not (world.data / "prospero_images.db").exists() or rows(world) == []
+
+
+def test_a_different_scale_is_a_different_request(world):
+    run(operation="upscale", image_bytes=png(), scale=2)
+    again = run(operation="upscale", image_bytes=png(), scale=4)
+    assert "different input" in again["error"]
