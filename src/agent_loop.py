@@ -11277,7 +11277,7 @@ async def _stream_agent_loop_body(
         # double-reports that dimension.
         _budget_exhaustion = (
             None if _local_completion_unbounded
-            else _budget_ledger.check(_round_loop_budget)
+            else _pending_main_admission_view(_budget_ledger, _pending_main_usage).check(_round_loop_budget)
         )
         if _budget_exhaustion is not None:
             logger.info("[agent] autonomy budget exhausted at round start: %s", _budget_exhaustion.as_dict())

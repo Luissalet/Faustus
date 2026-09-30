@@ -92,7 +92,7 @@ def test_real_loop_checks_pending_main_before_recovery(monkeypatch, trigger, amo
     events = _events(_collect(al.stream_agent_loop('https://fixture.invalid/v1', 'm',
         [{'role': 'user', 'content': 'Answer the fixture'}], max_rounds=4,
         relevant_tools={'read_file'}, owner='admin')))
-    assert len(calls) == main_count + (not denied) and effects == []
+    assert len(calls) == (1 if denied else main_count + 1) and effects == []
     assert any(e.get('type') == 'budget_exhausted' for e in events) == denied
     assert any(e.get('type') == 'response_replace' and 'Recovered synthetic answer.' in e.get('text', '')
                for e in events) != denied
