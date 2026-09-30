@@ -4207,6 +4207,52 @@ def _is_untrusted_context_message(message: dict) -> bool:
 _RECOVERY_STEP2_MAX_TOKENS = 1024
 
 
+def _pending_main_usage_update(pending, epoch, raw, *, endpoint_cost_tracked):
+    """Latest observed fields per outer stream invocation, not provider attempt."""
+    observed = _recovery_usage_snapshot(raw)
+    if not observed:
+        return
+    receipt = pending.setdefault(epoch, {"usage": {}, "settled_tokens": 0,
+                                         "settled_remote_units": 0})
+    receipt["usage"].update(observed)
+    receipt["usage"]["cost_state"] = "known" if "cost_usd" in receipt["usage"] else "unknown"
+    receipt["endpoint_cost_tracked"] = endpoint_cost_tracked
+
+
+def _pending_main_usage_residual(receipt):
+    usage = receipt["usage"]
+    # Partial snapshots can leave a stale total beside newer dimensions.
+    # Use the stronger observed bound, without adding those two representations.
+    tokens = max(usage.get("total_tokens", 0),
+                 sum(usage.get(key, 0) for key in ("input_tokens", "output_tokens")))
+    spend = autonomy_budget.remote_spend_units(
+        endpoint_cost_tracked=receipt.get("endpoint_cost_tracked"),
+        input_tokens=tokens, output_tokens=0, provider_cost_usd=usage.get("cost_usd"))
+    return (max(0, tokens - receipt["settled_tokens"]),
+            max(0, spend - receipt["settled_remote_units"]))
+
+
+def _pending_main_usage_settle(pending, epoch, *, tokens, remote_units):
+    """Credit only actual legacy ledger additions, separately by dimension."""
+    receipt = pending.get(epoch)
+    if receipt is None:
+        return
+    receipt["settled_tokens"] += tokens
+    receipt["settled_remote_units"] += remote_units
+    if _pending_main_usage_residual(receipt) == (0, 0):
+        pending.pop(epoch)
+
+
+def _pending_main_admission_view(ledger, pending):
+    from copy import deepcopy
+    view = deepcopy(ledger)
+    for receipt in pending.values():
+        tokens, spend = _pending_main_usage_residual(receipt)
+        view.add_tokens(tokens)
+        view.add_remote_spend(spend)
+    return view
+
+
 def _recovery_usage_snapshot(raw):
     """Keep observed stream fields only; no estimates or missing-count zeroes."""
     if not isinstance(raw, dict):
@@ -7504,6 +7550,7 @@ async def _stream_agent_loop_body(
         else autonomy_budget.resolve_budget(_autonomy_preset, get_setting=get_setting)
     )
     _budget_ledger = autonomy_budget.Ledger()
+    _pending_main_usage: Dict[int, Dict] = {}
     _compaction_usage_receipts: List[Dict] = []
 
     _recovery_usage_receipts: List[Dict] = []
@@ -7554,7 +7601,8 @@ async def _stream_agent_loop_body(
         # Preserve the existing unlimited policy of a turn started locally;
         # do not recalculate a new grant for its remote utility fallback.
         return (None if _local_completion_unbounded or is_local_endpoint(url)
-                else _budget_ledger.check(_round_loop_budget))
+                else _pending_main_admission_view(
+                    _budget_ledger, _pending_main_usage).check(_round_loop_budget))
     # The tool-call dimension is merged into the pre-existing
     # `max_tool_calls`/`total_tool_calls` mechanism below (one counter, not
     # two) — see `Budget.without_tool_calls`.
@@ -12423,6 +12471,8 @@ async def _stream_agent_loop_body(
                         _round_finish_reason = data.get("finish_reason")
                     elif data.get("type") == "usage":
                         u = data.get("data", {})
+                        _pending_main_usage_update(_pending_main_usage, round_num, u,
+                            endpoint_cost_tracked=actual_endpoint_cost_tracked)
                         actual_model = u.get("model") or actual_model
                         _round_actual_model = u.get("model") or _round_actual_model
                         normalized_usage = _normalize_usage_counts(
@@ -16410,14 +16460,17 @@ async def _stream_agent_loop_body(
             _round_in = int(_round_usage_bucket.get("input_tokens") or 0)
             _round_out = int(_round_usage_bucket.get("output_tokens") or 0)
             _budget_ledger.add_tokens(_round_in + _round_out)
-            _budget_ledger.add_remote_spend(autonomy_budget.remote_spend_units(
+            _main_remote_units = autonomy_budget.remote_spend_units(
                 endpoint_cost_tracked=_round_usage_bucket.get("endpoint_cost_tracked"),
                 input_tokens=_round_in, output_tokens=_round_out,
                 # OBJ-8/A1: when this round's bucket carries OpenRouter's REAL
                 # cost (usage.cost, via src/llm_core.py), charge the ledger
                 # that instead of the token-count guess above.
                 provider_cost_usd=_round_usage_bucket.get("cost_usd"),
-            ))
+            )
+            _budget_ledger.add_remote_spend(_main_remote_units)
+            _pending_main_usage_settle(_pending_main_usage, round_num,
+                tokens=_round_in + _round_out, remote_units=_main_remote_units)
         _budget_ledger.add_active_seconds(time.time() - _round_start)
 
         # BUG-STOP-01: a mid-round cancellation (scope=task/work) ends the
