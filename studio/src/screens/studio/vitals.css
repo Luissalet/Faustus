@@ -444,3 +444,55 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.fs-vt__res-h {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 var(--fs-space-2);
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-1);
+}
+
+.fs-vt__res-h b {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.fs-vt__res-dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px var(--fs-space-3);
+  margin: 4px 0 0;
+  font-size: var(--fs-label-size);
+}
+
+.fs-vt__res-dl dt {
+  color: var(--fs-text-3);
+}
+
+.fs-vt__res-dl dd {
+  margin: 0;
+  color: var(--fs-text-2);
+  overflow-wrap: anywhere;
+}
+
+.fs-vt__res-dl dd[data-muted] {
+  color: var(--fs-text-3);
+}
+
+.fs-vt__res-other {
+  display: flex;
+  flex-direction: column;
+  font-size: var(--fs-label-size);
+}
+
+.fs-vt__res-name {
+  color: var(--fs-text-2);
+  overflow-wrap: anywhere;
+}
+
+.fs-vt__res-meta {
+  color: var(--fs-text-3);
+  overflow-wrap: anywhere;
+}

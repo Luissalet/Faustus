@@ -493,28 +493,33 @@ function ModelsSection({ d }: { d: Usage }) {
       {models.length ? (
         <ul className="fs-vt__residents" data-testid="vitals-residents">
           {models.map((m) => (
-            <li key={`${m.engine}:${m.port ?? ''}:${m.model}`} className="fs-vt__card">
-              <h4 className="fs-vt__card-h">
-                <span title={m.model}>{shortModelName(m.model)}</span>
+            <li key={`${m.engine}:${m.port ?? ''}:${m.model}`} className="fs-vt__card fs-vt__res">
+              <div className="fs-vt__res-h">
+                <b title={m.model}>{shortModelName(m.model)}</b>
                 <span className="fs-vt__aside">
                   {m.engine ?? ''}
                   {m.port ? ` :${m.port}` : ''}
                   {m.generating ? ` · ${t('generating')}` : ''}
                 </span>
-              </h4>
-              <Row
-                label={t('Loaded by')}
-                value={m.loaded_by || t('unknown')}
-                muted={!m.loaded_by}
-                title={m.pid ? `pid ${m.pid}${m.endpoint ? ` · ${m.endpoint}` : ''}` : m.endpoint || undefined}
-              />
-              <Row
-                label={t('Size in memory')}
-                value={m.bytes != null ? (m.measured ? `${gb(m.bytes)} GB` : t('{n} GB of weights (in memory not measured)', { n: gb(m.bytes) })) : '—'}
-                muted={!m.measured}
-              />
-              <Row label={t('GPUs')} value={cardsText(m.gpus, d) || (m.measured === false ? t('not measured') : '—')} muted={!m.gpus?.length} />
-              {m.context_length ? <Row label={t('Context')} value={t('{n} tokens', { n: fmtCtx(m.context_length) })} /> : null}
+              </div>
+              <dl className="fs-vt__res-dl">
+                <dt>{t('Loaded by')}</dt>
+                <dd title={m.pid ? `pid ${m.pid}${m.endpoint ? ` · ${m.endpoint}` : ''}` : m.endpoint || undefined} data-muted={!m.loaded_by || undefined}>
+                  {m.loaded_by || t('unknown')}
+                </dd>
+                <dt>{t('Size in memory')}</dt>
+                <dd data-muted={!m.measured || undefined}>
+                  {m.bytes != null ? (m.measured ? `${gb(m.bytes)} GB` : t('{n} GB of weights (in memory not measured)', { n: gb(m.bytes) })) : '—'}
+                </dd>
+                <dt>{t('GPUs')}</dt>
+                <dd data-muted={!m.gpus?.length || undefined}>{cardsText(m.gpus, d) || (m.measured === false ? t('not measured') : '—')}</dd>
+                {m.context_length ? (
+                  <>
+                    <dt>{t('Context')}</dt>
+                    <dd>{t('{n} tokens', { n: fmtCtx(m.context_length) })}</dd>
+                  </>
+                ) : null}
+              </dl>
             </li>
           ))}
         </ul>
@@ -526,15 +531,15 @@ function ModelsSection({ d }: { d: Usage }) {
           <h4 className="fs-vt__sub">{t('Other processes on the GPUs')}</h4>
           <ul className="fs-vt__residents" data-testid="vitals-gpu-others">
             {others.map((o) => (
-              <li key={o.pid} className="fs-vt__row" data-wide="">
-                <span className="fs-vt__label" title={`pid ${o.pid}`}>
+              <li key={o.pid} className="fs-vt__res-other" title={`pid ${o.pid}`}>
+                <span className="fs-vt__res-name">
                   {o.name || `pid ${o.pid}`}
                   {o.hint ? ` · ${o.hint}` : ''}
                 </span>
-                <span className="fs-vt__val">
+                <span className="fs-vt__res-meta">
                   {o.bytes != null ? `${gb(o.bytes)} GB` : '—'}
-                  {o.gpus?.length ? ` · ${cardsText(o.gpus.map((g) => ({ index: g.index })), d)}` : ''}
-                  {o.loaded_by ? ` · ${o.loaded_by}` : ''}
+                  {o.gpus?.length ? ` · ${o.gpus.map((g) => `GPU ${g.index}`).join(' + ')}` : ''}
+                  {o.loaded_by ? ` · ${t('loaded by {who}', { who: o.loaded_by })}` : ''}
                 </span>
               </li>
             ))}
