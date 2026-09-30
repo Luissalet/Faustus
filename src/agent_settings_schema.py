@@ -638,7 +638,8 @@ GROUPS: list[dict[str, Any]] = [
             # errors and a failing path; 0 switches a detector off.
             _int("agent_loop_breaker_monologue_rounds", "Loop breaker: rounds of talk without a tool",
                  "Assistant rounds in a row that said something, called no tool and were kept "
-                 "going by the loop; at this many the turn stops with what was said. 0 = off.",
+                 "going by the loop. At this many the advisor (or a plain note) is asked to "
+                 "make it act or finish; reaching it a second time stops the turn. 0 = off.",
                  0, 20),
             _int("agent_loop_breaker_context_error_limit", "Loop breaker: consecutive context-length errors",
                  "The first 'request too long' error compacts harder and redoes the round; this "

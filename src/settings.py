@@ -1243,7 +1243,8 @@ DEFAULT_SETTINGS = {
     # StuckWatch (src/loop_breaker.py): three more ways a turn gets stuck that
     # never look like a repeated call. Each limit is a count; 0 switches that
     # detector off. Monologue: this many assistant rounds in a row that said
-    # something and called no tool while the loop held the turn open -> stop.
+    # something and called no tool while the loop held the turn open -> the
+    # advisor / a note asks it to act or finish; the second time -> stop.
     # Context: this many consecutive "request too long" provider errors -> stop
     # with a clear message (the first one compacts harder and redoes the round).
     # Failed path: the same tool + arguments returning an error this many

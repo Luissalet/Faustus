@@ -1501,19 +1501,19 @@ function AgentSection({ settings, onSave, say }: { settings: Settings | null; on
         return (
           <details key={g.key || g.title} className="fs-set__group" open={Boolean(q) || undefined}>
             <summary className="fs-set__group-head">
-              {g.title} <span className="fs-set__count">{fields.length}</span>
+              {t(g.title)} <span className="fs-set__count">{fields.length}</span>
             </summary>
-            {g.help && <p className="fs-set__help">{g.help}</p>}
+            {g.help && <p className="fs-set__help">{t(g.help)}</p>}
             <div className="fs-set__group-body">
               {fields.map((f) => (
                 <div key={f.key} className="fs-set__field fs-set__field--schema" data-changed={JSON.stringify(draft[f.key]) !== JSON.stringify(settings[f.key] ?? schema.defaults[f.key]) || undefined}>
                   <div className="fs-set__schema-text">
                     <label className="fs-set__label" htmlFor={`agset-${f.key}`}>
-                      {f.label}
+                      {t(f.label)}
                       {f.restart_hint && <span className="fs-set__restart">reinicio</span>}
                     </label>
                     <code className="fs-set__key">{f.key}</code>
-                    {f.help && <p className="fs-set__help">{f.help}</p>}
+                    {f.help && <p className="fs-set__help">{t(f.help)}</p>}
                   </div>
                   <div className="fs-set__control">
                     <SchemaControl field={f} value={draft[f.key]} onChange={(v) => setDraft((d) => ({ ...d, [f.key]: v }))} />
