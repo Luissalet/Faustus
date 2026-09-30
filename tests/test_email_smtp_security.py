@@ -103,3 +103,20 @@ def test_send_smtp_message_uses_ssl_when_configured(monkeypatch):
 
     assert _FakeSMTP.calls[0] == ("connect", "_FakeSMTPSSL", "smtp.local", 465)
     assert not any(call[0] == "starttls" for call in _FakeSMTP.calls)
+
+
+def test_send_smtp_message_trusts_the_port_over_a_contradicting_mode(monkeypatch):
+    import routes.email_helpers as helpers
+
+    monkeypatch.setattr(helpers.smtplib, "SMTP", _FakeSMTP)
+    monkeypatch.setattr(helpers.smtplib, "SMTP_SSL", _FakeSMTPSSL)
+
+    _FakeSMTP.calls = []
+    _send_smtp_message(_cfg("ssl", port=587), "from@example.com", ["to@example.com"], "hello")
+    assert _FakeSMTP.calls[0] == ("connect", "_FakeSMTP", "smtp.local", 587)
+    assert ("starttls", "smtp.local", 587) in _FakeSMTP.calls
+
+    _FakeSMTP.calls = []
+    _send_smtp_message(_cfg("starttls", port=465), "from@example.com", ["to@example.com"], "hello")
+    assert _FakeSMTP.calls[0] == ("connect", "_FakeSMTPSSL", "smtp.local", 465)
+    assert not any(call[0] == "starttls" for call in _FakeSMTP.calls)

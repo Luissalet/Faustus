@@ -159,9 +159,15 @@ def _get_valid_google_token(account_id: str, cfg: dict) -> str | None:
 
 def _smtp_security_mode(cfg: dict) -> str:
     raw = str(cfg.get("smtp_security") or "").strip().lower()
+    port = int(cfg.get("smtp_port") or 465)
+    # A mode that contradicts the well-known port cannot connect (implicit TLS on
+    # 587 fails with WRONG_VERSION_NUMBER, STARTTLS on 465 hangs): trust the port.
+    if raw == "ssl" and port == 587:
+        return "starttls"
+    if raw == "starttls" and port == 465:
+        return "ssl"
     if raw in {"ssl", "starttls", "none"}:
         return raw
-    port = int(cfg.get("smtp_port") or 465)
     if port == 587:
         return "starttls"
     return "ssl"

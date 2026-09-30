@@ -1342,6 +1342,12 @@ def _smtp_connect(account=None, cfg=None):
         raise ValueError(f"Email account {cfg.get('account_name') or account or 'default'} has no SMTP configured")
     port = int(cfg.get("smtp_port") or 465)
     security = str(cfg.get("smtp_security") or "").strip().lower()
+    # Trust the well-known port over a contradicting stored mode (see
+    # routes.email_helpers._smtp_security_mode).
+    if security == "ssl" and port == 587:
+        security = "starttls"
+    elif security == "starttls" and port == 465:
+        security = "ssl"
     if security not in {"ssl", "starttls", "none"}:
         security = "starttls" if port == 587 else "ssl"
     if security == "starttls":
