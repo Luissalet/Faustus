@@ -43,6 +43,7 @@ fallback.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import os
@@ -619,15 +620,22 @@ class ProcessManager:
         """Kill the tree this manager spawned, nothing else. Holding the
         unreaped process object is the proof for a live handle; a recovered
         record must prove (pid, creation time)."""
+        job_killed: Tuple[int, ...] = ()
         if live is not None and live.job is not None:
+            was_alive = live.proc.poll() is None
             try:
-                live.job.close()
+                live.job.close()  # the job object ends the whole tree on close
+                if was_alive and rec.get("pid"):
+                    job_killed = (int(rec["pid"]),)
             except Exception:
                 pass
         unverified = live is not None and live.proc.poll() is None
-        return process_ownership.terminate_tree(
+        outcome = process_ownership.terminate_tree(
             rec.get("pid"), spawned_at=rec.get("pid_created_at"), pgid=rec.get("pgid"),
             unverified_tree_ok=unverified)
+        if job_killed and not outcome.signalled:
+            outcome = dataclasses.replace(outcome, signalled=job_killed, code="", reason="")
+        return outcome
 
     def stop(self, handle: str, caller: Optional[Caller] = None, *, reason: str = "") -> Dict[str, Any]:
         self._load()

@@ -204,20 +204,31 @@ def test_probe_detects_a_widened_mount(image, monkeypatch):
     path) lets the forbidden read succeed: the probe must say so."""
     real = DockerWorkspaceBackend.docker_args
 
+    windows = os.name == "nt"
+
     def widened(self, spec, name, **kw):
         args = real(self, spec, name, **kw)
         parent = os.path.dirname(spec.workspace)
-        mount = ["--mount", f"type=bind,source={parent},target={parent},readonly"]
+        if windows:
+            # A Windows host path is never a path inside the Linux container, so
+            # the widening that matters there is the one next to /workspace.
+            mount = []
+            for sub in ("outside", "root2"):
+                mount += ["--mount", f"type=bind,source={os.path.join(parent, sub)},target=/{sub},readonly"]
+        else:
+            mount = ["--mount", f"type=bind,source={parent},target={parent},readonly"]
         i = args.index(self.image)
         return args[:i] + mount + args[i:]
 
     monkeypatch.setattr(DockerWorkspaceBackend, "docker_args", widened)
     report = run(probe.run_sandbox_probe(["shell", "python"], image=image))
+    expected_bad = ({"read_outside_relative", "read_sibling_relative"} if windows
+                    else {"read_outside_absolute_host_path", "read_sibling_absolute_host_path"})
     for op in ("shell", "python"):
         body = report["operations"][op]
         assert body["status"] == "failed", body["status"]
         bad = {c["check"] for c in body["checks"] if c["ok"] is False}
-        assert {"read_outside_absolute_host_path", "read_sibling_absolute_host_path"} <= bad
+        assert expected_bad <= bad, bad
     assert report["ok"] is False and report["failed"] == ["python", "shell"]
 
 

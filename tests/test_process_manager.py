@@ -72,7 +72,7 @@ def test_long_command_returns_a_handle_while_running(mgr):
 
 def test_big_output_is_bounded_and_the_cursor_reports_the_gap(mgr):
     mgr.settings[pm.SETTING_BUFFER] = 2048
-    r = mgr.start(argv=_argv("import sys\nfor i in range(3000): sys.stdout.write('line %05d\\n' % i)"),
+    r = mgr.start(argv=_argv("import sys\nfor i in range(3000): sys.stdout.buffer.write(b'line %05d\\n' % i)"),
                   caller=ME, yield_ms=15_000)
     assert r["completed"] and r["exit_code"] == 0
     live = mgr._live[r["handle"]]
