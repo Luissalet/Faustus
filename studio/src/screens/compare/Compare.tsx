@@ -31,6 +31,7 @@ import {
   DEFAULT_OPTIONS,
   eligibleRoutes,
   EVAL_PROMPTS,
+  fetchElo,
   formatMs,
   getExcluded,
   gradeAnswer,
@@ -41,6 +42,7 @@ import {
   MODE_HELP,
   MODE_LABEL,
   probeRoutes,
+  recordVoteRemote,
   routeLabel,
   saveOptions,
   saveVote,
@@ -48,9 +50,11 @@ import {
   searchWith,
   setExcluded,
   slotChar,
+  syncLocalVotes,
   synthesisPrompt,
   type CompareMode,
   type CompareOptions,
+  type EloRatings,
   type SearchHit,
 } from '../../adapters/compare';
 import { searchProviders, type SearchProvider } from '../../adapters/research';
@@ -264,6 +268,10 @@ export function CompareScreen() {
   const [excluded, setExcludedState] = useState<string[]>(getExcluded);
   const [scoreOpen, setScoreOpen] = useState(false);
   const [scoreMode, setScoreMode] = useState<CompareMode | 'all'>('all');
+  const [scoreView, setScoreView] = useState<'wins' | 'elo'>('wins');
+  const [eloTopic, setEloTopic] = useState('');
+  const [elo, setElo] = useState<EloRatings | null>(null);
+  const [eloError, setEloError] = useState<string | null>(null);
   const [probes, setProbes] = useState<Record<string, boolean>>({});
   const [probing, setProbing] = useState(false);
   const [notice, setNotice] = useState<{ text: string; tone: 'ok' | 'warn' } | null>(null);
@@ -541,7 +549,10 @@ export function CompareScreen() {
   const allDone = !running && lastPrompt !== '' && panes.length >= 2 && panes.every((p) => !p.streaming && (p.turns.length > 0 || p.hits.length > 0 || p.error));
   const vote = (winnerIndex: number) => {
     const winner = winnerIndex < 0 ? 'tie' : names[winnerIndex];
-    saveVote({ models: names, winner, prompt: lastPrompt, blind: opts.blind, mode: opts.mode, timestamp: Date.now() });
+    const cast = { models: names, winner, prompt: lastPrompt, blind: opts.blind, mode: opts.mode, timestamp: Date.now() };
+    saveVote(cast);
+    // The server rates the models with Elo from its own copy of the votes.
+    void recordVoteRemote(cast, panes.map((p, i) => (opts.mode === 'search' ? names[i] : p.route?.model || names[i])));
     setVoted(winner);
     setRevealed(true);
     say(winnerIndex < 0 ? t('Tie recorded.') : t('{name} wins.', { name: winner }));
@@ -589,6 +600,22 @@ export function CompareScreen() {
 
   const votes = useMemo(() => (scoreOpen ? loadVotes() : []), [scoreOpen, voted]);
   const rows = useMemo(() => scoreboard(votes, scoreMode), [votes, scoreMode]);
+
+  useEffect(() => {
+    if (!scoreOpen || scoreView !== 'elo') return;
+    const ctl = new AbortController();
+    setEloError(null);
+    void (async () => {
+      await syncLocalVotes(loadVotes());
+      try {
+        setElo(await fetchElo(scoreMode, ctl.signal));
+      } catch (e) {
+        if (!ctl.signal.aborted) setEloError((e as Error).message || t('Could not load the ratings.'));
+      }
+    })();
+    return () => ctl.abort();
+  }, [scoreOpen, scoreView, scoreMode, voted]);
+  const eloRows = elo ? (eloTopic && elo.topics[eloTopic] ? elo.topics[eloTopic] : elo.overall) : [];
 
   const noModels = routes.length === 0 && providers.length === 0;
   /* Blind means blind: once a race has started the chips hide the names too. */
@@ -828,7 +855,57 @@ export function CompareScreen() {
               </button>
             ))}
           </div>
-          {rows.length === 0 ? (
+          <div className="fs-seg" role="radiogroup" aria-label={t('Ranking')}>
+            {(['wins', 'elo'] as const).map((v) => (
+              <button key={v} type="button" role="radio" aria-checked={scoreView === v} data-testid={`compare-score-${v}`} onClick={() => setScoreView(v)}>
+                {v === 'wins' ? t('Wins') : t('Elo rating')}
+              </button>
+            ))}
+          </div>
+          {scoreView === 'elo' ? (
+            <div data-testid="compare-elo">
+              {eloError && <p className="fs-muted" role="alert">{eloError}</p>}
+              {elo && elo.overall.length === 0 && !eloError && <p className="fs-muted">{t('No votes yet. Compare something and pick a winner.')}</p>}
+              {elo && elo.overall.length > 0 && (
+                <>
+                  <label className="fs-cmp__topic">
+                    <span>{t('Topic')}</span>
+                    <select value={eloTopic} onChange={(e) => setEloTopic(e.target.value)} aria-label={t('Topic')}>
+                      <option value="">{t('All topics')}</option>
+                      {Object.keys(elo.topics).map((name) => (
+                        <option key={name} value={name}>{`${name} (${elo.topicVotes[name] ?? 0})`}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <table className="fs-cmp__table">
+                    <thead>
+                      <tr>
+                        <th>{t('Model')}</th>
+                        <th>{t('Elo')}</th>
+                        <th>{t('Votes')}</th>
+                        <th>{t('Wins')}</th>
+                        <th>{t('Losses')}</th>
+                        <th>{t('Ties')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {eloRows.map((r) => (
+                        <tr key={r.key}>
+                          <td title={r.key}>{r.label}</td>
+                          <td><strong>{Math.round(r.rating)}</strong></td>
+                          <td>{r.games}</td>
+                          <td>{r.wins}</td>
+                          <td>{r.losses}</td>
+                          <td>{r.ties}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p className="fs-muted">{t('Elo: everyone starts at {start}; K = {k}. A model with few votes moves a lot, so read small differences with care.', { start: elo.start, k: elo.k })}</p>
+                </>
+              )}
+            </div>
+          ) : rows.length === 0 ? (
             <p className="fs-muted">{t('No votes yet. Compare something and pick a winner.')}</p>
           ) : (
             <table className="fs-cmp__table">

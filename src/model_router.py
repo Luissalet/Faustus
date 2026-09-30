@@ -146,6 +146,9 @@ class RouterConfig:
     allow_paid_escalation: bool = False
     candidates: Tuple[str, ...] = ()
     min_capabilities: Tuple[str, ...] = ()
+    # Read the Elo ratings of the owner's comparison votes
+    # (`src/compare_elo.py`) as one more, bounded signal. Off = never read.
+    use_elo: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -155,6 +158,7 @@ class RouterConfig:
             "allow_paid_escalation": self.allow_paid_escalation,
             "candidates": list(self.candidates),
             "min_capabilities": list(self.min_capabilities),
+            "use_elo": self.use_elo,
         }
 
     @classmethod
@@ -170,7 +174,7 @@ def _validate_config(patch: Mapping[str, Any], base: Optional[RouterConfig] = No
     for key, value in dict(patch or {}).items():
         if key not in cur:
             raise ValueError(f"unknown model_router setting {key!r}")
-        if key in ("enabled", "prefer_local", "allow_paid_escalation"):
+        if key in ("enabled", "prefer_local", "allow_paid_escalation", "use_elo"):
             if not isinstance(value, bool):
                 raise ValueError(f"{key} must be a bool")
         elif key == "max_latency_s":
@@ -192,6 +196,7 @@ def _validate_config(patch: Mapping[str, Any], base: Optional[RouterConfig] = No
         allow_paid_escalation=bool(cur["allow_paid_escalation"]),
         candidates=tuple(cur["candidates"]),
         min_capabilities=tuple(cur["min_capabilities"]),
+        use_elo=bool(cur["use_elo"]),
     )
 
 
@@ -337,6 +342,7 @@ def score_candidates(
     *,
     config: Optional[RouterConfig] = None,
     data_dir: Optional[str] = None,
+    elo: Optional[Mapping[str, Mapping[str, Any]]] = None,
 ) -> List[Scored]:
     """Score every candidate against `requirements` (unioned with
     `config.min_capabilities`), from manifest evidence
@@ -392,6 +398,14 @@ def score_candidates(
         else:
             why.append("sin historial")
 
+        rated = (elo or {}).get(model)
+        if rated:
+            # Bounded on purpose: 200 Elo points above the start is worth one
+            # declared capability; nothing here can outweigh a missing one.
+            bonus = max(-1.5, min(1.5, (float(rated["rating"]) - 1000.0) / 200.0))
+            score += bonus
+            why.append(f"Elo {float(rated['rating']):.0f} ({int(rated['games'])} votos, {rated.get('scope', 'overall')})")
+
         latency_ok = True
         ewma = entry.get("ewma_latency_s")
         if max_latency is not None and isinstance(ewma, (int, float)):
@@ -436,6 +450,7 @@ def choose(
     project: Optional[Dict[str, Any]] = None,
     data_dir: Optional[str] = None,
     log: bool = True,
+    elo_topic: Optional[str] = None,
 ) -> Decision:
     """Pick a local model for `requirements`, or explain why none was
     picked. Never proposes a model that isn't in `installed`: when
@@ -454,7 +469,16 @@ def choose(
     else:
         candidates = list(installed)
 
-    scored = score_candidates(requirements, candidates, config=config, data_dir=data_dir)
+    elo = None
+    if config.use_elo:
+        # Read-only, and only because the setting asked for it.
+        try:
+            from src import compare_elo
+            elo = compare_elo.router_ratings(owner, elo_topic)
+        except Exception:  # noqa: BLE001 - a missing signal is not an error
+            logger.debug("model_router: Elo ratings unavailable", exc_info=True)
+            elo = None
+    scored = score_candidates(requirements, candidates, config=config, data_dir=data_dir, elo=elo)
     usable = [s for s in scored if s.meets_requirements]
 
     chosen: Optional[str] = None

@@ -471,3 +471,10 @@
   cursor: default;
   pointer-events: none;
 }
+
+.fs-cmp__topic {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  margin-block: var(--fs-space-2);
+}

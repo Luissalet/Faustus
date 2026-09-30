@@ -44,6 +44,7 @@ class ConfigPatch(BaseModel):
     allow_paid_escalation: Optional[bool] = None
     candidates: Optional[List[str]] = None
     min_capabilities: Optional[List[str]] = None
+    use_elo: Optional[bool] = None
 
     def as_patch(self) -> Dict[str, Any]:
         return {k: v for k, v in self.model_dump().items() if v is not None}

@@ -5,8 +5,8 @@ import uuid
 import random
 from datetime import datetime
 from fastapi import APIRouter, Form, HTTPException, Request
-from typing import List
-from pydantic import BaseModel
+from typing import List, Optional
+from pydantic import BaseModel, Field
 import logging
 
 from core.database import Comparison, SessionLocal
@@ -60,6 +60,34 @@ class RecordVoteRequest(BaseModel):
     models: List[str]
     winner: str           # model name or "tie"
     is_blind: bool = True
+    # Raw model ids, same order as `models` (labels may add the endpoint name):
+    # the rating key, so the same model is one row whatever endpoint served it.
+    model_ids: Optional[List[str]] = None
+    mode: Optional[str] = Field(None, max_length=20)
+
+
+class LocalVote(BaseModel):
+    prompt: str = ""
+    models: List[str]
+    winner: str
+    is_blind: bool = True
+    mode: Optional[str] = Field(None, max_length=20)
+    timestamp: float = 0          # ms since epoch, as the browser stored it
+
+
+class SyncVotesRequest(BaseModel):
+    votes: List[LocalVote] = Field(default_factory=list, max_length=500)
+
+
+def _vote_blind_mapping(models, model_ids, mode):
+    """What `/record` stores next to a vote: the full model list (labels), the
+    raw ids and the mode, which the Elo ratings read back."""
+    payload = {"models": list(models)}
+    if model_ids and len(model_ids) == len(models):
+        payload["model_ids"] = [str(i)[:200] for i in model_ids]
+    if mode:
+        payload["mode"] = mode
+    return json.dumps(payload)
 
 
 def setup_compare_routes(session_manager: SessionManager):
@@ -293,11 +321,9 @@ def setup_compare_routes(session_manager: SessionManager):
         model_a = body.models[0] if len(body.models) > 0 else ""
         model_b = body.models[1] if len(body.models) > 1 else ""
 
-        # For N>2 models, store the full list as JSON in blind_mapping
-        if len(body.models) > 2:
-            blind_mapping = json.dumps({"models": body.models})
-        else:
-            blind_mapping = None
+        # The full model list (plus raw ids and the mode) goes into
+        # blind_mapping as JSON: the Elo ratings read it back.
+        blind_mapping = _vote_blind_mapping(body.models, body.model_ids, body.mode)
 
         db = SessionLocal()
         try:
@@ -320,6 +346,53 @@ def setup_compare_routes(session_manager: SessionManager):
             db.close()
 
         return {"status": "ok", "id": comp_id}
+
+    @router.post("/record-batch")
+    def record_local_votes(request: Request, body: SyncVotesRequest):
+        """Bring votes the browser kept locally into the database, once.
+
+        Idempotent: each vote gets an id derived from its owner, time, models,
+        winner and prompt, and one already stored is skipped, so the browser
+        can send its whole list every time without duplicating anything."""
+        import hashlib
+        user = get_current_user(request)
+        added = skipped = 0
+        db = SessionLocal()
+        try:
+            for v in body.votes:
+                if len(v.models) < 2 or not v.winner:
+                    skipped += 1
+                    continue
+                digest = hashlib.sha1("|".join([
+                    str(user or ""), str(int(v.timestamp)), ",".join(v.models), v.winner, v.prompt[:500],
+                ]).encode("utf-8")).hexdigest()[:32]
+                comp_id = f"local-{digest}"
+                if db.query(Comparison.id).filter(Comparison.id == comp_id).first():
+                    skipped += 1
+                    continue
+                when = datetime.utcfromtimestamp(v.timestamp / 1000.0) if v.timestamp > 0 else datetime.utcnow()
+                db.add(Comparison(
+                    id=comp_id, prompt=v.prompt[:500], model_a=v.models[0], model_b=v.models[1],
+                    endpoint_a="", endpoint_b="", winner=v.winner, is_blind=v.is_blind,
+                    blind_mapping=_vote_blind_mapping(v.models, None, v.mode), voted_at=when, owner=user,
+                ))
+                added += 1
+            db.commit()
+        finally:
+            db.close()
+        return {"added": added, "skipped": skipped}
+
+    @router.get("/elo")
+    def elo_ratings(request: Request, mode: Optional[str] = None):
+        """Elo ratings (K=32, start 1000) from this user's comparison votes:
+        overall and per prompt topic. Recomputed on every call from the stored
+        votes, so deleting a comparison is reflected at once."""
+        user = get_current_user(request)
+        from src import compare_elo
+        result = compare_elo.compute(compare_elo.load_votes(user), mode=(mode or None))
+        from src import prompt_topics
+        result["topic_labels"] = list(prompt_topics.TOPICS)
+        return result
 
     @router.get("/history")
     def list_comparisons(request: Request):

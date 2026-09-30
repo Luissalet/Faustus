@@ -1,4 +1,4 @@
-import { ApiError, asArray } from './api';
+import { ApiError, asArray, getJson } from './api';
 import type { ModelRoute, TurnMetrics } from './chat';
 
 /**
@@ -268,4 +268,94 @@ export async function probeRoutes(routes: ModelRoute[]): Promise<Record<string, 
   } catch {
     return {};
   }
+}
+
+/* ── Elo ratings (server side) ───────────────────────────────────────────
+ *
+ * Every vote is also stored on the server (`/api/compare/record`), which
+ * rates the models with Elo (K = 32, start 1000): overall and per prompt
+ * topic. Votes kept in this browser before that existed are sent once more
+ * on demand; the server skips the ones it already has.
+ */
+
+export interface EloRow {
+  key: string;
+  label: string;
+  rating: number;
+  games: number;
+  wins: number;
+  losses: number;
+  ties: number;
+}
+
+export interface EloRatings {
+  k: number;
+  start: number;
+  votes: number;
+  overall: EloRow[];
+  topics: Record<string, EloRow[]>;
+  topicVotes: Record<string, number>;
+}
+
+const eNum = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+
+function eloRows(raw: unknown): EloRow[] {
+  return asArray<Record<string, unknown>>(raw).map((r) => ({
+    key: String(r.key ?? ''),
+    label: String(r.label ?? r.key ?? ''),
+    rating: eNum(r.rating),
+    games: eNum(r.games),
+    wins: eNum(r.wins),
+    losses: eNum(r.losses),
+    ties: eNum(r.ties),
+  }));
+}
+
+export function eloFrom(raw: Record<string, unknown>): EloRatings {
+  const topics: Record<string, EloRow[]> = {};
+  const rawTopics = raw.topics && typeof raw.topics === 'object' ? (raw.topics as Record<string, unknown>) : {};
+  for (const [name, rows] of Object.entries(rawTopics)) topics[name] = eloRows(rows);
+  const tv: Record<string, number> = {};
+  const rawTv = raw.topic_votes && typeof raw.topic_votes === 'object' ? (raw.topic_votes as Record<string, unknown>) : {};
+  for (const [name, n] of Object.entries(rawTv)) tv[name] = eNum(n);
+  return { k: eNum(raw.k) || 32, start: eNum(raw.start) || 1000, votes: eNum(raw.votes), overall: eloRows(raw.overall), topics, topicVotes: tv };
+}
+
+export async function fetchElo(mode: CompareMode | 'all', signal?: AbortSignal): Promise<EloRatings> {
+  const q = mode === 'all' ? '' : `?mode=${encodeURIComponent(mode)}`;
+  return eloFrom(await getJson<Record<string, unknown>>(`/api/compare/elo${q}`, signal));
+}
+
+async function postJsonQuiet(path: string, body: unknown): Promise<boolean> {
+  try {
+    const response = await fetch(path, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Store one vote on the server (best effort: the local copy is the record). */
+export function recordVoteRemote(v: Vote, modelIds: string[]): Promise<boolean> {
+  return postJsonQuiet('/api/compare/record', {
+    prompt: v.prompt,
+    models: v.models,
+    winner: v.winner,
+    is_blind: v.blind,
+    model_ids: modelIds.length === v.models.length ? modelIds : undefined,
+    mode: v.mode,
+  });
+}
+
+/** Send the votes this browser kept to the server; repeatable, the server dedupes. */
+export function syncLocalVotes(votes: Vote[]): Promise<boolean> {
+  if (!votes.length) return Promise.resolve(true);
+  return postJsonQuiet('/api/compare/record-batch', {
+    votes: votes.slice(-500).map((v) => ({ prompt: v.prompt, models: v.models, winner: v.winner, is_blind: v.blind, mode: v.mode, timestamp: v.timestamp })),
+  });
 }
