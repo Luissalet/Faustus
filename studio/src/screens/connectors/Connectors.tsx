@@ -1,5 +1,5 @@
 import {
-  AlertCircle, Calendar, CheckCircle2, ChevronDown, ExternalLink, HelpCircle, Loader2,
+  AlertCircle, Calendar, CheckCircle2, ChevronDown, Download, ExternalLink, HelpCircle, Loader2,
   Mail, MinusCircle, Play, Plug, Plus, PowerOff, RefreshCw, Settings2, Wrench, XCircle,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -26,6 +26,7 @@ import { NewConnectorForm } from './NewConnectorForm';
 import { NearbyApps } from './NearbyApps';
 import { LaunchProfilesPanel } from './LaunchProfiles';
 import { ConnectorToolsDrawer } from './ToolsDrawer';
+import { PluginMarketplace } from './PluginMarketplace';
 import '../projects.css';
 import '../settings.css';
 import './connectors.css';
@@ -222,6 +223,7 @@ export function ConnectorsScreen() {
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState<{ preset: ConnectorPreset; existing?: Connector; initialValues?: Record<string, string> } | null>(null);
   const [showProfiles, setShowProfiles] = useState(false);
+  const [marketplaceOpen, setMarketplaceOpen] = useState(false);
   const [nearbyOpen, setNearbyOpen] = useState(false);
   const [nearbyCount, setNearbyCount] = useState(0);
   const nearbyDefaultSet = useRef(false);
@@ -290,6 +292,7 @@ export function ConnectorsScreen() {
         <div className="fs-set__row-actions">
           <IconButton icon={RefreshCw} label={t('Refresh (check now)')} onClick={() => reload(true)} testId="connectors-refresh" />
           <Button size="sm" variant="ghost" icon={Settings2} label={t('Launch profiles')} onClick={() => setShowProfiles(true)} testId="connectors-profiles" />
+          <Button size="sm" variant="secondary" icon={Download} label={t('Plugin marketplace')} aria-expanded={marketplaceOpen} aria-controls="plugin-marketplace-panel" onClick={() => setMarketplaceOpen((open) => !open)} testId="connectors-marketplace" />
           <Button size="sm" variant="primary" icon={Plus} label={t('Add')} onClick={() => setAddOpen((v) => !v)} testId="connectors-add" />
         </div>
       </header>
@@ -350,6 +353,18 @@ export function ConnectorsScreen() {
       )}
 
       {showProfiles && <LaunchProfilesPanel onClose={() => setShowProfiles(false)} />}
+
+      {marketplaceOpen && <PluginMarketplace onConfigure={(id, path) => {
+        const preset = presets.find((candidate) => candidate.id === id);
+        if (preset) {
+          const initialValues = Object.fromEntries(preset.placeholders.filter((name) => name.endsWith('_DIR')).map((name) => [name, path]));
+          const existing = (connectors ?? []).find((connector) => connector.preset_id === id);
+          setForm({ preset, existing, initialValues });
+          setMarketplaceOpen(false);
+        } else {
+          say(t('Plugin preset not available. Refresh connectors and try again.'));
+        }
+      }} />}
 
       {failed ? (
         <EmptyState

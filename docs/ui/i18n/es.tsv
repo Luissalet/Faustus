@@ -8623,3 +8623,64 @@ Partially completed	Completado parcialmente
 Result unconfirmed	Resultado sin confirmar
 Some changes may have been applied. Check the result before trying again.	Puede que se hayan aplicado algunos cambios. Revisa el resultado antes de volver a intentarlo.
 The result could not be confirmed. Check the current state before trying again.	No se pudo confirmar el resultado. Revisa el estado actual antes de volver a intentarlo.
+Plugin marketplace	Marketplace de plugins
+HoardLink is required. Choose the Hoards you want; missing repositories download into your plugins folder.	HoardLink es obligatorio. Elige los hoards que quieras; los repositorios que falten se descargarán en tu carpeta de plugins.
+Already have a Hoard elsewhere? Link its folder. Downloading saves the source; configure and start the app separately.	¿Ya tienes un hoard en otra ubicación? Enlaza su carpeta. La descarga guarda el código; después configura y arranca la aplicación.
+Find a plugin	Buscar un plugin
+Linked folder	Carpeta enlazada
+Source downloaded	Código descargado
+Linked folder unavailable	Carpeta enlazada no disponible
+Check existing folder	Revisa la carpeta existente
+Not downloaded	Sin descargar
+Source downloaded.	Código descargado.
+Configure connector	Configurar conector
+Link existing folder	Enlazar carpeta existente
+Forget link	Quitar enlace
+Link removed; files kept.	Enlace eliminado; archivos conservados.
+Original repository	Repositorio original
+Existing repository folder	Carpeta del repositorio existente
+Folder linked.	Carpeta enlazada.
+Link folder	Enlazar carpeta
+No plugins match your search.	No hay plugins que coincidan con tu búsqueda.
+Import ChatGPT, Claude, LM Studio, Codex sessions or this app’s JSON exports. Nothing is written until you have seen the preview.	Importa ChatGPT, Claude, LM Studio, sesiones de Codex o exportaciones JSON de esta app. No se escribe nada hasta ver la vista previa.
+Parakeet detects the language automatically. Very short utterances can be mistaken for another language.	Parakeet detecta el idioma automáticamente. Las frases muy cortas pueden confundirse con otro idioma.
+Local (Parakeet V3 · experimental)	Local (Parakeet V3 · experimental)
+Parakeet V3 runs on CPU and detects the language automatically. Very short utterances can be mistaken for another language. First use downloads about 670 MB plus a voice activity model. Optional dependencies: requirements-voice-parakeet.txt.	Parakeet V3 usa la CPU y detecta el idioma automáticamente. Las frases muy cortas pueden confundirse con otro idioma. El primer uso descarga unos 670 MB y un modelo de detección de voz. Dependencias opcionales: requirements-voice-parakeet.txt.
+Browser recognition may send audio to its speech service. Choose a local provider for local transcription.	El navegador puede enviar el audio a su servicio de reconocimiento. Elige un proveedor local para transcribir en local.
+Browser recognition needs a fixed language. Choose English or Spanish; automatic detection uses local recognition.	El reconocimiento del navegador necesita un idioma fijo. Elige inglés o español; la detección automática usa reconocimiento local.
+Project board	Tablero del proyecto
+Preview tasks	Previsualizar tareas
+Add tasks to board	Añadir tareas al tablero
+No action items in this meeting	Esta reunión no tiene acciones registradas
+{n} tasks added to the project board	{n} tareas añadidas al tablero del proyecto
+Undo voice correction	Deshacer corrección por voz
+Correct by voice	Corregir con la voz
+Say what to change in your draft. It will stay here for review.	Di qué quieres cambiar en el borrador. Se quedará aquí para revisarlo.
+Could not apply the correction. Your draft is unchanged.	No se pudo aplicar la corrección. Tu borrador sigue intacto.
+Use original transcription	Usar transcripción original
+Natural dictation · clean fillers and self-corrections	Dictado natural · limpiar muletillas y autocorrecciones
+Advisory estimate; actual speed varies with context and engine.	Estimación orientativa; la velocidad real varía con el contexto y el motor.
+Speed is estimated, not measured; context depth and engine overhead are not included.	Velocidad estimada, no medida; no incluye la profundidad del contexto ni el coste del motor.
+Analyze a reference clip, transcribe it or create local narration. Videos can be up to 3 minutes, 1080p and 64 MB.	Analiza un vídeo de referencia, transcríbelo o crea una narración local. Admite hasta 3 minutos, 1080p y 64 MB.
+Analyze reference cuts	Analizar cortes del vídeo
+Analyzing reference cuts…	Analizando cortes del vídeo…
+Could not analyze this reference video.	No se pudo analizar este vídeo de referencia.
+Reference shot map	Mapa de planos de referencia
+Shot	Plano
+shots	planos
+cuts per minute	cortes por minuto
+seconds per shot on average	segundos por plano de media
+The shot map response is invalid.	El mapa de planos recibido no es válido.
+Visual cuts estimate pacing; they do not identify people or describe scene content. Select a shot to inspect it in the player.	Los cortes visuales muestran el ritmo, pero no identifican personas ni describen escenas. Elige un plano para verlo en el reproductor.
+Transcribe with existing Whisper weights, then edit the segments or ask the model for a translation draft. Dubbing uses an installed Windows voice and replaces the original audio; it does not clone voices or synchronize lips.	Transcribe con los pesos Whisper instalados, edita los segmentos o pide al modelo un borrador de traducción. El doblaje usa una voz de Windows y sustituye el audio original; no clona voces ni sincroniza labios.
+Translation target	Idioma de destino
+Translate segments	Traducir segmentos
+Translation draft	Borrador de traducción
+Review before replacing the original segments.	Revisa el borrador antes de sustituir los segmentos originales.
+This translation may be too long for its timing.	Esta traducción puede ser demasiado larga para su tiempo disponible.
+Use translation	Usar traducción
+Keep original	Conservar original
+Translating segments…	Traduciendo segmentos…
+Translation failed.	La traducción ha fallado.
+The translation response is invalid.	La respuesta de traducción no es válida.
+Plugin preset not available. Refresh connectors and try again.	El plugin aún no aparece en los conectores. Actualiza la lista y vuelve a intentarlo.

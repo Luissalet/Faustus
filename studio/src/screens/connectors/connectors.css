@@ -11,6 +11,30 @@
   padding: 0;
 }
 
+.fs-marketplace {
+  display: grid;
+  gap: var(--fs-space-3);
+  padding-block: var(--fs-space-5);
+  border-block-start: 1px solid var(--fs-border);
+}
+
+.fs-marketplace__search, .fs-marketplace__link {
+  display: grid;
+  gap: var(--fs-space-2);
+}
+
+.fs-marketplace__search { max-inline-size: 32rem; }
+.fs-marketplace__path {
+  display: flex;
+  align-items: baseline;
+  gap: var(--fs-space-2);
+  margin: 0;
+  font-family: var(--fs-font-code);
+  font-size: var(--fs-label-size);
+  overflow-wrap: anywhere;
+}
+.fs-marketplace__path svg { flex: none; }
+
 .fs-conn__row {
   display: grid;
   gap: var(--fs-space-2);
