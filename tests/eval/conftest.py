@@ -14,6 +14,31 @@ import pytest
 from tests.eval.harness import EvalApp
 
 
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_setup(item):
+    """Record the process state before the first fixture of an eval test is set up (H24)."""
+    from tests.eval import isolation
+    item._leak_guard = isolation.guard()
+    next(item._leak_guard)
+    yield
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_teardown(item, nextitem):
+    """Fail any eval test that leaves the process, its environment or the
+    developer's own data directory different from how it found them (H24).
+    A hook wrapper, not a fixture: it runs after every fixture has been torn
+    down and every monkeypatch undone, whatever order they were requested in."""
+    yield
+    guard = getattr(item, "_leak_guard", None)
+    if guard is not None:
+        item._leak_guard = None
+        try:
+            next(guard)
+        except StopIteration:
+            pass
+
+
 @pytest.fixture(autouse=True)
 def project_python_for_task_verify(monkeypatch):
     """The tasks' verify() runs their tests in THIS process, with this

@@ -125,20 +125,42 @@ class EvalApp:
     than imported as fixtures, while the SERVER (`tests.e2e.fake_llm`) is
     reused verbatim."""
 
-    def __init__(self) -> None:
-        self.data_dir = tempfile.mkdtemp(prefix="odysseus-eval-data-")
+    def __init__(self, *, repo: Optional[str] = None, settings: Optional[Dict[str, Any]] = None,
+                 endpoint: Optional[str] = None, model: Optional[str] = None,
+                 env: Optional[Dict[str, str]] = None, isolated_fake: bool = False,
+                 data_dir: Optional[str] = None) -> None:
+        """``repo``: checkout to run the server from (default: this one), so a
+        second revision can be measured. ``settings``: written to the data dir's
+        settings.json before the first start. ``endpoint`` / ``model``: a real
+        OpenAI-compatible model to use instead of the scripted one.
+        ``isolated_fake``: run the scripted model as its own process, so no
+        scripted state lives in this one. ``data_dir``: reuse a directory (a
+        restart keeps it; a new app gets a fresh one)."""
+        self.repo = Path(repo).resolve() if repo else REPO
+        self.data_dir = data_dir or tempfile.mkdtemp(prefix="odysseus-eval-data-")
+        self._owns_data_dir = data_dir is None
         self.port = _free_port()
         self.base = f"http://127.0.0.1:{self.port}"
+        self.endpoint = (endpoint or "").rstrip("/") or None
+        self.model = model or "fake-coder"
+        self._extra_env = dict(env or {})
+        self._isolated_fake = bool(isolated_fake) and self.endpoint is None
         self._fake_llm_port = _free_port()
-        self._fake_llm_base = f"http://127.0.0.1:{self._fake_llm_port}"
+        self._fake_llm_base = self.endpoint.rsplit("/v1", 1)[0] if self.endpoint else f"http://127.0.0.1:{self._fake_llm_port}"
         self._fake_srv = None
+        self._fake_proc: Optional[subprocess.Popen] = None
         self._proc: Optional[subprocess.Popen] = None
+        self._log = None
         self.endpoint_id = ""
+        if settings:
+            with open(os.path.join(self.data_dir, "settings.json"), "w", encoding="utf-8") as f:
+                json.dump(settings, f)
 
-    def start(self, timeout: float = 90.0) -> None:
-        from tests.e2e import fake_llm as _fake_llm_mod
-        self._fake_srv = _fake_llm_mod.serve(self._fake_llm_port)
+    @property
+    def model_url(self) -> str:
+        return self.endpoint or (self._fake_llm_base + "/v1")
 
+    def _env(self) -> Dict[str, str]:
         env = dict(os.environ)
         env.update({
             "ODYSSEUS_DATA_DIR": self.data_dir,
@@ -156,44 +178,86 @@ class EvalApp:
             # pytest); the host's PATH python may not.
             "FAUSTUS_PROJECT_PYTHON": sys.executable,
         })
+        env.update(self._extra_env)
+        return env
+
+    def _spawn(self, timeout: float) -> None:
         log_path = os.path.join(self.data_dir, "server.log")
-        self._log = open(log_path, "w", encoding="utf-8")
+        self._log = open(log_path, "a", encoding="utf-8")
         self._proc = subprocess.Popen(
             [sys.executable, "-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", str(self.port)],
-            cwd=str(REPO), env=env, stdout=self._log, stderr=subprocess.STDOUT,
+            cwd=str(self.repo), env=self._env(), stdout=self._log, stderr=subprocess.STDOUT,
         )
         try:
             _wait_http(self.base + "/api/chat/activity", timeout=timeout)
         except Exception:
             self.stop()
             raise
+
+    def start(self, timeout: float = 90.0) -> None:
+        if self.endpoint is None:
+            if self._isolated_fake:
+                self._fake_proc = subprocess.Popen(
+                    [sys.executable, "-m", "tests.e2e.fake_llm", str(self._fake_llm_port)],
+                    cwd=str(REPO), env=dict(os.environ, PYTHONPATH=str(REPO)),
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                _wait_http(self._fake_llm_base + "/v1/models", timeout=30)
+            else:
+                from tests.e2e import fake_llm as _fake_llm_mod
+                self._fake_srv = _fake_llm_mod.serve(self._fake_llm_port)
+        self._spawn(timeout)
         ep = _post_form(self.base + "/api/model-endpoints", {
-            "name": "eval-fake", "base_url": self._fake_llm_base + "/v1",
+            "name": "eval-fake" if self.endpoint is None else "eval-live", "base_url": self.model_url,
             "skip_probe": "true", "endpoint_kind": "local",
         })
         self.endpoint_id = ep.get("id") or (ep.get("endpoint") or {}).get("id") or ""
 
-    def stop(self) -> None:
+    def kill(self) -> None:
+        """SIGKILL the app server, leaving its data dir and the model as they are."""
+        if self._proc is not None:
+            self._proc.kill()
+            self._proc.wait(timeout=15)
+            self._proc = None
+        if self._log is not None:
+            try:
+                self._log.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def restart(self, timeout: float = 90.0) -> None:
+        """Boot the app again on the same data dir and port."""
+        self._spawn(timeout)
+
+    def stop(self, *, cleanup: bool = True) -> None:
         if self._proc is not None:
             self._proc.terminate()
             try:
                 self._proc.wait(timeout=15)
             except subprocess.TimeoutExpired:
                 self._proc.kill()
+            self._proc = None
         if self._fake_srv is not None:
             self._fake_srv.shutdown()
+            self._fake_srv = None
+        if self._fake_proc is not None:
+            self._fake_proc.kill()
+            self._fake_proc.wait(timeout=10)
+            self._fake_proc = None
         try:
             self._log.close()
         except Exception:  # noqa: BLE001
             pass
-        shutil.rmtree(self.data_dir, ignore_errors=True)
+        if cleanup and self._owns_data_dir:
+            shutil.rmtree(self.data_dir, ignore_errors=True)
 
     # -- the model's script ------------------------------------------------
 
     def script(self, responses: List[str]) -> None:
         """Record the canned answers `fake_llm` hands back, one per model
         call this turn makes — the "fixtures que graban las respuestas del
-        modelo" EVAL-01 asks for."""
+        modelo" EVAL-01 asks for. A no-op against a real model."""
+        if self.endpoint:
+            return
         body = json.dumps({"responses": responses, "reset": True}).encode("utf-8")
         req = urllib.request.Request(self._fake_llm_base + "/_script", data=body, method="POST",
                                      headers={"Content-Type": "application/json"})
@@ -208,8 +272,8 @@ class EvalApp:
 
     def new_session(self, name: str = "eval") -> str:
         r = _post_form(self.base + "/api/session", {
-            "name": name, "endpoint_id": self.endpoint_id, "endpoint_url": self._fake_llm_base + "/v1",
-            "model": "fake-coder", "skip_validation": "true",
+            "name": name, "endpoint_id": self.endpoint_id, "endpoint_url": self.model_url,
+            "model": self.model, "skip_validation": "true",
         })
         return r.get("id") or r.get("session_id")
 
@@ -235,15 +299,18 @@ class EvalApp:
         return events
 
     def send_turn(self, session_id: str, message: str, *, workspace: Optional[str] = None,
-                 max_approvals: int = 5, timeout: float = 60.0) -> TurnResult:
+                 max_approvals: int = 5, timeout: float = 60.0,
+                 reasoning_effort: Optional[str] = None) -> TurnResult:
         result = TurnResult(session_id=session_id)
         offered_captured = False
         form: Dict[str, Any] = {"session": session_id, "message": message, "mode": "agent"}
         if workspace:
             form["workspace"] = workspace
+        if reasoning_effort:
+            form["reasoning_effort"] = reasoning_effort
         for _leg in range(max_approvals + 1):
             events = self._post_chat_stream(form, timeout)
-            if not offered_captured:
+            if not offered_captured and self.endpoint is None:
                 calls = self._fake_calls()
                 result.tools_offered = _tool_names_from_messages(calls.get("last_messages") or [])
                 offered_captured = True
@@ -274,6 +341,8 @@ class EvalApp:
             }
             if workspace:
                 form["workspace"] = workspace
+            if reasoning_effort:
+                form["reasoning_effort"] = reasoning_effort
         result.rounds = max(result.rounds, 1)
         self._drain(session_id)
         return result
