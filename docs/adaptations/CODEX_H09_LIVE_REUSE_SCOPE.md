@@ -119,3 +119,12 @@ Nueva pregunta by-ID frente a búsqueda: fetch_ref real→MemoryEngineSource.fet
 `9dc7eeed`: _fetch rechaza storedowner no vacío distinto del request (también ownerblank), storedproject no vacío distinto de scope actual, secret y !is_valid_now. Globales blank siguen permitidos; workspace y fallback project_id conservados. Gate incognito antes get_item. Sin touch ni cambio acceso/last_accessed. Lote2filespropios,12nuevas; selección98 correctas3,73s (sources/standing/freshness), segunda selección con recall real + deferredphase **48 correctas2,72s**. Una selección inicial tenía test_context_engine_expand.py inexistente:0 tests, sustituida por recall existente. DB temporales reales, sin GPU/DB personal.
 
 Se cierra guard de reabrir por ID, NO lectorreadonly de get_item (usa _db legacy), atomicidad snapshot ni epochs universales. Fuente original: https://github.com/openai/codex/tree/b1e72963c3b71a9265a551e54beff078384efed9, contratos locales de memoria/contexto; nueva pregunta no repetición de revisión cerrada.
+
+
+### VISITADO / IMPLEMENTADO — petición léxica no consulta embeddings
+
+`1e9bca1f`: MemoryEngine.search añade semantic_enabled=True opcional. False omite tanto _semantic_scores como vector_store lazygetter, semantic0/wsem0/lexical.90/degradedFalse: omisión por política no simula avería. DefaultTrue conserva híbrido y degraded=True ante ausencia/error. MemoryEngineSource pasa sólo False cuando semantic no está permitido; llamada habilitada conserva API legacy de adapters inyectados. Sin cambios graph ni by-ID9dc7eeed.
+
+Repro previo gather/SQLite real lanes=('lexical',): vectorstore.search1 y resultado no degradado pese vía no permitida. Final183 correctas17,76s,0omitidas: semanticpolicy7+sources+fetch12+standingfreshness16+engine. Coordinador19 correctas1,43s (7nuevas+12fetch). Recordingstore/failgetters reales de prueba comprueban cero consultas/inicialización cuando deshabilitado, positivo semantic/default, absent/error legacy y gateincognito. Sin modelos/DB personal enpytest aislado. Híbrido readonly/freshness aún pendiente; primitivastrictc051 no certifica APIengine completa.
+
+Fuente original ya visitada https://github.com/openai/codex/tree/b1e72963c3b71a9265a551e54beff078384efed9 y contratos locales del planificador; adaptación propia, no revisiónradar repetida. Piloto lexical-only visitado/cerrado. Checkpoint98272203. Uso99% pero ordinaryUsageAllowed=true; sigue autorizado, automatización activa.
