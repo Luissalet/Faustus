@@ -65,3 +65,14 @@ Primer prototipo inline anterior fuera pytest intentó inicializar MemoryVector 
 Nueva evaluación active_seconds: 3repros pytest/fakeclock realwrapper terminal/warmretry/ctx_ack mantienenledger0 tras120–240s proveedor, retry bajo límite100. Prototipo por-await __anext__ 3correctas2,06s:120bloquea,20+20=40admite; consumerpausas1000entreSSE no añaden gasto (techo pared independiente elevado sólofixture). Piloto timepending implementándose por dimensión con crédito elapsedlegacy, no cargo universalwall ni duraciónrecoveryaux cerrada.
 
 Verificación ampliada final1f66cd71: autonomía + preflight + steeringlifecycle, **94 correctas420,08s (7min)**, sin omisiones/fallos. No repetir tras pasar salvo cambio relevante. Checkpoint475fc3fb.
+
+
+### VISITADO / IMPLEMENTADO — espera de inferencia principal en presupuesto
+
+`6974f6c8`: wrapper main mide cada await __anext__ del proveedor y registra antes de yield/error/cancel en recibo privado por outerround. Consumerpausas entre SSE y aclose quedan fuera de ese nuevo span. Ledger/admission/flush reciben residual activo por dimensión; cargo wall legacy efectivamente añadido en la misma ronda se acredita, evitando doble conteo. Observeropcional None conserva elementoslegacy sin muestrear reloj. Cierre innerstream ordinaryerror conserva error previo.
+
+Final113 correctas72,16s:22nuevas+19finalization+18retry+20pending+30recovery+4rootpretool intactas. Coordinador22 correctas5,03s. Fakeclock pytest aislado, proveedores sintéticos:120espera bajo100 deniega retries warm/ctx_ack ytools;20+20=40 bajo100 admite, aunque consumidor espera1000entreSSE; legacyround200incltools + terminal20=220, no240; cancel/error/close conserva37observados; créditos parciales por misma ronda y dobleflushsin duplicar.
+
+**Alcance estrecho:** contador activo del turno en memoria; no durabilidad/invoice ni clockwall universal. Cargo legacy por ronda conserva comportamiento previo y puede incluir intervalos que éste ya contaba; piloto nuevo sólo excluye pausas del span de espera del proveedor. Recuperaciónauxiliaryduration y overhead protocol/providerinternalidentities pendientes, tampoco añade reserva previa ni cambia grantslocales. Fuente original ya visitada https://github.com/openai/codex/tree/b1e72963c3b71a9265a551e54beff078384efed9; implementaciónpropia. Piloto visitado/cerrado en esealcance, no repetir sin pregunta nueva/regresión.
+
+Checkpoint5e89941b. JobObjectproducto en implementación, NOcerrado todavía. Uso100%redondeado y últimaordinaryUsageAllowedtrue; no se pausa antes de bloqueo real.
