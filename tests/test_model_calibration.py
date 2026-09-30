@@ -298,7 +298,7 @@ def env(monkeypatch):
     monkeypatch.setattr(lm, "_client_factory",
                         lambda timeout=10.0: httpx.Client(transport=httpx.MockTransport(fake.handler), timeout=timeout))
     monkeypatch.setattr(lm, "list_ollama_endpoints", lambda include_default=True, **kw: [
-        {"id": "local-ollama", "name": "Ollama", "base_url": ROOT + "/v1", "root": ROOT, "same_machine": True},
+        {"id": "local-ollama", "connection_revision": "fixture-revision", "name": "Ollama", "base_url": ROOT + "/v1", "root": ROOT, "same_machine": True},
     ])
     monkeypatch.setattr(mw, "auth_disabled", lambda: False)
     lm.reset_show_cache()

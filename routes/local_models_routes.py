@@ -238,6 +238,7 @@ def list_ollama_endpoints(include_default: bool = True, *, owner: str = "",
         seen_roots.add(root)
         out.append({
             "id": str(getattr(ep, "id", "") or ""),
+            "connection_revision": str(getattr(ep, "connection_revision", "") or ""),
             "name": str(getattr(ep, "name", "") or "Ollama"),
             "base_url": base,
             "root": root,
@@ -1670,7 +1671,8 @@ def setup_local_models_routes() -> APIRouter:
         announced, key, digest = await asyncio.to_thread(_resolve_announced, ep, name)
         manifest = mcal.save_announced(key, announced)
         manifest = mcal.get_effective_manifest(vendor="ollama", model_id=name, endpoint_id=ep["id"],
-            protocol=mcal.NATIVE_OLLAMA_PROTOCOL, digest=digest)
+            protocol=mcal.NATIVE_OLLAMA_PROTOCOL, digest=digest,
+            endpoint_revision=ep.get("connection_revision", ""))
         return {"model": name, "endpoint_id": ep["id"], "stable_model_id": key, **manifest}
 
     @caps_router.post("/api/models/{name:path}/calibrate")
@@ -1678,6 +1680,8 @@ def setup_local_models_routes() -> APIRouter:
         require_admin(request)
         name = validate_model_name(name)
         ep = _pick_endpoint(endpoint_id, _endpoints_for(request))
+        if not ep.get("connection_revision"):
+            raise HTTPException(409, "Calibration requires a persisted endpoint configuration")
         announced, key, digest = await asyncio.to_thread(_resolve_announced, ep, name)
         try:
             loaded = await asyncio.to_thread(_ps, ep["root"])
@@ -1697,6 +1701,7 @@ def setup_local_models_routes() -> APIRouter:
         tested = await asyncio.to_thread(_run)
         manifest = mcal.save_scoped_tested(vendor="ollama", model_id=name, endpoint_id=ep["id"],
             protocol=mcal.NATIVE_OLLAMA_PROTOCOL, digest=digest,
+            endpoint_revision=ep.get("connection_revision", ""),
             tested=tested, announced=announced)
         return {"model": name, "endpoint_id": ep["id"], "stable_model_id": key, **manifest}
 

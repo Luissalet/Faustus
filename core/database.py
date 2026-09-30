@@ -1,6 +1,7 @@
 import os
 import logging
 import sqlite3
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -1087,6 +1088,7 @@ class ModelEndpoint(TimestampMixin, Base):
     __tablename__ = "model_endpoints"
 
     id = Column(String, primary_key=True, index=True)
+    connection_revision = Column(String, nullable=False, default=lambda: uuid.uuid4().hex)
     name = Column(String, nullable=False)          # Display label, e.g. "Local vLLM", "OpenRouter"
     base_url = Column(String, nullable=False)      # Base URL, e.g. "http://localhost:8002/v1"
     api_key = Column(EncryptedText, nullable=True)  # Optional provider API key, encrypted at rest
@@ -1116,6 +1118,21 @@ class ModelEndpoint(TimestampMixin, Base):
     # Optional OAuth/session-backed credential row. Used by subscription-backed
     # providers that need refresh tokens instead of a static API key.
     provider_auth_id = Column(String, nullable=True, index=True)
+
+
+# Configuration identity is server-owned and changes in the same ORM transaction.
+# Bulk SQL and mutations inside a linked ProviderAuthSession are outside this hook.
+@event.listens_for(ModelEndpoint, "before_insert")
+def _new_endpoint_connection_revision(mapper, connection, endpoint):
+    endpoint.connection_revision = uuid.uuid4().hex
+
+
+@event.listens_for(ModelEndpoint, "before_update")
+def _rotate_endpoint_connection_revision(mapper, connection, endpoint):
+    state = inspect(endpoint)
+    if any(state.attrs[field].history.has_changes() for field in
+           ("base_url", "api_key", "provider_auth_id", "endpoint_kind")):
+        endpoint.connection_revision = uuid.uuid4().hex
 
 
 class ProviderAuthSession(TimestampMixin, Base):
@@ -1817,6 +1834,22 @@ def _migrate_add_model_type_column():
             conn.close()
         except Exception:
             pass
+
+def _migrate_add_endpoint_connection_revision():
+    """Assign opaque identities once; do not derive them from credentials."""
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    with sqlite3.connect(db_path) as conn:
+        columns = [row[1] for row in conn.execute("PRAGMA table_info(model_endpoints)")]
+        if not columns:
+            return
+        if "connection_revision" not in columns:
+            conn.execute("ALTER TABLE model_endpoints ADD COLUMN connection_revision TEXT")
+        rows = conn.execute("SELECT id FROM model_endpoints WHERE connection_revision IS NULL OR connection_revision = ''").fetchall()
+        conn.executemany("UPDATE model_endpoints SET connection_revision = ? WHERE id = ?",
+                         [(uuid.uuid4().hex, row[0]) for row in rows])
+
 
 def _migrate_add_model_endpoint_refresh_columns():
     """Add endpoint classification / refresh policy columns if missing."""
@@ -3120,6 +3153,7 @@ def _formal_migration_steps() -> "list[tuple[str, object]]":
         ("add_notes_sort_order", _migrate_add_notes_sort_order),
         ("add_model_type_column", _migrate_add_model_type_column),
         ("add_model_endpoint_refresh_columns", _migrate_add_model_endpoint_refresh_columns),
+        ("add_endpoint_connection_revision", _migrate_add_endpoint_connection_revision),
         ("add_model_endpoint_owner_column", _migrate_add_model_endpoint_owner_column),
         ("add_provider_auth_id_column", _migrate_add_provider_auth_id_column),
         ("add_supports_tools_column", _migrate_add_supports_tools_column),

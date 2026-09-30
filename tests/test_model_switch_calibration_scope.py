@@ -43,9 +43,9 @@ def test_helper_legacy_observations_are_removed_but_announcements_and_shape_stay
 
 
 @pytest.mark.parametrize("ok", [True, False])
-def test_helper_exact_native_model_scope_preserves_observation(ok):
+def test_helper_without_revision_keeps_historical_probe_out(ok):
     write(ok=ok)
-    assert switch()["capabilities"]["tested"][c.TEST_TOOL_CALLING]["ok"] is ok
+    assert switch()["capabilities"]["tested"] == {}  # Revision propagation pending.
 
 
 @pytest.mark.parametrize("changes", [{"new_endpoint_id": "b"}, {"new_endpoint_id": ""},
@@ -62,13 +62,13 @@ def test_helper_does_not_adopt_digest_observation_without_explicit_matching_stri
     assert switch(new_digest=digest)["capabilities"]["tested"] == {}
 
 
-def test_helper_digest_explicit_alias_and_loss_still_use_only_announcements():
+def test_helper_without_revision_cannot_adopt_digest_scoped_artifact():
     write(model="old-alias", ep="before", digest="oldblob", ok=False,
         announced={"capabilities": {"tools": True, "vision": True}})
     write(model="new-alias", digest="newblob", ok=True, announced={})
     result = switch(previous_digest="oldblob", new_digest="newblob")
-    assert result["lost"] == ["vision", "native tool calling"]
-    assert result["capabilities"]["tested"][c.TEST_TOOL_CALLING]["ok"] is True
+    assert result["lost"] == []  # Old scoped declarations are not current authority.
+    assert result["capabilities"]["tested"] == {}
 
 
 def test_probe_difference_alone_never_creates_lost_capabilities():
@@ -108,11 +108,11 @@ def patch_session(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("ok", [True, False])
-def test_patch_native_endpoint_uses_scoped_observation_and_persists_existing_fields(patch_session, ok):
+def test_patch_without_revision_excludes_probe_and_persists_existing_fields(patch_session, ok):
     call, session, factory = patch_session
     write(ok=ok)
     result = call()
-    assert result["capabilities"]["tested"][c.TEST_TOOL_CALLING]["ok"] is ok
+    assert result["capabilities"]["tested"] == {}  # Session revision propagation pending.
     assert set(result["capabilities"]) == {"announced", "tested", "degraded", "updated_at"}
     assert result["model"] == session.model == "new"
     assert result["endpoint_url"] == session.endpoint_url == NATIVE

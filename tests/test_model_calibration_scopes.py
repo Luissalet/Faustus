@@ -14,7 +14,7 @@ def isolated(tmp_path, monkeypatch):
 
 
 def identity(endpoint="a", protocol=c.NATIVE_OLLAMA_PROTOCOL, digest="blob", model="fixture"):
-    return dict(vendor="ollama", model_id=model, endpoint_id=endpoint, protocol=protocol, digest=digest)
+    return dict(vendor="ollama", model_id=model, endpoint_id=endpoint, protocol=protocol, digest=digest, endpoint_revision="fixture-revision")
 
 
 def write(**scope):
@@ -88,7 +88,7 @@ def test_explorer_selects_scoped_or_declarations_only_by_explicit_transport():
     write()
     spec = {"vendor": "ollama", "model_id": "fixture", "digest": "blob"}
     native = model_explorer.legacy_calibration_for(spec, {"endpoint_id": "a", "endpoint_url": "http://fixture/api/chat"})
-    assert native["tested"][c.TEST_TOOL_CALLING]["ok"] is True
+    assert native is None  # Explorer revision propagation remains pending; no probes.
     unknown = model_explorer.legacy_calibration_for(spec, {"endpoint_id": "a", "endpoint_url": "http://fixture"})
     assert unknown is None  # No declarations on the raw legacy artifact.
 
@@ -98,7 +98,7 @@ def test_provider_route_writes_scoped_probes_and_second_endpoint_sees_only_decla
     client, fake = env
     fake.ps = [{"name": "qwen3.5:9b", "model": "qwen3.5:9b", "digest": "aaa111"}]
     monkeypatch.setattr(lm, "list_ollama_endpoints", lambda **kw: [
-        {"id": ep, "name": ep, "base_url": ROOT + "/v1", "root": ROOT, "same_machine": True}
+        {"id": ep, "connection_revision": "fixture-revision", "name": ep, "base_url": ROOT + "/v1", "root": ROOT, "same_machine": True}
         for ep in ("a", "b")])
     response = client.post("/api/models/qwen3.5:9b/calibrate?endpoint_id=a", headers=ADMIN)
     assert response.status_code == 200, response.text

@@ -195,19 +195,17 @@ def test_provider_policy_names_an_alternative_that_meets_the_requirement():
     assert "m-with-tools" in excinfo.value.detail
 
 
-def test_provider_policy_local_model_uses_calibration_for_the_explanation(monkeypatch):
+def test_provider_policy_without_revision_cannot_use_scoped_failure(monkeypatch):
     monkeypatch.setattr(model_calibration, "_record_deployment_evidence", lambda *a, **k: None)
     model_calibration.save_scoped_tested(vendor="ollama", model_id="qwen2.5:7b", endpoint_id="ep",
-        protocol=model_calibration.NATIVE_OLLAMA_PROTOCOL,
+        protocol=model_calibration.NATIVE_OLLAMA_PROTOCOL, endpoint_revision="fixture-revision",
         tested={model_calibration.TEST_TOOL_CALLING: {"ok": False}}, announced={})
-    with pytest.raises(provider_policy.ProviderPolicyError) as excinfo:
-        provider_policy.resolve_route(
-            requested_model="qwen2.5:7b",
-            endpoint={"connection_id": "ep", "base_url": "http://127.0.0.1:11434/api/chat"},
-            requirements=provider_policy.RouteRequirements(required_parameters=("tool_call",)),
-        )
-    assert excinfo.value.error_class == "provider.parameter_unsupported"
-    assert "tool_call" in excinfo.value.detail
+    decision = provider_policy.resolve_route(
+        requested_model="qwen2.5:7b",
+        endpoint={"connection_id": "ep", "base_url": "http://127.0.0.1:11434/api/chat"},
+        requirements=provider_policy.RouteRequirements(required_parameters=("tool_call",)),
+    )
+    assert "unverified" in decision.reason
 
 
 def test_provider_policy_still_reports_unknown_without_blocking():
@@ -255,7 +253,7 @@ class _Db:
 
 
 class _Ep(SimpleNamespace):
-    pass
+    connection_revision = "fixture-revision"
 
 
 def _request(owner="luis"):
@@ -287,10 +285,10 @@ def test_local_ollama_model_explained_against_its_calibration_manifest(monkeypat
     monkeypatch.setattr(mr, "httpx", SimpleNamespace(get=lambda *a, **k: (_ for _ in ()).throw(OSError("no tags"))))
 
     model_calibration.save_scoped_tested(vendor="ollama", model_id="broken-model", endpoint_id="local-ollama",
-        protocol=model_calibration.NATIVE_OLLAMA_PROTOCOL,
+        protocol=model_calibration.NATIVE_OLLAMA_PROTOCOL, endpoint_revision="fixture-revision",
         tested={model_calibration.TEST_TOOL_CALLING: {"ok": False}}, announced={})
     model_calibration.save_scoped_tested(vendor="ollama", model_id="good-model", endpoint_id="local-ollama",
-        protocol=model_calibration.NATIVE_OLLAMA_PROTOCOL,
+        protocol=model_calibration.NATIVE_OLLAMA_PROTOCOL, endpoint_revision="fixture-revision",
         tested={model_calibration.TEST_TOOL_CALLING: {"ok": True}}, announced={})
 
     data = asyncio.run(endpoint(_request(), model="broken-model", endpoint_id="local-ollama", needs="tools"))

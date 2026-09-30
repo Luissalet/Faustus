@@ -169,14 +169,16 @@ def explicit_native_protocol(endpoint_url: str) -> str:
 
 
 def _calibration_scope(*, vendor: str, model_id: str, endpoint_id: str,
-                       protocol: str, digest: str = "") -> Dict[str, str]:
+                       protocol: str, digest: str = "", endpoint_revision: str = "") -> Dict[str, str]:
     vendor, endpoint_id, protocol = str(vendor or "").strip().lower(), str(endpoint_id or "").strip(), str(protocol or "").strip()
+    endpoint_revision = str(endpoint_revision or "").strip()
     if not vendor or not endpoint_id or not protocol:
         raise ValueError("calibration requires vendor, endpoint and explicit protocol")
     digest = str(digest or "").strip()
     if not str(model_id or "").strip() and not (vendor == "ollama" and digest):
         raise ValueError("calibration requires a model or an Ollama digest")
     return {"vendor": vendor, "endpoint_id": endpoint_id, "protocol": protocol,
+            **({"endpoint_revision": endpoint_revision} if endpoint_revision else {}),
             "digest": digest if vendor == "ollama" else "",
             "model_id": "" if vendor == "ollama" and digest else str(model_id or "").strip()}
 
@@ -184,7 +186,7 @@ def _calibration_scope(*, vendor: str, model_id: str, endpoint_id: str,
 def _scope_key(scope: Mapping[str, str]) -> str:
     import hashlib
     encoded = json.dumps(dict(scope), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return "calibration:v2:" + hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+    return ("calibration:v3:" if scope.get("endpoint_revision") else "calibration:v2:") + hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def calibration_key(**identity: str) -> str:
@@ -193,14 +195,14 @@ def calibration_key(**identity: str) -> str:
 
 
 def get_effective_manifest(*, vendor: str, model_id: str, endpoint_id: str = "",
-                           protocol: str = "", digest: str = "",
+                           protocol: str = "", digest: str = "", endpoint_revision: str = "",
                            data_dir: Optional[str] = None) -> Dict[str, Any]:
     """Only exact-scope observations; legacy contributes declarations, never probes."""
     legacy_key = manifest_key(vendor=vendor, model_id=model_id, endpoint_id=endpoint_id, digest=digest)
     legacy = get_manifest(legacy_key, data_dir=data_dir)
     scope, key, scoped = None, None, {}
-    if endpoint_id and protocol:
-        scope = _calibration_scope(vendor=vendor, model_id=model_id, endpoint_id=endpoint_id, protocol=protocol, digest=digest)
+    if endpoint_id and protocol and endpoint_revision:
+        scope = _calibration_scope(vendor=vendor, model_id=model_id, endpoint_id=endpoint_id, protocol=protocol, digest=digest, endpoint_revision=endpoint_revision)
         key = _scope_key(scope)
         scoped = get_manifest(key, data_dir=data_dir)
     matched = bool(scope and scoped.get("calibration_scope") == scope)
@@ -217,12 +219,13 @@ def get_effective_manifest(*, vendor: str, model_id: str, endpoint_id: str = "",
 
 
 def save_scoped_tested(*, vendor: str, model_id: str, endpoint_id: str, protocol: str,
-                       tested: Mapping[str, Any], announced: Mapping[str, Any], digest: str = "",
+                       tested: Mapping[str, Any], announced: Mapping[str, Any], digest: str = "", endpoint_revision: str = "",
                        data_dir: Optional[str] = None) -> Dict[str, Any]:
-    scope = _calibration_scope(vendor=vendor, model_id=model_id, endpoint_id=endpoint_id, protocol=protocol, digest=digest)
+    """Revisionless writers retain historical v2; effective readers never use it."""
+    scope = _calibration_scope(vendor=vendor, model_id=model_id, endpoint_id=endpoint_id, protocol=protocol, digest=digest, endpoint_revision=endpoint_revision)
     save_tested(_scope_key(scope), tested, announced=announced, data_dir=data_dir, _calibration_scope=scope)
     return get_effective_manifest(vendor=vendor, model_id=model_id, endpoint_id=endpoint_id,
-                                  protocol=protocol, digest=digest, data_dir=data_dir)
+                                  protocol=protocol, digest=digest, endpoint_revision=endpoint_revision, data_dir=data_dir)
 
 
 def _manifest_view(entry: Optional[Mapping[str, Any]]) -> Dict[str, Any]:

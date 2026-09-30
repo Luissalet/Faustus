@@ -2310,13 +2310,15 @@ def setup_model_routes(model_discovery):
                 digest_root = base[:-4].rstrip("/") if protocol and base.endswith("/api") else base
                 digests = _ollama_digests_for_root(digest_root)
                 manifest = mcal.get_effective_manifest(vendor="ollama", model_id=model,
-                    endpoint_id=endpoint_id, protocol=protocol, digest=digests.get(model, ""))
+                    endpoint_id=endpoint_id, protocol=protocol, digest=digests.get(model, ""),
+                    endpoint_revision=ep.connection_revision)
                 assertions: Dict[str, "mc.CapabilityAssertion"] = mc.assertions_from_calibration_manifest(manifest)
                 for sib in sibling_ids[:25]:
                     if sib == model:
                         continue
                     sib_manifest = mcal.get_effective_manifest(vendor="ollama", model_id=sib,
-                        endpoint_id=endpoint_id, protocol=protocol, digest=digests.get(sib, ""))
+                        endpoint_id=endpoint_id, protocol=protocol, digest=digests.get(sib, ""),
+                        endpoint_revision=ep.connection_revision)
                     candidates.append(mc.FitCandidateModel(
                         model_id=sib, endpoint_id=endpoint_id,
                         assertions=mc.assertions_from_calibration_manifest(sib_manifest),
