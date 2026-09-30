@@ -4253,6 +4253,21 @@ def _pending_main_admission_view(ledger, pending):
     return view
 
 
+def _flush_pending_main_usage(ledger, pending):
+    """Settle observed residuals into this turn's in-memory ledger, once."""
+    for epoch in list(pending):
+        tokens, spend = _pending_main_usage_residual(pending[epoch])
+        # Credit each successful addition immediately, so a later dimension's
+        # failure cannot make a repeated finalizer charge the first one again.
+        if tokens:
+            ledger.add_tokens(tokens)
+            _pending_main_usage_settle(pending, epoch, tokens=tokens, remote_units=0)
+        if spend:
+            ledger.add_remote_spend(spend)
+            _pending_main_usage_settle(pending, epoch, tokens=0, remote_units=spend)
+        _pending_main_usage_settle(pending, epoch, tokens=0, remote_units=0)
+
+
 def _recovery_usage_snapshot(raw):
     """Keep observed stream fields only; no estimates or missing-count zeroes."""
     if not isinstance(raw, dict):
@@ -7553,6 +7568,11 @@ async def _stream_agent_loop_body(
     )
     _budget_ledger = autonomy_budget.Ledger()
     _pending_main_usage: Dict[int, Dict] = {}
+    _finish_main_usage = functools.partial(
+        _flush_pending_main_usage, _budget_ledger, _pending_main_usage)
+    _turn_finalizers = _TURN_FINALIZERS.get()
+    if _turn_finalizers is not None:
+        _turn_finalizers.append(_finish_main_usage)
     _compaction_usage_receipts: List[Dict] = []
 
     _recovery_usage_receipts: List[Dict] = []
@@ -17269,6 +17289,12 @@ async def _stream_agent_loop_body(
         )
     except Exception:
         logger.debug("[execution-metrics] engine identity lookup failed", exc_info=True)
+    try:
+        _finish_main_usage()
+    except Exception:
+        # The wrapper will retry any uncredited residual on close. Accounting
+        # cleanup must not turn a completed answer into another failure.
+        logger.debug("main usage settlement failed", exc_info=True)
     metrics = _compute_final_metrics(
         _last_route_request_messages, full_response, total_duration, time_to_first_token,
         _last_route_context_length, real_input_tokens, real_output_tokens,
@@ -17527,39 +17553,49 @@ async def stream_agent_loop(*args, **kwargs) -> AsyncGenerator[str, None]:
         async for chunk in gen:
             yield chunk
     finally:
-        await gen.aclose()
-        for _finalize in list(_finalizers):
-            try:
-                _finalize()
-            except Exception:  # noqa: BLE001 - cleanup never masks the outcome
-                logger.debug("stream_agent_loop: turn finalizer failed", exc_info=True)
+        import sys
+        _primary_error = sys.exc_info()[1]
         try:
-            _TURN_FINALIZERS.reset(_finalizers_token)
-        except (ValueError, RuntimeError):
-            # Reset from a different context (the consumer closed the stream
-            # from another task): the value dies with this wrapper anyway.
-            _TURN_FINALIZERS.set(None)
-        _tool_clock.end_turn(_clock_token)
-        if _trace_run_token is not None:
+            await gen.aclose()
+        except Exception:
+            if _primary_error is None:
+                raise
+            # Preserve the body's existing exception (or consumer close),
+            # while still executing all independent cleanup callbacks below.
+            logger.debug("stream_agent_loop: generator close also failed")
+        finally:
+            for _finalize in list(_finalizers):
+                try:
+                    _finalize()
+                except Exception:  # noqa: BLE001 - cleanup never masks the outcome
+                    logger.debug("stream_agent_loop: turn finalizer failed", exc_info=True)
             try:
-                from src import llm_trace as _llm_trace
-                _llm_trace.reset_current_run_id(_trace_run_token)
-            except Exception:  # noqa: BLE001
-                logger.debug("stream_agent_loop: trace run id reset failed", exc_info=True)
-        if _pin_token is not None:
+                _TURN_FINALIZERS.reset(_finalizers_token)
+            except (ValueError, RuntimeError):
+                # Reset from a different context (the consumer closed the stream
+                # from another task): the value dies with this wrapper anyway.
+                _TURN_FINALIZERS.set(None)
+            _tool_clock.end_turn(_clock_token)
+            if _trace_run_token is not None:
+                try:
+                    from src import llm_trace as _llm_trace
+                    _llm_trace.reset_current_run_id(_trace_run_token)
+                except Exception:  # noqa: BLE001
+                    logger.debug("stream_agent_loop: trace run id reset failed", exc_info=True)
+            if _pin_token is not None:
+                try:
+                    from src import run_model_pin as _run_pin
+                    # Off the event loop: the restore ping is a blocking POST.
+                    await _run_pin.unpin_for_run_async(_pin_run_id, _pin_token)
+                except Exception:  # noqa: BLE001
+                    logger.debug("stream_agent_loop: model unpin failed", exc_info=True)
             try:
-                from src import run_model_pin as _run_pin
-                # Off the event loop: the restore ping is a blocking POST.
-                await _run_pin.unpin_for_run_async(_pin_run_id, _pin_token)
-            except Exception:  # noqa: BLE001
-                logger.debug("stream_agent_loop: model unpin failed", exc_info=True)
-        try:
-            mcp_mgr = get_mcp_manager()
-            if mcp_mgr is not None:
-                from src.builtin_mcp import disconnect_session_browser
-                await disconnect_session_browser(mcp_mgr, owner, session_id)
-            else:
-                from src.builtin_mcp import close_browser_session_for_task
-                close_browser_session_for_task(owner, session_id)
-        except Exception:  # noqa: BLE001 - never let cleanup mask the run's real outcome
-            logger.debug("stream_agent_loop: browser session close failed", exc_info=True)
+                mcp_mgr = get_mcp_manager()
+                if mcp_mgr is not None:
+                    from src.builtin_mcp import disconnect_session_browser
+                    await disconnect_session_browser(mcp_mgr, owner, session_id)
+                else:
+                    from src.builtin_mcp import close_browser_session_for_task
+                    close_browser_session_for_task(owner, session_id)
+            except Exception:  # noqa: BLE001 - never let cleanup mask the run's real outcome
+                logger.debug("stream_agent_loop: browser session close failed", exc_info=True)

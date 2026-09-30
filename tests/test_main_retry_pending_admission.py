@@ -62,7 +62,7 @@ def test_main_retry_is_admitted_only_below_pending_observed_limit(monkeypatch, t
     if denied:
         stop, = [e for e in events if e.get('type') == 'budget_exhausted']
         assert stop['kind'] == 'tokens' and stop['used'] == 1000
-        assert ledger.tokens == 0  # Admission still does not settle the legacy ledger.
+        assert ledger.tokens == 1000  # Finalization now settles the observed residual.
 
 
 def test_clean_context_retry_checks_accumulated_outer_rounds(monkeypatch):
@@ -78,7 +78,7 @@ def test_clean_context_retry_checks_accumulated_outer_rounds(monkeypatch):
     events = run()
     assert calls == [0, 0]
     stop, = [e for e in events if e.get('type') == 'budget_exhausted']
-    assert stop['used'] == 600 and ledger.tokens == 0
+    assert stop['used'] == 600 and ledger.tokens == 600
 
 
 @pytest.mark.parametrize('snapshots, denied, bound', [
@@ -105,7 +105,7 @@ def test_main_gate_uses_valid_snapshots_not_estimates_or_duplicate_sums(monkeypa
     stops = [e for e in events if e.get('type') == 'budget_exhausted']
     assert bool(stops) == denied
     if denied:
-        assert stops[0]['used'] == bound and ledger.tokens == 0
+        assert stops[0]['used'] == bound and ledger.tokens == bound
     else:
         assert len(calls) == 2
 

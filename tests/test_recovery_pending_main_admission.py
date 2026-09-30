@@ -97,9 +97,9 @@ def test_real_loop_checks_pending_main_before_recovery(monkeypatch, trigger, amo
     assert any(e.get('type') == 'response_replace' and 'Recovered synthetic answer.' in e.get('text', '')
                for e in events) != denied
     if denied:
-        # Admission view is conservative and read-only; omitted legacy charges
-        # remain omitted in the real ledger instead of silently being rewritten.
-        assert ledger.tokens == 0
+        # Admission remains read-only; finalization separately settles the
+        # observed contribution, without admitting another inference.
+        assert ledger.tokens == 1000
 
 
 def test_settled_previous_real_round_does_not_count_twice_at_recovery(monkeypatch):
@@ -128,6 +128,6 @@ def test_settled_previous_real_round_does_not_count_twice_at_recovery(monkeypatc
         [{'role': 'user', 'content': 'Read then answer the fixture'}], max_rounds=4,
         relevant_tools={'read_file'}, owner='admin')))
     assert calls == [0, 30, 30, 30]
-    assert ledger.tokens == 40
+    assert ledger.tokens == 60  # 30 settled main + 20 remaining main + 10 recovery.
     assert any(e.get('type') == 'response_replace' for e in events)
     assert not any(e.get('type') == 'budget_exhausted' for e in events)
