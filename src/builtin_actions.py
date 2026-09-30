@@ -463,7 +463,18 @@ async def action_tidy_documents(owner: str, **kwargs) -> Tuple[str, bool]:
 
 
 async def action_consolidate_memory(owner: str, **kwargs) -> Tuple[str, bool]:
-    """Consolidate/deduplicate memories for the owner."""
+    """Consolidate/deduplicate memories for the owner.
+
+    Runs only when there is new work since the last successful tidy-up, under
+    a lease (one tidy-up per owner at a time, across processes), and publishes
+    only the changes it decided on, applied to a fresh read of the file
+    (src/memory_consolidation.py). Memories saved while a model was deciding
+    are kept; an entry edited meanwhile is left alone.
+    """
+    _lease = None
+    _job_ok = False
+    _post = None
+    _before_ids: set = set()
     try:
         import json
         import re
@@ -495,6 +506,18 @@ async def action_consolidate_memory(owner: str, **kwargs) -> Tuple[str, bool]:
         memory_groups = {group_owner: group for group_owner, group in memory_groups.items() if group}
         if not memory_groups:
             raise TaskNoop("no memories to consolidate")
+
+        from src import memory_consolidation as _mc
+        _scope = _mc.scope_for(_owner_clean)
+        _group_entries = [m for group in memory_groups.values() for m in group]
+        if _mc.nothing_new(_scope, _group_entries):
+            raise TaskNoop("no new memory work since the last consolidation")
+        _lease = _mc.claim(_scope, f"consolidate_memory:{os.getpid()}")
+        if isinstance(_lease, _mc.work_lease.LeaseDenied):
+            _denied, _lease = _lease, None
+            raise TaskNoop(_denied.message)
+        _before = _mc.snapshot_fields(_group_entries)
+        _before_ids = set(_before)
 
         total_removed = 0
         total_cleaned = 0
@@ -729,7 +752,13 @@ async def action_consolidate_memory(owner: str, **kwargs) -> Tuple[str, bool]:
             total_removed += group_removed
 
         if total_removed or total_cleaned:
-            manager.save(all_memories)
+            _plan = _mc.make_plan(_before, all_memories)
+            _result = _mc.commit(manager, _lease, _plan, _before_ids)
+            if not _result.committed:
+                raise RuntimeError(f"memory tidy not applied: {_result.reason}")
+            _job_ok, _post = True, _result.post
+            # Report what reached the file, not what was decided on a stale read.
+            total_removed, total_cleaned = _result.dropped, _result.edited
             if ai_used:
                 reasons = ai_reasons[:3]
                 reason_text = f": {'; '.join(reasons)}" if reasons else ""
@@ -742,10 +771,15 @@ async def action_consolidate_memory(owner: str, **kwargs) -> Tuple[str, bool]:
             extra = f" (+{total_removed - len(removed_examples)} more)" if total_removed > len(removed_examples) else ""
             return f"Removed {total_removed} duplicate(s) of {total_scanned}: {preview}{extra}", True
 
+        _job_ok, _post = True, all_memories
         raise TaskNoop(f"scanned {total_scanned} memories, no duplicates")
     except Exception as e:
         logger.error(f"consolidate_memory action failed: {e}")
         return str(e), False
+    finally:
+        if _lease is not None:
+            from src import memory_consolidation as _mc_done
+            _mc_done.finish(_lease, success=_job_ok, post_entries=_post, before_ids=_before_ids)
 
 
 # Registry: action name -> async function(owner, **kwargs) -> (result_str, success_bool)

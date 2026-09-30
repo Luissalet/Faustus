@@ -224,6 +224,15 @@ def setup_memory_engine_routes() -> APIRouter:
         engine.invalidate_all_snapshots()
         return {"status": "success", "forgotten": True, "id": item_id, "tombstone": tombstone}
 
+    @router.get("/jobs")
+    async def background_jobs(request: Request) -> Dict[str, Any]:
+        """Who holds each memory upkeep job, when the last one finished and on
+        what input, and which job is backing off after a failure."""
+        from src import work_lease
+        rows = [r for r in work_lease.status()
+                if str(r.get("scope", "")).startswith(("memory-tidy:", "memory-curate:"))]
+        return {"status": "success", "jobs": rows, "count": len(rows)}
+
     @router.get("/evidence/dependents")
     async def evidence_dependents(request: Request, ref: str, kind: str,
                                   project: Optional[str] = None,

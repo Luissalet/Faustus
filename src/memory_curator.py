@@ -30,6 +30,7 @@ was created — the opposite of the point.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import threading
 from datetime import datetime
@@ -309,37 +310,142 @@ def _prune(item: Dict[str, Any], now: datetime, report: Dict[str, int]) -> bool:
     return True
 
 
+class LeaseLost(RuntimeError):
+    """A newer curation of the same scope was granted while this one ran."""
+
+
+_CURATION_ALGORITHM = "curator-1"
+
+
+def _scope_name(owner: Optional[str], project: Optional[str]) -> str:
+    return f"memory-curate:{(owner or '*')}:{(project or '*')}"
+
+
+def _input_revision(owner: Optional[str], project: Optional[str], now: datetime) -> str:
+    """Identity of what the passes would read, plus the UTC day.
+
+    The passes depend on the clock (decay, deprecation, pruning), so an
+    unchanged store is only "nothing new" within one day.
+    """
+    import hashlib
+    rows = sorted(
+        (str(i.get("id")), str(i.get("status")), str(i.get("updated_at")),
+         hashlib.sha256(str(i.get("text") or "").encode("utf-8")).hexdigest()[:16])
+        for i in engine.scoped_items(owner, project, engine.STATUSES))
+    digest = hashlib.sha256(repr(rows).encode("utf-8")).hexdigest()
+    return f"{digest}:{now.strftime('%Y-%m-%d')}"
+
+
 def curate(owner: Optional[str] = None, project: Optional[str] = None,
-           now: Optional[datetime] = None) -> Dict[str, Any]:
+           now: Optional[datetime] = None, *, skip_if_unchanged: bool = False) -> Dict[str, Any]:
     """Run every pass over one scope and report what changed.
 
     Report: ``{deduped, conflicts, inverted, promoted, demoted, pruned,
     total_active}``. Raises only if the store itself is unusable — callers on
     a hot path should use :func:`safe_curate`.
+
+    The pass is claimed with a lease (``src/work_lease.py``) on top of the
+    in-process lock, so two processes sharing the data directory do not curate
+    the same scope at once; a scope already being curated (or backing off
+    after a failure) answers ``{"skipped": ...}`` with the current count of
+    active items. ``skip_if_unchanged`` ends early, without touching anything,
+    when the last successful pass saw the same items on the same day.
     """
+    from src import work_lease
     with _CURATION_LOCK:
-        return _curate(owner, project, now)
+        now = now or engine._utcnow()
+        scope = _scope_name(owner, project)
+        try:
+            revision = _input_revision(owner, project, now)
+            if skip_if_unchanged and work_lease.is_unchanged(scope, revision, _CURATION_ALGORITHM):
+                return _skipped_report(owner, project, "no_new_work")
+            lease = work_lease.acquire(scope, f"curator:{os.getpid()}")
+        except Exception:  # noqa: BLE001 - a broken lease store never stops curation
+            logger.warning("memory curator: lease store unavailable", exc_info=True)
+            revision, lease = "", None
+        if isinstance(lease, work_lease.LeaseDenied):
+            return _skipped_report(owner, project, lease.reason)
+        guard = (lambda: None) if lease is None else _lease_guard(lease)
+        try:
+            report = _curate(owner, project, now, guard)
+        except LeaseLost:
+            report = {**_skipped_report(owner, project, "lease_lost")}
+            return report
+        except Exception:
+            if lease is not None:
+                _release(lease, False, "")
+            raise
+        if lease is not None:
+            # The revision after the pass: the pass changes the items it reads
+            # (merged evidence, new timestamps), and those changes are not new
+            # work. A write by someone else during the pass is treated as seen.
+            try:
+                after = _input_revision(owner, project, now)
+            except Exception:  # noqa: BLE001
+                after = ""
+            _release(lease, True, after)
+        return report
+
+
+def _skipped_report(owner: Optional[str], project: Optional[str], reason: str) -> Dict[str, Any]:
+    active = 0
+    try:
+        active = len([i for i in engine.scoped_items(owner, project, engine.STATUSES)
+                      if i.get("status") == "active"])
+    except Exception:  # noqa: BLE001
+        pass
+    return {"deduped": 0, "conflicts": 0, "inverted": 0, "promoted": 0, "demoted": 0,
+            "pruned": 0, "total_active": active, "skipped": reason}
+
+
+def _lease_guard(lease):
+    from src import work_lease
+
+    def guard() -> None:
+        if not work_lease.is_current(lease):
+            raise LeaseLost(lease.scope)
+    return guard
+
+
+def _release(lease, success: bool, revision: str) -> None:
+    from src import work_lease
+    try:
+        # Deterministic and cheap: a failed pass is retried on demand, no backoff.
+        work_lease.release(lease, success=success, input_revision=revision,
+                           algorithm_version=_CURATION_ALGORITHM, backoff=False)
+    except Exception:  # noqa: BLE001
+        logger.warning("memory curator: could not release the lease", exc_info=True)
 
 
 def _curate(owner: Optional[str], project: Optional[str],
-            now: Optional[datetime]) -> Dict[str, Any]:
-    """Run the passes while the process-wide curator lock is held."""
+            now: Optional[datetime], guard=lambda: None) -> Dict[str, Any]:
+    """Run the passes while the process-wide curator lock is held.
+
+    ``guard`` raises :class:`LeaseLost` between passes (and every few items in
+    the last one) when a successor holds the scope. Each pass and each item
+    write is idempotent, so stopping between them leaves a consistent store.
+    """
     now = now or engine._utcnow()
     report = {"deduped": 0, "conflicts": 0, "inverted": 0,
               "promoted": 0, "demoted": 0, "pruned": 0, "total_active": 0}
 
     items = engine.scoped_items(owner, project, engine.STATUSES)
     items = _dedupe(items, now, report)
+    guard()
 
     # Inversion before the ladder: an item that just became an anti-pattern
     # must not also be demoted for the score that made it one.
     for item in items:
         _invert(item, now, report)
+    guard()
 
     _resolve_conflicts(items, report)
+    guard()
 
     remaining: List[Dict[str, Any]] = []
-    for item in items:
+    for index, item in enumerate(items):
+        if index and index % 25 == 0:
+            guard()
         _maturity(item, now, report)
         if not _prune(item, now, report):
             remaining.append(item)
@@ -349,10 +455,11 @@ def _curate(owner: Optional[str], project: Optional[str],
 
 
 def safe_curate(owner: Optional[str] = None, project: Optional[str] = None,
-                now: Optional[datetime] = None) -> Dict[str, Any]:
+                now: Optional[datetime] = None, *, skip_if_unchanged: bool = False) -> Dict[str, Any]:
     """:func:`curate` that never raises — for schedulers and hot paths."""
     try:
-        return curate(owner=owner, project=project, now=now)
+        return curate(owner=owner, project=project, now=now,
+                      skip_if_unchanged=skip_if_unchanged)
     except Exception as exc:  # noqa: BLE001
         logger.debug("memory curator failed: %s", exc)
         return {"deduped": 0, "conflicts": 0, "inverted": 0, "promoted": 0,

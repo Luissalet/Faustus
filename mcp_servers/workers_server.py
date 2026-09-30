@@ -507,6 +507,24 @@ def render_session_usage(data: Dict[str, Any]) -> str:
     return "\n".join(out)
 
 
+def render_memory_jobs(data: Dict[str, Any]) -> str:
+    """Memory upkeep jobs (GET /api/memory-engine/jobs) as a few lines."""
+    rows = (data or {}).get("jobs") or []
+    if not rows:
+        return "No memory upkeep job has run yet."
+    out = []
+    for row in rows:
+        state = "idle"
+        if row.get("held_by"):
+            state = f"held by {row['held_by']}" + (" (lease expired)" if row.get("lease_expired") else "")
+        elif row.get("backing_off"):
+            state = f"backing off after {row.get('failures')} failure(s)"
+        mark = row.get("watermark")
+        last = f"last finished at {mark['completed_at']:.0f}" if mark else "never finished"
+        out.append(f"{row.get('scope')}: {state}; fence {row.get('last_fence')}; {last}")
+    return "\n".join(out)
+
+
 def render_run_spend(data: Dict[str, Any]) -> str:
     """One run's spend per purpose (GET /api/runs/{id}/spend)."""
     rows = (data or {}).get("purposes") or []
@@ -1013,6 +1031,16 @@ TOOLS: List[Tool] = [
         }, "required": ["session_id"]},
     ),
     Tool(
+        name="memory_jobs",
+        description=(
+            "State of Faustus's memory upkeep jobs (the tidy-up of saved memories and the learned-memory "
+            "curator): which worker holds each one, when it last finished and on what input, how many "
+            "times it failed and when it may retry. Use it to tell 'nothing to do' from 'someone is "
+            "already doing it' from 'backing off after a failure'."
+        ),
+        inputSchema={"type": "object", "properties": {}},
+    ),
+    Tool(
         name="run_spend",
         description=(
             "Where one agent run's model spend went, per purpose: main rounds, compaction, recovery, advisor, "
@@ -1457,6 +1485,9 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
                 return _text("Error: give the session_id")
             data = await asyncio.to_thread(_request, "GET", f"/api/session/{sid}/usage")
             return _text(render_session_usage(data))
+        if name == "memory_jobs":
+            data = await asyncio.to_thread(_request, "GET", "/api/memory-engine/jobs")
+            return _text(render_memory_jobs(data))
         if name == "run_spend":
             rid = urllib.parse.quote(str(args.get("run_id") or "").strip(), safe="")
             if not rid:
