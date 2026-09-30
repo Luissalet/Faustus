@@ -297,16 +297,45 @@ def _read_job_text(path: Path) -> str:
 
 
 def _read_output(rec: Dict[str, Any]) -> str:
+    # Four bytes per Unicode code point, plus decoder boundary slack. One
+    # descriptor and its initial size bound the reads, even if the log grows.
+    window = _MAX_OUTPUT_CHARS * 4 + 16
     try:
-        txt = _read_job_text(Path(rec["log_path"]))
+        with Path(rec["log_path"]).open("rb") as stream:
+            size = os.fstat(stream.fileno()).st_size
+            head_raw = stream.read(min(size, window))
+            bom = head_raw[:2]
+            utf16 = bom in (b"\xff\xfe", b"\xfe\xff")
+            encoding = ("utf-16-le" if bom == b"\xff\xfe" else "utf-16-be") if utf16 else "utf-8"
+            head = head_raw[2:] if utf16 else head_raw.removeprefix(b"\xef\xbb\xbf")
+            txt = head.decode(encoding, errors="replace")
+            if size <= window:
+                if len(txt) <= _MAX_OUTPUT_CHARS:
+                    return txt
+                tail_txt = txt
+            else:
+                offset = max(0, size - window)
+                if utf16:
+                    offset -= offset % 2
+                stream.seek(offset)
+                tail = stream.read(min(window + 1, size - offset))
+                # Discard only a partial code point at the window boundary.
+                # The extra window capacity keeps this outside retained text.
+                if utf16 and len(tail) >= 2:
+                    first = int.from_bytes(tail[:2], "little" if encoding.endswith("le") else "big")
+                    if 0xDC00 <= first <= 0xDFFF:
+                        tail = tail[2:]
+                elif not utf16:
+                    boundary = 0
+                    while boundary < min(3, len(tail)) and 0x80 <= tail[boundary] <= 0xBF:
+                        boundary += 1
+                    tail = tail[boundary:]
+                # Tail uses the explicit codec: an embedded BOM is content.
+                tail_txt = tail.decode(encoding, errors="replace")
     except Exception:
         return ""
-    if len(txt) > _MAX_OUTPUT_CHARS:
-        # Keep head + tail — the interesting bits are usually at both ends.
-        head = txt[: _MAX_OUTPUT_CHARS // 2]
-        tail = txt[-_MAX_OUTPUT_CHARS // 2:]
-        txt = head + "\n…[truncated]…\n" + tail
-    return txt
+    half = _MAX_OUTPUT_CHARS // 2
+    return txt[:half] + "\n…[truncated]…\n" + tail_txt[-half:]
 
 
 def _prune(jobs: Dict[str, Dict[str, Any]], now: float) -> bool:
