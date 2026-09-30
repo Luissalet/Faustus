@@ -19,6 +19,8 @@ BM25 is better — it is that neither of them should be deciding alone.
 """
 from __future__ import annotations
 
+import zlib
+
 import pytest
 
 from tests.test_tool_index_memory_lane import _chroma_down, _use_embedder
@@ -48,7 +50,10 @@ class EnglishOnlyEmbedder:
             vec = [0.0] * self.dim
             for word in str(text).lower().split():
                 if word.isascii():
-                    vec[hash(word) % self.dim] += 1.0
+                    # crc32, not hash(): str hashing is salted per process,
+                    # which made this lane's collisions (and the test) vary
+                    # from run to run.
+                    vec[zlib.crc32(word.encode()) % self.dim] += 1.0
                 else:
                     # Non-ASCII: a stable but meaningless bucket, which is
                     # what "the model has never seen this token" looks like
