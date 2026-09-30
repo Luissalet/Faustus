@@ -3149,7 +3149,7 @@ def test_force_answer_recovery_persists_and_bills_pinned_fallback_route(
 
     async def fake_compact(
         session, url, model, messages, headers=None, owner=None,
-        *, persist=True, compaction_state=None,
+        *, persist=True, compaction_state=None, _usage_observer=None,
     ):
         return (list(messages), 4096, False)
 
@@ -3552,7 +3552,7 @@ def test_agent_persists_only_answering_route_compaction(monkeypatch):
 
     async def fake_compact(
         session, url, model, messages, headers=None, owner=None,
-        *, persist=True, compaction_state=None,
+        *, persist=True, compaction_state=None, _usage_observer=None,
     ):
         assert persist is False
         compaction_state.update({"route": model, "applied": False})
@@ -3607,7 +3607,7 @@ def test_agent_deferred_compaction_survives_duplicate_primary_fallback(monkeypat
 
     async def fake_compact(
         session, url, model, messages, headers=None, owner=None,
-        *, persist=True, compaction_state=None,
+        *, persist=True, compaction_state=None, _usage_observer=None,
     ):
         assert persist is False
         compacted_routes.append((url, model))
