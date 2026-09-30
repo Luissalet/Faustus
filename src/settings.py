@@ -1259,6 +1259,16 @@ DEFAULT_SETTINGS = {
     # Keyed dispatch: file writes on disjoint paths run side by side with the
     # round's other independent calls (src/agent_loop.py).
     "agent_parallel_writes": True,
+    # Resource claims (src/resource_claims.py): every file call takes read or
+    # write claims before it runs, so a call that touches what another run is
+    # writing waits for it. off | files | files_and_external (also MCP servers
+    # and named processes). A call waits at most agent_resource_claim_wait_s
+    # seconds and is then refused, not started.
+    "agent_resource_claims": "files",
+    "agent_resource_claim_wait_s": 120,
+    # A guarded preview/apply refuses when the file's size or mtime changed
+    # after the preview was read, not only when its bytes did.
+    "agent_external_writer_check": True,
     # How many generations of workers one turn may produce
     # (src/subagent_permissions.py). 1 = the coordinator's workers may not
     # delegate again. Registered here so the ceiling is visible in Settings:

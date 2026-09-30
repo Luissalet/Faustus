@@ -122,6 +122,19 @@ GROUPS: list[dict[str, Any]] = [
                   "When one round asks for several independent calls, file edits (write_file, edit_file, "
                   "apply_patch) on paths no other call in the group touches run side by side with them. Calls "
                   "that could see each other's effect keep their order. Off while doubt review is on."),
+            _select("agent_resource_claims", "Resource claims for tool calls",
+                    "files = every file call takes read or write claims first; a call that touches what "
+                    "another run is writing waits for it, and readers of the same file never wait for "
+                    "each other. files_and_external also claims MCP servers and named processes. "
+                    "off = no claims.",
+                    ["files", "files_and_external", "off"]),
+            _int("agent_resource_claim_wait_s", "Claim wait limit (s)",
+                 "How long a call waits for the resources another call holds before it is refused "
+                 "instead of started.",
+                 1, 3600),
+            _bool("agent_external_writer_check", "Refuse an apply after an outside change",
+                  "When an edit was previewed and reviewed, refuse to apply it if the file's size or "
+                  "modification time changed in between, even if the bytes look the same."),
             _int("agent_auto_continue_cycles", "Auto-continue cycles",
                  "When the step cap hits mid-task, the harness continues by itself this many times "
                  "(each grants another Max steps) before showing the Continue button. 0 = always ask.",

@@ -296,6 +296,32 @@ def _review_preview_conflict(tool: str, path: str, expected: Optional[str],
             "current_revision": current, "next_action": "read_current_and_reconcile"}
 
 
+def _external_writer_check_enabled() -> bool:
+    try:
+        from src.settings import get_setting
+        return bool(get_setting("agent_external_writer_check", True))
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _identity_conflict(tool: str, path: str, expected) -> Optional[Dict[str, Any]]:
+    """Refuse an apply when the file's size or mtime differ from the preview's.
+
+    The content revision already catches changed bytes; this also catches a
+    rewrite that restored the same bytes (mtime) and is checked inside the
+    same mutex, right after the revision comparison. ``expected`` is the
+    fingerprint taken when the preview was read, or None when none was taken.
+    """
+    if expected is None or not _external_writer_check_enabled():
+        return None
+    from src import resource_claims as _rc
+    current = _rc.stat_identity(path)
+    changed = _rc.drift(expected, current)
+    if not changed or changed == ["unknown"]:
+        return None
+    return _rc.external_writer_conflict(tool, path, expected, current, changed)
+
+
 class EditFileTool:
     async def execute(self, content: str, ctx: dict) -> dict:
         from src.tool_execution import _resolve_tool_path, _resolve_search_root, _truncate
@@ -334,7 +360,7 @@ class EditFileTool:
         # needs no pre-write pass — it never blocks, so the section is
         # appended after the real write below.
         _dr_gate = None
-        _preview_known, _preview_revision = False, None
+        _preview_known, _preview_revision, _preview_identity = False, None, None
         try:
             from src import doubt_review as _doubt_review
         except Exception:  # noqa: BLE001
@@ -343,6 +369,8 @@ class EditFileTool:
             try:
                 _preview, _pcrlf, _preview_revision = await asyncio.to_thread(_read_text_lf, path)
                 _preview_known = True
+                from src import resource_claims as _rc
+                _preview_identity = _rc.stat_identity(path)
                 _pstatus, _pupdated = _replace_text(_preview, old_lf, new_lf, replace_all)
                 if _pstatus == "ok":
                     _pdiff = _unified_diff(_preview, _pupdated, path)
@@ -370,6 +398,8 @@ class EditFileTool:
                     raise
                 if _review_guard:
                     conflict = _review_preview_conflict("edit_file", path, _preview_revision, revision_now)
+                    if conflict is None:
+                        conflict = _identity_conflict("edit_file", path, _preview_identity)
                     if conflict is not None:
                         return original, conflict, "conflict"
                 if base_revision:
@@ -646,7 +676,7 @@ class WriteFileTool:
         # WITHOUT writing, so a "concerns" verdict can refuse the write
         # entirely. Advisory mode needs no pre-write pass.
         _dr_gate = None
-        _preview_known, _preview_revision = False, None
+        _preview_known, _preview_revision, _preview_identity = False, None, None
         try:
             from src import doubt_review as _doubt_review
         except Exception:  # noqa: BLE001
@@ -657,8 +687,12 @@ class WriteFileTool:
                 try:
                     _preview, _pcrlf, _preview_revision = await asyncio.to_thread(_read_text_lf, path)
                     _preview_known = True
+                    from src import resource_claims as _rc
+                    _preview_identity = _rc.stat_identity(path)
                 except FileNotFoundError:
                     _preview_known, _preview_revision = True, None
+                    from src import resource_claims as _rc
+                    _preview_identity = _rc.stat_identity(path)
                 except (IsADirectoryError, UnicodeDecodeError, OSError):
                     _preview = ""
                 _pdiff = _unified_diff(_preview, body, path)
@@ -683,6 +717,8 @@ class WriteFileTool:
                         old, crlf, revision_now = "", False, None
                     if _review_guard and current_known:
                         conflict = _review_preview_conflict("write_file", path, _preview_revision, revision_now)
+                        if conflict is None:
+                            conflict = _identity_conflict("write_file", path, _preview_identity)
                         if conflict is not None:
                             return conflict, None, "conflict"
                     # H4: a turn-scoped RewritePolicy (src/rewrite_policy.py) —
@@ -802,6 +838,7 @@ class ApplyPatchTool:
                 return {"error": "apply_patch: no file operations found", "exit_code": 1}
             prepared = []
             prepared_revisions = {}
+            prepared_identities = {}
             prepared_paths = set()
             for op in ops:
                 path = _resolve_tool_path(op["path"])
@@ -847,6 +884,8 @@ class ApplyPatchTool:
                         return conflict
                 prepared.append((kind, path, old, new, crlf))
                 prepared_revisions[path] = revision_now
+                from src import resource_claims as _rc
+                prepared_identities[path] = _rc.stat_identity(path)
         except (ValueError, UnicodeDecodeError, PermissionError, OSError) as e:
             return {"error": f"apply_patch: {e}", "exit_code": 1}
 
@@ -928,6 +967,9 @@ class ApplyPatchTool:
                             "current_path_exists": occupied or data is not None,
                             "next_action": "read_current_and_reconcile",
                         }
+                    external = _identity_conflict("apply_patch", p, prepared_identities.get(p))
+                    if external is not None:
+                        return None, external
                 return edit_journal.apply_batch(
                     journal_ops, read_bytes=_read_bytes, write_bytes=_write_bytes,
                     delete_path=_delete_path, apply_op=_apply_op), None

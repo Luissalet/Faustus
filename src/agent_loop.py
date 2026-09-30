@@ -97,6 +97,13 @@ from src.agent_tools import (
     MAX_AGENT_ROUNDS,
 )
 
+from src.resource_claims import (  # noqa: E402 - H18: claims before parallel calls
+    ClaimSet as _ClaimSet,
+    claims_for_call as _claims_for_call,
+    run_with_claims,
+    scope_setting as _claims_scope_setting,
+)
+
 logger = logging.getLogger(__name__)
 
 _BROWSER_MCP_PREFIX = "mcp__builtin_browser__"
@@ -10983,7 +10990,7 @@ async def _stream_agent_loop_body(
 
         async def _run_approved_tool():
             try:
-                return await execute_tool_block(
+                return await run_with_claims(approved_block, workspace, lambda: execute_tool_block(
                     approved_block,
                     session_id=session_id,
                     disabled_tools=disabled_tools,
@@ -11012,7 +11019,7 @@ async def _stream_agent_loop_body(
                         "turn_model": model,
                         "turn_endpoint_url": endpoint_url,
                     },
-                )
+                ), owner=str(session_id or ""))
             finally:
                 await approved_progress_q.put(None)
 
@@ -15646,6 +15653,8 @@ async def _stream_agent_loop_body(
         if _parallel_cap > 1 and len(tool_blocks) > 1:
             _group_idx: List[int] = []
             _seen_keys: Set[str] = set()
+            _claim_set = _ClaimSet()  # H18: read/write claims of the calls admitted so far
+            _claim_scope = _claims_scope_setting()
             _read_scopes: List[Optional[List[str]]] = []  # workspace reads' paths (None = whole workspace)
             _write_paths: List[str] = []
             for _pi, _pblock in enumerate(tool_blocks):
@@ -15715,6 +15724,8 @@ async def _stream_agent_loop_body(
                 if _pkey in _seen_keys:
                     break
                 _seen_keys.add(_pkey)
+                if not _claim_set.try_add(_claims_for_call(_pblock.tool_type, _pblock.content, workspace, _claim_scope)):
+                    break
                 _group_idx.append(_pi)
                 if _is_write:
                     _write_paths.extend(_ppaths)
@@ -15733,7 +15744,7 @@ async def _stream_agent_loop_body(
                 async def _run_prefetched(idx: int):
                     _blk = tool_blocks[idx]
                     _pt0 = time.monotonic()
-                    _pres = await execute_tool_block(
+                    _pres = await run_with_claims(_blk, workspace, lambda: execute_tool_block(
                         _blk,
                         session_id=session_id,
                         disabled_tools=disabled_tools,
@@ -15761,7 +15772,7 @@ async def _stream_agent_loop_body(
                             "turn_model": model,
                         "turn_endpoint_url": endpoint_url,
                         },
-                    )
+                    ), owner=str(session_id or ""))
                     _prefetched_duration_ms[idx] = round(max(0.0, (time.monotonic() - _pt0) * 1000.0), 1)
                     return idx, _pres
                 logger.info(
@@ -16185,7 +16196,7 @@ async def _stream_agent_loop_body(
                     async def _run_tool():
                         _forks.adopt(_fork_trace)  # the tie fork records into this turn's trace
                         try:
-                            return await execute_tool_block(
+                            return await run_with_claims(block, workspace, lambda: execute_tool_block(
                                 block,
                                 session_id=session_id,
                                 disabled_tools=disabled_tools,
@@ -16214,7 +16225,7 @@ async def _stream_agent_loop_body(
                                     "turn_model": model,
                         "turn_endpoint_url": endpoint_url,
                                 },
-                            )
+                            ), owner=str(session_id or ""))
                         finally:
                             # Sentinel so the drainer knows to stop.
                             await _progress_q.put(None)
