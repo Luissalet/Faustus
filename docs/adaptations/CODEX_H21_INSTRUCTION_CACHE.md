@@ -85,3 +85,5 @@ TTL5s se conserva; desactivada evita IO. Tres fallos antesfix por edición/borra
 trasTTL y desactivación, corregidos. Selección171 correctas/1omitida6,78s;
 coordinador13 focales correctas1,03s. No modelos ni aprobación nueva.
 Omite test_permission_bits_are_preserved por permisos POSIX en Windows.
+
+Estado vigente (historia anterior preservada): objetivos freshness cerrado en42e6d978; aprobación conjunta reglas+instrucciones a327ccd3 y digestpropio no universal. Lectura de objetivos sin caché stale evaluada con igualdad tamaño/mtime/updated_at: título actualizado visible; sin fix justificado. No repetir esa evaluación sin pregunta nueva.

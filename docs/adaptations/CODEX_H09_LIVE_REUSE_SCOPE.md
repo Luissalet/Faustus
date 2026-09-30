@@ -101,3 +101,21 @@ Final del agente: 300 correctas y 1 omisión en18,37s, 11 módulos, 16 nuevas. C
 Piloto standing cerrado; **consulta híbrida sigue desconocida**. Nueva evaluación real: MemoryVector devuelve parcial/vacío ante error de una lane; petición lanes=('lexical',) consulta vector store igualmente. Primitiva strict opt-in en implementación separada; política lexical-only pendiente. H09 general parcial (versiones/configuración universales y entrega efectiva pendientes). Fuente original ya visitada: https://github.com/openai/codex/tree/b1e72963c3b71a9265a551e54beff078384efed9; adaptación propia, sin repetir radar41.
 
 Precisión del lote99d27ee5: única omisión test_document_reuse_freshness.py::test_real_chroma_compiler_freshness (requires isolated full Chroma QA runtime; entorno principal chromadb-client). Ninguna prueba standing omitida. QA documental real ya44 correctas enruntime aislado tras169c5bd2. Checkpoint documental69b1918b.
+
+
+### VISITADO / IMPLEMENTADO — MemoryVector strict opt-in
+
+`c0514371`: MemoryVectorStore.search(strict=True) reutiliza query_lanes_strict: count una vez por lane capturada, vacío sólo si count conocido0; cualquier error count/encode/query/shape rechaza resultado entero en vez de certificar parcial. Query/k válidos requeridos incluso vacío. Distancia→score, prioridad custom, ranking/dedupe y defaultlegacy conservados. Sin initialize/reconnect/migrate/reindex durante consulta strict.
+
+Final126 correctas/1 omitida15,23s en6módulos. 24 nuevas:23 enruntime principal y1 Chroma real omitida por cliente thin (test_memory_vector_strict_queries.py::test_real_chroma_query_absence_and_partial_failure). QA aisladafullChroma1.5.9:24 correctas0,69s; coordinador24 correctas0,67s con3 warnings config asyncio_mode/timeout/timeout_method por plugins no cargados. PersistentClient temporal real, vectors3D explícitos/encoder determinista, consulta/vacío/colección borrada y lane válida junto lane fallida. Sin modelos, servicio ni DB personal. Script/artifact D:/LocalAI/tmp/chroma-strict-qa-20260930/run_memory_vector_qa.py y memory-vector-qa-result.json.
+
+Primitiva cerrada; aún no conectada a recibo híbrido ni lectura SQLite estricta híbrida. Política lexical-only en incremento separado. Fuente original ya visitada: https://github.com/openai/codex/tree/b1e72963c3b71a9265a551e54beff078384efed9; implementación propia, no revisión upstream/radar repetida.
+
+
+### VISITADO / IMPLEMENTADO — ámbito y vigencia al reabrir memoria por ID
+
+Nueva pregunta by-ID frente a búsqueda: fetch_ref real→MemoryEngineSource.fetch→SQLite permitía owner vacío leer privado, proyecto diferente/vacío recuperar fila de otro workspace, secret y ventana no vigente. Ranking posterior no recupera scope: candidate usa proyecto del request y no lleva sensibilidad/ventanas completas. Repro corregido de fixture:6 fallos reales y6 positivos antes cambio; dos intentos previos usaron nombre de columna inexistente last_used_at/last_used y no certifican esos positivos.
+
+`9dc7eeed`: _fetch rechaza storedowner no vacío distinto del request (también ownerblank), storedproject no vacío distinto de scope actual, secret y !is_valid_now. Globales blank siguen permitidos; workspace y fallback project_id conservados. Gate incognito antes get_item. Sin touch ni cambio acceso/last_accessed. Lote2filespropios,12nuevas; selección98 correctas3,73s (sources/standing/freshness), segunda selección con recall real + deferredphase **48 correctas2,72s**. Una selección inicial tenía test_context_engine_expand.py inexistente:0 tests, sustituida por recall existente. DB temporales reales, sin GPU/DB personal.
+
+Se cierra guard de reabrir por ID, NO lectorreadonly de get_item (usa _db legacy), atomicidad snapshot ni epochs universales. Fuente original: https://github.com/openai/codex/tree/b1e72963c3b71a9265a551e54beff078384efed9, contratos locales de memoria/contexto; nueva pregunta no repetición de revisión cerrada.
