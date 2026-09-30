@@ -26,7 +26,7 @@ import mcp_servers.context_engine_server as ces
 TOOL_NAMES = {
     "context_compile", "context_explain", "context_blocks", "context_capsule",
     "context_experiences", "context_code_index", "context_findings",
-    "context_diagnostics", "context_recall", "context_prompt_audit", "context_continuity", "context_instructions",
+    "context_diagnostics", "context_recall", "context_prompt_audit", "context_continuity", "context_instructions", "context_model_capabilities",
 }
 
 

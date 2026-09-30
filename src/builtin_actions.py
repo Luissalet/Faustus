@@ -3436,7 +3436,41 @@ async def action_cookbook_serve(
     return f"Launched {repo_id} (session {sid})", True
 
 
+async def action_probe_model_capabilities(owner: str, command: str = "", **kwargs) -> Tuple[str, bool]:
+    """Probe an OpenAI-compatible model endpoint and file what it did.
+
+    `command` is the JSON config string the task carries in `prompt`:
+    {"endpoint_id": "...", "model": "...", "probes": ["tool_calling", ...]}
+    (`probes` optional). Results are filed under the endpoint's current
+    connection revision (src/openai_probes.py); a server that cannot be reached
+    leaves earlier observations untouched and is reported as unknown.
+    """
+    import json
+    try:
+        cfg = json.loads(command or "{}")
+        if not isinstance(cfg, dict):
+            raise ValueError("config must be an object")
+    except Exception:
+        return f"Invalid JSON config: {command!r}", False
+    import asyncio
+    from src import openai_probes
+    try:
+        result = await asyncio.to_thread(
+            openai_probes.probe_endpoint, str(cfg.get("endpoint_id") or ""), str(cfg.get("model") or ""),
+            owner=owner or None, include=cfg.get("probes") if isinstance(cfg.get("probes"), list) else None)
+    except openai_probes.ProbeRefused as exc:
+        return f"Probe refused: {exc}", False
+    except Exception as exc:  # noqa: BLE001 - reported to the task, never raised into the scheduler
+        logger.error("probe_model_capabilities failed: %s", exc)
+        return f"Probe failed: {type(exc).__name__}", False
+    rows = [f"{r['capability']}: {r['verdict']}" for r in result["capabilities"]
+            if r["verdict"] != "not_declared"]
+    return (f"{result['model']} @ {result['endpoint_id']} [{result['protocol']}] "
+            + "; ".join(rows or ["nothing probed"])), True
+
+
 BUILTIN_ACTIONS = {
+    "probe_model_capabilities": action_probe_model_capabilities,
     "tidy_sessions": action_tidy_sessions,
     "tidy_documents": action_tidy_documents,
     "consolidate_memory": action_consolidate_memory,
@@ -3466,6 +3500,7 @@ BUILTIN_ACTIONS.update(_WATCH_ACTIONS)
 # Descriptions for the UI/API
 BUILTIN_ACTION_INFO = {
     **_WATCH_ACTION_INFO,
+    "probe_model_capabilities": "Probe an OpenAI-compatible model endpoint (tool calls, streaming tool calls, JSON mode, vision) and record what it actually did, apart from what it declares",
     "tidy_sessions": "Clean up empty chat sessions and auto-sort into folders",
     "tidy_documents": "Remove junk/empty documents",
     "consolidate_memory": "Remove duplicate memories",

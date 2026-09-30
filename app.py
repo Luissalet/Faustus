@@ -1155,6 +1155,11 @@ app.include_router(setup_workspace_routes())
 from routes.workspace_trust_routes import setup_workspace_trust_routes
 app.include_router(setup_workspace_trust_routes())
 
+# What an OpenAI-compatible model endpoint declares vs what it was observed to do
+# (src/openai_probes.py): supported / unsupported / unknown, filed per endpoint revision.
+from routes.model_probe_routes import setup_model_probe_routes
+app.include_router(setup_model_probe_routes())
+
 # Projects (chat folder + workspace + standing instructions + file-backed memory)
 from routes.project_routes import setup_project_routes
 app.include_router(setup_project_routes())

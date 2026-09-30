@@ -426,6 +426,73 @@
   opacity: 0.6;
 }
 
+.fs-set__ep-wide {
+  grid-column: 1 / -1;
+}
+
+/* Declared vs observed capabilities of one endpoint's model (Settings → Models). */
+.fs-epcap {
+  display: grid;
+  gap: var(--fs-space-2);
+  padding-block-start: var(--fs-space-2);
+  border-block-start: 1px solid var(--fs-border);
+}
+.fs-epcap__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-3);
+}
+.fs-epcap__pick,
+.fs-epcap__opt {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  font-size: var(--fs-label-size);
+}
+.fs-epcap__pick select {
+  font: inherit;
+  max-inline-size: 22rem;
+  background: var(--fs-surface-1);
+  color: var(--fs-text-1);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-control);
+  padding: 4px 8px;
+}
+.fs-epcap__table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+.fs-epcap__table th {
+  text-align: start;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fs-text-3);
+  padding: var(--fs-space-1) var(--fs-space-2);
+}
+.fs-epcap__table td {
+  padding: var(--fs-space-1) var(--fs-space-2);
+  border-block-start: 1px solid var(--fs-border);
+  vertical-align: top;
+}
+.fs-epcap__verdict { font-weight: 600; }
+.fs-epcap__verdict[data-verdict='verified'] { color: var(--fs-success); }
+.fs-epcap__verdict[data-verdict='unsupported'] { color: var(--fs-danger); }
+.fs-epcap__verdict[data-verdict='undetermined'] { color: var(--fs-warning); }
+.fs-epcap__verdict[data-verdict='declared_unverified'],
+.fs-epcap__verdict[data-verdict='declared_unsupported'],
+.fs-epcap__verdict[data-verdict='not_declared'] { color: var(--fs-text-2); }
+.fs-epcap__flag { color: var(--fs-warning); }
+.fs-epcap__why { color: var(--fs-text-3); }
+@media (max-width: 600px) {
+  .fs-epcap__table thead { display: none; }
+  .fs-epcap__table tr { display: grid; grid-template-columns: 1fr 1fr; }
+  .fs-epcap__table td:first-child { grid-column: 1 / -1; font-weight: 600; }
+}
+
 .fs-set__ep-main {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);

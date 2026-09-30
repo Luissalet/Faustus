@@ -499,6 +499,34 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="context_model_capabilities",
+            description=(
+                "What an OpenAI-compatible model endpoint declares versus what it was "
+                "observed to do, per capability: tool calling, streaming tool calls, JSON "
+                "mode, vision, effective context. Each row says declared (true / false / "
+                "none), probed (true / false / none), a verdict (verified, unsupported, "
+                "declared_unverified, declared_unsupported, undetermined, not_declared) "
+                "and whether the observation contradicts the declaration. Probes are "
+                "filed under the endpoint's connection revision, so nothing recorded "
+                "before it was reconfigured counts. Actions: read (default, no network), "
+                "probe (sends short requests to the endpoint, files the results), "
+                "probe_url (same against a bare address, nothing filed)."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["read", "probe", "probe_url"]},
+                    "endpoint_id": {"type": "string", "description": "Registered model endpoint."},
+                    "model": {"type": "string", "description": "Model name on that endpoint."},
+                    "base_url": {"type": "string", "description": "probe_url: server address, usually ending in /v1."},
+                    "probes": {"type": "array", "items": {"type": "string"},
+                               "description": "tool_calling, streaming_tool_calls, json_mode, vision, "
+                                              "context_length_effective (default: the first three)."},
+                },
+                "required": ["model"],
+            },
+        ),
+        Tool(
             name="context_instructions",
             description=(
                 "Which instruction files apply to a path inside a workspace, in order "
@@ -536,6 +564,7 @@ _WRITE_ACTIONS = {
     "context_code_index": ("refresh",),
     "context_findings": ("post",),
     "context_continuity": ("revoke_carry",),
+    "context_model_capabilities": ("probe", "probe_url"),
 }
 
 
@@ -843,7 +872,29 @@ _HANDLERS = {
     "context_experiences": _tool_experiences,
     "context_findings": _tool_findings,
 }
+async def _tool_model_capabilities(owner: str, args: dict) -> list[TextContent]:
+    from src import openai_probes as op
+    action = str(args.get("action") or "read")
+    model = str(args.get("model") or "")
+    endpoint_id = str(args.get("endpoint_id") or "")
+    probes = args.get("probes")
+    include = [str(p) for p in probes] if isinstance(probes, list) else None
+    try:
+        if action == "probe_url":
+            result = await asyncio.to_thread(op.probe_url, str(args.get("base_url") or ""), model,
+                                             include=include)
+        elif action == "probe":
+            result = await asyncio.to_thread(op.probe_endpoint, endpoint_id, model,
+                                             owner=owner or None, include=include)
+        else:
+            result = await asyncio.to_thread(op.read_endpoint, endpoint_id, model, owner=owner or None)
+    except op.ProbeRefused as exc:
+        return _json_result({"ok": False, "error": str(exc), "status": exc.status})
+    return _json_result({"ok": True, **result})
+
+
 _ASYNC_HANDLERS = {
+    "context_model_capabilities": _tool_model_capabilities,
     "context_compile": _tool_compile,
     "context_explain": _tool_explain,
     "context_recall": _tool_recall,

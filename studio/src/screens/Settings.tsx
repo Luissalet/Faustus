@@ -2,6 +2,7 @@ import {
   Bot,
   Check,
   Copy,
+  ListChecks,
   GitBranch,
   Globe,
   HardDrive,
@@ -83,6 +84,7 @@ import { AgentPolicyFields } from './source-control/AgentPolicyFields';
 import { isOpenRouterEndpoint } from '../adapters/openrouter';
 import { OpenRouterPrefsSection } from './settings/OpenRouterPrefs';
 import { ModelRouterSection } from './settings/ModelRouter';
+import { EndpointCapabilities } from './settings/EndpointCapabilities';
 import { t, tn } from '../i18n';
 
 /**
@@ -150,8 +152,10 @@ const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot; admin?: bool
 
 /* ── Models: endpoints ── */
 
-function ModelsSection({ endpoints, onChanged, say, onOpenOpenRouterPrefs }: { endpoints: ModelEndpoint[] | null; onChanged: () => void; say: (t: string) => void; onOpenOpenRouterPrefs: (endpointId: string) => void }) {
+function ModelsSection({ endpoints, onChanged, say, onOpenOpenRouterPrefs, admin }: { endpoints: ModelEndpoint[] | null; onChanged: () => void; say: (t: string) => void; onOpenOpenRouterPrefs: (endpointId: string) => void; admin: boolean }) {
   const [adding, setAdding] = useState(false);
+  // Which endpoint has its declared-vs-observed capability table open.
+  const [capsFor, setCapsFor] = useState<string | null>(null);
   // Copilot and a ChatGPT plan have no key to paste: they sign in the way a
   // TV app does, and the server makes the endpoint at the end.
   const [signingIn, setSigningIn] = useState(false);
@@ -258,6 +262,14 @@ function ModelsSection({ endpoints, onChanged, say, onOpenOpenRouterPrefs }: { e
                 {ep.models.length > 0 && <span className="fs-set__ep-models">{ep.models.slice(0, 8).join(' · ')}{ep.models.length > 8 ? ` · +${ep.models.length - 8}` : ''}</span>}
               </div>
               <div className="fs-set__ep-actions">
+                <IconButton
+                  icon={ListChecks}
+                  label={t('What it declares and what it does')}
+                  size="sm"
+                  disabled={!ep.enabled || ep.modelType !== 'llm'}
+                  onClick={() => setCapsFor((cur) => (cur === ep.id ? null : ep.id))}
+                  testId={`ep-caps-toggle-${ep.id}`}
+                />
                 {isOpenRouterEndpoint(ep.baseUrl) && (
                   <IconButton
                     icon={SlidersHorizontal}
@@ -312,6 +324,11 @@ function ModelsSection({ endpoints, onChanged, say, onOpenOpenRouterPrefs }: { e
                   }}
                 />
               </div>
+              {capsFor === ep.id && (
+                <div className="fs-set__ep-wide">
+                  <EndpointCapabilities endpoint={ep} admin={admin} say={say} />
+                </div>
+              )}
             </article>
           ))}
         </div>
@@ -1717,7 +1734,7 @@ export function SettingsScreen() {
         <div className="fs-set__body">
           {section === 'general' && <AppearanceSection say={say} />}
           {section === 'device' && <ThisDeviceSection say={say} />}
-          {section === 'models' && <ModelsSection endpoints={endpoints} onChanged={loadEps} say={say} onOpenOpenRouterPrefs={openOpenRouterPrefs} />}
+          {section === 'models' && <ModelsSection endpoints={endpoints} onChanged={loadEps} say={say} onOpenOpenRouterPrefs={openOpenRouterPrefs} admin={admin} />}
           {section === 'openrouter' && <OpenRouterPrefsSection endpoints={endpoints} focusEndpointId={openRouterFocusId} say={say} />}
           {section === 'local' && <LocalModelsSection admin={admin} say={say} />}
           {section === 'model_router' && <ModelRouterSection say={say} />}

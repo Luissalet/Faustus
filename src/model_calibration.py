@@ -168,6 +168,82 @@ def explicit_native_protocol(endpoint_url: str) -> str:
     return NATIVE_OLLAMA_PROTOCOL if path in ("/api", "/api/chat") else ""
 
 
+OPENAI_COMPATIBLE_VENDOR = "openai_compatible"
+OPENAI_CHAT_PROTOCOL = "openai_chat_completions"
+
+
+def explicit_openai_protocol(chat_url: str) -> str:
+    """The protocol of a *resolved chat URL*: only a path that ends in
+    ``/chat/completions`` is this wire format. A messages-style URL, an
+    Ollama native chat URL or a subscription responses URL is another protocol
+    and is never guessed into this one."""
+    from urllib.parse import urlsplit
+    try:
+        path = urlsplit(str(chat_url or "")).path.rstrip("/")
+    except ValueError:
+        return ""
+    return OPENAI_CHAT_PROTOCOL if path.endswith("/chat/completions") else ""
+
+
+#: declared capability name -> the tested key that can confirm or refute it
+DECLARED_TO_TESTED = {"tools": TEST_TOOL_CALLING, "vision": TEST_VISION}
+
+
+def probe_state(result: Any) -> str:
+    """``supported`` / ``unsupported`` / ``unknown`` for one stored probe result.
+    Only an exact boolean is an observation; everything else is unknown."""
+    ok = result.get("ok") if isinstance(result, Mapping) else None
+    return "supported" if ok is True else "unsupported" if ok is False else "unknown"
+
+
+def capability_states(manifest: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    """Declared, probed and unsupported kept apart, one row per capability.
+
+    ``declared`` is what the provider or the operator said (True / False / None
+    for no statement); ``probed`` is what this install observed for exactly this
+    endpoint, revision and protocol (True / False / None for not observed or
+    inconclusive). ``verdict``: ``verified`` (observed to work), ``unsupported``
+    (observed not to work), ``declared_unverified`` / ``declared_unsupported`` (stated
+    either way, never observed), ``not_declared`` (neither) and ``undetermined``
+    (an attempt was inconclusive).
+    ``conflict`` marks a declaration the observation contradicts.
+    """
+    announced = manifest.get("announced") if isinstance(manifest, Mapping) else None
+    caps = announced.get("capabilities") if isinstance(announced, Mapping) else None
+    caps = caps if isinstance(caps, Mapping) else {}
+    tested = manifest.get("tested") if isinstance(manifest, Mapping) else None
+    tested = tested if isinstance(tested, Mapping) else {}
+    declared_for = {tested_key: declared for declared, tested_key in DECLARED_TO_TESTED.items()}
+    rows: List[Dict[str, Any]] = []
+    for key in TEST_KEYS:
+        result = tested.get(key)
+        declared_name = declared_for.get(key)
+        declared = caps.get(declared_name) if declared_name and declared_name in caps else None
+        declared = declared if isinstance(declared, bool) else None
+        observed = probe_state(result)
+        probed = True if observed == "supported" else False if observed == "unsupported" else None
+        evidence = result.get("evidence") if isinstance(result, Mapping) else None
+        evidence = evidence if isinstance(evidence, Mapping) else {}
+        attempted = isinstance(result, Mapping) and bool(result.get("tested_at")) and not evidence.get("skipped")
+        if observed == "supported":
+            verdict = "verified"
+        elif observed == "unsupported":
+            verdict = "unsupported"
+        elif attempted:
+            verdict = "undetermined"
+        elif declared is None:
+            verdict = "not_declared"
+        else:
+            verdict = "declared_unverified" if declared else "declared_unsupported"
+        rows.append({
+            "capability": key, "declared": declared, "probed": probed, "verdict": verdict,
+            "conflict": declared is not None and probed is not None and declared != probed,
+            "tested_at": str(result.get("tested_at") or "") if isinstance(result, Mapping) else "",
+            "status": evidence.get("status"), "reason": str(evidence.get("reason") or ""),
+        })
+    return rows
+
+
 def _calibration_scope(*, vendor: str, model_id: str, endpoint_id: str,
                        protocol: str, digest: str = "", endpoint_revision: str = "") -> Dict[str, str]:
     vendor, endpoint_id, protocol = str(vendor or "").strip().lower(), str(endpoint_id or "").strip(), str(protocol or "").strip()

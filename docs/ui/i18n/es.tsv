@@ -8888,3 +8888,23 @@ unnamed	sin nombre
 {n} calls	{n} llamadas
 version	versión
 unversioned	sin versión
+Works	Funciona
+Not supported	No compatible
+Declared, not checked	Declarado, sin comprobar
+Declared unsupported, not checked	Declarado como no compatible, sin comprobar
+Passed	Superada
+Streaming tool calls	Llamadas a herramientas en streaming
+JSON mode	Modo JSON
+Image input	Entrada de imagen
+Effective context	Contexto efectivo
+Checked {name}	{name} comprobado
+Reload the models first: there is nothing to check yet.	Recarga primero los modelos: todavía no hay nada que comprobar.
+Also send an image	Enviar también una imagen
+Check what it does	Comprobar qué hace
+Sends a few short requests to this endpoint and records what it actually did	Envía unas pocas peticiones cortas a este endpoint y registra lo que hizo de verdad
+Capability	Capacidad
+Declared	Declarado
+contradicts the declaration	contradice lo declarado
+Observed results belong to this endpoint as configured now. Changing its address, key or kind starts over.	Lo observado pertenece a este endpoint tal como está configurado ahora. Cambiar su dirección, clave o tipo empieza de cero.
+Nothing has been checked for this endpoint as configured now.	No se ha comprobado nada de este endpoint tal como está configurado ahora.
+What it declares and what it does	Lo que declara y lo que hace

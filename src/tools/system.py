@@ -877,6 +877,11 @@ _APP_API_BLOCKLIST_METHOD_PATH = (
     # decision: if `/api/workspace` is ever narrowed to an exact segment match,
     # the write must stay blocked.
     ("POST",   "/api/workspace-trust"),
+    # Capability probes (src/openai_probes.py) make the SERVER send requests to a
+    # model server, with the endpoint's credentials or an address taken from the
+    # body. Reading what was probed (GET) stays open; running a probe is the
+    # admin's, from Settings or the MCP tool.
+    ("POST",   "/api/model-probes"),
     # Context engine deletes. A block, a capsule and an experience are the three
     # things the compiler will hand the NEXT turn: the standing rule, the
     # checkpoint a worker resumes from, and the record of what was already
@@ -1051,6 +1056,12 @@ async def do_app_api(content: str, owner: Optional[str] = None) -> Dict:
                              "turn, and that consent is the user's to give, not yours. "
                              "GET /api/workspace-trust?workspace=… is allowed: read it and TELL "
                              "the user which files are waiting for their approval.",
+                    "exit_code": 1}
+        if path.startswith("/api/model-probes"):
+            return {"error": f"{method} {path} is blocked for safety — a capability probe makes the server send "
+                             "requests to a model server with the endpoint's credentials or an address from the "
+                             "body. Ask the user to run it from Settings. GET /api/model-probes/openai is allowed: "
+                             "read what was already probed and TELL the user.",
                     "exit_code": 1}
         if path.startswith("/api/local-models"):
             return {"error": f"{method} {path} is blocked for safety — deleting, pulling, loading/unloading local models "
