@@ -9625,3 +9625,20 @@ Faustus ahora presenta `library_search` y `library_read` desde la primera ronda 
 ## 223. Scribe deja de anunciarse como plugin separado (27-09-2026)
 
 Las herramientas de audio de Scribe pasan a formar parte del MCP de Funes. Faustus ya no carga ni anuncia un plugin `scribe` con servidor, token, puerto y arranque independientes; la prueba de la familia Hoard protege esa retirada. Las grabaciones y transcripciones se usan a través de Funes.
+
+
+## 224. Reutilizar el contexto de memoria sin servir datos viejos (30-09-2026)
+
+Cuando un turno recupera memoria aprendida con una consulta de texto, el paquete de contexto ya se podía reutilizar en rondas posteriores solo para las lecturas sin consulta. Ahora también las consultas léxicas e híbridas guardan un recibo: base de datos, identidad del almacén vectorial y el reloj con el que se puntuó. Antes de reutilizar, Faustus repite la misma consulta estricta con ese reloj y con la vigencia evaluada en el momento; si cambia un texto, aparece un recuerdo nuevo que coincide, surge un conflicto, algo expira o cambia el modelo de embeddings, el paquete se reconstruye. Sin fijar el reloj, el decaimiento continuo de las puntuaciones cambiaba el redondeo en segundos y no se reutilizaba nunca. 16 pruebas nuevas y una prueba con Chroma real (83 correctas, ninguna omitida).
+
+## 225. La recuperación también cuenta en el tiempo activo del turno (30-09-2026)
+
+Los pasos 2 y 3 de la escalera de recuperación miden ahora solo las esperas al proveedor, igual que la respuesta principal, y el paso siguiente ve lo que consumió el anterior: un paso 2 de 70 s impide un paso 3 que superaría un presupuesto de 100 s. Las pausas del consumidor no cuentan y nada se carga dos veces. 6 pruebas nuevas.
+
+## 226. Editar una imagen desde el chat, de verdad y de principio a fin (30-09-2026)
+
+Con Studio en el navegador, un modelo pequeño sin visión (Qwen2.5-3B), Prospero y ComfyUI con Qwen-Image, se arrastró una foto al chat y se pidió en castellano ponerle un sombrero, pasarla a anime, una bufanda y unas gafas. La prueba sacó nueve fallos reales: la imagen generada no llegaba al navegador en directo porque el filtro de eventos del modo agente no la dejaba pasar; los nombres UUID de la galería de Prospero se rechazaban; al reabrir, los resultados sin código de salida desaparecían; el modelo inventaba hosts en los enlaces; el ID de galería del adjunto no llegaba a un modelo sin visión; el aviso «no hay modelo de visión» activaba las herramientas de administración; `edit_image` quedaba escondida en el catálogo; una ronda posterior repetía el render de 80 s; y el modelo podía decir «he añadido un bigote» sin haber llamado a ninguna herramienta. Todo corregido: la imagen se ve en directo y al reabrir, una sola vez, con su URL real; una afirmación de edición sin herramienta se rechaza, se reintenta y, si persiste, se sustituye por «No he editado ni generado ninguna imagen en este turno». Armonizar un recorte también pasa por el estudio seleccionado (img2img SDXL de Prospero).
+
+## 227. Cancelar solo mi render y recoger lo que un reinicio dejó a medias (30-09-2026)
+
+`image_job` puede cancelar una petición concreta: en cola se cancela al momento; en ejecución, Prospero la para en su siguiente punto de control. Prospero ya no usa el `/interrupt` global de ComfyUI, que paraba lo que se estuviera ejecutando aunque fuera de otro: lee la cola, interrumpe por el ID de su propio prompt si es el que corre o lo saca de la cola si espera. Probado con un prompt ajeno ejecutándose en la misma GPU: el nuestro salió de la cola y el ajeno terminó bien. Al arrancar, Faustus recoge los renders que el proceso anterior dejó enviados: se reinició a mitad de un render y, al volver, la imagen apareció en Biblioteca → Imágenes sin pedir nada; nunca se reenvía trabajo. Parar el turno del chat no cancela el render (la imagen se recoge luego). Ampliar y quitar fondo siguen en los servicios anteriores: sus modelos no están instalados y descargarlos requiere autorización.

@@ -6,6 +6,7 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 
 ## A. Decisiones o acciones de Luis
 
+- **Modelos para ampliar y quitar fondo en el estudio de imagen** (30-09, §227): `upscale` y `rembg` no pueden pasar a Prospero porque `ComfyUI/models/upscale_models` y `background_removal` están vacíos y ni Faustus ni Prospero tienen `realesrgan`/`rembg`. Hace falta autorizar la descarga de RealESRGAN_x4plus (~64 MB) y de un modelo de recorte (RMBG o BiRefNet); con ellos se añaden dos operaciones en Prospero y el adaptador las delega igual que inpaint/armonizar.
 - **Probar Claude como modelo con una clave real** (26-09, §212): la caché rodante de la conversación y el pensamiento dentro de bucles con herramientas sólo están probados contra respuestas simuladas; hace falta un endpoint de Anthropic (o `anthropic/*` por OpenRouter) con clave para un turno de agente de varias rondas, mirando `[anthropic-cache] read=` en el log y que no haya 400 por bloques de pensamiento.
 
 - **Permisos nuevos de Ledger's, Links y People's Hoard** (26-09): los tres esperan aprobación en Ajustes › Integraciones («new permissions pending approval»). Tras el re-escaneo su riesgo es `medium`: cada puente lee su propio `*_TOKEN` del entorno para llamar a su API local.
