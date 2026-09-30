@@ -57,3 +57,12 @@ migración de bg_jobs/tmux/contenedores. El límite expresado en caracteres no e
 una medición estricta de RSS. Los errores de lectura distintos del límite de
 línea y procesos descendientes que mantienen pipes abiertos requieren un
 incremento específico; no se declara resuelto todo el lifecycle.
+
+
+### VISITADO / IMPLEMENTADO — H11 lectura acotada del log en segundo plano
+
+`dad52508`: bg_jobs._read_output usa un descriptor con tamaño inicial y ventanas de principio/final; conserva límite16000caracteres y marcador. Antes Path.read_bytes decodificaba archivo completo en cada get/followup. ChildPython temporal real escribió8MiB/exit0: salida16015caracteres con peak16.778.061bytes antes. Después misma salida,2lecturas total<=128033bytes/max64017 y peak<1MiB. Mantiene _read_job_text para código de salida.
+
+Final70 correctas7,13s en5suites,36nuevas; coordinador36 correctas1,33s. UTF8sig/UTF16LE-BE, BOM integrado como contenido en tail, emoji pequeño15999caracteres, fronteras/surrogates, malformed y crecimiento/reducción durantelectura. Errores iniciales de nombres de fixtures demasiado largos en Windows corregidos con IDs cortos; no bugdelproducto. SinLLM/GPU/procesosajenos. No limita archivo en disco ni garantiza snapshot atómico frente escritor externo, no stdoutdrain nuevo ni solución stdin/handles durables.
+
+Fuente original https://github.com/autonomous-ai/openharness y https://github.com/openai/codex/tree/b1e72963c3b71a9265a551e54beff078384efed9, métodos/localcontratos previamentevisitados; adaptación propia, no revisión documental repetida. Piloto visitado/cerrado, H11global parcial. Scope2filespropios, cambiosajenos preservados, uso permitido y automatización activa.
