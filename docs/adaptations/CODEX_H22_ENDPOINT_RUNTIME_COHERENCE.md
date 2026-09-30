@@ -17,3 +17,19 @@ Fuente de referencia Codex fijada por el análisis existente: b1e72963c3b71a9265
 ## Evidencia de validación
 
 Freeze final: suite nueva 63 passed en 3.00s; selección final resolver/modelos/headers/URL, owner, controles de fanout y task endpoint junto a nueva suite: 116 passed en 8.24s. Una selección amplia previa (con 49 casos nuevos antes de las últimas regresiones) terminó 254 passed en 97.98s, incluyendo visión, foreground routing y auth ChatGPT; no se presenta como validación del freeze final. Diff check limpio en las cinco fuentes.
+
+## Protección de refresh concurrente (24f3685c)
+
+ProviderAuthSession incorpora credential_revision opaca y versionado optimista
+ORM. Un refresh iniciado en A ya no sobrescribe una reconexión B, incluso cuando
+la reconexión conserva los mismos tokens. El conflicto revierte la escritura y
+se propaga como error tipado/409. Endpoint resolver conserva esa incertidumbre
+sin fallback de entorno, incluido el conflicto entre dos refresh ordinarios
+que mantienen estable connection_revision. No adopta las credenciales nuevas
+como resultado del intento antiguo. SQL externo sigue fuera de esta garantía.
+
+Validación integrada del coordinador: 102 correctas en5,92s, incluyendo8 CAS,
+14 invalidación vinculada,72 coherencia y8 research. Fixtures research usan
+endpoints SQLite reales (ee4b0411). Son pruebas de concurrencia/lógica sin GPU;
+no requests a modelos/proveedores. Fuente original del análisis:
+https://github.com/openai/codex/tree/b1e72963c3b71a9265a551e54beff078384efed9.
