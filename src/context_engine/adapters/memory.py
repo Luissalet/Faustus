@@ -284,8 +284,13 @@ class MemoryEngineSource(ThreadedSource):
         # The scope check the search path gets from `scoped_items`, restated
         # for the by-id path: an id can come from anywhere, including a model.
         stored_owner = str(item.get("owner") or "")
-        if stored_owner and owner and stored_owner != owner:
+        if stored_owner and stored_owner != owner:
             logger.debug("refusing mem:%s - owned by another actor", item.get("id"))
+            return None
+        stored_project = str(item.get("project") or "")
+        if stored_project and stored_project != project:
+            return None
+        if item.get("sensitivity") == "secret" or not engine.is_valid_now(item):
             return None
         return self._candidate(engine.public_item(item), req, owner, project)
 
