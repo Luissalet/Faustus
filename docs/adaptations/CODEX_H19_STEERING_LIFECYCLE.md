@@ -91,3 +91,8 @@ Coordinador2 pruebas nuevas correctas26,32s; agente final2 correctas26,38s.
 Amplia previa34 correctas113,30s antes del último mockaux; no freeze final amplio.
 LLM/executors sintéticos, loop+registro reales; no GPU ni llamadas externas.
 Cierre worker de cancelled sigue siendo piloto posterior, no implementado aquí.
+
+`0716884d`: cancelled ahora cierra recepción antesfanout de guard. Tras latch
+72694f76, cuatro productores actuales terminan roundloop; assertions verifican
+esa semántica. Cola/retry preservados. Selección73 correctas33,24s;
+coordinador21 lifecycle correctas3,05s. No GPU/LLM ni recibosdurables nuevos.

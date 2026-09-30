@@ -362,3 +362,9 @@ H19 EN IMPLEMENTACIÓN nuevo repro real streamloop: tras cancelled durante recov
 la señal, sin impedir retry explícito nuevo. Coordinador2 correctas26,32s.
 Piloto H19 acotado, no recibos durables/último drain completo. Fuente Codex fijada
 https://github.com/openai/codex/tree/b1e72963c3b71a9265a551e54beff078384efed9.
+
+### VISITADO / IMPLEMENTADO — H19 cancelled worker, continuación directa
+
+`0716884d`: tras latch72694f76, cuatro productores actuales de cancelled terminan roundloop. Worker añade cancelled a guard con puerta cerrada antesfanout; cola previa/retry intactos. No ACK aplicado ni durable. Selección final73 correctas33,24s lifecycle/rutas/board/retryusage; coordinador21 lifecycle correctas3,05s. Guard presupuesto AST se adapta a condición compactionORrecovery_cancelled conservando assertbreak. Sin modelos/GPU/redpersonal, agentloop no editado en este lote. Cancelled previo sóloevaluado queda implementado para productores actuales; preúltimadrain/recibosdurables/restart siguen pendientes. Fuente https://github.com/openai/codex/tree/b1e72963c3b71a9265a551e54beff078384efed9, revisión upstream no repetida.
+
+`188bc6de` documenta biblioteca8ab116b9, `f770fb6c` documenta latch72694f76; coordinador2 recovery correctas26,32s sobre freeze. Ambos checkpoints conservan límites. Uso90% permitido, automatizaciónactiva. H21snapshotaprobado y H09objetivos siguen en implementación; no cerrarantespruebas. Próximo H19receipt sólo evaluaciónscope, no implementado aún. Cambiosajenos preservados.
