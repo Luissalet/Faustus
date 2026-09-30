@@ -307,6 +307,26 @@ async def run_code_mode(
                 )
             except asyncio.TimeoutError:
                 continue
+    except asyncio.CancelledError:
+        # Cancellation must not bypass the reap below or leave the shielded
+        # protocol/stderr pump running. Only terminate our direct child;
+        # descendant containment is a separate runtime guarantee.
+        pump_task.cancel()
+        if proc.returncode is None:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+        # Do not let a bridge that ignores cancellation delay child teardown.
+        await asyncio.wait({pump_task}, timeout=5)
+        if pump_task.done():
+            await asyncio.gather(pump_task, return_exceptions=True)
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=5)
+        except Exception:
+            # Preserve the caller's cancellation even if reaping fails.
+            pass
+        raise
     finally:
         try:
             proc.stdin.close()
