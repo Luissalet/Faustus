@@ -29,7 +29,7 @@ Usage::
     # matching the query (proves the plumbing and the size reduction)
     python scripts/bench_research_prune.py
 
-    # the real model (any OpenAI-compatible endpoint, e.g. the local server)
+    # the real model (any chat-completions endpoint, e.g. the local server)
     python scripts/bench_research_prune.py --model-name MODEL \\
         --endpoint http://127.0.0.1:8080/v1/chat/completions --timeout 300
 
@@ -263,7 +263,7 @@ def _fetch_pages(urls: List[str], pages_dir: Path) -> None:
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--pages-dir", default=str(DEFAULT_PAGES_DIR))
-    ap.add_argument("--endpoint", default="", help="OpenAI-compatible chat completions URL; empty = stand-in model")
+    ap.add_argument("--endpoint", default="", help="chat-completions URL; empty = stand-in model")
     ap.add_argument("--model-name", default="")
     ap.add_argument("--timeout", type=int, default=300, help="per-extraction timeout in seconds (real model)")
     ap.add_argument("--sim-rate", type=float, default=DEFAULT_SIM_RATE, help="simulated characters read per second")

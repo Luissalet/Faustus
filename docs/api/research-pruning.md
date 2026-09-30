@@ -166,7 +166,7 @@ invented) and the recall of per-page gold phrases. Pages live in
 # offline, deterministic stand-in model; time is simulated from characters read
 python scripts/bench_research_prune.py
 
-# the real model: any OpenAI-compatible chat completions endpoint
+# the real model: any chat-completions endpoint
 python scripts/bench_research_prune.py --endpoint http://127.0.0.1:8080/v1/chat/completions \
     --model-name MODEL --timeout 300
 
