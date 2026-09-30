@@ -1865,7 +1865,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "edit_image",
-            "description": "Edit an owned gallery image. Use instruction with prompt for a natural-language edit through the configured Prospero backend; upscale, rembg, inpaint and harmonize retain their existing edit services.",
+            "description": "Edit an owned gallery image. Use instruction with prompt for a natural-language edit through Prospero. Inpaint uses the selected Prospero studio or existing edit service, with an owned same-size mask; white redraws, black preserves. Upscale, rembg and harmonize retain their existing services.",
             "parameters": {
                 "type": "object",
                 "properties": {

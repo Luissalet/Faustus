@@ -25,6 +25,14 @@ El modo de chat que selecciona directamente un modelo de imagen también respeta
 la elección del estudio. El resultado se publica en galería y en el chat, y vuelve
 a mostrarse al reabrir el historial.
 
+La acción `inpaint` también usa Prospero cuando es el estudio seleccionado.
+Requiere `image_id`, `mask_id` de la misma cuenta y dimensiones, `prompt` y
+`strength` entre 0 y 1 (por defecto 0.75). Blanco en la máscara indica la zona
+a redibujar y negro la zona a conservar. Usa la plantilla `sdxl_inpaint` ya
+existente en Prospero y necesita su checkpoint SDXL configurado. La imagen y
+la máscara se importan al proyecto privado de esa sesión. Se conserva el
+servicio anterior cuando el estudio seleccionado es `configured`.
+
 ## Recuperación sin repetir generación
 
 Cada petición conserva `request_id`, conexión, propietario, sesión, proyecto,
@@ -56,8 +64,9 @@ galería y recibo usan recuperación idempotente, no una única transacción con
 - Prospero registra el envío a ComfyUI y retiene los trabajos inciertos al
   reiniciar. La recolección automática del resultado de esos trabajos GPU
   interrumpidos y un journal completo de batches aún no están implementados.
-- OpenAI-compatible `images/generations`, `images/edits`, upscale, rembg,
-  inpaint y harmonize anteriores continúan en Faustus. Su traslado a Prospero es
+- OpenAI-compatible `images/generations`, `images/edits`, upscale, rembg y
+  harmonize anteriores continúan en Faustus. Inpaint anterior se conserva como
+  alternativa al estudio Prospero. El traslado de los demás servicios es
   pendiente; no afirmar extracción completa de procesamiento.
 
 ## Referencias y comprobación

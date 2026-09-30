@@ -19,6 +19,10 @@ def png():
 @pytest.fixture
 def service(monkeypatch, png):
     calls = []
+    from src import settings
+    original_setting = settings.get_user_setting
+    monkeypatch.setattr(settings, 'get_user_setting', lambda key, owner='', default=None:
+        'configured' if key == 'image_execution_backend' else original_setting(key, owner, default))
     monkeypatch.setattr(tool, '_owned_image', lambda image_id, owner: (png, (8, 8)))
     class Client:
         def __init__(self, **kwargs): pass

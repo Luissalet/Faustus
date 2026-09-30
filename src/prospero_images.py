@@ -12,6 +12,7 @@ import hashlib
 import io
 import ipaddress
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -116,11 +117,14 @@ def _db():
             key TEXT PRIMARY KEY, request_id TEXT NOT NULL, owner TEXT NOT NULL,
             session_id TEXT NOT NULL, connector_id TEXT NOT NULL, origin TEXT NOT NULL,
             fingerprint TEXT NOT NULL, prompt TEXT, state TEXT NOT NULL, project_id TEXT,
-            job_id TEXT, input_asset_id TEXT, asset_id TEXT, gallery_id TEXT, filename TEXT);
+            job_id TEXT, input_asset_id TEXT, asset_id TEXT, gallery_id TEXT, filename TEXT,
+            operation TEXT DEFAULT 'generate', mask_asset_id TEXT);
     """)
     conn.execute("BEGIN IMMEDIATE")
-    if "prompt" not in {row[1] for row in conn.execute("PRAGMA table_info(requests)")}:
-        conn.execute("ALTER TABLE requests ADD COLUMN prompt TEXT")
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(requests)")}
+    for name, declaration in (("prompt", "TEXT"), ("operation", "TEXT DEFAULT 'generate'"), ("mask_asset_id", "TEXT")):
+        if name not in columns:
+            conn.execute(f"ALTER TABLE requests ADD COLUMN {name} {declaration}")
     conn.commit()
     return conn
 
@@ -149,7 +153,7 @@ def _digest(*parts):
     return hashlib.sha256(json.dumps(parts, ensure_ascii=False).encode()).hexdigest()
 
 
-def _reserve(key, request_id, owner, session_id, connector_id, origin, fingerprint, prompt):
+def _reserve(key, request_id, owner, session_id, connector_id, origin, fingerprint, prompt, operation):
     conn = _db()
     try:
         conn.execute("BEGIN IMMEDIATE")
@@ -163,9 +167,9 @@ def _reserve(key, request_id, owner, session_id, connector_id, origin, fingerpri
                 conn.execute("UPDATE requests SET prompt=? WHERE key=?", (prompt, key))
                 conn.commit()
             return False
-        conn.execute("INSERT INTO requests(key,request_id,owner,session_id,connector_id,origin,fingerprint,prompt,state)"
-                     " VALUES(?,?,?,?,?,?,?,?,'preparing')",
-                     (key, request_id, owner or "", session_id or "", connector_id, origin, fingerprint, prompt))
+        conn.execute("INSERT INTO requests(key,request_id,owner,session_id,connector_id,origin,fingerprint,prompt,operation,state)"
+                     " VALUES(?,?,?,?,?,?,?,?,?,'preparing')",
+                     (key, request_id, owner or "", session_id or "", connector_id, origin, fingerprint, prompt, operation))
         conn.commit()
         return True
     finally:
@@ -234,7 +238,25 @@ async def _project(client, scope):
     return project_id
 
 
-async def _prepare(client, key, scope, prompt, content):
+async def _import_reference(client, key, project_id, content, *, mask=False):
+    row = _read(key)
+    _authorize(row["owner"] or None, row["session_id"] or None)
+    _, _, kind = _validate_image(content, png_only=mask)
+    extension = {"PNG": "png", "JPEG": "jpg", "WEBP": "webp"}[kind]
+    _update(key, state="mask_import_intent" if mask else "import_intent")
+    asset = await _json(client, "POST", f"/api/projects/{project_id}/import-upload",
+        params={"kind": "image"}, files={"file": (("mask." if mask else "reference.") + extension,
+            content, "image/jpeg" if extension == "jpg" else "image/" + extension)})
+    if asset.get("project_id") != project_id or asset.get("kind") != "image":
+        raise AdapterError("Prospero reference belongs to an unexpected project or type")
+    reference = _identifier(asset.get("id"))
+    if mask and reference == row["input_asset_id"]:
+        raise AdapterError("Prospero returned the source identifier for the mask")
+    _update(key, **({"mask_asset_id": reference} if mask else {"input_asset_id": reference}))
+    return reference
+
+
+async def _prepare(client, key, scope, prompt, content, *, operation="generate", mask_bytes=None, strength=None):
     row = _read(key)
     _authorize(row["owner"] or None, row["session_id"] or None)
     project_id = await _project(client, scope)
@@ -242,20 +264,20 @@ async def _prepare(client, key, scope, prompt, content):
     _authorize(row["owner"] or None, row["session_id"] or None)
     payload = {"prompt": prompt, "count": 1, "wait_s": 0}
     if content is not None:
-        _, _, kind = _validate_image(content)
-        extension = {"PNG": "png", "JPEG": "jpg", "WEBP": "webp"}[kind]
-        _update(key, state="import_intent")
-        asset = await _json(client, "POST", f"/api/projects/{project_id}/import-upload",
-            params={"kind": "image"}, files={"file": ("reference." + extension, content, "image/" + extension)})
-        if asset.get("project_id") != project_id or asset.get("kind") != "image":
-            raise AdapterError("Prospero reference belongs to an unexpected project or type")
-        reference = _identifier(asset.get("id"))
-        _update(key, input_asset_id=reference)
+        reference = await _import_reference(client, key, project_id, content)
         payload["reference_asset_id"] = reference
+    path = f"/api/projects/{project_id}/generate"
+    if operation == "inpaint":
+        mask_id = await _import_reference(client, key, project_id, mask_bytes, mask=True)
+        payload.pop("reference_asset_id")
+        payload.update(operation="inpaint", asset_id=reference, mask_asset_id=mask_id)
+        if strength is not None:
+            payload["strength"] = strength
+        path = f"/api/assets/{reference}/edit"
     # Persist and fsync the intent before the non-idempotent job POST.
     _authorize(row["owner"] or None, row["session_id"] or None)
     _update(key, state="submit_intent")
-    generated = await _json(client, "POST", f"/api/projects/{project_id}/generate", json=payload)
+    generated = await _json(client, "POST", path, json=payload)
     job = generated.get("job") or {}
     if job.get("project_id") != project_id:
         raise AdapterError("Prospero job belongs to an unexpected project")
@@ -405,7 +427,8 @@ async def _poll(client, key, prompt, *, poll_timeout=None):
 
 async def run_image(prompt: str, session_id: str | None, owner: str | None,
                     image_path: str | None = None, *, request_id: str | None = None,
-                    image_bytes: bytes | None = None) -> dict:
+                    image_bytes: bytes | None = None, operation: str = "generate",
+                    mask_bytes: bytes | None = None, strength: float | None = None) -> dict:
     """Generate/edit one owned image; stable request IDs recover without resubmit."""
     key = None
     request_id = str(uuid.uuid4()) if request_id is None else request_id
@@ -432,10 +455,25 @@ async def run_image(prompt: str, session_id: str | None, owner: str | None,
             if not isinstance(content, bytes):
                 raise AdapterError("Reference image must be bytes")
             _validate_image(content)
+        if operation not in ("generate", "inpaint"):
+            raise AdapterError("Unsupported image operation")
+        if operation == "inpaint":
+            if content is None or not isinstance(mask_bytes, bytes):
+                raise AdapterError("Inpaint requires source image bytes and mask bytes")
+            if _validate_image(content)[:2] != _validate_image(mask_bytes, png_only=True)[:2]:
+                raise AdapterError("Inpaint source and mask dimensions must match")
+            if strength is not None and (isinstance(strength, bool) or not isinstance(strength, (int, float))
+                    or not 0 <= strength <= 1 or not math.isfinite(strength)):
+                raise AdapterError("Inpaint strength must be a finite number between 0 and 1")
+        elif mask_bytes is not None or strength is not None:
+            raise AdapterError("Mask and strength are only supported for inpaint")
         connector_id, origin = _connection(owner)
         key = _digest(owner or "", session_id or "", request_id)
         fingerprint = _digest(prompt, hashlib.sha256(content).hexdigest() if content is not None else None)
-        created = _reserve(key, request_id, owner, session_id, connector_id, origin, fingerprint, prompt)
+        if operation == "inpaint":
+            fingerprint = _digest(prompt, hashlib.sha256(content).hexdigest(), operation,
+                hashlib.sha256(mask_bytes).hexdigest(), float(strength) if strength is not None else None)
+        created = _reserve(key, request_id, owner, session_id, connector_id, origin, fingerprint, prompt, operation)
         row = _read(key)
         if not created and row["state"] == "done":
             return _result(row, prompt)
@@ -450,7 +488,8 @@ async def run_image(prompt: str, session_id: str | None, owner: str | None,
                 raise AdapterError("The connection did not identify itself as Prospero")
             if created:
                 try:
-                    await _prepare(client, key, _digest(owner or "", session_id or "", connector_id, origin), prompt, content)
+                    await _prepare(client, key, _digest(owner or "", session_id or "", connector_id, origin), prompt, content,
+                        operation=operation, mask_bytes=mask_bytes, strength=strength)
                 except BaseException:
                     _update(key, state="unknown")
                     raise
@@ -463,7 +502,7 @@ async def run_image(prompt: str, session_id: str | None, owner: str | None,
         except Exception:
             return _unknown(request_id, "The local image receipt could not be read; do not resubmit")
         message = str(exc) if isinstance(exc, AdapterError) else "Prospero image operation failed"
-        if row and row["state"] in ("preparing", "submit_intent", "import_intent", "unknown", "waiting"):
+        if row and row["state"] in ("preparing", "submit_intent", "import_intent", "mask_import_intent", "unknown", "waiting"):
             return _unknown(request_id, message, job_id=row["job_id"], state="pending" if row["job_id"] else "unknown")
         return {"error": message,
             "state": "unknown" if row and not row["job_id"] else "pending" if row and row["state"] == "waiting" else "failed",

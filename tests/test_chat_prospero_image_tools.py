@@ -148,6 +148,51 @@ async def test_other_owner_image_never_reaches_adapter(backend, owned_gallery):
 
 
 @pytest.mark.asyncio
+async def test_inpaint_delegates_owned_source_mask_and_server_context(backend, owned_gallery):
+    _, result = await dispatch('edit_image', {'action': 'inpaint', 'image_id': 'source',
+        'mask_id': 'source', 'prompt': 'blue hat', 'strength': 0.6, 'owner': 'forged'})
+    assert result['source_image_id'] == result['mask_image_id'] == 'source'
+    assert backend == [('blue hat', 'server-session', 'alice', {'request_id': 'server-call',
+        'image_bytes': image_tool._png(owned_gallery)[0], 'mask_bytes': image_tool._png(owned_gallery)[0],
+        'operation': 'inpaint', 'strength': 0.6})]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('changes', [{'mask_id': 'private'}, {'mask_id': 'missing'},
+    {'strength': float('nan')}, {'strength': True}, {'strength': -1}, {'prompt': ''}])
+async def test_inpaint_invalid_or_foreign_input_never_reaches_prospero(backend, owned_gallery, changes):
+    args = {'action': 'inpaint', 'image_id': 'source', 'mask_id': 'source', 'prompt': 'hat', **changes}
+    _, result = await dispatch('edit_image', args)
+    assert result['exit_code'] == 1 and not backend
+
+
+@pytest.mark.asyncio
+async def test_inpaint_mismatched_owned_mask_never_reaches_prospero(backend, owned_gallery):
+    from core import database
+    from src.constants import GENERATED_IMAGES_DIR
+    from pathlib import Path
+    Image.new('RGB', (2, 2), 'white').save(Path(GENERATED_IMAGES_DIR) / 'mask.png')
+    with database.SessionLocal() as db:
+        db.add(database.GalleryImage(id='mask', filename='mask.png', owner='alice', is_active=True))
+        db.commit()
+    _, result = await dispatch('edit_image', {'action': 'inpaint', 'image_id': 'source', 'mask_id': 'mask', 'prompt': 'hat'})
+    assert result['exit_code'] == 1 and 'dimensions' in result['error'] and not backend
+
+
+@pytest.mark.asyncio
+async def test_inpaint_prospero_uncertainty_does_not_fall_back_to_legacy(backend, owned_gallery, monkeypatch):
+    async def uncertain(*args, **kwargs):
+        return {'error': 'submitted result unknown', 'status': 'outcome_unknown', 'request_id': 'original'}
+    def no_legacy(*args, **kwargs):
+        pytest.fail('An uncertain Prospero edit must not invoke another engine')
+    monkeypatch.setattr(prospero_images, 'run_image', uncertain)
+    monkeypatch.setattr(image_tool, '_internal_headers', no_legacy)
+    _, result = await dispatch('edit_image', {'action': 'inpaint', 'image_id': 'source', 'mask_id': 'source', 'prompt': 'hat'})
+    from src.tool_result import normalize_tool_result
+    assert normalize_tool_result(result).status == 'outcome_unknown' and result['request_id'] == 'original'
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("prompt", ["", "   ", 3])
 async def test_instruction_prompt_validation_prevents_submission(backend, owned_gallery, prompt):
     _, result = await dispatch("edit_image", {"image_id": "source", "action": "instruction", "prompt": prompt})

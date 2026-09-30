@@ -16,9 +16,9 @@ from src import database, plugin_runtime, settings
 from src import prospero_images as adapter
 
 
-def png():
+def png(width=3, height=2, color="blue"):
     stream = io.BytesIO()
-    Image.new("RGB", (3, 2), "blue").save(stream, format="PNG")
+    Image.new("RGB", (width, height), color).save(stream, format="PNG")
     return stream.getvalue()
 
 
@@ -45,7 +45,7 @@ def world(tmp_path, monkeypatch):
     connection = {"id": "connection", "preset_id": "prospero", "owner": None,
         "app_url": "http://127.0.0.1:8815"}
     monkeypatch.setattr(plugin_runtime, "resolve", lambda *args, **kwargs: {"connector": connection})
-    calls, jobs, projects, config = [], {}, [], {}
+    calls, jobs, projects, imports, config = [], {}, [], {}, {}
     client_options = []
 
     async def handler(request):
@@ -62,11 +62,22 @@ def world(tmp_path, monkeypatch):
                 raise httpx.ReadTimeout("Synthetic project write ambiguity", request=request)
             return httpx.Response(200, json={"id": project})
         if path.endswith("/import-upload"):
-            assert png() in request.content
-            if config.get("import_timeout"):
+            assert b"\x89PNG\r\n\x1a\n" in request.content
+            reference = "reference_" + str(len(imports) + 1)
+            imports[reference] = path.split("/")[3]
+            conn = sqlite3.connect(data / "prospero_images.db")
+            try:
+                assert any(row[0] in ("import_intent", "mask_import_intent")
+                    for row in conn.execute("SELECT state FROM requests"))
+            finally:
+                conn.close()
+            if config.get("import_timeout") or config.get("import_timeout_on") == len(imports):
                 raise httpx.ReadTimeout("Synthetic import write ambiguity", request=request)
-            return httpx.Response(200, json={"id": "reference_1", "project_id": path.split("/")[3], "kind": "image"})
-        if path.endswith("/generate"):
+            imported = {"id": reference, "project_id": path.split("/")[3], "kind": "image"}
+            if config.get("bad_import_on") == len(imports):
+                imported[config["bad_import_field"]] = config["bad_import_value"]
+            return httpx.Response(200, json=imported)
+        if path.endswith("/generate") or path.endswith("/edit"):
             conn = sqlite3.connect(data / "prospero_images.db")
             try:
                 states = [row[0] for row in conn.execute("SELECT state FROM requests")]
@@ -80,7 +91,7 @@ def world(tmp_path, monkeypatch):
                 raise httpx.ReadTimeout("Synthetic ambiguous write", request=request)
             if config.get("post_cancel"):
                 raise asyncio.CancelledError()
-            project = path.split("/")[3]
+            project = imports[path.split("/")[3]] if path.endswith("/edit") else path.split("/")[3]
             job = "job_" + str(len(jobs) + 1)
             jobs[job] = {"id": job, "project_id": project, "payload": json.loads(request.content)}
             return httpx.Response(200, json={"job": {"id": job, "project_id": project}})
@@ -109,7 +120,7 @@ def world(tmp_path, monkeypatch):
 
     monkeypatch.setattr(adapter.httpx, "AsyncClient", client)
     yield SimpleNamespace(data=data, images=images, calls=calls, jobs=jobs, projects=projects,
-        config=config, connection=connection, sessions=sessions, client_options=client_options)
+        imports=imports, config=config, connection=connection, sessions=sessions, client_options=client_options)
     engine.dispose()
 
 
@@ -431,3 +442,93 @@ def test_legacy_receipt_schema_migrates_additively_without_erasing_ids(world):
     assert "error" not in run()
     legacy = next(row for row in rows(world) if row["key"] == "legacy")
     assert legacy["job_id"] == "job_legacy" and legacy["prompt"] is None
+
+
+@pytest.mark.parametrize("strength", [None, 0, 1, 0.65])
+def test_inpaint_imports_source_and_mask_into_private_project_and_uses_existing_edit(world, strength):
+    result = run(operation="inpaint", image_bytes=png(), mask_bytes=png(color="white"), strength=strength)
+    assert "error" not in result, result
+    payload = next(iter(world.jobs.values()))["payload"]
+    expected = {"prompt": "A blue bird", "operation": "inpaint", "asset_id": "reference_1",
+        "mask_asset_id": "reference_2", "count": 1, "wait_s": 0}
+    if strength is not None:
+        expected["strength"] = strength
+    assert payload == expected
+    assert world.imports == {"reference_1": "proj_1", "reference_2": "proj_1"}
+    row = rows(world)[0]
+    assert row["operation"] == "inpaint" and row["input_asset_id"] == "reference_1"
+    assert row["mask_asset_id"] == "reference_2" and row["owner"] == "alice"
+    assert ("POST", "/api/assets/reference_1/edit") in world.calls
+    assert not any(path.endswith("/generate") for _, path in world.calls)
+
+
+@pytest.mark.parametrize("changes", [{"image_bytes": None}, {"mask_bytes": None},
+    {"mask_bytes": b"invalid"}, {"mask_bytes": png(width=4)},
+    {"strength": float("nan")}, {"strength": float("inf")}, {"strength": -0.1},
+    {"strength": 1.1}, {"strength": "0.5"}, {"strength": True}, {"operation": "other"}])
+def test_inpaint_invalid_input_is_rejected_before_any_receipt_or_http(world, changes):
+    kwargs = {"operation": "inpaint", "image_bytes": png(), "mask_bytes": png(color="white"), "strength": 0.5}
+    kwargs.update(changes)
+    assert "error" in run(**kwargs)
+    assert world.calls == [] and not world.data.exists()
+
+
+def test_generate_fingerprint_is_unchanged_and_mask_arguments_cannot_be_ignored(world):
+    assert "error" not in run(image_bytes=png())
+    assert rows(world)[0]["fingerprint"] == adapter._digest("A blue bird", adapter.hashlib.sha256(png()).hexdigest())
+    before = list(world.calls)
+    assert "only supported for inpaint" in run("new", image_bytes=png(), mask_bytes=png())["error"]
+    assert world.calls == before
+
+
+@pytest.mark.parametrize("changed", ["mask", "strength", "operation"])
+def test_inpaint_request_id_cannot_be_reused_with_changed_semantics(world, changed):
+    kwargs = {"operation": "inpaint", "image_bytes": png(), "mask_bytes": png(color="white"), "strength": 0.5}
+    assert "error" not in run(**kwargs)
+    before = list(world.calls)
+    if changed == "mask":
+        kwargs["mask_bytes"] = png(color="black")
+    elif changed == "strength":
+        kwargs["strength"] = 0.6
+    else:
+        kwargs = {"image_bytes": png()}
+    assert "different input" in run(**kwargs)["error"] and world.calls == before
+
+
+def test_inpaint_resume_needs_no_source_or_mask_and_has_no_import_or_job_duplicates(world):
+    world.config["job_state"] = "queued"
+    pending = run(operation="inpaint", image_bytes=png(), mask_bytes=png(color="white"), strength=0.5)
+    assert pending["result_status"] == "outcome_unknown"
+    before = [call for call in world.calls if call[0] == "POST"]
+    world.config["job_state"] = "done"
+    result = asyncio.run(adapter.resume_image("request-one", "session-one", "alice"))
+    assert "error" not in result and result["image_id"]
+    assert [call for call in world.calls if call[0] == "POST"] == before
+    assert len(world.jobs) == 1 and len(world.imports) == 2
+    with world.sessions() as db:
+        assert db.query(database.GalleryImage).count() == 1
+
+
+@pytest.mark.parametrize("stage", ["mask_import", "edit_submit"])
+def test_inpaint_ambiguous_second_import_or_edit_submission_never_retries(world, stage):
+    world.config.update({"import_timeout_on": 2} if stage == "mask_import" else {"post_timeout": True})
+    kwargs = {"operation": "inpaint", "image_bytes": png(), "mask_bytes": png(color="white"), "strength": 0.5}
+    result = run(**kwargs)
+    assert result["result_status"] == "outcome_unknown"
+    row = rows(world)[0]
+    assert row["state"] == "unknown" and row["input_asset_id"] == "reference_1"
+    assert row["mask_asset_id"] == (None if stage == "mask_import" else "reference_2")
+    before = list(world.calls)
+    assert run(**kwargs)["result_status"] == "outcome_unknown"
+    assert asyncio.run(adapter.resume_image("request-one", "session-one", "alice"))["result_status"] == "outcome_unknown"
+    assert world.calls == before and not world.jobs
+
+
+@pytest.mark.parametrize("import_number", [1, 2])
+@pytest.mark.parametrize("field,value", [("project_id", "foreign"), ("kind", "video"), ("id", "../unsafe")])
+def test_inpaint_import_identity_is_validated_before_edit_submission(world, import_number, field, value):
+    world.config.update(bad_import_on=import_number, bad_import_field=field, bad_import_value=value)
+    result = run(operation="inpaint", image_bytes=png(), mask_bytes=png(color="white"))
+    assert "error" in result and result["result_status"] == "outcome_unknown"
+    assert not world.jobs and not any(path.endswith("/edit") or path.endswith("/generate") for _, path in world.calls)
+    assert len(world.imports) == import_number

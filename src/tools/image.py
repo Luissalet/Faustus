@@ -92,6 +92,14 @@ async def do_edit_image(content: str, owner: Optional[str] = None, *,
             if isinstance(strength, bool) or not isinstance(strength, (int, float)) or not math.isfinite(strength) or not 0 <= strength <= 1:
                 raise ValueError("strength must be between 0 and 1")
             payload["strength"] = strength
+        if action == "inpaint":
+            from src.settings import get_user_setting
+            if get_user_setting("image_execution_backend", owner, "configured") == "prospero":
+                from src.prospero_images import run_image
+                result = await run_image(prompt, session_id, owner, request_id=request_id,
+                                         image_bytes=source, operation="inpaint",
+                                         mask_bytes=mask, strength=strength)
+                return {**result, "source_image_id": image_id, "mask_image_id": mask_id}
         headers = _internal_headers(owner)
         async with httpx.AsyncClient(timeout=180, follow_redirects=False) as client:
             response = await client.post(f"{_INTERNAL_BASE}/api/image/{_ROUTES[action]}", json=payload, headers=headers)
