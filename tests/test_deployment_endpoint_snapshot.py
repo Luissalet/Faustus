@@ -90,20 +90,22 @@ def test_migration_preserves_legacy_json_evidence_and_coexists(tmp_path, provide
         assert connection.execute('SELECT endpoint_revision, endpoint_scope_url FROM deployments WHERE deployment_id=?', (resolve('A').deployment.deployment_id,)).fetchone() == ('A', 'http://fixture/api')
 
 
-def test_route_real_sqlite_captures_revision_url_and_options_before_io(tmp_path, monkeypatch, provider):
+@pytest.mark.parametrize("configured_url", ["http://fixture/api",
+    "http://user:password@fixture/api?token=secret#fragment"])
+def test_route_real_sqlite_captures_revision_url_and_options_before_io(tmp_path, monkeypatch, provider, configured_url):
     engine = create_engine('sqlite:///' + str(tmp_path / 'endpoints.db'))
     db.ModelEndpoint.__table__.create(engine)
     factory = sessionmaker(bind=engine)
     monkeypatch.setattr(routes, 'SessionLocal', factory)
     with factory() as session:
-        row = db.ModelEndpoint(id='ep', name='fixture', base_url='http://fixture/api', api_key=None)
+        row = db.ModelEndpoint(id='ep', name='fixture', base_url=configured_url, api_key=None)
         session.add(row); session.commit(); revision_a = row.connection_revision
     store = mi.ModelIdentityStore(str(tmp_path / 'identity.db'))
     monkeypatch.setattr(mi, 'default_store', lambda: store)
     monkeypatch.setattr(routes.odysseus_settings, 'get_setting', lambda key, default=None: True if key == 'creator_enabled' else default)
     original_tags = mi._fetch_tags
     def tags(root):
-        assert root == 'http://fixture'
+        assert root == routes._ollama_root(configured_url)
         with factory() as session:
             row = session.get(db.ModelEndpoint, 'ep')
             row.api_key = 'synthetic-new-key'
@@ -124,7 +126,7 @@ def test_route_real_sqlite_captures_revision_url_and_options_before_io(tmp_path,
         first = response.json()['deployment']
         assert first['endpoint_revision'] == revision_a
         assert first['endpoint_scope_url'] == 'http://fixture/api'
-        assert first['endpoint_url'] == 'http://fixture'
+        assert first['endpoint_url'] == routes._ollama_root(configured_url)
         assert first['configuration']['nested']['value'] == 'before'
         with factory() as session:
             assert session.get(db.ModelEndpoint, 'ep').connection_revision != revision_a
@@ -191,3 +193,60 @@ def test_missing_saved_options_fails_open_once(monkeypatch, provider):
     assert len(calls) == 1
     assert result.deployment.configuration == {'num_ctx': 8192}
     assert result.deployment.endpoint_revision == 'A'
+
+
+@pytest.mark.parametrize('raw,expected', [
+    ('http://user:password@fixture:11434/api?token=secret#fragment', 'http://fixture:11434/api'),
+    ('https://user:password@[::1]:11434/api/chat?token=secret#fragment', 'https://[::1]:11434/api/chat'),
+    ('http://fixture/v1?token=secret', 'http://fixture/v1'),
+    ('http://user:password@fixture:bad/api?token=secret', ''),
+    ('http://user:password@[::1/api?token=secret', ''),
+    ('/api?token=secret', ''),
+])
+def test_scope_url_sanitized_direct_resolver_and_store(tmp_path, provider, raw, expected):
+    result = resolve('A', scope=raw)
+    assert result.deployment.endpoint_scope_url == expected
+    assert result.deployment.deployment_id == resolve('A').deployment.deployment_id
+    assert result.deployment.endpoint_url == 'http://fixture'
+    store = mi.ModelIdentityStore(str(tmp_path / 'scope.db'))
+    store.upsert_deployment(result.deployment)
+    saved = store.get_deployment(result.deployment.deployment_id)
+    assert saved['endpoint_scope_url'] == expected
+    with sqlite3.connect(store.db_path) as connection:
+        scope, manifest = connection.execute('SELECT endpoint_scope_url, manifest_json FROM deployments').fetchone()
+    assert scope == expected
+    assert json.loads(manifest)['endpoint_scope_url'] == expected
+    assert all(secret not in scope for secret in ('user:', 'password', 'token=', 'secret', 'fragment'))
+    if expected:
+        assert calibration.explicit_native_protocol(expected) == calibration.explicit_native_protocol(raw)
+
+
+def test_scope_url_sanitized_route_capture_without_changing_io(tmp_path, monkeypatch, provider):
+    import asyncio
+    engine = create_engine('sqlite:///' + str(tmp_path / 'scope-endpoints.db'))
+    db.ModelEndpoint.__table__.create(engine)
+    factory = sessionmaker(bind=engine)
+    monkeypatch.setattr(routes, 'SessionLocal', factory)
+    raw = 'http://user:password@[::1]:11434/api?token=secret#fragment'
+    with factory() as session:
+        session.add(db.ModelEndpoint(id='ep', name='fixture', base_url=raw, api_key=None))
+        session.commit()
+    captured = routes._resolve_endpoint('ep')
+    observed = []
+    monkeypatch.setattr(mi, '_fetch_tags', lambda root: observed.append(root) or {})
+    result = asyncio.run(routes._to_thread_resolve(captured['root'], 'fixture', captured['id'],
+        endpoint_revision=captured['revision'], endpoint_scope_url=captured['scope_url']))
+    assert observed == [captured['root']]
+    assert result.deployment.endpoint_url == captured['root']
+    assert result.deployment.endpoint_scope_url == 'http://[::1]:11434/api'
+    assert result.deployment.endpoint_revision == captured['revision']
+    assert calibration.explicit_native_protocol(result.deployment.endpoint_scope_url) == calibration.NATIVE_OLLAMA_PROTOCOL
+    engine.dispose()
+
+
+def test_direct_manifest_cannot_bypass_scope_sanitization(provider):
+    from dataclasses import replace
+    original = resolve('A').deployment
+    changed = replace(original, endpoint_scope_url='http://user:password@fixture/api?token=secret#fragment')
+    assert changed.to_dict()['endpoint_scope_url'] == 'http://fixture/api'
+    assert changed.deployment_id == original.deployment_id

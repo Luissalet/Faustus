@@ -178,6 +178,27 @@ class EngineInfo:
         return {"kind": self.kind, "version": self.version, "build_digest": self.build_digest or None}
 
 
+def sanitize_endpoint_scope_url(value: str) -> str:
+    """Transport identity only: never persist userinfo, query or fragment here.
+
+    Malformed hosts/ports remain unknown. This does not sanitize the separate
+    operational endpoint_url or change the URL used for provider requests.
+    """
+    from urllib.parse import urlsplit, urlunsplit
+    try:
+        parsed = urlsplit(str(value or ""))
+        host = parsed.hostname
+        port = parsed.port
+        if not parsed.scheme or not host:
+            return ""
+        authority = f"[{host}]" if ":" in host else host
+        if port is not None:
+            authority += f":{port}"
+        return urlunsplit((parsed.scheme, authority, parsed.path, "", ""))
+    except ValueError:
+        return ""
+
+
 @dataclass(frozen=True)
 class DeploymentManifest:
     """Identidad de ejecución — MOD-02. `deployment_id` is a pure function
@@ -202,6 +223,9 @@ class DeploymentManifest:
     availability: str = "unknown"
     endpoint_revision: str = ""
     endpoint_scope_url: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "endpoint_scope_url", sanitize_endpoint_scope_url(self.endpoint_scope_url))
 
     def to_dict(self) -> Dict[str, Any]:
         return {
