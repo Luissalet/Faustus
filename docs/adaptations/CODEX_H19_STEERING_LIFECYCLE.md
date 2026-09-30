@@ -79,3 +79,15 @@ preservados; métricas de presupuesto no cierran. Coordinador19 correctas2,48s,
 selección71 correctas32,57s. cancelled sigue sólo evaluado: rama recovery interna
 sale del asyncstream sin cierre universal probado. No cerrar por tipo ni afirmar
 entrega durable/último drain resueltos. Sin modelos/GPU.
+
+## Cancelación durante recuperación (72694f76)
+
+El bucle real podía continuar si el consumidor limpiaba la señal de cancelación
+tras recibir el SSE cancelled de recovery. Repro:2 llamadas modelo donde se
+esperaba1. Un latch por ronda se fija antes del evento y termina el roundloop
+tras el stream, independientemente de posteriores cambios del store del caller.
+Nueva invocación explícita con señal limpia funciona; no cambia presupuesto.
+Coordinador2 pruebas nuevas correctas26,32s; agente final2 correctas26,38s.
+Amplia previa34 correctas113,30s antes del último mockaux; no freeze final amplio.
+LLM/executors sintéticos, loop+registro reales; no GPU ni llamadas externas.
+Cierre worker de cancelled sigue siendo piloto posterior, no implementado aquí.
