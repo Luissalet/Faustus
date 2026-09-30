@@ -218,3 +218,56 @@ def test_nonstring_locator_rejected_before_any_read(monkeypatch, run_id, receipt
     monkeypatch.setattr(agent_runs, "_session_log_names", lambda *a: pytest.fail("must not read"))
     with pytest.raises(ValueError):
         agent_runs.read_steering_receipt("parent", run_id, "child", receipt_id)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("seq", True), ("seq", -1), ("seq", "0"),
+    ("source", {"unexpected": "object"}), ("source", "other"), ("source", None),
+    ("worker_id", {"unexpected": "object"}), ("worker_id", 7), ("worker_id", None),
+    ("delegation_id", {"unexpected": "object"}), ("delegation_id", 7), ("delegation_id", None),
+    ("drained_attempt_run_id", []), ("drained_attempt_run_id", False),
+    ("applied_attempt_run_id", {}), ("applied_attempt_run_id", 0),
+])
+def test_malformed_receipt_scalar_fields_are_unknown_not_queued_authority(api, field, value):
+    from pathlib import Path
+    client, _, run = api
+    receipt = submit(client)
+    run.log.orphan()
+    path = Path(run.log.path)
+    lines = path.read_text(encoding="utf-8").splitlines()
+    row = json.loads(lines[1])
+    if field == "seq":
+        row[field] = value
+    else:
+        payload = json.loads(row["ev"][6:])
+        payload[field] = value
+        row["ev"] = "data: " + json.dumps(payload) + "\n\n"
+    lines[1] = json.dumps(row)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    response = status(client, receipt)
+    assert response.status_code == 200
+    result = response.json()
+    assert result["state"] == "unknown" and result["durability"] == "unknown"
+    assert all(key not in result for key in ("source", "worker_id", "delegation_id", "drained_attempt_run_id", "applied_attempt_run_id"))
+
+
+
+def test_valid_scalar_provenance_keeps_existing_non_uuid_contract(api):
+    from pathlib import Path
+    client, _, run = api
+    receipt = submit(client)
+    run.log.orphan()
+    path = Path(run.log.path)
+    lines = path.read_text(encoding="utf-8").splitlines()
+    row = json.loads(lines[1])
+    payload = json.loads(row["ev"][6:])
+    payload.update(worker_id="worker.alias", delegation_id="", source="supervisor",
+                   accepted_attempt_run_id="existing-attempt-alias")
+    row["ev"] = "data: " + json.dumps(payload) + "\n\n"
+    lines[1] = json.dumps(row)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    result = status(client, receipt).json()
+    assert result["state"] == "queued" and result["durability"] == "unknown"
+    assert result["worker_id"] == "worker.alias" and result["delegation_id"] == ""
+    assert result["accepted_attempt_run_id"] == "existing-attempt-alias"
+    assert result["source"] == "supervisor"

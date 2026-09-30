@@ -523,7 +523,9 @@ def read_steering_receipt(parent_session_id: str, parent_run_id: str,
                     continue
                 return unknown
             ev = obj["ev"]
-            if not isinstance(ev, str) or not isinstance(obj.get("seq"), int):
+            seq = obj.get("seq")
+            if (not isinstance(ev, str) or not isinstance(seq, int)
+                    or isinstance(seq, bool) or seq < 0):
                 return unknown
             if not ev.startswith("data: {"):
                 continue
@@ -537,6 +539,13 @@ def read_steering_receipt(parent_session_id: str, parent_run_id: str,
                     or payload.get("parent_run_id") != parent_run_id
                     or not isinstance(accepted, str) or not accepted):
                 return unknown
+            if (not isinstance(payload.get("worker_id"), str) or not payload["worker_id"]
+                    or not isinstance(payload.get("delegation_id"), str)
+                    or payload.get("source") not in ("user", "supervisor")):
+                return unknown
+            for key in ("drained_attempt_run_id", "applied_attempt_run_id"):
+                if key in payload and (not isinstance(payload[key], str) or not payload[key]):
+                    return unknown
             previous = receipts.get(rid)
             state = payload.get("state")
             if previous is None:
