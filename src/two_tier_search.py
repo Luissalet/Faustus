@@ -458,6 +458,7 @@ def _result(hits: List[Dict[str, Any]], tier: str, degraded: bool,
 def search(corpus: Iterable[Any], query: Any, k: int = DEFAULT_K, *,
            embedder: Any = None, reranker: Any = None,
            rerank_head: int = RERANK_HEAD,
+           candidate_filter: Optional[Callable[[str], bool]] = None,
            clock: Callable[[], float] = time.perf_counter) -> Dict[str, Any]:
     """Rank ``corpus`` against ``query``. Never raises.
 
@@ -484,7 +485,7 @@ def search(corpus: Iterable[Any], query: Any, k: int = DEFAULT_K, *,
     except Exception:  # noqa: BLE001
         started = 0.0
     try:
-        return _search(corpus, query, k, embedder, reranker, rerank_head, started, clock)
+        return _search(corpus, query, k, embedder, reranker, rerank_head, started, clock, candidate_filter)
     except Exception as exc:  # noqa: BLE001 - "never an error" is the contract
         logger.warning("two-tier search failed entirely (%s); answering empty", exc)
         return _result([], TIER_LEXICAL, True, [], started, clock,
@@ -493,7 +494,8 @@ def search(corpus: Iterable[Any], query: Any, k: int = DEFAULT_K, *,
 
 def _search(corpus: Iterable[Any], query: Any, k: int, embedder: Any,
             reranker: Any, rerank_head: int,
-            started: float, clock: Callable[[], float]) -> Dict[str, Any]:
+            started: float, clock: Callable[[], float],
+            candidate_filter: Optional[Callable[[str], bool]] = None) -> Dict[str, Any]:
     try:
         k = max(1, min(int(k or DEFAULT_K), MAX_K))
     except (TypeError, ValueError):
@@ -618,6 +620,9 @@ def _search(corpus: Iterable[Any], query: Any, k: int, embedder: Any,
             scores = {doc_id: rerank_scores.get(doc_id, scores.get(doc_id, 0.0))
                       for doc_id in ordered}
 
+    # Narrow the finished ranking, preserving scores and the full scoring corpus.
+    if candidate_filter is not None:
+        ordered = [doc_id for doc_id in ordered if candidate_filter(doc_id)]
     hits = [_hit(originals[doc_id], scores.get(doc_id, 0.0), index, tier)
             for index, doc_id in enumerate(ordered[:k], start=1)
             if doc_id in originals]

@@ -333,7 +333,15 @@ def search_catalog(
             from src.tool_index import get_tool_index
             idx = get_tool_index()
             if idx is not None:
-                retrieved = list(idx.retrieve(q, k=max(k, 1)))
+                supports_filter = False
+                if candidate_filter is not None:
+                    import inspect
+                    try:
+                        supports_filter = "candidate_filter" in inspect.signature(idx.retrieve).parameters
+                    except (TypeError, ValueError):
+                        pass  # Older index adapters retain their existing contract.
+                options = {"candidate_filter": candidate_filter} if candidate_filter is not None and supports_filter else {}
+                retrieved = list(idx.retrieve(q, k=max(k, 1), **options))
         except Exception:
             logger.debug("tool catalog: index retrieve failed", exc_info=True)
         # The embedding index can outlive a connector (a failed delete, a

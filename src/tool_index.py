@@ -28,7 +28,7 @@ import re
 import threading
 import time
 import unicodedata
-from typing import Dict, List, Optional, Set
+from typing import Callable, Dict, List, Optional, Set
 
 import src.embedding_lanes as _lanes_mod
 from src.tool_index_examples import EXAMPLES as _TOOL_EXAMPLES
@@ -762,8 +762,10 @@ class ToolIndex:
             out_meta.append(meta)
         return out_docs, out_ids, out_meta
 
-    def retrieve(self, query: str, k: int = 8) -> List[str]:
+    def retrieve(self, query: str, k: int = 8, *,
+                 candidate_filter: Optional[Callable[[str], bool]] = None) -> List[str]:
         """Retrieve the top-K most relevant tool names for a query."""
+        filter_options = {"candidate_filter": candidate_filter} if candidate_filter is not None else {}
         rows = []
         lane_priority = {LANE_CUSTOM: 0, LANE_FASTEMBED: 1}
         # A lane that answered with nothing above its floor has said "none of
@@ -802,13 +804,13 @@ class ToolIndex:
             # Nothing close enough (a recipe, a translation): no candidates
             # beyond a tool the request nearly names outright.
             anchor = self._strong_lexical_anchor(query)
-            return [anchor] if anchor and k > 0 else []
+            return [anchor] if anchor and k > 0 and (candidate_filter is None or candidate_filter(anchor)) else []
         if not rows:
             # No vector lane could answer: none was built, all are empty, or
             # all of them raised. This used to return [] and leave the turn on
             # keyword-only tool selection. Now it drops to the lexical floor,
             # which needs no model and no network.
-            return self.lexical_retrieve(query, k=k)
+            return self.lexical_retrieve(query, k=k, **filter_options)
         rows.sort(key=lambda row: (-row["score"], lane_priority.get(row["embedding_lane"], 99)))
         if k > 0 and getattr(self, "backend", "") in (BACKEND_MEMORY, BACKEND_CHROMA):
             # Every vector backend votes together with the lexical lane: the
@@ -821,12 +823,15 @@ class ToolIndex:
             # compone?» with ask_teacher/design_canvas.
             deep = [row["tool_name"] for row in
                     dedupe_results(rows, id_key="tool_name", limit=max(k * 3, 24))]
-            return self._with_lexical_lane(query, deep, k)
+            return self._with_lexical_lane(query, deep, k, **filter_options)
+        if candidate_filter is not None:
+            rows = [row for row in rows if candidate_filter(row["tool_name"])]
         names = [row["tool_name"] for row in
                  dedupe_results(rows, id_key="tool_name", limit=k)]
         return names[:max(0, int(k))]
 
-    def _with_lexical_lane(self, query: str, vector_order: List[str], k: int) -> List[str]:
+    def _with_lexical_lane(self, query: str, vector_order: List[str], k: int, *,
+                           candidate_filter: Optional[Callable[[str], bool]] = None) -> List[str]:
         """Fuse the embedding lane's ranking with the lexical one.
 
         The in-memory lane is a small English embedding model. Asked in
@@ -846,18 +851,21 @@ class ToolIndex:
         measured separately on a live catalogue before it joined (see
         `retrieve`) rather than assuming the result transfers.
         """
+        def permitted_order(names):
+            return [name for name in names if candidate_filter is None or candidate_filter(name)]
+
         try:
             from src.two_tier_search import rrf, _ordered
         except Exception:  # noqa: BLE001 - never fail a turn over ranking
-            return vector_order[:max(0, int(k))]
+            return permitted_order(vector_order)[:max(0, int(k))]
         try:
             lexical = self.lexical_retrieve(query, k=max(k * 3, 24))
         except Exception as exc:  # noqa: BLE001
             logger.debug("tool index: lexical lane unavailable (%s)", exc)
-            return vector_order[:max(0, int(k))]
+            return permitted_order(vector_order)[:max(0, int(k))]
         if not lexical:
-            return vector_order[:max(0, int(k))]
-        names = _ordered(rrf(lexical, vector_order))[:max(0, int(k))]
+            return permitted_order(vector_order)[:max(0, int(k))]
+        names = permitted_order(_ordered(rrf(lexical, vector_order)))[:max(0, int(k))]
         # And still the reserved tail slot. Fusing two rankings is about
         # which tool is *most like* the request; this is about the one the
         # request nearly names outright. BM25 ranks `manage_scripts` above
@@ -866,7 +874,7 @@ class ToolIndex:
         # fixes that, because both lanes agree and both are wrong about
         # what was meant.
         anchor = self._strong_lexical_anchor(query)
-        if anchor and anchor not in names and k > 0:
+        if anchor and anchor not in names and k > 0 and (candidate_filter is None or candidate_filter(anchor)):
             if len(names) >= k:
                 names.pop()
             names.append(anchor)
@@ -899,7 +907,8 @@ class ToolIndex:
                     for name, desc in BUILTIN_TOOL_DESCRIPTIONS.items()}
         return [{"id": name, "text": text} for name, text in docs.items()]
 
-    def lexical_retrieve(self, query: str, k: int = 8) -> List[str]:
+    def lexical_retrieve(self, query: str, k: int = 8, *,
+                         candidate_filter: Optional[Callable[[str], bool]] = None) -> List[str]:
         """Tool names from ``src.two_tier_search`` over the descriptions.
 
         The floor under both vector backends: BM25-lite fused with hash
@@ -913,7 +922,8 @@ class ToolIndex:
         except Exception as exc:  # noqa: BLE001 - pragma: no cover
             logger.debug("tool index: lexical floor unavailable (%s)", exc)
             return []
-        found = two_tier_search.search(self.corpus_rows(), query, k=k)
+        filter_options = {"candidate_filter": candidate_filter} if candidate_filter is not None else {}
+        found = two_tier_search.search(self.corpus_rows(), query, k=k, **filter_options)
         names = [str(hit.get("id")) for hit in found.get("hits") or [] if hit.get("id")]
         # The same reserved tail slot `retrieve` already gives the weak
         # in-memory embedder, for the case that is strictly worse: no vector
@@ -922,7 +932,7 @@ class ToolIndex:
         # not put `web_search` there -- two tests said so, in red, and the
         # safeguard for the milder case was sitting right above.
         anchor = self._strong_lexical_anchor(query)
-        if anchor and anchor not in names and k > 0:
+        if anchor and anchor not in names and k > 0 and (candidate_filter is None or candidate_filter(anchor)):
             if len(names) >= k:
                 names.pop()
             names.append(anchor)
