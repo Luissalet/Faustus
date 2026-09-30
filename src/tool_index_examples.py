@@ -1155,6 +1155,17 @@ EXAMPLES: Dict[str, List[str]] = {
     ],
 
     # ── PDF operations (R4, Reach wave) ─────────────────────────────────────
+    "page_find": [
+        "busca en la página dónde habla del precio de envío",
+        "find the login link on this page",
+        "does this page mention a refund policy",
+        "localiza el botón de pagar en la web abierta",
+    ],
+    "page_window": [
+        "muéstrame el siguiente trozo de la página",
+        "show me the next part of this page",
+        "sigue leyendo la página donde lo dejaste",
+    ],
     "pdf_ops": [
         "combina estos tres PDFs en uno solo",
         "split this PDF into one file per chapter",

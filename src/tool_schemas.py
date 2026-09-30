@@ -3419,6 +3419,41 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "page_find",
+            "description": "Search the WHOLE latest browser snapshot (the page you last got from browser_snapshot / browser_navigate / a click) for a string or a regular expression, and get back only the matching lines with their [ref=...] handles and a little context -- without putting the page into the conversation. Use it when a snapshot was cut or windowed, or to locate one control or phrase on a long page. Takes no new snapshot; if the page changed since, take a fresh browser_snapshot first.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Text to find (case-insensitive unless case_sensitive), or a regular expression when regex is true."},
+                    "regex": {"type": "boolean", "description": "Treat `query` as a regular expression matched line by line. Default false."},
+                    "case_sensitive": {"type": "boolean", "description": "Default false."},
+                    "context": {"type": "integer", "description": "Lines of context before and after each match (0-5, default 1)."},
+                    "max_matches": {"type": "integer", "description": "Maximum matches returned (1-50, default 10); the total is always reported."},
+                    "snapshot_id": {"type": "string", "description": "Optional: the snapshot id shown in a window footer; refuses if it is no longer the latest."}
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "page_window",
+            "description": "Read another window of the latest browser snapshot when a snapshot result ended with a `[window: chars A-B of N ... Next window: page_window {\"offset\": B}]` line. The window size is the browser snapshot max-chars setting; the page's navigation links are repeated at the end of each window. Takes no new browser snapshot.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "offset": {"type": "integer", "description": "Character offset to start from (the `offset` the previous window's footer gave; 0 = the start)."},
+                    "limit": {"type": "integer", "description": "Optional window size in characters (default: the snapshot max-chars setting)."},
+                    "snapshot_id": {"type": "string", "description": "Optional: the snapshot id from the footer; refuses if the page has been re-snapshotted since."}
+                },
+                "required": ["offset"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "pdf_ops",
             "description": "PDF operations: merge several PDFs into one, split a PDF by page ranges, extract a subset of pages, rotate pages, reorder every page, delete pages, read/write metadata (title/author/subject/keywords), compress (re-encode content streams, dedupe objects, reports bytes before/after), watermark_text (diagonal text stamp on every page), page_count, to_images (rasterize pages to PNG -- needs pypdfium2 or pdf2image), ocr (add a searchable text layer -- needs the ocrmypdf CLI), redact (REALLY remove text matching `patterns`/`regex` or covering page `rects`, flatten the affected pages, then re-read the output to verify no match remains; returns the verification result and never echoes the removed text), compare (word-by-word diff of `input` against `other`, per page, with inserted/deleted/changed runs and a summary; optional `html_output` report). Every path is confined to the active workspace / uploads folder. A generated file is written NEXT TO its source and never overwrites an input unless `overwrite: true`.",
             "parameters": {

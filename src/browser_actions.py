@@ -88,7 +88,17 @@ def check_precondition(
         )
     if precondition.require_element:
         from src.browser_view import element_present
-        if not element_present(precondition.require_element, snapshot_text):
+        haystack = snapshot_text
+        if not element_present(precondition.require_element, haystack):
+            # A paged snapshot only shows one window: look in the whole stored
+            # snapshot of the same page before refusing the action.
+            try:
+                from src.browser_snapshot_window import full_text_for
+                full = full_text_for(snapshot_text)
+            except Exception:  # noqa: BLE001 - never turn a lookup failure into a refusal
+                full = None
+            if full and element_present(precondition.require_element, full):
+                return None
             return f"expected element {precondition.require_element!r} was not found in the current page"
     return None
 

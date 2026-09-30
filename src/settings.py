@@ -1388,6 +1388,12 @@ DEFAULT_SETTINGS = {
     # Budget for the accessibility snapshot text returned to the model by
     # browser_snapshot / browser_navigate (truncated at a line boundary).
     "browser_snapshot_max_chars": 12000,
+    # Mark (with `*`) the elements that are new since the previous snapshot of
+    # the same page, so the model sees what an action made appear.
+    "browser_snapshot_mark_new": False,
+    # Serve a long snapshot in windows of browser_snapshot_max_chars (page_window
+    # fetches the next one) instead of cutting it at that size.
+    "browser_snapshot_paging": False,
     # browser_evaluate / browser_run_code_unsafe run model-written JavaScript
     # inside the page; opt-in only. Off → not offered AND denied at dispatch.
     "browser_allow_code_execution": False,

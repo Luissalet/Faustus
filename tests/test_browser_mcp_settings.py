@@ -198,7 +198,7 @@ def test_truncate_cuts_at_line_boundary_and_appends_note():
     assert len(out) < len(text)
     assert out.startswith("### Page\n- Page URL: https://example.com\n- Page Title: Example")
     body, note = out.rsplit("\n\n", 1)
-    assert note == "(snapshot truncated to 2000 chars — use browser_find or browser_snapshot with a narrower scope)"
+    assert note == "(snapshot truncated to 2000 chars — use page_find to search the whole page, or browser_snapshot with a narrower scope)"
     assert len(body) <= 2000
     # cut on a whole line: the last kept line is complete
     assert body.splitlines()[-1].endswith("x" * 40)

@@ -794,6 +794,15 @@ _register(
     ToolEffect.WRITE_PRIVATE,
 )
 _register(
+    # page_find / page_window (src/agent_tools/page_snapshot_tools.py): pure
+    # reads over the latest browser snapshot Faustus already stored for this
+    # session -- no new browser call -- but the text is exactly as untrusted
+    # as the page it came from.
+    {"page_find", "page_window"},
+    ToolEffect.READ_PRIVATE,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+_register(
     # PDF operations (R4, Reach wave, src/agent_tools/pdf_ops_tool.py): every
     # op reads an input PDF from the workspace/uploads allowlist and (except
     # page_count/metadata-read) writes a NEW file back into it -- same class

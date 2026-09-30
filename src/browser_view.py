@@ -137,7 +137,9 @@ def _strip_list_marker(line: str) -> str:
     ``2) ``) — both appear in real snapshot text depending on which
     ``@playwright/mcp`` build (or relay) produced it, and neither carries
     information the element parser below needs."""
-    return re.sub(r'^\s*(?:[-*•]|\d{1,4}[.)])\s*', '', line)
+    # Repeated on purpose: a snapshot marks new elements with an extra `*` after
+    # the list marker (src/browser_snapshot_window.py), and that must not hide the role.
+    return re.sub(r'^\s*(?:(?:[-*•]|\d{1,4}[.)])\s*)+', '', line)
 
 
 _ELEMENT_REF_RE = re.compile(r'ref[:=]\s*["\']?([A-Za-z0-9_-]+)', re.IGNORECASE)

@@ -681,6 +681,11 @@ GROUPS: list[dict[str, Any]] = [
             _int("browser_snapshot_max_chars", "Snapshot max chars",
                  "Budget for the accessibility snapshot text returned by browser_snapshot / browser_navigate.",
                  1000, 200_000),
+            _bool("browser_snapshot_mark_new", "Mark new elements",
+                  "Put a * before the elements that are new since the previous snapshot of the same page."),
+            _bool("browser_snapshot_paging", "Page long snapshots",
+                  "Serve a long snapshot in windows of the max-chars size (the model asks for the next one "
+                  "with page_window) instead of cutting it. The page's navigation links repeat in every window."),
             _bool("browser_allow_code_execution", "Allow page JavaScript",
                   "Offer browser_evaluate / browser_run_code_unsafe: model-written JavaScript runs inside "
                   "the page. Off = not offered and denied."),

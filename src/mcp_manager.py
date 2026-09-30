@@ -97,9 +97,17 @@ def truncate_browser_snapshot(text: str, max_chars: int) -> str:
         head = head[:cut]
     head = head.rstrip()
     return (
-        f"{head}\n\n(snapshot truncated to {limit} chars — use browser_find or "
-        "browser_snapshot with a narrower scope)"
+        f"{head}\n\n(snapshot truncated to {limit} chars — use page_find to search the "
+        "whole page, or browser_snapshot with a narrower scope)"
     )
+
+
+def _browser_bool_setting(key: str) -> bool:
+    try:
+        from src.settings import get_setting
+        return bool(get_setting(key, False))
+    except Exception:
+        return False
 
 
 def _browser_snapshot_budget() -> int:
@@ -1797,7 +1805,7 @@ class McpManager:
             await self._refresh_after_unknown_tool(server_id, tool_name, result)
         self._record_call_outcome(server_id, True, time.time() - call_started)
         if _is_browser_connection(server_id):
-            result = self._postprocess_browser_result(tool_name, result)
+            result = self._postprocess_browser_result(tool_name, result, server_id=server_id)
         return result
 
     async def _refresh_after_unknown_tool(self, server_id: str, tool_name: str, result: Dict) -> None:
@@ -1827,11 +1835,15 @@ class McpManager:
         result["tools_refreshed"] = True
 
     @staticmethod
-    def _postprocess_browser_result(tool_name: str, result: Dict) -> Dict:
+    def _postprocess_browser_result(tool_name: str, result: Dict, server_id: str = "") -> Dict:
         """Apply the snapshot budget to successful snapshot-bearing results.
 
         Error text is never truncated: it is short and it is what the model
-        needs verbatim to recover.
+        needs verbatim to recover. The full snapshot is also kept (bounded,
+        per connection) so `page_find` / `page_window` can reach the part the
+        budget left out; with `browser_snapshot_mark_new` new elements are
+        marked, and with `browser_snapshot_paging` the budget becomes a window
+        size instead of a cut (src/browser_snapshot_window.py).
         """
         if not isinstance(result, dict) or tool_name not in _BROWSER_SNAPSHOT_TOOLS:
             return result
@@ -1841,8 +1853,22 @@ class McpManager:
         if not isinstance(text, str):
             return result
         limit = _browser_snapshot_budget()
+        try:
+            from src import browser_snapshot_window as _bsw
+            text, handled = _bsw.process_snapshot(
+                server_id, text, limit=limit,
+                mark_new=_browser_bool_setting("browser_snapshot_mark_new"),
+                paging=_browser_bool_setting("browser_snapshot_paging"),
+            )
+        except Exception as exc:  # noqa: BLE001 - windows are an aid, never a failure
+            logger.debug(f"browser snapshot windowing skipped: {exc}")
+            handled = False
+        if handled:
+            result = dict(result)
+            result["stdout"] = text
+            return result
         truncated = truncate_browser_snapshot(text, limit)
-        if truncated is not text:
+        if truncated is not text or text is not result.get("stdout"):
             result = dict(result)
             result["stdout"] = truncated
         return result
