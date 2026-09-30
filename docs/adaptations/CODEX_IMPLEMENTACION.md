@@ -604,3 +604,23 @@ Final95 correctas4,10s en7suites,14 nuevas; coordinador14 correctas0,91s. JSONL 
 ### VISITADO / EVALUADO — H05 prepared→builder de proveedor
 
 Builders reales con schema nested boolean/array/required/additionalProperties: Harmony conserva parameters y nombres con roundtrip; Ollama conserva contrato; Anthropic input_schema igual; OpenAIchat tools sin rewrite. Original sin mutación. No se encontró bug nuevo de tipo/required para corregir. Smalltalk puede omitir tools; subscriptionResponses también: omisión deliberada, no wireauthority certificada. Recibo actual declara candidate_prepared/shadow/notcomparable; no promesa request_sent. Sin fakePOST benchmark ni nueva implementación. Autoridad de schemas efectivamente enviados requiere piloto distinto y sigue pendiente. Fuente https://github.com/openai/codex/tree/b1e72963c3b71a9265a551e54beff078384efed9 y builderslocales ya visitados. No repetir esta comparación sin nueva pregunta/version.
+
+
+### VISITADO / IMPLEMENTADO — liquidación y admisión antes de herramientas
+
+`e119cec5`: residual observado principal se liquida una vez en el ledger capturado al cerrar wrapper, y antes de métricas en cierre normal. Créditos tokens/spend separados compensan cargo legacy; fallos por dimensión no duplican otra dimensión ya añadida. Callback en _TURN_FINALIZERS existente, nestedfinally ejecuta todos aun gen.aclose con error ordinary y conserva excepción previa. Final109 correctas60,45s (19nuevas+18retry+20pending+30recovery+21lifecycle+1disconnect); nueva19 también11,86s. Terminal, error, cancel, consumerclose y cost-only/local conocidos. **Ledger sólo memoria del turno**; no journal durable ni cambio de buckets/metrics públicas, ni factura de providerattempts internos. CancelledError secundario al cerrar no garantía universal nueva.
+
+`1f66cd71`: gate antes de cada tool usa ledger más mainobservado pendiente, sin cambiar límites/localbypass ni cargo. Repropytest aislado2FAIL2PASS13,11s: main1000 con límite500 ejecutaba read_file y paraba sólo después; now noefecto/tool_output, una sola llamada main y checkpointvacío. Control100 y local1000 aún ejecutan; snapshotrepetido1000 no duplica. Source1line funcional+comentario, nueva4tests; selección final61 correctas54,13s (4nuevas+19finalización+18retry+20pending). Selección adicional autonomía/preflight/lifecycle aún en curso al registrar: no afirmar final correcta hasta resultado.
+
+Primer prototipo inline anterior fuera pytest intentó inicializar MemoryVector enlocalhost8100 (servicio no disponible); no certifica ausencia de acceso a datos personales. Repro decisivo/finalpytest usa conftest aislado; no herramienta real ejecutada, efectos sintéticos. No revertir datos ajenos por inferencia. Fuente original ya visitada https://github.com/openai/codex/tree/b1e72963c3b71a9265a551e54beff078384efed9; adaptaciones propias.
+
+Nueva evaluación active_seconds: 3repros pytest/fakeclock realwrapper terminal/warmretry/ctx_ack mantienenledger0 tras120–240s proveedor, retry bajo límite100. Prototipo por-await __anext__ 3correctas2,06s:120bloquea,20+20=40admite; consumerpausas1000entreSSE no añaden gasto (techo pared independiente elevado sólofixture). Piloto timepending implementándose por dimensión con crédito elapsedlegacy, no cargo universalwall ni duraciónrecoveryaux cerrada.
+
+
+### VISITADO / EVALUADO — descendientes de Code Mode en Windows
+
+Nueva pregunta trasda7412f6: guest temporal crea nieto30s; cancelar recogechild directo pero nieto sigue vivo. Limpieza manual sólo handle Windows obtenido antescancel sobre proceso propio. process_ownership/terminate_tree actuales psutil/PIDctime best-effort, sinJobObject: no garantizan contener spawn/reparentrace. Este límite permanece; no declarar H11global cerrado.
+
+Prototipo aislado JobObject parentowned UUIDLocal +KILL_ON_JOB_CLOSE, bootstrap Open/Assigncurrent ANTESguest y cierra su handle, parent soleholder. Closeparentjob termina child+grandchild (handlesseñalizados/directreaped), también stdinclosed. Open trasparentclose falla2/exit76 sinusercode. Assign con query-onlyhandle ennestedjob falla5/exit77 sinusercode; anidación normal estehost sí permitida. No claim fallo Windowsnested general. No modificación productos en esta evaluación.
+
+Implementación específica runner+bootstrap+tests ahoraautorizada, pendiente commit y regresiones. JobObject no aislamientofilesystem/red ni frontera contra otros procesos del mismo usuario; jobname nosecret. No Docker ni PIDwalk como sustituto. Fuente original https://github.com/autonomous-ai/openharness y https://github.com/openai/codex/tree/b1e72963c3b71a9265a551e54beff078384efed9, contratoslocales ya visitados; nueva pregunta/prototipo, no repetir radar41.
