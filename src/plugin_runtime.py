@@ -79,8 +79,7 @@ def resolve(ref: str, *, owner: Optional[str] = None) -> Dict[str, Any]:
 
     rows = _connectors()
     if owner:
-        mine = [r for r in rows if not r.get("owner") or r.get("owner") == owner]
-        rows = mine or rows
+        rows = [r for r in rows if not r.get("owner") or r.get("owner") == owner]
 
     connector = None
     for row in rows:
@@ -138,7 +137,7 @@ async def survey(*, owner: Optional[str] = None, check: bool = False) -> List[Di
     """
     rows = _connectors()
     if owner:
-        rows = [r for r in rows if not r.get("owner") or r.get("owner") == owner] or rows
+        rows = [r for r in rows if not r.get("owner") or r.get("owner") == owner]
     by_preset = {str(r.get("preset_id") or ""): r for r in rows}
 
     out: List[Dict[str, Any]] = []
