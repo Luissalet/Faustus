@@ -43,3 +43,12 @@ venv/Scripts/python.exe -m pytest tests/test_compaction_budget_receipts.py tests
 ```
 
 H14 continúa parcial: esto cubre la compactación llamada desde preparación de rutas del agente, no todos los revisores, síntesis finales, manual condense, workers u otros auxiliares. No unifica cuentas de delegación, no reserva antes de inferencia, no inventa consumo sin métricas y no convierte unidades aproximadas en un precio exacto. Compactación extractiva/determinista no produce gasto LLM; métricas no recibidas permanecen desconocidas.
+
+
+### VISITADO / IMPLEMENTADO — H14 consumo de recuperación
+
+`28385388`: observer privado opcional step_completion→ladder→ambos callers captura último valor válido por campo/step, sin sumar snapshots acumulativos repetidos. Error/cancel conserva observación en finally; partial/cost-only no borra tokens previos ni coste conocido. Retorno4tuple legacy intacto. Recovery_usage separado de buckets principales/compactor y cargo al ledger presupuestario del turno; coste desconocido no se inventa. Gate antes de same-model/utility usa política vigente y presupuesto observado; agotamiento termina caller/round sin tools ni nueva inferencia. ASTlifecycle incorpora dos nuevas emisiones (6total) conservando4anteriores y comprueba latch antesfanout/outerbreak.
+
+Repro real loop/ladder/helper con proveedor sintético: usage800input/200output descartado antes (ledger0), ahora ledger1000/receipt1000. Ambos callers degenerate/ctx_ack con step2 de100tokens alcanzan cuota: utilidad/roundposterior/tools no despachan. Final53 correctas17,25s (30nuevas+lifecycle21+cost2); coordinador30 nuevas14,37s. Amplia previa98 correctas/1 fallo197,85s: único fallo era assert estructural de4emisiones desactualizado, corregido y repetido final; selección71 correctas103,29s tenía26nuevas antescontrolesfinales, no freeze global. Scope3filespropios.
+
+Límites: recuperación local excluida de cargo/receipt según política existente; turno originalmente local conserva grant ilimitado aunque utility sea remota (su consumo remoto sí observado/cargado, no límiteinventado). No reserva previa, unión de cuentas ni factura universal para retries internos sin identidad. Métricas principales mantienen su significado, consumo recovery aparte. Fuente https://github.com/openai/codex/tree/b1e72963c3b71a9265a551e54beff078384efed9 y auxiliareslocales ya visitados. Nuevo timing de uso principal antes recovery sólo evaluación, no cerrado. Sin modelos/GPU reales ni cambios personales.

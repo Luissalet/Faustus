@@ -25,3 +25,10 @@ incremento. Tampoco crea auditoría completa de operaciones directas del host.
 Fuente conceptual ya visitada: [H11](CODEX_HARNESS_ANALISIS_2026-09-29.md) y
 [Codex fijado b1e72963](https://github.com/openai/codex/tree/b1e72963c3b71a9265a551e54beff078384efed9).
 Implementación propia; no se repite revisión upstream.
+
+
+### VISITADO / IMPLEMENTADO — H11 cancelación recoge hijo CodeMode
+
+`da7412f6`: CancelledError en run_code_mode ya no salta limpieza posterior. Termina sólo proceso hijo directo capturado, cancela/espera pump con límite y reap acotado; propaga CancelledError. Repro childPython temporal propio leyendo config y sleep30: antes taskcancelled=True/childalive=True; después child recogido, pump no huérfano. Sin kill de procesos ajenos ni árbol de PIDs supuesto, sin cambio de cuotas/protocolo/drenajes.
+
+Final2nuevas0,78s con warnings-as-errors y gc explícito,32regresiones14,33s con1PytestUnraisableExceptionWarning WindowsProactor en approval_pause de causa no determinada (sin causalidad baseline certificada; no esconderla). Coordinador2nuevas-Werror0,80s correctas. Errorfixture accidental importgc enchild en vezjson produjo readiness timeout duranteQA; fixturecorregidoantesfinal, no bugproducto. Sólo runner.py+testnuevo. No garantías sobre descendientes, cancelacionesrepetidas o callbacks que ignorencancelación; stdin/handlesdurables generales pendientes. Fuente https://github.com/openai/codex/tree/b1e72963c3b71a9265a551e54beff078384efed9 y runtimehostlocal; métodosvisitados no repetidos.
