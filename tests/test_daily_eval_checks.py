@@ -135,3 +135,109 @@ def test_cache_totals_sum_the_tasks_and_give_the_reuse_share():
               "prompt_cache": total, "tasks": []}
     assert "86% reutilizado, 1 rondas con caché perdida" in markdown(report)
     assert cache_totals([{}])["reuse"] is None
+
+
+# ------------------------------------------------------------ advisor A/B ---
+
+def _ab_args(**over):
+    from types import SimpleNamespace
+    base = dict(base="http://x", model="main", endpoint_url="http://m/v1", only="dates-span,dates-weekday",
+                with_writes=False, timeout=30, set=[], advisor_ab=True)
+    base.update(over)
+    return SimpleNamespace(**base)
+
+
+class _AbClient:
+    """A fake instance: the answer, rounds and time depend on whether the
+    advisor setting is on at the moment the case runs."""
+    log = []
+
+    def __init__(self, *a, **k):
+        self.advisor = None
+        self.saved = []
+
+    def settings(self):
+        return {"advisor_enabled": False, "other": 1}
+
+    def save_settings(self, patch):
+        self.saved.append(dict(patch))
+        _AbClient.log.append(("save", dict(patch)))
+        if "advisor_enabled" in patch:
+            self.advisor = patch["advisor_enabled"]
+
+    def new_session(self, model, endpoint_url):
+        return "s"
+
+    def turn(self, session, message, mode, model, web, timeout, approve):
+        _AbClient.log.append(("turn", self.advisor))
+        on = bool(self.advisor)
+        # without the advisor the model misses the weekday case; with it, it hits and takes one more round
+        answer = "viernes" if on or "1 de enero" not in message else "sábado"
+        if "entre el 3 de marzo" in message:
+            answer = "Hay 45 días."
+        return {"answer": answer, "tools": [], "cards": 0, "error": "", "seconds": 12.0 if on else 10.0,
+                "prompt_cache": {"rounds": 0, "processed": 0, "cached": 0, "lost_rounds": 0},
+                "observed_models": ["main"], "fallbacks": [], "rounds": 3 if on else 2,
+                "advisor_uses": 1 if on else 0}
+
+
+def test_advisor_ab_runs_each_case_under_both_arms_and_reports_per_arm(monkeypatch):
+    de = daily_eval
+    _AbClient.log = []
+    monkeypatch.setattr(de, "Client", _AbClient)
+    report = de.run(_ab_args())
+    arms = report["arms"]
+    assert set(arms) == {"without_advisor", "with_advisor"}
+    assert arms["without_advisor"] == {"hits": 1, "cases": 2, "rounds": 4, "seconds": 20.0, "advisor_uses": 0}
+    assert arms["with_advisor"] == {"hits": 2, "cases": 2, "rounds": 6, "seconds": 24.0, "advisor_uses": 2}
+    assert [(r["id"], r["arm"]) for r in report["tasks"]] == [
+        ("dates-weekday", "without_advisor"), ("dates-weekday", "with_advisor"),
+        ("dates-span", "without_advisor"), ("dates-span", "with_advisor")]
+    # the arms alternate per case, and the turns really ran under the matching setting
+    assert [e[1] for e in _AbClient.log if e[0] == "turn"] == [False, True, False, True]
+    md = de.markdown(report)
+    assert "A/B del asesor" in md and "| with_advisor | 2/2 | 6 | 24 | 2 |" in md
+    assert "| dates-weekday | MAL, 2, 10 | bien, 3, 12 |" in md
+
+
+def test_advisor_ab_restores_the_advisor_setting_afterwards_and_on_failure(monkeypatch):
+    de = daily_eval
+    saved = []
+
+    class Boom(_AbClient):
+        def save_settings(self, patch):
+            saved.append(dict(patch))
+
+        def turn(self, *a, **k):
+            raise RuntimeError("engine down")
+
+    monkeypatch.setattr(de, "Client", Boom)
+    report = de.run(_ab_args(only="dates-span"))      # a failing turn is a result, the run goes on
+    assert report["arms"]["with_advisor"]["hits"] == 0
+    assert saved[0] == {"advisor_enabled": False} and saved[-1] == {"advisor_enabled": False}
+    saved.clear()
+
+    def boom(args, client, arms=None):
+        raise RuntimeError("fatal")
+    monkeypatch.setattr(de, "_run", boom)
+    import pytest
+    with pytest.raises(RuntimeError):
+        de.run(_ab_args())
+    assert saved == [{"advisor_enabled": False}], "restored to what it was before the A/B"
+
+
+def test_turn_counts_rounds_and_advisor_uses_from_the_stream():
+    class FakeClient(daily_eval.Client):
+        def __init__(self):
+            pass
+
+        def form(self, path, data, timeout=30):
+            events = [{"type": "model_info", "model": "main"}, {"type": "agent_step", "round": 2},
+                      {"type": "advisor_advice", "trigger": "loop"}, {"type": "delta", "delta": "ok"},
+                      {"type": "metrics", "data": {"agent_rounds": 3}}]
+            return io.BytesIO("".join(f"data: {json.dumps(ev)}\n\n" for ev in events).encode())
+
+    result = FakeClient().turn("s", "m", "agent", "main", False, 30, False)
+    assert result["rounds"] == 3 and result["advisor_uses"] == 1
+    combined = daily_eval.combine_turns([result, result])
+    assert combined["rounds"] == 6 and combined["advisor_uses"] == 2

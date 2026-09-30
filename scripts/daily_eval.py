@@ -15,6 +15,7 @@ the answer — never a model judging a model.
     python scripts/daily_eval.py --only dates-weekday,iva
     python scripts/daily_eval.py --with-writes      # also the tasks that write (a note)
     python scripts/daily_eval.py --set agent_followup_reasoning_budget=1536   # one A/B arm
+    python scripts/daily_eval.py --advisor-ab       # every case twice: advisor off, then on
 
 Credentials come from FAUSTUS_USER / FAUSTUS_PASS. The report goes to
 `logs/daily_eval/<timestamp>.json` and `.md` (or `--out PREFIX`).
@@ -132,6 +133,7 @@ class Client:
         answer, tools, cards, error = "", [], 0, ""
         observed_models, fallbacks = [], []
         cache = {"rounds": 0, "processed": 0, "cached": 0, "lost_rounds": 0}
+        rounds, steps, advisor_uses = 0, 0, 0
         started = time.time()
         for _leg in range(6):
             approval = None
@@ -161,7 +163,14 @@ class Client:
                         answer = ev["text"]
                     if kind == "tool_start":
                         tools.append(str(ev.get("tool") or ""))
+                    if kind == "agent_step":
+                        steps += 1
+                    if kind == "advisor_advice":
+                        advisor_uses += 1
                     if kind == "metrics" and isinstance(ev.get("data"), dict):
+                        ar = ev["data"].get("agent_rounds")
+                        if isinstance(ar, (int, float)) and not isinstance(ar, bool):
+                            rounds += int(ar)
                         for key, value in (ev["data"].get("prompt_cache") or {}).items():
                             if key in cache and isinstance(value, (int, float)):
                                 cache[key] += int(value)
@@ -181,6 +190,8 @@ class Client:
                     "tool_approval_id": approval, "tool_approval_decision": "approve_task"}
         return {"answer": answer, "tools": tools, "cards": cards, "error": error,
                 "seconds": round(time.time() - started, 1), "prompt_cache": cache,
+                # model rounds: the loop's own count, else the rounds it announced (+ the first)
+                "rounds": rounds or (steps + 1), "advisor_uses": advisor_uses,
                 "observed_models": observed_models, "fallbacks": fallbacks}
 
 
@@ -209,31 +220,66 @@ def combine_turns(turns: List[Dict[str, Any]]) -> Dict[str, Any]:
                                 for model in turn.get("observed_models") or []]
     final["fallbacks"] = [fallback for turn in turns
                           for fallback in turn.get("fallbacks") or []]
+    final["rounds"] = sum(int(turn.get("rounds") or 0) for turn in turns)
+    final["advisor_uses"] = sum(int(turn.get("advisor_uses") or 0) for turn in turns)
     final["error"] = next((str(turn["error"]) for turn in turns if turn.get("error")), "")
     final["turns"] = turns
     return final
 
 
+#: The two arms of `--advisor-ab`: the same cases with the advisor off, then on.
+ADVISOR_ARMS = (("without_advisor", {"advisor_enabled": False}), ("with_advisor", {"advisor_enabled": True}))
+
+
 def run(args) -> Dict[str, Any]:
     client = Client(args.base, os.environ.get("FAUSTUS_USER", ""), os.environ.get("FAUSTUS_PASS", ""))
     overrides = parse_overrides(getattr(args, "set", None) or [])
-    if not overrides:
+    arms = list(ADVISOR_ARMS) if getattr(args, "advisor_ab", False) else []
+    if not overrides and not arms:
         return _run(args, client)
-    # An A/B arm: apply the settings for this run only and put the previous
+    # An A/B run: apply the settings for this run only and put the previous
     # values back afterwards, whatever happens in between.
     before = client.settings()
-    previous = {k: before.get(k) for k in overrides}
-    client.save_settings(overrides)
-    print(f"settings for this run: {overrides} (restored afterwards)", flush=True)
+    touched = set(overrides) | {k for _, patch in arms for k in patch}
+    previous = {k: before.get(k) for k in touched}
+    if overrides:
+        client.save_settings(overrides)
+        print(f"settings for this run: {overrides} (restored afterwards)", flush=True)
     try:
-        report = _run(args, client)
+        report = _run(args, client, arms=arms) if arms else _run(args, client)
     finally:
         client.save_settings(previous)
-    report["settings"] = overrides
+    if overrides:
+        report["settings"] = overrides
     return report
 
 
-def _run(args, client: "Client") -> Dict[str, Any]:
+def _run_task(args, client: "Client", task: Dict[str, Any]) -> Dict[str, Any]:
+    session = client.new_session(args.model, args.endpoint_url)
+    result: Dict[str, Any] = {"answer": "", "tools": [], "cards": 0, "seconds": 0.0, "error": ""}
+    turns: List[Dict[str, Any]] = []
+    for index, message in enumerate(task["messages"]):
+        # "new_chat_each": every message in a fresh chat (memory recall
+        # across chats); the checks read the last one.
+        if index and task.get("new_chat_each"):
+            session = client.new_session(args.model, args.endpoint_url)
+        try:
+            result = client.turn(session, message, task.get("mode", "agent"), args.model,
+                                 bool(task.get("web")), args.timeout, approve=True)
+        except Exception as exc:  # noqa: BLE001 - one task's failure is a result
+            result = {"answer": "", "tools": [], "cards": 0, "seconds": 0.0, "error": repr(exc)}
+            turns.append(result)
+            break
+        turns.append(result)
+        if result.get("error"):
+            break
+    result = combine_turns(turns)
+    checks = check(task, {**result, "expected_model": args.model})
+    ok = all(c["ok"] for c in checks)
+    return {"id": task["id"], "ok": ok, "session": session, **result, "checks": checks}
+
+
+def _run(args, client: "Client", arms: Optional[List[Any]] = None) -> Dict[str, Any]:
     tasks = json.loads(TASKS_PATH.read_text(encoding="utf-8"))
     only = {t.strip() for t in (args.only or "").split(",") if t.strip()}
     rows = []
@@ -242,39 +288,47 @@ def _run(args, client: "Client") -> Dict[str, Any]:
             continue
         if task.get("writes") and not args.with_writes:
             continue
-        session = client.new_session(args.model, args.endpoint_url)
-        result: Dict[str, Any] = {"answer": "", "tools": [], "cards": 0, "seconds": 0.0, "error": ""}
-        turns: List[Dict[str, Any]] = []
-        for index, message in enumerate(task["messages"]):
-            # "new_chat_each": every message in a fresh chat (memory recall
-            # across chats); the checks read the last one.
-            if index and task.get("new_chat_each"):
-                session = client.new_session(args.model, args.endpoint_url)
-            try:
-                result = client.turn(session, message, task.get("mode", "agent"), args.model,
-                                     bool(task.get("web")), args.timeout, approve=True)
-            except Exception as exc:  # noqa: BLE001 - one task's failure is a result
-                result = {"answer": "", "tools": [], "cards": 0, "seconds": 0.0, "error": repr(exc)}
-                turns.append(result)
-                break
-            turns.append(result)
-            if result.get("error"):
-                break
-        result = combine_turns(turns)
-        checks = check(task, {**result, "expected_model": args.model})
-        ok = all(c["ok"] for c in checks)
-        rows.append({"id": task["id"], "ok": ok, "session": session, **result, "checks": checks})
-        print(f"{'PASS' if ok else 'FAIL'} {task['id']:<22} {result['seconds']:>6.0f} s  "
-              f"tools={','.join(t.split('__')[-1] for t in result['tools']) or '-'}  cards={result['cards']}",
-              flush=True)
-        for c in checks:
-            if not c["ok"]:
-                print(f"      - {c['check']} {c['detail']}", flush=True)
+        # Each case runs under every arm back to back (not arm after arm), so
+        # a slow minute on the machine does not land on one arm only.
+        for arm, patch in (arms or [("", {})]):
+            if patch:
+                client.save_settings(patch)
+            row = _run_task(args, client, task)
+            if arm:
+                row["arm"] = arm
+            rows.append(row)
+            label = f"{row['id']} [{arm}]" if arm else row["id"]
+            print(f"{'PASS' if row['ok'] else 'FAIL'} {label:<36} {row['seconds']:>6.0f} s  "
+                  f"rounds={row.get('rounds', 0)}  tools={','.join(t.split('__')[-1] for t in row['tools']) or '-'}  "
+                  f"cards={row['cards']}", flush=True)
+            for c in row["checks"]:
+                if not c["ok"]:
+                    print(f"      - {c['check']} {c['detail']}", flush=True)
     passed = sum(1 for r in rows if r["ok"])
-    return {"when": time.strftime("%Y-%m-%d %H:%M:%S"), "base": args.base, "model": args.model,
-            "passed": passed, "total": len(rows),
-            "seconds": round(sum(r["seconds"] for r in rows), 1),
-            "prompt_cache": cache_totals(rows), "tasks": rows}
+    report = {"when": time.strftime("%Y-%m-%d %H:%M:%S"), "base": args.base, "model": args.model,
+              "passed": passed, "total": len(rows),
+              "seconds": round(sum(r["seconds"] for r in rows), 1),
+              "prompt_cache": cache_totals(rows), "tasks": rows}
+    if arms:
+        report["arms"] = arm_summary(rows)
+    return report
+
+
+def arm_summary(rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """Per arm of an A/B run: hits (cases whose checks all passed), cases,
+    model rounds, seconds and advisor uses. Pure, so it is unit-tested."""
+    out: Dict[str, Dict[str, Any]] = {}
+    for r in rows:
+        arm = str(r.get("arm") or "")
+        if not arm:
+            continue
+        s = out.setdefault(arm, {"hits": 0, "cases": 0, "rounds": 0, "seconds": 0.0, "advisor_uses": 0})
+        s["cases"] += 1
+        s["hits"] += 1 if r.get("ok") else 0
+        s["rounds"] += int(r.get("rounds") or 0)
+        s["seconds"] = round(s["seconds"] + float(r.get("seconds") or 0), 1)
+        s["advisor_uses"] += int(r.get("advisor_uses") or 0)
+    return out
 
 
 def cache_totals(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -303,8 +357,26 @@ def markdown(report: Dict[str, Any]) -> str:
     for r in report["tasks"]:
         fails = "; ".join(f"{c['check']} {c['detail']}".strip() for c in r["checks"] if not c["ok"])
         tools = ", ".join(t.split("__")[-1] for t in r["tools"]) or "—"
-        lines.append(f"| {r['id']} | {'bien' if r['ok'] else 'MAL'} | {r['seconds']:.0f} | {tools} | "
+        lines.append(f"| {r['id']}{' [' + r['arm'] + ']' if r.get('arm') else ''} | {'bien' if r['ok'] else 'MAL'} | {r['seconds']:.0f} | {tools} | "
                      f"{r['cards']} | {fails or '—'} |")
+    arms = report.get("arms") or {}
+    if arms:
+        lines += ["", "## A/B del asesor", "",
+                  "| brazo | aciertos | rondas | segundos | usos del asesor |", "| --- | --- | --- | --- | --- |"]
+        for arm, s in arms.items():
+            lines.append(f"| {arm} | {s['hits']}/{s['cases']} | {s['rounds']} | {s['seconds']:.0f} | {s['advisor_uses']} |")
+        by_task: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        for r in report["tasks"]:
+            by_task.setdefault(r["id"], {})[str(r.get("arm") or "")] = r
+        names = list(arms)
+        lines += ["", "| tarea | " + " | ".join(f"{n} (resultado, rondas, s)" for n in names) + " |",
+                  "| --- | " + " | ".join("---" for _ in names) + " |"]
+        for tid, per in by_task.items():
+            cells = []
+            for n in names:
+                r = per.get(n)
+                cells.append("—" if r is None else f"{'bien' if r['ok'] else 'MAL'}, {r.get('rounds', 0)}, {r['seconds']:.0f}")
+            lines.append(f"| {tid} | " + " | ".join(cells) + " |")
     return "\n".join(lines) + "\n"
 
 
@@ -317,6 +389,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--with-writes", action="store_true", help="also run tasks that write data (a note)")
     ap.add_argument("--timeout", type=float, default=900.0)
     ap.add_argument("--out", default="", help="report path prefix (default logs/daily_eval/<timestamp>)")
+    ap.add_argument("--advisor-ab", action="store_true",
+                    help="run every case twice, advisor off then on, and report hits, rounds and seconds per arm "
+                         "(needs advisor_model or teacher_model to be set)")
     ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                     help="apply a setting for this run only, restored afterwards (repeatable; A/B arms)")
     args = ap.parse_args(argv)
