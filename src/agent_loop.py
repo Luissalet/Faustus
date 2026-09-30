@@ -15761,6 +15761,13 @@ async def _stream_agent_loop_body(
                 # `failed_path_limit` times: that path is closed. Refuse
                 # without running and say what to change instead.
                 desc = f"{block.tool_type}: BLOCKED"
+                # Refusing is not progress: the repeat still counts toward the
+                # loop policy's own streak, so its stop still arrives.
+                try:
+                    if _loop_policy.observe_skipped(block.tool_type, block.content or "") == "stop":
+                        _loop_policy_stop = True
+                except Exception:  # noqa: BLE001
+                    pass
                 result = {
                     "error": (
                         f"This exact {block.tool_type} call has already failed "
