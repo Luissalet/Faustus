@@ -102,6 +102,10 @@ def _disabled_tools(prompt: str, definition: Any, tools: Optional[List[str]]) ->
     return disabled
 
 
+#: How often the reader wakes up to check the deadline and the cancel flag.
+_WAKE_S = 30.0
+
+
 async def _consume(stream, *, deadline: float, cancelled: Callable[[], bool]) -> Dict[str, Any]:
     text = ""
     tool_events: List[Dict[str, Any]] = []
@@ -111,6 +115,10 @@ async def _consume(stream, *, deadline: float, cancelled: Callable[[], bool]) ->
     stop_reason = ""
     approvals = 0
     it = stream.__aiter__()
+    # One pending read at a time, never cancelled by the periodic wake-up: a
+    # model that thinks for minutes before its first token must not have its
+    # stream torn down (cancelling `__anext__` closes the agent generator).
+    pending: Optional[asyncio.Future] = None
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -119,12 +127,16 @@ async def _consume(stream, *, deadline: float, cancelled: Callable[[], bool]) ->
         if cancelled():
             stop_reason = "cancelled"
             break
+        if pending is None:
+            pending = asyncio.ensure_future(it.__anext__())
+        done, _ = await asyncio.wait({pending}, timeout=min(remaining, _WAKE_S))
+        if not done:
+            continue                       # re-check the deadline and the lease
+        fut, pending = pending, None
         try:
-            chunk = await asyncio.wait_for(it.__anext__(), timeout=min(remaining, 30.0))
+            chunk = fut.result()
         except StopAsyncIteration:
             break
-        except asyncio.TimeoutError:
-            continue                       # re-check the deadline and the lease
         if not isinstance(chunk, str):
             continue
         if chunk.startswith("event: error"):
@@ -157,6 +169,12 @@ async def _consume(stream, *, deadline: float, cancelled: Callable[[], bool]) ->
                                     **({"needs_approval": True} if asked else {})})
         elif event.get("type") == "error" and event.get("message"):
             error = str(event.get("message"))[:300]
+    if pending is not None:              # deadline or cancel with a read in flight
+        pending.cancel()
+        try:
+            await pending
+        except (asyncio.CancelledError, StopAsyncIteration, Exception):  # noqa: BLE001
+            pass
     try:
         await stream.aclose()
     except Exception:  # noqa: BLE001 - closing a finished generator is best-effort

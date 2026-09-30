@@ -995,3 +995,27 @@ def test_a_simulation_follows_the_guard_branch_it_is_given():
     d = guard_flow(["secrets"])
     assert "hold" in simulate(d, choices={"gate": "fail"}).activated
     assert "send" in simulate(d, choices={"gate": "pass"}).activated
+
+
+def test_a_model_that_thinks_long_before_its_first_token_is_not_cut(monkeypatch):
+    """The periodic wake-up of the agent-turn reader must not cancel the
+    stream: a local model can think well past the wake-up interval."""
+    import asyncio
+    import json as _json
+    from src.workflows import agent_turn
+
+    closed = {"early": False}
+
+    async def slow_stream():
+        try:
+            await asyncio.sleep(0.25)          # longer than the patched wake-up below
+            yield "data: " + _json.dumps({"delta": "hola"}) + "\n\n"
+        except asyncio.CancelledError:
+            closed["early"] = True
+            raise
+
+    monkeypatch.setattr(agent_turn, "_WAKE_S", 0.05)
+    import time as _time
+    out = asyncio.run(agent_turn._consume(slow_stream(), deadline=_time.monotonic() + 5,
+                                          cancelled=lambda: False))
+    assert out["text"] == "hola" and not closed["early"] and out["stop_reason"] == ""

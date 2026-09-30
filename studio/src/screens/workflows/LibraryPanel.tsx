@@ -16,6 +16,12 @@ import { JsonField } from './NodeForms';
  * here from what the server itself lists, not rebuilt on this side.
  */
 
+/** A usable library name from a definition id ("triage.reply" -> "triage_reply"),
+ * the same rule the server applies when no name is given. */
+export function libraryName(id: string): string {
+  return (id || '').toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 48);
+}
+
 export interface LibraryPanelProps {
   definition: Record<string, unknown> | null;
   /** Called with the edited definition (its `inputs` schema changed). */
@@ -68,7 +74,7 @@ export function LibraryPanel({ definition, onDefinitionChange, onLoad, savedName
   useEffect(() => { void reload(); }, [reload]);
 
   const definitionId = typeof definition?.id === 'string' ? definition.id : '';
-  useEffect(() => { setName(savedName || definitionId); }, [savedName, definitionId]);
+  useEffect(() => { setName(savedName || libraryName(definitionId)); }, [savedName, definitionId]);
 
   async function run(label: string, action: () => Promise<void>) {
     setBusy(label);
