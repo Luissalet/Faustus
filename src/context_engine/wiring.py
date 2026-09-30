@@ -600,6 +600,16 @@ async def _file_reuse_is_current(request: ContextRequest, previous: Mapping[str,
         return False
 
 
+async def _objective_reuse_is_current(request: ContextRequest, previous: Mapping[str, Any]) -> bool:
+    from .objective_reuse import revalidate
+    try:
+        return await asyncio.wait_for(revalidate(previous.get("_objective_reuse_receipts"),
+            request, _reuse_scope, timeout_s()), timeout_s())
+    except Exception:
+        logger.debug("context objectives reuse validation unavailable", exc_info=True)
+        return False
+
+
 async def deliver_round(*, request: ContextRequest,
                         messages: Sequence[Mapping[str, Any]],
                         tool_schemas: Sequence[Any] = (),
@@ -611,7 +621,7 @@ async def deliver_round(*, request: ContextRequest,
 
     ``previous`` is what this function returned on an earlier round of the
     same turn. When its request identity matches, its delivered file projections
-    remain current and it still fits the room left, it is delivered again byte
+    and captured objectives queries remain current and it still fits the room left, it is delivered again byte
     for byte instead of compiling a new one:
     the question is the same all turn
     (see `last_user_text`), and a packet that differs from the last round's
@@ -648,7 +658,8 @@ async def deliver_round(*, request: ContextRequest,
             prior_report = previous["report"]
             prior_tokens = int(prior_report.get("packet_tokens") or 0)
             if (0 < prior_tokens <= allowance and previous.get("message")
-                    and await _file_reuse_is_current(request, previous)):
+                    and await _file_reuse_is_current(request, previous)
+                    and await _objective_reuse_is_current(request, previous)):
                 report = dict(prior_report)
                 report.update({
                     "round": max(0, int(round_index or 0)),
@@ -657,22 +668,25 @@ async def deliver_round(*, request: ContextRequest,
                 })
                 return {"message": previous["message"], "report": report,
                         "_reuse_scope": reuse_scope,
-                        "_file_reuse_receipts": previous.get("_file_reuse_receipts", ())}
+                        "_file_reuse_receipts": previous.get("_file_reuse_receipts", ()),
+                        "_objective_reuse_receipts": previous.get("_objective_reuse_receipts")}
         bounded = replace(
             request,
             policy=replace(request.policy, token_budget=allowance),
         )
-        packet, omitted = await asyncio.wait_for(
-            _compile_live(
-                bounded,
-                messages=_snapshot(messages),
-                tool_schemas=tuple(tool_schemas or ()),
-                context_length=context_length,
-                window_known=window_known,
-                max_output_tokens=max_output_tokens,
-            ),
-            timeout_s(),
-        )
+        from .objective_reuse import capture_queries, captured
+        with capture_queries() as objective_capture:
+            packet, omitted = await asyncio.wait_for(
+                _compile_live(
+                    bounded,
+                    messages=_snapshot(messages),
+                    tool_schemas=tuple(tool_schemas or ()),
+                    context_length=context_length,
+                    window_known=window_known,
+                    max_output_tokens=max_output_tokens,
+                ),
+                timeout_s(),
+            )
         recallable = _remember_omitted(packet, omitted, bounded)
         body = _render_live(packet, _recall_footer(recallable))
         if not body:
@@ -697,6 +711,7 @@ async def deliver_round(*, request: ContextRequest,
             "message": message,
             "_reuse_scope": reuse_scope,
             "_file_reuse_receipts": _captured_file_receipts(packet),
+            "_objective_reuse_receipts": captured(objective_capture, packet),
             "report": {
                 "round": max(0, int(round_index or 0)),
                 "delivered": True,

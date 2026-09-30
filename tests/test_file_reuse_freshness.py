@@ -26,6 +26,9 @@ def live(tmp_path, monkeypatch):
         return await original_fetch(self, ref, req)
 
     async def compile_live(req, **kwargs):
+        # This synthetic compiler deliberately does not query objectives.
+        from src.context_engine.objective_reuse import record_query
+        record_query(None, (), False)
         calls.append(req)
         candidate = await FileSource().fetch(req.explicit_refs[0], RetrievalRequest(request=req))
         item = ContextItem(item_id="file", source_type="file", source_ref=req.explicit_refs[0],

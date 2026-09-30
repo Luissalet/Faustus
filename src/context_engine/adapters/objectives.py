@@ -107,8 +107,12 @@ class ObjectivesSource(ThreadedSource):
 
         project = resolve_project(req)
         if not project:
+            from ..objective_reuse import capturing
+            if capturing() and (req.project_id or req.session_id or req.workspace):
+                raise ValueError("Objectives project scope is unavailable")
             return ()
-        state = objectives.load_state(project)
+        from ..objective_reuse import capturing
+        state = objectives.load_state(project, strict=True) if capturing() else objectives.load_state(project)
         payload = objectives.serialize_state(state)
         records = list(payload.get("objectives") or [])
         if not records:

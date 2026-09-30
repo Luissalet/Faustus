@@ -17,6 +17,9 @@ def delivery(monkeypatch):
     monkeypatch.setattr(wiring, "_remember_omitted", lambda *a: [])
 
     async def compile_live(request, **kw):
+        # This synthetic compiler deliberately does not query objectives.
+        from src.context_engine.objective_reuse import record_query
+        record_query(None, (), False)
         calls.append(request)
         return ContextPacket(
             packet_id=f"ctxpkt_{len(calls)}", request_id=request.request_id,
