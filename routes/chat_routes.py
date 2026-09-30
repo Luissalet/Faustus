@@ -5104,9 +5104,31 @@ def setup_chat_routes(
         from src.agent_tools.subagent_tools import active_worker_ids, steer_worker
         if child_session_id not in active_worker_ids():
             raise HTTPException(404, "No active sub-agent worker for this session")
+        if isinstance(body, dict) and body.get("return_receipt") is True:
+            from src.agent_tools.subagent_tools import steer_worker_receipt
+            receipt = steer_worker_receipt(child_session_id, text[:4000], source="user")
+            if receipt is None:
+                raise HTTPException(404, "No active sub-agent worker for this session")
+            return {"ok": True, "receipt": receipt}
         if not steer_worker(child_session_id, text[:4000], source="user"):
             raise HTTPException(404, "No active sub-agent worker for this session")
         return {"ok": True}
+
+    @router.get("/api/chat/subagent/steering-receipts/{child_session_id}/{receipt_id}")
+    async def subagent_steering_receipt(request: Request, child_session_id: str, receipt_id: str,
+                                      parent_session_id: str, parent_run_id: str) -> Dict[str, Any]:
+        # Caller locators are references, never authority. Authorize both rows
+        # before even listing or opening a journal.
+        _verify_session_owner(request, child_session_id)
+        _verify_session_owner(request, parent_session_id)
+        try:
+            receipt = agent_runs.read_steering_receipt(parent_session_id, parent_run_id,
+                                                      child_session_id, receipt_id)
+        except ValueError:
+            raise HTTPException(400, "Invalid steering receipt locator") from None
+        if receipt is None:
+            raise HTTPException(404, "Steering receipt not found")
+        return receipt
 
     # ------------------------------------------------------------------ #
     # GET /api/chat/activity — sidebar status dots in one call: sessions with a

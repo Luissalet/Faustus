@@ -481,6 +481,97 @@ def _session_log_paths(session_id: str) -> List[str]:
     return paths
 
 
+_STEERING_READ_MAX_BYTES = 8 * 1024 * 1024
+_STEERING_READ_MAX_LINES = 100000
+
+
+def read_steering_receipt(parent_session_id: str, parent_run_id: str,
+                          child_session_id: str, receipt_id: str) -> Optional[dict]:
+    """Bounded exact-journal observation; no fsync proof or queue restoration."""
+    if (not isinstance(parent_run_id, str) or not isinstance(receipt_id, str)
+            or not re.fullmatch(r"[0-9a-f]{32}", parent_run_id)
+            or not re.fullmatch(r"[0-9a-f]{32}", receipt_id)):
+        raise ValueError("invalid steering locator")
+    unknown = {"receipt_id": receipt_id, "state": "unknown", "evidence": "journal",
+               "durability": "unknown", "journal_present": False}
+    try:
+        names = [name for name in _session_log_names(parent_session_id)
+                 if name.endswith("-" + parent_run_id + ".jsonl")]
+        if len(names) != 1:
+            return unknown
+        with open(os.path.join(_runs_dir(), names[0]), "rb") as handle:
+            raw = handle.read(_STEERING_READ_MAX_BYTES + 1)
+        unknown["journal_present"] = True
+        if len(raw) > _STEERING_READ_MAX_BYTES or not raw.endswith(b"\n"):
+            return unknown
+        lines = raw.decode("utf-8").splitlines()
+        if not lines or len(lines) > _STEERING_READ_MAX_LINES:
+            return unknown
+        header = json.loads(lines[0])
+        if (not isinstance(header, dict) or header.get("session_id") != parent_session_id
+                or header.get("run_id") != parent_run_id):
+            return unknown
+        receipts = {}
+        for line in lines[1:]:
+            obj = json.loads(line)
+            if not isinstance(obj, dict):
+                return unknown
+            if "run_id" in obj and obj["run_id"] != parent_run_id:
+                return unknown
+            if "ev" not in obj:
+                if "status" in obj or isinstance(obj.get("effect_recovery"), dict):
+                    continue
+                return unknown
+            ev = obj["ev"]
+            if not isinstance(ev, str) or not isinstance(obj.get("seq"), int):
+                return unknown
+            if not ev.startswith("data: {"):
+                continue
+            payload = json.loads(ev[6:])
+            if payload.get("type") != "steering_receipt":
+                continue
+            rid, child = payload.get("receipt_id"), payload.get("child_session_id")
+            accepted = payload.get("accepted_attempt_run_id")
+            if (not isinstance(rid, str) or not re.fullmatch(r"[0-9a-f]{32}", rid)
+                    or not isinstance(child, str) or not child
+                    or payload.get("parent_run_id") != parent_run_id
+                    or not isinstance(accepted, str) or not accepted):
+                return unknown
+            previous = receipts.get(rid)
+            state = payload.get("state")
+            if previous is None:
+                if state != "queued":
+                    return unknown
+            else:
+                if (previous.get("child_session_id") != child
+                        or previous.get("accepted_attempt_run_id") != accepted
+                        or previous.get("worker_id") != payload.get("worker_id")
+                        or previous.get("delegation_id") != payload.get("delegation_id")
+                        or previous.get("source") != payload.get("source")
+                        or state not in {"queued": {"drained", "dropped"}, "drained": {"applied"}}.get(previous["state"], set())):
+                    return unknown
+            if state != "applied" and payload.get("applied_attempt_run_id"):
+                return unknown
+            if state in {"queued", "dropped"} and payload.get("drained_attempt_run_id"):
+                return unknown
+            if state == "drained" and not payload.get("drained_attempt_run_id"):
+                return unknown
+            if state == "applied" and (not payload.get("applied_attempt_run_id")
+                    or payload.get("applied_attempt_run_id") != payload.get("drained_attempt_run_id")
+                    or payload.get("drained_attempt_run_id") != previous.get("drained_attempt_run_id")):
+                return unknown
+            receipts[rid] = payload
+        receipt = receipts.get(receipt_id)
+        if receipt is None or receipt.get("child_session_id") != child_session_id:
+            return None  # Foreign/missing only after a validated complete journal.
+        return {key: receipt[key] for key in ("receipt_id", "state", "parent_run_id", "child_session_id",
+                "worker_id", "delegation_id", "accepted_attempt_run_id", "source",
+                "drained_attempt_run_id", "applied_attempt_run_id") if key in receipt} | {
+                    "evidence": "journal", "durability": "unknown", "journal_present": True}
+    except (OSError, UnicodeError, ValueError, TypeError, AttributeError):
+        return unknown
+
+
 def _log_path(session_id: str) -> str:
     """Latest only: an invalid current header must never expose an older run."""
     paths = _session_log_paths(session_id)

@@ -568,7 +568,9 @@ def steer_worker_receipt(child_session_id: str, text: str, source: str = "user")
         # observation history is bounded. The durable journal is unchanged.
         run._steering_receipts.pop(next(iter(run._steering_receipts)))
     _record_steering_receipt(run, receipt, "queued")
-    return dict(receipt)
+    return dict(receipt, child_session_id=run.session_id,
+                parent_session_id=run._steering_parent_session_id,
+                parent_run_id=run.parent_run_id)
 
 
 def steer_worker(child_session_id: str, text: str, source: str = "user") -> bool:
@@ -1301,6 +1303,7 @@ class SubagentRun:
         self.stall_reason: Optional[str] = None
         self.steer_queue: List[Dict[str, str]] = []
         self._steering_recorder = None
+        self._steering_parent_session_id = None
         self._steering_attempt_id = None
         self._steering_entry_receipts = {}
         self._steering_receipts = {}
@@ -2262,6 +2265,7 @@ class DelegateAgentsTool:
         for run in runs:
             _bind_causal_identity(run, parent_run_id, delegation_id, parent_call_id)
             run._steering_recorder = steering_recorder
+            run._steering_parent_session_id = parent_sid
         locks = FileLockRegistry(workspace)
         harness_options = ctx.get("harness_options") if isinstance(ctx.get("harness_options"), dict) else None
 
@@ -2635,6 +2639,7 @@ class DelegateAgentsTool:
             reviewer = SubagentRun(len(runs), reviewer_task, role="reviewer")
             _bind_causal_identity(reviewer, parent_run_id, delegation_id, parent_call_id)
             reviewer._steering_recorder = steering_recorder
+            reviewer._steering_parent_session_id = parent_sid
             # The reviewer runs after everyone else, so nobody is still writing:
             # this is the ONE place that fact is true, and the one place the
             # bypass is granted.
