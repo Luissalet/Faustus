@@ -384,6 +384,42 @@ export interface HarnessCheck {
   detail?: string;
 }
 
+/** One use of the advisor (src/advisor.py): a second model read the session
+ *  and wrote advice. Live from the `advisor_advice` event, restored from
+ *  `metadata.advisor`. `text` is absent when it had nothing to add. */
+export interface AdvisorAdvice {
+  trigger: string;
+  round?: number;
+  ok: boolean;
+  noAdvice: boolean;
+  model?: string;
+  tokensIn?: number;
+  tokensOut?: number;
+  latencyMs?: number;
+  text?: string;
+  error?: string;
+}
+
+/** The wire shape of one advisor use (live event or persisted entry). */
+export function adviceFrom(raw: unknown): AdvisorAdvice | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const trigger = str(r.trigger);
+  if (!trigger) return null;
+  return {
+    trigger,
+    round: num(r.round),
+    ok: r.ok === true,
+    noAdvice: r.no_advice === true,
+    model: str(r.model) || undefined,
+    tokensIn: num(r.tokens_in),
+    tokensOut: num(r.tokens_out),
+    latencyMs: num(r.latency_ms),
+    text: str(r.text) || undefined,
+    error: str(r.error) || undefined,
+  };
+}
+
 export interface HarnessSummary {
   toolCalls: number;
   failedCalls: number;
@@ -640,6 +676,7 @@ export type ChatEvent =
       warnings?: string[];
     }
   | { type: 'check'; check: HarnessCheck }
+  | { type: 'advice'; advice: AdvisorAdvice }
   | { type: 'summary'; summary: HarnessSummary }
   | { type: 'context'; percent?: number; tokens?: number; window?: number; ledger?: ContextLedger }
   /** OBJ-4/Lote 83: the agent's git policy acting on the turn's workspace
@@ -1723,6 +1760,10 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
           detail: str(raw.detail ?? raw.reason ?? raw.message) || undefined,
         },
       };
+    case 'advisor_advice': {
+      const advice = adviceFrom(raw);
+      return advice ? { type: 'advice', advice } : null;
+    }
     case 'harness_summary':
       return { type: 'summary', summary: summaryFrom(data) };
     case 'plan_tracker':

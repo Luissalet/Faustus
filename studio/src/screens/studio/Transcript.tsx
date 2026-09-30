@@ -5,7 +5,7 @@ import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState, 
 import { lazyChunk } from '../../shell/lazyChunk';
 import { createPortal } from 'react-dom';
 import { Button, describeError, ExecutionTimeline, friendlyError, IconButton } from '../../components';
-import { fetchCompactionEvent, pinCompactionFragment, fetchLlmTraces, forkLlmTrace, faviconStripEntries, type AskUser, type CompactionEvent, type ContextLedger, type ContextReceipt, type DelegationTask, type LlmTraceRow, type WebSource } from '../../adapters/chat';
+import { fetchCompactionEvent, pinCompactionFragment, fetchLlmTraces, forkLlmTrace, faviconStripEntries, type AdvisorAdvice, type AskUser, type CompactionEvent, type ContextLedger, type ContextReceipt, type DelegationTask, type LlmTraceRow, type WebSource } from '../../adapters/chat';
 import { createRecipeFromRun } from '../../adapters/strategy';
 import type { AnswerVersion } from '../../adapters/sessions';
 import type { EvidenceRef } from '../../adapters/evidence';
@@ -1633,6 +1633,49 @@ export function strategyIsDefault(strategy: TurnStrategy): boolean {
     && (strategy.reasons[0] ?? '').startsWith('no specific pattern matched');
 }
 
+const ADVICE_TRIGGER_WORD: Record<string, string> = {
+  plan_or_write: 'first plan or write',
+  loop: 'loop breaker',
+  final: 'before the final answer',
+};
+
+/**
+ * The advisor's notes for this turn (src/advisor.py): one collapsed item per
+ * use, closed by default and never louder than a thinking block. The body is
+ * the advice the working model was handed (advisory, written by a second
+ * model), or why there is none. Shown live and after a reload.
+ */
+function AdviceCard({ advice }: { advice: AdvisorAdvice[] }) {
+  if (advice.length === 0) return null;
+  return (
+    <div className="fs-advice" data-testid="turn-advice">
+      {advice.map((a, i) => {
+        const trigger = ADVICE_TRIGGER_WORD[a.trigger] ? t(ADVICE_TRIGGER_WORD[a.trigger]) : a.trigger;
+        const cost = [
+          a.model,
+          a.latencyMs !== undefined ? `${(a.latencyMs / 1000).toFixed(1)} s` : '',
+          a.tokensIn !== undefined ? t('{n} tokens', { n: (a.tokensIn ?? 0) + (a.tokensOut ?? 0) }) : '',
+        ].filter(Boolean).join(' · ');
+        return (
+          <details key={`${a.trigger}-${i}`} className="fs-studio__thinking" data-testid="turn-advice-item" data-tone={a.ok ? undefined : 'danger'}>
+            <summary>
+              {a.ok
+                ? a.noAdvice
+                  ? t('Advice ({trigger}): nothing to add', { trigger })
+                  : t('Advice ({trigger})', { trigger })
+                : t('Advice ({trigger}): not available', { trigger })}
+            </summary>
+            {a.text && <p className="fs-prose fs-advice__text">{a.text}</p>}
+            {!a.ok && a.error && <p className="fs-ctx__note">{a.error}</p>}
+            {cost && <p className="fs-trace__meta">{cost}</p>}
+            {a.text && <p className="fs-trace__meta">{t('Advisory only: a second model wrote this, and the agent may ignore it.')}</p>}
+          </details>
+        );
+      })}
+    </div>
+  );
+}
+
 function StrategyLine({ strategy }: { strategy: TurnStrategy }) {
   if (strategyIsDefault(strategy)) return null;
   const profile = STRATEGY_PROFILE_WORD[strategy.profile] ?? strategy.profile;
@@ -1953,6 +1996,7 @@ function AssistantTurn({
             })}
           </p>
         )}
+        {turn.advice && turn.advice.length > 0 && <AdviceCard advice={turn.advice} />}
         {!turn.streaming && turn.strategy && <StrategyLine strategy={turn.strategy} />}
         {!turn.streaming && <ContextReceiptCard turn={turn} />}
         {turn.ask && <AskCard ask={turn.ask} busy={busy} onApproval={onApproval} onAnswer={onAnswer} />}

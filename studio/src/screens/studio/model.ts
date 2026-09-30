@@ -1,9 +1,11 @@
 import type { RunStatus } from '../../components';
 import {
   summaryFrom,
+  adviceFrom,
   toolEventsFrom,
   domainOf,
   faviconUrlFor,
+  type AdvisorAdvice,
   type AskUser,
   type ChatEvent,
   type ContextLedger,
@@ -218,6 +220,9 @@ export interface Turn {
   contextReceipts?: ContextReceipt[];
   /** CMP-09/CMP-12 (W3-A): see `TurnStrategy`'s doc comment. */
   strategy?: TurnStrategy;
+  /** The advisor's notes for this turn (live `advisor_advice` events, or
+   *  `metadata.advisor` on a reloaded turn). */
+  advice?: AdvisorAdvice[];
   /** Lot T: the reasoning mode the server ran this turn with (live
    *  `think_mode` event); what the composer's "Auto · …" chip reads. */
   thinkMode?: { mode: 'fast' | 'think' | 'deep'; requested: string; source: string; budget: number | null };
@@ -1061,6 +1066,8 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
     }
     case 'check':
       return { ...turn, checks: [...turn.checks, event.check] };
+    case 'advice':
+      return { ...turn, advice: [...(turn.advice ?? []), event.advice] };
     case 'summary':
       return { ...turn, summary: event.summary };
     case 'context':
@@ -1208,6 +1215,14 @@ function strategyFromMeta(meta: Record<string, unknown>): TurnStrategy | undefin
   };
 }
 
+/** `metadata.advisor`: the advisor's uses this turn, as persisted by
+ *  `src/agent_loop.py`. `undefined` for a message that predates it. */
+function adviceFromMeta(meta: Record<string, unknown>): AdvisorAdvice[] | undefined {
+  if (!Array.isArray(meta.advisor)) return undefined;
+  const list = meta.advisor.map(adviceFrom).filter((x): x is AdvisorAdvice => x !== null);
+  return list.length ? list : undefined;
+}
+
 /**
  * What history keeps of an agent turn, back into the turn: the tool rail
  * (`tool_events`, with diffs, screenshots and sub-agent records), the
@@ -1281,6 +1296,7 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
     !meta.research_sources &&
     !meta.context_receipts &&
     !meta.strategy &&
+    !meta.advisor &&
     !modeFields.behaviorMode &&
     !restoredThoughts.thoughts.length
   ) {
@@ -1376,6 +1392,7 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
       ? (meta.context_receipts as Record<string, unknown>[]).map((x) => ({ source: s(x.source), kind: s(x.kind), ref: s(x.ref), why: s(x.why) }))
       : turn.contextReceipts,
     strategy: strategyFromMeta(meta) ?? turn.strategy,
+    advice: adviceFromMeta(meta) ?? turn.advice,
     plan: planUpdate?.plan ?? turn.plan,
     planSteps: planUpdate?.steps ?? turn.planSteps,
     planRevision: planUpdate?.revision ?? turn.planRevision,

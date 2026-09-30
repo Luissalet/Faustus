@@ -898,6 +898,17 @@ details.fs-studio__step > summary:hover .fs-trace__label {
   min-block-size: 22px;
 }
 
+.fs-advice {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fs-advice__text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .fs-studio__thinking > summary {
   display: flex;
   align-items: center;
