@@ -33,6 +33,8 @@ def live(tmp_path, monkeypatch):
         record_personal_query(None, (), False)
         from src.context_engine.document_reuse import record_query as record_document_query
         record_document_query(None, (), False)
+        from src.context_engine.memory_engine_reuse import record_query as record_standing_query
+        record_standing_query(None, (), False)
         calls.append(req)
         candidate = await FileSource().fetch(req.explicit_refs[0], RetrievalRequest(request=req))
         item = ContextItem(item_id="file", source_type="file", source_ref=req.explicit_refs[0],

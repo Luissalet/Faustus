@@ -48,6 +48,7 @@ reference is not provenance.
 
 from __future__ import annotations
 from datetime import datetime, timezone
+import asyncio
 
 import logging
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -136,44 +137,81 @@ class MemoryEngineSource(ThreadedSource):
     # ── search ─────────────────────────────────────────────────────────────
 
     def _search(self, req: RetrievalRequest) -> Sequence[ContextCandidate]:
+        return self._search_bundle(req, strict=False)[0]
+
+    async def search(self, req: RetrievalRequest) -> Sequence[ContextCandidate]:
+        from ..memory_engine_reuse import capturing, completed, standing
+        if not capturing() or not standing(req):
+            return await super().search(req)
+        if self._gate(req):
+            return ()
+        candidates, bundle = await asyncio.to_thread(self._search_bundle, req, strict=True)
+        if bundle is not None:
+            bundle = (*bundle, self)
+        completed(req, bundle)
+        return candidates
+
+    def _search_bundle(self, req: RetrievalRequest, *, strict: bool):
         import src.memory_engine as engine
 
         owner, project = self._scope(req)
         limit = req.top()
         query = str(req.query or "").strip()
+        bundle = None
+        degraded = False
 
         if query and req.allows("lexical"):
             rows = engine.search(query, owner=owner, project=project, k=limit,
                                  statuses=("active", "anti_pattern"),
                                  touch_hits=False)
         elif req.allows("mandatory"):
-            rows = self._standing(engine, owner, project, limit)
+            if strict:
+                from ..memory_engine_reuse import database_path, validating
+                try:
+                    before = database_path()
+                    expected = getattr(self, '_expected_database_path', None)
+                    if expected is not None and expected != before:
+                        raise ValueError('standing memory database changed before query')
+                    rows = self._standing(engine, owner, project, limit, strict=True)
+                    bundle = (before, database_path())
+                except Exception:
+                    if validating():
+                        raise
+                    rows = self._standing(engine, owner, project, limit)
+                    degraded = True
+            else:
+                rows = self._standing(engine, owner, project, limit)
         else:
-            return ()
+            return (), None
 
         out: List[ContextCandidate] = []
         for row in rows:
+            if degraded:
+                row = dict(row, degraded=True)
             candidate = self._candidate(row, req, owner, project)
             if candidate is not None:
                 out.append(candidate)
-        return tuple(out[:limit])
+        return tuple(out[:limit]), bundle
 
     @staticmethod
     def _standing(engine: Any, owner: str, project: str,
-                  limit: int) -> List[Dict[str, Any]]:
+                  limit: int, *, strict: bool = False) -> List[Dict[str, Any]]:
         """Procedural rules and anti-patterns, best first, with no query.
 
         Anti-patterns are deliberately not score-filtered: an inverted rule has
         a deeply negative score BY CONSTRUCTION — that is why it was inverted —
         and the warning is the entire reason it was kept.
         """
-        items = engine.scoped_items(owner, project, ("active", "anti_pattern"))
         instant = datetime.now(timezone.utc)
+        if strict:
+            items = engine.context_snapshot(owner, project, ("active", "anti_pattern"), now=instant)
+        else:
+            items = engine.scoped_items(owner, project, ("active", "anti_pattern"))
         items = [item for item in items
                  if item.get("sensitivity") != "secret"
                  and (not (item.get("valid_from") or item.get("valid_until"))
                       or engine.is_valid_now(item, instant))]
-        rows = [engine.public_item(item, now=instant) for item in items]
+        rows = items if strict else [engine.public_item(item, now=instant) for item in items]
         rules = [r for r in rows
                  if r.get("status") == "active"
                  and r.get("level") in _STANDING_LEVELS

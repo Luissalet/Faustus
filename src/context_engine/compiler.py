@@ -403,10 +403,12 @@ class ContextCompiler:
         from .objective_reuse import record_query
         from .personal_memory_reuse import record_query as record_personal_query
         from .document_reuse import record_query as record_document_query
+        from .memory_engine_reuse import record_query as record_standing_query
         if not pool:
             record_query(None, (), "objectives" in wanted)
             record_personal_query(None, (), "personal_memory" in wanted)
             record_document_query(None, (), "documents" in wanted)
+            record_standing_query(None, (), "memory_engine" in wanted)
             return [], []
         retrieval = RetrievalRequest(
             request=request,
@@ -421,10 +423,12 @@ class ContextCompiler:
             record_query(retrieval, results, "objectives" in wanted)
             record_personal_query(retrieval, results, "personal_memory" in wanted)
             record_document_query(retrieval, results, "documents" in wanted)
+            record_standing_query(retrieval, results, "memory_engine" in wanted)
         except Exception:  # noqa: BLE001 - gather promises not to, belt and braces
             record_query(retrieval, (), "objectives" in wanted)
             record_personal_query(retrieval, (), "personal_memory" in wanted)
             record_document_query(retrieval, (), "documents" in wanted)
+            record_standing_query(retrieval, (), "memory_engine" in wanted)
             logger.warning("context gather failed", exc_info=True)
             return [], ["retrieval failed entirely; the packet carries only "
                         "mandatory context"]

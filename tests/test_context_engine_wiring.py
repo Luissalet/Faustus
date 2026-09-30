@@ -547,13 +547,15 @@ async def test_a_later_round_reuses_the_packet_while_it_fits(flags, monkeypatch)
             record_personal_query(None, (), False)
             from src.context_engine.document_reuse import record_query as record_document_query
             record_document_query(None, (), False)
+            from src.context_engine.memory_engine_reuse import record_query as record_standing_query
+            record_standing_query(None, (), False)
             compiled.append(request.request_id)
             return ContextPacket(
                 packet_id=f"ctxpkt_{len(compiled)}", request_id=request.request_id,
                 owner="luis", session_id="s1", model="test-model",
                 window=ContextBudget(max_tokens=4096, input_budget=900),
                 sections=(ContextSection(kind="retrieved_memory", items=(
-                    ContextItem(item_id="m", source_type="memory", source_ref="mem:one",
+                    ContextItem(item_id="m", source_type="memory", source_ref="fixture:one",
                                 title="Known preference", body=f"note {len(compiled)}", tokens=3000),
                 )),),
             )

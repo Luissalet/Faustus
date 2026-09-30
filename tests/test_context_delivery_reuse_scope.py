@@ -24,6 +24,8 @@ def delivery(monkeypatch):
         record_personal_query(None, (), False)
         from src.context_engine.document_reuse import record_query as record_document_query
         record_document_query(None, (), False)
+        from src.context_engine.memory_engine_reuse import record_query as record_standing_query
+        record_standing_query(None, (), False)
         calls.append(request)
         return ContextPacket(
             packet_id=f"ctxpkt_{len(calls)}", request_id=request.request_id,
@@ -31,7 +33,7 @@ def delivery(monkeypatch):
             model=request.actor.model,
             window=ContextBudget(max_tokens=4096, input_budget=900),
             sections=(ContextSection(kind="retrieved_memory", items=(ContextItem(
-                item_id="m", source_type="memory", source_ref="mem:private",
+                item_id="m", source_type="memory", source_ref="fixture:private",
                 title="Snapshot", body=f"snapshot {len(calls)}", tokens=30),)),),
         ), []
 
@@ -52,7 +54,7 @@ def delivery(monkeypatch):
     ("actor", {"role": "worker"}),
     ("policy", {"allow_personal_memory": False}),
     ("policy", {"allow_project_sources": False}),
-    ("policy", {"excluded_refs": ("mem:private",)}),
+    ("policy", {"excluded_refs": ("fixture:private",)}),
     ("policy", {"excluded_prefixes": ("private/",)}),
     ("policy", {"minimum_freshness_s": 10}),
     ("task", {"query": "Another task."}), ("task", {"phase": "plan"}),
