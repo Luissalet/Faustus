@@ -1871,10 +1871,29 @@ def _bind_causal_identity(run: SubagentRun, parent_run_id: Optional[str],
         run.delegation_id = delegation_id
 
 
+def _ledger_child_result(run: SubagentRun) -> None:
+    """H23: the parent run's ledger learns what this worker cost, at the one
+    place every ending (done, stopped, stalled, timed out) goes through."""
+    try:
+        from src import exec_ledger
+        if not run.parent_run_id:
+            return
+        finished = run.finished or time.time()
+        exec_ledger.child_result(
+            run.parent_run_id, run.parent_session_id or "", child_session_id=run.session_id or "",
+            worker_id=run.id, name=str(run.name or ""), role=str(run.role or ""), outcome=str(run.outcome() or ""),
+            stop_reason=str(run.stop_reason or ""), input_tokens=run.input_tokens or None,
+            output_tokens=run.output_tokens or None, duration_ms=max(0.0, (finished - run.started) * 1000.0),
+            tool_calls=run.tool_calls, parent_call_id=run.parent_call_id)
+    except Exception:  # noqa: BLE001 - the ledger is a record, never a condition
+        logger.debug("exec ledger child_result skipped", exc_info=True)
+
+
 def _save_transcript(run: SubagentRun, sm: Any) -> None:
     """Persist the worker's transcript into its child chat so it can be
     audited later — also when it was stopped, stalled or timed out: what it
     did is evidence, and HOW it ended is recorded in the metadata."""
+    _ledger_child_result(run)
     if not sm or not run.session_id:
         return
     try:

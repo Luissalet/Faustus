@@ -68,6 +68,10 @@ reaches any route below at all — the 403 names the missing scope.
 | GET | `/api/session/{session_id}/usage` | `sessions`, `agents:dispatch` | read | An owned session's usage per model: tokens, prompt cache, steps, tool calls, time, cost. |
 | GET | `/api/usage/recap?days=N` | `sessions` | read | The token owner's own usage over the last N days, across chats: turns, tokens, cache, local vs hosted, models, top tools, cost. |
 | GET | `/api/session/{session_id}/turn_review?turns=N` | `sessions`, `agents:dispatch` | read | What an owned session's last N turns did (tools, failures, rounds, writes, cache), with findings. |
+| GET | `/api/effects`, `/api/effects/{effect_id}` | `sessions`, `agents:dispatch` | read | The token owner's actions that left the machine (mail, messages, webhooks, calendar/HTTP writes, connector writes): state, effect certainty, attempt id; `?unresolved=true` lists the unknown or partial ones. |
+| GET | `/api/runs/{session_id}/ledger` | `sessions`, `agents:dispatch` | read | An owned session's execution ledger; `?run_id=` replays one run call by call (approvals, attempts, what resumed). |
+| GET | `/api/runs/{session_id}/turn-cost` | `sessions`, `agents:dispatch` | read | Where one turn's time and tokens went, grouped by cause; values nobody reported are `null`. |
+| GET | `/api/agent/orphans` | `sessions`, `agents:dispatch` | read | The token owner's workers whose parent run is gone. |
 | GET | `/api/session/{session_id}/alternatives` | `sessions` | read | Earlier answers to the questions still in an owned session (what regenerate/edit replaced), keyed by the question's history index. |
 | GET | `/api/history/{session_id}` | `sessions` | read | An owned session's message history — the same route the desktop app itself loads a chat from. |
 | GET | `/api/session/{sid}/export` | `sessions` | read | Download one owned session's rendered conversation (`?fmt=md\|txt\|json\|html\|pdf\|docx`). The bytes are also recorded as an artifact (`session_id` set), so `client.artifacts.list({sessionId})` finds it right after. |

@@ -733,6 +733,15 @@ _register(
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
 _register(
+    # run_report (src/agent_tools/run_report_tool.py) reads the owner's own
+    # durable run records (effect outbox, execution ledger, steering journal);
+    # they can quote destinations and the user's own messages, so its result
+    # is untrusted like the chat reviews.
+    {"run_report"},
+    ToolEffect.READ_PRIVATE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
+_register(
     # turn_review (src/turn_review.py) reads the owner's own saved chat
     # turns (tool names, exit codes, short output excerpts, timings); the
     # excerpts can quote text a tool fetched, so its result is untrusted.

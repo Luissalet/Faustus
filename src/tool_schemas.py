@@ -3163,6 +3163,26 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "run_report",
+            "description": "Read what a run actually did, what it cost and what it left open, from durable records. view=effects: actions that left the machine (email, messages, webhooks, calendar/HTTP writes, connector writes) with their state and whether the outcome is still unknown; with unresolved=true it first asks the destination about each unresolved one and never sends again. view=ledger: one turn replayed call by call (attempts, approvals, what resumed after a restart). view=cost: where one turn's time and tokens went, by cause (model rounds, tools, compaction, recovery, advisor, workers, retries); values nobody reported stay unknown. view=steering: messages sent to a live run and whether each was applied or dropped. view=orphans: workers whose parent run is gone. Use before re-sending anything whose outcome was unknown, and when asked why a turn was slow or expensive.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "view": {"type": "string", "enum": ["effects", "ledger", "cost", "steering", "orphans"], "description": "Which record to read"},
+                    "session_id": {"type": "string", "description": "Another of your chats (default: this one)"},
+                    "run_id": {"type": "string", "description": "A specific run (default: the latest with work)"},
+                    "turn": {"type": "integer", "description": "0 = latest turn, 1 = the one before, ... (ledger, cost)"},
+                    "unresolved": {"type": "boolean", "description": "effects: only those whose outcome is unknown or partial, after asking the destination"},
+                    "state": {"type": "string", "description": "effects: filter by state (e.g. outcome_unknown)"},
+                    "limit": {"type": "integer", "description": "Maximum rows (default 30)"}
+                },
+                "required": ["view"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "page_prune",
             "description": "Cut a web page down to what answers a question, without a model. Give a url (fetched like web_fetch), or raw html, or already extracted text, plus the query the page is being read for. Each block (paragraph, heading, list item, table row) is scored by text density, link density, tag and class/id hints; blocks above the threshold are ranked against the query with BM25 (accents folded, Spanish and English) and the best are returned in document order under a character cap, with the page title and the best match always kept. Returns the pruned text, original vs pruned characters, blocks kept, the top BM25 score and (optionally) every block's score.",
             "parameters": {

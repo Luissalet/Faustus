@@ -80,7 +80,7 @@ def _capture_call_phase():
 @contextmanager
 def call_phase(phase, *, step=None):
     """Label only explicitly scoped auxiliary calls; never infer old phases."""
-    phase = phase if phase in ("compaction", "recovery") else None
+    phase = phase if phase in ("compaction", "recovery", "advisor") else None
     step = step if phase == "recovery" and type(step) is int and step in (2, 3) else None
     token = _CURRENT_CALL_PHASE.set((phase, step))
     try:
@@ -348,6 +348,26 @@ def _write_line(path: str, record: Dict[str, Any]) -> None:
         pass
 
 
+def _ledger_model_call(session_id, run_id, phase_snapshot, run_snapshot, transport, model, usage,
+                       duration_ms, error) -> None:
+    """H23: every model call of a run leaves a small, text-free row in the
+    execution ledger, whether or not debug tracing is on, so a turn's cost can
+    be explained afterwards. The run is the detached run the call was made in
+    (the server-owned binding); the id the tracer uses is only the fallback."""
+    from src import exec_ledger
+    if not exec_ledger.enabled():
+        return
+    phase, _step = (_capture_call_phase() if phase_snapshot is _CALL_PHASE_UNSET else phase_snapshot)
+    bound_run, _bound_session = exec_ledger.current_identity(str(session_id))
+    traced = run_id or ((current_run_id() or None) if run_snapshot is _RUN_ID_UNSET else run_snapshot)
+    # Identity is read here, in the caller's context; the write happens on the
+    # tracer's writer thread so a slow disk never adds latency to the call.
+    _EXECUTOR.submit(
+        exec_ledger.model_call, bound_run or traced or "", str(session_id), phase=phase or "",
+        transport=transport or "", model=model or "", usage=dict(usage or {}), duration_ms=duration_ms,
+        error=error or "", source="llm_trace")
+
+
 def record_call(
     *,
     session_id: Optional[str],
@@ -364,6 +384,7 @@ def record_call(
     error: Optional[str] = None,
     _phase_snapshot=_CALL_PHASE_UNSET,
     _run_snapshot=_RUN_ID_UNSET,
+    transport: Optional[str] = None,
 ) -> None:
     """Best-effort, fire-and-forget trace of one model call.
 
@@ -381,6 +402,11 @@ def record_call(
     """
     if not session_id:
         return
+    try:
+        _ledger_model_call(session_id, run_id, _phase_snapshot, _run_snapshot, transport, model, usage,
+                           duration_ms, error)
+    except Exception:
+        logger.debug("[llm_trace] ledger model_call skipped", exc_info=True)
     try:
         if not tracing_enabled():
             return
@@ -404,8 +430,12 @@ def record_call(
             "error": error,
         }
         phase, step = (_capture_call_phase() if _phase_snapshot is _CALL_PHASE_UNSET else _phase_snapshot)
-        if phase in ("compaction", "recovery"):
+        if phase in ("compaction", "recovery", "advisor"):
             record["phase"] = phase
+        if transport in ("stream", "call"):
+            # H23: a streamed call is one of the loop's own rounds; a
+            # non-streamed call with no phase is an auxiliary call nobody labelled.
+            record["transport"] = transport
         if phase == "recovery" and type(step) is int and step in (2, 3):
             record["step"] = step
         _EXECUTOR.submit(_record_on_thread, str(session_id), record)
@@ -573,7 +603,8 @@ def list_calls(session_id: str) -> List[Dict[str, Any]]:
             "provider": rec.get("provider"),
             "duration_ms": rec.get("duration_ms"),
             "usage": _summary_usage(rec.get("usage")),
-            **({"phase": rec["phase"]} if rec.get("phase") in ("compaction", "recovery") else {}),
+            **({"phase": rec["phase"]} if rec.get("phase") in ("compaction", "recovery", "advisor") else {}),
+            **({"transport": rec["transport"]} if rec.get("transport") in ("stream", "call") else {}),
             **({"step": rec["step"]} if rec.get("phase") == "recovery" and type(rec.get("step")) is int and rec["step"] in (2, 3) else {}),
             "response_chars": len(text),
             "response_preview": text[:200],

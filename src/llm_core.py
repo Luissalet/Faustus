@@ -4386,6 +4386,7 @@ async def llm_call_async(
             llm_trace.record_call(
                 _phase_snapshot=_trace_phase_snapshot,
                 _run_snapshot=_trace_run_snapshot,
+                transport="call",
                 session_id=session_id,
                 endpoint_url=url,
                 model=_model_out,
@@ -5760,6 +5761,7 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
             llm_trace.record_call(
                 _phase_snapshot=_trace_phase_snapshot,
                 _run_snapshot=_trace_run_snapshot,
+                transport="stream",
                 session_id=session_id,
                 endpoint_url=url,
                 model=model,

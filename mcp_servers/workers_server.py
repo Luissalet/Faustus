@@ -20,7 +20,8 @@ tokens go to planning and review:
 
 Tools: workers_guide (read first), dispatch_workers (start a job),
 session_usage / turn_review / answer_versions / session_events (what a chat or a worker's chat used and what
-its last turns did, with findings),
+its last turns did, with findings), run_report (effects that left the machine and whether they landed, a turn
+replayed call by call, where a turn's time and tokens went, orphaned workers),
 workers_wait (block until done, then the compact result), workers_wait_for
 (block until ONE condition holds — a phase, a worker state, an event, a file
 change — and return the moment it does), workers_status,
@@ -1006,6 +1007,25 @@ TOOLS: List[Tool] = [
         }, "required": ["session_id"]},
     ),
     Tool(
+        name="run_report",
+        description=(
+            "What a Faustus run did, cost and left open, from its durable records. view=effects: emails, messages, "
+            "webhooks, calendar/HTTP writes and connector writes that left the machine, with their state and whether "
+            "the outcome is still unknown (unresolved=true lists only those). view=ledger: a turn replayed call by "
+            "call, including approvals and what resumed after a restart. view=cost: where one turn's time and tokens "
+            "went, by cause (model rounds, tools, compaction, recovery, advisor, workers, retries); what nobody "
+            "reported stays unknown. view=orphans: workers whose parent run is gone. Read it before re-sending "
+            "anything whose outcome was unknown, and before judging a slow or expensive turn."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "view": {"type": "string", "enum": ["effects", "ledger", "cost", "orphans"]},
+            "session_id": {"type": "string", "description": "The chat id (ledger, cost)"},
+            "run_id": {"type": "string", "description": "A specific run (default: the latest with work)"},
+            "turn": {"type": "integer", "default": 0, "description": "0 = latest turn, 1 = the one before (ledger, cost)"},
+            "unresolved": {"type": "boolean", "default": False, "description": "effects: only unknown or partial outcomes"},
+        }, "required": ["view"]},
+    ),
+    Tool(
         name="answer_versions",
         description=(
             "The earlier answers a Faustus chat keeps for each question still in it: what a regenerate or an "
@@ -1416,6 +1436,28 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
                 turns = 1
             data = await asyncio.to_thread(_request, "GET", f"/api/session/{sid}/turn_review?turns={turns}")
             return _text(str((data or {}).get("markdown") or "No review."))
+        if name == "run_report":
+            view = str(args.get("view") or "").strip().lower()
+            sid = urllib.parse.quote(str(args.get("session_id") or "").strip(), safe="")
+            query = ""
+            if args.get("run_id"):
+                query += "&run_id=" + urllib.parse.quote(str(args["run_id"]), safe="")
+            try:
+                query += f"&turn={max(0, int(args.get('turn') or 0))}"
+            except (TypeError, ValueError):
+                pass
+            if view == "effects":
+                path = "/api/effects?" + ("unresolved=true" if args.get("unresolved") else "limit=50")
+            elif view == "orphans":
+                path = "/api/agent/orphans"
+            elif view in ("ledger", "cost"):
+                if not sid:
+                    return _text("Error: give the session_id")
+                path = f"/api/runs/{sid}/" + ("ledger" if view == "ledger" else "turn-cost") + "?" + query.lstrip("&")
+            else:
+                return _text("Error: view must be effects, ledger, cost or orphans")
+            data = await asyncio.to_thread(_request, "GET", path)
+            return _text(str((data or {}).get("text") or "Nothing recorded."))
         if name == "answer_versions":
             sid = urllib.parse.quote(str(args.get("session_id") or "").strip(), safe="")
             if not sid:

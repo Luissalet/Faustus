@@ -592,7 +592,27 @@ async def advise(*, trigger: str, messages: Sequence[Dict[str, Any]],
         logger.debug("advisor call failed", exc_info=True)
     finally:
         result.latency_ms = (time.monotonic() - started) * 1000.0
+        _ledger_call(result)
     return result
+
+
+def _ledger_call(result: "AdvisorResult") -> None:
+    """H23: the advisor's own model call, attributed to the run that asked for
+    it, so the turn's cost view can show it apart from the main rounds."""
+    if not result.model or result.skipped:
+        return
+    try:
+        from src import exec_ledger
+        run_id, session_id = exec_ledger.current_identity()
+        if not run_id:
+            return
+        exec_ledger.model_call(
+            run_id, session_id, phase="advisor", transport="call", model=result.model,
+            usage={"input_tokens": result.tokens_in, "output_tokens": result.tokens_out,
+                   "usage_source": "reported_engine" if result.tokens_source == "reported" else "estimated"},
+            duration_ms=result.latency_ms, error=result.error, source="advisor")
+    except Exception:  # noqa: BLE001 - never costs the advice
+        logger.debug("advisor ledger record skipped", exc_info=True)
 
 
 __all__ = [

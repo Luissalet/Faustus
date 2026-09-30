@@ -185,6 +185,18 @@ API_TOKEN_RULES: Tuple[Rule, ...] = (
           note="an owned session's usage: tokens, prompt cache, steps, tool calls, time, cost"),
     _read("/api/session/{session_id}/turn_review", "sessions", "agents:dispatch",
           note="what an owned session's recent turns did, with findings"),
+    # Read-only records of what a run did (H03/H08/H19/H23): actions that left
+    # the machine, the causal ledger of a run, where a turn's cost went and
+    # orphaned workers. Reconciling, resolving and killing stay on the session.
+    _read("/api/effects", "sessions", "agents:dispatch",
+          note="the token owner's own effects that left the machine, with their state and certainty"),
+    _read("/api/effects/{effect_id}", "sessions", "agents:dispatch", note="one owned effect with its history"),
+    _read("/api/runs/{session_id}/ledger", "sessions", "agents:dispatch",
+          note="an owned session's execution ledger, or one run replayed"),
+    _read("/api/runs/{session_id}/turn-cost", "sessions", "agents:dispatch",
+          note="where one of an owned session's turns spent its time and tokens, by cause"),
+    _read("/api/agent/orphans", "sessions", "agents:dispatch",
+          note="the token owner's own workers whose parent run is gone"),
     _read("/api/session/{session_id}/alternatives", "sessions",
           note="earlier answers to the questions still in an owned session (regenerate/edit versions)"),
     _read("/api/usage/recap", "sessions", note="the token owner's own usage over a period, across chats"),

@@ -1104,6 +1104,14 @@ EXAMPLES: Dict[str, List[str]] = {
         "qué módulos se han movido o acoplado nuevo desde entonces",
         "check whether this change introduced a new dependency cycle",
     ],
+    "run_report": [
+        "where did the time of that last turn go",
+        "¿dónde se fue el coste del último turno?",
+        "did that email actually go out before I send it again",
+        "¿se envió el correo o quedó en duda?",
+        "are there workers still running from a turn that ended",
+        "show me what happened to the message I sent while it was working",
+    ],
     "turn_review": [
         "why did your last answer take so long",
         "¿por qué falló el último turno?",

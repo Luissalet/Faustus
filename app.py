@@ -1570,6 +1570,7 @@ from routes.project_concepts_routes import setup_project_concepts_routes
 from routes.typed_choice_routes import setup_typed_choice_routes
 from routes.typed_decision_routes import setup_typed_decision_routes
 from routes.agent_loop_stats_routes import setup_agent_loop_stats_routes
+from routes.run_report_routes import setup_run_report_routes
 from routes.prior_art_routes import setup_prior_art_routes
 app.include_router(setup_contacts_routes())
 app.include_router(setup_code_graph_routes())
@@ -1578,6 +1579,7 @@ app.include_router(setup_project_concepts_routes())
 app.include_router(setup_typed_choice_routes())
 app.include_router(setup_typed_decision_routes())
 app.include_router(setup_agent_loop_stats_routes())
+app.include_router(setup_run_report_routes())
 app.include_router(setup_prior_art_routes())
 
 # Autonomous engineering wave: bug hunter, CI failure analyzer, fix memory,
@@ -2137,6 +2139,21 @@ async def _startup_event():
             logger.warning("Recovered %d interrupted agent run(s) from the previous process", len(_interrupted))
     except Exception as e:
         logger.warning(f"Interrupted-run recovery skipped: {e}")
+    # What the previous process left open in the effect outbox, the execution
+    # ledger and the steering journal is closed explicitly, never guessed:
+    # an effect that was dispatching is outcome_unknown, a run that was running
+    # is interrupted, a steering message that was never read is dropped with a
+    # reason (its text is carried into the next turn).
+    try:
+        from src import effect_outbox as _eo, exec_ledger as _xl, steering_journal as _sj
+        _r_eo = await asyncio.to_thread(_eo.recover_orphans)
+        _r_xl = await asyncio.to_thread(_xl.recover_after_restart)
+        _r_sj = await asyncio.to_thread(_sj.recover_after_restart)
+        logger.info("Restart recovery: effects=%s ledger_runs=%d steering_dropped=%d",
+                    _r_eo if not isinstance(_r_eo, dict) else {k: len(v) if hasattr(v, "__len__") else v for k, v in _r_eo.items()},
+                    len(_r_xl.get("runs", [])), len(_r_sj.get("dropped", [])))
+    except Exception as e:
+        logger.warning(f"Effect/ledger/steering recovery skipped: {e}")
     # A recording that was live when the process stopped cannot still be
     # recording after boot.  Recover it eagerly (when the feature is enabled),
     # rather than waiting for the first Teach API call to make persisted state

@@ -92,6 +92,7 @@ from .process_tools import (
 )
 from .sandbox_probe_tool import SandboxProbeTool
 from .turn_review_tool import TurnReviewTool
+from .run_report_tool import RunReportTool
 from .pdf_ops_tool import PdfOpsTool
 from .page_snapshot_tools import PageFindTool, PageWindowTool
 from .check_score_tool import CheckScoreTool
@@ -377,6 +378,7 @@ from .research_podcast_tools import ResearchPodcastTool  # noqa: E402
 
 TOOL_HANDLERS["research_podcast"] = ResearchPodcastTool().execute
 TOOL_HANDLERS["turn_review"] = TurnReviewTool().execute
+TOOL_HANDLERS["run_report"] = RunReportTool().execute
 
 # ---------------------------------------------------------------------------
 # Constants (re-exported for backward compatibility — single source of truth
@@ -501,6 +503,8 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "sandbox_probe",
              # Review of a chat's recent turns -- src/agent_tools/turn_review_tool.py.
              "turn_review",
+             # Durable run records (effects, ledger, cost, steering, orphans) -- src/agent_tools/run_report_tool.py.
+             "run_report",
              # R3 (Reach wave): fan-out -- src/agent_tools/fanout_tools.py.
              "fanout_run", "fanout_status", "fanout_results", "fanout_apply",
              # PDF operations (R4, Reach wave) -- src/agent_tools/pdf_ops_tool.py.
