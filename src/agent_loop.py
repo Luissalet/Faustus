@@ -15118,13 +15118,13 @@ async def _stream_agent_loop_body(
                 break
 
             # TASK-06: autonomy budget, checked before every tool call —
-            # tokens/active_seconds/subagents/remote_spend accumulated from
-            # rounds completed so far (see the round-loop check above for
-            # why sub-round granularity isn't needed here). Local inference
+            # settled ledger plus usage already observed in this response,
+            # whose legacy round charge happens only after tool dispatch.
+            # The admission view credits settled dimensions only once. Local inference
             # never takes this exit: there is no metered cost to exhaust.
             _budget_exhaustion = (
                 None if _local_completion_unbounded
-                else _budget_ledger.check(_round_loop_budget)
+                else _pending_main_admission_view(_budget_ledger, _pending_main_usage).check(_round_loop_budget)
             )
             if _budget_exhaustion is not None:
                 logger.info("[agent] autonomy budget exhausted before tool call: %s", _budget_exhaustion.as_dict())
