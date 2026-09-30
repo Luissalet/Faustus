@@ -69,6 +69,7 @@ _CURRENT_CALL_PHASE = contextvars.ContextVar("faustus_llm_trace_call_phase", def
 
 
 _CALL_PHASE_UNSET = object()
+_RUN_ID_UNSET = object()
 
 
 def _capture_call_phase():
@@ -362,6 +363,7 @@ def record_call(
     duration_ms: Optional[float] = None,
     error: Optional[str] = None,
     _phase_snapshot=_CALL_PHASE_UNSET,
+    _run_snapshot=_RUN_ID_UNSET,
 ) -> None:
     """Best-effort, fire-and-forget trace of one model call.
 
@@ -388,7 +390,7 @@ def record_call(
             "seq": None,  # filled in on the writer thread, ordered there
             "ts": time.time(),
             "session_id": str(session_id),
-            "run_id": run_id or (current_run_id() or None),
+            "run_id": run_id or ((current_run_id() or None) if _run_snapshot is _RUN_ID_UNSET else _run_snapshot),
             "endpoint": _endpoint_host(endpoint_url),
             "provider": _provider_kind(endpoint_url),
             "model": model,

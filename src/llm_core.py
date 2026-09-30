@@ -4348,6 +4348,7 @@ async def llm_call_async(
     """
     from src import llm_trace
     _trace_phase_snapshot = llm_trace._capture_call_phase()
+    _trace_run_snapshot = llm_trace.current_run_id() or None
     _t0 = time.time()
     _err: Optional[str] = None
     _text = ""
@@ -4384,6 +4385,7 @@ async def llm_call_async(
             from src import llm_trace
             llm_trace.record_call(
                 _phase_snapshot=_trace_phase_snapshot,
+                _run_snapshot=_trace_run_snapshot,
                 session_id=session_id,
                 endpoint_url=url,
                 model=_model_out,
@@ -5722,6 +5724,7 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
     """
     from src import llm_trace
     _trace_phase_snapshot = llm_trace._capture_call_phase()
+    _trace_run_snapshot = llm_trace.current_run_id() or None
     if not llm_trace.tracing_enabled() or not session_id:
         async for chunk in _stream_llm_traced_source(
             url, model, messages, temperature=temperature, max_tokens=max_tokens,
@@ -5756,6 +5759,7 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
         try:
             llm_trace.record_call(
                 _phase_snapshot=_trace_phase_snapshot,
+                _run_snapshot=_trace_run_snapshot,
                 session_id=session_id,
                 endpoint_url=url,
                 model=model,
