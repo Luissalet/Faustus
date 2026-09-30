@@ -1531,11 +1531,22 @@ def start(session_id: str, agen: AsyncGenerator[str, None], lane: Optional[str] 
             prev.task.cancel()
             prev_task = prev.task   # new run awaits this before it starts writing
         if prev.evict_task and not prev.evict_task.done():
-            prev.evict_task.cancel()
+            try:
+                prev.evict_task.cancel()
+            except RuntimeError:
+                pass  # its event loop is gone (a second app lifespan in this process)
         # Distinct run files let the old drain record its own final state.
         # A task cancelled before entering _drain still needs a terminal log.
         if prev.log is not None and prev.task is not None:
-            prev.task.add_done_callback(lambda _task, old=prev: old.log.finish(old.status))
+            if prev.task.done():
+                # A finished task would schedule the callback on its own loop,
+                # which may already be closed; finishing the log now is the same.
+                try:
+                    prev.log.finish(prev.status)
+                except Exception:
+                    pass
+            else:
+                prev.task.add_done_callback(lambda _task, old=prev: old.log.finish(old.status))
     run = _Run(lane=lane, label=label)
     run.model = str(model or "")
     run.endpoint_url = str(endpoint_url or "")
