@@ -4282,7 +4282,7 @@ def _recovery_usage_snapshot(raw):
 
 
 async def _recovery_step_completion(url, model, headers, messages, temperature, max_tokens,
-                                     gen_overrides, session_id, agent_stream_timeout, *, _usage_observer=None):
+                                     gen_overrides, session_id, agent_stream_timeout, *, _usage_observer=None, _trace_step=None):
     """One tools-off, no-harness completion for a recovery-ladder step.
 
     Returns ``(text, reasoning, degenerate, error)``: ``text``/``reasoning``
@@ -4298,47 +4298,49 @@ async def _recovery_step_completion(url, model, headers, messages, temperature, 
     error = False
     usage = {}
     try:
-        async for chunk in stream_llm_with_fallback(
-            [(url, model, headers)],
-            messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            tools=None,
-            timeout=agent_stream_timeout,
-            session_id=session_id,
-            gen_overrides=gen_overrides,
-            fallback_on_empty=False,
-        ):
-            if chunk.startswith("event: error"):
-                error = True
-                try:
-                    error_line = next(
-                        line[6:] for line in chunk.splitlines() if line.startswith("data: ")
-                    )
-                    error_data = json.loads(error_line)
-                except Exception:
-                    error_data = {}
-                if is_degenerate_output_error(error_data):
-                    degenerate = True
-                break
-            if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
-                try:
-                    data = json.loads(chunk[6:])
-                except Exception:
-                    continue
-                if data.get("type") == "usage":
-                    observed = _recovery_usage_snapshot(data.get("data"))
-                    if observed:
-                        # A later partial snapshot does not erase dimensions
-                        # already reported. Replace each present valid field,
-                        # never sum cumulative snapshots from this invocation.
-                        usage.update(observed)
-                        usage["cost_state"] = "known" if "cost_usd" in usage else "unknown"
-                if "delta" in data:
-                    if data.get("thinking"):
-                        reasoning += data.get("delta") or ""
-                    else:
-                        text += data.get("delta") or ""
+        from src.llm_trace import call_phase
+        with call_phase("recovery", step=_trace_step):
+            async for chunk in stream_llm_with_fallback(
+                [(url, model, headers)],
+                messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                tools=None,
+                timeout=agent_stream_timeout,
+                session_id=session_id,
+                gen_overrides=gen_overrides,
+                fallback_on_empty=False,
+            ):
+                if chunk.startswith("event: error"):
+                    error = True
+                    try:
+                        error_line = next(
+                            line[6:] for line in chunk.splitlines() if line.startswith("data: ")
+                        )
+                        error_data = json.loads(error_line)
+                    except Exception:
+                        error_data = {}
+                    if is_degenerate_output_error(error_data):
+                        degenerate = True
+                    break
+                if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
+                    try:
+                        data = json.loads(chunk[6:])
+                    except Exception:
+                        continue
+                    if data.get("type") == "usage":
+                        observed = _recovery_usage_snapshot(data.get("data"))
+                        if observed:
+                            # A later partial snapshot does not erase dimensions
+                            # already reported. Replace each present valid field,
+                            # never sum cumulative snapshots from this invocation.
+                            usage.update(observed)
+                            usage["cost_state"] = "known" if "cost_usd" in usage else "unknown"
+                    if "delta" in data:
+                        if data.get("thinking"):
+                            reasoning += data.get("delta") or ""
+                        else:
+                            text += data.get("delta") or ""
     finally:
         # One snapshot of latest valid fields per invocation, also after cancel.
         # Streaming snapshots are cumulative, not token increments. Internal
@@ -4537,7 +4539,7 @@ async def _recovery_ladder(*, reason: str, endpoint_url: str, model: str, header
             return
         text, reasoning, degenerate, _error = await _recovery_step_completion(
             endpoint_url, model, headers, step_messages, step_temperature, step_max_tokens,
-            step2_overrides, session_id, agent_stream_timeout,
+            step2_overrides, session_id, agent_stream_timeout, _trace_step=2,
             **({"_usage_observer": functools.partial(_usage_observer, step=2)} if _usage_observer is not None else {}),
         )
         if text.strip() and not degenerate and not is_reference_context_echo(text.strip()):
@@ -4576,7 +4578,7 @@ async def _recovery_ladder(*, reason: str, endpoint_url: str, model: str, header
             return
         text3, reasoning3, degenerate3, _error3 = await _recovery_step_completion(
             util_url, util_model, util_headers or {}, step_messages, step_temperature,
-            step_max_tokens, step3_overrides, session_id, agent_stream_timeout,
+            step_max_tokens, step3_overrides, session_id, agent_stream_timeout, _trace_step=3,
             **({"_usage_observer": functools.partial(_usage_observer, step=3)} if _usage_observer is not None else {}),
         )
         if text3.strip() and not degenerate3 and not is_reference_context_echo(text3.strip()):

@@ -972,17 +972,19 @@ async def summarize_rows(
         logger.debug(f"privacy_policy check unavailable for compaction ({e}); proceeding")
 
     try:
-        summary = await llm_call_async(
-            compact_url,
-            compact_model,
-            summary_messages,
-            temperature=0.2,
-            max_tokens=SUMMARY_MAX_TOKENS,
-            headers=compact_headers,
-            timeout=timeout,
-            session_id=session_id,
-            _usage_observer=_usage_observer,
-        )
+        from src.llm_trace import call_phase
+        with call_phase("compaction"):
+            summary = await llm_call_async(
+                compact_url,
+                compact_model,
+                summary_messages,
+                temperature=0.2,
+                max_tokens=SUMMARY_MAX_TOKENS,
+                headers=compact_headers,
+                timeout=timeout,
+                session_id=session_id,
+                _usage_observer=_usage_observer,
+            )
     except Exception as e:
         logger.error(f"Compaction summary failed: {e}")
         raise

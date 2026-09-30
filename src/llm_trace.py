@@ -43,6 +43,7 @@ back to its clock-window heuristic for those records.
 from __future__ import annotations
 
 import contextvars
+from contextlib import contextmanager
 import glob
 import hashlib
 import json
@@ -62,6 +63,21 @@ _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]")
 _CURRENT_RUN_ID: "contextvars.ContextVar[str]" = contextvars.ContextVar(
     "faustus_llm_trace_run_id", default=""
 )
+
+
+_CURRENT_CALL_PHASE = contextvars.ContextVar("faustus_llm_trace_call_phase", default=(None, None))
+
+
+@contextmanager
+def call_phase(phase, *, step=None):
+    """Label only explicitly scoped auxiliary calls; never infer old phases."""
+    phase = phase if phase in ("compaction", "recovery") else None
+    step = step if phase == "recovery" and type(step) is int and step in (2, 3) else None
+    token = _CURRENT_CALL_PHASE.set((phase, step))
+    try:
+        yield
+    finally:
+        _CURRENT_CALL_PHASE.reset(token)
 
 
 def set_current_run_id(run_id: str) -> "contextvars.Token":
@@ -376,6 +392,11 @@ def record_call(
             "duration_ms": duration_ms,
             "error": error,
         }
+        phase, step = _CURRENT_CALL_PHASE.get()
+        if phase is not None:
+            record["phase"] = phase
+        if step is not None:
+            record["step"] = step
         _EXECUTOR.submit(_record_on_thread, str(session_id), record)
         try:
             from src import token_calibration
@@ -541,6 +562,8 @@ def list_calls(session_id: str) -> List[Dict[str, Any]]:
             "provider": rec.get("provider"),
             "duration_ms": rec.get("duration_ms"),
             "usage": _summary_usage(rec.get("usage")),
+            **({"phase": rec["phase"]} if rec.get("phase") in ("compaction", "recovery") else {}),
+            **({"step": rec["step"]} if rec.get("phase") == "recovery" and type(rec.get("step")) is int and rec["step"] in (2, 3) else {}),
             "response_chars": len(text),
             "response_preview": text[:200],
             "finish_reason": rec.get("finish_reason"),
