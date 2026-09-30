@@ -598,6 +598,24 @@ _MCP_TOOL_MAP = {
 _EMAIL_MCP_OWNER_ARG = "_odysseus_owner"
 
 
+def _with_effect_link(tool: str, args: Dict) -> Dict:
+    """Hand the mail server the outbox admission opened for this call (only for
+    the send tools), so its SMTP dispatch settles that row. Hidden argument."""
+    try:
+        from src import effect_outbox
+        from src.effect_tools import EMAIL_EFFECT_TOOLS
+        ctx = effect_outbox.current_context()
+        bare = tool[len("mcp__email__"):] if tool.startswith("mcp__email__") else tool
+        if ctx is not None and ctx.admission_id and bare in EMAIL_EFFECT_TOOLS:
+            args = dict(args)
+            args["_faustus_effect"] = {
+                "admission_id": ctx.admission_id, "attempt_id": ctx.attempt_id, "run_id": ctx.run_id,
+                "session_id": ctx.session_id, "call_id": ctx.call_id, "tool": ctx.tool}
+    except Exception:  # noqa: BLE001 - the call must still run without the link
+        pass
+    return args
+
+
 def _parse_qualified_mcp_args(tool: str, content: str) -> tuple[Dict, Optional[str]]:
     raw = (content or "").strip()
     if not raw:
@@ -1529,42 +1547,139 @@ async def execute_tool_block(
         except Exception:
             _intent_failed = _intent_required
             logger.debug("tool_effect pending write failed for call_id=%s", call_id, exc_info=True)
+    # H03: a non-repeatable external effect (mail, messaging, third-party
+    # writes) is admitted only once its intent is committed to the effect
+    # outbox and read back. Independent of the run log: it also covers calls
+    # with no detached run, and is settled precisely by the transport.
+    _admission = None
+    _admission_error: Optional[BaseException] = None
+    _attempt_id = ""
     try:
-        if _intent_failed:
-            return ("Email not dispatched", {
+        from src import effect_outbox as _eo, effect_tools as _et
+        _attempt_id = _eo.new_attempt_id()
+        if _eo.enabled():
+            _desc = _et.describe_call(getattr(block, "tool_type", None), getattr(block, "content", None))
+            if _desc is not None:
+                _admission = _et.admit_call(
+                    _desc, owner=str(owner or ""), session_id=str(session_id or ""),
+                    run_id=str(causal_call.run_id or ""), call_id=str(call_id or ""))
+                _attempt_id = _admission.attempt_id or _attempt_id
+    except Exception as _admit_exc:  # noqa: BLE001 - intent not persisted: the effect must not be sent
+        _admission_error = _admit_exc
+    try:
+        if not _intent_failed and (_admission_error is not None or (
+                _admission is not None and _admission.deduplicated)):
+            # Nothing was dispatched: resolve the pending marker written above.
+            if _tracked_effect and effect_recorder is not None:
+                try:
+                    effect_recorder.record(
+                        call_id=str(call_id), tool=str(getattr(block, "tool_type", None) or ""),
+                        effect_class=_effect_class, state="failed", result_status="failed")
+                except Exception:
+                    logger.debug("tool_effect failed write skipped for call_id=%s", call_id, exc_info=True)
+        if _admission is not None and _admission.deduplicated and not _intent_failed and _admission_error is None:
+            _dedup = _et.deduplicated_result(_admission)
+            _dedup["attempt_id"] = _attempt_id
+            return (f"{getattr(block, 'tool_type', None)}: already dispatched", _dedup)
+        if _intent_failed or _admission_error is not None:
+            return ("Email not dispatched" if _email_effect else "Effect not dispatched", {
                 "status": "failed", "error_code": "EFFECT_INTENT_NOT_PERSISTED",
-                "error": "The email was not dispatched because its intent could not be persisted.",
-                "effect_not_dispatched": True, "exit_code": 1,
+                "error": ("The email was not dispatched because its intent could not be persisted."
+                          if _email_effect else
+                          "The action was not dispatched because its intent could not be persisted."),
+                "effect_not_dispatched": True, "exit_code": 1, "attempt_id": _attempt_id,
+                "effect_certainty": "none",
             })
         _tool_started_at = time.monotonic()
         _tool_started_wall = time.time()
-        output = await _execute_tool_block_impl(
-            block,
-            session_id=session_id,
-            disabled_tools=disabled_tools,
-            owner=owner,
-            progress_cb=progress_cb,
-            tool_policy=tool_policy,
-            security_context=security_context,
-            approved_document_id=(
-                exact_approval.pending.document_id
-                if approval_claimed
-                else None
-            ),
-            approved_document_version=(
-                exact_approval.pending.document_version
-                if approval_claimed
-                else None
-            ),
-            approved_document_digest=(
-                exact_approval.pending.document_digest
-                if approval_claimed
-                else None
-            ),
-            human_approved=approval_claimed,
-            pdf_call_binding=pdf_call_binding,
-            _causal_call=causal_call,
-        )
+        _effect_token = None
+        if _admission is not None:
+            _effect_ctx = _et.context_for(
+                _admission, owner=str(owner or ""), session_id=str(session_id or ""),
+                run_id=str(causal_call.run_id or ""), call_id=str(call_id or ""))
+            _effect_token = _eo.bind_context(_effect_ctx)
+            if _admission.descriptor.transport == "opaque":
+                try:
+                    _eo.begin_dispatch(_admission.id)
+                except Exception:  # noqa: BLE001 - dispatch could not be recorded: do not dispatch
+                    _eo.reset_context(_effect_token)
+                    return ("Effect not dispatched", {
+                        "status": "failed", "error_code": "EFFECT_INTENT_NOT_PERSISTED",
+                        "error": "The action was not dispatched because its dispatch could not be recorded.",
+                        "effect_not_dispatched": True, "exit_code": 1, "attempt_id": _attempt_id,
+                        "effect_certainty": "none"})
+        try:
+            output = await _execute_tool_block_impl(
+                block,
+                session_id=session_id,
+                disabled_tools=disabled_tools,
+                owner=owner,
+                progress_cb=progress_cb,
+                tool_policy=tool_policy,
+                security_context=security_context,
+                approved_document_id=(
+                    exact_approval.pending.document_id
+                    if approval_claimed
+                    else None
+                ),
+                approved_document_version=(
+                    exact_approval.pending.document_version
+                    if approval_claimed
+                    else None
+                ),
+                approved_document_digest=(
+                    exact_approval.pending.document_digest
+                    if approval_claimed
+                    else None
+                ),
+                human_approved=approval_claimed,
+                pdf_call_binding=pdf_call_binding,
+                _causal_call=causal_call,
+            )
+        except BaseException as _impl_exc:
+            # H04: an exception after dispatch is not "failed": the effect may
+            # have happened. Record it as unknown (cancellation included) and
+            # re-raise; outbox-managed calls are settled and, for ordinary
+            # exceptions, returned as an explicit outcome_unknown result.
+            _is_cancel = isinstance(_impl_exc, (asyncio.CancelledError, KeyboardInterrupt, SystemExit))
+            if _admission is not None:
+                _eff_row = _et.settle_admission(_admission, {}, result_status="failed", exception=_impl_exc)
+                if not _is_cancel and _eff_row.get("state") in ("outcome_unknown", "partial"):
+                    _exc_result = {"error": f"{type(_impl_exc).__name__}: {_impl_exc}", "exit_code": 1,
+                                   "attempt_id": _attempt_id}
+                    _et.apply_verdict(_exc_result, _eff_row)
+                    _exc_result["effect_certainty"] = "unknown" if _exc_result.get("status") == "outcome_unknown" else "partial"
+                    if _tracked_effect and effect_recorder is not None:
+                        try:
+                            effect_recorder.record(
+                                call_id=str(call_id), tool=str(getattr(block, "tool_type", None) or ""),
+                                effect_class=_effect_class, state="unknown" if _exc_result["effect_certainty"] == "unknown" else "partial",
+                                result_status=_exc_result["status"], uncertainty=_exc_result.get("uncertainty"))
+                        except Exception:
+                            logger.debug("tool_effect unknown write failed for call_id=%s", call_id, exc_info=True)
+                    return (f"{getattr(block, 'tool_type', None)}: outcome unknown", _exc_result)
+            if _tracked_effect and effect_recorder is not None and _effect_class and _effect_class != "read":
+                try:
+                    effect_recorder.record(
+                        call_id=str(call_id), tool=str(getattr(block, "tool_type", None) or ""),
+                        effect_class=_effect_class, state="unknown",
+                        result_status="cancelled" if _is_cancel else "outcome_unknown",
+                        uncertainty={"reason": f"{type(_impl_exc).__name__} after dispatch began",
+                                     "reconcile_action": "read_current_state_before_retry"})
+                except Exception:
+                    logger.debug("tool_effect unknown write failed for call_id=%s", call_id, exc_info=True)
+            raise
+        finally:
+            if _effect_token is not None:
+                _eo.reset_context(_effect_token)
+        if _admission is not None and isinstance(output, tuple) and len(output) > 1 and isinstance(output[1], dict):
+            try:
+                from src.tool_result import normalize_tool_result as _norm
+                _pre = _norm(output[1], call_id=str(call_id or ""))
+                _et.settle_admission(_admission, output[1], result_status=_pre.status)
+            except Exception:
+                logger.debug("effect admission settle skipped for call_id=%s", call_id, exc_info=True)
+
         # CALL-05: normalize the tool's own ad hoc result dict into the
         # typed ToolResult contract (src/tool_result.py), at THIS single
         # execution point — every caller (chat, workflow, subagent, MCP)
@@ -1602,6 +1717,16 @@ async def execute_tool_block(
                 "normalize_tool_result failed for tool=%s",
                 getattr(block, "tool_type", None), exc_info=True,
             )
+        # H04: every result carries the attempt it came from and how sure we
+        # are about its effect (none / confirmed / partial / unknown).
+        try:
+            if isinstance(output, tuple) and len(output) > 1 and isinstance(output[1], dict):
+                from src.tool_result import effect_certainty as _certainty
+                output[1].setdefault("attempt_id", _attempt_id)
+                output[1]["effect_certainty"] = _certainty(
+                    _typed_result, effect_class=_effect_class or "", raw=output[1])
+        except Exception:  # noqa: BLE001
+            logger.debug("effect certainty stamp skipped", exc_info=True)
         if _tracked_effect:
             # Receiving a result does not resolve a partial/unknown effect.
             # Preserve that uncertainty in the event used by restart recovery.
@@ -2374,6 +2499,7 @@ async def _execute_tool_block_impl(
                 if owner:
                     args = dict(args)
                     args[_EMAIL_MCP_OWNER_ARG] = owner
+                args = _with_effect_link(tool, args)
                 result = await mcp.call_tool(qualified, args)
         else:
             result = {"error": "MCP manager not available", "exit_code": 1}
@@ -2389,6 +2515,8 @@ async def _execute_tool_block_impl(
                 if tool.startswith("mcp__email__") and owner:
                     args = dict(args)
                     args[_EMAIL_MCP_OWNER_ARG] = owner
+                if tool.startswith("mcp__email__"):
+                    args = _with_effect_link(tool, args)
                 if is_browser_action(tool):
                     # Ola A wiring: route this task's browser_* calls through
                     # its own isolated MCP connection (WEB-03) instead of the
@@ -2468,6 +2596,9 @@ _FORMATTER_HANDLED_KEYS = {
     # calling format_tool_result (see command_output_filters wiring below)
     # and pops right after — never real tool-result data.
     "_shell_tool", "_shell_command",
+    # H03/H04 identity of the attempt and what it did to the world; shown by
+    # the dedicated effect line below, not as raw JSON.
+    "attempt_id", "effect_certainty", "effect_id",
 }
 
 
@@ -2533,6 +2664,13 @@ def format_tool_result(description: str, result: Dict, *, tool: str = "", comman
             parts.append(_cl)
     except Exception:  # noqa: BLE001 - a clock never costs a result
         pass
+    if isinstance(result, dict) and result.get("effect_certainty") in ("unknown", "partial") and (
+            result.get("status") in ("outcome_unknown", "partial") or result.get("outcome_unknown")):
+        _word = "UNKNOWN" if result.get("effect_certainty") == "unknown" else "PARTIAL"
+        parts.append(
+            f"**Effect outcome: {_word}** — this action may already have taken effect"
+            + (f" (effect {result.get('effect_id')})" if result.get("effect_id") else "")
+            + ". Do not repeat it without checking the destination first.")
     _image_count = 0
     try:
         from src.tool_images import normalize_result_images

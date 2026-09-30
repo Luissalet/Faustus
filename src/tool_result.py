@@ -151,4 +151,35 @@ def effect_state(result: Optional[ToolResult]) -> str:
     return "confirmed" if result.status == "succeeded" else "failed"
 
 
-__all__ = ["normalize_tool_result", "effect_state"]
+#: Effect classes whose failures cannot be read as "nothing happened" without
+#: an explicit marker: they leave the process (or change something that stays).
+_UNCERTAIN_ON_GENERIC_FAILURE = frozenset({"external", "sensitive"})
+
+
+def effect_certainty(result: Optional[ToolResult], *, effect_class: str = "",
+                     raw: Optional[Mapping[str, Any]] = None) -> str:
+    """How sure we are about what this call did to the world.
+
+    ``none``      certainly nothing happened (a read, a refusal, an explicit
+                  "not dispatched")
+    ``confirmed`` the effect happened
+    ``partial``   part of it happened
+    ``unknown``   it may have happened; do not repeat it without checking
+
+    A generic failure of an external-effect call without an explicit
+    not-dispatched marker is ``unknown``: an error string after dispatch does
+    not prove the destination did nothing.
+    """
+    raw = raw if isinstance(raw, Mapping) else {}
+    if result is None or result.status in ("outcome_unknown", "cancelled"):
+        return "unknown"
+    if result.status == "partial":
+        return "partial"
+    if result.status == "succeeded":
+        return "none" if effect_class in ("", "read") else "confirmed"
+    if result.status in ("denied", "conflict") or raw.get("effect_not_dispatched") or raw.get("blocked"):
+        return "none"
+    return "unknown" if effect_class in _UNCERTAIN_ON_GENERIC_FAILURE else "none"
+
+
+__all__ = ["normalize_tool_result", "effect_state", "effect_certainty"]

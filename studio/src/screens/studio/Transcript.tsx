@@ -740,6 +740,17 @@ function ToolRail({
                   </span>
                 </p>
               )}
+              {step.state === 'failed' && step.effectCertainty === 'unknown' && (
+                <p className="fs-studio__uncertain" data-testid="tool-effect-warning">
+                  <AlertTriangle size={14} aria-hidden="true" />
+                  <span>{t('This failed, but it may already have taken effect. Check the destination before trying again.')}</span>
+                </p>
+              )}
+              {step.attemptId && (
+                <p className="fs-studio__step-links" data-testid="tool-attempt-id">
+                  <span>{t('Attempt')} {step.attemptId}{step.effectId ? ` · ${t('Effect')} ${step.effectId}` : ''}</span>
+                </p>
+              )}
               {step.output && <pre className="fs-studio__out">{step.output.slice(0, 6000)}</pre>}
               {step.screenshot && <img className="fs-studio__shot" src={step.screenshot} alt={t('Tool screenshot')} loading="lazy" />}
             </details>

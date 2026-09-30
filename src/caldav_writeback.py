@@ -260,6 +260,16 @@ def _discover_calendars(client):
             return []
 
 
+def _interpret_push_result(result):
+    """Outbox verdict for ``push_event``'s answer: it never raises for a
+    refusal, so a not-ok dict means the server did not apply the change."""
+    if isinstance(result, dict) and result.get("ok"):
+        return ("succeeded", {"external_ref": str(result.get("remote_href") or "")})
+    reason = "conflict: neither side applied" if isinstance(result, dict) and result.get("conflict") \
+        else str((result or {}).get("error") or "push refused") if isinstance(result, dict) else "push refused"
+    return ("failed_before_effect", {"reason": reason[:300], "error_class": "caldav_refused"})
+
+
 def _writeback_blocking(local_cal_id, ev, delete, url, username, password,
                         owner="", account_id="") -> dict:
     from src.caldav_sync import _build_dav_client
@@ -382,9 +392,29 @@ async def writeback_event(owner: str, calendar_source: str, calendar_id: str,
             logger.warning("CalDAV write-back URL rejected: %s", e)
             return {"ok": False, "error": str(e)[:200]}
         acc_id = acc.get("id") or ""
-        result = await asyncio.to_thread(
-            _writeback_blocking, calendar_id, ev, delete, url, user, pw, owner, acc_id
-        )
+
+        async def _push():
+            return await asyncio.to_thread(
+                _writeback_blocking, calendar_id, ev, delete, url, user, pw, owner, acc_id
+            )
+
+        from src import effect_outbox
+        uid = str((ev or {}).get("uid") or "")
+        if effect_outbox.enabled() and uid:
+            # A write to a remote calendar is an effect we cannot take back:
+            # commit the intent first. CalDAV addresses resources by UID and
+            # `push_event` looks the UID up before it creates, so the
+            # destination does deduplicate on it; that is what makes replaying
+            # an unknown write through the pending-push loop safe.
+            dispatched = await effect_outbox.adispatch_effect(
+                "calendar.caldav_delete" if delete else "calendar.caldav_write", _push,
+                owner=owner, destination=str(calendar_id)[:200], identifier=uid,
+                identifier_kind="calendar_uid", arguments=ev, idempotency_key=uid,
+                destination_enforces_idempotency=True, interpret=_interpret_push_result,
+            )
+            result = dispatched.value
+        else:
+            result = await _push()
         _persist_writeback_result(owner, calendar_id, (ev or {}).get("uid", ""), result, delete=delete)
         if not result.get("ok"):
             logger.warning("CalDAV write-back did not apply: %s", result.get("error") or result)
@@ -392,5 +422,11 @@ async def writeback_event(owner: str, calendar_source: str, calendar_id: str,
     except Exception as e:
         logger.exception("CalDAV write-back raised")
         result = {"ok": False, "error": str(e)[:200]}
+        if getattr(e, "effect_certainty", "") == "unknown":
+            # The request may have reached the server: keep that visible
+            # instead of a plain failure. The row stays queued for the
+            # (UID-addressed, hence repeatable) pending-push retry.
+            result.update({"status": "outcome_unknown", "outcome_unknown": True,
+                           "effect_id": (getattr(e, "effect", None) or {}).get("id", "")})
         _persist_writeback_result(owner, calendar_id, (ev or {}).get("uid", ""), result, delete=delete)
         return result

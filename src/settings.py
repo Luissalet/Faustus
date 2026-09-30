@@ -1202,6 +1202,13 @@ DEFAULT_SETTINGS = {
     # concurrency is > 0.
     "agent_runs_persist": True,
     "agent_runs_keep_hours": 48,
+    # Effect outbox (H03): write-ahead record of effects that cannot be
+    # repeated (mail, messaging, webhooks, third-party writes). Off restores
+    # the transports' previous behaviour.
+    "agent_effect_outbox": True,
+    # Execution ledger (H08): causal, append-only record of calls, attempts,
+    # results and approvals per run, independent of the visual replay.
+    "agent_exec_ledger": True,
     "agent_queue_local_concurrency": 1,
     "agent_queue_api_concurrency": 0,
     # delegate_agents: add a reviewer worker after the others by default.

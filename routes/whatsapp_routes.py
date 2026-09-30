@@ -70,6 +70,9 @@ class IdBody(BaseModel):
 
 
 def _code(exc: Exception) -> int:
+    from src.effect_outbox import OutcomeUnknownError
+    if isinstance(exc, OutcomeUnknownError):
+        return 504  # the bridge may have sent it: not a "retry me" 503
     msg = str(exc)
     if msg.startswith("ambiguous"):
         return 409

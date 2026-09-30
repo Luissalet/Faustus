@@ -9,6 +9,7 @@ import logging
 import re
 import ssl
 import time
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import urlparse
@@ -321,6 +322,13 @@ def sanitize_error(error: str, max_len: int = 200) -> str:
     return cleaned[:max_len]
 
 
+def _classify_webhook_exception(exc):
+    """A failure to connect sent nothing; anything later may have reached the receiver."""
+    if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)):
+        return "failed_before_effect"
+    return "outcome_unknown"
+
+
 class WebhookManager:
     # Class-level default so the gate reads open on an instance built without
     # __init__ (tests construct one through __new__ to avoid the database), and
@@ -473,9 +481,28 @@ class WebhookManager:
             sig = hmac.new(secret.encode(), body.encode(), hashlib.sha256).hexdigest()
             headers["X-Odysseus-Signature"] = sig
 
+        # A delivery is an effect that cannot be taken back. Commit the intent
+        # first; a timeout after the body went out is "unknown", not "failed".
+        # The delivery id is an identifier the receiver MAY use to deduplicate;
+        # nothing here assumes that it does.
+        from src import effect_outbox
+        delivery_id = uuid.uuid4().hex
+        headers["X-Faustus-Delivery"] = delivery_id
         db = SessionLocal()
         try:
-            resp = await self._send_request(url, body, headers, pinned_ips[0])
+            if effect_outbox.enabled():
+                dispatched = await effect_outbox.adispatch_effect(
+                    "webhook.deliver",
+                    lambda: self._send_request(url, body, headers, pinned_ips[0]),
+                    destination=f"{urlparse(url).netloc}"[:200], identifier=delivery_id,
+                    identifier_kind="client_request_id", arguments=body, dedup_key=None,
+                    classify=_classify_webhook_exception,
+                    interpret=lambda r: ("succeeded", {}) if getattr(r, "status_code", 200) < 500 else
+                    ("outcome_unknown", {"reason": f"HTTP {r.status_code} after delivery",
+                                         "error_class": "http_server_error"}))
+                resp = dispatched.value
+            else:
+                resp = await self._send_request(url, body, headers, pinned_ips[0])
             db.query(Webhook).filter(Webhook.id == webhook_id).update({
                 "last_triggered_at": _utcnow(),
                 "last_status_code": resp.status_code,

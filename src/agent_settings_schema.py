@@ -758,6 +758,13 @@ GROUPS: list[dict[str, Any]] = [
                  0, 64),
             _bool("agent_scorecard", "Model scorecard",
                   "Record per-model reliability metrics of agent turns (/scorecard)."),
+            _bool("agent_effect_outbox", "Effect outbox",
+                  "Write-ahead record for effects that cannot be repeated (mail, messages, webhooks, "
+                  "third-party writes): the intent is saved before anything is sent, and a lost answer "
+                  "stays 'unknown' until it is reconciled. Off restores the previous behaviour."),
+            _bool("agent_exec_ledger", "Execution ledger",
+                  "Append-only record of each run's calls, attempts, results and approvals, kept "
+                  "independently of the chat replay so a restart can explain and resume the run."),
         ],
     ),
     _group(

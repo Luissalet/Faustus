@@ -41,6 +41,7 @@ from typing import Optional, List
 
 from src.auth_helpers import _auth_disabled, get_current_user
 from src.secret_storage import decrypt as _decrypt
+from src.effect_outbox import OutcomeUnknownError
 
 logger = logging.getLogger(__name__)
 
@@ -173,14 +174,52 @@ def _smtp_security_mode(cfg: dict) -> str:
     return "ssl"
 
 
-def _send_smtp_message(cfg: dict, from_addr: str, recipients: list[str], message: str | bytes, timeout: int = 30) -> None:
+class SmtpOutcomeUnknown(smtplib.SMTPException, OutcomeUnknownError):
+    """The SMTP conversation was lost after the message body was handed over.
+
+    The server may have accepted and delivered it: this is NOT "not sent".
+    It is an ``smtplib.SMTPException`` so existing ``except`` clauses keep
+    catching it, and an ``OutcomeUnknownError`` so new code can tell it from a
+    refusal. ``effect`` is the outbox row (identifier = Message-ID)."""
+
+    def __init__(self, effect, cause):
+        text = (f"SMTP outcome unknown ({type(cause).__name__}: {cause}); the message may have been "
+                "delivered. Check the Sent folder or reconcile before sending again.")
+        smtplib.SMTPException.__init__(self, text)
+        self.effect = dict(effect or {})
+        self.effect_certainty = "unknown"
+
+
+def _ensure_message_id(message):
+    """Return ``(message, message_id, supplied)``; adds a Message-ID header
+    when the message has none so the effect carries an identifier that can be
+    looked up later in the Sent folder."""
+    raw = message if isinstance(message, bytes) else str(message).encode("utf-8", "replace")
+    head = raw.split(b"\r\n\r\n", 1)[0] if b"\r\n\r\n" in raw[:65536] else raw.split(b"\n\n", 1)[0]
+    match = re.search(rb"(?im)^message-id:[ \t]*(<[^>\r\n]+>)", head)
+    if match:
+        return message, match.group(1).decode("ascii", "replace"), True
+    if not re.search(rb"(?im)^(from|to|subject):", head):
+        # Not an RFC 822 message (a bare body): send it verbatim, no identifier.
+        return message, "", False
+    mid = email.utils.make_msgid(domain="faustus.local")
+    eol = b"\r\n" if b"\r\n" in raw[:4096] else b"\n"
+    patched = b"Message-ID: " + mid.encode("ascii") + eol + raw
+    return (patched if isinstance(message, bytes) else patched.decode("utf-8", "replace")), mid, False
+
+
+def _send_smtp_message_raw(cfg: dict, from_addr: str, recipients: list[str], message: str | bytes,
+                           timeout: int = 30, phase: dict | None = None) -> None:
     """Send through SMTP using the configured transport security mode."""
     host = cfg["smtp_host"]
     port = int(cfg.get("smtp_port") or 465)
     user = cfg.get("smtp_user") or ""
     password = cfg.get("smtp_password") or ""
+    phase = phase if phase is not None else {}
+    phase["v"] = "connect"
 
     def _auth_smtp(smtp):
+        phase["v"] = "auth"
         if cfg.get("oauth_provider") == "google":
             token = _get_valid_google_token(cfg.get("account_id"), cfg)
             if not token:
@@ -189,16 +228,34 @@ def _send_smtp_message(cfg: dict, from_addr: str, recipients: list[str], message
             smtp.auth("XOAUTH2", lambda challenge=None: _xoauth2_raw(user, token), initial_response_ok=True)
         elif user and password:
             smtp.login(user, password)
+        phase["v"] = "envelope"
+
+    def _track_data(smtp):
+        """Mark the moment the message body is handed over: before it, a
+        failure certainly sent nothing; after it, it does not prove that."""
+        original = getattr(smtp, "data", None)
+        if original is None:
+            return
+
+        def data(msg):
+            phase["v"] = "data"
+            return original(msg)
+        try:
+            smtp.data = data
+        except AttributeError:
+            pass
 
     security = _smtp_security_mode(cfg)
 
     if security == "ssl":
         with smtplib.SMTP_SSL(host, port, timeout=timeout) as smtp:
             _auth_smtp(smtp)
+            _track_data(smtp)
             refused = smtp.sendmail(from_addr, recipients, message)
             if refused:
                 # sendmail returns normally if SOME recipients were accepted.
                 # Reporting this as full success hides a partial delivery.
+                phase["v"] = "partial"
                 raise smtplib.SMTPRecipientsRefused(refused)
         return
 
@@ -206,9 +263,107 @@ def _send_smtp_message(cfg: dict, from_addr: str, recipients: list[str], message
         if security == "starttls":
             smtp.starttls()
         _auth_smtp(smtp)
+        _track_data(smtp)
         refused = smtp.sendmail(from_addr, recipients, message)
         if refused:
+            phase["v"] = "partial"
             raise smtplib.SMTPRecipientsRefused(refused)
+
+
+def _annotate_partial(effect, cause):
+    """Keep raising the original ``SMTPRecipientsRefused`` (existing callers
+    match on it) but mark it with the outbox row and a ``partial`` certainty."""
+    try:
+        cause.effect = dict(effect or {})
+        cause.effect_certainty = "partial"
+    except Exception:  # noqa: BLE001
+        pass
+    return cause
+
+
+def _smtp_classifier(phase: dict):
+    def classify(exc):
+        if phase.get("v") == "partial":
+            return "partial"
+        if isinstance(exc, smtplib.SMTPDataError):
+            return "failed_before_effect"  # the server answered DATA with a refusal
+        if phase.get("v") != "data":
+            return "failed_before_effect"  # nothing but envelope traffic left the process
+        return "outcome_unknown"
+    return classify
+
+
+def _send_smtp_message(cfg: dict, from_addr: str, recipients: list[str], message: str | bytes, timeout: int = 30,
+                       *, dedup_key: str | None = None) -> None:
+    """Send through SMTP, recording the effect in the outbox first.
+
+    The intent (destination, Message-ID, digest of the message) is committed
+    and read back before the connection is opened; if that is not possible
+    nothing is sent. A failure before the body was handed over is a plain
+    failure; a connection lost after it raises :class:`SmtpOutcomeUnknown`
+    (never a generic "send failed") and leaves the row ``outcome_unknown`` for
+    reconciliation by Message-ID."""
+    from src import effect_outbox
+    if not effect_outbox.enabled():
+        return _send_smtp_message_raw(cfg, from_addr, recipients, message, timeout)
+    message, message_id, supplied = _ensure_message_id(message)
+    phase: dict = {}
+    try:
+        outcome = effect_outbox.dispatch_effect(
+            "email.smtp",
+            lambda: _send_smtp_message_raw(cfg, from_addr, recipients, message, timeout, phase),
+            owner=str(cfg.get("owner") or ""),
+            destination=", ".join(recipients)[:500],
+            identifier=message_id, identifier_kind="message_id",
+            arguments=message,
+            # A caller-supplied key (a scheduled row id) or a Message-ID the
+            # caller fixed in advance defines "the same message"; a generated
+            # Message-ID is new per call and deduplicates nothing.
+            dedup_key=dedup_key or (message_id if supplied else None),
+            classify=_smtp_classifier(phase),
+            wrap_unknown=lambda effect, cause: SmtpOutcomeUnknown(effect, cause),
+            wrap_partial=_annotate_partial,
+            context=effect_outbox.current_context(),
+        )
+    except effect_outbox.IntentNotPersisted as exc:
+        raise RuntimeError(f"Email not sent: its intent could not be persisted ({exc})") from exc
+    except OutcomeUnknownError as exc:
+        if isinstance(exc, SmtpOutcomeUnknown):
+            raise
+        raise SmtpOutcomeUnknown(exc.effect, exc) from exc
+    return None
+
+
+def _find_sent_message(cfg_account_id, owner: str, message_id: str):
+    """Reconciler lookup: is ``message_id`` in the Sent folder? Absence is not
+    proof that it never left (not every provider files a Sent copy)."""
+    mid = (message_id or "").strip().lstrip("<").rstrip(">").replace('"', '\\"')
+    if not mid:
+        return {"found": False}
+    with _imap(cfg_account_id, owner=owner) as imap:
+        sent_folder = _detect_sent_folder(imap)
+        status, _sel = imap.select(_q(sent_folder), readonly=True)
+        if status != "OK":
+            return None
+        status, data = imap.uid("SEARCH", None, f'HEADER Message-ID "{mid}"')
+        if status != "OK":
+            return None
+        return {"found": True, "external_ref": message_id} if data and data[0] else {"found": False}
+
+
+def _reconcile_smtp_effect(record: dict):
+    try:
+        return _find_sent_message(None, record.get("owner") or "", record.get("identifier") or "")
+    except Exception:  # noqa: BLE001 - an unreachable mailbox is not an answer
+        return None
+
+
+def _register_effect_reconcilers() -> None:
+    from src import effect_outbox
+    effect_outbox.register_reconciler("email.smtp", _reconcile_smtp_effect)
+
+
+_register_effect_reconcilers()
 
 
 def _friendly_email_auth_error(protocol: str, host: str, error: object) -> str:

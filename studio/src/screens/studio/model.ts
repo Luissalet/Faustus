@@ -41,6 +41,10 @@ export interface Step {
   state: RunStatus | 'partial' | 'outcome_unknown';
   resultStatus?: ToolResultStatus;
   uncertainty?: ToolOutcomeFields['uncertainty'];
+  /** H04: the attempt behind this result and how sure we are about its effect. */
+  attemptId?: string;
+  effectId?: string;
+  effectCertainty?: ToolOutcomeFields['effectCertainty'];
   meta?: string;
   command?: string;
   output?: string;
@@ -931,6 +935,9 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
         meta: toolStepMeta(event.exitCode, event.durationMs, event.resultStatus),
         resultStatus: event.resultStatus,
         uncertainty: event.uncertainty,
+        attemptId: event.attemptId,
+        effectId: event.effectId,
+        effectCertainty: event.effectCertainty,
         durationMs: event.durationMs,
         command: index === -1 ? event.command : turn.steps[index].command,
         output: event.output,
@@ -1334,6 +1341,9 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
       meta: superseded ? t('Cancelled') : pending ? t('permission requested') : parked ? (ev.askResolved ? t('permission answered') : t('permission requested')) : toolStepMeta(ev.exitCode, undefined, ev.resultStatus),
       resultStatus: ev.resultStatus,
       uncertainty: ev.uncertainty,
+      attemptId: ev.attemptId,
+      effectId: ev.effectId,
+      effectCertainty: ev.effectCertainty,
       command: ev.command,
       output: parked ? '' : ev.output,
       round: ev.round,

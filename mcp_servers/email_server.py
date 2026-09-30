@@ -66,12 +66,39 @@ def _uid_fetch_rows(data) -> list:
 
 _ACCOUNT_CACHE: dict = {}  # key = normalized account selector -> config dict
 _MCP_OWNER_ARG = "_odysseus_owner"
+#: Hidden call argument: the outbox admission the tool layer opened for this
+#: call, so the SMTP dispatch below settles that row instead of opening another.
+_MCP_EFFECT_ARG = "_faustus_effect"
 _CURRENT_OWNER: ContextVar[str | None] = ContextVar("email_mcp_owner", default=None)
 _OWNER_ENV_KEYS = ("ODYSSEUS_MCP_EMAIL_OWNER", "ODYSSEUS_EMAIL_OWNER")
 _OWNER_SCOPE_ERROR = (
     "Error: email MCP requires an authenticated owner or ODYSSEUS_MCP_EMAIL_OWNER "
     "when owner-scoped email accounts are configured."
 )
+
+
+def _annotate_partial(effect, cause):
+    try:
+        cause.effect = dict(effect or {})
+        cause.effect_certainty = "partial"
+    except Exception:  # noqa: BLE001
+        pass
+    return cause
+
+
+def _bind_effect_context(raw, owner: str):
+    """Bind the caller's effect context (run, call, attempt, admission) for this call."""
+    if not isinstance(raw, dict):
+        return None
+    try:
+        from src import effect_outbox
+        ctx = effect_outbox.EffectContext(
+            owner=owner, session_id=str(raw.get("session_id") or ""), run_id=str(raw.get("run_id") or ""),
+            call_id=str(raw.get("call_id") or ""), attempt_id=str(raw.get("attempt_id") or ""),
+            tool=str(raw.get("tool") or ""), admission_id=str(raw.get("admission_id") or ""))
+        return effect_outbox.bind_context(ctx)
+    except Exception:  # noqa: BLE001 - the call must still run without the link
+        return None
 
 
 def _clean_header_value(value) -> str:
@@ -1526,11 +1553,62 @@ def _send_email(to, subject, body, in_reply_to=None, references=None, cc=None, b
     if bcc:
         recipients.extend([a.strip() for a in bcc.split(",")] if isinstance(bcc, str) else bcc)
 
-    conn = _smtp_connect(send_account, cfg=cfg)
-    try:
-        conn.send_message(msg, from_addr=cfg["from_address"], to_addrs=recipients)
-    finally:
-        conn.quit()
+    from src import effect_outbox
+    phase = {"v": "connect"}
+    message_id = msg.get("Message-ID", "")
+
+    def _dispatch():
+        conn = _smtp_connect(send_account, cfg=cfg)  # refused/unreachable here sent nothing
+        try:
+            phase["v"] = "envelope"
+            original_data = getattr(conn, "data", None)
+            if original_data is not None:
+                def data(payload):
+                    phase["v"] = "data"
+                    return original_data(payload)
+                conn.data = data
+            refused = conn.send_message(msg, from_addr=cfg["from_address"], to_addrs=recipients)
+            if refused:
+                phase["v"] = "partial"
+                raise smtplib.SMTPRecipientsRefused(refused)
+        finally:
+            try:
+                conn.quit()
+            except Exception:
+                pass
+
+    def _classify(exc):
+        if phase["v"] == "partial":
+            return "partial"
+        if isinstance(exc, smtplib.SMTPDataError) or phase["v"] != "data":
+            return "failed_before_effect"
+        return "outcome_unknown"
+
+    if effect_outbox.enabled():
+        try:
+            effect_outbox.dispatch_effect(
+                "email.smtp", _dispatch, owner=_current_owner(),
+                destination=", ".join(recipients)[:500], identifier=message_id,
+                identifier_kind="message_id", arguments=msg.as_bytes(), classify=_classify,
+                wrap_partial=_annotate_partial)
+        except effect_outbox.IntentNotPersisted as exc:
+            return {"error": f"Email not sent: its intent could not be persisted ({exc})",
+                    "effect_not_dispatched": True}
+        except smtplib.SMTPRecipientsRefused as exc:
+            if getattr(exc, "effect_certainty", "") != "partial":
+                raise  # every recipient was refused: nothing was delivered
+            # Some recipients accepted the message and some refused it: report
+            # the partial delivery instead of "sent".
+            return {"sent": True, "partial": True, "to": recipients, "subject": subject,
+                    "refused": sorted(exc.recipients), "message_id": message_id,
+                    "account": cfg.get("account_name"), "account_id": cfg.get("account_id")}
+        except effect_outbox.OutcomeUnknownError as exc:
+            return {"error": ("Outcome unknown: the SMTP connection was lost after the message was handed over; "
+                              "it may have been delivered. Check the Sent folder before sending it again."),
+                    "outcome_unknown": True, "message_id": message_id,
+                    "effect_id": (exc.effect or {}).get("id", "")}
+    else:
+        _dispatch()
 
     sent_folder = None
     sent_uid = None
@@ -2470,6 +2548,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     arguments = dict(arguments) if isinstance(arguments, dict) else {}
     owner = str(arguments.pop(_MCP_OWNER_ARG, "") or "").strip()
     owner_token = _CURRENT_OWNER.set(owner or None)
+    effect_token = _bind_effect_context(arguments.pop(_MCP_EFFECT_ARG, None), owner)
     try:
         all_db_accounts = _read_accounts_from_db()
         if _mcp_owner_required(all_db_accounts):
@@ -2735,6 +2814,10 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     ),
                 )]
             acct_note = f" (from {result['account']})" if result.get("account") else ""
+            if result.get("partial"):
+                return [TextContent(type="text", text=(
+                    f"PARTIALLY sent: the server refused {', '.join(result.get('refused') or [])}; the other "
+                    f"recipients accepted the message (subject '{result['subject']}'){acct_note}."))]
             return [TextContent(type="text", text=f"Sent email to {result['to']} with subject '{result['subject']}'{acct_note}.")]
 
         elif name == "draft_email":
@@ -2911,6 +2994,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         return [TextContent(type="text", text=f"Error: {e}")]
     finally:
         _CURRENT_OWNER.reset(owner_token)
+        if effect_token is not None:
+            from src import effect_outbox as _effect_outbox
+            _effect_outbox.reset_context(effect_token)
 
 
 # ── Main ──

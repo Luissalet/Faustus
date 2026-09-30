@@ -503,6 +503,31 @@ def _validated_ips(raw_ips: List[str]) -> List[ipaddress._BaseAddress]:
     return ips
 
 
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def _interpret_http_status(response):
+    """Outbox verdict for an HTTP answer. A 5xx that is not a plain refusal
+    does not prove the destination did nothing."""
+    status = int(getattr(response, "status_code", 0) or 0)
+    if status < 400:
+        return ("succeeded", {})
+    if status in (500, 502, 504):
+        return ("outcome_unknown", {"reason": f"HTTP {status} after the request was sent",
+                                    "error_class": "http_server_error"})
+    return ("failed_before_effect", {"reason": f"HTTP {status}: the destination refused the request",
+                                     "error_class": "http_refused"})
+
+
+def _classify_httpx_exception(exc):
+    """Only a failure to connect proves nothing was sent; a read timeout, a
+    reset or a protocol error happen after the request left."""
+    if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout,
+                        httpx.UnsupportedProtocol, httpx.InvalidURL)):
+        return "failed_before_effect"
+    return "outcome_unknown"
+
+
 async def execute_api_call(
     integration_id: str,
     method: str,
@@ -628,11 +653,11 @@ async def execute_api_call(
         if len(parts) == 2:
             auth = httpx.BasicAuth(parts[0], parts[1])
 
-    try:
+    async def _send_request():
         async with httpx.AsyncClient(
             timeout=30.0, transport=_PinnedAsyncTransport(pinned_ips)
         ) as client:
-            response = await client.request(
+            return await client.request(
                 method,
                 url,
                 params=params,
@@ -640,6 +665,20 @@ async def execute_api_call(
                 headers=headers,
                 auth=auth,
             )
+
+    from src import effect_outbox
+    try:
+        if method not in _SAFE_METHODS and effect_outbox.enabled():
+            # A write to a third party cannot be taken back: commit the intent
+            # first, and never report a lost answer as "the request failed".
+            dispatched = await effect_outbox.adispatch_effect(
+                f"http.{method.lower()}", _send_request,
+                destination=f"{integration.get('name') or integration_id} {path}"[:400],
+                arguments={"method": method, "path": path, "params": params, "body": body},
+                interpret=_interpret_http_status, classify=_classify_httpx_exception)
+            response = dispatched.value
+        else:
+            response = await _send_request()
 
         content_type = response.headers.get("content-type", "")
         status = response.status_code
@@ -737,6 +776,17 @@ async def execute_api_call(
 
         return {"output": output, "exit_code": 0}
 
+    except effect_outbox.IntentNotPersisted as exc:
+        return {"error": f"Request not sent: its intent could not be persisted ({exc})", "exit_code": 1,
+                "status": "failed", "effect_not_dispatched": True}
+    except effect_outbox.OutcomeUnknownError as exc:
+        return {"error": f"The request to {integration.get('name')} may have been applied; the answer was "
+                         f"lost ({exc.__cause__.__class__.__name__ if exc.__cause__ else 'unknown'}). "
+                         "Read the remote state before repeating it.",
+                "exit_code": 1, "status": "outcome_unknown", "outcome_unknown": True,
+                "effect_id": (exc.effect or {}).get("id", ""),
+                "uncertainty": {"reason": "the request was sent and the response was lost",
+                                "reconcile_action": "read the remote state before repeating the request"}}
     except httpx.TimeoutException:
         return {"error": f"Request to {integration.get('name')} timed out", "exit_code": 1}
     except httpx.RequestError as exc:

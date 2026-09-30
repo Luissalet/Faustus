@@ -21,6 +21,7 @@ back is DATA — a summarising prompt says so — never an instruction.
 """
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import os
@@ -46,6 +47,20 @@ HTTP_TIMEOUT = 20.0
 
 class BridgeError(Exception):
     pass
+
+
+from src.effect_outbox import OutcomeUnknownError  # noqa: E402
+
+
+class BridgeOutcomeUnknown(BridgeError, OutcomeUnknownError):
+    """The bridge connection was lost after the request was handed over: the
+    message may have been sent. Never read this as "not sent"."""
+
+    def __init__(self, effect, cause):
+        BridgeError.__init__(self, f"outcome unknown ({type(cause).__name__}): the WhatsApp message may have "
+                                   f"been sent; check the chat before sending it again (effect {(effect or {}).get('id', '?')})")
+        self.effect = dict(effect or {})
+        self.effect_certainty = "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -223,17 +238,114 @@ def _get(path: str, params: Optional[Dict[str, Any]] = None) -> Any:
     return r.json()
 
 
+_POST_PHASE: "contextvars.ContextVar[Optional[Dict[str, str]]]" = contextvars.ContextVar("wa_post_phase", default=None)
+
+
 def _post(path: str, body: Dict[str, Any]) -> Any:
+    phase = _POST_PHASE.get()
+    return _post_raw(path, body, phase if phase is not None else {})
+
+
+def _post_raw(path: str, body: Dict[str, Any], phase: Dict[str, str]) -> Any:
+    """``_post`` that tells the caller how far the request got."""
+    phase["v"] = "connect"
     try:
         r = httpx.post(base_url() + path, json=body, headers=_headers(), timeout=HTTP_TIMEOUT)
-    except Exception as exc:  # noqa: BLE001
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as exc:
         raise BridgeError(f"WhatsApp bridge is not running ({exc.__class__.__name__}); start it in Tools → WhatsApp")
+    except Exception as exc:  # noqa: BLE001 - read timeout / reset / protocol error: the request was sent
+        phase["v"] = "sent"
+        raise exc
+    phase["v"] = "answered"
     data = r.json() if r.content else {}
     if r.status_code == 409:
         raise BridgeError("ambiguous — which one? " + ", ".join(f"{c.get('name')} ({c.get('jid')})" for c in (data.get("ambiguous") or [])))
     if r.status_code >= 400:
+        phase["status"] = str(r.status_code)
         raise BridgeError(data.get("error") or f"HTTP {r.status_code}")
     return data
+
+
+def _post_with_phase(path: str, body: Dict[str, Any], phase: Dict[str, str]) -> Any:
+    token = _POST_PHASE.set(phase)
+    try:
+        return _post(path, body)
+    finally:
+        _POST_PHASE.reset(token)
+
+
+def _classify_post(phase: Dict[str, str]):
+    def classify(exc):
+        if not phase.get("v") and isinstance(exc, BridgeError) and not isinstance(exc, OutcomeUnknownError):
+            return "failed_before_effect"  # a refusal raised by the bridge layer itself
+        if phase.get("v") == "connect":
+            return "failed_before_effect"
+        if phase.get("v") == "answered":
+            status = phase.get("status", "")
+            # The bridge answered and refused, except for gateway-style
+            # failures that do not prove nothing was handed to WhatsApp.
+            return "outcome_unknown" if status in ("500", "502", "504") else "failed_before_effect"
+        return "outcome_unknown"
+    return classify
+
+
+def _post_effect(kind: str, path: str, body: Dict[str, Any], *, destination: str = "",
+                 fingerprint: str = "") -> Any:
+    """POST that leaves the process for good (a sent or forwarded message):
+    intent committed first, outcome recorded, never reported as "not sent"
+    when the answer was lost after the request went out."""
+    from src import effect_outbox
+    if not effect_outbox.enabled():
+        return _post(path, body)
+    phase: Dict[str, str] = {}
+    try:
+        outcome = effect_outbox.dispatch_effect(
+            kind, lambda: _post_with_phase(path, body, phase), destination=destination,
+            identifier=fingerprint, identifier_kind="content_fingerprint" if fingerprint else "none",
+            arguments=body, classify=_classify_post(phase),
+            wrap_unknown=lambda effect, cause: BridgeOutcomeUnknown(effect, cause),
+            interpret=lambda value: ("succeeded", {"external_ref": str((value or {}).get("id") or "")})
+            if isinstance(value, dict) else None)
+    except effect_outbox.IntentNotPersisted as exc:
+        raise BridgeError(f"message not sent: its intent could not be persisted ({exc})")
+    return outcome.value
+
+
+def message_fingerprint(to: str, text: str) -> str:
+    import hashlib
+    return hashlib.sha256(f"{to}\n{text}".encode("utf-8", "replace")).hexdigest()[:32]
+
+
+def _reconcile_sent_message(record: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Look for our own message in the chat it was addressed to, by content
+    fingerprint and after the dispatch time. A chat that does not list it is
+    "not found yet", not proof that it was never sent."""
+    fingerprint = record.get("identifier") or ""
+    to = record.get("destination") or ""
+    if not fingerprint or not to:
+        return {"found": False}
+    from datetime import datetime
+    try:
+        started = datetime.fromisoformat(str(record.get("dispatch_started_at") or "").replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        started = 0.0
+    try:
+        rows = messages(to, since_hours=max(1.0, (time.time() - started) / 3600 + 0.1), limit=200)
+    except BridgeError:
+        return None
+    for row in rows:
+        if row.get("from_me") and float(row.get("ts") or 0) >= started - 5 and \
+                message_fingerprint(to, str(row.get("text") or "")) == fingerprint:
+            return {"found": True, "external_ref": str(row.get("id") or "")}
+    return {"found": False}
+
+
+def _register_reconcilers() -> None:
+    from src import effect_outbox
+    effect_outbox.register_reconciler("whatsapp.send", _reconcile_sent_message)
+
+
+_register_reconcilers()
 
 
 def status() -> Dict[str, Any]:
@@ -276,7 +388,8 @@ def send(to: str, text: str = "", *, quote: Optional[str] = None, mentions: Opti
         body["mentions"] = list(mentions)
     if media:
         body["media"] = media
-    return _post("/send", body)
+    return _post_effect("whatsapp.send", "/send", body, destination=str(to)[:200],
+                        fingerprint=message_fingerprint(str(to), body["text"]))
 
 
 def send_file(to: str, data: bytes, mime: str, *, filename: str = "", caption: str = "", quote: Optional[str] = None,
@@ -318,7 +431,7 @@ def delete(message_id: str) -> Dict[str, Any]:
 
 
 def forward(message_id: str, to: str) -> Dict[str, Any]:
-    return _post("/forward", {"id": message_id, "to": to})
+    return _post_effect("whatsapp.forward", "/forward", {"id": message_id, "to": to}, destination=str(to)[:200])
 
 
 def edit(message_id: str, text: str) -> Dict[str, Any]:

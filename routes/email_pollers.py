@@ -1469,7 +1469,8 @@ def _scheduled_poll_once() -> dict:
                 if r[3]:
                     recipients.extend([a.strip() for a in r[3].split(",") if a.strip()])
 
-                _send_smtp_message(cfg, cfg["from_address"], recipients, outer.as_string())
+                _send_smtp_message(cfg, cfg["from_address"], recipients, outer.as_string(),
+                                   dedup_key=f"scheduled_email:{sid}")
 
                 # Append to local Sent folder
                 try:

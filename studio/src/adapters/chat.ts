@@ -500,9 +500,15 @@ export type SubagentPayload = Record<string, unknown>;
 
 /** Everything the stream can say, narrowed to what the screen renders. */
 export type ToolResultStatus = 'succeeded' | 'failed' | 'cancelled' | 'conflict' | 'denied' | 'outcome_unknown' | 'partial';
+/** What a call did to the world (H04): certainly nothing, confirmed, partly, or unknown. */
+export type EffectCertainty = 'none' | 'confirmed' | 'partial' | 'unknown';
 export interface ToolOutcomeFields {
   resultStatus?: ToolResultStatus;
   uncertainty?: { reason?: string; reconcileAction?: string };
+  /** The attempt this result belongs to, and the effect-outbox row behind it. */
+  attemptId?: string;
+  effectId?: string;
+  effectCertainty?: EffectCertainty;
 }
 
 export function toolOutcomeFrom(raw: Record<string, unknown>): ToolOutcomeFields {
@@ -512,7 +518,15 @@ export function toolOutcomeFrom(raw: Record<string, unknown>): ToolOutcomeFields
   const u = raw.uncertainty && typeof raw.uncertainty === 'object' ? raw.uncertainty as Record<string, unknown> : {};
   const reason = typeof u.reason === 'string' ? u.reason.slice(0, 512) : undefined;
   const reconcileAction = typeof u.reconcile_action === 'string' ? u.reconcile_action.slice(0, 512) : undefined;
-  return { resultStatus, uncertainty: reason || reconcileAction ? { reason, reconcileAction } : undefined };
+  const certainties = ['none', 'confirmed', 'partial', 'unknown'];
+  const effectCertainty = typeof raw.effect_certainty === 'string' && certainties.includes(raw.effect_certainty)
+    ? raw.effect_certainty as EffectCertainty : undefined;
+  const attemptId = typeof raw.attempt_id === 'string' && raw.attempt_id ? raw.attempt_id.slice(0, 64) : undefined;
+  const effectId = typeof raw.effect_id === 'string' && raw.effect_id ? raw.effect_id.slice(0, 64) : undefined;
+  return {
+    resultStatus, uncertainty: reason || reconcileAction ? { reason, reconcileAction } : undefined,
+    attemptId, effectId, effectCertainty,
+  };
 }
 
 export type ChatEvent =
@@ -529,6 +543,9 @@ export type ChatEvent =
       exitCode: number | null;
       resultStatus?: ToolResultStatus;
       uncertainty?: ToolOutcomeFields['uncertainty'];
+      attemptId?: string;
+      effectId?: string;
+      effectCertainty?: EffectCertainty;
       diff?: StepDiff;
       docId?: string;
       /** A validated raster data: URL (desktop_screenshot and browser tools). */

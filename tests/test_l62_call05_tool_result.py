@@ -133,10 +133,12 @@ def test_execute_tool_block_normalizes_a_functional_failure_without_changing_the
     assert result.get("exit_code") == 1
     assert "error" in result
     # The adapter classified it as failed and said so at the single
-    # execution point, without adding or removing a single key from what
-    # the tool itself returned.
+    # execution point, without adding or removing a key from what the tool
+    # itself returned. The only additions are the H04 stamps every result
+    # carries: the attempt it came from and how sure we are about its effect.
     assert any("status=failed" in r.message for r in caplog.records)
-    assert set(result.keys()) == {"error", "exit_code"}
+    assert set(result.keys()) - {"attempt_id", "effect_certainty"} == {"error", "exit_code"}
+    assert result["attempt_id"].startswith("att_") and result["effect_certainty"] == "none"
 
 
 def test_execute_tool_block_leaves_a_successful_result_completely_untouched():
@@ -147,7 +149,9 @@ def test_execute_tool_block_leaves_a_successful_result_completely_untouched():
     assert result["exit_code"] == 0
     # Exactly the keys AskUserTool itself sets — normalize_tool_result never
     # mutates the tuple execute_tool_block hands back to its caller.
-    assert set(result.keys()) == {"ask_user", "output", "exit_code"}
+    assert set(result.keys()) - {"attempt_id", "effect_certainty"} == {"ask_user", "output", "exit_code"}
+    # ask_user is a control-class call that completed: its effect is confirmed.
+    assert result["attempt_id"].startswith("att_") and result["effect_certainty"] == "confirmed"
 
 
 def test_normalize_tool_result_never_raises_on_a_result_it_cannot_classify(caplog):
