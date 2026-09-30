@@ -72,3 +72,10 @@ budget_exhausted/cancelled. No concede rondas ni cambia presupuestos/permisos.
 Fuente original del análisis sigue https://github.com/openai/codex/tree/b1e72963c3b71a9265a551e54beff078384efed9,
 sin revisión repetida; adaptación propia al lifecycle actual de Faustus.
 Commit `2b5b6a3f`; selección final86 correctas46,87s lifecycle/rutas/board/retries/causal/dispatch. No sumar suites focales solapadas.
+
+Incremento `d9ae4eeb`: budget_exhausted se emite como guard y cierra antes
+fanout; cuatro productores actuales terminan roundloop. Cola previa/retry
+preservados; métricas de presupuesto no cierran. Coordinador19 correctas2,48s,
+selección71 correctas32,57s. cancelled sigue sólo evaluado: rama recovery interna
+sale del asyncstream sin cierre universal probado. No cerrar por tipo ni afirmar
+entrega durable/último drain resueltos. Sin modelos/GPU.

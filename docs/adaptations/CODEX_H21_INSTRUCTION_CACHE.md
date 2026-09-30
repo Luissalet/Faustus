@@ -62,3 +62,19 @@ Resultado: **66 pasadas, 1 omitida** (permisos POSIX, omitida en Windows), 3,38 
 Casos nuevos: sustitución con igual tamaño y mtime dentro/fuera de TTL, edición
 normal, cambio de prioridad de archivo, eliminación, presupuesto/truncamiento,
 hash del fragmento normalizado y ciclo real de aprobación/cambio/reaprobación/revocación.
+
+## Incremento posterior: caché de reglas (e62ad0eb)
+
+project_rules.block conservaba firma path/mtime y podía devolver texto antiguo
+con edición del mismo tamaño/mtime. Ahora captura discovery una vez y cachea
+por SHA256 de la proyección acotada/decodificada, metadatos ordenados y error.
+Render y nota sin confianza usan esa misma tupla; no segunda lectura. Pruebas
+con tempfile reales cubren cambios/altas/bajas/error/recuperación y un solo scan.
+Coordinador7 nuevas correctas0,70s; agente selección165 correctas/1 omitida6,20s.
+No inferencia GPU ni servicios personales; omisión POSIX no certifica Windows.
+
+Esta identidad no amplía digest de aprobación de workspace: rules/objetivos
+siguen fuera. Captura secuencial no es transacción de directorio, ni hash completo
+más allá del límite. Biblioteca/TTL/rendercache previos fuera de alcance.
+Freshness de objetivos en reuse_scope H09 sólo evaluado: falta recibo de versión
+de la fuente; guard actual sólo files. No implementado ni globalmente cerrado.
