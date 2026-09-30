@@ -107,3 +107,9 @@ Sinrecorder/writefiable/attemptreal, durabilidadunknown; boolTrue sóloencolado.
 Reemplazoregistroparent no migra eventos. 90 pruebas45,42s; coordinador14 nuevas
 2,72s. Contrato steering_receipt en catálogoSSE,6 correctas0,75s. SinLLM/GPU niHTTPnuevo.
 AppliedIDexacto/recuperaciónstatus/restart siguenpendientes, no effectsuccessclaim.
+
+Fase2 `4dc501a1`: applied significa append a mensajes observadoSSE con UUID
+interno exacto worker/intento drenado; nunca modelread/success. Publicpending
+legacyshape idéntica, IDnoenprompt. Rechaza forged/crossworker/duplicate/oldattempt.
+Final104 correctas46,09s; coordinador28receipt2,89s, catálogoSSE6 correctas0,79s.
+No HTTPnuevo ni restorequeue, durablefailure appliedobservado quedaunknown.
