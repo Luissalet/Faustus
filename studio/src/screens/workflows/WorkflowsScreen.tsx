@@ -13,6 +13,7 @@ import {
   type SimulationResult,
 } from '../../adapters/topology';
 import { loadAgentProfiles } from '../../adapters/agents';
+import { listSavedWorkflows } from '../../adapters/workflows';
 import { PlanGraph, type NodeMark, type PlanGraphNode } from './PlanGraph';
 import { NodeInspector, type InspectorNode, type NodePatch } from './NodeInspector';
 import { RunOverlay } from './RunOverlay';
@@ -247,6 +248,18 @@ export function WorkflowsScreen() {
         setDefinition(def);
         setSavedName(null);
         setBoundRunId(runId);
+        // A run of a library workflow can be evaluated straight away: find the
+        // entry holding this same id and version, if there is one.
+        const id = typeof def.id === 'string' ? def.id : '';
+        const version = def.version == null ? '' : String(def.version);
+        if (id) {
+          listSavedWorkflows()
+            .then((saved) => {
+              const match = saved.find((w) => w.workflowId === id && (!version || !w.version || w.version === version));
+              if (match && openedRunParam.current === runId) setSavedName(match.name);
+            })
+            .catch(() => undefined);
+        }
         setSelectedNodeId(null);
         setMode('execute');
         // Mark this id as already-opened BEFORE the param write below so
