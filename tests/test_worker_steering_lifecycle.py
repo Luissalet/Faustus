@@ -178,3 +178,80 @@ async def test_terminal_stream_event_closes_before_error_fanout_and_retry_reopen
     assert worker.steer_queue == []
     await attempt(worker, emit)
     assert len(attempts) == 2 and not worker.accepts_steers
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("terminal", ["rounds_exhausted", "budget_exceeded", "intent_nudge_exhausted"])
+async def test_terminal_guard_rejects_late_input_preserves_queue_and_retry(worker, monkeypatch, terminal):
+    attempts = []
+    async def stream(*a, **kw):
+        register(worker)
+        attempts.append(True)
+        if len(attempts) == 1:
+            assert st.steer_worker(worker.session_id, "Previously accepted")
+            yield "data: " + json.dumps({"type": terminal}) + "\n\n"
+        else:
+            pending = kw["pending_user_messages"]()
+            assert pending == [{"text": "Previously accepted", "source": "user"}]
+            injected, *_ = agent_loop._apply_steers_to_messages([], pending)
+            for ev in injected:
+                yield "data: " + json.dumps(ev) + "\n\n"
+        yield "data: [DONE]\n\n"
+    async def emit(event):
+        if event["event"] == "guard":
+            assert not asyncio.current_task().done()
+            assert not worker.accepts_steers
+            assert not st.steer_worker(worker.session_id, "Late terminal input")
+    monkeypatch.setattr(agent_loop, "stream_agent_loop", stream)
+    await attempt(worker, emit)
+    assert worker.steered == 0 and len(worker.steer_queue) == 1
+    await attempt(worker, emit)
+    assert worker.steered == 1 and worker.steer_queue == []
+
+
+@pytest.mark.asyncio
+async def test_loop_breaker_recovery_stays_open_and_injects(worker, monkeypatch):
+    async def stream(*a, **kw):
+        register(worker)
+        yield 'data: {"type":"loop_breaker_triggered"}\n\n'
+        pending = kw["pending_user_messages"]()
+        messages = []
+        injected, *_ = agent_loop._apply_steers_to_messages(messages, pending)
+        assert messages[-1] == {"role": "user", "content": "Recovery input"}
+        for event in injected:
+            yield "data: " + json.dumps(event) + "\n\n"
+    async def emit(event):
+        if event["event"] == "guard":
+            assert worker.accepts_steers
+            assert st.steer_worker(worker.session_id, "Recovery input")
+    monkeypatch.setattr(agent_loop, "stream_agent_loop", stream)
+    await attempt(worker, emit)
+    assert worker.steered == 1 and worker.steer_queue == []
+
+
+@pytest.mark.parametrize("terminal", ["rounds_exhausted", "budget_exceeded", "intent_nudge_exhausted"])
+def test_real_guard_callsites_end_rounds_instead_of_recovering(terminal):
+    import ast
+    from pathlib import Path
+    tree = ast.parse(Path(agent_loop.__file__).read_text(encoding="utf-8"))
+    parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
+    event = next(node for node in ast.walk(tree) if isinstance(node, ast.Dict)
+        and any(isinstance(key, ast.Constant) and key.value == "type"
+            and isinstance(value, ast.Constant) and value.value == terminal
+            for key, value in zip(node.keys, node.values)))
+    ancestors = []
+    while event in parents:
+        event = parents[event]
+        ancestors.append(event)
+    guard = next(node for node in ancestors if isinstance(node, ast.If))
+    if terminal == "rounds_exhausted":
+        assert not any(isinstance(node, (ast.For, ast.AsyncFor, ast.While)) for node in ancestors)
+    else:
+        assert isinstance(guard.body[-1], ast.Break)
+        if terminal == "budget_exceeded":
+            assert any(isinstance(node, ast.Assign) and any(isinstance(target, ast.Name)
+                and target.id == "budget_hit" for target in node.targets)
+                and isinstance(node.value, ast.Constant) and node.value.value is True for node in guard.body)
+            budget_exit = next(node for node in ast.walk(tree) if isinstance(node, ast.If)
+                and isinstance(node.test, ast.Name) and node.test.id == "budget_hit")
+            assert isinstance(budget_exit.body[-1], ast.Break)

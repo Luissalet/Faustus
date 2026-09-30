@@ -1721,6 +1721,10 @@ async def _run_subagent(
                     run.output_tokens = _prior_output_tokens + _out
                     _output_from_metrics = True
             elif et in ("rounds_exhausted", "budget_exceeded", "loop_breaker_triggered", "intent_nudge_exhausted"):
+                # These three guards end the round loop; recovery from a loop
+                # breaker can continue, so its admission gate stays open.
+                if et != "loop_breaker_triggered":
+                    run.accepts_steers = False
                 await emit({"event": "guard", "kind": et})
             elif et == "agent_terminal":
                 run.error = "model request failed"
