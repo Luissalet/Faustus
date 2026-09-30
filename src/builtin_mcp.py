@@ -106,6 +106,11 @@ _BUILTIN_SERVERS = {
     # sandbox probe (src/process_manager.py, src/sandbox_probe.py). The server
     # process holds its own handles in its own store; it is not owner-scoped.
     "execution": ("mcp_servers/execution_server.py", "Built-in: Execution"),
+    # Harness diagnostics (src/history_projection.py, src/resource_claims.py,
+    # src/bench/harness_pair.py): what the history projector would repair, what
+    # a set of tool calls would claim, and the paired bench reports. Read-only,
+    # no owner-scoped data.
+    "harness": ("mcp_servers/harness_server.py", "Built-in: Harness diagnostics"),
 }
 
 # Built-in servers whose every tool is a 1:1 twin of a native agent tool
