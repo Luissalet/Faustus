@@ -58,3 +58,24 @@ ante errores de la autoridad is_permitted sigue siendo el previo.
 Fuente conceptual del [análisis H17 fijado](CODEX_HARNESS_ANALISIS_2026-09-29.md):
 [Codex registry.rs b1e72963](https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/core/src/tools/registry.rs).
 Implementación propia sobre las rutas actuales, sin repetir revisiones upstream.
+
+## Incremento posterior: ventana de candidatos permitidos (30-09-2026)
+
+El residual del primer piloto se reproduce con24 candidatos vectoriales
+bloqueados delante de ask_user permitido: la consulta anterior nunca lo veía.
+Con candidate_filter, retrieve amplía geométricamente la ventana por lane,
+reutilizando un único embedding. Termina al obtener suficientes nombres únicos
+permitidos, agotar la colección, recibir respuesta corta, llegar al score floor
+o al techo absoluto256. Sin filtro conserva su consulta y profundidad previas.
+En fusión evita recortar el pool vectorial antes de considerar permisos y pasa
+candidate_filter al buscador lexical antes de su corte; mantiene corpus BM25.
+
+El techo256 es un límite deliberado: candidatos posteriores pueden seguir
+ocultos. El freno por floor supone ranking ordenado de distancias del backend.
+Adapters legacy siguen conservando su contrato; no se promete completar k.
+Es lógica de recuperación, sin inferencia GPU ni tráfico a modelos reales.
+Revisión independiente sin bloqueos; coordinador22 pruebas focales correctas
+en1,27s (overfetch y cutoff), incluyendo query legacy, denegación total,
+cap con k100/count400, encode único, respuesta corta, floor y filtro lexical.
+Fuente original sigue registry.rs fijado arriba, sin revisión repetida.
+Commit del incremento: `17b6bc8a`. Selección amplia:231 correctas/2 fallos de categorías MCP, reproducidos también en baseline previo cargado sólo en proceso; no suite amplia verde. Fixtures de categorías pendientes fuera de este lote.
