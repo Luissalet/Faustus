@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Designing rate limits for a public API</title></head>
+<body>
+<nav><a href="/">Docs home</a> <a href="/guides">Guides</a> <a href="/reference">Reference</a> <a href="/changelog">Changelog</a> <a href="/status">Status</a></nav>
+<div id="cookie-bar" class="cookie"><p>This site stores cookies on your device. Accept to continue browsing with all features enabled.</p></div>
+<div class="docs">
+<aside class="toc"><ul><li><a href="#why">Why limit</a></li><li><a href="#token">Token bucket</a></li><li><a href="#headers">Headers</a></li><li><a href="#retry">Retries</a></li></ul></aside>
+<main>
+<h1>Designing rate limits for a public API</h1>
+<p>A rate limit protects a service from overload and makes capacity predictable for every caller. The limit should be stated in the documentation, enforced the same way everywhere and reported back to the client in each response.</p>
+<h2 id="why">Why limits exist</h2>
+<p>Without a limit, one noisy client can consume the capacity that other clients depend on. A limit also caps the cost of a bug: a retry loop with no backoff is contained instead of taking the service down.</p>
+<h2 id="token">The token bucket algorithm</h2>
+<p>A token bucket holds a fixed number of tokens that refill at a constant rate. Each request removes one token; when the bucket is empty the request is rejected or delayed. The bucket size sets the allowed burst and the refill rate sets the sustained throughput.</p>
+<p>The fixed window counter is simpler but lets a client send double the limit across a window boundary. A sliding window avoids that at the price of storing more state per client.</p>
+<h2 id="headers">Telling clients where they stand</h2>
+<p>Return the limit, the remaining quota and the time until reset in response headers. When a request is rejected, respond with status 429 and a retry-after value so clients can wait the right amount of time instead of guessing.</p>
+<h2 id="retry">Retries and backoff</h2>
+<p>Clients should retry only idempotent requests, use exponential backoff with random jitter and stop after a bounded number of attempts. Jitter spreads retries in time so that many clients do not return at the same instant.</p>
+</main>
+</div>
+<footer><a href="/terms">Terms</a> <a href="/privacy">Privacy</a> <a href="/contact">Contact</a><p>Copyright 2026 Example Docs. All rights reserved.</p></footer>
+</body>
+</html>

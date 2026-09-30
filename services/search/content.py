@@ -298,8 +298,14 @@ def _annotate_source_quality(result: dict, extra_flags=None) -> dict:
 # Main content fetcher
 # ----------------------------------------------------------------------
 def fetch_webpage_content(url: str, timeout: int = 5, retry_attempt: int = 0,
-                          max_bytes: int = None, format: str = "markdown") -> dict:
+                          max_bytes: int = None, format: str = "markdown",
+                          keep_html: bool = False) -> dict:
     """Fetch and extract meaningful content from a webpage with caching.
+
+    ``keep_html`` adds the page's raw markup as ``result["raw_html"]`` of a
+    freshly fetched HTML page, for callers that score the DOM themselves
+    (``src.research_prune``). It is never written to the cache: a cache hit
+    comes back without it and the caller prunes the extracted text instead.
 
     ``max_bytes`` raises the download budget per call (clamped to the hard
     cap); the default is the soft cap. When the body is cut short the result
@@ -573,6 +579,9 @@ def fetch_webpage_content(url: str, timeout: int = 5, retry_attempt: int = 0,
     }
     _annotate_source_quality(result)
     _cache_result(cache_file, cache_key, result, url)
+    if keep_html:
+        result = dict(result)
+        result["raw_html"] = response.text
     return result
 
 
