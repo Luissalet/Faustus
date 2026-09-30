@@ -62,9 +62,18 @@ Implementación propia sin repetir upstream ni el radar de proyectos.
 
 Discovery no concede permisos: la revocación vigente y el dispatcher continúan
 gobernando la ejecución. No se liga este resultado a un snapshot de paso ni se
-certifica la estabilidad de MCP después del lookup. Se reutiliza el comportamiento
-vigente del predicado, incluidos sus fallbacks ante errores; no se implementa una
-nueva política fail-closed. El filtro del resultado de búsqueda ocurre después
+certifica la estabilidad de MCP después del lookup. El piloto inicial reutilizó el comportamiento
+del predicado, incluidos sus fallbacks ante errores. El incremento a1b488e1
+registrado abajo cierra la excepción de tool_policy.blocks. El filtro del resultado de búsqueda ocurre después
 del ranking/límite actuales, por lo que no repone candidatos inferiores cuando
 los primeros estén bloqueados. Otros anuncios textuales y superficies Code Mode
 no quedan certificados por este incremento. H17 permanece parcial.
+
+
+### VISITADO / IMPLEMENTADO — H17 autoridad de permisos no disponible
+
+`a1b488e1`: is_permitted devuelve False cuando tool_policy.blocks lanza excepción. Antes la trataba como permiso concedido: lookup real ofrecía schema/promoción de read_file mientras dispatcher real con la misma policy fallaba antes del handler. Ahora schema/catalog/categories/hints/audit/fallback y aliases no ofrecen decisiones no verificables; otras herramientas con permiso resuelto siguen disponibles. Policy None deliberada y ToolPolicy normal permisiva mantienen compatibilidad.
+
+Antesfix:9 nuevas fallaban/2 positivas pasaban. Final11 correctas0,91s y43 integración lookup/index/alias/audit correctas3,02s; coordinador11 correctas0,87s. Selección ampliada119nodes/7suites interrumpida con Ctrl-C sólo en sesiónQA propia tras76dots sin avance visible, exit1 sin traceback: NO se certifica suite completa ni fallo de assertion o deadlock del producto. Nodo activo inferido por orden en-live-failure de offer_execute_coherence; ese parametrizado ejecuta un stream sintético por cada herramienta anunciada, potencial cientos. Pruebas originales intactas.
+
+Scope sólo tool_discovery.py+test nuevo. Autoridad fallida sintética y dispatcher/lookup reales; perfil normal puro/frozen sin incidente UI demostrado. Sin LLM/GPU/servicios externos ni nuevo flujo de aprobación. Referencia https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/core/src/tools/registry.rs y contratos locales; no revisión upstream repetida. Piloto cerrado, H17 superficies generales y permisos cambiantes todavía parcial. Checkpointfe1779bc registra evaluación MCP success:false; documentosfreshness/recoveryusage siguen en implementación, uso95% permitido.
