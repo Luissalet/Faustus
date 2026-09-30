@@ -48,6 +48,7 @@ EXTRA_KEYS: tuple[str, ...] = ("tool_path_extra_roots", "vision_enabled", "visio
                                "advisor_max_tokens", "advisor_context_tokens",
                                "typed_decision_error_fork", "typed_decision_tool_tie",
                                "typed_decision_tool_tie_tolerance", "typed_decision_compaction_keep",
+                               "self_declared_risk",
                                "mode_effort_bug_hunt", "mode_effort_ci_analysis")
 
 FIELD_TYPES: tuple[str, ...] = ("bool", "int", "float", "text", "select", "list", "secret")
@@ -669,6 +670,11 @@ GROUPS: list[dict[str, Any]] = [
             _bool("typed_decision_compaction_keep", "Typed decision in extractive compaction",
                   "Per old tool result, the classifier decides whether to keep it verbatim in the "
                   "digest; the last six messages are never folded. Off by default."),
+            # Self-declared risk (src/self_declared_risk.py).
+            _bool("self_declared_risk", "Models declare the risk of state-changing calls",
+                  "State-changing tools get an optional security_risk parameter (LOW, MEDIUM, HIGH, "
+                  "UNKNOWN). HIGH forces the approval card even when policy would run the call; "
+                  "the others never lower anything. The parameter is removed before the tool runs."),
             # Handoff lanes (src/handoff_lanes.py): permissions-as-topology,
             # which agent may delegate to which, with which tools. The
             # dedicated Studio panel (GET/PUT /api/handoff-lanes) is the

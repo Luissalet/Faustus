@@ -741,6 +741,11 @@ DEFAULT_SETTINGS = {
     # Relative gap to the best lexical score within which two tools tie.
     "typed_decision_tool_tie_tolerance": 0.03,
     "typed_decision_compaction_keep": False,
+    # Models declare the risk of state-changing calls (src/self_declared_risk.py):
+    # an optional `security_risk` parameter on those tools; HIGH forces the
+    # approval card, nothing ever lowers the gate. The parameter is removed
+    # before the tool runs.
+    "self_declared_risk": True,
     # Per-model load defaults for Ollama models (Settings → Local models →
     # Options…, src/model_load_options.py): {"<endpoint_id>|<model>":
     # {"num_ctx", "num_gpu", "keep_alive"}}. Applied under explicit

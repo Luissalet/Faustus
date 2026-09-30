@@ -6226,6 +6226,7 @@ def _reasoning_ends_with_tool_call(reasoning: str) -> bool:
     return text.endswith("</tool_call>") and "<tool_call>" in text
 
 
+from src import self_declared_risk as _self_risk
 def _resolve_tool_blocks(
     round_response: str,
     native_tool_calls: list,
@@ -6237,6 +6238,7 @@ def _resolve_tool_blocks(
     round_reasoning: str = "",
     argument_snapshot=None,
     schema_receipt=None,
+    declared_risk: Optional[Dict[int, str]] = None,
 ):
     """Choose native function calls or fenced code block parsing. Returns
     (tool_blocks, used_native, converted_calls) — the same three values it
@@ -6255,12 +6257,18 @@ def _resolve_tool_blocks(
         for tc in native_tool_calls:
             tc_name = tc.get("name", "")
             tc_args = tc.get("arguments", "{}")
+            # `security_risk` (src/self_declared_risk.py) is the model's own
+            # estimate, not an argument of the tool: take it out before
+            # anything is built from the arguments, keep what it said.
+            tc_args, _declared = _self_risk.strip_from_arguments(tc_args)
             block = function_call_to_tool_block(tc_name, tc_args)
             if block:
                 block, arg_meta = _validate_native_tool_call(tc_name, tc_args, block,
                                                              path_roots=path_roots,
                                                              argument_snapshot=argument_snapshot,
                                                              schema_receipt=schema_receipt)
+                if _declared and declared_risk is not None:
+                    declared_risk[id(block)] = _declared
                 if arg_meta is not None:
                     arg_validation[id(block)] = arg_meta
                 tool_blocks.append(block)
@@ -10231,6 +10239,7 @@ async def _stream_agent_loop_body(
     _fork_trace, _fork_restore = _forks.begin_turn()
     _fork_error_on = (not _is_teacher_run and not guide_only
                       and _forks.fork_enabled(_forks.FORK_TOOL_ERROR))
+    _risk_records: list = []   # one per state-changing call: declared vs policy risk
     _fork_failed: Optional[tuple] = None    # (tool, args, result) of this round's last failure
     _fork_pending: Optional[tuple] = None   # (receipt, choice, tool, args) awaiting the next call
 
@@ -11919,6 +11928,11 @@ async def _stream_agent_loop_body(
             )
         except Exception as _slim_err:
             logger.debug("[tool-slim] skipped: %s", _slim_err)
+        # Self-declared risk: one optional `security_risk` parameter on the
+        # state-changing tools, added here once for every route (API, local,
+        # MCP) instead of in 200 schemas. HIGH can only raise the gate below.
+        if all_tool_schemas and _self_risk.enabled() and not guide_only:
+            all_tool_schemas = _self_risk.with_risk_param(all_tool_schemas)
 
         # Context Engine live path: one replacement packet per provider call.
         # Conversation and tool results stay in their native roles; only the
@@ -13251,6 +13265,7 @@ async def _stream_agent_loop_body(
             else round_response
         )
         _arg_validation: Dict[int, Dict[str, Any]] = {}
+        _declared_risk: Dict[int, str] = {}
         from src.tool_schema_receipts import argument_snapshot_for_answer
         _answer_argument_snapshot, _answer_schema_receipt = argument_snapshot_for_answer(
             _candidate_request_states, candidate_index, round_num=round_num,
@@ -13262,6 +13277,7 @@ async def _stream_agent_loop_body(
             is_api_model=(_is_api_model and not guide_only),
             allow_fenced_for_api=_ody_doc_finetune_mode,
             arg_validation=_arg_validation,
+            declared_risk=_declared_risk,
             # The roots a path argument may point into — the same ones
             # execute_tool_block binds for the tool itself, so the schema
             # check and the tool never disagree about an absolute path
@@ -15458,6 +15474,24 @@ async def _stream_agent_loop_body(
             except Exception:  # noqa: BLE001
                 logger.debug("tool_arg_policy evaluation failed for tool=%s", block.tool_type, exc_info=True)
                 _arg_policy_decision = None
+            # Self-declared risk: a HIGH declaration turns an allowed call into
+            # an approval card; nothing the model says ever lowers the gate.
+            # The declared and the policy's own level are recorded per call.
+            try:
+                if _self_risk.enabled() and _self_risk.wants_param(block.tool_type):
+                    from src.tool_capabilities import tool_approval_mode as _approval_mode
+                    _risk_policy_level = _self_risk.policy_risk(
+                        block.tool_type, block.content, gate_allowed=security_decision.allowed)
+                    _risk_declared = _declared_risk.get(id(block))
+                    security_decision, _risk_forced = _self_risk.raise_decision(
+                        security_decision, _risk_declared, block.tool_type,
+                        approval_mode=_approval_mode(),
+                        gate_bypassed=bool(run_security.approval_gate_bypassed))
+                    _risk_records.append(_self_risk.record(_self_risk.make_record(
+                        block.tool_type, _risk_declared, _risk_policy_level,
+                        forced=_risk_forced, round_num=round_num)))
+            except Exception:  # noqa: BLE001 - the estimate never costs a call
+                logger.debug("self-declared risk failed for tool=%s", block.tool_type, exc_info=True)
             _ody_clamped_tool_allowed = (
                 _ody_notes_finetune_mode
                 and block.tool_type in {"manage_notes", "manage_calendar", "manage_tasks"}
@@ -17744,6 +17778,11 @@ async def _stream_agent_loop_body(
         # message's metadata with the rest of the trace.
         metrics["decision_receipts"] = list(_fork_trace.receipts)[:60]
     _fork_restore()
+    if _risk_records:
+        # Declared vs policy risk per state-changing call, so disagreements
+        # can be counted from history too (GET /api/agent/risk/stats is the
+        # live counter).
+        metrics["risk_declarations"] = _risk_records[:80]
     if _advisor_state.receipts:
         # One entry per advisor use (trigger, model, tokens, latency, the
         # advice itself): rides onto the saved message like the receipts.

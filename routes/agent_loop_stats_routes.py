@@ -10,6 +10,12 @@ GET /api/agent/decision-forks/stats
        per fork how often it was asked, decided, fell back, what it chose, what
        came of it, plus the last receipts and which forks are switched on.
 
+GET /api/agent/risk/stats
+    -> counters of the risk models declare on state-changing calls
+       (src/self_declared_risk.py): how often they declared, how often HIGH
+       forced an approval card, how often the declaration and the policy's
+       own level disagreed, per tool, plus the last few records.
+
 Nothing here changes anything; it only reports what the loop already did.
 """
 from __future__ import annotations
@@ -33,6 +39,11 @@ def setup_agent_loop_stats_routes() -> APIRouter:
     async def get_decision_fork_stats(_u: str = Depends(require_user)) -> Dict[str, Any]:
         from src import decision_forks
         return decision_forks.stats()
+
+    @router.get("/risk/stats")
+    async def get_risk_stats(_u: str = Depends(require_user)) -> Dict[str, Any]:
+        from src import self_declared_risk
+        return self_declared_risk.stats()
 
     return router
 
