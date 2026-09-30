@@ -131,17 +131,16 @@ def test_null_owner_is_legacy_single_user_noop():
     assert ep is not None and ep.id == "ep-x"
 
 
-def test_runtime_resolution_uses_provider_auth_for_chatgpt_subscription(monkeypatch):
-    ep = SimpleNamespace(
-        id="ep-chatgpt",
-        owner="alice",
-        base_url="https://chatgpt.com/backend-api/codex",
-        api_key=None,
-        provider_auth_id="auth-1",
-        cached_models='["gpt-5.5"]',
-        hidden_models=None,
-    )
+def test_runtime_resolution_uses_provider_auth_for_chatgpt_subscription(monkeypatch, tmp_path):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from core.database import ModelEndpoint
+    from src import endpoint_resolver
 
+    engine = create_engine("sqlite:///" + str(tmp_path / "research.db"))
+    ModelEndpoint.__table__.create(engine)
+    sessions = sessionmaker(bind=engine)
+    monkeypatch.setattr(endpoint_resolver, "SessionLocal", sessions)
     monkeypatch.setattr(
         "src.chatgpt_subscription.resolve_runtime_credentials",
         lambda auth_id, owner=None: {
@@ -149,9 +148,16 @@ def test_runtime_resolution_uses_provider_auth_for_chatgpt_subscription(monkeypa
             "api_key": "fresh-access-token",
         },
     )
-
-    url, model, headers = _resolve_endpoint_runtime(ep, owner="alice", model="")
-
-    assert url == "https://chatgpt.com/backend-api/codex/responses"
-    assert model == "gpt-5.5"
-    assert headers["Authorization"] == "Bearer fresh-access-token"
+    try:
+        with sessions() as db:
+            ep = ModelEndpoint(id="ep-chatgpt", owner="alice", is_enabled=True,
+                name="fixture", base_url="https://chatgpt.com/backend-api/codex",
+                api_key=None, provider_auth_id="auth-1", cached_models='["gpt-5.5"]')
+            db.add(ep)
+            db.commit()
+            url, model, headers = _resolve_endpoint_runtime(ep, owner="alice", model="")
+        assert url == "https://chatgpt.com/backend-api/codex/responses"
+        assert model == "gpt-5.5"
+        assert headers["Authorization"] == "Bearer fresh-access-token"
+    finally:
+        engine.dispose()
