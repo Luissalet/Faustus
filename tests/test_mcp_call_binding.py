@@ -197,3 +197,60 @@ async def test_scoped_browser_revocation_during_reconnect_prevents_retry(fixture
     task = asyncio.create_task(m.call_tool(f'mcp__{sid}__browser_snapshot', {}))
     await entered.wait(); release.set(); result = await task
     assert result['status'] == 'outcome_unknown' and calls == [first] and reconnects == [True]
+
+
+async def test_nested_caller_mutation_during_oauth_does_not_change_arguments(fixture, monkeypatch):
+    m, sid, _, entered, release, calls, _ = fixture
+    seen = []
+    async def execute(session, name, args):
+        seen.append(args); return {"exit_code": 0}
+    monkeypatch.setattr(m, '_do_call', execute)
+    arguments = {'nested': {'items': ['ENTRY']}}
+    task = asyncio.create_task(m.call_tool(f'mcp__{sid}__mutate_record', arguments))
+    await entered.wait(); arguments['nested']['items'].append('CALLER MUTATION')
+    release.set(); await task
+    assert seen == [{'nested': {'items': ['ENTRY']}}]
+    assert arguments == {'nested': {'items': ['ENTRY', 'CALLER MUTATION']}}
+
+
+async def test_arguments_captured_before_lazy_builtin_configuration_await(fixture, monkeypatch):
+    m, old, first, _, release, calls, _ = fixture
+    sid = mm.DEVTOOLS_MCP_SERVER_ID
+    m._sessions[sid] = m._sessions.pop(old)
+    m._connections[sid] = m._connections.pop(old)
+    m._tools[sid] = m._tools.pop(old)
+    checking, continue_check = asyncio.Event(), asyncio.Event()
+    seen = []
+    async def ensure():
+        checking.set(); await continue_check.wait()
+    async def oauth(_): return None
+    async def execute(session, name, args):
+        seen.append(args); return {'exit_code': 0}
+    monkeypatch.setattr(m, 'ensure_builtin_devtools_current', ensure)
+    monkeypatch.setattr(m, '_oauth_ensure_valid', oauth)
+    monkeypatch.setattr(m, '_do_call', execute)
+    arguments = {'nested': {'value': 'ENTRY'}}
+    task = asyncio.create_task(m.call_tool(f'mcp__{sid}__mutate_record', arguments))
+    await checking.wait(); arguments['nested']['value'] = 'LATE'
+    continue_check.set(); await task
+    assert seen == [{'nested': {'value': 'ENTRY'}}]
+
+
+@pytest.mark.parametrize('read_only', [False, True])
+async def test_sdk_mutation_cannot_change_captured_arguments_or_read_retry(fixture, monkeypatch, read_only):
+    m, sid, first, _, release, calls, reconnects = fixture
+    m._tools[sid][0]['annotations']['readOnlyHint'] = read_only
+    seen = []
+    async def execute(session, name, args):
+        seen.append(args['nested']['items'][:]); calls.append(session)
+        args['nested']['items'].append('SDK MUTATION')
+        if session is first: raise ConnectionError('fixture response lost')
+        return {'exit_code': 0}
+    monkeypatch.setattr(m, '_do_call', execute)
+    arguments = {'nested': {'items': ['ENTRY']}}
+    task = asyncio.create_task(m.call_tool(f'mcp__{sid}__mutate_record', arguments))
+    await fixture[3].wait(); release.set(); result = await task
+    assert arguments == {'nested': {'items': ['ENTRY']}}
+    assert seen == ([['ENTRY'], ['ENTRY']] if read_only else [['ENTRY']])
+    assert len(reconnects) == (1 if read_only else 0)
+    assert result.get('status') == (None if read_only else 'outcome_unknown')

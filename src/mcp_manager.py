@@ -1623,6 +1623,9 @@ class McpManager:
 
         server_id = parts[1]
         tool_name = parts[2]
+        # Entry arguments are private call state, not a caller-owned live dict.
+        # Freeze before even the lazy built-in configuration checks can yield.
+        captured_arguments = deepcopy(arguments)
 
         if _is_browser_connection(server_id):
             # Dispatch-side half of the offered-then-executable invariant: the
@@ -1737,7 +1740,7 @@ class McpManager:
             if dead:
                 raise ConnectionError(f"MCP server process for {server_id} has exited")
             dispatched = True
-            result = await self._do_call(session, tool_name, arguments)
+            result = await self._do_call(session, tool_name, deepcopy(captured_arguments))
         except asyncio.CancelledError:
             raise
         except Exception as e:
@@ -1764,7 +1767,7 @@ class McpManager:
                     session = self._sessions.get(server_id)
                     if session:
                         try:
-                            result = await self._do_call(session, tool_name, arguments)
+                            result = await self._do_call(session, tool_name, deepcopy(captured_arguments))
                         except asyncio.CancelledError:
                             raise
                         except Exception as e2:
