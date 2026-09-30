@@ -21,8 +21,8 @@ is the way back to any run by id.
     {
       "mcpServers": {
         "faustus-workflows": {
-          "command": "D:/LocalAI/odysseus/venv/Scripts/python.exe",
-          "args": ["D:/LocalAI/odysseus/mcp_servers/workflows_server.py"],
+          "command": "<path to the Faustus Python>",
+          "args": ["<Faustus folder>/mcp_servers/workflows_server.py"],
           "env": {"FAUSTUS_URL": "http://127.0.0.1:7000",
                   "FAUSTUS_API_TOKEN": "ody_..."}    # Settings -> API tokens -> profile with agents:dispatch
         }

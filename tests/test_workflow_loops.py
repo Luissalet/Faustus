@@ -95,7 +95,7 @@ class Skills:
 
 
 def run(store, definition, skills, *, permissions=None, **create):
-    run_id = store.create_run(definition, owner="luis", inputs=create.pop("inputs", {}),
+    run_id = store.create_run(definition, owner="owner-a", inputs=create.pop("inputs", {}),
                               permissions=permissions, **create)["run_id"]
     return run_id, WorkflowEngine(default_handlers(skill=skills), store).advance(run_id)
 
@@ -340,7 +340,7 @@ def test_a_classify_in_the_body_routes_each_pass(store):
     from src.workflows.model_calls import ModelCalls
     skills = Skills()
     handlers = default_handlers(skill=skills, models=ModelCalls(complete=Models().complete, decide=Models().decide))
-    run_id = store.create_run(loop_flow(body, budget={"max_iterations": 2}, tail=False), owner="luis")["run_id"]
+    run_id = store.create_run(loop_flow(body, budget={"max_iterations": 2}, tail=False), owner="owner-a")["run_id"]
     assert WorkflowEngine(handlers, store).advance(run_id)["status"] == "completed"
     assert skills.iterations("light") == [1] and skills.iterations("heavy") == [2]
 
@@ -375,7 +375,7 @@ def test_a_paused_exhausted_loop_can_be_extended_and_continues_from_where_it_sto
     run_id, first = run(store, d, skills)
     assert first["status"] == "paused"
     engine = WorkflowEngine(default_handlers(skill=skills), store)
-    out = engine.extend_loop(run_id, "lp", iterations=3, by="luis")
+    out = engine.extend_loop(run_id, "lp", iterations=3, by="owner-a")
     assert out["ok"] is True and out["extended"]["iterations"] == 3
     assert out["advance"]["status"] == "completed"
     assert skills.iterations() == [1, 2, 3, 4], "iterations 1 and 2 are not run again"
@@ -510,7 +510,7 @@ def test_a_crash_between_passes_resumes_at_the_same_iteration(store):
     handlers = default_handlers()
     handlers["extract"] = read
     d = loop_flow(body, budget={"max_iterations": 3})
-    run_id = store.create_run(d, owner="luis")["run_id"]
+    run_id = store.create_run(d, owner="owner-a")["run_id"]
     with pytest.raises(SystemExit):
         WorkflowEngine(handlers, store).advance(run_id)
     assert calls == [1, 2]
@@ -531,7 +531,7 @@ def test_a_crash_between_passes_resumes_at_the_same_iteration(store):
 def test_a_crash_inside_an_effectful_body_node_is_an_unknown_effect_and_is_not_repeated(store):
     skills = Skills(crash_on=("step", 2))
     d = loop_flow(budget={"max_iterations": 3})
-    run_id = store.create_run(d, owner="luis")["run_id"]
+    run_id = store.create_run(d, owner="owner-a")["run_id"]
     with pytest.raises(SystemExit):
         WorkflowEngine(default_handlers(skill=skills), store).advance(run_id)
     assert skills.iterations() == [1, 2]
@@ -560,7 +560,7 @@ def test_a_crash_after_the_last_pass_is_written_but_before_the_loop_finishes_doe
     body node."""
     skills = Skills()
     d = loop_flow(budget={"max_iterations": 2}, tail=False)
-    run_id = store.create_run(d, owner="luis")["run_id"]
+    run_id = store.create_run(d, owner="owner-a")["run_id"]
     from src.workflows import store as store_mod
     killed = {"n": 0}
 
@@ -586,7 +586,7 @@ def test_a_crash_after_until_held_finishes_without_another_pass(store):
     until = {"left": {"path": "loop.results.step.n"}, "op": "gte", "right": 1}
     skills = Skills()
     d = loop_flow(budget={"max_iterations": 5}, until=until, tail=False)
-    run_id = store.create_run(d, owner="luis")["run_id"]
+    run_id = store.create_run(d, owner="owner-a")["run_id"]
     from src.workflows import store as store_mod
 
     def hook(point, **ctx):
@@ -617,7 +617,7 @@ def test_a_cancelled_run_stops_the_loop_before_the_next_body_node(store):
 
     skills = Skills(produce=produce)
     d = loop_flow(budget={"max_iterations": 5}, tail=False)
-    run_id = store.create_run(d, owner="luis")["run_id"]
+    run_id = store.create_run(d, owner="owner-a")["run_id"]
     holder["run_id"] = run_id
     result = WorkflowEngine(default_handlers(skill=skills), store).advance(run_id)
     assert result["status"] == "cancelled"
@@ -633,7 +633,7 @@ def test_retrying_a_finished_loop_with_a_reading_body_starts_it_over(store):
     handlers = default_handlers()
     handlers["extract"] = lambda node, ctx: (calls.append(ctx["loop"]["iteration"]) or {"data": {}})
     d = loop_flow(body, budget={"max_iterations": 2}, tail=False)
-    run_id = store.create_run(d, owner="luis")["run_id"]
+    run_id = store.create_run(d, owner="owner-a")["run_id"]
     engine = WorkflowEngine(handlers, store)
     engine.advance(run_id)
     assert store.retry_node(run_id, "lp", d)["ok"] is True
@@ -653,7 +653,7 @@ def test_a_loop_whose_body_reaches_outside_cannot_be_replayed(store):
 
 def test_opening_an_iteration_twice_returns_the_same_row(store):
     d = loop_flow()
-    run_id = store.create_run(d, owner="luis")["run_id"]
+    run_id = store.create_run(d, owner="owner-a")["run_id"]
     first = store.open_iteration(run_id, "lp", 1, key="k1")
     second = store.open_iteration(run_id, "lp", 1, key="k1")
     assert first["opened"] is True and second["opened"] is False

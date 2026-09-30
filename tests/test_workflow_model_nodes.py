@@ -76,7 +76,7 @@ class FakeModels:
 
 
 def run_flow(store, definition, handlers, inputs=None, **create):
-    run_id = store.create_run(definition, owner="luis", inputs=inputs or {}, **create)["run_id"]
+    run_id = store.create_run(definition, owner="owner-a", inputs=inputs or {}, **create)["run_id"]
     result = WorkflowEngine(handlers, store).advance(run_id)
     return run_id, result
 
@@ -116,7 +116,7 @@ def test_an_agent_node_runs_one_turn_with_a_rendered_prompt_and_records_the_answ
     assert spec["prompt"] == "Summarise: printer on fire"
     assert spec["tools"] == ["read_file"] and spec["agent"] == "reviewer"
     assert spec["max_rounds"] == 5 and spec["timeout_s"] == 60
-    assert spec["owner"] == "luis" and spec["node_id"] == "think"
+    assert spec["owner"] == "owner-a" and spec["node_id"] == "think"
     out = store.node_runs(run_id)["think"]
     assert out.status == "completed"
     assert out.result["text"] == "the summary"
@@ -268,7 +268,7 @@ def test_a_crash_mid_turn_never_runs_the_turn_twice_after_restart(store):
         raise SystemExit("power cut")
 
     d = agent_flow()
-    run_id = store.create_run(d, owner="luis", inputs={"ticket": "t"})["run_id"]
+    run_id = store.create_run(d, owner="owner-a", inputs={"ticket": "t"})["run_id"]
     with pytest.raises(SystemExit):
         WorkflowEngine(default_handlers(agent=dying), store).advance(run_id)
     assert turns == ["turn"]
@@ -323,12 +323,12 @@ def test_the_production_agent_runner_drives_the_one_agent_loop(monkeypatch):
                         lambda owner, model=None: ("http://127.0.0.1:8080/v1", model or "local-27b", {"x": "y"}))
     started = []
     out = agent_turn.run({"prompt": "do it", "system": "be brief", "tools": ["read_file"],
-                          "max_rounds": 3, "timeout_s": 30, "owner": "luis",
+                          "max_rounds": 3, "timeout_s": 30, "owner": "owner-a",
                           "run_id": "wfr_1", "node_id": "think",
                           "begin_effect": lambda: started.append(True) or True})
     assert out["text"] == "all done" and out["rounds"] == 1 and out["tool_calls"] == 1
     assert out["model"] == "local-27b" and started == [True]
-    assert seen["max_rounds"] == 3 and seen["owner"] == "luis"
+    assert seen["max_rounds"] == 3 and seen["owner"] == "owner-a"
     assert seen["messages"][0] == {"role": "system", "content": "be brief"}
     assert seen["messages"][-1] == {"role": "user", "content": "do it"}
     # Only the listed tool survives; delegation is never on.
@@ -359,7 +359,7 @@ def test_the_production_runner_stops_at_its_deadline(monkeypatch):
                                   cancelled=cancelled)
 
     monkeypatch.setattr(agent_turn, "_consume", quick)
-    out = agent_turn.run({"prompt": "x", "timeout_s": 5, "owner": "luis"})
+    out = agent_turn.run({"prompt": "x", "timeout_s": 5, "owner": "owner-a"})
     assert out["stop_reason"] == "timeout" and out["text"] == "partial"
 
 
@@ -554,7 +554,7 @@ def test_a_restart_between_the_decision_and_its_branch_reads_the_recorded_label(
     would answer differently now."""
     models = FakeModels(decisions={"label": decision("billing")})
     skills = Skills()
-    run_id = store.create_run(classify_flow(), owner="luis", inputs={"ticket": "x"})["run_id"]
+    run_id = store.create_run(classify_flow(), owner="owner-a", inputs={"ticket": "x"})["run_id"]
     first = WorkflowEngine(default_handlers(models=models.as_calls(), skill=skills), store)
     first.advance(run_id, max_nodes=2)                 # start + classify only
     assert store.node_runs(run_id)["route"].status == "completed"
@@ -984,7 +984,7 @@ def test_a_guard_verdict_survives_a_restart_and_is_not_recomputed(store):
     check = {"type": "model", "id": "tone", "question": "Is the text abusive?"}
     skills = Skills()
     d = guard_flow([check])
-    run_id = store.create_run(d, owner="luis", inputs={"draft": "hi"})["run_id"]
+    run_id = store.create_run(d, owner="owner-a", inputs={"draft": "hi"})["run_id"]
     WorkflowEngine(default_handlers(models=models.as_calls(), skill=skills), store).advance(run_id)
     again = WorkflowEngine(default_handlers(models=models.as_calls(), skill=skills), store).advance(run_id)
     assert again["status"] == "completed" and len(models.decide_calls) == 1 and skills.ran == ["send"]
