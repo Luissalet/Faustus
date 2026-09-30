@@ -50,6 +50,7 @@
     {"type": "queue_status", "stability": "extended", "fields": {}},
     {"type": "paused", "stability": "extended", "fields": {}},
     {"type": "steer", "stability": "extended", "fields": {}},
+    {"type": "steering_receipt", "stability": "extended", "fields": {"receipt_id": "string", "state": "queued|drained|dropped", "parent_run_id": "string", "child_session_id": "string", "worker_id": "string", "delegation_id": "string", "accepted_attempt_run_id": "string", "source": "user|supervisor", "drained_attempt_run_id": "string?"}, "note": "durable queue observations; drained does not mean applied or read, and the journal does not restore the queue"},
     {"type": "compacted", "stability": "extended", "fields": {}},
     {"type": "context_compacted", "stability": "extended", "fields": {"round": "int?", "data": "object"}, "note": "mid-turn spill/fold under soft context ceiling (tokens_before/after, spilled, overflow_ids)"},
     {"type": "context_op", "stability": "extended", "fields": {"round": "int?", "op": "status|pin|unpin|drop|note", "ok": "bool", "handles": "array", "tokens_freed": "int", "overflow_ids": "array?"}, "note": "the model acted on its own context with a context tool (src/context_self_manage.py): handles it named, tokens freed, overflow ids its dropped/noted results went to"},

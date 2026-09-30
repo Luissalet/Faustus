@@ -96,3 +96,14 @@ Cierre worker de cancelled sigue siendo piloto posterior, no implementado aquí.
 72694f76, cuatro productores actuales terminan roundloop; assertions verifican
 esa semántica. Cola/retry preservados. Selección73 correctas33,24s;
 coordinador21 lifecycle correctas3,05s. No GPU/LLM ni recibosdurables nuevos.
+
+## Recibos fase1 (bfd5992a)
+
+Registro JSONL+fsync del run padre exacto capturado, estados queued/drained/dropped,
+IDs por aceptación y provenance de attempts sintexto/body. Drained sólo retirada
+de cola, noapplied/read. Descartefinal despuésretries vacía cola, no finintento.
+Historiallivecap1024 ysidecar IDs pendientes; journaldurable no restaura cola.
+Sinrecorder/writefiable/attemptreal, durabilidadunknown; boolTrue sóloencolado.
+Reemplazoregistroparent no migra eventos. 90 pruebas45,42s; coordinador14 nuevas
+2,72s. Contrato steering_receipt en catálogoSSE,6 correctas0,75s. SinLLM/GPU niHTTPnuevo.
+AppliedIDexacto/recuperaciónstatus/restart siguenpendientes, no effectsuccessclaim.
