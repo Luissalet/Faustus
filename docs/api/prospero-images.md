@@ -80,4 +80,21 @@ Pruebas: SQLite y galería temporales, HTTP/ComfyUI simulado, aislamiento de usu
 revocación de permisos, recibos y reinicios, edición de referencia, recuperación
 sin POST, rutas de herramientas/admisión y configuración real de Studio.
 Comprobación visual de ajustes en escritorio oscuro y móvil claro. No se ha
-ejecutado una generación o edición con un modelo/GPU real para esta etapa.
+ejecutado una generación o edición con un modelo/GPU real en el piloto inicial.
+
+Validación real posterior, 30-09-2026: retrato ficticio SDXL y cuatro ediciones
+por instrucciones sin máscara con Qwen-Image 2.1 int8 en RTX 5060 Ti de 16 GB:
+sombrero rojo, estilo anime, añadir Darth Vader y añadir Keanu Reeves. Todas
+terminaron y se publicaron como PNG 1024×1024 en la galería de la cuenta/sesión
+de prueba aislada. Inspección visual realizada; mantienen rasgos reconocibles,
+pero la difusión redibuja detalles y no promete preservar píxeles o identidad
+con exactitud. `image_job` real recuperó las cuatro salidas con los mismos IDs
+sin aumentar los cinco jobs (original y cuatro ediciones). Se probaron la
+herramienta/adapter, los motores y la recuperación; no una interacción completa
+de chat con selección de herramienta por un LLM y navegador en esta corrida.
+
+Se observó una espera de VRAM entre renders por caché DynamicVRAM fuera del
+contador de memoria activa de PyTorch. Fue necesario liberar manualmente la
+caché del ComfyUI dedicado a la prueba. La admisión de memoria sigue pendiente
+de corrección; esto no certifica una secuencia desatendida de múltiples ediciones.
+No se alteraron ajustes/datos del usuario ni se descargaron modelos nuevos.
