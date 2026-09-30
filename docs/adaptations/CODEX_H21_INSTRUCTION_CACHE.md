@@ -78,3 +78,10 @@ siguen fuera. Captura secuencial no es transacción de directorio, ni hash compl
 más allá del límite. Biblioteca/TTL/rendercache previos fuera de alcance.
 Freshness de objetivos en reuse_scope H09 sólo evaluado: falta recibo de versión
 de la fuente; guard actual sólo files. No implementado ni globalmente cerrado.
+
+Biblioteca/rendercache: `8ab116b9` captura biblioteca antes de cachehit y firma
+su habilitación, campos renderizados/orden y hashbody. Render usa misma tupla.
+TTL5s se conserva; desactivada evita IO. Tres fallos antesfix por edición/borrado
+trasTTL y desactivación, corregidos. Selección171 correctas/1omitida6,78s;
+coordinador13 focales correctas1,03s. No modelos ni aprobación nueva.
+Omite test_permission_bits_are_preserved por permisos POSIX en Windows.
