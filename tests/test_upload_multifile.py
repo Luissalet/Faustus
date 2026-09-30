@@ -87,8 +87,15 @@ def _files(n):
     return [types.SimpleNamespace(filename=f"f{i}.txt") for i in range(n)]
 
 
-def _image_upload(name="photo.png", content=b"not really png but enough for route metadata"):
-    return types.SimpleNamespace(filename=name, file=io.BytesIO(content))
+def _png_bytes():
+    from PIL import Image
+    out = io.BytesIO()
+    Image.new("RGB", (4, 3), (200, 120, 40)).save(out, format="PNG")
+    return out.getvalue()
+
+
+def _image_upload(name="photo.png", content=None):
+    return types.SimpleNamespace(filename=name, file=io.BytesIO(_png_bytes() if content is None else content))
 
 
 @pytest.fixture(autouse=True)
@@ -237,3 +244,31 @@ async def test_non_image_chat_upload_is_not_added_to_gallery(tmp_path, monkeypat
         assert db.query(GalleryImage).count() == 0
     finally:
         db.close()
+
+
+async def test_undecodable_image_upload_stays_out_of_gallery(tmp_path, monkeypatch):
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'gallery.db'}",
+        connect_args={"check_same_thread": False},
+        poolclass=NullPool,
+    )
+    cdb.Base.metadata.create_all(engine)
+    TestingSession = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    gallery_dir = tmp_path / "generated_images"
+    monkeypatch.setattr(up, "SessionLocal", TestingSession)
+    monkeypatch.setattr(up, "GENERATED_IMAGES_DIR", str(gallery_dir))
+    h = UploadHandler(base_dir=str(tmp_path), upload_dir=str(tmp_path / "uploads"))
+    endpoint = _upload_endpoint(h)
+
+    result = await endpoint(_request(user="alice"),
+                            [_image_upload(content=b'{"detail": "Invalid filename"}')])
+    uploaded = result["files"][0]
+
+    # The upload itself is kept; only the gallery (and its edit tools) refuse it.
+    assert uploaded["id"] and "gallery_id" not in uploaded
+    db = TestingSession()
+    try:
+        assert db.query(GalleryImage).count() == 0
+    finally:
+        db.close()
+    assert not gallery_dir.exists() or not any(gallery_dir.iterdir())

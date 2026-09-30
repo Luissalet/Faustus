@@ -206,6 +206,16 @@ def setup_upload_routes(upload_handler):
         source_path = meta.get("path")
         if not source_path or not os.path.isfile(source_path):
             return None
+        # A name and MIME that say "image" are the client's claim. Only bytes
+        # that decode as an image become a gallery item an edit tool may use
+        # (seen live: a 74-byte JSON error body named .png was promoted, and
+        # the edit then failed inside the tool with "cannot identify image").
+        try:
+            from PIL import Image
+            with Image.open(source_path) as probe:
+                probe.verify()
+        except Exception:
+            return None
 
         db = SessionLocal()
         try:

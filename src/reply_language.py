@@ -38,13 +38,19 @@ MIN_SIGNAL = 1.0
 # Scoring those bodies for reply language is what flipped English Silhouettes
 # turns ("Implement it" + Spanish plan zip/md) to an "answer in Spanish"
 # directive. Same envelope the agent loop already strips for tool routing.
+# ``[Image: name]`` starts the block a text-only model gets for an image:
+# the vision description (or the "no vision model configured" notice) and
+# the gallery reference follow it. None of that is the user's instruction —
+# the notice's "configured"/"Settings" once flipped a hat edit into the admin
+# toolset and the edit tool was never offered.
 _ATTACHMENT_BODY_START_RE = re.compile(
-    r"(?m)^(?:=== (?:File|ZIP archive): .+? ===|\[Attached non-text file\])\s*$"
+    r"(?m)^(?:=== (?:File|ZIP archive): .+? ===|\[Attached non-text file\]|\[Image: .+?\])\s*$"
 )
 # Image / media chrome is English boilerplate and can outweigh a short Spanish
 # caption when left in the scored text.
 _ATTACHMENT_CHROME_LINE_RE = re.compile(
-    r"(?m)^\[(?:Image attached:.*?|\d+\s+inline media payload.*?omitted|Attachment:.*?)\]\s*$"
+    r"(?m)^\[(?:Image attached:.*?|\d+\s+inline media payload.*?omitted|Attachment:.*?"
+    r"|Gallery image ID: [A-Za-z0-9_-]{1,128}|Image attached but could not be processed)\]\s*$"
 )
 
 # Each directive is written in the language it names.  This is a runtime

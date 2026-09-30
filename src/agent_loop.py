@@ -703,6 +703,108 @@ _DOMAIN_HOT_TOOLS = {
     "media": {"inspect_media"},
 }
 
+#: Tools whose one call is a whole GPU job and a new gallery item.
+_ONCE_PER_TURN_MEDIA_TOOLS = frozenset({"generate_image", "edit_image"})
+
+
+def _media_job_key(tool_type: str, content: str) -> Optional[str]:
+    """What makes two image calls the same GPU job, or None when unparseable.
+
+    An instruction edit is its source image and its instruction; fields that
+    action never reads do not make a new job. Seen live: the repeat carried a
+    stray ``mask_id`` (the previous request ID) and no ``scale``, and ran a
+    second 80-second render of the same edit. Inpaint also depends on its
+    mask and strength; every other action and ``generate_image`` keep all
+    their arguments.
+    """
+    if tool_type not in _ONCE_PER_TURN_MEDIA_TOOLS:
+        return None
+    try:
+        args = json.loads(content or "{}")
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(args, dict):
+        return None
+    if tool_type == "edit_image":
+        action = str(args.get("action") or "").strip().lower()
+        if action == "instruction":
+            args = {"action": action, "image_id": args.get("image_id"),
+                    "prompt": " ".join(str(args.get("prompt") or "").split())}
+        elif action == "inpaint":
+            args = {"action": action, "image_id": args.get("image_id"),
+                    "mask_id": args.get("mask_id"), "strength": args.get("strength", 0.75),
+                    "prompt": " ".join(str(args.get("prompt") or "").split())}
+    import hashlib
+    body = json.dumps({"tool": tool_type, "args": args}, sort_keys=True, ensure_ascii=True, default=str)
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def _repeated_media_result(tool_type: str, content: str, tool_events, round_num: int):
+    """The earlier result of a byte-identical image call from a previous round.
+
+    Seen live (3B, Prospero): after the approved edit finished, the next round
+    sent the same ``edit_image`` again, a second 80-second render and a second
+    gallery item for one request. Identical calls in ONE round stay separate
+    (a deliberate batch of variations); a later round repeating an already
+    produced request gets that request's image back, not a new job.
+    """
+    key = _media_job_key(tool_type, content)
+    if key is None:
+        return None
+    for event in reversed(list(tool_events or [])):
+        if (not isinstance(event, dict) or event.get("tool") != tool_type
+                or event.get("round") == round_num
+                or event.get("exit_code") not in (None, 0)
+                or not isinstance(event.get("image_url"), str) or not event.get("image_url")):
+            continue
+        # Events without a stored key fall back to their displayed command,
+        # which may be truncated: then it does not parse and nothing is reused.
+        previous = event.get("media_job_key") or _media_job_key(tool_type, event.get("command") or "")
+        if previous != key:
+            continue
+        image_id = event.get("image_id")
+        return {
+            "output": (f"This exact {tool_type} request already finished earlier in this turn, "
+                       f"so it was not run again. Gallery image ID: {image_id}. "
+                       f"Image URL: {event['image_url']}"),
+            "exit_code": 0,
+            "image_url": event["image_url"],
+            **({"image_id": image_id} if image_id else {}),
+            "reused_result": True,
+        }
+    return None
+
+
+_GALLERY_REFERENCE_RE = re.compile(r"^\[Gallery image ID: [A-Za-z0-9_-]{1,128}\]\s*$", re.MULTILINE)
+_IMAGE_GENERATION_RE = re.compile(
+    r"\b(?:genera|generate|crea|create|dibuja|draw|pinta|paint|haz(?:me)?|make)\b"
+    r"(?:\s+\S+){0,3}\s+\b(?:una?\s+)?(?:imagen(?:es)?|image|images|picture|foto|ilustraci[oó]n|illustration)\b",
+    re.IGNORECASE,
+)
+
+
+def _media_hot_tools(latest_user_text: str, earlier_user_texts=()) -> set:
+    """Image tools a media request needs as schemas on its first round.
+
+    An attached, owned gallery image (the reference line the chat adds for
+    it) means the image is what the user wants changed: ``edit_image`` and
+    ``image_job``, which collects a pending edit. That holds for a follow-up
+    about an image attached a few messages earlier too (seen live: «Ahora
+    edita la imagen original adjunta: ponle un bigote» got no edit tool and
+    the 3B model claimed an edit it never made). A request to produce an
+    image by those words gets ``generate_image``. Anything else keeps the
+    domain's default hot set (``inspect_media``) and the catalog.
+    """
+    text = str(latest_user_text or "")
+    hot = set()
+    if _GALLERY_REFERENCE_RE.search(text) or any(
+            _GALLERY_REFERENCE_RE.search(str(earlier or "")) for earlier in earlier_user_texts or ()):
+        hot |= {"edit_image", "image_job"}
+    if _IMAGE_GENERATION_RE.search(_request_text_without_attached_files(text)):
+        hot |= {"generate_image", "image_job"}
+    return hot
+
+
 _WORKSPACE_TERMINUS_TOOLS = (
     _DOMAIN_TOOL_MAP["files"]
     | {"manage_skills", "ask_teacher", "web_search", "web_fetch", "ask_user", "update_plan",
@@ -8668,6 +8770,10 @@ async def _stream_agent_loop_body(
         except Exception as _plugin_err:  # noqa: BLE001 - selection must not fail on this
             logger.debug("plugin name scan failed: %s", _plugin_err)
 
+    # An image edit/generation request is held to its evidence like a coding
+    # turn: "se ha añadido un bigote" with no image tool run is a false claim
+    # (seen live, 3B), not an answer. Set by the media seeding below.
+    _media_claim_scope = False
     # If deterministic domain detection fired, seed the corresponding domain
     # tools into the selected tool set. This is not direct prompt-pack
     # injection: `_assemble_prompt()` still derives domain rules from the final
@@ -8685,6 +8791,28 @@ async def _stream_agent_loop_body(
             # (the tool list sits at the top of the prompt) before reading it.
             if _hot_seed is not None and not relevant_tools:
                 _hot_seed |= _DOMAIN_HOT_TOOLS.get(str(_domain), set())
+        # An owned gallery image in THIS message is the object of the request:
+        # its edit tool goes out as a schema, not a catalog line. Seen live
+        # (3B, Prospero): «Edita la imagen adjunta: ponle un sombrero…» had
+        # edit_image deferred to lookup_tools and the model renamed the chat.
+        if "media" in (_intent.get("domains") or set()):
+            _earlier_user_texts = []
+            for _earlier_msg in reversed(messages[:-1] if messages else []):
+                if _earlier_msg.get("role") != "user":
+                    continue
+                _earlier_content = _earlier_msg.get("content", "")
+                if isinstance(_earlier_content, list):
+                    _earlier_content = " ".join(
+                        b.get("text", "") for b in _earlier_content if isinstance(b, dict))
+                _earlier_user_texts.append(str(_earlier_content or ""))
+                if len(_earlier_user_texts) >= 6:
+                    break
+            _media_hot = _media_hot_tools(_last_user, _earlier_user_texts)
+            if _media_hot:
+                _media_claim_scope = True
+                _relevant_tools.update(_media_hot)
+                if _hot_seed is not None and not relevant_tools:
+                    _hot_seed |= _media_hot
         # The board belongs to a project: in a chat with none, every board_*
         # call refuses (`board.no_project`). Seen live: «¿Qué tareas tengo
         # pendientes?» offered all eight, and the model spent a 90-second
@@ -13340,7 +13468,7 @@ async def _stream_agent_loop_body(
             # no tools left to fix anything, so do not bounce it — but never
             # let unsupported "done" claims pass as verified either.
             _fa_text = _strip_think_blocks(cleaned_round).strip()
-            if _fa_text and (_harness_scope_active or _ledger.events):
+            if _fa_text and (_harness_scope_active or _ledger.events or _media_claim_scope):
                 try:
                     _fa_check = _ledger.check_completion(_fa_text)
                 except Exception:
@@ -14005,12 +14133,26 @@ async def _stream_agent_loop_body(
                         )
                 except Exception as _us_err:
                     logger.debug("[harness] ui_smoke (pre-check) failed to run: %s", _us_err)
-            if _hc_text and (_harness_scope_active or _ledger.events):
+            if _hc_text and (_harness_scope_active or _ledger.events or _media_claim_scope):
                 try:
                     _check = _ledger.check_completion(_hc_text)
                 except Exception as _hc_err:  # never let the harness kill a turn
                     logger.warning("[harness] completion check failed: %s", _hc_err)
                     _check = {"ok": True, "reasons": []}
+                # An image request answered with "the image now has X" while
+                # no image tool produced anything this turn (seen live, 3B).
+                if _media_claim_scope and not any(
+                        isinstance(_ev, dict) and _ev.get("image_url") for _ev in tool_events):
+                    try:
+                        _image_claims = _harness.find_image_result_claims(_hc_text)
+                    except Exception:  # noqa: BLE001 - the check never ends a turn
+                        _image_claims = []
+                    if _image_claims:
+                        _check = dict(_check)
+                        _check["reasons"] = list(_check.get("reasons") or []) + ["image_claim_without_tool"]
+                        _check["image_claims"] = _image_claims
+                        _check.setdefault("claims", [])
+                        _check["ok"] = False
                 if not _check["ok"]:
                     if _ledger.rejections < _HARNESS_MAX_REJECTIONS:
                         _ledger.rejections += 1
@@ -15351,6 +15493,12 @@ async def _stream_agent_loop_body(
                     _arg_policy_decision.rule_id, block.tool_type,
                     _arg_policy_decision.arg, _arg_policy_decision.op,
                 )
+            elif (i not in _prefetched and (_repeated_media := _repeated_media_result(
+                    block.tool_type, block.content or "", tool_events, round_num)) is not None):
+                desc = f"{block.tool_type}: ALREADY DONE"
+                result = _repeated_media
+                logger.info("[media] identical %s from an earlier round served, not re-run",
+                            block.tool_type)
             elif not security_decision.allowed and i not in _prefetched:
                 # (A call the keyed dispatch already ran was admitted only if
                 # the gate would pass it even after untrusted content; its
@@ -16262,6 +16410,8 @@ async def _stream_agent_loop_body(
                 "output": output_text,
                 "exit_code": result.get("exit_code"),
                 **_result_fields,
+                **({"media_job_key": _media_job_key(block.tool_type, block.content or "")}
+                   if block.tool_type in _ONCE_PER_TURN_MEDIA_TOOLS else {}),
                 # OBS-01: same call_id the live tool_start/tool_progress/
                 # tool_output events carried, so a history reload can still
                 # link this persisted record back to the exact call that

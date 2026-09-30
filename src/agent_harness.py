@@ -714,6 +714,49 @@ def find_mutation_claims(
     return out
 
 
+_ES_IMAGE_VERBS = (r"(?:a[ñn]adido|aplicado|editado|generado|creado|cambiado|puesto|modificado|"
+                   r"transformado|convertido|quitado|eliminado|retocado|dibujado|pintado)")
+_EN_IMAGE_VERBS = r"(?:added|applied|edited|generated|created|changed|put|modified|transformed|converted|removed|drawn|painted)"
+_IMAGE_RESULT_CLAIM_RES: List[re.Pattern] = [
+    re.compile(r"\b(?:se\s+(?:le\s+)?(?:ha|han)|(?:le\s+)?(?:he|hemos))\s+" + _ES_IMAGE_VERBS + r"\b", re.IGNORECASE),
+    re.compile(r"\baqu[ií]\s+(?:tienes|est[aá])\s+(?:la|tu)\s+(?:nueva\s+)?(?:imagen|foto)\b", re.IGNORECASE),
+    re.compile(r"\b(?:imagen|foto)\s+(?:editada|generada|modificada|nueva|resultante)\b", re.IGNORECASE),
+    re.compile(r"\b(?:i\s+(?:have|'ve)|i've|(?:has|have)\s+been)\s+" + _EN_IMAGE_VERBS + r"\b", re.IGNORECASE),
+    re.compile(r"\bhere\s+is\s+(?:the|your)\s+(?:edited|new|generated|updated|modified)\s+(?:image|picture|photo)\b",
+               re.IGNORECASE),
+]
+_IMAGE_CLAIM_NEGATION_RE = re.compile(
+    r"(?:\bno\b|\bnot\b|n't\b|\bnunca\b|\bnever\b|\bsin\b|\bwithout\b|\bcould\b|\bpodr[ií]a\b|"
+    r"\bpuedo\b|\bcan\b|\bsi\b|\bif\b)[^.!?\n]{0,24}$",
+    re.IGNORECASE,
+)
+
+
+def find_image_result_claims(text: str, limit: int = 3) -> List[str]:
+    """Sentences that present an image as already edited or created.
+
+    Used only on image requests: the generic mutation claims are about files,
+    and «Se ha añadido un bigote grande al hombre» — said by a 3B model that
+    never called the edit tool — matched none of them. Negated or conditional
+    phrasing («no he podido…», «si quieres, he…») is not a claim.
+    """
+    body = text or ""
+    found: List[str] = []
+    for pattern in _IMAGE_RESULT_CLAIM_RES:
+        for match in pattern.finditer(body):
+            if _IMAGE_CLAIM_NEGATION_RE.search(body[max(0, match.start() - 40):match.start()]):
+                continue
+            start = max(body.rfind(".", 0, match.start()), body.rfind("\n", 0, match.start())) + 1
+            end_candidates = [i for i in (body.find(".", match.end()), body.find("\n", match.end())) if i != -1]
+            end = min(end_candidates) if end_candidates else len(body)
+            sentence = body[start:end].strip()
+            if sentence and sentence not in found:
+                found.append(sentence[:200])
+            if len(found) >= limit:
+                return found
+    return found
+
+
 def find_permission_stall(text: str) -> Optional[str]:
     """Prose that asks the user for permission to keep going, instead of
     calling a tool or ask_user. None when the text is a real design question
@@ -2131,6 +2174,16 @@ class TurnLedger:
             )
             for c in check["claims"][:3]:
                 lines.append(f'    claim: "{c}"')
+        if "image_claim_without_tool" in check["reasons"]:
+            lines.append(
+                "- You say an image was edited or created, but no image tool (edit_image / "
+                "generate_image) produced an image this turn. Call edit_image with "
+                "action=instruction and the Gallery image ID from the user's attachment (or "
+                "generate_image for a new picture) and report what it returns, or say plainly "
+                f"that the image was not changed. Tools that ran: {tools}."
+            )
+            for c in (check.get("image_claims") or [])[:3]:
+                lines.append(f'    claim: "{c}"')
         if "fabricated_paths" in check["reasons"]:
             lines.append(
                 "- You mention paths that do not exist in the workspace and were never returned "
@@ -2357,6 +2410,13 @@ class TurnLedger:
         completion prose must not survive in the transcript or history.
         """
         touched = self.mutated_paths()
+        if "image_claim_without_tool" in (check.get("reasons") or []) and not touched:
+            if self.language == "es":
+                return ("No he editado ni generado ninguna imagen en este turno: no se ejecutó "
+                        "ninguna herramienta de imagen, así que la afirmación del modelo no era "
+                        "cierta. Vuelve a pedírmelo y lo intento con la herramienta de edición.")
+            return ("I did not edit or create any image in this turn: no image tool ran, so the "
+                    "model's claim was not true. Ask again and I will try with the image tool.")
         if self.language == "es":
             if touched:
                 files = ", ".join(f"`{p}`" for p in touched)

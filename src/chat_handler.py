@@ -16,6 +16,38 @@ from src.constants import (
 from core.models import ChatMessage
 from src.chat_helpers import extract_urls, model_supports_vision
 from src.document_processor import build_user_content, analyze_image_with_vl_result
+
+
+def owned_gallery_id_for_upload(file_info: Dict[str, Any], owner: Optional[str]) -> Optional[str]:
+    """The gallery ID the upload route gave this image, looked up again.
+
+    The upload response carries ``gallery_id`` to the browser, but the stored
+    upload metadata does not, so a send that resolves the upload by its ID
+    lost the reference and a model without vision only saw the upload ID
+    (seen live: ``edit_image`` then failed with "Gallery image not found").
+    The lookup mirrors the upload route's own promotion: same content hash,
+    active, and the same owner when there is one. No row means no reference.
+    """
+    existing = file_info.get("gallery_id")
+    if isinstance(existing, str) and existing:
+        return existing
+    file_hash = file_info.get("hash") or file_info.get("checksum_sha256")
+    if not isinstance(file_hash, str) or not file_hash:
+        return None
+    try:
+        from core.database import GalleryImage, SessionLocal
+        with SessionLocal() as db:
+            query = db.query(GalleryImage).filter(
+                GalleryImage.file_hash == file_hash,
+                GalleryImage.is_active == True,  # noqa: E712
+            )
+            if owner:
+                query = query.filter(GalleryImage.owner == owner)
+            row = query.first()
+            return row.id if row is not None else None
+    except Exception:
+        logger.debug("gallery reference lookup for upload failed", exc_info=True)
+        return None
 from src.youtube_handler import (
     is_youtube_url,
     extract_youtube_id,
@@ -194,6 +226,10 @@ class ChatHandler:
             for att_id in effective_att_ids:
                 fi = self.upload_handler.resolve_upload(att_id, owner=owner)
                 if fi:
+                    if self.upload_handler.is_image_file(fi.get("name", ""), fi.get("mime", "")):
+                        gallery_id = await asyncio.to_thread(owned_gallery_id_for_upload, fi, owner)
+                        if gallery_id:
+                            fi = {**fi, "gallery_id": gallery_id}
                     files_by_id[att_id] = fi
 
             for att_id in effective_att_ids:
@@ -208,6 +244,7 @@ class ChatHandler:
                         "created_at": fi.get("created_at") or fi.get("uploaded_at"),
                         "width": fi.get("width"),
                         "height": fi.get("height"),
+                        **({"gallery_id": fi["gallery_id"]} if fi.get("gallery_id") else {}),
                     })
 
         # Analyze images only when attachment preprocessing is actually
