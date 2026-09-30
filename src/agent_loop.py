@@ -1716,6 +1716,8 @@ def recompute_capabilities_on_model_switch(
     new_endpoint_url: str,
     previous_endpoint_id: str = "",
     new_endpoint_id: str = "",
+    previous_endpoint_revision: str = "",
+    new_endpoint_revision: str = "",
     previous_digest: str = "",
     new_digest: str = "",
 ) -> Dict[str, Any]:
@@ -1742,18 +1744,19 @@ def recompute_capabilities_on_model_switch(
     from src import model_calibration as mcal
     from src.llm_core import _detect_provider
 
-    def effective(model: str, url: str, endpoint_id: str, digest: str) -> Dict[str, Any]:
+    def effective(model: str, url: str, endpoint_id: str, digest: str, endpoint_revision: str) -> Dict[str, Any]:
         vendor = _detect_provider(url) or ""
         manifest = mcal.get_effective_manifest(vendor=vendor, model_id=model, endpoint_id=endpoint_id,
             protocol=mcal.explicit_native_protocol(url) if vendor == "ollama" else "",
-            digest=digest.strip() if isinstance(digest, str) else "")
+            digest=digest.strip() if isinstance(digest, str) else "",
+            endpoint_revision=endpoint_revision)
         # A never-seen route keeps the existing empty-hints contract.
         if manifest["evidence_scope"] == "unobserved" and not manifest["announced"] and not manifest["updated_at"]:
             manifest["degraded"] = []
         return manifest
 
-    previous_manifest = effective(previous_model, previous_endpoint_url, previous_endpoint_id, previous_digest)
-    new_manifest = effective(new_model, new_endpoint_url, new_endpoint_id, new_digest)
+    previous_manifest = effective(previous_model, previous_endpoint_url, previous_endpoint_id, previous_digest, previous_endpoint_revision)
+    new_manifest = effective(new_model, new_endpoint_url, new_endpoint_id, new_digest, new_endpoint_revision)
     return {
         # Preserve the existing switch payload; scope metadata stays internal.
         "capabilities": {key: new_manifest[key] for key in ("announced", "tested", "degraded", "updated_at")},
@@ -7357,7 +7360,9 @@ async def _stream_agent_loop_body(
             _denial_origin.setdefault(str(_name), origin)
 
     _note_denials(disabled_tools, DENIAL_ORIGIN_REQUEST)
-    route_descriptors = list(route_descriptors or [])
+    # Freeze route identity before streaming awaits; caller-owned dictionaries
+    # may change while a queued fallback is answering an older configuration.
+    route_descriptors = [dict(row) for row in (route_descriptors or [])]
     while len(route_descriptors) < 1 + len(fallbacks or []):
         route_descriptors.append({})
     requested_route = route_descriptors[0] if route_descriptors else {}
@@ -12416,7 +12421,15 @@ async def _stream_agent_loop_body(
                                     previous_endpoint_url=_endpoint_url_before_fallback,
                                     new_model=model,
                                     new_endpoint_url=endpoint_url,
-                                    previous_endpoint_id=str(requested_endpoint_id or ""),
+                                    previous_endpoint_id=str(
+                                        (_candidate_route_descriptors[0] or {}).get("endpoint_id") or ""
+                                    ),
+                                    previous_endpoint_revision=str(
+                                        (_candidate_route_descriptors[0] or {}).get("connection_revision") or ""
+                                    ),
+                                    new_endpoint_revision=str(
+                                        (_pinned_fallback_route or {}).get("connection_revision") or ""
+                                    ),
                                     new_endpoint_id=str(
                                         (_pinned_fallback_route or {}).get("endpoint_id") or ""
                                     ),

@@ -759,6 +759,7 @@ def setup_session_routes(
             _previous_endpoint_url = session.endpoint_url
             endpoint_api_key = ""
             endpoint_base_url = ""
+            endpoint_revision = ""
             if endpoint_id:
                 from core.database import ModelEndpoint
                 from src.auth_helpers import owner_filter
@@ -774,6 +775,7 @@ def setup_session_routes(
                     ep = q.first()
                     if not ep:
                         raise HTTPException(400, "Model endpoint no longer exists")
+                    endpoint_revision = getattr(ep, "connection_revision", "") or ""
                     endpoint_base_url = ep.base_url or ""
                     endpoint_api_key = ep.api_key or ""
                     endpoint_url = build_chat_url(normalize_base(endpoint_base_url))
@@ -816,6 +818,7 @@ def setup_session_routes(
                     vendor=new_vendor,
                     model_id=model,
                     endpoint_id=endpoint_id or "",
+                    endpoint_revision=endpoint_revision,
                     protocol=mcal.explicit_native_protocol(endpoint_url) if new_vendor == "ollama" else "",
                 )
                 # No endpoint_id is known for the PREVIOUS route (the session

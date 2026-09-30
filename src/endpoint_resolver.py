@@ -509,6 +509,7 @@ def _resolve_endpoint_by_id_with_descriptor(
             (chat_url, m, headers),
             {
                 "endpoint_id": ep.id,
+                "connection_revision": getattr(ep, "connection_revision", "") or "",
                 "endpoint_label": getattr(ep, "name", None) or ep.id,
                 "endpoint_cost_tracked": endpoint_cost_tracked(
                     chat_url,
