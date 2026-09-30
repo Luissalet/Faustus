@@ -118,3 +118,30 @@ servicios personales. Los servicios propios de QA quedaron cerrados.
 focales del coordinador correctas (4,04 s). Fuente y límites detallados en
 [Prospero](https://github.com/Luissalet/ProsperosHoard),
 `docs/COMFY_MEMORY_ADMISSION.md`. Evidencia: directorio QA citado anteriormente.
+
+### Prueba funcional con modelos y GPU, 30-09-2026
+
+El bucle stream_agent_loop real recibió herramientas nativas con un endpoint QA
+persistido y Qwen2.5-3B-Instruct q8_0 en GPU3. El modelo eligió edit_image sin
+máscara; dispatcher, Prospero y Comfy/Qwen-Image 2.1 en GPU1 completaron el
+trabajo y el evento generated_image devolvió la URL correcta de la galería propia.
+Total85,54s; herramienta81,90s. Job job_01M3R1B55R8G2W7Y5YX31ZSCRA,
+galería fb667e0e-f586-4d59-a380-577b4e4698bf: retrato con sombrero verde,
+PNG1024² inspeccionado. GPU1 pico100%. GPU3 pico92% corresponde al piloto
+native anterior; el observador del fullstream empezó tarde y no capturó ese pico.
+No se certificó navegador/UI. El primer intento sin herramientas nativas había
+inventado un GalleryImageID, rechazado por ownership sin render.
+
+Otra selección nativa real ejecutó inpaint SDXL con máscara propia en27,16s,
+GPU1 pico100%, galería b3201cd9-1904-4394-964d-f9aefbeb0867. Original SHA
+sin cambios. Sombrero azul estilizado con costuras visibles; no certificar calidad
+fotográfica ni fullstream/UIinpaint. Evidencia verificable en
+D:/LocalAI/tmp/prospero-live-edit-20260930/gpu-agent-1744f95029764b88bfbaeb4e2f04fcf5
+y gpu-inpaint-4cf651186279480b86284bc988fbcc3c, incluidos PNG, eventos,
+recibos y telemetría. No mocks de LLM, herramienta ni motor de imágenes.
+
+Límite pendiente: el modelo inventó un host en el enlace de su respuesta textual,
+aunque herramienta y SSE devolvieron correctamente /api/generated-image/{id}.png.
+Dos renders Qwen consecutivos y SDXL terminaron sin /free ni liberación manual
+con el perfil dedicado --disable-smart-memory. No garantía universal de memoria.
+Servicios QA cerrados después; configuraciones/datos personales preservados.
