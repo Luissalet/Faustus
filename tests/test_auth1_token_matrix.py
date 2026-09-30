@@ -31,6 +31,7 @@ def test_the_reachable_surface_is_exactly_this():
         "DELETE|PATCH|POST|PUT /api/v1/chat": ("chat",),
         "GET|HEAD|OPTIONS /api/models": ("chat",),
         "DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT /api/dispatch*": ("agents:dispatch",),
+        "DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT /api/workflows/published*": ("agents:dispatch",),
         "GET|HEAD|OPTIONS /api/changesets/from-dispatch/*": ("agents:dispatch",),
         # S1.1: the `sessions` surface — an external SDK client driving a
         # chat session end to end. See core/authz.py and

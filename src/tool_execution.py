@@ -1334,7 +1334,7 @@ async def execute_tool_block(
         session_id=session_id, disabled_tools=disabled_tools, owner=owner, progress_cb=progress_cb,
         workspace=workspace, workspace_roots=workspace_roots, tool_policy=tool_policy,
         security_context=security_context, exact_approval=exact_approval, turn_options=turn_options,
-        call_id=call_id)
+        call_id=call_id, step_snapshot=step_snapshot)
     if not _xl.enabled() or security_context is _MISSING_TOOL_SECURITY_CONTEXT:
         return await _execute_tool_block_core(block, **_kwargs)
     tool = str(getattr(block, "tool_type", None) or "")
@@ -1409,6 +1409,7 @@ async def _execute_tool_block_core(
     exact_approval: Optional[ExactToolApproval] = None,
     turn_options: Optional[dict] = None,
     call_id: Optional[str] = None,
+    step_snapshot: Optional[Any] = None,
 ) -> Tuple[str, Dict]:
     """Execute a single tool block. Returns (description, result_dict).
 
