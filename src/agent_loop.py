@@ -82,6 +82,7 @@ from src.tool_approvals import (
 from src.tool_utils import _truncate, get_mcp_manager
 from src.tool_presentation import tool_result_fields
 from src import agent_harness as _harness
+from src import loop_decisions as _loop_decisions
 from src.agent_tools import (
     parse_tool_blocks,
     strip_tool_blocks,
@@ -7650,6 +7651,13 @@ async def _stream_agent_loop_body(
     # read-only context calls (src/context_tool_gate.py); with no packet
     # offered and no matching rule it decides exactly like its parent.
     from src.context_tool_gate import ContextAwareSecurityContext
+    # The folder grant is remembered on disk and can be revoked while the run
+    # is in flight; the context re-reads it (`workspace_grant_bypass`) instead
+    # of carrying the answer it read here for the whole run.
+    _gate_explicit_bypass = bool(
+        exact_approval and exact_approval.allow_remaining_actions
+    ) or bool(security_gate_bypass)
+    _gate_workspace_grant = (not _gate_explicit_bypass) and _workspace_gate_granted(owner, workspace)
     run_security = ContextAwareSecurityContext(
         external_untrusted_context_seen=(
             bool(external_untrusted_context_seen)
@@ -7659,9 +7667,8 @@ async def _stream_agent_loop_body(
             )
             or messages_contain_external_untrusted_context(messages)
         ),
-        approval_gate_bypassed=bool(
-            exact_approval and exact_approval.allow_remaining_actions
-        ) or bool(security_gate_bypass) or _workspace_gate_granted(owner, workspace),
+        approval_gate_bypassed=_gate_explicit_bypass or _gate_workspace_grant,
+        workspace_grant_bypass=_gate_workspace_grant,
         trusted_workspace=str((harness_options or {}).get("trusted_workspace") or ""),
         trusted_agents=bool((harness_options or {}).get("trusted_agents")),
         user_delegation=(
@@ -8657,6 +8664,9 @@ async def _stream_agent_loop_body(
     # extras beyond this seed are deferred to the compact catalog + lookup_tools.
     # A caller-pinned set is an authorization decision: nothing is deferred.
     _hot_seed: Optional[set] = set(relevant_tools) if relevant_tools else None
+    # Tools only retrieval picked (H17): the ones a DEFERRED exposure may list
+    # in the catalog instead of sending their schema. Empty for a caller-pinned set.
+    _exposure_pool: Set[str] = set()
     # For `_sticky_toolset`: what semantic retrieval alone picked, whether the
     # request names an installed plugin, and the MCP tools kept because this
     # chat used their server.
@@ -8735,6 +8745,7 @@ async def _stream_agent_loop_body(
                         _retrieved_tools = set(_relevant_tools)
                         if _hot_seed is None:
                             _hot_seed = set(_relevant_tools)
+                            _exposure_pool = set(_relevant_tools)
                     except asyncio.TimeoutError:
                         # Leave _relevant_tools unset so the keyword fallback
                         # below still runs. Hard-coding ALWAYS_AVAILABLE here
@@ -8763,6 +8774,7 @@ async def _stream_agent_loop_body(
         logger.info(f"[tool-rag] Keyword fallback selected: {sorted(_relevant_tools - ALWAYS_AVAILABLE)}")
         if _hot_seed is None:
             _hot_seed = set(_relevant_tools)
+            _exposure_pool = set(_relevant_tools)
 
     # A request that names one of the user's installed applications brings the
     # plugin tools with it. Seen live: «Arranca Jobhunter's Hoard y dime si
@@ -9428,6 +9440,24 @@ async def _stream_agent_loop_body(
             "overflow_ids": list(_outcome.get("overflow_ids") or [])[:20],
         }
     from src.tool_serve import LOOKUP_TOOL as _LOOKUP_TOOL, partition_offer as _partition_offer
+    # H17: a DEFERRED tool retrieval picked without the request giving any
+    # evidence for it is listed in the catalog instead of carrying a schema
+    # (`agent_tool_exposure`). A CODE_ONLY tool is never offered to a model step.
+    if _relevant_tools is not None and not guide_only and not relevant_tools:
+        try:
+            from src import tool_exposure as _exposure
+            if bool(get_setting("agent_tool_exposure", True)):
+                _code_only = _exposure.code_only_names(_relevant_tools)
+                if _code_only:
+                    _relevant_tools -= _code_only
+                if _hot_seed is not None and _exposure_pool:
+                    _hot_seed, _exposure_demoted = _exposure.demote(
+                        _hot_seed, _retrieval_query or _last_user or "",
+                        candidates=_exposure_pool, keep=forced_tools or ())
+                    if _exposure_demoted:
+                        logger.info("[tool-exposure] listed without schema: %s", sorted(_exposure_demoted))
+        except Exception:  # noqa: BLE001 - exposure never breaks the turn
+            logger.debug("[tool-exposure] skipped", exc_info=True)
     # Same tools as the previous turn of this chat when they still cover
     # this one (see `_sticky_toolset`): the tool list is rendered at the top
     # of the prompt, so a different list costs a full reprocess every turn.
@@ -10349,6 +10379,10 @@ async def _stream_agent_loop_body(
     _harness_enabled = bool(get_setting("agent_harness_checks", True)) and not guide_only
     _HARNESS_MAX_REJECTIONS = 2
     _HARNESS_MAX_LENGTH_CONTINUES = 2
+    # Every round beyond the model's own tool calls is granted by one policy
+    # (src/extra_round_policy.py): a known cause, a counted budget, a receipt.
+    from src.extra_round_policy import ExtraRounds as _ExtraRounds
+    _xr = _ExtraRounds(str(get_setting("agent_extra_round_policy", "enforce") or "enforce"))
     _ledger = _harness.TurnLedger(workspace, _last_user)
     # For an explicit count of the user's Links Hoard library, do the exact
     # read before the model sees any untrusted tool result. A 3B repeatedly
@@ -11704,6 +11738,10 @@ async def _stream_agent_loop_body(
                     if _continuation_shadow_mismatches < 3:
                         logger.debug("[continuation-shadow] comparison unavailable", exc_info=True)
                         _continuation_shadow_mismatches += 1
+                _xr_ext = _xr.extension_event(
+                    _extension_shadow.reason if _extension_action is not None
+                    else ("progress" if _used_progress_gate else "configured_cycle"),
+                    cycles_left=_auto_cycles_left, rounds_granted=max_rounds, round_num=round_num - 1)
                 logger.info("[harness] step limit (%s) reached mid-task — auto-continuing with %s more rounds%s",
                             round_num - 1, max_rounds,
                             " (progress-based extension)" if _used_progress_gate else "")
@@ -11736,6 +11774,7 @@ async def _stream_agent_loop_body(
                         "round": round_num - 1,
                         "attempt": 1,
                         "max_attempts": None if _auto_cycles_left < 0 else 1,
+                        **_xr_ext,
                     }) + "\n\n"
                 )
                 if _used_progress_gate:
@@ -11751,6 +11790,7 @@ async def _stream_agent_loop_body(
                             "type": "harness_check", "status": "auto_continue",
                             "reason": "progress_continue", "round": round_num - 1,
                             "message": f"continúa: unidad {_progress_unit_count}",
+                            **_xr_ext,
                         }) + "\n\n"
                     )
                 full_response += "\n\n"
@@ -12334,6 +12374,26 @@ async def _stream_agent_loop_body(
                 state.pop("schema_receipt", None)
                 state.pop("argument_snapshot", None)
                 logger.debug("[schema-receipt] capture unavailable", exc_info=True)
+            # The contract of THIS step (src/step_snapshot.py): what was
+            # announced, to whom, under which policy. Calls are judged
+            # against it and against live revocation when they execute.
+            state.pop("step_snapshot", None)
+            try:
+                if str(get_setting("agent_step_snapshot_mode", "enforce")) != "off":
+                    from src.step_snapshot import capture_step
+                    from src.tool_security import owner_is_admin_or_single_user as _snap_is_admin
+                    import sys as _snap_sys
+                    state["step_snapshot"] = capture_step(
+                        candidate_tools, session_id=session_id,
+                        run_id=str(_hopts.get("run_id") or session_id or ""),
+                        round_num=round_num, candidate_index=index, owner=owner,
+                        is_admin=bool(_snap_is_admin(owner)), disabled_tools=disabled_tools,
+                        tool_policy=tool_policy,
+                        environment={"platform": _snap_sys.platform, "model": candidate_model,
+                                     "workspace": bool(workspace)},
+                        text_only=bool(state.get("text_only_transport")))
+            except Exception:
+                logger.debug("[step-snapshot] capture unavailable", exc_info=True)
             _candidate_request_states[index] = state
             return {
                 "messages": request_messages,
@@ -12591,16 +12651,16 @@ async def _stream_agent_loop_body(
                 # turn with a raw HTTP-400 message.
                 if (
                     is_degenerate_output_error(error_data)
+                    and _xr.permits("degenerate_output_retry", _degenerate_retries, 3)
                     and (not _degenerate_output_retried
-                         or (_degenerate_retries < 3
-                             and round_num - _last_degenerate_retry_round >= 4))
+                         or round_num - _last_degenerate_retry_round >= 4)
                     and round_num < max_rounds
                 ):
                     _degenerate_output_hit = True
                     _degenerate_output_reason = str(error_data.get("error") or "")[:500]
                     break
                 if (
-                    not _images_refused
+                    _xr.permits("image_input_refused", int(_images_refused), 1)
                     and _image_input_refused(error_data)
                     and round_num < max_rounds
                 ):
@@ -12623,7 +12683,7 @@ async def _stream_agent_loop_body(
                     and _harness_enabled
                     and not _force_answer
                     and not plan_mode
-                    and _empty_round_nudges < 1
+                    and _xr.permits("empty_completion", _empty_round_nudges, 1)
                     and (
                         _harness_scope_active
                         or round_num > 1
@@ -12649,7 +12709,7 @@ async def _stream_agent_loop_body(
                 # budget as the degenerate-output retry above.
                 if (
                     _looks_like_engine_lost(error_data, terminal_status)
-                    and not _engine_lost_recovered
+                    and _xr.permits("engine_lost_recovered", int(_engine_lost_recovered), 1)
                     and round_num < max_rounds
                     and engine_swap.restartable_engine_for_url(endpoint_url) is not None
                 ):
@@ -12663,6 +12723,7 @@ async def _stream_agent_loop_body(
                         "data: " + json.dumps({
                             "type": "harness_check", "status": "auto_continue",
                             "reason": "engine_lost_recovered", "round": round_num,
+                            **_xr.preview("engine_lost_recovered", used=1, limit=1),
                             "message": (
                                 "The local engine stopped mid-answer; restarting it "
                                 "and redoing this step"
@@ -13120,7 +13181,7 @@ async def _stream_agent_loop_body(
                             if _think_first_ts is None:
                                 _think_first_ts = time.time()
                             elif (
-                                _think_watchdog_on and _think_cutoffs < 1
+                                _think_watchdog_on and _xr.permits("think_cutoff", _think_cutoffs, 1)
                                 and not round_response.strip()
                                 and (
                                     (time.time() - _think_first_ts > _think_budget_s
@@ -13232,6 +13293,7 @@ async def _stream_agent_loop_body(
                     "type": "harness_check", "status": "think_cutoff", "round": round_num,
                     "seconds": round(_think_secs), "reasoning_chars": len(round_reasoning),
                     "budget_seconds": _think_budget_s,
+                    **_xr.event("think_cutoff", used=_think_cutoffs, limit=1, round_num=round_num),
                 }) + "\n\n"
             )
             yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
@@ -13250,6 +13312,7 @@ async def _stream_agent_loop_body(
                 "data: " + json.dumps({
                     "type": "harness_check", "status": "auto_continue",
                     "reason": "image_input_refused", "round": round_num,
+                    **_xr.event("image_input_refused", used=1, limit=1, round_num=round_num),
                 }) + "\n\n"
             )
             yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
@@ -13287,6 +13350,7 @@ async def _stream_agent_loop_body(
             yield "data: " + json.dumps({
                 "type": "harness_check", "status": "auto_continue",
                 "reason": "context_overflow_compact", "round": round_num,
+                **_xr.event("context_overflow_compact", used=1, limit=1, round_num=round_num),
             }) + "\n\n"
             yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
             yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
@@ -13302,6 +13366,7 @@ async def _stream_agent_loop_body(
             if round_response and full_response.endswith(round_response):
                 full_response = full_response[:-len(round_response)]
             _ledger.notes.append(f"engine_lost_recovered@{round_num}")
+            _xr.event("engine_lost_recovered", used=1, limit=1, round_num=round_num)
             _rounds_budget += 1  # the retry must not eat the task's step budget
             yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
             yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
@@ -13390,6 +13455,7 @@ async def _stream_agent_loop_body(
                     "type": "harness_check", "status": "auto_continue",
                     "reason": "degenerate_output_retry", "round": round_num,
                     "dropped_untrusted_context": _dropped_untrusted,
+                    **_xr.event("degenerate_output_retry", used=_degenerate_retries, limit=3, round_num=round_num),
                 }) + "\n\n"
             )
             yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
@@ -13417,6 +13483,10 @@ async def _stream_agent_loop_body(
         _declared_risk: Dict[int, str] = {}
         from src.tool_schema_receipts import argument_snapshot_for_answer
         _answer_argument_snapshot, _answer_schema_receipt = argument_snapshot_for_answer(
+            _candidate_request_states, candidate_index, round_num=round_num,
+        )
+        from src.step_snapshot import step_snapshot_for_answer
+        _answer_step_snapshot = step_snapshot_for_answer(
             _candidate_request_states, candidate_index, round_num=round_num,
         )
         tool_blocks, used_native, converted_calls = _resolve_tool_blocks(
@@ -13511,6 +13581,7 @@ async def _stream_agent_loop_body(
                             "saved memory facts already provided. Do not call manage_memory or any tool.")
                         ),
                     })
+                    _xr.event("memory_lookup_dropped", used=1, limit=1, round_num=round_num)
                     yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
                     continue
 
@@ -13715,7 +13786,7 @@ async def _stream_agent_loop_body(
         # Any turn, not only the one resumed after an approval: with the card
         # in the transcript, a later low-signal message ("no me acuerdo")
         # came back as the card sentence alone.
-        if (not tool_blocks and _approval_echo_retries < 2
+        if (not tool_blocks and _xr.permits("approval_echo", _approval_echo_retries, 2)
                 and not _force_answer and not plan_mode
                 and _strip_think_blocks(cleaned_round).strip().lower() == _APPROVAL_CARD_QUESTION.lower()):
             _approval_echo_retries += 1
@@ -13727,10 +13798,12 @@ async def _stream_agent_loop_body(
                 "Continue the original task using the available tools and verify its outcome. "
                 "If a tool is blocked, report that concrete blocker. Do not echo the approval card.")
             )})
-            yield "data: " + json.dumps({"type": "harness_check", "status": "auto_continue", "reason": "approval_echo", "round": round_num}) + "\n\n"
+            yield "data: " + json.dumps({"type": "harness_check", "status": "auto_continue", "reason": "approval_echo", "round": round_num,
+                                         **_xr.event("approval_echo", used=_approval_echo_retries, limit=2, round_num=round_num)}) + "\n\n"
             continue
 
-        if (not tool_blocks and _local_completion_unbounded and not _budget_stop_echo_retried
+        if (not tool_blocks and _local_completion_unbounded
+                and _xr.permits("local_no_cost_stop", int(_budget_stop_echo_retried), 1)
                 and not _force_answer and not plan_mode
                 and _looks_like_budget_exhausted_stop(_strip_think_blocks(cleaned_round))):
             # Local models invent a billed stop this runtime does not have.
@@ -13751,6 +13824,7 @@ async def _stream_agent_loop_body(
             yield "data: " + json.dumps({
                 "type": "harness_check", "status": "auto_continue",
                 "reason": "local_no_cost_stop", "round": round_num,
+                **_xr.event("local_no_cost_stop", used=1, limit=1, round_num=round_num),
             }) + "\n\n"
             continue
 
@@ -13784,7 +13858,7 @@ async def _stream_agent_loop_body(
                 # have it available again on the next natural turn.
                 if (
                     _consecutive_echo_rounds >= 2
-                    and not _echo_clean_retry_done
+                    and _xr.permits("context_echo_retry", int(_echo_clean_retry_done), 1)
                     and round_num < max_rounds
                 ):
                     _echo_clean_retry_done = True
@@ -13813,6 +13887,7 @@ async def _stream_agent_loop_body(
                             "type": "harness_check", "status": "no_action", "round": round_num,
                             "attempt": 1, "max_attempts": 1,
                             "reason": "reference_context_echo_clean_retry",
+                            **_xr.event("context_echo_retry", used=1, limit=1, round_num=round_num),
                         }) + "\n\n"
                     )
                     full_response += "\n\n"
@@ -13908,12 +13983,37 @@ async def _stream_agent_loop_body(
                 if round_texts:
                     round_texts[-1] = _hc_text
                 full_response = strip_reference_context_echo(full_response)
+            # What follows a text-only round is one decision, in a fixed order
+            # (src/loop_decisions.py): continue a cut-off reply, correct a call
+            # to a tool that does not exist, nudge (or, exhausted, ask about) an
+            # empty round, correct the reply language, else the claim checks.
+            _dropped = [
+                str(tc.get("name") or "?") for tc in (native_tool_calls or [])
+                if tc not in (converted_calls or [])
+            ]
+            _empty_give_up = (
+                not _hc_text
+                and not _boundary_echo_only
+                and (
+                    _recover_empty_completion
+                    or _harness_scope_active
+                    or (_ledger.progress and any(t.get("status") != "completed" for t in _ledger.progress))
+                )
+            )
+            _text_action = _loop_decisions.decide_text_round(_loop_decisions.TextRoundState(
+                finish_reason=str(_round_finish_reason or ""),
+                length_continues=_ledger.length_continues, length_limit=_HARNESS_MAX_LENGTH_CONTINUES,
+                dropped_tool_calls=bool(_dropped),
+                unknown_tool_nudges=_unknown_tool_nudges, unknown_tool_limit=2,
+                empty_give_up=bool(_empty_give_up),
+                empty_nudges=_empty_round_nudges, empty_limit=_empty_round_max_nudges,
+                wrong_language=bool(_observed_wrong_lang and _required_reply_lang),
+                language_nudges=_language_mismatch_nudges,
+                round_num=round_num, max_rounds=max_rounds,
+            ), _xr.permits)
             # ── (1) Truncated output: continue instead of accepting a cut-off
             # answer as the end of the turn.
-            if (
-                _round_finish_reason == "length"
-                and _ledger.length_continues < _HARNESS_MAX_LENGTH_CONTINUES
-            ):
+            if _text_action == _loop_decisions.CONTINUE_LENGTH:
                 _ledger.length_continues += 1
                 logger.info("[harness] round %s hit max_tokens (finish_reason=length) — auto-continue #%s",
                             round_num, _ledger.length_continues)
@@ -13934,6 +14034,8 @@ async def _stream_agent_loop_body(
                         "type": "harness_check", "status": "auto_continue", "reason": "length",
                         "round": round_num, "attempt": _ledger.length_continues,
                         "max_attempts": _HARNESS_MAX_LENGTH_CONTINUES,
+                        **_xr.event("length", used=_ledger.length_continues,
+                                    limit=_HARNESS_MAX_LENGTH_CONTINUES, round_num=round_num),
                     }) + "\n\n"
                 )
                 full_response += "\n\n"
@@ -13943,11 +14045,7 @@ async def _stream_agent_loop_body(
             # function_call_to_tool_block ("Unknown function call"), so from the
             # model's point of view the tool ran and said nothing — and the turn
             # would end here with no answer. Tell it, with the real names.
-            _dropped = [
-                str(tc.get("name") or "?") for tc in (native_tool_calls or [])
-                if tc not in (converted_calls or [])
-            ]
-            if _dropped and _unknown_tool_nudges < 2:
+            if _text_action == _loop_decisions.CORRECT_UNKNOWN_TOOL:
                 _unknown_tool_nudges += 1
                 _sent_names = [n for n in _tool_names_sent if n] or sorted(str(n) for n in (_relevant_tools or []))
                 _sugg: list = []
@@ -13991,6 +14089,7 @@ async def _stream_agent_loop_body(
                         "type": "harness_check", "status": "unknown_tool", "round": round_num,
                         "tools": _dropped, "suggestions": _sugg, "attempt": _unknown_tool_nudges,
                         "max_attempts": 2,
+                        **_xr.event("hallucinated_tool", used=_unknown_tool_nudges, limit=2, round_num=round_num),
                     }) + "\n\n"
                 )
                 full_response += "\n\n"
@@ -14011,16 +14110,7 @@ async def _stream_agent_loop_body(
             # then a clean retry on the 2nd consecutive echo, then the
             # recovery ladder on the 3rd) and must run its course before the
             # generic empty-round give-up ever competes with it.
-            _empty_give_up = (
-                not _hc_text
-                and not _boundary_echo_only
-                and (
-                    _recover_empty_completion
-                    or _harness_scope_active
-                    or (_ledger.progress and any(t.get("status") != "completed" for t in _ledger.progress))
-                )
-            )
-            if _empty_give_up and _empty_round_nudges < _empty_round_max_nudges:
+            if _text_action == _loop_decisions.NUDGE_EMPTY:
                 _empty_round_nudges += 1
                 _open = [t.get("content") for t in (_ledger.progress or []) if t.get("status") != "completed"]
                 logger.warning("[harness] round %s ended with no text and no tool call — nudging (open objectives: %s)",
@@ -14042,11 +14132,13 @@ async def _stream_agent_loop_body(
                     "data: " + json.dumps({
                         "type": "harness_check", "status": "empty_round", "round": round_num,
                         "open": _open[:6], "attempt": _empty_round_nudges, "max_attempts": _empty_round_max_nudges,
+                        **_xr.event("empty_completion", used=_empty_round_nudges,
+                                    limit=_empty_round_max_nudges, round_num=round_num),
                     }) + "\n\n"
                 )
                 yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
                 continue
-            if _empty_give_up and _empty_round_nudges >= _empty_round_max_nudges:
+            if _text_action == _loop_decisions.ASK_EMPTY_EXHAUSTED:
                 # Every nudge came back empty too: never end in silence — ask
                 # the user a concrete question built from the last known
                 # state, through the same question_store mechanism a real
@@ -14062,12 +14154,7 @@ async def _stream_agent_loop_body(
             # ── (2a) Wrong reply language — before no_action, so a Spanish
             # "Voy a…" on an English turn is corrected specifically instead of
             # only being treated as a missing tool call.
-            if (
-                _observed_wrong_lang
-                and _required_reply_lang
-                and _language_mismatch_nudges < 1
-                and round_num < max_rounds
-            ):
+            if _text_action == _loop_decisions.CORRECT_LANGUAGE:
                 _language_mismatch_nudges += 1
                 _pending_language_nudge = False
                 _ledger.notes.append(f"language_mismatch_nudge@{round_num}")
@@ -14096,6 +14183,7 @@ async def _stream_agent_loop_body(
                         "required": _required_reply_lang,
                         "observed": _observed_wrong_lang,
                         "round": round_num, "attempt": 1, "max_attempts": 1,
+                        **_xr.event("language_mismatch", used=_language_mismatch_nudges, limit=1, round_num=round_num),
                     }) + "\n\n"
                 )
                 full_response += "\n\n"
@@ -14126,7 +14214,7 @@ async def _stream_agent_loop_body(
             if (
                 _boundary_echo_only
                 and not _harness_scope_active
-                and _echo_nudges < 1
+                and _xr.permits("context_echo_nudge", _echo_nudges, 1)
                 and round_num < max_rounds
             ):
                 _echo_nudges += 1
@@ -14145,6 +14233,7 @@ async def _stream_agent_loop_body(
                     "data: " + json.dumps({
                         "type": "harness_check", "status": "no_action", "round": round_num,
                         "attempt": 1, "max_attempts": 1, "reason": "reference_context_echo",
+                        **_xr.event("context_echo_nudge", used=_echo_nudges, limit=1, round_num=round_num),
                     }) + "\n\n"
                 )
                 full_response += "\n\n"
@@ -14156,7 +14245,7 @@ async def _stream_agent_loop_body(
                 and _harness_scope_active
                 and not _requires_project_objective_apply
                 and not _project_objective_unavailable
-                and _no_action_nudges < 1
+                and _xr.permits("no_action_nudge", _no_action_nudges, 1)
                 and round_num < max_rounds
                 and (
                     _boundary_echo_only
@@ -14210,13 +14299,15 @@ async def _stream_agent_loop_body(
                         "type": "harness_check", "status": "no_action", "round": round_num,
                         "attempt": 1, "max_attempts": 1,
                         "reason": "reference_context_echo" if _boundary_echo_only else "no_workspace_action",
+                        **_xr.event("no_action_nudge", used=_no_action_nudges, limit=1, round_num=round_num),
                     }) + "\n\n"
                 )
                 full_response += "\n\n"
                 yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
                 continue
 
-            if _project_objective_unavailable and _project_objective_unavailable_nudges < 1:
+            if _project_objective_unavailable and _xr.permits(
+                    "objective_unavailable", _project_objective_unavailable_nudges, 1):
                 try:
                     _unavailable_check = _ledger.check_completion(_hc_text)
                     _claimed_unavailable_action = "claims_without_mutation" in (
@@ -14245,6 +14336,8 @@ async def _stream_agent_loop_body(
                             "type": "harness_check", "status": "required_action_unavailable",
                             "tool": "project_objectives", "round": round_num,
                             "attempt": 1, "max_attempts": 1,
+                            **_xr.event("objective_unavailable", used=_project_objective_unavailable_nudges,
+                                        limit=1, round_num=round_num),
                         }) + "\n\n"
                     )
                     full_response += "\n\n"
@@ -14253,7 +14346,7 @@ async def _stream_agent_loop_body(
             if (
                 _requires_project_objective_apply
                 and not _project_objective_apply_succeeded()
-                and _project_objective_nudges < 2
+                and _xr.permits("objective_apply", _project_objective_nudges, 2)
             ):
                 _project_objective_nudges += 1
                 _ledger.notes.append(f"project_objective_apply_nudge@{round_num}")
@@ -14276,12 +14369,14 @@ async def _stream_agent_loop_body(
                         "type": "harness_check", "status": "required_action",
                         "tool": "project_objectives", "action": "apply", "round": round_num,
                         "attempt": _project_objective_nudges, "max_attempts": 2,
+                        **_xr.event("objective_apply", used=_project_objective_nudges, limit=2, round_num=round_num),
                     }) + "\n\n"
                 )
                 full_response += "\n\n"
                 yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
                 continue
-            if _hc_text and not _answer_rewrite_used and not plan_mode and round_num < max_rounds:
+            if (_hc_text and _xr.permits("answer_rewrite", int(_answer_rewrite_used), 1)
+                    and not plan_mode and round_num < max_rounds):
                 try:
                     from src import answer_checks as _answer_checks
                     try:
@@ -14336,6 +14431,7 @@ async def _stream_agent_loop_body(
                             "slots": _slot_bad,
                             "round": round_num, "attempt": 1, "max_attempts": 1,
                             "weekdays": _wd_bad, "phrases": _aloud[:4],
+                            **_xr.event("answer_rewrite", used=1, limit=1, round_num=round_num),
                         }) + "\n\n"
                     )
                     yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
@@ -14415,7 +14511,7 @@ async def _stream_agent_loop_body(
                         _check.setdefault("claims", [])
                         _check["ok"] = False
                 if not _check["ok"]:
-                    if _ledger.rejections < _HARNESS_MAX_REJECTIONS:
+                    if _xr.permits("claim_rejection", _ledger.rejections, _HARNESS_MAX_REJECTIONS):
                         _ledger.rejections += 1
                         # A rejected answer is the harness's own bounded
                         # correction loop (capped above, and it ends itself
@@ -14461,6 +14557,8 @@ async def _stream_agent_loop_body(
                                 "max_attempts": _HARNESS_MAX_REJECTIONS,
                                 "mutations": _ledger.mutated_paths(),
                                 "permission": _check.get("permission"),
+                                **_xr.event("claim_rejection", used=_ledger.rejections,
+                                            limit=_HARNESS_MAX_REJECTIONS, round_num=round_num),
                             }) + "\n\n"
                         )
                         full_response += "\n\n"
@@ -14477,7 +14575,7 @@ async def _stream_agent_loop_body(
                     # by an execution cycle, and the answer is kept with a note.
                     _sources_only = _check["reasons"] == ["unconsulted_sources"]
                     if (
-                        _harness_execution_recoveries < 1
+                        _xr.permits("execution_recovery", _harness_execution_recoveries, 1)
                         and workspace
                         and not _sources_only
                         and not (_ledger.effects and _harness.TurnLedger.check_is_stall_only(_check))
@@ -14505,6 +14603,8 @@ async def _stream_agent_loop_body(
                             "data: " + json.dumps({
                                 "type": "harness_check", "status": "auto_continue",
                                 "reason": "execution_recovery", "round": round_num,
+                                **_xr.event("execution_recovery", used=_harness_execution_recoveries,
+                                            limit=1, round_num=round_num),
                             }) + "\n\n"
                         )
                         full_response += "\n\n"
@@ -14552,7 +14652,7 @@ async def _stream_agent_loop_body(
                     # not say so. One bounded round to make the answer honest
                     # about it (or to ask) — the edits themselves stay.
                     _ts_check = None
-                    if workspace and _ledger.target_nudges < 1:
+                    if workspace and _xr.permits("target_substitution", _ledger.target_nudges, 1):
                         try:
                             _ts_check = _ledger.check_target_substitution(_hc_text)
                         except Exception as _ts_err:
@@ -14571,6 +14671,7 @@ async def _stream_agent_loop_body(
                                 "type": "harness_check", "status": "target_substituted", "round": round_num,
                                 "missing": _ts_check["missing"], "changed": _ts_check["changed"],
                                 "attempt": 1, "max_attempts": 1, "mutations": _ledger.mutated_paths(),
+                                **_xr.event("target_substitution", used=_ledger.target_nudges, limit=1, round_num=round_num),
                             }) + "\n\n"
                         )
                         full_response += "\n\n"
@@ -14580,7 +14681,7 @@ async def _stream_agent_loop_body(
                     # and changed files: make sure they at least parse before the
                     # turn ends. One bounded round-trip to fix what broke.
                     _syntax_failed = []
-                    if _ledger.mutations and workspace and _ledger.syntax_rejections < 1:
+                    if _ledger.mutations and workspace and _xr.permits("syntax_fix", _ledger.syntax_rejections, 1):
                         try:
                             _checks = await asyncio.to_thread(
                                 _harness.static_check_files, _ledger.mutated_paths(), workspace
@@ -14612,6 +14713,7 @@ async def _stream_agent_loop_body(
                                 "errors": [{"path": c["path"], "error": c["error"]} for c in _syntax_failed],
                                 "attempt": _ledger.syntax_rejections, "max_attempts": 1,
                                 "mutations": _ledger.mutated_paths(),
+                                **_xr.event("syntax_fix", used=_ledger.syntax_rejections, limit=1, round_num=round_num),
                             }) + "\n\n"
                         )
                         full_response += "\n\n"
@@ -14626,7 +14728,7 @@ async def _stream_agent_loop_body(
                     # warning can never spend the fix round. No tool installed →
                     # "unavailable": no round, no failure mark.
                     _analysis_failed = []
-                    if _ledger.mutations and workspace and _static_on and _ledger.static_fix_rounds < _static_max_fix:
+                    if _ledger.mutations and workspace and _static_on and _xr.permits("static_fix", _ledger.static_fix_rounds, _static_max_fix):
                         try:
                             from src import static_checks as _static_checks
                             _sres = await asyncio.to_thread(
@@ -14669,6 +14771,8 @@ async def _stream_agent_loop_body(
                                 "static_analysis": _ledger.static_analysis,
                                 "attempt": _ledger.static_fix_rounds, "max_attempts": _static_max_fix,
                                 "mutations": _ledger.mutated_paths(),
+                                **_xr.event("static_fix", used=_ledger.static_fix_rounds,
+                                            limit=_static_max_fix, round_num=round_num),
                             }) + "\n\n"
                         )
                         full_response += "\n\n"
@@ -14702,7 +14806,7 @@ async def _stream_agent_loop_body(
                             _note = "ui_smoke_failed:" + str(_usres.get("summary") or "")[:80]
                             if _note not in _ledger.notes:
                                 _ledger.notes.append(_note)
-                            if _ledger.ui_smoke_fix_rounds < 1:
+                            if _xr.permits("ui_smoke_fix", _ledger.ui_smoke_fix_rounds, 1):
                                 _ledger.ui_smoke_fix_rounds += 1
                                 logger.warning("[harness] round %s ui_smoke FAILED (%s) — one fix round",
                                                round_num, _usres.get("summary"))
@@ -14715,6 +14819,8 @@ async def _stream_agent_loop_body(
                                         "round": round_num, "ui_smoke": _ledger.ui_smoke,
                                         "attempt": _ledger.ui_smoke_fix_rounds, "max_attempts": 1,
                                         "mutations": _ledger.mutated_paths(),
+                                        **_xr.event("ui_smoke_fix", used=_ledger.ui_smoke_fix_rounds,
+                                                    limit=1, round_num=round_num),
                                     }) + "\n\n"
                                 )
                                 full_response += "\n\n"
@@ -14771,7 +14877,7 @@ async def _stream_agent_loop_body(
                             _tres = None
                         if (_tres and _tres.get("ran") and _tres.get("ok") is False
                                 and not _tres.get("inconclusive") and not _tres.get("pre_existing_only")
-                                and _ledger.tests_fix_rounds < _tests_max_fix):
+                                and _xr.permits("tests_fix", _ledger.tests_fix_rounds, _tests_max_fix)):
                             _ledger.tests_fix_rounds += 1
                             logger.warning("[harness] round %s project tests FAILED (%s) — one fix round",
                                            round_num, _tres.get("summary"))
@@ -14783,6 +14889,8 @@ async def _stream_agent_loop_body(
                                     "type": "harness_check", "status": "tests_failed", "round": round_num,
                                     "tests": _ledger.tests, "attempt": _ledger.tests_fix_rounds,
                                     "max_attempts": _tests_max_fix, "mutations": _ledger.mutated_paths(),
+                                    **_xr.event("tests_fix", used=_ledger.tests_fix_rounds,
+                                                limit=_tests_max_fix, round_num=round_num),
                                 }) + "\n\n"
                             )
                             full_response += "\n\n"
@@ -14821,7 +14929,7 @@ async def _stream_agent_loop_body(
                             if _note not in _ledger.notes:
                                 _ledger.notes.append(_note)
                             _rev_errors = []
-                        if _rev_errors and _ledger.review_fix_rounds < _review_max_fix:
+                        if _rev_errors and _xr.permits("review_fix", _ledger.review_fix_rounds, _review_max_fix):
                             _ledger.review_fix_rounds += 1
                             _ledger.review_mutations_at_fix = len(_ledger.mutations)
                             logger.warning("[harness] round %s review flagged %d defect(s) — one fix round",
@@ -14834,6 +14942,8 @@ async def _stream_agent_loop_body(
                                     "type": "harness_check", "status": "review_issues", "round": round_num,
                                     "review": _ledger.review, "attempt": _ledger.review_fix_rounds,
                                     "max_attempts": _review_max_fix, "mutations": _ledger.mutated_paths(),
+                                    **_xr.event("review_fix", used=_ledger.review_fix_rounds,
+                                                limit=_review_max_fix, round_num=round_num),
                                 }) + "\n\n"
                             )
                             full_response += "\n\n"
@@ -14861,6 +14971,7 @@ async def _stream_agent_loop_body(
                             if round_response.strip():
                                 messages.append({"role": "assistant", "content": round_response})
                             messages.append({"role": "user", "_harness_note": True, "content": _lang_note(_adv_note)})
+                            _xr.event("advisor_final", used=1, limit=1, round_num=round_num)
                             full_response += "\n\n"
                             yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
                             continue
@@ -14951,8 +15062,9 @@ async def _stream_agent_loop_body(
                 and len(_intent_text) < 400
                 and "```" not in _intent_text
             )
-            if _looks_like_promise and _intent_nudge_count < _MAX_INTENT_NUDGES:
+            if _looks_like_promise and _xr.permits("intent_nudge", _intent_nudge_count, _MAX_INTENT_NUDGES):
                 _intent_nudge_count += 1
+                _xr.event("intent_nudge", used=_intent_nudge_count, limit=_MAX_INTENT_NUDGES, round_num=round_num)
                 _matched_phrase = _intent_match.group(0).strip()
                 logger.info(f"[agent] intent-without-action nudge #{_intent_nudge_count} on round {round_num}: {_matched_phrase!r}")
                 _lower_phrase = _matched_phrase.lower()
@@ -15059,8 +15171,9 @@ async def _stream_agent_loop_body(
                 _ce_decision = None
             if isinstance(_ce_decision, dict) and _ce_decision.get("ok"):
                 _ce_next = list(_ce_decision.get("continue_with") or [])
-                _ce_continuation_granted = bool(_ce_next and _ce_completion_rounds < _CE_MAX_ROUNDS)
-                _ce_round_limit_hit = bool(_ce_next and _ce_completion_rounds >= _CE_MAX_ROUNDS)
+                _ce_continuation_granted = bool(
+                    _ce_next and _xr.permits("completion_continue", _ce_completion_rounds, _CE_MAX_ROUNDS))
+                _ce_round_limit_hit = bool(_ce_next and not _ce_continuation_granted)
                 if _ce_round_limit_hit:
                     _ledger.stop_reason = "completion_budget_exhausted"
                 yield (
@@ -15082,13 +15195,19 @@ async def _stream_agent_loop_body(
                                                       else "" if _ce_continuation_granted else "no_proposal"),
                         "completion_rounds_used": _ce_completion_rounds,
                         "completion_rounds_limit": _CE_MAX_ROUNDS,
+                        **({"cause": "completion_continue", "family": "completion"}
+                           if _ce_continuation_granted else {}),
                     })
                     + "\n\n"
                 )
-                if _ce_next and _ce_completion_rounds < _CE_MAX_ROUNDS:
+                # The policy granted it; the literal bound is kept in the guard so
+                # the structure audit of this hook still sees the budget test.
+                if _ce_next and _ce_continuation_granted and _ce_completion_rounds < _CE_MAX_ROUNDS:
                     # Live mode only: `continue_with` is empty in shadow, so
                     # this branch cannot be reached by a measurement.
                     _ce_completion_rounds += 1
+                    _xr.event("completion_continue", used=_ce_completion_rounds,
+                              limit=_CE_MAX_ROUNDS, round_num=round_num)
                     _ledger.stop_reason = "completion_continue"
                     messages.append({
                         "role": "system",
@@ -15112,7 +15231,7 @@ async def _stream_agent_loop_body(
             if _latest_plan_update and not (isinstance(_ce_decision, dict) and _ce_decision.get("ok")
                                              and _ce_decision.get("continue_with")):
                 _plan_gap = _plan_coverage_gap(_latest_plan_update, _last_user or "")
-                if _plan_gap and _plan_coverage_rounds < _PLAN_COVERAGE_MAX_ROUNDS:
+                if _plan_gap and _xr.permits("plan_coverage", _plan_coverage_rounds, _PLAN_COVERAGE_MAX_ROUNDS):
                     _plan_coverage_rounds += 1
                     _ledger.stop_reason = "plan_coverage_incomplete"
                     yield (
@@ -15121,6 +15240,8 @@ async def _stream_agent_loop_body(
                             "type": "plan_coverage_gap",
                             "uncovered": _plan_gap,
                             "round": round_num,
+                            **_xr.event("plan_coverage", used=_plan_coverage_rounds,
+                                        limit=_PLAN_COVERAGE_MAX_ROUNDS, round_num=round_num),
                         })
                         + "\n\n"
                     )
@@ -15241,6 +15362,8 @@ async def _stream_agent_loop_body(
                         + _emphasis)
                     ),
                 })
+            _xr.event("loop_recovery", used=_loop_recovery_retries, limit=_MAX_LOOP_RECOVERY_RETRIES,
+                      round_num=round_num)
             full_response += "\n\n"
             yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
             continue
@@ -15394,6 +15517,8 @@ async def _stream_agent_loop_body(
                     "directly instead of running another probe.")
                 ),
             })
+            _xr.event("loop_recovery", used=_loop_recovery_retries, limit=_MAX_LOOP_RECOVERY_RETRIES,
+                      round_num=round_num)
             full_response += "\n\n"
             yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
             continue
@@ -15538,6 +15663,7 @@ async def _stream_agent_loop_body(
                         workspace=workspace,
                         workspace_roots=workspace_roots,
                         security_context=run_security,
+                        step_snapshot=_answer_step_snapshot,
                         turn_options={
                             "gen_overrides": gen_overrides,
                             "harness_options": _hopts,
@@ -15989,6 +16115,7 @@ async def _stream_agent_loop_body(
                                 workspace_roots=workspace_roots,
                                 security_context=run_security,
                                 call_id=_call_id,
+                                step_snapshot=_answer_step_snapshot,
                                 turn_options={
                                     "gen_overrides": gen_overrides,
                                     "harness_options": _hopts,

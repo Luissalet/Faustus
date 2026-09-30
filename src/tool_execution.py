@@ -997,8 +997,15 @@ async def _direct_fallback(
             if isinstance(result, dict):
                 result["pdf_call_contract"] = pdf_call_binding.metadata()
             return result
-        if tool in TOOL_HANDLERS:
-            return await TOOL_HANDLERS[tool](content, ctx)
+        # The authority resolves a registered tool to its executable
+        # registration. A name it does not know (a tool added to the handler
+        # table at runtime) keeps the direct table lookup.
+        from src.tool_authority import AUTHORITY
+        handler = AUTHORITY.handler(tool, TOOL_HANDLERS)
+        if handler is None and tool in TOOL_HANDLERS and not AUTHORITY.is_spelling(tool):
+            handler = TOOL_HANDLERS[tool]
+        if handler is not None:
+            return await handler(content, ctx)
 
     except Exception as e:
         return {"error": f"{tool}: {e}", "exit_code": 1}
@@ -1281,8 +1288,13 @@ async def execute_tool_block(
     exact_approval: Optional[ExactToolApproval] = None,
     turn_options: Optional[dict] = None,
     call_id: Optional[str] = None,
+    step_snapshot: Optional[Any] = None,
 ) -> Tuple[str, Dict]:
     """Execute a single tool block. Returns (description, result_dict).
+
+    `step_snapshot` (src/step_snapshot.py) is the contract the model step
+    that made this call was announced under; the call is judged against it
+    and against the LIVE disable list, policy and MCP schema.
 
     Thin wrapper: bind the per-turn workspace (so the path resolvers + subprocess
     cwd confine to it) for the duration of this call, then delegate. Reset on the
@@ -1321,6 +1333,19 @@ async def execute_tool_block(
             "security_context must be a ToolRunSecurityContext or "
             "NO_TOOL_SECURITY_CONTEXT"
         )
+
+    _step_verdict = None
+    if step_snapshot is not None:
+        from src.step_snapshot import authorize_for_execution
+        _step_verdict = authorize_for_execution(
+            step_snapshot, block, session_id=session_id, owner=owner,
+            disabled_tools=disabled_tools, tool_policy=tool_policy)
+        if not _step_verdict.allowed:
+            logger.warning("Step snapshot refused tool=%r: %s", getattr(block, "tool_type", None), _step_verdict.reason)
+            return (f"{getattr(block, 'tool_type', None)}: BLOCKED", {
+                "error": _step_verdict.reason or "The tool call does not match the step that announced it.",
+                "exit_code": 1, "blocked": True, "policy": "step_snapshot",
+                "step_snapshot": _step_verdict.observation(step_snapshot)})
 
     # Resolve one executable registration and its contract before any await.
     from src.run_causality import (capture_call, capture_effect_recorder,
@@ -1635,6 +1660,8 @@ async def execute_tool_block(
                     )
             except Exception:
                 logger.exception("teach capture hook failed without affecting tool=%s", _captured_tool)
+        if _step_verdict is not None and isinstance(output, tuple) and len(output) > 1 and isinstance(output[1], dict):
+            output[1].setdefault("step_snapshot", _step_verdict.observation(step_snapshot))
         return output
     finally:
         _active_turn_options.reset(opts_token)

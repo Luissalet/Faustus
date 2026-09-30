@@ -440,6 +440,24 @@ GROUPS: list[dict[str, Any]] = [
             _bool("agent_sticky_toolset", "Keep a chat's tools from turn to turn",
                   "The tool list sits at the start of the prompt; keeping it the same between turns "
                   "lets a local server reuse its cached prompt instead of reading it all again."),
+            _select("agent_step_snapshot_mode", "Check each call against its step",
+                    "enforce = a call is refused when its tool was disabled or blocked after the step "
+                    "announced it, or when an MCP server changed the tool's schema in the meantime; "
+                    "shadow = report only; off = no check.",
+                    ["off", "shadow", "enforce"]),
+            _select("agent_step_snapshot_unannounced", "Calls to tools the step did not announce",
+                    "allow = run it; shadow = run it and record that it was not announced; "
+                    "refuse = do not run it (only applies when the check above is enforce).",
+                    ["allow", "shadow", "refuse"]),
+            _select("agent_extra_round_policy", "Extra rounds policy",
+                    "Every round beyond the configured cycle is granted by one policy that records its "
+                    "cause and budget. enforce = apply it; shadow = record the decision and keep the "
+                    "previous limits; legacy = neither.",
+                    ["legacy", "shadow", "enforce"]),
+            _bool("agent_tool_exposure", "List heavy tools instead of loading their schema",
+                  "Narrow, heavy tools (code graph, swarms, boards, goals and similar) appear as one-line "
+                  "catalog entries until your request or the model asks for them, which saves context on "
+                  "every other turn. They stay callable and discoverable."),
             _bool("tool_gate_own_context_trusted", "Your own context does not trigger approvals",
                   "Your skills, saved memory, local MCP tool descriptions and the compiled context "
                   "packet are your own material, so they do not make shell commands and other gated "

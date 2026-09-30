@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from src.extra_round_policy import ExtraRounds
 from src.continuation_decision import RoundExtensionInput, decide_round_extension
 
 
@@ -64,6 +65,7 @@ def environment(state):
                 _progress_events_at_last_check=state.events_last,
                 _no_progress_streak=state.no_progress_streak,
                 _loop_recovery_active=state.recovery_active,
+                _xr=ExtraRounds("enforce"),
                 _continuation_shadow_reports=0, _continuation_shadow_mismatches=0,
                 logger=SimpleNamespace(debug=lambda *a, **k: logs.append(("debug", a)),
                                        warning=lambda *a, **k: logs.append(("warning", a))),

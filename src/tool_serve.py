@@ -319,6 +319,8 @@ def search_catalog(
             return
         if candidate_filter is not None and not candidate_filter(name):
             return
+        if _code_only(name):
+            return
         seen.add(name)
         ordered.append(name)
 
@@ -327,6 +329,7 @@ def search_catalog(
             _add(resolved)
 
     q = (query or "").strip()
+    retrieval_index: Any = None
     if q:
         retrieved: List[str] = []
         try:
@@ -341,7 +344,11 @@ def search_catalog(
                     except (TypeError, ValueError):
                         pass  # Older index adapters retain their existing contract.
                 options = {"candidate_filter": candidate_filter} if candidate_filter is not None and supports_filter else {}
+                # An adapter that cannot filter is asked for exactly `k`
+                # (its cutoff stays explicit); what the filter leaves short is
+                # completed below from the permitted pool.
                 retrieved = list(idx.retrieve(q, k=max(k, 1), **options))
+                retrieval_index = idx
         except Exception:
             logger.debug("tool catalog: index retrieve failed", exc_info=True)
         # The embedding index can outlive a connector (a failed delete, a
@@ -368,6 +375,16 @@ def search_catalog(
         for name in retrieved:
             if _callable(name):
                 _add(name)
+        if (retrieval_index is not None and candidate_filter is not None and len(ordered) < k
+                and _completion_on()):
+            # The permitted pool is reachable past the vector lane's 256-row
+            # window: the lexical lane scans the whole corpus under the filter.
+            try:
+                for name in retrieval_index.lexical_retrieve(q, k=max(k, 1), candidate_filter=candidate_filter):
+                    if _callable(name):
+                        _add(name)
+            except Exception:
+                logger.debug("tool catalog: permitted-pool completion failed", exc_info=True)
         if not retrieved:
             from src.tool_index import BUILTIN_TOOL_DESCRIPTIONS
             needle = q.lower()
@@ -380,6 +397,22 @@ def search_catalog(
         ordered = _break_lexical_tie(q, ordered, candidate_filter)
 
     return ordered[: max(1, min(int(k or _DEFAULT_K), _MAX_RETURN))]
+
+
+def _completion_on() -> bool:
+    try:
+        from src.settings import get_setting
+        return bool(get_setting("agent_tool_exposure", True))
+    except Exception:
+        return False
+
+
+def _code_only(name: str) -> bool:
+    try:
+        from src.tool_exposure import code_only_names
+        return bool(code_only_names([name]))
+    except Exception:
+        return False
 
 
 def _break_lexical_tie(query: str, ordered: List[str],

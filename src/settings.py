@@ -225,6 +225,23 @@ DEFAULT_SETTINGS = {
     # gate; web text, e-mail, documents, remote MCP and tool results do.
     "tool_gate_own_context_trusted": True,
     "agent_sticky_toolset_max": 48,
+    # Contract of a model step (src/step_snapshot.py): every call is judged
+    # against the tool set that step announced and against live revocation.
+    # "enforce" refuses a revoked tool or an MCP tool whose schema changed
+    # after the step announced it; "shadow" only reports; "off" skips it.
+    "agent_step_snapshot_mode": "enforce",
+    # What a call to a tool the step never announced does: "allow", "shadow"
+    # (run and record it) or "refuse".
+    "agent_step_snapshot_unannounced": "shadow",
+    # Extra rounds (src/extra_round_policy.py): every round beyond the
+    # configured cycle is granted by one policy that records its cause and
+    # budget. "enforce" applies it, "shadow" records the decision and keeps
+    # the legacy limit, "legacy" does neither.
+    "agent_extra_round_policy": "enforce",
+    # Exposure (src/tool_authority.py): heavy, narrow tools are listed as
+    # one-line catalog entries until the request or the model asks for them,
+    # instead of carrying a full schema on every turn.
+    "agent_tool_exposure": True,
     # Mid-turn context pressure (src/context_compactor.apply_midturn_pressure):
     # each agent round spills fat/old tool results to data/context_overflow and
     # folds history so a long overnight turn stays under a soft ceiling instead
