@@ -2037,6 +2037,68 @@ def _migrate_add_endpoint_connection_revision():
                          [(uuid.uuid4().hex, row[0]) for row in rows])
 
 
+# Connection identity is rotated by ORM hooks above. Anything that writes the same
+# rows with plain SQL (a script, a bulk UPDATE, another tool opening app.db) bypasses
+# them, so the database enforces the same rule itself. An ORM write changes the
+# revision in the same statement, which keeps these triggers quiet for it.
+_NEW_REVISION_SQL = "lower(hex(randomblob(16)))"
+
+_REVISION_TRIGGERS = (
+    # A row inserted without an identity gets one.
+    "CREATE TRIGGER IF NOT EXISTS trg_model_endpoints_revision_insert "
+    "AFTER INSERT ON model_endpoints "
+    "WHEN NEW.connection_revision IS NULL OR NEW.connection_revision = '' "
+    "BEGIN UPDATE model_endpoints SET connection_revision = " + _NEW_REVISION_SQL + " WHERE id = NEW.id; END",
+    # Where the endpoint points, how it authenticates or what it is: a new identity.
+    "CREATE TRIGGER IF NOT EXISTS trg_model_endpoints_revision_update "
+    "AFTER UPDATE OF base_url, api_key, provider_auth_id, endpoint_kind ON model_endpoints "
+    "WHEN NEW.connection_revision IS OLD.connection_revision AND ("
+    "NEW.base_url IS NOT OLD.base_url OR NEW.api_key IS NOT OLD.api_key OR "
+    "NEW.provider_auth_id IS NOT OLD.provider_auth_id OR NEW.endpoint_kind IS NOT OLD.endpoint_kind) "
+    "BEGIN UPDATE model_endpoints SET connection_revision = " + _NEW_REVISION_SQL + " WHERE id = NEW.id; END",
+    # Credentials changed underneath every endpoint that uses them: new credential
+    # version, and a new connection identity for each linked endpoint.
+    "CREATE TRIGGER IF NOT EXISTS trg_provider_auth_revision_update "
+    "AFTER UPDATE OF provider, owner, base_url, auth_mode, access_token, refresh_token ON provider_auth_sessions "
+    "WHEN NEW.credential_revision IS OLD.credential_revision AND ("
+    "NEW.provider IS NOT OLD.provider OR NEW.owner IS NOT OLD.owner OR NEW.base_url IS NOT OLD.base_url OR "
+    "NEW.auth_mode IS NOT OLD.auth_mode OR NEW.access_token IS NOT OLD.access_token OR "
+    "NEW.refresh_token IS NOT OLD.refresh_token) "
+    "BEGIN "
+    "UPDATE provider_auth_sessions SET credential_revision = " + _NEW_REVISION_SQL + " WHERE id = NEW.id; "
+    "UPDATE model_endpoints SET connection_revision = " + _NEW_REVISION_SQL + " WHERE provider_auth_id = NEW.id; "
+    "END",
+)
+
+
+def install_revision_triggers(conn) -> list:
+    """Create the revision triggers on a raw ``sqlite3`` connection; idempotent.
+
+    Each one is only created when its table and revision column exist, so this
+    is safe to run on a database that predates them. Returns the trigger names
+    that exist afterwards.
+    """
+    def _has(table, column):
+        return any(row[1] == column for row in conn.execute(f"PRAGMA table_info({table})"))
+
+    if _has("model_endpoints", "connection_revision"):
+        conn.execute(_REVISION_TRIGGERS[0])
+        conn.execute(_REVISION_TRIGGERS[1])
+        if _has("provider_auth_sessions", "credential_revision"):
+            conn.execute(_REVISION_TRIGGERS[2])
+    return [row[0] for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'trg%revision%' ORDER BY name")]
+
+
+def _migrate_add_revision_triggers():
+    """Enforce connection identity in the database, not only in the ORM layer."""
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    with sqlite3.connect(db_path) as conn:
+        install_revision_triggers(conn)
+
+
 def _migrate_add_model_endpoint_refresh_columns():
     """Add endpoint classification / refresh policy columns if missing."""
     import sqlite3
@@ -3395,6 +3457,7 @@ def _formal_migration_steps() -> "list[tuple[str, object]]":
         ("add_session_connector_ids", _migrate_add_session_connector_ids),
         ("add_calendar_external_ref", _migrate_add_calendar_external_ref),
         ("add_lease_generation_columns", _migrate_add_lease_generation_columns),
+        ("add_revision_triggers", _migrate_add_revision_triggers),
     ]
 
 
