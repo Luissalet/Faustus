@@ -181,7 +181,7 @@ async def test_terminal_stream_event_closes_before_error_fanout_and_retry_reopen
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("terminal", ["rounds_exhausted", "budget_exceeded", "intent_nudge_exhausted", "budget_exhausted"])
+@pytest.mark.parametrize("terminal", ["rounds_exhausted", "budget_exceeded", "intent_nudge_exhausted", "budget_exhausted", "cancelled"])
 async def test_terminal_guard_rejects_late_input_preserves_queue_and_retry(worker, monkeypatch, terminal):
     attempts = []
     observed_guards = []
@@ -309,7 +309,48 @@ def test_all_real_budget_exhausted_callsites_stop_instead_of_recovering():
     assert sorted(flags) == ["_compaction_budget_exhaustion", "budget_hit", "budget_hit"]
     for flag in set(flags):
         exits = [node for node in ast.walk(tree) if isinstance(node, ast.If)
-            and ((isinstance(node.test, ast.Name) and node.test.id == flag)
-                or (isinstance(node.test, ast.Compare) and isinstance(node.test.left, ast.Name)
-                    and node.test.left.id == flag)) and isinstance(node.body[-1], ast.Break)]
+            and any(isinstance(name, ast.Name) and name.id == flag for name in ast.walk(node.test))
+            and isinstance(node.body[-1], ast.Break)]
+        assert any(isinstance(parents[node], ast.While) for node in exits)
+
+
+
+def test_all_cancelled_callsites_exit_rounds_with_recovery_latch():
+    import ast
+    from pathlib import Path
+    tree = ast.parse(Path(agent_loop.__file__).read_text(encoding="utf-8"))
+    parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
+    events = [node for node in ast.walk(tree) if isinstance(node, ast.Dict)
+        and any(isinstance(key, ast.Constant) and key.value == "type"
+            and isinstance(value, ast.Constant) and value.value == "cancelled"
+            for key, value in zip(node.keys, node.values))]
+    assert len(events) == 4
+    flags = set()
+    for event in events:
+        node = event
+        guards = []
+        while node in parents:
+            node = parents[node]
+            if isinstance(node, ast.If):
+                guards.append(node)
+            if isinstance(node, (ast.For, ast.AsyncFor, ast.While)):
+                loop = node
+                break
+        guard = guards[0]
+        assert isinstance(guard.body[-1], ast.Break)
+        if isinstance(loop, ast.While):
+            continue
+        flag = "_cancel_hit" if isinstance(loop, ast.For) else "_recovery_cancelled"
+        assignments = [node for node in guard.body if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == flag for target in node.targets)
+            and isinstance(node.value, ast.Constant) and node.value.value is True]
+        assert len(assignments) == 1
+        if flag == "_recovery_cancelled":
+            assert assignments[0].lineno < event.lineno  # Latched before fanout.
+        flags.add(flag)
+    assert flags == {"_cancel_hit", "_recovery_cancelled"}
+    for flag in flags:
+        exits = [node for node in ast.walk(tree) if isinstance(node, ast.If)
+            and any(isinstance(name, ast.Name) and name.id == flag for name in ast.walk(node.test))
+            and isinstance(node.body[-1], ast.Break)]
         assert any(isinstance(parents[node], ast.While) for node in exits)

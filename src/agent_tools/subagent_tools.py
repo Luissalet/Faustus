@@ -1720,8 +1720,8 @@ async def _run_subagent(
                 if _out is not None:
                     run.output_tokens = _prior_output_tokens + _out
                     _output_from_metrics = True
-            elif et in ("rounds_exhausted", "budget_exceeded", "budget_exhausted", "loop_breaker_triggered", "intent_nudge_exhausted"):
-                # Exhaustion guards end the round loop; recovery from a loop
+            elif et in ("rounds_exhausted", "budget_exceeded", "budget_exhausted", "cancelled", "loop_breaker_triggered", "intent_nudge_exhausted"):
+                # Exhaustion/cancellation ends the round loop; recovery from a loop
                 # breaker can continue, so its admission gate stays open.
                 if et != "loop_breaker_triggered":
                     run.accepts_steers = False
