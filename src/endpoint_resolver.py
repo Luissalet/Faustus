@@ -143,6 +143,37 @@ def _endpoint_enabled_models(ep) -> list:
     return [m for m in merged if m not in hidden]
 
 
+class EndpointConfigurationChanged(RuntimeError):
+    """The selected endpoint changed while its runtime credentials resolved."""
+
+
+_RUNTIME_CONFIG_FIELDS = (
+    "id", "connection_revision", "base_url", "api_key", "provider_auth_id",
+    "endpoint_kind", "owner", "is_enabled",
+)
+
+
+def _runtime_config_snapshot(ep):
+    # Private comparison only: never include credential values in errors/logs.
+    return tuple(getattr(ep, field, None) for field in _RUNTIME_CONFIG_FIELDS)
+
+
+def _assert_runtime_config_current(snapshot):
+    try:
+        with SessionLocal() as current_db:
+            current = current_db.query(ModelEndpoint).filter(ModelEndpoint.id == snapshot[0]).first()
+            matches = current is not None and _runtime_config_snapshot(current) == snapshot
+    except Exception:
+        # An unverifiable snapshot cannot safely fall back to another destination.
+        raise EndpointConfigurationChanged(
+            "Endpoint configuration could not be verified; resolve it again."
+        ) from None
+    if not matches:
+        raise EndpointConfigurationChanged(
+            "Endpoint configuration changed during credential resolution; resolve it again."
+        )
+
+
 def resolve_endpoint_runtime(ep, owner: Optional[str] = None) -> Tuple[str, Optional[str]]:
     """Resolve a ModelEndpoint row to its runtime base URL and bearer/API key.
 
@@ -150,13 +181,21 @@ def resolve_endpoint_runtime(ep, owner: Optional[str] = None) -> Tuple[str, Opti
     store refreshable credentials in ProviderAuthSession and must resolve a
     current access token at call time.
     """
+    snapshot = _runtime_config_snapshot(ep)
     base = normalize_base(getattr(ep, "base_url", "") or "")
     api_key = getattr(ep, "api_key", None)
     auth_id = getattr(ep, "provider_auth_id", None)
     if auth_id:
         from src.chatgpt_subscription import resolve_runtime_credentials
 
-        creds = resolve_runtime_credentials(auth_id, owner=owner)
+        try:
+            creds = resolve_runtime_credentials(auth_id, owner=owner)
+        except Exception:
+            # Configuration drift also wins over credential failures: otherwise
+            # a generic caller catch could silently choose an unrelated route.
+            _assert_runtime_config_current(snapshot)
+            raise
+        _assert_runtime_config_current(snapshot)
         base = normalize_base(creds.get("base_url") or base)
         api_key = creds.get("api_key")
     return base, api_key
@@ -366,6 +405,8 @@ def resolve_endpoint(
     try:
         from src.settings import get_user_setting, load_settings
         settings = load_settings()
+    except EndpointConfigurationChanged:
+        raise
     except Exception:
         return fallback_url, fallback_model, fallback_headers
 
@@ -412,6 +453,8 @@ def resolve_endpoint(
 
         try:
             base, api_key = resolve_endpoint_runtime(ep, owner=owner)
+        except EndpointConfigurationChanged:
+            raise
         except Exception as e:
             logger.warning("Could not resolve endpoint runtime credentials: %s", e)
             return fallback_url, fallback_model, fallback_headers
@@ -443,10 +486,14 @@ def resolve_endpoint(
                 adopted = model_lease.adopted_model_for(base)
                 if adopted:
                     model = adopted
+            except EndpointConfigurationChanged:
+                raise
             except Exception as e:  # noqa: BLE001
                 logger.debug("model lease: adopted-model lookup failed: %s", e)
 
         return chat_url, model or fallback_model, headers
+    except EndpointConfigurationChanged:
+        raise
     except Exception as e:
         logger.debug(f"Could not resolve {setting_prefix} endpoint: {e}")
         return fallback_url, fallback_model, fallback_headers
@@ -482,6 +529,8 @@ def _resolve_endpoint_by_id_with_descriptor(
             return None
         try:
             base, api_key = resolve_endpoint_runtime(ep, owner=owner)
+        except EndpointConfigurationChanged:
+            raise
         except Exception as e:
             logger.warning("Could not resolve endpoint runtime credentials: %s", e)
             return None
@@ -517,6 +566,8 @@ def _resolve_endpoint_by_id_with_descriptor(
                 ),
             },
         )
+    except EndpointConfigurationChanged:
+        raise
     except Exception as e:
         logger.debug(f"Could not resolve endpoint {ep_id}: {e}")
         return None
@@ -639,6 +690,8 @@ def resolve_route_descriptor(
             actual = (candidate[0].rstrip("/"), candidate[1], candidate[2] or {})
             if actual == expected:
                 return descriptor
+    except EndpointConfigurationChanged:
+        raise
     except Exception as e:
         logger.debug("Could not identify selected endpoint route: %s", e)
     finally:
@@ -694,6 +747,8 @@ def _resolve_fallback_candidates(setting_key: str, owner: Optional[str] = None) 
         from src.settings import get_user_setting, load_settings
         settings = load_settings()
         chain = get_user_setting(setting_key, owner or "", settings.get(setting_key) or []) or []
+    except EndpointConfigurationChanged:
+        raise
     except Exception:
         return []
     return resolve_fallback_entries(chain, owner=owner)

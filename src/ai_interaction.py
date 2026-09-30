@@ -14,6 +14,7 @@ These are agent tools — the LLM writes fenced code blocks and they execute
 through the standard agent_tools.py pipeline.
 """
 
+from src.endpoint_resolver import EndpointConfigurationChanged
 import asyncio
 import json
 import logging
@@ -225,6 +226,8 @@ def _resolve_model(spec: str, owner: Optional[str] = None, model_type: Optional[
         for ep in endpoints:
             try:
                 base, api_key = resolve_endpoint_runtime(ep, owner=owner)
+            except EndpointConfigurationChanged:
+                raise
             except Exception:
                 continue
             provider = _detect_provider(base)

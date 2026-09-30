@@ -19,6 +19,7 @@ here means concurrent harness loops; the GPU still serializes generations.
 """
 from __future__ import annotations
 
+from src.endpoint_resolver import EndpointConfigurationChanged
 import asyncio
 import contextvars
 import json
@@ -2072,6 +2073,8 @@ def _route_for(run: "SubagentRun", default_url: str, owner: Optional[str], defau
         if run.team_bound:
             kwargs['require_exact_model'] = True
         resolved = resolve_endpoint_by_id(run.endpoint_id, run.model_override or None, **kwargs)
+    except EndpointConfigurationChanged:
+        raise
     except Exception as exc:  # noqa: BLE001 - a route lookup never fails a run
         logger.debug("delegate_agents: endpoint %s unavailable: %s", run.endpoint_id, exc)
         resolved = None

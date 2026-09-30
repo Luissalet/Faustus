@@ -19,6 +19,7 @@ there is no separate "resume" function to fall out of sync with this one.
 
 from __future__ import annotations
 
+from src.endpoint_resolver import EndpointConfigurationChanged
 import asyncio
 import logging
 import os
@@ -237,6 +238,8 @@ async def run_all(
             try:
                 from src.endpoint_resolver import resolve_endpoint_by_id
                 resolved = resolve_endpoint_by_id(endpoint_id, model or None, owner=owner)
+            except EndpointConfigurationChanged:
+                raise
             except Exception:
                 resolved = None
             if resolved and resolved[0]:

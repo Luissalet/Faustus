@@ -35,6 +35,7 @@ cached description of the image or a short placeholder.
 """
 from __future__ import annotations
 
+from src.endpoint_resolver import EndpointConfigurationChanged
 import logging
 import os
 import re
@@ -170,6 +171,8 @@ def list_vision_endpoints(owner: Optional[str]) -> List[Dict[str, Any]]:
                 continue
             try:
                 base, api_key = resolve_endpoint_runtime(ep, owner=owner)
+            except EndpointConfigurationChanged:
+                raise
             except Exception:  # noqa: BLE001
                 continue
             url = build_chat_url(base)
@@ -194,6 +197,8 @@ def list_vision_endpoints(owner: Optional[str]) -> List[Dict[str, Any]]:
                 "models": models,
                 "local": local,
             })
+    except EndpointConfigurationChanged:
+        raise
     except Exception as exc:  # noqa: BLE001
         logger.debug("vision routing: endpoint listing failed: %s", exc)
     finally:
@@ -425,6 +430,8 @@ def _resolve_on_endpoint(ep_id: str, model: str, owner: Optional[str]) -> Option
         try:
             from src.endpoint_resolver import resolve_endpoint_by_id
             resolved = resolve_endpoint_by_id(ep_id, model or None, owner=owner)
+        except EndpointConfigurationChanged:
+            raise
         except Exception:  # noqa: BLE001
             resolved = None
         if not resolved or not model:
