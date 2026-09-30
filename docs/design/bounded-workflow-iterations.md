@@ -1,13 +1,10 @@
 # Bounded workflow iterations — a design proposal (CMP-07)
 
-Status: **proposed, not implemented**. `src/contracts/workflow_iteration.py`
-is the dataclass + validation half of this document, kept deliberately
-disconnected from anything that runs: not imported by
-`src/workflows/engine.py`, `src/workflows/handlers.py`, or any route.
-`WorkflowDefinition.parse()` (`src/contracts/workflow.py`) still refuses
-every cycle outright, `_find_cycle` untouched, and `NODE_TYPES` gains no
-`"loop"` entry. This document is what a future lot would need to read
-before wiring any of it in.
+Status: **implemented**. `src/contracts/workflow_iteration.py` is the contract,
+`src/workflows/loop.py` runs it, and `"loop"` is a real node type. The choices
+this document left open are settled in "How it was wired" at the end. The text
+below is kept as the reasoning the implementation follows; where it says "a
+future lot", read "this one".
 
 ## Why this is a document first
 
@@ -108,32 +105,48 @@ before its NEXT iteration starts, and `IterationState.status ==
 terminal vocabulary every other node already has, rather than inventing a
 cancellation channel specific to loops.
 
-## What this document does NOT settle (open for whoever wires this in)
+## How it was wired
 
-- **How `body` nodes are scheduled relative to the rest of the graph.**
-  Whether the loop node itself is a single entry in `ready_nodes()`'s
-  runnable list that internally drives its body to completion each
-  iteration, or whether each iteration re-exposes the body nodes to the
-  normal scheduler with a per-iteration suffix on their id, is an engine
-  design question this document deliberately leaves open — both are
-  compatible with the `IterationState`/idempotency-key shape above, and
-  picking one is exactly the "cableado al motor" this lot was told not to
-  do.
-- **Whether `LINT-WF-CYCLE-NO-BOUND` gains a "bounded" exemption.** Once a
-  real `"loop"` node type exists, `agent_profile_lint.lint_workflow`
-  would need to recognise a cycle wholly contained inside one `loop`
-  node's own internal scheduling as bounded-by-design rather than an
-  error — `find_cycles` over the FLAT `needs` graph (which a loop's body,
-  referenced by id rather than nested, does not by itself turn into a
-  cycle — see "The proposed shape" above) may not even need to change,
-  depending on the scheduling design chosen above.
-- **`workflow_cost_estimate`/`preflight` pricing a loop.** Both already
-  have the concept of "an unbounded number of calls, reported rather than
-  guessed" for a cycle; extending that to "a KNOWN ceiling of
-  `max_iterations` calls, still reported rather than assumed to always
-  hit the ceiling" is a small, compatible change once a loop is real, not
-  attempted here.
-- **UI.** `studio/src/screens/workflows/NodeInspector.tsx` (this same
-  lot) has no loop-specific affordance; a loop node, if one is ever
-  authored by hand and imported, would render through the same generic
-  `config` JSON view every other node type falls back to today.
+- **Scheduling.** The loop is one runnable node. The engine still sees a flat,
+  acyclic `needs` graph; `src/workflows/loop.py` runs the `body` (sibling node
+  ids, in `needs` order) once per iteration inside that node's own claim and
+  lease. Body nodes are never top-level runnable (`loop_body_ids`), a body node
+  may depend only on its body siblings and on what the loop itself waits for,
+  and nothing outside may depend on a body node, only on the loop.
+- **Body types.** `agent, classify, extract, guard, condition, artifact_store,
+  skill, deliver`. Not waits, approvals, triggers or another loop.
+- **State.** One row per pass in `workflow_iteration_runs` (unique key =
+  `loop_effect_idempotency_key`), updated as each body node settles, plus
+  `workflow_loop_state` for what a person added to a ceiling. A restart
+  re-enters the loop node (a loop is not itself effectful, so its expired lease
+  is released), finds the open pass and resumes at the body node it was on.
+  Finished passes are never run again.
+- **Effects.** A body node that reaches outside is never repeated to find out
+  whether it happened: a pass found open across such a node fails with
+  `unknown_effect`, the same rule the engine applies to a top-level node.
+- **Exit.** `until` is evaluated after every pass over a context with
+  `loop.iteration`, `loop.results.<body node>` (this pass) and `loop.previous`
+  (the pass before), plus the usual `inputs` and `results`. A loop without
+  `until` runs `max_iterations` passes and completes. With `until`, running out
+  of `max_iterations`, `max_seconds` (active time only) or `max_tool_calls`
+  (effectful body nodes plus what agent turns report) is "exhausted":
+  `on_exhausted: pause` parks the loop node for a person to extend
+  (`POST /api/workflows/runs/{id}/nodes/{node}/extend`) or stop, `fail` ends it.
+  `max_tokens` is refused: nothing meters tokens per pass, so it could never
+  fire.
+- **Run budget.** The run's own autonomy budget is consulted between passes,
+  and pass spend is part of `WorkflowStore.usage_so_far`, so a loop cannot be
+  the way out of it.
+- **Cancellation.** A pass polls the node's `cancel_requested` between body
+  nodes and hands it to each body handler, so the lease fence applies to body
+  effects too.
+- **Tools that read a definition.** `LINT-WF-CYCLE-NO-BOUND` is unchanged (a
+  loop is not a cycle). New findings: `LINT-WF-LOOP-NO-UNTIL`,
+  `LINT-WF-LOOP-EFFECT-UNMETERED`; a loop's `until` counts as the evaluator for
+  its body. The cost estimate multiplies body nodes by the loop's iteration
+  range and reports a number where a cycle could only be assumed. The
+  simulation reports a loop as a unit (`loops`) and does not walk its body.
+  Preflight counts model calls of loop bodies. The mermaid export draws a
+  dashed "repeats up to N" edge from the loop to each body node.
+- **Not done.** Nested loops, parallel iterations over a list, and token
+  metering.

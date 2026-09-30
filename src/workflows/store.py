@@ -78,7 +78,8 @@ WORKER_ID = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
 #: next pass does — see `fault`.
 FAULT_POINTS = ("before_run_insert", "after_run_insert", "before_claim",
                 "before_insert", "after_claim", "before_effect",
-                "after_effect", "before_result", "after_result")
+                "after_effect", "before_result", "after_result",
+                "before_iteration_insert")
 
 _fault_hook: Optional[Callable[..., None]] = None
 
@@ -123,6 +124,30 @@ def _iso_in(seconds: int) -> str:
     moment = (datetime.now(timezone.utc).replace(microsecond=0)
               + timedelta(seconds=max(1, int(seconds))))
     return moment.isoformat().replace("+00:00", "Z")
+
+
+def loop_iteration_spend(row: Mapping[str, Any], by_id: Mapping[str, Any]) -> Dict[str, float]:
+    """What one pass of a loop cost, for its ceilings and for the run's ledger:
+    every effectful body node that ran counts as one tool call, plus the tool
+    calls an agent turn reported; seconds are the pass's own wall time."""
+    from src.contracts.workflow import node_is_effectful
+    calls = 0
+    for node_id, step in ((row.get("result") or {}).get("body") or {}).items():
+        node = by_id.get(node_id)
+        if node is None or step.get("status") not in ("completed", "failed"):
+            continue
+        if node_is_effectful(node):
+            calls += 1
+        calls += int(((step.get("result") or {}).get("tool_calls")) or 0) if node.type == "agent" else 0
+    seconds = 0.0
+    if row.get("started_at") and row.get("ended_at"):
+        try:
+            start = datetime.fromisoformat(str(row["started_at"]).replace("Z", "+00:00"))
+            end = datetime.fromisoformat(str(row["ended_at"]).replace("Z", "+00:00"))
+            seconds = max(0.0, (end - start).total_seconds())
+        except (ValueError, TypeError):
+            pass
+    return {"tool_calls": calls, "seconds": seconds}
 
 
 class WorkflowStore:
@@ -287,6 +312,17 @@ class WorkflowStore:
                     active_seconds += max(0.0, (end - start).total_seconds())
                 except Exception:
                     pass
+        # A loop's body nodes never get node rows of their own; what they spent
+        # is in the loop's pass rows, and leaving it out would let a loop spend
+        # the run's whole budget without the run noticing.
+        by_id = {n.id: n for n in loaded["definition"].nodes}
+        for node_id, node in by_id.items():
+            if node.type != "loop":
+                continue
+            for row in self.iteration_rows(run_id, node_id):
+                spent = loop_iteration_spend(row, by_id)
+                tool_calls += spent["tool_calls"]
+                active_seconds += spent["seconds"]
         return {"tool_calls": tool_calls, "active_seconds": active_seconds}
 
     @staticmethod
@@ -594,6 +630,15 @@ class WorkflowStore:
             return {"ok": False, "reason": (
                 f"{node.type!r} nodes reach outside the process; retry a paused one "
                 "through resume, not a bare re-run of one that already finished")}
+        if node.type == "loop":
+            from src.contracts.workflow import node_is_effectful
+            by_id = {n.id: n for n in definition.nodes}
+            touching = [b for b in (node.config or {}).get("body") or []
+                        if b in by_id and node_is_effectful(by_id[b])]
+            if touching:
+                return {"ok": False, "reason": (
+                    f"this loop's body reaches outside the process ({touching}); its "
+                    "finished passes cannot be replayed. Start a new run instead")}
 
         db = SessionLocal()
         try:
@@ -629,12 +674,14 @@ class WorkflowStore:
                 ).update({"status": "running", "ended_at": None, "reason": ""},
                          synchronize_session=False)
             db.commit()
-            return {"ok": bool(changed)}
         except Exception:
             db.rollback()
             raise
         finally:
             db.close()
+        if changed and node.type == "loop":
+            self.clear_iterations(run_id, node_id)
+        return {"ok": bool(changed)}
 
     def release_key(self, run_id: str, node_id: str, attempt: int) -> bool:
         """Let a later attempt claim this node again.
@@ -657,6 +704,169 @@ class WorkflowStore:
                                synchronize_session=False))
             db.commit()
             return bool(changed)
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    # ── loop iterations ───────────────────────────────────────────────────
+    #
+    # A `loop` node is one claimed node row (the engine's own lease covers it)
+    # plus one row per pass here. The pass row is written before the pass runs,
+    # under a key that names the iteration, and updated as each body node
+    # settles: what a restart reads to resume the same iteration at the same
+    # body node.
+
+    @staticmethod
+    def _iteration_view(row) -> Dict[str, Any]:
+        return {"run_id": row.workflow_run_id, "node_id": row.node_id,
+                "iteration": int(row.iteration), "status": row.status,
+                "idempotency_key": row.idempotency_key or "",
+                "started_at": row.started_at, "ended_at": row.ended_at,
+                "reason": row.reason or "",
+                "result": json.loads(row.result_json or "{}"),
+                "budget_used": json.loads(row.budget_json or "{}")}
+
+    def iteration_rows(self, run_id: str, node_id: str) -> List[Dict[str, Any]]:
+        from core.database import IterationRunRow, SessionLocal
+        db = SessionLocal()
+        try:
+            rows = (db.query(IterationRunRow)
+                    .filter(IterationRunRow.workflow_run_id == run_id,
+                            IterationRunRow.node_id == node_id)
+                    .order_by(IterationRunRow.iteration.asc()).all())
+            return [self._iteration_view(r) for r in rows]
+        finally:
+            db.close()
+
+    def open_iteration(self, run_id: str, node_id: str, iteration: int, *,
+                       key: str) -> Dict[str, Any]:
+        """Open pass `iteration`, or return the row that already is. Losing the
+        unique key to another writer is an answer (their row), never an error."""
+        from core.database import IterationRunRow, SessionLocal
+        from sqlalchemy.exc import IntegrityError
+        db = SessionLocal()
+        try:
+            existing = (db.query(IterationRunRow)
+                        .filter(IterationRunRow.idempotency_key == key).first())
+            if existing is not None:
+                return {"opened": False, **self._iteration_view(existing)}
+            fault("before_iteration_insert", run_id=run_id, node_id=node_id, iteration=iteration)
+            db.add(IterationRunRow(
+                id=f"it_{uuid.uuid4().hex[:20]}", workflow_run_id=run_id, node_id=node_id,
+                iteration=iteration, status="running", idempotency_key=key,
+                started_at=now_iso(), reason="", result_json="{}", budget_json="{}",
+                schema_version=1))
+            try:
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+                winner = (db.query(IterationRunRow)
+                          .filter(IterationRunRow.idempotency_key == key).first())
+                if winner is None:
+                    raise
+                return {"opened": False, **self._iteration_view(winner)}
+            row = (db.query(IterationRunRow)
+                   .filter(IterationRunRow.idempotency_key == key).one())
+            return {"opened": True, **self._iteration_view(row)}
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    def save_iteration(self, run_id: str, node_id: str, iteration: int, *,
+                       status: Optional[str] = None, result: Optional[Mapping[str, Any]] = None,
+                       reason: Optional[str] = None,
+                       budget_used: Optional[Mapping[str, Any]] = None) -> bool:
+        from core.database import IterationRunRow, SessionLocal
+        from src.contracts.workflow import TERMINAL_NODE
+        values: Dict[str, Any] = {}
+        if status is not None:
+            values["status"] = status
+            if status in TERMINAL_NODE:
+                values["ended_at"] = now_iso()
+        if result is not None:
+            values["result_json"] = _json(dict(result))
+        if reason is not None:
+            values["reason"] = reason
+        if budget_used is not None:
+            values["budget_json"] = _json(dict(budget_used))
+        if not values:
+            return True
+        db = SessionLocal()
+        try:
+            changed = (db.query(IterationRunRow)
+                       .filter(IterationRunRow.workflow_run_id == run_id,
+                               IterationRunRow.node_id == node_id,
+                               IterationRunRow.iteration == iteration)
+                       .update(values, synchronize_session=False))
+            db.commit()
+            return bool(changed)
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    def clear_iterations(self, run_id: str, node_id: str) -> int:
+        """Forget a loop's passes (a retry of a loop with nothing effectful in
+        its body starts from iteration 1; the claim keys go with the rows)."""
+        from core.database import IterationRunRow, LoopStateRow, SessionLocal
+        db = SessionLocal()
+        try:
+            n = (db.query(IterationRunRow)
+                 .filter(IterationRunRow.workflow_run_id == run_id,
+                         IterationRunRow.node_id == node_id).delete(synchronize_session=False))
+            db.query(LoopStateRow).filter(LoopStateRow.workflow_run_id == run_id,
+                                          LoopStateRow.node_id == node_id).delete(synchronize_session=False)
+            db.commit()
+            return int(n)
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    def loop_extra(self, run_id: str, node_id: str) -> Dict[str, int]:
+        """What has been added to this loop's ceilings since it started."""
+        from core.database import LoopStateRow, SessionLocal
+        db = SessionLocal()
+        try:
+            row = (db.query(LoopStateRow)
+                   .filter(LoopStateRow.workflow_run_id == run_id,
+                           LoopStateRow.node_id == node_id).first())
+            raw = json.loads(row.extra_json or "{}") if row else {}
+            return {k: int(raw.get(k) or 0) for k in ("iterations", "seconds", "tool_calls")}
+        finally:
+            db.close()
+
+    def extend_loop(self, run_id: str, node_id: str, *, iterations: int = 0,
+                    seconds: int = 0, tool_calls: int = 0, by: str = "") -> Dict[str, int]:
+        """Add to a loop's ceilings. Additive and recorded (who, when, how
+        much), so a loop that keeps being extended is visible as that."""
+        from core.database import LoopStateRow, SessionLocal
+        db = SessionLocal()
+        try:
+            row = (db.query(LoopStateRow)
+                   .filter(LoopStateRow.workflow_run_id == run_id,
+                           LoopStateRow.node_id == node_id).first())
+            if row is None:
+                row = LoopStateRow(id=f"ls_{uuid.uuid4().hex[:20]}", workflow_run_id=run_id,
+                                   node_id=node_id, extra_json="{}", history_json="[]")
+                db.add(row)
+            extra = json.loads(row.extra_json or "{}")
+            for key, amount in (("iterations", iterations), ("seconds", seconds),
+                                ("tool_calls", tool_calls)):
+                extra[key] = int(extra.get(key) or 0) + max(0, int(amount))
+            history = json.loads(row.history_json or "[]")
+            history.append({"at": now_iso(), "by": by, "iterations": int(iterations),
+                            "seconds": int(seconds), "tool_calls": int(tool_calls)})
+            row.extra_json = _json(extra)
+            row.history_json = _json(history[-50:])
+            db.commit()
+            return {k: int(extra.get(k) or 0) for k in ("iterations", "seconds", "tool_calls")}
         except Exception:
             db.rollback()
             raise

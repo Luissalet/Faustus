@@ -24,7 +24,9 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
 from src.agent_profiles import catalog
-from src.contracts.workflow import EFFECTFUL_TYPES, WorkflowDefinition, WorkflowNode, node_is_effectful
+from src.contracts.workflow import (
+    EFFECTFUL_TYPES, WorkflowDefinition, WorkflowNode, loop_body_ids, node_is_effectful,
+)
 
 __all__ = ["Finding", "lint_profile", "lint_all", "lint_workflow", "find_cycles"]
 
@@ -307,6 +309,17 @@ def _ancestors(by_id: Mapping[str, WorkflowNode], node_id: str) -> set:
     return seen
 
 
+def _with_loop_ancestors(by_id: Mapping[str, WorkflowNode], owner: Mapping[str, str],
+                         node_id: str) -> set:
+    """A body node runs when its loop does, so what stands upstream of the loop
+    stands upstream of the body node too."""
+    found = set(_ancestors(by_id, node_id))
+    loop_id = owner.get(node_id)
+    if loop_id:
+        found |= _ancestors(by_id, loop_id) | {loop_id}
+    return found
+
+
 def _unreachable_nodes(wf: WorkflowDefinition) -> List[str]:
     """Node ids no chain of `needs` from a root (`needs == ()`) ever reaches
     — forward reachability over the same edges `needs` encodes. On a valid,
@@ -351,6 +364,30 @@ def lint_workflow(definition: Any) -> List[Finding]:
             hint="break the cycle, or route it through a `condition` node with a real exit edge",
         ))
 
+    owner = loop_body_ids(wf.nodes)
+    for node in wf.nodes:
+        if node.type != "loop":
+            continue
+        config = node.config or {}
+        budget = config.get("budget") or {}
+        body = [by_id[b] for b in config.get("body") or [] if b in by_id]
+        if not config.get("until"):
+            findings.append(Finding(
+                code="LINT-WF-LOOP-NO-UNTIL", severity="warn", subject=f"node:{node.id}",
+                message=f"loop '{node.id}' has no `until`, so it always runs all "
+                        f"{budget.get('max_iterations')} iterations",
+                hint="add an `until` condition if the loop should stop once something holds",
+            ))
+        if any(node_is_effectful(b) for b in body) and not (
+                budget.get("max_seconds") or budget.get("max_tool_calls")):
+            findings.append(Finding(
+                code="LINT-WF-LOOP-EFFECT-UNMETERED", severity="warn", subject=f"node:{node.id}",
+                message=f"loop '{node.id}' repeats a body node that reaches outside Faustus up to "
+                        f"{budget.get('max_iterations')} times with no `max_seconds` or "
+                        "`max_tool_calls` to stop it sooner",
+                hint="set `budget.max_tool_calls` (or `max_seconds`) next to `max_iterations`",
+            ))
+
     for node_id in _unreachable_nodes(wf):
         findings.append(Finding(
             code="LINT-WF-UNREACHABLE", severity="error",
@@ -362,8 +399,10 @@ def lint_workflow(definition: Any) -> List[Finding]:
     for node in wf.nodes:
         if node.type not in ("deliver", "artifact_store"):
             continue
-        ancestor_types = {by_id[a].type for a in _ancestors(by_id, node.id)}
-        if not ({"condition", "human_approval"} & ancestor_types):
+        ancestor_types = {by_id[a].type for a in _with_loop_ancestors(by_id, owner, node.id)}
+        # A loop's `until` condition is an evaluator for everything in its body.
+        in_checked_loop = bool(owner.get(node.id) and (by_id[owner[node.id]].config or {}).get("until"))
+        if not ({"condition", "human_approval", "guard"} & ancestor_types) and not in_checked_loop:
             findings.append(Finding(
                 code="LINT-WF-OUTPUT-NO-EVALUATOR", severity="warn",
                 subject=f"node:{node.id}",
@@ -377,7 +416,7 @@ def lint_workflow(definition: Any) -> List[Finding]:
             continue
         if bool((node.config or {}).get("idempotent")):
             continue
-        ancestor_types = {by_id[a].type for a in _ancestors(by_id, node.id)}
+        ancestor_types = {by_id[a].type for a in _with_loop_ancestors(by_id, owner, node.id)}
         if "human_approval" not in ancestor_types:
             findings.append(Finding(
                 code="LINT-WF-EFFECT-NO-HUMAN", severity="warn",

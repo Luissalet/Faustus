@@ -898,6 +898,58 @@ class NodeRunRow(TimestampMixin, Base):
     )
 
 
+class IterationRunRow(TimestampMixin, Base):
+    """One pass of one `loop` node, written BEFORE the pass starts.
+
+    `idempotency_key` is `loop_effect_idempotency_key(run, node, iteration,
+    config)`: unique across the table, so two workers opening iteration 3 of
+    the same loop lose to one row, while iteration 4 gets a key of its own.
+    `result_json` holds the pass's progress, node by node (status, result,
+    effect state, and the partial result of a body node that paused), which is
+    what lets a process that died mid-pass resume at the same iteration and
+    at the same body node rather than start the loop again.
+    """
+    __tablename__ = "workflow_iteration_runs"
+
+    id          = Column(String, primary_key=True, index=True)
+    workflow_run_id = Column(String, nullable=False, index=True)
+    node_id     = Column(String, nullable=False, index=True)
+    iteration   = Column(Integer, nullable=False, default=1)
+    status      = Column(String, nullable=False, default="running", index=True)
+    idempotency_key = Column(String(64), nullable=False, unique=True, index=True)
+    started_at  = Column(String, nullable=True)
+    ended_at    = Column(String, nullable=True)
+    reason      = Column(Text, nullable=True, default="")
+    result_json = Column(Text, nullable=True)
+    budget_json = Column(Text, nullable=True)
+    schema_version = Column(Integer, nullable=False, default=1)
+
+    __table_args__ = (
+        Index("ix_iteration_runs_run_node", "workflow_run_id", "node_id", "iteration"),
+    )
+
+
+class LoopStateRow(TimestampMixin, Base):
+    """What a person added to a loop's ceiling after it ran out.
+
+    Kept apart from the definition (which a run snapshots and never edits) and
+    from the iteration rows (which are a record, not a setting): the stored
+    ceiling is `definition budget + extra`, so extending a loop is one small,
+    visible write that names who asked.
+    """
+    __tablename__ = "workflow_loop_state"
+
+    id          = Column(String, primary_key=True, index=True)
+    workflow_run_id = Column(String, nullable=False, index=True)
+    node_id     = Column(String, nullable=False, index=True)
+    extra_json  = Column(Text, nullable=True)
+    history_json = Column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_loop_state_run_node", "workflow_run_id", "node_id", unique=True),
+    )
+
+
 class MediaRunRow(TimestampMixin, Base):
     """One render on a media engine, and everything needed to do it again.
 

@@ -29,7 +29,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Tuple
 
 from src.contracts import NodeRun, WorkflowDefinition, WorkflowNode
 from src.contracts.base import now_iso
-from src.contracts.workflow import TERMINAL_NODE
+from src.contracts.workflow import TERMINAL_NODE, loop_body_ids
 
 from .store import WorkflowStore
 from .clock import due, normalized
@@ -109,9 +109,10 @@ def branch_closed(definition: WorkflowDefinition,
     that is not met has, so everything downstream of them stops the same way
     and the run says which half of the graph did not happen."""
     stopped = _stopping(definition, states)
+    owned = loop_body_ids(definition.nodes)
     out: List[WorkflowNode] = []
     for node in definition.nodes:
-        if not node.branch:
+        if not node.branch or node.id in owned:
             continue
         state = states.get(node.id)
         if state is not None and state.status in TERMINAL_NODE:
@@ -136,7 +137,10 @@ def ready_nodes(definition: WorkflowDefinition,
     runnable: List[WorkflowNode] = []
     blocked: List[WorkflowNode] = []
     stopped = _stopping(definition, states)
+    owned = loop_body_ids(definition.nodes)
     for node in definition.nodes:
+        if node.id in owned:
+            continue                       # run by its loop, once per iteration
         state = states.get(node.id)
         if state is not None and state.status in TERMINAL_NODE:
             continue
@@ -353,6 +357,21 @@ class WorkflowEngine:
         return {"ok": True, "reason": "budget_exhausted", "run_id": run_id,
                 "status": "paused", "ran": [], "budget": exhausted.as_dict()}
 
+    def _permission_denial(self, run_id: str, node: WorkflowNode) -> str:
+        """Why this run's declared permissions refuse `node`, or empty when they
+        allow it. Shared by the top-level check and by a loop, which runs its
+        body nodes itself and must not be a way around the allow-list."""
+        policy = self.store.get_policy(run_id)
+        allowed = policy["permissions"]
+        if allowed is None:
+            return ""                          # nothing declared: no restriction
+        allowed_set = set(allowed)
+        action = str((node.config or {}).get("action") or "")
+        if node.type in allowed_set or (action and action in allowed_set):
+            return ""
+        return (f"policy_permission_denied: this run's declared permissions do not "
+                f"include node type {node.type!r}" + (f" or action {action!r}" if action else ""))
+
     def _check_permission(self, run_id: str, node: WorkflowNode) -> Optional[Dict[str, Any]]:
         """AUTO-02: refuse a node outside this run's declared permissions —
         immediately and without a retry, since a policy violation is not a
@@ -360,16 +379,9 @@ class WorkflowEngine:
         means the node may run; a dict means it was refused and `advance`
         should record it and keep going (a later, permitted node may still
         be runnable)."""
-        policy = self.store.get_policy(run_id)
-        allowed = policy["permissions"]
-        if allowed is None:
-            return None                        # nothing declared: no restriction
-        allowed_set = set(allowed)
-        action = str((node.config or {}).get("action") or "")
-        if node.type in allowed_set or (action and action in allowed_set):
+        reason = self._permission_denial(run_id, node)
+        if not reason:
             return None
-        reason = (f"policy_permission_denied: this run's declared permissions do not "
-                 f"include node type {node.type!r}" + (f" or action {action!r}" if action else ""))
         worker_id = uuid.uuid4().hex
         claim = self.store.start_node(run_id, node, attempt=1, worker_id=worker_id)
         if not claim.get("claimed"):
@@ -396,7 +408,8 @@ class WorkflowEngine:
         # simply had not been answered yet.
         resumed = bool(previous and previous.status in ("pending", "paused")
                        and ((previous.result or {}).get("approval_id")
-                            or (previous.result or {}).get("wake_at")))
+                            or (previous.result or {}).get("wake_at")
+                            or (previous.result or {}).get("loop_budget_exhausted")))
         if previous is None:
             attempt = 1
         elif resumed:
@@ -451,6 +464,12 @@ class WorkflowEngine:
             generation=_claim_generation)
 
         handler = self.handlers.get(node.type)
+        if handler is None and node.type == "loop":
+            # A loop is not a capability somebody wires in: it is the engine
+            # running its own nodes again, so it is always available and runs
+            # its body through the same handlers (and the same refusals).
+            from . import loop as loop_runner
+            handler = lambda n, c: loop_runner.run(self, definition, n, c)   # noqa: E731
         if handler is None:
             finish(status="failed",
                                    reason=f"no handler for node type {node.type!r}")
@@ -492,6 +511,14 @@ class WorkflowEngine:
                     finish(status='failed', reason='handler returned an invalid wake time')
                     return {'node_id': node.id, 'status': 'failed',
                             'reason': 'handler returned an invalid wake time'}
+            if not approval_id and not wake_at and raw.get("loop_budget_exhausted"):
+                # A loop that ran out of budget waits for a person to extend
+                # or stop it (`extend_loop`, or cancelling the run) — that is
+                # a real way out, even though there is no approval card.
+                finish(status="paused", result=raw,
+                       reason=str(raw.get("reason") or "loop budget exhausted"))
+                return {"node_id": node.id, "status": "paused", "attempt": attempt,
+                        "approval_id": "", "wake_at": ""}
             if not approval_id and not wake_at:
                 # A pause nobody and nothing can end is a stall. Refuse it
                 # rather than park the run forever: either a person can answer
@@ -586,9 +613,10 @@ class WorkflowEngine:
         # directly. Reporting one level deep answers "why did `write` not run?"
         # and leaves "and what about `send`?" hanging — which is the question
         # someone asks next.
-        unreached = sorted(set(_unreachable(definition, states)) | {
+        owned = set(loop_body_ids(definition.nodes))
+        unreached = sorted((set(_unreachable(definition, states)) | {
             nid for nid, st in states.items()
-            if st.status == "skipped" and (st.result or {}).get("branch_not_taken")})
+            if st.status == "skipped" and (st.result or {}).get("branch_not_taken")}) - owned)
         if failures:
             detail = f"failed: {sorted(failures)}"
             if unreached:
@@ -630,6 +658,38 @@ class WorkflowEngine:
             return {"ok": False, "reason": "not_paused", "node_id": node_id}
         self._emit("workflow.node", run_id=run_id, node=node_id, status="resumed")
         return self.advance(run_id)
+
+    def extend_loop(self, run_id: str, node_id: str, *, iterations: int = 0,
+                    seconds: int = 0, tool_calls: int = 0, by: str = "") -> Dict[str, Any]:
+        """Give a loop that ran out of budget more room, and carry on.
+
+        Only for a `loop` node parked by `on_exhausted: pause`. The extension is
+        additive and recorded, it can only raise a ceiling the definition set
+        (an unbounded dimension stays unbounded), and the total iteration
+        ceiling never passes the contract's own maximum."""
+        loaded = self.store.get_run(run_id)
+        if loaded is None:
+            return {"ok": False, "reason": "not_found", "run_id": run_id}
+        node = loaded["definition"].node(node_id)
+        if node is None or node.type != "loop":
+            return {"ok": False, "reason": "not_a_loop", "node_id": node_id}
+        state = self.store.node_runs(run_id).get(node_id)
+        if state is None or state.status != "paused" or not (state.result or {}).get("loop_budget_exhausted"):
+            return {"ok": False, "reason": "not_exhausted", "node_id": node_id}
+        amounts = {"iterations": iterations, "seconds": seconds, "tool_calls": tool_calls}
+        if any(isinstance(v, bool) or not isinstance(v, int) or v < 0 for v in amounts.values()):
+            return {"ok": False, "reason": "amounts must be whole numbers, zero or more"}
+        if not any(amounts.values()):
+            return {"ok": False, "reason": "nothing to add: give iterations, seconds or tool_calls"}
+        base = int(((node.config or {}).get("budget") or {}).get("max_iterations") or 0)
+        current = self.store.loop_extra(run_id, node_id)["iterations"]
+        if base + current + iterations > 10_000:
+            return {"ok": False, "reason": "that would pass the 10000-iteration ceiling"}
+        total = self.store.extend_loop(run_id, node_id, iterations=iterations, seconds=seconds,
+                                       tool_calls=tool_calls, by=by)
+        self._emit("workflow.loop_extended", run_id=run_id, node=node_id, by=by, extra=total)
+        outcome = self.resume(run_id, node_id)
+        return {"ok": bool(outcome.get("ok", True)), "extended": total, "advance": outcome}
 
     def _wake_due(self, run_id: str) -> List[str]:
         """Reopen the nodes that were waiting for a time that has now passed.

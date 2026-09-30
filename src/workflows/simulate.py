@@ -65,7 +65,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
-from src.contracts.workflow import WorkflowDefinition, declared_branches
+from src.contracts.workflow import WorkflowDefinition, declared_branches, loop_body_ids
 
 __all__ = ["SimulationResult", "simulate"]
 
@@ -118,6 +118,10 @@ class SimulationResult:
     rounds_used: int
     rounds_max: int
     warnings: Tuple[str, ...] = field(default_factory=tuple)
+    #: `{loop id: {body, max_iterations, min_iterations, has_until, ...}}`. A
+    #: loop's body is not walked: it is not decided by `needs` but by the
+    #: iteration, so the simulation reports it as a unit.
+    loops: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -130,6 +134,7 @@ class SimulationResult:
             "rounds_used": self.rounds_used,
             "rounds_max": self.rounds_max,
             "warnings": list(self.warnings),
+            "loops": {k: dict(v) for k, v in self.loops.items()},
         }
 
 
@@ -174,7 +179,17 @@ def simulate(
     outcome: Dict[str, str] = {}          # node_id -> "activated" | "not_taken"
     undecided: Dict[str, Dict[str, str]] = {}  # node_id -> {kind, blocked_by}
     human_waits: List[str] = []
-    remaining = set(by_id)
+    owned = loop_body_ids(wf.nodes)
+    remaining = {nid for nid in by_id if nid not in owned}
+    loops: Dict[str, Dict[str, Any]] = {}
+    for node in wf.nodes:
+        if node.type == "loop":
+            cfg = node.config or {}
+            top = int((cfg.get("budget") or {}).get("max_iterations") or 0)
+            loops[node.id] = {"body": list(cfg.get("body") or []), "max_iterations": top,
+                              "min_iterations": 1 if cfg.get("until") else top,
+                              "has_until": bool(cfg.get("until")),
+                              "on_exhausted": (cfg.get("budget") or {}).get("on_exhausted", "pause")}
     rounds: List[Dict[str, Any]] = []
     round_no = 0
 
@@ -279,6 +294,11 @@ def simulate(
         })
 
     warnings = [_AND_NOT_BRANCH_WARNING]
+    for loop_id, info in loops.items():
+        warnings.append(
+            f"loop '{loop_id}' runs its body {info['body']} between {info['min_iterations']} and "
+            f"{info['max_iterations']} time(s); the body is not walked here, because what it does on "
+            "each pass depends on what the previous pass produced")
     if remaining:
         warnings.append(
             f"{len(remaining)} node(s) were never reached within rounds_max={rounds_max}: "
@@ -297,4 +317,5 @@ def simulate(
         rounds_used=round_no,
         rounds_max=rounds_max,
         warnings=tuple(warnings),
+        loops=loops,
     )

@@ -112,6 +112,63 @@ def _ancestors(by_id: Mapping[str, WorkflowNode], node_id: str) -> set:
     return seen
 
 
+#: Node types that call the model themselves (through a purpose, not a named
+#: model), and how many calls one activation makes at the least and at the most.
+MODEL_NODE_TYPES = ("agent", "classify", "extract", "guard")
+
+
+def loop_bounds(wf: WorkflowDefinition) -> Dict[str, Tuple[str, int, int]]:
+    """`{body node id: (loop id, fewest passes, most passes)}`. A loop with an
+    `until` may stop after one pass; one without runs `max_iterations` times.
+    Both ends are known, which is the point of a bounded loop: the estimate
+    reports a number where a cycle could only be assumed."""
+    out: Dict[str, Tuple[str, int, int]] = {}
+    for node in wf.nodes:
+        if node.type != "loop":
+            continue
+        config = node.config if isinstance(node.config, Mapping) else {}
+        budget = config.get("budget") if isinstance(config.get("budget"), Mapping) else {}
+        hi = max(1, int(budget.get("max_iterations") or 1))
+        lo = 1 if config.get("until") else hi
+        for body in config.get("body") or []:
+            if isinstance(body, str):
+                out.setdefault(body, (node.id, lo, hi))
+    return out
+
+
+def model_calls_per_activation(node: WorkflowNode) -> Optional[Tuple[int, int]]:
+    """`(fewest, most)` model calls one activation of a model node makes, or
+    None for a node that does not call the model itself."""
+    config = node.config if isinstance(node.config, Mapping) else {}
+    if node.type == "classify":
+        asks = config.get("on_uncertain") == "ask" or not config.get("fallback")
+        return (1, 2 if asks else 1)
+    if node.type == "extract":
+        return (1, 2)                                   # one repair at most
+    if node.type == "guard":
+        checks = config.get("checks") if isinstance(config.get("checks"), (list, tuple)) else []
+        has_model = any(isinstance(c, Mapping) and c.get("type") == "model" for c in checks)
+        return (1, 1) if has_model else (0, 0)
+    if node.type == "agent":
+        try:
+            rounds = int(config.get("max_rounds") or 8)
+        except (TypeError, ValueError):
+            rounds = 8
+        return (1, max(1, rounds) + (1 if config.get("output_schema") else 0))
+    return None
+
+
+def _gated(wf: WorkflowDefinition, by_id: Mapping[str, WorkflowNode]) -> set:
+    """Nodes that might not run: a `condition` upstream, or a branch gate on
+    the node itself or on something upstream of it."""
+    out = set()
+    for node in wf.nodes:
+        chain = _ancestors(by_id, node.id) | {node.id}
+        if any(by_id[a].type == "condition" or by_id[a].branch for a in chain if a in by_id):
+            out.add(node.id)
+    return out
+
+
 def estimate(
     definition: Any,
     *,
@@ -137,10 +194,8 @@ def estimate(
         for node_id in cycle:
             cycle_members[node_id] = assumed_iterations
 
-    gated_ids = {
-        node.id for node in wf.nodes
-        if any(by_id[a].type == "condition" for a in _ancestors(by_id, node.id))
-    }
+    gated_ids = _gated(wf, by_id)
+    loops = loop_bounds(wf)
 
     per_node: List[Dict[str, Any]] = []
     unpriced: List[str] = []
@@ -155,10 +210,23 @@ def estimate(
             calls_min, calls_max = 0, 1
         else:
             calls_min, calls_max = 1, 1
+        if node.id in loops:
+            _, passes_min, passes_max = loops[node.id]
+            calls_min, calls_max = calls_min * passes_min, calls_max * passes_max
 
         model = ""
         usd_min = usd_max = 0.0
         note = "not a model-invoking node type"
+        extra_row: Dict[str, Any] = {}
+        per_call = model_calls_per_activation(node)
+        if per_call is not None:
+            extra_row["model_calls_min"] = calls_min * per_call[0]
+            extra_row["model_calls_max"] = calls_max * per_call[1]
+            note = ("calls the model resolved for its purpose at run time — no price known, "
+                    "excluded from totals")
+        if node.id in loops:
+            extra_row["loop"] = loops[node.id][0]
+            extra_row["iterations"] = [loops[node.id][1], loops[node.id][2]]
         if node.type == "skill":
             model = str((node.config or {}).get("model") or "").strip()
             if not model:
@@ -180,7 +248,7 @@ def estimate(
         per_node.append({
             "node_id": node.id, "type": node.type, "model": model,
             "calls_min": calls_min, "calls_max": calls_max,
-            "usd_min": usd_min, "usd_max": usd_max, "note": note,
+            "usd_min": usd_min, "usd_max": usd_max, "note": note, **extra_row,
         })
         calls_min_total += calls_min
         calls_max_total += calls_max
@@ -426,10 +494,8 @@ def estimate_detailed(
         for node_id in cycle:
             cycle_members[node_id] = assumed_iterations
 
-    gated_ids = {
-        node.id for node in wf.nodes
-        if any(by_id[a].type == "condition" for a in _ancestors(by_id, node.id))
-    }
+    gated_ids = _gated(wf, by_id)
+    loops = loop_bounds(wf)
 
     def _price_for(model: str) -> Tuple[Optional[StructuredPrice], Optional[str]]:
         """Returns `(price, reason_if_none)`. Prefers a caller-supplied
@@ -482,12 +548,20 @@ def estimate_detailed(
         else:
             calls_min, calls_max = 1, 1
             structural_max = 1
+        structural_min = 0 if node.id in gated_ids else 1
+        if node.id in loops:
+            # A bounded loop, unlike a cycle, has a known ceiling: the body
+            # runs at most `max_iterations` times, and structurally so.
+            _, passes_min, passes_max = loops[node.id]
+            calls_min, calls_max = calls_min * passes_min, calls_max * passes_max
+            structural_min = structural_min * passes_min
+            structural_max = (structural_max * passes_max) if isinstance(structural_max, int) else structural_max
         node_act_min += calls_min
         node_act_max += calls_max
 
         row: Dict[str, Any] = {
             "node_id": node.id, "type": node.type,
-            "structural_bounds": {"min": 0 if node.id in gated_ids else 1, "max": structural_max},
+            "structural_bounds": {"min": structural_min, "max": structural_max},
             "activations": {"min": calls_min, "max": calls_max},
             "is_model_call": False, "is_external_op": False,
             "model": "", "calls_profile_source": "n/a",
@@ -574,6 +648,28 @@ def estimate_detailed(
                         if isinstance(latency, Mapping):
                             row["latency_estimate"] = dict(latency)
 
+        elif model_calls_per_activation(node) is not None:
+            lo, hi = model_calls_per_activation(node)
+            mc_min, mc_max = calls_min * lo, calls_max * hi
+            row["is_model_call"] = mc_max > 0
+            row["model_calls"] = {"min": mc_min, "max": mc_max}
+            row["tokens_in"] = {"min": mc_min * prompt_tokens, "max": mc_max * prompt_tokens}
+            row["tokens_out"] = {"min": mc_min * completion_tokens, "max": mc_max * completion_tokens}
+            row["calls_profile_source"] = "node_type_default"
+            row["note"] = (f"'{node.type}' node: {lo}-{hi} model call(s) per activation on the model "
+                           "resolved at run time; no price is known")
+            if node.id in loops:
+                row["loop"] = {"node": loops[node.id][0], "iterations": [loops[node.id][1], loops[node.id][2]]}
+            if mc_max > 0:
+                _note(f"node '{node.id}' ({node.type}): the model is resolved at run time from its "
+                      "purpose, so its cost is unknown, excluded from cost_known_usd")
+            model_calls_min += mc_min
+            model_calls_max += mc_max
+            tokens_in_min += mc_min * prompt_tokens
+            tokens_in_max += mc_max * prompt_tokens
+            tokens_out_min += mc_min * completion_tokens
+            tokens_out_max += mc_max * completion_tokens
+
         elif node.type in ("artifact_store", "deliver"):
             row["is_external_op"] = True
             row["external_ops"] = {"min": calls_min, "max": calls_max}
@@ -588,7 +684,7 @@ def estimate_detailed(
               f"{assumed_iterations} iterations each; structural_bounds leaves them unbounded")
 
     structural_bounds = {
-        "node_activations": {"min": sum(0 if n.id in gated_ids else 1 for n in wf.nodes),
+        "node_activations": {"min": sum(r["structural_bounds"]["min"] for r in per_node),
                               "max": "unbounded" if cycle_members else node_act_max},
         "note": "graph shape alone — no assumed_iterations applied to cycles, "
                 "so a definition with an unbounded cycle reports max as the "

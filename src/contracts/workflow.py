@@ -33,7 +33,15 @@ from .base import (
 NODE_TYPES = ("manual", "schedule", "webhook", "skill", "condition", "wait",
               "wait_until", "wait_for_event",
               "human_approval", "artifact_store", "deliver",
-              "agent", "classify", "extract", "guard")
+              "agent", "classify", "extract", "guard", "loop")
+
+#: What a `loop` node may run as its body. Everything here finishes on its own
+#: (or pauses on something the loop knows how to resume); a node that waits on
+#: a clock, an event or a person has no business inside something that is
+#: supposed to finish within a known number of passes, and a loop inside a loop
+#: multiplies two ceilings nobody reviewed together.
+LOOP_BODY_TYPES = ("agent", "classify", "extract", "guard", "condition",
+                   "artifact_store", "skill", "deliver")
 
 #: Types that reach outside — the ones where running twice is the real damage
 #: and the idempotency key has to be honoured by whatever performs them.
@@ -222,6 +230,7 @@ class WorkflowDefinition:
                 raise ContractError(f"{path}.nodes[{node.id}].needs",
                                     "a node cannot depend on itself")
             _check_branch(node, {n.id: n for n in nodes}, f"{path}.nodes[{node.id}].branch")
+        _check_loops(nodes, path)
         cycle = _find_cycle(nodes)
         if cycle:
             raise ContractError(
@@ -277,6 +286,98 @@ def _check_branch(node: "WorkflowNode", by_id: Mapping[str, "WorkflowNode"], pat
             raise ContractError(f"{path}.{dep}",
                                 f"{source.type} node {dep!r} declares the branches {list(known)}; "
                                 f"{unknown} is not one of them")
+
+
+def loop_body_ids(nodes: Sequence[WorkflowNode]) -> Dict[str, str]:
+    """`{body node id: loop node id}` for every node some `loop` owns. A body
+    node is run by its loop, once per iteration, and is never scheduled as a
+    top-level node of its own."""
+    owner: Dict[str, str] = {}
+    for node in nodes:
+        if node.type == "loop":
+            body = (node.config or {}).get("body")
+            if isinstance(body, (list, tuple)):
+                for b in body:
+                    if isinstance(b, str):
+                        owner.setdefault(b, node.id)
+    return owner
+
+
+def _ancestors(start: str, by_id: Mapping[str, "WorkflowNode"]) -> set:
+    seen: set = set()
+    todo = list(by_id[start].needs)
+    while todo:
+        nid = todo.pop()
+        if nid in seen or nid not in by_id:
+            continue
+        seen.add(nid)
+        todo.extend(by_id[nid].needs)
+    return seen
+
+
+def _check_loops(nodes: Sequence["WorkflowNode"], path: str) -> None:
+    """A loop is bounded by construction, and its body is a fixed, visible set
+    of nodes — not a cycle in `needs` (which is still refused, below).
+
+    The rules, each one a way a loop could otherwise become a stall or a second
+    scheduler: `max_iterations` is required and positive; the body names real
+    nodes of allowed types; a node belongs to at most one loop; a body node may
+    only read the loop's own ancestors and its body siblings (so every input it
+    has is there before the first iteration); and nothing outside the loop may
+    wait on a body node, only on the loop, whose result carries the last
+    iteration's outputs."""
+    loops = [n for n in nodes if n.type == "loop"]
+    if not loops:
+        return
+    from .workflow_iteration import LoopNodeConfig
+
+    by_id = {n.id: n for n in nodes}
+    owner: Dict[str, str] = {}
+    bodies: Dict[str, Tuple[str, ...]] = {}
+    for node in loops:
+        where = f"{path}.nodes[{node.id}].config"
+        cfg = LoopNodeConfig.parse(node.config, where, known_node_ids=list(by_id))
+        if cfg.budget.max_tokens:
+            raise ContractError(
+                f"{where}.budget.max_tokens",
+                "tokens are not metered per iteration yet, so this ceiling could never "
+                "fire; bound the loop with max_iterations, max_seconds or max_tool_calls")
+        for b in cfg.body:
+            if b == node.id:
+                raise ContractError(f"{where}.body", "a loop cannot contain itself")
+            if by_id[b].type not in LOOP_BODY_TYPES:
+                raise ContractError(
+                    f"{where}.body",
+                    f"{b!r} is a '{by_id[b].type}' node; a loop body may only use "
+                    f"{', '.join(LOOP_BODY_TYPES)}")
+            if b in owner:
+                raise ContractError(f"{where}.body",
+                                    f"{b!r} is already in the body of loop {owner[b]!r}")
+            owner[b] = node.id
+        bodies[node.id] = cfg.body
+        stuck = sorted(set(cfg.body) & _ancestors(node.id, by_id))
+        if stuck:
+            raise ContractError(f"{path}.nodes[{node.id}].needs",
+                                f"a loop cannot wait on its own body node(s) {stuck}")
+
+    for loop_id, body in bodies.items():
+        allowed = set(body) | _ancestors(loop_id, by_id)
+        for b in body:
+            outside = sorted(set(by_id[b].needs) - allowed)
+            if outside:
+                raise ContractError(
+                    f"{path}.nodes[{b}].needs",
+                    f"a node in the body of loop {loop_id!r} may only depend on its body "
+                    f"siblings and on what the loop itself waits for; {outside} is neither")
+    for node in nodes:
+        mine = owner.get(node.id)
+        for dep in node.needs:
+            theirs = owner.get(dep)
+            if theirs and theirs != mine:
+                raise ContractError(
+                    f"{path}.nodes[{node.id}].needs",
+                    f"{dep!r} is inside loop {theirs!r}; depend on the loop, whose result "
+                    "carries the body's last outputs")
 
 
 def _find_cycle(nodes: Sequence[WorkflowNode]) -> Tuple[str, ...]:
@@ -365,12 +466,15 @@ class NodeRun:
             raise ContractError(f"{path}.ended_at",
                                 f"is required once a node is '{status}'")
         if status == "paused" and not text(data, "approval_id", path, required=False) \
-                and not (result or {}).get("wake_at"):
+                and not (result or {}).get("wake_at") \
+                and not (result or {}).get("loop_budget_exhausted"):
             # Two things can end a pause: a person (an approval id) or the
             # clock (`result.wake_at`). Requiring one of them is the invariant;
             # requiring specifically an approval would make `wait` impossible
             # to express, and a pause nobody and nothing can resolve is a stall
-            # with better manners.
+            # with better manners. A `loop` that ran out of budget is the third
+            # way out: a person extends it (or stops the run) — that is an
+            # answer, and the loop says so in `result.loop_budget_exhausted`.
             raise ContractError(
                 f"{path}.approval_id",
                 "a paused node has to say what will end the pause: an approval id "

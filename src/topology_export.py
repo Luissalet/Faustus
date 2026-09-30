@@ -167,6 +167,11 @@ _NODE_SHAPES: Dict[str, Tuple[str, str]] = {
     "human_approval": ("[/", "/]"),
     "artifact_store": ("[(", ")]"),
     "deliver": ("[[", "]]"),
+    "agent": ("[", "]"),
+    "classify": ("{", "}"),
+    "extract": ("[", "]"),
+    "guard": ("{", "}"),
+    "loop": ("[[", "]]"),
 }
 
 _NODE_TYPE_COLORS: Dict[str, str] = {
@@ -181,6 +186,11 @@ _NODE_TYPE_COLORS: Dict[str, str] = {
     "human_approval": "#8e24aa",
     "artifact_store": "#00695c",
     "deliver": "#2e7d32",
+    "agent": "#5e35b1",
+    "classify": "#ef6c00",
+    "extract": "#0277bd",
+    "guard": "#c62828",
+    "loop": "#455a64",
 }
 
 
@@ -248,12 +258,24 @@ def workflow_to_mermaid(definition: Any) -> str:
             if not dep_safe:
                 continue
             dep_node = by_id.get(dep)
-            if dep_node is not None and dep_node.type == "condition":
+            if node.branch.get(dep):
+                # A branch gate: the edge only carries the run when the
+                # classify/guard behind it chose one of these labels.
+                label = _escape_label(" / ".join(node.branch[dep])[:60])
+                lines.append(f'    {dep_safe} -->|"{label}"| {safe}')
+            elif dep_node is not None and dep_node.type == "condition":
                 label = _escape_label(_condition_label(dep_node))
                 lines.append(f'    {dep_safe} -->|"{label}"| {safe}')
             else:
                 lines.append(f"    {dep_safe} --> {safe}")
 
+    for node in wf.nodes:
+        if node.type == "loop":
+            cfg = node.config if isinstance(node.config, Mapping) else {}
+            top = (cfg.get("budget") or {}).get("max_iterations") if isinstance(cfg.get("budget"), Mapping) else None
+            for body in cfg.get("body") or []:
+                if body in used:
+                    lines.append(f'    {used[node.id]} -.->|"repeats up to {top}x"| {used[body]}')
     for node_type, color in _NODE_TYPE_COLORS.items():
         lines.append(f"    classDef nt_{node_type} fill:{color},color:#fff;")
     for node in wf.nodes:

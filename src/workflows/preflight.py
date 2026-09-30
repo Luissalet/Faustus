@@ -121,7 +121,15 @@ def _referenced_input_keys(nodes: Sequence[WorkflowNode]) -> List[str]:
     `config.when.left`/`right`. See the module docstring for the scope
     limit — a `skill`/`deliver` node's opaque `config` is not scanned."""
     found: set = set()
+    from .templating import references
     for node in nodes:
+        if node.type in ("agent", "classify", "extract", "guard") and isinstance(node.config, Mapping):
+            # The model nodes read the run through `{{ inputs.key }}` templates.
+            for field_name in ("prompt", "text", "instructions", "system"):
+                for path in references(node.config.get(field_name)):
+                    if path.startswith("inputs."):
+                        found.add(path)
+            continue
         if node.type != "condition":
             continue
         when = node.config.get("when") if isinstance(node.config, Mapping) else None
@@ -182,6 +190,22 @@ def preflight(
     tokens_min_total = tokens_max_total = 0
     unpriced: set = set(cost_estimate.unpriced_models)
     for row in cost_estimate.per_node:
+        if row["type"] in ("agent", "classify", "extract", "guard"):
+            # These call the model themselves, on whichever one their purpose
+            # resolves to at run time: their tokens are counted, their price
+            # is not knowable here, and the total says so.
+            calls_lo, calls_hi = row.get("model_calls_min", 0), row.get("model_calls_max", 0)
+            token_rows.append({
+                "node_id": row["node_id"], "model": "unknown (resolved at run time)",
+                "tokens_min": calls_lo * tokens_per_call, "tokens_max": calls_hi * tokens_per_call,
+                "model_installed_locally": None,
+                **({"loop": row["loop"], "iterations": row["iterations"]} if "loop" in row else {}),
+            })
+            tokens_min_total += calls_lo * tokens_per_call
+            tokens_max_total += calls_hi * tokens_per_call
+            if calls_hi:
+                unpriced.add(f"node:{row['node_id']} (model chosen at run time)")
+            continue
         if row["type"] != "skill":
             continue
         installed = None
@@ -231,6 +255,14 @@ def preflight(
                     seen_tools.add(skill_id)
                     tools.append(skill_id)
                 connections.add("media" if skill_id.startswith("media:") else f"skill:{skill_id}")
+        elif node.type == "agent":
+            for tool in (config.get("tools") or []):
+                if isinstance(tool, str) and tool not in seen_tools:
+                    seen_tools.add(tool)
+                    tools.append(tool)
+            connections.add("agent")
+        elif node.type in ("classify", "extract", "guard"):
+            connections.add("model")
         elif node.type == "deliver":
             backend = str(config.get("backend") or "")
             connections.add(f"deliver:{backend}" if backend else "deliver:unknown")

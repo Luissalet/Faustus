@@ -1,16 +1,19 @@
 """
-contracts/workflow_iteration.py — PROPOSED contract for a bounded workflow
-loop (CMP-07, `docs/design/bounded-workflow-iterations.md`).
+contracts/workflow_iteration.py — the contract of a bounded workflow loop
+(CMP-07, `docs/design/bounded-workflow-iterations.md`).
 
-**This file is a design artifact, not a running feature.** It is dataclasses
-and validation only: nothing here is imported by `src/workflows/engine.py`,
-`src/workflows/handlers.py`, or any route. `WorkflowDefinition.parse()`
-(`src/contracts/workflow.py`) still refuses every cycle outright — `_find_
-cycle` is untouched by this file, unimported by it, and this module adds no
-`"loop"` entry to `NODE_TYPES`. A `WorkflowNode` built today cannot express
-a loop; this is what one WOULD look like if a future lot decides to wire it
-in, following `docs/design/bounded-workflow-iterations.md`'s reasoning for
-every field below.
+This is the shape a `loop` node's `config` must have, and the record one pass
+of it leaves behind. It is wired in: `"loop"` is a `NODE_TYPES` entry,
+`WorkflowDefinition.parse()` validates every loop's `config` with
+`LoopNodeConfig.parse` (see `_check_loops` in `contracts/workflow.py`), and
+`src/workflows/loop.py` runs it, keeping one row per pass in
+`workflow_iteration_runs` under `loop_effect_idempotency_key`. The dependency
+still runs one way: this module imports nothing from `src/workflows/`.
+
+`WorkflowDefinition.parse()` still refuses every cycle in `needs`
+(`_find_cycle` is untouched): a loop is not a cycle in the graph, it is one
+node that runs a fixed set of its siblings again, at most `max_iterations`
+times.
 
 Why propose the shape before the engine: `docs/api/topology.md` already
 documents, twice (`agent_profile_lint`'s `LINT-WF-CYCLE-NO-BOUND` and

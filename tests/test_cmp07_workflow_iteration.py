@@ -1,11 +1,11 @@
 """tests/test_cmp07_workflow_iteration.py — CMP-07 (W2-E, CONTRATO_CMP_W2.md).
 
-`src/contracts/workflow_iteration.py` is a PROPOSED contract: dataclasses
-and validation only, never imported by the engine or any route. These tests
-pin (1) that it stays that way — nothing here reaches into `workflows/`,
-and `WorkflowDefinition`'s real `NODE_TYPES`/`_find_cycle` are untouched —
-and (2) the shape itself: budgets, the early-exit condition, per-iteration
-state, and the per-(effect, iteration) idempotency key.
+`src/contracts/workflow_iteration.py` is the contract of the `loop` node: the
+budget, the early-exit condition, per-iteration state and the per-(effect,
+iteration) idempotency key. The contract module itself stays free of the
+engine (the dependency runs from `workflows` to `contracts`, never back), and
+`WorkflowDefinition`'s cycle refusal is untouched: the running loop is covered
+by `tests/test_workflow_loops.py`.
 
 `-p no:cacheprovider -W ignore` per COMUN.
 """
@@ -30,8 +30,13 @@ from src.contracts.workflow_iteration import (
 
 # ── this stays a proposal, not a wired feature ──────────────────────────────
 
-def test_loop_is_not_a_real_node_type_yet():
-    assert "loop" not in NODE_TYPES
+def test_loop_is_a_real_node_type_and_a_cycle_in_needs_is_still_refused():
+    from src.contracts import WorkflowDefinition
+    assert "loop" in NODE_TYPES
+    with pytest.raises(ContractError):
+        WorkflowDefinition.parse({"id": "c", "version": "1.0.0", "title": "c", "nodes": [
+            {"id": "a", "type": "skill", "needs": ["b"], "config": {"skill": "x.y"}},
+            {"id": "b", "type": "skill", "needs": ["a"], "config": {"skill": "x.y"}}]})
 
 
 def test_module_never_imports_the_engine_or_handlers():

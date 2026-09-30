@@ -580,11 +580,26 @@ def setup_workflows_routes():
             raise HTTPException(status_code=404, detail=f"no run {run_id}")
         states = store.node_runs(run_id)
         runnable, blocked = ready_nodes(loaded["definition"], states)
+        # A loop's body nodes have no node rows of their own; what each pass
+        # did, node by node, is here.
+        loops = {}
+        for node in loaded["definition"].nodes:
+            if node.type == "loop":
+                loops[node.id] = [
+                    {"iteration": r["iteration"], "status": r["status"], "reason": r["reason"],
+                     "started_at": r["started_at"], "ended_at": r["ended_at"],
+                     "until": (r["result"].get("until") or {}),
+                     "nodes": {b: {"status": s.get("status"), "attempt": s.get("attempt"),
+                                   "effect": s.get("effect"), "reason": s.get("reason", "")}
+                               for b, s in (r["result"].get("body") or {}).items()},
+                     "budget_used": r["budget_used"]}
+                    for r in store.iteration_rows(run_id, node.id)]
         return {"ok": True, "run": loaded["run"].to_dict(),
                 "definition": loaded["definition"].to_dict(),
                 "nodes": {nid: st.to_dict() for nid, st in states.items()},
                 "runnable_now": [n.id for n in runnable],
-                "blocked": [n.id for n in blocked]}
+                "blocked": [n.id for n in blocked],
+                "loops": loops}
 
     @router.post("/runs/{run_id}/advance")
     async def advance(run_id: str, request: Request):
@@ -630,6 +645,27 @@ def setup_workflows_routes():
         payload = await _optional_json(request)
         if payload.get("advance"):
             result["result"] = await asyncio.to_thread(_engine(store).advance, run_id)
+        return result
+
+    @router.post("/runs/{run_id}/nodes/{node_id}/extend")
+    async def extend_loop(run_id: str, node_id: str, request: Request):
+        """Give a loop that ran out of budget (`on_exhausted: pause`) more room
+        — `{iterations, seconds, tool_calls}`, each optional, additive and
+        recorded — and carry on. Only a loop parked by its own budget can be
+        extended; to stop it instead, cancel the run."""
+        require_admin(request)
+        payload = await _json_object(request)
+        unknown = sorted(set(payload) - {"iterations", "seconds", "tool_calls"})
+        if unknown:
+            raise HTTPException(status_code=400, detail=f"unknown field(s) {unknown}")
+        who = str(getattr(request.state, "current_user", "") or "")
+        result = await asyncio.to_thread(
+            _engine(store).extend_loop, run_id, node_id, by=who,
+            iterations=payload.get("iterations", 0), seconds=payload.get("seconds", 0),
+            tool_calls=payload.get("tool_calls", 0))
+        if not result.get("ok"):
+            status = 404 if result.get("reason") == "not_found" else 409
+            raise HTTPException(status_code=status, detail=result.get("reason"))
         return result
 
     @router.post("/runs/{run_id}/cancel")
