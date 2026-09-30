@@ -5081,15 +5081,51 @@ def setup_chat_routes(
             if isinstance(_steer_body, dict) else "steer"
         )
         _expected_run_id = request.headers.get("X-Odysseus-Run-Id")
+        _steer_owner = str(effective_user(request) or "")
         if _mode == "queue":
-            ok = agent_runs.queue_send_after(session_id, _text[:4000],
-                                              expected_run_id=_expected_run_id)
+            receipt = agent_runs.queue_send_after_receipt(session_id, _text[:4000],
+                                                          expected_run_id=_expected_run_id, owner=_steer_owner)
         else:
-            ok = agent_runs.queue_steer(session_id, _text[:4000],
-                                         expected_run_id=_expected_run_id)
-        if not ok:
+            receipt = agent_runs.queue_steer_receipt(session_id, _text[:4000],
+                                                     expected_run_id=_expected_run_id, owner=_steer_owner)
+        if receipt is None:
             raise HTTPException(404, "No active run for this session")
-        return {"ok": True, "mode": "queue" if _mode == "queue" else "steer"}
+        # `ok` still means "accepted into the queue"; the receipt says what
+        # has happened to it since (queued is not delivered).
+        return {"ok": True, "mode": "queue" if _mode == "queue" else "steer", "receipt": receipt}
+
+    # H19: what happened to the messages sent to a live run. `queued` is
+    # accepted, `drained` is taken by the run, only `applied` is delivered;
+    # `dropped` carries the reason and the text.
+    @router.get("/api/chat/steer/{session_id}/receipts")
+    async def chat_steer_receipts(request: Request, session_id: str) -> Dict[str, Any]:
+        _verify_session_owner(request, session_id)
+        from src import steering_journal
+        return {"session_id": session_id,
+                "receipts": steering_journal.receipts(session_id=session_id, owner=str(effective_user(request) or ""),
+                                                      limit=100)}
+
+    # "Send after" messages whose run has ended, handed to the client to send
+    # as new turns (none while the session is parked on an approval card).
+    @router.post("/api/chat/steer/{session_id}/claim")
+    async def chat_steer_claim(request: Request, session_id: str) -> Dict[str, Any]:
+        _verify_session_owner(request, session_id)
+        from src import steering_journal
+        if agent_runs.is_active(session_id):
+            return {"messages": [], "blocked": "run_active"}
+        _claim_owner = str(effective_user(request) or "")
+        if session_id in tool_approval_store.pending_session_ids(owner=_claim_owner):
+            return {"messages": [], "blocked": "approval_pending"}
+        return {"messages": steering_journal.claim_send_after(session_id, owner=_claim_owner)}
+
+    @router.post("/api/chat/steer/receipt/{receipt_id}/ack")
+    async def chat_steer_ack(request: Request, receipt_id: str) -> Dict[str, Any]:
+        from src import steering_journal
+        rec = steering_journal.acknowledge(receipt_id, owner=str(effective_user(request) or ""))
+        if rec is None:
+            raise HTTPException(404, "No handed-off message with this receipt")
+        _verify_session_owner(request, rec.get("session_id", ""))
+        return {"ok": True, "receipt": rec}
 
     # ------------------------------------------------------------------ #
     # POST /api/chat/subagent/stop/{child_session_id} — stop ONE worker of a

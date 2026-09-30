@@ -169,6 +169,9 @@ class _Run:
                  # live turn; it is delivered as a new chat turn once this one
                  # ends (drained by the route layer via take_send_after).
                  "pause_requested", "steer_queue", "send_after_queue",
+                 # H19: receipt ids of the queued steers, in queue order
+                 # (src/steering_journal.py); entries stay plain dicts.
+                 "steer_receipts",
                  # BUG-STOP-01: an explicit, polled cancellation flag,
                  # independent of asyncio task cancellation. `stop()` sets
                  # this to a reason string (never cleared) at the same
@@ -221,6 +224,7 @@ class _Run:
         self.pause_requested: bool = False
         self.steer_queue: list = []
         self.send_after_queue: list = []
+        self.steer_receipts: list = []
         # BUG-STOP-01
         self.cancel_requested: Optional[str] = None
 
@@ -815,11 +819,26 @@ def _observability_fields(run: _Run, *, sequence: int) -> Dict[str, Any]:
     }
 
 
+def _observe_steer_applied(run: _Run, ev: str) -> None:
+    """The loop emits a `steer` event at the moment it appends the message to
+    the conversation: that, and only that, makes a receipt `applied`."""
+    try:
+        payload = json.loads(ev.split("data: ", 1)[1])
+    except Exception:  # noqa: BLE001
+        return
+    if payload.get("type") != "steer":
+        return
+    sid = next((k for k, v in _RUNS.items() if v is run), "")
+    _steer_transition(run, sid, " ".join(str(payload.get("text") or "").split()).strip()[:4000], "drained", "applied")
+
+
 def _publish(run: _Run, ev: str, *, durable: bool = False) -> None:
     """Append one SSE event (or replace the previous progress tick of the same
     tool call) and fan it out to every live subscriber."""
     if not durable:
         _observe_activity(run, ev)
+        if run.steer_receipts and '"type": "steer"' in ev:
+            _observe_steer_applied(run, ev)
     key = _compact_key(ev)
     replaced = key is not None and run.last_key == key and bool(run.buffer)
     # 1-based, growing per stream, and stable across a compacted replace: a
@@ -1409,6 +1428,19 @@ async def prioritize_run(run_id: str) -> bool:
     return False
 
 
+def _ledger_run_event(session_id: str, run: _Run, state: Optional[str]) -> None:
+    """Causal record of the run's own transitions (src/exec_ledger.py). Never
+    raises: the ledger is a record, not a precondition of the run."""
+    try:
+        from src import exec_ledger
+        if state is None:
+            exec_ledger.run_started(run.run_id, session_id, label=run.label, model=run.model)
+        else:
+            exec_ledger.run_state(run.run_id, session_id, state, reason=run.cancel_requested or "")
+    except Exception:  # noqa: BLE001
+        logger.debug("exec ledger run event skipped", exc_info=True)
+
+
 async def _drain(session_id: str, run: _Run, agen: AsyncGenerator[str, None],
                  prev_task: Optional[asyncio.Task] = None) -> None:
     """Pull every event from the wrapped generator into the run buffer, fanning
@@ -1495,6 +1527,8 @@ async def _drain(session_id: str, run: _Run, agen: AsyncGenerator[str, None],
                 run.log.finish(run.status if run.status != "running" else "done")
             except Exception:
                 pass
+        _ledger_run_event(session_id, run, run.status if run.status != "running" else "done")
+        _drop_unread_steers(session_id, run)
         # Wake every subscriber with the end sentinel so their SSE closes.
         _wake_subscribers()
         # CMP-05: record the durable marker BEFORE the eviction timer is even
@@ -1557,6 +1591,7 @@ def start(session_id: str, agen: AsyncGenerator[str, None], lane: Optional[str] 
         except Exception as e:
             logger.debug("[agent-run] log init failed: %s", e)
             run.log = None
+    _ledger_run_event(session_id, run, None)
     run.task = asyncio.create_task(_drain(session_id, run, agen, prev_task))
     return run
 
@@ -1743,24 +1778,72 @@ def take_pause_request(session_id: str) -> bool:
     return True
 
 
-def queue_steer(session_id: str, text: str, source: str = "user",
-                 expected_run_id: Optional[str] = None) -> bool:
+def queue_steer_receipt(session_id: str, text: str, source: str = "user",
+                        expected_run_id: Optional[str] = None,
+                        owner: str = "") -> Optional[Dict[str, Any]]:
     """Queue an instruction that is injected as a user message at the turn's
     next safe point (mirrors `subagent_tools.steer_worker`, for the main
-    session run instead of a delegated worker)."""
+    session run instead of a delegated worker). Returns a receipt that says
+    what happened to it so far -- ``queued`` means accepted into the queue,
+    not read -- or None when nothing was queued."""
     text = " ".join(str(text or "").split()).strip()
     if not text:
-        return False
+        return None
     run = _RUNS.get(session_id)
     if run is None or run.status != "running":
-        return False
+        return None
     if expected_run_id and run.run_id != expected_run_id:
-        return False
-    run.steer_queue.append({
-        "text": text[:4000],
-        "source": "supervisor" if source == "supervisor" else "user",
-    })
-    return True
+        return None
+    source = "supervisor" if source == "supervisor" else "user"
+    run.steer_queue.append({"text": text[:4000], "source": source})
+    receipt = _journal_steer(session_id, run, text[:4000], source, "steer", owner)
+    run.steer_receipts.append({"id": receipt["receipt_id"], "text": text[:4000], "state": "queued", "owner": owner})
+    return receipt
+
+
+def queue_steer(session_id: str, text: str, source: str = "user",
+                 expected_run_id: Optional[str] = None) -> bool:
+    """Bool form of `queue_steer_receipt` (queue admission only)."""
+    return queue_steer_receipt(session_id, text, source, expected_run_id) is not None
+
+
+def _journal_steer(session_id: str, run: _Run, text: str, source: str, mode: str, owner: str) -> Dict[str, Any]:
+    try:
+        from src import steering_journal
+        return steering_journal.queued(session_id, run.run_id, owner=owner, text=text, source=source, mode=mode)
+    except Exception:  # noqa: BLE001 - the queue works without the journal; the receipt says so
+        logger.debug("steering journal write skipped", exc_info=True)
+        import uuid as _uuid
+        return {"receipt_id": _uuid.uuid4().hex, "state": "queued", "mode": mode, "durable": False}
+
+
+def _steer_transition(run: _Run, session_id: str, text: str, frm: str, to: str, reason: str = "") -> None:
+    for rec in run.steer_receipts:
+        if rec["state"] == frm and rec["text"] == text:
+            rec["state"] = to
+            try:
+                from src import steering_journal
+                steering_journal.transition(rec["id"], to, session_id=session_id, run_id=run.run_id,
+                                            owner=rec.get("owner", ""), reason=reason, mode="steer")
+            except Exception:  # noqa: BLE001
+                logger.debug("steering journal transition skipped", exc_info=True)
+            return
+
+
+def _drop_unread_steers(session_id: str, run: _Run) -> None:
+    """A run ended: a steer it never read is dropped with a reason, not lost."""
+    for rec in run.steer_receipts:
+        if rec["state"] in ("queued", "drained"):
+            frm = rec["state"]
+            rec["state"] = "dropped"
+            try:
+                from src import steering_journal
+                steering_journal.transition(
+                    rec["id"], "dropped", session_id=session_id, run_id=run.run_id, owner=rec.get("owner", ""),
+                    reason="run_ended_before_it_was_read" if frm == "queued" else "run_ended_before_it_was_applied",
+                    mode="steer")
+            except Exception:  # noqa: BLE001
+                logger.debug("steering journal drop skipped", exc_info=True)
 
 
 def peek_steers(session_id: str) -> bool:
@@ -1776,7 +1859,26 @@ def take_steers(session_id: str) -> List[Dict[str, str]]:
     if run is None:
         return []
     out, run.steer_queue = list(run.steer_queue), []
+    for entry in out:
+        _steer_transition(run, session_id, str(entry.get("text") or ""), "queued", "drained")
     return out
+
+
+def queue_send_after_receipt(session_id: str, text: str, source: str = "user",
+                             expected_run_id: Optional[str] = None, owner: str = "") -> Optional[Dict[str, Any]]:
+    """Hold a message for delivery as a NEW turn once this one ends. The
+    receipt is ``queued`` until the client claims and sends it."""
+    text = " ".join(str(text or "").split()).strip()
+    if not text:
+        return None
+    run = _RUNS.get(session_id)
+    if run is None or run.status != "running":
+        return None
+    if expected_run_id and run.run_id != expected_run_id:
+        return None
+    source = "supervisor" if source == "supervisor" else "user"
+    run.send_after_queue.append({"text": text[:4000], "source": source})
+    return _journal_steer(session_id, run, text[:4000], source, "send_after", owner)
 
 
 def queue_send_after(session_id: str, text: str, source: str = "user",
@@ -1784,19 +1886,7 @@ def queue_send_after(session_id: str, text: str, source: str = "user",
     """Queue a message for delivery as a NEW turn once this one ends ("send
     after" / "Enviar despues") -- unlike `queue_steer`, this is never injected
     into the live turn, so it cannot alter work already in flight."""
-    text = " ".join(str(text or "").split()).strip()
-    if not text:
-        return False
-    run = _RUNS.get(session_id)
-    if run is None or run.status != "running":
-        return False
-    if expected_run_id and run.run_id != expected_run_id:
-        return False
-    run.send_after_queue.append({
-        "text": text[:4000],
-        "source": "supervisor" if source == "supervisor" else "user",
-    })
-    return True
+    return queue_send_after_receipt(session_id, text, source, expected_run_id) is not None
 
 
 def take_send_after(session_id: str) -> List[Dict[str, str]]:

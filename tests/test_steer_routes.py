@@ -93,7 +93,8 @@ async def test_steer_route_default_mode_queues_for_the_live_turn(routes):
     steer = routes("/api/chat/steer/{session_id}", "POST")
     run = await _start_run("live1")
     out = await steer(_Req(body={"text": "  focus on the tests first  "}, run_id=run.run_id), "live1")
-    assert out == {"ok": True, "mode": "steer"}
+    assert {k: out[k] for k in ("ok", "mode")} == {"ok": True, "mode": "steer"}
+    assert out["receipt"]["state"] == "queued"  # accepted into the queue; not claimed as delivered
     assert agent_runs.take_steers("live1") == [{"text": "focus on the tests first", "source": "user"}]
     assert agent_runs.take_steers("live1") == []  # drained once
     assert agent_runs.take_send_after("live1") == []  # never touched the OTHER queue
@@ -106,7 +107,8 @@ async def test_steer_route_queue_mode_never_touches_the_live_steer_queue(routes)
     steer = routes("/api/chat/steer/{session_id}", "POST")
     run = await _start_run("live2")
     out = await steer(_Req(body={"text": "send this later", "mode": "queue"}, run_id=run.run_id), "live2")
-    assert out == {"ok": True, "mode": "queue"}
+    assert {k: out[k] for k in ("ok", "mode")} == {"ok": True, "mode": "queue"}
+    assert out["receipt"]["state"] == "queued" and out["receipt"]["mode"] == "send_after"
     assert agent_runs.take_steers("live2") == []
     assert agent_runs.take_send_after("live2") == [{"text": "send this later", "source": "user"}]
     run.task.cancel()

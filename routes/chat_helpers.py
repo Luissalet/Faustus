@@ -704,6 +704,19 @@ def _session_is_research_spinoff(sess) -> bool:
     return False
 
 
+def _carry_steering(existing: Optional[str], session_id: str, owner: Any) -> Optional[str]:
+    """Join the next-turn note about earlier unresolved tool effects with the
+    note about messages the user sent that a previous run never read (H19)."""
+    try:
+        from src import steering_journal
+        carried = steering_journal.carry_block(str(session_id or ""), owner=str(owner or "") or None)
+    except Exception:  # noqa: BLE001 - a journal problem never costs the turn
+        logger.debug("steering carry skipped", exc_info=True)
+        carried = None
+    parts = [p for p in (existing, carried) if p]
+    return "\n\n".join(parts) if parts else None
+
+
 async def build_chat_context(
     sess,
     request,
@@ -851,7 +864,8 @@ async def build_chat_context(
         # A05: only present for the turn right after a restart recovered
         # this session's run with a tool_effect stuck at "pending" — see
         # src.agent_runs.unknown_effects_system_block / recover_interrupted_runs.
-        unknown_effects_block=agent_runs.unknown_effects_system_block(sess),
+        unknown_effects_block=_carry_steering(
+            agent_runs.unknown_effects_system_block(sess), session_id, user),
     )
     if use_rag is not None or is_research_spinoff or casual_low_signal:
         _preface_kwargs["use_rag"] = use_rag_val
@@ -1269,6 +1283,16 @@ def save_assistant_response(
         md["model"] = actual_model
     if character_name:
         md["character_name"] = character_name
+    # H23: which detached run produced this message, so the turn's cost view
+    # can be opened for it after a reload (the live `metrics` event already
+    # carries the same id as `trace_id`).
+    if not incognito and "run_id" not in md:
+        try:
+            _saved_run = agent_runs.get_run_id(session_id)
+            if _saved_run:
+                md["run_id"] = _saved_run
+        except Exception:  # noqa: BLE001
+            pass
     if web_sources:
         md["web_sources"] = web_sources
     if rag_sources:
