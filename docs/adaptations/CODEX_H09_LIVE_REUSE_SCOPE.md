@@ -41,3 +41,12 @@ No completa H09 ni cambia permisos.
 Referencia conceptual ya visitada: [backlog H09](CODEX_HARNESS_ANALISIS_2026-09-29.md)
 y [Codex fijado b1e72963](https://github.com/openai/codex/tree/b1e72963c3b71a9265a551e54beff078384efed9).
 Implementación propia; sin nueva revisión upstream.
+
+
+### VISITADO / IMPLEMENTADO — H09 permiso de documentos personales, 30-09-2026
+
+`d71a6b10`: DocumentSource comprueba `allow_personal_memory` y propietario antes de abrir/consultar su almacén, tanto en búsqueda async como llamada síncrona directa. Un manager ya abierto tampoco se consulta con política desactivada. Planner clasifica `documents` como fuente personal y la excluye cuando se deniega esa política. Conserva consulta, límite y filtro owner de la búsqueda permitida; no se incorpora filtro de proyecto inexistente.
+
+Antes: 4 regresiones fallaban y una pasaba (apertura denegada/owner vacío y documentos ofrecidos con política personal desactivada). Después: 210 pruebas correctas en 13,67 s, incluyendo 8 nuevas. El fixture anterior que esperaba documentos personales permitidos en incognito se actualiza al contrato de privacidad y conserva asserts de causa y caso positivo. Coordinador: 8 nuevas correctas en 0,79 s. Fuente real adapter/planner con manager sintético; no prueba de Chroma ni inferencia/GPU. `available()` conserva imports previos: la garantía es no abrir/consultar el store, no ausencia universal de IO de imports.
+
+Fuente original https://github.com/openai/codex/tree/b1e72963c3b71a9265a551e54beff078384efed9 y contratos locales; revisión upstream no repetida. Piloto de permisos visitado/cerrado. Freshness documental y consulta estricta siguen PENDIENTES: collection.count con OSError puede acabar count=0/query_lanes=[] y healthy=True, reproducido con EmbeddingLane/query_lanes reales y collection sintética. Runtime Chroma instalado es cliente HTTP; PersistentClient temporal rechazado. No certificar vacío ni revalidación hasta resolver ruta estricta y QA aislada real. Sin activar servicios personales. Uso 94% permitido, automatización activa; preservar cambios ajenos.
