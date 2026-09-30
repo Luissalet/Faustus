@@ -1,0 +1,89 @@
+{
+  "schema": 1,
+  "id": "midas",
+  "name": "Midas's Hoard",
+  "purpose": "A local market-research lab: frozen, provenance-tagged market snapshots from free providers, falsifiable investment theses with invalidation rules, an honest backtester with sealed holdout and overfitting checks, a number-checked advocate/risk/arbiter committee, and portfolio analysis. Research only: no trading, no advice.",
+  "capabilities": [
+    "market-data-snapshots",
+    "provider-search",
+    "series-compare",
+    "fx-conversion",
+    "investment-theses",
+    "invalidation-rules",
+    "thesis-checks",
+    "strategy-spec",
+    "backtest",
+    "sealed-holdout",
+    "walk-forward",
+    "permutation-test",
+    "bootstrap-ci",
+    "multiple-testing-log",
+    "committee-review",
+    "number-ledger",
+    "portfolio-analysis",
+    "report-export"
+  ],
+  "placeholders": [
+    "MIDAS_DIR",
+    "APP_URL",
+    "TOKEN_FILE",
+    "PYTHON"
+  ],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:5192",
+    "TOKEN_FILE": "{MIDAS_DIR}/data/mcp-token",
+    "PYTHON": "{MIDAS_DIR}/venv/Scripts/python.exe"
+  },
+  "app": {
+    "url_default": "http://127.0.0.1:5192",
+    "ui_url": "{APP_URL}",
+    "health": {
+      "path": "/api/health",
+      "expect": {
+        "service": "midas-hoard"
+      }
+    },
+    "identify": {
+      "service": [
+        "midas-hoard"
+      ],
+      "title": [
+        "midas's hoard",
+        "laboratorio de mercados"
+      ]
+    },
+    "launch_hint": {
+      "kind": "process",
+      "executable": "{PYTHON}",
+      "argv": [
+        "-m",
+        "midas_hoard"
+      ],
+      "cwd": "{MIDAS_DIR}",
+      "env": {
+        "PORT_STRICT": "1",
+        "MIDAS_PORT": "5192"
+      },
+      "readiness": {
+        "url": "{APP_URL}/api/health",
+        "timeout_s": 30
+      }
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{PYTHON}",
+    "args": [
+      "{MIDAS_DIR}/mcp_server.py"
+    ],
+    "env": {
+      "MIDAS_URL": "{APP_URL}",
+      "MIDAS_TOKEN_FILE": "{TOKEN_FILE}"
+    },
+    "optional_env": [
+      "MIDAS_BRIDGE_AUTOSTART",
+      "MIDAS_DATA_DIR"
+    ]
+  },
+  "notes": "Keep the app running (python -m midas_hoard); the MCP bridge proxies every call to the local server, never opens the database, and starts the app itself when it is not answering. Everything is historical analysis for research, never investment advice. market_fetch, thesis_create/update/evidence_add, strategy_save, portfolio_set and the committee write to the local store; deletes need confirm:true on the owning tool and only when the user asks."
+}

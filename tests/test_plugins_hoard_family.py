@@ -1,5 +1,5 @@
 """The Hoard apps that ship as plugins (ledger, links, people, argus, borges,
-vulcan, hypatia, echo, nightingale, cassandra, vitruvius, cicero, tantalus, lumiere).
+vulcan, hypatia, echo, nightingale, cassandra, vitruvius, midas, cicero, tantalus, lumiere).
 
 Each is a standalone application with its own repository; what ships here is
 Faustus's side of the contract, copied from the `faustus-plugin.json` the app
@@ -26,6 +26,7 @@ FAMILY = {
     "nightingale": ("nightingale-hoard", 5189, "nightingale"),
     "cassandra": ("cassandra-hoard", 5190, "cassandra"),
     "vitruvius": ("vitruvius-hoard", 5191, "vitruvius"),
+    "midas": ("midas-hoard", 5192, "midas"),
     "cicero": ("cicero-hoard", 5194, "cicero"),
     "tantalus": ("tantalus-hoard", 5197, "tantalus"),
     "lumiere": ("lumiere-hoard", 5198, "lumiere"),
@@ -66,3 +67,20 @@ def test_a_person_can_name_each_member(pid):
     _service, _port, word = FAMILY[pid]
     named = {p.id for p in plugins.named_in(f"abre {word} y dime si responde")}
     assert pid in named
+
+
+def test_midas_declares_its_bridge_environment_and_is_not_in_the_public_catalogue():
+    import json
+    from pathlib import Path
+
+    plugin = plugins.get("midas")
+    assert plugin is not None
+    assert plugin.name == "Midas's Hoard"
+    assert {"MIDAS_DIR", "APP_URL", "TOKEN_FILE", "PYTHON"} <= set(plugin.placeholders)
+    assert plugin.launch_hint["env"]["MIDAS_PORT"] == "5192"
+    assert "midas_hoard" in plugin.launch_hint["argv"]
+    assert any(arg.endswith("mcp_server.py") for arg in plugin.args)
+    assert "backtest" in plugin.capabilities
+    # No public repository yet: it must not appear in the clonable catalogue.
+    catalog = json.loads((Path(__file__).parents[1] / "plugins" / "marketplace.json").read_text(encoding="utf-8"))
+    assert "midas" not in {entry["id"] for entry in catalog["plugins"]}
