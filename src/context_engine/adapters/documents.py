@@ -35,6 +35,7 @@ writes, so the reference resolves back to a real place on disk.
 from __future__ import annotations
 
 import logging
+import asyncio
 import threading
 from typing import Any, List, Mapping, Optional, Sequence
 
@@ -94,15 +95,46 @@ class DocumentSource(ThreadedSource):
             return self._manager
 
     def _search(self, req: RetrievalRequest) -> Sequence[ContextCandidate]:
+        return self._search_bundle(req, strict=False)[0]
+
+    async def search(self, req: RetrievalRequest) -> Sequence[ContextCandidate]:
+        from ..document_reuse import capturing, completed
+        if not capturing():
+            return await super().search(req)
+        if self._gate(req):
+            return ()
+        candidates, bundle = await asyncio.to_thread(self._search_bundle, req, strict=True)
+        completed(req, bundle)
+        return candidates
+
+    def _search_bundle(self, req: RetrievalRequest, *, strict: bool):
         # Keep the guard here too: direct synchronous callers must not open
         # Chroma before policy and owner have been checked.
         if self._gate(req):
-            return ()
+            return (), None
         owner = str(req.owner or "")
         limit = req.top()
         store = self._store()
-        hits = list(store.search(str(req.query or ""), k=limit, owner=owner) or [])
-        degraded = not bool(getattr(getattr(store, "vector_rag", None), "healthy", True))
+        bundle = None
+        strict_failed = False
+        if strict:
+            from ..document_reuse import identity, validating
+            try:
+                before = identity(store)
+                expected = getattr(self, '_expected_query_identity', None)
+                if expected is not None and before != expected:
+                    raise ValueError('document query runtime changed before search')
+                hits = list(store.search(str(req.query or ""), k=limit, owner=owner, strict=True) or [])
+                after = identity(store)
+                bundle = (store, before, after, True)
+            except Exception:
+                if validating():
+                    raise
+                strict_failed = True
+                hits = list(store.search(str(req.query or ""), k=limit, owner=owner) or [])
+        else:
+            hits = list(store.search(str(req.query or ""), k=limit, owner=owner) or [])
+        degraded = strict_failed or not bool(getattr(getattr(store, "vector_rag", None), "healthy", True))
         out: List[ContextCandidate] = []
         for hit in hits:
             if float(hit.get("similarity") or 0.0) < RAG_SIMILARITY_FLOOR:
@@ -110,7 +142,7 @@ class DocumentSource(ThreadedSource):
             candidate = self._candidate(hit, req, owner, degraded)
             if candidate is not None:
                 out.append(candidate)
-        return tuple(out[:limit])
+        return tuple(out[:limit]), bundle
 
     def _candidate(self, hit: Mapping[str, Any], req: RetrievalRequest,
                    owner: str, degraded: bool) -> Optional[ContextCandidate]:

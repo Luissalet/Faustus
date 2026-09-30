@@ -22,6 +22,8 @@ def delivery(monkeypatch):
         record_query(None, (), False)
         from src.context_engine.personal_memory_reuse import record_query as record_personal_query
         record_personal_query(None, (), False)
+        from src.context_engine.document_reuse import record_query as record_document_query
+        record_document_query(None, (), False)
         calls.append(request)
         return ContextPacket(
             packet_id=f"ctxpkt_{len(calls)}", request_id=request.request_id,
