@@ -7,6 +7,8 @@ from typing import Dict, Optional
 
 from src.tools._common import _parse_tool_args, _internal_headers
 
+_HARMONIZE_PROMPT = ("Harmonize this image: unify lighting, color and edges so every element "
+                     "belongs to the same scene; keep the composition, people and objects.")
 _ROUTES = {"upscale": "upscale-local", "rembg": "remove-bg", "inpaint": "inpaint", "harmonize": "harmonize"}
 _MAX_BYTES = 20 * 1024 * 1024
 
@@ -92,6 +94,16 @@ async def do_edit_image(content: str, owner: Optional[str] = None, *,
             if isinstance(strength, bool) or not isinstance(strength, (int, float)) or not math.isfinite(strength) or not 0 <= strength <= 1:
                 raise ValueError("strength must be between 0 and 1")
             payload["strength"] = strength
+        if action == "harmonize":
+            from src.settings import get_user_setting
+            if get_user_setting("image_execution_backend", owner, "configured") == "prospero":
+                # Same img2img as the configured service, run by the selected
+                # studio so one engine renders every chat image operation.
+                from src.prospero_images import run_image
+                result = await run_image(prompt.strip() or _HARMONIZE_PROMPT, session_id, owner,
+                                         request_id=request_id, image_bytes=source,
+                                         operation="img2img", strength=strength)
+                return {**result, "source_image_id": image_id}
         if action == "inpaint":
             from src.settings import get_user_setting
             if get_user_setting("image_execution_backend", owner, "configured") == "prospero":

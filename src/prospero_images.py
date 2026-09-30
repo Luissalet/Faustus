@@ -274,6 +274,14 @@ async def _prepare(client, key, scope, prompt, content, *, operation="generate",
         if strength is not None:
             payload["strength"] = strength
         path = f"/api/assets/{reference}/edit"
+    elif operation == "img2img":
+        # Harmonize: the studio's existing SDXL img2img edit of the imported
+        # source; `strength` is the fraction redrawn (denoise).
+        payload.pop("reference_asset_id")
+        payload.update(operation="img2img", asset_id=reference)
+        if strength is not None:
+            payload["strength"] = strength
+        path = f"/api/assets/{reference}/edit"
     # Persist and fsync the intent before the non-idempotent job POST.
     _authorize(row["owner"] or None, row["session_id"] or None)
     _update(key, state="submit_intent")
@@ -455,7 +463,7 @@ async def run_image(prompt: str, session_id: str | None, owner: str | None,
             if not isinstance(content, bytes):
                 raise AdapterError("Reference image must be bytes")
             _validate_image(content)
-        if operation not in ("generate", "inpaint"):
+        if operation not in ("generate", "inpaint", "img2img"):
             raise AdapterError("Unsupported image operation")
         if operation == "inpaint":
             if content is None or not isinstance(mask_bytes, bytes):
@@ -465,6 +473,12 @@ async def run_image(prompt: str, session_id: str | None, owner: str | None,
             if strength is not None and (isinstance(strength, bool) or not isinstance(strength, (int, float))
                     or not 0 <= strength <= 1 or not math.isfinite(strength)):
                 raise AdapterError("Inpaint strength must be a finite number between 0 and 1")
+        elif operation == "img2img":
+            if content is None or mask_bytes is not None:
+                raise AdapterError("img2img requires source image bytes and no mask")
+            if strength is not None and (isinstance(strength, bool) or not isinstance(strength, (int, float))
+                    or not 0 <= strength <= 1 or not math.isfinite(strength)):
+                raise AdapterError("img2img strength must be a finite number between 0 and 1")
         elif mask_bytes is not None or strength is not None:
             raise AdapterError("Mask and strength are only supported for inpaint")
         connector_id, origin = _connection(owner)
@@ -473,6 +487,9 @@ async def run_image(prompt: str, session_id: str | None, owner: str | None,
         if operation == "inpaint":
             fingerprint = _digest(prompt, hashlib.sha256(content).hexdigest(), operation,
                 hashlib.sha256(mask_bytes).hexdigest(), float(strength) if strength is not None else None)
+        elif operation == "img2img":
+            fingerprint = _digest(prompt, hashlib.sha256(content).hexdigest(), operation,
+                float(strength) if strength is not None else None)
         created = _reserve(key, request_id, owner, session_id, connector_id, origin, fingerprint, prompt, operation)
         row = _read(key)
         if not created and row["state"] == "done":

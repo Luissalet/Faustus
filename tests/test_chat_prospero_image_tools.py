@@ -250,3 +250,37 @@ async def test_generate_remains_inside_effect_intent_wrapper(backend):
     assert result["exit_code"] == 0
     assert [event["state"] for event in events] == ["pending", "confirmed"]
     assert all(event["call_id"] == "server-call" and event["tool"] == "generate_image" for event in events)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prompt, strength", [("warm evening light", 0.35), ("", None)])
+async def test_harmonize_delegates_owned_source_as_img2img(backend, owned_gallery, prompt, strength):
+    args = {'action': 'harmonize', 'image_id': 'source', 'prompt': prompt, 'owner': 'forged'}
+    if strength is not None:
+        args['strength'] = strength
+    _, result = await dispatch('edit_image', args)
+    assert result['source_image_id'] == 'source'
+    sent_prompt, session, owner, kwargs = backend[0]
+    assert (session, owner) == ('server-session', 'alice')
+    assert sent_prompt == (prompt or image_tool._HARMONIZE_PROMPT)
+    assert kwargs == {'request_id': 'server-call', 'image_bytes': image_tool._png(owned_gallery)[0],
+                      'operation': 'img2img', 'strength': 0.4 if strength is None else strength}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('changes', [{'image_id': 'private'}, {'strength': 2}, {'strength': float('nan')}])
+async def test_harmonize_invalid_or_foreign_input_never_reaches_prospero(backend, owned_gallery, changes):
+    _, result = await dispatch('edit_image', {'action': 'harmonize', 'image_id': 'source', **changes})
+    assert result['exit_code'] == 1 and not backend
+
+
+@pytest.mark.asyncio
+async def test_harmonize_with_configured_backend_keeps_the_existing_service(backend, owned_gallery, monkeypatch):
+    monkeypatch.setattr(settings, "get_user_setting", lambda key, owner="", default=None: "configured")
+    reached = []
+    def legacy_headers(owner):
+        reached.append(owner)
+        raise RuntimeError('legacy service reached')
+    monkeypatch.setattr(image_tool, '_internal_headers', legacy_headers)
+    _, result = await dispatch('edit_image', {'action': 'harmonize', 'image_id': 'source'})
+    assert backend == [] and reached == ['alice'] and result['exit_code'] == 1

@@ -532,3 +532,35 @@ def test_inpaint_import_identity_is_validated_before_edit_submission(world, impo
     assert "error" in result and result["result_status"] == "outcome_unknown"
     assert not world.jobs and not any(path.endswith("/edit") or path.endswith("/generate") for _, path in world.calls)
     assert len(world.imports) == import_number
+
+
+@pytest.mark.parametrize("strength", [None, 0.4])
+def test_img2img_imports_source_and_uses_existing_edit(world, strength):
+    result = run(operation="img2img", image_bytes=png(), strength=strength)
+    assert "error" not in result, result
+    payload = next(iter(world.jobs.values()))["payload"]
+    expected = {"prompt": "A blue bird", "operation": "img2img", "asset_id": "reference_1",
+                "count": 1, "wait_s": 0}
+    if strength is not None:
+        expected["strength"] = strength
+    assert payload == expected
+    assert world.imports == {"reference_1": "proj_1"}
+    assert ("POST", "/api/assets/reference_1/edit") in world.calls
+    assert not any(path.endswith("/generate") for _, path in world.calls)
+    assert rows(world)[0]["operation"] == "img2img"
+
+
+@pytest.mark.parametrize("changes", [{"image_bytes": None}, {"mask_bytes": png()}, {"strength": 1.5},
+                                     {"strength": float("nan")}, {"strength": True}])
+def test_img2img_invalid_input_is_rejected_before_any_receipt_or_http(world, changes):
+    kwargs = {"operation": "img2img", "image_bytes": png(), "strength": 0.4}
+    kwargs.update(changes)
+    assert "error" in run(**kwargs)
+    assert world.calls == [] and not world.data.exists()
+
+
+def test_img2img_request_id_cannot_be_reused_with_changed_strength(world):
+    assert "error" not in run(operation="img2img", image_bytes=png(), strength=0.4)
+    before = list(world.calls)
+    assert "different input" in run(operation="img2img", image_bytes=png(), strength=0.5)["error"]
+    assert world.calls == before
