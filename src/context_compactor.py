@@ -399,6 +399,26 @@ def extractive_digest(rows: List[Dict[str, Any]], *, max_chars: int = _EXTRACT_T
 
 
 def _sanitize_tool_messages(msgs: List[Dict]) -> List[Dict]:
+    """Repair tool-call adjacency after the history was trimmed.
+
+    OpenAI's API requires every `role:"tool"` message to immediately follow an
+    assistant message that carries `tool_calls`. Front-trimming can cut the
+    assistant parent and keep its results, or cut results and keep the call.
+    The repair now runs on the canonical history (src/history_projection.py):
+      - a result whose call was cut is left out, with a receipt;
+      - a call whose result was cut keeps its place and gets an explicit
+        "result not part of this context" item instead of disappearing.
+    Private keys on messages are preserved. ``llm_projection_mode`` = legacy
+    restores the previous pruning.
+    """
+    from src import history_projection as hp
+    if hp.projection_mode() == "legacy":
+        return _sanitize_tool_messages_legacy(msgs)
+    repaired, _receipts = hp.repair_tool_pairs(msgs)
+    return repaired
+
+
+def _sanitize_tool_messages_legacy(msgs: List[Dict]) -> List[Dict]:
     """Drop orphaned `tool` messages and dangling assistant `tool_calls`.
 
     OpenAI's API requires every `role:"tool"` message to immediately

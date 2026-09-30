@@ -1777,6 +1777,25 @@ def _ollama_normalize_messages(messages: List[Dict]) -> List[Dict]:
     return out
 
 
+def _ollama_messages(messages: List[Dict]) -> List[Dict]:
+    """Native chat messages from the canonical history (H12); legacy keeps the
+    direct conversion."""
+    from src import history_projection as hp
+    mode = hp.projection_mode()
+    if mode == "legacy":
+        return _ollama_normalize_messages(messages)
+    if mode == "shadow":
+        legacy = _ollama_normalize_messages(messages)
+        try:
+            diff = hp.compare_shadow(legacy, hp.project(messages, "ollama", record=False).messages)
+            if diff is not None:
+                hp.record_shadow_difference(diff)
+        except Exception:  # noqa: BLE001
+            logger.debug("ollama projection shadow comparison failed", exc_info=True)
+        return legacy
+    return hp.project(messages, "ollama").messages
+
+
 # Backward-compatible alias for callers/tests that imported the older name
 # (it only handled tool messages originally — issue #4723 broadened scope).
 _ollama_normalize_tool_messages = _ollama_normalize_messages
@@ -1812,7 +1831,7 @@ def _build_ollama_payload(
     """
     payload: Dict = {
         "model": model,
-        "messages": _ollama_normalize_messages(messages),
+        "messages": _ollama_messages(messages),
         "stream": stream,
     }
     options: Dict = {}
@@ -3026,8 +3045,8 @@ def _convert_openai_content_to_anthropic(content):
     return converted
 
 
-def _build_anthropic_payload(model, messages, temperature, max_tokens, stream=False, tools=None):
-    """Convert OpenAI-style messages to Anthropic format."""
+def _anthropic_messages_legacy(messages):
+    """Previous message conversion, kept for rollback and as the shadow reference."""
     system_parts = []
     chat_messages = []
     for m in messages:
@@ -3072,6 +3091,32 @@ def _build_anthropic_payload(model, messages, temperature, max_tokens, stream=Fa
             # Convert multimodal content (image_url → image) for Anthropic
             content = _convert_openai_content_to_anthropic(m["content"])
             chat_messages.append({"role": m["role"], "content": content})
+    return system_parts, chat_messages
+
+
+def _anthropic_messages(messages):
+    """``(system_parts, messages)`` for the Messages API, from the canonical history (H12)."""
+    from src import history_projection as hp
+    mode = hp.projection_mode()
+    if mode == "legacy":
+        return _anthropic_messages_legacy(messages)
+    if mode == "shadow":
+        legacy = _anthropic_messages_legacy(messages)
+        try:
+            proj = hp.project(messages, "anthropic", record=False)
+            diff = hp.compare_shadow(legacy[1], proj.messages)
+            if diff is not None or legacy[0] != proj.system_parts:
+                hp.record_shadow_difference(diff or {"system_parts": True})
+        except Exception:  # noqa: BLE001
+            logger.debug("anthropic projection shadow comparison failed", exc_info=True)
+        return legacy
+    proj = hp.project(messages, "anthropic")
+    return proj.system_parts, proj.messages
+
+
+def _build_anthropic_payload(model, messages, temperature, max_tokens, stream=False, tools=None):
+    """Convert OpenAI-style messages to Anthropic format."""
+    system_parts, chat_messages = _anthropic_messages(messages)
     # Anthropic only accepts temperature in [0.0, 1.0] and 400s on anything above
     # 1.0. Clamp here (in the Anthropic builder only) so presets/sliders that use
     # the wider OpenAI 0.0-2.0 range — e.g. the shipped "Nietzsche" preset at 1.2
@@ -3473,8 +3518,11 @@ def _merge_untrusted_and_user(last: Dict, item: Dict) -> Optional[Dict]:
     return merged
 
 
-def _sanitize_llm_messages(messages: List[Dict], provider: Optional[str] = None) -> List[Dict]:
+def _sanitize_llm_messages_legacy(messages: List[Dict], provider: Optional[str] = None) -> List[Dict]:
     """Strip Faustus-only metadata before sending messages to providers.
+
+    Previous repair path, kept as the rollback and the shadow reference for
+    ``history_projection`` (``llm_projection_mode`` = legacy / shadow).
 
     Per the OpenAI chat format: user/system messages must have content; a tool
     message needs content + tool_call_id; an assistant message may carry content,
@@ -3639,6 +3687,47 @@ def _sanitize_llm_messages(messages: List[Dict], provider: Optional[str] = None)
             merged.append(item)
 
     return merged
+
+
+def _history_protocol(tools=None) -> str:
+    """Protocol the history is projected for on a chat request.
+
+    Native tool calls stay native. Only when the request carries no tool
+    schemas and ``llm_fence_history_without_tools`` is on are earlier native
+    calls and results rendered as fenced text, which is what a model that gets
+    its tools as text blocks can read.
+    """
+    if not tools:
+        from src import history_projection
+        if history_projection.fence_history_without_tools():
+            return "text_fence"
+    return "openai_chat"
+
+
+def _sanitize_llm_messages(messages: List[Dict], provider: Optional[str] = None,
+                           protocol: str = "openai_chat") -> List[Dict]:
+    """Project the conversation for a provider request (H12).
+
+    The history is read once into ``history_projection``'s canonical form and
+    rendered for ``protocol``; repairs are receipted there. ``messages`` is
+    never modified. ``llm_projection_mode`` selects the previous code
+    (``legacy``) or runs both and records differences (``shadow``).
+    """
+    from src import history_projection as hp
+    mode = hp.projection_mode()
+    if mode == "legacy" and protocol == "openai_chat":
+        return _sanitize_llm_messages_legacy(messages, provider=provider)
+    if mode == "shadow" and protocol == "openai_chat":
+        legacy = _sanitize_llm_messages_legacy(messages, provider=provider)
+        try:
+            canonical = hp.project(messages, "openai_chat", provider=provider, record=False).messages
+            diff = hp.compare_shadow(legacy, canonical)
+            if diff is not None:
+                hp.record_shadow_difference(diff)
+        except Exception:  # noqa: BLE001 - shadow never costs a request
+            logger.debug("history projection shadow comparison failed", exc_info=True)
+        return legacy
+    return hp.project(messages, protocol, provider=provider).messages
 
 
 def _normalize_anthropic_url(url: str) -> str:
@@ -5924,7 +6013,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         _budget = RetryBudget(LLMConfig.RETRY_TIME_BUDGET)
         _budget.start()
     provider = _detect_provider(url)
-    messages_copy = _sanitize_llm_messages(messages, provider=provider)
+    messages_copy = _sanitize_llm_messages(messages, provider=provider, protocol=_history_protocol(tools))
 
     # Consolidate multiple system messages into one at the start.
     # Some models (e.g. Qwen3.5) reject system messages that aren't first.

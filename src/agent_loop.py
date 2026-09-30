@@ -6793,6 +6793,11 @@ def _append_tool_results(
                 # model's context_status listing (src/context_self_manage.py).
                 "_tool_round": round_num,
             }
+            # Private: how certain the effect is (partial, outcome_unknown, ...),
+            # kept for the canonical history; never sent to a provider.
+            _effect_status = result.get("status") if isinstance(result, dict) else None
+            if isinstance(_effect_status, str) and _effect_status.strip():
+                result_message["_effect_status"] = _effect_status.strip()
             capabilities = capabilities_for_action(tool_name, tool_content)
             should_arm_gate = tool_result_should_arm_gate(
                 tool_name,

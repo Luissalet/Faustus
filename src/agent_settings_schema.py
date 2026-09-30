@@ -33,7 +33,7 @@ from src.settings import DEFAULT_SETTINGS, RETIRED_SETTING_KEYS
 # Keys the schema MUST cover (besides EXTRA_KEYS): every default matching this.
 SCHEMA_KEY_RE = re.compile(r"^(agent_|browser_|desktop_)")
 # Agent-adjacent keys that live under other prefixes but belong on this page.
-EXTRA_KEYS: tuple[str, ...] = ("tool_path_extra_roots", "vision_enabled", "vision_model",
+EXTRA_KEYS: tuple[str, ...] = ("llm_projection_mode", "llm_fence_history_without_tools", "tool_path_extra_roots", "vision_enabled", "vision_model",
                               "vision_timeout_seconds", "vision_max_side", "vision_max_side_limit", "vision_min_side",
                                "vision_write_every",
                                "vision_max_tokens", "vision_num_ctx",
@@ -490,6 +490,16 @@ GROUPS: list[dict[str, Any]] = [
                  "at a time instead of one per new image, so the prompt before them stays the same "
                  "and a local server can reuse its cache. 1 = one by one.",
                  1, 32),
+            _select("llm_projection_mode", "How history becomes the prompt",
+                    "canonical = tool calls and results are repaired once on a canonical history; a "
+                    "call with no recorded result stays in the prompt with an explicit unknown "
+                    "outcome and every repair leaves a receipt. legacy = the previous pruning, "
+                    "which deleted such calls. shadow = send the legacy result and record any "
+                    "difference from the canonical one.",
+                    ["canonical", "legacy", "shadow"]),
+            _bool("llm_fence_history_without_tools", "Fence tool history when no tools are sent",
+                  "When a request carries no tool schemas, earlier native tool calls and results "
+                  "are rendered as fenced text blocks instead of tool messages."),
             _bool("agent_midturn_compact_enabled", "Mid-turn context compaction",
                   "During a long agent turn, spill old/large tool outputs to disk and "
                   "fold history when the prompt nears the soft ceiling — so overnight "

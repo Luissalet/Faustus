@@ -212,6 +212,15 @@ DEFAULT_SETTINGS = {
     # window of 32k or more, so the prompt before them stays the same for a
     # few rounds and a local server's prompt cache keeps it (1 = one by one).
     "agent_keep_images_batch": 4,
+    # How the conversation is turned into a provider request
+    # (src/history_projection.py). canonical = one repair on a canonical
+    # history with a receipt per change; legacy = the previous pruning;
+    # shadow = send the legacy result and record any difference.
+    "llm_projection_mode": "canonical",
+    # When a request carries no tool schemas, render earlier native tool calls
+    # and their results as fenced text, which is what a model that gets its
+    # tools as text blocks can read. Off = the history is sent as it is.
+    "llm_fence_history_without_tools": False,
     # A chat keeps its tool set from turn to turn (the tool list sits at the
     # start of the prompt, so a new list re-reads it all); a turn that needs
     # more widens it up to this many tools, past that it starts over.
