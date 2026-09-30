@@ -17,6 +17,7 @@ from src.embedding_lanes import (
     dedupe_results,
     lane_count,
     migrate_legacy_collection,
+    query_lanes_strict,
 )
 
 logger = logging.getLogger(__name__)
@@ -145,13 +146,34 @@ class MemoryVectorStore:
             except Exception as e:
                 logger.warning(f"memory remove {memory_id}: {e}")
 
-    def search(self, query: str, k: int = 8) -> List[Dict]:
+    def search(self, query: str, k: int = 8, *, strict: bool = False) -> List[Dict]:
         """Search for the most relevant memory IDs by semantic similarity.
         Returns list of {"memory_id": str, "score": float}.
 
         ChromaDB cosine distance = 1 - cosine_similarity.
         We convert back: similarity = 1.0 - distance.
         """
+        if strict:
+            if not self._healthy:
+                raise RuntimeError("strict memory vector search is unavailable")
+            if not isinstance(query, str) or not query.strip():
+                raise ValueError("strict memory vector search requires a query")
+            if isinstance(k, bool) or not isinstance(k, int) or k <= 0:
+                raise ValueError("strict memory vector search requires a positive integer limit")
+            out = []
+            priority = {LANE_CUSTOM: 0, LANE_FASTEMBED: 1}
+            for lane, results in query_lanes_strict(
+                self._lanes, query, n_results=lambda lane, count: min(k, count),
+                include=["distances"],
+            ):
+                for index, memory_id in enumerate(results["ids"][0]):
+                    out.append({
+                        "memory_id": memory_id,
+                        "score": round(1.0 - results["distances"][0][index], 4),
+                        "embedding_lane": lane.name,
+                    })
+            out.sort(key=lambda row: (-row["score"], priority.get(row["embedding_lane"], 99)))
+            return dedupe_results(out, id_key="memory_id", limit=k)
         if not self._healthy or self.count() == 0:
             return []
 
