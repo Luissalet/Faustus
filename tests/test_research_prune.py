@@ -310,3 +310,26 @@ def test_from_settings_clamps_bad_values():
     cfg = PruneConfig.from_settings({"research_prune_threshold": 7, "research_prune_max_chars": 999999})
     assert cfg.threshold == 1.0 and cfg.max_chars == 60000
     assert PruneConfig.from_settings({}, max_chars=1234).max_chars == 1234
+
+
+def test_a_kept_introduction_brings_its_short_link_items_along():
+    """Short link-only list items fail the block score and share no words with
+    the question, yet they are what the introduction promised."""
+    from src.research_prune import PruneConfig, prune_page
+    filler = " ".join(f"Sentence {i} about posture, desks and screens at work." for i in range(60))
+    html = (
+        "<html><body><article>"
+        f"<p>{filler}</p>"
+        "<p>Serious causes of neck pain that need urgent attention include:</p>"
+        "<ul><li><a href='/a'>Carotid artery dissection</a></li>"
+        "<li><a href='/b'>Acute coronary syndrome</a></li>"
+        "<li><a href='/c'>Meningitis</a></li></ul>"
+        f"<p>{filler}</p>"
+        "</article><nav><ul><li><a href='/x'>Home</a></li><li><a href='/y'>About</a></li></ul></nav>"
+        "</body></html>"
+    )
+    r = prune_page("serious causes of neck pain that need urgent attention", html=html,
+                   config=PruneConfig(max_chars=1500))
+    for item in ("Carotid artery dissection", "Acute coronary syndrome", "Meningitis"):
+        assert item in r.text, r.text
+    assert "About" not in r.text  # a navigation list never comes along

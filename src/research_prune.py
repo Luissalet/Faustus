@@ -803,12 +803,13 @@ def _select(blocks: List[Block], query: str, title: str, cfg: PruneConfig, candi
         simulated.update(idx for _level, idx in b.headings)
     if not docs:
         return _render(clean_title, [], blocks), [], 0.0, "empty"
+    used = 0
     if total_cost <= budget:
         for b in docs:
             take(b)            # everything that passed already fits under the cap
+        used = total_cost
     elif top <= 0.0:
         note = "no_query_match"
-        used = 0
         for b in docs:         # leading blocks: the most likely summary of the page
             c = cost(b, have_headings)
             if used + c > budget:
@@ -820,7 +821,6 @@ def _select(blocks: List[Block], query: str, title: str, cfg: PruneConfig, candi
             used += c
     else:
         ranked = sorted((b for b in docs if b.bm25 > 0.0), key=lambda b: (-b.bm25, b.index))
-        used = 0
         for b in ranked:
             c = cost(b, have_headings)
             if used + c > budget:
@@ -831,8 +831,54 @@ def _select(blocks: List[Block], query: str, title: str, cfg: PruneConfig, candi
                 continue
             take(b)
             used += c
+    # A list is read whole: a kept item, or a kept line that introduces it
+    # ("Major causes include:"), brings its sibling items along while they
+    # fit. Short link-only items fail the block score on their own (a
+    # list of diagnoses is all links) and share no words with the question,
+    # yet they are the answer the introduction promised.
+    for b in _list_completion(blocks, selected):
+        c = cost(b, have_headings)
+        if used + c > budget:
+            break
+        take(b)
+        used += c
     text = _render(clean_title, selected, blocks)
     return text, selected, top, note
+
+
+#: A run longer than this, or bigger than this many characters, is a
+#: directory or a menu rather than a list someone wrote as an answer.
+LIST_COMPLETION_MAX_ITEMS = 25
+LIST_COMPLETION_MAX_CHARS = 2000
+
+
+def _list_completion(blocks: List[Block], selected: List[Block]) -> List[Block]:
+    """List items to add because their list (or its introduction) is kept.
+
+    A run is a stretch of consecutive ``li`` blocks in document order. It is
+    completed when one of its items is selected, or when the block just
+    before it is selected and ends with a colon. Items in boilerplate context
+    (navigation, footers...) never come in; long runs are left alone."""
+    chosen = {b.index for b in selected}
+    out: List[Block] = []
+    i = 0
+    while i < len(blocks):
+        if blocks[i].tag != "li":
+            i += 1
+            continue
+        j = i
+        while j < len(blocks) and blocks[j].tag == "li":
+            j += 1
+        run = blocks[i:j]
+        intro = blocks[i - 1] if i > 0 else None
+        introduced = bool(intro and intro.index in chosen and not intro.is_heading
+                          and intro.text.rstrip().endswith(":"))
+        if (introduced or any(b.index in chosen for b in run)) \
+                and len(run) <= LIST_COMPLETION_MAX_ITEMS \
+                and sum(len(b.text) for b in run) <= LIST_COMPLETION_MAX_CHARS:
+            out.extend(b for b in run if b.index not in chosen and not b.negative and b.text.strip())
+        i = j
+    return out
 
 
 def prune_page(query: str, *, html: Optional[str] = None, text: Optional[str] = None, title: str = "",
