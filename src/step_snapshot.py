@@ -259,7 +259,16 @@ def authorize_call(snapshot: Optional[StepSnapshot], name: Any, *, session_id: A
             return CallAuthorization(False, "revoked", "the tool is no longer offered by its server",
                                      announced.semantic_sha256)
         _, live_semantic = definition_hashes(dict(live))
-        if live_semantic != announced.semantic_sha256:
+        announced_semantic = announced.semantic_sha256
+        if live_semantic != announced_semantic:
+            # The loop adds its own optional `security_risk` parameter to
+            # state-changing tools before announcing them (self_declared_risk).
+            # The server never declared it, so it is not a change of the
+            # server's contract: compare without it.
+            own = _without_loop_params(announced.definition(), dict(live))
+            if own is not None:
+                _, announced_semantic = definition_hashes(own)
+        if live_semantic != announced_semantic:
             logger.warning("step snapshot: contract of %s changed: %s", announced.name,
                            "; ".join(contract_diff(announced.definition(), dict(live))) or "no visible difference")
             return CallAuthorization(
@@ -267,6 +276,32 @@ def authorize_call(snapshot: Optional[StepSnapshot], name: Any, *, session_id: A
                 "the tool's schema changed after this step announced it; the announced contract applies",
                 announced.semantic_sha256, live_semantic)
     return CallAuthorization(True, "ok", "", announced.semantic_sha256)
+
+
+def _without_loop_params(announced: Any, live: Mapping[str, Any]) -> Optional[dict]:
+    """`announced` without the parameters the loop itself adds to every
+    schema it sends, when the live definition does not declare them; None
+    when there is nothing to remove."""
+    try:
+        from src.self_declared_risk import LEVELS, PARAM
+    except Exception:  # noqa: BLE001
+        LEVELS, PARAM = ("LOW", "MEDIUM", "HIGH", "UNKNOWN"), "security_risk"
+    params = announced.get("parameters") if isinstance(announced, dict) else None
+    props = params.get("properties") if isinstance(params, dict) else None
+    live_params = live.get("parameters") if isinstance(live, dict) else None
+    live_props = (live_params or {}).get("properties") if isinstance(live_params, dict) else None
+    if not isinstance(props, dict) or PARAM not in props or (isinstance(live_props, dict) and PARAM in live_props):
+        return None
+    added = props.get(PARAM)
+    # Only the loop's own shape is removed; a server's own `security_risk`
+    # that vanished is a real change.
+    if not (isinstance(added, dict) and added.get("type") == "string" and list(added.get("enum") or []) == list(LEVELS)):
+        return None
+    out = json.loads(json.dumps(announced))
+    del out["parameters"]["properties"][PARAM]
+    if isinstance(live_params, dict) and "properties" not in live_params and not out["parameters"]["properties"]:
+        del out["parameters"]["properties"]
+    return out
 
 
 def contract_diff(announced: Any, live: Any, path: str = "", limit: int = 8) -> list:
