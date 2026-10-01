@@ -9,11 +9,17 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+import contextvars
 import os
 import time
 
 
 _ACTIVE_REQUESTS = 0
+# True inside the handling of a tracked request: whoever runs here has a user
+# waiting for the answer. A model call made here as "background" would wait
+# for foreground activity to stop -- including this very request -- and never
+# run (seen live: a bug hunt from the API waited forever). See workload_for().
+_USER_WAITING: contextvars.ContextVar[bool] = contextvars.ContextVar("faustus_user_waiting", default=False)
 _LAST_ACTIVITY = 0.0
 _LAST_BROWSER_ACTIVITY = 0.0
 _COND: asyncio.Condition | None = None
@@ -173,9 +179,11 @@ async def track_interactive_request(path: str = "", method: str = ""):
         _ACTIVE_REQUESTS += 1
         _LAST_ACTIVITY = time.monotonic()
         cond.notify_all()
+    waiting = _USER_WAITING.set(True)
     try:
         yield
     finally:
+        _USER_WAITING.reset(waiting)
         async with cond:
             _ACTIVE_REQUESTS = max(0, _ACTIVE_REQUESTS - 1)
             _LAST_ACTIVITY = time.monotonic()
@@ -217,3 +225,17 @@ async def wait_for_interactive_quiet(label: str = "") -> bool:
                 await asyncio.wait_for(cond.wait(), timeout=timeout)
             except asyncio.TimeoutError:
                 pass
+
+
+def user_waiting() -> bool:
+    """True while running inside a tracked request (or a thread or task started
+    from one, which copies the context): a user is waiting for this result."""
+    return bool(_USER_WAITING.get())
+
+
+def workload_for(default: str = "background") -> str:
+    """The model-call workload for work that may run either for a waiting user
+    or on its own: "foreground" when a user is waiting (a background call would
+    queue behind the very request it serves), `default` otherwise. Read it in
+    the caller's own context, before handing work to another event loop."""
+    return "foreground" if user_waiting() else default

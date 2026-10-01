@@ -242,6 +242,9 @@ def run(spec: Mapping[str, Any]) -> Dict[str, Any]:
     cancelled: Callable[[], bool] = (lambda: bool(cancel_check())) if callable(cancel_check) else (lambda: False)
     session_id = f"wf-{str(spec.get('run_id') or 'run')[:24]}-{str(spec.get('node_id') or 'node')[:24]}-{uuid.uuid4().hex[:6]}"
 
+    from src.interactive_gate import workload_for
+    workload = workload_for("background")      # read before run_coroutine changes loop
+
     async def turn() -> Dict[str, Any]:
         from src.agent_loop import stream_agent_loop
         stream = stream_agent_loop(
@@ -249,7 +252,7 @@ def run(spec: Mapping[str, Any]) -> Dict[str, Any]:
             max_rounds=max_rounds, session_id=session_id, owner=owner or None,
             workspace=workspace, workspace_roots=[workspace] if workspace else None,
             disabled_tools=disabled, security_gate_bypass=False,
-            workload="background",
+            workload=workload,
             pending_cancel=lambda: ("the workflow lost its claim" if cancelled() else None),
         )
         return await _consume(stream, deadline=time.monotonic() + timeout_s, cancelled=cancelled)

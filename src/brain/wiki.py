@@ -208,11 +208,12 @@ async def refresh_entity(entity_id: Any, *, force: bool = False, background: boo
 
         try:
             from src.llm_core import llm_call_async
+            from src.interactive_gate import workload_for as _workload_for
             raw = await llm_call_async(
                 url=url, model=model,
                 messages=[{"role": "user", "content": _build_wiki_prompt(profile_data)}],
                 headers=headers, temperature=0.2, max_tokens=_MAX_SUMMARY_TOKENS,
-                timeout=45, max_retries=1, workload="background",
+                timeout=45, max_retries=1, workload=_workload_for("background"),
             )
         except Exception as exc:  # noqa: BLE001
             logger.debug("brain.wiki: model call failed for %s (%s)", entity_id, exc)

@@ -588,7 +588,7 @@ async def generate_tests(target: Target, *, owner: str = "", model: Optional[str
             url=url, model=use_model, messages=[{"role": "user", "content": prompt}],
             headers=headers, temperature=0.2, max_tokens=3000,
             timeout=int(_me.timeout_for(_bh_overrides, 60)),
-            max_retries=1, workload="background", gen_overrides=_bh_overrides,
+            max_retries=1, workload="foreground", gen_overrides=_bh_overrides,
         )
     except Exception as e:  # noqa: BLE001
         logger.debug("[bug_hunt] generation model call failed", exc_info=True)
@@ -801,7 +801,7 @@ async def triage(target: Target, run_result: RunResult, *, owner: str = "",
             url=url, model=use_model, messages=[{"role": "user", "content": prompt}],
             headers=headers, temperature=0.1, max_tokens=1500,
             timeout=int(_me.timeout_for(_bh_overrides, 45)),
-            max_retries=1, workload="background", gen_overrides=_bh_overrides,
+            max_retries=1, workload="foreground", gen_overrides=_bh_overrides,
         )
     except Exception:  # noqa: BLE001
         logger.debug("[bug_hunt] triage model call failed", exc_info=True)

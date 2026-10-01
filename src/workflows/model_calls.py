@@ -89,12 +89,18 @@ def complete_text(messages: List[Dict[str, str]], *, owner: str = "",
             f"no model endpoint is configured for {purpose or DEFAULT_PURPOSE!r}; set the "
             "utility or default chat model in Settings")
 
+    # Advanced from a request (Studio's Run), a user is waiting: a background
+    # call would queue behind that request. Read here, before run_coroutine
+    # hands the call to another loop.
+    from src.interactive_gate import workload_for
+    workload = workload_for("background")
+
     async def call() -> str:
         from src.llm_core import llm_call_async
         raw = await llm_call_async(
             url=url, model=model, messages=messages, headers=headers,
             temperature=temperature, max_tokens=max_tokens,
-            timeout=max(1, int(timeout_s)), max_retries=1, workload="background",
+            timeout=max(1, int(timeout_s)), max_retries=1, workload=workload,
             _spend_purpose="workflow_model")
         return raw[0] if isinstance(raw, tuple) else raw
 
