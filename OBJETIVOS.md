@@ -1150,4 +1150,3 @@ Hecho en §251: el ámbito `attention:read` y la herramienta `faustus_attention`
 
 - Que el sondeo de Cassandra mire la lista de atención y emita un evento por el bus (y el aviso de Boop si está activado) cuando una aprobación o una pregunta pase de N minutos, una sola vez por espera.
 - Una tarjeta «Faustus te espera» en el panel de Cassandra.
-- Conectar Cassandra en la 7000 (Conectores) para usar `faustus_attention` desde el chat.
