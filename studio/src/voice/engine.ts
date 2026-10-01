@@ -23,6 +23,10 @@ export class TurnDetector {
   // VoicePanel's `silenceMs` prefs key); this constructor default is the
   // fallback when no preference is read yet.
   constructor(readonly silenceMs = 900, readonly maximumMs = 60000) {}
+  /** Whether enough speech was heard to make a turn at all. */
+  get heard(): boolean { return this.voiced >= 100; }
+  /** When the voice was last above the threshold (0 before any). */
+  get lastVoiceAt(): number { return this.lastVoice; }
   push(level: number, now: number): 'continue' | 'silence' | 'limit' | 'empty' {
     if (!this.started) this.started = now;
     if (level > 0.025) { this.voiced += 50; this.lastVoice = now; }
@@ -150,5 +154,64 @@ export class SentenceBuffer {
       if (part) out.push(part);
     }
     return out;
+  }
+}
+
+
+/**
+ * Speculative transcription: on a short pause the recording so far is sent to
+ * speech-to-text while the turn detector is still waiting for the real end of
+ * the turn. If the person speaks again the guess is withdrawn and forgotten;
+ * if the turn ends with no voice after the snapshot, that transcript is the
+ * answer and the wait for a second transcription is saved. Only the
+ * transcript is ever speculative — nothing is sent to the model before the
+ * turn is confirmed, so a wrong guess has no effect beyond one STT call.
+ */
+export class SpeculativeTranscript {
+  private pending: { at: number; result: Promise<string>; cancel: () => void } | null = null;
+  private wanted = 0;
+  /** Guesses started this turn, and how many the person withdrew by speaking again. */
+  started = 0;
+  withdrawn = 0;
+  constructor(readonly eagerMs = 350, readonly maxPerTurn = 3) {}
+  /** True when a snapshot should be taken now: a pause of `eagerMs` after real speech, none in flight. */
+  shouldSnapshot(detector: TurnDetector, now: number): boolean {
+    if (this.eagerMs <= 0 || this.pending || this.wanted || this.started >= this.maxPerTurn) return false;
+    if (!detector.heard || !detector.lastVoiceAt) return false;
+    const quiet = now - detector.lastVoiceAt;
+    return quiet >= this.eagerMs && quiet < detector.silenceMs;
+  }
+  /** Mark that the next recorded chunk closes the snapshot (taken at `now`). */
+  want(now: number): void { this.wanted = now; }
+  get wantedAt(): number { return this.wanted; }
+  /** The snapshot is on its way to STT. */
+  start(result: Promise<string>, cancel: () => void): void {
+    if (!this.wanted) { cancel(); return; }
+    this.pending = { at: this.wanted, result, cancel };
+    this.wanted = 0;
+    this.started += 1;
+    result.catch(() => undefined);
+  }
+  /** Voice heard at `now`: anything snapshotted before it no longer covers the turn. */
+  voice(now: number): void {
+    if (this.wanted && now > this.wanted) this.wanted = 0;
+    if (this.pending && now > this.pending.at) {
+      this.pending.cancel();
+      this.pending = null;
+      this.withdrawn += 1;
+    }
+  }
+  /** The turn ended: the speculative transcript if it still covers it, else null. */
+  take(): Promise<string> | null {
+    const p = this.pending;
+    this.pending = null;
+    this.wanted = 0;
+    return p ? p.result : null;
+  }
+  /** Drop whatever is in flight (cancel, abort). */
+  drop(): void {
+    this.pending?.cancel();
+    this.pending = null;
+    this.wanted = 0;
   }
 }

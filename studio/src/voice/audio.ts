@@ -1,5 +1,5 @@
 import { locale, t } from '../i18n';
-import { BARGE_IN_MS, BARGE_IN_THRESHOLD, TurnDetector, spokenText, isStopPhrase, isHallucination } from './engine';
+import { BARGE_IN_MS, BARGE_IN_THRESHOLD, SpeculativeTranscript, TurnDetector, spokenText, isStopPhrase, isHallucination } from './engine';
 
 export interface SpeechCapabilities {
   provider: string;
@@ -105,6 +105,8 @@ export interface CaptureOptions {
   lang?: string;
   /** 'silence' duration (ms) the built-in TurnDetector waits before ending the turn. Defaults to TurnDetector's own default. */
   silenceMs?: number;
+  /** Pause (ms) after which the recording so far is transcribed speculatively while the end of the turn is confirmed; 0 turns it off. */
+  eagerMs?: number;
   /** Reuse an already-open microphone (see `openMic`) instead of requesting a fresh one: skips the permission/device round trip. Not applicable to browser speech recognition. */
   mic?: OpenMic;
   onPartial?: (text: string) => void;
@@ -201,41 +203,71 @@ async function captureRaw(config: SpeechCapabilities, options: CaptureOptions): 
     const done = new Promise<string>((yes, no) => { resolve = yes; reject = no; });
     done.catch(() => undefined);
     const detector = new TurnDetector(options.silenceMs);
+    const speculation = new SpeculativeTranscript(options.autoStop ? options.eagerMs ?? 350 : 0);
     const start = performance.now();
     let voiced = false, cancelled = false, detectedLanguage = '';
     const stop = () => { if (recorder.state !== 'inactive') recorder.stop(); };
-    const cancel = () => { cancelled = true; stop(); reject(aborted()); cleanup(); };
+    const cancel = () => { cancelled = true; speculation.drop(); stop(); reject(aborted()); cleanup(); };
     const cleanup = () => {
       clearInterval(timer); signal.removeEventListener('abort', cancel);
       if (!reused) { stream.getTracks().forEach(t => { t.onended = null; t.stop(); }); source?.disconnect(); }
       if (ctx?.state !== 'closed') void ctx?.close();
     };
     const timer = window.setInterval(() => {
-      const level = audioLevel(analyser); if (level > 0.025) voiced = true;
-      if ((options.autoStop && detector.push(level, performance.now()) !== 'continue') || performance.now() - start > 60000) stop();
+      const now = performance.now();
+      const level = audioLevel(analyser); if (level > 0.025) { voiced = true; speculation.voice(now); }
+      if ((options.autoStop && detector.push(level, now) !== 'continue') || now - start > 60000) { stop(); return; }
+      if (recorder.state === 'recording' && speculation.shouldSnapshot(detector, now)) {
+        speculation.want(now);
+        try { recorder.requestData(); } catch { speculation.voice(now + 1); }
+      }
     }, 50);
+    // One STT request for the recording so far; its own controller so a
+    // withdrawn guess stops costing anything.
+    const transcribe = async (blob: Blob, extra: AbortSignal): Promise<string> => {
+      const fd = new FormData();
+      fd.append('file', blob, recorder.mimeType.includes('mp4') ? 'voice.mp4' : 'voice.webm');
+      fd.append('expected_provider', config.provider);
+      if (options.lang) fd.append('language', options.lang);
+      const response = await fetch('/api/stt/transcribe', { method: 'POST', body: fd, credentials: 'same-origin', signal: AbortSignal.any([signal, extra, AbortSignal.timeout(120000)]) });
+      if (!response.ok) throw new Error(t('Transcription failed. Check Settings → Voice and try again.'));
+      const result = await response.json() as { text?: string; language?: string };
+      detectedLanguage = result.language || (options.lang !== 'auto' ? options.lang : '') || config.language;
+      return result.text?.trim() || '';
+    };
     recorder.ondataavailable = e => {
       bytes += e.data.size;
       if (bytes > 16 * 1024 * 1024) { reject(new Error(t('Recording is too large. Try a shorter message.'))); cancel(); }
       else if (e.data.size) chunks.push(e.data);
+      if (speculation.wantedAt && recorder.state === 'recording' && chunks.length) {
+        const guess = new AbortController();
+        speculation.start(transcribe(new Blob(chunks.slice(), { type: recorder.mimeType }), guess.signal), () => guess.abort());
+      }
     };
     recorder.onerror = () => { reject(new Error(t('Recording failed. Reconnect your microphone and retry.'))); cancel(); };
     for (const track of stream.getTracks()) track.onended = () => { reject(new Error(t('Microphone disconnected. Reconnect it and retry.'))); cancel(); };
     recorder.onstop = async () => {
       cleanup();
       if (signal.aborted || cancelled) { reject(aborted()); return; }
+      const early = speculation.take();
       if (!voiced || !bytes) { resolve(''); return; }
       options.onTranscribing?.();
-      const fd = new FormData();
-      fd.append('file', new Blob(chunks, { type: recorder.mimeType }), recorder.mimeType.includes('mp4') ? 'voice.mp4' : 'voice.webm');
-      fd.append('expected_provider', config.provider);
-      if (options.lang) fd.append('language', options.lang);
+      if (early) {
+        // Nothing was said after the snapshot: its transcript is the turn's.
+        try {
+          const text = await early;
+          signal.throwIfAborted();
+          console.debug('[voice] speculative transcript used');
+          resolve(text);
+          return;
+        } catch (e) {
+          if (signal.aborted) { reject(e as Error); return; }
+          // The guess failed: transcribe the whole recording as before.
+        }
+      }
       try {
-        const response = await fetch('/api/stt/transcribe', { method: 'POST', body: fd, credentials: 'same-origin', signal: AbortSignal.any([signal, AbortSignal.timeout(120000)]) });
-        if (!response.ok) throw new Error(t('Transcription failed. Check Settings → Voice and try again.'));
-        const result = await response.json() as { text?: string; language?: string };
-        detectedLanguage = result.language || (options.lang !== 'auto' ? options.lang : '') || config.language;
-        signal.throwIfAborted(); resolve(result.text?.trim() || '');
+        const text = await transcribe(new Blob(chunks, { type: recorder.mimeType }), new AbortController().signal);
+        signal.throwIfAborted(); resolve(text);
       } catch (e) { reject(e as Error); }
     };
     signal.addEventListener('abort', cancel, { once: true });
