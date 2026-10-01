@@ -9043,3 +9043,11 @@ host:port=command for servers no launcher keeps running, comma-separated. The co
 Wait for the restarted server (seconds)	Espera al servidor reiniciado (segundos)
 How long a big model may take to load again before the restart counts as failed.	Cuánto puede tardar un modelo grande en volver a cargar antes de dar el reinicio por fallido.
 Theme: {name} — not kept, your eight saved themes are full	Tema: {name} — no se ha guardado, tus ocho temas guardados están llenos
+Rehearse on recent calls	Ensayar con las llamadas recientes
+Rehearse saved rules on recent calls	Ensayar las reglas guardadas con las llamadas recientes
+Rehearsal on recent calls	Ensayo con las llamadas recientes
+No recorded tool calls to rehearse on yet.	Todavía no hay llamadas a herramientas registradas con las que ensayar.
+Of the last	De las últimas
+recorded calls, these rules would deny	llamadas registradas, estas reglas habrían denegado
+and ask approval for	y pedido aprobación para
+Could not rehearse the rules.	No se pudieron ensayar las reglas.

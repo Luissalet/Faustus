@@ -4,6 +4,10 @@ policy rules (src/tool_arg_policy.py).
     GET  /api/tool-arg-rules        -> {"rules": [...]}
     PUT  /api/tool-arg-rules        -> {"rules": [...]}   (replaces the whole list)
     POST /api/tool-arg-rules/test   -> {"tool": str, "args": {...}} -> decision
+    POST /api/tool-arg-rules/rehearse -> {"rules"?: [...], "limit"?: int}
+                                      -> what those rules (default: the saved
+                                         ones) would have done to the newest
+                                         recorded tool calls; nothing is saved
 
 Admin-only, same gate as the other admin settings routes
 (routes/agent_settings_routes.py, routes/command_guard_routes.py):
@@ -13,7 +17,7 @@ Admin-only, same gate as the other admin settings routes
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -32,6 +36,11 @@ def _error(status: int, message: str) -> JSONResponse:
 
 class SaveRulesRequest(BaseModel):
     rules: List[Dict[str, Any]]
+
+
+class RehearseRequest(BaseModel):
+    rules: Optional[List[Dict[str, Any]]] = None
+    limit: int = 500
 
 
 class TestRuleRequest(BaseModel):
@@ -79,5 +88,19 @@ def setup_tool_arg_policy_routes() -> APIRouter:
             "value": decision.value,
             "message": decision.message(),
         }
+
+    @router.post("/api/tool-arg-rules/rehearse")
+    async def rehearse_tool_arg_rules(request: Request, body: RehearseRequest):
+        require_admin(request)
+        if body.rules is None:
+            rules = get_setting("tool_arg_rules", []) or []
+        else:
+            try:
+                rules = validate_rules(body.rules)
+            except RuleError as exc:
+                return _error(400, str(exc))
+        from src.tool_arg_rehearsal import rehearse_recent
+
+        return rehearse_recent(rules, body.limit)
 
     return router

@@ -197,6 +197,33 @@ export async function saveToolArgRules(rules: ToolArgRule[]): Promise<ToolArgRul
 /** The Settings "try it" box: whether a tool+args pair would be allowed
  * under the currently SAVED rules (not whatever is still unsaved in the
  * editor) — same read-only intent as `dryRunTool`. */
+export interface ToolArgRehearsal {
+  checked: number;
+  would_deny: number;
+  would_ask: number;
+  untouched: number;
+  limit: number;
+  newest: string;
+  oldest: string;
+  by_rule: { id: string; tool: string; deny: number; ask: number }[];
+  samples: { ts: string; session_id: string; tool: string; action: ToolArgRuleAction; rule_id: string; message: string; args_head: string }[];
+}
+
+/** "What would these rules have done to my recent work?" Replays the newest
+ * recorded tool calls through `rules` (default: the saved ones) — nothing
+ * runs, nothing is saved. */
+export async function rehearseToolArgRules(rules: ToolArgRule[] | null, limit = 500): Promise<ToolArgRehearsal> {
+  const path = '/api/tool-arg-rules/rehearse';
+  const response = await fetch(path, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(rules === null ? { limit } : { rules, limit }),
+  });
+  if (!response.ok) throw new Error(await responseReason(response, path));
+  return (await response.json()) as ToolArgRehearsal;
+}
+
 export async function testToolArgRule(tool: string, args: Record<string, unknown>): Promise<ToolArgRuleTestResult> {
   const path = '/api/tool-arg-rules/test';
   const response = await fetch(path, {

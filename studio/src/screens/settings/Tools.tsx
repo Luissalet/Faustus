@@ -26,6 +26,7 @@ import {
   loadFavoriteTools,
   saveFavoriteTools,
   saveToolArgRules,
+  rehearseToolArgRules,
   testToolArgRule,
   type ArgumentIssue,
   type CatalogEntry,
@@ -34,6 +35,7 @@ import {
   type ToolArgRule,
   type ToolArgRuleAction,
   type ToolArgRuleOp,
+  type ToolArgRehearsal,
   type ToolArgRuleTestResult,
 } from '../../adapters/tools';
 import { t } from '../../i18n';
@@ -592,6 +594,10 @@ function ArgRulesPanel({ say }: { say: (t: string) => void }) {
   const [testBusy, setTestBusy] = useState(false);
   const [testError, setTestError] = useState('');
 
+  const [rehearsal, setRehearsal] = useState<ToolArgRehearsal | null>(null);
+  const [rehearsalBusy, setRehearsalBusy] = useState(false);
+  const [rehearsalError, setRehearsalError] = useState('');
+
   const reload = () =>
     listToolArgRules()
       .then((r) => { setRules(r); setFailedStatus(null); })
@@ -678,6 +684,35 @@ function ArgRulesPanel({ say }: { say: (t: string) => void }) {
     }
   };
 
+  /** The rule list as it would be if the open form were saved — or the
+   * saved list when no form is open. */
+  const candidateRules = (): ToolArgRule[] | null => {
+    if (!rules) return null;
+    if (editingId === null) return rules;
+    const id = draft.id.trim();
+    if (!id || !draft.tool.trim() || !draft.arg.trim()) return null;
+    const normalized: ToolArgRule = { ...draft, id, value: textToValue(draft.op, String(draft.value ?? '')) };
+    return editingId === '' ? [...rules.filter((r) => r.id !== id), normalized] : rules.map((r) => (r.id === editingId ? normalized : r));
+  };
+
+  const runRehearsal = async () => {
+    const candidate = candidateRules();
+    setRehearsalError('');
+    setRehearsal(null);
+    if (candidate === null) {
+      setRehearsalError(t('Rule id, tool and argument are required.'));
+      return;
+    }
+    setRehearsalBusy(true);
+    try {
+      setRehearsal(await rehearseToolArgRules(candidate));
+    } catch (e: unknown) {
+      setRehearsalError((e as Error)?.message || t('Could not rehearse the rules.'));
+    } finally {
+      setRehearsalBusy(false);
+    }
+  };
+
   if (failedStatus === 401 || failedStatus === 403) {
     return <EmptyState tone="denied" title={t('Administrators only')} body={t('This account cannot change argument rules.')} />;
   }
@@ -757,11 +792,53 @@ function ArgRulesPanel({ say }: { say: (t: string) => void }) {
             {formError && <p className="fs-set__help" data-tone="bad">{formError}</p>}
             <div className="fs-set__row-actions">
               <Button variant="primary" size="sm" label={t('Save rule')} onClick={() => void saveDraft()} loading={saving} disabled={saving} />
+              <Button variant="secondary" size="sm" label={t('Rehearse on recent calls')} onClick={() => void runRehearsal()} loading={rehearsalBusy} disabled={rehearsalBusy} testId="tool-arg-rule-rehearse" />
               <Button variant="ghost" size="sm" label={t('Cancel')} onClick={cancelEdit} />
             </div>
           </div>
         )}
       </div>
+
+      {(rehearsal || rehearsalError) && (
+        <div className="fs-set__card" data-testid="tool-arg-rule-rehearsal">
+          <h3 className="fs-set__card-title">{t('Rehearsal on recent calls')}</h3>
+          {rehearsalError ? (
+            <p className="fs-set__help" data-tone="bad">{rehearsalError}</p>
+          ) : rehearsal && (
+            <>
+              <p className="fs-set__help" data-tone={rehearsal.would_deny + rehearsal.would_ask ? 'bad' : 'ok'} data-testid="tool-arg-rule-rehearsal-summary">
+                {rehearsal.checked === 0
+                  ? t('No recorded tool calls to rehearse on yet.')
+                  : `${t('Of the last')} ${rehearsal.checked} ${t('recorded calls, these rules would deny')} ${rehearsal.would_deny} ${t('and ask approval for')} ${rehearsal.would_ask}.`}
+              </p>
+              {rehearsal.by_rule.length > 0 && (
+                <ul className="fs-set__list">
+                  {rehearsal.by_rule.map((row) => (
+                    <li key={row.id} className="fs-set__row">
+                      <span className="fs-tools__text">
+                        <strong>{row.id}</strong>
+                        <span className="fs-set__help">{t('Deny')}: {row.deny} · {t('Ask for approval')}: {row.ask}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {rehearsal.samples.length > 0 && (
+                <ul className="fs-set__list" data-testid="tool-arg-rule-rehearsal-samples">
+                  {rehearsal.samples.map((sample, i) => (
+                    <li key={`${sample.ts}-${i}`} className="fs-set__row">
+                      <span className="fs-tools__text">
+                        <code className="fs-tools__id">{sample.tool}</code>
+                        <span className="fs-set__help">{sample.action === 'ask' ? t('Ask for approval') : t('Deny')} · {sample.rule_id} · <code>{sample.args_head}</code></span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       <div className="fs-set__card">
         <h3 className="fs-set__card-title">{t('Test')}</h3>
@@ -777,6 +854,7 @@ function ArgRulesPanel({ say }: { say: (t: string) => void }) {
           <textarea id="argrule-test-args" className="fs-field fs-set__pre" rows={3} value={testArgsJson} onChange={(e) => setTestArgsJson(e.target.value)} />
         </div>
         <Button variant="secondary" size="sm" label={t('Test')} onClick={() => void runTest()} loading={testBusy} disabled={testBusy || !testTool.trim()} testId="tool-arg-rule-test-run" />
+        <Button variant="ghost" size="sm" label={t('Rehearse saved rules on recent calls')} onClick={() => void runRehearsal()} loading={rehearsalBusy} disabled={rehearsalBusy || editingId !== null || !rules?.length} testId="tool-arg-rule-rehearse-saved" />
         {testError && <p className="fs-set__help" data-tone="bad">{testError}</p>}
         {testResult && (
           <p className="fs-set__help" data-tone={testResult.allowed ? 'ok' : 'bad'} data-testid="tool-arg-rule-test-result">

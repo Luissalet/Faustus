@@ -280,6 +280,20 @@ def evaluate(tool_name: str, args: Any) -> Optional[Decision]:
         raw_rules = get_setting("tool_arg_rules", []) or []
     except Exception:  # noqa: BLE001 - settings unavailable is not a policy hit
         return None
+    return evaluate_rules(tool_name, args, raw_rules)
+
+
+def evaluate_rules(tool_name: str, args: Any, raw_rules: Any) -> Optional[Decision]:
+    """:func:`evaluate` against an explicit rule list instead of the saved one.
+
+    The rehearsal (``src.tool_arg_rehearsal``) uses it to ask what a set of
+    rules that is NOT saved yet would have done to calls already made.
+    """
+    tool_name = str(tool_name or "")
+    if not isinstance(args, dict):
+        args = {}
+    if not tool_name:
+        return None
     if not isinstance(raw_rules, list) or not raw_rules:
         return None
 
