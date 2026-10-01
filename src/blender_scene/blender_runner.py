@@ -123,8 +123,24 @@ def selected_only(objects):
 
 
 def has_op(path):
+    """Is the operator registered? `hasattr` on bpy.ops is always true (the
+    wrappers are created lazily), so ask for its RNA type, which raises when the
+    operator does not exist in this Blender."""
     mod, _, name = path.partition(".")
-    return hasattr(getattr(bpy.ops, mod, None), name)
+    try:
+        getattr(getattr(bpy.ops, mod), name).get_rna_type()
+        return True
+    except (AttributeError, KeyError, RuntimeError):
+        return False
+
+
+def ensure_addon(module):
+    """Enable a bundled add-on the older import/export operators live in."""
+    try:
+        import addon_utils
+        addon_utils.enable(module, default_set=True)
+    except Exception:  # noqa: BLE001 - the operator call reports what is missing
+        pass
 
 
 def record_output(path, kind):
@@ -666,6 +682,7 @@ def op_import_model(op):
         if has_op("wm.stl_import"):
             bpy.ops.wm.stl_import(filepath=path)
         else:
+            ensure_addon("io_mesh_stl")
             bpy.ops.import_mesh.stl(filepath=path)
     elif fmt == "obj":
         if has_op("wm.obj_import"):
@@ -676,6 +693,7 @@ def op_import_model(op):
         if has_op("wm.ply_import"):
             bpy.ops.wm.ply_import(filepath=path)
         else:
+            ensure_addon("io_mesh_ply")
             bpy.ops.import_mesh.ply(filepath=path)
     elif fmt == "fbx":
         bpy.ops.import_scene.fbx(filepath=path)
@@ -706,6 +724,7 @@ def op_export_model(op):
         if has_op("wm.stl_export"):
             bpy.ops.wm.stl_export(filepath=path, export_selected_objects=True, apply_modifiers=mods)
         else:
+            ensure_addon("io_mesh_stl")
             bpy.ops.export_mesh.stl(filepath=path, use_selection=True, use_mesh_modifiers=mods)
     elif ext == ".obj":
         if has_op("wm.obj_export"):
