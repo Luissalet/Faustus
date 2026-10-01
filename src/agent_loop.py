@@ -10377,6 +10377,11 @@ async def _stream_agent_loop_body(
     from src.loop_breaker import LoopPolicy as _LoopPolicy, observation_for_tool as _loop_observation, STOP_REASON as _LOOP_STOP_REASON
     _loop_policy = _LoopPolicy.from_settings(get_setting)
     _loop_policy_stop = False
+    # Zero-token advisories (src/loop_breaker.py::AdvisoryGuard): a short hint
+    # appended to a TOOL RESULT only (never the prompt prefix), each at most
+    # once per run. None when `agent_advisory_guards` is off.
+    from src.loop_breaker import advisory_guard_from_settings as _advisory_guard_for
+    _advisory_guard = _advisory_guard_for(get_setting)
     # Three more ways a turn gets stuck (monologue, repeated "request too
     # long" errors, a call that keeps failing); counters in src/loop_breaker.py.
     from src.loop_breaker import CONTEXT_ERROR_STOP_REASON as _CONTEXT_STOP_REASON, MONOLOGUE_STOP_REASON as _MONOLOGUE_STOP_REASON, StuckWatch as _StuckWatch, is_context_length_error as _is_ctx_error, is_failed_result as _is_failed_call
@@ -17491,6 +17496,13 @@ async def _stream_agent_loop_body(
             if isinstance(_model_result, dict):
                 _model_result.pop("_shell_tool", None)
                 _model_result.pop("_shell_command", None)
+            if (_advisory_guard is not None and isinstance(result, dict)
+                    and not result.get("blocked") and not result.get("approval_required")):
+                _advisory_text = _advisory_guard.advise(
+                    block.tool_type, block.content or "", result, round_num)
+                if _advisory_text:
+                    formatted = f"{formatted}\n\n{_advisory_text}"
+                    _ledger.notes.append(f"advisory@{round_num}:{block.tool_type}")
             if (isinstance(result, dict) and block.tool_type in _project_rules_mod.PATH_RULE_TOOLS
                     and not _is_failed_call(result) and not result.get("blocked")
                     and not result.get("approval_required")):

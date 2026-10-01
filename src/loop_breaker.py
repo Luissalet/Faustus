@@ -56,6 +56,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Deque, Dict, List, Optional, Set, Tuple
@@ -772,3 +773,238 @@ class StuckWatch:
             "context_error_limit": self.context_error_limit,
             "failed_path_limit": self.failed_path_limit,
         }
+
+
+# ── zero-token advisories ──────────────────────────────────────────────────
+#
+# Small, mechanical hints appended to a TOOL RESULT (never to the system
+# prompt or to an earlier message, so the cached prompt prefix stays
+# byte-identical). Each rule fires at most once per run. They cost no model
+# call: plain pattern checks over the call and its result.
+
+ADVISORY_GUARDS_SETTING = "agent_advisory_guards"
+
+ADVISORY_RESCAN = (
+    "[advisory] You already have results for a broad search of this tree from the last round "
+    "or two. Narrow the next search (a specific folder or pattern) or read the file instead "
+    "of scanning the same tree again."
+)
+ADVISORY_BATCH_EDITS = (
+    "[advisory] Several edits in a row have the same shape on different files. Do the rest "
+    "in one step with code_mode (or a short python script) instead of one call per file."
+)
+ADVISORY_SHELL_PIPELINE = (
+    "[advisory] A find/wc/sort/xargs pipeline over the tree is slow and easy to get wrong "
+    "here. Do this with code_mode or a short python script instead."
+)
+
+_EDIT_TOOLS = frozenset({"edit_file", "write_file"})
+_SHELL_TOOLS = frozenset({"bash", "powershell"})
+_SEARCH_WINDOW_ROUNDS = 2
+_EDIT_STREAK = 3
+_EDIT_SHAPE_RATIO = 0.9
+_NO_RESULT_PREFIXES = ("(no output)", "no matches", "no files", "no results", "0 matches")
+
+_SHELL_SEARCH_RE = re.compile(
+    r"(?:^|[;&|(]\s*)(?:git\s+grep\b|grep\s+-[A-Za-z]*[rR]|rg\b|find\b|ls\s+-[A-Za-z]*R|"
+    r"Get-ChildItem\b[^|;\n]*-Recurse|Select-String\b[^|;\n]*-Path)",
+    re.I,
+)
+_SHELL_PIPELINE_RE = re.compile(
+    r"(?:\bfind\b|\bls\s+-[A-Za-z]*R|Get-ChildItem\b[^|\n]*-Recurse)[^\n]*"
+    r"\|\s*(?:xargs|wc|sort|uniq|Measure-Object|Sort-Object|ForEach-Object)\b",
+    re.I,
+)
+
+
+def _call_args(tool: str, content: Any) -> Dict[str, Any]:
+    if isinstance(content, dict):
+        return content
+    text = str(content or "").strip()
+    try:
+        parsed = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        parsed = None
+    if isinstance(parsed, dict):
+        return parsed
+    if tool in _SHELL_TOOLS:
+        return {"command": text}
+    return {"raw": text}
+
+
+def _shell_text(args: Dict[str, Any]) -> str:
+    return str(args.get("command") or args.get("script") or args.get("cmd") or args.get("raw") or "")
+
+
+def _norm_root(path: Any) -> str:
+    p = str(path or "").replace("\\", "/").strip().strip("\"'")
+    while p.startswith("./"):
+        p = p[2:]
+    p = p.rstrip("/")
+    return p or "."
+
+
+def _looks_like_file(root: str) -> bool:
+    base = root.rsplit("/", 1)[-1]
+    return root != "." and "." in base.lstrip(".") and not base.endswith(".")
+
+
+def _shell_search_root(cmd: str) -> Optional[str]:
+    """Root of a recursive shell search, or None when the command is not one."""
+    m = _SHELL_SEARCH_RE.search(cmd)
+    if not m:
+        return None
+    segment = re.split(r"[|;&]", cmd[m.start():].lstrip(";&|( \t"), maxsplit=1)[0]
+    toks = [t.strip("\"'") for t in segment.split()]
+    if not toks:
+        return "."
+    head = toks[0].lower()
+    rest = toks[1:]
+    if head == "find":
+        return _norm_root(rest[0]) if rest and not rest[0].startswith("-") else "."
+    if head == "get-childitem":
+        for i, t in enumerate(rest):
+            if t.lower() in ("-path", "-literalpath") and i + 1 < len(rest):
+                return _norm_root(rest[i + 1])
+        pos = [t for t in rest if not t.startswith("-")]
+        return _norm_root(pos[0]) if pos else "."
+    pos = [t for t in rest if not t.startswith("-")]
+    if head in ("grep", "rg", "git", "select-string"):
+        if head == "git":
+            pos = pos[1:]               # drop the `grep` sub-command word
+        return _norm_root(pos[-1]) if len(pos) >= 2 else "."
+    return _norm_root(pos[-1]) if pos else "."          # ls -R <dir>
+
+
+def _result_has_output(result: Any) -> bool:
+    if not isinstance(result, dict):
+        return bool(result)
+    if result.get("error") or result.get("blocked"):
+        return False
+    code = result.get("exit_code")
+    if isinstance(code, int) and code not in (0, 1):
+        return False
+    parts = [result.get(k) for k in ("output", "results", "matches", "stdout", "files")]
+    text = " ".join(str(p) for p in parts if p).strip()
+    return bool(text) and not text.lower().startswith(_NO_RESULT_PREFIXES)
+
+
+def _alike(a: str, b: str) -> bool:
+    if a == b:
+        return True
+    import difflib
+    sm = difflib.SequenceMatcher(None, a, b, autojunk=False)
+    return sm.real_quick_ratio() >= _EDIT_SHAPE_RATIO and sm.ratio() >= _EDIT_SHAPE_RATIO
+
+
+class AdvisoryGuard:
+    """Per-run state for the advisories. ``advise`` returns the text to append
+    to this call's tool result ("" for none) and never raises."""
+
+    def __init__(self) -> None:
+        self.fired: Set[str] = set()
+        self._last_search: Optional[Tuple[int, str]] = None
+        self._edit_tool = ""
+        self._edit_shape = ""
+        self._edit_paths: List[str] = []
+
+    # -- public ---------------------------------------------------------
+    def advise(self, tool: str, args: Any, result: Any, round_num: int = 0) -> str:
+        try:
+            return self._advise(str(tool or ""), _call_args(str(tool or ""), args), result, int(round_num or 0))
+        except Exception:  # noqa: BLE001 - an advisory must never cost a turn
+            return ""
+
+    # -- rules ----------------------------------------------------------
+    def _advise(self, tool: str, args: Dict[str, Any], result: Any, round_num: int) -> str:
+        out = ""
+        if tool in _EDIT_TOOLS:
+            out = self._edit_rule(tool, args)
+        else:
+            self._edit_tool, self._edit_shape, self._edit_paths = "", "", []
+            if tool in _SHELL_TOOLS and "C" not in self.fired and _SHELL_PIPELINE_RE.search(_shell_text(args)):
+                self.fired.add("C")
+                out = ADVISORY_SHELL_PIPELINE
+            search = self._search_rule(tool, args, result, round_num)
+            out = out or search
+        return out
+
+    def _edit_rule(self, tool: str, args: Dict[str, Any]) -> str:
+        path = str(args.get("path") or "")
+        shape = json.dumps({k: v for k, v in args.items() if k not in ("path", "base_revision")},
+                           sort_keys=True, default=str)[:3000]
+        if (path and tool == self._edit_tool and path not in self._edit_paths
+                and _alike(shape, self._edit_shape)):
+            self._edit_paths.append(path)
+        else:
+            self._edit_tool, self._edit_shape = tool, shape
+            self._edit_paths = [path] if path else []
+        if len(self._edit_paths) >= _EDIT_STREAK and "B" not in self.fired:
+            self.fired.add("B")
+            return ADVISORY_BATCH_EDITS
+        return ""
+
+    def _search_root(self, tool: str, args: Dict[str, Any]) -> Optional[str]:
+        """Root of a BROAD search (a whole tree, not one file), else None."""
+        if tool == "grep":
+            root = _norm_root(args.get("path"))
+        elif tool == "glob":
+            pattern = str(args.get("pattern") or "")
+            if not any(c in pattern for c in "*?["):
+                return None             # one named file, not a sweep
+            root = _norm_root(args.get("path"))
+        elif tool in _SHELL_TOOLS:
+            root = _shell_search_root(_shell_text(args))
+            if root is None:
+                return None
+        else:
+            return None
+        return None if _looks_like_file(root) else root
+
+    def _search_rule(self, tool: str, args: Dict[str, Any], result: Any, round_num: int) -> str:
+        root = self._search_root(tool, args)
+        if root is None:
+            return ""
+        out = ""
+        prev = self._last_search
+        if (prev is not None and "A" not in self.fired
+                and round_num - prev[0] <= _SEARCH_WINDOW_ROUNDS
+                and _covers(root, prev[1])):
+            self.fired.add("A")
+            out = ADVISORY_RESCAN
+        self._last_search = (round_num, root) if _result_has_output(result) else None
+        return out
+
+
+def _covers(new_root: str, old_root: str) -> bool:
+    """The new search sweeps the old one's tree again (same folder or an
+    ancestor). A search of a SUBfolder is narrowing, which is what we want."""
+    if new_root == "." or new_root == old_root:
+        return True
+    return old_root.startswith(new_root.rstrip("/") + "/")
+
+
+def advisory_guard_from_settings(get_setting=None) -> Optional[AdvisoryGuard]:
+    """A fresh guard for one run, or None when `agent_advisory_guards` is off."""
+    if get_setting is None:
+        try:
+            from src.settings import get_setting as _gs
+            get_setting = _gs
+        except Exception:  # noqa: BLE001
+            get_setting = lambda key, default=None: default  # noqa: E731
+    try:
+        if not get_setting(ADVISORY_GUARDS_SETTING, True):
+            return None
+    except Exception:  # noqa: BLE001
+        pass
+    return AdvisoryGuard()
+
+
+def advise(guard: Optional[AdvisoryGuard], tool: str, args: Any, result: Any, round_num: int = 0) -> str:
+    """Advisory text for this call's result, or "" (also when `guard` is None)."""
+    return guard.advise(tool, args, result, round_num) if guard is not None else ""
+
+
+def with_advisory(text: str, advisory: str) -> str:
+    """`text` with the advisory appended as its own paragraph (unchanged when empty)."""
+    return f"{text}\n\n{advisory}" if advisory else text
