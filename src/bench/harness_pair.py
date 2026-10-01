@@ -29,6 +29,7 @@ import hashlib
 import json
 import os
 import shutil
+import stat
 import statistics
 import sys
 import tempfile
@@ -177,8 +178,27 @@ class Sandbox:
         changed |= {p for p in self.before_canary if p not in now}
         return sorted(changed)
 
-    def cleanup(self) -> None:
-        shutil.rmtree(self.root, ignore_errors=True)
+    def cleanup(self, attempts: int = 5, pause_s: float = 0.4) -> None:
+        """Remove the whole sandbox. On Windows git writes its objects
+        read-only and a process that just exited can hold a handle for a
+        moment, so a plain ``rmtree`` left the directory behind (reported as a
+        state leak on every case): clear the read-only bit and retry briefly."""
+        def _writable_then_retry(func, path, _exc):
+            try:
+                os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
+                func(path)
+            except OSError:
+                pass
+        for attempt in range(max(1, attempts)):
+            if not self.root.exists():
+                return
+            try:
+                shutil.rmtree(self.root, onerror=_writable_then_retry)
+            except OSError:
+                pass
+            if not self.root.exists():
+                return
+            time.sleep(pause_s * (attempt + 1))
 
     def leftover(self) -> bool:
         return self.root.exists()

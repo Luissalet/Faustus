@@ -364,3 +364,20 @@ def test_cli_exit_codes_follow_the_verdict():
     cli = _cli()
     assert cli.EXIT_BY_VERDICT["regression"] == 1 and cli.EXIT_BY_VERDICT["blocked"] == 1
     assert cli.EXIT_BY_VERDICT["inconclusive"] == 2 and cli.EXIT_BY_VERDICT["equivalent"] == 0
+
+
+def test_cleanup_removes_read_only_files(tmp_path, monkeypatch):
+    """Git writes its objects read-only; on Windows a plain rmtree left the
+    sandbox behind and every case reported a state leak."""
+    import os
+    import stat
+    monkeypatch.setattr(hp.tempfile, "mkdtemp", lambda prefix="": str(tmp_path / "sbx"))
+    (tmp_path / "sbx").mkdir()
+    sb = hp.Sandbox.create()
+    obj = sb.workspace / ".git" / "objects" / "ab" / "cdef"
+    obj.parent.mkdir(parents=True)
+    obj.write_text("x", encoding="utf-8")
+    os.chmod(obj, stat.S_IREAD)
+    os.chmod(obj.parent, stat.S_IREAD | stat.S_IEXEC)
+    sb.cleanup(pause_s=0.01)
+    assert not sb.leftover()
