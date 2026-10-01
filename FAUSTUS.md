@@ -9885,3 +9885,16 @@ Probado:
 - Carril exacto, sobre el catálogo real de 469 herramientas de la 7000, comparado con la versión anterior: «use lookup_tools to list categories» pone `lookup_tools` en primer lugar (antes cuarta), y «check the GPU with gpu_usage» sube `list_cookbook_servers` a la primera posición. Las preguntas sin identificadores no cambian.
 
 Lo que queda está en OBJ-51.
+
+## 251. Cassandra sabe qué te está esperando en Faustus (01-10-2026)
+
+Del radar del 01-10 (#403, la idea de coucou llevada a un Hoard). Cassandra vigilaba si Faustus estaba arriba, pero no si un chat llevaba cuarenta minutos parado en una tarjeta de aprobación.
+
+- **Faustus: ámbito de token `attention:read`** (`470e303f`). Abre `GET /api/attention` del dueño del token y nada más; `sessions` también la abre y `POST /api/attention/read` sigue cerrado a tokens. Se puede emitir desde Ajustes → Tokens de API («Atención»), y la prueba que fija la superficie de los tokens (`tests/test_auth1_token_matrix.py`) incluye la ruta nueva.
+- **Cassandra's Hoard: herramienta `faustus_attention`** (`206086c` y `7477a1d` en su repositorio). Es de sólo lectura y lee esa lista con el token de `CASSANDRA_FAUSTUS_TOKEN` o de `data/faustus-token`, sólo en direcciones loopback. Cuenta lo que espera a la persona (aprobaciones y preguntas), las ejecuciones paradas, cuánto lleva cada una y las esperas largas (≥ `wait_min`). Si no puede leer la lista dice por qué: sin token, token rechazado o Faustus caído.
+
+Probado:
+- Pruebas: `tests/test_attention_token_scope.py` y las de tokens y atención (95 en verde) en Faustus; 7 nuevas y la suite entera en Cassandra; `tsc` en verde.
+- En vivo: en la 7000 se emitió el token `cassandra-attention` con `attention:read`. Lee `/api/attention` (200) y no puede listar sesiones (403). Desde Cassandra (5190, reiniciada por el Hub), `POST /api/agent/call` con `faustus_attention` devolvió `ok`: 1 pregunta abierta esperándote y 4 ejecuciones terminadas sin revisar. Una espera sin hora queda como desconocida, no como 0 minutos.
+
+Lo que queda está en OBJ-52.
