@@ -377,14 +377,18 @@ async def test_benchmark_a_writer_never_overlaps_readers_of_the_same_file(tmp_pa
 
 # ── the loop takes claims before it runs calls ───────────────────────────────
 
-def _hold_in_thread(path, mode, seconds):
+def _hold_in_thread(path, mode, seconds, release=None):
+    """Hold a claim from another thread for `seconds`, or until `release` is set."""
     ready = threading.Event()
 
     def run():
         async def main():
             lease = await rc.broker().acquire([P(path, mode)], owner="other run", label="write_file")
             ready.set()
-            await asyncio.sleep(seconds)
+            if release is not None:
+                await asyncio.to_thread(release.wait, seconds)
+            else:
+                await asyncio.sleep(seconds)
             rc.broker().release(lease)
         asyncio.run(main())
 
@@ -429,12 +433,17 @@ def test_loop_read_waits_for_a_write_another_run_holds(tmp_path, monkeypatch):
 def test_loop_read_of_another_file_does_not_wait(tmp_path, monkeypatch):
     (tmp_path / "f.py").write_text("x")
     (tmp_path / "g.py").write_text("y")
-    thread = _hold_in_thread(str(tmp_path / "g.py"), Mode.WRITE, 1.5)
-    released_at = time.monotonic() + 1.5
-    events, ran = _run_loop(tmp_path, monkeypatch, '```read_file\n{"path": "f.py"}\n```')
-    started = ran[0][1]
-    thread.join(3)
-    assert started < released_at - 0.5   # did not wait for the other file's writer
+    # The writer of g.py lets go only when told to, so a slow machine cannot make
+    # a read that waited look like one that did not.
+    release = threading.Event()
+    thread = _hold_in_thread(str(tmp_path / "g.py"), Mode.WRITE, 30, release=release)
+    try:
+        events, ran = _run_loop(tmp_path, monkeypatch, '```read_file\n{"path": "f.py"}\n```')
+        still_held = not release.is_set() and thread.is_alive()
+    finally:
+        release.set()
+        thread.join(5)
+    assert ran and still_held            # the read ran while the other file's writer still held it
 
 
 def test_loop_call_that_cannot_get_its_claims_is_refused_not_started(tmp_path, monkeypatch):
