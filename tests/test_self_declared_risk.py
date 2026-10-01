@@ -245,7 +245,8 @@ def test_stats_route(monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from routes import agent_loop_stats_routes
-    from src.auth_helpers import require_user
+    # the object the routes depend on: a test elsewhere may reload src.auth_helpers
+    require_user = agent_loop_stats_routes.require_user
     risk.record(risk.make_record("bash", "HIGH", "MEDIUM", forced=True))
     app = FastAPI()
     app.include_router(agent_loop_stats_routes.setup_agent_loop_stats_routes())

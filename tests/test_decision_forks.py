@@ -436,7 +436,8 @@ def test_stats_route_lists_the_three_forks(monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from routes import agent_loop_stats_routes
-    from src.auth_helpers import require_user
+    # the object the routes depend on: a test elsewhere may reload src.auth_helpers
+    require_user = agent_loop_stats_routes.require_user
     forks.record(forks.make_receipt("tool_tie", ["a", "b"], _dec("p", "a"), fallback=False, outcome="promoted_first"))
     app = FastAPI()
     app.include_router(agent_loop_stats_routes.setup_agent_loop_stats_routes())

@@ -422,7 +422,8 @@ def test_stats_route_reports_counters_and_needs_a_user(monkeypatch):
     from fastapi import FastAPI, HTTPException
     from fastapi.testclient import TestClient
     from routes import agent_loop_stats_routes
-    from src.auth_helpers import require_user
+    # the object the routes depend on: a test elsewhere may reload src.auth_helpers
+    require_user = agent_loop_stats_routes.require_user
 
     _settings(monkeypatch, advisor_enabled=True)
     state = advisor.AdvisorState.from_settings()
