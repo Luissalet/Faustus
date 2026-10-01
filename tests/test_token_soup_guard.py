@@ -72,3 +72,13 @@ def test_real_text_is_not_word_salad(text):
     # this test is about.)
     for start in range(0, max(1, len(text) - 300), 7):
         assert _token_soup_reason(text[start:start + 300]) is None, text[start:start + 300]
+
+
+def test_a_run_of_one_symbol_points_at_the_server_not_the_sampler():
+    import json as _json
+    exc = _degenerate()("repeated unit '/' 120 times (120 chars)", "qwen-test")
+    chunk = _llm_core._degenerate_output_error_chunk(exc)
+    data = _json.loads(chunk.split("data: ", 1)[1])
+    assert "restarting the server" in data["error"]
+    word = _llm_core._degenerate_output_error_chunk(_degenerate()("repeated unit 'ok ' 40 times", "m"))
+    assert "lower temperature" in word

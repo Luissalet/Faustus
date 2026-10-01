@@ -1038,9 +1038,17 @@ def _degenerate_output_error_chunk(exc: "DegenerateOutput") -> str:
     harness's targeted retry) can tell it apart from an ordinary transport
     failure without string-matching the human-readable message."""
     logger.warning("[degenerate-stream] aborting model=%s reason=%s", exc.model, exc.reason)
+    hint = "Try a different model or lower temperature."
+    # A run of one punctuation symbol from the first tokens ("////", "!!!!")
+    # is not a sampling problem: the server's own state is broken (seen with
+    # llama-server after a corrupted slot) and every request gets the same
+    # until it is restarted.
+    if re.search(r"repeated unit '[^\w\s]'", str(exc.reason or "")):
+        hint = ("A run of one symbol like this usually means the model server itself is in a broken "
+                "state; restarting the server fixes it.")
     message = (
         f"Stopped generation: {exc.model} started repeating tokens "
-        f"({exc.reason}). Try a different model or lower temperature."
+        f"({exc.reason}). {hint}"
     )
     return f'event: error\ndata: {json.dumps({"status": 502, "text": message, "error": message, "error_class": DEGENERATE_OUTPUT_ERROR_CLASS, "fallback_eligible": False})}\n\n'
 
