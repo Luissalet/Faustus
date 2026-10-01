@@ -257,6 +257,9 @@ _TIMEOUT_EXEMPT_PREFIXES = (
     "/api/whatsapp/assist", # one LLM pass over a chat on the local model; a cold 27B needs minutes (seen live: 504 at 45s)
     "/api/whatsapp/transcribe",  # a voice note through local Whisper; the first call loads the model
     "/api/whatsapp/upload", # a 25 MB attachment plus an ffmpeg pass for voice notes
+    "/api/bug-hunt",        # writes and runs tests with the model; minutes on a local 27B (seen live: 504 at 45s)
+    "/api/blender/run",     # a headless Blender render; its own blender_timeout_seconds (300 s by default)
+    "/api/workflows/runs",  # advancing a run executes its nodes, model nodes included, in the request
 )
 # Session-scoped long calls: `/api/session/{id}/condense` is one LLM pass over a
 # hand-picked range on the session's own model — a cold local 27B needs minutes
