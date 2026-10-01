@@ -485,6 +485,12 @@ DEFAULT_SETTINGS = {
     "research_prune_pages": True,
     "research_prune_max_chars": 6000,
     "research_prune_threshold": 0.48,
+    # Typed 3D scenes rendered headless with Blender (src/blender_scene).
+    # `blender_path` is the blender executable (or its folder); empty means
+    # search BLENDER_PATH, PATH and the usual install folders.
+    # `blender_timeout_seconds` is how long one scene run may take.
+    "blender_path": "",
+    "blender_timeout_seconds": 300,
     # Measured stop (src/research_saturation.py): end the run, without asking
     # the model, after `research_saturation_patience` rounds in a row that
     # each added fewer than `research_saturation_min_new_facts` new facts and
