@@ -70,7 +70,8 @@ def test_git_build_info_reads_the_reflog_without_a_git_subprocess(monkeypatch) -
 
 
 def test_git_build_info_matches_the_real_reflog_tip() -> None:
-    log_path = os.path.join(app_module.BASE_DIR, ".git", "logs", "HEAD")
+    git_dir, _common = app_module._git_dirs(app_module.BASE_DIR)    # a linked worktree has its own
+    log_path = os.path.join(git_dir, "logs", "HEAD")
     with open(log_path, "r", encoding="utf-8") as fh:
         lines = [ln for ln in fh.read().splitlines() if ln.strip()]
     expected_sha = lines[-1].split("\t", 1)[0].split(" ")[1][:7]
@@ -91,3 +92,32 @@ def test_served_studio_info_hashes_the_actually_served_index_html() -> None:
     assert info["path"] == "static/index.html"
     expected_path = abs_join(app_module.BASE_DIR, "static/index.html")
     assert info["sha"] == asset_version(expected_path)
+
+
+def test_git_build_info_reads_a_linked_worktree(tmp_path) -> None:
+    """In a linked worktree `.git` is a file pointing at the per-worktree git dir;
+    HEAD's reflog is there and branch refs are in the main repository's dir."""
+    main = tmp_path / "main" / ".git"
+    wt_git = main / "worktrees" / "wt"
+    (wt_git / "logs").mkdir(parents=True)
+    (main / "refs" / "heads").mkdir(parents=True)
+    checkout = tmp_path / "wt"
+    checkout.mkdir()
+    (checkout / ".git").write_text(f"gitdir: {wt_git}\n", encoding="utf-8")
+    (wt_git / "commondir").write_text("../..\n", encoding="utf-8")
+    sha = "0123456789abcdef0123456789abcdef01234567"
+    (wt_git / "logs" / "HEAD").write_text(
+        f"{'0' * 40} {sha} Someone <someone@example.invalid> 1790000000 +0000\tcommit: x\n", encoding="utf-8")
+    info = _git_build_info(str(checkout))
+    assert info["sha"] == "0123456" and info["date"] == "2026-09-21T14:13:20Z"
+
+    # no reflog: HEAD names a branch whose ref lives in the main repository
+    (wt_git / "logs" / "HEAD").unlink()
+    (wt_git / "HEAD").write_text("ref: refs/heads/integ\n", encoding="utf-8")
+    (main / "refs" / "heads" / "integ").write_text(sha + "\n", encoding="utf-8")
+    assert _git_build_info(str(checkout))["sha"] == "0123456"
+
+    # packed into the main repository's packed-refs
+    (main / "refs" / "heads" / "integ").unlink()
+    (main / "packed-refs").write_text(f"# pack-refs\n{sha} refs/heads/integ\n", encoding="utf-8")
+    assert _git_build_info(str(checkout))["sha"] == "0123456"

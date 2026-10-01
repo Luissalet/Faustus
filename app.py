@@ -1839,6 +1839,34 @@ async def serve_login(request: Request):
         return RedirectResponse(url="/", status_code=302)
     return serve_html_with_nonce(request, abs_join(BASE_DIR, "static/login.html"))
 
+def _git_dirs(repo_root: str) -> "tuple[str, str]":
+    """``(git_dir, common_dir)`` of a checkout. In a linked worktree ``.git`` is
+    a file (``gitdir: <path>``): HEAD and its reflog live in that per-worktree
+    directory, while branch refs and ``packed-refs`` live in the main
+    repository's directory, named by its ``commondir`` file."""
+    git_dir = os.path.join(repo_root, ".git")
+    if os.path.isfile(git_dir):
+        try:
+            with open(git_dir, "r", encoding="utf-8", errors="replace") as fh:
+                first = fh.readline().strip()
+        except OSError:
+            return git_dir, git_dir
+        if first.startswith("gitdir:"):
+            target = first.split(":", 1)[1].strip()
+            git_dir = os.path.normpath(target if os.path.isabs(target) else os.path.join(repo_root, target))
+    common_dir = git_dir
+    common_file = os.path.join(git_dir, "commondir")
+    if os.path.isfile(common_file):
+        try:
+            with open(common_file, "r", encoding="utf-8", errors="replace") as fh:
+                target = fh.read().strip()
+            if target:
+                common_dir = os.path.normpath(target if os.path.isabs(target) else os.path.join(git_dir, target))
+        except OSError:
+            pass
+    return git_dir, common_dir
+
+
 def _git_build_info(repo_root: str) -> Dict[str, Optional[str]]:
     """Short commit sha + its date for the running checkout (BASE-01),
     read straight out of `.git` — no `git` subprocess (COMUN.md's hard rule
@@ -1858,7 +1886,7 @@ def _git_build_info(repo_root: str) -> Dict[str, Optional[str]]:
     """
     import re
     info: Dict[str, Optional[str]] = {"sha": None, "date": None}
-    git_dir = os.path.join(repo_root, ".git")
+    git_dir, common_dir = _git_dirs(repo_root)
     try:
         log_path = os.path.join(git_dir, "logs", "HEAD")
         if os.path.isfile(log_path):
@@ -1885,11 +1913,13 @@ def _git_build_info(repo_root: str) -> Dict[str, Optional[str]]:
                 if head.startswith("ref:"):
                     ref = head.split(":", 1)[1].strip()
                     ref_path = os.path.join(git_dir, *ref.split("/"))
+                    if not os.path.isfile(ref_path):
+                        ref_path = os.path.join(common_dir, *ref.split("/"))
                     if os.path.isfile(ref_path):
                         with open(ref_path, "r", encoding="utf-8", errors="replace") as fh:
                             sha = fh.read().strip()
                     else:
-                        packed_path = os.path.join(git_dir, "packed-refs")
+                        packed_path = os.path.join(common_dir, "packed-refs")
                         if os.path.isfile(packed_path):
                             with open(packed_path, "r", encoding="utf-8", errors="replace") as fh:
                                 for line in fh:
