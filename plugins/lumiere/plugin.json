@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "id": "lumiere",
-  "name": "Lumière's Hoard",
-  "purpose": "A local video editor: media library with proxies, a multitrack timeline (cuts, ripple edits, speed, transitions, titles, picture-in-picture, keyframes, effects), text-based editing on word-level transcripts, automatic tools (silence and filler-word removal, scene cuts, vertical reframing that follows the subject, captions, cuts on the beat, highlights of long videos, loudness matching, stabilization), edit plans written from plain language, and frame-exact ffmpeg renders with GPU encoding, for people and for assistants over MCP.",
+  "name": "Lumiere's Hoard",
+  "purpose": "A local video editor: media library with proxies, a multitrack timeline (cuts, ripple edits, speed and speed curves, nested sequences, shape masks, transitions, titles, picture-in-picture, keyframes, effects, multicam synced by sound), text-based editing on word-level transcripts with speaker separation, automatic tools (silence and filler-word removal, scene cuts, vertical reframing that follows faces, captions, cuts on the beat, highlights of long videos read by the local model, background music picking, b-roll suggestions, loudness matching, stabilization), project templates with slots, edit plans written from plain language, translated subtitles, several formats in one export and frame-exact ffmpeg renders with GPU encoding, for people and for assistants over MCP.",
   "capabilities": [
     "video-editing",
     "multitrack-timeline",
@@ -10,6 +10,9 @@
     "proxies",
     "ripple-edit",
     "speed-ramp",
+    "speed-curves",
+    "nested-sequences",
+    "shape-masks",
     "transitions",
     "titles",
     "picture-in-picture",
@@ -42,7 +45,18 @@
     "gif-export",
     "audio-export",
     "edl-export",
-    "frame-snapshot"
+    "frame-snapshot",
+    "multicam",
+    "audio-sync",
+    "speaker-diarization",
+    "project-templates",
+    "music-picker",
+    "b-roll-suggestions",
+    "subtitle-translation",
+    "multi-format-export",
+    "webgl-preview",
+    "face-detection",
+    "model-highlights"
   ],
   "placeholders": [
     "LUMIERE_DIR",
