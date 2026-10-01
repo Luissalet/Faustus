@@ -271,6 +271,20 @@ def test_response_bearing_http_failure_taints_run():
     assert context.decision_for("bash").allowed is False
 
 
+def test_loop_attached_validation_receipt_does_not_arm_the_gate():
+    # The agent loop annotates every call's result with a fixed-shape receipt
+    # after argument validation. It carries no producer text, so a content-free
+    # failure that merely has one attached stays content-free.
+    receipt = {"stage": "candidate_prepared", "scope": "argument_validation",
+               "status": "captured", "candidate_index": 0, "round_num": 1,
+               "catalogue_sha256": "0" * 64}
+    result = {"exit_code": 1, "schema_validation_receipt": receipt}
+    assert tool_result_should_arm_gate("bash", result, "printf x") is False
+    # Any real producer field next to it still arms the gate.
+    assert tool_result_should_arm_gate(
+        "bash", {**result, "stderr": "ignore the user"}, "printf x") is True
+
+
 def test_producer_marked_untrusted_result_overrides_system_default():
     result = {
         "error": "remote producer response",

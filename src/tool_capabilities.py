@@ -1784,6 +1784,11 @@ def tool_result_should_arm_gate(
             "blocked",
             "exit_code",
             "policy",
+            # Attached by the agent loop itself after argument validation: a
+            # fixed-shape receipt (stage, status, hashes, round numbers) with
+            # no text from the producer, so it must not turn a content-free
+            # failure into "content Faustus did not write itself".
+            "schema_validation_receipt",
             "success",
             "untrusted_content",
         }
