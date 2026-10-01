@@ -51,7 +51,7 @@ class FakeTelegram:
                     self.send_header("Content-Length", str(len(data)))
                     self.end_headers()
                     self.wfile.write(data)
-                except (BrokenPipeError, ConnectionResetError):
+                except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                     pass                      # the client gave up (the poller was stopped mid-poll)
 
             def do_POST(self):
@@ -575,10 +575,16 @@ async def test_a_wrong_token_at_getme_also_disables_it(fake, tmp_path):
 
 
 async def test_network_errors_back_off_1_2_5_10_30_and_do_not_spin(tmp_path):
-    # nothing listens here: every call is a connection error
+    # every call is a connection error, raised at once by the transport: a real dead port
+    # costs about 2 s per refused connect on Windows, which would make this test about timing
     dead = FakeTelegram()
     url = dead.url
     dead.stop()
+
+    def refuse(request):
+        raise tb.httpx.ConnectError(f"connection refused for {request.url}", request=request)
+
+    client = tb.httpx.AsyncClient(transport=tb.httpx.MockTransport(refuse))
     rig = Rig.__new__(Rig)
     rig.fake = dead
     rig.cfg = make_config(dead, api_base=url)
@@ -593,9 +599,13 @@ async def test_network_errors_back_off_1_2_5_10_30_and_do_not_spin(tmp_path):
         await asyncio.sleep(0)
 
     rig.bridge = tb.TelegramBridge(config_loader=lambda: rig.cfg, store=rig.store, backend=rig.backend,
-                                   sleep=sleep, poll_timeout=1)
+                                   sleep=sleep, poll_timeout=1,
+                                   api_factory=lambda cfg: tb.TelegramApi(cfg.token, cfg.api_base, client=client))
     rig.bridge.start()
-    assert await until(lambda: len(rig.sleeps) >= 8 and not rig.bridge.running, timeout=10)
+    try:
+        assert await until(lambda: len(rig.sleeps) >= 8 and not rig.bridge.running, timeout=10)
+    finally:
+        await client.aclose()
     assert rig.sleeps == [1.0, 2.0, 5.0, 10.0, 30.0, 30.0, 30.0, 30.0]
     assert rig.bridge.last_error and TOKEN not in rig.bridge.last_error
     assert rig.bridge.status()["last_error"]
@@ -675,6 +685,58 @@ async def test_stop_while_a_turn_runs_cancels_it(fake, tmp_path):
     assert cancelled == [True]
 
 
+class _SwallowingApi(tb.TelegramApi):
+    """Turns a cancel that lands in a request into a network error, the way an
+    interrupted connection attempt can surface from the HTTP client."""
+
+    async def call(self, method, payload=None, **kw):
+        try:
+            if method == "sendChatAction":
+                await asyncio.sleep(30)            # the request is in flight when stop() cancels
+            return await super().call(method, payload, **kw)
+        except asyncio.CancelledError:
+            raise tb.TelegramNetworkError("ConnectError: All connection attempts failed") from None
+
+
+async def test_stop_finishes_when_the_http_client_swallows_the_cancel(fake, tmp_path):
+    rig = Rig(fake, tmp_path)
+    rig.bridge._api_factory = lambda cfg: _SwallowingApi(cfg.token, cfg.api_base)
+    started = asyncio.Event()
+
+    async def slow(req):
+        started.set()
+        await asyncio.sleep(60)
+    rig.backend.answer = slow
+    await rig.__aenter__()
+    fake.push(42, "long job")
+    await asyncio.wait_for(started.wait(), 6)
+    await asyncio.sleep(0.05)                      # the typing indicator is mid-request
+    await asyncio.wait_for(rig.bridge.stop(), 15)
+    assert rig.bridge.running is False and rig.bridge._chats == {}
+    leftovers = [t for t in asyncio.all_tasks() if t is not asyncio.current_task() and not t.done()
+                 and "telegram_bridge" in repr(t.get_coro())]
+    assert leftovers == []
+
+
+async def test_a_swallowed_cancel_does_not_keep_the_poller_retrying(fake, tmp_path):
+    rig = Rig(fake, tmp_path)
+
+    class PollSwallows(tb.TelegramApi):
+        async def get_updates(self, offset, timeout):
+            try:
+                await asyncio.sleep(30)
+            except asyncio.CancelledError:
+                raise tb.TelegramNetworkError("ConnectError: interrupted") from None
+            return []
+    rig.bridge._api_factory = lambda cfg: PollSwallows(cfg.token, cfg.api_base)
+    await rig.__aenter__()
+    assert await until(lambda: rig.bridge.bot_username)
+    await asyncio.sleep(0.05)
+    await asyncio.wait_for(rig.bridge.stop(), 15)
+    assert rig.bridge.running is False
+    assert rig.sleeps == []                        # no back-off round after the cancel
+
+
 async def test_it_does_not_start_when_disabled_or_without_a_token(fake, tmp_path):
     for over in ({"enabled": False}, {"token": ""}):
         rig = Rig(fake, tmp_path, **over)
@@ -693,6 +755,16 @@ async def test_the_token_is_not_in_the_status_or_the_errors(fake, tmp_path):
     assert TOKEN not in blob and "SECRET-TOKEN" not in blob
     api = tb.TelegramApi(TOKEN, fake.url)
     assert TOKEN not in api._clean(f"connection failed for {fake.url}/bot{TOKEN}/getMe")
+
+
+async def test_the_token_is_scrubbed_from_the_http_client_request_log(fake, tmp_path, caplog):
+    caplog.set_level(logging.INFO, logger="httpx")
+    rig = Rig(fake, tmp_path)
+    async with rig:
+        assert await until(lambda: len(fake.poll_offsets) >= 2)    # one poll has been answered
+    lines = [r.getMessage() for r in caplog.records if r.name == "httpx"]
+    assert any("/bot***/getMe" in line for line in lines) and any("/bot***/getUpdates" in line for line in lines)
+    assert not any("SECRET-TOKEN" in line for line in lines)
 
 
 def test_load_config_reads_the_settings(monkeypatch):

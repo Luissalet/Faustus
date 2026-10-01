@@ -38,6 +38,32 @@ from .store import BridgeStore
 
 logger = logging.getLogger(__name__)
 
+# The bot token is part of every Bot API URL, and the HTTP client logs each request
+# URL at INFO, which the app's root logger writes to its log file. Scrub it there.
+_BOT_TOKEN_IN_URL = re.compile(r"/bot\d{3,}:[A-Za-z0-9_-]{10,}")
+
+
+class _ScrubBotToken(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            message = record.getMessage()
+        except Exception:  # noqa: BLE001
+            return True
+        if "/bot" in message and _BOT_TOKEN_IN_URL.search(message):
+            record.msg = _BOT_TOKEN_IN_URL.sub("/bot***", message)
+            record.args = ()
+        return True
+
+
+def _install_log_scrubber() -> None:
+    for name in ("httpx", "httpcore"):
+        target = logging.getLogger(name)
+        if not any(isinstance(f, _ScrubBotToken) for f in target.filters):
+            target.addFilter(_ScrubBotToken())
+
+
+_install_log_scrubber()
+
 #: Seconds to wait after the 1st, 2nd, 3rd… consecutive failure (the last repeats).
 BACKOFF_S = (1.0, 2.0, 5.0, 10.0, 30.0)
 #: Long-poll window handed to `getUpdates`.
@@ -79,6 +105,32 @@ class TelegramNetworkError(Exception):
 def _is_loopback(base: str) -> bool:
     host = (urlparse(base).hostname or "").lower()
     return host in ("127.0.0.1", "localhost", "::1")
+
+
+def _cancel_requested() -> bool:
+    """True when the running task has been asked to stop. A cancel that lands inside
+    the HTTP client can come back out as an ordinary network error (the connection
+    attempt it interrupted fails); the loops below would then carry on, and the one
+    cancel request would be spent. They check this after any swallowed error."""
+    task = asyncio.current_task()
+    cancelling = getattr(task, "cancelling", None)
+    return bool(task is not None and cancelling is not None and cancelling())
+
+
+async def _cancel_and_wait(task: Optional["asyncio.Future"], *, tries: int = 5, wait_s: float = 2.0) -> None:
+    """Cancel a task and wait until it has finished, cancelling again if a cancel was
+    swallowed on the way; gives up after `tries` rounds instead of hanging."""
+    if task is None:
+        return
+    for _ in range(tries):
+        if task.done():
+            break
+        task.cancel()
+        await asyncio.wait({task}, timeout=wait_s)
+    if task.done() and not task.cancelled():
+        task.exception()          # mark it retrieved; the error was logged where it happened
+    elif not task.done():
+        logger.warning("telegram bridge: a task did not stop after %d cancel requests", tries)
 
 
 class TelegramApi:
@@ -314,12 +366,7 @@ class TelegramBridge:
 
     async def stop(self) -> None:
         task, self._task = self._task, None
-        if task is not None and not task.done():
-            task.cancel()
-            try:
-                await task
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                pass
+        await _cancel_and_wait(task, wait_s=5.0)      # the poller's own shutdown takes a few seconds at most
         self.running = False
 
     def needs_restart(self, cfg: BridgeConfig) -> bool:
@@ -371,6 +418,8 @@ class TelegramBridge:
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:  # noqa: BLE001 - the poller must outlive any single failure
+                    if _cancel_requested():
+                        raise asyncio.CancelledError() from None
                     self._record_error(str(exc) or type(exc).__name__)
                     delay = BACKOFF_S[min(self.failures, len(BACKOFF_S) - 1)]
                     if isinstance(exc, TelegramError) and exc.retry_after:
@@ -383,8 +432,11 @@ class TelegramBridge:
             self._publish()
             await self._shutdown_workers()
             if self._api is not None:
-                await self._api.aclose()
-                self._api = None
+                api, self._api = self._api, None
+                try:
+                    await asyncio.wait_for(api.aclose(), 5.0)
+                except (asyncio.TimeoutError, Exception):  # noqa: BLE001
+                    pass
 
     def _ensure_api(self, cfg: BridgeConfig) -> TelegramApi:
         api = self._api
@@ -410,15 +462,10 @@ class TelegramBridge:
 
     async def _shutdown_workers(self) -> None:
         chats, self._chats = list(self._chats.values()), {}
-        for chat in chats:
-            if chat.task is not None and not chat.task.done():
-                chat.task.cancel()
-        for chat in chats:
-            if chat.task is not None:
-                try:
-                    await chat.task
-                except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                    pass
+        tasks = [chat.task for chat in chats if chat.task is not None]
+        if tasks:
+            await asyncio.gather(*(_cancel_and_wait(task, tries=3, wait_s=1.0) for task in tasks),
+                                 return_exceptions=True)
 
     # ── updates ─────────────────────────────────────────────────────────
     async def _safe_dispatch(self, update: Dict[str, Any], cfg: BridgeConfig, api: TelegramApi) -> None:
@@ -533,6 +580,8 @@ class TelegramBridge:
             except TelegramUnauthorized:
                 pass                      # the poller sees the same 401 and disables itself
             except Exception:  # noqa: BLE001
+                if _cancel_requested():
+                    raise asyncio.CancelledError() from None
                 logger.warning("telegram bridge: turn for chat %s failed", state.chat_id, exc_info=True)
                 try:
                     await self._say(self._api, state.chat_id,
@@ -577,11 +626,7 @@ class TelegramBridge:
                 await self._say(api, chat_id, f"Faustus could not start this turn: {exc}")
                 return
         finally:
-            typing.cancel()
-            try:
-                await typing
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                pass
+            await _cancel_and_wait(typing)
         self.store.touch(chat_id)
         await self._reply(api, chat_id, result, session_link(cfg.public_url, sid))
 
@@ -602,7 +647,8 @@ class TelegramBridge:
             except TelegramUnauthorized:
                 return
             except Exception:  # noqa: BLE001 - the indicator is a courtesy
-                pass
+                if _cancel_requested():
+                    raise asyncio.CancelledError() from None
             await asyncio.sleep(_TYPING_EVERY_S)
 
     # ── replies ─────────────────────────────────────────────────────────
