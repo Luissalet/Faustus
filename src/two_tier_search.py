@@ -282,7 +282,10 @@ def rare_terms(query: Any) -> List[str]:
 
 
 def _term_pattern(term: str) -> "re.Pattern[str]":
-    return re.compile(r"(?<![\w])" + re.escape(term) + r"(?![\w])", re.IGNORECASE)
+    # Whole token, with one exception: ``__`` is the namespace separator of
+    # MCP tool names (``mcp__server__tool``), so ``session_events`` must find
+    # ``mcp__workers__session_events``.
+    return re.compile(r"(?:(?<![\w])|(?<=__))" + re.escape(term) + r"(?![\w])", re.IGNORECASE)
 
 
 def exact_scores(query: Any, docs: Sequence[Tuple[str, Any]]) -> Tuple[Dict[str, float], List[str], set]:

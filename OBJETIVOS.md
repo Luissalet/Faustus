@@ -1136,3 +1136,10 @@ Del radar del 01-10 (#386 y #387), pedido por Luis para tener el ecosistema más
 - Telegram: leer notas de voz (transcripción), fotos (visión) y ficheros que se manden al bot.
 - Escenas 3D: animación por fotogramas clave y render de vídeo corto; materiales con texturas de imagen de la carpeta de la escena.
 - Más canales de chat con el mismo puente, si Luis usa otros.
+
+## OBJ-51 · Identificadores tal cual y ensayo de reglas: lo que falta (01-10-2026)
+
+Hecho en §250 (radar #386 y #390). **Por hacer:**
+
+- Llevar el carril de términos raros a las búsquedas que no pasan por `two_tier_search`: la memoria (`src/memory_engine.py`, con su propio BM25) y los corpus de expertos (`services/experts.py`).
+- Ensayo de reglas: incluir también las llamadas de los runners externos (recibos de `agent_gate`) y decir cuántas de las que se habrían parado ya las había parado otra puerta.

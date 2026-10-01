@@ -82,3 +82,13 @@ def test_exact_lane_survives_refined_tier():
 
     found = tts.search(_corpus(), "KEY-12 server", k=2, embedder=Emb())
     assert "b" in [h["id"] for h in found["hits"]]
+
+
+def test_mcp_namespaced_tool_name_matches_its_last_part():
+    docs = [{"id": "mcp__workers__session_events", "text": "mcp__workers__session_events: events of a chat"},
+            {"id": "send_to_session", "text": "send_to_session: send a message to a session"},
+            {"id": "x_session_events", "text": "x_session_events is another tool"}]
+    scores, kept, full = tts.exact_scores("session_events", [(d["id"], d["text"]) for d in docs])
+    assert full == {"mcp__workers__session_events"}
+    found = tts.search(docs, "run session_events for that chat", k=1)
+    assert found["hits"][0]["id"] == "mcp__workers__session_events"
