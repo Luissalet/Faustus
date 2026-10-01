@@ -26,6 +26,25 @@ from src.foreground_model_routing import (
 )
 
 
+@pytest.fixture(autouse=True)
+def no_real_tool_index(monkeypatch):
+    """Route provenance is the subject here, not tool retrieval.
+
+    A turn that passes an empty `relevant_tools` makes the loop ask the tool
+    index for its tools. With no warm vector cache on the machine (the cache
+    file is gitignored) the first such turn embeds every tool description with
+    the real model on CPU - minutes - and `asyncio.run` then waits for that
+    worker thread before returning, even though the loop already gave up on it
+    after its 1.5 s selection timeout. Whichever test ran first paid for it, so
+    results depended on test order and on the machine. The index being
+    unavailable is a supported state (the loop falls back to keyword
+    selection), so make it so here.
+    """
+    import src.tool_index as tool_index
+
+    monkeypatch.setattr(tool_index, "get_tool_index", lambda: None)
+
+
 def _collect(gen):
     async def _run():
         return [chunk async for chunk in gen]
