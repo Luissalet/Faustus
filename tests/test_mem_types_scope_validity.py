@@ -127,6 +127,13 @@ def test_migration_is_additive_over_a_pre_mem01_database(store, tmp_path):
     the old way, then open it through the engine and confirm every old row
     is still there with sane backfilled defaults — no data lost."""
     path = engine.db_path()
+    # clear_injected() (called by the fixture) now clears the durable injection
+    # receipts (commit 9e0e8e50), which opens the engine and so creates the
+    # current-schema database. Start from a store that does not exist yet so the
+    # hand-built pre-MEM-01 schema below is genuinely the old one.
+    for suffix in ("", "-wal", "-shm"):
+        if os.path.exists(path + suffix):
+            os.unlink(path + suffix)
     conn = sqlite3.connect(path)
     conn.execute("""
         CREATE TABLE items (
