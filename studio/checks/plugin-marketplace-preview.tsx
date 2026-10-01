@@ -3,34 +3,6 @@ import {createRoot} from 'react-dom/client';
 import {PluginMarketplace} from '../src/screens/connectors/PluginMarketplace';
 import {setLang} from '../src/i18n';
 import catalogueSource from '../../plugins/marketplace.json';
-import manifest0 from "../../plugins/hoardhub/plugin.json";
-import manifest1 from "../../plugins/argus/plugin.json";
-import manifest2 from "../../plugins/babel/plugin.json";
-import manifest3 from "../../plugins/borges/plugin.json";
-import manifest4 from "../../plugins/cassandra/plugin.json";
-import manifest5 from "../../plugins/cookhoard/plugin.json";
-import manifest6 from "../../plugins/daguerre/plugin.json";
-import manifest7 from "../../plugins/diskhoard/plugin.json";
-import manifest8 from "../../plugins/dorian/plugin.json";
-import manifest9 from "../../plugins/echo/plugin.json";
-import manifest10 from "../../plugins/funes/plugin.json";
-import manifest11 from "../../plugins/gamerhoard/plugin.json";
-import manifest12 from "../../plugins/gepetto/plugin.json";
-import manifest13 from "../../plugins/hypatia/plugin.json";
-import manifest14 from "../../plugins/jobhunter/plugin.json";
-import manifest15 from "../../plugins/laplace/plugin.json";
-import manifest16 from "../../plugins/ledger/plugin.json";
-import manifest17 from "../../plugins/links/plugin.json";
-import manifest18 from "../../plugins/mercator/plugin.json";
-import manifest19 from "../../plugins/nightingale/plugin.json";
-import manifest20 from "../../plugins/people/plugin.json";
-import manifest21 from "../../plugins/platos/plugin.json";
-import manifest22 from "../../plugins/prospero/plugin.json";
-import manifest23 from "../../plugins/vitruvius/plugin.json";
-import manifest24 from "../../plugins/vulcan/plugin.json";
-import manifest25 from "../../plugins/writer/plugin.json";
-import manifest26 from "../../plugins/homehoard/plugin.json";
-import manifest27 from "../../plugins/scheherazade/plugin.json";
 import '../src/styles/fonts.css';
 import '../src/styles/tokens.css';
 import '../src/styles/base.css';
@@ -44,7 +16,10 @@ const params = new URLSearchParams(location.search);
 setLang(params.get('lang') === 'en' ? 'en' : 'es', {persist:false});
 document.documentElement.dataset.theme = params.get('theme') === 'light' ? 'light' : 'dark';
 const state = params.get('state') ?? 'missing';
-const manifests = [manifest0, manifest1, manifest2, manifest3, manifest4, manifest5, manifest6, manifest7, manifest8, manifest9, manifest10, manifest11, manifest12, manifest13, manifest14, manifest15, manifest16, manifest17, manifest18, manifest19, manifest20, manifest21, manifest22, manifest23, manifest24, manifest25, manifest26, manifest27];
+// Every catalogue row's manifest, resolved from the row id (the bundler includes all
+// plugins/*/plugin.json), so a newly listed Hoard needs no edit here.
+const manifests = await Promise.all(catalogueSource.plugins.map(row =>
+  import(`../../plugins/${row.id}/plugin.json`).then(module => module.default ?? module)));
 export const previewManifestRegistry = new Map(manifests.map(manifest => [manifest.id, manifest]));
 export const catalogue = {root:'D:/Fixture/plugins', plugins:catalogueSource.plugins.map(row => {
   const manifest = previewManifestRegistry.get(row.id);

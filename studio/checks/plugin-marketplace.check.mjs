@@ -10,6 +10,7 @@ const dom = new Window({ url: 'http://localhost' });
 for (const key of ['window', 'document', 'localStorage', 'navigator', 'HTMLElement'])
   Object.defineProperty(globalThis, key, { value: dom[key] ?? dom, configurable: true });
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+process.env.NODE_ENV = 'development';   // act() exists only in React's development build
 localStorage.setItem('faustus_studio_lang', 'en');
 const source = JSON.parse(readFileSync('plugins/marketplace.json', 'utf8'));
 const makeCatalogue = () => ({ root: 'D:/Fixture/plugins', plugins: source.plugins.map(row => {

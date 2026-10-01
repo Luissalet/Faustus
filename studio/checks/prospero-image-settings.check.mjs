@@ -10,6 +10,7 @@ const dom = new Window({url:'http://localhost/fixture?backend=configured&lang=en
 for (const key of ['window','document','localStorage','navigator','HTMLElement','location'])
   Object.defineProperty(globalThis,key,{value:dom[key] ?? dom,configurable:true});
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+process.env.NODE_ENV = 'development';   // act() exists only in React's development build
 const host = document.createElement('main'); host.id='fixture'; document.body.append(host);
 const output = resolve('.prospero-image-settings-check.mjs');
 const bundled = await build({entryPoints:['studio/checks/prospero-image-settings-preview.tsx'],bundle:true,

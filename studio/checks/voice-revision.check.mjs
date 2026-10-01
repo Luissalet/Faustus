@@ -7,6 +7,9 @@ import { resolve } from 'node:path';
 const dom = new Window({ url: 'http://localhost' });
 for (const key of ['window', 'document', 'localStorage', 'navigator', 'HTMLElement']) Object.defineProperty(globalThis, key, { value: dom[key] ?? dom, configurable: true });
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+// act() exists only in React's development build; react/index.js picks the build from
+// NODE_ENV when it is first imported (below), so an inherited NODE_ENV=production must not win.
+process.env.NODE_ENV = 'development';
 localStorage.setItem('faustus_voice_prefs', JSON.stringify({ continuous: false, autoSend: false, readAloud: false }));
 let finishCapture, captureOptions, openMicResult, calls = [], sent = [];
 const config = { configured: true, dependency_installed: true, execution: 'browser' };
@@ -22,7 +25,7 @@ const result = await build({ entryPoints: ['studio/src/voice/VoicePanel.tsx'], b
   b.onResolve({ filter: /^\.\/audio$/ }, () => ({ path: 'voice-fixture', namespace: 'fixture' }));
   b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: 'export const {capabilities,capture,openMic}=globalThis.voiceFixture; export const playSpeech=async()=>{}; export const watchForSpeech=()=>{}; export const audioLevel=()=>0;' }));
 } }] });
-const output = resolve('.voice-revision-check.mjs'); writeFileSync(output, result.outputFiles[0].text);
+const output = resolve(`.voice-revision-check-${process.pid}.mjs`); writeFileSync(output, result.outputFiles[0].text);
 try {
   const React = await import('react'); const { act } = React;
   const { createRoot } = await import('react-dom/client'); const { MemoryRouter } = await import('react-router');
