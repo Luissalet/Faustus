@@ -136,3 +136,21 @@ def test_a_pending_step_is_never_verified():
     assert step.verified is False
     done = PlanStep.from_dict({"title": "shipped", "status": "done", "verified": True}, order=1)
     assert done.verified is True
+
+
+def test_steps_in_other_agents_todo_shape_are_read():
+    """{"content", "status": "completed"|"in_progress"} is what models used to
+    other agents' todo tools send; it used to parse as a plan with no steps."""
+    plan = parse_steps_input({"steps": [
+        {"content": "Read the file", "status": "completed"},
+        {"content": "Fix the bug", "status": "in_progress"},
+        {"text": "Run the tests", "status": "cancelled"},
+        {"step": "Report", "status": "To-Do"},
+    ]})
+    assert [s.title for s in plan.steps] == ["Read the file", "Fix the bug", "Run the tests", "Report"]
+    assert [s.status for s in plan.steps] == ["done", "pending", "blocked", "pending"]
+
+
+def test_title_key_wins_over_aliases():
+    step = parse_steps_input({"steps": [{"title": "Real", "content": "Other"}]}).steps[0]
+    assert step.title == "Real"

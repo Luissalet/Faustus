@@ -9948,3 +9948,12 @@ Probado en vivo en el PC: Kafka leyó 77 correos (53 documentos) y la sincroniza
 ## 255. El arreglo automático de un servidor que suelta «////» respeta a su lanzador (01-10-2026)
 
 Visto en vivo tras reiniciar el 7000: el llama-server q4 del 8081 (vigilado por `Start-LlamaQ4.ps1`, que lo arranca otra vez cuando termina) empezó a contestar «////». `src/model_server_heal.py` lo reinició por el motor gestionado registrado para el mismo puerto, que describe el q8 con 235k de contexto en las cuatro GPU, mientras el vigilante levantaba el q4: los dos modelos cargaron a la vez (51 de 60 GB). Ahora, si el proceso que escucha en el puerto tiene un lanzador vivo, se termina ese proceso y el lanzador lo vuelve a arrancar con su propio comando; el motor gestionado y el comando configurado quedan para los servidores sin lanzador. Pruebas nuevas en `tests/test_model_server_heal.py` (15 en verde). Se paró el q8 a mano y el q4 quedó en las GPU 2 y 3, como estaba.
+
+## 256. `update_plan` lee el formato de lista de tareas que mandan los modelos (01-10-2026)
+
+Visto en el uso real (vuelta de investigación del 01-10, `claude/investigacion-ecosistema-01-10.md`): 19 llamadas a `update_plan` fallaron con «needs a non-empty `plan` … or a `steps` array» aunque traían un array `steps`. El 27B manda el formato de otros agentes, `{"steps": [{"content": "…", "status": "completed" | "in_progress"}]}`, y `PlanStep.from_dict` sólo leía `title` y los estados propios, así que cada paso salía sin título y el plan quedaba vacío.
+
+- `src/plan_state.py`: el título se lee de `title`, `content`, `text`, `step`, `task`, `name` o `description`, por ese orden (`TITLE_KEYS`). Los estados de otros agentes se traducen (`STATUS_ALIASES`): `completed`/`finished` → `done`, `in_progress`/`todo` → `pending`, `cancelled`/`failed` → `blocked`.
+- `src/agent_tools/interaction_tools.py`: una lista `steps` vacía o sin ningún paso legible, o un JSON sin `plan` ni `steps`, devuelve error. Antes se guardaba el JSON en crudo como texto del plan. El markdown suelto sigue funcionando igual.
+
+Pruebas: `tests/test_update_plan_shapes.py` (nuevo) y dos casos más en `tests/test_plan_state.py`, junto con el resto de pruebas que tocan el plan. También se comprobó en proceso con el payload exacto que fallaba (1/2 hecho, sin error).

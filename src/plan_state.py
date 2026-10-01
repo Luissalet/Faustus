@@ -43,6 +43,15 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 #: client that only understands checkboxes shows nothing misleading; what it
 #: adds is that the NEXT round must not treat the step as settled.
 STATUSES = ("pending", "done", "blocked", "needs_review")
+#: What other agents' todo tools call a step's text, in the order they are read.
+TITLE_KEYS = ("title", "content", "text", "step", "task", "name", "description")
+#: Their status words, mapped onto ours (there is no separate in-progress state).
+STATUS_ALIASES = {
+    "completed": "done", "complete": "done", "finished": "done", "ok": "done",
+    "in_progress": "pending", "active": "pending", "todo": "pending", "open": "pending", "not_started": "pending",
+    "failed": "blocked", "cancelled": "blocked", "canceled": "blocked", "skipped": "blocked",
+    "review": "needs_review",
+}
 
 #: Marks a `[x]` step whose `verified` flag is False, so `to_markdown` never
 #: silently drops it — an old renderer just sees a checked box with a comment.
@@ -99,8 +108,17 @@ class PlanStep:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any], *, order: int) -> "PlanStep":
-        title = str(data.get("title", "")).strip()
-        status = str(data.get("status", "pending")).strip().lower()
+        # Models trained on other agents' todo tools send `content`/`text`/`step`
+        # for the title and `completed`/`in_progress` for the status; read them
+        # instead of rejecting a plan whose every step looks untitled.
+        title = ""
+        for key in TITLE_KEYS:
+            value = data.get(key)
+            if isinstance(value, str) and value.strip():
+                title = value.strip()
+                break
+        status = str(data.get("status", "pending")).strip().lower().replace("-", "_").replace(" ", "_")
+        status = STATUS_ALIASES.get(status, status)
         if status not in STATUSES:
             status = "pending"
         step_id = str(data.get("id") or "").strip() or stable_step_id(title, order)

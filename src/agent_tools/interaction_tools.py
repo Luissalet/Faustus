@@ -113,17 +113,23 @@ class UpdatePlanTool:
         try:
             parsed = json.loads(raw) if raw else {}
         except (ValueError, TypeError):
-            parsed = {}
+            parsed = None  # plain markdown, not JSON
 
         if isinstance(parsed, dict) and parsed.get("plan"):
             plan = str(parsed.get("plan", "")).strip()
-        elif isinstance(parsed, dict) and parsed.get("steps"):
+        elif isinstance(parsed, dict) and "steps" in parsed:
             # Newer structured form: {"steps": [...]}. No markdown was given,
             # so `plan` (the field every existing client already reads) is
-            # rendered from the structured steps instead of left empty.
+            # rendered from the structured steps instead of left empty. A
+            # steps list with no readable step is an empty plan, never the
+            # raw JSON stored as the checklist.
             steps_plan = parse_steps_input(parsed)
-            if steps_plan is not None:
+            if steps_plan is not None and steps_plan.steps:
                 plan = to_markdown(steps_plan)
+            else:
+                steps_plan = None
+        elif isinstance(parsed, (dict, list)):
+            plan = ""  # JSON without a plan or steps: nothing to store
         else:
             plan = raw
 
