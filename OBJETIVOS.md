@@ -1082,3 +1082,57 @@ PENDIENTES queda para fallos y comprobaciones; lo que es una mejora o una funci�
 - **Asistente MTP emparejado por preset y medida con el build nuevo** (26-09, radar #332): comprobar si el build del 8081 ya carga el asistente desde `--models-dir`, que `engine_swap` lo empareje solo y medir tok/s del 27B con MTP antes y después. Con el 8081 libre, fuera de exámenes.
 - **Modelo grande de reserva en CPU** (26-09, radar #345): un MoE grande leyendo expertos del disco, para trabajo nocturno o Deep Research sin prisa sin ocupar las GPU. Medir antes de decidir si merece la pena.
 - **Ideas del radar para los Hoards** (26-09, radar #337, #338, #340, #341, #342): voz de personaje desde una descripción (Prospero/Scheherazade), preguntas orales con repetición espaciada (Hypatia), historial de portapapeles con acción por tipo, botón «Escuchar» con reparto de voces (Links) y capacidad `image` sin Python (Hoard Link). Van en el repo de cada Hoard.
+
+## OBJ-48 · Lo que nos faltaba de los reels del 30-09 — HECHO (01-10-2026)
+
+Del análisis de los reels del 30-09 (#366-385), todo lo que era de Faustus:
+
+- Flujos con nodos de modelo (`agent`, `classify`, `extract`, `guard`), bucle acotado, flujos como herramientas MCP y evaluación (§234).
+- Deep Research con poda y BM25, parada por saturación y medición WAD (§235).
+- Asesor, decisiones tipadas en tres bifurcaciones, riesgo declarado, vigía de atascos y reglas por ruta (§236).
+- Nota con cobertura en `bug_hunt` y la revisión de despliegue, y libro de cifras (§237).
+- Redacción y comparación de PDF, preset de Android, navegador con marcas y `page_find`, transcripciones de subagentes y Elo por tema (§238).
+- Midas como plugin y comité con modelo real (§239).
+
+Medidas con el 27B q4:
+
+- Guía WAD real: 10 páginas leídas frente a 3, 13 podadas (2.043.113 → 50.138 caracteres) y 95 % de frases citadas.
+- Banco de 4 páginas: 58.334 → 24.311 caracteres, con el 100 % citado y el 81,8 % de datos clave en los dos brazos.
+- Asesor: 19/20 con y sin él, 685 s frente a 758 s.
+- Banco pareado: 9/9 en los dos brazos, sin violaciones, mediana 63 s frente a 57 s.
+
+Quedan en otros chats, por ser de otros repos:
+
+- La ficha de Vulcan con Blender: Faustus ya tiene las escenas 3D tipadas (OBJ-50); Vulcan puede llamarlas por MCP en vez de repetirlas.
+- El vídeo a partir de HTML animado y la letra animada en Prospero.
+- `mark_audit` y `mark_test_sheet` en Vitruvius.
+- El vigía de listas en Links.
+- Vuelta atrás y alcances de token en el Hub.
+
+## OBJ-49 · Cierre de las adaptaciones del harness H01-H24 — HECHO (01-10-2026)
+
+Cada punto tiene su nota de cierre en `docs/design/codex-closure/` y su fila en `docs/adaptations/CODEX_IMPLEMENTACION.md` (§240).
+
+- **Verificado en Windows real**: confinamiento con Docker Desktop, gestor de procesos y sonda.
+- **Medido con el 27B q4**: banco pareado del harness (§240).
+
+**Por hacer:**
+
+- Migrar a la autoridad de herramientas las 205 familias que hoy solo están envueltas (H05).
+- Extraer a funciones puras las ramas de herramientas, compactación y recuperación del bucle (H07).
+- Contar en la cuenta del turno las llamadas síncronas `llm_call` (H14).
+
+Ninguna de las tres cambia lo que ve el usuario.
+
+## OBJ-50 · Escenas 3D con Blender y Faustus desde Telegram — HECHO (01-10-2026)
+
+Del radar del 01-10 (#386 y #387), pedido por Luis para tener el ecosistema más completo:
+
+- Escenas 3D descritas con tipos, validadas antes de arrancar Blender, renderizadas sin ventana y comprobadas con aserciones declarativas; herramienta, servidor MCP, rutas y ajustes (§244). Probado con Blender 3.6, 4.3, 4.5 y 5.0 y desde el chat con el 27B.
+- Puente opcional de Telegram: cada chat autorizado es una conversación de Faustus y cada mensaje un turno (§245).
+
+**Por hacer:**
+
+- Telegram: leer notas de voz (transcripción), fotos (visión) y ficheros que se manden al bot.
+- Escenas 3D: animación por fotogramas clave y render de vídeo corto; materiales con texturas de imagen de la carpeta de la escena.
+- Más canales de chat con el mismo puente, si Luis usa otros.

@@ -1,10 +1,21 @@
 # Pendientes de cierre
 
-Actualizado: 26-09-2026. REGLA: nunca nombres de empresas/personas del buzón de Luis en commits, docs, tests ni comentarios — ejemplos siempre ficticios. Sólo trabajo vigente; quitar cada entrada al cerrarla.
+Actualizado: 01-10-2026. REGLA: nunca nombres de empresas/personas del buzón de Luis en commits, docs, tests ni comentarios — ejemplos siempre ficticios. Sólo trabajo vigente; quitar cada entrada al cerrarla.
 
 Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya cerradas u obsoletas, con la prueba de cada cierre en FAUSTUS.md, los tests o el historial de git). Dentro de cada sección, lo más reciente primero.
 
 ## A. Decisiones o acciones de Luis
+
+- **El 8081 sirve ahora el 27B en q4** (01-10, §241). Lo pediste para dejar GPU libre durante las pruebas: `D:\LocalAI\_claude_tmp\Start-LlamaQ4.ps1` lo arranca con 64k de contexto en una sola ranura y solo en las GPU 2 y 3. Para volver al q8 con su vigilante: `D:\LocalAI\Stop-LlamaServer.ps1` y después `D:\LocalAI\Start-LlamaServer.ps1`. ¿Lo dejo en q4 o vuelvo al q8 cuando acaben las pruebas?
+- **Autor del commit `c2864141`** (Cicero en el marketplace, 30-09): quedó con tu correo personal en vez del no-reply. ¿Lo reescribo? Está en master sin push. Hay que reescribir ese commit y los que van encima.
+- **Dos paletas de Ajustes → Apariencia con nombres de otros productos** (anteriores a esta sesión). ¿Les cambio el nombre? Las paletas se quedan igual; solo cambiaría cómo se llaman.
+- **Probar el puente de Telegram con un bot real** (01-10, §245): está probado contra un servidor falso de la API. Para la prueba real hace falta que crees un bot (en Telegram, el chat de creación de bots → `/newbot`) y pegues su token en Ajustes del agente → Telegram, con tu id de chat en la lista (el bot te lo dice la primera vez que le escribes). ¿Lo hacemos?
+- **El 8081 se quedó roto tres veces** (01-10, §246): el q4 acabó contestando «////» a todo, también a un «di hola» directo, hasta reiniciarlo. Las dos primeras con dos ranuras; la tercera ya con una sola, en una ronda que reutilizaba 22k tokens de la caché y tras muchas entradas de la caché de prompts en RAM («making room for prompt cache entry»). El q4 de pruebas arranca ahora con una ranura y `--cache-ram 0` (sin esa caché en RAM), y el aviso del chat dice que hay que reiniciar el servidor. Tu q8 usa las opciones por defecto: si te pasa con él, ¿le pongo `-np 1 --cache-ram 0` en `Start-LlamaServer.ps1`?
+- **El ayudante 3B ocupa memoria en las cuatro GPU** (01-10, §242): el `llama-server` del 8082 lo arranca la instancia principal (7000) sin fijar tarjeta, y tiene entre 1,2 y 1,4 GB en cada una (unos 5,2 GB en total, contando las tuyas 0 y 1). Con `CUDA_VISIBLE_DEVICES=2` en su perfil de arranque se quedaría en una sola. Es tu configuración de la 7000: ¿lo cambio?
+- **El ayudante del 8082 contesta «???» a todo** (01-10): es el `llama-server` del 3B que arranca tu instancia principal (7000), roto igual que lo estuvo el 8081. No lo he reiniciado porque es de tu 7000 y lo usan sus tareas de fondo (títulos, resúmenes, extracción). Se arregla reiniciando la 7000 o solo ese proceso. ¿Lo reinicio yo?
+- **Servidores de la familia retenidos por el escáner de seguridad en el 7001** (01-10, §247): Midas's Hoard manda su token al hub de la familia y el escáner no puede saber que la URL es local (se construye en otro fichero), así que lo marca crítico. Con el cambio del 01-10 un servidor así ya no arranca hasta que se aprueba. Es un falso positivo: apruébalo con la casilla «I have reviewed the findings…» en Ajustes › Integraciones (en el 7001, y en el 7000 si allí sale igual). GamerHoard salía por mandar su clave a la API de juegos y ya no cuenta como crítico.
+- **Tanda de verificaciones en vivo con el modelo (secciones C y D)**: 86 comprobaciones de sesiones anteriores que necesitan el 27B, varias en tareas largas. ¿Cuándo puedo ocupar las GPU 2 y 3 unas horas para pasarlas seguidas?
+- **Medir MTP y MoE en CPU (#332, #345)**: necesitan el 8081 en exclusiva durante un rato. Hoy no se puede, porque pediste dejar GPU libre. Dime cuándo.
 
 - **Probar Claude como modelo con una clave real** (26-09, §212): la caché rodante de la conversación y el pensamiento dentro de bucles con herramientas sólo están probados contra respuestas simuladas; hace falta un endpoint de Anthropic (o `anthropic/*` por OpenRouter) con clave para un turno de agente de varias rondas, mirando `[anthropic-cache] read=` en el log y que no haya 400 por bloques de pensamiento.
 
@@ -30,7 +41,7 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 - **`utility_model`/`utility_endpoint_id` nulos en el 7001** (23-09, §169): fijarlos en ese data dir para poder probar la extracción de instintos.
 - **Nota de coaching** (20-09, §90): el agente editó su propio validador (`cults3d_check.py`) durante una tarea; decidir si el harness debe marcar como sospechosa cualquier escritura a un fichero que la propia tarea usa como verificador.
 
-- **Prueba de voz física completa** (QA-41, comprobación pendiente): conversación completa por micrófono en español e inglés; no se puede activar grabación ni permisos sin que Luis esté delante.
+- **Prueba de voz física completa** (QA-41, comprobación pendiente): conversación completa por micrófono en español e inglés; no se puede activar grabación ni permisos sin que Luis esté delante. Incluye la transcripción especulativa (§243): en el registro del navegador debe salir `[voice] speculative transcript used` cuando el turno acaba en una pausa, y nada si sigues hablando tras la pausa corta.
 - **Puente MCP y Docker Desktop en la máquina de Luis** (08-09, spec v2): el arranque lanzado a través del puente falla con `unable to get 'ProgramData'` (PowerShell sin `ProgramData`/`ALLUSERSPROFILE`); lanzado directamente por Luis funciona a la primera. No reproducible sin acceso a esa máquina.
 - **`OLLAMA_MAX_LOADED_MODELS=1`** (spec v2): variable del servicio Ollama de la máquina de Luis, no es código nuestro; decidir si se deja así.
 - **HW-06, cuándo un nodo remoto pasa a "implementado"** (spec v2, HW-06): la primitiva (`src/remote_worker_registry.py`) está construida y probada; falta que Luis fije el criterio de fiabilidad/soporte para activar el flag.
@@ -38,7 +49,6 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 - **Render de Mermaid en Studio** (11-09): hoy solo se muestra la fuente (copiar/descargar); decidir si merece la pena añadir una librería de render gráfico.
 - **OBJ-5, nodos remotos por grupos** (11-09): aplazado hasta que Luis tenga un segundo PC.
 - **Adaptador Herdr contra una instancia real** (ADP-13/CMP-06): `src/external_runtimes/herdr.py` infiere el contrato solo del texto del informe; falta que Luis dé una URL de un Herdr real para probarlo (solo lectura, por diseño).
-- **Nodo de tipo "loop" en workflows** (ADP-31): diseño y dataclasses existen (`src/contracts/workflow_iteration.py`) sin tipo de nodo en el esquema; activar un bucle real es decisión de producto.
 - **Importar un export real de otro programa de diagramas** (ADP-17): el formato de `src/workflows/interchange.py` nunca se contrastó contra un exportador real; falta que Luis aporte un fichero de ejemplo real.
 - **Enlace de material de documento y futuro del "fork clásico"** (11-09, excursos): sin decidir si el panel debería conocer la ruta del documento, y si el fork clásico debería dejar de copiar mensajes.
 - **Mediciones de laboratorio INF-06/07** (spec INF): especulación, reparto entre GPUs, comparación de motores; solo con autorización explícita de Luis para cada tanda.
@@ -83,22 +93,23 @@ Acciones físicas o de cuentas que sólo puede hacer Luis (micrófono, móvil, W
 
 ## B. Código por hacer
 
-Nada abierto a 26-09 (mañana): lo que era una mejora pasó a OBJETIVOS (OBJ-47).
+Nada abierto a 01-10: lo que era una mejora pasó a OBJETIVOS (OBJ-47 y siguientes).
 
 
 
 ## C. Verificar en vivo sin modelo
 
+Lo que se podía ver sin modelo ya está visto (§247: tope de memoria, cuarentena de un servidor crítico, conceptos con datos). Lo que queda aquí necesita datos que solo produce un turno del modelo (registro en sombra, conflictos de memoria, deriva tras un refactor) o arrancar un motor en las GPU (Optimize, `llama-server` desde la UI), así que va con la tanda de D.
+
 - **Pantallas nuevas del 26-09 sin datos para verlas llenas** (§209): el desglose por decisión del panel de autonomía (el registro en sombra está vacío mientras el modo sea `off`), los conflictos de memoria sugeridos (hoy no hay ninguno) y «Relaunch with this profile» (sale tras activar un perfil que deja algo pendiente; no se activó con el examen en marcha). Verificadas en vivo: la revisión de skills importadas (proyecto › Reglas, dos skills con su riesgo y el botón Aprobar) y el nombre del servidor MCP en Procesos.
 
 - **Optimize con una medición real, y lo que cuelga de una tarea** (spec INF): la pestaña Optimize del Cookbook ya se abrió en el 7000 el 26-09. Muestra el plan (endpoint, modelo, objetivo y la suite `es_conversation`) y no arranca nada al abrirla. Falta lanzar una medición con el 8081 libre y ver en vivo el chip de arquitectura, «Capabilities», el `ReceiptPanel` de una tarea y la cronología bajo una respuesta.
 - **`llama-server` gestionado desde la UI, resto de casos** (FAUSTUS §119 Parte B): crear un engine real desde Ajustes contra `llama-server.exe`, ver Start pasar de `stopped` a `unhealthy` a `running`, el rechazo si el puerto ya está ocupado por otro proceso, el Stop con confirmación cuando sirve el modelo por defecto, y «Rellenar desde lo que ya escucha en este puerto».
-- **Tope duro del bloque de memoria en pantalla** (FAUSTUS §120 Parte B): provocar el tope en un proyecto real y confirmar que el panel deja ver cuántos ítems se omitieron.
-- **Casilla de «aprobar de todas formas» con un servidor MCP crítico de verdad** (FAUSTUS §147): las insignias de riesgo y «Re-scan security» ya se vieron en Ajustes › Integraciones (26-09); falta un servidor local que lea un `*_TOKEN` y lo mande a un host externo, para ver la cuarentena y la casilla.
-- **Pestaña Concepts con datos** (FAUSTUS §154): la pestaña ya se abrió en el 7000 (Contexto › Concepts con proyecto; sin proyecto dice «No project bound»), pero ningún proyecto tiene conceptos todavía: falta ver el grafo `<canvas>`, el clic en un nodo y el panel de referencias rotas cuando el agente registre alguno.
 - **Deriva de arquitectura contra un refactor real** (FAUSTUS §180): provocar una deriva real (mover un fichero, introducir un ciclo) en un repo de verdad y comprobar la nota en el resumen del turno; dejar `approval_autonomy` en `shadow` una sesión entera y revisar el historial del panel.
 
 ## D. Verificar en vivo con el modelo local
+
+Todas necesitan el 27B en el 8081, muchas durante una tarea larga; juntas son varias horas de GPU 2 y 3. Las hago en una tanda cuando digas que puedo ocupar esas GPU ese rato (pregunta en A).
 
 - **Hoards con su nivel de razonamiento** (26-09, §212): una guía de estudio de Hypatia (`max`) y un lote de subtítulos de Daguerre (`off`) contra el 8081; la guía debe pensar y responder entera y los subtítulos no deben quedarse vacíos.
 - **Compactación `extract` en una tarea larga** (26-09): poner `compaction_summary_mode=extract` en una ejecución larga (el examen o `daily_eval`), comprobar que la compactación ya no llama al Utility y comparar si el 27B conserva la tarea tan bien como con el resumen por modelo.
@@ -110,14 +121,12 @@ Nada abierto a 26-09 (mañana): lo que era una mejora pasó a OBJETIVOS (OBJ-47)
 - **Calibración de tokens reaprendida** (26-09, §210): tras desplegar, comprobar en `GET /api/token-calibration` que `qwen3.8-27b-q8-llamacpp` vuelve a un factor cercano a 0,9 en chats de texto, y que el ledger del turno enseña la línea «Razonamiento del modelo que se conserva» en una tarea larga.
 - **Relevo antes del tope de tiempo** (26-09, §209): en la próxima tarea larga (examen 32; el 31 no llegó al tope, lo cortó el detector de bucles), comprobar que al 85 % del tope el 27B deja el plan con resultados y un fichero de notas, y que el turno siguiente arranca desde ahí en vez de releerlo todo.
 - **Un slot por chat en el 8081** (27-09, §213): al pasar el 7006 a master tras el examen 32, en la tarea larga siguiente buscar `[engine] chat … keeps llama-server slot` en su log y comprobar que las rondas con un cambio temprano (imágenes plegadas, reintento tras bucle) reutilizan lo anterior al cambio en vez de salir con «0 from cache». En el 3B sólo se pudo ver a medias por la caché compartida de 16k.
-- **«Mañana a las 8» en una tarea programada** (26-09): pedirla en un chat y comprobar que `next_run` cae mañana.
 - **Tarjeta del guardián de comandos destructivos y línea de estado** (26-09, §209): en un turno real, que la tarjeta nombre el comando y su motivo, y que durante una herramienta larga la línea de estado diga qué herramienta corre. Los veredictos por cita del informe de investigación salen con la siguiente investigación.
-- **Cantidades para N personas** (26-09, `answer_checks.servings_requested`): pedir en el 7006 «lista de la compra para 8: pollo al horno con patatas» y comprobar que el 27B calcula por persona con `python` y que piezas y pesos cuadran.
+- **Cantidades para N personas** (26-09, `answer_checks.servings_requested`; repetido el 01-10 en el 7001): el 27B q4 da la lista en la primera ronda con cantidades razonables (unos 400 g de pollo por persona) sin calcular con `python`; el empujón de «sin acción en el espacio de trabajo» que lo mandaba a buscar recetas ya no salta en listas de la compra, recetas ni menús (§247). Falta decidir si una lista para N personas debe calcular siempre por persona con `python`.
 - **`context_*` automáticos en una tarea larga** (25-09, §197): ver si el 27B los usa solo, a partir de qué punto, y si el aviso al umbral blando ayuda o estorba.
 - **`swarm_map` en modo `agent`** (25-09, §197): probarlo con el 8081 compartido por otros chats (el modo `llm` ya se probó con 6 ciudades).
 - **Reescritura de día de la semana y paráfrasis de «recuerda que…»** (25-09, §184): confirmar en turnos reales que el bug lunes→viernes y el razonamiento en voz alta ya no aparecen.
 - **Ruta ofrecida vs inventada** (25-09, §184): medir en turnos reales que una oferta ya no provoca rechazo y que un «he guardado X» falso sí.
-- **Calidad real de `bug_hunt`** (24-09, §189): medirla con el 27B sobre `src/git_radar.py` o similar; ajustar el prompt si inventa expectativas.
 - **`fix_memory` en un chat real** (24-09, §189): comprobar que un turno con ficheros cambiados deja línea en `DATA_DIR/fix_memory/<owner>/` y que el turno siguiente muestra «Past fixes».
 - **Carriles de `enforce` con `delegate_agents` real** (24-09, §189): probar con un `AGENT.md` de biblioteca y el diálogo de Studio con clics reales.
 - **Turno de noche real** (24-09, §189): 2-3 tareas de `dispatch` con presupuesto corto; comprobar la tarjeta de Inicio vía `night_shift_report`.
