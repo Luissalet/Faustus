@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Mapping, Optional, Tuple
@@ -32,6 +33,8 @@ from src.tool_schema_receipts import definition_hashes
 
 MODES = ("off", "shadow", "enforce")
 UNANNOUNCED_MODES = ("allow", "shadow", "refuse")
+
+logger = logging.getLogger(__name__)
 
 
 def _digest(value: Any) -> str:
@@ -257,11 +260,40 @@ def authorize_call(snapshot: Optional[StepSnapshot], name: Any, *, session_id: A
                                      announced.semantic_sha256)
         _, live_semantic = definition_hashes(dict(live))
         if live_semantic != announced.semantic_sha256:
+            logger.warning("step snapshot: contract of %s changed: %s", announced.name,
+                           "; ".join(contract_diff(announced.definition(), dict(live))) or "no visible difference")
             return CallAuthorization(
                 not enforce, "contract_changed",
                 "the tool's schema changed after this step announced it; the announced contract applies",
                 announced.semantic_sha256, live_semantic)
     return CallAuthorization(True, "ok", "", announced.semantic_sha256)
+
+
+def contract_diff(announced: Any, live: Any, path: str = "", limit: int = 8) -> list:
+    """Where two definitions differ structurally (descriptions apart), as short
+    `path: announced -> live` lines, at most `limit`. For the log only."""
+    out: list = []
+
+    def walk(a: Any, b: Any, where: str) -> None:
+        if len(out) >= limit:
+            return
+        if isinstance(a, dict) and isinstance(b, dict):
+            for key in sorted(set(a) | set(b)):
+                if key == "description":
+                    continue
+                if key not in a or key not in b:
+                    out.append(f"{where}/{key}: {'missing' if key not in a else type(a[key]).__name__} -> "
+                               f"{'missing' if key not in b else type(b[key]).__name__}")
+                else:
+                    walk(a[key], b[key], f"{where}/{key}")
+        elif isinstance(a, list) and isinstance(b, list) and len(a) == len(b):
+            for i, (x, y) in enumerate(zip(a, b)):
+                walk(x, y, f"{where}[{i}]")
+        elif a != b or type(a) is not type(b):
+            out.append(f"{where}: {json.dumps(a, default=str)[:60]} -> {json.dumps(b, default=str)[:60]}")
+
+    walk(announced, live, path)
+    return out
 
 
 def live_mcp_definition(name: str, manager: Any) -> Optional[dict]:
