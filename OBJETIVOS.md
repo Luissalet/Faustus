@@ -1126,7 +1126,7 @@ Ninguna de las tres cambia lo que ve el usuario.
 
 ## OBJ-50 · Escenas 3D con Blender y Faustus desde Telegram — HECHO (01-10-2026)
 
-Del radar del 01-10 (#386 y #387), pedido por Luis para tener el ecosistema más completo:
+Del análisis de dos repos del 01-10 (`claude/radar-switch-blender-01-10.md`: sandbox-quantum/switch y blender-json-scene-pipeline; allí numerados #386 y #387, que no son las #386-#387 de `radar-ideas.md`), pedido por Luis para tener el ecosistema más completo:
 
 - Escenas 3D descritas con tipos, validadas antes de arrancar Blender, renderizadas sin ventana y comprobadas con aserciones declarativas; herramienta, servidor MCP, rutas y ajustes (§244). Probado con Blender 3.6, 4.3, 4.5 y 5.0 y desde el chat con el 27B.
 - Puente opcional de Telegram: cada chat autorizado es una conversación de Faustus y cada mensaje un turno (§245).
