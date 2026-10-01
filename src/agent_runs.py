@@ -181,7 +181,9 @@ class _Run:
                  # propagated through however many nested try/except layers
                  # a real turn's tool execution goes through. Authoritative:
                  # once set, it is never reset for this run.
-                 "cancel_requested")
+                 "cancel_requested",
+                 # The terminal `cancelled` frame went out (once per run).
+                 "cancel_published")
 
     @property
     def outcome(self) -> Optional[str]:
@@ -227,6 +229,7 @@ class _Run:
         self.steer_receipts: list = []
         # BUG-STOP-01
         self.cancel_requested: Optional[str] = None
+        self.cancel_published = False
 
 
 _RUNS: Dict[str, _Run] = {}
@@ -846,6 +849,17 @@ def _observe_steer_applied(run: _Run, ev: str) -> None:
         return
     sid = next((k for k, v in _RUNS.items() if v is run), "")
     _steer_transition(run, sid, " ".join(str(payload.get("text") or "").split()).strip()[:4000], "drained", "applied")
+
+
+def _publish_cancelled(run: _Run) -> None:
+    """The run's terminal `cancelled` frame, once: a stream that only closed
+    would read as a finished answer to its client."""
+    if run.cancel_published:
+        return
+    run.cancel_published = True
+    _publish(run, "data: " + json.dumps({
+        "type": "cancelled", "reason": run.cancel_requested or "task_cancelled",
+    }) + "\n\n")
 
 
 def _publish(run: _Run, ev: str, *, durable: bool = False) -> None:
@@ -1503,9 +1517,7 @@ async def _drain(session_id: str, run: _Run, agen: AsyncGenerator[str, None],
         # Closing the stream alone looks like a successful answer to clients.
         # Publish before cleanup/waking subscribers so replay carries the same
         # terminal outcome as a client that was connected when Stop arrived.
-        _publish(run, "data: " + json.dumps({
-            "type": "cancelled", "reason": run.cancel_requested or "task_cancelled",
-        }) + "\n\n")
+        _publish_cancelled(run)
         # Let the wrapped generator's own CancelledError handler run (it saves
         # the partial response to the session).
         try:
@@ -1577,6 +1589,11 @@ def start(session_id: str, agen: AsyncGenerator[str, None], lane: Optional[str] 
             # when the task had already started.
             if prev.status == "running":
                 prev.status = "stopped"
+                # Its subscribers wake now, before the task's own cancellation
+                # handler runs: give them the terminal frame first, or they end
+                # on a closed stream (seen on Windows, where the handler ran
+                # after the subscriber had already returned).
+                _publish_cancelled(prev)
                 _wake_run_subscribers(prev)
             prev.task.cancel()
             prev_task = prev.task   # new run awaits this before it starts writing

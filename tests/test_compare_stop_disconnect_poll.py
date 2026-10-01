@@ -491,3 +491,32 @@ def test_compare_mode_branch_skips_agent_runs_in_source():
     between = src[direct_return_idx:detach_idx]
     assert "_safe_stream()" in between
     assert "agent_runs.start" not in between and "agent_runs.subscribe" not in between
+
+
+def test_a_run_replaced_while_running_publishes_its_cancelled_frame_once():
+    """The replacement marks the old run stopped and wakes its subscribers
+    synchronously; the frame must already be in its buffer then, and the
+    task's own cancellation handler must not add a second one."""
+    from src import agent_runs
+
+    async def main():
+        sid = "replace-once"
+        agent_runs._RUNS.pop(sid, None)
+
+        async def slow():
+            yield 'data: {"delta":"a"}\n\n'
+            await asyncio.Event().wait()
+
+        async def fast():
+            yield 'data: {"delta":"b"}\n\n'
+
+        first = agent_runs.start(sid, slow())
+        while not first.buffer:
+            await asyncio.sleep(0)
+        agent_runs.start(sid, fast())
+        assert any('"type": "cancelled"' in ev for ev in first.buffer)   # before the task ran its handler
+        await asyncio.wait_for(asyncio.shield(first.task), 2)
+        assert sum('"type": "cancelled"' in ev for ev in first.buffer) == 1
+        agent_runs._RUNS.pop(sid, None)
+
+    asyncio.run(main())
