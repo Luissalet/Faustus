@@ -60,6 +60,16 @@ def test_html_preview_surfaces_render_inside_a_sandboxed_iframe(relpath):
         assert "allow-same-origin" not in fn.group(0), (
             "sandboxAttr() must never grant allow-same-origin")
         return
+    if relpath.endswith("screens/documents/Editor.tsx"):
+        # Deliberate change (commit 1cd13f59): the editor's HTML preview no
+        # longer owns an <iframe>; it renders the shared <AppFrame>, which
+        # loads the server-side sandbox page in an opaque-origin iframe.
+        # The sandbox assertion therefore moves to that component's source,
+        # and the editor must not reintroduce a raw, unsandboxed <iframe>.
+        assert "<AppFrame" in source, f"no sandboxed preview frame found in {relpath}"
+        assert not re.search(r"<iframe\b", source), (
+            f"{relpath} must render previews through AppFrame, not a raw <iframe>")
+        source = (REPO_ROOT / "studio/src/components/AppFrame.tsx").read_text(encoding="utf-8")
     matches = re.findall(r'<iframe[^>]*\bsandbox="([^"]*)"', source)
     assert matches, f"no sandboxed <iframe> found in {relpath}"
     for attrs in matches:
