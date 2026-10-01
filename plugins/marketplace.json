@@ -25,6 +25,7 @@
     {"id": "mercator", "repository_url": "https://github.com/Luissalet/Mercators-Hoard.git", "required": false},
     {"id": "nightingale", "repository_url": "https://github.com/Luissalet/NightingalesHoard.git", "required": false},
     {"id": "people", "repository_url": "https://github.com/Luissalet/PeoplesHoard.git", "required": false},
+    {"id": "phileas", "repository_url": "https://github.com/Luissalet/PhileasHoard.git", "required": false},
     {"id": "platos", "repository_url": "https://github.com/Luissalet/PlatosHoard.git", "required": false},
     {"id": "prospero", "repository_url": "https://github.com/Luissalet/ProsperosHoard.git", "required": false},
     {"id": "scheherazade", "repository_url": "https://github.com/Luissalet/ScheherazadesHoard.git", "required": false},

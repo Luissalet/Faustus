@@ -14,7 +14,7 @@ CATALOG = json.loads((ROOT / "marketplace.json").read_text(encoding="utf-8"))
 def test_catalog_schema_unique_ids_and_public_clone_urls():
     assert CATALOG["schema"] == 1
     entries = CATALOG["plugins"]
-    assert len(entries) == 31
+    assert len(entries) == 32
     assert len({entry["id"] for entry in entries}) == len(entries)
     for entry in entries:
         assert set(entry) == {"id", "repository_url", "required"}
@@ -57,6 +57,8 @@ def test_verified_home_and_story_repositories_are_optional_catalog_entries():
         "repository_url": "https://github.com/Luissalet/ScheherazadesHoard.git", "required": False}
     assert entries["tantalus"] == {"id": "tantalus",
         "repository_url": "https://github.com/Luissalet/TantalusHoard.git", "required": False}
+    assert entries["phileas"] == {"id": "phileas",
+        "repository_url": "https://github.com/Luissalet/PhileasHoard.git", "required": False}
 
 
 def test_independent_watch_and_book_repositories_are_excluded():
