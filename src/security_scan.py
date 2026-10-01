@@ -431,8 +431,9 @@ def _secret_name_at(text: str, start: int, end: int) -> str:
 
 def _sent_to_its_own_service(text: str, secret_name: str) -> bool:
     """True when the credential is named after a service (RAWG_API_KEY) and every
-    non-loopback URL the text names is that service's host (api.rawg.io): an API
-    client sending its key to the API it is for. Hosts built at runtime cannot be
+    non-loopback URL named around it (the same window the rule looks in for the
+    network call) is that service's host (api.rawg.io): an API client sending
+    its key to the API it is for. Hosts built at runtime cannot be
     judged; like the loopback case this only lowers a finding's severity."""
     service = _SECRET_SUFFIX.sub("", secret_name.upper()).strip("_").lower()
     if len(service) < 3 or service in {"api", "auth", "access", "secret", "private", "my"}:
@@ -471,7 +472,8 @@ def scan_text(text: str, *, kind: str = "generic", filename: str = "<text>") -> 
                 # loopback API: every URL literal in the file is loopback.
                 severity = "low"
             elif rule.id == "EXFIL_SECRET_TO_NETWORK" and _sent_to_its_own_service(
-                    text, _secret_name_at(text, m.start(), m.end())):
+                    text[max(0, m.start() - rule.window):m.end() + rule.window],
+                    _secret_name_at(text, m.start(), m.end())):
                 # An API client sending SERVICE_API_KEY to that service's host.
                 severity = "low"
             if rule.category in _DOWNGRADE_IN_FENCE and line_no in fenced:

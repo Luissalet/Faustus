@@ -564,3 +564,23 @@ def test_a_key_sent_anywhere_else_stays_critical():
     generic = "k = os.environ['API_KEY']\nrequests.post('https://api.example.com', data=k)\n"
     found = [f for f in scan_text(generic, kind="mcp_server").findings if f.rule_id == "EXFIL_SECRET_TO_NETWORK"]
     assert found and all(f.severity == "critical" for f in found)
+
+
+def test_other_services_elsewhere_in_the_file_do_not_matter():
+    """Live 01-10: the games plugin also calls the Steam API in another function
+    (with a key passed in the call), which kept its RAWG client critical."""
+    from src.security_scan import scan_text
+    filler = "\n".join(f"// line {i} of other tools" for i in range(30))
+    src = (
+        "async function rawg(path) {\n"
+        "  const key = process.env.RAWG_API_KEY;\n"
+        "  const url = new URL(`https://api.rawg.io/api${path}`);\n"
+        "  url.searchParams.set('key', key);\n"
+        "  return fetch(url);\n"
+        "}\n" + filler + "\n"
+        "async function steam(apiKey, id) {\n"
+        "  return fetch(`https://api.steampowered.com/ISteamUserStats/x?key=${apiKey}&appid=${id}`);\n"
+        "}\n"
+    )
+    found = [f for f in scan_text(src, kind="mcp_server").findings if f.rule_id == "EXFIL_SECRET_TO_NETWORK"]
+    assert found and all(f.severity == "low" for f in found)
