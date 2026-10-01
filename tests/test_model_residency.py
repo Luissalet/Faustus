@@ -92,3 +92,21 @@ def test_a_card_that_could_not_be_read_means_not_measured():
     row, = out["models"]
     assert row["measured"] is False and row["bytes"] == 17 * GB
     assert [g["index"] for g in row["gpus"]] == [2, 3]
+
+
+def test_another_faustus_instance_is_named_with_its_port(monkeypatch):
+    class P:
+        def __init__(self, pid, name, cmd, parents=()):
+            self.pid, self._name, self._cmd, self._parents = pid, name, cmd, list(parents)
+        def name(self): return self._name
+        def cmdline(self): return self._cmd
+        def parents(self): return self._parents
+    main = P(10, "python.exe", ["python.exe", "-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", "7000"])
+    runner = P(20, "llama-server.exe", ["llama-server.exe", "--port", "8082"], parents=[main])
+
+    class FakePsutil:
+        @staticmethod
+        def Process(pid):
+            return {20: runner, 10: main}[pid]
+    monkeypatch.setattr(mr, "_psutil", lambda: FakePsutil)
+    assert mr._describe_origin(20, self_pid=99, profiles={}) == {"kind": "faustus", "label": "Faustus :7000"}

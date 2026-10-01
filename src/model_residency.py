@@ -143,6 +143,21 @@ def _describe_origin(pid: int, *, self_pid: int, profiles: Dict[int, str]) -> Di
             continue
         if name.startswith("ollama"):
             return {"kind": "ollama", "label": "Ollama"}
+    # Another Faustus instance on this machine (a second port, the main one
+    # next to a test one) started it: say which, not "python.exe".
+    for p in chain:
+        try:
+            cmd = [str(t) for t in (p.cmdline() or [])]
+        except Exception:  # noqa: BLE001
+            continue
+        if any("uvicorn" in t for t in cmd) and "app:app" in cmd:
+            port = ""
+            for i, tok in enumerate(cmd):
+                if tok == "--port" and i + 1 < len(cmd):
+                    port = cmd[i + 1]
+                elif tok.startswith("--port="):
+                    port = tok.split("=", 1)[1]
+            return {"kind": "faustus", "label": f"Faustus :{port}" if port else "Faustus"}
     # Started outside Faustus: name the nearest parent that says something
     # (a script beats the shell that ran it; a shell beats nothing).
     for p in chain:
