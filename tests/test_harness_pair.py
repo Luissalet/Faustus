@@ -381,3 +381,19 @@ def test_cleanup_removes_read_only_files(tmp_path, monkeypatch):
     os.chmod(obj.parent, stat.S_IREAD | stat.S_IEXEC)
     sb.cleanup(pause_s=0.01)
     assert not sb.leftover()
+
+
+def test_cleanup_ends_a_command_still_running_in_the_sandbox():
+    """A command started by a server a case killed keeps running with the workspace
+    as its working directory; on Windows that keeps the sandbox from being removed."""
+    import subprocess
+    import sys as _sys
+    box = hp.Sandbox.create()
+    proc = subprocess.Popen([_sys.executable, "-c", "import time; time.sleep(60)"], cwd=str(box.workspace))
+    try:
+        box.cleanup()
+        assert proc.wait(timeout=10) is not None
+        assert not box.leftover()
+    finally:
+        if proc.poll() is None:
+            proc.kill()

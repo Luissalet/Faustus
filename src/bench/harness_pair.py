@@ -133,6 +133,37 @@ def _hash_tree(root: Path, ignored: Sequence[str] = ()) -> Dict[str, str]:
     return out
 
 
+def kill_processes_inside(root: Path, wait_s: float = 5.0) -> List[int]:
+    """End every process (other than this one) whose working directory is inside
+    ``root``; returns their pids. Best effort: a process that cannot be read is skipped."""
+    try:
+        import psutil
+    except ImportError:  # pragma: no cover - psutil is a requirement
+        return []
+    try:
+        base = os.path.normcase(os.path.realpath(str(root)))
+    except OSError:
+        return []
+    victims = []
+    for proc in psutil.process_iter(["pid"]):
+        if proc.pid == os.getpid():
+            continue
+        try:
+            cwd = os.path.normcase(os.path.realpath(proc.cwd()))
+        except (psutil.Error, OSError):
+            continue
+        if cwd == base or cwd.startswith(base + os.sep):
+            victims.append(proc)
+    for proc in victims:
+        try:
+            proc.kill()
+        except psutil.Error:
+            pass
+    if victims:
+        psutil.wait_procs(victims, timeout=wait_s)
+    return [p.pid for p in victims]
+
+
 @dataclass
 class Sandbox:
     """Everything one bench run may touch, in one throwaway directory.
@@ -182,7 +213,11 @@ class Sandbox:
         """Remove the whole sandbox. On Windows git writes its objects
         read-only and a process that just exited can hold a handle for a
         moment, so a plain ``rmtree`` left the directory behind (reported as a
-        state leak on every case): clear the read-only bit and retry briefly."""
+        state leak on every case): clear the read-only bit and retry briefly.
+        A command started by a server the case killed outlives it (nothing
+        reaps it on Windows) and keeps the workspace as its working directory,
+        so processes working inside the sandbox are ended first."""
+        kill_processes_inside(self.root)
         def _writable_then_retry(func, path, _exc):
             try:
                 os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
