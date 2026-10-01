@@ -634,35 +634,51 @@ def persistence_enabled() -> bool:
 # a large file that changed since the last scan is held by the antivirus
 # while it reads the whole thing (26-09: 145 s inside `open()` for the 107 MB
 # log of an exam run). The sidecar is a few bytes, so that scan is instant.
+_TERMINAL_STATUSES = ("done", "stopped", "error", "interrupted", "waiting_user")
+
+
 def _status_sidecar(path: str) -> str:
     return path + ".status"
 
 
-def _write_status_sidecar(path: str, status: str) -> None:
+def _write_status_sidecar(path: str, status: str, *, effects_scanned: bool = False) -> None:
     """`<status> <log size>`: the size ties the sidecar to the exact log it
-    describes, and reading a size never opens the log."""
+    describes, and reading a size never opens the log.
+
+    A third token, `scanned`, is written only by startup recovery after it read
+    the whole terminal log and found no unresolved tool effect (or had already
+    acknowledged them). It lets the next startup skip that log without opening
+    it, which a status alone cannot: a terminal log may still hold an uncertain
+    effect that needs a notice, so only a completed scan can vouch for it."""
     try:
         size = os.path.getsize(path)
     except OSError:
         size = -1
     try:
         with open(_status_sidecar(path), "w", encoding="utf-8") as f:
-            f.write(f"{status} {size}")
+            f.write(f"{status} {size}" + (" scanned" if effects_scanned else ""))
     except OSError:
         pass
+
+
+def _read_status_sidecar_parts(path: str) -> Optional[Tuple[str, bool]]:
+    try:
+        with open(_status_sidecar(path), "r", encoding="utf-8") as f:
+            parts = f.read(80).split()
+        if len(parts) not in (2, 3) or int(parts[1]) != os.path.getsize(path):
+            return None
+        if len(parts) == 3 and parts[2] != "scanned":
+            return None
+    except (OSError, ValueError):
+        return None
+    return (parts[0], len(parts) == 3) if parts[0] else None
 
 
 def _read_status_sidecar(path: str) -> Optional[str]:
     """The sidecar's status when the log is still exactly the size it had
     when the sidecar was written; None when it is missing or stale."""
-    try:
-        with open(_status_sidecar(path), "r", encoding="utf-8") as f:
-            parts = f.read(80).split()
-        if len(parts) != 2 or int(parts[1]) != os.path.getsize(path):
-            return None
-    except (OSError, ValueError):
-        return None
-    return parts[0] or None
+    parts = _read_status_sidecar_parts(path)
+    return parts[0] if parts else None
 
 
 class _RunLog:
@@ -2499,13 +2515,26 @@ def recover_interrupted_runs(session_manager=None) -> List[Dict[str, Any]]:
             log_mtime = os.path.getmtime(path)
         except OSError:
             continue
-        side = _read_status_sidecar(path)
+        side_parts = _read_status_sidecar_parts(path)
+        side = side_parts[0] if side_parts else None
+        if side_parts and side_parts[1] and side in _TERMINAL_STATUSES:
+            # A previous recovery read this exact log end to end and found no
+            # effect needing a notice: do not open it again (it can be tens of
+            # MB, and the first open of a changed file can stall for minutes).
+            try:
+                if now - log_mtime > keep_h * 3600:
+                    os.remove(path)
+                    if os.path.exists(_status_sidecar(path)):
+                        os.remove(_status_sidecar(path))
+            except OSError:
+                pass
+            continue
         peeked = side if side and side != "running" else _peek_status(path)
         if peeked == "unreadable":
             continue
         info = _read_log(path, for_recovery=True)
         status = info.get("status")
-        if status in ("done", "stopped", "error", "interrupted", "waiting_user"):
+        if status in _TERMINAL_STATUSES:
             effects = _partial_from_events(info.get("events") or []).get("unknown_effects") or []
             if effects:
                 acknowledged, entry = _recover_terminal_effects(path, info, effects, session_manager)
@@ -2513,6 +2542,7 @@ def recover_interrupted_runs(session_manager=None) -> List[Dict[str, Any]]:
                     recovered.append(entry)
                 if not acknowledged:
                     continue
+            _write_status_sidecar(path, status, effects_scanned=True)
             try:
                 if now - log_mtime > keep_h * 3600:
                     os.remove(path)
