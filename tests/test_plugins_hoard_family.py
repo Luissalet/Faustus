@@ -29,6 +29,7 @@ FAMILY = {
     "midas": ("midas-hoard", 5192, "midas"),
     "cicero": ("cicero-hoard", 5194, "cicero"),
     "tantalus": ("tantalus-hoard", 5197, "tantalus"),
+    "phileas": ("phileas-hoard", 5199, "phileas"),
     "lumiere": ("lumiere-hoard", 5198, "lumiere"),
 }
 
