@@ -6673,6 +6673,7 @@ export const es: Record<string, string> = {
   "Theme name": "Nombre del tema",
   "Theme name…": "Nombre del tema…",
   "Theme: {name}": "Tema: {name}",
+  "Theme: {name} — not kept, your eight saved themes are full": "Tema: {name} — no se ha guardado, tus ocho temas guardados están llenos",
   "Then click the page where it goes": "Luego pulsa en la página donde va",
   "Then every colour on its own. The whole interface follows these tokens, so nothing is left behind.": "Y luego cada color por separado. Toda la interfaz sigue estos tokens, así que no se queda nada atrás.",
   "Then run": "Después ejecutar",

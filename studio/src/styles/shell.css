@@ -864,3 +864,26 @@ html[data-studio-shell='on'] body > *:not(#studio-root):not(#fs-overlay-root) {
   background: var(--fs-brand);
   color: var(--fs-on-brand);
 }
+
+/* What the agent points at with ui_control `highlight` (shell/uiEvents.ts). */
+.fs-ui-highlight {
+  outline: 2px solid var(--fs-brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+  position: relative;
+}
+.fs-ui-highlight[data-ui-highlight]::after {
+  content: attr(data-ui-highlight);
+  position: absolute;
+  inset-block-start: calc(100% + 6px);
+  inset-inline-start: 0;
+  z-index: 50;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  background: var(--fs-brand);
+  color: var(--fs-on-brand);
+  pointer-events: none;
+}

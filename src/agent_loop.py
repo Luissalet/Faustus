@@ -16770,6 +16770,8 @@ async def _stream_agent_loop_body(
                 for k in (
                     "toggle_name", "state", "mode", "model", "endpoint_url",
                     "theme_name", "colors",
+                    # create_theme's background effect; highlight's target
+                    "bg", "selector", "label",
                     # ui_control open_email_reply payload — without these the
                     # frontend openReplyDraft bails on undefined uid and the
                     # reply window silently never opens.

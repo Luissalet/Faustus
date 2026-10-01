@@ -82,6 +82,8 @@ import { startTour } from '../shell/store';
 import { refreshActivity } from '../shell/activity';
 import { TOURS, resetTours, seenTours } from '../lib/tours';
 import { getTheme as getMode, setTheme as setMode, type ThemeChoice } from '../shell/theme';
+import { applyThemeEvent, clearHighlights, emailReplyRoute, highlight, PANEL_ROUTES } from '../shell/uiEvents';
+import type { UiEvent } from '../adapters/uiEvent';
 import { BrandMark } from '../shell/BrandMark';
 import { useSpotlight } from '../shell/useSpotlight';
 import { ModelPicker } from './ModelPicker';
@@ -712,6 +714,75 @@ export function StudioScreen() {
     },
     [knobs, sessionId, navigate],
   );
+
+  /* ui_control (adapters/uiEvent.ts): what the agent asked the screen to do
+     — a theme, a panel, a toggle, the mode, the model, a reply draft, a
+     highlight. The stream loops hold one render's closures for the whole
+     turn, so they call the latest handler through this ref. Navigation
+     waits for the turn to end, so the reply is not taken off the screen.
+     `replay` (a turn picked up after a reload) skips the navigation. */
+  const [pendingRoute, setPendingRoute] = useState<string | null>(null);
+  useEffect(() => {
+    if (busy || !pendingRoute) return;
+    setPendingRoute(null);
+    navigate(pendingRoute);
+  }, [busy, pendingRoute, navigate]);
+  const uiEventRef = useRef<(ev: UiEvent, replay: boolean) => void>(() => undefined);
+  uiEventRef.current = (ev, replay) => {
+    switch (ev.kind) {
+      case 'set_theme':
+      case 'create_theme': {
+        const done = applyThemeEvent(ev);
+        if (done) {
+          say(done.saved ? t('Theme: {name}', { name: done.name }) : t('Theme: {name} — not kept, your eight saved themes are full', { name: done.name }));
+        }
+        return;
+      }
+      case 'toggle': {
+        const name = ev.toggleName ?? '';
+        const on = ev.state;
+        if (typeof on !== 'boolean' || !['web', 'bash', 'rag', 'research', 'incognito'].includes(name)) return;
+        if (name === 'rag') setRagActive(on);
+        if (name === 'incognito' && !on && sessionId && incognitoIds().includes(sessionId)) setPendingRoute('/studio');
+        setKnobsState((k) => ({ ...k, [name]: on }));
+        return;
+      }
+      case 'set_mode':
+        if (ev.mode === 'agent' || ev.mode === 'chat') {
+          const mode = ev.mode;
+          setKnobsState((k) => ({ ...k, mode }));
+        }
+        return;
+      case 'switch_model': {
+        const want = (ev.model ?? '').toLowerCase();
+        if (!want) return;
+        const url = (ev.endpointUrl ?? '').replace(/\/+$/, '');
+        const sameModel = routes.filter((r) => r.model.toLowerCase() === want);
+        const hit = sameModel.find((r) => url && r.endpointUrl.replace(/\/+$/, '') === url) ?? sameModel[0];
+        if (!hit) return;
+        explicitPick.current = true;
+        pendingSessionRoute.current = null;
+        setRouteId(hit.id);
+        say(t('Model: {name}', { name: hit.model }));
+        return;
+      }
+      case 'open_panel': {
+        const to = PANEL_ROUTES[ev.panel ?? ''];
+        if (to && !replay) setPendingRoute(to);
+        return;
+      }
+      case 'open_email_reply':
+        if (!replay) void emailReplyRoute(ev).then(setPendingRoute);
+        return;
+      case 'highlight':
+        if (ev.selector) highlight(ev.selector, ev.label);
+        return;
+      case 'clear_highlight':
+        clearHighlights();
+        return;
+      default:
+    }
+  };
 
   const setWorkspace = useCallback((path: string) => {
     persistWorkspace(path);
@@ -1349,6 +1420,7 @@ export function StudioScreen() {
             patchLast((t) => apply(t, event));
           }
           panelDispatch({ type: 'event', event, busy: true });
+          if (event.type === 'tool_output' && event.uiEvent) uiEventRef.current(event.uiEvent, false);
         }
       } catch (error) {
         if (!controller.signal.aborted && controllerRef.current === controller) {
@@ -1430,6 +1502,7 @@ export function StudioScreen() {
             patchLast((t) => apply(t, event));
           }
           panelDispatch({ type: 'event', event, busy: true });
+          if (event.type === 'tool_output' && event.uiEvent) uiEventRef.current(event.uiEvent, false);
         }
       } catch (error) {
         if (!controller.signal.aborted && controllerRef.current === controller) {
@@ -1487,6 +1560,7 @@ export function StudioScreen() {
             patchLast((t) => apply(t, event));
           }
           panelDispatch({ type: 'event', event, busy: true });
+          if (event.type === 'tool_output' && event.uiEvent) uiEventRef.current(event.uiEvent, true);
         }
       } catch {
         /* aborted (the session changed) or the run ended mid-read */

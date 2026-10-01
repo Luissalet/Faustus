@@ -9042,3 +9042,4 @@ Restart commands	Órdenes de reinicio
 host:port=command for servers no launcher keeps running, comma-separated. The command must stop and start the server itself.	host:puerto=orden para servidores que no mantiene en marcha ningún lanzador, separados por comas. La orden tiene que parar y arrancar el servidor ella misma.
 Wait for the restarted server (seconds)	Espera al servidor reiniciado (segundos)
 How long a big model may take to load again before the restart counts as failed.	Cuánto puede tardar un modelo grande en volver a cargar antes de dar el reinicio por fallido.
+Theme: {name} — not kept, your eight saved themes are full	Tema: {name} — no se ha guardado, tus ocho temas guardados están llenos

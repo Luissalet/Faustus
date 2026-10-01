@@ -1,3 +1,4 @@
+import { uiEventFrom, type UiEvent } from './uiEvent';
 import { t } from '../i18n';
 import {
   ApiError,
@@ -608,6 +609,9 @@ export type ChatEvent =
        *  model reads on the result's first line. */
       durationMs?: number;
       turnElapsedMs?: number;
+      /** `ui_control`'s request to the screen (theme, panel, toggle, mode,
+       *  model, reply draft, highlight): `shell/uiEvents.ts`. */
+      uiEvent?: UiEvent;
     }
   | { type: 'steer'; text: string; source: string; interrupt: boolean }
   | { type: 'subagent'; payload: SubagentPayload }
@@ -1585,6 +1589,7 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
         callId: str(raw.call_id) || undefined,
         durationMs: num(raw.duration_ms) ?? undefined,
         turnElapsedMs: num(raw.turn_elapsed_ms) ?? undefined,
+        uiEvent: uiEventFrom(raw),
       };
     case 'browser_view': {
       const frame = frameFrom(raw);
