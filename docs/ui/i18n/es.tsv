@@ -8994,3 +8994,31 @@ Blender executable	Ejecutable de Blender
 Full path to blender.exe or blender. Empty = look at BLENDER_PATH, the PATH and the usual install folders, newest version first.	Ruta completa de blender.exe o blender. Vacío = buscar en BLENDER_PATH, el PATH y las carpetas de instalación habituales, de la versión más nueva a la más antigua.
 Time limit per scene (seconds)	Tiempo máximo por escena (segundos)
 How long one headless Blender run may take before it is stopped.	Cuánto puede durar una ejecución de Blender sin ventana antes de pararla.
+Chat bridges: Telegram	Puentes de chat: Telegram
+Talk to your Faustus agent from a Telegram chat (src/chat_bridges/). Faustus polls the bot's updates itself, so no public address is needed. Only the chats you list may talk to it, every chat is one conversation in Studio, and a tool that needs an approval waits there: the bot replies with a link instead of approving anything.	Habla con tu agente de Faustus desde un chat de Telegram (src/chat_bridges/). Faustus consulta él mismo las novedades del bot, así que no hace falta una dirección pública. Solo pueden hablarle los chats que enumeres, cada chat es una conversación en Studio y una herramienta que necesita aprobación espera allí: el bot responde con un enlace en vez de aprobar nada.
+Enable the Telegram bridge	Activar el puente de Telegram
+Off by default. When on and a bot token is set, Faustus starts polling the bot and answers the chats listed below. Changing this applies without a restart.	Desactivado por defecto. Con el puente activado y un token de bot guardado, Faustus empieza a consultar el bot y responde a los chats de la lista de abajo. El cambio se aplica sin reiniciar.
+Bot token	Token del bot
+The token the bot-creation chat on Telegram gave you. It is stored encrypted and never shown again after you save it.	El token que te dio el chat de creación de bots de Telegram. Se guarda cifrado y no vuelve a mostrarse una vez guardado.
+Allowed chat ids	Ids de chat permitidos
+Chat ids that may talk to the agent, comma-separated. Empty = nobody. A chat that is not on the list gets one reply with its own id, so you can copy it here.	Ids de los chats que pueden hablar con el agente, separados por comas. Vacío = nadie. Un chat que no está en la lista recibe una sola respuesta con su propio id, para que lo copies aquí.
+"agent" runs a full agent turn with tools (approvals wait in Studio). "chat" answers with the model alone, without tools.	"agent" ejecuta un turno completo del agente con herramientas (las aprobaciones esperan en Studio). "chat" responde solo con el modelo, sin herramientas.
+Model name for these conversations on the default endpoint. Empty = the default chat model.	Nombre del modelo para estas conversaciones en el endpoint por defecto. Vacío = el modelo de chat por defecto.
+Owner account	Cuenta propietaria
+The Faustus account that owns the conversations and whose tools and settings the agent uses. Empty = the first administrator.	La cuenta de Faustus que es dueña de las conversaciones y cuyas herramientas y ajustes usa el agente. Vacío = el primer administrador.
+API base URL	URL base de la API
+Where the bot API lives. Leave the default unless you run a local test server.	Dónde está la API del bot. Deja el valor por defecto salvo que uses un servidor de pruebas local.
+Chats that wrote and are not on the list: {chats}. Copy an id into the allowed list to let that chat in.	Chats que han escrito y no están en la lista: {chats}. Copia un id en la lista de permitidos para dejar entrar a ese chat.
+Enabled, but no bot token is saved.	Activado, pero no hay ningún token de bot guardado.
+Enabled, not running yet.	Activado, todavía no está en marcha.
+Last error: {error}	Último error: {error}
+Loading the bridge status…	Cargando el estado del puente…
+Off.	Desactivado.
+Running as @{name}.	En marcha como @{name}.
+Running, but the last request failed: {error}	En marcha, pero la última petición ha fallado: {error}
+Telegram bridge	Puente de Telegram
+Test the token	Probar el token
+Testing…	Probando…
+The bot API did not accept the token.	La API del bot no ha aceptado el token.
+The token works: @{name}.	El token funciona: @{name}.
+{allowed} allowed chats, {conversations} conversations.	{allowed} chats permitidos, {conversations} conversaciones.

@@ -74,6 +74,7 @@ import { IntegrationsSection } from './settings/Integrations';
 import { LocalModelsSection } from './settings/LocalModels';
 import { AppearanceSection } from './settings/Appearance';
 import { ThisDeviceSection } from './settings/ThisDevice';
+import { ChatBridgeStatus } from './settings/ChatBridgeStatus';
 import { BehaviorModesSection } from './settings/BehaviorModes';
 import { PiperVoices } from './settings/PiperVoices';
 import { authStatus } from '../adapters/account';
@@ -1456,6 +1457,7 @@ function SchemaControl({ field, value, onChange }: { field: SchemaField; value: 
     );
   }
   if (field.type === 'list') return <Text id={id} value={list(value)} onChange={(v) => onChange(fromList(v))} />;
+  if (field.type === 'secret') return <Text id={id} value={str(value)} onChange={onChange} secret />;
   return <Text id={id} value={str(value)} onChange={onChange} />;
 }
 
@@ -1521,6 +1523,7 @@ function AgentSection({ settings, onSave, say }: { settings: Settings | null; on
               {t(g.title)} <span className="fs-set__count">{fields.length}</span>
             </summary>
             {g.help && <p className="fs-set__help">{t(g.help)}</p>}
+            {g.id === 'chat_bridges' && <ChatBridgeStatus savedKey={JSON.stringify([settings.telegram_bridge_enabled, settings.telegram_bot_token, settings.telegram_allowed_chat_ids])} />}
             <div className="fs-set__group-body">
               {fields.map((f) => (
                 <div key={f.key} className="fs-set__field fs-set__field--schema" data-changed={JSON.stringify(draft[f.key]) !== JSON.stringify(settings[f.key] ?? schema.defaults[f.key]) || undefined}>

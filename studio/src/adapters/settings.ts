@@ -139,7 +139,7 @@ export interface SchemaField {
   key: string;
   label: string;
   help: string;
-  type: 'bool' | 'int' | 'float' | 'select' | 'list' | 'text' | string;
+  type: 'bool' | 'int' | 'float' | 'select' | 'list' | 'text' | 'secret' | string;
   min?: number;
   max?: number;
   step?: number;
@@ -148,6 +148,8 @@ export interface SchemaField {
 }
 
 export interface SchemaGroup {
+  /** The server's id for the group (`chat_bridges`, `loop`, …). */
+  id?: string;
   key: string;
   title: string;
   help?: string;
