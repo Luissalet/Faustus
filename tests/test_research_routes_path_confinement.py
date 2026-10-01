@@ -563,3 +563,18 @@ def test_spinoff_reads_saved_query_for_done_active_task(tmp_path, monkeypatch):
     primer = session_manager.created.messages[0].content
     assert "completed query" in primer
     assert "(not recorded)" not in primer
+
+
+def test_result_peek_carries_the_run_stats_so_studio_can_show_them(tmp_path, monkeypatch):
+    """Rounds, pruning, confidence and why the run stopped are saved with the
+    report; Studio showed none of them because the peek left them out."""
+    stats = {"Rounds": 3, "Pruned": "13 page(s), 2043113 -> 50138 chars", "Confidence": "0.17",
+             "Stopped": "time_budget_exhausted: the time budget ran out", "Claims cited": "95%"}
+    path = _write_research(tmp_path / "deep_research", "rp-peekstats1", owner="alice",
+                           result="r", sources=[], raw_findings=[], stats=stats).resolve()
+    monkeypatch.setattr("routes.research.research_routes._find_owned_research_path", lambda sid, user: path)
+    handler = _research_handler()
+    handler.get_result.return_value = None
+    target = _route(setup_research_routes(handler), "/api/research/result-peek/{session_id}", "POST")
+    out = asyncio.run(target(session_id="rp-peekstats1", request=_request("alice")))
+    assert out["stats"]["Pruned"].startswith("13 page") and out["stats"]["Claims cited"] == "95%"

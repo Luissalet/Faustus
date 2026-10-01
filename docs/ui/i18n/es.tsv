@@ -9022,3 +9022,9 @@ Testing…	Probando…
 The bot API did not accept the token.	La API del bot no ha aceptado el token.
 The token works: @{name}.	El token funciona: @{name}.
 {allowed} allowed chats, {conversations} conversations.	{allowed} chats permitidos, {conversations} conversaciones.
+Queries	Consultas
+URLs	URL
+Pruned	Podado
+Citations	Citas
+Claims cited	Frases citadas
+Duration	Duración

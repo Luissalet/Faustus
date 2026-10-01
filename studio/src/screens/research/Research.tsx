@@ -229,6 +229,25 @@ export function CoverageMap({ coverage }: { coverage: CoverageNode[] }) {
   );
 }
 
+/** The numbers the run itself recorded (rounds, URLs, pruning, confidence,
+ *  why it stopped, how much of the report is cited), as the server sent them. */
+const STAT_ORDER = ['Duration', 'Rounds', 'Queries', 'URLs', 'Pruned', 'Confidence', 'Stopped', 'Citations', 'Claims cited', 'Model', 'Search', 'Category'];
+
+function ResearchStats({ stats }: { stats: Record<string, string> }) {
+  const keys = [...STAT_ORDER.filter((k) => stats[k]), ...Object.keys(stats).filter((k) => !STAT_ORDER.includes(k) && stats[k])];
+  if (keys.length === 0) return null;
+  return (
+    <dl className="fs-rs__stats" data-testid="research-stats">
+      {keys.map((k) => (
+        <div key={k} className="fs-rs__stat">
+          <dt>{t(k)}</dt>
+          <dd>{stats[k]}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 function ResultCard({ job, formats, onDiscuss, onDelete, onDismiss, say }: { job: Job; formats: string[]; onDiscuss: () => void; onDelete: () => void; onDismiss: () => void; say: (m: string, tone?: 'ok' | 'warn') => void }) {
   const [open, setOpen] = useState(false);
   const [podcast, setPodcast] = useState(false);
@@ -265,6 +284,7 @@ function ResultCard({ job, formats, onDiscuss, onDelete, onDismiss, say }: { job
           <Button variant="ghost" size="sm" icon={ChevronDown} label={open ? t('Hide the report') : t('Show the report')} onClick={() => setOpen((o) => !o)} testId="research-toggle-report" />
           {open && (
             <div className="fs-rs__report">
+              {r.stats && <ResearchStats stats={r.stats} />}
               <div className="fs-prose fs-rs__prose">
                 <Rich text={r.result} />
               </div>

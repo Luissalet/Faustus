@@ -237,6 +237,30 @@
   content: "⚠ ";
 }
 
+.fs-rs__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 0 0 12px;
+  font-size: var(--fs-label-size);
+}
+
+.fs-rs__stat {
+  display: flex;
+  gap: 6px;
+  min-inline-size: 0;
+}
+
+.fs-rs__stat dt {
+  color: var(--fs-text-3);
+}
+
+.fs-rs__stat dd {
+  margin: 0;
+  color: var(--fs-text-2);
+  overflow-wrap: anywhere;
+}
+
 .fs-rs__meta--live {
   display: inline-flex;
   align-items: center;

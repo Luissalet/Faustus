@@ -207,6 +207,9 @@ export interface ResearchResult {
    *  picked up from, and what it kept from that run's checkpoint. */
   resumedFrom?: string;
   resumedKept?: ResearchCheckpoint;
+  /** What the run recorded about itself: rounds, URLs, pruning, confidence,
+   *  why it stopped, how much is cited. Keys as the server names them. */
+  stats?: Record<string, string>;
 }
 
 async function postJson(path: string, body: unknown): Promise<Record<string, unknown>> {
@@ -426,7 +429,15 @@ function resultFrom(raw: Record<string, unknown>): ResearchResult {
     category: String(raw.category ?? ''),
     resumedFrom,
     resumedKept: resumedFrom ? checkpointFrom(raw.resumed_kept) : undefined,
+    stats: statsFrom(raw.stats),
   };
+}
+
+function statsFrom(raw: unknown): Record<string, string> | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) if (v !== null && v !== undefined && v !== '') out[k] = String(v);
+  return Object.keys(out).length ? out : undefined;
 }
 
 /** The finished report of a job this browser started (or any saved one, via peek). */

@@ -352,6 +352,8 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
         # Read before clear_result() drops the in-memory entry.
         entry = research_handler._active_tasks.get(session_id) or {}
         out = {"result": result, "sources": sources, "raw_findings": raw_findings}
+        if isinstance(entry.get("stats"), dict):
+            out["stats"] = entry["stats"]
         if entry.get("resumed_from"):
             out["resumed_from"] = entry["resumed_from"]
             out["resumed_kept"] = entry.get("resumed_kept")
@@ -873,6 +875,8 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
                     "raw_findings": d.get("raw_findings", []),
                     "category": d.get("category") or "",
                 }
+                if isinstance(d.get("stats"), dict):
+                    out["stats"] = d["stats"]
                 if d.get("resumed_from"):
                     out["resumed_from"] = d["resumed_from"]
                     out["resumed_kept"] = d.get("resumed_kept")
@@ -882,6 +886,8 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
         raw_findings = research_handler.get_raw_findings(session_id) or []
         out = {"result": result, "sources": sources, "raw_findings": raw_findings, "category": ""}
         entry = research_handler._active_tasks.get(session_id) or {}
+        if isinstance(entry.get("stats"), dict):
+            out["stats"] = entry["stats"]
         if entry.get("resumed_from"):
             out["resumed_from"] = entry["resumed_from"]
             out["resumed_kept"] = entry.get("resumed_kept")
