@@ -462,3 +462,12 @@ def test_a_suite_that_kept_the_old_placeholder_still_finds_the_target(tmp_path):
     suite = bug_hunt.GeneratedSuite(code=code, test_names=["test_double"], source="model")
     result = bug_hunt.run_suite(str(tmp_path), suite, timeout_s=60)
     assert result.ok is True, result.output_tail
+
+
+def test_the_prompt_asks_for_the_contract_not_the_current_output():
+    """Live 01-10: for split_bill ("shares that add up to the total") the 27B
+    computed round(100/3, 2) * 3 = 99.99 and asserted that, so the bug passed."""
+    from src import bug_hunt
+    t = bug_hunt.Target(path="pricing.py", symbol="split_bill", kind="function", source="def split_bill(): ...")
+    prompt = bug_hunt._build_generation_prompt(t, 4)
+    assert "never by repeating the code's own arithmetic" in prompt

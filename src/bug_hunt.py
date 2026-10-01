@@ -471,6 +471,10 @@ Rules:
 - Every test function name starts with `test_`.
 - Before each test function, add a one-line comment stating the EXACT
   expected behaviour that test checks.
+- Derive every expected value from the docstring, the name and the obvious
+  contract, never by repeating the code's own arithmetic: if the code visibly
+  breaks what its docstring promises, the test asserts the promise and is
+  expected to fail. That failing test is the point of this hunt.
 - Any test whose expectation is a guess rather than something stated by the
   docstring or the obvious contract of the code MUST have `assumption` in its
   function name (e.g. `test_negative_input_assumption`).
