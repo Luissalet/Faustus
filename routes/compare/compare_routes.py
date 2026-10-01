@@ -244,8 +244,6 @@ def setup_compare_routes(session_manager: SessionManager):
         # Store comparison record
         db = SessionLocal()
         try:
-            if db.query(Comparison.id).filter(Comparison.id == comp_id).first():
-                return {"status": "ok", "id": comp_id, "duplicate": True}
             comp = Comparison(
                 id=comp_id,
                 prompt=prompt,
