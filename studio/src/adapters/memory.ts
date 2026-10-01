@@ -336,9 +336,26 @@ export async function curateRules(): Promise<CuratorReport> {
   return { deduped: n('deduped'), inverted: n('inverted'), promoted: n('promoted'), demoted: n('demoted'), pruned: n('pruned'), totalActive: n('total_active') };
 }
 
-export async function previewPack(query = ''): Promise<{ text: string; chars: number; budget: number; degraded: boolean; ids: string[] }> {
-  const data = await getJson<{ pack?: string; chars?: number; budget?: number; degraded?: boolean; ids?: string[] }>(`/api/memory-engine/pack?query=${encodeURIComponent(query)}`);
-  return { text: data.pack ?? '', chars: data.chars ?? 0, budget: data.budget ?? 0, degraded: Boolean(data.degraded), ids: Array.isArray(data.ids) ? data.ids.map(String) : [] };
+export interface PackPreview {
+  text: string;
+  chars: number;
+  budget: number;
+  degraded: boolean;
+  ids: string[];
+  /** Rules the hard character cap left out whole, and the cap itself. */
+  droppedCount: number;
+  capChars: number;
+  /** The highest-priority rule alone did not fit and was cut at a sentence. */
+  truncatedItem: boolean;
+}
+
+export async function previewPack(query = ''): Promise<PackPreview> {
+  const data = await getJson<{ pack?: string; chars?: number; budget?: number; degraded?: boolean; ids?: string[]; dropped_count?: number; cap_chars?: number; truncated_item?: boolean }>(`/api/memory-engine/pack?query=${encodeURIComponent(query)}`);
+  return {
+    text: data.pack ?? '', chars: data.chars ?? 0, budget: data.budget ?? 0, degraded: Boolean(data.degraded),
+    ids: Array.isArray(data.ids) ? data.ids.map(String) : [],
+    droppedCount: Number(data.dropped_count) || 0, capChars: Number(data.cap_chars) || 0, truncatedItem: Boolean(data.truncated_item),
+  };
 }
 
 /* ── MEM-03: failure memory, controlled promotion ─────────────────────────

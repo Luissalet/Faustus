@@ -9030,3 +9030,6 @@ Claims cited	Frases citadas
 Duration	Duración
 Loading the report	Cargando el informe
 Could not load the report: {e}	No se pudo cargar el informe: {e}
+{n} rule left out by the {cap}-character cap	{n} regla fuera por el tope de {cap} caracteres
+{n} rules left out by the {cap}-character cap	{n} reglas fuera por el tope de {cap} caracteres
+the first rule was cut to fit	la primera regla se recortó para caber

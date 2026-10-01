@@ -50,6 +50,7 @@ import {
   pinMemory,
   pinRule,
   previewPack,
+  type PackPreview,
   recordDecision,
   registerFailure,
   resolveConflict,
@@ -320,7 +321,7 @@ function LearnedRules({ say }: { say: (text: string) => void }) {
   const [text, setText] = useState('');
   const [level, setLevel] = useState<string>('procedural');
   const [report, setReport] = useState<CuratorReport | null>(null);
-  const [pack, setPack] = useState<{ text: string; chars: number; budget: number; degraded: boolean } | null>(null);
+  const [pack, setPack] = useState<PackPreview | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   // Job C: "which items are currently being injected into prompts" —
   // the id set of `pack_detail()`'s no-query block, refreshed alongside the
@@ -539,7 +540,12 @@ function LearnedRules({ say }: { say: (text: string) => void }) {
             if (!o) setPack(null);
           }}
           title={t('What the model sees')}
-          description={`${t('{a} of {b} characters', { a: pack.chars, b: pack.budget })}${pack.degraded ? t(' · degraded') : ''}`}
+          description={[
+            t('{a} of {b} characters', { a: pack.chars, b: pack.budget }),
+            pack.degraded ? t('degraded') : '',
+            pack.droppedCount > 0 ? tn(pack.droppedCount, '{n} rule left out by the {cap}-character cap', '{n} rules left out by the {cap}-character cap', { cap: pack.capChars }) : '',
+            pack.truncatedItem ? t('the first rule was cut to fit') : '',
+          ].filter(Boolean).join(' · ')}
           footer={<Button variant="ghost" size="sm" label={t('Close')} onClick={() => setPack(null)} />}
         >
           <pre className="fs-rules__pack">{pack.text || t('(empty)')}</pre>
