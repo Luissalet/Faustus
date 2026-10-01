@@ -166,21 +166,50 @@ def numbers_in(text: Any) -> List[str]:
     return [m.group(0).strip() for m in _NUMBER_RE.finditer(_text(text)) if m.group(0).strip()]
 
 
+# Ordinary words that open a sentence (and are capitalised only for that):
+# "Según la fuente, …", "However, …". At the start of a sentence they are not
+# names; anywhere else the usual rule applies. Folded, Spanish and English.
+_SENTENCE_STARTERS = frozenset("""
+segun ademas tambien sin embargo aunque durante tras desde hasta entre sobre ambos ambas
+cada todos todas otro otra otros otras algunos algunas varios varias muchos muchas pocos
+asimismo finalmente primero segundo tercero luego despues antes ahora hoy ayer manana
+en resumen conclusion nota fuente fuentes cifra cifras dato datos total resultado
+however according also overall both each all after before during since although
+moreover therefore thus finally first second third then now today yesterday note source
+sources figure figures data result results summary in conclusion
+""".split())
+
+# Where a sentence (or a list item, or a "Label:" line) begins: the start of
+# the text or of a line, optionally after list or emphasis markers, or after
+# a full stop, question or exclamation mark.
+_SENTENCE_START_RE = re.compile(r"(?:^|\n|[.!?¡¿]\s)[\s\-*•>#_\[(\"'«“¡¿]*", re.UNICODE)
+
+
 def names_in(text: Any) -> List[str]:
     """Capitalised words — the cheap stand-in for named entities.
 
-    A word that starts a sentence is capitalised too, but the check is done
-    case-insensitively against the source, so a sentence-initial ordinary word
-    costs nothing: it only has to occur in the source *at all*.
+    A word that starts a sentence is capitalised too. The check is done
+    case-insensitively against the source, so a sentence-initial word that
+    occurs anywhere in the source costs nothing; one that does not (an
+    ordinary opener such as "Según" or "However", or the label of a
+    "Cifra: …" line) is not treated as a name, because layer 4 only ever
+    refutes and a refutation over "Según" is a false accusation. A name that
+    opens a sentence ("Globex approved…") is still a name.
     """
+    raw = _text(text)
+    starts = {m.end() for m in _SENTENCE_START_RE.finditer(raw)}
     out: List[str] = []
-    for match in _WORD_RE.finditer(_text(text)):
+    for match in _WORD_RE.finditer(raw):
         word = match.group(0)
         if len(word) < 2 or not word[0].isupper():
             continue
         folded = _fold(word)
         if folded in _STOPWORDS or folded in out:
             continue
+        if match.start() in starts:
+            after = raw[match.end():match.end() + 2]
+            if folded in _SENTENCE_STARTERS or after.startswith(":") or after.startswith("*:"):
+                continue
         out.append(folded)
     return out
 

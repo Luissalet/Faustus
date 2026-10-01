@@ -251,3 +251,20 @@ def test_verify_claims_keeps_each_claim_beside_its_verdict():
     assert [r["layer"] for r in rows] == [1, 4]
     assert rows[1]["claim"].endswith("3,500 million euros")
     assert cv.verify_claims("a single string", SOURCE)[0]["claim"] == "a single string"
+
+
+def test_an_ordinary_sentence_opener_is_not_a_name():
+    """'Según la fuente, …' and a '- **Cifra:** …' label line are faithful
+    sentences: layer 4 must not refute them over the capitalised opener
+    (seen with a real model writing a one-line report from a source)."""
+    source = ("A fecha del lote 29, el mapa de reutilizacion listaba 23 requisitos P0 en estado "
+              "'existente' sobre un total de 100 requisitos P0 auditados.")
+    for claim in ("Según la fuente, el mapa de reutilización listaba **23 requisitos P0** en estado "
+                  "«existente» sobre un total de 100 auditados (lote 29).",
+                  "- **Cifra:** 23 requisitos P0 en estado existente (de 100 auditados).",
+                  "However, 23 requisitos P0 were existente out of 100."):
+        assert "segun" not in cv.names_in(claim) and "cifra" not in cv.names_in(claim)
+        assert cv.verify(claim, source)["layer"] != 4, claim
+    # A real name is still a name, at the start of a sentence or after an opener.
+    assert cv.verify("Globex listaba 23 requisitos P0.", source)["layer"] == 4
+    assert "globex" in cv.verify("Según Globex, había 23 requisitos.", source)["unsupported_terms"]
