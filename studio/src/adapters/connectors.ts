@@ -98,6 +98,9 @@ export interface ConnectorServerInfo {
 }
 
 export interface Connector {
+  /** Arrives as null for an MCP server listed here without a connector
+   *  record (a plugin or a server added by hand): identify rows with
+   *  `connectorKey`, never by `id` alone. */
   id: string;
   preset_id: string | null;
   owner: string | null;
@@ -192,6 +195,16 @@ export interface ConnectorTool {
 }
 export const listConnectorTools = (id: string) => getJson<ConnectorTool[]>(`/api/app-connectors/${encodeURIComponent(id)}/tools`);
 
+/** What identifies a row on the Connectors screen. A server listed without a
+ *  connector record has no id; matching `null` against an absent `?id=` opened
+ *  its tools dialog on every visit and the dialog could not be closed. */
+export const connectorKey = (c: Connector): string => c.id || `server:${c.server.id}`;
+
+/** The tools of a row: through its connector when it has one, otherwise
+ *  straight from its MCP server. */
+export const listToolsFor = (c: Connector) =>
+  c.id ? listConnectorTools(c.id) : getJson<ConnectorTool[]>(`/api/mcp/servers/${encodeURIComponent(c.server.id)}/tools`);
+
 export interface RefreshToolsResult {
   ok: boolean;
   reconnected: boolean;
@@ -206,6 +219,18 @@ export interface RefreshToolsResult {
 /** Re-read a connector's tool list; `reconnect` restarts the bridge process first. */
 export const refreshConnectorTools = (id: string, reconnect = false) =>
   post<RefreshToolsResult>(`/api/app-connectors/${encodeURIComponent(id)}/refresh-tools`, { reconnect }, 'connectors/refresh-tools');
+
+export async function refreshToolsFor(c: Connector, reconnect = false): Promise<RefreshToolsResult> {
+  if (c.id) return refreshConnectorTools(c.id, reconnect);
+  const sid = encodeURIComponent(c.server.id);
+  if (reconnect) {
+    await post<unknown>(`/api/mcp/servers/${sid}/reconnect`, {}, 'connectors/reconnect');
+    const tools = await getJson<ConnectorTool[]>(`/api/mcp/servers/${sid}/tools`);
+    return { ok: true, reconnected: true, tool_count: tools.length };
+  }
+  const r = await post<RefreshToolsResult>(`/api/mcp/servers/${sid}/refresh-tools`, {}, 'connectors/refresh-tools');
+  return { ...r, reconnected: false };
+}
 
 export interface LaunchResult {
   launched: boolean;

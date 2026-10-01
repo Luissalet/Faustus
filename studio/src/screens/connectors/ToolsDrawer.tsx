@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button, Dialog, Skeleton } from '../../components';
 import { Toggle } from '../settings/fields';
 import { setMcpDisabledTools } from '../../adapters/integrations';
-import { listConnectorTools, refreshConnectorTools, type Connector, type ConnectorTool } from '../../adapters/connectors';
+import { listToolsFor, refreshToolsFor, type Connector, type ConnectorTool } from '../../adapters/connectors';
 import { t } from '../../i18n';
 
 /**
@@ -19,7 +19,7 @@ export function ConnectorToolsDrawer({ connector, onClose }: { connector: Connec
   const [note, setNote] = useState<string | null>(null);
 
   const reload = () =>
-    listConnectorTools(connector.id)
+    listToolsFor(connector)
       .then((list) => {
         setTools(list);
         setErr(null);
@@ -31,13 +31,13 @@ export function ConnectorToolsDrawer({ connector, onClose }: { connector: Connec
   useEffect(() => {
     void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connector.id]);
+  }, [connector.id, connector.server.id]);
 
   const refresh = async (reconnect: boolean) => {
     setBusy(true);
     setNote(null);
     try {
-      const r = await refreshConnectorTools(connector.id, reconnect);
+      const r = await refreshToolsFor(connector, reconnect);
       await reload();
       if (!r.ok) setErr(r.error ?? t('Refresh failed'));
       else if (r.reconnected) setNote(t('Restarted: {n} tools', { n: r.tool_count }));

@@ -8,6 +8,7 @@ import { Button, EmptyState, IconButton, QuickMenu, Skeleton, Toast } from '../.
 import {
   checkConnector,
   connectConnector,
+  connectorKey,
   deleteConnector,
   disconnectConnector,
   launchConnector,
@@ -272,7 +273,10 @@ export function ConnectorsScreen() {
   }, [connectors]);
 
   const drawerId = params.get('id');
-  const drawerConnector = useMemo(() => (connectors ?? []).find((c) => c.id === drawerId) ?? null, [connectors, drawerId]);
+  const drawerConnector = useMemo(
+    () => (drawerId ? (connectors ?? []).find((c) => connectorKey(c) === drawerId) ?? null : null),
+    [connectors, drawerId],
+  );
   const closeDrawer = () => {
     const next = new URLSearchParams(params);
     next.delete('id');
@@ -382,12 +386,12 @@ export function ConnectorsScreen() {
         <ul className="fs-conn__list" data-testid="connectors-list">
           {connectors.map((c) => (
             <ConnectorRow
-              key={c.id}
+              key={connectorKey(c)}
               connector={c}
               onChanged={() => reload(true)}
               onOpenTools={() => {
                 const next = new URLSearchParams(params);
-                next.set('id', c.id);
+                next.set('id', connectorKey(c));
                 setParams(next, { replace: true });
               }}
               onEdit={() => {
