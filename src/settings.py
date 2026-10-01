@@ -491,6 +491,22 @@ DEFAULT_SETTINGS = {
     # `blender_timeout_seconds` is how long one scene run may take.
     "blender_path": "",
     "blender_timeout_seconds": 300,
+    # Telegram chat bridge (src/chat_bridges/telegram_bridge.py): opt-in. A bot
+    # created with the platform's bot-creation chat is polled with long
+    # polling (no public URL). `telegram_bot_token` is a credential (masked on
+    # read, stored `enc:` encrypted); `telegram_allowed_chat_ids` is the only
+    # list of chats that may talk to the agent (empty = nobody);
+    # `telegram_agent_mode` is `agent` (tools, approvals wait in Studio) or
+    # `chat` (a plain model reply); `telegram_model` empty = the default chat
+    # model; `telegram_owner` empty = the first administrator; the API base is
+    # overridable so a test can point at a fake server.
+    "telegram_bridge_enabled": False,
+    "telegram_bot_token": "",
+    "telegram_allowed_chat_ids": [],
+    "telegram_agent_mode": "agent",
+    "telegram_model": "",
+    "telegram_owner": "",
+    "telegram_api_base": "https://api.telegram.org",
     # Measured stop (src/research_saturation.py): end the run, without asking
     # the model, after `research_saturation_patience` rounds in a row that
     # each added fewer than `research_saturation_min_new_facts` new facts and

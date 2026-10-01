@@ -51,7 +51,9 @@ EXTRA_KEYS: tuple[str, ...] = ("llm_projection_mode", "llm_fence_history_without
                                "self_declared_risk",
                                "mode_effort_bug_hunt", "mode_effort_ci_analysis",
                                "workflow_eval_model_judge",
-                               "blender_path", "blender_timeout_seconds")
+                               "blender_path", "blender_timeout_seconds",
+                               "telegram_bridge_enabled", "telegram_bot_token", "telegram_allowed_chat_ids",
+                               "telegram_agent_mode", "telegram_model", "telegram_owner", "telegram_api_base")
 
 FIELD_TYPES: tuple[str, ...] = ("bool", "int", "float", "text", "select", "list", "secret")
 _NUMERIC_TYPES = ("int", "float")
@@ -1350,6 +1352,37 @@ GROUPS: list[dict[str, Any]] = [
             _int("blender_timeout_seconds", "Time limit per scene (seconds)",
                  "How long one headless Blender run may take before it is stopped.",
                  5, 3600),
+        ],
+    ),
+    _group(
+        "chat_bridges", "Chat bridges: Telegram",
+        "Talk to your Faustus agent from a Telegram chat (src/chat_bridges/). Faustus polls the bot's "
+        "updates itself, so no public address is needed. Only the chats you list may talk to it, every "
+        "chat is one conversation in Studio, and a tool that needs an approval waits there: the bot "
+        "replies with a link instead of approving anything.",
+        [
+            _bool("telegram_bridge_enabled", "Enable the Telegram bridge",
+                  "Off by default. When on and a bot token is set, Faustus starts polling the bot and "
+                  "answers the chats listed below. Changing this applies without a restart."),
+            _field("telegram_bot_token", "Bot token",
+                   "The token the bot-creation chat on Telegram gave you. It is stored encrypted and "
+                   "never shown again after you save it.",
+                   "secret", placeholder="123456:ABC..."),
+            _list("telegram_allowed_chat_ids", "Allowed chat ids",
+                  "Chat ids that may talk to the agent, comma-separated. Empty = nobody. A chat that is "
+                  "not on the list gets one reply with its own id, so you can copy it here."),
+            _select("telegram_agent_mode", "Mode",
+                    "\"agent\" runs a full agent turn with tools (approvals wait in Studio). \"chat\" "
+                    "answers with the model alone, without tools.",
+                    ["agent", "chat"]),
+            _text("telegram_model", "Model",
+                  "Model name for these conversations on the default endpoint. Empty = the default chat model."),
+            _text("telegram_owner", "Owner account",
+                  "The Faustus account that owns the conversations and whose tools and settings the agent "
+                  "uses. Empty = the first administrator."),
+            _text("telegram_api_base", "API base URL",
+                  "Where the bot API lives. Leave the default unless you run a local test server.",
+                  placeholder="https://api.telegram.org"),
         ],
     ),
     _group(

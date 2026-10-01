@@ -115,6 +115,10 @@ _BUILTIN_SERVERS = {
     # a set of tool calls would claim, and the paired bench reports. Read-only,
     # no owner-scoped data.
     "harness": ("mcp_servers/harness_server.py", "Built-in: Harness diagnostics"),
+    # Chat bridges (src/chat_bridges): `telegram_status`, read-only. Reads the
+    # poller's snapshot, the settings and the chat mapping; never the token,
+    # never writes, never talks to Telegram. Not owner-scoped.
+    "chat_bridges": ("mcp_servers/chat_bridges_server.py", "Built-in: Chat bridges"),
 }
 
 # Built-in servers whose every tool is a 1:1 twin of a native agent tool

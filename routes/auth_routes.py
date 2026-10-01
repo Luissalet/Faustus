@@ -44,6 +44,15 @@ from src.integrations import (
 
 logger = logging.getLogger(__name__)
 
+#: Credentials stored `enc:`-encrypted (src/secret_storage.py) instead of as typed.
+#: The reader decrypts them; a plaintext value from an older file still works.
+_ENCRYPTED_SETTINGS = frozenset({"telegram_bot_token"})
+
+
+def _encrypt_setting(value: str) -> str:
+    from src.secret_storage import encrypt
+    return encrypt(value)
+
 
 class LoginRequest(BaseModel):
     username: str
@@ -961,7 +970,16 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
                 except ValueError as exc:
                     raise HTTPException(400, f"{key} {exc}")
             current[key] = restore_masked(key, val, current.get(key))
+            if key in _ENCRYPTED_SETTINGS and isinstance(current[key], str) and current[key]:
+                current[key] = _encrypt_setting(current[key])
         _save_settings(current)
+        if any(str(k).startswith("telegram_") for k in body):
+            # The chat bridge follows its settings without a restart.
+            try:
+                from src.chat_bridges import apply_settings as _apply_chat_bridge
+                await _apply_chat_bridge()
+            except Exception as exc:  # noqa: BLE001 - saving the settings must not fail on this
+                logger.warning("chat bridge settings not applied: %s", exc)
         if "browser_devtools_mcp" in body:
             # Starts/stops the optional DevTools MCP server the same way a
             # browser_* change reaches the always-on builtin_browser (lazily,

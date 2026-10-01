@@ -1578,6 +1578,7 @@ from routes.agent_loop_stats_routes import setup_agent_loop_stats_routes
 from routes.run_report_routes import setup_run_report_routes
 from routes.prior_art_routes import setup_prior_art_routes
 from routes.blender_scene_routes import setup_blender_scene_routes
+from routes.chat_bridge_routes import setup_chat_bridge_routes
 app.include_router(setup_contacts_routes())
 app.include_router(setup_code_graph_routes())
 app.include_router(setup_doc_claims_routes())
@@ -1588,6 +1589,7 @@ app.include_router(setup_agent_loop_stats_routes())
 app.include_router(setup_run_report_routes())
 app.include_router(setup_prior_art_routes())
 app.include_router(setup_blender_scene_routes())
+app.include_router(setup_chat_bridge_routes())
 
 # Autonomous engineering wave: bug hunter, CI failure analyzer, fix memory,
 # handoff lanes, night shift and git history per file/symbol.
@@ -2287,6 +2289,15 @@ async def _startup_event():
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Model warmup not started (non-critical): {e}")
 
+    # Telegram chat bridge (src/chat_bridges/): opt-in, only started when
+    # `telegram_bridge_enabled` is on and a bot token is saved. It polls the
+    # bot API outwards, so no public address is needed.
+    try:
+        from src.chat_bridges import start_telegram_bridge
+        start_telegram_bridge(_supervisor)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Telegram bridge not started (non-critical): {e}")
+
     # Shared model lease (src/model_lease.py): register this instance so
     # sibling instances sharing the same local model server can see it
     # (residency leadership, VRAM reservation visibility, adoption).
@@ -2695,6 +2706,11 @@ async def _shutdown_event():
         try:
             from src import engine_swap
             await engine_swap.stop()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from src.chat_bridges import stop_telegram_bridge
+            await stop_telegram_bridge()
         except Exception:  # noqa: BLE001
             pass
     except Exception:
