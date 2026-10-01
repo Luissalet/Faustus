@@ -248,6 +248,46 @@ function ResearchStats({ stats }: { stats: Record<string, string> }) {
   );
 }
 
+/** The report of a run this browser did not start (it is listed from the server
+ *  after a reload): read on demand, with what the run recorded about itself. */
+function RecentReport({ id }: { id: string }) {
+  const [open, setOpen] = useState(false);
+  const [result, setResult] = useState<ResearchResult | null>(null);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const toggle = async () => {
+    const next = !open;
+    setOpen(next);
+    if (!next || result || loading) return;
+    setLoading(true);
+    setError('');
+    try {
+      setResult(await researchResult(id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+  return (
+    <>
+      <Button variant="ghost" size="sm" icon={ChevronDown} label={open ? t('Hide the report') : t('Show the report')} onClick={() => void toggle()} testId="research-recent-toggle" />
+      {open && (
+        <div className="fs-rs__report" data-testid="research-recent-report">
+          {loading && <Skeleton label={t('Loading the report')} count={3} height="20px" />}
+          {error && <p className="fs-rs__meta">{t('Could not load the report: {e}', { e: error })}</p>}
+          {result?.stats && <ResearchStats stats={result.stats} />}
+          {result && (
+            <div className="fs-prose fs-rs__prose">
+              <Rich text={result.result} />
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
 function ResultCard({ job, formats, onDiscuss, onDelete, onDismiss, say }: { job: Job; formats: string[]; onDiscuss: () => void; onDelete: () => void; onDismiss: () => void; say: (m: string, tone?: 'ok' | 'warn') => void }) {
   const [open, setOpen] = useState(false);
   const [podcast, setPodcast] = useState(false);
@@ -997,6 +1037,7 @@ export function ResearchScreen() {
                   <Button variant="ghost" size="sm" icon={Headphones} label={t('Podcast')} onClick={() => setPodcastFor((cur) => (cur === r.id ? null : r.id))} title={t('Make or play the podcast of this report')} />
                   <IconButton icon={X} label={t('Clear from the list')} size="sm" onClick={() => setDismissed((d) => new Set(d).add(r.id))} />
                 </div>
+                <RecentReport id={r.id} />
                 {podcastFor === r.id && <PodcastPanel researchId={r.id} autostart say={say} />}
               </li>
             ))}
