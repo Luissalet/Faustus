@@ -1425,7 +1425,7 @@ def save_assistant_response(
             try:
                 if not _post_turn_owner:
                     return
-                from src.instincts import extract_from_turn, project_key, should_extract
+                from src.instincts import extract_from_turn, project_key, should_extract, should_offer
                 _tool_count = len(tool_events or [])
                 _round_texts = md.get("round_texts")
                 _round_count = (
@@ -1433,6 +1433,9 @@ def save_assistant_response(
                     else int(md.get("round_count") or 0)
                 )
                 if not should_extract(_round_count, _tool_count, _post_turn_last_user):
+                    return
+                # With approval on, only long turns are worth a proposal.
+                if not should_offer(_tool_count):
                     return
                 history = [
                     {"role": m.get("role"), "content": m.get("content")}

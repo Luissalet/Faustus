@@ -1507,7 +1507,7 @@ _PRIVATE_ACTION_READS: Mapping[str, frozenset[str]] = MappingProxyType(
         "manage_session": frozenset({"list", "switch", "open", "select", "view"}),
         "manage_skills": frozenset({"list", "index", "view", "view_ref", "search"}),
         "manage_tasks": frozenset({"list"}),
-        "manage_instincts": frozenset({"list", "view", "status", "export"}),
+        "manage_instincts": frozenset({"list", "view", "status", "export", "proposed"}),
     }
 )
 
@@ -1537,7 +1537,8 @@ _PRIVATE_ACTION_WRITES: Mapping[str, frozenset[str]] = MappingProxyType(
         "manage_skills": frozenset({"add", "edit", "patch", "publish", "delete"}),
         "manage_tasks": frozenset({"create", "edit", "delete", "pause", "resume", "run"}),
         "manage_instincts": frozenset(
-            {"confirm", "contradict", "add", "retire", "promote", "evolve", "import"}
+            {"confirm", "contradict", "add", "retire", "promote", "evolve", "import",
+             "approve", "reject", "edit"}
         ),
     }
 )

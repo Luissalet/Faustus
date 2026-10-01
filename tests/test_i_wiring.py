@@ -146,8 +146,10 @@ def test_chat_helpers_fires_instinct_extraction(tmp_path, monkeypatch):
         sess, session_manager=fake_session_manager, session_id="s1",
         full_response="Here is the fix.",
         last_metrics={"model": "actual-model"},
-        tool_events=[{"round": 1, "tool": "bash", "command": "x", "output": "ok", "exit_code": 0},
-                     {"round": 2, "tool": "bash", "command": "y", "output": "ok", "exit_code": 0}],
+        # Lessons need approval by default, which only offers one after a
+        # turn of at least `instincts_offer_min_tool_calls` (8) tool calls.
+        tool_events=[{"round": i, "tool": "bash", "command": "x", "output": "ok", "exit_code": 0}
+                     for i in range(1, 9)],
     )
 
     # The hook schedules extraction with asyncio.ensure_future — give the
@@ -165,6 +167,6 @@ def test_chat_helpers_fires_instinct_extraction(tmp_path, monkeypatch):
             break
         _time.sleep(0.05)
 
-    assert calls, "extract_from_turn was never called for a 2-tool-call turn"
+    assert calls, "extract_from_turn was never called for a long (8 tool call) turn"
     assert calls[0]["owner"] == "alice"
     assert calls[0]["session_id"] == "s1"

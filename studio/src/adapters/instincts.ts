@@ -33,12 +33,15 @@ export interface Instinct {
   created: number;
   updated: number;
   last_observed: number;
-  status: 'active' | 'retired';
+  status: 'active' | 'retired' | 'proposed' | 'rejected';
   promoted_from: string[];
   effective_confidence: number;
 }
 
 export interface InstinctsStatus {
+  /** Lessons waiting for the user's approval; they are never used until approved. */
+  proposed?: number;
+  pending_proposals?: Instinct[];
   total: number;
   by_scope: Record<string, number>;
   by_domain: Record<string, number>;
@@ -86,8 +89,9 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
 const API = '/api/instincts';
 const enc = (s: string) => encodeURIComponent(s);
 
-export async function listInstincts(opts?: { project?: string; minConfidence?: number }): Promise<Instinct[]> {
+export async function listInstincts(opts?: { project?: string; minConfidence?: number; status?: string }): Promise<Instinct[]> {
   const q = new URLSearchParams();
+  if (opts?.status) q.set('status', opts.status);
   if (opts?.project) q.set('project', opts.project);
   if (opts?.minConfidence) q.set('min_confidence', String(opts.minConfidence));
   const qs = q.toString();
@@ -127,6 +131,25 @@ export function confirmInstinct(id: string, evidence?: string): Promise<Instinct
 
 export function contradictInstinct(id: string, evidence?: string): Promise<Instinct> {
   return postJson<Instinct>(`${API}/${enc(id)}/contradict`, { evidence: evidence ? { note: evidence } : null });
+}
+
+export interface InstinctEdits {
+  trigger?: string;
+  action?: string;
+  domain?: InstinctDomain;
+}
+
+/** Approve a proposed lesson (optionally rewording it); it is used from the next turn. */
+export function approveInstinct(id: string, edits?: InstinctEdits): Promise<Instinct> {
+  return postJson<Instinct>(`${API}/${enc(id)}/approve`, edits ?? {});
+}
+
+export function rejectInstinct(id: string): Promise<Instinct> {
+  return postJson<Instinct>(`${API}/${enc(id)}/reject`, {});
+}
+
+export function editInstinct(id: string, edits: InstinctEdits): Promise<Instinct> {
+  return postJson<Instinct>(`${API}/${enc(id)}/edit`, edits);
 }
 
 export function retireInstinct(id: string): Promise<Instinct> {

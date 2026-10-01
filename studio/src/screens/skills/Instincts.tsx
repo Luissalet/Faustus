@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button, EmptyState, Skeleton } from '../../components';
 import {
   addInstinct,
+  approveInstinct,
+  rejectInstinct,
   confirmInstinct,
   contradictInstinct,
   deleteInstinct,
@@ -83,6 +85,50 @@ function InstinctRow({ inst, busy, onConfirm, onContradict, onRetire, onDelete }
   );
 }
 
+function ProposalRow({ inst, busy, onApprove, onReject }: {
+  inst: Instinct;
+  busy: string;
+  onApprove: (edits?: { trigger: string; action: string }) => void;
+  onReject: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [trigger, setTrigger] = useState(inst.trigger);
+  const [action, setAction] = useState(inst.action);
+  return (
+    <li className="fs-set__row" data-testid={`instinct-proposal-${inst.id}`}>
+      <span className="fs-tools__text" style={{ flex: 1 }}>
+        {editing ? (
+          <>
+            <input className="fs-field" aria-label={t('When (trigger)')} value={trigger} onChange={(e) => setTrigger(e.target.value)} />
+            <input className="fs-field" aria-label={t('Do (action)')} value={action} onChange={(e) => setAction(e.target.value)} />
+          </>
+        ) : (
+          <>
+            <strong>{inst.trigger}</strong> <span className="fs-set__help">→ {inst.action}</span>
+          </>
+        )}
+        <span className="fs-set__help">
+          <span className="fs-chip" data-on style={{ marginInlineEnd: 6 }}>{t(DOMAIN_LABEL[inst.domain] ?? inst.domain)}</span>
+          {inst.project_name ? inst.project_name : ''}
+        </span>
+      </span>
+      <span className="fs-set__row-actions">
+        <Button
+          variant="primary"
+          size="sm"
+          icon={Check}
+          label={t('Approve')}
+          loading={busy === `approve:${inst.id}`}
+          disabled={editing && (!trigger.trim() || !action.trim())}
+          onClick={() => onApprove(editing ? { trigger: trigger.trim(), action: action.trim() } : undefined)}
+        />
+        <Button variant="ghost" size="sm" label={editing ? t('Cancel') : t('Edit')} onClick={() => setEditing((v) => !v)} />
+        <Button variant="ghost" size="sm" icon={X} label={t('Reject')} loading={busy === `reject:${inst.id}`} onClick={onReject} />
+      </span>
+    </li>
+  );
+}
+
 function AddInstinctForm({ onAdd, busy }: { onAdd: (trigger: string, action: string, domain: InstinctDomain) => Promise<void>; busy: boolean }) {
   const [open, setOpen] = useState(false);
   const [trigger, setTrigger] = useState('');
@@ -128,6 +174,7 @@ function AddInstinctForm({ onAdd, busy }: { onAdd: (trigger: string, action: str
 
 export function InstinctsPanel({ say }: { say: (t: string) => void }) {
   const [items, setItems] = useState<Instinct[] | null>(null);
+  const [proposals, setProposals] = useState<Instinct[]>([]);
   const [status, setStatus] = useState<InstinctsStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState('');
@@ -139,8 +186,13 @@ export function InstinctsPanel({ say }: { say: (t: string) => void }) {
 
   const reload = async () => {
     try {
-      const [list, st] = await Promise.all([listInstincts(), instinctsStatus()]);
+      const [list, st, waiting] = await Promise.all([
+        listInstincts(),
+        instinctsStatus(),
+        listInstincts({ status: 'proposed' }),
+      ]);
       setItems(list);
+      setProposals(waiting);
       setStatus(st);
       setError(null);
     } catch (e) {
@@ -250,6 +302,28 @@ export function InstinctsPanel({ say }: { say: (t: string) => void }) {
           </p>
         </div>
       )}
+
+      <div className="fs-set__card" data-testid="instinct-proposals">
+        <h3 className="fs-set__card-title">{t('Waiting for your approval')}</h3>
+        <p className="fs-set__help">
+          {t('New lessons are only proposed here. None of them is used until you approve it, and an approved one applies from the next turn.')}
+        </p>
+        {proposals.length === 0 ? (
+          <p className="fs-set__help">{t('Nothing is waiting.')}</p>
+        ) : (
+          <ul className="fs-set__list">
+            {proposals.map((inst) => (
+              <ProposalRow
+                key={inst.id}
+                inst={inst}
+                busy={busy}
+                onApprove={(edits) => run(`approve:${inst.id}`, () => approveInstinct(inst.id, edits), t('Lesson approved. It applies from the next turn.'))}
+                onReject={() => run(`reject:${inst.id}`, () => rejectInstinct(inst.id))}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
 
       <div className="fs-set__card">
         <h3 className="fs-set__card-title">{t('Project-scoped')}</h3>

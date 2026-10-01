@@ -16,6 +16,11 @@ for the actual store/behaviour; this module is a thin HTTP adapter over it.
     POST   /api/instincts/{id}/confirm
     POST   /api/instincts/{id}/contradict
     POST   /api/instincts/{id}/retire
+    POST   /api/instincts/{id}/approve             {trigger?, action?, domain?}
+    POST   /api/instincts/{id}/reject
+    POST   /api/instincts/{id}/edit                {trigger?, action?, domain?}
+    GET    /api/instincts/proposed?project=
+    GET    /api/instincts?status=active|proposed|rejected|retired|all
     DELETE /api/instincts/{id}
 
 Literal sub-paths (`status`, `export`, `promote`, `evolve`, `import`,
@@ -47,6 +52,12 @@ class AddInstinctRequest(BaseModel):
 
 class EvidenceRequest(BaseModel):
     evidence: Optional[Dict[str, Any]] = None
+
+
+class EditInstinctRequest(BaseModel):
+    trigger: Optional[str] = Field(None, min_length=1, max_length=200)
+    action: Optional[str] = Field(None, min_length=1, max_length=300)
+    domain: Optional[str] = None
 
 
 class PromoteRequest(BaseModel):
@@ -89,6 +100,11 @@ def setup_instincts_routes() -> APIRouter:
     @router.get("/export")
     async def get_export(request: Request):
         return {"json": instincts.export_json(_owner(request))}
+
+    @router.get("/proposed")
+    async def get_proposed(request: Request, project: Optional[str] = None):
+        items = instincts.list_by_status(_owner(request), ("proposed",), project=project)
+        return {"instincts": items, "count": len(items)}
 
     @router.post("/promote")
     async def post_promote(request: Request, body: PromoteRequest):
@@ -143,11 +159,21 @@ def setup_instincts_routes() -> APIRouter:
     async def list_instincts_route(
         request: Request, project: Optional[str] = None,
         min_confidence: float = 0.0, include_global: bool = True,
+        status: str = "active",
     ):
-        items = instincts.list_instincts(
-            _owner(request), project=project,
-            include_global=include_global, min_confidence=min_confidence,
-        )
+        wanted = str(status or "active").strip().lower()
+        if wanted == "active":
+            items = instincts.list_instincts(
+                _owner(request), project=project,
+                include_global=include_global, min_confidence=min_confidence,
+            )
+        else:
+            kinds = sorted(instincts.STATUSES) if wanted == "all" else [wanted]
+            if any(k not in instincts.STATUSES for k in kinds):
+                raise HTTPException(400, f"unknown status {status!r}")
+            items = instincts.list_by_status(
+                _owner(request), kinds, project=project, include_global=include_global,
+            )
         return {"instincts": items, "count": len(items)}
 
     @router.post("")
@@ -187,6 +213,36 @@ def setup_instincts_routes() -> APIRouter:
             return instincts.contradict(_owner(request), id, evidence=body.evidence)
         except KeyError:
             raise HTTPException(404, "Instinct not found")
+
+    @router.post("/{id}/approve")
+    async def approve_instinct(request: Request, id: str, body: Optional[EditInstinctRequest] = None):
+        body = body or EditInstinctRequest()
+        try:
+            return instincts.approve(
+                _owner(request), id, trigger=body.trigger, action=body.action, domain=body.domain,
+            )
+        except KeyError:
+            raise HTTPException(404, "Instinct not found")
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+
+    @router.post("/{id}/reject")
+    async def reject_instinct(request: Request, id: str):
+        try:
+            return instincts.reject(_owner(request), id)
+        except KeyError:
+            raise HTTPException(404, "Instinct not found")
+
+    @router.post("/{id}/edit")
+    async def edit_instinct(request: Request, id: str, body: EditInstinctRequest):
+        try:
+            return instincts.edit(
+                _owner(request), id, trigger=body.trigger, action=body.action, domain=body.domain,
+            )
+        except KeyError:
+            raise HTTPException(404, "Instinct not found")
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
 
     @router.post("/{id}/retire")
     async def retire_instinct(request: Request, id: str):

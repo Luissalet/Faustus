@@ -3634,12 +3634,13 @@ FUNCTION_TOOL_SCHEMAS = [
                 "a manual one. retire deactivates one (kept, never deleted). promote merges "
                 "a pattern seen across several projects into one global instinct. evolve "
                 "clusters related instincts into a suggested draft skill/command/agent. "
-                "export/import move the whole set as JSON."
+                "export/import move the whole set as JSON. New lessons start as 'proposed' and are "
+                "never used until the user approves them; do not approve or reject on your own."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "action": {"type": "string", "enum": ["list", "view", "status", "confirm", "contradict", "add", "retire", "promote", "evolve", "export", "import"], "description": "list = active instincts; view = one record by id; status = counts + top 5 + pending promotions; confirm/contradict = adjust confidence for id; add = create a manual instinct; retire = deactivate id; promote = merge a widely-seen project pattern into global; evolve = cluster into a suggested skill/command/agent; export/import = whole-set JSON."},
+                    "action": {"type": "string", "enum": ["list", "view", "status", "confirm", "contradict", "add", "retire", "promote", "evolve", "export", "import", "proposed", "approve", "reject", "edit"], "description": "proposed = lessons waiting for the user's approval; approve/reject = ONLY when the user says so (approve may reword with trigger/do); edit = reword id; list = active instincts; view = one record by id; status = counts + top 5 + pending promotions; confirm/contradict = adjust confidence for id; add = create a manual instinct; retire = deactivate id; promote = merge a widely-seen project pattern into global; evolve = cluster into a suggested skill/command/agent; export/import = whole-set JSON."},
                     "id": {"type": "string", "description": "Instinct id (for view/confirm/contradict/retire, and optionally promote to restrict it to one candidate)."},
                     "trigger": {"type": "string", "description": "The recurring situation, starting with 'when'/'cuando' (for add), e.g. 'when writing new FastAPI routes'."},
                     "do": {"type": "string", "description": "What to do in that situation (for add), e.g. 'use the router factory in routes/ and register in app.py'."},
@@ -3728,11 +3729,11 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "night_shift",
-            "description": "An unattended queue of dispatch jobs run overnight under a budget, with a morning report -- 'run these N things tonight and tell me in the morning'. Actions: start (queue a shift: task descriptions, a workspace, and a budget of minutes/tasks/tokens -- each task runs as its own verified worker, sequentially, stopping cleanly once the budget runs out); status (a shift's state and per-task results so far, or the recent shifts when no id is given); stop (ask a running shift to stop after its current task); report (the Markdown morning report for a shift, or the latest one when no id is given).",
+            "description": "An unattended queue of dispatch jobs run overnight under a budget, with a morning report -- 'run these N things tonight and tell me in the morning'. Actions: start (queue a shift: task descriptions, a workspace, and a budget of minutes/tasks/tokens -- each task runs as its own verified worker, sequentially, stopping cleanly once the budget runs out); status (a shift's state and per-task results so far, or the recent shifts when no id is given); stop (ask a running shift to stop after its current task); report (the Markdown morning report for a shift, or the latest one when no id is given); budget (the period budget: spend and GPU seconds against their daily/weekly targets, whether unattended work is paused and until when, the failure breaker and provider cooldowns).",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "action": {"type": "string", "enum": ["start", "status", "stop", "report"], "description": "Default 'start'."},
+                    "action": {"type": "string", "enum": ["start", "status", "stop", "report", "budget"], "description": "Default 'start'."},
                     "id": {"type": "string", "description": "A shift id, for status/stop/report. Omitted on status/report: the recent shifts / the latest shift."},
                     "tasks": {"type": "array", "items": {"type": "string"}, "description": "start: up to 12 task descriptions, run one after another."},
                     "workspace": {"type": "string", "description": "start: the absolute folder the shift's workers are confined to. Defaults to the current workspace."},

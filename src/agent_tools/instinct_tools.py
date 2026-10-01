@@ -18,6 +18,7 @@ __all__ = ["do_manage_instincts"]
 _VALID_ACTIONS = (
     "list", "view", "status", "confirm", "contradict", "add", "retire",
     "promote", "evolve", "export", "import",
+    "proposed", "approve", "reject", "edit",
 )
 
 
@@ -37,6 +38,10 @@ async def do_manage_instincts(content: str, owner: Optional[str] = None) -> Dict
       evolve {project, generate}               — cluster instincts into a draft skill/command/agent suggestion.
       export {}                                — full JSON dump of this owner's instincts.
       import {json}                            — validated, dedup-by-id import of that shape.
+      proposed {project}                       — lessons waiting for the user's approval (never injected).
+      approve {id, trigger?, do?}              — the USER approved a proposal (optionally reworded); active from the next turn.
+      reject {id}                              — the USER rejected it; kept so it is not proposed again.
+      edit {id, trigger?, do?}                 — reword one without changing its status.
     """
     from src import instincts
 
@@ -67,6 +72,32 @@ async def do_manage_instincts(content: str, owner: Optional[str] = None) -> Dict
                 label = "project" if it.get("scope") == "project" else "global"
                 lines.append(f"- [{it['id']}] [{label} {pct}%] {it.get('trigger','')}: {it.get('action','')}")
             return {"results": "\n".join(lines), "count": len(items)}
+
+        if action == "proposed":
+            items = instincts.list_by_status(owner, ("proposed",), project=args.get("project"))
+            if not items:
+                return {"results": "No lessons are waiting for approval.", "count": 0}
+            lines = [f"- [{it['id']}] {it.get('trigger','')}: {it.get('action','')}" for it in items]
+            return {"results": "\n".join(lines), "count": len(items)}
+
+        if action in ("approve", "reject", "edit"):
+            iid = (args.get("id") or "").strip()
+            if not iid:
+                return {"error": f"id is required for {action}", "exit_code": 1}
+            trig = args.get("trigger")
+            act_text = args.get("do") if args.get("do") is not None else args.get("action_text")
+            try:
+                if action == "approve":
+                    return {"results": instincts.approve(owner, iid, trigger=trig, action=act_text,
+                                                         domain=args.get("domain"))}
+                if action == "reject":
+                    return {"results": instincts.reject(owner, iid)}
+                return {"results": instincts.edit(owner, iid, trigger=trig, action=act_text,
+                                                  domain=args.get("domain"))}
+            except KeyError:
+                return {"error": f"instinct {iid!r} not found", "exit_code": 1}
+            except ValueError as e:
+                return {"error": str(e), "exit_code": 1}
 
         if action == "view":
             iid = (args.get("id") or "").strip()

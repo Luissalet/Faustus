@@ -57,8 +57,9 @@ __all__ = [
     "DOMAINS", "SCOPES", "STATUSES",
     "instinct_id", "project_key", "detect_project_name",
     "effective_confidence",
-    "list_instincts", "get", "upsert", "add",
+    "list_instincts", "list_by_status", "get", "upsert", "add",
     "confirm", "contradict", "retire", "delete",
+    "approve", "reject", "edit", "require_approval", "should_offer",
     "promote", "evolve",
     "render_block",
     "should_extract", "looks_like_correction", "extract_from_turn",
@@ -70,7 +71,11 @@ DOMAINS = frozenset({
     "debugging", "other",
 })
 SCOPES = frozenset({"project", "global"})
-STATUSES = frozenset({"active", "retired"})
+# `proposed` = extracted automatically and waiting for the user's yes (never
+# injected); `rejected` = the user said no (never injected, never revived by a
+# later automatic extraction). Only `active` records reach the prompt.
+STATUSES = frozenset({"active", "retired", "proposed", "rejected"})
+APPROVED_CONFIDENCE = 0.85
 
 # ── confidence math (unit-tested directly) ─────────────────────────────────
 
@@ -234,6 +239,11 @@ def _load(owner: Optional[str], *, now: Optional[float] = None) -> Dict[str, Dic
     for item in data.values():
         if not isinstance(item, dict):
             continue
+        if item.get("status") not in STATUSES:
+            # Records written before statuses existed (or with a stray value)
+            # stay in force: nothing the user already has disappears.
+            item["status"] = "active"
+            changed = True
         if item.get("status") == "active" and effective_confidence(item, now) <= RETIRE_THRESHOLD:
             item["status"] = "retired"
             item["updated"] = now
@@ -255,7 +265,8 @@ def _clean_scope(value: Any) -> str:
 
 def _new_record(iid: str, *, trigger: str, action: str, domain: str, scope: str,
                 project: str, project_name: str, source: str, confidence: float,
-                evidence: Sequence[Mapping[str, Any]], now: float) -> Dict[str, Any]:
+                evidence: Sequence[Mapping[str, Any]], now: float,
+                status: str = "active") -> Dict[str, Any]:
     return {
         "id": iid,
         "trigger": trigger,
@@ -273,7 +284,7 @@ def _new_record(iid: str, *, trigger: str, action: str, domain: str, scope: str,
         "created": now,
         "updated": now,
         "last_observed": now,
-        "status": "active",
+        "status": status if status in STATUSES else "active",
         "promoted_from": [],
     }
 
@@ -356,6 +367,10 @@ def upsert(owner: Optional[str], item: Mapping[str, Any]) -> Dict[str, Any]:
     source = str(item.get("source") or "session-observation").strip() or "session-observation"
     new_evidence = list(item.get("evidence") or [])
     confidence_hint = item.get("confidence")
+    requested = str(item.get("status") or "active").strip().lower()
+    if requested not in ("active", "proposed"):
+        requested = "active"
+    auto = source == "session-observation"
 
     now = time.time()
     iid = instinct_id(trigger, action, scope, project)
@@ -369,7 +384,7 @@ def upsert(owner: Optional[str], item: Mapping[str, Any]) -> Dict[str, Any]:
         record = _new_record(
             iid, trigger=trigger, action=action, domain=domain, scope=scope,
             project=project, project_name=project_name, source=source,
-            confidence=conf, evidence=new_evidence, now=now,
+            confidence=conf, evidence=new_evidence, now=now, status=requested,
         )
     else:
         record = dict(existing)
@@ -388,7 +403,15 @@ def upsert(owner: Optional[str], item: Mapping[str, Any]) -> Dict[str, Any]:
         record["evidence"] = (list(record.get("evidence") or []) + new_evidence)[-EVIDENCE_CAP:]
         record["updated"] = now
         record["last_observed"] = now
-        record["status"] = "active"
+        prev = existing.get("status") or "active"
+        if prev == "rejected" and auto:
+            record["status"] = "rejected"        # a no stays a no
+        elif prev == "active":
+            record["status"] = "active"
+        elif prev == "proposed" and requested == "proposed":
+            record["status"] = "proposed"
+        else:
+            record["status"] = requested
 
     data[iid] = record
     _save_raw(owner, data)
@@ -503,6 +526,133 @@ def delete(owner: Optional[str], id: str) -> bool:
     del data[id]
     _save_raw(owner, data)
     return True
+
+
+# ── approval: proposed -> active | rejected ────────────────────────────────
+
+def require_approval() -> bool:
+    """`instincts_require_approval` (default True): automatic extractions are
+    stored as `proposed` and only reach the prompt after the user approves."""
+    try:
+        from src.settings import get_setting
+        return bool(get_setting("instincts_require_approval", True))
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _offer_min_tool_calls() -> int:
+    try:
+        from src.settings import get_setting
+        return max(0, int(get_setting("instincts_offer_min_tool_calls", 8)))
+    except Exception:  # noqa: BLE001
+        return 8
+
+
+def should_offer(tool_count: Any) -> bool:
+    """With approval on, a lesson is only offered after a turn that made at
+    least `instincts_offer_min_tool_calls` tool calls (default 8): short turns
+    teach nothing portable. With approval off the old rule applies."""
+    if not require_approval():
+        return True
+    try:
+        n = int(tool_count or 0)
+    except (TypeError, ValueError):
+        n = 0
+    return n >= _offer_min_tool_calls()
+
+
+def list_by_status(owner: Optional[str], statuses: Sequence[str] = ("proposed",), *,
+                   project: Optional[str] = None, include_global: bool = True) -> List[Dict[str, Any]]:
+    """Records in any of `statuses` (newest first for proposals, best
+    confidence first otherwise), same project scoping as `list_instincts`."""
+    wanted = {s for s in statuses if s in STATUSES}
+    now = time.time()
+    data = _load(owner, now=now)
+    out: List[Dict[str, Any]] = []
+    for rec in data.values():
+        if not isinstance(rec, dict) or rec.get("status") not in wanted:
+            continue
+        if rec.get("scope") == "global":
+            if not include_global:
+                continue
+        elif project is not None and rec.get("project") != project:
+            continue
+        out.append(_with_effective(rec, now))
+    if wanted <= {"proposed", "rejected"}:
+        out.sort(key=lambda r: _to_float(r.get("created"), 0.0), reverse=True)
+    else:
+        out.sort(key=lambda r: r["effective_confidence"], reverse=True)
+    return out
+
+
+def _clean_text(value: Any, limit: int) -> Optional[str]:
+    if value is None:
+        return None
+    text = re.sub(r"\s+", " ", str(value)).strip()
+    if not text:
+        raise ValueError("text cannot be empty")
+    return text[:limit]
+
+
+def edit(owner: Optional[str], id: str, *, trigger: Optional[str] = None,
+         action: Optional[str] = None, domain: Optional[str] = None) -> Dict[str, Any]:
+    """Reword a record in place (its storage key stays the same). Status is
+    untouched: editing a proposal does not approve it."""
+    now = time.time()
+    data = _load_raw(owner)
+    rec = data.get(id)
+    if rec is None:
+        raise KeyError(f"no instinct {id!r}")
+    t = _clean_text(trigger, 200)
+    a = _clean_text(action, 300)
+    if t is not None:
+        rec["trigger"] = t
+    if a is not None:
+        rec["action"] = a
+    if domain is not None:
+        rec["domain"] = _clean_domain(domain)
+    rec["updated"] = now
+    data[id] = rec
+    _save_raw(owner, data)
+    return _with_effective(rec, now)
+
+
+def approve(owner: Optional[str], id: str, *, trigger: Optional[str] = None,
+            action: Optional[str] = None, domain: Optional[str] = None) -> Dict[str, Any]:
+    """Make a proposed (or rejected/retired) lesson active, optionally
+    rewording it first. Approval lifts the confidence to at least
+    `APPROVED_CONFIDENCE` so it clears the injection threshold; it takes
+    effect from the NEXT turn, because the prompt block is built once at the
+    start of a turn."""
+    if trigger is not None or action is not None or domain is not None:
+        edit(owner, id, trigger=trigger, action=action, domain=domain)
+    now = time.time()
+    data = _load_raw(owner)
+    rec = data.get(id)
+    if rec is None:
+        raise KeyError(f"no instinct {id!r}")
+    rec["status"] = "active"
+    rec["confidence"] = max(_to_float(rec.get("confidence"), 0.3), APPROVED_CONFIDENCE)
+    rec["approved_at"] = now
+    rec["updated"] = now
+    rec["last_observed"] = now
+    data[id] = rec
+    _save_raw(owner, data)
+    return _with_effective(rec, now)
+
+
+def reject(owner: Optional[str], id: str) -> Dict[str, Any]:
+    """The user said no: kept on disk so the same idea is not proposed again,
+    never injected."""
+    data = _load_raw(owner)
+    rec = data.get(id)
+    if rec is None:
+        raise KeyError(f"no instinct {id!r}")
+    rec["status"] = "rejected"
+    rec["updated"] = time.time()
+    data[id] = rec
+    _save_raw(owner, data)
+    return _with_effective(rec)
 
 
 # ── promotion: project → global once seen widely enough ────────────────────
@@ -835,13 +985,41 @@ def _valid_trigger(trigger: str) -> bool:
     return low.startswith("when") or low.startswith("cuando")
 
 
-def _build_extract_prompt(conversation_text: str, existing: Sequence[Mapping[str, str]]) -> str:
+_NON_PORTABLE_RE = re.compile(
+    r"[A-Za-z]:[\\/]"                       # drive path
+    r"|\b[\w.-]+[\\/][\w.-]+\.[A-Za-z0-9]{1,5}\b"   # dir/file.ext
+    r"|\b\d{4}-\d{2}-\d{2}\b"                 # ISO date
+    r"|\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b"       # 01-10-2026
+)
+
+
+def _is_portable(trigger: str, action: str) -> bool:
+    """A proposal is one sentence with no file paths or dates (a lesson that
+    only makes sense in the exact task it came from is not worth asking about)."""
+    if "\n" in action or "\n" in trigger:
+        return False
+    if re.search(r"[.!?]\s+\S", action.strip()):
+        return False                          # more than one sentence
+    return not (_NON_PORTABLE_RE.search(trigger) or _NON_PORTABLE_RE.search(action))
+
+
+def _build_extract_prompt(conversation_text: str, existing: Sequence[Mapping[str, str]],
+                          max_items: int = 3) -> str:
+    n_word = "ONE" if max_items == 1 else f"up to {max_items}"
     lines = [
-        "You are studying an AI agent session to spot small, reusable behaviours "
-        "it should remember for next time in THIS project.",
-        "Propose 0 to 3 'instincts': a TRIGGER (a recurring situation) and an "
+        "You are studying an AI agent session to spot a small, reusable lesson "
+        "it should remember for next time.",
+        f"Propose 0 or {n_word} 'instincts': a TRIGGER (a recurring situation) and an "
         "ACTION (what to do in that situation), grounded ONLY in what actually "
         "happened in the conversation below — never invented.",
+        "Quality bar (when in doubt, save nothing):",
+        "- ONE portable lesson, stated in ONE sentence.",
+        "- No file paths, function or variable names, dates, ticket numbers or "
+        "project-specific names unless the lesson is meaningless without them.",
+        "- It must be something that would change behaviour in a FUTURE, DIFFERENT "
+        "task — not a description of what was done this time, and not an obvious "
+        "habit any assistant already has.",
+        "- Skip anything that only records progress, an outcome, or a one-off fix.",
         "Rules:",
         "- trigger MUST start with 'when' (English) or 'cuando' (Spanish), max 140 characters.",
         "- action is a concrete instruction, max 240 characters.",
@@ -852,11 +1030,13 @@ def _build_extract_prompt(conversation_text: str, existing: Sequence[Mapping[str
         "- Return NOTHING (zero <instinct> blocks) when there is no genuinely "
         "reusable pattern this turn.",
         "",
-        "=== EXISTING INSTINCTS FOR THIS PROJECT (id: trigger) ===",
+        "=== EXISTING INSTINCTS FOR THIS PROJECT (id: trigger) — do not repeat "
+        "any of these, including those marked proposed or rejected ===",
     ]
     if existing:
         for it in existing:
-            lines.append(f"- {it.get('id', '')}: {it.get('trigger', '')}")
+            tag = f" [{it['status']}]" if it.get("status") not in (None, "", "active") else ""
+            lines.append(f"- {it.get('id', '')}: {it.get('trigger', '')}{tag}")
     else:
         lines.append("(none yet)")
     lines += [
@@ -864,7 +1044,8 @@ def _build_extract_prompt(conversation_text: str, existing: Sequence[Mapping[str
         "=== CONVERSATION ===",
         conversation_text[:8000],
         "",
-        "Respond with zero to three blocks EXACTLY in this tagged format (plain "
+        "Respond with zero or at most " + ("one block" if max_items == 1 else f"{max_items} blocks")
+        + " EXACTLY in this tagged format (plain "
         "text, no JSON, no code fences):",
         "<instinct>",
         "trigger: when ...",
@@ -912,6 +1093,9 @@ async def extract_from_turn(owner: Optional[str], session_id: Optional[str],
         max_per_turn = max(0, int(get_setting("instincts_extract_max_per_turn", 3)))
     except Exception:  # noqa: BLE001
         max_per_turn = 3
+    approval = require_approval()
+    if approval:
+        max_per_turn = min(max_per_turn, 1)      # at most one proposal per turn
 
     conversation_text = _conversation_text(messages)
     if not conversation_text.strip():
@@ -919,13 +1103,15 @@ async def extract_from_turn(owner: Optional[str], session_id: Optional[str],
 
     try:
         existing_ctx = [
-            {"id": it["id"], "trigger": it.get("trigger", "")}
-            for it in list_instincts(owner, project=project, include_global=True, min_confidence=0.0)[:20]
+            {"id": it["id"], "trigger": it.get("trigger", ""), "status": it.get("status", "active")}
+            for it in list_by_status(
+                owner, ("active", "proposed", "rejected"), project=project, include_global=True,
+            )[:30]
         ]
     except Exception:  # noqa: BLE001
         existing_ctx = []
 
-    prompt = _build_extract_prompt(conversation_text, existing_ctx)
+    prompt = _build_extract_prompt(conversation_text, existing_ctx, max_items=max_per_turn or 1)
 
     try:
         from src.endpoint_resolver import resolve_endpoint
@@ -965,6 +1151,8 @@ async def extract_from_turn(owner: Optional[str], session_id: Optional[str],
             continue
         if domain not in DOMAINS:
             continue
+        if approval and not _is_portable(trigger, action):
+            continue
         if not evidence_text or _norm(evidence_text) not in normalized_conversation:
             # Grounding: no invented evidence, ever.
             continue
@@ -983,6 +1171,7 @@ async def extract_from_turn(owner: Optional[str], session_id: Optional[str],
                 "trigger": trigger, "action": action, "domain": domain,
                 "scope": "project", "project": project or "", "project_name": project_name or "",
                 "source": "session-observation",
+                "status": "proposed" if approval else "active",
                 "evidence": [{
                     "session_id": session_id or "", "turn_ts": time.time(),
                     "excerpt": evidence_text[:200],
@@ -990,6 +1179,8 @@ async def extract_from_turn(owner: Optional[str], session_id: Optional[str],
             })
         except Exception:  # noqa: BLE001
             continue
+        if record.get("status") == "rejected":
+            continue                              # the user already said no to this one
         stored.append(record)
 
     return stored[:max_per_turn]
@@ -1068,7 +1259,10 @@ def status(owner: Optional[str], project: Optional[str] = None) -> Dict[str, Any
         by_domain[v.get("domain", "other")] = by_domain.get(v.get("domain", "other"), 0) + 1
     top = list_instincts(owner, project=project, include_global=True, min_confidence=0.0)[:5]
     pending = promote(owner, dry_run=True)
+    proposals = list_by_status(owner, ("proposed",), project=project)
     return {
+        "proposed": len(proposals),
+        "pending_proposals": proposals[:20],
         "total": len(active),
         "by_scope": by_scope,
         "by_domain": by_domain,
