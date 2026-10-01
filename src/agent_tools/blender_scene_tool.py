@@ -126,7 +126,9 @@ def _publish_image(path: str, prompt: str, size: str, model: str, ctx: dict) -> 
         from src.constants import GENERATED_IMAGES_DIR
 
         ext = os.path.splitext(path)[1].lower() or ".png"
-        filename = f"blender_{uuid.uuid4().hex[:12]}{ext}"
+        # Plain hex: the generated-image route only serves hex or UUID names
+        # (src/generated_images.py), so a prefixed name showed a broken image.
+        filename = f"{uuid.uuid4().hex}{ext}"
         os.makedirs(GENERATED_IMAGES_DIR, exist_ok=True)
         shutil.copyfile(path, os.path.join(GENERATED_IMAGES_DIR, filename))
     except Exception as exc:  # noqa: BLE001

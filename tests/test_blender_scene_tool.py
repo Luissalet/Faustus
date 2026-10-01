@@ -214,7 +214,10 @@ def test_a_render_is_returned_as_an_image_and_registered_with_the_gallery_folder
     assert normalize_result_images(out)[0]["mimeType"] == "image/png"
     assert screenshot_data_url(out).startswith("data:image/png;base64,")
     url = out["image_url"]
-    assert url.startswith("/api/generated-image/blender_") and url.endswith(".png")
+    assert url.startswith("/api/generated-image/") and url.endswith(".png")
+    # the name must be one the generated-image route serves, or the chat shows a broken image
+    from src.generated_images import GENERATED_IMAGE_RE
+    assert GENERATED_IMAGE_RE.fullmatch(url.rsplit("/", 1)[1])
     assert out["image_size"] == "320x240" and out["image_model"] == "blender 4.3.2" and out["image_prompt"] == "demo"
     copied = isolated_dirs / "generated" / url.rsplit("/", 1)[1]
     assert copied.read_bytes() == PNG
