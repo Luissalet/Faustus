@@ -42,7 +42,13 @@ def test_third_party_write_lost_reply_is_unknown_and_not_replayed():
     assert typed.uncertainty.reconcile_action == "read_current_state_before_retry"
 
 
-def test_builtin_write_reconnects_but_does_not_replay_uncertain_call():
+def test_builtin_write_does_not_reconnect_or_replay_uncertain_call():
+    # Deliberate change (commit d223b67f, pinned by test_mcp_call_binding.py::
+    # test_write_response_lost_is_never_replayed): a dispatched write whose reply
+    # was lost no longer tears down / re-establishes the session inside that
+    # call, since a stale failed call must not obtain authority over a newer
+    # registration. The outcome stays unknown; a later call on a dead session
+    # reconnects before dispatching (nothing sent, so safe).
     mgr = _manager(builtin=True, readonly=False)
     calls = []
     reconnects = []
@@ -59,7 +65,7 @@ def test_builtin_write_reconnects_but_does_not_replay_uncertain_call():
     mgr._reconnect_builtin = reconnect
     raw = asyncio.run(mgr.call_tool("mcp__srv__action", {}))
     assert calls == ["applied"]
-    assert reconnects == [True]
+    assert reconnects == []
     assert raw["status"] == "outcome_unknown"
 
 
