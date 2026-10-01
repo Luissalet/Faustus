@@ -2228,7 +2228,17 @@ function LiveLine({ live, contextTokens }: { live: LiveRate; contextTokens?: num
               : t('Waiting for the model');
   return (
     <p className="fs-studio__waiting fs-studio__live" data-phase={live.phase} data-testid="turn-live">
-      <span className="fs-studio__pulse" aria-hidden="true" />
+      {live.phase === 'waiting' ? (
+        <span className="fs-studio__pulse" aria-hidden="true" />
+      ) : (
+        // One shape per phase, so the state reads at a glance: dots circling
+        // while it thinks, bars while it writes, a ring while a tool runs.
+        <span className="fs-orb" data-phase={live.phase} aria-hidden="true" data-testid="turn-orb">
+          <i />
+          <i />
+          <i />
+        </span>
+      )}
       <span className="fs-studio__live-what" role="status">
         {what}
       </span>
