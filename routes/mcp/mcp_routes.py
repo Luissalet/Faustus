@@ -1330,8 +1330,25 @@ def setup_mcp_routes(mcp_manager: McpManager):
                 and extension_manifest.get_manifest(server_id) is not None \
                 and not extension_manifest.is_quarantined_for_permissions(server_id):
             extension_manifest.quarantine_for_security(server_id)
-        return {"server_id": server_id, "security_scan": scan_dict,
-                "pending_approval": extension_manifest.is_quarantined_for_security(server_id)}
+        released = None
+        if not scan.has_critical() and extension_manifest.is_quarantined_for_security(server_id):
+            # The hold was for a critical finding a fresh scan of the same
+            # server no longer makes (the code changed, or the rule got more
+            # precise): lift it and start the server, which it never was.
+            try:
+                manifest = extension_manifest.approve_security_scan(server_id)
+                from src import security_policy
+                security_policy.consent_store.grant(
+                    server_id, "*", security_policy.effects_for_declared_permissions(manifest.get("permissions")))
+                released = await _start_after_approval(server_id)
+            except ValueError:
+                released = None
+        out = {"server_id": server_id, "security_scan": scan_dict,
+               "pending_approval": extension_manifest.is_quarantined_for_security(server_id)}
+        if released is not None:
+            out["released"] = True
+            out["started"] = released
+        return out
 
     return router
 

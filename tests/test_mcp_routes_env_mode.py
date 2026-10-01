@@ -260,3 +260,73 @@ def test_the_stderr_route_is_empty_when_nothing_was_logged(routes, db, logs):
     db.commit()
     body = _call(routes[("GET", "/api/mcp/servers/{server_id}/stderr")], server_id="quiet")
     assert body["tail"] == ""
+
+
+# ── a server held for a critical scan finding (live check 01-10) ─────────
+
+class _Scan:
+    def __init__(self, critical):
+        self._critical = critical
+
+    def has_critical(self):
+        return self._critical
+
+    def to_dict(self):
+        return {"risk_level": "critical" if self._critical else "low", "findings": []}
+
+
+def _hold(monkeypatch, held):
+    state = {"held": held, "approved": 0}
+    monkeypatch.setattr(mcp_routes.extension_manifest, "is_quarantined_for_security", lambda sid: state["held"])
+    monkeypatch.setattr(mcp_routes.extension_manifest, "is_quarantined_for_permissions", lambda sid: False)
+    monkeypatch.setattr(mcp_routes.extension_manifest, "get_manifest", lambda sid: {"id": sid, "permissions": {}})
+    monkeypatch.setattr(mcp_routes.extension_manifest, "attach_security_scan", lambda sid, d: None)
+
+    def approve(sid):
+        state["held"] = False
+        state["approved"] += 1
+        return {"id": sid, "permissions": {}}
+    monkeypatch.setattr(mcp_routes.extension_manifest, "approve_security_scan", approve)
+    monkeypatch.setattr(mcp_routes.extension_manifest, "quarantine_for_security",
+                        lambda sid: state.__setitem__("held", True))
+    return state
+
+
+class _Req:
+    def __init__(self, body=b""):
+        self._body = body
+
+    async def body(self):
+        return self._body
+
+
+def test_approving_a_security_hold_with_the_override_starts_the_server(routes, db, manager, monkeypatch):
+    db.add(McpServer(id="held", name="Held", transport="stdio", command="node",
+                     args="[]", env="{}", is_enabled=True, inherit_env=False))
+    db.commit()
+    state = _hold(monkeypatch, held=True)
+    out = asyncio.run(routes[("POST", "/api/mcp/servers/{server_id}/manifest/approve")](
+        server_id="held", request=_Req(b'{"override": true}')))
+    assert state["approved"] == 1 and out["started"] is True and "held" in manager.connected
+
+
+def test_a_rescan_without_the_critical_finding_releases_and_starts_it(routes, db, manager, monkeypatch):
+    db.add(McpServer(id="fp", name="False positive", transport="stdio", command="node",
+                     args="[]", env="{}", is_enabled=True, inherit_env=False))
+    db.commit()
+    state = _hold(monkeypatch, held=True)
+    monkeypatch.setattr(mcp_routes, "scan_mcp_server_config", lambda **kw: _Scan(False))
+    out = _call(routes[("GET", "/api/mcp/servers/{server_id}/security-scan")], server_id="fp")
+    assert out["released"] is True and out["started"] is True and out["pending_approval"] is False
+    assert state["approved"] == 1 and "fp" in manager.connected
+
+
+def test_a_rescan_that_still_finds_it_keeps_the_hold(routes, db, manager, monkeypatch):
+    db.add(McpServer(id="bad", name="Bad", transport="stdio", command="node",
+                     args="[]", env="{}", is_enabled=True, inherit_env=False))
+    db.commit()
+    state = _hold(monkeypatch, held=True)
+    monkeypatch.setattr(mcp_routes, "scan_mcp_server_config", lambda **kw: _Scan(True))
+    out = _call(routes[("GET", "/api/mcp/servers/{server_id}/security-scan")], server_id="bad")
+    assert out["pending_approval"] is True and "released" not in out
+    assert state["approved"] == 0 and "bad" not in manager.connected
