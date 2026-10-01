@@ -281,6 +281,10 @@ def test_descriptor_resolution_preserves_safe_endpoint_identity(monkeypatch):
         ),
         {
             "endpoint_id": "backup",
+            # Descriptors carry the connection revision since fd3fb8fe (blank
+            # for an endpoint that has never had one), so a model switch can
+            # detect a changed connection.
+            "connection_revision": "",
             "endpoint_label": "Endpoint backup",
             "endpoint_cost_tracked": True,
         },
@@ -315,6 +319,7 @@ def test_exact_id_descriptor_wins_when_routes_are_identical(monkeypatch):
         owner="alice",
     ) == {
         "endpoint_id": "account-two",
+        "connection_revision": "",  # see fd3fb8fe: descriptors carry the revision
         "endpoint_label": "Endpoint account-two",
         "endpoint_cost_tracked": True,
     }
