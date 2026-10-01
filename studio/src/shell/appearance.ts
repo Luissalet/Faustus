@@ -55,8 +55,8 @@ export const PRESETS: Record<string, Colors> = {
   terminal: { bg: '#000000', fg: '#00ff41', panel: '#0a0a0a', border: '#003b00', red: '#00ff41' },
   organs: { bg: '#0a0406', fg: '#efe1c8', panel: '#15080a', border: '#3a1519', red: '#c83240' },
   lavender: { bg: '#f3eef8', fg: '#3d3551', panel: '#faf7ff', border: '#cec3de', red: '#9b6dcc' },
-  gpt: { bg: '#212121', fg: '#ececec', panel: '#171717', border: '#424242', red: '#949494' },
-  claude: { bg: '#262624', fg: '#f5f4f0', panel: '#30302e', border: '#4a4a47', red: '#c6613f' },
+  graphite: { bg: '#212121', fg: '#ececec', panel: '#171717', border: '#424242', red: '#949494' },
+  terracotta: { bg: '#262624', fg: '#f5f4f0', panel: '#30302e', border: '#4a4a47', red: '#c6613f' },
   cute: { bg: '#fff0f5', fg: '#d4608a', panel: '#fff8fa', border: '#f0c0d0', red: '#ff6b9d' },
 };
 /** The effect each built-in theme came with, as before. */
@@ -134,11 +134,23 @@ function writeJson(key: string, value: unknown): void {
   }
 }
 
+const sameColors = (a: Colors, b: Colors) =>
+  (['bg', 'fg', 'panel', 'border', 'red'] as const).every((k) => String(a[k] ?? '').toLowerCase() === b[k].toLowerCase());
+
+/** The built-in preset a saved theme was, when that preset has since been
+ * renamed: a name no preset and no theme of the user's carries, with exactly
+ * one preset's colours. Two presets were renamed on 01-10-2026 (to graphite
+ * and terracotta); a theme picked before keeps its look and its tick. */
+function renamedPreset(name: string, colors: Colors | undefined): string | null {
+  if (!colors || PRESETS[name] || name === 'studio' || name === 'custom' || customThemes[name]) return null;
+  return Object.keys(PRESETS).find((n) => sameColors(colors, PRESETS[n])) ?? null;
+}
+
 function normalize(raw: unknown): Theme {
   const o = (raw && typeof raw === 'object' ? raw : {}) as Partial<Theme> & { name?: string };
   let name = o.name || 'studio';
-  if (name === 'chatgpt') name = 'gpt';
   if (name === 'sakura') name = 'ume';
+  name = renamedPreset(name, o.colors) ?? name;
   const t: Theme = { name };
   if (o.colors && typeof o.colors === 'object') t.colors = { ...(PRESETS[name] ?? PRESETS.dark), ...o.colors };
   else if (PRESETS[name]) t.colors = PRESETS[name];
@@ -153,8 +165,8 @@ function normalize(raw: unknown): Theme {
   return t;
 }
 
-let current: Theme = normalize(readJson(KEY, null));
 let customThemes: Record<string, Theme> = readJson(CUSTOM_KEY, {});
+let current: Theme = normalize(readJson(KEY, null));
 const listeners = new Set<() => void>();
 function emit() {
   for (const fn of listeners) fn();
