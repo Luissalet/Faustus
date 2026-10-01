@@ -8,7 +8,8 @@ local model does not have to rediscover (or invent) the rules each time.
 
 Lookup order (first existing file wins, unless the setting lists otherwise):
     AGENTS.md, CLAUDE.md, .faustus/INSTRUCTIONS.md, FAUSTUS.md,
-    .cursorrules, CONVENTIONS.md, .github/copilot-instructions.md
+    .cursorrules, CONVENTIONS.md, .github/copilot-instructions.md,
+    .windsurfrules, .clinerules (a file), GEMINI.md
 
 A project whose conventions were written before the rename may still have
 that folder as ``.odysseus/INSTRUCTIONS.md``; it is still read (read-only
@@ -45,6 +46,9 @@ DEFAULT_FILES = (
     ".cursorrules", "CONVENTIONS.md", os.path.join(".github", "copilot-instructions.md"),
     # Read-only compat: a project folder created before the rename.
     os.path.join(".odysseus", "INSTRUCTIONS.md"),
+    # Other tools' single-file rules and Gemini's instructions file. A folder
+    # form (`.clinerules/`, `.windsurf/rules/`) is read by src/project_rules.py.
+    ".windsurfrules", ".clinerules", "GEMINI.md",
 )
 DEFAULT_MAX_CHARS = 6000
 # (root, trusted) -> (checked_at, selected path/file set, content identity, block).

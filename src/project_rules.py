@@ -54,7 +54,22 @@ RULE_DIR_NAMES: Tuple[str, ...] = (
     os.path.join(".agents", "rules"),
     os.path.join(".claude", "rules"),
     os.path.join(".cursor", "rules"),
+    # Other tools' rule folders, read with their own frontmatter dialects (see
+    # `_foreign_scope`): Cline, Windsurf and Copilot path-specific instructions.
+    ".clinerules",
+    os.path.join(".windsurf", "rules"),
+    os.path.join(".github", "instructions"),
 )
+
+#: File extensions a rule folder holds. Folders not listed hold `*.md`.
+_FOREIGN_ORIGINS = frozenset({
+    ".clinerules", os.path.join(".windsurf", "rules"), os.path.join(".github", "instructions"),
+})
+_ORIGIN_EXTS: Dict[str, Tuple[str, ...]] = {
+    os.path.join(".cursor", "rules"): (".mdc",),
+    ".clinerules": (".md", ".txt"),
+    os.path.join(".github", "instructions"): (".instructions.md",),
+}
 
 MAX_RULE_BYTES = 64 * 1024
 MAX_RULE_FILES = 40
@@ -98,21 +113,39 @@ class ProjectRule:
     #: with them is delivered once per conversation, appended to the result of
     #: the first read/edit/write of a matching file (see `path_rule_note`).
     paths: Tuple[str, ...] = ()
+    #: A rule the author keeps for explicit use (`trigger: manual`, a model-decided
+    #: rule, or a Copilot instructions file with no `applyTo`): never injected on
+    #: its own, only named in the prompt so it can be asked for.
+    manual: bool = False
+    description: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         out = {"id": self.id, "origin": self.origin, "root": self.root, "path": self.path,
                "distance": self.distance, "bytes": self.bytes, "error": self.error}
         if self.paths:
             out["paths"] = list(self.paths)
+        if self.manual:
+            out["manual"] = True
+        if self.description:
+            out["description"] = self.description
         return out
 
 
-def _rule_files(folder: str, ext: str) -> List[str]:
+def _rule_files(folder: str, ext: Any) -> List[str]:
+    exts = (ext,) if isinstance(ext, str) else tuple(ext)
     try:
         names = sorted(os.listdir(folder))
     except OSError:
         return []
-    return [n for n in names if n.lower().endswith(ext) and not n.startswith(".")]
+    return [n for n in names if n.lower().endswith(exts) and not n.startswith(".")]
+
+
+def _rule_id(name: str, origin: str) -> str:
+    low = name.lower()
+    for suffix in (".instructions.md",):
+        if origin == os.path.join(".github", "instructions") and low.endswith(suffix):
+            return name[: -len(suffix)]
+    return os.path.splitext(name)[0]
 
 
 def _strip_mdc_frontmatter(text: str) -> str:
@@ -163,7 +196,41 @@ def _rule_paths(fm: Dict[str, Any], *, is_mdc: bool) -> Tuple[str, ...]:
     return paths
 
 
-def _read_rule_file(path: str, *, is_mdc: bool) -> Tuple[str, int, str, Tuple[str, ...]]:
+#: `applyTo` / `globs` values that mean "every file": the rule is always on.
+_ALL_FILES_GLOBS = frozenset({"**", "**/*", "*", "**/**", "**/*.*"})
+
+
+def _foreign_scope(fm: Dict[str, Any], origin: str) -> Tuple[Tuple[str, ...], bool, str]:
+    """`(paths, manual, description)` for a rule from another tool's folder.
+
+    Dialects: `trigger` (Windsurf: always_on|glob|manual|model_decision), `globs`
+    (Windsurf, Cursor), `applyTo` (Copilot), `alwaysApply` (Cursor) and our own
+    `paths`. Only an always-on rule (no paths, not manual) rides the cached
+    system prompt; a glob-scoped one is delivered when a matching file is
+    touched; a manual or model-decided one is never injected on its own."""
+    fm = fm if isinstance(fm, dict) else {}
+    desc = str(fm.get("description") or "").strip()[:200]
+    trigger = str(fm.get("trigger") or "").strip().lower().replace("-", "_")
+    always = fm.get("alwaysApply")
+    always = always is True or str(always).strip().lower() == "true"
+    globs = _glob_list(fm.get("paths")) or _glob_list(fm.get("globs")) or _glob_list(fm.get("applyTo"))
+    every_file = bool(globs) and all(g in _ALL_FILES_GLOBS for g in globs)
+    if trigger in ("always_on", "always"):
+        return (), False, desc
+    if trigger == "glob":
+        return (() if every_file else globs), (not globs), desc
+    if trigger in ("manual", "model_decision"):
+        return (), True, desc
+    if always or every_file:
+        return (), False, desc
+    if globs:
+        return globs, False, desc
+    if origin == os.path.join(".github", "instructions"):
+        return (), True, desc          # Copilot: no applyTo means not applied automatically
+    return (), False, desc
+
+
+def _read_rule_file(path: str, *, is_mdc: bool, origin: str = "") -> Tuple[Any, ...]:
     try:
         size = os.path.getsize(path)
     except OSError as exc:
@@ -176,6 +243,16 @@ def _read_rule_file(path: str, *, is_mdc: bool) -> Tuple[str, int, str, Tuple[st
     except OSError as exc:
         return "", size, f"unreadable: {exc}", ()
     paths: Tuple[str, ...] = ()
+    foreign = origin in _FOREIGN_ORIGINS
+    manual, description = False, ""
+    if foreign:
+        # Another tool's folder: its frontmatter is configuration, never content.
+        try:
+            fm, body = parse_frontmatter(text) if text.startswith("---") else ({}, text)
+        except Exception:  # noqa: BLE001 - a malformed file keeps its raw text
+            fm, body = {}, text
+        paths, manual, description = _foreign_scope(fm, origin)
+        return body.strip(), size, "", paths, manual, description
     if text.startswith("---"):
         try:
             fm, body = parse_frontmatter(text)
@@ -210,20 +287,22 @@ def discover_project_rules(workspace: str, *, max_files: int = MAX_RULE_FILES) -
             if not os.path.isdir(folder) or not _contained(folder, root):
                 continue
             is_mdc = origin.endswith(os.path.join(".cursor", "rules"))
-            ext = ".mdc" if is_mdc else ".md"
+            ext = _ORIGIN_EXTS.get(origin, (".md",))
             for name in _rule_files(folder, ext):
                 if len(out) >= max_files:
                     return out
                 path = os.path.join(folder, name)
                 if os.path.islink(path) or not _contained(path, root):
                     continue
-                rel_id = os.path.splitext(name)[0]
-                read = _read_rule_file(path, is_mdc=is_mdc)
+                rel_id = _rule_id(name, origin)
+                read = _read_rule_file(path, is_mdc=is_mdc, origin=origin)
                 text, size, error = read[:3]
                 paths = read[3] if len(read) > 3 else ()
+                manual = bool(read[4]) if len(read) > 4 else False
+                description = read[5] if len(read) > 5 else ""
                 out.append(ProjectRule(id=rel_id, origin=origin, root=root, path=path,
                                        distance=distance, text=text, bytes=size, error=error,
-                                       paths=paths))
+                                       paths=paths, manual=manual, description=description))
     return out
 
 
@@ -242,7 +321,8 @@ def _project_rules_signature(workspace: str, *,
     rules = _rules if _rules is not None else discover_project_rules(workspace)
     return tuple((r.path, r.root, r.origin, r.distance, r.id, r.bytes, r.error,
                   hashlib.sha256(r.text.encode("utf-8")).hexdigest(),
-                  *((r.paths,) if r.paths else ())) for r in rules)
+                  *((r.paths,) if r.paths else ()),
+                  *(("manual", r.description) if r.manual else ())) for r in rules)
 
 
 # ---------------------------------------------------------------------------
@@ -450,11 +530,16 @@ def block(workspace: str, *, trusted: bool = True, languages: Optional[Sequence[
     more: List[str] = []
 
     scoped: List[str] = []
+    manual: List[str] = []
     if trusted:
         for r in captured_rules:
             if r.error or not r.text:
                 continue
             rel = os.path.relpath(r.path, r.root).replace(os.sep, "/")
+            if r.manual:
+                # Kept for explicit use: named here, never injected on its own.
+                manual.append(f"{rel} ({r.description})" if r.description else rel)
+                continue
             if r.paths:
                 # Path-scoped: delivered with the result of the first read or
                 # edit of a matching file, not on every turn (`path_rule_note`).
@@ -488,6 +573,9 @@ def block(workspace: str, *, trusted: bool = True, languages: Optional[Sequence[
     if scoped:
         parts.append("Path-scoped rules (their text appears the first time you read or edit a "
                      "matching file): " + "; ".join(scoped[:12]) + (", …" if len(scoped) > 12 else "") + ".")
+    if manual:
+        parts.append("Manual rules (not applied unless the user asks; read the file if they do): "
+                     + "; ".join(manual[:12]) + (", …" if len(manual) > 12 else "") + ".")
     if not parts and not more:
         text = ""
     else:
