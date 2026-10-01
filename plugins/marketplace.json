@@ -21,6 +21,7 @@
     {"id": "laplace", "repository_url": "https://github.com/Luissalet/LaplacesHoard.git", "required": false},
     {"id": "ledger", "repository_url": "https://github.com/Luissalet/LedgersHoard.git", "required": false},
     {"id": "links", "repository_url": "https://github.com/Luissalet/LinksHoard.git", "required": false},
+    {"id": "lumiere", "repository_url": "https://github.com/Luissalet/LumieresHoard.git", "required": false},
     {"id": "mercator", "repository_url": "https://github.com/Luissalet/Mercators-Hoard.git", "required": false},
     {"id": "nightingale", "repository_url": "https://github.com/Luissalet/NightingalesHoard.git", "required": false},
     {"id": "people", "repository_url": "https://github.com/Luissalet/PeoplesHoard.git", "required": false},

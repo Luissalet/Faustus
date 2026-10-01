@@ -1,0 +1,110 @@
+{
+  "schema": 1,
+  "id": "lumiere",
+  "name": "Lumière's Hoard",
+  "purpose": "A local video editor: media library with proxies, a multitrack timeline (cuts, ripple edits, speed, transitions, titles, picture-in-picture, keyframes, effects), text-based editing on word-level transcripts, automatic tools (silence and filler-word removal, scene cuts, vertical reframing that follows the subject, captions, cuts on the beat, highlights of long videos, loudness matching, stabilization), edit plans written from plain language, and frame-exact ffmpeg renders with GPU encoding, for people and for assistants over MCP.",
+  "capabilities": [
+    "video-editing",
+    "multitrack-timeline",
+    "media-library",
+    "proxies",
+    "ripple-edit",
+    "speed-ramp",
+    "transitions",
+    "titles",
+    "picture-in-picture",
+    "keyframes",
+    "color-effects",
+    "audio-effects",
+    "text-based-editing",
+    "transcription",
+    "word-timestamps",
+    "filler-word-removal",
+    "silence-removal",
+    "jump-cuts",
+    "scene-detection",
+    "auto-reframe",
+    "vertical-video",
+    "captions",
+    "burned-subtitles",
+    "srt-export",
+    "beat-sync",
+    "highlights",
+    "shorts-from-long-video",
+    "loudness-normalization",
+    "audio-ducking",
+    "stabilization",
+    "freeze-frame",
+    "natural-language-edit-plans",
+    "undo-history",
+    "gpu-encoding",
+    "lossless-cut",
+    "gif-export",
+    "audio-export",
+    "edl-export",
+    "frame-snapshot"
+  ],
+  "placeholders": [
+    "LUMIERE_DIR",
+    "APP_URL",
+    "TOKEN_FILE",
+    "PYTHON"
+  ],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:5198",
+    "TOKEN_FILE": "{LUMIERE_DIR}/data/mcp-token",
+    "PYTHON": "{LUMIERE_DIR}/venv/Scripts/python.exe"
+  },
+  "app": {
+    "url_default": "http://127.0.0.1:5198",
+    "ui_url": "{APP_URL}",
+    "health": {
+      "path": "/api/health",
+      "expect": {
+        "service": "lumiere-hoard"
+      }
+    },
+    "identify": {
+      "service": [
+        "lumiere-hoard"
+      ],
+      "title": [
+        "lumière's hoard",
+        "editor de vídeo"
+      ]
+    },
+    "launch_hint": {
+      "kind": "process",
+      "executable": "{PYTHON}",
+      "argv": [
+        "-m",
+        "lumiere_hoard"
+      ],
+      "cwd": "{LUMIERE_DIR}",
+      "env": {
+        "PORT_STRICT": "1",
+        "LUMIERE_PORT": "5198"
+      },
+      "readiness": {
+        "url": "{APP_URL}/api/health",
+        "timeout_s": 30
+      }
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{PYTHON}",
+    "args": [
+      "{LUMIERE_DIR}/mcp_server.py"
+    ],
+    "env": {
+      "LUMIERE_URL": "{APP_URL}",
+      "LUMIERE_TOKEN_FILE": "{TOKEN_FILE}"
+    },
+    "optional_env": [
+      "LUMIERE_BRIDGE_AUTOSTART",
+      "LUMIERE_DATA_DIR"
+    ]
+  },
+  "notes": "Keep the app running (python -m lumiere_hoard): it holds the job queue (proxies, analyses, transcription, renders); the MCP bridge proxies every call, never opens the database and starts the app when it is not answering. Media are imported by path and never copied or modified; renders go to the app's renders folder or a folder the user names. timeline_edit, edit_command, text_cut, plan_apply and the history actions change a project (each change is one undo step); project_delete and media_delete need confirm=true and only when the user asks. Smart edits that need an analysis queue it and say so: follow job_status and repeat. Transcription needs faster-whisper (pip install faster-whisper) and uses the GPU when there is one; renders use the NVIDIA encoder when it works."
+}
