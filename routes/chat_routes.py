@@ -4319,6 +4319,12 @@ def setup_chat_routes(
                                         # so the transcript keeps it after reload.
                                         "steer",
                                         "paused",
+                                        # The advisor's advice (src/advisor.py): the
+                                        # loop yields it and Studio shows it folded in
+                                        # the turn activity, but it was dropped here, so
+                                        # it only appeared after a reload (seen live,
+                                        # 01-10-2026, A/B of the daily battery).
+                                        "advisor_advice",
                                     ):
                                         if data.get("type") == "steer":
                                             _st_text = str(data.get("text") or "").strip()

@@ -133,7 +133,7 @@ class Client:
         answer, tools, cards, error = "", [], 0, ""
         observed_models, fallbacks = [], []
         cache = {"rounds": 0, "processed": 0, "cached": 0, "lost_rounds": 0}
-        rounds, steps, advisor_uses = 0, 0, 0
+        rounds, steps, advisor_uses, advisor_saved = 0, 0, 0, 0
         started = time.time()
         for _leg in range(6):
             approval = None
@@ -168,6 +168,10 @@ class Client:
                     if kind == "advisor_advice":
                         advisor_uses += 1
                     if kind == "metrics" and isinstance(ev.get("data"), dict):
+                        # The receipts saved with the turn count the advisor too,
+                        # so a live event that never arrives still shows up.
+                        if isinstance(ev["data"].get("advisor"), list):
+                            advisor_saved = len(ev["data"]["advisor"])
                         ar = ev["data"].get("agent_rounds")
                         if isinstance(ar, (int, float)) and not isinstance(ar, bool):
                             rounds += int(ar)
@@ -191,7 +195,7 @@ class Client:
         return {"answer": answer, "tools": tools, "cards": cards, "error": error,
                 "seconds": round(time.time() - started, 1), "prompt_cache": cache,
                 # model rounds: the loop's own count, else the rounds it announced (+ the first)
-                "rounds": rounds or (steps + 1), "advisor_uses": advisor_uses,
+                "rounds": rounds or (steps + 1), "advisor_uses": max(advisor_uses, advisor_saved),
                 "observed_models": observed_models, "fallbacks": fallbacks}
 
 
