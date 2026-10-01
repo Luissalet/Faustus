@@ -931,6 +931,16 @@ def _open_client_session(client_session_cls: Any, read_stream: Any, write_stream
             return client_session_cls(read_stream, write_stream)
 
 
+
+def _quarantined_for_security(server_id: str) -> bool:
+    """True while the server waits for an override of a critical pre-scan
+    finding (src/extension_manifest.py). Never raises."""
+    try:
+        from src import extension_manifest
+        return bool(extension_manifest.is_quarantined_for_security(server_id))
+    except Exception:  # noqa: BLE001 - a broken manifest store never blocks a connection
+        return False
+
 class McpManager:
     """Manages MCP server connections and tool routing."""
 
@@ -1003,7 +1013,18 @@ class McpManager:
         environment — so every existing caller and every already-configured
         server is untouched. `False` hands over only the structural variables
         plus the server's own declared env.
+
+        A server whose security pre-scan found critical issues and is waiting
+        for an explicit override is not started at all: for a stdio server,
+        starting it is running its code, which is what the quarantine is for.
         """
+        if _quarantined_for_security(server_id):
+            self._connections[server_id] = {
+                "status": "error", "name": name, "quarantined": True,
+                "error": (f"{name} was not started: its security pre-scan found critical issues. "
+                          "Review them in Settings > Integrations and approve with the override to start it."),
+            }
+            return False
         try:
             if transport == "stdio":
                 res = await self._connect_stdio(

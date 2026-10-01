@@ -1213,6 +1213,24 @@ def setup_mcp_routes(mcp_manager: McpManager):
         )
         return result
 
+    async def _start_after_approval(server_id: str) -> Optional[bool]:
+        db = SessionLocal()
+        try:
+            srv = db.query(McpServer).filter(McpServer.id == server_id).first()
+            if srv is None or not srv.is_enabled:
+                return None
+            args = json.loads(srv.args) if srv.args else []
+            env = json.loads(srv.env) if srv.env else {}
+            config = dict(name=srv.name, transport=srv.transport, command=srv.command,
+                          args=args, env=env, url=srv.url, inherit_env=server_inherits_env(srv))
+        finally:
+            db.close()
+        try:
+            return await mcp_manager.connect_server(server_id=server_id, **config)
+        except Exception as exc:  # noqa: BLE001 - the approval itself stands
+            logger.warning("[mcp] could not start %s after approval: %s", server_id, exc)
+            return False
+
     @router.post("/servers/{server_id}/manifest/approve")
     async def approve_server_manifest(server_id: str, request: Request):
         """Explicit admin acceptance of whatever this server is quarantined
@@ -1243,7 +1261,8 @@ def setup_mcp_routes(mcp_manager: McpManager):
             body = {}
         override = bool(body.get("override")) if isinstance(body, dict) else False
 
-        if extension_manifest.is_quarantined_for_security(server_id):
+        was_security_hold = extension_manifest.is_quarantined_for_security(server_id)
+        if was_security_hold:
             if not override:
                 manifest = extension_manifest.get_manifest(server_id) or {}
                 return _review_json_error(
@@ -1264,7 +1283,12 @@ def setup_mcp_routes(mcp_manager: McpManager):
         from src import security_policy
         effect_set = security_policy.effects_for_declared_permissions(manifest.get("permissions"))
         security_policy.consent_store.grant(server_id, "*", effect_set)
-        return {"server_id": server_id, "manifest": manifest}
+        started = None
+        if was_security_hold:
+            # It was never started while on hold (McpManager.connect_server):
+            # start it now that an admin has accepted the findings.
+            started = await _start_after_approval(server_id)
+        return {"server_id": server_id, "manifest": manifest, "started": started}
 
     @router.get("/servers/{server_id}/security-scan")
     async def get_server_security_scan(server_id: str, request: Request):
