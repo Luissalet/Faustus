@@ -52,6 +52,8 @@ EXTRA_KEYS: tuple[str, ...] = ("llm_projection_mode", "llm_fence_history_without
                                "mode_effort_bug_hunt", "mode_effort_ci_analysis",
                                "workflow_eval_model_judge",
                                "blender_path", "blender_timeout_seconds",
+                               "model_server_auto_heal", "model_server_restart_commands",
+                               "model_server_heal_timeout_s",
                                "telegram_bridge_enabled", "telegram_bot_token", "telegram_allowed_chat_ids",
                                "telegram_agent_mode", "telegram_model", "telegram_owner", "telegram_api_base")
 
@@ -1352,6 +1354,25 @@ GROUPS: list[dict[str, Any]] = [
             _int("blender_timeout_seconds", "Time limit per scene (seconds)",
                  "How long one headless Blender run may take before it is stopped.",
                  5, 3600),
+        ],
+    ),
+    _group(
+        "model_server_heal", "Local model servers",
+        "When a model server on this machine gets stuck answering every prompt with one symbol "
+        "repeated (\"////\", \"????\"), Faustus checks it with a one-line greeting and restarts it "
+        "(src/model_server_heal.py): a managed engine is stopped and started, a server started by a "
+        "launcher script that is still running is ended so the launcher starts it again, and any "
+        "other server uses the restart command set here.",
+        [
+            _bool("model_server_auto_heal", "Restart a server stuck on garbage",
+                  "Off: Faustus only says the server needs a restart."),
+            _list("model_server_restart_commands", "Restart commands",
+                  "host:port=command for servers no launcher keeps running, comma-separated. The command "
+                  "must stop and start the server itself.",
+                  placeholder="127.0.0.1:8081=powershell -File D:\\LocalAI\\Restart-LlamaServer.ps1"),
+            _int("model_server_heal_timeout_s", "Wait for the restarted server (seconds)",
+                 "How long a big model may take to load again before the restart counts as failed.",
+                 30, 3600),
         ],
     ),
     _group(

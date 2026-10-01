@@ -1014,9 +1014,10 @@ class DegenerateOutput(Exception):
     show) and `model` for logging/telemetry.
     """
 
-    def __init__(self, reason: str, model: str = ""):
+    def __init__(self, reason: str, model: str = "", url: str = ""):
         self.reason = reason
         self.model = model or "model"
+        self.url = url or ""
         super().__init__(reason)
 
 
@@ -1030,6 +1031,22 @@ def is_degenerate_output_error(error_data) -> bool:
     if str(error_data.get("error_class") or "") == DEGENERATE_OUTPUT_ERROR_CLASS:
         return True
     return "token repeat limit" in str(error_data.get("error") or "").lower()
+
+
+def _schedule_heal_on_garbage(url: str, model: str, text: Any) -> None:
+    """A whole non-streamed reply made of one short unit repeated ("????",
+    "////") from a server on this machine: have it checked and restarted in
+    the background (src/model_server_heal.py). Live 01-10: the helper server
+    answered every title and summary with "????" for hours. Never raises."""
+    try:
+        body = str(text or "").strip()
+        if len(body) < 8 or not is_local_endpoint(url):
+            return
+        from src import engine_swap, model_server_heal
+        if engine_swap._is_garbage(body):
+            model_server_heal.schedule(url, model, "a whole reply of one repeated unit")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _degenerate_output_error_chunk(exc: "DegenerateOutput") -> str:
@@ -1046,6 +1063,14 @@ def _degenerate_output_error_chunk(exc: "DegenerateOutput") -> str:
     if re.search(r"repeated unit '[^\w\s]'", str(exc.reason or "")):
         hint = ("A run of one symbol like this usually means the model server itself is in a broken "
                 "state; restarting the server fixes it.")
+        # A local server in that state is checked and restarted in the
+        # background (src/model_server_heal.py) so the next request works.
+        try:
+            from src import model_server_heal
+            if getattr(exc, "url", "") and model_server_heal.schedule(exc.url, exc.model, str(exc.reason)):
+                hint += " Faustus is checking it and will restart it if it stays that way."
+        except Exception:  # noqa: BLE001 - a heal must never break the error itself
+            pass
     message = (
         f"Stopped generation: {exc.model} started repeating tokens "
         f"({exc.reason}). {hint}"
@@ -1177,8 +1202,9 @@ class _DegenerateStreamGuard:
     one small unit repeated over that whole span.
     """
 
-    def __init__(self, model: str):
+    def __init__(self, model: str, url: str = ""):
         self.model = model or "model"
+        self.url = url or ""
         self.last_token = ""
         self.same_run = 0
         self.recent_tokens: List[str] = []
@@ -1270,7 +1296,7 @@ class _DegenerateStreamGuard:
                                "in a broken state, and restarting it usually fixes this")
 
         if reason:
-            raise DegenerateOutput(reason, self.model)
+            raise DegenerateOutput(reason, self.model, self.url)
 
     def check_reasoning(self, text: str) -> None:
         """`check` plus a paragraph-loop detector for the reasoning channel.
@@ -1303,7 +1329,7 @@ class _DegenerateStreamGuard:
                 raise DegenerateOutput(
                     f"reasoning loop: the same sentence came back {counts[norm]} times "
                     f"('{norm[:60]}…')",
-                    self.model,
+                    self.model, self.url,
                 )
         if len(counts) > 4000:
             for key in list(counts)[:2000]:
@@ -4507,6 +4533,7 @@ async def llm_call_async(
             _text, _model_out = result[0], result[1]
         else:
             _text = result
+        _schedule_heal_on_garbage(url, model, _text)
         return result
     except asyncio.CancelledError:
         _spend_outcome = "cancelled"
@@ -6186,7 +6213,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         yield f'event: error\ndata: {json.dumps({"error": f"Upstream {_host_key(target_url)} unreachable (cooldown active)", "status": 503})}\n\n'
         return
     note_model_activity(target_url, model)
-    degenerate_guard = _DegenerateStreamGuard(model)
+    degenerate_guard = _DegenerateStreamGuard(model, target_url)
 
     # ── ChatGPT Subscription / Codex Responses streaming ──
     if provider == "chatgpt-subscription":

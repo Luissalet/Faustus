@@ -332,6 +332,12 @@ DEFAULT_SETTINGS = {
     # disables the idle reaper entirely (default: engines stay up once
     # started, like today).
     "engine_autostart": True,
+    # A local server stuck answering garbage is checked and restarted
+    # (src/model_server_heal.py). Commands are "host:port=command" for servers
+    # no launcher keeps running; the timeout covers a big model loading again.
+    "model_server_auto_heal": True,
+    "model_server_restart_commands": [],
+    "model_server_heal_timeout_s": 420,
     "engine_autostart_timeout_s": 180,
     "engine_idle_ttl_minutes": 0,
     "engine_idle_check_s": 30,

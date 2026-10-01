@@ -305,29 +305,30 @@ async def generates_sanely(url: str, model: str, *, timeout_s: float = 30.0) -> 
         return None
 
 
+async def restart_managed_engine(engine: Dict[str, Any]) -> bool:
+    """Stop and start a managed engine; True when it came back healthy."""
+    from src import engines
+    await engines.stop_engine(engine["id"])
+    await asyncio.sleep(_RESTART_PAUSE_S)
+    result = await _do_start_and_wait(engine["id"], float(_settings()["autostart_timeout_s"]))
+    return result.get("action") == "started"
+
+
 async def restart_if_garbled(url: str, model: str) -> bool:
-    """Restart the managed engine behind `url` when it only produces garbage.
+    """Restart the local server behind `url` when it only produces garbage.
 
     Called by the agent harness after a token-repeat collapse. A collapse is
     usually the model's own doing (a loop, a bad sampler), which the harness
-    retries with other settings; but when the engine answers a trivial prompt
+    retries with other settings; but when the server answers a trivial prompt
     with the same repeated symbol, no setting helps and the whole turn --
-    every retry, then the fallback -- is lost. True when it restarted the
-    engine and it came back healthy and sane. Never raises."""
+    every retry, then the fallback -- is lost. A managed engine is stopped and
+    started; a server started outside Faustus is restarted by its configured
+    command or its launcher (src/model_server_heal.py). True when it was
+    restarted and came back answering sanely. Never raises."""
     try:
-        engine = restartable_engine_for_url(url)
-        if engine is None:
-            return False
-        if await generates_sanely(url, model) is not False:
-            return False
-        from src import engines
-        logger.warning("[engine-swap] engine %s answers with garbage; restarting it", engine.get("id"))
-        await engines.stop_engine(engine["id"])
-        await asyncio.sleep(_RESTART_PAUSE_S)
-        result = await _do_start_and_wait(engine["id"], float(_settings()["autostart_timeout_s"]))
-        if result.get("action") != "started":
-            return False
-        return bool(await generates_sanely(url, model))
+        from src import model_server_heal
+        result = await model_server_heal.heal(url, model, reason="token-repeat collapse in a turn")
+        return result.get("action") in ("restarted", "waited")
     except Exception as exc:  # noqa: BLE001
         logger.warning("[engine-swap] garbled-engine restart failed for %s: %s", url, exc)
         return False

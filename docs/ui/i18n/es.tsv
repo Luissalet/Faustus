@@ -9034,3 +9034,11 @@ Could not load the report: {e}	No se pudo cargar el informe: {e}
 {n} rules left out by the {cap}-character cap	{n} reglas fuera por el tope de {cap} caracteres
 the first rule was cut to fit	la primera regla se recortó para caber
 held by the security pre-scan, not started	retenido por el escaneo de seguridad, sin arrancar
+Local model servers	Servidores de modelos locales
+When a model server on this machine gets stuck answering every prompt with one symbol repeated ("////", "????"), Faustus checks it with a one-line greeting and restarts it (src/model_server_heal.py): a managed engine is stopped and started, a server started by a launcher script that is still running is ended so the launcher starts it again, and any other server uses the restart command set here.	Cuando un servidor de modelos de esta máquina se queda contestando a todo con un mismo símbolo repetido («////», «????»), Faustus lo comprueba con un saludo de una línea y lo reinicia (src/model_server_heal.py): un motor gestionado se para y se arranca, un servidor que arrancó un script lanzador que sigue en marcha se cierra para que el lanzador lo vuelva a arrancar, y cualquier otro usa la orden de reinicio que pongas aquí.
+Restart a server stuck on garbage	Reiniciar un servidor atascado en basura
+Off: Faustus only says the server needs a restart.	Apagado: Faustus solo avisa de que hay que reiniciar el servidor.
+Restart commands	Órdenes de reinicio
+host:port=command for servers no launcher keeps running, comma-separated. The command must stop and start the server itself.	host:puerto=orden para servidores que no mantiene en marcha ningún lanzador, separados por comas. La orden tiene que parar y arrancar el servidor ella misma.
+Wait for the restarted server (seconds)	Espera al servidor reiniciado (segundos)
+How long a big model may take to load again before the restart counts as failed.	Cuánto puede tardar un modelo grande en volver a cargar antes de dar el reinicio por fallido.

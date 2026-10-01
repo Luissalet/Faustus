@@ -1020,6 +1020,20 @@ TOOLS: List[Tool] = [
         }},
     ),
     Tool(
+        name="model_server_check",
+        description=(
+            "Check a model server on this machine and restart it if it is stuck answering every prompt "
+            "with one symbol repeated (\"////\", \"????\"): it is asked for a one-line greeting first, "
+            "and only a garbage answer leads to a restart (a managed engine, a server whose launcher "
+            "script is still running, or one with a restart command in Settings). Without `url`, lists "
+            "the recent checks and restarts."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "url": {"type": "string", "description": "The server, e.g. http://127.0.0.1:8081/v1"},
+            "model": {"type": "string", "description": "Model name to ask with (any name works on llama-server)"},
+        }},
+    ),
+    Tool(
         name="session_usage",
         description=(
             "What a Faustus chat (or a dispatched worker's chat) used, per model: turns, model steps, "
@@ -1543,6 +1557,14 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             raw = await asyncio.to_thread(_request, "GET", f"/api/session/{sid}/export?fmt=jsonl&record=false",
                                           None, _TIMEOUT, 1, True)
             return _text(filter_session_events(raw, args.get("types"), args.get("last")))
+        if name == "model_server_check":
+            url = str(args.get("url") or "").strip()
+            if not url:
+                data = await asyncio.to_thread(_request, "GET", "/api/engines/heal/status")
+            else:
+                data = await asyncio.to_thread(_request, "POST", "/api/engines/heal",
+                                               {"url": url, "model": str(args.get("model") or "")}, 600)
+            return _text(json.dumps(data, indent=2, ensure_ascii=False, default=str))
         if name == "models_fit":
             refresh = "true" if args.get("refresh") else "false"
             data = await asyncio.to_thread(_request, "GET", f"/api/models/fit?refresh={refresh}")

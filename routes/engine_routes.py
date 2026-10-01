@@ -62,6 +62,11 @@ class EngineUpdateBody(BaseModel):
     mmproj_path: Optional[str] = None
 
 
+class HealBody(BaseModel):
+    url: str
+    model: str = ""
+
+
 def setup_engine_routes() -> APIRouter:
     router = APIRouter(prefix="/api/engines", tags=["engines"])
 
@@ -81,6 +86,24 @@ def setup_engine_routes() -> APIRouter:
         require_human(request)
         from src import engine_swap
         return engine_swap.status()
+
+    @router.get("/heal/status")
+    def heal_status_route(request: Request) -> Dict[str, Any]:
+        """Local model servers restarted for answering garbage
+        (src/model_server_heal.py): the settings and the last attempts."""
+        require_human(request)
+        from src import model_server_heal
+        return model_server_heal.status()
+
+    @router.post("/heal")
+    async def heal_route(body: HealBody, request: Request) -> Dict[str, Any]:
+        """Check one local model server with a greeting and restart it if it
+        answers garbage. Only servers on this machine."""
+        require_admin(request)
+        from src import model_server_heal
+        if model_server_heal._host_port(body.url) is None:
+            raise HTTPException(400, "url must be a model server on this machine (127.0.0.1 or localhost)")
+        return await model_server_heal.heal(body.url, body.model or "", reason="asked for a check")
 
     @router.get("/discover")
     async def discover(request: Request, port: int, host: str = engines.DEFAULT_HOST) -> Dict[str, Any]:
