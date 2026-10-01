@@ -2125,6 +2125,12 @@ async def _execute_tool_block_impl(
                 if tool == "powershell":
                     _bg_routed["error"] = str(_bg_routed["error"]).replace("bash:", "powershell:", 1)
                 return f"{tool} (background): refused", _bg_routed
+            # Wrong-directory preflight, same as the foreground shell tools.
+            from src.agent_tools.subprocess_tools import _shell_preflight
+            _bg_cmd, _bg_pf_note, _bg_pf_refusal = _shell_preflight(
+                _bg_cmd, "powershell" if tool == "powershell" else "bash")
+            if _bg_pf_refusal is not None:
+                return f"{tool} (background): refused", _bg_pf_refusal
             from src import bg_jobs
             rec = bg_jobs.launch(
                 _bg_cmd, session_id=session_id, cwd=agent_cwd(),
@@ -2148,6 +2154,9 @@ async def _execute_tool_block_impl(
                 # (process_read / process_stop accept it).
                 "process_handle": f"bg:{rec['id']}",
             }
+            if _bg_pf_note:
+                from src import command_preflight
+                command_preflight.add_note(result, _bg_pf_note)
             logger.info(f"Tool executed: {desc} -> bg job {rec['id']}")
             return desc, result
 

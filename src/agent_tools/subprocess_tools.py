@@ -758,6 +758,32 @@ def _mark_sandbox_skip(result: dict, skip: str) -> dict:
     return result
 
 
+def _shell_preflight(content: str, shell: str):
+    """Wrong-directory preflight (src/command_preflight.py, setting
+    `shell_preflight_enabled`). Returns ``(command, note, refusal)``: the
+    command to run (rewritten to start in the right folder when exactly one
+    folder has the file it needs), a one-line note for the tool output, and a
+    ready tool result when several folders match and nothing may run."""
+    try:
+        from src import command_preflight
+        from src.tool_execution import agent_cwd
+        res = command_preflight.apply(str(content or ""), agent_cwd(), shell)
+    except Exception:  # noqa: BLE001 - the preflight must never block a command
+        return content, "", None
+    if res.action == "refuse":
+        return content, "", command_preflight.refusal(res)
+    if res.action == "rewrite":
+        return res.command, res.note, None
+    return content, "", None
+
+
+def _with_preflight_note(result, note: str):
+    if note:
+        from src import command_preflight
+        return command_preflight.add_note(result, note)
+    return result
+
+
 class BashTool:
     async def execute(self, content: str, ctx: dict) -> dict:
         # `raw: true` in a JSON-object call opts this one call out of
@@ -771,7 +797,11 @@ class BashTool:
         if isinstance(content, dict):
             _raw_flag = bool(content.get("raw"))
             content = str(content.get("command") or content.get("cmd") or content.get("code") or "")
-        result = await self._execute_inner(content, ctx)
+        _pf_shell = "powershell" if (IS_WINDOWS and not find_bash()) else "bash"
+        content, _pf_note, _pf_refusal = _shell_preflight(content, _pf_shell)
+        if _pf_refusal is not None:
+            return _pf_refusal
+        result = _with_preflight_note(await self._execute_inner(content, ctx), _pf_note)
         if _raw_flag and isinstance(result, dict):
             result["_raw_requested"] = True
         return result
@@ -1023,7 +1053,10 @@ class PowerShellTool:
         if isinstance(content, dict):
             _raw_flag = bool(content.get("raw"))
             content = str(content.get("script") or content.get("command") or content.get("code") or "")
-        result = await self._execute_inner(content, ctx)
+        content, _pf_note, _pf_refusal = _shell_preflight(content, "powershell")
+        if _pf_refusal is not None:
+            return _pf_refusal
+        result = _with_preflight_note(await self._execute_inner(content, ctx), _pf_note)
         if _raw_flag and isinstance(result, dict):
             result["_raw_requested"] = True
         return result
