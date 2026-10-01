@@ -50,7 +50,8 @@ EXTRA_KEYS: tuple[str, ...] = ("llm_projection_mode", "llm_fence_history_without
                                "typed_decision_tool_tie_tolerance", "typed_decision_compaction_keep",
                                "self_declared_risk",
                                "mode_effort_bug_hunt", "mode_effort_ci_analysis",
-                               "workflow_eval_model_judge")
+                               "workflow_eval_model_judge",
+                               "blender_path", "blender_timeout_seconds")
 
 FIELD_TYPES: tuple[str, ...] = ("bool", "int", "float", "text", "select", "list", "secret")
 _NUMERIC_TYPES = ("int", "float")
@@ -1335,6 +1336,20 @@ GROUPS: list[dict[str, Any]] = [
                  "How long a paused script waits for that answer before the call is denied as timed "
                  "out. Does not count against the script's own wall-time limit above.",
                  1, 3600),
+        ],
+    ),
+    _group(
+        "scene_3d", "3D scenes",
+        "Typed scene descriptions rendered headless with Blender (blender_scene tool and MCP "
+        "server, src/blender_scene/): the model writes a list of checked operations, never free "
+        "code, and every file stays inside the scene's own folder.",
+        [
+            _text("blender_path", "Blender executable",
+                  "Full path to blender.exe or blender. Empty = look at BLENDER_PATH, the PATH and the "
+                  "usual install folders, newest version first."),
+            _int("blender_timeout_seconds", "Time limit per scene (seconds)",
+                 "How long one headless Blender run may take before it is stopped.",
+                 5, 3600),
         ],
     ),
     _group(
