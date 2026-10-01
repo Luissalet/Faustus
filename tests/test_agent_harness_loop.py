@@ -833,3 +833,13 @@ def test_a_request_for_a_text_is_answered_with_the_text():
     assert _asks_for_a_text("write me a cover letter for this job")
     assert not _asks_for_a_text("Escríbeme una función que sume dos números")
     assert not _asks_for_a_text("arregla el contador de la página de inicio")
+
+
+def test_a_shopping_list_or_recipe_is_answered_in_prose():
+    from src.agent_loop import _asks_for_a_prose_answer, _looks_like_workspace_coding_request
+
+    for text in ("Lista de la compra para 8: pollo al horno con patatas.",
+                 "Un plan de comidas para la semana, dos personas",
+                 "a shopping list for a barbecue for 10", "Receta de lentejas con chorizo"):
+        assert _asks_for_a_prose_answer(text) and not _looks_like_workspace_coding_request(text), text
+    assert not _asks_for_a_prose_answer("arregla el test que falla en el carrito")

@@ -2545,6 +2545,23 @@ _TEXT_FOR_THE_USER_RE = re.compile(
 )
 
 
+_PROSE_ANSWER_RE = re.compile(
+    r"\b(?:lista\s+de\s+(?:la\s+)?compra|shopping\s+list|grocery\s+list|"
+    r"recetas?|recipes?|men[uú]\s+(?:semanal|para|de\s+la\s+semana)|weekly\s+menu|"
+    r"plan\s+de\s+comidas|meal\s+plan)\b",
+    re.IGNORECASE,
+)
+
+
+def _asks_for_a_prose_answer(text: str) -> bool:
+    """A shopping list, a recipe or a meal plan: the reply itself is the answer.
+    Seen live (01-10): "Lista de la compra para 8: pollo al horno con patatas"
+    in agent mode with a bound workspace was answered in round 1 and then sent
+    back as "no workspace action", so it took four more rounds and the list was
+    written twice."""
+    return bool(_PROSE_ANSWER_RE.search(str(text or "")))
+
+
 def _asks_for_a_text(text: str) -> bool:
     """The user asked for a piece of writing (a letter, a complaint, an
     email...), which is answered with the text itself. Seen live: "Escríbeme
@@ -14357,6 +14374,10 @@ async def _stream_agent_loop_body(
                 and not _explanation_request(_last_user)
                 # …and neither is a letter or email written as asked.
                 and not (_asks_for_a_text(_last_user) and not workspace)
+                # …nor a shopping list, recipe or meal plan, workspace or not,
+                # unless the request is plainly about files in it.
+                and not (_asks_for_a_prose_answer(_last_user)
+                         and not _looks_like_workspace_coding_request(_last_user))
             ):
                 _no_action_nudges += 1
                 _ledger.notes.append(f"no_action_nudge@{round_num}")
