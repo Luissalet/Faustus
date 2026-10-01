@@ -20,7 +20,9 @@ machine, until you turn it on and save a bot token.
      **Test the token** calls `getMe` with the saved token.
    - The token is stored encrypted (`enc:` prefix, the same storage as the
      other credentials) and is shown masked from then on. It is never returned
-     by any route, written to a log or included in the status.
+     by any route, written to a log or included in the status. The HTTP client
+     logs each request URL, which carries the token; a log filter replaces it
+     with `***` there.
 3. Find your chat id. Send any message to your bot from the chat you want to
    use. The bot answers `This chat is not authorised. Your chat id is 123456789.`
    once, and the id is also logged and listed under the status line (**Chats
