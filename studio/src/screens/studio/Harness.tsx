@@ -41,6 +41,8 @@ const CHECK_WORDS: Record<string, string> = {
   no_action: 'No action taken',
   rewrite_policy: 'Whole-file rewrite refused',
   plan_tracker: 'Implementation plan',
+  plan_continue: 'Continues the plan on its own',
+  plan_continue_stop: 'Plan paused: asking you',
 };
 
 const GATE_WORDS: Record<string, string> = {

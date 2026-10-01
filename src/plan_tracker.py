@@ -50,6 +50,12 @@ PARSER_VERSION = 3
 # import-time dependency on agent_harness; `replace_attachment` imports
 # `user_authored_text` from it lazily instead, at call time only.
 _MARKER_RE = re.compile(r"=== (File|ZIP archive): (.+?) ===\n?")
+# Header tag `build_user_content` / `_process_zip_file` add to the inlined block
+# of a plan-like text attachment: the id of the FULL text stashed on disk, so
+# the tracker does not depend on the (truncated) inline copy.
+_PLAN_ID_RE = re.compile(r"Plan-Id:\s*([0-9a-f]{16})")
+_FULL_TEXT_MAX_BYTES = 4 * 1024 * 1024
+_FULL_TEXT_KEEP = 60
 
 _HEADING_RE = re.compile(r"^(#{1,4})\s+(.+?)\s*$", re.M)
 _NUM_LIST_RE = re.compile(r"^\s{0,3}(\d{1,3})[.)]\s+(.+?)\s*$", re.M)
@@ -110,23 +116,119 @@ def _default_min_chars() -> int:
         return 3000
 
 
+def _split_authored(text: str) -> Tuple[str, str]:
+    """(what the user typed, the inlined attachment blocks that follow it)."""
+    raw = text or ""
+    m = re.search(r"\n=== (?:File|ZIP archive): ", raw)
+    if not m:
+        return raw, ""
+    return raw[:m.start()], raw[m.start():]
+
+
+def _resolve_full_body(body: str) -> str:
+    """The inline copy of a big attachment is cut by the shared 24000-character
+    budget; a `Plan-Id:` tag in its header names the full text kept on disk."""
+    try:
+        m = _PLAN_ID_RE.search((body or "")[:600])
+        if m:
+            full = load_stashed_text(m.group(1))
+            if full:
+                return full
+    except Exception:
+        pass
+    return body
+
+
 def find_plan_attachment(text: str, min_chars: Optional[int] = None) -> Optional[Tuple[str, str]]:
     """First inlined attachment in a user message that looks like a plan:
-    body >= min_chars AND >= 3 detectable tasks. None otherwise. Never raises."""
+    >= 3 detectable tasks AND (body >= min_chars, OR a small but deliberately
+    structured plan sent with an execute request such as "ejecuta el plan").
+    Returns (title, FULL body): when the inline copy was cut by the attachment
+    budget the full text comes from the stash named by its `Plan-Id` tag.
+    None otherwise. Never raises."""
     try:
         cap = int(min_chars) if min_chars is not None else _default_min_chars()
     except Exception:
         cap = 3000
     try:
-        for _kind, title, body in _iter_attachments(text or ""):
-            if len(_normalize(body)) < cap:
+        authored, _rest = _split_authored(text or "")
+        executes = strict_execute_request(authored)
+        for kind, title, body in _iter_attachments(text or ""):
+            if kind != "File":
                 continue
-            spec = parse_plan(title, body)
-            if len(spec.tasks) >= 3:
-                return title, body
+            full = _resolve_full_body(body)
+            big = len(_normalize(full)) >= cap
+            if not big and not executes:
+                continue
+            spec = parse_plan(title, full)
+            if len(spec.tasks) < 3:
+                continue
+            if not big and _split_sections_ex(_normalize(full))[0] in ("", "bullet"):
+                continue
+            return title, full
         return None
     except Exception:
         return None
+
+
+# ---------------------------------------------------------------------------
+# Full text of a plan-like attachment (kept off the prompt)
+# ---------------------------------------------------------------------------
+
+def _full_dir() -> str:
+    return os.path.join(os.path.dirname(PLAN_TRACKER_DIR), "plan_tracker_full")
+
+
+def stash_plan_text(body: str, min_tasks: int = 3) -> str:
+    """Keep the FULL text of a plan-like text attachment under DATA_DIR and
+    return its id (the plan hash), or "" when the text is not plan-like or too
+    big. `build_user_content` tags the inlined block with it (`Plan-Id:`), so
+    the tracker sees every task even when the prompt copy is truncated."""
+    try:
+        norm = _normalize(body)
+        if not norm or len(norm.encode("utf-8", "ignore")) > _FULL_TEXT_MAX_BYTES:
+            return ""
+        spec = parse_plan("", norm)
+        if len(spec.tasks) < int(min_tasks):
+            return ""
+        d = _full_dir()
+        os.makedirs(d, exist_ok=True)
+        path = os.path.join(d, spec.hash + ".txt")
+        if not os.path.isfile(path):
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(norm)
+            os.replace(tmp, path)
+            _prune_full(d)
+        return spec.hash
+    except Exception:
+        return ""
+
+
+def load_stashed_text(plan_id: str) -> Optional[str]:
+    safe = re.sub(r"[^0-9a-f]+", "", str(plan_id or ""))[:32]
+    if not safe:
+        return None
+    try:
+        with open(os.path.join(_full_dir(), safe + ".txt"), "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception:
+        return None
+
+
+def _prune_full(d: str) -> None:
+    try:
+        files = [os.path.join(d, n) for n in os.listdir(d) if n.endswith(".txt")]
+        if len(files) <= _FULL_TEXT_KEEP:
+            return
+        files.sort(key=lambda p: os.path.getmtime(p))
+        for p in files[:len(files) - _FULL_TEXT_KEEP]:
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -237,7 +339,15 @@ def _split_sections(text: str) -> List[Tuple[Optional[str], str, str]]:
     """(key_hint, section_title, section_body) by markdown headings first,
     then first-level numbered lists, then checkboxes. Empty when the text
     has none of those (unstructured attachment -> 0 tasks)."""
+    return _split_sections_ex(text)[1]
+
+
+def _split_sections_ex(text: str) -> Tuple[str, List[Tuple[Optional[str], str, str]]]:
+    """`_split_sections` plus which structure produced the tasks:
+    heading | numbered | checkbox | step | bullet | "" (none). Bullets are the
+    weakest signal (any list is made of them), the others are deliberate."""
     marks = list(_HEADING_RE.finditer(text))
+    heading_out: List[Tuple[Optional[str], str, str]] = []
     if marks:
         level = _task_heading_level(marks)
         out: List[Tuple[Optional[str], str, str]] = []
@@ -251,33 +361,37 @@ def _split_sections(text: str) -> List[Tuple[Optional[str], str, str]]:
                     end = nxt.start()
                     break
             out.append((None, m.group(2).strip(), text[start:end]))
-        if out:
-            return out
-    for pattern in (_NUM_LIST_RE, _CHECKBOX_RE):
+        if len(out) >= 3:
+            return "heading", out
+        # One title heading over a numbered list is a list of tasks, not one task.
+        heading_out = out
+    for kind, pattern in (("numbered", _NUM_LIST_RE), ("checkbox", _CHECKBOX_RE)):
         marks = list(pattern.finditer(text))
-        if not marks:
+        if not marks or (heading_out and len(marks) < 3):
             continue
         out = []
         for i, m in enumerate(marks):
             start = m.end()
             end = marks[i + 1].start() if i + 1 < len(marks) else len(text)
             out.append((None, m.group(2).strip(), text[start:end]))
-        return out
+        return kind, out
     marks = list(_STEP_LINE_RE.finditer(text))
     if len(marks) >= _MIN_FALLBACK_STEPS:
         out = []
         for i, m in enumerate(marks):
             end = marks[i + 1].start() if i + 1 < len(marks) else len(text)
             out.append((None, f"{m.group(1).strip()}: {m.group(2).strip()}", text[m.end():end]))
-        return out
+        return "step", out
     marks = list(_BULLET_RE.finditer(text))
     if len(marks) >= _MIN_FALLBACK_STEPS:
         out = []
         for i, m in enumerate(marks):
             end = marks[i + 1].start() if i + 1 < len(marks) else len(text)
             out.append((None, m.group(1).strip(), text[m.end():end]))
-        return out
-    return []
+        return "bullet", out
+    if heading_out:
+        return "heading", heading_out
+    return "", []
 
 
 def parse_plan(title: str, body: str) -> PlanSpec:
@@ -627,15 +741,18 @@ def brief(tracker: Dict[str, Any], language: str = "en", max_chars: int = 2500) 
     return out
 
 
-def replace_attachment(text: str, tracker: Dict[str, Any], max_task_chars: int = 6000) -> str:
+def replace_attachment(text: str, tracker: Dict[str, Any], max_task_chars: int = 6000,
+                       authored: Optional[str] = None) -> str:
     """`user_authored_text(text)` + brief + only the current task's text —
     the inlined attachment body (which may be 172 KB) never reaches this
-    output."""
-    try:
-        from src.agent_harness import user_authored_text
-        authored = user_authored_text(text)
-    except Exception:
-        authored = text or ""
+    output. `authored` replaces the typed part (a pasted plan keeps only its
+    intro there)."""
+    if authored is None:
+        try:
+            from src.agent_harness import user_authored_text
+            authored = user_authored_text(text)
+        except Exception:
+            authored = text or ""
 
     parts = [authored, "", brief(tracker)]
     cur = current_task(tracker)
@@ -659,7 +776,8 @@ _EXEC_VERB_RE = re.compile(
     r"\b("
     r"implementa(?:r|do)?|implement|sigue|contin[uú]a|continue|finish|termina|"
     r"completa|haz(?:lo)?|build|crea|start|empieza|do it|go|adelante|"
-    r"keep\s+(?:going|implementing)|next task|siguiente"
+    r"keep\s+(?:going|implementing)|next task|siguiente|"
+    r"ejecuta(?:r|lo)?|execute|run|proceed|procede|aplica(?:r|lo)?|realiza(?:r|lo)?"
     r")\b",
     re.I,
 )
@@ -674,3 +792,173 @@ def looks_like_execute_request(user_text: str) -> bool:
     if not text or "?" in text or len(text) > 400:
         return False
     return bool(_EXEC_VERB_RE.search(text))
+
+
+# ---------------------------------------------------------------------------
+# A plan typed or pasted in the message body (no attachment)
+# ---------------------------------------------------------------------------
+
+_PLAN_WORDS_RE = re.compile(
+    r"\b(plan|plano|tareas?|tasks?|pasos?|steps?|fases?|phases?|etapas?|checklist|todo|"
+    r"roadmap|hoja de ruta|implementa\w*|implement\w*)\b", re.I)
+
+
+def _default_paste_min_chars() -> int:
+    try:
+        from src.settings import get_setting
+        return int(get_setting("agent_plan_tracker_paste_min_chars", 600))
+    except Exception:
+        return 600
+
+
+def _pasted_intro(norm: str) -> str:
+    """What the user wrote before the first task of a pasted plan."""
+    kind, sections = _split_sections_ex(norm)
+    if not sections:
+        return ""
+    idx = norm.find(sections[0][1])
+    if idx <= 0:
+        return ""
+    return norm[:norm.rfind("\n", 0, idx) + 1].strip()
+
+
+def find_plan_in_text(text: str, min_chars: Optional[int] = None) -> Optional[Tuple[str, str]]:
+    """A plan typed or pasted in the message itself (no `=== File:` block).
+
+    Needs >= 3 tasks from a real list (numbered, checkboxes, "Paso N", task
+    headings; plain bullets only when the message is an execute request) and
+    EITHER the message is long enough (`agent_plan_tracker_paste_min_chars`,
+    with plan vocabulary or a deliberate list) OR it reads as an execute
+    request ("ejecuta esto", "implementa el plan"). A question, or a list of
+    questions, is never a plan. Returns (title, body from the first task on —
+    the intro is kept in the prompt, the tasks go to the tracker) or None.
+    Never raises."""
+    try:
+        floor = int(min_chars) if min_chars is not None else _default_paste_min_chars()
+        if floor <= 0:
+            return None
+        authored, _rest = _split_authored(text or "")
+        norm = _normalize(authored)
+        if len(norm) < 30:
+            return None
+        kind, sections = _split_sections_ex(norm)
+        if len(sections) < 3:
+            return None
+        titles = [str(s[1]) for s in sections]
+        if sum(1 for t in titles if t.rstrip().endswith("?")) * 2 >= len(titles):
+            return None
+        intro = _pasted_intro(norm)
+        tail = intro[-300:]
+        asks = "?" in tail
+        executes = strict_execute_request(tail)
+        strong = kind in ("heading", "numbered", "checkbox", "step")
+        deliberate = kind in ("checkbox", "step") or bool(_PLAN_WORDS_RE.search(norm[:600]))
+        if executes and not asks:
+            ok = strong or bool(_PLAN_WORDS_RE.search(norm[:600]))
+        elif asks:
+            ok = False
+        else:
+            ok = strong and deliberate and len(norm) >= floor
+        if not ok:
+            return None
+        idx = norm.find(titles[0])
+        start = norm.rfind("\n", 0, idx) + 1 if idx > 0 else 0
+        body = norm[start:].strip()
+        first = (intro.splitlines() or [titles[0]])[0].strip() or titles[0]
+        return "pasted plan: " + first[:100], body
+    except Exception:
+        return None
+
+
+def replace_pasted(text: str, tracker: Dict[str, Any], max_task_chars: int = 6000) -> str:
+    """The prompt copy of a message that carried a pasted plan: the user's
+    intro, the brief and only the current task (like `replace_attachment`);
+    any real attachment blocks that followed are kept."""
+    authored, rest = _split_authored(text or "")
+    intro = _pasted_intro(_normalize(authored))[:6000]
+    if not intro:
+        intro = "(plan pegado en el mensaje, ya registrado en el seguimiento)"
+    return replace_attachment(text, tracker, max_task_chars, authored=intro) + rest
+
+
+# ---------------------------------------------------------------------------
+# Keep working inside the turn while tasks remain
+# ---------------------------------------------------------------------------
+
+#: Consecutive continuations that close no task before the turn asks.
+AUTOCONTINUE_FRUITLESS_MAX = 3
+
+
+def closed_count(tracker: Dict[str, Any]) -> int:
+    """Tasks that are finished one way or the other (done or skipped)."""
+    p = progress(tracker or {})
+    return int(p.get("done", 0)) + int(p.get("skipped", 0))
+
+
+def autocontinue_decision(
+    tracker: Optional[Dict[str, Any]], *, enabled: bool = True, armed: bool = True,
+    used: int = 0, cap: int = 40, fruitless: int = 0,
+    awaiting_user: bool = False, recovery_active: bool = False,
+) -> Dict[str, Any]:
+    """Whether a turn that just ended without a tool call must go on with the
+    plan. Pure: `used` continuations granted this turn, `fruitless` of them
+    since the last task closed. Actions: ``continue``; ``stop`` (end the turn
+    asking a concrete question); ``none`` (let the turn end as usual)."""
+    if not enabled:
+        return {"action": "none", "reason": "disabled"}
+    if not tracker:
+        return {"action": "none", "reason": "no_plan"}
+    cur = current_task(tracker)
+    if not cur:
+        return {"action": "none", "reason": "done"}
+    if not armed:
+        return {"action": "none", "reason": "not_armed"}
+    if awaiting_user:
+        return {"action": "none", "reason": "awaiting_user", "task": cur}
+    if recovery_active:
+        return {"action": "stop", "reason": "loop_recovery", "task": cur}
+    if int(used) >= int(cap):
+        return {"action": "stop", "reason": "cap", "task": cur}
+    if int(fruitless) >= AUTOCONTINUE_FRUITLESS_MAX:
+        return {"action": "stop", "reason": "no_progress", "task": cur}
+    return {"action": "continue", "reason": "pending", "task": cur}
+
+
+def continuation_note(tracker: Dict[str, Any]) -> str:
+    """The harness message that sends the model on to the next task."""
+    prog = progress(tracker)
+    cur = current_task(tracker) or {}
+    key = cur.get("key") or cur.get("id") or "?"
+    acc = "; ".join((cur.get("acceptance") or [])[:4])
+    files = ", ".join((cur.get("files") or [])[:6])
+    return (
+        "[Harness check — automatic runtime message, not a new user request] "
+        f'The plan "{tracker.get("title", "")}" is not finished: {prog["done"]}/{prog["total"]} '
+        f"tasks done, {prog['pending']} still open. Next task: {key} — {cur.get('title', '')}. "
+        + (f"Acceptance: {acc}. " if acc else "")
+        + (f"Files: {files}. " if files else "")
+        + "The plan itself is the go-ahead: do NOT ask the user whether to continue and do not "
+        "restate what you already did. Call plan_task for this task, do the work with tools, "
+        "verify it the way the task says (run it, read the file back), then call plan_done with "
+        "concrete evidence (what you ran or created and what it showed). If it is truly impossible "
+        "or already covered, call plan_skip with the reason and go to the next one. Stop only when "
+        "every task is done or skipped, or when a decision only the user can make blocks you "
+        "(then call ask_user once, naming the task)."
+    )
+
+
+# A stricter reading for importing a plan WITHOUT the size evidence: the broad
+# list above also fires on "here you go", which is not a go-ahead.
+_STRICT_EXEC_RE = re.compile(
+    r"\b(implementa(?:r|do|lo)?|implement|sigue|contin[u\u00fa]a|continue|finish|termina|"
+    r"completa|haz(?:lo)?|build|empieza|start|ejecuta(?:r|lo)?|execute|run|proceed|procede|"
+    r"aplica(?:r|lo)?|realiza(?:r|lo)?|adelante|keep\s+(?:going|implementing)|lleva\s+a\s+cabo)\b",
+    re.I,
+)
+
+
+def strict_execute_request(user_text: str) -> bool:
+    text = (user_text or "").strip()
+    if not text or "?" in text or len(text) > 400:
+        return False
+    return bool(_STRICT_EXEC_RE.search(text))

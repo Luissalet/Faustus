@@ -1395,6 +1395,17 @@ DEFAULT_SETTINGS = {
     "agent_plan_tracker": True,
     "agent_plan_tracker_min_chars": 3000,
     "agent_plan_tracker_task_chars": 6000,
+    # A plan typed or pasted in the message (no attachment) is imported when it
+    # is a real task list at least this long (0 = never import pasted text);
+    # an explicit execute request ("ejecuta este plan") needs no minimum.
+    "agent_plan_tracker_paste_min_chars": 600,
+    # Keep working INSIDE the turn while the tracked plan has open tasks: when
+    # the model ends a round without a tool call (or asks "continue?"), the
+    # runtime sends it on to the next task instead of ending the turn, up to
+    # this many continuations per turn. Stops with a concrete question after 3
+    # continuations that close no task, on loop-breaker recovery, or at the cap.
+    "agent_plan_autocontinue": True,
+    "agent_plan_autocontinue_max": 40,
     # Model the workers run on ("" = the coordinator's). Two different models
     # generate at the same time on Ollama; two requests to one model queue on
     # its single slot — pin the worker model to the other card (Local models →

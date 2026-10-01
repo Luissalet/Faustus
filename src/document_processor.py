@@ -75,6 +75,18 @@ def _process_text_file(path: str) -> str:
     except OSError:
         size_str = "unknown"
 
+    # A plan-like text/markdown file is also kept whole under DATA_DIR and its
+    # id goes into the header: the inline copy below is cut at 30000 characters
+    # and again by the shared 24000-character attachment budget, but the plan
+    # tracker (src/plan_tracker.py) must see every task.
+    plan_id = ""
+    if ext in (".md", ".markdown", ".txt") and len(content) >= 1500:
+        try:
+            from src.plan_tracker import stash_plan_text
+            plan_id = stash_plan_text(content)
+        except Exception:
+            plan_id = ""
+
     lines = content.split("\n")
     line_count = len(lines)
     content_length = len(content)
@@ -100,7 +112,8 @@ def _process_text_file(path: str) -> str:
         truncated = True
 
     header = f"\n=== File: {filename} ===\n"
-    header += f"[Type: {language}, Lines: {line_count}, Size: {size_str} bytes]"
+    header += f"[Type: {language}, Lines: {line_count}, Size: {size_str} bytes"
+    header += (f", Plan-Id: {plan_id}]" if plan_id else "]")
 
     code_extensions = {
         ".py", ".js", ".html", ".css", ".json", ".md", ".sh", ".bash", ".nix",
@@ -120,8 +133,97 @@ def _process_text_file(path: str) -> str:
         return result
 
 
+ZIP_TEXT_EXTS = (".md", ".markdown", ".txt")
+ZIP_MEMBER_MAX_BYTES = 2 * 1024 * 1024
+ZIP_TEXT_TOTAL_BYTES = 8 * 1024 * 1024
+ZIP_MAX_TEXT_MEMBERS = 40
+ZIP_MAX_PLAN_BLOCKS = 3
+ZIP_INLINE_MEMBER_CHARS = 30000
+_ZIP_PLAN_NAME_RE = re.compile(
+    r"plan|tarea|task|roadmap|todo|paso|step|fase|phase|spec|implement|backlog|checklist", re.I)
+
+
+def _safe_zip_member_name(name: str) -> str | None:
+    """A member name that cannot point outside an extraction root (nothing is
+    ever written to disk here anyway): no absolute paths, drive letters, `..`
+    or empty segments, no macOS resource forks. None when unsafe."""
+    n = (name or "").replace("\\", "/")
+    if not n or n.endswith("/") or n.startswith("/") or re.match(r"^[A-Za-z]:", n):
+        return None
+    parts = n.split("/")
+    if any(p in ("", "..") for p in parts):
+        return None
+    if parts[0] == "__MACOSX" or parts[-1].startswith("._"):
+        return None
+    return "/".join(parts)
+
+
+def _zip_text_members(archive: "zipfile.ZipFile", infos) -> list[tuple[str, str]]:
+    """(safe name, text) of the small .md/.txt members. Bounded by member size,
+    member count and total size; encrypted members are skipped; the bytes are
+    read in memory only (never extracted, never executed)."""
+    out: list[tuple[str, str]] = []
+    total = 0
+    for info in infos:
+        if len(out) >= ZIP_MAX_TEXT_MEMBERS or total >= ZIP_TEXT_TOTAL_BYTES:
+            break
+        try:
+            if info.is_dir() or (info.flag_bits & 0x1):
+                continue
+            name = _safe_zip_member_name(info.filename)
+            if not name or not name.lower().endswith(ZIP_TEXT_EXTS):
+                continue
+            if info.file_size > ZIP_MEMBER_MAX_BYTES:
+                continue
+            with archive.open(info) as fh:
+                data = fh.read(ZIP_MEMBER_MAX_BYTES + 1)
+            if len(data) > ZIP_MEMBER_MAX_BYTES:
+                continue
+            total += len(data)
+            try:
+                text = data.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                text = data.decode("cp1252", errors="replace")
+            out.append((name, text.replace("\r\n", "\n")))
+        except Exception as exc:  # noqa: BLE001 - one bad member never breaks the rest
+            logger.debug("ZIP member skipped (%s): %s", getattr(info, "filename", "?"), exc)
+    return out
+
+
+def _zip_plan_blocks(display_name: str, members: list[tuple[str, str]]) -> list[str]:
+    """`=== File: <zip>/<member> ===` blocks for the members that are plans
+    (>= 3 tasks), so the plan tracker finds them like a plain attachment.
+    Not every README: the member must be named like a plan, hold a checklist
+    / "Paso N" list, or be the only text file in the archive."""
+    try:
+        from src.plan_tracker import stash_plan_text, _split_sections_ex, _normalize
+    except Exception:
+        return []
+    blocks: list[str] = []
+    for name, text in members:
+        if len(blocks) >= ZIP_MAX_PLAN_BLOCKS:
+            break
+        plan_id = stash_plan_text(text)
+        if not plan_id:
+            continue
+        kind = _split_sections_ex(_normalize(text))[0]
+        if not (_ZIP_PLAN_NAME_RE.search(name) or kind in ("checkbox", "step") or len(members) == 1):
+            continue
+        shown = text if len(text) <= ZIP_INLINE_MEMBER_CHARS else text[:ZIP_INLINE_MEMBER_CHARS] + "\n[Truncated]"
+        ext = os.path.splitext(name.lower())[1]
+        lang = "text" if ext == ".txt" else "markdown"
+        blocks.append(
+            f"\n\n=== File: {display_name}/{name} ===\n"
+            f"[Type: {lang}, Lines: {text.count(chr(10)) + 1}, Size: {len(text.encode('utf-8', 'ignore')):,} bytes, "
+            f"Plan-Id: {plan_id}]\n\n{shown}"
+        )
+    return blocks
+
+
 def _process_zip_file(path: str, display_name: str) -> str:
-    """Expose a ZIP as a compact actionable reference without extracting it."""
+    """Expose a ZIP as a compact actionable reference. Nothing is extracted to
+    disk; the small .md/.txt members are read in memory so a plan inside the
+    archive reaches the plan tracker as an `=== File: <zip>/<member> ===` block."""
     try:
         with zipfile.ZipFile(path) as archive:
             infos = archive.infolist()
@@ -133,7 +235,12 @@ def _process_zip_file(path: str, display_name: str) -> str:
                 "Use Python zipfile or PowerShell to inspect/read specific members. "
                 "Do not call read_file on the ZIP binary itself. Extract only inside the active workspace.",
             ]
-            return "\n".join(lines)
+            blocks: list[str] = []
+            try:
+                blocks = _zip_plan_blocks(display_name, _zip_text_members(archive, infos))
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("ZIP text members unavailable for %s: %s", path, exc)
+            return "\n".join(lines) + "".join(blocks)
     except (OSError, zipfile.BadZipFile, zipfile.LargeZipFile) as exc:
         logger.warning("ZIP attachment inspection failed for %s: %s", path, exc)
         return f"\n\n[ZIP attachment could not be inspected: {display_name} ({exc})]"

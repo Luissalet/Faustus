@@ -1278,6 +1278,8 @@ export const es: Record<string, string> = {
   "Continue in Studio": "Seguir en Studio",
   "Continue: {label}": "Continuar: {label}",
   "Continues on its own": "Continúa solo",
+  "Continues the plan on its own": "Sigue con el plan sin esperar",
+  "Plan paused: asking you": "Plan en pausa: te pregunta",
   "Contradict": "Contradecir",
   "Contradicted": "Contradicho",
   "Contradiction": "Contradicción",

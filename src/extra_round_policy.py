@@ -95,6 +95,7 @@ CAUSES: Mapping[str, Cause] = {
     # completion
     "completion_continue": Cause("completion", "the completion engine found requirements not yet satisfied"),
     "plan_coverage": Cause("completion", "the plan has steps the turn did not cover"),
+    "plan_continue": Cause("completion", "the tracked plan still has open tasks, so the turn goes on with the next one"),
 }
 
 

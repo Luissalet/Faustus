@@ -1509,6 +1509,21 @@ GROUPS: list[dict[str, Any]] = [
                  "Maximum characters of the current task's own text kept when replacing the full "
                  "attachment in the prompt.",
                  200, 50000),
+            _int("agent_plan_tracker_paste_min_chars", "Plan tracker: minimum pasted plan size",
+                 "A plan typed or pasted in the message (no attachment) is imported into the tracker "
+                 "when it is a real task list of at least this many characters; an explicit execute "
+                 "request such as 'ejecuta este plan' needs no minimum. 0 turns pasted-plan import off.",
+                 0, 100000),
+            _bool("agent_plan_autocontinue", "Plan: keep working until every task is done",
+                  "While the tracked plan has open tasks, a turn that ends without a tool call (or "
+                  "asks 'shall I continue?') is sent on to the next task inside the same turn instead "
+                  "of waiting for another 'continúa'. Stops with a concrete question after 3 "
+                  "continuations that close no task, when the loop breaker intervenes, on Stop, a "
+                  "steer or an approval card, or at the per-turn cap."),
+            _int("agent_plan_autocontinue_max", "Plan: automatic continuations per turn",
+                 "Most times one turn may send the model on to the next plan task by itself before it "
+                 "stops and asks.",
+                 1, 500),
         ],
     ),
 ]

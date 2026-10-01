@@ -4571,7 +4571,8 @@ async def _recovery_step_completion(url, model, headers, messages, temperature, 
 
 
 def _end_turn_with_question(*, reason: str, round_num: int, session_id: Optional[str],
-                             owner: Optional[str], ledger, elapsed_s: float = 0.0) -> Iterable:
+                             owner: Optional[str], ledger, elapsed_s: float = 0.0,
+                             plan: Optional[Dict[str, Any]] = None) -> Iterable:
     """Build and register a concrete question from the turn's own ledger
     state, and yield the SSE chunk(s) that end the turn asking it — never a
     bare placeholder. Owner requirement, 18-09-2026: a large/repetitive task
@@ -4597,7 +4598,27 @@ def _end_turn_with_question(*, reason: str, round_num: int, session_id: Optional
     _done = len(ledger.mutated_paths()) if hasattr(ledger, "mutated_paths") else 0
     _es = str(getattr(ledger, "language", "") or "es").lower().startswith("es")
     _rounds = max(0, round_num - 1)
-    if reason == "turn_wall_clock_ceiling":
+    if reason.startswith("plan_") and plan:
+        # The tracked plan could not be carried on automatically: name the task
+        # that is blocking and what the person can decide (plan auto-continue).
+        _pk = f'{plan.get("key") or ""} — {plan.get("task_title") or ""}'.strip(" —")
+        _pn = f'{plan.get("done", 0)}/{plan.get("total", 0)}'
+        if reason == "plan_loop_recovery":
+            _why_es, _why_en = "el detector de bucles ha frenado la investigación", "the loop breaker stopped the investigation"
+        elif reason == "plan_continue_cap":
+            _why_es = f'he llegado al máximo de {plan.get("cap", 0)} continuaciones automáticas de este turno'
+            _why_en = f'I reached this turn\'s limit of {plan.get("cap", 0)} automatic continuations'
+        else:
+            _why_es = "en las últimas continuaciones no he conseguido cerrarla"
+            _why_en = "my last continuations did not manage to close it"
+        question = (
+            f'El plan «{plan.get("title") or ""}» va {_pn}. Me he quedado en {_pk}: {_why_es}. '
+            "¿Qué prefieres: que la salte, que lo intente de otra forma, o me das el dato que falta?"
+        ) if _es else (
+            f'Plan "{plan.get("title") or ""}" is at {_pn}. I am stuck on {_pk}: {_why_en}. '
+            "Shall I skip it, try another approach, or can you give me what is missing?"
+        )
+    elif reason == "turn_wall_clock_ceiling":
         # The turn ran out of time, it did not get stuck: saying "I could not
         # make progress" after three hours of work read as a failure (exam 32).
         _mins = int(round((elapsed_s or 0) / 60)) if elapsed_s else 0
@@ -11439,6 +11460,25 @@ async def _stream_agent_loop_body(
     _continuation_shadow_mismatches = 0
     _progress_unit_count = 0
     _progress_extension_used = False
+    # Plan auto-continue (src/plan_tracker.py autocontinue_decision): while the
+    # tracked plan has open tasks a turn that ends without a tool call goes on
+    # with the next task instead of waiting for another "continúa".
+    _plan_ac_enabled = False
+    _plan_ac_max = 40
+    try:
+        _plan_ac_enabled = bool(get_setting("agent_plan_autocontinue", True))
+        _plan_ac_max = max(1, int(get_setting("agent_plan_autocontinue_max", 40) or 40))
+    except (TypeError, ValueError):
+        pass
+    _plan_ac_used = 0
+    _plan_ac_fruitless = 0
+    _plan_ac_closed_last = None
+    _plan_closed_start = None
+    _plan_ac_armed = False
+    _plan_ac_done_emitted = False
+    _plan_imported_now = False
+    _plan_scope = None
+    _plan_tracker = None
     if (
         _harness_enabled and _harness_scope_active and session_id
         and not _todo_refresh_nudged
@@ -11492,7 +11532,24 @@ async def _stream_agent_loop_body(
                                 _last_user_msg["content"] = _pt.replace_attachment(
                                     _content, _plan_tracker, max_task_chars=_task_chars)
                                 _has_inline_attachment = False  # replaced: skip the TOC trim
+                                _plan_imported_now = True
                                 _ledger.notes.append("plan_tracker:attachment:" + str(_plan_tracker.get("hash") or ""))
+                if _plan_tracker is None:
+                    # A plan typed or pasted in the message itself (no
+                    # attachment): same tracker, the intro stays in the prompt.
+                    _paste_msg = next(
+                        (m for m in reversed(messages or [])
+                         if m.get("role") == "user" and not m.get("_agent_injected")
+                         and not m.get("_harness_note") and isinstance(m.get("content"), str)), None)
+                    _paste_found = _pt.find_plan_in_text(_paste_msg["content"]) if _paste_msg else None
+                    if _paste_found:
+                        _plan_tracker = _pt.upsert_from_attachment(_plan_scope, _paste_found[0], _paste_found[1])
+                        if _plan_tracker:
+                            _paste_msg["content"] = _pt.replace_pasted(
+                                _paste_msg["content"], _plan_tracker,
+                                max_task_chars=int(get_setting("agent_plan_tracker_task_chars", 6000) or 6000))
+                            _plan_imported_now = True
+                            _ledger.notes.append("plan_tracker:pasted:" + str(_plan_tracker.get("hash") or ""))
                 if _plan_tracker is None:
                     _plan_tracker = _pt.active(_plan_scope)
                 if _plan_tracker:
@@ -11507,6 +11564,15 @@ async def _stream_agent_loop_body(
                         _all_prog.get("done") == _all_prog.get("total"))
                 if _plan_tracker and _pt.current_task(_plan_tracker):
                     _ledger.plan_active = True
+                    # Armed: the plan was handed over this turn, or the person is
+                    # resuming it ("continúa", "sigue con el plan"), or the model
+                    # starts using the plan tools. A stale plan from an old chat
+                    # in the same folder never drags an unrelated turn along.
+                    _plan_ac_armed = bool(
+                        _plan_imported_now or _is_continue
+                        or _pt.looks_like_execute_request(_last_user or ""))
+                    _plan_ac_closed_last = _pt.closed_count(_plan_tracker)
+                    _plan_closed_start = _plan_ac_closed_last
                     # Offer the plan tools alongside whatever the retriever
                     # picked: the brief tells the model to use them.
                     if _relevant_tools is not None and not guide_only:
@@ -13948,6 +14014,129 @@ async def _stream_agent_loop_body(
                 **_xr.event("local_no_cost_stop", used=1, limit=1, round_num=round_num),
             }) + "\n\n"
             continue
+
+        # Plan auto-continue: the model ended the round with no tool call (or
+        # asked "continue?") while the tracked plan still has open tasks.
+        # Re-read the tracker from disk (plan_done writes there), close what the
+        # turn evidently finished, and decide: go on, ask, or let the turn end.
+        if (not tool_blocks and _plan_tracker is not None and _plan_ac_enabled
+                and not _force_answer and not plan_mode and not guide_only
+                and _round_finish_reason != "length" and not _awaiting_user):
+            _pac = None
+            _pac_tr = _plan_tracker
+            try:
+                from src import plan_tracker as _pt_ac
+                _pac_tr = _pt_ac.load(_plan_scope, str(_plan_tracker.get("hash") or "")) or _plan_tracker
+                if _ledger.mutations:
+                    try:
+                        from src.agent_tools.coding_tools import load_todos as _load_todos_ac
+                        _todos_ac = _load_todos_ac(session_id) if session_id else []
+                    except Exception:
+                        _todos_ac = []
+                    _pac_auto = _pt_ac.reconcile(
+                        _plan_scope, _pac_tr, todos=_todos_ac,
+                        mutated_paths=_ledger.mutated_paths(), workspace=workspace,
+                        turn=_context_turn_id)
+                    if _pac_auto:
+                        _ledger.notes.append("plan_tracker:auto_done=" + ",".join(_pac_auto))
+                _plan_tracker = _pac_tr
+                _pac_closed = _pt_ac.closed_count(_pac_tr)
+                if _plan_ac_closed_last is not None and _pac_closed > _plan_ac_closed_last:
+                    _plan_ac_fruitless = 0
+                _plan_ac_closed_last = _pac_closed
+                _pac_prog = _pt_ac.progress(_pac_tr)
+                _ledger.plan_all_done_with_evidence = bool(_pac_prog.get("total")) and (
+                    _pac_prog.get("done") == _pac_prog.get("total"))
+                _pac_armed = _plan_ac_armed or any(
+                    str((_e or {}).get("tool") or "").startswith("plan_") for _e in _ledger.events)
+                _pac = _pt_ac.autocontinue_decision(
+                    _pac_tr, enabled=True, armed=_pac_armed, used=_plan_ac_used,
+                    cap=_plan_ac_max, fruitless=_plan_ac_fruitless,
+                    awaiting_user=_awaiting_user, recovery_active=_loop_recovery_active)
+            except Exception as _pac_err:  # noqa: BLE001 - never the reason a turn fails
+                logger.debug("[harness] plan auto-continue skipped: %s", _pac_err)
+                _pac = None
+            if _pac and _pac.get("action") == "continue" and _xr.permits(
+                    "plan_continue", _plan_ac_used, _plan_ac_max):
+                _plan_ac_used += 1
+                _plan_ac_fruitless += 1
+                # A harness-driven continuation is not a monologue.
+                _stuck.monologue_streak = 0
+                _monologue_pending = ""
+                _pac_cur = _pac.get("task") or {}
+                _pac_key = _pac_cur.get("key") or _pac_cur.get("id")
+                _ledger.notes.append(f"plan_continue@{round_num}:{_pac_key}")
+                logger.info("[harness] plan auto-continue #%d at round %d -> %s (%s/%s done)",
+                            _plan_ac_used, round_num, _pac_key, _pac_prog.get("done"), _pac_prog.get("total"))
+                if round_response.strip():
+                    if _harness.find_permission_stall(_strip_think_blocks(cleaned_round).strip()):
+                        # "¿Continúo?" is not an answer: the plan is the go-ahead.
+                        if full_response.endswith(round_response):
+                            full_response = full_response[:-len(round_response)]
+                            yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
+                    else:
+                        messages.append({"role": "assistant", "content": round_response})
+                messages.append({
+                    "role": "user", "_harness_note": True,
+                    "content": _lang_note(_pt_ac.continuation_note(_pac_tr)),
+                })
+                yield (
+                    "data: " + json.dumps({
+                        "type": "harness_check", "status": "plan_continue", "round": round_num,
+                        "label": _pac_tr.get("title"),
+                        "detail": f'{_pac_prog.get("done")}/{_pac_prog.get("total")} · {_pac_key}',
+                        "attempt": _plan_ac_used, "max_attempts": _plan_ac_max,
+                        "fruitless": _plan_ac_fruitless,
+                        **_xr.event("plan_continue", used=_plan_ac_used,
+                                    limit=_plan_ac_max, round_num=round_num),
+                    }) + "\n\n"
+                )
+                yield (
+                    "data: " + json.dumps({
+                        "type": "plan_tracker", "hash": _pac_tr.get("hash"), "title": _pac_tr.get("title"),
+                        "done": _pac_prog.get("done"), "total": _pac_prog.get("total"),
+                        "current": _pac_key,
+                    }) + "\n\n"
+                )
+                full_response += "\n\n"
+                yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                continue
+            if _pac and _pac.get("action") in ("stop", "continue"):
+                # Stop conditions: loop recovery, the cap (or a refused policy
+                # grant), or three continuations that closed nothing.
+                _pac_why = _pac.get("reason") if _pac.get("action") == "stop" else "cap"
+                _pac_cur = _pac.get("task") or {}
+                _pac_prog = _pt_ac.progress(_pac_tr)
+                _ledger.notes.append(f"plan_continue_stop@{round_num}:{_pac_why}")
+                yield (
+                    "data: " + json.dumps({
+                        "type": "harness_check", "status": "plan_continue_stop", "round": round_num,
+                        "label": _pac_tr.get("title"), "detail": str(_pac_why),
+                        "attempt": _plan_ac_used, "max_attempts": _plan_ac_max,
+                    }) + "\n\n"
+                )
+                for _rk, _rpayload in _end_turn_with_question(
+                    reason={"loop_recovery": "plan_loop_recovery", "cap": "plan_continue_cap"}.get(
+                        str(_pac_why), "plan_no_progress"),
+                    round_num=round_num, session_id=session_id, owner=owner, ledger=_ledger,
+                    plan={"title": _pac_tr.get("title"), "done": _pac_prog.get("done"),
+                          "total": _pac_prog.get("total"), "key": _pac_cur.get("key") or _pac_cur.get("id"),
+                          "task_title": _pac_cur.get("title"), "cap": _plan_ac_max},
+                ):
+                    yield _rpayload
+                _awaiting_user = True
+                break
+            if (_pac and _pac.get("reason") == "done" and not _plan_ac_done_emitted
+                    and _plan_ac_used):
+                # Every task closed during this turn: tell the UI the final count.
+                _plan_ac_done_emitted = True
+                _pac_prog = _pt_ac.progress(_pac_tr)
+                yield (
+                    "data: " + json.dumps({
+                        "type": "plan_tracker", "hash": _pac_tr.get("hash"), "title": _pac_tr.get("title"),
+                        "done": _pac_prog.get("done"), "total": _pac_prog.get("total"), "current": None,
+                    }) + "\n\n"
+                )
 
         if not tool_blocks and _harness_enabled and not _force_answer and not plan_mode:
             _hc_raw = _strip_think_blocks(cleaned_round).strip()
@@ -18066,6 +18255,8 @@ async def _stream_agent_loop_body(
         try:
             if _plan_tracker is not None and _ledger.mutations:
                 from src import plan_tracker as _pt_end
+                # plan_done writes to disk during the turn: reconcile on a fresh copy.
+                _plan_tracker = _pt_end.load(_plan_scope, str(_plan_tracker.get("hash") or "")) or _plan_tracker
                 from src.agent_tools.coding_tools import load_todos as _load_todos_end
                 _todos_end = _load_todos_end(session_id) if session_id else []
                 _auto_done = _pt_end.reconcile(
@@ -18088,6 +18279,27 @@ async def _stream_agent_loop_body(
                     )
         except Exception as _pt_end_err:
             logger.debug("[harness] plan_tracker reconcile skipped: %s", _pt_end_err)
+        # Final progress: plan_done calls made during the turn change the
+        # tracker on disk without any event, so the UI would keep the count it
+        # got when the plan was imported.
+        try:
+            if _plan_tracker is not None and _plan_closed_start is not None:
+                from src import plan_tracker as _pt_fin
+                _fin_tr = _pt_fin.load(_plan_scope, str(_plan_tracker.get("hash") or ""))
+                if _fin_tr and _pt_fin.closed_count(_fin_tr) > _plan_closed_start:
+                    _fin_prog = _pt_fin.progress(_fin_tr)
+                    _fin_cur = _pt_fin.current_task(_fin_tr) or {}
+                    _plan_closed_start = _pt_fin.closed_count(_fin_tr)
+                    yield (
+                        "data: " + json.dumps({
+                            "type": "plan_tracker",
+                            "hash": _fin_tr.get("hash"), "title": _fin_tr.get("title"),
+                            "done": _fin_prog.get("done"), "total": _fin_prog.get("total"),
+                            "current": _fin_cur.get("key") or _fin_cur.get("id"),
+                        }) + "\n\n"
+                    )
+        except Exception as _pt_fin_err:
+            logger.debug("[harness] plan_tracker final progress skipped: %s", _pt_fin_err)
         try:
             _ws_pid = str(_hopts.get("project_id") or "").strip()
             if _ws_pid and bool(get_setting("agent_project_todos", True)) and _ledger.events:

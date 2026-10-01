@@ -40,7 +40,10 @@ def ws(tmp_path, monkeypatch):
 
 
 def test_plan_attachment_is_parsed_once_and_execute_request_without_action_is_rejected(ws, monkeypatch):
-    _patch_common(monkeypatch, settings={"agent_project_tests": False, "agent_ui_smoke": False})
+    # In-turn auto-continue has its own tests (test_plan_autocontinue.py); here
+    # it is off so the scripted flow checks the older rejection layers alone.
+    _patch_common(monkeypatch, settings={"agent_project_tests": False, "agent_ui_smoke": False,
+                                         "agent_plan_autocontinue": False})
     calls = _scripted_stream(monkeypatch, [
         ("Reference context received.", "stop"),          # the real #14 answer (×2)
         ("Reference context received.", "stop"),
@@ -82,7 +85,8 @@ def test_second_chat_without_attachment_gets_the_brief_not_the_plan(ws, monkeypa
     from src import plan_tracker as pt
     scope = pt.scope_for("proj-sil2", ws)
     assert pt.upsert_from_attachment(scope, "plan.md", _big_plan_text())
-    _patch_common(monkeypatch, settings={"agent_project_tests": False, "agent_ui_smoke": False})
+    _patch_common(monkeypatch, settings={"agent_project_tests": False, "agent_ui_smoke": False,
+                                         "agent_plan_autocontinue": False})
     calls = _scripted_stream(monkeypatch, [
         ("```plan_status\n{}\n```", "tool_calls"),
         ("Continuing with WP03.", "stop"),
@@ -138,7 +142,8 @@ def test_turn_end_reconciles_plan_tasks_from_completed_todos_and_written_files(w
             return {"output": "ok", "exit_code": 0, "todos": todos}
         return None
 
-    _patch_common(monkeypatch, settings={"agent_project_tests": False, "agent_ui_smoke": False}, tool_exec=_exec)
+    _patch_common(monkeypatch, settings={"agent_project_tests": False, "agent_ui_smoke": False,
+                                         "agent_plan_autocontinue": False}, tool_exec=_exec)
     _scripted_stream(monkeypatch, [
         ('```edit_file\n{"path": "src/dependency_drift.py", "old_string": "x = 1", "new_string": "x = 2"}\n```', "tool_calls"),
         ('```todowrite\n[{"content": "WP03 — Dependency drift check", "status": "completed"}]\n```', "tool_calls"),
