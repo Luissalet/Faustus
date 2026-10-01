@@ -37,7 +37,8 @@ def test_meeting_actions_preview_commit_and_repeat(tmp_path, monkeypatch):
 
     tool = MeetingActionsToBoardTool()
     ctx = {"owner": "luis", "project_id": "p1"}
-    monkeypatch.setattr("src.agent_tools.board_tools._key_for", lambda *_: "ATL")
+    # the module the tool was defined in, even if src.agent_tools was reloaded since
+    monkeypatch.setitem(MeetingActionsToBoardTool.execute.__globals__, "_key_for", lambda *_: "ATL")
     preview = asyncio.run(tool.execute(json.dumps({"meeting_id": meeting_id}), ctx))
     assert preview["exit_code"] == 0 and preview["created"] == 0
     assert len(preview["actions"]) == 2
