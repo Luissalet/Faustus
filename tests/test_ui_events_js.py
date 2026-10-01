@@ -47,3 +47,25 @@ def test_the_stream_forwards_what_studio_needs():
     for key in ('"theme_name"', '"colors"', '"bg"', '"selector"', '"label"', '"panel"', '"uid"', '"body"', '"mode"', '"model"'):
         assert key in block, key
 
+
+
+@pytest.mark.parametrize("text", [
+    "Pon el tema forest en la interfaz.",
+    "Cambia la paleta a terracotta",
+    "Hazme un tema volcán con brasas",
+    "Abre mis notas",
+    "Activa la búsqueda web",
+    "Pasa a modo chat",
+    "Cambia de modelo a qwen",
+])
+def test_spanish_screen_requests_reach_ui_control(text):
+    import src.agent_tools  # noqa: F401  (agent_tools <-> tool_parsing import cycle)
+    from src.agent_loop import _classify_agent_request
+    assert "ui" in (_classify_agent_request([], text).get("domains") or set())
+
+
+@pytest.mark.parametrize("text", ["Háblame sobre el tema de la inflación", "Arregla el bug del login"])
+def test_a_topic_is_not_a_theme(text):
+    import src.agent_tools  # noqa: F401
+    from src.agent_loop import _classify_agent_request
+    assert "ui" not in (_classify_agent_request([], text).get("domains") or set())

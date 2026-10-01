@@ -3236,7 +3236,19 @@ def _classify_agent_request(messages: List[Dict], last_user: str, *,
         domains.add("web")
     if has(r"\b(research|deep dive|investigate|look into)\b"):
         domains.add("web")
-    if has(r"\b(open|show|toggle|turn on|turn off|disable|enable|switch model|change model|settings|theme|panel)\b"):
+    if has(
+        r"\b(open|show|toggle|turn on|turn off|disable|enable|switch model|change model|settings|theme|panel)\b",
+        # LANG-02: pon/cambia/crea el tema o la paleta, modo oscuro/claro/
+        # chat/agente, abre las notas/el correo/los ajustes…, activa o
+        # desactiva la búsqueda/la terminal…, cambia de modelo. Live
+        # (01-10): «Pon el tema forest en la interfaz» got the coding toolset
+        # without ui_control and the model went reading the repo.
+        r"\b(?:pon|cambia|usa|aplica|crea|hazme|haz)\b[^.?!\n]{0,30}\b(?:tema|paleta)\b(?!\s+(?:de|del|que|sobre)\b)",
+        r"\bmodo (?:oscuro|claro|chat|agente)\b",
+        r"\babre(?:me)? (?:el |la |las |los |mis? )?(?:notas|correo|bandeja|ajustes|configuraci[oó]n|biblioteca|galer[ií]a|memorias?|cerebro|skills|cookbook|chats|conversaciones)\b",
+        r"\b(?:activa|desactiva|enciende|apaga)\b[^.?!\n]{0,20}\b(?:b[uú]squeda|web|terminal|shell|bash|investigaci[oó]n|inc[oó]gnito|rag)\b",
+        r"\b(?:cambia(?:r)? (?:de|el) modelo|usa el modelo)\b",
+    ):
         domains.add("ui")
     if has(r"\b(session|chat history|rename chat|delete chat|archive chat|fork chat|list chats)\b"):
         domains.add("sessions")
@@ -8997,6 +9009,11 @@ async def _stream_agent_loop_body(
             # "email"/"model" word does not dump those families as schemas.
             if _hot_seed is not None:
                 _hot_seed = set(_WORKSPACE_TERMINUS_TOOLS) | _kept_code_intel
+                # One schema, and the only way to do what a UI request asks:
+                # a theme or a panel named in the latest message keeps it
+                # offered next to the workspace tools.
+                if "ui" in _latest_only_domains:
+                    _hot_seed.add("ui_control")
         elif workspace and not plan_mode and not _active_document_relevant and not active_email:
             # A bound workspace is the user's declared intent to work in that
             # folder. Whatever the retriever picked (it is English-biased and

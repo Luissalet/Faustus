@@ -1230,7 +1230,10 @@ class ToolIndex:
         # Theme / UI control intent
         frozenset({"theme", "color scheme", "colors of the ui", "make it dark",
                    "make it light", "make the ui", "switch theme", "change theme",
-                   "dark mode", "light mode", "toggle"}):
+                   "dark mode", "light mode", "toggle",
+                   "pon el tema", "cambia el tema", "crea un tema", "hazme un tema",
+                   "tema oscuro", "tema claro", "paleta", "modo oscuro", "modo claro",
+                   "modo chat", "modo agente", "cambia de modelo", "cambia el modelo"}):
             {"ui_control"},
         # Desktop control intent (FAUSTUS): see the screen / drive the mouse
         # and keyboard of the machine the server runs on. ES + EN. Generic
