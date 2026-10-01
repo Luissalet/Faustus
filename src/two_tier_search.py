@@ -104,6 +104,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 import time
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -117,6 +118,8 @@ __all__ = [
     "TIERS",
     "RERANK_HEAD",
     "bm25_scores",
+    "exact_scores",
+    "rare_terms",
     "rrf",
     "search",
     "snippet",
@@ -202,6 +205,118 @@ def bm25_scores(query: Any, docs: Sequence[Tuple[str, Any]]) -> Dict[str, float]
             scores[doc_id] = total
     top = max(scores.values()) if scores else 0.0
     return {doc_id: value / top for doc_id, value in scores.items()} if top > 0 else {}
+
+
+# ---------------------------------------------------------------------------
+# Tier 1, lane C: rare terms, matched verbatim
+# ---------------------------------------------------------------------------
+#
+# Identifiers are what both other lanes are worst at. The shared tokenizer
+# splits ``KEY-12`` into ``key`` and ``12`` and ``model_server_check`` into
+# three common words, so BM25 and the hash cosine reward a document that merely
+# talks about keys and servers; an embedder does no better, because a ticket
+# number or a tool name carries no meaning to embed. This lane reads the RAW
+# query and the RAW document instead: it pulls out the tokens that look like
+# identifiers (``KEY-12``, ``snake_case``, ``camelCase``, ``path/to.py``,
+# acronyms, long numbers, anything in backticks) and ranks the documents that
+# contain them verbatim, rarer terms counting more. It is independent evidence
+# -- raw strings, not the shared tokens -- so it is fused at full weight, and a
+# document that holds EVERY rare term of the query is never left out of the
+# head. No model, no I/O; a query without such tokens leaves the search
+# exactly as it was.
+
+EXACT_WEIGHT = 1.0
+MAX_RARE_TERMS = 8
+
+_BACKTICK_RE = re.compile(r"`([^`\n]{2,80})`")
+_STRIP_CHARS = " \t\r\n.,;:!?()[]{}<>\"'\u00ab\u00bb\u201c\u201d\u2018\u2019\u00bf\u00a1"
+
+
+def _looks_rare(token: str) -> bool:
+    if len(token) < 2 or len(token) > 120:
+        return False
+    if re.fullmatch(r"[A-Z][A-Z0-9]{1,15}", token) and any(c.isalpha() for c in token):
+        return True                                  # MCP, RAG, GPU2
+    if len(token) < 3:
+        return False
+    if re.fullmatch(r"\d{4,}", token):
+        return True                                  # 20260929, ids
+    if re.search(r"\d", token) and re.search(r"[A-Za-z]", token):
+        return True                                  # KEY-12, b10456, v0.35
+    if re.search(r"\w_\w", token):
+        return True                                  # snake_case
+    if re.search(r"[a-z][A-Z]", token):
+        return True                                  # camelCase
+    if re.search(r"\w[/\\]\w", token):
+        return True                                  # src/x.py, D:\a\b
+    if len(token) >= 4 and re.search(r"[A-Za-z_]\.[A-Za-z]{1,5}$", token) \
+            and not re.fullmatch(r"(?:[A-Za-z]\.){2,}", token):
+        return True                                  # file.py, faustus.md
+    return False
+
+
+def rare_terms(query: Any) -> List[str]:
+    """The identifier-like terms of ``query``, in order, deduplicated.
+
+    Backticked spans are taken whole. Everything else is split on whitespace,
+    stripped of surrounding punctuation and kept only if :func:`_looks_rare`.
+    """
+    text = str(query if query is not None else "")
+    found: List[str] = []
+    seen = set()
+
+    def _add(term: str) -> None:
+        key = term.lower()
+        if term and key not in seen and len(found) < MAX_RARE_TERMS:
+            seen.add(key)
+            found.append(term)
+
+    for span in _BACKTICK_RE.findall(text):
+        _add(span.strip())
+    rest = _BACKTICK_RE.sub(" ", text)
+    for raw in rest.split():
+        token = raw.strip(_STRIP_CHARS)
+        if _looks_rare(token):
+            _add(token)
+    return found
+
+
+def _term_pattern(term: str) -> "re.Pattern[str]":
+    return re.compile(r"(?<![\w])" + re.escape(term) + r"(?![\w])", re.IGNORECASE)
+
+
+def exact_scores(query: Any, docs: Sequence[Tuple[str, Any]]) -> Tuple[Dict[str, float], List[str], set]:
+    """``(scores, kept_terms, full_ids)`` for the rare-term lane.
+
+    ``scores`` is Σ log(1 + N/df) over the rare terms a document contains
+    verbatim (case-insensitive, whole-token). A term present in more than half
+    of a corpus of four or more is not rare there and is dropped. ``full_ids``
+    are the documents holding every kept term.
+    """
+    terms = rare_terms(query)
+    if not terms or not docs:
+        return {}, [], set()
+    texts = [(str(doc_id), "" if text is None else str(text)) for doc_id, text in docs]
+    total = len(texts)
+    matches: Dict[str, set] = {}
+    for term in terms:
+        pattern = _term_pattern(term)
+        hit_ids = {doc_id for doc_id, text in texts if text and pattern.search(text)}
+        if not hit_ids:
+            continue
+        if total >= 4 and len(hit_ids) > total / 2:
+            continue
+        matches[term] = hit_ids
+    if not matches:
+        return {}, [], set()
+    scores: Dict[str, float] = {}
+    for term, hit_ids in matches.items():
+        weight = math.log(1.0 + total / len(hit_ids))
+        for doc_id in hit_ids:
+            scores[doc_id] = scores.get(doc_id, 0.0) + weight
+    kept = [term for term in terms if term in matches]
+    full = set.intersection(*matches.values()) if matches else set()
+    return scores, kept, full
 
 
 # ---------------------------------------------------------------------------
@@ -538,6 +653,19 @@ def _search(corpus: Iterable[Any], query: Any, k: int, embedder: Any,
         tier = TIER_LEXICAL
         tier1 = dict(lexical)
 
+    # -- tier 1, lane C: rare terms, verbatim (see exact_scores) -------------
+    exact, _exact_terms, exact_full = exact_scores(
+        text, [(row["id"], row["text"]) for row in rows])
+    exact_ranked = _ordered(exact)
+    if exact_ranked:
+        lanes.append("exact")
+        if hash_ranked:
+            tier1 = rrf(lexical_ranked, hash_ranked, exact_ranked,
+                        weights=(BM25_WEIGHT, HASH_WEIGHT, EXACT_WEIGHT))
+        else:
+            tier1 = rrf(lexical_ranked, exact_ranked,
+                        weights=(BM25_WEIGHT, EXACT_WEIGHT))
+
     scores = tier1
     degraded = True
 
@@ -601,6 +729,26 @@ def _search(corpus: Iterable[Any], query: Any, k: int, embedder: Any,
             promoted = kept + missing[:max(0, k - len(kept))]
             rest = [doc_id for doc_id in ordered if doc_id not in set(promoted)]
             ordered = promoted + rest
+
+    # -- a document holding every rare term is never left out of the head ---
+    # The query named an identifier and these are the documents that carry
+    # it. Whatever the other lanes thought of their prose, they go in the
+    # head, displacing only documents that do not carry it, at most half.
+    if exact_full and k > 0:
+        head = ordered[:k]
+        missing = [doc_id for doc_id in exact_ranked
+                   if doc_id in exact_full and doc_id not in head]
+        not_full = [doc_id for doc_id in head if doc_id not in exact_full]
+        budget = min(len(missing), max(1, k // 2), max(len(not_full), k - len(head)))
+        if missing and budget:
+            room = max(0, budget - (k - len(head)))
+            dropped = set(not_full[-room:]) if room else set()
+            kept = [doc_id for doc_id in head if doc_id not in dropped]
+            promoted = kept + missing[:budget]
+            promoted_set = set(promoted)
+            ordered = promoted + [doc_id for doc_id in ordered if doc_id not in promoted_set]
+            for doc_id in missing[:budget]:
+                scores.setdefault(doc_id, 0.0)
 
     # ── tier 3: a cross-encoder over the fused head, opt-in ────────────────
     rerank_reason: Optional[str] = None
