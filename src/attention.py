@@ -511,6 +511,27 @@ def _default_project_ids(session_ids: Iterable[str]) -> Dict[str, str]:
         db.close()
 
 
+def _default_session_labels(session_ids: Iterable[str]) -> Dict[str, str]:
+    """Best-effort `{session_id: chat name}` for rows that carry no label
+    (a card or question whose run already ended): the same `Session.name`
+    the sidebar shows."""
+    ids = [str(s) for s in session_ids if str(s or "").strip()]
+    if not ids:
+        return {}
+    try:
+        from core.database import SessionLocal, Session as DbSession
+    except Exception:  # noqa: BLE001 - optional enrichment
+        return {}
+    db = SessionLocal()
+    try:
+        rows = db.query(DbSession.id, DbSession.name).filter(DbSession.id.in_(ids)).all()
+        return {row.id: str(row.name) for row in rows if row.name}
+    except Exception:  # noqa: BLE001
+        return {}
+    finally:
+        db.close()
+
+
 def attention_for_owner(
     owner: str,
     *,
@@ -611,6 +632,11 @@ def attention_for_owner(
         infos[sid] = RunInfo(session_id=sid, status=status, finished_at=finished_at, label=label)
 
     proj_ids = _default_project_ids(infos.keys()) if project_ids is None else project_ids
+    if project_ids is None:
+        unlabelled = [sid for sid, info in infos.items() if not info.label]
+        for sid, name in _default_session_labels(unlabelled).items():
+            if sid in infos:
+                infos[sid] = replace(infos[sid], label=name)
 
     out: List[Dict[str, Any]] = []
     for sid, info in infos.items():

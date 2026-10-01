@@ -35,3 +35,12 @@ def test_store_reports_the_oldest_card_per_session():
     from src.tool_approvals import ToolApprovalStore
     store = ToolApprovalStore()
     assert store.pending_session_since(owner="alice") == {}
+
+def test_unlabelled_rows_take_the_chat_name(monkeypatch):
+    monkeypatch.setattr(attention, "_default_pending_approvals", lambda owner: ["appr"])
+    monkeypatch.setattr(attention, "_default_pending_approval_since", lambda owner: {"appr": 9_000.0})
+    monkeypatch.setattr(attention, "_default_project_ids", lambda ids: {})
+    monkeypatch.setattr(attention, "_default_session_labels", lambda ids: {"appr": "Fix the build"} if "appr" in ids else {})
+    rows = attention.attention_for_owner("alice", now=10_000.0, agent_activity={}, worker_cards={},
+                                         finished_rows=[], reads={}, open_questions=[])
+    assert rows[0]["label"] == "Fix the build"
