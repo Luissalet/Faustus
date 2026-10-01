@@ -41,6 +41,10 @@ KNOWN_SCOPES: FrozenSet[str] = frozenset({
     "memory:read", "memory:write",
     "cookbook:read", "cookbook:launch",
     "agents:dispatch",
+    # attention:read: GET /api/attention only, so a local watcher (the
+    # observability app) can ask "what is waiting for the owner?" without a
+    # token that could also drive a chat.
+    "attention:read",
 })
 
 READ_METHODS: FrozenSet[str] = frozenset({"GET", "HEAD", "OPTIONS"})
@@ -167,6 +171,8 @@ API_TOKEN_RULES: Tuple[Rule, ...] = (
     Rule(frozenset({"POST"}), "/api/session", ("sessions",), effect="reversible",
          note="create a session owned by the token's owner"),
     _read("/api/sessions", "sessions", note="list the token owner's own sessions"),
+    _read("/api/attention", "attention:read", "sessions",
+          note="what needs the token owner now: approvals, questions, stale runs (read-only)"),
     Rule(frozenset({"PATCH"}), "/api/session/{sid}", ("sessions",), effect="reversible",
          note="rename/re-home/switch-model an owned session"),
     Rule(frozenset({"DELETE"}), "/api/session/{sid}", ("sessions",), effect="reversible",

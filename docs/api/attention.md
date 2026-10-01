@@ -170,3 +170,7 @@ de `classify()`; abrir un run llama a `markAttentionRead`.
   `project_id` hoy) — documentado arriba, no oculto.
 - `signal_source == "heuristic"` es un hueco tipado, no cableado: CMP-06
   (adaptador Herdr, solo lectura) es quien lo rellenará.
+
+## Acceso con token (`attention:read`)
+
+Un token `ody_` con el ámbito `attention:read` (o `sessions`) puede leer `GET /api/attention` del dueño del token y nada más; `POST /api/attention/read` sigue cerrado a tokens. Es el ámbito que usa la app de observabilidad para avisar de aprobaciones que llevan rato esperando y de ejecuciones paradas (`core/authz.py`, `tests/test_attention_token_scope.py`).

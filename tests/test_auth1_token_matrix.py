@@ -38,6 +38,8 @@ def test_the_reachable_surface_is_exactly_this():
         # docs/api/sdk_surface.md for the full table and its ownership rule.
         "POST /api/session": ("sessions",),
         "GET|HEAD|OPTIONS /api/sessions": ("sessions",),
+        # Read-only "what is waiting for me" for a local watcher (radar #403).
+        "GET|HEAD|OPTIONS /api/attention": ("attention:read", "sessions"),
         "PATCH /api/session/{sid}": ("sessions",),
         "DELETE /api/session/{sid}": ("sessions",),
         "GET|HEAD|OPTIONS /api/session/{sid}/connectors": ("sessions",),

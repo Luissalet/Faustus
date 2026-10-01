@@ -30,6 +30,8 @@ ALLOWED_SCOPES = {
     "calendar:read",
     "calendar:write",
     "memory:read",
+    # Read-only view of what is waiting for the owner (GET /api/attention).
+    "attention:read",
     "memory:write",
     "cookbook:read",
     "cookbook:launch",

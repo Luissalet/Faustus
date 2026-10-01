@@ -9051,3 +9051,5 @@ Of the last	De las últimas
 recorded calls, these rules would deny	llamadas registradas, estas reglas habrían denegado
 and ask approval for	y pedido aprobación para
 Could not rehearse the rules.	No se pudieron ensayar las reglas.
+Attention	Atención
+Read what is waiting for you: pending approvals, open questions and stalled runs (GET /api/attention)	Leer lo que te espera: aprobaciones pendientes, preguntas abiertas y ejecuciones paradas (GET /api/attention)
