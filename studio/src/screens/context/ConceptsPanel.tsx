@@ -348,10 +348,10 @@ function ConceptDetailPanel({
           <h5>{t('Relations')}</h5>
           <ul className="fs-ctx__concepts-edges">
             {detail.outgoing.map((e) => (
-              <li key={e.id}>→ {e.rel} → {e.dst}</li>
+              <li key={e.id}>{detail.id} → {e.rel} → {e.dst}</li>
             ))}
             {detail.incoming.map((e) => (
-              <li key={e.id}>{e.src} → {e.rel} →</li>
+              <li key={e.id}>{e.src} → {e.rel} → {detail.id}</li>
             ))}
           </ul>
         </div>
