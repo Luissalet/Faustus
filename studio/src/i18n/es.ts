@@ -7926,6 +7926,7 @@ export const es: Record<string, string> = {
   "has never run": "nunca ha corrido",
   "held": "se mantuvo",
   "held back": "retenido",
+  "held by the security pre-scan, not started": "retenido por el escaneo de seguridad, sin arrancar",
   "helpful according to whom?": "¿útil según quién?",
   "heuristic": "heurística",
   "hf config": "config de hf",

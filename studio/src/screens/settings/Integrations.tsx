@@ -225,7 +225,9 @@ async function fetchAll(): Promise<{ items: Item[]; googleConfigured: boolean }>
       : '';
     const detail = [
       statusText,
-      s.manifest_pending_approval ? t('new permissions pending approval') : '',
+      // Both holds set the same pending flag; a security hold is not a permission request.
+      s.security_scan_pending_approval ? t('held by the security pre-scan, not started')
+        : s.manifest_pending_approval ? t('new permissions pending approval') : '',
       scanBadge,
     ].filter(Boolean).join(' · ');
     items.push({ kind: 'mcp', id: s.id, name: s.name || 'MCP', detail, enabled: s.is_enabled !== false, data: s });
