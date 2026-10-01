@@ -578,9 +578,12 @@ def test_project_instructions_block_priority_cache_and_cap(ws, settings):
     pi.invalidate(str(ws))
     text = pi.block(str(ws))
     assert "from AGENTS.md" in text and "make test" in text and "pnpm" not in text
-    # Cached: an edit within the TTL is not re-read until invalidated.
+    # Trusted text is keyed by its content (commit 54fea979), not by an mtime/TTL
+    # window: an edit shows on the very next read, and a stale rule can never
+    # outlive the file that carried it. invalidate() stays a harmless no-op here.
     (ws / "AGENTS.md").write_text("Changed rule.\n", encoding="utf-8")
-    assert "make test" in pi.block(str(ws))
+    fresh = pi.block(str(ws))
+    assert "Changed rule." in fresh and "make test" not in fresh
     pi.invalidate(str(ws))
     assert "Changed rule." in pi.block(str(ws))
     # Size cap (never below 500 chars) → truncated with a note.
