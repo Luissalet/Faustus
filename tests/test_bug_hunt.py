@@ -433,3 +433,32 @@ def test_a_file_saved_with_a_byte_order_mark_is_planned_per_function(tmp_path):
     targets = bug_hunt.plan_targets(str(tmp_path), "pricing.py")
     assert sorted(t.symbol for t in targets) == ["apply_discount", "split_bill"]
     assert all("﻿" not in t.source for t in targets)
+
+
+def test_the_generation_prompt_names_the_workspace_variable_not_a_placeholder():
+    from src import bug_hunt
+    t = bug_hunt.Target(path="pkg/pricing.py", symbol="split_bill", kind="function", source="def split_bill(): ...")
+    prompt = bug_hunt._build_generation_prompt(t, 4)
+    assert 'os.environ["BUG_HUNT_WORKSPACE"]' in prompt and "'pkg/pricing.py'" in prompt
+    assert "<WORKSPACE>" not in prompt
+
+
+def test_a_suite_that_kept_the_old_placeholder_still_finds_the_target(tmp_path):
+    """Live 01-10: the 27B copied '<WORKSPACE>\\\\pricing.py' literally and every
+    test failed with OSError before reaching the code."""
+    import shutil
+    import pytest as _pytest
+    if shutil.which("python") is None and shutil.which("python3") is None:
+        _pytest.skip("no python on PATH")
+    from src import bug_hunt
+    (tmp_path / "calc.py").write_text("def double(x):\n    return 2 * x\n", encoding="utf-8")
+    code = (
+        "import importlib.util\n"
+        "spec = importlib.util.spec_from_file_location('calc', '<WORKSPACE>/calc.py')\n"
+        "mod = importlib.util.module_from_spec(spec)\n"
+        "spec.loader.exec_module(mod)\n\n"
+        "def test_double():\n    assert mod.double(2) == 4\n"
+    )
+    suite = bug_hunt.GeneratedSuite(code=code, test_names=["test_double"], source="model")
+    result = bug_hunt.run_suite(str(tmp_path), suite, timeout_s=60)
+    assert result.ok is True, result.output_tail

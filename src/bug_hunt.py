@@ -464,10 +464,10 @@ None, zero, negative numbers, very large input, unicode), invalid-input
 handling, and idempotency/ordering when relevant to this code.
 
 Rules:
-- Import the target with `import ast, importlib.util, os, sys` and
-  `importlib.util.spec_from_file_location` against the absolute path
-  {os.path.join('<WORKSPACE>', *target.path.split('/'))!r} — do not guess a
-  package import path.
+- Import the target with `importlib.util.spec_from_file_location` from the
+  path the runner gives you in an environment variable, exactly like this:
+  `TARGET = os.path.join(os.environ["BUG_HUNT_WORKSPACE"], {target.path!r})`
+  — do not guess a package import path and do not write a placeholder path.
 - Every test function name starts with `test_`.
 - Before each test function, add a one-line comment stating the EXACT
   expected behaviour that test checks.
@@ -643,6 +643,10 @@ def run_suite(workspace: str, suite: GeneratedSuite, *, timeout_s: int = 120,
               slug_hint: str = "target") -> RunResult:
     root = _norm_root(workspace)
     scratch = _scratch_dir(root)
+    # A model that copied the old placeholder literally: point it at the workspace
+    # (forward slashes, so a Windows path cannot form an escape in a string literal).
+    if "<WORKSPACE>" in suite.code:
+        suite.code = suite.code.replace("<WORKSPACE>", root.replace("\\", "/"))
     digest = hashlib.sha1(suite.code.encode("utf-8", "replace")).hexdigest()[:10]
     file_name = f"test_bh_{_slug(slug_hint)}_{digest}.py"
     file_path = os.path.join(scratch, file_name)
@@ -1106,7 +1110,12 @@ async def hunt(workspace: str, target: str, *, owner: str = "", keep_tests: bool
             except OSError:
                 pass
         if result.inconclusive and result.summary:
-            notes.append(f"{t.qualname}: {result.summary}")
+            why = ""
+            if not result.tests and result.output_tail:
+                # The test file itself did not load: say why in one line.
+                errors = [ln.strip() for ln in result.output_tail.splitlines() if ln.lstrip().startswith("E ")]
+                why = f" ({errors[-1][1:].strip()[:200]})" if errors else ""
+            notes.append(f"{t.qualname}: {result.summary}{why}")
 
     suite_source = "model" if "model" in suite_sources else ("fallback" if suite_sources else "none")
     try:
