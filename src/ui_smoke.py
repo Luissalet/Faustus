@@ -693,6 +693,111 @@ _A11Y_JS = r"""
 }
 """
 
+# Generic-design patterns that mark an interface as assembled rather than
+# designed (radar #241): deterministic, no model, warnings only. Each rule is
+# a pattern a person can check and fix: a purple-to-blue gradient, cards
+# nested in cards, grey text on a saturated background, one font for
+# everything, a rounded icon above every heading.
+_DESIGN_JS = r"""
+() => {
+  const findings = [];
+  const counts = {};
+  const MAX_PER_RULE = 5;
+  function sel(el) {
+    if (!el || el.nodeType !== 1) return '';
+    let s = el.tagName.toLowerCase();
+    if (el.id) return s + '#' + el.id;
+    if (typeof el.className === 'string' && el.className.trim()) s += '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.');
+    return s;
+  }
+  function push(rule, el, detail) {
+    counts[rule] = (counts[rule] || 0) + 1;
+    if (counts[rule] <= MAX_PER_RULE) findings.push({ rule, severity: 'minor', selector: sel(el), detail });
+  }
+  function rgb(str) {
+    const m = String(str || '').match(/rgba?\(([^)]+)\)/);
+    if (!m) return null;
+    const p = m[1].split(/[ ,\/]+/).filter(Boolean).map(Number);
+    return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+  }
+  function hsl(c) {
+    const r = c.r / 255, g = c.g / 255, b = c.b / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    let h = 0, s = 0;
+    if (max !== min) {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+      h *= 60;
+    }
+    return { h, s, l };
+  }
+  function isCard(cs) {
+    const radius = parseFloat(cs.borderTopLeftRadius) || 0;
+    const framed = (cs.boxShadow && cs.boxShadow !== 'none') || parseFloat(cs.borderTopWidth) > 0;
+    const bg = rgb(cs.backgroundColor);
+    return radius >= 8 && framed && bg && bg.a > 0.5;
+  }
+  const all = Array.prototype.slice.call(document.querySelectorAll('body *')).slice(0, 3000);
+  const fonts = {};
+  let textEls = 0;
+  all.forEach((el) => {
+    const cs = getComputedStyle(el);
+    if (cs.display === 'none' || cs.visibility === 'hidden') return;
+    // 1. purple-to-blue gradient
+    const bgi = cs.backgroundImage || '';
+    if (/gradient/.test(bgi)) {
+      const hues = (bgi.match(/rgba?\([^)]+\)/g) || []).map(rgb).filter(Boolean).map(hsl).filter((x) => x.s > 0.35);
+      const purple = hues.some((x) => x.h >= 255 && x.h <= 300);
+      const blue = hues.some((x) => x.h >= 190 && x.h < 255);
+      if (purple && blue) push('purple-blue-gradient', el, 'purple-to-blue gradient background');
+    }
+    // 2. a card inside a card
+    if (isCard(cs)) {
+      let p = el.parentElement, depth = 0;
+      while (p && depth < 4) {
+        if (isCard(getComputedStyle(p))) { push('nested-cards', el, 'card inside card ' + sel(p)); break; }
+        p = p.parentElement; depth++;
+      }
+    }
+    // 3. grey text straight on a saturated background
+    const own = Array.prototype.some.call(el.childNodes, (n) => n.nodeType === 3 && n.textContent.trim().length > 2);
+    if (own) {
+      textEls++;
+      const fam = (cs.fontFamily || '').split(',')[0].replace(/["']/g, '').trim().toLowerCase();
+      fonts[fam] = (fonts[fam] || 0) + 1;
+      const fg = rgb(cs.color);
+      let bgEl = el, bg = null;
+      while (bgEl) { const c = rgb(getComputedStyle(bgEl).backgroundColor); if (c && c.a > 0.5) { bg = c; break; } bgEl = bgEl.parentElement; }
+      if (fg && bg) {
+        const f = hsl(fg), b = hsl(bg);
+        if (f.s < 0.08 && f.l > 0.3 && f.l < 0.7 && b.s > 0.45 && b.l > 0.2 && b.l < 0.8) push('grey-on-color', el, 'grey text on a saturated background');
+      }
+    }
+  });
+  // 4. one font for everything (only meaningful on a page with real text)
+  const famNames = Object.keys(fonts);
+  if (textEls >= 30 && famNames.length === 1 && /^(inter|system-ui|-apple-system|roboto|arial|helvetica)$/.test(famNames[0])) {
+    push('single-generic-font', document.body, 'every text element uses ' + famNames[0]);
+  }
+  // 5. a rounded icon above every heading
+  const heads = Array.prototype.slice.call(document.querySelectorAll('h2, h3'));
+  const iconHeads = heads.filter((h) => {
+    const prev = h.previousElementSibling;
+    if (!prev) return false;
+    const icon = prev.matches('svg, img') ? prev : prev.querySelector(':scope > svg, :scope > img');
+    if (!icon) return false;
+    const r = parseFloat(getComputedStyle(prev).borderTopLeftRadius) || 0;
+    return r >= 6 && prev.getBoundingClientRect().width <= 72;
+  });
+  if (heads.length >= 3 && iconHeads.length >= 3 && iconHeads.length / heads.length >= 0.75) {
+    push('icon-above-every-heading', iconHeads[0], iconHeads.length + ' of ' + heads.length + ' headings sit under a rounded icon');
+  }
+  return { findings, counts_by_rule: counts };
+}
+"""
+
 # Navigation timing, LCP (via a buffered PerformanceObserver) and JS/CSS
 # transfer size, read once the page has settled. Warnings only — perf never
 # fails a turn (see `_perf_warnings`).
@@ -775,6 +880,7 @@ def _playwright_audit(base_url: str, timeout_s: float) -> Dict[str, Any]:
     errors: List[str] = []
     a11y: Dict[str, Any] = {"findings": [], "counts_by_severity": {"serious": 0, "moderate": 0, "minor": 0}}
     perf: Dict[str, Any] = {}
+    design: Dict[str, Any] = {}
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         try:
@@ -796,6 +902,13 @@ def _playwright_audit(base_url: str, timeout_s: float) -> Dict[str, Any]:
             except Exception as e:  # noqa: BLE001
                 logger.debug("[ui_smoke] a11y audit failed: %s", e)
             try:
+                design_raw = page.evaluate(_DESIGN_JS)
+                if isinstance(design_raw, dict):
+                    design = {"findings": design_raw.get("findings") or [],
+                              "counts_by_rule": design_raw.get("counts_by_rule") or {}}
+            except Exception as e:  # noqa: BLE001
+                logger.debug("[ui_smoke] design audit failed: %s", e)
+            try:
                 perf_raw = page.evaluate(_PERF_JS)
                 if isinstance(perf_raw, dict):
                     perf = dict(perf_raw)
@@ -804,7 +917,7 @@ def _playwright_audit(base_url: str, timeout_s: float) -> Dict[str, Any]:
                 logger.debug("[ui_smoke] perf audit failed: %s", e)
         finally:
             browser.close()
-    return {"console_errors": errors, "a11y": a11y, "perf": perf}
+    return {"console_errors": errors, "a11y": a11y, "perf": perf, "design": design}
 
 
 # ---------------------------------------------------------------------------
@@ -816,7 +929,8 @@ def _report(*, ran: bool, ok: bool = True, summary: str = "", server_cmd: Option
             assets: Optional[List[Dict]] = None, console_errors: Optional[List[str]] = None,
             playwright_used: bool = False, a11y: Optional[Dict[str, Any]] = None,
             perf: Optional[Dict[str, Any]] = None,
-            quality_warnings: Optional[List[str]] = None) -> Dict[str, Any]:
+            quality_warnings: Optional[List[str]] = None,
+            design: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     return {
         "ran": bool(ran),
         "ok": bool(ok),
@@ -830,10 +944,12 @@ def _report(*, ran: bool, ok: bool = True, summary: str = "", server_cmd: Option
         "a11y": a11y,
         "perf": perf,
         "quality_warnings": quality_warnings or [],
+        "design": design,
     }
 
 
-def _quality_warnings(a11y: Optional[Dict[str, Any]], perf: Optional[Dict[str, Any]]) -> List[str]:
+def _quality_warnings(a11y: Optional[Dict[str, Any]], perf: Optional[Dict[str, Any]],
+                      design: Optional[Dict[str, Any]] = None) -> List[str]:
     """Human-readable warnings for findings that never fail a turn on their
     own: a11y (regardless of severity — blocking is a separate decision made
     by the caller) and perf thresholds. Surfaced to the completion gate as
@@ -849,6 +965,10 @@ def _quality_warnings(a11y: Optional[Dict[str, Any]], perf: Optional[Dict[str, A
     if perf:
         for w in perf.get("warnings") or []:
             out.append(f"perf: {w}")
+    if design:
+        rules = design.get("counts_by_rule") or {}
+        if rules:
+            out.append("design: " + ", ".join(f"{k} ×{v}" for k, v in sorted(rules.items())))
     return out
 
 
@@ -933,6 +1053,7 @@ def run_smoke(workspace: str, spec: Dict[str, Any], *, timeout_s: float = DEFAUL
         playwright_used = False
         a11y: Optional[Dict[str, Any]] = None
         perf: Optional[Dict[str, Any]] = None
+        design: Optional[Dict[str, Any]] = None
         if playwright_available():
             remaining = max(3.0, deadline - time.time())
             try:
@@ -940,6 +1061,7 @@ def run_smoke(workspace: str, spec: Dict[str, Any], *, timeout_s: float = DEFAUL
                 console_errors = audit.get("console_errors") or []
                 a11y = audit.get("a11y")
                 perf = audit.get("perf")
+                design = audit.get("design")
                 playwright_used = True
                 # attach to the audited page's own entry too, not just the
                 # top-level report — the audit only ever loads base_url + "/".
@@ -960,11 +1082,11 @@ def run_smoke(workspace: str, spec: Dict[str, Any], *, timeout_s: float = DEFAUL
         ok = not problems and not console_errors and not a11y_blocking_failed
         summary = _summarize(pages, assets, console_errors, problems, a11y=a11y, perf=perf,
                               a11y_blocking_failed=a11y_blocking_failed)
-        quality_warnings = _quality_warnings(a11y, perf)
+        quality_warnings = _quality_warnings(a11y, perf, design)
         return _report(ran=True, ok=ok, server_cmd=cmd_str, url=base_url, pages=pages,
                         assets=assets, console_errors=console_errors, summary=summary,
                         playwright_used=playwright_used, a11y=a11y, perf=perf,
-                        quality_warnings=quality_warnings)
+                        quality_warnings=quality_warnings, design=design)
     finally:
         _kill_process_tree(proc)
 
@@ -1043,6 +1165,9 @@ def compact(report: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     a11y = report.get("a11y")
     if a11y:
         out["a11y_counts"] = a11y.get("counts_by_severity")
+    design = report.get("design")
+    if design and design.get("counts_by_rule"):
+        out["design_counts"] = design.get("counts_by_rule")
     perf = report.get("perf")
     if perf:
         out["perf"] = {
