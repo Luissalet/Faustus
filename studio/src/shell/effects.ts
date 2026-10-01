@@ -11,6 +11,21 @@
  * exactly as before.
  */
 
+/** `#rgb`, `#rrggbb` or `rgb(r, g, b)` → its channels. The previous
+ * interface had this as a global in its theme script; the port left it
+ * out, and the embers and perlin-flow effects threw a ReferenceError on
+ * their first frame (retrowave and terminal drew no background). */
+function hexToRgb(color) {
+  const c = String(color || '').trim();
+  let m = c.match(/^#([0-9a-f]{3})$/i);
+  if (m) return { r: parseInt(m[1][0] + m[1][0], 16), g: parseInt(m[1][1] + m[1][1], 16), b: parseInt(m[1][2] + m[1][2], 16) };
+  m = c.match(/^#([0-9a-f]{6})/i);
+  if (m) return { r: parseInt(m[1].slice(0, 2), 16), g: parseInt(m[1].slice(2, 4), 16), b: parseInt(m[1].slice(4, 6), 16) };
+  m = c.match(/^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/i);
+  if (m) return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]) };
+  return null;
+}
+
 export type EffectName = 'none' | 'dots' | 'synapse' | 'rain' | 'constellations' | 'perlin-flow' | 'petals' | 'sparkles' | 'embers';
 
 export const EFFECTS: EffectName[] = ['none', 'dots', 'synapse', 'rain', 'constellations', 'perlin-flow', 'petals', 'sparkles', 'embers'];
