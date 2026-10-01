@@ -1637,11 +1637,26 @@ _NAMES_AN_EVENT = re.compile(
 _LINK_OR_ADDRESS = re.compile(r"https?://\S+|www\.\S+|[\w.+-]+@[\w-]+\.[\w.]+", re.IGNORECASE)
 
 
+# «Mira mi calendario de esta semana y dime qué día tengo más libre.» Live
+# (battery, 01-10-2026) the first read (`list_calendars`) went through and the
+# second (`list_events`) stopped at the card: the first result had armed the
+# gate. Reading the user's own calendar is what that question asks for, and
+# nothing is written. Only the two read actions pass; update and delete keep
+# the card.
+_CALENDAR_READS = ("list_events", "list_calendars")
+_ASKS_ABOUT_THE_CALENDAR = re.compile(
+    r"\b(?:calendarios?|agenda|citas?|reuniones|reunion|eventos?|libres?|ocupad[ao]s?|huecos?"
+    r"|calendars?|schedule|appointments?|meetings?|events?|free|busy)\b")
+
+
 def _adds_to_the_calendar(user_text: str, content: Any, workspace: str = "") -> bool:
     from src import plugins as plugins_mod
 
     args = _parse_args(content)
-    if str(args.get("action") or "").strip() != "create_event":
+    action = str(args.get("action") or "").strip()
+    if action in _CALENDAR_READS:
+        return bool(_ASKS_ABOUT_THE_CALENDAR.search(plugins_mod.fold(user_text)))
+    if action != "create_event":
         return False
     folded = plugins_mod.fold(user_text)
     if not (_ordered(folded, _ORDERS_AN_EVENT) and _NAMES_AN_EVENT.search(folded)):
