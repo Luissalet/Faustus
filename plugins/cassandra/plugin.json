@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "cassandra",
   "name": "Cassandra's Hoard",
-  "purpose": "Observability for the local AI stack: which local services (the workspace, llama-server, Ollama, ComfyUI, the launcher and every Hoard app) are up, what went down and when, what else changed at that moment, what the logs said, what the GPUs were doing, and opt-in restarts.",
+  "purpose": "Observability for the local AI stack: which local services (the workspace, llama-server, Ollama, ComfyUI, the launcher and every Hoard app) are up, what went down and when, what else changed at that moment, what the logs said, what the GPUs were doing, whether the user's public websites are up (HTTP, TLS certificate, DNS, domain expiry), and opt-in restarts.",
   "capabilities": [
     "service-status",
     "health-checks",
@@ -20,7 +20,11 @@
     "audit-trail",
     "agent-calls",
     "secrets-audit",
-    "event-bus"
+    "event-bus",
+    "public-sites",
+    "site-uptime",
+    "tls-certificates",
+    "domain-expiry"
   ],
   "placeholders": [
     "CASSANDRA_DIR",
@@ -84,5 +88,5 @@
       "CASSANDRA_DATA_DIR"
     ]
   },
-  "notes": "Keep the app running (python -m cassandra_hoard) so it keeps watching: the MCP bridge proxies every call to the local server, never opens the database, and starts the app itself when it is not answering. Probable causes are heuristics: quote them as probable. svc_restart and svc_watch change things and are only for when the user asks; restart commands can only be set from the UI or data/services.json unless CASSANDRA_AGENT_COMMANDS=1."
+  "notes": "Keep the app running (python -m cassandra_hoard) so it keeps watching: the MCP bridge proxies every call to the local server, never opens the database, and starts the app itself when it is not answering. Probable causes are heuristics: quote them as probable. sites_status and site_history read the public websites Cassandra checks from outside (state, latency, certificate days, domain expiry); svc_restart, svc_watch and sites_watch change things and are only for when the user asks; restart commands can only be set from the UI or data/services.json unless CASSANDRA_AGENT_COMMANDS=1."
 }

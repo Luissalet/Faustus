@@ -9976,3 +9976,35 @@ Visto en el uso real: en dos semanas hubo 33 mensajes «continúa»/«sigue» pa
 **En vivo** (instancia aparte en el 7010 con datos propios, q4 27B del 8081): un plan pegado de 3 tareas en un chat nuevo, un solo mensaje. Hubo un `harness_check plan_continue` (ronda 5, «0/3 · t01», intento 1/40) porque el modelo había creado los tres archivos pero cerró el turno sin `plan_done`; siguió solo y acabó con `uno.txt=alfa`, `dos.txt=beta`, `tres.txt=gamma` y el tracker en 3/3 con evidencia. Segunda prueba, un `.md` con 3 tareas dentro de un `.zip` subido por `/api/upload`: el tracker importó «plan_zip.zip/plan_zip.md» con 3 tareas, se crearon `a.txt`, `b.txt` y `c.txt` y el estado quedó en 3/3. Tercera, repetida tras añadir el avance final: el último evento `plan_tracker` llegó con 3/3. La tarjeta de aprobación de `python` se resolvió con «Permitir para esta tarea».
 
 **Límites:** el modelo local suele cerrar bien las tareas solo, así que `plan_continue` actúa sobre todo cuando se para pronto o pregunta; no se ha reconstruido el Studio (sin `node_modules` en este árbol), de modo que las dos etiquetas nuevas de `Harness.tsx` salen con el texto crudo del estado hasta la próxima compilación.
+
+## 259. Vuelta de investigación del 01-10: Vulcan ordena colecciones, Tantalus lee las ofertas del correo y Cassandra vigila las webs públicas (02-10-2026)
+
+Luis pidió «otra vuelta de investigación» y eligió las cuatro propuestas. El detalle de la investigación está en `claude/investigacion-ecosistema-01-10.md`. Se hizo sobre datos reales: 2.518 cabeceras de correo de 90 días, el uso de Faustus en `data/app.db` y los pendientes. Los planes que se siguen solos son §257, y el arreglo de `update_plan` es §256.
+
+- **Vulcan's Hoard · Organizar colección** (`0cb5c55`). Ordenar las carpetas de «Contornos pokemon» por líneas evolutivas y escribir sus fichas costó unas 350 llamadas y unas 40 correcciones.
+  - `collection_plan` (sólo lectura): lee una lista de referencia (`001 Bulbasaur > Ivysaur > Venusaur`, CSV o fichero), casa los elementos de una carpeta sin distinguir mayúsculas ni acentos y quitando prefijos numéricos, y devuelve el plan. Marca lo que ya está en su sitio, lo que no coincide, lo ambiguo y los conflictos.
+  - `collection_apply`: aplica el plan sin borrar ni sobrescribir nada y deja un diario para deshacer.
+  - `collection_undo`: deshace la última aplicación.
+  - `sheets_batch`: crea o refresca las fichas de todas las carpetas en una llamada; en modo esqueleto no usa modelo.
+  - Página «Organizar colección». 22 herramientas MCP.
+- **Tantalus's Hoard · Correo** (`a006471`).
+  - «Ofertas»: lee en sólo lectura, con la cuenta de Faustus, los correos de rebajas de tiendas de juegos y librerías. Saca el título, el descuento y la fecha de fin, los caduca a su fecha y sólo avisa cuando coinciden con una lista de deseos o un vigilante. La primera lectura es silenciosa.
+  - «Ruido»: los remitentes de promociones de los últimos 30 días, con su peso, la categoría de Gmail, el enlace de baja (como texto, nunca se abre) y qué Hoard los lee. Nunca da de baja, archiva ni mueve nada.
+  - 4 herramientas nuevas (`mail_deals`, `mail_deals_scan`, `mail_deal_set`, `mail_noise_report`). Con el radar de §258 son 53.
+- **Cassandra's Hoard · Webs públicas** (`082dd1f`). Vigila mybookhoard.com, watchhoard.com, gamer-hoard.com y cookhoard.com. La lista vive en `data/sites.json`, fuera del código.
+  - HTTP: estado, latencia y redirección. Una web cuenta como caída tras dos fallos seguidos.
+  - Certificado: días que quedan, emisor y cadena.
+  - DNS, y la caducidad del dominio por RDAP una vez al día.
+  - Incidencias en la misma línea de tiempo que los servicios; eventos `cassandra.site.*` y avisos de certificado a 21, 7 y 1 días y de dominio a 30, 7 y 1.
+  - Herramientas `sites_status`, `site_history` y `sites_watch`; tarjeta «Webs públicas» en el Panel. 15 herramientas.
+- **Writers-Hoard-Desktop** (`232d1a3`, subido). El flujo de Pages había fallado 47 veces porque el repo nunca tuvo Pages activado. Se cambió por un CI que verifica, prueba, compila y comprueba el tamaño del bundle.
+- **HoardLink** (`272963c`, subido). `scripts/sync_vendored.py` ya no entra en carpetas que empiezan por `_` o `.`. Antes refrescaba la copia de `_archivo\Atlas's Hoard`.
+
+Probado:
+- Suites: Vulcan 115, Tantalus 445, Cassandra 131 y HoardLink 381, todas en verde; `tests/test_plugins_hoard_family.py` 37.
+- En vivo, por MCP, desde Faustus: Vulcan 22 herramientas, Tantalus 53 y Cassandra 15, todas `available`.
+- En Chrome:
+  - Vulcan previsualizó un plan sobre una copia de prueba (6 grupos, 13 elementos a mover, 6 en su sitio, 1 sin coincidencia; con acentos y prefijos `0001_`).
+  - Tantalus mostró 6 ofertas vigentes y el informe de ruido (817 correos, 332 promocionales, 19 dominios de ruido).
+  - Cassandra mostró las cuatro webs en 200, con certificados a 63-77 días y dominios hasta julio-septiembre de 2027.
+- Los manifiestos `plugins/vulcan`, `plugins/tantalus` y `plugins/cassandra` son copia de los de cada app.
