@@ -218,6 +218,10 @@ def _map_luids_by_index(gpus: List[Dict[str, Any]], apps: List[Dict[str, Any]],
 
     free_gpus = [g for g in gpus if g["index"] not in mapping and g["used_bytes"] is not None]
     free_luids = {luid: int(b) for luid, b in (adapters or {}).items() if luid not in taken_luids}
+    joint = _joint_assignment(free_gpus, free_luids)
+    if joint:
+        mapping.update(joint)
+        return mapping
     pairs = sorted(
         (abs(int(g["used_bytes"]) - bytes_), g["index"], luid, bytes_)
         for g in free_gpus for luid, bytes_ in free_luids.items()
@@ -243,6 +247,45 @@ def _map_luids_by_index(gpus: List[Dict[str, Any]], apps: List[Dict[str, Any]],
         done_gpus.add(idx)
         done_luids.add(luid)
     return mapping
+
+
+def _joint_assignment(free_gpus: List[Dict[str, Any]], free_luids: Dict[str, int]) -> Dict[int, str]:
+    """Match every remaining card to an adapter at once, by the smallest total
+    difference between ``memory.used`` and the adapter's dedicated bytes.
+
+    Two cards holding similar amounts (12.5 and 11.9 GB) made the pair-by-pair
+    rule give up on both, although only one way of pairing them fits: the
+    other is off by more than a gigabyte on each card. The joint answer is
+    taken only when every pair is within tolerance and it beats the next best
+    pairing by a clear margin; otherwise ``{}`` and the pair-by-pair rule runs.
+    """
+    from itertools import permutations
+
+    if not free_gpus or len(free_gpus) > 6 or len(free_luids) < len(free_gpus):
+        return {}
+    luids = list(free_luids)
+    if len(luids) > 10:
+        return {}
+    used = {g["index"]: int(g["used_bytes"]) for g in free_gpus}
+    order = [g["index"] for g in free_gpus]
+    scored = []
+    for combo in permutations(luids, len(order)):
+        total, ok = 0, True
+        for idx, luid in zip(order, combo):
+            dist = abs(used[idx] - free_luids[luid])
+            scale = max(used[idx], free_luids[luid], 1)
+            if dist > _MATCH_FRACTION * scale + _MATCH_SLACK:
+                ok = False
+            total += dist
+        scored.append((total, ok, combo))
+    scored.sort(key=lambda t: t[0])
+    best_total, best_ok, best_combo = scored[0]
+    if not best_ok:
+        return {}
+    mean_scale = sum(max(used[i], free_luids[l], 1) for i, l in zip(order, best_combo)) / len(order)
+    if len(scored) > 1 and scored[1][0] - best_total <= _AMBIGUOUS_FRACTION * mean_scale:
+        return {}
+    return dict(zip(order, best_combo))
 
 
 def match_models_to_pids(models: List[Dict[str, Any]], pid_blobs: Dict[int, str],

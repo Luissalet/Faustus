@@ -82,3 +82,13 @@ def test_driver_contexts_on_other_cards_are_not_listed_as_cards():
     row, = out["models"]
     assert [g["index"] for g in row["gpus"]] == [2, 3]
     assert row["bytes"] == 21 * GB + 24576  # the total is still everything it holds
+
+
+def test_a_card_that_could_not_be_read_means_not_measured():
+    """nvidia-smi lists the runner on GPUs 2 and 3 but their bytes could not be
+    read; the KB of driver context on 0 and 1 are not a measurement."""
+    out = _build(runners=[{"model": "m", "root": "http://127.0.0.1:8081", "footprint_bytes": 17 * GB}],
+                 listening={8081: 7}, per_pid={7: {2: None, 3: None, 0: 24576, 1: 270336}})
+    row, = out["models"]
+    assert row["measured"] is False and row["bytes"] == 17 * GB
+    assert [g["index"] for g in row["gpus"]] == [2, 3]

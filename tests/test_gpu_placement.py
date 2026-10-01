@@ -346,3 +346,13 @@ def test_without_a_gpu_list_the_snapshot_is_asked(box, monkeypatch):
 def test_wddm_is_windows_only_and_quiet_elsewhere(monkeypatch):
     monkeypatch.setattr(gp.sys, "platform", "linux")
     assert gp._wddm() is None
+
+
+def test_two_cards_with_similar_totals_map_when_only_one_pairing_fits():
+    """Seen live: a model split over GPUs 2 and 3 (12.2 and 11.6 GiB used) and
+    a helper on every card left no exact witness, and the pair-by-pair rule gave
+    up on both because the totals are within 5 % of each other. Only one
+    pairing fits: the other is off by more than a gigabyte on each card."""
+    gpus = [dict(GPUS[0], mem_used=12459), dict(GPUS[1], mem_used=11891)]
+    adapters = {LUID0: 12465 * MIB, LUID1: 11897 * MIB, "0x00000000_0x00017667": 0}
+    assert gp.map_luids(gpus, [], [], adapters) == {LUID0: 0, LUID1: 1}

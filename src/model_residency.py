@@ -78,6 +78,11 @@ def process_gpu_bytes(gpus: List[Dict[str, Any]]) -> Dict[int, Dict[int, Optiona
 
 
 def _total(per: Dict[int, Optional[int]]) -> Optional[int]:
+    """Everything the process holds, or None when a card nvidia-smi lists it on
+    could not be read: a sum of the readable cards alone (a few KB of driver
+    context) passed for a measurement of a 21 GB model."""
+    if any(b is None for b in per.values()):
+        return None
     known = [b for b in per.values() if b is not None]
     return sum(known) if known else None
 
