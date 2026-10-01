@@ -289,8 +289,11 @@ async def test_triple_replacement_closes_middle_subscriber_and_preserves_save_or
     third = agent_runs.start(session_id, third_stream())
 
     # The superseded middle response closes immediately even though its task
-    # remains as the transitive barrier for the first run's partial save.
-    assert await asyncio.wait_for(middle_events_task, timeout=1) == []
+    # remains as the transitive barrier for the first run's partial save. Its
+    # only frame is the cancellation outcome: a stream that just closed would
+    # look like a finished answer to the client.
+    middle_events = await asyncio.wait_for(middle_events_task, timeout=1)
+    assert len(middle_events) == 1 and '"type": "cancelled"' in middle_events[0]
     assert middle.status == "stopped"
     assert middle.task is not None and not middle.task.done()
     assert not third_started.is_set()

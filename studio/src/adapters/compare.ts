@@ -349,6 +349,8 @@ export function recordVoteRemote(v: Vote, modelIds: string[]): Promise<boolean> 
     is_blind: v.blind,
     model_ids: modelIds.length === v.models.length ? modelIds : undefined,
     mode: v.mode,
+    // Same id as the later sync of this browser's votes, so it is stored once.
+    timestamp: v.timestamp,
   });
 }
 

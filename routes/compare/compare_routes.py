@@ -64,6 +64,18 @@ class RecordVoteRequest(BaseModel):
     # the rating key, so the same model is one row whatever endpoint served it.
     model_ids: Optional[List[str]] = None
     mode: Optional[str] = Field(None, max_length=20)
+    # When the browser kept this vote too, the time it stored: the vote then
+    # gets the same id the local-votes sync gives it, so it is stored once.
+    timestamp: float = 0
+
+
+def _local_vote_id(user, timestamp, models, winner, prompt) -> str:
+    """The id a vote kept by the browser gets on the server (see /record-batch)."""
+    import hashlib
+    digest = hashlib.sha1("|".join([
+        str(user or ""), str(int(timestamp)), ",".join(models), winner, (prompt or "")[:500],
+    ]).encode("utf-8")).hexdigest()[:32]
+    return f"local-{digest}"
 
 
 class LocalVote(BaseModel):
@@ -232,6 +244,8 @@ def setup_compare_routes(session_manager: SessionManager):
         # Store comparison record
         db = SessionLocal()
         try:
+            if db.query(Comparison.id).filter(Comparison.id == comp_id).first():
+                return {"status": "ok", "id": comp_id, "duplicate": True}
             comp = Comparison(
                 id=comp_id,
                 prompt=prompt,
@@ -316,7 +330,8 @@ def setup_compare_routes(session_manager: SessionManager):
     def record_comparison(request: Request, body: RecordVoteRequest):
         """Lightweight endpoint to record a comparison vote from the frontend."""
         user = get_current_user(request)
-        comp_id = str(uuid.uuid4())
+        comp_id = (_local_vote_id(user, body.timestamp, body.models, body.winner, body.prompt)
+                   if body.timestamp > 0 else str(uuid.uuid4()))
 
         model_a = body.models[0] if len(body.models) > 0 else ""
         model_b = body.models[1] if len(body.models) > 1 else ""
@@ -327,6 +342,8 @@ def setup_compare_routes(session_manager: SessionManager):
 
         db = SessionLocal()
         try:
+            if db.query(Comparison.id).filter(Comparison.id == comp_id).first():
+                return {"status": "ok", "id": comp_id, "duplicate": True}
             comp = Comparison(
                 id=comp_id,
                 prompt=body.prompt[:500],
@@ -354,7 +371,6 @@ def setup_compare_routes(session_manager: SessionManager):
         Idempotent: each vote gets an id derived from its owner, time, models,
         winner and prompt, and one already stored is skipped, so the browser
         can send its whole list every time without duplicating anything."""
-        import hashlib
         user = get_current_user(request)
         added = skipped = 0
         db = SessionLocal()
@@ -363,10 +379,7 @@ def setup_compare_routes(session_manager: SessionManager):
                 if len(v.models) < 2 or not v.winner:
                     skipped += 1
                     continue
-                digest = hashlib.sha1("|".join([
-                    str(user or ""), str(int(v.timestamp)), ",".join(v.models), v.winner, v.prompt[:500],
-                ]).encode("utf-8")).hexdigest()[:32]
-                comp_id = f"local-{digest}"
+                comp_id = _local_vote_id(user, v.timestamp, v.models, v.winner, v.prompt)
                 if db.query(Comparison.id).filter(Comparison.id == comp_id).first():
                     skipped += 1
                     continue

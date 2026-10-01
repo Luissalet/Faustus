@@ -218,6 +218,23 @@ def test_batch_sync_is_idempotent_and_validates(client):
     assert too_many.status_code == 422
 
 
+def test_a_vote_recorded_then_synced_from_the_browser_counts_once(client):
+    """The vote button stores the vote (with the raw model ids) and the browser
+    keeps its own copy, which the scoreboard later syncs. Seen live: the same
+    vote was then counted twice, once by id and once by label."""
+    vote = {"prompt": "Traduce al inglés: el tren sale a las siete", "models": ["27b · llama.cpp", "3b · helper"],
+            "winner": "27b · llama.cpp", "timestamp": 1790833300000, "mode": "chat"}
+    first = _record(client, vote["winner"], models=tuple(vote["models"]), prompt=vote["prompt"],
+                    model_ids=["27b", "3b"], mode="chat", timestamp=vote["timestamp"])
+    again = _record(client, vote["winner"], models=tuple(vote["models"]), prompt=vote["prompt"],
+                    model_ids=["27b", "3b"], mode="chat", timestamp=vote["timestamp"])
+    assert again["id"] == first["id"] and again.get("duplicate") is True
+    synced = client.post("/api/compare/record-batch", json={"votes": [vote]}).json()
+    assert synced == {"added": 0, "skipped": 1}
+    body = client.get("/api/compare/elo").json()
+    assert body["votes"] == 1 and [r["key"] for r in body["overall"]] == ["27b", "3b"]
+
+
 def test_deleting_a_comparison_changes_the_ratings(client):
     cid = _record(client, "m1")["id"]
     assert client.get("/api/compare/elo").json()["votes"] == 1
