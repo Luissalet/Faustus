@@ -90,6 +90,10 @@ OTHER_EFFECT_TOOLS = frozenset({
     # harness could reject a truthful "added to project objectives" receipt as
     # unsupported even though the dedicated tool had succeeded.
     "project_objectives", "manage_project_context",
+    # The screen: a theme, a panel, a toggle, the model. Live (01-10): after
+    # a successful `set_theme forest` the reply «He puesto el tema forest»
+    # was rejected as claims_without_mutation.
+    "ui_control",
 })
 # MCP tools (plugins, connectors) are only known here by name, so the verb in
 # the tool's own name decides whether a successful call is evidence for an

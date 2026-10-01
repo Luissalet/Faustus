@@ -69,3 +69,13 @@ def test_a_topic_is_not_a_theme(text):
     import src.agent_tools  # noqa: F401
     from src.agent_loop import _classify_agent_request
     assert "ui" not in (_classify_agent_request([], text).get("domains") or set())
+
+
+def test_a_reply_about_a_theme_change_is_backed_by_the_screen_tool():
+    from src.agent_harness import TurnLedger
+    ledger = TurnLedger(workspace=None, user_text="Pon el tema forest")
+    ledger.record("ui_control", "set_theme forest", {"ui_event": "set_theme", "theme_name": "forest", "results": "Theme changed to 'forest'"}, 1)
+    check = ledger.check_completion("Listo: el tema **forest** ya está aplicado en la interfaz.")
+    assert "claims_without_mutation" not in check["reasons"], check
+    fresh = TurnLedger(workspace=None, user_text="Pon el tema forest")
+    assert "claims_without_mutation" in fresh.check_completion("Listo: el tema **forest** ya está aplicado en la interfaz.")["reasons"]
