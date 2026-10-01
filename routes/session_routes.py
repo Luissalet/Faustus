@@ -281,6 +281,13 @@ def _stop_runs_for_deleted_sessions(session_ids=None) -> int:
             tool_approval_store.forget_session(sid)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Could not drop the pending approvals of deleted session %s: %s", sid, exc)
+        try:  # and so do its open questions (an approval card opens one too)
+            from src import question_store
+            for q in question_store.list_open(owner=None, limit=200):
+                if str(q.get("session_id") or "") == str(sid) and q.get("question_id"):
+                    question_store.cancel_question(str(q["question_id"]), reason="session_deleted")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not cancel the open questions of deleted session %s: %s", sid, exc)
     return stopped
 
 

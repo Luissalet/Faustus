@@ -9929,7 +9929,7 @@ Cierra OBJ-52. Cassandra ya no sólo contesta cuando se le pregunta: vigila.
 
   Si la espera se resuelve y vuelve, cuenta como una espera nueva. El estado lleva la última lectura, y el Panel tiene la tarjeta «Faustus te espera», con las esperas largas o el motivo cuando no puede leer la lista.
 - **Faustus, lista de atención** (`5e48dbd1` y `564de2b6`). Una tarjeta o una pregunta cuya ejecución ya había terminado no tenía `since` ni etiqueta, así que nadie podía saber cuánto llevaba esperando. Ahora se fecha con su tarjeta pendiente más antigua (`pending_session_since` del almacén de aprobaciones) o con la hora en que se abrió la pregunta, y lleva el nombre del chat.
-- **Faustus, borrar un chat** (`routes/session_routes.py`, `forget_session`). Al borrar un chat sus tarjetas de aprobación seguían pendientes, y figuraban como esperando, hasta que caducaban. Ahora se van con él.
+- **Faustus, borrar un chat** (`routes/session_routes.py`). Al borrar un chat, sus tarjetas de aprobación (`forget_session`) y sus preguntas abiertas seguían pendientes, y figuraban como esperando, hasta que caducaban. Ahora se van con él; cada tarjeta abre también una pregunta, así que hacía falta borrar las dos. Probado en vivo: una tarjeta real del 27B se borró con su chat y no quedó nada en la lista de atención.
 
 Probado:
 - Pruebas: `tests/test_attention_since.py`, `tests/test_tool_approvals_per_chat.py` y las de aprobaciones, borrado de sesiones y atención (575 en verde) en Faustus; 3 nuevas y la suite entera en Cassandra.
