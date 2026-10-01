@@ -3204,6 +3204,28 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "blender_scene",
+            "description": "Build and render a 3D scene described as typed JSON, headless with Blender, and verify it. A scene is {\"meta\": {...}, \"ops\": [{\"op\": \"add_mesh\", ...}, ...]}: new_scene, load_blend, save, delete, set_world, add_mesh, set_transform, add_empty, add_material, assign_material, add_modifier, add_light, add_camera, track_to, add_text, set_render, render, compositor_glare, import_model, export_model and assert (object_count, object_exists, material_assigned, resolution, engine, camera_active, bbox_within, file_exists). There is no free-form code: the scene is validated first (unknown ops or fields, wrong types, out-of-range values and paths outside the project folder come back as precise errors), then run in order inside Blender; a failing op is reported and the run continues unless meta.stop_on_error. Paths are relative to the session's project folder or start with ${PROJECT_ROOT}/ and cannot leave it. Actions: probe (is Blender installed, which version), schema (the format; call this first to see every op and field), validate (check a scene without running Blender), run (execute; returns per-op status, assertion results, the files written and the rendered image), smoke (a built-in scene that renders, saves and re-loads itself).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["probe", "schema", "validate", "run", "smoke"], "description": "What to do (default: run when a scene is given)"},
+                    "scene": {"type": "object", "description": "The scene: {\"meta\": {name, description, stop_on_error}, \"ops\": [...]}. Alternative: pass `ops` (and `meta`) directly."},
+                    "ops": {"type": "array", "items": {"type": "object"}, "description": "The list of ops, instead of scene.ops"},
+                    "meta": {"type": "object", "description": "Scene metadata when ops is given directly"},
+                    "folder": {"type": "string", "description": "Sub-folder of the session's project folder to work in (default: the session folder itself). Use one per model so files do not mix."},
+                    "timeout": {"type": "number", "description": "Seconds Blender may run (default 300 or the blender_timeout_seconds setting)"},
+                    "format": {"type": "string", "enum": ["summary", "json_schema"], "description": "schema action: compact text (default) or the full JSON Schema"},
+                    "op": {"type": "string", "description": "schema action: show only this op"},
+                    "engine": {"type": "string", "enum": ["workbench", "eevee", "cycles"], "description": "smoke action: render engine (default workbench, works without a GPU)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "doc_claims_check",
             "description": "Ground backticked claims in Markdown docs (file paths, dotted symbols, settings keys, API routes, tool names) in the actual code -- reports which ones are broken (the thing no longer exists) and which sections are stale (the code they cite changed after the doc section was last edited, with the commits in between). Use before closing a docs-writing task to catch stale references, or when asked 'is this doc still accurate'.",
             "parameters": {

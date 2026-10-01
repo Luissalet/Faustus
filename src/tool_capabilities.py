@@ -693,6 +693,19 @@ _register(
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
 _register(
+    # blender_scene (src/blender_scene): `run` starts the Blender executable on
+    # a fixed runner script with a validated, typed scene (no free-form code)
+    # and writes renders/.blend/model files only inside its own per-session
+    # folder under the data directory; probe/schema/validate only read. It also
+    # reads model and .blend files from that same folder. Classed with the other
+    # tools that write generated files into private storage (generate_image),
+    # plus the workspace read.
+    {"blender_scene"},
+    ToolEffect.READ_WORKSPACE,
+    ToolEffect.WRITE_PRIVATE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
+_register(
     # Reach (R1): reach_read/reach_search fetch attacker-reachable content
     # from arbitrary channels (web, youtube, github, reddit, x, hackernews,
     # rss, arxiv, wikipedia) -- same class as web_fetch/web_search.

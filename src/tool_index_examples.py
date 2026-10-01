@@ -1150,6 +1150,12 @@ EXAMPLES: Dict[str, List[str]] = {
         "why does this page give me so little useful text",
         "shrink this long article to the paragraphs about pricing",
     ],
+    "blender_scene": [
+        "renderiza una escena 3D con un cubo con bisel y una esfera sobre un suelo",
+        "build a 3D scene with a camera and a sun light and render it to a PNG",
+        "exporta este modelo a STL con Blender sin abrir la interfaz",
+        "comprueba si Blender está instalado y funciona en modo headless",
+    ],
     "doc_claims_check": [
         "check if the README still matches the code",
         "revisa si FAUSTUS.md tiene referencias rotas al código",

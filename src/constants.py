@@ -108,6 +108,9 @@ EMAIL_URGENCY_CACHE_DIR = os.path.join(DATA_DIR, "email_urgency_cache")
 SKILLS_DIR = os.path.join(DATA_DIR, "skills")
 GALLERY_DIR = os.path.join(DATA_DIR, "gallery")
 GALLERY_UPLOADS_DIR = os.path.join(DATA_DIR, "gallery_uploads")
+# Typed 3D scenes rendered with Blender (src/blender_scene): one folder per chat
+# session; every path a scene names must stay inside its folder.
+BLENDER_SCENES_DIR = os.path.join(DATA_DIR, "blender_scenes")
 MEMORY_VECTORS_DIR = os.path.join(DATA_DIR, "memory_vectors")
 
 # Paths with an intentional dedicated env override, defaulting under DATA_DIR.

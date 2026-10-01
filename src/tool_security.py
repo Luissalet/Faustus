@@ -147,6 +147,7 @@ NON_ADMIN_BLOCKED_TOOLS = BUILTIN_EMAIL_TOOLS | {
     "inspect_image",
     "plan_media_transform",
     "transform_media",
+    "blender_scene",
     "write_file",
     "edit_file",
     "apply_patch",

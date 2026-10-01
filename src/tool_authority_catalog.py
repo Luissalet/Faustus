@@ -44,6 +44,7 @@ DEFERRED_FAMILIES = {
     "project_board": re.compile(r"^(board_|meeting_actions_to_board$)"),
     "autonomy": re.compile(r"^(night_shift|bug_hunt|ci_failures|prior_art|doc_claims_check|recall_fixes)$"),
     "structural": re.compile(r"^structural_(search|rewrite)$"),
+    "scene_3d": re.compile(r"^blender_scene$"),
     "documents_ops": re.compile(r"^(pdf_ops|page_prune|check_score|research_podcast|design_canvas)$"),
     "self_management": re.compile(r"^(manage_instincts|memory_rules|branch_futures|capability_health|manage_teach_mode)$"),
     "messaging": re.compile(r"^whatsapp_"),

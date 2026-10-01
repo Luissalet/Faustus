@@ -102,6 +102,10 @@ _BUILTIN_SERVERS = {
     # Page pruning (src/research_prune.py): url/html/text + a question -> the
     # blocks worth reading, with scores. No owner-scoped data, no writes.
     "research_prune": ("mcp_servers/research_prune_server.py", "Built-in: Page pruning"),
+    # Typed 3D scenes rendered headless with Blender (src/blender_scene): probe,
+    # schema, validate, run, smoke. Writes only inside its own scenes folder
+    # (BLENDER_SCENES_DIR/mcp); no owner-scoped data.
+    "blender_scene": ("mcp_servers/blender_scene_server.py", "Built-in: Blender scenes"),
     # Execution: process handles (start/read/write_stdin/stop/list) and the
     # sandbox probe (src/process_manager.py, src/sandbox_probe.py). The server
     # process holds its own handles in its own store; it is not owner-scoped.
@@ -119,7 +123,7 @@ _BUILTIN_SERVERS = {
 # their tools: indexing both put two copies of each answer in the top-k and
 # pushed other relevant tools out of the turn (seen live: `code_graph_*` next
 # to `mcp__code_graph__code_graph_*` for one question).
-NATIVE_TWIN_SERVERS = frozenset({"code_graph", "prior_art", "research_prune", "execution"})
+NATIVE_TWIN_SERVERS = frozenset({"code_graph", "prior_art", "research_prune", "execution", "blender_scene"})
 
 # NPX-based built-in servers (run via npx, not Python).
 #

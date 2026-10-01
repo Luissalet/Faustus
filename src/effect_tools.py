@@ -38,7 +38,7 @@ _SAFE_HTTP_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 #: third-party connector writes.
 _BUILTIN_MCP_SERVERS = frozenset({
     "brain", "code_graph", "context_engine", "email", "image_gen", "memory", "prior_art", "rag",
-    "research_prune", "workers", "workflows", "browser", "devtools", "chrome-devtools", "playwright",
+    "research_prune", "blender_scene", "workers", "workflows", "browser", "devtools", "chrome-devtools", "playwright",
 })
 
 _WRITE_VERBS = frozenset({
