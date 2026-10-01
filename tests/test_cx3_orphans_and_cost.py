@@ -249,11 +249,15 @@ async def test_worker_ending_is_recorded_under_the_parent_run():
 @pytest.mark.asyncio
 async def test_run_report_tool_reads_each_view(monkeypatch, tmp_path):
     from src import effect_outbox as eo
-    from src.agent_tools.run_report_tool import RunReportTool
+    import importlib
+    # Patch the module object itself: other tests reload the agent_tools package,
+    # and a dotted-path patch then cannot find the submodule as an attribute.
+    rr = importlib.import_module("src.agent_tools.run_report_tool")
+    RunReportTool = rr.RunReportTool
     eo.set_db_path(str(tmp_path / "effects.sqlite3"))
     try:
         _seed_turn("rr", "s-tool")
-        monkeypatch.setattr("src.agent_tools.run_report_tool._owns", lambda owner: (lambda sid: True))
+        monkeypatch.setattr(rr, "_owns", lambda owner: (lambda sid: True))
         tool = RunReportTool()
         ctx = {"session_id": "s-tool", "owner": "alice"}
         cost = await tool.execute(json.dumps({"view": "cost"}), ctx)
@@ -272,7 +276,7 @@ async def test_run_report_tool_reads_each_view(monkeypatch, tmp_path):
         assert "No orphaned workers" in orphans["output"]
         bad = await tool.execute(json.dumps({"view": "nope"}), ctx)
         assert bad["exit_code"] == 1
-        monkeypatch.setattr("src.agent_tools.run_report_tool._owns", lambda owner: (lambda sid: False))
+        monkeypatch.setattr(rr, "_owns", lambda owner: (lambda sid: False))
         denied = await tool.execute(json.dumps({"view": "cost", "session_id": "someone-elses"}), ctx)
         assert denied["exit_code"] == 1
     finally:

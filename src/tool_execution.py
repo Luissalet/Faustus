@@ -1825,7 +1825,10 @@ async def _execute_tool_block_core(
         # unknown). A read-only result with no effect stays byte-for-byte as the
         # tool returned it (CALL-05).
         try:
-            if isinstance(output, tuple) and len(output) > 1 and isinstance(output[1], dict):
+            # A call refused before dispatch (connector or admin policy, "X: BLOCKED")
+            # never ran, so its refusal stays exactly as written.
+            _refused = isinstance(output, tuple) and isinstance(output[0], str) and output[0].endswith(": BLOCKED")
+            if isinstance(output, tuple) and len(output) > 1 and isinstance(output[1], dict) and not _refused:
                 from src.tool_result import effect_certainty as _certainty
                 _cert = _certainty(_typed_result, effect_class=_effect_class or "", raw=output[1])
                 if (_effect_class not in (None, "", "read")) or _cert not in ("", "none"):

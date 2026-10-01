@@ -71,7 +71,13 @@ def test_plan_mode_allows_qualified_readonly_email_discovery():
 
 def test_email_policy_name_aliases():
     """The alias rule every execution gate relies on."""
-    from src.tool_security import email_tool_policy_names
+    from src.tool_security import email_tool_policy_names as _names
+
+    def email_tool_policy_names(name):
+        # A wrapped tool's internal canonical id ("legacy.<name>") is one more
+        # spelling the tool authority adds; the rule here is about the user-
+        # facing ones.
+        return {n for n in _names(name) if not n.startswith("legacy.")}
 
     assert email_tool_policy_names("list_emails") == {
         "list_emails", "mcp__email__list_emails",
@@ -81,6 +87,9 @@ def test_email_policy_name_aliases():
     }
     # Non-email names alias only to themselves — including mcp__email__
     # spellings of tools the email server doesn't expose.
-    assert email_tool_policy_names("bash") == {"bash"}
+    # A registered tool aliases to its own spellings (bash / shell / ...),
+    # never to an email tool.
+    bash = email_tool_policy_names("bash")
+    assert {"bash", "shell"} <= bash and not any("email" in n for n in bash)
     assert email_tool_policy_names("mcp__email__not_a_tool") == {"mcp__email__not_a_tool"}
     assert email_tool_policy_names("mcp__other__list_emails") == {"mcp__other__list_emails"}

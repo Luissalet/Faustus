@@ -3105,7 +3105,7 @@ aside.fs-panel {
 }
 
 .fs-sat__bad {
-  color: var(--fs-danger, #c0392b);
+  color: var(--fs-danger);
 }
 
 .fs-sa__foot {

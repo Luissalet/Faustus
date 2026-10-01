@@ -81,6 +81,12 @@ def box(monkeypatch):
     # about the developer's machine, not about the fixture. A test that wants
     # orphans patches this itself (tests/test_health.py does).
     monkeypatch.setattr(gpu_placement, "orphan_runners", lambda gpus: [])
+    # Same for the model servers outside Ollama and the per-process residency
+    # list: both read the live machine, which changes between two samples.
+    async def _no_external():
+        return []
+    monkeypatch.setattr(sur, "_collect_external_runners", _no_external)
+    monkeypatch.setattr(sur.model_residency, "snapshot", lambda ollama, external, gpus: {"models": [], "others": []})
     sur._cache["ts"] = 0.0
     sur._cache["data"] = None
     yield state

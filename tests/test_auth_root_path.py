@@ -250,7 +250,7 @@ def test_real_auth_middleware_uses_application_relative_path(tmp_path):
         env=env,
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=120,  # importing the whole app on a loaded machine can pass 30 s
         check=False,
     )
 

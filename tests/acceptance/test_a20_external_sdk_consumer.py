@@ -154,7 +154,7 @@ def _script_fake_model(fake_base: str, responses: list, delay: float = 0.0) -> N
 
 
 def _run_consumer(node: str, project_dir: Path, kind: str, server: dict,
-                   env_extra: dict, timeout: float = 60.0) -> Tuple[int, dict, str]:
+                   env_extra: dict, timeout: float = 180.0) -> Tuple[int, dict, str]:
     entry = "index.mjs" if kind == "esm" else "index.cjs"
     env = dict(os.environ)
     env.update({

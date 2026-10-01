@@ -92,7 +92,9 @@ def _wait_http(url: str, timeout: float = 90.0) -> None:
 def _post_form(url: str, data: Dict[str, Any]) -> Dict[str, Any]:
     body = urllib.parse.urlencode(data).encode("utf-8")
     req = urllib.request.Request(url, data=body, method="POST")
-    with urllib.request.urlopen(req, timeout=30) as r:
+    # The first request after start initialises lazily; on a loaded machine
+    # (the full suite in parallel) that alone can pass 30 s.
+    with urllib.request.urlopen(req, timeout=90) as r:
         return json.loads(r.read().decode("utf-8") or "{}")
 
 

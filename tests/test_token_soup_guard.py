@@ -8,7 +8,14 @@ server's own HTTP 500.
 """
 import pytest
 
-from src.llm_core import DegenerateOutput, _DegenerateStreamGuard, _token_soup_reason
+import src.llm_core as _llm_core
+from src.llm_core import _DegenerateStreamGuard, _token_soup_reason
+
+
+def _degenerate():
+    # Looked up when the test runs: other tests reload src.llm_core, which
+    # rebinds the class the guard raises inside the same module namespace.
+    return _llm_core.DegenerateOutput
 
 SOUP = (
     "orque多大wanysofarotre成果 compens狼癞wanyotre Jus控eel Jusubinularyolderswany狼eitasofar大义"
@@ -27,14 +34,14 @@ def _feed(text, chunk=3, reasoning=True):
 
 
 def test_the_live_soup_is_caught_in_the_reasoning_channel():
-    with pytest.raises(DegenerateOutput) as exc:
+    with pytest.raises(_degenerate()) as exc:
         _feed(SOUP)
     assert "word salad" in exc.value.reason
     assert "restarting it" in exc.value.reason
 
 
 def test_and_in_the_content_channel():
-    with pytest.raises(DegenerateOutput):
+    with pytest.raises(_degenerate()):
         _feed(SOUP, reasoning=False)
 
 

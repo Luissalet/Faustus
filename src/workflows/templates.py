@@ -272,7 +272,10 @@ def _check(param: Parameter, value: Any) -> Tuple[Any, Optional[str]]:
     if "@@" in value:
         return None, f"{param.name}: may not contain '@@'"
     if param.kind == "folder":
-        if not (os.path.isabs(value) or re.match(r"^[A-Za-z]:[\\/]", value) or value.startswith("\\\\")):
+        # A rooted POSIX path counts on every host: since Python 3.13 Windows no
+        # longer calls "/srv/in" absolute, but the workflow may run in a container.
+        if not (os.path.isabs(value) or value.startswith("/") or re.match(r"^[A-Za-z]:[\\/]", value)
+                or value.startswith("\\\\")):
             return None, f"{param.name}: must be an absolute folder path"
         if ".." in re.split(r"[\\/]+", value):
             return None, f"{param.name}: may not contain '..'"

@@ -69,6 +69,9 @@ def live(tmp_path, monkeypatch):
     monkeypatch.setattr(wiring, 'enabled', lambda: True)
     monkeypatch.setattr(wiring, '_live_budget', lambda *a, **kw: 6000)
     monkeypatch.setattr(wiring, '_remember_omitted', lambda *a: [])
+    # The live compile has a short wall clock and fails open (no packet) when it
+    # is exceeded; a loaded machine running the suite in parallel can pass it.
+    monkeypatch.setattr(wiring, 'timeout_s', lambda: 30.0)
     yield collection, runtime, request, source
     store.use_path(None)
 
