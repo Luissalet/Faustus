@@ -420,3 +420,16 @@ async def test_static_prepass_reports_undefined_names_first(tmp_path, monkeypatc
     assert static[0].verdict == "bug" and static[0].severity == "high"
     assert "offset" in static[0].root_cause and static[0].traceback.startswith("pkg/broken.py:2")
     assert any(n.startswith("static pre-pass") for n in report.notes)
+
+
+def test_a_file_saved_with_a_byte_order_mark_is_planned_per_function(tmp_path):
+    """Windows editors and PowerShell often save UTF-8 with a BOM; read as plain
+    UTF-8 the BOM made ast.parse fail, so the hunt fell back to one file-level
+    target and the model saw a stray character (live 01-10)."""
+    from src import bug_hunt
+    (tmp_path / "pricing.py").write_bytes(
+        "﻿def apply_discount(price, percent):\n    return price\n\n\n"
+        "def split_bill(total, people):\n    return [total / people] * people\n".encode("utf-8"))
+    targets = bug_hunt.plan_targets(str(tmp_path), "pricing.py")
+    assert sorted(t.symbol for t in targets) == ["apply_discount", "split_bill"]
+    assert all("﻿" not in t.source for t in targets)

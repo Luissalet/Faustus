@@ -267,7 +267,7 @@ def _grep_callers(workspace: str, symbol: str, exclude_path: str, limit: int = 5
             if rel == exclude_path:
                 continue
             try:
-                with open(full, "r", encoding="utf-8", errors="replace") as f:
+                with open(full, "r", encoding="utf-8-sig", errors="replace") as f:
                     for i, line in enumerate(f, 1):
                         if pattern.search(line):
                             out.append(f"{rel}:{i}: {line.strip()[:120]}")
@@ -299,7 +299,7 @@ def _callers_for(workspace: str, path: str, symbol: str, limit: int = 5) -> List
 def _targets_from_python_file(workspace: str, root: str, rel: str, only_symbol: str = "") -> List[Target]:
     abs_path = os.path.join(root, *rel.split("/"))
     try:
-        with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
+        with open(abs_path, "r", encoding="utf-8-sig", errors="replace") as f:
             text = f.read()
     except OSError:
         return []
@@ -396,7 +396,7 @@ def plan_targets(workspace: str, target: str) -> List[Target]:
 def _file_level_target(root: str, rel: str) -> Target:
     abs_path = os.path.join(root, *rel.split("/"))
     try:
-        with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
+        with open(abs_path, "r", encoding="utf-8-sig", errors="replace") as f:
             text = f.read()
     except OSError:
         text = ""
@@ -845,7 +845,7 @@ def _existing_test_names(path: str) -> set:
     if not os.path.isfile(path):
         return set()
     try:
-        with open(path, "r", encoding="utf-8", errors="replace") as f:
+        with open(path, "r", encoding="utf-8-sig", errors="replace") as f:
             tree = ast.parse(f.read())
     except (OSError, SyntaxError):
         return set()
