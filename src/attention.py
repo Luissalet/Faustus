@@ -389,6 +389,28 @@ def _default_pending_approvals(owner: str) -> Iterable[str]:
     return tool_approval_store.pending_session_ids(owner=owner)
 
 
+def _default_pending_approval_since(owner: str) -> Dict[str, float]:
+    try:
+        from src.tool_approvals import tool_approval_store
+        return tool_approval_store.pending_session_since(owner=owner)
+    except Exception:  # noqa: BLE001 - a missing age never breaks the tray
+        return {}
+
+
+def _iso_ts(value: Any) -> Optional[float]:
+    """Epoch seconds from an ISO timestamp (naive = UTC), or None."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        from datetime import datetime, timezone
+        dt = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    except ValueError:
+        return None
+
+
 def _default_open_questions(owner: str) -> List[Dict[str, Any]]:
     from src import question_store
     try:
@@ -542,12 +564,18 @@ def attention_for_owner(
     # report (e.g. the detached run already ended, the card is what is
     # keeping the chat "open") still needs a row — never dropped just
     # because the run itself is no longer live.
+    # Such a row has no live run to date it, so it is dated by the card or
+    # the question itself: a watcher can then say how long it has waited.
+    approval_since = (_default_pending_approval_since(owner)
+                      if pending_approval_sessions is None else {})
     for sid in approval_sessions:
         if sid not in infos:
-            infos[sid] = RunInfo(session_id=sid, has_pending_approval=True)
+            infos[sid] = RunInfo(session_id=sid, has_pending_approval=True,
+                                 started_at=approval_since.get(sid))
     for sid in question_by_session:
         if sid not in infos:
-            infos[sid] = RunInfo(session_id=sid, has_pending_question=True)
+            infos[sid] = RunInfo(session_id=sid, has_pending_question=True,
+                                 started_at=_iso_ts(question_by_session[sid].get("opened_at")))
         elif not infos[sid].has_pending_question:
             infos[sid] = replace(infos[sid], has_pending_question=True)
 

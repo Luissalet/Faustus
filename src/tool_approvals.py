@@ -862,6 +862,20 @@ class ToolApprovalStore:
                 if pending.owner == normalized_owner and pending.session_id
             })
 
+    def pending_session_since(self, *, owner: Any) -> dict[str, float]:
+        """`{session_id: created_at of its oldest pending card}` for this owner:
+        how long each parked chat has been waiting on the person."""
+        now = time.time()
+        normalized_owner = _normalized_owner(owner)
+        out: dict[str, float] = {}
+        with self._lock:
+            self._purge_expired_locked(now)
+            for pending in self._pending.values():
+                if pending.owner == normalized_owner and pending.session_id:
+                    prev = out.get(pending.session_id)
+                    out[pending.session_id] = pending.created_at if prev is None else min(prev, pending.created_at)
+        return out
+
     def peek(self, approval_id: Any) -> PendingToolApproval | None:
         now = time.time()
         with self._lock:
