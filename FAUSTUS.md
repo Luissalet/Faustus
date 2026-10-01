@@ -9838,3 +9838,23 @@ Al repasar en la instancia 7001 las comprobaciones pendientes que no necesitan h
 - **Tope del bloque de memoria.** La ruta ya decía cuántas reglas dejaba fuera el tope de caracteres, pero la vista previa «Lo que ve el modelo» solo enseñaba el tamaño. Ahora dice cuántas quedaron fuera y si la primera se recortó. Probado con seis reglas y un tope de 400: «261 of 400 characters · 5 rules left out by the 400-character cap».
 - **Conceptos del proyecto.** Probado con datos: grafo, clic en un nodo, referencia rota en rojo con la insignia «Stale». Una relación entrante se leía «web-app → configured_by →» sin destino; ahora nombra el concepto seleccionado en su extremo.
 - **Informes de Deep Research tras recargar.** Los que no lanzó ese navegador solo tenían el enlace al informe visual; ahora se abren ahí mismo con su resumen de la ejecución (duración, rondas, búsquedas, URLs, páginas podadas, confianza, por qué paró, citas).
+
+
+## 248. Servidores de modelos que se reinician solos (01-10-2026)
+
+El 8081 se quedó tres veces contestando «////» a todo y el ayudante del 8082 pasó horas devolviendo «????» a cada título y resumen, hasta que alguien los reinició a mano. Ahora lo hace Faustus (`src/model_server_heal.py`):
+
+- **Cuándo mira.** Cuando el vigía de basura corta un flujo por una racha de un solo símbolo, cuando una llamada entera vuelve hecha de un solo símbolo repetido (el «????» del ayudante) y cuando el bucle del agente detecta el colapso. Un bucle de razonamiento es cosa del modelo y no dispara nada. El aviso del chat añade que Faustus lo está comprobando.
+- **Cómo lo confirma.** Le pide un saludo de una línea. Si contesta normal, no se toca. Solo servidores de esta máquina (loopback); uno remoto nunca.
+- **Cómo lo reinicia**, por orden: un motor gestionado por Faustus se para y se arranca con su perfil; si no, el comando configurado para ese puerto; si no, si el proceso que escucha lo lanzó un script que sigue vivo (PowerShell, cmd, bash…), se termina el servidor y el script lo vuelve a levantar. Si no hay ninguna de las tres, no lo mata (quedaría caído) y dice que hace falta reiniciarlo a mano. Después espera a que vuelva a escuchar, a que `/health` diga ok y a que el saludo salga bien.
+- **Sin bucles ni carreras.** Varias comprobaciones del mismo puerto comparten un intento; un fichero de bloqueo por puerto hace que dos instancias de Faustus no lo reinicien a la vez (la segunda espera a la primera); si sigue roto menos de 3 minutos después de un reinicio, no lo vuelve a reiniciar y lo dice.
+- **Ajustes** (Agente → «Local model servers»): `model_server_auto_heal` (activado), `model_server_restart_commands` (`host:puerto=comando` para servidores sin script lanzador) y `model_server_heal_timeout_s` (420 s, lo que tarda en cargar un modelo grande).
+- **API y MCP.** `GET /api/engines/heal/status` (activado, comandos, en curso y últimos intentos) y `POST /api/engines/heal {url, model}` (administrador, solo loopback). La herramienta MCP `model_server_check` del servidor de workers hace las dos cosas: sin `url` da el estado, con `url` comprueba y reinicia si hace falta.
+
+Los lanzadores de la máquina:
+
+- `D:\LocalAI\_claude_tmp\Start-LlamaQ4.ps1` queda abierto y vuelve a arrancar el q4 cada vez que se cierra; `Stop-LlamaQ4.ps1` lo para del todo (deja una marca para que el bucle no lo levante). Arranca con una ranura y `--cache-ram 0`.
+- `D:\LocalAI\Start-LlamaServer.ps1` (el q8) ya tenía su bucle con vigilante; ahora arranca también con `--cache-ram 0`, porque la tercera rotura fue con una sola ranura y tras muchas entradas de esa caché en RAM.
+- El perfil del ayudante 3B en la 7000 arranca solo en la GPU 2 (`CUDA_VISIBLE_DEVICES=2`); antes ocupaba 1,2–1,4 GB en cada una de las cuatro.
+
+Probado en Windows: 14 pruebas nuevas y las de motores, `llm_core`, ajustes y MCP (564 en total). En vivo contra el 8081 real, con la primera comprobación forzada a «basura»: terminó el PID 164216, el script lanzador lo levantó como 113724 y el saludo volvió bien en 31 s. `POST /api/engines/heal` y `model_server_check` por el puente MCP contestan «healthy» con el 8081 sano, y el grupo de ajustes se ve en Agente sin errores de consola. El ayudante del 8082 de la 7000, roto con «????», se reinició en la GPU 2 y contesta «Hi.».
