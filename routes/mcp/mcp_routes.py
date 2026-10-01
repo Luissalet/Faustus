@@ -259,7 +259,8 @@ def _apply_extension_governance(
     extension_manifest.attach_security_scan(server_id, scan.to_dict())
     from src.settings import get_setting
     security_quarantined = False
-    if scan.has_critical() and bool(get_setting("security_scan_block_critical", True)):
+    if scan.has_critical() and bool(get_setting("security_scan_block_critical", True)) \
+            and not extension_manifest.security_scan_already_approved(server_id, scan.to_dict()):
         if not extension_manifest.is_quarantined_for_permissions(server_id):
             extension_manifest.quarantine_for_security(server_id)
         security_quarantined = True
@@ -294,7 +295,8 @@ def scan_connected_tools(mcp_manager: Any, server_id: str, *, name: str, transpo
         quarantined = False
         if scan.has_critical() and bool(get_setting("security_scan_block_critical", True)) \
                 and extension_manifest.get_manifest(server_id) is not None \
-                and not extension_manifest.is_quarantined_for_permissions(server_id):
+                and not extension_manifest.is_quarantined_for_permissions(server_id) \
+                and not extension_manifest.security_scan_already_approved(server_id, scan_dict):
             extension_manifest.quarantine_for_security(server_id)
             quarantined = True
         return {"security_scan": scan_dict, "security_scan_quarantined": quarantined}
@@ -1328,7 +1330,8 @@ def setup_mcp_routes(mcp_manager: McpManager):
         from src.settings import get_setting
         if scan.has_critical() and bool(get_setting("security_scan_block_critical", True)) \
                 and extension_manifest.get_manifest(server_id) is not None \
-                and not extension_manifest.is_quarantined_for_permissions(server_id):
+                and not extension_manifest.is_quarantined_for_permissions(server_id) \
+                and not extension_manifest.security_scan_already_approved(server_id, scan_dict):
             extension_manifest.quarantine_for_security(server_id)
         released = None
         if not scan.has_critical() and extension_manifest.is_quarantined_for_security(server_id):

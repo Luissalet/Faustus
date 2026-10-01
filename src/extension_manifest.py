@@ -203,6 +203,10 @@ def record_install_or_update(
     if not quarantined and prior and prior.get("pending_approval_reason") == "security_scan":
         manifest["pending_approval"] = True
         manifest["pending_approval_reason"] = "security_scan"
+    if prior and prior.get("security_scan_approved"):
+        # The findings an admin accepted stay accepted across an update; a
+        # different critical finding has a different fingerprint anyway.
+        manifest["security_scan_approved"] = prior["security_scan_approved"]
     _save_one(server_id, manifest)
     if quarantined:
         _quarantine(server_id)
@@ -287,16 +291,45 @@ def is_quarantined_for_security(server_id: str) -> bool:
                 and manifest.get("pending_approval_reason") == "security_scan")
 
 
+def critical_findings_fingerprint(scan: Optional[Dict[str, Any]]) -> str:
+    """One hash for the CRITICAL findings of a scan (rule, file, snippet),
+    "" when there are none. What an admin approves is this set: the same
+    findings on the next scan stay approved, a new one does not."""
+    rows = sorted(
+        (str(f.get("rule_id") or ""), str(f.get("file") or ""), str(f.get("snippet") or "").strip())
+        for f in ((scan or {}).get("findings") or [])
+        if isinstance(f, dict) and str(f.get("severity") or "").lower() == "critical"
+    )
+    if not rows:
+        return ""
+    return hashlib.sha256(json.dumps(rows, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def security_scan_already_approved(server_id: str, scan: Optional[Dict[str, Any]]) -> bool:
+    """Whether an admin already accepted exactly these critical findings for
+    this server. Live (01-10): an approved server was scanned again on its
+    next connection, found the same finding and was held again, so an
+    approval did not last past a restart."""
+    manifest = get_manifest(server_id)
+    approved = (manifest or {}).get("security_scan_approved")
+    fp = critical_findings_fingerprint(scan)
+    return bool(fp and approved and approved == fp)
+
+
 def approve_security_scan(server_id: str) -> Dict[str, Any]:
     """Explicit admin override of a security-scan quarantine. Mirrors
     `approve_new_permissions` but only lifts a quarantine THIS module placed
-    for `pending_approval_reason == "security_scan"`."""
+    for `pending_approval_reason == "security_scan"`. The critical findings
+    it accepts are remembered (`security_scan_already_approved`)."""
     manifest = get_manifest(server_id)
     if manifest is None:
         raise ValueError(f"no manifest recorded for {server_id!r}")
     manifest = dict(manifest)
     manifest["pending_approval"] = False
     manifest.pop("pending_approval_reason", None)
+    fp = critical_findings_fingerprint(manifest.get("security_scan"))
+    if fp:
+        manifest["security_scan_approved"] = fp
     _save_one(server_id, manifest)
     _unquarantine(server_id)
     return manifest

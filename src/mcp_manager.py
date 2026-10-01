@@ -941,6 +941,38 @@ def _quarantined_for_security(server_id: str) -> bool:
     except Exception:  # noqa: BLE001 - a broken manifest store never blocks a connection
         return False
 
+async def _security_hold_still_needed(server_id: str, *, name: str, transport: str,
+                                     command: Optional[str], args, env) -> bool:
+    """Scan a held server's launch line and local code again, statically
+    (nothing runs), before refusing to start it. The hold is lifted when the
+    scan no longer finds anything critical, or finds only the critical
+    findings an admin already approved; otherwise it stays. Live (01-10):
+    three servers stayed held with no critical finding left (the rule had
+    become more precise), and since a held server is never started, the
+    scan after connecting that would have released them never ran.
+    Never raises; True keeps the hold."""
+    try:
+        from src import extension_manifest, security_policy
+        from routes.mcp.mcp_routes import scan_mcp_server_config
+        scan = await asyncio.to_thread(
+            scan_mcp_server_config, name=name, transport=transport,
+            command=command, args=list(args or []), env=dict(env or {}),
+        )
+        found = scan.to_dict()
+        extension_manifest.attach_security_scan(server_id, found)
+        if scan.has_critical() and not extension_manifest.security_scan_already_approved(server_id, found):
+            return True
+        manifest = extension_manifest.approve_security_scan(server_id)
+        security_policy.consent_store.grant(
+            server_id, "*", security_policy.effects_for_declared_permissions(manifest.get("permissions")))
+        logger.info("[mcp] %s: security hold lifted, a fresh scan finds %s", name,
+                    "only approved findings" if scan.has_critical() else "nothing critical")
+        return False
+    except Exception as exc:  # noqa: BLE001 - when in doubt, keep the hold
+        logger.warning("[mcp] %s: could not re-check its security hold: %s", name, exc)
+        return True
+
+
 class McpManager:
     """Manages MCP server connections and tool routing."""
 
@@ -1018,7 +1050,8 @@ class McpManager:
         for an explicit override is not started at all: for a stdio server,
         starting it is running its code, which is what the quarantine is for.
         """
-        if _quarantined_for_security(server_id):
+        if _quarantined_for_security(server_id) and await _security_hold_still_needed(
+                server_id, name=name, transport=transport, command=command, args=args, env=env):
             self._connections[server_id] = {
                 "status": "error", "name": name, "quarantined": True,
                 "error": (f"{name} was not started: its security pre-scan found critical issues. "
