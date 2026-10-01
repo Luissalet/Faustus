@@ -13,12 +13,14 @@ What it does, for a loopback endpoint only:
    a model looping on a real prompt is the harness's business, not a broken
    server.
 2. Restart the server, the first way that applies:
-   * a managed engine (Settings > engines): stop and start it;
-   * a command set for that host:port in ``model_server_restart_commands``
-     (``"127.0.0.1:8081=powershell -File D:\\LocalAI\\Restart-LlamaServer.ps1"``);
    * a supervised server: the process listening on the port was started by a
      script that is still running (a launcher that starts the server again
-     when it exits). Ending the server process is then a restart.
+     when it exits). Ending the server process is then a restart, with the
+     command that started it -- a managed engine for the same port may
+     describe a different model, so the live launcher goes first;
+   * a managed engine (Settings > engines): stop and start it;
+   * a command set for that host:port in ``model_server_restart_commands``
+     (``"127.0.0.1:8081=powershell -File D:\\LocalAI\\Restart-LlamaServer.ps1"``).
    A server with none of these is left alone and the result says why.
 3. Wait for the port, ``/health`` and a sane greeting again.
 
@@ -282,17 +284,20 @@ async def _heal_once(url: str, model: str, reason: str) -> Dict[str, Any]:
                         else "another instance was restarting it and it did not come back sane"})
     try:
         _LAST_RESTART[f"{port}"] = time.time()
-        if engine is not None:
+        if supervisor is not None and pid:
+            # The live server's own launcher is still running and starts it again with the command it was started
+            # with. A managed engine registered for the same port may describe another model: live 01-10 a q4
+            # server under its watchdog was "restarted" through the managed q8 engine, and both loaded at once.
+            how = f"ended PID {pid}; its launcher {supervisor['name']} (PID {supervisor['pid']}) starts it again"
+            started = await _end_process(int(pid))
+            back = started and await _wait_back(url, model, port, cfg["timeout_s"])
+        elif engine is not None:
             how = f"managed engine {engine.get('id')}"
             ok = await engine_swap.restart_managed_engine(engine)
             back = ok and bool(await engine_swap.generates_sanely(url, model))
         else:
-            if command:
-                how = "restart command"
-                started = await asyncio.to_thread(_run_command, command)
-            else:
-                how = f"ended PID {pid}; its launcher {supervisor['name']} (PID {supervisor['pid']}) starts it again"
-                started = await _end_process(int(pid))
+            how = "restart command"
+            started = await asyncio.to_thread(_run_command, command)
             back = started and await _wait_back(url, model, port, cfg["timeout_s"])
         return _record({**base, "action": "restarted" if back else "failed", "how": how,
                         "detail": "answers sanely again" if back else "did not come back answering sanely"})

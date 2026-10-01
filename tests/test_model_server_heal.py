@@ -78,6 +78,47 @@ def test_a_supervised_server_is_ended_and_comes_back(monkeypatch):
     assert heal.status()["recent"][-1]["action"] == "restarted"
 
 
+def test_a_supervised_server_goes_back_through_its_launcher_not_a_managed_engine(monkeypatch):
+    """Live 01-10: a q4 server kept alive by its watchdog got "restarted" through a managed engine registered for
+    the same port with the q8 command, and both models loaded at once."""
+    _sanity(monkeypatch, [False])
+    ended = []
+    monkeypatch.setattr(engine_swap, "restartable_engine_for_url", lambda url: {"id": "engine-q8"})
+
+    async def no_engine(engine):
+        pytest.fail("the managed engine describes another model; the live launcher restarts this one")
+    monkeypatch.setattr(engine_swap, "restart_managed_engine", no_engine)
+    monkeypatch.setattr(heal, "listener_pid", lambda port: 4242)
+    monkeypatch.setattr(heal, "supervisor_of", lambda pid: {"pid": 7, "name": "powershell.exe", "cmdline": "x"})
+
+    async def end(pid):
+        ended.append(pid)
+        return True
+
+    async def back(url, model, port, timeout_s):
+        return True
+    monkeypatch.setattr(heal, "_end_process", end)
+    monkeypatch.setattr(heal, "_wait_back", back)
+    out = asyncio.run(heal.heal(URL, "m"))
+    assert out["action"] == "restarted" and ended == [4242] and "launcher" in out["how"]
+
+
+def test_without_a_launcher_the_managed_engine_restarts_it(monkeypatch):
+    _sanity(monkeypatch, [False, True])
+    used = []
+    monkeypatch.setattr(engine_swap, "restartable_engine_for_url", lambda url: {"id": "engine-1"})
+
+    async def restart(engine):
+        used.append(engine["id"])
+        return True
+    monkeypatch.setattr(engine_swap, "restart_managed_engine", restart)
+    monkeypatch.setattr(heal, "listener_pid", lambda port: 4242)
+    monkeypatch.setattr(heal, "supervisor_of", lambda pid: None)
+    monkeypatch.setattr(heal, "_end_process", lambda pid: pytest.fail("a managed engine is restarted, not killed"))
+    out = asyncio.run(heal.heal(URL, "m"))
+    assert out["action"] == "restarted" and used == ["engine-1"]
+
+
 def test_a_broken_server_nothing_can_restart_is_reported_not_killed(monkeypatch):
     _sanity(monkeypatch, [False])
     monkeypatch.setattr(heal, "listener_pid", lambda port: 4242)
