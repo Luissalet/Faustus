@@ -2414,6 +2414,13 @@ class ToolRunSecurityContext:
             return ToolGateDecision(True)
         if self._rereads_own_artifact(tool_name, content):
             return ToolGateDecision(True)
+        # page_find / page_window only search or page the browser snapshot this
+        # session already stored -- the page the model has just opened -- so
+        # there is nothing private or new for injected text to reach. Seen live:
+        # "open this page and find X without reading it all" stopped at a card
+        # on the find, after the navigate had armed the gate.
+        if tool_name in {"page_find", "page_window"}:
+            return ToolGateDecision(True)
         if self.user_request and (
             tool_name not in _WRITES_OUTSIDE_TEXT
             or _action_from_content(str(tool_name), content) in ("list", "search")

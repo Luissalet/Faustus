@@ -32,3 +32,14 @@ def test_any_other_artifact_still_asks():
     assert ctx.decision_for("read_artifact", {"artifact_id": OTHER}).allowed is False
     assert ctx.decision_for("read_artifact", {"artifact_id": OWN, "also": OTHER}).allowed is False
     assert ctx.decision_for("read_artifact", {}).allowed is False
+
+
+def test_searching_the_page_snapshot_this_session_stored_reads_without_a_card():
+    """`page_find`/`page_window` only search or page the snapshot the browser
+    already stored for this session; seen live, the find after a navigate
+    stopped at a card."""
+    ctx = _armed()
+    assert ctx.decision_for("page_find", {"query": "Quebec"}).allowed is True
+    assert ctx.decision_for("page_window", {"window": 2}).allowed is True
+    # the rest of the gate is untouched
+    assert ctx.decision_for("read_artifact", {"artifact_id": OTHER}).allowed is False
