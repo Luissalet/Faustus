@@ -950,5 +950,22 @@ class ToolApprovalStore:
                 self._persist_locked()
         return retired_ids, carried_taint
 
+    def forget_session(self, session_id: Any) -> int:
+        """Drop every pending card of a chat that is being deleted, whoever
+        owns it (the delete route already checked the owner). Without this a
+        deleted chat's card stayed pending, and listed as waiting, until its
+        TTL ran out. Returns how many were dropped."""
+        normalized_session = str(session_id or "")
+        if not normalized_session:
+            return 0
+        with self._lock:
+            dropped = [approval_id for approval_id, pending in self._pending.items()
+                       if pending.session_id == normalized_session]
+            for approval_id in dropped:
+                self._pending.pop(approval_id, None)
+            if dropped:
+                self._persist_locked()
+        return len(dropped)
+
 
 tool_approval_store = ToolApprovalStore()

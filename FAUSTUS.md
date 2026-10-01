@@ -9918,3 +9918,19 @@ Salió al probar §251 desde el chat de la 7000, con Cassandra conectada y el 27
 Probado:
 - `tests/test_step_snapshot_risk_param.py` (4 pruebas) y las de instantáneas y riesgo declarado: 158 en verde.
 - En vivo con `scripts/faustus_run.py` y el 27B q4: «Con Cassandra's Hoard: ¿Faustus me está esperando para algo?» llamó a `mcp__ad7ca654__faustus_attention`, que respondió (exit 0) en 3 rondas y 80 s, con 1 pregunta esperando y 6 ejecuciones sin revisar. Antes del arreglo, la misma pregunta acababa con cuatro rechazos y una respuesta sin datos.
+
+## 253. Avisos de esperas largas y una lista de atención con fecha y nombre (01-10-2026)
+
+Cierra OBJ-52. Cassandra ya no sólo contesta cuando se le pregunta: vigila.
+
+- **Cassandra's Hoard** (`6934fd5` en su `main`). Un vigilante lee la lista de atención cada minuto con el token de sólo lectura. Cuando una aprobación o una pregunta lleva al menos `CASSANDRA_FAUSTUS_WAIT_MIN` minutos esperando (15 por defecto; 0 lo apaga), lo anuncia una sola vez:
+  - por el bus de la familia, como `cassandra.faustus.waiting`;
+  - si Boop está configurado, como aviso sin título ni contenido del chat.
+
+  Si la espera se resuelve y vuelve, cuenta como una espera nueva. El estado lleva la última lectura, y el Panel tiene la tarjeta «Faustus te espera», con las esperas largas o el motivo cuando no puede leer la lista.
+- **Faustus, lista de atención** (`5e48dbd1` y `564de2b6`). Una tarjeta o una pregunta cuya ejecución ya había terminado no tenía `since` ni etiqueta, así que nadie podía saber cuánto llevaba esperando. Ahora se fecha con su tarjeta pendiente más antigua (`pending_session_since` del almacén de aprobaciones) o con la hora en que se abrió la pregunta, y lleva el nombre del chat.
+- **Faustus, borrar un chat** (`routes/session_routes.py`, `forget_session`). Al borrar un chat sus tarjetas de aprobación seguían pendientes, y figuraban como esperando, hasta que caducaban. Ahora se van con él.
+
+Probado:
+- Pruebas: `tests/test_attention_since.py`, `tests/test_tool_approvals_per_chat.py` y las de aprobaciones, borrado de sesiones y atención (575 en verde) en Faustus; 3 nuevas y la suite entera en Cassandra.
+- En vivo, con una tarjeta real del 27B (`faustus_run.py` sin `--approve`) y Cassandra arrancada con `CASSANDRA_FAUSTUS_WAIT_MIN=1`: la tarjeta salió con fecha y con el nombre del chat. Cassandra mandó dos `cassandra.faustus.waiting` al bus del Hub (se ven en su auditoría), uno por la tarjeta y otro por la pregunta antigua, y en la lectura siguiente no repitió (`sent` siguió en 2). Con Playwright, el Panel en castellano mostró «Faustus te espera · aviso a partir de 1 min · 2 · aprobación … 11 min». Después Cassandra volvió a arrancarse desde el Hub con los 15 min por defecto.

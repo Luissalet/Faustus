@@ -1144,9 +1144,6 @@ Hecho en §250 (radar #386 y #390). **Por hacer:**
 - Llevar el carril de términos raros a las búsquedas que no pasan por `two_tier_search`: la memoria (`src/memory_engine.py`, con su propio BM25) y los corpus de expertos (`services/experts.py`).
 - Ensayo de reglas: incluir también las llamadas de los runners externos (recibos de `agent_gate`) y decir cuántas de las que se habrían parado ya las había parado otra puerta.
 
-## OBJ-52 · Cassandra avisa de lo que espera en Faustus (01-10-2026)
+## OBJ-52 · Cassandra avisa de lo que espera en Faustus — HECHO (01-10-2026)
 
-Hecho en §251: el ámbito `attention:read` y la herramienta `faustus_attention` de Cassandra. **Por hacer:**
-
-- Que el sondeo de Cassandra mire la lista de atención y emita un evento por el bus (y el aviso de Boop si está activado) cuando una aprobación o una pregunta pase de N minutos, una sola vez por espera.
-- Una tarjeta «Faustus te espera» en el panel de Cassandra.
+Hecho en §251 y §253: ámbito `attention:read`, herramienta `faustus_attention`, conexión en la 7000, aviso por el bus y Boop, tarjeta en el Panel, y lista de atención con fecha y nombre.

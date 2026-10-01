@@ -276,6 +276,11 @@ def _stop_runs_for_deleted_sessions(session_ids=None) -> int:
             exec_ledger.purge_session(sid)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Could not purge the execution ledger of deleted session %s: %s", sid, exc)
+        try:  # its pending approval cards go with it, or they stay "waiting"
+            from src.tool_approvals import tool_approval_store
+            tool_approval_store.forget_session(sid)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not drop the pending approvals of deleted session %s: %s", sid, exc)
     return stopped
 
 
