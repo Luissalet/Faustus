@@ -2,10 +2,12 @@
   "schema": 1,
   "id": "dorian",
   "name": "Dorian's Hoard",
-  "purpose": "Manage local credentials and sessions through Dorian's Hoard's own MCP server.",
+  "purpose": "Consult the user's reviewed personal context and reflection with source attribution, and submit new information for the user's review through Dorian's Hoard's permissioned MCP server.",
   "capabilities": [
-    "credentials",
-    "sessions"
+    "personal-context",
+    "reflection",
+    "source-evidence",
+    "reviewed-updates"
   ],
   "placeholders": [
     "DORIAN_DIR",

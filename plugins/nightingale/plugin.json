@@ -3,7 +3,7 @@
   "id": "nightingale",
   "name": "Nightingale's Hoard",
   "purpose": "The user's own data workbench: ingest files/folders/URLs into a local DuckDB workbench, clean data with versioned steps (undo/redo, lineage, replay), run quality rules, build charts and dashboards, and train quick models — every operation recorded and explained.",
-  "capabilities": ["ingest", "transform", "quality-rules", "charts", "dashboards", "models", "forecasting", "sql-query", "analysis-log", "ask-your-data"],
+  "capabilities": ["ingest", "transform", "quality-rules", "charts", "dashboards", "dashboards-as-code", "models", "forecasting", "sql-query", "analysis-log", "ask-your-data"],
   "placeholders": ["NIGHTINGALE_DIR", "APP_URL", "TOKEN_FILE", "PYTHON"],
   "defaults": {
     "APP_URL": "http://127.0.0.1:5189",

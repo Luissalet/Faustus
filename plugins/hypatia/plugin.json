@@ -3,7 +3,7 @@
   "id": "hypatia",
   "name": "Hypatia's Hoard",
   "purpose": "The user's exam-prep bank (Exam Coach) on their PC: subjects, topics and questions with spaced repetition, quizzes and mock exams in chat, answer grading, and a notebook of their own sources with cited answers, study guides, podcast, mind maps and a Socratic tutor. The Exam Coach PWA served by the same app shows and syncs the same data.",
-  "capabilities": ["exam-prep", "question-bank", "spaced-repetition", "quiz", "mock-exams", "answer-grading", "weak-topics", "key-concepts", "deliverables", "question-suggestions", "notebook-sources", "citations", "study-guides", "podcast", "mind-map", "tutor", "search", "stats"],
+  "capabilities": ["exam-prep", "question-bank", "spaced-repetition", "quiz", "mock-exams", "answer-grading", "weak-topics", "key-concepts", "deliverables", "question-suggestions", "notebook-sources", "citations", "study-guides", "podcast", "mind-map", "tutor", "search", "stats", "symbolic-math"],
   "placeholders": ["HYPATIA_DIR", "APP_URL", "TOKEN_FILE", "PYTHON"],
   "defaults": {
     "APP_URL": "http://127.0.0.1:5187",
