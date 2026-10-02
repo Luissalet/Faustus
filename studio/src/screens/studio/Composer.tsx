@@ -188,6 +188,8 @@ export interface ComposerProps {
   behaviorModes: BehaviorMode[];
   behaviorModeId: string | null;
   onPickBehaviorMode: (id: string) => void;
+  /** The Lean/Normal chat-mode chip (always visible beside the behaviour mode), rendered by the screen. */
+  chatModeChip?: ReactNode;
   /** The preset chip (picker + clear), rendered by the screen. */
   presetChip?: ReactNode;
   extraControls?: ReactNode;
@@ -316,6 +318,7 @@ export function Composer({
   behaviorModes,
   behaviorModeId,
   onPickBehaviorMode,
+  chatModeChip,
   presetChip,
   extraControls,
   lastSent,
@@ -1082,6 +1085,7 @@ export function Composer({
           />
         )}
         <BehaviorModeSelector modes={behaviorModes} activeId={behaviorModeId} onPick={onPickBehaviorMode} />
+        {chatModeChip}
         <SessionConnectorsSelector sessionId={sessionId} />
         <ApprovalSelector disabled={busy} onNotice={onNotice} />
         <StrategyProfileSelector profile={strategyProfile} onPick={pickStrategyProfile} />

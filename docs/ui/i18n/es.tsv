@@ -9053,3 +9053,10 @@ and ask approval for	y pedido aprobación para
 Could not rehearse the rules.	No se pudieron ensayar las reglas.
 Attention	Atención
 Read what is waiting for you: pending approvals, open questions and stalled runs (GET /api/attention)	Leer lo que te espera: aprobaciones pendientes, preguntas abiertas y ejecuciones paradas (GET /api/attention)
+Chat mode: {label}	Modo del chat: {label}
+Could not set the chat mode.	No se pudo cambiar el modo del chat.
+Lean	Ligero
+Lean chat: no skills index, repo map, instincts or plugin tools; only the core tools. Click for Normal.	Chat ligero: sin índice de habilidades, mapa del repo, instintos ni herramientas de plugins; solo las herramientas básicas. Haz clic para Normal.
+Normal chat: the full harness. Click for Lean (fewer prompt blocks, core tools only).	Chat normal: el arnés completo. Haz clic para Ligero (menos bloques de prompt, solo herramientas básicas).
+Continues the plan on its own	Sigue con el plan sin esperar
+Plan paused: asking you	Plan en pausa: te pregunta

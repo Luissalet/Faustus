@@ -113,6 +113,8 @@ import './studio.css';
 import { locale, t, tn, useLang } from '../i18n';
 import { useDisplay } from '../shell/display';
 import { getSessionMode, listModes, modeLabel, resolveModeCommand, setSessionMode, type BehaviorMode } from '../adapters/behaviorModes';
+import { getChatMode, parseChatModeWord, setChatMode, type ChatMode } from '../adapters/chatMode';
+import ChatModeChip from './studio/ChatModeChip';
 
 /* Rare, and the eager bundle has a budget: the folder picker and the side
    panel (browser frames, document editor, file viewer) arrive when opened. */
@@ -446,6 +448,15 @@ export function StudioScreen() {
   const [modeCatalog, setModeCatalog] = useState<{ modes: BehaviorMode[]; default: string }>({ modes: [], default: 'default' });
   const [sessionModeId, setSessionModeIdState] = useState<string | null>(null);
   const [pendingModeId, setPendingModeId] = useState<string | null>(null);
+  /* Lean mode pinned per chat (src/chat_mode.py): `chatMode` is this
+   *  session's effective mode (read-only fetch whenever `sessionId`
+   *  changes); `pendingChatMode` is a pick made before a session exists,
+   *  persisted by `send()` before the first turn; `chatModeTouched` marks a
+   *  session whose mode was set explicitly so a slower GET never overwrites it. */
+  const [chatMode, setChatModeState] = useState<ChatMode | null>(null);
+  const [defaultChatMode, setDefaultChatMode] = useState<ChatMode>('normal');
+  const [pendingChatMode, setPendingChatMode] = useState<ChatMode | null>(null);
+  const chatModeTouched = useRef<string | null>(null);
   /* Commands that need handlers declared further down (fork, tts): the
      handlers are stored here after they exist, and read at call time. */
   const extrasRef = useRef<{ fork: () => void; tts: () => void }>({ fork: () => undefined, tts: () => undefined });
@@ -696,6 +707,46 @@ export function StudioScreen() {
         await setSessionMode(sessionId, id);
       } catch (error) {
         say(`${t('Could not set the behaviour mode.')} ${(error as Error).message}`, 'danger');
+      }
+    },
+    [sessionId, say],
+  );
+
+  useEffect(() => {
+    if (!sessionId) {
+      setChatModeState(null);
+      setPendingChatMode(null);
+      return;
+    }
+    let alive = true;
+    getChatMode(sessionId)
+      .then((r) => {
+        if (!alive) return;
+        setDefaultChatMode(r.default);
+        if (chatModeTouched.current !== sessionId) setChatModeState(r.mode);
+      })
+      .catch(() => { if (alive && chatModeTouched.current !== sessionId) setChatModeState(null); });
+    return () => { alive = false; };
+  }, [sessionId]);
+  const activeChatMode: ChatMode = sessionId ? (chatMode ?? defaultChatMode) : (pendingChatMode ?? defaultChatMode);
+  /** The ONLY place that writes the chat mode from this screen: an explicit
+   *  pick (the chip, or `/mode lean|normal`). With no session yet it only
+   *  records the pick; `send()` persists it before the first turn. */
+  const pickChatMode = useCallback(
+    async (next: ChatMode): Promise<boolean> => {
+      if (!sessionId) {
+        setPendingChatMode(next);
+        return true;
+      }
+      chatModeTouched.current = sessionId;
+      setChatModeState(next);
+      try {
+        const view = await setChatMode(sessionId, next);
+        setChatModeState(view.mode);
+        return true;
+      } catch (error) {
+        say(`${t('Could not set the chat mode.')} ${(error as Error).message}`, 'danger');
+        return false;
       }
     },
     [sessionId, say],
@@ -1886,8 +1937,21 @@ export function StudioScreen() {
           // behavior_modes.check.mjs can exercise it without a DOM; this
           // case only supplies the session I/O, exactly like `/model`
           // above supplies routing for `resolveCommand`'s parse.
+          // Lean mode, pinned per chat: `/mode lean|normal` is the chat mode
+          // (one switch for the prompt blocks and tools); everything else is
+          // a behaviour mode, below.
+          const chatWord = parseChatModeWord(args);
+          if (chatWord) {
+            if (await pickChatMode(chatWord)) {
+              say(t('Chat mode: {label}', { label: chatWord === 'lean' ? t('Lean') : t('Normal') }));
+            }
+            return true;
+          }
           const result = resolveModeCommand(modeCatalog.modes, activeModeId, args, lang);
-          if (result.kind === 'list') { report(result.markdown ?? ''); return true; }
+          if (result.kind === 'list') {
+            report(`${result.markdown ?? ''}\n\n${t('Chat mode: {label}', { label: activeChatMode === 'lean' ? t('Lean') : t('Normal') })} — /mode lean, /mode normal`);
+            return true;
+          }
           if (result.kind === 'unknown') { say(result.markdown ?? '', 'warning'); return true; }
           await pickBehaviorMode(result.id!);
           const picked = modeCatalog.modes.find((m) => m.id === result.id);
@@ -2730,13 +2794,20 @@ export function StudioScreen() {
         // `run()`'s `behaviorMode` below, so a slow or failed persist never
         // costs this first reply the mode it was sent with).
         if (isNewSession && pendingModeId) void setSessionMode(sid, pendingModeId).catch(() => undefined);
+        // A chat mode picked before the session existed is stored (and the
+        // prompt settings pinned with it) BEFORE the first turn reads it.
+        if (isNewSession && pendingChatMode) {
+          chatModeTouched.current = sid;
+          setChatModeState(pendingChatMode);
+          await setChatMode(sid, pendingChatMode).then((view) => setChatModeState(view.mode)).catch(() => undefined);
+        }
         void run(sid, withImageReferences(message, sent), { attachments: sent, behaviorMode: isNewSession ? pendingModeId ?? undefined : undefined });
       } finally {
         sendingMessage.current = false;
         setPreparingMessage(false);
       }
     },
-    [attachments, busy, runCommand, ensureSession, run, sessionId, pendingModeId, steerLive],
+    [attachments, busy, runCommand, ensureSession, run, sessionId, pendingModeId, pendingChatMode, steerLive],
   );
 
   /* Notas → "Resolver con el agente": sends as soon as a route is known and
@@ -3428,6 +3499,7 @@ export function StudioScreen() {
           behaviorModes={modeCatalog.modes}
           behaviorModeId={activeModeId}
           onPickBehaviorMode={pickBehaviorMode}
+          chatModeChip={<ChatModeChip mode={activeChatMode} onPick={(next) => { void pickChatMode(next); }} />}
           presetChip={<><PresetPicker current={preset} onPick={(p) => setPreset(p ? { id: p.id, name: p.name } : null)} onNotice={say} openSignal={presetSignal} />{!knobs.incognito&&<ChatTeam sessionId={sessionId} routes={routes} coordinator={route} busy={busy} ensureSession={()=>ensureSession(t('Conversation'))} onEnabled={setTeamEnabled}/>}</>}
           lastSent={lastSent}
           extraControls={<><LocalVideo/><StyleLab key={'style:'+sessionId} model={route?route.model+'@'+route.endpointName:''} onSaved={saved=>setPreset({id:saved.id,name:saved.name})}/>{project&&!knobs.incognito?<ProjectVisualReferences key={sessionId||project.id} projectId={project.id} onUse={async(file,referenceRole)=>{

@@ -88,7 +88,7 @@ export const COMMANDS: SlashCommand[] = [
   // CONTRATO_MODOS: a behaviour mode is a conversational stance ("how
   // Faustus argues"), never a change to what it can do — orthogonal to
   // Chat/Agent mode, task presets, the model and the skills.
-  { name: 'mode', aliases: ['modo'], category: 'Chat', usage: '/mode [id|name|off]', help: 'Behaviour mode for this conversation — how Faustus argues, never what it can do. Bare lists them; "off" returns to Default.' },
+  { name: 'mode', aliases: ['modo'], category: 'Chat', usage: '/mode [id|name|off|lean|normal]', help: 'Behaviour mode for this conversation — how Faustus argues, never what it can do. Bare lists them; "off" returns to Default. "lean" / "normal" is the chat mode: lean drops the skills index, repo map, instincts and plugin tools (core tools only), pinned for this chat.' },
 
   /* ── Agent ── */
   {
