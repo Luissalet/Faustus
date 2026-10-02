@@ -53,7 +53,7 @@ Faustus: 277 pruebas correctas y 2 omitidas en las áreas modificadas. Writers: 
 
 En Plato queda `test_real_end_to_end[star]`: IoU 0.975507 frente al mínimo 0.98, con 310 pruebas correctas. El trazado, las máscaras y esta prueba no han cambiado respecto a la base del paquete; no se ha reducido el umbral para ocultar el fallo.
 
-Se reiniciaron el Hub y las 23 aplicaciones que estaban en marcha, tras comprobar que no había trabajos activos ni grabación en Funes; todas volvieron a responder correctamente. Las aplicaciones que estaban paradas no se arrancaron.
+Se reiniciaron el Hub y las 23 aplicaciones que estaban en marcha, tras comprobar que no había trabajos activos ni grabación en Funes; todas volvieron a responder correctamente. Las aplicaciones que estaban paradas no se arrancaron. Faustus también se reinició con su gestor de servidor, después de comprobar que no tenía trabajos activos; el servidor principal del 7000 volvió a estar saludable.
 
 ## Verificación con servicios reales
 
