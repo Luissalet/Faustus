@@ -14,7 +14,7 @@ CATALOG = json.loads((ROOT / "marketplace.json").read_text(encoding="utf-8"))
 def test_catalog_schema_unique_ids_and_public_clone_urls():
     assert CATALOG["schema"] == 1
     entries = CATALOG["plugins"]
-    assert len(entries) == 32
+    assert len(entries) == 35
     assert len({entry["id"] for entry in entries}) == len(entries)
     for entry in entries:
         assert set(entry) == {"id", "repository_url", "required"}
