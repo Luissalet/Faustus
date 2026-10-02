@@ -1160,10 +1160,7 @@ Hecho en §260 y §261. **Por hacer:**
 - `!!orden` en el compositor: ejecuta en la shell sin pasar por el modelo.
 - `/github` para etiquetas, notas de cambios y comprobaciones de release con `gh`.
 
-## OBJ-54 · Medir los modelos locales y ajustarlos: Galton's Hoard y Pygmalion's Hoard — EN CURSO (02-10-2026)
+## OBJ-54 · Medir los modelos locales y ajustarlos: Galton's Hoard y Pygmalion's Hoard — HECHO (02-10-2026)
 
-Acordado con Luis el 02-10: dos apps separadas de la familia (Galton, puerto 5201, banco de pruebas; Pygmalion, puerto 5202, LoRA/QLoRA, fusiones, cuantización propia con matriz de importancia y contexto largo con YaRN); el árbitro de VRAM del Hub decide; las GPU 0 y 1 nunca sin su permiso; nunca se descarga un modelo que haya cargado otro. Detalle y pruebas en FAUSTUS.md §264.
+Acordado con Luis el 02-10: dos apps separadas de la familia (Galton, puerto 5201, banco de pruebas; Pygmalion, puerto 5202, LoRA/QLoRA, fusiones, cuantización propia con matriz de importancia y contexto largo con YaRN); el árbitro de VRAM del Hub decide; las GPU 0 y 1 nunca sin su permiso; nunca se descarga un modelo que haya cargado otro. Hecho y probado en el PC (FAUSTUS.md §264, §266 y §267): medida completa del 27B q8 con rutas publicadas, QLoRA real de Qwen3.5-0.8B y de Qwen3.5-9B con su evaluación, repositorios públicos `Luissalet/GaltonsHoard` y `Luissalet/PygmalionsHoard`, conectores en Faustus. Lo aprendido: con 160 preguntas y respuestas, un ajuste de dos o tres épocas apenas mete hechos nuevos en el modelo (el 9B gana 3 de 20 casos reservados, empata 17); para eso hace falta un dataset con varias preguntas parafraseadas por hecho o dejar los hechos a la búsqueda.
 
-Lo que queda:
-- QLoRA real del Qwen3.5-9B (descargado, 19,3 GB): necesita una GPU permitida con unos 11 GB libres (ver PENDIENTES, sección A).
-- Un segundo ajuste del 0.8B con más registros o más épocas: el primero (160 registros, una época) no se distingue del base en los registros reservados (+0,05, 1 gana y 19 empates).
