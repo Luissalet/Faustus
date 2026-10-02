@@ -6,6 +6,7 @@ artifact store or claim durable cross-artifact identity.
 """
 from __future__ import annotations
 
+from src.media_bins import which as _family_media_which
 import asyncio
 import hashlib
 import json
@@ -100,7 +101,7 @@ async def plan_media_transform(args):
             raise MediaTransformError('Audio extraction requires a known duration of at most 10 minutes.', 'duration_limit')
         warnings += ['Extracts only the first audio track, stereo at 48 kHz. Video, subtitles, other tracks and chapters are omitted.',
                      'MP3 uses lossy 192 kbit/s encoding.' if fmt == 'mp3' else 'WAV uses 16-bit PCM; bit depth and sample rate may change.']
-        engine, available = 'FFmpeg', bool(shutil.which('ffmpeg'))
+        engine, available = 'FFmpeg', bool(_family_media_which('ffmpeg'))
     return {'recipe': 'image_convert_v1' if fmt in IMAGE_FORMATS else 'audio_extract_v1',
             'source': info, 'path': str(destination), 'options': {k: v for k, v in args.items() if k not in {'source', 'path'}},
             'engine': engine, 'engine_executable_available': available,
@@ -233,7 +234,7 @@ async def transform_media(args, progress_cb=None):
             command = [sys.executable, str(Path(__file__).with_name('media_transform_worker.py')),
                        str(snapshot), str(output), json.dumps(plan['options'])]
         else:
-            command = _audio_command(shutil.which('ffmpeg'), snapshot, output, args['format'])
+            command = _audio_command(_family_media_which('ffmpeg'), snapshot, output, args['format'])
         await _run(command, output, progress_cb, began)
         await _progress(progress_cb, 'validating', began)
         if not output.is_file() or not 0 < output.stat().st_size <= MAX_OUTPUT_BYTES:

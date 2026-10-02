@@ -23,6 +23,7 @@ no inventa idempotencia").
 """
 from __future__ import annotations
 
+from src.media_bins import which as _family_media_which
 import hashlib
 import json
 import os
@@ -60,11 +61,11 @@ _JOBS_LOCK = threading.Lock()
 
 
 def _ffmpeg_path() -> str:
-    return shutil.which("ffmpeg") or ""
+    return _family_media_which("ffmpeg") or ""
 
 
 def _ffprobe_path() -> str:
-    return shutil.which("ffprobe") or ""
+    return _family_media_which("ffprobe") or ""
 
 
 def _ffmpeg_version(exe: str) -> str:

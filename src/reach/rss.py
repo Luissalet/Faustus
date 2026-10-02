@@ -3,54 +3,21 @@
 on an optional package."""
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
 from typing import Any
 
 from src.reach.base import Availability, Backend, Channel, ReachBackendError, ReachResult
 from src.reach.http_client import make_client
 
-_ATOM_NS = "{http://www.w3.org/2005/Atom}"
 
 
 def _parse_minimal(xml_bytes: bytes, url: str) -> ReachResult:
-    try:
-        root = ET.fromstring(xml_bytes)
-    except ET.ParseError as exc:
-        raise ReachBackendError(f"malformed XML: {exc}") from exc
-
-    items: list[dict[str, Any]] = []
-    title = ""
-    if root.tag.endswith("feed"):  # Atom
-        t = root.find(f"{_ATOM_NS}title")
-        title = (t.text or "").strip() if t is not None else ""
-        for entry in root.findall(f"{_ATOM_NS}entry"):
-            et_ = entry.find(f"{_ATOM_NS}title")
-            summary = entry.find(f"{_ATOM_NS}summary")
-            if summary is None:
-                summary = entry.find(f"{_ATOM_NS}content")
-            link_el = entry.find(f"{_ATOM_NS}link")
-            date_el = entry.find(f"{_ATOM_NS}updated") or entry.find(f"{_ATOM_NS}published")
-            items.append({
-                "author": (entry.findtext(f"{_ATOM_NS}author/{_ATOM_NS}name") or ""),
-                "text": ((et_.text if et_ is not None else "") or "") + "\n" + ((summary.text if summary is not None else "") or ""),
-                "score": 0,
-                "at": (date_el.text or "") if date_el is not None else "",
-            })
-    else:  # RSS 2.0
-        channel = root.find("channel")
-        base = channel if channel is not None else root
-        t = base.find("title")
-        title = (t.text or "").strip() if t is not None else ""
-        for item in base.findall("item"):
-            items.append({
-                "author": item.findtext("author") or item.findtext("{http://purl.org/dc/elements/1.1/}creator") or "",
-                "text": (item.findtext("title") or "") + "\n" + (item.findtext("description") or ""),
-                "score": 0,
-                "at": item.findtext("pubDate") or "",
-            })
-    if not items and not title:
-        raise ReachBackendError("no title or items found -- not RSS/Atom?")
-    return ReachResult(channel="rss", url=url, title=title, items=items, source_trust="public_api")
+    from src.hoard_link.web.feeds import parse_feed
+    feed = parse_feed(xml_bytes, url)
+    if feed is None:
+        raise ReachBackendError("malformed XML or not RSS/Atom")
+    items = [{"author": item["author"], "text": item["title"] + "\n" + item["summary"],
+              "score": 0, "at": item["updated"] or item["published"]} for item in feed["items"]]
+    return ReachResult(channel="rss", url=url, title=feed["title"], items=items, source_trust="public_api")
 
 
 class FeedparserBackend(Backend):
@@ -77,7 +44,7 @@ class FeedparserBackend(Backend):
         feed = parsed.get("feed", {})
         items = [
             {"author": e.get("author", ""), "text": f"{e.get('title', '')}\n{e.get('summary', '')}",
-             "score": 0, "at": e.get("published", "")}
+             "score": 0, "at": e.get("updated") or e.get("published", "")}
             for e in parsed.get("entries", [])
         ]
         if not items and not feed.get("title"):

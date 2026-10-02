@@ -120,6 +120,17 @@ class STTService:
         (src/stt_cleanup.py) is applied by the callers below, in one place,
         so every local-STT caller — chat dictation and the meeting-notes
         pipeline alike — sees the same post-processed output."""
+        from src import family_services
+        try:
+            shared = family_services.transcribe_bytes(audio_bytes, language=language,
+                model=self._load_settings().get("stt_model", "base"))
+            if shared.get("ok"):
+                if metadata is not None:
+                    metadata["language"] = shared.get("language") or language
+                    metadata["stt_source"] = "funes"
+                return [{"start": s.get("start_s", 0), "end": s.get("end_s", 0), "text": s.get("text", "")} for s in shared.get("segments", [])]
+        except Exception:
+            logger.debug("Family STT unavailable; using Faustus's local backend", exc_info=True)
         model = self._get_whisper()
         if not model:
             return None

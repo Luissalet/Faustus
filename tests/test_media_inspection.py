@@ -37,7 +37,7 @@ async def test_image_measured_without_model_or_ffprobe(tmp_path, monkeypatch):
     path = tmp_path / 'reference.png'
     png(path)
     original = hashlib.sha256(path.read_bytes()).hexdigest()
-    monkeypatch.setattr(media.shutil, 'which', lambda _: None)
+    monkeypatch.setattr(media, '_family_media_which', lambda _: None)
     result = await InspectMediaTool().execute('{"path":"reference.png"}', {})
     assert result['exit_code'] == 0
     data = result['media']
@@ -119,7 +119,7 @@ async def test_empty_directory_and_invalid_media(tmp_path):
 @pytest.mark.asyncio
 async def test_missing_ffprobe_is_actionable_and_never_installs(tmp_path, monkeypatch):
     (tmp_path / 'movie.mp4').write_bytes(b'not inspected')
-    monkeypatch.setattr(media.shutil, 'which', lambda _: None)
+    monkeypatch.setattr(media, '_family_media_which', lambda _: None)
     with pytest.raises(media.MediaInspectionError) as error:
         await media.inspect_media('movie.mp4')
     assert error.value.code == 'ffprobe_unavailable'

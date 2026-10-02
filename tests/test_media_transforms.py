@@ -198,7 +198,7 @@ def wav(path):
 @pytest.mark.asyncio
 async def test_missing_audio_engine_is_reported_without_install(tmp_path, monkeypatch):
     wav(tmp_path / 'input.wav')
-    monkeypatch.setattr(media.shutil, 'which', lambda _: None)
+    monkeypatch.setattr(media, '_family_media_which', lambda _: None)
     args = recipe(source='input.wav', path='out.wav', format='wav')
     plan = await media.plan_media_transform(args)
     assert plan['engine'] == 'FFmpeg' and not plan['ready_to_attempt']

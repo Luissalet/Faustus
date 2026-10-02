@@ -28,31 +28,10 @@ from src import url_safety
 from src.constants import WEB_FETCH_HARD_MAX_BYTES, WEB_FETCH_SOFT_MAX_BYTES
 
 
-_PRIVATE_NETWORKS = (
-    ipaddress.ip_network("0.0.0.0/8"),
-    ipaddress.ip_network("10.0.0.0/8"),
-    ipaddress.ip_network("127.0.0.0/8"),
-    ipaddress.ip_network("169.254.0.0/16"),
-    ipaddress.ip_network("172.16.0.0/12"),
-    ipaddress.ip_network("192.168.0.0/16"),
-    ipaddress.ip_network("::1/128"),
-    ipaddress.ip_network("fc00::/7"),
-    ipaddress.ip_network("fe80::/10"),
-)
+from src.hoard_link.web.safety import classify_ip, check_url, resolve_public, PUBLIC, PolicyError
 
-
-def _is_private_address(addr: ipaddress._BaseAddress) -> bool:
-    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
-        addr = addr.ipv4_mapped
-    return (
-        addr.is_private
-        or addr.is_loopback
-        or addr.is_link_local
-        or addr.is_reserved
-        or addr.is_multicast
-        or addr.is_unspecified
-        or any(addr in net for net in _PRIVATE_NETWORKS)
-    )
+def _is_private_address(addr):
+    return classify_ip(str(addr), PUBLIC) is not None
 
 
 def _resolve_hostname_ips(hostname: str) -> list[ipaddress._BaseAddress]:
@@ -69,59 +48,21 @@ def _resolve_hostname_ips(hostname: str) -> list[ipaddress._BaseAddress]:
     return out
 
 
-def _public_http_url(
-    url: str,
-    *,
-    resolver: Callable[[str], list[ipaddress._BaseAddress]] | None = None,
-) -> bool:
+def _public_http_url(url, *, resolver=None):
     resolver = resolver or _resolve_hostname_ips
     try:
-        parsed = urlparse(url)
-        if parsed.scheme not in ("http", "https"):
-            return False
-        host = (parsed.hostname or "").strip()
-        if not host:
-            return False
-        lower = host.lower()
-        if lower in ("localhost", "metadata", "metadata.google.internal"):
-            return False
-        if lower.endswith((".local", ".localhost", ".internal", ".lan", ".intranet")):
-            return False
-        try:
-            return not _is_private_address(ipaddress.ip_address(host))
-        except ValueError:
-            pass
-        addrs = resolver(host)
-        return bool(addrs) and not any(_is_private_address(a) for a in addrs)
-    except Exception:
+        return check_url(url, PUBLIC, lambda host, port: [str(ip) for ip in resolver(host)]) is None
+    except (TypeError, ValueError):
         return False
 
 
-def _resolve_public_ips(
-    url: str,
-    *,
-    resolver: Callable[[str], list[ipaddress._BaseAddress]] | None = None,
-) -> list[ipaddress._BaseAddress]:
+def _resolve_public_ips(url, *, resolver=None):
     resolver = resolver or _resolve_hostname_ips
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https") or not parsed.hostname:
-        raise httpx.RequestError(f"Blocked non-public URL: {url}")
-    host = (parsed.hostname or "").strip().lower()
-    if host in ("localhost", "metadata", "metadata.google.internal"):
-        raise httpx.RequestError(f"Blocked non-public hostname: {host}")
     try:
-        ip = ipaddress.ip_address(host)
-        if _is_private_address(ip):
-            raise httpx.RequestError(f"Blocked non-public IP literal: {host}")
-        return [ip]
-    except httpx.RequestError:
-        raise
-    except ValueError:
-        pass
-    addrs = resolver(host)
-    if not addrs or any(_is_private_address(a) for a in addrs):
-        raise httpx.RequestError(f"Blocked non-public URL: {url}")
-    return addrs
+        return [ipaddress.ip_address(ip) for ip in resolve_public(url, PUBLIC,
+                    lambda host, port: [str(ip) for ip in resolver(host)])]
+    except PolicyError as exc:
+        raise httpx.RequestError(f"Blocked non-public URL: {url}: {exc}") from exc
 
 
 class _PinnedBackend(httpcore.NetworkBackend):

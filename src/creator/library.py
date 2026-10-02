@@ -25,6 +25,7 @@ per-owner Library proxy.
 """
 from __future__ import annotations
 
+from src.media_bins import which as _family_media_which
 import json
 import logging
 import mimetypes
@@ -189,7 +190,7 @@ def _probe_ffprobe(path: str, *, ffprobe: str,
 
 def extract_metadata(*, sha256: str, path: str, kind: str,
                      db_path: Optional[str] = None,
-                     which: Callable[[str], Optional[str]] = shutil.which,
+                     which: Callable[[str], Optional[str]] = _family_media_which,
                      run: Callable[..., Any] = subprocess.run) -> Dict[str, Any]:
     """Duration/dimensions/codec/sample_rate for one blob, cached by sha256 so
     two owners of identical bytes (or two occurrences of one re-used render)
@@ -237,7 +238,7 @@ def _public_row(row) -> Dict[str, Any]:
 
 def list_items(owner: str, project_id: str, *, kind: str = "", tag: str = "",
                q: str = "", db_path: Optional[str] = None,
-               which: Callable[[str], Optional[str]] = shutil.which,
+               which: Callable[[str], Optional[str]] = _family_media_which,
                run: Callable[..., Any] = subprocess.run) -> List[Dict[str, Any]]:
     """This owner's occurrences in one project, optionally narrowed by
     ``kind``, a ``tag`` (matched against ``recipe`` or ``skill_id`` — no
@@ -338,7 +339,7 @@ def generate_proxy(owner: str, occurrence_id: str, *,
     from src.constants import ARTIFACT_STORE_DIR
     from src.contracts.blob import ArtifactOccurrence
 
-    which = which or shutil.which  # resolved at call time, not at def time, so a
+    which = which or _family_media_which  # resolved at call time, not at def time, so a
     # test (or a route) that monkeypatches `shutil.which` after import still
     # takes effect for a caller that did not pass its own `which`.
     try:

@@ -33,6 +33,7 @@ posture the research run markers take.
 """
 from __future__ import annotations
 
+from src.media_bins import which as _family_media_which
 import asyncio
 import hashlib
 import io
@@ -648,7 +649,7 @@ _SAMPLE_FMT = {1: "u8", 2: "s16", 4: "s32"}
 
 
 def _ffmpeg() -> Optional[str]:
-    return shutil.which("ffmpeg")
+    return _family_media_which("ffmpeg")
 
 
 def convert_wav(data: bytes, channels: int, sampwidth: int, rate: int) -> bytes:

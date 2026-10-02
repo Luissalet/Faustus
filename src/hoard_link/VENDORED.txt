@@ -1,0 +1,5 @@
+Vendored from HoardLink (https://github.com/Luissalet/HoardLink), version 0.8.1
+
+Byte-identical copy of the upstream hoard_link/ package (every .py file except the
+hub/ subpackage, which only the hub itself runs) plus its LICENSE. Do not edit these
+files; run scripts/sync_vendored.py in the HoardLink repository to update every copy.

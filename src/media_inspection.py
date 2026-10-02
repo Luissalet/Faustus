@@ -6,6 +6,7 @@ playlists. Parsers run in disposable processes with bounded output and time.
 """
 from __future__ import annotations
 
+from src.media_bins import which as _family_media_which
 import asyncio
 import json
 import math
@@ -195,13 +196,13 @@ async def inspect_media(raw_path: str) -> dict:
         try:
             result = await _run_probe([sys.executable, str(Path(__file__).with_name('media_probe_worker.py')), kind, path])
         except MediaInspectionError as exc:
-            executable = shutil.which('ffprobe') if suffix == '.wav' else None
+            executable = _family_media_which('ffprobe') if suffix == '.wav' else None
             if exc.code != 'invalid_media' or not executable:
                 raise
             # IEEE-float and compressed WAV need FFprobe; PCM remains dependency-free.
             result = _normalize_ffprobe(await _run_probe(_ffprobe_command(executable, path, 'wav')))
     else:
-        executable = shutil.which('ffprobe')
+        executable = _family_media_which('ffprobe')
         if not executable:
             raise MediaInspectionError('FFprobe is not installed or not on the server PATH. Install FFmpeg/FFprobe to inspect compressed audio and video. Images and PCM WAV work without it. No installation was attempted.', 'ffprobe_unavailable')
         result = _normalize_ffprobe(await _run_probe(_ffprobe_command(executable, path, DEMUXERS[suffix])))

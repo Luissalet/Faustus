@@ -364,6 +364,8 @@ def _process_pdf(path: str, owner: str | None = None,
         limits = set()
         text_pages = 0
         used_vision = False
+        used_family_ocr = False
+        family_ocr_pages = None
 
         for page_num, page in enumerate(reader.pages):
             if len(pdf_text) >= MAX_PDF_INLINE_CHARS:
@@ -391,6 +393,25 @@ def _process_pdf(path: str, owner: str | None = None,
                 continue
             if not allow_vision:
                 continue
+            if not page_text:
+                if family_ocr_pages is None:
+                    family_ocr_pages = {}
+                    try:
+                        from src import family_services
+                        shared = family_services.extract(path, ocr="auto", max_pages=min(total_pages, MAX_PDF_ATTACHMENT_VISION_CALLS),
+                                                         timeout_s=30, local_fallback=False)
+                        if shared.get("ok"):
+                            family_ocr_pages = {int(u["number"]): str(u.get("text") or "").strip()
+                                                for u in shared.get("units", []) if u.get("kind") == "page" and u.get("number")}
+                    except Exception as exc:
+                        logger.debug("Family OCR unavailable: %s", exc)
+                recovered = family_ocr_pages.get(page_num + 1, "")
+                if recovered:
+                    used_family_ocr = True
+                    pdf_text += f"\n\n[Page {page_num + 1} OCR via Kafka]:\n{recovered}"
+                    if evidence_out is not None:
+                        evidence_out.append(pdf_page_evidence_ref(path, page_num + 1, recovered, owner_id=owner or "system"))
+                    continue
             if vision_calls >= MAX_PDF_ATTACHMENT_VISION_CALLS:
                 limits.add('vision')
                 continue
@@ -455,7 +476,7 @@ def _process_pdf(path: str, owner: str | None = None,
         # text — independent of whether vision actually recovered anything.
         needs_ocr = total_pages > 0 and text_pages == 0
         pdf_limitations: List[str] = []
-        if needs_ocr and not used_vision:
+        if needs_ocr and not used_vision and not used_family_ocr:
             pdf_limitations.append(
                 "no extractable text on any page and no vision reading succeeded "
                 "(OCR unavailable or failed)"

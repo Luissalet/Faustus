@@ -54,6 +54,7 @@ from the enclosing segment's span.
 """
 from __future__ import annotations
 
+from src.media_bins import which as _family_media_which
 import json
 import logging
 import shutil
@@ -105,7 +106,7 @@ def _adapter():
 
 # ── ffmpeg normalization (bounded, degrades without ffmpeg) ─────────────
 
-def _probe_duration(path: str, *, which=shutil.which, run=subprocess.run) -> Optional[float]:
+def _probe_duration(path: str, *, which=_family_media_which, run=subprocess.run) -> Optional[float]:
     ffprobe = which("ffprobe")
     if not ffprobe:
         return None
@@ -124,7 +125,7 @@ def _probe_duration(path: str, *, which=shutil.which, run=subprocess.run) -> Opt
 
 
 def _normalize_audio(source_path: str, workdir: str, *,
-                     which=shutil.which, run=subprocess.run) -> str:
+                     which=_family_media_which, run=subprocess.run) -> str:
     """Best-effort 16 kHz mono WAV of `source_path`, written under
     `workdir`. Returns `source_path` unchanged (never raises) when ffmpeg
     is not on PATH — a documented degrade (CONTRATO.md rule 6): the ASR

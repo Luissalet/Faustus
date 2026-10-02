@@ -21,6 +21,7 @@ back is DATA — a summarising prompt says so — never an instruction.
 """
 from __future__ import annotations
 
+from src.media_bins import which as _family_media_which
 import contextvars
 import json
 import logging
@@ -410,7 +411,7 @@ def send_file(to: str, data: bytes, mime: str, *, filename: str = "", caption: s
 
 
 def _to_ogg_opus(data: bytes) -> Optional[bytes]:
-    ffmpeg = shutil.which("ffmpeg")
+    ffmpeg = _family_media_which("ffmpeg")
     if not ffmpeg:
         return None
     try:

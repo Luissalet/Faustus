@@ -45,6 +45,7 @@ back (idempotent), not a silent retry from a temp file that may be gone.
 """
 from __future__ import annotations
 
+from src.media_bins import which as _family_media_which
 import hashlib
 import json
 import logging
@@ -554,7 +555,7 @@ def _build_proxies(owner: str, occurrence: Dict[str, Any], kind: str, *,
 def ingest_file(owner: str, project_id: str, source_path: str, filename: str, *,
                 max_bytes: Optional[int] = None, max_duration_s: Optional[float] = None,
                 db_path: Optional[str] = None, store_dir: Optional[str] = None,
-                which: Callable[[str], Optional[str]] = shutil.which,
+                which: Callable[[str], Optional[str]] = _family_media_which,
                 run: Callable[..., Any] = subprocess.run) -> Dict[str, Any]:
     """Validate, then durably ingest, one local file already on disk
     (an upload's own temp file, or any caller-resolved local path).
@@ -750,7 +751,7 @@ async def _store_url_text(owner: str, project_id: str, url: str, title: str, tex
 
 def resume_job(owner: str, job_id: str, *, db_path: Optional[str] = None,
                store_dir: Optional[str] = None,
-               which: Callable[[str], Optional[str]] = shutil.which,
+               which: Callable[[str], Optional[str]] = _family_media_which,
                run: Callable[..., Any] = subprocess.run) -> Dict[str, Any]:
     """Finish a job left at ``proxying`` after a crash/restart. The source
     occurrence is already durable (bytes on disk, owned) by the time a job
@@ -785,7 +786,7 @@ def resume_job(owner: str, job_id: str, *, db_path: Optional[str] = None,
 
 def resume_pending(*, owner: Optional[str] = None, db_path: Optional[str] = None,
                    store_dir: Optional[str] = None,
-                   which: Callable[[str], Optional[str]] = shutil.which,
+                   which: Callable[[str], Optional[str]] = _family_media_which,
                    run: Callable[..., Any] = subprocess.run) -> List[Dict[str, Any]]:
     """Sweep every job left at ``proxying`` (optionally scoped to one
     owner) and resume each. Meant to run once at process startup so a crash

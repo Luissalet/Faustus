@@ -4,6 +4,15 @@ import os
 import types
 import importlib.util
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def no_live_hoard_services(monkeypatch):
+    """Migration tests must not fetch through the user's running family."""
+    from src.hoard_link import fam_web, _famsvc
+    monkeypatch.setattr(fam_web, "fetch", lambda *a, **k: {"ok": False, "error": "hub unreachable"})
+    monkeypatch.setattr(_famsvc, "call_tool", lambda *a, **k: {
+        "ok": False, "kind": "hub_down", "error": "hub unreachable"})
 from unittest.mock import MagicMock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

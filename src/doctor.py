@@ -30,6 +30,7 @@ traceback.
 
 from __future__ import annotations
 
+from src.media_bins import which as _family_media_which
 import logging
 import json
 import os
@@ -667,7 +668,7 @@ def _environment_psutil() -> Finding:
 
 
 def _environment_ffmpeg() -> Finding:
-    path = shutil.which("ffmpeg")
+    path = _family_media_which("ffmpeg")
     if not path:
         return Finding("environment", "ffmpeg", "absent", "no ffmpeg on PATH",
                        fix="install ffmpeg if you need audio/video transcoding; "

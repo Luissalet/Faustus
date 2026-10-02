@@ -50,7 +50,7 @@ BodyTooLargeError = _outbound_fetch.BodyTooLargeError
 _CappedFetch = _outbound_fetch._CappedFetch
 
 
-def _get_public_url(url, headers, timeout, max_redirects=5, max_bytes=None):
+def _get_local_public_url(url, headers, timeout, max_redirects=5, max_bytes=None):
     return _outbound_fetch._get_public_url(
         url,
         headers=headers,
@@ -60,6 +60,22 @@ def _get_public_url(url, headers, timeout, max_redirects=5, max_bytes=None):
         resolve_public_ips=_resolve_public_ips,
         transport_factory=_PinnedTransport,
     )
+
+def _get_public_url(url, headers, timeout, max_redirects=5, max_bytes=None):
+    from src import family_services
+    result = family_services.fetch(url, tier="auto", accept="any", timeout=timeout,
+                                   max_bytes=max_bytes, respect_robots=True)
+    if result.get("ok") and isinstance(result.get("body"), bytes):
+        response = httpx.Response(result.get("status", 200), content=result["body"],
+                                  headers=result.get("headers", {}), request=httpx.Request("GET", url))
+        response.truncated = bool(result.get("truncated"))
+        response.declared_bytes = result.get("total_bytes")
+        return response
+    # Policy/HTTP errors remain authoritative; only unavailable transport falls back.
+    if result.get("status") not in (None, 401, 404, 503) and result.get("error") != "hub unreachable":
+        raise httpx.RequestError(result.get("error") or "family fetch failed")
+    return _get_local_public_url(url, headers, timeout, max_redirects, max_bytes)
+
 
 
 # PDF extraction (optional dependency)

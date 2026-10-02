@@ -38,6 +38,7 @@ job runs Python (the STT + notes pipeline), not a subprocess.
 
 from __future__ import annotations
 
+from src.media_bins import which as _family_media_which
 import json
 import logging
 import os
@@ -131,7 +132,7 @@ def get_job(job_id: str, *, owner: Optional[str] = None) -> Optional[Dict[str, A
 # ── Audio chunking ───────────────────────────────────────────────────────
 
 def _probe_duration(path: str) -> Optional[float]:
-    ffprobe = shutil.which("ffprobe")
+    ffprobe = _family_media_which("ffprobe")
     if not ffprobe:
         return None
     try:
@@ -154,7 +155,7 @@ def _split_chunks(src_path: str, work_dir: str, chunk_seconds: int) -> List[Dict
     Falls back to a single chunk (the whole file, offset 0) when ffmpeg is
     missing or duration probing fails — still correct, just not chunked.
     """
-    ffmpeg = shutil.which("ffmpeg")
+    ffmpeg = _family_media_which("ffmpeg")
     duration = _probe_duration(src_path) if ffmpeg else None
     if not ffmpeg or not duration:
         return [{"path": src_path, "offset": 0.0}]

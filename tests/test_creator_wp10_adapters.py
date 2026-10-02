@@ -311,7 +311,7 @@ def test_comfyui_reconcile_delegates_and_reads_status(fake_media_runs):
 # ═══════════════════════════════════════════════════════════════════════
 
 def test_ffmpeg_describe_reports_unavailable_without_the_binary(monkeypatch):
-    monkeypatch.setattr("src.creator.adapters.ffmpeg.shutil.which", lambda name: "")
+    monkeypatch.setattr("src.creator.adapters.ffmpeg._family_media_which", lambda name: "")
     adapter = FfmpegAdapter()
     manifest = adapter.describe()
     assert manifest.available is False
@@ -320,7 +320,7 @@ def test_ffmpeg_describe_reports_unavailable_without_the_binary(monkeypatch):
 
 
 def test_ffmpeg_submit_without_binary_is_rejected_before_queue(monkeypatch):
-    monkeypatch.setattr("src.creator.adapters.ffmpeg.shutil.which", lambda name: "")
+    monkeypatch.setattr("src.creator.adapters.ffmpeg._family_media_which", lambda name: "")
     adapter = FfmpegAdapter()
     plan = adapter.plan("trim", {"start_seconds": 0, "duration_seconds": 1}, ["occ_1"])
     assert plan.ok is False

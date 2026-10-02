@@ -106,21 +106,8 @@ def _get_or_404_event(db, uid: str, owner: str) -> CalendarEvent:
 
 
 def _ics_escape(text: str) -> str:
-    """Escape a value for an iCalendar TEXT field (RFC 5545 §3.3.11).
-
-    Backslash, semicolon and comma are structural in TEXT values and must be
-    escaped, and newlines become a literal ``\\n``. Backslash is escaped first
-    so the escapes we add aren't re-escaped.
-    """
-    return (
-        (text or "")
-        .replace("\\", "\\\\")
-        .replace(";", "\\;")
-        .replace(",", "\\,")
-        .replace("\r\n", "\\n")
-        .replace("\n", "\\n")
-        .replace("\r", "\\n")
-    )
+    from src.hoard_link.ics import ics_escape
+    return ics_escape(text)
 
 
 def _safe_ics_filename(name: str) -> str:
@@ -2024,7 +2011,11 @@ def setup_calendar_routes(upload_handler=None) -> APIRouter:
                 lines.append("END:VEVENT")
             lines.append("END:VCALENDAR")
 
-            ics_data = "\r\n".join(lines)
+            from src.hoard_link.ics import fold_line
+            from datetime import datetime, timezone
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            lines = [line + "\r\nDTSTAMP:" + stamp if line == "BEGIN:VEVENT" else line for line in lines]
+            ics_data = "\r\n".join(fold_line(part) for line in lines for part in line.split("\r\n")) + "\r\n"
             download_name = _safe_ics_filename(cal.name)
             return Response(
                 content=ics_data,
