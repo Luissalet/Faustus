@@ -11,6 +11,12 @@ proximity checks (e.g. "was there an `eval(` near this `atob(`") that a
 single regex cannot express cleanly. That is the whole design — a scanner
 that could itself be tricked into running something is worse than none.
 
+One exception to "no I/O beyond reading the files": a finding in a file
+that is byte-for-byte the Hoard Link family library committed in the
+user's own Hoard Link checkout is lowered to "low" (`_lower_family_library`).
+That asks the checkout's git object store whether the blob exists
+(`git cat-file --batch-check`); it never runs anything it scans.
+
 Nothing here blocks anything by itself. It produces a `ScanResult` the
 caller attaches to whatever the human is about to review; the one place that
 turns "critical findings" into a hard stop is the approval route, gated by
@@ -20,8 +26,11 @@ caller does not pass an explicit override.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
+import shutil
+import subprocess
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -533,6 +542,105 @@ def _iter_files(paths: Iterable[str], max_files: int) -> Iterable[str]:
             seen += 1
 
 
+# ── the family library every Hoard app vendors ────────────────────────────
+#
+# Hoard apps vendor the Hoard Link helpers (hoard_link/*.py, hoard-link.js):
+# they read the app's own family token and call the hub on this machine,
+# which EXFIL_SECRET_TO_NETWORK cannot tell from a leak because the hub's URL
+# is resolved at runtime. A finding in a file whose exact content (line
+# endings aside) is committed in the user's Hoard Link checkout is that
+# library, already in the user's hands: it is kept, lowered to "low" and says
+# why. A copy that differs by one byte keeps its severity, and so does the
+# checkout itself (the root of that trust is reviewed as itself).
+
+_FAMILY_MIN_BYTES = 200
+_HOARD_LINK_NAMES = ("HoardLink", "Hoard Link", "hoard-link", "Hoard Link's Hoard")
+
+
+def _is_hoard_link_checkout(path: str) -> bool:
+    return (os.path.isfile(os.path.join(path, "hoard_link", "hub", "__main__.py"))
+            and os.path.exists(os.path.join(path, ".git")))
+
+
+def _hoard_link_checkouts(paths: Sequence[str]) -> List[str]:
+    """`HOARD_LINK_DIR`, else a Hoard Link checkout next to the scanned folder
+    or one of its parents (up to four levels): where the family keeps it."""
+    candidates: List[str] = []
+    env = (os.environ.get("HOARD_LINK_DIR") or "").strip()
+    if env:
+        candidates.append(env)
+    for p in paths:
+        cur = os.path.abspath(p)
+        for _ in range(4):
+            parent = os.path.dirname(cur)
+            if parent == cur:
+                break
+            candidates.extend(os.path.join(parent, name) for name in _HOARD_LINK_NAMES)
+            cur = parent
+    found: List[str] = []
+    for c in candidates:
+        try:
+            real = os.path.realpath(c)
+        except OSError:
+            continue
+        if real not in found and _is_hoard_link_checkout(real):
+            found.append(real)
+    return found
+
+
+def _git_blob_id(data: bytes) -> str:
+    return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
+
+
+def _known_blobs(checkout: str, ids: Sequence[str]) -> set:
+    """The ids among `ids` that are blobs in the checkout's git object store."""
+    git = shutil.which("git")
+    if not git or not ids:
+        return set()
+    try:
+        out = subprocess.run(
+            [git, "-C", checkout, "cat-file", "--batch-check"], input="\n".join(ids) + "\n",
+            capture_output=True, text=True, timeout=15,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    known = set()
+    for line in (out.stdout or "").splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] == "blob":
+            known.add(parts[0])
+    return known
+
+
+def _inside(path: str, folder: str) -> bool:
+    try:
+        return os.path.commonpath([os.path.normcase(os.path.realpath(path)),
+                                   os.path.normcase(folder)]) == os.path.normcase(folder)
+    except ValueError:
+        return False
+
+
+def _lower_family_library(findings: List[Finding], flagged: Dict[str, bytes], paths: Sequence[str]) -> None:
+    checkouts = _hoard_link_checkouts(paths)
+    if not checkouts:
+        return
+    ids_by_file = {path: {_git_blob_id(raw), _git_blob_id(raw.replace(b"\r\n", b"\n"))}
+                   for path, raw in flagged.items()}
+    library: Dict[str, str] = {}
+    for checkout in checkouts:
+        outside = {p: ids for p, ids in ids_by_file.items() if p not in library and not _inside(p, checkout)}
+        known = _known_blobs(checkout, sorted({i for ids in outside.values() for i in ids}))
+        for p, ids in outside.items():
+            if ids & known:
+                library[p] = checkout
+    for f in findings:
+        checkout = library.get(f.file)
+        if checkout and f.severity != "low":
+            f.description = (f"{f.description} Lowered from {f.severity}: the file is the Hoard Link family "
+                             f"library, identical to a version committed in {checkout}.")
+            f.severity = "low"
+
+
 def scan_paths(paths, *, kind: str = "generic", max_files: int = 200,
                 max_bytes: int = _MAX_FILE_BYTES_DEFAULT) -> ScanResult:
     """Scan a file, a list of files, or a directory tree (recursively, with
@@ -542,6 +650,7 @@ def scan_paths(paths, *, kind: str = "generic", max_files: int = 200,
         paths = [paths]
     paths = [os.fspath(p) for p in paths]
     findings: List[Finding] = []
+    flagged: Dict[str, bytes] = {}
     files_scanned = 0
     truncated = False
     file_list = list(_iter_files(paths, max_files + 1))
@@ -567,9 +676,13 @@ def scan_paths(paths, *, kind: str = "generic", max_files: int = 200,
             continue
         file_kind = _kind_for_ext(path, kind)
         result = scan_text(text, kind=file_kind, filename=path)
+        if any(f.severity != "low" for f in result.findings) and len(raw) >= _FAMILY_MIN_BYTES:
+            flagged[path] = raw
         findings.extend(result.findings)
         files_scanned += 1
 
+    if flagged:
+        _lower_family_library(findings, flagged, paths)
     score = _score(findings)
     return ScanResult(findings=findings, risk_score=score,
                        risk_level=_risk_level_for_findings(findings),
