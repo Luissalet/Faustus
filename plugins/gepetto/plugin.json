@@ -63,7 +63,8 @@
   },
   "x-family": {
     "agent_contract": false,
+    "events": true,
     "stack": "python",
-    "note": "REST API (OpenAPI) only, reached from Faustus through its generic REST bridge; no /api/agent/call, no token, no events. start.py picks the venv when present."
+    "note": "REST API (OpenAPI) reached from Faustus through its generic REST bridge; no /api/agent/call. It writes data/mcp-token at start and emits gepetto.export.done {path, ref, title} when an evaluation finishes with figure-ready.stl. start.py picks the venv when present."
   }
 }

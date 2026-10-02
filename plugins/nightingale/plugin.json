@@ -30,5 +30,5 @@
     "env": { "NIGHTINGALE_URL": "{APP_URL}", "NIGHTINGALE_TOKEN_FILE": "{TOKEN_FILE}" },
     "optional_env": []
   },
-  "notes": "Keep the app running (python -m nightingale) while the assistant uses it: the MCP bridge proxies every call to the local server and never opens the database directly."
+  "notes": "Keep the app running (python -m nightingale) while the assistant uses it: the MCP bridge proxies every call to the local server and never opens the database directly. data_ingest kind=hoard calls another app's tool through Hoard Hub (presets ledger_transactions, phileas_shipments, argus_app_time [unverified]); it needs the hub and that app running."
 }

@@ -3,7 +3,7 @@
   "id": "prospero",
   "name": "Prospero's Hoard",
   "purpose": "Directs a media studio (ComfyUI, ffmpeg, TTS) to produce consistent characters (model sheets, local LoRA training, portable character packs), photocards, album art, beat-cut music videos as resumable productions and reusable recipes, narrated vertical shorts from a topic or a script (voice-over, word-by-word captions, stock or generated pictures, ducked music), cloned voices, audiobooks and dubbed video.",
-  "capabilities": ["image generation", "video editing", "graphic design", "audio analysis", "text-to-speech", "music composition", "speech-to-text", "voice cloning", "dubbing", "audiobooks", "music video production pipeline", "production recipes", "quality assurance", "animatic previews", "character consistency", "lora training", "character library", "narrated shorts", "stock footage", "script writing", "captions"],
+  "capabilities": ["image generation", "video editing", "graphic design", "audio analysis", "text-to-speech", "music composition", "speech-to-text", "voice cloning", "dubbing", "audiobooks", "timeline export to the video editor", "storyboard to production", "cast import", "job events", "hub notifications", "music video production pipeline", "production recipes", "quality assurance", "animatic previews", "character consistency", "lora training", "character library", "narrated shorts", "stock footage", "script writing", "captions"],
   "placeholders": ["PROSPERO_DIR", "APP_URL"],
   "defaults": {"APP_URL": "http://127.0.0.1:8815"},
   "app": {
@@ -27,5 +27,5 @@
     "optional_env": []
   },
   "provides": {"skills": ["skills/idol-production/SKILL.md", "skills/voice-studio/SKILL.md", "skills/narrated-shorts/SKILL.md"]},
-  "notes": "A media studio: characters, generated photocards/covers, songs, beat-cut music videos as resumable productions and reusable recipes, narrated shorts with stock or generated pictures, cloned voices, audiobooks and dubbed video, driven through ComfyUI/ffmpeg/TTS/STT. Does not host any model itself."
+  "notes": "A media studio: characters, generated photocards/covers, songs, beat-cut music videos as resumable productions and reusable recipes, narrated shorts with stock or generated pictures, cloned voices, audiobooks and dubbed video, driven through ComfyUI/ffmpeg/TTS/STT. Does not host any model itself. It tells the family hub when a production waits for a take or the animatic, finishes or fails (notify.via auto|hub|off, GPU jobs hold the hub's lease unless PROSPERO_GPU_LEASE=0), can open a production's cut in the video editor (production_export_lumiere), and takes cast members, storyboards and text-to-speech from the other apps."
 }

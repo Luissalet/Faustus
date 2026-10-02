@@ -3,7 +3,8 @@
   "id": "hypatia",
   "name": "Hypatia's Hoard",
   "purpose": "The user's exam-prep bank (Exam Coach) on their PC: subjects, topics and questions with spaced repetition, quizzes and mock exams in chat, answer grading, and a notebook of their own sources with cited answers, study guides, podcast, mind maps and a Socratic tutor. A teacher role adds classes, exams generated from the teacher's bank and sources with citations and versions, rubrics, batch correction with model proposals the teacher confirms, grades and class analysis (student data stays local). The Exam Coach PWA served by the same app shows and syncs the same data.",
-  "capabilities": ["exam-prep", "question-bank", "spaced-repetition", "quiz", "mock-exams", "answer-grading", "weak-topics", "key-concepts", "deliverables", "question-suggestions", "notebook-sources", "citations", "study-guides", "podcast", "mind-map", "tutor", "search", "stats", "symbolic-math", "teacher-classes", "exam-generation", "rubrics", "batch-grading", "class-analysis"],
+  "capabilities": ["exam-prep", "question-bank", "spaced-repetition", "quiz", "mock-exams", "answer-grading", "weak-topics", "key-concepts", "deliverables", "question-suggestions", "notebook-sources", "citations", "study-guides", "podcast", "mind-map", "tutor", "search", "stats", "symbolic-math", "teacher-classes", "exam-generation", "rubrics", "batch-grading", "class-analysis", "family-agenda", "job-events", "card-source-refs"],
+  "x-family": { "agenda": true },
   "placeholders": ["HYPATIA_DIR", "APP_URL", "TOKEN_FILE", "PYTHON"],
   "defaults": {
     "APP_URL": "http://127.0.0.1:5187",

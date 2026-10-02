@@ -3,7 +3,8 @@
   "id": "people",
   "name": "People's Hoard",
   "purpose": "Personal CRM: who people are, what to remember about them, when you last talked and what to follow up on, all stored locally.",
-  "capabilities": ["people", "aliases", "facts", "interactions", "reminders", "birthdays", "circles", "search", "conversation_brief", "commitments", "commitments_from_meetings", "commitments_from_text", "commitments_digest"],
+  "capabilities": ["people", "aliases", "facts", "interactions", "reminders", "birthdays", "circles", "search", "conversation_brief", "commitments", "commitments_from_meetings", "commitments_from_text", "commitments_digest", "people_from_minutes", "last_contact_from_mail", "gift_ideas", "gift_watch", "family_agenda"],
+  "x-family": { "agenda": true },
   "placeholders": ["PEOPLE_DIR", "APP_URL", "TOKEN_FILE"],
   "defaults": {
     "APP_URL": "http://127.0.0.1:5182",
@@ -29,5 +30,5 @@
     "env": { "PEOPLE_URL": "{APP_URL}", "PEOPLE_TOKEN_FILE": "{TOKEN_FILE}" },
     "optional_env": []
   },
-  "notes": "Keep the app running (npm start) while the assistant uses it: the MCP bridge proxies every call to the local server and never opens the database itself. Names can be ambiguous; the assistant should ask when a tool returns several candidates. Commitments (who promised what to whom) also come from Funes meeting minutes through the Hoard Link hub: the app reads them by itself while the hub answers (PEOPLE_COMMITMENTS_AUTO=0 turns that off); proposals that need a decision wait in commitments_review."
+  "notes": "Keep the app running (npm start) while the assistant uses it: the MCP bridge proxies every call to the local server and never opens the database itself. Names can be ambiguous; the assistant should ask when a tool returns several candidates. Commitments (who promised what to whom) also come from Funes meeting minutes through the Hoard Link hub: the app reads them by itself while the hub answers (PEOPLE_COMMITMENTS_AUTO=0 turns that off); proposals that need a decision wait in commitments_review. Meeting attendees get a timeline line from Funes minutes (people_from_minutes); the last contact is kept from the hub's mail (contacts_sync_mail, every 30 min, subjects only); gift ideas can be watched by Tantalus; birthdays, follow-ups and commitments with a day go on the family agenda."
 }

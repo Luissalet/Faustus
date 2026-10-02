@@ -19,7 +19,11 @@
     "event-bus",
     "media-download",
     "video-download",
-    "audio-download"
+    "audio-download",
+    "highlights-to-flashcards",
+    "resurface",
+    "daily-digest",
+    "job-events"
   ],
   "placeholders": [
     "LINKS_DIR",

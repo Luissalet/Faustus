@@ -45,7 +45,13 @@
     "aggregator-radar",
     "release-calendar",
     "shop-stock-by-chain",
-    "visible-window-tier"
+    "visible-window-tier",
+    "hub-notifications",
+    "hub-mail-gateway",
+    "family-agenda",
+    "purchase-matching",
+    "gift-idea-watchers",
+    "budget-in-alerts"
   ],
   "placeholders": [
     "TANTALUS_DIR",
@@ -109,5 +115,8 @@
       "TANTALUS_DATA_DIR"
     ]
   },
-  "notes": "Keep the app running (python -m tantalus_hoard): its scheduler does the checks and sends the notifications; the MCP bridge proxies every call to the local server, never opens the database, and starts the app when it is not answering. Page text from retailers is untrusted data. Sites behind CAPTCHA or login are reported as needs_human and never bypassed. mail_deals, mail_deals_scan and mail_noise_report read the Faustus mailbox through a read-only reader that runs under Faustus's Python (nothing is sent, moved, flagged, unsubscribed or deleted; mail links are never opened; the first scan is quiet); watcher_create/update, target_add/update, candidate_accept, mail_deal_set, settings_set and secret_set write to the local store; deletes need confirm:true and only when the user asks."
+  "notes": "Keep the app running (python -m tantalus_hoard): its scheduler does the checks and sends the notifications; the MCP bridge proxies every call to the local server, never opens the database, and starts the app when it is not answering. Page text from retailers is untrusted data. Sites behind CAPTCHA or login are reported as needs_human and never bypassed. mail_deals, mail_deals_scan and mail_noise_report read the Faustus mailbox through a read-only reader that runs under Faustus's Python (nothing is sent, moved, flagged, unsubscribed or deleted; mail links are never opened; the first scan is quiet); watcher_create/update, target_add/update, candidate_accept, mail_deal_set, settings_set and secret_set write to the local store; deletes need confirm:true and only when the user asks. Through the family hub: alerts go out as one hub notification (notify.via), sale mails can be read from the hub's mail gateway (mail.source; the noise report keeps its own read-only reader), release days answer GET /api/family/agenda, watchers_match_purchase / watcher_mark_bought / watcher_add serve purchases and gift ideas, and a watcher's budget_category adds Ledger's remaining budget to its alerts.",
+  "x-family": {
+    "agenda": true
+  }
 }

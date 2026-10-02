@@ -12,7 +12,10 @@
     "maintenance",
     "maintenance-reminders",
     "home-sync",
-    "papers-link"
+    "papers-link",
+    "purchase-intake",
+    "family-agenda",
+    "prefilled-add-form"
   ],
   "placeholders": [
     "HOMEHOARD_DIR",
@@ -75,5 +78,8 @@
       "HOMEHOARD_BRIDGE_AUTOSTART"
     ]
   },
-  "notes": "El servidor (python bridge/server.py, solo en 127.0.0.1) guarda la casa en data/home.json y las fotos en data/photos; la web se sincroniza con él y el puente MCP le reenvía cada llamada con el token de data/mcp-token y lo arranca si no responde. home_add_item, home_update_item, home_move_item, home_item_details con set y maintenance_* escriben; maintenance_delete necesita confirm:true. Papeles, garantías y manuales se consultan en Kafka's Hoard a través del Hoard Hub; cada tarea de mantenimiento activa se refleja como plazo en Kafka. Solo las tareas con basis law son obligaciones legales y citan su norma."
+  "x-family": {
+    "agenda": true
+  },
+  "notes": "El servidor (python bridge/server.py, solo en 127.0.0.1) guarda la casa en data/home.json y las fotos en data/photos; la web se sincroniza con él y el puente MCP le reenvía cada llamada con el token de data/mcp-token y lo arranca si no responde. home_add_item, item_add_from_purchase, home_update_item, home_move_item, home_item_details con set y maintenance_* escriben; maintenance_delete necesita confirm:true. Papeles, garantías y manuales se consultan en Kafka's Hoard a través del Hoard Hub; cada tarea de mantenimiento activa se refleja como plazo en Kafka. Solo las tareas con basis law son obligaciones legales y citan su norma. item_add_from_purchase archiva una compra que llega de otro Hoard (sin sitio va a «Por colocar») y la web abre #/add?name=…&source_ref=… con el formulario precargado. Responde a GET /api/family/agenda con las tareas de mantenimiento y emite homehoard.item.created y homehoard.maintenance.due."
 }
