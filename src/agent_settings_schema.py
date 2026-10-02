@@ -1575,6 +1575,11 @@ GROUPS: list[dict[str, Any]] = [
                   "(Skills > Instincts)."),
             _int("instincts_offer_min_tool_calls", "Lessons: minimum tool calls in the turn",
                  "A lesson is proposed only after a turn with at least this many tool calls.", 1, 200),
+            _select("agent_default_chat_mode", "Default chat mode",
+                    "Mode for chats that have not chosen one with /mode or the composer chip. lean drops the skills "
+                    "index, repo map, instincts and MCP/plugin tools for a much shorter prompt; each chat pins its "
+                    "prompt-shaping settings so a later change here does not alter a running conversation.",
+                    ["normal", "lean"]),
         ],
     ),
 ]

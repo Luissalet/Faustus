@@ -147,6 +147,21 @@ class _FakeSession:
         raise AssertionError(f"unexpected query model: {model!r}")
 
 
+@pytest.fixture(autouse=True)
+def _forget_modules_imported_against_the_stub():
+    """Modules imported while ``core.database`` is stubbed (routes.calendar_routes,
+    src.tools.calendar, ...) keep references to the stub classes. Drop every
+    module this test added or replaced so later tests import them against the
+    real database again."""
+    before = dict(sys.modules)
+    yield
+    for name in list(sys.modules):
+        if name not in before:
+            del sys.modules[name]
+        elif sys.modules[name] is not before[name]:
+            sys.modules[name] = before[name]
+
+
 def _install_calendar_db_stub(monkeypatch):
     db = types.ModuleType("core.database")
     db.SessionLocal = MagicMock()

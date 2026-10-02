@@ -10053,3 +10053,28 @@ Verificado en el PC (Windows, apps arrancadas desde el hub):
 - En Chrome: Descargas (descarga de 80,9 MB y reproducción con Range), Partir en ZIPs (plan) y Taller (unir por ruta, subir y descargar).
 - En el 7000 con el 27B q4: «Descárgame el audio de esto: <YouTube>» → `media_download` y la ruta del MP3 (68 s); «Parte en zips de 10 MB la carpeta …» → `disk_zip_split` (128 s); «Comprime este PDF para que pese menos de 300 KB: …» → `pdf_compress` (222 s). DiskHoard se adoptó en el 7000 (18 tools); su pre-escaneo solo marcaba el falso positivo conocido del token de la familia (`hoard_link/family.py`) y se aprobó con override.
 - `plugins/links`, `plugins/diskhoard` y `plugins/kafka` son copia de los manifiestos de cada app.
+
+## 261. Vista de todo lo que corre, modo ligero fijado por chat y una contaminación entre pruebas (02-10-2026)
+
+Segunda tanda de lo que se trajo de los dos repos de §260.
+
+- **`GET /api/farm/state`** (`505b1e05`, `src/farm_state.py`, `routes/farm_routes.py`). Un solo JSON con lo que corre ahora:
+  - qué corre: turnos de chat y sus sub-agentes colgando del turno que los lanzó, trabajos de dispatch y sus workers, turno de noche, flujos, tareas programadas y el estado del presupuesto de §260;
+  - de cada elemento: id, tipo, título (sin cuerpos de mensajes), padre, estado, inicio, último evento, modelo, progreso y enlace;
+  - caché de 1 s con ETag y 304.
+  Lo puede leer el usuario con sesión o un token con el ámbito nuevo de sólo lectura `farm:read`, que no abre nada más.
+- **Cassandra's Hoard · «Agentes en marcha»** (`692f85f`). Tarjeta del Panel con cada ejecución y sus hijos sangrados, más la línea de presupuesto: GPU de hoy y su ritmo, cortacircuitos y enfriamientos. Sólo consulta mientras el Panel está a la vista y dice por qué cuando no puede leer Faustus. Herramienta MCP `faustus_farm`, 16 en total.
+- **Modo ligero fijado por chat** (`f6a5b1f5`, `64dc9216`, `src/chat_mode.py`).
+  - `/mode lean|normal`, el chip «Ligero/Normal» del compositor y `GET/POST /api/sessions/{id}/mode`.
+  - En modo ligero se quitan el índice de skills, el mapa del repo, los instintos y las herramientas MCP y de plugins; se quedan las herramientas básicas.
+  - Cada chat fija los ajustes que dan forma al prompt, así que un cambio global no altera el prefijo de una conversación en marcha. Vale para los chats nuevos, o al volver a usar `/mode`. Se guarda en `sessions.chat_profile`.
+  - Ajuste nuevo `agent_default_chat_mode`.
+  - `prompt_audit` apunta ahora `system_prefix_sha256` por ronda.
+- **Pruebas que se contaminaban** (`tests/test_calendar_owner_scope.py`). Sustituía `core.database` por un módulo falso. Los módulos importados contra él (`routes.calendar_routes`, `src.tools.calendar`) se quedaban en `sys.modules`, y `tests/test_upload_handler_cleanup.py` fallaba sólo si corría después. Un fixture automático olvida tras cada prueba los módulos que esta añadió o cambió.
+
+Probado:
+- 114 pruebas de la vista y de la matriz de tokens, la suite de Cassandra y 34 de modo ligero; las dos pruebas que se contaminaban pasan juntas.
+- En vivo:
+  - `/api/farm/state` mostró un turno real con `delegate_agents` y sus dos workers hijos, y el 304 al repetir.
+  - `faustus_farm` respondió por MCP desde Cassandra, y la tarjeta salió en el Panel (Playwright).
+  - Modo ligero en la instancia de pruebas 7010 con el 27B: misma pregunta, 16.445 → 7.545 tokens de entrada en la primera ronda, de 33 a 13 herramientas, primer token de 25,6 a 19,9 s. Con una pregunta simple, de 17,9 a 7,4 s. El hash del prefijo de un chat ligero no cambió al tocar un ajuste global; un chat nuevo sí tomó el nuevo.

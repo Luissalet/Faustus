@@ -1439,6 +1439,10 @@ DEFAULT_SETTINGS = {
     # Dispatched jobs are linted for named files, an exact verify command and a
     # single outcome: off | warn | enforce (src/dispatch_spec_lint.py).
     "dispatch_spec_lint": "warn",
+    # Chat mode for conversations that have not chosen one (/mode lean|normal):
+    # lean drops the skills index, repo map, instincts and MCP/plugin tools; the
+    # resolved prompt-shaping settings are pinned per chat (src/chat_mode.py).
+    "agent_default_chat_mode": "normal",
     # Model the workers run on ("" = the coordinator's). Two different models
     # generate at the same time on Ollama; two requests to one model queue on
     # its single slot — pin the worker model to the other card (Local models →

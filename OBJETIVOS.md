@@ -1147,3 +1147,15 @@ Hecho en §250 (radar #386 y #390). **Por hacer:**
 ## OBJ-52 · Cassandra avisa de lo que espera en Faustus — HECHO (01-10-2026)
 
 Hecho en §251 y §253: ámbito `attention:read`, herramienta `faustus_attention`, conexión en la 7000, aviso por el bus y Boop, tarjeta en el Panel, y lista de atención con fecha y nombre.
+
+## OBJ-53 · Lo que queda de los dos repos del 02-10 (tau y la granja de agentes)
+
+Hecho en §260 y §261. **Por hacer:**
+
+- Buzón entre agentes: mensajes con remitente, urgente y despertar, tope de 3 saltos y de despertares por hora, entregados donde hoy se drenan los steers y reflejados en el bus como `faustus.agent.msg`. Un mensaje de otro agente nunca es una aprobación.
+- Comprobación de carpeta también para lo que lanza la herramienta `python` con `subprocess` (hoy sólo cubre las órdenes de shell).
+- Medidor del presupuesto del periodo en el panel de uso de Studio; hoy se ve en `GET /api/budget/period` y en la tarjeta «Agentes en marcha» de Cassandra.
+- Adoptar tras un reinicio los trabajos de dispatch que seguían vivos, en vez de marcarlos interrumpidos.
+- Árbol de sesiones (bifurcaciones y clones de un chat) en Studio, sobre el `/fork` que ya existe.
+- `!!orden` en el compositor: ejecuta en la shell sin pasar por el modelo.
+- `/github` para etiquetas, notas de cambios y comprobaciones de release con `gh`.
