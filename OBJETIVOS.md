@@ -1165,6 +1165,5 @@ Hecho en §260 y §261. **Por hacer:**
 Acordado con Luis el 02-10: dos apps separadas de la familia (Galton, puerto 5201, banco de pruebas; Pygmalion, puerto 5202, LoRA/QLoRA, fusiones, cuantización propia con matriz de importancia y contexto largo con YaRN); el árbitro de VRAM del Hub decide; las GPU 0 y 1 nunca sin su permiso; nunca se descarga un modelo que haya cargado otro. Detalle y pruebas en FAUSTUS.md §264.
 
 Lo que queda:
-- Terminar la medida del 27B q8 del 8081 (la ejecución de continuación está en marcha en Galton; espera a que el servidor esté libre entre caso y caso) y publicar las rutas (`routes_publish`) para que Hoard Link elija por tarea con datos.
 - QLoRA real del Qwen3.5-9B (descargado, 19,3 GB): necesita una GPU permitida con unos 11 GB libres (ver PENDIENTES, sección A).
 - Un segundo ajuste del 0.8B con más registros o más épocas: el primero (160 registros, una época) no se distingue del base en los registros reservados (+0,05, 1 gana y 19 empates).
