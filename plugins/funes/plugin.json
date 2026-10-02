@@ -3,7 +3,7 @@
   "id": "funes",
   "name": "Funes's Hoard",
   "purpose": "Gives the assistant a local memory of desktop activity and audio sessions. Records and transcribes meetings and voice notes, searches transcripts, and merges them with screen and clipboard memory in one citable timeline.",
-  "capabilities": ["activity timeline", "day summaries", "resume context", "recent files", "git commits", "activity search", "audio recording", "live and final transcription", "meeting search and notes", "audio import and export", "federated recall (screen, clipboard, audio)"],
+  "capabilities": ["activity timeline", "day summaries", "resume context", "recent files", "git commits", "activity search", "audio recording", "live and final transcription", "meeting search and notes", "audio import and export", "meeting minutes with action items", "import audio by file path", "federated recall (screen, clipboard, audio)"],
   "placeholders": ["FUNES_DIR", "APP_URL"],
   "defaults": {"APP_URL": "http://127.0.0.1:8813"},
   "app": {

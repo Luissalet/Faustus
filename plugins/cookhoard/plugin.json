@@ -2,15 +2,125 @@
   "schema": 1,
   "id": "cookhoard",
   "name": "CookHoard",
-  "purpose": "Local cooking assistant for recipes, fridge-aware recommendations, a weekly menu and a unified shopping list. No web server or cloud account is required.",
-  "capabilities": ["recipes", "cooking steps", "fridge", "shopping list", "seasonal recommendations", "weekly menu", "daily servings", "scaled menu ingredient totals", "pantry stock deficits"],
-  "placeholders": ["COOKHOARD_DIR"],
+  "purpose": "Local cooking assistant for recipes, fridge-aware recommendations, a weekly menu and a unified shopping list. It imports recipes from video links (Instagram, TikTok, YouTube, Facebook) and pasted text into reviewable drafts, keeps a pantry with places and expiry dates, reads supermarket tickets into prices, costs recipes and menus against a weekly budget and warns every morning about food that is about to expire. Everything stays on the computer.",
+  "capabilities": [
+    "recipes",
+    "cooking steps",
+    "fridge",
+    "shopping list",
+    "seasonal recommendations",
+    "weekly menu",
+    "daily servings",
+    "scaled menu ingredient totals",
+    "pantry stock deficits",
+    "video-recipe-import",
+    "reel-import",
+    "recipe-text-import",
+    "recipe-drafts",
+    "ingredient-dictionary",
+    "pantry-places",
+    "expiry-tracking",
+    "leftovers",
+    "what-to-cook",
+    "tickets",
+    "ticket-ocr",
+    "mail-receipts",
+    "price-book",
+    "recipe-cost",
+    "menu-cost",
+    "food-spending",
+    "price-watch",
+    "cooking-mode",
+    "shopping-sections",
+    "daily-reminders",
+    "dashboard"
+  ],
+  "placeholders": [
+    "COOKHOARD_DIR",
+    "APP_URL",
+    "TOKEN_FILE",
+    "DATA_DIR"
+  ],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:5210",
+    "DATA_DIR": "%LOCALAPPDATA%/CookHoard",
+    "TOKEN_FILE": "%LOCALAPPDATA%/CookHoard/mcp-token"
+  },
+  "app": {
+    "url_default": "http://127.0.0.1:5210",
+    "ui_url": "{APP_URL}",
+    "health": {
+      "path": "/api/health",
+      "expect": {
+        "service": "cookhoard"
+      }
+    },
+    "identify": {
+      "service": [
+        "cookhoard"
+      ],
+      "title": [
+        "cookhoard",
+        "cocina de casa"
+      ]
+    },
+    "launch_hint": {
+      "kind": "process",
+      "executable": "node",
+      "argv": [
+        "server/bootstrap.mjs"
+      ],
+      "cwd": "{COOKHOARD_DIR}",
+      "env": {
+        "PORT_STRICT": "1",
+        "COOKHOARD_PORT": "5210",
+        "COOKHOARD_DATA_DIR": "{DATA_DIR}"
+      },
+      "readiness": {
+        "url": "{APP_URL}/api/health",
+        "timeout_s": 30
+      }
+    }
+  },
   "mcp": {
     "transport": "stdio",
     "command": "node",
-    "args": ["{COOKHOARD_DIR}/apps/mcp/bootstrap.mjs"],
-    "env": {},
-    "optional_env": ["COOKHOARD_DATA_DIR"]
+    "args": [
+      "{COOKHOARD_DIR}/apps/mcp/bootstrap.mjs"
+    ],
+    "env": {
+      "COOKHOARD_URL": "{APP_URL}",
+      "COOKHOARD_TOKEN_FILE": "{TOKEN_FILE}",
+      "COOKHOARD_DATA_DIR": "{DATA_DIR}"
+    },
+    "optional_env": [
+      "COOKHOARD_AUTOSTART",
+      "COOKHOARD_MODE",
+      "COOKHOARD_YTDLP",
+      "COOKHOARD_FFMPEG",
+      "COOKHOARD_PYTHON",
+      "COOKHOARD_SCHEDULER",
+      "COOKHOARD_ALLOWED_HOSTS"
+    ]
   },
-  "notes": "Run npm install once in CookHoard. Faustus launches the MCP process directly; kitchen data is saved locally under COOKHOARD_DATA_DIR or the user's local app-data folder. No website, domain or Supabase service is needed."
+  "x-events": [
+    "cookhoard.pantry.expiring",
+    "cookhoard.recipe.imported",
+    "cookhoard.menu.planned"
+  ],
+  "x-links": {
+    "funes": "audio transcription for video recipes (scribe_import_file)",
+    "kafka": "ticket OCR (doc_add_file) and mail receipts (docs_list)",
+    "tantalus": "price watching (target_add)",
+    "ledger": "food spending (silent when absent)",
+    "hub": "local chat and vision models through Hoard Link chat()"
+  },
+  "x-requires": {
+    "optional": [
+      "yt-dlp",
+      "ffmpeg"
+    ],
+    "node": ">=22.13"
+  },
+  "notes": "Run npm install and npm run build once in CookHoard, then start the app (npm start, or let Faustus launch it): the MCP bridge proxies every call to the running app, starts it when it is not answering and falls back to running the tools in-process (COOKHOARD_MODE=inprocess forces that, COOKHOARD_AUTOSTART=0 disables the auto-start). Both share one kitchen.json under COOKHOARD_DATA_DIR (default %LOCALAPPDATA%/CookHoard) guarded by a cross-process lock; a version 1 kitchen migrates on the first write and the original is kept as kitchen.json.v1.bak. Video links need yt-dlp (settings: media.ytdlp or COOKHOARD_YTDLP; Instagram and TikTok often need cookies from Edge, Chrome or Firefox, or a cookies.txt file) and optionally ffmpeg for key frames; without them text, pages with structured data and tickets still work. Every recipe read from a video or text is a draft with the line that justified each ingredient; nothing is saved until it is accepted. Quantities that a model suggests are only kept when the source text contains the number. Missing models, Funes, Kafka, Ledger or Tantalus are reported as such, never faked. The daily routine at 09:00 (with catch-up after the computer was off) emits cookhoard.pantry.expiring; COOKHOARD_SCHEDULER=0 turns it off. Only local requests are accepted (COOKHOARD_ALLOWED_HOSTS adds host names). Mutating tools: pantry_set, shopping_mark_bought, ingredient_add, ingredient_alias_add, price_add, recipe_draft_accept/discard, import_recipe_*, ticket_import_*, ticket_line_map, settings_set, import_kitchen and the original kitchen editors; deletes only when the user asks."
 }

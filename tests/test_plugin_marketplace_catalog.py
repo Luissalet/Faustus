@@ -70,8 +70,16 @@ def test_independent_watch_and_book_repositories_are_excluded():
     assert independent.isdisjoint(repository_names)
 
 
-@pytest.mark.parametrize("plugin_id,entrypoint", [("cookhoard", "apps/mcp/bootstrap.mjs"),
-    ("gamerhoard", "mcp/server.mjs")])
+def test_cookhoard_is_a_real_app_with_a_stdio_bridge():
+    # CookHoard 0.2 ships its own local app (port 5210) and keeps the stdio bridge Faustus starts.
+    raw = json.loads((ROOT / "cookhoard" / "plugin.json").read_text(encoding="utf-8"))
+    plugin = plugins.parse_manifest(raw)
+    assert plugin.app_url_default == "http://127.0.0.1:5210" and plugin.health_path == "/api/health"
+    assert plugin.launch_hint and plugin.transport == "stdio" and plugin.command == "node"
+    assert plugin.args[0].endswith("apps/mcp/bootstrap.mjs")
+
+
+@pytest.mark.parametrize("plugin_id,entrypoint", [("gamerhoard", "mcp/server.mjs")])
 def test_direct_stdio_toolpacks_have_no_fabricated_background_app(plugin_id, entrypoint):
     raw = json.loads((ROOT / plugin_id / "plugin.json").read_text(encoding="utf-8"))
     plugin = plugins.parse_manifest(raw)

@@ -163,7 +163,7 @@ def test_the_survey_says_what_can_be_done_with_each_plugin(world):
     assert rows["dorian"]["connected"] is False
     # Installed-but-unconnected still shows what it would lend, which is how
     # a person decides whether connecting it is worth doing.
-    assert rows["dorian"]["capabilities"] == ["credentials", "sessions"]
+    assert rows["dorian"]["capabilities"] == ["personal-context", "reflection", "source-evidence", "reviewed-updates"]
 
 
 def test_the_survey_does_not_touch_the_network_unless_asked(world):
