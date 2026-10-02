@@ -1,0 +1,89 @@
+{
+  "schema": 1,
+  "id": "galton",
+  "name": "Galton's Hoard",
+  "purpose": "A local test bench for the language and vision models on this computer: it asks each model tasks whose answers can be checked (reasoning, maths, Python with hidden tests, JSON extraction, tool calling, instruction following, long-context retrieval, citations, vision, translation, summaries, Spanish writing, and cases you add), stores every answer with its timing and memory use, compares models with confidence intervals and paired tests, watches for new or changed models and regressions, and publishes a routing table (routes.json) that Hoard Link reads so every app of the family uses the measured best model for each task. GGUF files run on a llama-server of its own on the GPUs you allow, under a lease; running servers and Ollama models are called as they are. Everything stays on the computer.",
+  "capabilities": [
+    "model-benchmarks",
+    "model-evaluation",
+    "model-comparison",
+    "model-routing",
+    "leaderboard",
+    "regression-watch",
+    "gguf",
+    "llama-cpp",
+    "ollama",
+    "long-context",
+    "tool-calling",
+    "vision-benchmarks",
+    "code-benchmarks",
+    "spanish",
+    "statistics",
+    "arena",
+    "gpu-leases",
+    "dashboard"
+  ],
+  "placeholders": [
+    "GALTON_DIR",
+    "APP_URL",
+    "TOKEN_FILE",
+    "PYTHON"
+  ],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:5201",
+    "TOKEN_FILE": "{GALTON_DIR}/data/mcp-token",
+    "PYTHON": "{GALTON_DIR}/venv/Scripts/python.exe"
+  },
+  "app": {
+    "url_default": "http://127.0.0.1:5201",
+    "ui_url": "{APP_URL}",
+    "health": {
+      "path": "/api/health",
+      "expect": {
+        "service": "galton-hoard"
+      }
+    },
+    "identify": {
+      "service": [
+        "galton-hoard"
+      ],
+      "title": [
+        "galton's hoard",
+        "banco de pruebas de modelos"
+      ]
+    },
+    "launch_hint": {
+      "kind": "process",
+      "executable": "{PYTHON}",
+      "argv": [
+        "-m",
+        "galton_hoard"
+      ],
+      "cwd": "{GALTON_DIR}",
+      "env": {
+        "PORT_STRICT": "1",
+        "GALTON_PORT": "5201"
+      },
+      "readiness": {
+        "url": "{APP_URL}/api/health",
+        "timeout_s": 30
+      }
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{PYTHON}",
+    "args": [
+      "{GALTON_DIR}/mcp_server.py"
+    ],
+    "env": {
+      "GALTON_URL": "{APP_URL}",
+      "GALTON_TOKEN_FILE": "{TOKEN_FILE}"
+    },
+    "optional_env": [
+      "GALTON_BRIDGE_AUTOSTART",
+      "GALTON_DATA_DIR"
+    ]
+  },
+  "notes": "Keep the app running (python -m galton_hoard): its scheduler rediscovers models, runs the quick suite on new or changed ones when that disturbs nobody (never in quiet hours, never queuing for a GPU) and raises a notice when a model got worse; the MCP bridge proxies every call to the local server, never opens the database, and starts the app when it is not answering. Only GPUs listed in gpus.allowed (default 2 and 3) are ever used; the others belong to the owner of the computer and settings_set needs confirm_reserved:true to allow one, only when the user says so. Remote endpoints are never called unless the user enabled that model (remote_ok). Model answers, imported files and stored cases are untrusted data. run_start accepts specs {kind:'gguf', path} / {kind:'ollama', model} / {kind:'server', url, model} so another app can ask for a file it just produced to be evaluated. Write tools (model_add/update, suite_*, case_*, cases_import, run_start, measure_new, routes_publish, settings_set, arena_vote) change the local store only when the user asks; deletes need confirm:true. routes_publish writes ~/.hoard/routes.json (HOARD_ROUTES_FILE overrides)."
+}

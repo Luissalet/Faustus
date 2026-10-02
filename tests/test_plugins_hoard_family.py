@@ -1,6 +1,6 @@
 """The Hoard apps that ship as plugins (ledger, links, people, argus, borges,
 vulcan, hypatia, echo, nightingale, cassandra, vitruvius, midas, cicero, tantalus, lumiere,
-phileas, kafka).
+phileas, kafka, galton, pygmalion).
 
 Each is a standalone application with its own repository; what ships here is
 Faustus's side of the contract, copied from the `faustus-plugin.json` the app
@@ -33,6 +33,8 @@ FAMILY = {
     "phileas": ("phileas-hoard", 5199, "phileas"),
     "lumiere": ("lumiere-hoard", 5198, "lumiere"),
     "kafka": ("kafka-hoard", 5200, "kafka"),
+    "galton": ("galton-hoard", 5201, "galton"),
+    "pygmalion": ("pygmalion-hoard", 5202, "pygmalion"),
 }
 
 

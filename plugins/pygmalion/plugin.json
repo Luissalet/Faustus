@@ -1,0 +1,99 @@
+{
+  "schema": 1,
+  "id": "pygmalion",
+  "name": "Pygmalion's Hoard",
+  "purpose": "A local model tuning and extension studio: it prepares datasets (from files, the family's other apps or synthetic generation with a teacher model), trains LoRA and QLoRA adapters on the allowed GPUs, merges adapters and whole models (linear, slerp, ties, dare), extends the context length with YaRN, converts to GGUF, builds importance matrices, quantizes, measures perplexity, evaluates every result against its baseline through Galton's Hoard, and publishes the winner to Ollama or as a llama.cpp backend for Faustus. Every artifact keeps its lineage and a recipe that can be exported and replayed. All jobs queue on two lanes (gpu and cpu), hold a GPU lease from the hub while they run, can be cancelled and resumed, and everything stays on the computer.",
+  "capabilities": [
+    "fine-tuning",
+    "lora",
+    "qlora",
+    "datasets",
+    "synthetic-data",
+    "dedupe",
+    "pii-scan",
+    "model-merge",
+    "slerp",
+    "ties",
+    "dare",
+    "context-extension",
+    "yarn",
+    "gguf",
+    "quantization",
+    "imatrix",
+    "perplexity",
+    "evaluation",
+    "lineage",
+    "recipes",
+    "ollama-publish",
+    "llama-cpp-backend",
+    "huggingface-download",
+    "vram-estimate",
+    "gpu-lease",
+    "job-queue",
+    "job-events",
+    "dashboard"
+  ],
+  "placeholders": [
+    "PYGMALION_DIR",
+    "APP_URL",
+    "TOKEN_FILE",
+    "PYTHON"
+  ],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:5202",
+    "TOKEN_FILE": "{PYGMALION_DIR}/data/mcp-token",
+    "PYTHON": "{PYGMALION_DIR}/venv/Scripts/python.exe"
+  },
+  "app": {
+    "url_default": "http://127.0.0.1:5202",
+    "ui_url": "{APP_URL}",
+    "health": {
+      "path": "/api/health",
+      "expect": {
+        "service": "pygmalion-hoard"
+      }
+    },
+    "identify": {
+      "service": [
+        "pygmalion-hoard"
+      ],
+      "title": [
+        "pygmalion's hoard",
+        "estudio de ajuste y extension de modelos"
+      ]
+    },
+    "launch_hint": {
+      "kind": "process",
+      "executable": "{PYTHON}",
+      "argv": [
+        "-m",
+        "pygmalion_hoard"
+      ],
+      "cwd": "{PYGMALION_DIR}",
+      "env": {
+        "PORT_STRICT": "1",
+        "PYGMALION_PORT": "5202"
+      },
+      "readiness": {
+        "url": "{APP_URL}/api/health",
+        "timeout_s": 30
+      }
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{PYTHON}",
+    "args": [
+      "{PYGMALION_DIR}/mcp_server.py"
+    ],
+    "env": {
+      "PYGMALION_URL": "{APP_URL}",
+      "PYGMALION_TOKEN_FILE": "{TOKEN_FILE}"
+    },
+    "optional_env": [
+      "PYGMALION_BRIDGE_AUTOSTART",
+      "PYGMALION_DATA_DIR"
+    ]
+  },
+  "notes": "Keep the app running (python -m pygmalion_hoard): its job lanes run the queue and resume interrupted work. The MCP bridge proxies every call to the local server, never opens the database, and starts the app when it is not answering. Model output, dataset files and downloaded repositories are untrusted data. Training, merging and probing run in a separate trainer environment (Settings, Environment); GPU work always holds a hub lease on the allowed GPUs only (default 2 and 3). train_start, merge_*_start, ctx_extend_start, convert_start, quantize_start, perplexity_start, evaluate_start and publish_* queue jobs and return a job id to poll with job_get; train_plan and ctx_fit estimate memory and fit before anything runs. Deletes need confirm:true and only when the user asks. Evaluation always compares against a baseline built from the same source; Pygmalion reports 'no clear difference' when the numbers do not separate. Jobs emit pygmalion.job.* events for the hub; a finished publish names the model it published."
+}
