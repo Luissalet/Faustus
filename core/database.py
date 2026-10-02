@@ -262,6 +262,12 @@ class Session(TimestampMixin, Base):
     # in this file (see `McpServer.disabled_tools` right above its class).
     connector_ids = Column(Text, nullable=True)
 
+    # Lean mode pinned per chat (src/chat_mode.py): JSON object
+    # {"v": 1, "mode": "normal"|"lean", "pinned": {setting: value, ...},
+    # "pinned_at": epoch seconds}, or NULL for a chat that never had a turn
+    # since the column existed. TEXT for the same reason as `connector_ids`.
+    chat_profile = Column(Text, nullable=True)
+
     # Relationship to chat messages
     messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan")
     
@@ -1853,6 +1859,28 @@ def _migrate_add_session_connector_ids():
                 logging.getLogger(__name__).info("Migrated: added 'connector_ids' to sessions")
     except Exception as e:
         logging.getLogger(__name__).warning(f"sessions.connector_ids migration failed: {e}")
+
+
+def _migrate_add_session_chat_profile():
+    """Add `chat_profile` to sessions (lean mode pinned per chat).
+
+    Same idempotency story as `_migrate_add_session_connector_ids` right
+    above: a fresh install already has the column from today's model, an
+    older `sessions` table gets it ALTERed in once. Purely additive: NULL
+    means "this chat never resolved a profile", which `src.chat_mode` reads
+    as "resolve and pin at the next turn".
+    """
+    try:
+        with engine.connect() as conn:
+            cols = [r[1] for r in conn.execute(text("PRAGMA table_info(sessions)"))]
+            if not cols:
+                return
+            if "chat_profile" not in cols:
+                conn.execute(text("ALTER TABLE sessions ADD COLUMN chat_profile TEXT"))
+                conn.commit()
+                logging.getLogger(__name__).info("Migrated: added 'chat_profile' to sessions")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"sessions.chat_profile migration failed: {e}")
 
 
 def _migrate_add_owner_column():
@@ -3455,6 +3483,7 @@ def _formal_migration_steps() -> "list[tuple[str, object]]":
         ("add_session_wire_material_columns", _migrate_add_session_wire_material_columns),
         ("add_session_behavior_mode", _migrate_add_session_behavior_mode),
         ("add_session_connector_ids", _migrate_add_session_connector_ids),
+        ("add_session_chat_profile", _migrate_add_session_chat_profile),
         ("add_calendar_external_ref", _migrate_add_calendar_external_ref),
         ("add_lease_generation_columns", _migrate_add_lease_generation_columns),
         ("add_revision_triggers", _migrate_add_revision_triggers),
@@ -4267,6 +4296,43 @@ def set_session_connector_ids(session_id: str, connector_ids) -> bool:
         return True
     except Exception:
         logger.warning("Failed to persist connector_ids %r for session %s", connector_ids, session_id)
+        return False
+
+def get_session_chat_profile(session_id: str):
+    """Return a session's persisted lean-mode profile (a dict), or None.
+
+    None means the chat has not resolved a profile yet (or the id is
+    unknown, or the stored text is not a JSON object). Best-effort like
+    `get_session_connector_ids`: never raises, so the chat path can call it
+    without a guard.
+    """
+    import json as _json
+    try:
+        with get_db_session() as db:
+            raw = db.query(Session.chat_profile).filter(Session.id == session_id).scalar()
+        if not raw:
+            return None
+        parsed = _json.loads(raw)
+        return parsed if isinstance(parsed, dict) else None
+    except Exception:
+        logger.warning("Failed to read chat_profile for session %s", session_id)
+        return None
+
+def set_session_chat_profile(session_id: str, profile) -> bool:
+    """Persist a session's lean-mode profile (or clear it with `None`).
+
+    Returns True only when a row was actually updated, so a caller can tell
+    "no such session" (e.g. an incognito wrapper id) from a stored profile.
+    Best-effort: never raises.
+    """
+    import json as _json
+    try:
+        value = None if profile is None else _json.dumps(profile, sort_keys=True, ensure_ascii=True)
+        with get_db_session() as db:
+            updated = db.query(Session).filter(Session.id == session_id).update({"chat_profile": value})
+        return bool(updated)
+    except Exception:
+        logger.warning("Failed to persist chat_profile for session %s", session_id)
         return False
 
 def get_session_by_id(session_id: str):

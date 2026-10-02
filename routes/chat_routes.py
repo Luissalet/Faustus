@@ -54,6 +54,7 @@ from routes.document_helpers import _owner_session_filter
 from core.database import SessionLocal, get_session_mode, set_session_mode
 from core.database import get_session_behavior_mode
 from src import behavior_modes
+from src import chat_mode as chat_profiles  # not `chat_mode`: the chat route has a local of that name
 from src.settings import get_setting
 from core.database import Session as DBSession, ChatMessage as DBChatMessage
 from core.database import Document as DBDocument, ModelEndpoint
@@ -2123,6 +2124,15 @@ def setup_chat_routes(
         # Per-project agent knobs → harness_options (checkpoints, tests,
         # review, trusted workspace…). Non-project chats get the defaults.
         _harness_options = _project_harness_options(request, session, workspace)
+        # Lean mode pinned per chat (src/chat_mode.py): the profile this turn
+        # runs under (pinned on the chat's first turn). Nobody/incognito
+        # turns carry none.
+        _chat_profile = None
+        if session and not incognito:
+            try:
+                _chat_profile = chat_profiles.turn_profile(session)
+            except Exception:  # noqa: BLE001 - the profile is never worth the turn
+                logger.debug("chat profile unavailable for %s", session, exc_info=True)
         # Plan mode is a modifier on agent mode — it only makes sense with tools.
         if plan_mode:
             chat_mode = "agent"
@@ -4111,6 +4121,8 @@ def setup_chat_routes(
                         _loop_harness_options["incognito"] = bool(incognito)
                         _loop_harness_options["no_memory"] = bool(no_memory)
                         _loop_harness_options["no_skills"] = bool(no_skills)
+                        if _chat_profile:
+                            _loop_harness_options["chat_profile"] = _chat_profile
                         # ADP-22: hand the resolved route classification down
                         # to `src.agent_loop._usage_bucket` (`route_decision`
                         # kwarg) so saved usage carries the SAME
@@ -4984,10 +4996,14 @@ def setup_chat_routes(
         # same turn under whatever mode is already persisted (or the global
         # default if none is). Resolved the same way `build_chat_context`
         # resolves it, just without a `requested` candidate.
+        try:
+            _regen_profile = chat_profiles.turn_profile(sid)
+        except Exception:  # noqa: BLE001
+            _regen_profile = None
         _regen_mode = behavior_modes.resolve(
             requested=None,
             session_mode=get_session_behavior_mode(sid),
-            default_setting=get_setting("behavior_mode_default"),
+            default_setting=chat_profiles.profile_setting(_regen_profile, "behavior_mode_default"),
             owner=owner,
         )
         _regen_mode_block = behavior_modes.system_block(_regen_mode)
@@ -5013,6 +5029,7 @@ def setup_chat_routes(
                 session_id=sid,
                 owner=owner,
                 disabled_tools=disabled_for_regenerate,
+                harness_options={"chat_profile": _regen_profile} if _regen_profile else None,
             ):
                 if chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
                     try:

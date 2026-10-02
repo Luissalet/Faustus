@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field
 from core.database import get_session_behavior_mode, set_session_behavior_mode
 from core.middleware import require_admin
 from core.session_manager import SessionManager
+from routes.chat_mode_routes import build_chat_mode_router
 from routes.session_routes import _verify_session_owner
 from src import behavior_modes
 from src.auth_helpers import effective_user
@@ -154,5 +155,9 @@ def setup_behavior_mode_routes(session_manager: SessionManager) -> APIRouter:
         if mode is None:
             return _error(404, f"Unknown behaviour mode {body.mode!r}.", "modes.not_found")
         return behavior_modes.check_response(mode, body.text)
+
+    # Lean mode pinned per chat (GET/POST /api/sessions/{id}/mode): a chat-level
+    # switch next to the behaviour mode, registered by the same setup call.
+    router.include_router(build_chat_mode_router(session_manager))
 
     return router

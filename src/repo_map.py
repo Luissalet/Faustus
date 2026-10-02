@@ -116,7 +116,7 @@ _LANG_RES = {"js": _JS_SYMBOL_RES, "go": _GO_RES, "rs": _RS_RES, "java": _JAVA_R
 
 def _setting(key: str, default: Any) -> Any:
     try:
-        from src.settings import get_setting
+        from src.chat_mode import get_setting  # pinned per chat while its turn runs
         return get_setting(key, default)
     except Exception:
         return default

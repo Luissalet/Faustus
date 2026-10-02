@@ -46,7 +46,10 @@ from src.context_compactor import (
     maybe_compact,
     COMPACT_THRESHOLD,
 )
-from src.settings import get_setting
+# Lean mode pinned per chat (src/chat_mode.py): the same `get_setting`, but a
+# pinned chat's turn reads the prompt-shaping values frozen with its profile.
+from src.chat_mode import get_setting
+from src import chat_mode as _chat_mode
 from src import autonomy_budget
 from src import plan_state
 from src.prompt_security import untrusted_context_message, UNTRUSTED_CONTEXT_HEADER
@@ -5146,7 +5149,7 @@ def _build_system_prompt(
         _ov_sig = _hl.sha256(_json.dumps(get_builtin_overrides() or {}, sort_keys=True).encode()).hexdigest()
     except Exception:
         _ov_sig = ""
-    cache_key = (frozenset(disabled_tools or []), bool(mcp_mgr), needs_admin, _rt_key, _st_key, compact, _ov_sig, owner, suppress_local_context, suppress_skills)
+    cache_key = (frozenset(disabled_tools or []), bool(mcp_mgr), needs_admin, _rt_key, _st_key, compact, _ov_sig, owner, suppress_local_context, suppress_skills, _chat_mode.is_lean())
     if _cached_base_prompt and _cached_base_prompt_key == cache_key and not active_document:
         agent_prompt = _cached_base_prompt
         # Skill index is user-editable (name + description), so it must never
@@ -5586,7 +5589,8 @@ def _build_system_prompt(
         except Exception as _pr_err:
             logger.debug("[project_rules] injection failed: %s", _pr_err)
         try:
-            agent_prompt += _big_task_strategy_block()
+            if not _chat_mode.is_lean():
+                agent_prompt += _big_task_strategy_block()
         except Exception:
             pass
     elif (
@@ -5608,7 +5612,7 @@ def _build_system_prompt(
     # the caller did not pass one.
     _given_project_id = str(project_id or "").strip()
     _repos_project_id = ""
-    if not suppress_local_context and owner and (_given_project_id or session_id):
+    if not suppress_local_context and not _chat_mode.is_lean() and owner and (_given_project_id or session_id):
         try:
             _repos_project_id = _given_project_id
             if not _repos_project_id:
@@ -5626,7 +5630,7 @@ def _build_system_prompt(
     # `project_id`, or the one it resolved for this same session/owner)
     # instead of resolving the project a second time; falls back to its own
     # lookup when the repos block was skipped or failed before setting it.
-    if not suppress_local_context and owner and (_given_project_id or session_id):
+    if not suppress_local_context and not _chat_mode.is_lean() and owner and (_given_project_id or session_id):
         try:
             _board_project_id = _repos_project_id or _given_project_id
             if not _board_project_id:
@@ -5642,7 +5646,7 @@ def _build_system_prompt(
     # block just above (needs an owner; skipped under suppress_local_context
     # like every other project-scoped addition here), plus the turn's own
     # last user message as the task text `choose_strategy` classifies.
-    if not suppress_local_context and owner:
+    if not suppress_local_context and not _chat_mode.is_lean() and owner:
         try:
             _strategy_task_text = _extract_last_user_message(messages)
             if _strategy_task_text:
@@ -5658,7 +5662,7 @@ def _build_system_prompt(
         or (relevant_tools and (set(relevant_tools) & _HARNESS_RULE_TOOLS))
     ):
         try:
-            from src.settings import get_setting as _gs
+            from src.chat_mode import get_setting as _gs
             if _gs("agent_harness_checks", True):
                 agent_prompt += _harness.local_model_policy()
         except Exception:
@@ -6049,9 +6053,12 @@ def _build_base_prompt(
         # ALWAYS_AVAILABLE back in here used to silently undo those
         # drops. Only force-include the irreducible loop primitives
         # (ask_user, update_plan, lookup_tools) as belt-and-suspenders.
-        tool_names = set(relevant_tools) | {"ask_user", "update_plan", "lookup_tools"}
+        # Lean chat: only `ask_user` is a loop primitive; the plan tracker, the
+        # catalog helper and the admin sections are not part of a plain chat.
+        _lean_base = _chat_mode.is_lean()
+        tool_names = set(relevant_tools) | ({"ask_user"} if _lean_base else {"ask_user", "update_plan", "lookup_tools"})
         deferred -= {"ask_user", "update_plan", "lookup_tools"}
-        if needs_admin:
+        if needs_admin and not _lean_base:
             tool_names |= _ADMIN_TOOLS
         agent_prompt = _assemble_prompt(
             tool_names, disabled, compact=compact, record_blocks=record_blocks,
@@ -7814,6 +7821,12 @@ async def _stream_agent_loop_body(
         # public/non-admin users rather than trying to enumerate every tool.
         mcp_mgr = None
 
+    # Lean chat (src/chat_mode.py): no MCP or plugin tools and none of their
+    # prompt blocks; the rest of what lean drops is gated on `_lean` below.
+    _lean = _chat_mode.is_lean()
+    if _lean:
+        mcp_mgr = None
+
     # TASK-06: autonomy budget for this turn (src/autonomy_budget.py). Every
     # preset gets a Budget; only `read_only` additionally narrows what is
     # offered. That narrowing happens HERE — before both the tool schema
@@ -7980,7 +7993,7 @@ async def _stream_agent_loop_body(
     # workspace, ranked for this request, injected once per turn as reference
     # data right before the user's message. Frozen for the whole turn so the
     # prompt prefix stays identical across rounds (local KV cache).
-    if workspace and not guide_only and _hopts.get("repo_map", True):
+    if workspace and not guide_only and not _lean and _hopts.get("repo_map", True):
         try:
             from src import repo_map as _repo_map
             _repo_map_text = await asyncio.to_thread(_repo_map.build, workspace, _last_user)
@@ -8026,7 +8039,7 @@ async def _stream_agent_loop_body(
         logger.debug("[lifecycle_hooks] session_start/turn_start run failed", exc_info=True)
     # Learned instincts (src/instincts.py): small per-project behaviours mined
     # from earlier sessions, injected as reference data when confident enough.
-    if owner and get_setting("instincts_enabled", True) and not _hopts.get("incognito"):
+    if owner and not _lean and get_setting("instincts_enabled", True) and not _hopts.get("incognito"):
         try:
             from src import instincts as _instincts
             _inst_text = _instincts.render_block(
@@ -8045,7 +8058,7 @@ async def _stream_agent_loop_body(
     # Fix memory (src/fix_memory.py): past solved issues of this project,
     # recalled by lexical/file/error overlap with the request and injected the
     # same way instincts are. Never blocks; empty when nothing matches.
-    if (workspace and owner and get_setting("fix_memory_enabled", True)
+    if (workspace and owner and not _lean and get_setting("fix_memory_enabled", True)
             and get_setting("fix_memory_auto_recall", True) and not _hopts.get("incognito")):
         try:
             from src import fix_memory as _fixmem
@@ -8068,7 +8081,7 @@ async def _stream_agent_loop_body(
     # concepts_understand itself; this only makes it automatic, running a
     # semantic search over the user's message and adding the closest
     # concepts as reference data, the same spot repo_map uses.
-    if workspace and not guide_only and get_setting("agent_project_concepts_inject", False):
+    if workspace and not guide_only and not _lean and get_setting("agent_project_concepts_inject", False):
         try:
             from src import project_concepts as _pc
             _pc_key = _pc.resolve_project_key(workspace=workspace)
@@ -9397,7 +9410,7 @@ async def _stream_agent_loop_body(
     # (grep, read_file, ...) that aren't in its schema list. Keep the schemas
     # in lockstep: manage_skills is callable whenever any skill is indexed,
     # and a matched skill's declared requires_toolsets ride along with it.
-    if not guide_only and _relevant_tools is not None and not _low_signal_turn and not _hopts.get("no_skills"):
+    if not guide_only and _relevant_tools is not None and not _low_signal_turn and not _hopts.get("no_skills") and not _lean:
         try:
             from services.memory.skills import SkillsManager
             from src.constants import DATA_DIR
@@ -9552,6 +9565,18 @@ async def _stream_agent_loop_body(
             "tokens_freed": int(_outcome.get("tokens_freed") or 0),
             "overflow_ids": list(_outcome.get("overflow_ids") or [])[:20],
         }
+    # Lean chat: keep only the core tools of what selection offered, plus what
+    # the request forced. Before the exposure / sticky / partition steps below,
+    # so they all work on the lean set and the list is the same turn after
+    # turn (a stable tool list is part of a stable prompt prefix). A
+    # caller-pinned set (approval replay, scheduler) is an authorization
+    # decision and is left alone, like everywhere else in this selection.
+    if _lean and not guide_only and not relevant_tools:
+        _relevant_tools = _chat_mode.lean_tool_names(
+            _relevant_tools, disabled_tools, keep=forced_tools or ())
+        if _hot_seed is not None:
+            _hot_seed = set(_hot_seed) & _relevant_tools
+        logger.info("[chat-mode] lean: tools kept=%s", sorted(_relevant_tools))
     from src.tool_serve import LOOKUP_TOOL as _LOOKUP_TOOL, partition_offer as _partition_offer
     # H17: a DEFERRED tool retrieval picked without the request giving any
     # evidence for it is listed in the catalog instead of carrying a schema
@@ -9595,8 +9620,9 @@ async def _stream_agent_loop_body(
     _schema_tools = None
     _deferred_tools: Set[str] = set()
     if _relevant_tools is not None:
-        _relevant_tools.add(_LOOKUP_TOOL)
-        _catalog_on = bool(get_setting("agent_tool_catalog", True))
+        if not _lean:
+            _relevant_tools.add(_LOOKUP_TOOL)
+        _catalog_on = bool(get_setting("agent_tool_catalog", True)) and not _lean
         _partition_seed = set(_hot_seed) if _hot_seed is not None else set(_relevant_tools)
         try:
             from src.tool_index import ALWAYS_AVAILABLE as _always_hot
@@ -9619,6 +9645,11 @@ async def _stream_agent_loop_body(
             hot_seed=_partition_seed,
             enabled=_catalog_on,
         )
+        if _lean:
+            # `partition_offer` always carries its own helper; a lean chat has
+            # no catalog to look anything up in.
+            _schema_tools.discard(_LOOKUP_TOOL)
+            _relevant_tools.discard(_LOOKUP_TOOL)
         if _deferred_tools:
             logger.info(
                 "[tool-catalog] deferred %s tools to lookup_tools: %s",
@@ -10077,7 +10108,7 @@ async def _stream_agent_loop_body(
             compact=is_api or is_native_ollama or is_ollama_compat,
             owner=owner,
             suppress_local_context=guide_only,
-            suppress_skills=_low_signal_turn or bool(_hopts.get("no_skills")),
+            suppress_skills=_low_signal_turn or bool(_hopts.get("no_skills")) or _lean,
             suppress_personal_memory=bool(_hopts.get("incognito") or _hopts.get("no_memory")),
             active_email=active_email,
             workspace=workspace,
@@ -18539,6 +18570,9 @@ async def _stream_agent_loop_body(
     if _prompt_audit.rounds:
         # Hashes only, bounded: rides onto the saved message like the receipts.
         metrics["prompt_audit"] = _prompt_audit.summary()
+    _chat_mode_block = _chat_mode.metrics_block()
+    if _chat_mode_block:
+        metrics["chat_mode"] = _chat_mode_block
     if _context_receipts_summary:
         # Same persistence path as `harness` below: `metrics` becomes
         # `last_metrics` -> `md` in `save_assistant_response`, so this rides
@@ -18742,6 +18776,12 @@ async def stream_agent_loop(*args, **kwargs) -> AsyncGenerator[str, None]:
     owner = bound.arguments.get("owner")
     session_id = bound.arguments.get("session_id")
     _hopts = bound.arguments.get("harness_options") or {}
+    # Lean mode pinned per chat (src/chat_mode.py): the route resolved this
+    # chat's profile; the turn reads it through a ContextVar. A run with no
+    # profile (a scheduled task, a sub-agent inside a chat) explicitly gets
+    # none, so it can never inherit its parent's lean mode or pinned values.
+    _chat_profile_token = _chat_mode.activate(
+        _hopts.get("chat_profile") if isinstance(_hopts, dict) else None)
     _pin_run_id = str((_hopts.get("run_id") if isinstance(_hopts, dict) else None) or session_id or "")
     _pin_token = None
     try:
@@ -18783,6 +18823,7 @@ async def stream_agent_loop(*args, **kwargs) -> AsyncGenerator[str, None]:
         async for chunk in gen:
             yield chunk
     finally:
+        _chat_mode.deactivate(_chat_profile_token)
         import sys
         _primary_error = sys.exc_info()[1]
         try:

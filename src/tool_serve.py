@@ -401,7 +401,7 @@ def search_catalog(
 
 def _completion_on() -> bool:
     try:
-        from src.settings import get_setting
+        from src.chat_mode import get_setting  # pinned per chat while its turn runs
         return bool(get_setting("agent_tool_exposure", True))
     except Exception:
         return False

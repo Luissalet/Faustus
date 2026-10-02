@@ -2604,7 +2604,7 @@ class McpManager:
         capped by the ``agent_mcp_prompt_budget_tokens`` setting.
         """
         try:
-            from src.settings import get_setting
+            from src.chat_mode import get_setting  # pinned per chat while its turn runs
             full_listing = bool(get_setting("agent_mcp_prompt_full_listing", False))
             budget = int(get_setting("agent_mcp_prompt_budget_tokens", 1500) or 0)
         except Exception:

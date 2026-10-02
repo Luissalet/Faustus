@@ -47,7 +47,7 @@ _cache: Dict[str, object] = {}
 
 def enabled() -> bool:
     try:
-        from src.settings import get_setting
+        from src.chat_mode import get_setting  # pinned per chat while its turn runs
         return bool(get_setting("agent_tool_exposure", True))
     except Exception:  # noqa: BLE001 - an unreadable setting keeps the legacy offer
         return False

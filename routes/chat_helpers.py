@@ -15,6 +15,7 @@ from core.database import Session as DBSession, ModelEndpoint
 from core.database import get_session_behavior_mode
 from src import agent_runs
 from src import behavior_modes
+from src import chat_mode
 from src.settings import get_setting
 from src.llm_core import normalize_model_id
 from src.endpoint_resolver import normalize_base
@@ -803,6 +804,17 @@ async def build_chat_context(
     if casual_low_signal:
         mem_enabled = False
         skills_enabled = False
+    # Lean mode pinned per chat (src/chat_mode.py): resolved here (and pinned
+    # on the chat's first turn) so a plain chat-mode turn and an agent turn
+    # read the same profile. Nobody/incognito turns carry none.
+    _chat_profile = None
+    if not incognito:
+        try:
+            _chat_profile = chat_mode.turn_profile(session_id)
+        except Exception:  # noqa: BLE001 - the profile is never worth the turn
+            logger.debug("chat profile unavailable for %s", session_id, exc_info=True)
+    if _chat_profile and _chat_profile.get("lean"):
+        skills_enabled = False
     logger.debug(
         "Memory enabled=%s for user=%s (incognito=%s, no_memory=%s, pref=%s)",
         mem_enabled, user, incognito, no_memory, uprefs.get("memory_enabled", "NOT_SET"),
@@ -845,7 +857,7 @@ async def build_chat_context(
     _resolved_mode = behavior_modes.resolve(
         requested=behavior_mode,
         session_mode=get_session_behavior_mode(session_id),
-        default_setting=get_setting("behavior_mode_default"),
+        default_setting=chat_mode.profile_setting(_chat_profile, "behavior_mode_default"),
         owner=user,
     )
     _preface_kwargs = dict(

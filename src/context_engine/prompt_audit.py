@@ -179,6 +179,22 @@ def fingerprint_prompt(messages: Sequence[Mapping[str, Any]],
     }
 
 
+def _system_prefix(messages: Sequence[Mapping[str, Any]], fingerprint: Mapping[str, Any]) -> str:
+    """Cumulative hash of the leading system messages (empty when there are none).
+
+    Two turns whose prompts were shaped by the same settings share it, whatever
+    the user typed: it is what a pinned chat compares across turns."""
+    count = 0
+    for message in messages:
+        if str(message.get("role") or "") != "system":
+            break
+        count += 1
+    blocks = fingerprint.get("blocks") or []
+    if not count or count > len(blocks):
+        return ""
+    return str(blocks[count - 1]["prefix_sha256"])[:_SHA_PREFIX]
+
+
 def stable_prefix_blocks(previous: Mapping[str, Any], current: Mapping[str, Any]) -> int:
     """How many leading blocks of ``current`` are byte-identical to ``previous``."""
     left = previous.get("blocks") or []
@@ -578,6 +594,7 @@ class PromptAuditRecorder:
                 "candidate": int(candidate),
                 "prompt_sha256": fingerprint["prompt_sha256"],
                 "tools_sha256": fingerprint["tools_sha256"],
+                "system_prefix_sha256": _system_prefix(messages, fingerprint),
                 "messages": fingerprint["messages"],
                 "tools": fingerprint["tools"],
                 "tokens_estimate": fingerprint["tokens_estimate"],

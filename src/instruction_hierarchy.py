@@ -67,7 +67,7 @@ PRECEDENCE_TEXT = (
 
 def enabled() -> bool:
     try:
-        from src.settings import get_setting
+        from src.chat_mode import get_setting  # pinned per chat while its turn runs
         return bool(get_setting("agent_instruction_hierarchy", False))
     except Exception:  # noqa: BLE001
         return False
