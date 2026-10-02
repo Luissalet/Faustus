@@ -100,15 +100,16 @@ export function useSpheres(pollMs: number = SPHERE_POLL_MS): {
   useEffect(() => {
     let cancelled = false;
     let controller: AbortController | null = null;
-    const refresh = async () => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    const refresh = async (poll = false) => {
+      // a hidden window skips the periodic polls, never the first look (a window opened behind others must still show it)
+      if (poll && typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       controller?.abort();
       controller = new AbortController();
       const next = await loadSpheres(controller.signal);
       if (!cancelled && !controller.signal.aborted) setState(next);
     };
     void refresh();
-    const id = window.setInterval(() => void refresh(), pollMs);
+    const id = window.setInterval(() => void refresh(true), pollMs);
     const onFocus = () => void refresh();
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onFocus);
