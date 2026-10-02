@@ -32,6 +32,8 @@ ALLOWED_SCOPES = {
     "memory:read",
     # Read-only view of what is waiting for the owner (GET /api/attention).
     "attention:read",
+    # Read-only view of what is running now (GET /api/farm/state).
+    "farm:read",
     "memory:write",
     "cookbook:read",
     "cookbook:launch",

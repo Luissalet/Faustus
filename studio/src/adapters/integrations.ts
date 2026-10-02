@@ -426,6 +426,7 @@ export const AGENT_SCOPES: { key: string; label: string; detail: string }[] = [
   { key: 'cookbook:read', label: 'Cookbook', detail: 'List cookbook tasks and tail their output' },
   { key: 'cookbook:launch', label: 'Cookbook launch', detail: 'Launch and stop cookbook serve tasks: runs SSH commands on your servers, bounded by the same allowlist the UI uses' },
   { key: 'attention:read', label: 'Attention', detail: 'Read what is waiting for you: pending approvals, open questions and stalled runs (GET /api/attention)' },
+  { key: 'farm:read', label: 'Farm', detail: 'Read what is running now: chat runs, their sub-agents, dispatch jobs and the period budget (GET /api/farm/state)' },
   { key: 'agents:dispatch', label: 'Dispatch workers', detail: 'Start local worker jobs from outside the app (POST /api/dispatch, the faustus-workers MCP server) and read their results' },
 ];
 export const AGENT_CONFIGS: Record<'codex' | 'claude', { label: string; word: string; namePrefix: string; defaultName: string; pluginPath: string; buildSetup: (origin: string, token: string) => string }> = {

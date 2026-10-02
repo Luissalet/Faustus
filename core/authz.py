@@ -45,6 +45,10 @@ KNOWN_SCOPES: FrozenSet[str] = frozenset({
     # observability app) can ask "what is waiting for the owner?" without a
     # token that could also drive a chat.
     "attention:read",
+    # farm:read: GET /api/farm/state only, so a local watcher can ask "what is
+    # running right now?" (runs, their sub-agents, jobs, the period budget)
+    # without a token that could also drive a chat.
+    "farm:read",
 })
 
 READ_METHODS: FrozenSet[str] = frozenset({"GET", "HEAD", "OPTIONS"})
@@ -173,6 +177,8 @@ API_TOKEN_RULES: Tuple[Rule, ...] = (
     _read("/api/sessions", "sessions", note="list the token owner's own sessions"),
     _read("/api/attention", "attention:read", "sessions",
           note="what needs the token owner now: approvals, questions, stale runs (read-only)"),
+    _read("/api/farm/state", "farm:read", "sessions",
+          note="what is running now for the token owner: runs, sub-agents, jobs, budget (read-only)"),
     Rule(frozenset({"PATCH"}), "/api/session/{sid}", ("sessions",), effect="reversible",
          note="rename/re-home/switch-model an owned session"),
     Rule(frozenset({"DELETE"}), "/api/session/{sid}", ("sessions",), effect="reversible",

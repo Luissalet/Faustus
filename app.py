@@ -1274,6 +1274,11 @@ app.include_router(setup_external_runtimes_routes())
 from routes.attention_routes import setup_attention_routes
 app.include_router(setup_attention_routes())
 
+# What is running right now, in one document (src/farm_state.py): chat turns, the
+# sub-agents under them, dispatch jobs, workflows and the period budget. Read-only.
+from routes.farm_routes import setup_farm_routes
+app.include_router(setup_farm_routes())
+
 # Wiki-links/backlinks between Documents (W1-E / ADP-06): [[Title]] /
 # [[doc:<id>]] parsing, reconstructible index (src/document_links.py).
 from routes.document_links_routes import setup_document_links_routes
