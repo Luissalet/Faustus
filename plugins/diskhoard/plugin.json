@@ -2,8 +2,8 @@
   "schema": 1,
   "id": "diskhoard",
   "name": "DiskHoard",
-  "purpose": "Measures what fills the user's disks, knows which folders are regenerable junk (caches, node_modules, build output, temp files) and can clean them: to the Recycle Bin, permanently with explicit confirmation, or through a reviewable PowerShell script.",
-  "capabilities": ["disk-usage", "scan", "hotspots", "junk-catalog", "stale-folders", "largest-files", "file-types", "find-files", "explain-folder", "cleanup-script", "delete-to-recycle-bin", "delete-permanent", "rescan"],
+  "purpose": "Measures what fills the user's disks, knows which folders are regenerable junk (caches, node_modules, build output, temp files) and can clean them: to the Recycle Bin, permanently with explicit confirmation, or through a reviewable PowerShell script. It also splits a folder into ZIPs that each stay under a size limit (upload sites with a per-file cap), cutting a file bigger than the limit into raw .zip.001 volumes.",
+  "capabilities": ["disk-usage", "scan", "hotspots", "junk-catalog", "stale-folders", "largest-files", "file-types", "find-files", "explain-folder", "cleanup-script", "delete-to-recycle-bin", "delete-permanent", "rescan", "zip-split", "split-archives"],
   "placeholders": ["DISKHOARD_DIR", "APP_URL", "TOKEN_FILE"],
   "defaults": {
     "APP_URL": "http://127.0.0.1:8817",
@@ -29,5 +29,5 @@
     "env": { "DISKHOARD_URL": "{APP_URL}", "DISKHOARD_TOKEN_FILE": "{TOKEN_FILE}", "DISKHOARD_DATA_DIR": "{DISKHOARD_DIR}/data" },
     "optional_env": ["DISKHOARD_AUTOSTART"]
   },
-  "notes": "Standard library only: any Python 3.9+ runs both the app and the MCP bridge, so Faustus's own interpreter is enough. The bridge starts the app itself when it is not running. The UI opens with a token in the URL; the bridge reads the same token from data/mcp-token. Deleting through the assistant goes to the Recycle Bin unless it says mode='permanent' with confirm=true, and drive roots, the user profile, Windows and anything the catalog marks 'do not touch' are always refused."
+  "notes": "Standard library only: any Python 3.9+ runs both the app and the MCP bridge, so Faustus's own interpreter is enough. The bridge starts the app itself when it is not running. The UI opens with a token in the URL; the bridge reads the same token from data/mcp-token. Deleting through the assistant goes to the Recycle Bin unless it says mode='permanent' with confirm=true, and drive roots, the user profile, Windows and anything the catalog marks 'do not touch' are always refused. Zip splitting (disk_zip_plan, disk_zip_split, disk_zip_status, disk_zip_cancel) never changes the source folder unless too_large='move' is used with confirm=true; it refuses to write into drive roots, Windows, Program Files or the profile root, never writes inside the source folder, and leaves no half-written part when cancelled."
 }

@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "links",
   "name": "Links Hoard",
-  "purpose": "Read-later bookmark library with extracted article text, tags and highlights, stored locally.",
+  "purpose": "Read-later bookmark library with extracted article text, tags and highlights, stored locally; also downloads the video, audio or photos behind a link (YouTube, X, Instagram, TikTok…) to disk.",
   "capabilities": [
     "bookmarks",
     "read-later",
@@ -16,7 +16,10 @@
     "feeds",
     "github-releases",
     "page-changes",
-    "event-bus"
+    "event-bus",
+    "media-download",
+    "video-download",
+    "audio-download"
   ],
   "placeholders": [
     "LINKS_DIR",
