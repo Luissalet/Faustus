@@ -10008,3 +10008,31 @@ Probado:
   - Tantalus mostró 6 ofertas vigentes y el informe de ruido (817 correos, 332 promocionales, 19 dominios de ruido).
   - Cassandra mostró las cuatro webs en 200, con certificados a 63-77 días y dominios hasta julio-septiembre de 2027.
 - Los manifiestos `plugins/vulcan`, `plugins/tantalus` y `plugins/cassandra` son copia de los de cada app.
+
+## 260. Ideas de dos agentes de fuera: presupuesto por periodo, cortacircuitos, revisión de encargos, comandos desde su carpeta y lecciones con aprobación (02-10-2026)
+
+Luis mandó dos repos para ver qué traernos.
+- **tau**, un agente de código de terminal: el README dice MIT pero no hay fichero de licencia. Sus identificadores (`tengu_*`, `CLAUDE_CODE_*`, carpetas `buddy` y `moreright`) apuntan a que parte del código fuente filtrado de otro agente comercial, así que **sólo se tomaron ideas**, implementadas desde cero.
+- **clodfarm**, una granja de agentes con presupuesto semanal, con licencia MIT de Duke Security, Inc. Se adaptó su línea de ritmo, con atribución en `THIRD_PARTY_NOTICES.md`.
+
+Lo que Faustus ya tenía y no se tocó: respaldo de modelo y proveedor, estabilidad de la caché del prompt (§ ronda 9), bloqueo de ficheros entre agentes (`FileLockRegistry`), resultados grandes aparcados, delegación verificada al modelo local (`dispatch.py`), acceso desde el móvil, turno de noche y estadísticas.
+
+Nuevo:
+- **Comandos desde la carpeta de su objetivo** (`1dbe811b`, `src/command_preflight.py`). Si `python server.py`, `npm run dev`, `pytest ruta`, `node x.js`, `docker compose` o `uvicorn mod:app` no encuentran su objetivo en la carpeta actual y vive en una sola subcarpeta, el comando se lanza desde allí y el resultado lo dice. Con varias candidatas no se ejecuta y se listan. Ante cualquier duda se ejecuta tal cual. Ajuste `shell_preflight_enabled`.
+- **Lecciones con aprobación** (`7fbea1fd`). Lo que aprende `src/instincts.py` queda como propuesta (`proposed`) hasta que se aprueba, edita o rechaza en Skills → Instintos o en `/api/instincts/proposed`. Sólo se inyectan las activas; las que ya existían siguen activas. Como mucho una propuesta por turno, y sólo tras turnos con al menos `instincts_offer_min_tool_calls` (8) llamadas. La extracción pide una lección portátil, sin rutas ni nombres propios, y ante la duda no guarda nada. Los cambios valen desde el turno siguiente, para no tocar el prefijo en caché.
+- **Avisos sin coste de prompt** (`ab0219a6`, `src/loop_breaker.py`). Se añaden al resultado de la herramienta, nunca al prefijo, una vez por ejecución: volver a recorrer lo que acaba de buscar, tres ediciones seguidas con la misma forma en ficheros distintos, y tuberías `find|wc|sort` de shell. Ajuste `agent_advisory_guards`.
+- **Más ficheros de reglas** (`96be78e8`). Se leen también `.clinerules`, `.windsurf/rules`, `.windsurfrules`, `.github/instructions/*.instructions.md` y `GEMINI.md`, con su activación (`alwaysApply`, `globs`, `applyTo`, `trigger`). Sólo las de siempre entran en el prompt en caché.
+- **Presupuesto por periodo, cortacircuitos y revisión de encargos** (`f914b605`).
+  - `src/period_budget.py`: presupuesto por proveedor y ventana (día o semana) con línea de ritmo y margen, y `budget_gpu_daily_seconds` para el modelo local. El trabajo desatendido (dispatch, turno de noche, tareas programadas, la escalada de pago del router y los sub-agentes de `delegate_agents`) se pausa con `pause_until` y motivo, y espera mientras hay un turno de chat en marcha (`budget_backoff_when_interactive`).
+  - `src/unattended_breaker.py`: tras `unattended_failure_breaker` (5) fallos desatendidos seguidos, incluidas las respuestas «////» del servidor local, no arranca nada nuevo y avisa; se cierra solo a los 30 min. Un 429 enfría ese proveedor durante su Retry-After, o 15 min si no lo trae.
+  - `src/dispatch_spec_lint.py`: un encargo sin ficheros, sin comando exacto de verificación, con varios resultados o con verbos vagos se avisa (`warn`) o se rechaza con `needs_detail` (`enforce`).
+  - Interfaz: `GET /api/budget/period`, `POST /api/budget/period/breaker/reset`, `POST /api/budget/period/cooldowns/clear`, `POST /api/dispatch/lint`; herramientas MCP `budget_period` y `workers_lint`, y la acción `budget` de `night_shift`.
+- Los 14 ajustes están registrados en `src/settings.py` y en el grupo «Budget, breaker and guards» de `src/agent_settings_schema.py`.
+
+Probado:
+- Pruebas: 29 de preflight, 20 de lecciones, 11 de avisos, 16 de reglas, 63 de presupuesto, 27 del cortacircuitos y 26 de la revisión de encargos, más las suites relacionadas (dispatch, turno de noche, `llm_core`, router, heal, matriz de tokens: 823). El esquema de ajustes, sin problemas.
+- En vivo, en una instancia aparte en el 7010 con el 27B q4 del 8081:
+  - `python server.py` lanzado desde la raíz se ejecutó en la primera ronda desde `backend/`, con la nota `[preflight]`.
+  - Una lección propuesta salió en `/api/instincts/proposed` y se aprobó.
+  - Con `budget_gpu_daily_seconds=20`, un trabajo de 28 s llenó la ventana y el siguiente `POST /api/dispatch` devolvió 429 `budget_paused` con la hora de reanudación. Un turno de noche de 3 tareas paró entre tareas.
+  - Un encargo vago dio `no_files`, `no_verify` y `vague_verbs`.

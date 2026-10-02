@@ -1406,6 +1406,39 @@ DEFAULT_SETTINGS = {
     # continuations that close no task, on loop-breaker recovery, or at the cap.
     "agent_plan_autocontinue": True,
     "agent_plan_autocontinue_max": 40,
+    # Shell commands whose target (script, package.json, compose file, test path)
+    # lives in one subfolder run from that folder; several candidates are listed
+    # instead of running (src/command_preflight.py).
+    "shell_preflight_enabled": True,
+    # Lessons the agent learns are stored as proposals and injected only once the
+    # user approves them; a proposal is offered only after a turn with at least
+    # this many tool calls (src/instincts.py).
+    "instincts_require_approval": True,
+    "instincts_offer_min_tool_calls": 8,
+    # Short hints appended to a tool result (never to the prompt prefix): a
+    # re-scan after a search, repeated same-shape edits, shell find|wc pipelines.
+    "agent_advisory_guards": True,
+    # Period budget (src/period_budget.py): a pace line over a day or week per
+    # provider; targets is JSON {provider: {"usd": x, "tokens": n}} (a bare
+    # number is dollars; keys are a host, a provider kind or "*"). 0/{} = off.
+    "budget_period_window": "week",
+    "budget_period_targets": "{}",
+    "budget_period_band_pct": 10,
+    "budget_period_min_workers": 0,
+    # Seconds per day the local generation slot may be held by unattended work.
+    "budget_gpu_daily_seconds": 0,
+    # Unattended work (dispatch, night shift, scheduled tasks) waits while a chat
+    # turn is live.
+    "budget_backoff_when_interactive": True,
+    # After this many consecutive failed unattended runs new starts pause and a
+    # notification goes out; the breaker closes by itself after the cooldown.
+    "unattended_failure_breaker": 5,
+    "unattended_breaker_cooldown_min": 30,
+    # Cooldown for a provider endpoint after a 429 without Retry-After.
+    "provider_cooldown_default_min": 15,
+    # Dispatched jobs are linted for named files, an exact verify command and a
+    # single outcome: off | warn | enforce (src/dispatch_spec_lint.py).
+    "dispatch_spec_lint": "warn",
     # Model the workers run on ("" = the coordinator's). Two different models
     # generate at the same time on Ollama; two requests to one model queue on
     # its single slot — pin the worker model to the other card (Local models →

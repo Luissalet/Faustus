@@ -38,6 +38,11 @@ EXTRA_KEYS: tuple[str, ...] = ("llm_projection_mode", "llm_fence_history_without
                                "vision_write_every",
                                "vision_max_tokens", "vision_num_ctx",
                                "dispatch_model", "dispatch_endpoint_id", "gpu_placement_prefer",
+                               "shell_preflight_enabled", "instincts_require_approval", "instincts_offer_min_tool_calls",
+                               "budget_period_window", "budget_period_targets", "budget_period_band_pct",
+                               "budget_period_min_workers", "budget_gpu_daily_seconds", "budget_backoff_when_interactive",
+                               "unattended_failure_breaker", "unattended_breaker_cooldown_min",
+                               "provider_cooldown_default_min", "dispatch_spec_lint",
                                "sandbox_missing_policy", "compaction_summary_mode", "llamacpp_pin_session_slot", "tool_gate_own_context_trusted", "code_graph_community_summaries",
                                "code_graph_drift_check", "approval_autonomy",
                                "mode_effort_research", "mode_effort_research_reading",
@@ -1524,6 +1529,52 @@ GROUPS: list[dict[str, Any]] = [
                  "Most times one turn may send the model on to the next plan task by itself before it "
                  "stops and asks.",
                  1, 500),
+        ],
+    ),
+    _group(
+        "budget_guards",
+        "Budget, breaker and guards",
+        "Period budgets for hosted providers and the local GPU, a breaker for unattended work, "
+        "provider cooldowns, the spec lint for dispatched jobs, and cheap guards around tools.",
+        [
+            _select("budget_period_window", "Budget window",
+                    "Length of the budget window, in local time.", ["day", "week"]),
+            _text("budget_period_targets", "Budget per provider",
+                  "JSON object {provider: {\"usd\": x, \"tokens\": n}}; a bare number is dollars. A key is a host "
+                  "(openrouter.ai), a provider kind (openrouter, anthropic) or * for every hosted provider. "
+                  "Unattended work follows a pace line through the window and pauses when it gets ahead. {} = off."),
+            _int("budget_period_band_pct", "Budget: margin over the pace line (%)",
+                 "How far ahead of the pace line unattended work may run before it waits.", 0, 100),
+            _int("budget_period_min_workers", "Budget: minimum workers",
+                 "Floor that pacing never goes below; only a spent window stops work entirely.", 0, 64),
+            _int("budget_gpu_daily_seconds", "Local GPU: seconds per day for unattended work",
+                 "Seconds per day the local generation slot may be held by dispatch jobs, the night shift and "
+                 "scheduled tasks. 0 = no limit.", 0, 86400),
+            _bool("budget_backoff_when_interactive", "Unattended work waits while you chat",
+                  "Dispatch jobs, night-shift tasks and scheduled tasks wait while a chat turn is running."),
+            _int("unattended_failure_breaker", "Breaker: consecutive failures",
+                 "After this many failed unattended runs in a row, new starts pause and a notification is sent. "
+                 "0 = off.", 0, 100),
+            _int("unattended_breaker_cooldown_min", "Breaker: minutes before it closes",
+                 "Minutes after which an open breaker closes by itself.", 1, 1440),
+            _int("provider_cooldown_default_min", "Provider cooldown after a 429 (min)",
+                 "Minutes a provider endpoint is skipped after a 429 that carries no Retry-After. 0 = only an "
+                 "explicit Retry-After cools it.", 0, 1440),
+            _select("dispatch_spec_lint", "Spec lint for dispatched jobs",
+                    "Checks that a delegated job names its files, has an exact verify command and one outcome. "
+                    "warn attaches the findings and runs; enforce refuses with needs_detail.",
+                    ["off", "warn", "enforce"]),
+            _bool("shell_preflight_enabled", "Shell: run from the folder that holds the target",
+                  "A command like 'python server.py' or 'npm run dev' whose target lives in exactly one subfolder "
+                  "runs from there (the result says so); with several candidates they are listed instead."),
+            _bool("agent_advisory_guards", "Hints in tool results",
+                  "Short hints appended to a tool result, never to the prompt prefix: a re-scan after a search, "
+                  "three same-shape edits in a row, shell find|wc pipelines."),
+            _bool("instincts_require_approval", "Lessons need your approval",
+                  "A lesson the agent learns is stored as a proposal and only reaches the prompt once approved "
+                  "(Skills > Instincts)."),
+            _int("instincts_offer_min_tool_calls", "Lessons: minimum tool calls in the turn",
+                 "A lesson is proposed only after a turn with at least this many tool calls.", 1, 200),
         ],
     ),
 ]
