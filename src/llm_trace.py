@@ -400,6 +400,15 @@ def record_call(
     exact `run_id` match when one was recorded, falling back to its
     clock-window heuristic only for older/context-less records.
     """
+    try:
+        # Every model call, with or without a chat session: hosted spend into the
+        # period budget ledger and a final 429 into the provider cooldown.
+        if endpoint_url:
+            from src import period_budget
+            period_budget.on_model_call(endpoint_url, model or "", usage,
+                                        request_headers=(request or {}).get("headers"), error=error)
+    except Exception:
+        logger.debug("[llm_trace] period budget hook skipped", exc_info=True)
     if not session_id:
         return
     try:

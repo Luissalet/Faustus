@@ -498,13 +498,26 @@ def choose(
             if profile == privacy_policy.PROFILE_LOCAL_ONLY:
                 reason += "; escalado a pago bloqueado por política de privacidad local-only"
             else:
-                escalated = True
-                escalation = {
-                    "reason": reason,
-                    "requirements": requirements.to_dict(),
-                    "privacy_profile": profile,
-                }
-                reason += "; escalado a pago (requiere que el caller confirme explícitamente, nunca automático)"
+                # The period budget (src/period_budget.py) can hold a paid
+                # escalation back: a spent allowance, or a provider in cooldown.
+                paused = None
+                try:
+                    from src import period_budget
+                    paused = period_budget.gate_paid_escalation()
+                except Exception:  # noqa: BLE001 - a broken ledger never blocks routing
+                    paused = None
+                if paused:
+                    escalation = {"budget_paused": paused}
+                    reason += (f"; escalado a pago en pausa por el presupuesto del periodo "
+                               f"(budget_paused: {paused.get('reason')}; hasta {paused.get('pause_until_iso') or 'nueva orden'})")
+                else:
+                    escalated = True
+                    escalation = {
+                        "reason": reason,
+                        "requirements": requirements.to_dict(),
+                        "privacy_profile": profile,
+                    }
+                    reason += "; escalado a pago (requiere que el caller confirme explícitamente, nunca automático)"
         else:
             reason += "; escalado a pago deshabilitado (allow_paid_escalation=False)"
 

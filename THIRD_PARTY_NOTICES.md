@@ -84,6 +84,27 @@ forget to keep in sync with the code.
   budget/degradation vocabulary (`parser: regex` when tree-sitter is
   absent); no graph-ranking library was introduced.
 
+- **[clodfarm](https://github.com/matank001/clodfarm)** by **Duke
+  Security, Inc.** **MIT** (Copyright (c) Duke Security, Inc.). Three
+  small ideas from its worker-farm, reimplemented against Faustus's own
+  data (no source file is vendored; each module's docstring says what was
+  and was not carried over):
+
+  - `src/period_budget.py` - the pace line (allowed share of a period =
+    elapsed share + a band, over the line means wait until it catches up),
+    the floor that slows work without freezing it, and "a window past its
+    reset counts as empty", from its `governor.py`. The money, GPU-seconds
+    and interactive back-off sources are Faustus's own.
+  - `src/unattended_breaker.py` - pausing a worker for 15 minutes after a
+    provider 429, and stopping new starts after a run of failed runs.
+  - `src/dispatch_spec_lint.py` - the task-spec checklist (name the files,
+    give the exact verify command, one outcome, no vague verbs) from its
+    bot documentation.
+
+  No `docs/adaptations/provenance.json` entry has been added yet (that
+  folder was owned by another change when this landed); add one with
+  `destination` set to the three files above.
+
 ## Bundled
 
 - **Skill library, rule library and agent library** (`skills/library/`,

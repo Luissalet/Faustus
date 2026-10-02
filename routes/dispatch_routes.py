@@ -5,6 +5,9 @@
                                       verify_scope?, fix_rounds?, expected_output_contains?,
                                       client_request_id?} → the job
                                      (header `Idempotency-Key`: a retry returns the same job)
+  POST /api/dispatch/lint            {tasks, verify?, criteria?} -> {ok, tasks: [{index, name, problems}],
+                                     needs_detail: [...], mode} - what is missing from the spec, without
+                                     starting anything (src/dispatch_spec_lint.py)
   GET  /api/dispatch                 recent jobs (compact, no result)
   GET  /api/dispatch/config?workspace=  the resolved model/server and the verifier a
                                      job in that folder would run
@@ -24,6 +27,12 @@
                                      `?states=1` (non-streaming) adds what each worker's
                                      own output says about it.
   POST /api/dispatch/{id}/cancel
+
+A job is refused with HTTP 429 and a `budget_paused` / `breaker_open` body
+(`reason`, `pause_until`, `retry_after_s`; also the `Retry-After` header) when the
+period budget or the unattended-failure breaker says wait (src/period_budget.py);
+with `dispatch_spec_lint: enforce` a spec that lacks detail is refused with HTTP 422
+and `needs_detail` (in `warn`, the default, the job runs and carries `spec_lint`).
 
 Without `stream=1` — and with `agent_dispatch_sse` off — `/{id}/events`
 answers with exactly the JSON body it always did, byte for byte.
@@ -54,9 +63,10 @@ import time
 from typing import Any, AsyncIterator, Dict
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from src import dispatch
+from src import period_budget
 from src import robot_envelope as robot
 from src import robot_projection as lean
 from src.auth_helpers import require_user
@@ -164,9 +174,33 @@ def setup_dispatch_routes() -> APIRouter:
         key = (request.headers.get("Idempotency-Key") or request.headers.get("X-Idempotency-Key") or "").strip()
         try:
             job = await dispatch.start(owner or None, body, idempotency_key=key or None)
+        except dispatch.SpecNeedsDetail as e:
+            return JSONResponse(status_code=422, content={
+                "status": "needs_detail", "needs_detail": e.report.get("needs_detail") or [],
+                "tasks": e.report.get("tasks") or [], "codes": e.report.get("codes") or [], "mode": "enforce"})
+        except period_budget.BudgetPaused as e:
+            info = e.info
+            headers = {}
+            if info.get("retry_after_s") is not None:
+                headers["Retry-After"] = str(max(1, int(float(info["retry_after_s"]) + 0.999)))
+            return JSONResponse(status_code=429, content=info, headers=headers)
         except ValueError as e:
             raise HTTPException(400, str(e))
         return dispatch.compact(job)
+
+    @router.post("/lint")
+    async def lint(request: Request):
+        """What is missing from a spec, before anything starts. The same check
+        `dispatch_spec_lint` runs on a real request (`warn` attaches it to the
+        job, `enforce` refuses with it); this endpoint only answers."""
+        _owner(request)
+        body = await _body(request)
+        try:
+            report = dispatch.lint_body(body)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        report["mode"] = dispatch.spec_lint_mode()
+        return report
 
     @router.get("")
     async def index(request: Request, limit: int = 50):

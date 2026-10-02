@@ -10,6 +10,13 @@ the task in flight is allowed to finish, nothing is left half-started -- and
 the shift's state says exactly why (`budget_exhausted`) rather than looking
 like every task simply ran.
 
+Between two tasks the shift also asks the period budget (src/period_budget.py)
+and the unattended-failure breaker (src/unattended_breaker.py): while the owner
+has an interactive turn live it WAITS (its own minutes keep counting); when a
+day/week allowance, the local GPU-seconds window or a provider cooldown says
+stop it ends cleanly as `budget_paused` (or `breaker_open`) with the answer's
+`pause_until` and `reason` kept on the shift, and the tasks left unrun listed.
+
 Persistence: one JSON file per shift, `<DATA_DIR>/night_shift/<owner>/<id>.json`,
 written after every task so a crash mid-shift loses at most the task in
 flight, never the ones already done. `stop(id)` sets a flag on that same
@@ -35,7 +42,7 @@ __all__ = [
 ]
 
 MAX_TASKS = 12
-STATES = ("queued", "running", "done", "stopped", "budget_exhausted", "error")
+STATES = ("queued", "running", "done", "stopped", "budget_exhausted", "budget_paused", "breaker_open", "error")
 _DEFAULT_TASK_TIMEOUT_S = 1800.0
 
 #: Owner -> shift ids currently running, so a duplicate `start()` for the
@@ -220,6 +227,7 @@ async def _run(shift_id: str, owner: Optional[str]) -> None:
     tasks_done = 0
     final_state = "done"
     skipped: List[str] = []
+    paused_info: Optional[Dict[str, Any]] = None
 
     try:
         for task_text in shift["tasks"]:
@@ -241,10 +249,17 @@ async def _run(shift_id: str, owner: Optional[str]) -> None:
                 final_state = "budget_exhausted"
                 skipped = shift["tasks"][tasks_done:]
                 break
+            gate_state, gate_info = await _gate_before_task(owner, shift_id, shift, max_minutes)
+            if gate_state:
+                final_state = gate_state
+                paused_info = gate_info
+                skipped = shift["tasks"][tasks_done:]
+                break
 
             body: Dict[str, Any] = {
                 "tasks": [{"instruction": task_text}], "workspace": shift["workspace"],
                 "verify": "auto" if shift.get("verify", True) else "none", "fix_rounds": 1,
+                "unattended": True,
             }
             if shift.get("model"):
                 body["model"] = shift["model"]
@@ -266,8 +281,20 @@ async def _run(shift_id: str, owner: Optional[str]) -> None:
                     "needs_attention": job.status not in ("done",),
                 })
             except Exception as exc:  # noqa: BLE001 - one task failing must not sink the shift
+                from src import period_budget
+                if isinstance(exc, period_budget.BudgetPaused):
+                    # the gate said go a moment ago and a limit was hit since: the same clean stop
+                    final_state = "breaker_open" if exc.info.get("kind") == "breaker" else "budget_paused"
+                    paused_info = exc.info
+                    skipped = shift["tasks"][tasks_done:]
+                    break
                 logger.warning("night_shift %s: task %r failed to dispatch: %s", shift_id, task_text[:80], exc)
                 row.update({"status": "error", "error": str(exc)[:400], "needs_attention": True})
+                try:
+                    from src import unattended_breaker
+                    unattended_breaker.record("night_shift", False, str(exc)[:200])
+                except Exception:  # noqa: BLE001
+                    pass
             shift = get(owner, shift_id) or shift
             shift.setdefault("results", []).append(row)
             tasks_done += 1
@@ -281,6 +308,9 @@ async def _run(shift_id: str, owner: Optional[str]) -> None:
         shift["state"] = final_state
         if skipped:
             shift["skipped"] = skipped
+        if paused_info:
+            shift["budget_paused"] = paused_info
+        shift.pop("waiting_for", None)
         _save(shift)
         _RUNNING.pop(shift_id, None)
         try:
@@ -290,14 +320,52 @@ async def _run(shift_id: str, owner: Optional[str]) -> None:
                 "night_shift_finished", owner=owner,
                 title="Night shift finished",
                 body=f"{len(shift.get('results', []))} task(s) run, {attn} need attention "
-                     f"({final_state}).",
-                data={"shift_id": shift_id, "state": final_state},
+                     f"({final_state})." + (f" Paused: {paused_info.get('reason')}." if paused_info else ""),
+                data={"shift_id": shift_id, "state": final_state,
+                      "pause_until": (paused_info or {}).get("pause_until")},
             )
         except Exception:  # noqa: BLE001 - a notification failing must not raise here
             logger.debug("night_shift %s: notification emit failed", shift_id, exc_info=True)
 
 
 # ── report ───────────────────────────────────────────────────────────────
+
+async def _gate_before_task(owner: Optional[str], shift_id: str, shift: Dict[str, Any],
+                            max_minutes: Optional[int]):
+    """Ask the period budget before each task. Returns `(None, None)` to go
+    ahead, else `(state, answer)`: `budget_paused` / `breaker_open` with the
+    `budget_paused` answer (reason, pause_until), `stopped` or
+    `budget_exhausted` when the wait ran into the owner's own limits. An
+    interactive turn is waited out, not treated as a stop."""
+    from src import dispatch, period_budget
+    url = None
+    try:
+        url = dispatch.resolve_route(owner, shift.get("model"))[0]
+    except Exception:  # noqa: BLE001 - no route yet: the gate still reads the windows
+        url = None
+    waiting = False
+    while True:
+        info = period_budget.gate("night_shift", url, unattended=True)
+        if info is None:
+            if waiting:
+                cur = get(owner, shift_id)
+                if cur is not None:
+                    cur.pop("waiting_for", None)
+                    _save(cur)
+            return None, None
+        if info.get("kind") != "interactive":
+            return ("breaker_open" if info.get("kind") == "breaker" else "budget_paused"), info
+        cur = get(owner, shift_id)
+        if cur is not None and cur.get("stop_requested"):
+            return "stopped", None
+        if max_minutes and _elapsed_minutes(shift) >= max_minutes:
+            return "budget_exhausted", None
+        if not waiting and cur is not None:
+            waiting = True
+            cur["waiting_for"] = "an interactive turn to finish"
+            _save(cur)
+        await asyncio.sleep(period_budget.wait_seconds(info, ceiling=15.0))
+
 
 def report(owner: Optional[str], shift_id: str) -> str:
     """A morning-readable Markdown report for one shift."""
@@ -333,6 +401,12 @@ def report(owner: Optional[str], shift_id: str) -> str:
             lines.append(f"- Verification: {verification.get('mode') or verification.get('label') or 'ran'}")
         if row.get("error"):
             lines.append(f"- Error: {row['error']}")
+    held = shift.get("budget_paused")
+    if isinstance(held, dict) and held:
+        lines.append("\n## Paused by the period budget")
+        lines.append(f"- {held.get('reason')}")
+        if held.get("pause_until_iso"):
+            lines.append(f"- Resumes after {held.get('pause_until_iso')}")
     skipped = shift.get("skipped") or []
     if skipped:
         lines.append("\n## Skipped (budget exhausted before these ran)")

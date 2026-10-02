@@ -2221,6 +2221,26 @@ class DelegateAgentsTool:
         headers = getattr(parent, "headers", None) or None
         if not endpoint_url or not model:
             return {"error": "delegate_agents: parent session has no model route", "exit_code": 1}
+        # Period budget (src/period_budget.py): how many sub-agents the day's or
+        # week's allowance lets start now. Pacing can shave the count; a spent
+        # window refuses with `budget_paused` and `pause_until`. A dispatch job
+        # already passed this gate at start, and an interactive chat turn is
+        # never held back for the owner's own presence.
+        if not ctx.get("period_budget_checked"):
+            _wanted = len(args["tasks"])
+            try:
+                from src import period_budget as _pb
+                _allowed, _paused = _pb.allowed_workers(
+                    "delegate_agents", endpoint_url, _wanted, unattended=bool(ctx.get("unattended")))
+            except Exception:  # noqa: BLE001 - a broken ledger never blocks work
+                _allowed, _paused = _wanted, None
+            if _allowed <= 0:
+                return {"error": "delegate_agents: budget_paused - " + str((_paused or {}).get("reason") or "period budget"),
+                        "exit_code": 1, "budget_paused": _paused}
+            if _allowed < _wanted:
+                args["tasks"] = args["tasks"][:_allowed]
+                args["dropped_tasks"] = int(args.get("dropped_tasks") or 0) + (_wanted - _allowed)
+                args["budget_capped"] = _paused
         # Workers default to the coordinator's model unless the admin picked a
         # worker model (Settings → Agent & automation). Measured on the
         # two-card box: Ollama runs two DIFFERENT models' runners at the same

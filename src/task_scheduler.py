@@ -1851,6 +1851,14 @@ class TaskScheduler:
                 foreground_active = has_foreground_activity()
             except Exception:
                 foreground_active = False
+            # The unattended-failure breaker (src/unattended_breaker.py): after a
+            # run of failed unattended runs nothing new starts until it closes.
+            breaker_until = None
+            try:
+                from src import unattended_breaker
+                breaker_until = unattended_breaker.open_until()
+            except Exception:
+                breaker_until = None
             # Reap claims held by workers that stopped answering before
             # looking at what is due: without this a task whose holder was
             # killed stays unclaimable until its lease runs out on its own.
@@ -1870,9 +1878,11 @@ class TaskScheduler:
                 # this one's shared lock turns it into `database is locked`
                 # instead of a clean loss of the race.
                 candidates = [(t.id, t.next_run) for t in due]
-                if foreground_active:
+                if foreground_active or breaker_until:
+                    defer_to = (now + timedelta(minutes=15) if foreground_active
+                                else datetime.fromtimestamp(breaker_until, tz=timezone.utc).replace(tzinfo=None))
                     for task in due:
-                        task.next_run = now + timedelta(minutes=15)
+                        task.next_run = defer_to
                     if due:
                         db.commit()
                     candidates = []
@@ -2271,6 +2281,14 @@ class TaskScheduler:
                 status=run.status, result=run.result, error=run.error,
                 action=getattr(task, "action", "") or "",
             )
+            try:
+                from src import unattended_breaker
+                if run.status == "error":
+                    unattended_breaker.record("scheduled_task", False, f"{task.name}: {run.error or run.result or ''}")
+                elif run.status == "success":
+                    unattended_breaker.record("scheduled_task", True)
+            except Exception:
+                pass
 
             output = task.output_target or "session"
             # Per-task notification gate. Default True (notifications_enabled
@@ -2322,6 +2340,11 @@ class TaskScheduler:
 
         except Exception as exec_exc:
             logger.exception(f"Task {task_id} execution error")
+            try:
+                from src import unattended_breaker
+                unattended_breaker.record("scheduled_task", False, f"{type(exec_exc).__name__}: {exec_exc}")
+            except Exception:
+                pass
             # Fetch the task's owner so the error notification reaches
             # the same user the success notification would have.
             _owner = None

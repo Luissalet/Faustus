@@ -182,6 +182,14 @@ def _drop_lock(port: int) -> None:
 def _record(event: Dict[str, Any]) -> Dict[str, Any]:
     event = {"at": time.time(), **event}
     _EVENTS.append(event)
+    try:
+        # A server confirmed to be answering garbage is a failure for the
+        # unattended-work breaker (src/unattended_breaker.py).
+        if event.get("action") in ("restarted", "failed", "manual", "waited"):
+            from src import unattended_breaker
+            unattended_breaker.record("local_garbage", False, str(event.get("detail") or "")[:200])
+    except Exception:  # noqa: BLE001
+        pass
     level = logging.WARNING if event.get("action") in ("restarted", "failed") else logging.INFO
     logger.log(level, "[model-heal] %s", event)
     return event

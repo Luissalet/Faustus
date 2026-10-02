@@ -55,6 +55,8 @@ def test_the_reachable_surface_is_exactly_this():
         "GET|HEAD|OPTIONS /api/agent/orphans": ("sessions", "agents:dispatch"),
         "GET|HEAD|OPTIONS /api/session/{session_id}/alternatives": ("sessions",),
         "GET|HEAD|OPTIONS /api/usage/recap": ("sessions",),
+        # Period budget: read-only spend/pace/breaker view for a coordinator (src/period_budget.py).
+        "GET|HEAD|OPTIONS /api/budget/period": ("sessions", "agents:dispatch"),
         "GET|HEAD|OPTIONS /api/session/{sid}/export": ("sessions",),
         "GET|HEAD|OPTIONS /api/history/{session_id}": ("sessions",),
         "POST /api/chat_stream": ("sessions",),

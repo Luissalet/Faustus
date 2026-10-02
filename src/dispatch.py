@@ -330,6 +330,14 @@ class DispatchJob:
         # ended for a reason other than "the rounds ran out", which one.
         self.convergence: Optional[Dict[str, Any]] = None
         self.stopped_by: Optional[str] = None
+        # Spec lint (src/dispatch_spec_lint.py, `dispatch_spec_lint`): what the
+        # coordinator left out of the spec, attached so the job still runs in
+        # `warn` mode. None when the spec was complete or the lint is off.
+        self.spec_lint: Optional[Dict[str, Any]] = None
+        # Started by unattended work (a night shift, a scheduled run): its
+        # failure counts for the breaker (src/unattended_breaker.py) and it
+        # waits while an interactive turn is live (src/period_budget.py).
+        self.unattended: bool = False
         # What the objectives graph did to the task list before the job ran
         # ({"by": "impact", "from": [...], "to": [...]}), so the reordering is
         # visible and auditable instead of silent. None when nothing moved and
@@ -389,6 +397,10 @@ class DispatchJob:
             d["expected_output_contains"] = self.expected_output
         if self.task_order is not None:
             d["task_order"] = self.task_order
+        if self.spec_lint is not None:
+            d["spec_lint"] = self.spec_lint
+        if self.unattended:
+            d["unattended"] = True
         if self.args.get("criteria"):
             # Declared alongside `expected_output_contains` above: what the
             # job was pinned to prove, visible even on a brief/queued view.
@@ -1064,6 +1076,51 @@ def _resume_target(job: DispatchJob, v: Optional[Dict[str, Any]] = None) -> Opti
 
 # ── running a job ───────────────────────────────────────────────────────────
 
+class SpecNeedsDetail(ValueError):
+    """`dispatch_spec_lint: enforce` refused a job whose spec is missing detail;
+    `report` is the lint answer (`needs_detail`, per-task problems)."""
+
+    def __init__(self, report: Dict[str, Any]):
+        super().__init__("needs_detail: " + "; ".join(report.get("needs_detail") or [])[:600])
+        self.report = dict(report)
+
+
+def spec_lint_mode() -> str:
+    from src import dispatch_spec_lint
+    return dispatch_spec_lint.mode(_setting("dispatch_spec_lint", "warn"))
+
+
+def validate_task_spec(task: Any, job: Optional[Dict[str, Any]] = None) -> List[Dict[str, str]]:
+    """What is missing from one task's spec, as `[{code, message, fix}]` (empty
+    when it is ready to hand to a worker): no file named or scoped, no exact
+    verify command, more than one outcome, vague verbs with no criteria, a
+    public API with no "do not change" line. `job` is the request body around
+    it (its `verify` and `criteria` count for every task)."""
+    from src import dispatch_spec_lint
+    return dispatch_spec_lint.validate_task_spec(task, job=job)
+
+
+def lint_body(body: Dict[str, Any], args: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """The lint of a whole dispatch request: `{ok, tasks: [{index, name,
+    problems}], needs_detail: [...], codes: [...]}`."""
+    from src import dispatch_spec_lint
+    tasks = list((args or {}).get("tasks") or [])
+    if not tasks:
+        tasks = _parse_tasks(body.get("tasks"))
+    return dispatch_spec_lint.lint_tasks(tasks, job=body)
+
+
+def _budget_gate(url: str, unattended: bool) -> Optional[Dict[str, Any]]:
+    """The period budget's answer for a job that would start now (None = go).
+    Interactive back-off and the failure breaker only apply to unattended jobs."""
+    try:
+        from src import period_budget
+        return period_budget.gate("dispatch", url, unattended=unattended)
+    except Exception as e:  # noqa: BLE001 - a broken ledger never blocks work
+        logger.debug("dispatch: budget gate unavailable: %s", e)
+        return None
+
+
 def _parse_tasks(raw: Any) -> List[Dict[str, Any]]:
     from src.agent_tools.subagent_tools import parse_delegation_args
     args = parse_delegation_args(json.dumps({"tasks": raw}) if not isinstance(raw, str) else raw)
@@ -1660,7 +1717,8 @@ async def _delegate(job: DispatchJob, args: Dict[str, Any], cb: Callable) -> Dic
     from src.agent_tools.subagent_tools import DelegateAgentsTool
     tool = DelegateAgentsTool()
     ctx = {"session_id": job.session_id, "owner": job.owner, "progress_cb": cb,
-           "gen_overrides": job.gen_overrides or None, "model": job.model}
+           "gen_overrides": job.gen_overrides or None, "model": job.model,
+           "period_budget_checked": True, "unattended": job.unattended}
     result = await tool.execute(json.dumps(args), ctx)
     return result if isinstance(result, dict) else {"output": str(result)}
 
@@ -2031,12 +2089,31 @@ async def _run(job: DispatchJob) -> None:
             _release_workspace(ws_key, job.id)
         job.finished = time.time()
         _settle(job)
+        _note_breaker(job)
         _record_job_duration(job)
         _record_turn(job)
         job._persist()
         job._notify()
         from src.changeset_store import record_dispatch
         await asyncio.to_thread(record_dispatch, job)
+
+
+def _note_breaker(job: DispatchJob) -> None:
+    """An unattended job that failed outright (an error, or not one worker
+    finished) counts toward the failure breaker; one that finished clears it.
+    Cancelled, interrupted and mixed results are neither."""
+    if not job.unattended:
+        return
+    try:
+        from src import unattended_breaker
+        statuses = _worker_statuses(job.result)
+        failed = job.status == "error" or (job.status == "partial" and statuses and "done" not in statuses)
+        if failed:
+            unattended_breaker.record("dispatch", False, job.error or job.verdict or "")
+        elif job.status == "done":
+            unattended_breaker.record("dispatch", True)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("dispatch %s: breaker bookkeeping failed: %s", job.id, e)
 
 
 async def _verify(job: DispatchJob) -> Dict[str, Any]:
@@ -2187,6 +2264,16 @@ async def start(owner: Optional[str], body: Dict[str, Any], *, runner: Optional[
     # An external agent that is off, unknown or not installed is refused here,
     # before a Workers chat exists and before any other worker starts.
     vet_runners(args)
+    # What the coordinator left out of the spec: attached in `warn` mode,
+    # refused before anything exists in `enforce` mode.
+    spec_lint = None
+    lint_mode = spec_lint_mode()
+    if lint_mode != "off":
+        report = lint_body(body, args)
+        if not report["ok"]:
+            if lint_mode == "enforce":
+                raise SpecNeedsDetail(report)
+            spec_lint = {"mode": lint_mode, "needs_detail": report["needs_detail"], "codes": report["codes"]}
     raw_ws = str(body.get("workspace") or "").strip()
     if not raw_ws:
         # without one the workers' cwd is Faustus's own data dir (sessions,
@@ -2198,6 +2285,11 @@ async def start(owner: Optional[str], body: Dict[str, Any], *, runner: Optional[
         raise ValueError(f"workspace is not a usable directory: {raw_ws}")
     verify, scope, fix_rounds, verify_timeout, expected_output = _verify_options(body)
     url, model, headers = resolve_route(owner, body.get("model"))
+    unattended = bool(body.get("unattended"))
+    paused = _budget_gate(url, unattended)
+    if paused:
+        from src import period_budget
+        raise period_budget.BudgetPaused(paused)
     gen = _clean_gen(body.get("gen_overrides"))
     # The impact score the objectives graph already computes finally decides
     # something: a SEQUENTIAL job's tasks run in the order the graph ranks the
@@ -2212,6 +2304,8 @@ async def start(owner: Optional[str], body: Dict[str, Any], *, runner: Optional[
                       verify=verify, verify_scope=scope, fix_rounds=fix_rounds, verify_timeout_s=verify_timeout,
                       expected_output=expected_output)
     job.task_order = task_order
+    job.spec_lint = spec_lint
+    job.unattended = unattended
     job.session_id = _make_session(job)
     async with _lock:
         _jobs[job.id] = job
@@ -2288,6 +2382,8 @@ def _load(job_id: str) -> Optional[DispatchJob]:
     job.stopped_by = d.get("stopped_by")
     job.proof = d.get("proof")
     job.task_order = d.get("task_order")
+    job.spec_lint = d.get("spec_lint") if isinstance(d.get("spec_lint"), dict) else None
+    job.unattended = bool(d.get("unattended"))
     # What ran outside the command guard has to survive a restart: a job read
     # back from its mirror still says which external agents it used.
     job.runners_used = [str(k) for k in (d.get("runners") or []) if str(k)]
@@ -2638,6 +2734,22 @@ and on checking the result, not on reading files or running tests yourself.
    one fixer worker gets the failure output and the verification runs again,
    and the loop stops by itself as soon as the rounds stop changing anything
    (`result.convergence`, `result.stopped_by: "convergence"`).
+
+7. `workers_lint` (POST /api/dispatch/lint) checks a spec BEFORE it is sent and says
+   what is missing: no file named, no exact verify command, more than one
+   outcome, a vague verb ("improve", "clean up") with no criteria, a public API
+   touched with no "do not change" line. A job that runs anyway carries the same
+   findings as `spec_lint`; with `dispatch_spec_lint: enforce` it is refused with
+   `needs_detail` until you add the detail.
+
+## When Faustus says wait
+A job can be refused with HTTP 429 / `budget_paused` (the period budget: a
+day's or week's allowance for a hosted provider, or the local model's GPU
+seconds for today, is spent or running ahead of its pace) or `breaker_open`
+(several unattended runs in a row failed). Nothing was started and nothing was
+lost: the answer carries `reason`, `pause_until` and `retry_after_s`. Dispatch it
+again after `pause_until` (`budget_period` shows every window), or do the work
+yourself. Do not retry in a loop.
 
 ## Reading the result
 `status`: `done` = every worker finished AND the verification passed (or

@@ -90,6 +90,20 @@ def clean_dead_host_cooldown():
 
 
 @pytest.fixture(autouse=True)
+def isolated_period_budget(tmp_path_factory):
+    """The period ledger, the failure breaker and the provider cooldowns are
+    process-wide state (a SQLite ledger plus module dicts). Each test gets an
+    empty ledger of its own and a closed breaker with no cooldowns, so a test
+    that books spend or opens the breaker cannot change the next one."""
+    from src import period_budget, unattended_breaker
+    period_budget.set_db_path(str(tmp_path_factory.mktemp("period") / "period_budget.sqlite3"))
+    period_budget.reset_for_tests()
+    yield
+    period_budget.reset_for_tests()
+    period_budget.set_db_path(None)
+
+
+@pytest.fixture(autouse=True)
 def clean_bash_probe_cache():
     """`find_bash` probes once and keeps the answer in a module global.
 

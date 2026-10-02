@@ -496,6 +496,28 @@ def _foreground_model_busy() -> bool:
 
 @asynccontextmanager
 async def _local_model_slot(target_url: str, model: str, workload: Optional[str] = None):
+    """The local generation slot (below), timed: the seconds it was HELD (the
+    wait for it is not counted) are booked as GPU seconds in the period budget
+    ledger (src/period_budget.py). Hosted endpoints pass straight through."""
+    async with _local_model_slot_gate(target_url, model, workload):
+        _held_from = time.monotonic()
+        try:
+            yield
+        finally:
+            _book_gpu_seconds(target_url, model, time.monotonic() - _held_from)
+
+
+def _book_gpu_seconds(target_url: str, model: str, seconds: float) -> None:
+    try:
+        if seconds >= 0.01 and is_local_endpoint(target_url):
+            from src import period_budget
+            period_budget.record_gpu_seconds(target_url, seconds, model)
+    except Exception:  # noqa: BLE001 - bookkeeping never changes a call
+        pass
+
+
+@asynccontextmanager
+async def _local_model_slot_gate(target_url: str, model: str, workload: Optional[str] = None):
     """Serialize local model traffic, with foreground chat taking priority.
 
     Most local servers expose one GPU/CPU generation pipe even when their HTTP
@@ -4219,6 +4241,13 @@ def _dedupe_model_candidates_with_descriptors(candidates, descriptors=None):
         out.append(candidate)
         raw_descriptor = descriptors[index] if index < len(descriptors) else {}
         out_descriptors.append(_safe_route_descriptor(raw_descriptor))
+    try:
+        # An endpoint a provider just rate-limited (429/overload) is skipped
+        # while another candidate exists (src/unattended_breaker.py).
+        from src import unattended_breaker
+        out, out_descriptors = unattended_breaker.filter_candidates(out, out_descriptors)
+    except Exception:  # noqa: BLE001
+        pass
     return out, out_descriptors
 
 
@@ -4947,6 +4976,11 @@ async def _llm_call_async_impl(
                         )
                     await asyncio.sleep(_wait)
                     continue
+                try:
+                    from src import unattended_breaker
+                    unattended_breaker.note_status(target_url, r.status_code, r.headers, request_headers=headers)
+                except Exception:  # noqa: BLE001
+                    pass
                 raise _annotate(
                     HTTPException(r.status_code, friendly),
                     error_class=err_class,
@@ -5845,6 +5879,7 @@ def _stream_retry_decision(*, status: Optional[int] = None,
     classification = classify_http(status=status, headers=headers, exc=exc)
     retryable = classification is not RetryClass.NO_RETRY
     if fail_fast:
+        _note_final_status(status, headers)
         return False, 0.0, classification, False
     if classification is RetryClass.OUTCOME_UNKNOWN and delta_emitted:
         return False, 0.0, classification, retryable
@@ -5854,7 +5889,20 @@ def _stream_retry_decision(*, status: Optional[int] = None,
     if can_retry and attempt < max_retries and not budget.exhausted():
         retry_after = parse_retry_after(headers) if status is not None else None
         return True, _retry_delay(attempt, retry_after=retry_after), classification, retryable
+    _note_final_status(status, headers)
     return False, 0.0, classification, retryable
+
+
+def _note_final_status(status, headers) -> None:
+    """A streaming attempt failed for good: a 429/overload starts that
+    endpoint's cooldown once the call's trace record names the endpoint
+    (src/unattended_breaker.py, src/period_budget.on_model_call)."""
+    try:
+        if status is not None:
+            from src import unattended_breaker
+            unattended_breaker.note_pending_status(status, headers)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 async def _stream_retry_or_fail(*, should_retry: bool, wait: float,

@@ -9,6 +9,9 @@ One tool, four actions (`action` in the JSON payload):
   stop    {"id"} -> ask a running shift to stop after its current task
   report  {"id"?} -> the Markdown report for that shift, or the latest one
           for this owner when `id` is omitted
+  budget  {} -> the period budget (src/period_budget.py): spend and GPU
+          seconds against their day/week targets, what is paused and until
+          when, the unattended-failure breaker and provider cooldowns
 
 `start` launches real work in the background (a sequence of `dispatch`
 jobs), the same class of action as `delegate_agents` -- see
@@ -97,5 +100,10 @@ class NightShiftTool:
                 shift_id = latest["id"]
             return {"output": night_shift.report(owner, shift_id)}
 
+        if action == "budget":
+            from src import period_budget
+            state = period_budget.state()
+            return {"output": period_budget.render_text(state), "budget": state}
+
         return {"error": f"night_shift: unknown action {action!r} "
-                          "(use start, status, stop or report)", "exit_code": 1}
+                          "(use start, status, stop, report or budget)", "exit_code": 1}

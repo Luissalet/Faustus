@@ -25,7 +25,7 @@ replayed call by call, where a turn's time and tokens went, orphaned workers),
 workers_wait (block until done, then the compact result), workers_wait_for
 (block until ONE condition holds — a phase, a worker state, an event, a file
 change — and return the moment it does), workers_status,
-workers_events, workers_cancel, workers_list, models_fit (which local models
+workers_events, workers_cancel, workers_list, workers_lint (what a task spec is missing, checked before it is sent), budget_period (spend against the period targets, GPU seconds, the failure breaker, provider cooldowns), models_fit (which local models
 exist, how big each one is and whether it fits the card — read before naming a
 `model`), objectives_list/objectives_apply,
 guard_explain, memory_pack (what this machine has already learned), and
@@ -67,6 +67,7 @@ change with the format.
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import os
 import sys
@@ -132,6 +133,17 @@ def _toon(path: str, timeout: float = _TIMEOUT) -> Optional[str]:
     return text if text.startswith("ok: ") else None
 
 
+class FaustusHTTPError(RuntimeError):
+    """Faustus answered with an HTTP error; `code` and `body` (the parsed JSON
+    answer, or {}) let a tool say what happened in its own words, e.g. a job
+    refused with 429 `budget_paused` or 422 `needs_detail`."""
+
+    def __init__(self, message: str, code: int = 0, body: Optional[Dict[str, Any]] = None):
+        super().__init__(message)
+        self.code = code
+        self.body = body or {}
+
+
 def _request(method: str, path: str, body: Optional[Dict[str, Any]] = None, timeout: float = _TIMEOUT,
              retries: int = 1, as_text: bool = False):
     data = json.dumps(body).encode("utf-8") if body is not None else None
@@ -151,8 +163,10 @@ def _request(method: str, path: str, body: Optional[Dict[str, Any]] = None, time
             break
         except urllib.error.HTTPError as e:
             detail = ""
+            full = ""
             try:
-                detail = e.read().decode("utf-8")[:600]
+                full = e.read().decode("utf-8")[:20000]
+                detail = full[:600]
             except Exception:
                 pass
             hint = ""
@@ -161,7 +175,14 @@ def _request(method: str, path: str, body: Optional[Dict[str, Any]] = None, time
                         else " — the FAUSTUS_API_TOKEN is not accepted (revoked? another Faustus?)")
             elif e.code == 403:
                 hint = " — the token needs the agents:dispatch scope (profile 'fable_workers') and an admin owner"
-            raise RuntimeError(f"Faustus answered HTTP {e.code} for {method} {path}: {detail}{hint}")
+            parsed: Dict[str, Any] = {}
+            try:
+                value = json.loads(full) if full else {}
+                parsed = value if isinstance(value, dict) else {}
+            except (ValueError, TypeError):
+                parsed = {}
+            raise FaustusHTTPError(f"Faustus answered HTTP {e.code} for {method} {path}: {detail}{hint}",
+                                   e.code, parsed)
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             # one retry: a dispatch carries its Idempotency-Key, so a POST
             # that did go through returns the same job instead of a second one
@@ -228,6 +249,7 @@ def render(job: Dict[str, Any]) -> str:
         lines.append(f"workspace: {job['workspace']} · model: {job.get('model') or '?'} · {job.get('duration_s')} s")
     if job.get("chat_url"):
         lines.append(f"board: {BASE}{job['chat_url']}")
+    lines.extend(render_spec_lint(job.get("spec_lint")))
     if status in ("interrupted", "cancelled", "cancelling"):
         lines.append("this job did not finish — read the changes below, then re-dispatch the remaining work as a narrower task")
     if job.get("phase") and status in _LIVE_STATUSES:
@@ -902,6 +924,105 @@ def render_validation(data: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def render_spec_lint(lint: Any) -> List[str]:
+    """What the spec lint found missing in a job that ran anyway (`warn`)."""
+    if not isinstance(lint, dict) or not lint.get("needs_detail"):
+        return []
+    lines = [f"SPEC LINT ({lint.get('mode') or 'warn'}): the job ran, but its spec was missing detail "
+             f"({', '.join(lint.get('codes') or [])}) - write the next one with:"]
+    lines.extend("  - " + str(item) for item in (lint.get("needs_detail") or [])[:8])
+    return lines
+
+
+def render_lint(data: Dict[str, Any]) -> str:
+    """The answer of POST /api/dispatch/lint (and of a job refused with 422 `needs_detail`)."""
+    mode = data.get("mode") or "warn"
+    if data.get("ok"):
+        return f"spec lint ({mode}): every task names its files, a verify command and one outcome - ready to dispatch"
+    lines = [f"spec lint ({mode}): NOT ready - " + ", ".join(data.get("codes") or [])]
+    for row in data.get("tasks") or []:
+        problems = row.get("problems") or []
+        if not problems:
+            lines.append(f"task {row.get('index')} ({row.get('name')}): ok")
+            continue
+        lines.append(f"task {row.get('index')} ({row.get('name')}):")
+        for p in problems:
+            lines.append(f"  - {p.get('message')} -> {p.get('fix')}")
+    if mode == "enforce":
+        lines.append("dispatch_spec_lint is `enforce`: a job like this is refused until the detail is added")
+    return "\n".join(lines)
+
+
+def render_paused(info: Dict[str, Any]) -> str:
+    """A job refused with 429: the period budget or the failure breaker says wait."""
+    head = "breaker_open" if info.get("status") == "breaker_open" else "budget_paused"
+    lines = [f"{head}: {info.get('reason') or 'no reason given'}"]
+    if info.get("pause_until_iso"):
+        lines.append(f"pause_until: {info['pause_until_iso']}")
+    if info.get("retry_after_s") is not None:
+        lines.append(f"retry_after_s: {info['retry_after_s']}")
+    lines.append("nothing was started and nothing was lost - dispatch it again after pause_until "
+                 "(budget_period shows the windows), or do this job yourself")
+    return "\n".join(lines)
+
+
+def _money(metric: str, value: Any) -> str:
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if metric == "usd":
+        return f"${v:,.2f}" if v >= 1 else f"${v:,.4f}".rstrip("0").rstrip(".")
+    if metric == "gpu_seconds":
+        return f"{v:,.0f} s"
+    return f"{v:,.0f}"
+
+
+def _iso(ts: Any) -> str:
+    try:
+        return datetime.datetime.fromtimestamp(float(ts)).isoformat(timespec="minutes")
+    except (TypeError, ValueError, OverflowError, OSError):
+        return "?"
+
+
+def render_period_budget(data: Dict[str, Any]) -> str:
+    """GET /api/budget/period as a few lines: spend against each target, the pace
+    line, when a paused window resumes, the failure breaker and any cooldowns."""
+    lines = [f"period budget ({data.get('window')}, resets {_iso(data.get('window_resets_at'))})"]
+    if not data.get("enabled"):
+        lines.append("no target set: nothing is paced (settings budget_period_targets, budget_gpu_daily_seconds)")
+    rows = list(data.get("providers") or [])
+    if data.get("gpu"):
+        rows.append(data["gpu"])
+    for row in rows:
+        metric = row.get("metric")
+        state = "ok"
+        if row.get("paused"):
+            state = "PAUSED" + (f" until {_iso(row['paused_until'])}" if row.get("paused_until") else "")
+        pace = row.get("pace") or {}
+        lines.append(f"- {row.get('provider')} {metric}/{row.get('window')}: {_money(metric, row.get('used'))} of "
+                     f"{_money(metric, row.get('target')) if row.get('target') else 'no target'}"
+                     + (f" (pace line {_money(metric, pace['allowed'])})" if pace.get("allowed") is not None else "")
+                     + f" - {state}")
+    for seen in data.get("hosted_seen") or []:
+        lines.append(f"  spent on {seen.get('provider')}: {_money('usd', seen.get('usd'))}, {seen.get('tokens')} tokens"
+                     + (f", {seen.get('unpriced_tokens')} unpriced" if seen.get("unpriced_tokens") else ""))
+    if data.get("interactive_active"):
+        lines.append("an interactive chat turn is live: unattended work waits for it")
+    br = data.get("breaker") or {}
+    if br.get("open"):
+        lines.append(f"failure breaker OPEN after {br.get('consecutive_failures')} failures in a row, "
+                     f"closes {_iso(br.get('pause_until'))} (or when the owner resets it in Faustus)")
+    elif br.get("enabled"):
+        lines.append(f"failure breaker closed ({br.get('consecutive_failures', 0)}/{br.get('threshold')} in a row)")
+    for cd in data.get("cooldowns") or []:
+        lines.append(f"cooldown: {cd.get('endpoint')} after HTTP {cd.get('status')}, "
+                     f"{cd.get('remaining_s')} s left (retry-after honoured: {bool(cd.get('honoured_retry_after'))})")
+    return "\n".join(lines)
+
+
+
+
 TOOLS: List[Tool] = [
     Tool(
         name="dispatch_workers",
@@ -992,6 +1113,42 @@ TOOLS: List[Tool] = [
         name="workers_cancel",
         description="Stop a dispatched job.",
         inputSchema={"type": "object", "properties": {"job_id": {"type": "string"}}, "required": ["job_id"]},
+    ),
+    Tool(
+        name="workers_lint",
+        description=(
+            "Check a task spec BEFORE dispatching it, without starting anything: is a file named, is there an "
+            "exact verify command, is there one outcome, are the vague verbs backed by criteria, does a public "
+            "API touched carry a 'do not change' line? Takes the same `tasks` (and `verify`, `criteria`) as "
+            "dispatch_workers and answers what is missing and how to fix it. With the setting dispatch_spec_lint "
+            "= enforce a job that fails this is refused; in warn (default) it runs and the answer carries the lint."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "tasks": {"type": "array", "minItems": 1, "items": {"anyOf": [
+                    {"type": "string"},
+                    {"type": "object", "properties": {"instruction": {"type": "string"}, "name": {"type": "string"},
+                                                      "files": {"type": "array", "items": {"type": "string"}},
+                                                      "criteria": {"type": "array", "items": {"type": "string"}}},
+                     "required": ["instruction"]}]}},
+                "verify": {"type": "string", "description": "the exact command that proves the job is done"},
+                "criteria": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["tasks"],
+        },
+    ),
+    Tool(
+        name="budget_period",
+        description=(
+            "The period budget: spend on each hosted provider against its target for the day or week (and the "
+            "pace line it is held to), the local model's GPU-seconds for today, whether an interactive chat turn "
+            "is live (unattended work waits for it), the failure breaker (paused after N unattended runs in a "
+            "row failed) and any provider in cooldown after a 429. Read it when dispatch_workers answers "
+            "budget_paused or breaker_open: it says when the pause ends. Read-only; the breaker closes by "
+            "itself, or the owner resets it in Faustus."
+        ),
+        inputSchema={"type": "object", "properties": {}},
     ),
     Tool(
         name="workers_guide",
@@ -1752,8 +1909,22 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             return _text("\n".join(lines))
         if name == "dispatch_workers":
             body = {k: v for k, v in args.items() if v is not None}
-            job = await asyncio.to_thread(_request, "POST", "/api/dispatch", body)
+            try:
+                job = await asyncio.to_thread(_request, "POST", "/api/dispatch", body)
+            except FaustusHTTPError as err:
+                if err.code == 429 and (err.body.get("budget_paused") or err.body.get("breaker_open")):
+                    return _text(render_paused(err.body))
+                if err.code == 422 and err.body.get("status") == "needs_detail":
+                    return _text("job NOT started - " + render_lint(err.body))
+                raise
             return _text(render(job) + "\n(call workers_wait with this job_id)")
+        if name == "workers_lint":
+            body = {k: v for k, v in args.items() if v is not None}
+            data = await asyncio.to_thread(_request, "POST", "/api/dispatch/lint", body)
+            return _text(render_lint(data))
+        if name == "budget_period":
+            data = await asyncio.to_thread(_request, "GET", "/api/budget/period")
+            return _text(render_period_budget(data))
         job_id = str(args.get("job_id") or "").strip()
         if name == "workers_wait":
             t = min(_MAX_WAIT, max(5.0, float(args.get("timeout_s") or 300)))
