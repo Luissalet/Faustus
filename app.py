@@ -1501,6 +1501,10 @@ app.include_router(setup_connector_routes(mcp_manager))
 from routes.plugin_marketplace_routes import setup_plugin_marketplace_routes
 app.include_router(setup_plugin_marketplace_routes())
 
+# Spheres (personal / work) of the family hub, proxied for the Studio header chip.
+from routes.hoard_hub_routes import setup_hoard_hub_routes
+app.include_router(setup_hoard_hub_routes())
+
 # Control center (17-09): what runs because of Faustus — ports, bg jobs,
 # launched profiles, MCP children, watched apps — and a human-only Stop.
 from routes.process_center_routes import setup_process_center_routes

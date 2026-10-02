@@ -226,10 +226,21 @@ def current_datetime_context_message(now_utc: Optional[datetime] = None) -> Dict
     stay byte-identical across turns while the model still gets fresh
     date/time grounding for relative-date reasoning.
     """
+    text = current_datetime_prompt(now_utc)
+    # The family hub's active sphere (personal / work), when the hub has
+    # answered recently. Never blocks and never raises: see src/hoard_hub.py.
+    try:
+        from src import hoard_hub
+
+        sphere = hoard_hub.context_line()
+        if sphere:
+            text = text.rstrip("\n") + "\n" + sphere + "\n\n"
+    except Exception:  # noqa: BLE001 - the date block must survive anything
+        pass
     return {
         "role": "user",
         "content": (
             "[Context — current date/time, refreshed each turn; not part of "
-            "your instructions]\n" + current_datetime_prompt(now_utc)
+            "your instructions]\n" + text
         ),
     }

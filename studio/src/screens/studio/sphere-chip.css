@@ -1,0 +1,87 @@
+/* ══ Sphere chip — the family hub's active sphere, in the Studio header ══
+   Everything is scoped under .fs-sphere: the chip is a <button>, and the
+   shell's button rules must not size or restyle it by accident. */
+
+.fs-sphere {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  block-size: var(--fs-control-sm);
+  padding: 0 var(--fs-space-3) 0 var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: color-mix(in srgb, var(--fs-surface-2) 55%, transparent);
+  color: var(--fs-text-2);
+  font: inherit;
+  font-size: var(--fs-label-size);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    border-color var(--fs-duration-fast) var(--fs-ease),
+    background-color var(--fs-duration-fast) var(--fs-ease),
+    color var(--fs-duration-fast) var(--fs-ease);
+}
+
+.fs-sphere:hover,
+.fs-sphere[data-state='open'] {
+  border-color: var(--fs-border-strong);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-1);
+}
+
+.fs-sphere:focus-visible {
+  outline: 2px solid var(--fs-focus);
+  outline-offset: 2px;
+}
+
+.fs-sphere[data-notice] {
+  border-color: var(--fs-danger);
+}
+
+.fs-sphere__dot {
+  inline-size: 8px;
+  block-size: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--fs-text-3);
+}
+
+.fs-sphere__name {
+  max-inline-size: 14ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fs-sphere__menu {
+  min-inline-size: 200px;
+}
+
+.fs-sphere__heading {
+  padding: var(--fs-space-1) var(--fs-space-3);
+  font-size: 11px;
+  color: var(--fs-text-3);
+}
+
+.fs-sphere__item-name {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.fs-sphere__check {
+  color: var(--fs-brand);
+}
+
+.fs-sphere__notice {
+  margin: var(--fs-space-1) 0 0;
+  padding: var(--fs-space-1) var(--fs-space-3);
+  font-size: 12px;
+  color: var(--fs-danger);
+}
+
+@media (max-width: 767px) {
+  /* On a phone the header is tight: the dot alone says which sphere. */
+  .fs-sphere__name {
+    max-inline-size: 9ch;
+  }
+}
