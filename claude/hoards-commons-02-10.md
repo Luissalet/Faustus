@@ -36,7 +36,7 @@ Registro del 03-10-2026. Los 34 paquetes del relevo están aplicados en `main`; 
 | Ledger's Hoard | Correcto | 3 s |
 | Links Hoard | Correcto | 28 s |
 | Lumiere's Hoard | Correcto | 389 s |
-| Mercator's Hoard | Suite final en curso | 36 s |
+| Mercator's Hoard | Correcto: 77 pruebas | 20 s |
 | Midas's Hoard | Correcto | 46 s |
 | Nightingale's Hoard | Correcto | 343 s |
 | People's Hoard | Correcto | 3 s |
