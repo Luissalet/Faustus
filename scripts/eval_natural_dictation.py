@@ -8,10 +8,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import re
 import time
 import sys
-import unicodedata
 import urllib.request
 from pathlib import Path
 
@@ -59,12 +57,17 @@ CASES = [
     ("short_number", "dictate", "", "42", ["42"]),
     ("successive_repairs", "dictate", "", "Reserva para el martes, perdón, el miércoles, no, mejor el jueves a las seis.", ["Reserva para el jueves a las seis"]),
     ("meaningful_bueno", "dictate", "", "El resultado es bueno, pero no es definitivo.", ["El resultado es bueno pero no es definitivo"]),
+    ("negative_temperature", "dictate", "", "Eh, la temperatura es -12 grados, no 12.", ["La temperatura es -12 grados no 12"]),
+    ("percentage", "dictate", "", "Aplica el 15%, perdón, el 12% de descuento.", ["Aplica el 12% de descuento"]),
+    ("fraction", "dictate", "", "Necesito 3/4 de litro, no 3 litros.", ["Necesito 3/4 de litro no 3 litros"]),
 ]
 
 
 def normalize(text: str) -> str:
-    text = unicodedata.normalize("NFC", text).casefold()
-    return re.sub(r"[^\w]+", " ", text).strip()
+    # Punctuation-insensitive scoring must not hide corrupted quantities.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from services.stt.natural_dictation import lexemes
+    return " ".join(lexemes(text))
 
 
 def main() -> int:

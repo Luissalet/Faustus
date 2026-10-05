@@ -106,6 +106,21 @@ Latest measured results (small exploratory samples, 2026-09-28):
 
 ## Open-source precedents and design decisions
 
+### Quantity fidelity regression (2026-10-05)
+
+The deletion check accepted `-12` → `12`, `15%` → `15`, and `3/4` → `3`
+because its tokenizer discarded meaningful symbols as punctuation. Signed
+quantities, percentages, fractions and colon-separated times are now atomic
+tokens. Spacing and the Unicode minus glyph can change without altering their
+meaning; an explicit abandoned quantity may still be deleted in a correction.
+The text evaluator now preserves these symbols in its scoring too.
+
+Validation: 45 focused editor/cleanup tests pass and all 21 text scenarios match
+through the production editor with qwen3.8-27b-q8-llamacpp on port 8081 (short
+answers take the existing no-model path). These are text-stage checks, not new
+audio accuracy measurements. This does not prove all semantic deletions safe.
+Report: `D:/LocalAI/qa-rambler-numbers-isolated-20261005.json`.
+
 ### Follow-up: short turns and independent ASR comparison
 
 The voice frontend previously rejected all normalized utterances of two or fewer

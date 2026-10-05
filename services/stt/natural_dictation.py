@@ -32,8 +32,12 @@ SCHEMA = {"type": "object", "properties": {"text": {"type": "string"}}, "require
 
 
 def lexemes(text: str) -> list[str]:
-    # Keep decimals together: changing 1.5 to 15 is not punctuation cleanup.
-    return re.findall(r"\d+(?:[.,]\d+)*|[^\W\d_]+(?:['’][^\W\d_]+)*|\w+", unicodedata.normalize("NFC", text).casefold())
+    # Signs, fractions and percentage marks carry meaning, unlike prose
+    # punctuation. Keep each quantity atomic so deletion cannot turn -12
+    # into 12, 3/4 into 3, or 15% into 15. Spacing and minus glyph may vary.
+    numeric = r"[+\-−]?\s*\d+(?:[.,/:]\d+)*(?:\s*[%‰°])?"
+    parts = re.findall(numeric + r"|[^\W\d_]+(?:['’][^\W\d_]+)*|\w+", unicodedata.normalize("NFC", text).casefold())
+    return [re.sub(r"\s+", "", part).replace("−", "-") if re.fullmatch(numeric, part) else part for part in parts]
 
 
 def faithful_deletions(source: str, candidate: str) -> bool:
