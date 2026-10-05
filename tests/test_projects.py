@@ -28,6 +28,34 @@ def workspace(tmp_path):
     return str(ws)
 
 
+def test_memory_directory_symlink_cannot_read_or_write_outside_workspace(store, workspace, tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "MEMORY.md").write_text("private")
+    from pathlib import Path
+    Path(workspace, ".faustus").symlink_to(outside, target_is_directory=True)
+    project = {"workspace": workspace}
+    assert store.read_index(project) == "" and store.list_memory_files(project) == []
+    assert store.scaffold_memory(project) == ""
+    with pytest.raises(ProjectError):
+        store.write_memory_file(project, "secret.md", "bad")
+    assert not (outside / "secret.md").exists()
+
+
+def test_memory_index_symlink_cannot_read_or_scaffold_outside(store, workspace, tmp_path):
+    from pathlib import Path
+    base = Path(workspace, ".faustus")
+    base.mkdir()
+    outside = tmp_path / "private.md"
+    outside.write_text("private")
+    (base / "MEMORY.md").symlink_to(outside)
+    project = {"workspace": workspace}
+    assert store.read_index(project) == ""
+    with pytest.raises(ProjectError):
+        store.scaffold_memory(project)
+    assert outside.read_text() == "private"
+
+
 # ── store basics ──────────────────────────────────────────────────────
 
 

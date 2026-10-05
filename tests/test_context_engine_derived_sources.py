@@ -425,7 +425,7 @@ def test_the_project_flag_gates_exactly_what_the_ranker_would_refuse():
     consulting it under the flag buys a thread and a guaranteed omission; a
     block, an experience and a recipe are not on that list, and an incognito
     turn keeps the standing rule that says which folder it may not touch."""
-    assert planner.PROJECT_SOURCE_IDS == ("project_memory", "files", "code_index")
+    assert planner.PROJECT_SOURCE_IDS == ("project_memory", "files", "code_index", "repository_rationale")
     assert "symbol" in ranking.PROJECT_SOURCE_TYPES
     for kind in ("block", "experience", "recipe", "capsule", "finding"):
         assert kind not in ranking.PROJECT_SOURCE_TYPES

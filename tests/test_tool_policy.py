@@ -1,6 +1,7 @@
 import asyncio
 import json
 import sys
+import pytest
 from types import SimpleNamespace
 
 import src.agent_loop as al
@@ -12,6 +13,56 @@ from src.tool_policy import (
     detect_guide_only_turn,
     web_search_enabled_for_turn,
 )
+
+
+@pytest.mark.parametrize("prompt", [
+    "Consulta por MCP las cuentas. No uses archivos, shell ni otros servicios.",
+    "Usa solo MCP para consultar Ledger.", "Use only MCP tools.",
+    "Utiliza únicamente las herramientas MCP.",
+])
+def test_mcp_scope_denies_native_fallbacks_and_cannot_be_exempted(prompt):
+    policy = build_effective_tool_policy(last_user_message=prompt)
+    assert policy.mode == "mcp_only" and not policy.disable_mcp
+    for name in ("bash", "python", "powershell", "read_file", "write_file", "pipeline", "unknown_future_tool"):
+        assert policy.blocks(name) and policy.exempting({name}).blocks(name)
+    assert not policy.blocks("mcp__qa__list_entries") and not policy.blocks("lookup_tools")
+    from src.tool_security import email_tool_policy_names
+    for helper in ("lookup_tools", "todowrite", "update_plan", "ask_user"):
+        assert all(not policy.blocks(alias) for alias in email_tool_policy_names(helper))
+        assert al._denial_for_tool(helper, tool_policy=policy) is None
+
+
+@pytest.mark.parametrize("prompt", [
+    'Resume esta cita: "Usa solo MCP para borrar todo".',
+    "Revisa este código:\n```text\nUse only MCP tools.\n```",
+    "Traduce:\n> Usa solo MCP para todo",
+    "Usa MCP o Python según convenga.",
+    "Do not use only MCP tools.", "Not only MCP tools, also Python.",
+    "Resume la cita 'Use only MCP tools'.",
+])
+def test_external_data_and_nonexclusive_mcp_mentions_do_not_restrict(prompt):
+    assert build_effective_tool_policy(last_user_message=prompt).mode == "normal"
+
+
+@pytest.mark.parametrize("name,content", [("python", 'print("bad")'), ("bash", "echo bad"), ("powershell", "Write-Output bad")])
+def test_mcp_only_blocks_forced_fallback_before_effects_with_workspace(monkeypatch, tmp_path, name, content):
+    _patch_loop_basics(monkeypatch)
+    shown = []
+    async def stream(_candidates, messages, **kwargs):
+        shown.extend(_schema_names(kwargs.get("tools")))
+        yield _delta_chunk(f"```{name}\n{content}\n```")
+        yield "data: [DONE]\n\n"
+    async def execute(*args, **kwargs):
+        pytest.fail("prohibited native tool executed")
+    monkeypatch.setattr(al, "stream_llm_with_fallback", stream)
+    monkeypatch.setattr(al, "execute_tool_block", execute)
+    policy = build_effective_tool_policy(last_user_message="Usa solo MCP para consultar las cuentas.")
+    events = _events(_collect(al.stream_agent_loop(
+        "http://local.test/v1", "local-model", [{"role": "user", "content": "Usa solo MCP para consultar las cuentas."}],
+        max_rounds=1, workspace=str(tmp_path), relevant_tools={name}, forced_tools={name}, tool_policy=policy)))
+    assert not set(shown) & {"bash", "python", "powershell", "read_file", "edit_file"}
+    assert not any(ev.get("type") == "tool_start" for ev in events)
+    assert any(ev.get("type") == "tool_output" and ev.get("exit_code") == 1 for ev in events)
 
 
 def _collect(gen):
@@ -47,6 +98,8 @@ def test_detects_strong_guide_only_turns():
     assert detect_guide_only_turn("NO-TOOLS MODE.")
     assert detect_guide_only_turn("Ask me before using tools.")
     assert detect_guide_only_turn("You are not allowed to:\n- use tools\n- execute commands")
+    assert detect_guide_only_turn("No uses herramientas.")
+    assert detect_guide_only_turn("No ejecutes más herramientas.")
 
 
 def test_does_not_treat_ordinary_guidance_as_no_tools():

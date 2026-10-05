@@ -1187,7 +1187,15 @@ class ProjectStore:
 
     def memory_dir(self, project: Dict[str, Any]) -> str:
         ws = (project or {}).get("workspace") or ""
-        return convention_dir(ws)
+        base = convention_dir(ws)
+        if base:
+            root, resolved = os.path.realpath(ws), os.path.realpath(base)
+            try:
+                if os.path.commonpath([root, resolved]) != root:
+                    return ""
+            except ValueError:
+                return ""
+        return base
 
     def _memory_path(self, project: Dict[str, Any], filename: str) -> str:
         """Resolve a memory filename to an absolute path, refusing anything
@@ -1210,7 +1218,7 @@ class ProjectStore:
         if not base:
             return ""
         os.makedirs(base, exist_ok=True)
-        index = os.path.join(base, MEMORY_INDEX)
+        index = self._memory_path(project, MEMORY_INDEX)
         if not os.path.exists(index):
             with open(index, "w", encoding="utf-8") as fh:
                 fh.write(
@@ -1226,7 +1234,10 @@ class ProjectStore:
         base = self.memory_dir(project)
         if not base:
             return ""
-        path = os.path.join(base, MEMORY_INDEX)
+        try:
+            path = self._memory_path(project, MEMORY_INDEX)
+        except ProjectError:
+            return ""
         try:
             with open(path, "r", encoding="utf-8", errors="replace") as fh:
                 return fh.read(MAX_MEMORY_FILE)

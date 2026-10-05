@@ -81,6 +81,7 @@ from .memory import MemoryEngineSource, PersonalMemorySource
 from .objectives import ObjectivesSource
 from .project_links import ProjectLinksSource
 from .projects import ProjectMemorySource
+from .rationale import RepositoryRationaleSource
 from .provenance import ProvenanceSource
 from .sessions import SessionSource, reset_history_provider, set_history_provider
 from .state_mirror import StateMirrorSource
@@ -88,6 +89,7 @@ from .state_mirror import StateMirrorSource
 SOURCE_FACTORIES: Tuple[Callable[[], ContextSource], ...] = (
     ObjectivesSource,
     ProjectMemorySource,
+    RepositoryRationaleSource,
     ProjectLinksSource,
     MemoryEngineSource,
     PersonalMemorySource,

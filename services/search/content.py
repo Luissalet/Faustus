@@ -6,7 +6,7 @@ import json
 import os
 import re
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List
 
 import httpx
@@ -314,9 +314,21 @@ def _annotate_source_quality(result: dict, extra_flags=None) -> dict:
 # ----------------------------------------------------------------------
 # Main content fetcher
 # ----------------------------------------------------------------------
+def _response_observation(response, url: str) -> dict:
+    return {
+        "http_status": response.status_code,
+        "final_url": str(getattr(response, "url", url)),
+        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "truncated": getattr(response, "truncated", False),
+        "fetched_bytes": len(response.content),
+        "total_bytes": getattr(response, "declared_bytes", None),
+        "headers": dict(response.headers) if hasattr(response, "headers") else {},
+    }
+
+
 def fetch_webpage_content(url: str, timeout: int = 5, retry_attempt: int = 0,
                           max_bytes: int = None, format: str = "markdown",
-                          keep_html: bool = False) -> dict:
+                          keep_html: bool = False, inspect: bool = False) -> dict:
     """Fetch and extract meaningful content from a webpage with caching.
 
     ``keep_html`` adds the page's raw markup as ``result["raw_html"]`` of a
@@ -343,7 +355,8 @@ def fetch_webpage_content(url: str, timeout: int = 5, retry_attempt: int = 0,
     # soft-cap fetch, or a flat-text fetch, must not be served to a later
     # full-budget / markdown request for the same URL.
     cache_key = generate_cache_key(
-        f"{url}#cap={effective_cap}#fmt={format}#x={_EXTRACTOR_VERSION}")
+        f"{url}#cap={effective_cap}#fmt={format}#x={_EXTRACTOR_VERSION}"
+        + ("#inspect=1" if inspect else ""))
     cache_file = CONTENT_CACHE_DIR / f"{cache_key}.cache"
 
     # Check cache
@@ -377,6 +390,14 @@ def fetch_webpage_content(url: str, timeout: int = 5, retry_attempt: int = 0,
         response = _get_public_url(url, headers=headers, timeout=timeout,
                                    max_bytes=effective_cap)
 
+        if inspect:
+            # A received HTTP response is an observation, including errors,
+            # empty bodies and binary types. Do not extract or retry it.
+            result = {"url": url, "content": "", "success": True, "error": "",
+                      **_response_observation(response, url)}
+            _cache_result(cache_file, cache_key, result, url)
+            return result
+
         if response.status_code == 429:
             raise RateLimitError(f"Rate limit hit for {url} (attempt {retry_attempt})")
 
@@ -403,12 +424,7 @@ def fetch_webpage_content(url: str, timeout: int = 5, retry_attempt: int = 0,
     # read `Last-Modified`/`Date`/`Age` off it later
     # (`src.outbound_fetch.staleness_from_headers`) without this module
     # knowing anything about staleness itself.
-    _size_fields = {
-        "truncated": getattr(response, "truncated", False),
-        "fetched_bytes": len(response.content),
-        "total_bytes": getattr(response, "declared_bytes", None),
-        "headers": dict(response.headers) if hasattr(response, "headers") else {},
-    }
+    _size_fields = _response_observation(response, url)
 
     # PDF handling
     content_type = response.headers.get("Content-Type", "").lower()

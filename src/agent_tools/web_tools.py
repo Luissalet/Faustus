@@ -125,11 +125,13 @@ class WebFetchTool:
         raw = content.strip()
         url = ""
         max_bytes = None
+        inspect_http = False
         if raw.startswith("{"):
             try:
                 parsed = json.loads(raw)
                 if isinstance(parsed, dict):
                     url = str(parsed.get("url") or "").strip()
+                    inspect_http = parsed.get("inspect") is True
                     # Download-budget override (#3812): "full": true raises the
                     # budget to the hard cap; an explicit max_bytes is clamped
                     # to the hard cap downstream. Default stays the soft cap.
@@ -157,6 +159,8 @@ class WebFetchTool:
                     sig = inspect.signature(fetch_webpage_content)
                     if "max_bytes" in sig.parameters:
                         kwargs["max_bytes"] = max_bytes
+                    if "inspect" in sig.parameters and inspect_http:
+                        kwargs["inspect"] = True
                 except (TypeError, ValueError):
                     # Some deployed/test shims may not expose a signature.
                     # Prefer compatibility over failing the whole fetch.
@@ -172,6 +176,39 @@ class WebFetchTool:
         except Exception as e:
             return {"error": f"web_fetch: {url}: {e}", "exit_code": 1}
         err = result.get("error")
+        if inspect_http:
+            if err:
+                return {"error": f"web_fetch: {url}: {err}", "exit_code": 1,
+                        "untrusted_content": True}
+            from src.web_profile import passive_http_profile
+            profile = passive_http_profile(url, result)
+            output = json.dumps(profile, ensure_ascii=False, indent=2)
+            # JSON escaping can amplify even a short hostile header. Keep a
+            # complete parseable profile while trimming observation values.
+            for cap in (128, 64, 32, 0):
+                if len(output) <= MAX_OUTPUT_CHARS:
+                    break
+                profile["profile_truncated"] = True
+                for header in profile["headers"].values():
+                    if len(header["value"]) > cap:
+                        header["value"] = header["value"][:cap]
+                        header["value_truncated"] = True
+                output = json.dumps(profile, ensure_ascii=False, indent=2)
+            response = {"output": output, "profile": profile, "exit_code": 0,
+                        "untrusted_content": True, "evidence_refs": []}
+            # An old cache entry with unknown capture time is still useful,
+            # but cannot mint a dated observation receipt.
+            if profile["captured_at"]:
+                evidence = _evidence_for_fetch(
+                    url, output, owner_id=str(ctx.get("owner") or "system"),
+                    project_id=ctx.get("project_id") or None, truncated=False,
+                    fetched_bytes=None, total_bytes=None,
+                ).to_mapping()
+                evidence["captured_at"] = profile["captured_at"]
+                evidence["locator"] = {"kind": "whole", "value":
+                    "passive_http_profile: selected HTTP metadata; no page body"}
+                response["evidence_refs"] = [evidence]
+            return response
         text = (result.get("content") or "").strip()
         title = result.get("title") or ""
 

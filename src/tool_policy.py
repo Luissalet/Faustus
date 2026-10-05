@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 from types import MappingProxyType
 from typing import Iterable, Mapping, Optional, Set, Tuple
 
@@ -17,6 +18,47 @@ GUIDE_ONLY_DIRECTIVE = (
 )
 
 WEB_TOOL_NAMES = frozenset({"web_search", "web_fetch"})
+MCP_ONLY_HELPERS = frozenset({"lookup_tools", "todowrite", "update_plan", "ask_user"})
+
+
+@lru_cache(maxsize=1)
+def _mcp_helper_policy_names() -> frozenset[str]:
+    # The gate checks registered aliases and semantic keys as well as the
+    # surface spelling. They must have the same scope decision.
+    from src.tool_security import email_tool_policy_names
+    return frozenset(name for helper in MCP_ONLY_HELPERS for name in email_tool_policy_names(helper))
+
+
+MCP_ONLY_DIRECTIVE = (
+    "## MCP-ONLY TOOL POLICY\n"
+    "The user restricted this turn to MCP tools. Use lookup_tools to find them. "
+    "Native shell, Python, filesystem, web and delegation tools are disabled; "
+    "do not simulate a service or use a fallback through them. If the MCP service "
+    "is unavailable, report that limitation. Existing approval requirements still apply."
+)
+
+
+def detect_mcp_only_turn(message: object) -> bool:
+    """Recognise explicit scope restrictions in the user's own prose only."""
+    from src.reply_language import instruction_text_for_language
+    text = instruction_text_for_language(message)
+    # Code, quotations and quoted lines are reference data, not authorization.
+    text = re.sub(r"```[\s\S]*?```|`[^`]*`|\"[^\"]*\"|“[^”]*”|(?<!\w)'[^']*'", "", text)
+    text = re.sub(r"(?m)^\s*>.*$", "", text)
+    text = re.sub(r"\s+", " ", text).lower()
+    exclusive = (
+        r"\b(?:usa|use|utiliza|utilice)\s+(?:solo|sólo|únicamente|exclusivamente|only)\s+"
+        r"(?:las?\s+)?(?:herramientas?\s+(?:nativas?\s+)?|native\s+tools?\s+)?mcp\b"
+        r"|\bonly\s+(?:native\s+)?mcp\s+tools?\b"
+    )
+    scope_requested = any(
+        not re.search(r"(?:\bnot|\bno|\bnever|\bdon't|\bdo not)\s*(?:use\s*)?$", text[:match.start()])
+        for match in re.finditer(exclusive, text)
+    )
+    return bool(scope_requested or (
+        re.search(r"\bmcp\b", text)
+        and re.search(r"\bno uses archivos,?\s*shell ni otros servicios\b", text)
+    ))
 
 
 def tool_toggle_enabled(value: object) -> bool:
@@ -141,6 +183,8 @@ _GUIDE_ONLY_PATTERNS: Tuple[Tuple[re.Pattern[str], str], ...] = tuple(
         (r"\bnot allowed to use (?:any )?tools?\b", "user forbade tool use"),
         (r"\bnot allowed to:?.{0,120}\buse (?:any )?tools?\b", "user forbade tool use"),
         (r"\bask (?:me )?(?:for confirmation )?before using tools?\b", "user requested confirmation before tools"),
+        (r"\bno uses (?:ninguna |más )?herramientas?\b", "user forbade tool use"),
+        (r"\bno ejecutes (?:más |ninguna )?herramientas?\b", "user forbade tool use"),
     )
 )
 
@@ -162,13 +206,17 @@ class ToolPolicy:
     def blocks(self, tool_name: Optional[str]) -> bool:
         if not tool_name:
             return False
-        return self.block_all_tool_calls or tool_name in self.disabled_tools or tool_name in self.hidden_tools
+        scope_denied = (self.mode == "mcp_only" and not tool_name.startswith("mcp__")
+                        and tool_name not in _mcp_helper_policy_names())
+        return scope_denied or self.block_all_tool_calls or tool_name in self.disabled_tools or tool_name in self.hidden_tools
 
     def reason_for(self, tool_name: Optional[str]) -> str:
         if tool_name and tool_name in self.reasons:
             return self.reasons[tool_name]
         if self.block_all_tool_calls and self.mode == "guide_only":
             return "Tool use is disabled for this guide-only turn."
+        if self.mode == "mcp_only":
+            return "The user restricted this turn to MCP tools; native fallbacks are disabled."
         return "Tool use is disabled for this turn."
 
     def exempting(self, names: Iterable[str]) -> "ToolPolicy":
@@ -197,7 +245,7 @@ class ToolPolicy:
         returned unchanged here as well, because there is no exemption from
         "no tools at all".
         """
-        if self.block_all_tool_calls:
+        if self.block_all_tool_calls or self.mode == "mcp_only":
             return self
         exempt = {str(name) for name in (names or ()) if name}
         if not exempt or not (exempt & self.all_disabled_names()):
@@ -285,6 +333,15 @@ def build_effective_tool_policy(
             block_all_tool_calls=True,
             disable_mcp=True,
         )
+
+    if detect_mcp_only_turn(last_user_message):
+        native = {name for name in known_tool_names()
+                  if not name.startswith("mcp__") and name not in _mcp_helper_policy_names()}
+        disabled.update(native)
+        hidden.update(native)
+        reasons.update({name: "The user restricted this turn to MCP tools." for name in native})
+        return ToolPolicy(disabled_tools=frozenset(disabled), hidden_tools=frozenset(hidden),
+                          reasons=MappingProxyType(reasons), mode="mcp_only")
 
     return ToolPolicy(
         disabled_tools=frozenset(disabled),

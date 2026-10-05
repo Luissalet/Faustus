@@ -179,6 +179,7 @@ _RESEARCH = _matcher(RESEARCH_SIGNALS)
 SOURCE_SECTIONS: Dict[str, Tuple[str, ...]] = {
     "objectives": ("active_goal", "decisions"),
     "project_memory": ("project_rules",),
+    "repository_rationale": ("retrieved_documents",),
     # The project's typed context links (`adapters/project_links.py`).  The
     # manifest is `project_rules`; a query's excerpts land in the section of
     # whatever kind the link points at, which is why one adapter declares
@@ -245,10 +246,10 @@ PERSONAL_SOURCE_IDS: Tuple[str, ...] = ("memory_engine", "personal_memory", "bra
 #: ``ProjectLinksSource._gate`` enforces ``allow_project_sources`` itself,
 #: on the event loop and before the store is consulted — a project's links
 #: are project data by construction, and an incognito turn never sees one.
-PROJECT_SOURCE_IDS: Tuple[str, ...] = ("project_memory", "files", "code_index")
+PROJECT_SOURCE_IDS: Tuple[str, ...] = ("project_memory", "files", "code_index", "repository_rationale")
 
 #: Useless without ``execution.workspace``; asking them costs a thread each.
-WORKSPACE_SOURCE_IDS: Tuple[str, ...] = ("files", "code_index")
+WORKSPACE_SOURCE_IDS: Tuple[str, ...] = ("files", "code_index", "repository_rationale")
 
 #: Useless without ``execution.session_id``.
 SESSION_SOURCE_IDS: Tuple[str, ...] = ("sessions",)

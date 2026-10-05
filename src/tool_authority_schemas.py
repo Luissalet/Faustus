@@ -44,11 +44,14 @@ CORE_SCHEMAS = {
                     "'what's on this page <url>'). Use when you already have a concrete URL/domain. NOT for "
                     "open-ended searches (use web_search) or 'research X' jobs (use trigger_research). Downloads "
                     "are size-budgeted; a '[partial content: ...]' notice in the result means the body was cut "
-                    'short and you can re-call with full=true for the rest.',
+                    'short and you can re-call with full=true for the rest. Set inspect=true for a passive HTTP '
+                    'profile (status, final URL and selected headers), without extra scans or security verdicts.',
      'parameters': {'type': 'object',
                     'properties': {'url': {'type': 'string',
                                            'description': 'The URL or domain to fetch (http/https; a bare domain '
                                                           'like example.com is fine)'},
+                                   'inspect': {'type': 'boolean',
+                                               'description': 'Return passive HTTP observations instead of page text.'},
                                    'full': {'type': 'boolean',
                                             'description': 'Raise the download budget to the hard cap for large '
                                                            'pages/files. Use only after a result reported '

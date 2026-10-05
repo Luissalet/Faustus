@@ -1,0 +1,39 @@
+# Context index
+
+## 0
+## 1
+## 2
+## 3
+## 4
+## 5
+## 6
+## 7
+## 8
+## 9
+## A
+## B
+## C
+## D
+## E
+## F
+- [faustus-reliability.md](faustus-reliability.md) — rationale for repository reasons, passive HTTP observations and MCP-only scope
+## G
+## H
+## I
+## J
+## K
+## L
+## M
+## N
+## O
+## P
+## Q
+## R
+## S
+## T
+## U
+## V
+## W
+## X
+## Y
+## Z

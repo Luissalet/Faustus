@@ -60,7 +60,7 @@ from src.tool_security import (
     email_tool_policy_names,
     plan_mode_disabled_tools,
 )
-from src.tool_policy import GUIDE_ONLY_DIRECTIVE, WEB_TOOL_NAMES, ToolPolicy
+from src.tool_policy import GUIDE_ONLY_DIRECTIVE, MCP_ONLY_DIRECTIVE, WEB_TOOL_NAMES, ToolPolicy
 from src.user_request_gate import user_request_text as _user_request_text
 from src.user_request_gate import asked_before_text as _asked_before_text
 from src.tool_capabilities import (
@@ -519,6 +519,8 @@ _AGENT_RULES = """\
 - If the user explicitly says "this workspace" or "current workspace" but no active workspace is set, do not inspect or edit random home-folder files. Tell them to set one with `/workspace pick` or `/workspace set /absolute/path`.
 - After a tool succeeds, do not second-guess it; reply with one short confirmation unless more work remains.
 - After a tool fails, retry with a concrete fix or state what is blocking you.
+- When a tool marks a cost or measurement incomplete, report the known subtotal and the missing values. Missing prices may be zero (for example a gift): the full total could equal the subtotal. Do not say the total is greater, different, or "not the subtotal". Say "known subtotal X; full total unverified because Y has no recorded price"; do not invent that price.
+- A tool catalogue can expose only part of a service. Absence from that catalogue, or a historical note, does not prove that the current API lacks a feature; report the observed scope and leave unverified capabilities unknown.
 - Calls that do not depend on each other (reading several files, editing different files, independent searches) go in the SAME round: they run side by side, and one round is cheaper than several.
 - Finish only when the user's concrete request is actually done, or clearly state that you are blocked.
 - A NEW SYSTEM IS DECIDED WITH THE USER FIRST. "Implement X" / "add auth" / "make me a system for Y" with at least two reasonable designs (where the data lives, which framework or language, where it goes, how far the scope reaches) that neither the request nor the code settles: your FIRST action is `ask_user` with 2-4 options (recommended first, one line each) and you write NOTHING until they answer. A small edit has one obvious reading - just do it; a new system has several - ask, once, and only about what you cannot decide yourself.
@@ -544,6 +546,8 @@ _API_AGENT_RULES = """\
 - Keep answers concise unless the user asks for depth.
 - After a tool succeeds, do not second-guess it; reply with one short confirmation unless more work remains.
 - After a tool fails, retry with a concrete fix or state what is blocking you.
+- When a tool marks a cost or measurement incomplete, report the known subtotal and the missing values. Missing prices may be zero (for example a gift): the full total could equal the subtotal. Do not say the total is greater, different, or "not the subtotal". Say "known subtotal X; full total unverified because Y has no recorded price"; do not invent that price.
+- A tool catalogue can expose only part of a service. Absence from that catalogue, or a historical note, does not prove that the current API lacks a feature; report the observed scope and leave unverified capabilities unknown.
 - Calls that do not depend on each other (reading several files, editing different files, independent searches) go in the SAME round: they run side by side, and one round is cheaper than several.
 - Finish only when the user's concrete request is actually done, or clearly state that you are blocked.
 - A NEW SYSTEM IS DECIDED WITH THE USER FIRST. "Implement X" / "add auth" / "make me a system for Y" with at least two reasonable designs (where the data lives, which framework or language, where it goes, how far the scope reaches) that neither the request nor the code settles: your FIRST action is `ask_user` with 2-4 options (recommended first, one line each) and you write NOTHING until they answer. A small edit has one obvious reading - just do it; a new system has several - ask, once, and only about what you cannot decide yourself.
@@ -8699,6 +8703,8 @@ async def _stream_agent_loop_body(
             return set()                       # nothing to be confined to
         if guide_only or (tool_policy is not None and tool_policy.block_all_tool_calls):
             return set()                       # the turn sends no tools at all
+        if tool_policy is not None and tool_policy.mode == "mcp_only":
+            return set()                       # explicit scope beats workspace heuristics
         if _active_document_relevant or active_email:
             # The turn is about the open document / the open email, not the
             # folder. Forcing file tools in would drag it back to disk.
@@ -10176,6 +10182,8 @@ async def _stream_agent_loop_body(
             _prepend_agent_directive(route_messages, build_active_plan_note(approved_plan))
         if guide_only:
             _prepend_agent_directive(route_messages, GUIDE_ONLY_DIRECTIVE)
+        elif tool_policy is not None and tool_policy.mode == "mcp_only":
+            _prepend_agent_directive(route_messages, MCP_ONLY_DIRECTIVE)
         if _project_objective_unavailable:
             _prepend_agent_directive(
                 route_messages,

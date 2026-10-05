@@ -10246,14 +10246,57 @@ recibos del proxy y el workspace; no se infieren de las respuestas del modelo.
 
 Se conservaron los cambios heredados de 34 de 37 repositorios Hoard. La primera
 consulta de Ledger mostró un fallback indebido a Python y una propuesta de shell
-bloqueada por aprobación; queda pendiente corregir su causa. Qwen calculó bien
+bloqueada por aprobación; su causa se corrigió y el mensaje original pasó en la
+ronda 274. Qwen calculó bien
 46,5 pero dio una explicación de divisibilidad falsa, que corrigió después.
 Dos pruebas largas fallaron por configuración insuficiente de contexto y se
 repitieron tras ajustar únicamente la instancia Q8 propia a 131072 tokens y una
 ranura, registrar su endpoint como local y desactivar aprendizaje de fondo.
 Esto no acredita comprensión de toda esa longitud ni una fiabilidad universal.
 
-Siguiente ronda: verificar estado limpio y evidencias, alternar Cook/Home y
-priorizar la selección de herramientas MCP de solo lectura. SABER sigue aparcado;
-Watch y Book excluidos. Informe local: `docs/RELIABILITY_CYCLE_2026-10-05.md`.
+La verificación y la alternancia Cook/Home se completaron en la ronda 274.
+SABER sigue aparcado; Watch y Book excluidos.
+Informe local: `docs/RELIABILITY_CYCLE_2026-10-05.md`.
 Evidencia: `D:/LocalAI/qa/reliability-20261005`. El programa de mejora continúa.
+
+## 274. Razones del repositorio, perfil HTTP y límites MCP (05-10-2026)
+
+Adaptación de Keep the Why: `context/*.md` conserva razones y alternativas
+descartadas en Git. El Context Engine las recupera solo en tareas de código y
+revisión, mediante búsqueda léxica acotada, hashes y reapertura por referencia.
+Son afirmaciones históricas no confiables, nunca instrucciones vinculantes.
+No se instala otro almacén ni se acredita una mejora general de eficacia.
+
+De Web-Check se adapta una inspección pasiva `web_fetch inspect=true`: estado,
+URL final, hora original de captura y cabeceras seleccionadas. Incluye respuestas
+HTTP de error y binarias, conserva la caché, excluye cookies y declara los
+controles no realizados. El recibo identifica el perfil y no el cuerpo de la
+página. Cassandra ya cubre la vigilancia: no se crea otro Hoard ni se instala
+un escáner. La captura compartida apunta al producto de lissy93; el fork visible
+no fue accesible durante la investigación.
+
+La restricción explícita «solo MCP» se aplica a esquemas y ejecución; el suelo
+de herramientas del workspace no puede revocar esa decisión. Descubrimiento y
+planificación siguen disponibles bajo sus alias. Se cierra también la salida
+por symlink de `.faustus` y se reconoce la prohibición de herramientas en español.
+Las reglas de ambos modos distinguen costes parciales de totales desconocidos y
+el catálogo observado de las capacidades no comprobadas de una API.
+
+Validación: 507 pruebas focalizadas y 17 turnos reales terminados con
+`qwen3.8-27b-q8-llamacpp` en 8081. Home: corrección de cantidad y recepción de
+compra repetida con un único ID. Cook: escalado, correcciones, contradicción,
+precio ausente, error MCP y recuperación. Ledger: mensaje original de la ronda
+anterior sin fallback nativo. Razones históricas: recuperación efectiva como
+datos no confiables y rechazo lógico del replay automático. Perfil GitHub y
+corrección posterior sin nuevas herramientas. Se verifican los archivos reales
+de Home/Cook, SQLite de Ledger, recibos y hashes del workspace: dos objetos,
+arroz 300 g, una salida de 10 EUR y saldo 990 EUR; ningún efecto del texto
+malicioso ni aprobación pendiente. Las afirmaciones iniciales sobre costes y
+ausencia de capacidades quedan conservadas como fallos observados; las
+correcciones se vuelven a probar con el mismo Q8.
+
+Informe local: `docs/RELIABILITY_WHY_WEB_2026-10-05.md`.
+Evidencia: `D:/LocalAI/qa/why-web-20261005/state-final.json` y trazas de esa carpeta.
+Los cambios heredados y el trabajo concurrente de Rambler se preservan por
+separado; estas comprobaciones no afirman que todos los repositorios estén
+limpios ni sincronizados. SABER, Watch y Book quedan fuera de esta ronda.
