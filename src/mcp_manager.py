@@ -2077,20 +2077,41 @@ class McpManager:
                 output_parts.append(str(content.data))
 
         output = "\n".join(output_parts)
-        is_error = bool(getattr(result, 'isError', False)) or _body_reports_error(output)
+        text_error = _body_reports_error(output)
+        try:
+            reported = json.loads(output)
+        except (TypeError, ValueError):
+            reported = None
+        structured = getattr(result, "structuredContent", None)
+        structured_text = None
+        if isinstance(structured, dict):
+            # MCP permits structured-only results. A human-readable summary
+            # can also omit data or a failure, so preserve both representations.
+            structured_text = json.dumps(structured, ensure_ascii=False, sort_keys=True)
+            try:
+                equivalent = json.loads(output) == structured
+            except (TypeError, ValueError):
+                equivalent = False
+            if not equivalent:
+                output = "\n".join(part for part in (output, structured_text) if part)
+        unknown = ((isinstance(reported, dict) and reported.get("outcome_unknown") is True)
+                   or (isinstance(structured, dict) and structured.get("outcome_unknown") is True))
+        # An output schema can legitimately define an `error` data field
+        # (for example an error log). For structured results, MCP's isError
+        # flag is authoritative; retain only the legacy text-envelope heuristic.
+        is_error = bool(getattr(result, 'isError', False)) or text_error or unknown
 
         result_dict = {
             "stdout": output if not is_error else "",
             "stderr": output if is_error else "",
             "exit_code": 1 if is_error else 0,
         }
+        if structured_text is not None:
+            result_dict["structured_content"] = structured
+            result_dict["untrusted_content"] = True
         if is_error and output:
             result_dict["untrusted_content"] = True
-            try:
-                reported = json.loads(output)
-            except (TypeError, ValueError):
-                reported = None
-            if isinstance(reported, dict) and reported.get("outcome_unknown") is True:
+            if unknown:
                 # A bridge may have received an error *after* forwarding a
                 # write to its backing app. Preserve that uncertainty through
                 # the normal tool-result adapter; do not recast it as a simple

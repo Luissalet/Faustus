@@ -73,6 +73,15 @@ def test_plain_language_selects_the_real_coworker_tools():
     assert agent_loop._DOMAIN_HOT_TOOLS['coworkers']=={'coworker_list','coworker_save','coworker_run'}
 
 
+def test_selected_coworkers_have_prompt_rules():
+    from src import agent_loop
+    selected = {'coworker_list', 'coworker_save', 'coworker_run'}
+    rules = agent_loop._domain_rules_for_tools(selected)
+    assert len(rules) == 1
+    assert 'Coworker rules' in rules[0]
+    assert 'request_id' in rules[0]
+
+
 def test_specialist_templates_cover_the_whole_family():
     from src.coworkers import templates
     rows=templates()

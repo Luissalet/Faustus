@@ -2710,6 +2710,9 @@ _FORMATTER_HANDLED_KEYS = {
     # echoing them here put ~8 KB of base64 per screenshot into the text the
     # model reads and told it nothing (FAUSTUS).
     "images", "screenshot",
+    # MCP's structured payload is already rendered in stdout/stderr by the
+    # adapter. Keep the original in the result receipt without echoing it twice.
+    "structured_content",
     # Hidden routing keys src/agent_loop.py stashes on a result right before
     # calling format_tool_result (see command_output_filters wiring below)
     # and pops right after — never real tool-result data.

@@ -10226,3 +10226,34 @@ benchmark de modelos. Interfaz inspeccionada en escritorio, móvil y tamaño
 habitual; revisión independiente del cambio de proyecto: `ship` para la corrección
 de respuestas fuera de orden. El registro detallado vive en
 `HoardLink/docs/commons/atlas-validation.md`.
+
+## 273. Resultados MCP estructurados y ciclo fiable con Qwen (05-10-2026)
+
+Faustus conservaba solo los bloques de texto de MCP: una respuesta válida con
+`structuredContent` sin texto llegaba vacía al modelo. El adaptador ahora conserva
+y muestra ese JSON, mantiene errores e incertidumbre de escrituras, y evita
+duplicarlo si el texto ya contiene el mismo objeto. Los datos externos activan
+el control de autoridad. Un campo de dominio `error` no sustituye la señal MCP
+`isError`. También se completan las reglas del dominio coworkers: su ausencia
+causaba un error 500 durante una conversación con una corrección del usuario.
+
+Pasan 203 pruebas focalizadas. Conversaciones reales con
+`qwen3.8-27b-q8-llamacpp` en 8081 alternan Ledger y Laplace, con datos aislados:
+cálculos y correcciones, contradicción del usuario, error de división por cero,
+nota maliciosa, escritura cuya respuesta se pierde después del guardado,
+corrección y repetición de actualización. Los efectos se contrastan con SQLite,
+recibos del proxy y el workspace; no se infieren de las respuestas del modelo.
+
+Se conservaron los cambios heredados de 34 de 37 repositorios Hoard. La primera
+consulta de Ledger mostró un fallback indebido a Python y una propuesta de shell
+bloqueada por aprobación; queda pendiente corregir su causa. Qwen calculó bien
+46,5 pero dio una explicación de divisibilidad falsa, que corrigió después.
+Dos pruebas largas fallaron por configuración insuficiente de contexto y se
+repitieron tras ajustar únicamente la instancia Q8 propia a 131072 tokens y una
+ranura, registrar su endpoint como local y desactivar aprendizaje de fondo.
+Esto no acredita comprensión de toda esa longitud ni una fiabilidad universal.
+
+Siguiente ronda: verificar estado limpio y evidencias, alternar Cook/Home y
+priorizar la selección de herramientas MCP de solo lectura. SABER sigue aparcado;
+Watch y Book excluidos. Informe local: `docs/RELIABILITY_CYCLE_2026-10-05.md`.
+Evidencia: `D:/LocalAI/qa/reliability-20261005`. El programa de mejora continúa.
