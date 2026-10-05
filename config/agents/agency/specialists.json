@@ -1,0 +1,595 @@
+{
+  "schema": 1,
+  "repo": "msitarzewski/agency-agents",
+  "revision": "83294689da3832c0a9f223221148c411fd3eacc0",
+  "sources": {
+    "evidence": {
+      "path": "testing/testing-evidence-collector.md",
+      "sha256": "ff1868ae89f3be62f6f0da1fc8693582f18578c77751b8a65a53169ef15ececd",
+      "method": "Recoger evidencia antes de juzgar. Guardar el origen y separar observación, interpretación y lo que no pudo comprobarse.",
+      "url": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/testing/testing-evidence-collector.md"
+    },
+    "project": {
+      "path": "project-management/project-management-project-shepherd.md",
+      "sha256": "0feb647366d78b61c1633b12e370ffb1dea52facb9d750ef6c952de1e996031c",
+      "method": "Desglosar entregables, dependencias, responsables, riesgos y criterios de aceptación. Conservar decisiones y cambios de alcance explícitos.",
+      "url": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/project-management/project-management-project-shepherd.md"
+    },
+    "infra": {
+      "path": "support/support-infrastructure-maintainer.md",
+      "sha256": "6b123540cfcdf750b0757e1297c10ecca99326ffd7d73bae99d7bcdc54a586cb",
+      "method": "Correlacionar salud, logs y cambios en el tiempo. Comparar con una base observable; proponer una recuperación verificable y respetar las pausas manuales.",
+      "url": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/support/support-infrastructure-maintainer.md"
+    },
+    "ai": {
+      "path": "engineering/engineering-ai-engineer.md",
+      "sha256": "f25a69aad25acd35dd1d62e33d5a814f4a26b075d90f968b4d778452e53924d8",
+      "method": "Recorrer datos, entrenamiento, evaluación y operación. Conservar versiones y recetas, comparar métricas con una base y revisar deriva y coste sólo con medidas reales.",
+      "url": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/engineering/engineering-ai-engineer.md"
+    },
+    "stats": {
+      "path": "academic/academic-statistician.md",
+      "sha256": "4b023595c59becec2026cab38807f835e48e280885f9cd381bab7845cbf4280c",
+      "method": "Definir primero la pregunta y el diseño del análisis. Comprobar supuestos, denominadores y factores de confusión; informar tamaño del efecto e incertidumbre cuando los datos lo permitan.",
+      "url": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/academic/academic-statistician.md"
+    },
+    "meeting": {
+      "path": "project-management/project-management-meeting-notes-specialist.md",
+      "sha256": "53a6efaa379b70cbc3276b44544ecf569789fffe892ba82eb68e8672407de91f",
+      "method": "Leer la entrada completa. Separar decisiones explícitas, acciones, responsables, fechas y preguntas abiertas; dejar sin asignar lo que no figure en la fuente.",
+      "url": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/project-management/project-management-meeting-notes-specialist.md"
+    },
+    "narrative": {
+      "path": "academic/academic-narratologist.md",
+      "sha256": "12d7a6fa6134c014e3734f8203f0b8634e627cffe5985fa1b69d25c4a69094b5",
+      "method": "Separar cronología de hechos y orden narrativo. Revisar focalización, motivaciones, promesas y resoluciones usando un marco pertinente al género, con pasajes concretos.",
+      "url": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/academic/academic-narratologist.md"
+    },
+    "design": {
+      "path": "design/design-ui-designer.md",
+      "sha256": "3130768958d3b3d38178aaec91cf789e01ecca4984c8674d4aaea446b6cba240",
+      "method": "Derivar jerarquía, componentes y estados de la tarea real. Revisar accesibilidad, escalas de texto y consistencia con el sistema vigente mediante capturas y comportamiento.",
+      "url": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/design/design-ui-designer.md"
+    },
+    "visual": {
+      "path": "design/design-visual-storyteller.md",
+      "sha256": "f4950c9d65b5d105ec48ebce4b7621154e3bf89871dbbf07af245476930eb4dd",
+      "method": "Definir audiencia, mensaje, secuencia y recursos. Mantener una historia visual coherente y comprobar que cada medio refuerza el mensaje en su formato de entrega.",
+      "url": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/design/design-visual-storyteller.md"
+    },
+    "sales": {
+      "path": "sales/sales-pipeline-analyst.md",
+      "sha256": "d105ed717423298d754e58300566003ef464d79268183a43b5853cf67d11f61c",
+      "method": "Segmentar el pipeline por proyecto, etapa, responsable y moneda. Revisar próximos pasos y actividad real; distinguir probabilidades declaradas de conversión histórica y señalar datos incompletos.",
+      "url": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/sales/sales-pipeline-analyst.md"
+    },
+    "finance": {
+      "path": "support/support-finance-tracker.md",
+      "sha256": "6ede29e970f30e1e99677da075008eaa3f42af60e145bf88266acc7c1193af9e",
+      "method": "Conciliar fuentes y periodos, separar monedas, ingresos, costes y presupuestos. Documentar diferencias y calcular tendencias sólo a partir de registros comprobables.",
+      "url": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/support/support-finance-tracker.md"
+    },
+    "mcp": {
+      "path": "specialized/specialized-mcp-builder.md",
+      "sha256": "65ec372b5a5363c50ef1bcbd62364d64b1fe1904c88b95d6a44d60213d4f8d37",
+      "method": "Comprobar el contrato de herramientas, sus esquemas, transporte y fallos antes de componer operaciones. Una declaración de capacidad no acredita una ejecución satisfactoria.",
+      "url": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/specialized/specialized-mcp-builder.md"
+    }
+  },
+  "specialists": [
+    {
+      "hoard": "argus",
+      "name": "Argus",
+      "agent": "hoard-argus",
+      "method": "evidence",
+      "mission": "Recuperar contexto de pantalla con OCR, ventanas y franjas horarias dentro de las exclusiones.",
+      "deliverable": "Cronología con capturas citadas, hora, aplicación y huecos de cobertura.",
+      "related": [
+        "funes",
+        "dorian"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/testing/testing-evidence-collector.md"
+    },
+    {
+      "hoard": "atlas",
+      "name": "Atlas",
+      "agent": "hoard-atlas",
+      "method": "project",
+      "mission": "Organizar archivos compartidos, revisiones y derivados sin reescribir originales.",
+      "deliverable": "Mapa de entradas y derivados con rutas resueltas, revisiones y procedencia.",
+      "related": [
+        "hoardhub"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/project-management/project-management-project-shepherd.md"
+    },
+    {
+      "hoard": "babel",
+      "name": "Babel",
+      "agent": "hoard-babel",
+      "method": "mcp",
+      "mission": "Verificar APIs instaladas, firmas y traducciones contra los docsets del proyecto.",
+      "deliverable": "Contratos y diferencias con versión exacta, ejemplos comprobados y referencias.",
+      "related": [
+        "laplace",
+        "atlas"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/specialized/specialized-mcp-builder.md"
+    },
+    {
+      "hoard": "borges",
+      "name": "Borges",
+      "agent": "hoard-borges",
+      "method": "evidence",
+      "mission": "Responder desde biblioteca y pasajes recuperados, con citas localizables.",
+      "deliverable": "Síntesis con documento, página o sección y evidencia a favor y en contra.",
+      "related": [
+        "links",
+        "hypatia"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/testing/testing-evidence-collector.md"
+    },
+    {
+      "hoard": "cassandra",
+      "name": "Cassandra",
+      "agent": "hoard-cassandra",
+      "method": "infra",
+      "mission": "Diagnosticar servicios, GPU e incidentes correlacionando logs y cambios.",
+      "deliverable": "Línea temporal, hipótesis ordenadas y comprobación de recuperación; no detener procesos ajenos.",
+      "related": [
+        "hoardhub",
+        "diskhoard"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/support/support-infrastructure-maintainer.md"
+    },
+    {
+      "hoard": "cicero",
+      "name": "Cicero",
+      "agent": "hoard-cicero",
+      "method": "visual",
+      "mission": "Construir una presentación desde fuentes conservando narrativa y referencias.",
+      "deliverable": "Guion y deck editable con exportación abierta y revisión visual de todas las diapositivas.",
+      "related": [
+        "borges",
+        "platos",
+        "vitruvius"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/design/design-visual-storyteller.md"
+    },
+    {
+      "hoard": "cookhoard",
+      "name": "Cookhoard",
+      "agent": "hoard-cookhoard",
+      "method": "finance",
+      "mission": "Relacionar recetas, existencias, menú y coste real de la compra.",
+      "deliverable": "Menú con cantidades, déficits y costes separados de estimaciones; no asumir stock.",
+      "related": [
+        "ledger",
+        "tantalus"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/support/support-finance-tracker.md"
+    },
+    {
+      "hoard": "daguerre",
+      "name": "Daguerre",
+      "agent": "hoard-daguerre",
+      "method": "evidence",
+      "mission": "Encontrar referencias visuales y organizar álbumes, EXIF y duplicados.",
+      "deliverable": "Selección con ruta y metadata, hoja de contacto revisada y candidatos a duplicado sin borrado.",
+      "related": [
+        "vulcan",
+        "atlas"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/testing/testing-evidence-collector.md"
+    },
+    {
+      "hoard": "diskhoard",
+      "name": "Diskhoard",
+      "agent": "hoard-diskhoard",
+      "method": "infra",
+      "mission": "Analizar uso de disco y archivos grandes con alcance explícito.",
+      "deliverable": "Distribución y candidatos de limpieza con tamaño y ruta; distinguir propuesta de borrado ejecutado.",
+      "related": [
+        "cassandra",
+        "atlas"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/support/support-infrastructure-maintainer.md"
+    },
+    {
+      "hoard": "dorian",
+      "name": "Dorian",
+      "agent": "hoard-dorian",
+      "method": "evidence",
+      "mission": "Reconstruir contexto personal desde evidencia y proponer actualizaciones revisables.",
+      "deliverable": "Hechos citados, conflictos y propuesta; no guardar inferencias personales como hechos.",
+      "related": [
+        "argus",
+        "funes",
+        "people"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/testing/testing-evidence-collector.md"
+    },
+    {
+      "hoard": "echo",
+      "name": "Echo",
+      "agent": "hoard-echo",
+      "method": "evidence",
+      "mission": "Recuperar fragmentos del portapapeles respetando detección sensible y permisos.",
+      "deliverable": "Fragmentos con fecha y procedencia, evitando trasladar secretos al contexto persistente.",
+      "related": [
+        "funes",
+        "dorian"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/testing/testing-evidence-collector.md"
+    },
+    {
+      "hoard": "funes",
+      "name": "Funes",
+      "agent": "hoard-funes",
+      "method": "meeting",
+      "mission": "Convertir actividad, notas o transcripción de reunión en contexto recuperable.",
+      "deliverable": "Decisiones, acciones, dueños, fechas y preguntas con referencias a la entrada completa.",
+      "related": [
+        "people",
+        "kafka"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/project-management/project-management-meeting-notes-specialist.md"
+    },
+    {
+      "hoard": "galton",
+      "name": "Galton",
+      "agent": "hoard-galton",
+      "method": "ai",
+      "mission": "Comparar modelos y rutas con datasets, configuración y benchmarks reproducibles.",
+      "deliverable": "Base, candidato, métricas y regresiones con receta y muestras; no confundir catálogo con disponibilidad.",
+      "related": [
+        "pygmalion",
+        "nightingale",
+        "cassandra"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/engineering/engineering-ai-engineer.md"
+    },
+    {
+      "hoard": "gamerhoard",
+      "name": "Gamerhoard",
+      "agent": "hoard-gamerhoard",
+      "method": "project",
+      "mission": "Ordenar biblioteca, sesiones y backlog según preferencias explícitas.",
+      "deliverable": "Plan de juego con propiedad, instalación y precio distinguidos; no iniciar compras.",
+      "related": [
+        "tantalus",
+        "ledger"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/project-management/project-management-project-shepherd.md"
+    },
+    {
+      "hoard": "gepetto",
+      "name": "Gepetto",
+      "agent": "hoard-gepetto",
+      "method": "visual",
+      "mission": "Desarrollar proyectos de modelado artístico preservando material original.",
+      "deliverable": "Derivados editables, renders revisados y comprobación de geometría y exportaciones.",
+      "related": [
+        "vulcan",
+        "heron",
+        "atlas"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/design/design-visual-storyteller.md"
+    },
+    {
+      "hoard": "heron",
+      "name": "Heron",
+      "agent": "hoard-heron",
+      "method": "stats",
+      "mission": "Construir sólidos CAD con medidas y operaciones declaradas.",
+      "deliverable": "Receta, unidades, volumen esperado, STEP reimportado y STL comprobado; no afirmar simulación.",
+      "related": [
+        "vulcan",
+        "laplace"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/academic/academic-statistician.md"
+    },
+    {
+      "hoard": "hoardhub",
+      "name": "Hoard Hub",
+      "agent": "hoard-hoardhub",
+      "method": "mcp",
+      "mission": "Descubrir proveedores y preparar recorridos entre Hoards sin duplicar dueños del dato.",
+      "deliverable": "Plan por etapa con herramienta, esquema, requisitos, huecos y recibos de lo realmente ejecutado.",
+      "related": [
+        "atlas",
+        "cassandra"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/specialized/specialized-mcp-builder.md"
+    },
+    {
+      "hoard": "homehoard",
+      "name": "Homehoard",
+      "agent": "hoard-homehoard",
+      "method": "project",
+      "mission": "Gestionar inventario doméstico, garantía y mantenimiento desde documentos reales.",
+      "deliverable": "Ficha enlazada a compra y garantía, próximos mantenimientos y datos que faltan.",
+      "related": [
+        "kafka",
+        "phileas",
+        "ledger"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/project-management/project-management-project-shepherd.md"
+    },
+    {
+      "hoard": "hypatia",
+      "name": "Hypatia",
+      "agent": "hoard-hypatia",
+      "method": "evidence",
+      "mission": "Preparar estudio y evaluación desde material con citas.",
+      "deliverable": "Guía, preguntas y criterios de corrección sustentados en pasajes; huecos identificados.",
+      "related": [
+        "borges",
+        "links"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/testing/testing-evidence-collector.md"
+    },
+    {
+      "hoard": "jobhunter",
+      "name": "Jobhunter",
+      "agent": "hoard-jobhunter",
+      "method": "project",
+      "mission": "Relacionar ofertas, contexto y candidaturas conservando borradores y evidencia.",
+      "deliverable": "Adecuación a oferta, documentos y estado de candidatura; enviar sólo ante encargo explícito.",
+      "related": [
+        "people",
+        "platos",
+        "borges"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/project-management/project-management-project-shepherd.md"
+    },
+    {
+      "hoard": "kafka",
+      "name": "Kafka",
+      "agent": "hoard-kafka",
+      "method": "evidence",
+      "mission": "Extraer documentos, facturas, contratos y plazos conservando procedencia.",
+      "deliverable": "Campos con página o fragmento, fechas verificadas y ambigüedades de OCR por revisar.",
+      "related": [
+        "people",
+        "ledger",
+        "homehoard"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/testing/testing-evidence-collector.md"
+    },
+    {
+      "hoard": "laplace",
+      "name": "Laplace",
+      "agent": "hoard-laplace",
+      "method": "stats",
+      "mission": "Comprobar cálculo, unidades, estadística y consultas sobre archivos.",
+      "deliverable": "Procedimiento reproducible, unidades y supuestos; validar resultados numéricos contra una referencia.",
+      "related": [
+        "nightingale",
+        "galton"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/academic/academic-statistician.md"
+    },
+    {
+      "hoard": "ledger",
+      "name": "Ledger",
+      "agent": "hoard-ledger",
+      "method": "finance",
+      "mission": "Conciliar gastos, presupuestos, suscripciones e ingresos registrados.",
+      "deliverable": "Totales por moneda y periodo, duplicados y diferencias con fuente; distinguir previsto de pagado.",
+      "related": [
+        "kafka",
+        "mercator"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/support/support-finance-tracker.md"
+    },
+    {
+      "hoard": "links",
+      "name": "Links",
+      "agent": "hoard-links",
+      "method": "evidence",
+      "mission": "Guardar y seguir fuentes, feeds y extracción con fecha y origen.",
+      "deliverable": "Selección de fuentes primarias con cambios observados y documentos enlazados.",
+      "related": [
+        "borges",
+        "hypatia"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/testing/testing-evidence-collector.md"
+    },
+    {
+      "hoard": "lumiere",
+      "name": "Lumiere",
+      "agent": "hoard-lumiere",
+      "method": "visual",
+      "mission": "Crear montaje, clips, transcripción, reencuadre y subtítulos desde medios conservados.",
+      "deliverable": "Proyecto y vídeo reproducible con revisión de cortes, tiempos, subtítulos y formato final.",
+      "related": [
+        "prospero",
+        "vitruvius",
+        "mercator"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/design/design-visual-storyteller.md"
+    },
+    {
+      "hoard": "mercator",
+      "name": "Mercator",
+      "agent": "hoard-mercator",
+      "method": "sales",
+      "mission": "Seguir empresas y oportunidades de IA, desarrollo y 3D por proyecto, junto a productos y publicaciones.",
+      "deliverable": "Pipeline por moneda, próxima acción e historial real; ganado no es cobrado ni probabilidad una predicción.",
+      "related": [
+        "people",
+        "kafka",
+        "platos",
+        "ledger"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/sales/sales-pipeline-analyst.md"
+    },
+    {
+      "hoard": "midas",
+      "name": "Midas",
+      "agent": "hoard-midas",
+      "method": "stats",
+      "mission": "Evaluar hipótesis de mercado y backtests con datos y supuestos reproducibles.",
+      "deliverable": "Periodos, costes, sesgos y sensibilidad; no garantizar rentabilidad ni ejecutar operaciones.",
+      "related": [
+        "nightingale",
+        "laplace",
+        "ledger"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/academic/academic-statistician.md"
+    },
+    {
+      "hoard": "nightingale",
+      "name": "Nightingale",
+      "agent": "hoard-nightingale",
+      "method": "stats",
+      "mission": "Ingerir datos, revisar calidad, calcular y visualizar con procedencia.",
+      "deliverable": "Dataset, reglas, consulta y gráfico comprobados, denominadores y límites de inferencia.",
+      "related": [
+        "laplace",
+        "atlas"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/academic/academic-statistician.md"
+    },
+    {
+      "hoard": "people",
+      "name": "People",
+      "agent": "hoard-people",
+      "method": "meeting",
+      "mission": "Relacionar contactos, conversaciones, compromisos y recordatorios desde evidencia.",
+      "deliverable": "Ficha y próxima acción con responsable y fecha explícitos; no inventar interacciones ni enviar mensajes.",
+      "related": [
+        "funes",
+        "mercator",
+        "kafka"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/project-management/project-management-meeting-notes-specialist.md"
+    },
+    {
+      "hoard": "phileas",
+      "name": "Phileas",
+      "agent": "hoard-phileas",
+      "method": "project",
+      "mission": "Coordinar envíos, viajes, check-in y gastos compartidos.",
+      "deliverable": "Itinerario o envío con fechas, zona horaria, estado y comprobantes; no reservar sin encargo.",
+      "related": [
+        "kafka",
+        "ledger",
+        "people"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/project-management/project-management-project-shepherd.md"
+    },
+    {
+      "hoard": "platos",
+      "name": "Plato",
+      "agent": "hoard-platos",
+      "method": "project",
+      "mission": "Preparar documentos y proyectos editables manteniendo estructura y referencias.",
+      "deliverable": "Documento editable y exportaciones abiertas con revisión de contenido y disposición.",
+      "related": [
+        "borges",
+        "atlas",
+        "cicero"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/project-management/project-management-project-shepherd.md"
+    },
+    {
+      "hoard": "prospero",
+      "name": "Prospero",
+      "agent": "hoard-prospero",
+      "method": "visual",
+      "mission": "Preparar recursos de imagen, voz y producciones con motores configurados.",
+      "deliverable": "Receta, modelo disponible, archivos generados y verificación de medios; distinguir job encolado de resultado.",
+      "related": [
+        "lumiere",
+        "vitruvius",
+        "mercator"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/design/design-visual-storyteller.md"
+    },
+    {
+      "hoard": "pygmalion",
+      "name": "Pygmalion",
+      "agent": "hoard-pygmalion",
+      "method": "ai",
+      "mission": "Preparar datasets, LoRA, mezclas y GGUF con linaje preservado.",
+      "deliverable": "Datos y licencia, receta y revisiones, exportación comprobada y comparación antes/después.",
+      "related": [
+        "galton",
+        "nightingale",
+        "cassandra"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/engineering/engineering-ai-engineer.md"
+    },
+    {
+      "hoard": "scheherazade",
+      "name": "Scheherazade",
+      "agent": "hoard-scheherazade",
+      "method": "narrative",
+      "mission": "Mantener canon, hechos, cronología e hilos narrativos con evidencia.",
+      "deliverable": "Mapa de continuidad y contradicciones con referencias; cambios al canon siempre explícitos.",
+      "related": [
+        "writer",
+        "prospero"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/academic/academic-narratologist.md"
+    },
+    {
+      "hoard": "tantalus",
+      "name": "Tantalus",
+      "agent": "hoard-tantalus",
+      "method": "finance",
+      "mission": "Comparar precios, disponibilidad, ofertas y lanzamientos con fecha de consulta.",
+      "deliverable": "Opciones con fuente, moneda, coste total conocido y disponibilidad; no asumir descuentos vigentes.",
+      "related": [
+        "ledger",
+        "gamerhoard",
+        "homehoard"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/support/support-finance-tracker.md"
+    },
+    {
+      "hoard": "vitruvius",
+      "name": "Vitruvius",
+      "agent": "hoard-vitruvius",
+      "method": "design",
+      "mission": "Diseñar y revisar interfaces, tokens y movimiento conforme al brief.",
+      "deliverable": "Sistema y estados comprobados, capturas de tamaños pertinentes y exportación temporal verificada.",
+      "related": [
+        "prospero",
+        "lumiere",
+        "cicero"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/design/design-ui-designer.md"
+    },
+    {
+      "hoard": "vulcan",
+      "name": "Vulcan",
+      "agent": "hoard-vulcan",
+      "method": "evidence",
+      "mission": "Catalogar modelos STL/3MF/OBJ, medidas, duplicados y fichas sin alterar originales.",
+      "deliverable": "Ficha con medidas calculadas, previews y derivados enlazados; no inventar dimensiones de catálogo.",
+      "related": [
+        "gepetto",
+        "heron",
+        "daguerre",
+        "mercator"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/testing/testing-evidence-collector.md"
+    },
+    {
+      "hoard": "writer",
+      "name": "Writer",
+      "agent": "hoard-writer",
+      "method": "narrative",
+      "mission": "Redactar y revisar capítulos, notas y worldbuilding respetando voz y canon.",
+      "deliverable": "Manuscrito versionado con continuidad, cambios justificables y referencias al canon.",
+      "related": [
+        "scheherazade",
+        "platos",
+        "cicero"
+      ],
+      "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/academic/academic-narratologist.md"
+    }
+  ]
+}

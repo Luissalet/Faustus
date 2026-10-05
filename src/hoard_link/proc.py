@@ -104,6 +104,10 @@ def popen(args: Sequence[Any], *, detached: bool = False, low_priority: bool = F
     """
     argv = _argv(args)
     kw = dict(kw)
+    # Match the wrapper's UTF-8 text protocol on Windows Python children too.
+    # Explicit caller environments remain authoritative.
+    if kw.get("env") is None:
+        kw["env"] = build_env()
     kw.setdefault("stdin", subprocess.DEVNULL)
     if kw.get("text") or kw.get("universal_newlines") or kw.get("encoding"):
         kw.setdefault("encoding", "utf-8")

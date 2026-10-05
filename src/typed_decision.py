@@ -91,6 +91,9 @@ _MAX_TOP_LOGPROBS = 20
 MAX_CONTEXT_CHARS = 6000
 
 DEFAULTS: Dict[str, Any] = {
+    "typed_decision_provider": "logprobs",
+    "typed_decision_ollaya_url": "http://127.0.0.1:11435",
+    "typed_decision_ollaya_model": "laya:multilingual",
     "typed_decisions_enabled": True,
     "typed_decision_timeout_ms": 1500,
     "typed_decision_min_confidence": 0.7,
@@ -618,6 +621,18 @@ async def decide(context: str, fields: Sequence[Field], *, owner: Optional[str] 
         budget = default_timeout_s() if timeout_s is None else max(0.01, float(timeout_s))
         min_conf = default_min_confidence() if min_confidence is None else float(min_confidence)
         min_m = default_min_mass() if min_mass is None else float(min_mass)
+
+        if _setting("typed_decision_provider") == "ollaya":
+            from src.systemone_decision import decide_native
+            try:
+                native = await asyncio.wait_for(decide_native(
+                    context, flds, budget=budget, min_confidence=min_conf,
+                    instructions=instructions, owner=owner), timeout=budget)
+            except asyncio.TimeoutError:
+                native = {f.name: _unavailable(f, "timeout") for f in flds}
+            for f in flds:
+                _finish(native.get(f.name) or _unavailable(f, "malformed_answer"))
+            return out
 
         try:
             prep = await asyncio.wait_for(asyncio.to_thread(_prepare, purpose, owner), timeout=budget)

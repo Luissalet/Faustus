@@ -67,7 +67,8 @@ def _get_public_url(url, headers, timeout, max_redirects=5, max_bytes=None):
                                    max_bytes=max_bytes, respect_robots=True)
     if result.get("ok") and isinstance(result.get("body"), bytes):
         response = httpx.Response(result.get("status", 200), content=result["body"],
-                                  headers=result.get("headers", {}), request=httpx.Request("GET", url))
+                                  headers=result.get("headers", {}),
+                                  request=httpx.Request("GET", result.get("final_url") or result.get("url") or url))
         response.truncated = bool(result.get("truncated"))
         response.declared_bytes = result.get("total_bytes")
         return response

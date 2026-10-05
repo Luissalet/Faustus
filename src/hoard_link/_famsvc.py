@@ -29,9 +29,9 @@ from typing import Any, Callable, Mapping, Optional
 from . import family as _f
 from ._hubclient import fetch
 from .waiting import DONE_STATES, MAX_WAIT_S, clamp_wait
+from .service_contracts import OWNERS
 
 #: service name -> the app that owns it (docs/commons/services.md)
-OWNERS: dict[str, str] = {"media": "links", "stt": "funes", "tts": "prospero", "docs": "kafka", "embed": "borges"}
 
 #: the hub accepts at most this per call (``POST /api/apps/<id>/call``, ``timeout_s``)
 HUB_MAX_S = 900.0

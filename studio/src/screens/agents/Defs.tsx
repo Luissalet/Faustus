@@ -11,6 +11,7 @@ import {
 } from '../../adapters/agents';
 import { ProfileLint } from './ProfileLint';
 import { HandoffLanesPanel } from './HandoffLanes';
+import { CoworkersPanel } from './Coworkers';
 import { t, tn } from '../../i18n';
 
 /**
@@ -217,6 +218,7 @@ export function Defs({ onUseAgent }: { onUseAgent: (slug: string) => void }) {
           <strong>{t('What a path rule cannot promise:')}</strong> {data?.shell_note || t('a path rule governs the file tools, not another program\'s shell.')}
         </p>
       </div>
+      <CoworkersPanel />
       <div className="fs-agents__toolbar">
         <label className="fs-agents__search">
           <Search size={13} aria-hidden="true" />

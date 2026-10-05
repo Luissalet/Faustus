@@ -598,6 +598,12 @@ _register(
 # taxonomy names -- no network egress to a third party beyond the endpoint the
 # turn is already using, and nothing written outside DATA_DIR.
 _register({"design_canvas"}, ToolEffect.WRITE_PRIVATE)
+_register({"brain_graph"}, ToolEffect.READ_PRIVATE,
+          result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED)
+_register({"reach_recipe"}, ToolEffect.WRITE_PRIVATE, ToolEffect.BROKERED_NETWORK_READ,
+          ToolEffect.NETWORK_EGRESS, result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED)
+_register({"reach_crawl"}, ToolEffect.WRITE_PRIVATE, ToolEffect.BROKERED_NETWORK_READ,
+          ToolEffect.NETWORK_EGRESS, result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED)
 # Recoverable omission (OBJ-29, src/agent_tools/context_recall_tools.py). It
 # reads the Context Engine's own recall store (owner-scoped) and, for a row
 # stored without its text, reopens the source through the same adapter
@@ -634,6 +640,9 @@ _register(
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
 _register({"plugin_app"}, ToolEffect.EXECUTE_CODE, ToolEffect.UI_SIDE_EFFECT)
+_register({"coworker_list"}, ToolEffect.READ_PRIVATE)
+_register({"coworker_save"}, ToolEffect.WRITE_PRIVATE)
+_register({"coworker_run"}, ToolEffect.EXECUTE_CODE)
 # Isolated, comparable alternatives (CMP-13, W2-G, src/agent_tools/
 # alternatives_tools.py). `alt_compare` only reads a diff against the base
 # (same class as git_diff) -- READ_WORKSPACE, workspace-sourced content.
@@ -709,7 +718,7 @@ _register(
     # Reach (R1): reach_read/reach_search fetch attacker-reachable content
     # from arbitrary channels (web, youtube, github, reddit, x, hackernews,
     # rss, arxiv, wikipedia) -- same class as web_fetch/web_search.
-    {"reach_read", "reach_search"},
+    {"reach_read", "reach_search", "reach_extract", "reach_read_many", "reach_browser"},
     ToolEffect.BROKERED_NETWORK_READ,
     ToolEffect.NETWORK_EGRESS,
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
@@ -1689,6 +1698,14 @@ def capabilities_for_action(tool_name: Any, content: Any) -> ToolCapabilities:
         return _MCP_READONLY_LOCAL_CAPABILITIES
 
     action = _action_from_content(tool_name, content)
+    if tool_name == 'reach_recipe' and action in ('list', 'delete'):
+        return _capabilities(ToolEffect.READ_PRIVATE if action == 'list' else ToolEffect.WRITE_PRIVATE,
+                             result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED)
+    if tool_name == 'reach_crawl' and action in ('status', 'export', 'cancel'):
+        return _capabilities(ToolEffect.READ_PRIVATE if action == 'status' else ToolEffect.WRITE_PRIVATE,
+                             result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED)
+    if tool_name == 'reach_browser' and action in ('status', 'close'):
+        return _capabilities(ToolEffect.READ_PRIVATE, result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED)
     if action in _CATALOG_ACTION_READS.get(tool_name, ()):
         return _capabilities(
             ToolEffect.READ_PUBLIC,

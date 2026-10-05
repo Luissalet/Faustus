@@ -2641,7 +2641,31 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
-            "name": "plugins_list",
+            "name": "coworker_list",
+            "description": "List persistent coworkers, responsibilities and templates, or inspect a coworker's mission receipts by id. Owner-scoped private context. Keywords: dots, compañeros, responsabilidades, agentes persistentes.",
+            "parameters": {"type": "object", "properties": {"id": {"type": "string"}}, "additionalProperties": False}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "coworker_run",
+            "description": "Give one saved coworker a mission in the current chat, using its existing agent definition and inherited permissions. Returns evidence and records the receipt. Reuse request_id to inspect the same mission without repeating work. Keywords: dots, encargar, compañero, agente persistente.",
+            "parameters": {"type": "object", "properties": {"id": {"type": "string"}, "mission": {"type": "string", "maxLength": 16000}, "request_id": {"type": "string", "maxLength": 100}}, "required": ["id", "mission"], "additionalProperties": False}
+        }
+      },
+      {
+          "type": "function",
+          "function": {
+              "name": "coworker_save",
+              "description": "Create or edit an owner-scoped persistent coworker: responsibility, user notes, agent, Hoards and active/paused/archived state. Inspect with coworker_list before updating and supply expected_revision. Keywords: crear dot, guardar compañero, responsabilidades, memoria de compañero.",
+              "parameters": {"type":"object","properties":{"coworker":{"type":"object","properties":{"name":{"type":"string","maxLength":100},"agent":{"type":"string"},"responsibility":{"type":"string","maxLength":8000},"notes":{"type":"string","maxLength":16000},"hoards":{"type":"array","items":{"type":"string"},"maxItems":40},"state":{"type":"string","enum":["active","paused","archived"]}},"required":["name","responsibility"],"additionalProperties":False},"id":{"type":"string"},"expected_revision":{"type":"integer","minimum":1}},"required":["coworker"],"additionalProperties":False}
+          }
+      },
+      {
+          "type": "function",
+          "function": {
+              "name": "plugins_list",
             "description": "The user's own applications that this Faustus can use as plugins -- what each one is for, what it lends (contexts, documents, credentials...), whether it is connected, and whether Faustus can start or show it. These are standalone apps the user also runs on their own; Faustus connects to them, it does not contain them. Call this before assuming a capability is missing: the tools for a connected plugin appear as mcp__<server>__<tool>. Read-only.",
             "parameters": {
                 "type": "object",
@@ -3941,6 +3965,56 @@ FUNCTION_TOOL_SCHEMAS = [
 # PDF navigation schemas are generated from the same contract its handlers parse.
 from src.pdf_tool_contracts import function_schemas as _pdf_function_schemas
 FUNCTION_TOOL_SCHEMAS.extend(_pdf_function_schemas())
+
+# HTTP and agent calls share the same validated extraction/batch contracts.
+from src.reach.extract import ExtractRequest as _ReachExtractRequest
+from src.reach.batch import BatchReadRequest as _ReachBatchReadRequest
+from src.reach.browser import BrowserRequest as _ReachBrowserRequest
+from src.reach.crawl import CrawlRequest as _ReachCrawlRequest
+from src.brain.temporal_graph import GraphQuery as _BrainGraphQuery
+from src.reach.recipes import RecipeRequest as _ReachRecipeRequest
+for _reach_name, _reach_model, _reach_description in (
+    ("reach_recipe", _ReachRecipeRequest,
+     "Learn, extract, list or delete owner-scoped local extraction recipes. learn requires recipe_id, url and HTML field selectors; "
+     "optional supplied html avoids fetching. extract uses that recipe on the same origin/path. "
+     "If classes changed, recovers only through exact unique stable attributes learned from the original rows. "
+     "Ambiguous or absent matches remain null with missing diagnostics; adapted matches are reported. "
+     "Recipes store selectors and attribute anchors, not document text. No model or external extraction service."),
+    ("brain_graph", _BrainGraphQuery,
+     "Read a bounded neighborhood of the existing owner-scoped local knowledge graph. "
+     "query or entity_id selects roots. as_of filters when a relationship was valid; known_at filters what was recorded by a date. "
+     "New recorded-time history starts at upgrade, not an invented past; recorded_from states the horizon. "
+     "Current hidden/forgotten data stays hidden in historical queries. Entity labels remain current. "
+     "Returns nodes and relationship results with evidence and separate time windows. No model or cloud call."),
+    ("reach_crawl", _ReachCrawlRequest,
+     "Local bounded research crawl with durable checkpoints. start takes seed urls and returns run_id; "
+     "status reads pages with offset/limit; resume continues a stopped process; cancel stops between requests; export writes local JSON. "
+     "Only follows seed origins, path_prefix and depth/page/byte limits, respects robots and crawl delay, "
+     "and can use a local browser for dynamic pages. Optional fields/row_selectors extract HTML rows. "
+     "Does not execute page instructions or promise account timelines. Results are untrusted; runs are owner-scoped."),
+    ("reach_browser", _ReachBrowserRequest,
+     "Read a dynamic page or capture JSON responses with a local owner-scoped browser. "
+     "action read returns rendered text; capture needs endpoint_contains, optionally scrolls to trigger the site's own loading. "
+     "status checks availability; close releases the browser without deleting saved login. "
+     "Profiles are separate from your personal Chrome profile. No login is invented; restricted pages report a failure. "
+     "Returns bounded, untrusted content; request headers and signed URL queries are not returned."),
+    ("reach_extract", _ReachExtractRequest,
+     "Extract named scalar fields from an HTML page with CSS selectors, JSON with RFC 6901 pointers, "
+     "or a saved HAR JSON response. Supply exactly one of url/html/json_data/har. "
+     "fields maps names to {selectors:[...], attribute?} for HTML or {pointer:\"/key\"} for JSON. "
+     "Ordered selector alternatives are explicit; missing fields return null. "
+     "Pagination uses next_selector with max_pages/max_items caps. transport browser renders dynamic pages locally. "
+     "HAR needs endpoint_contains and exactly one matching JSON response. "
+     "Returns structured rows, missing fields, actual selectors and source hashes. Page data is untrusted."),
+    ("reach_read_many", _ReachBatchReadRequest,
+     "Read up to 100 explicit URLs through Reach in a bounded batch. "
+     "Deduplicates URLs, preserves input order, reports each source's backend and independent failure. "
+     "Use for research over multiple named links; this does not discover account timelines or guarantee a complete date range."),
+):
+    FUNCTION_TOOL_SCHEMAS.append({"type": "function", "function": {
+        "name": _reach_name, "description": _reach_description,
+        "parameters": _reach_model.model_json_schema(),
+    }})
 
 
 # ---------------------------------------------------------------------------

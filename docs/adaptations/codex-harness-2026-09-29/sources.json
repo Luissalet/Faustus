@@ -1,0 +1,820 @@
+{
+  "faustus_head": "dac591428735651ef250458d7b3db06e2df72a14",
+  "codex_head": "b1e72963c3b71a9265a551e54beff078384efed9",
+  "scope": "Files cited, not a claim of exhaustive review of all lines; hashes of local bytes at report finalization. Faustus local pre-existing changes were not modified.",
+  "sources": [
+    {
+      "id": "F01",
+      "repository": "Faustus",
+      "path": "src/agent_loop.py",
+      "sha256": "36795e645e7dc9172f0d4624f1955b4e157264f03d7c7610dd3e32b236d90c54",
+      "bytes": 971530,
+      "lines": 17153,
+      "link": "D:/LocalAI/Faustus/src/agent_loop.py:7145",
+      "symbol_line": 7145
+    },
+    {
+      "id": "F02",
+      "repository": "Faustus",
+      "path": "src/tool_execution.py",
+      "sha256": "160875024cae2398aee66da1ee05c59ed77f78a273691ca7faf56b9c562536bd",
+      "bytes": 139686,
+      "lines": 3004,
+      "link": "D:/LocalAI/Faustus/src/tool_execution.py:1252",
+      "symbol_line": 1252
+    },
+    {
+      "id": "F03",
+      "repository": "Faustus",
+      "path": "src/code_mode/runner.py",
+      "sha256": "05ad0a25dd2d31e398ca28cd9fc8e69b495a0a8b8af52eb154f86f03f7118ef2",
+      "bytes": 13560,
+      "lines": 349,
+      "link": "D:/LocalAI/Faustus/src/code_mode/runner.py"
+    },
+    {
+      "id": "F04",
+      "repository": "Faustus",
+      "path": "src/code_mode/guest.py",
+      "sha256": "042ed4775403b1ab8914c442c1d64365581dd6ef6061faf37fc333fb3f11701a",
+      "bytes": 8075,
+      "lines": 231,
+      "link": "D:/LocalAI/Faustus/src/code_mode/guest.py"
+    },
+    {
+      "id": "F05",
+      "repository": "Faustus",
+      "path": "src/sandbox_exec.py",
+      "sha256": "5b9779f793546be4d69fd5371c395cc7ddd04c92d5f2b7a49d000d8e4193e2ee",
+      "bytes": 23654,
+      "lines": 554,
+      "link": "D:/LocalAI/Faustus/src/sandbox_exec.py"
+    },
+    {
+      "id": "F06",
+      "repository": "Faustus",
+      "path": "src/tool_registry.py",
+      "sha256": "2663bb553d43ea9e1c66b135606131516a76d4799e768632e579ea3b5507f9f9",
+      "bytes": 15813,
+      "lines": 345,
+      "link": "D:/LocalAI/Faustus/src/tool_registry.py:323",
+      "symbol_line": 323
+    },
+    {
+      "id": "F07",
+      "repository": "Faustus",
+      "path": "src/contracts/tool.py",
+      "sha256": "d5a436c6ff96d2597882f2ee9af5d60e1031e0b0ba95530560aad9055b01a6b3",
+      "bytes": 26895,
+      "lines": 581,
+      "link": "D:/LocalAI/Faustus/src/contracts/tool.py:405",
+      "symbol_line": 405
+    },
+    {
+      "id": "F08",
+      "repository": "Faustus",
+      "path": "src/codex_chat.py",
+      "sha256": "63138c28167ce8fb6a0ce18e7615f80526551441ce8558d7a0b0e87b26807530",
+      "bytes": 16987,
+      "lines": 344,
+      "link": "D:/LocalAI/Faustus/src/codex_chat.py"
+    },
+    {
+      "id": "F09",
+      "repository": "Faustus",
+      "path": "src/agent_runs.py",
+      "sha256": "fe87fd42f70795bf4a2c99231dde6c7a9b9493c188800f35e204aea1b48a4a35",
+      "bytes": 94493,
+      "lines": 2092,
+      "link": "D:/LocalAI/Faustus/src/agent_runs.py"
+    },
+    {
+      "id": "F10",
+      "repository": "Faustus",
+      "path": "src/tool_discovery.py",
+      "sha256": "be9e6a84092fc56b2fd4780a6c27ae523fd49243f5dc08e07858bcfef27369fa",
+      "bytes": 12001,
+      "lines": 290,
+      "link": "D:/LocalAI/Faustus/src/tool_discovery.py"
+    },
+    {
+      "id": "F11",
+      "repository": "Faustus",
+      "path": "src/tool_preflight.py",
+      "sha256": "5ec4b5af5b0d4a0f09aa46de131d4a45f6c6ad42fb2253d15f4cc665c0845934",
+      "bytes": 15694,
+      "lines": 330,
+      "link": "D:/LocalAI/Faustus/src/tool_preflight.py"
+    },
+    {
+      "id": "F12",
+      "repository": "Faustus",
+      "path": "src/tool_approvals.py",
+      "sha256": "cb4de7907572285db391b1cc0693491da170d16e8e1c49ad25e1e80f667ad45e",
+      "bytes": 38999,
+      "lines": 903,
+      "link": "D:/LocalAI/Faustus/src/tool_approvals.py"
+    },
+    {
+      "id": "F13",
+      "repository": "Faustus",
+      "path": "src/approval_store.py",
+      "sha256": "d0e4c376561c834dacc831ccfb9bce744b7c0cde72034a76111b6dc56af29a98",
+      "bytes": 20175,
+      "lines": 448,
+      "link": "D:/LocalAI/Faustus/src/approval_store.py"
+    },
+    {
+      "id": "F14",
+      "repository": "Faustus",
+      "path": "src/auto_review.py",
+      "sha256": "d7b4ea1c4b0cafe3690dcf14d4997cfbe38cd54631e700cf3cc4dd1ea86b56c9",
+      "bytes": 52099,
+      "lines": 1100,
+      "link": "D:/LocalAI/Faustus/src/auto_review.py"
+    },
+    {
+      "id": "F15",
+      "repository": "Faustus",
+      "path": "src/approval_autonomy.py",
+      "sha256": "a8045d1db08333b95b24426504a7e5a5318dfd9b8e7dfd94e470707b9b9faffc",
+      "bytes": 28140,
+      "lines": 635,
+      "link": "D:/LocalAI/Faustus/src/approval_autonomy.py"
+    },
+    {
+      "id": "F16",
+      "repository": "Faustus",
+      "path": "src/context_engine/compiler.py",
+      "sha256": "481ed3c9fdaefe58eeca68496db1d8c0721d575ad2761b3aba77294a21b30251",
+      "bytes": 64849,
+      "lines": 1342,
+      "link": "D:/LocalAI/Faustus/src/context_engine/compiler.py"
+    },
+    {
+      "id": "F17",
+      "repository": "Faustus",
+      "path": "src/context_ledger.py",
+      "sha256": "a771ac07b65e4458d462cd842cd6706aea4bedb515ce644816f2370e79c4d730",
+      "bytes": 16596,
+      "lines": 365,
+      "link": "D:/LocalAI/Faustus/src/context_ledger.py"
+    },
+    {
+      "id": "F18",
+      "repository": "Faustus",
+      "path": "src/context_compactor.py",
+      "sha256": "70aeaba8287c0e9dedbfc6b0c540426e81e44003bd9bf5aafbc80c9b0eb492ae",
+      "bytes": 96467,
+      "lines": 2248,
+      "link": "D:/LocalAI/Faustus/src/context_compactor.py:401",
+      "symbol_line": 401
+    },
+    {
+      "id": "F19",
+      "repository": "Faustus",
+      "path": "src/context_self_manage.py",
+      "sha256": "5d45129a45c9a10219ed01ee67fd1822392e29cdf9a190eae43cde09e3cd45bb",
+      "bytes": 31940,
+      "lines": 715,
+      "link": "D:/LocalAI/Faustus/src/context_self_manage.py"
+    },
+    {
+      "id": "F20",
+      "repository": "Faustus",
+      "path": "src/compaction_guard.py",
+      "sha256": "550bec29189f86bbd627e3955afe3a38f669128d18bacb51242695ca4f367dc1",
+      "bytes": 4631,
+      "lines": 108,
+      "link": "D:/LocalAI/Faustus/src/compaction_guard.py"
+    },
+    {
+      "id": "F21",
+      "repository": "Faustus",
+      "path": "src/tool_result_offload.py",
+      "sha256": "1ae12cddb22569589acb926b07d84cfedefd7a02767d0340f7c18a517ff09040",
+      "bytes": 13205,
+      "lines": 275,
+      "link": "D:/LocalAI/Faustus/src/tool_result_offload.py"
+    },
+    {
+      "id": "F22",
+      "repository": "Faustus",
+      "path": "src/memory_engine.py",
+      "sha256": "b645bbbf998d195d063198e7353d317236ce5e77916c56afb1b68d4d502976a0",
+      "bytes": 91484,
+      "lines": 2156,
+      "link": "D:/LocalAI/Faustus/src/memory_engine.py"
+    },
+    {
+      "id": "F23",
+      "repository": "Faustus",
+      "path": "src/agent_tools/subagent_tools.py",
+      "sha256": "1b0ea6ed21b1e8297ca0d3c72bd62efa167f1fa8e3f6dc8d713feee21ae2f9c1",
+      "bytes": 134439,
+      "lines": 2487,
+      "link": "D:/LocalAI/Faustus/src/agent_tools/subagent_tools.py"
+    },
+    {
+      "id": "F24",
+      "repository": "Faustus",
+      "path": "src/budget_account.py",
+      "sha256": "95048b990a2282a326c2d3a0b939c282ee67c134ea845cbc5125258a2d26e588",
+      "bytes": 16968,
+      "lines": 368,
+      "link": "D:/LocalAI/Faustus/src/budget_account.py"
+    },
+    {
+      "id": "F25",
+      "repository": "Faustus",
+      "path": "src/resource_admission.py",
+      "sha256": "dbcb8d5960783fedde5b2e272015fe5454dc3dd7d5b25844da79d4f8c911b056",
+      "bytes": 16743,
+      "lines": 383,
+      "link": "D:/LocalAI/Faustus/src/resource_admission.py"
+    },
+    {
+      "id": "F26",
+      "repository": "Faustus",
+      "path": "src/chat_outbox.py",
+      "sha256": "95a6e53f4be79c2b06dc890f11299c2ae68f967d3fa1a3ca95e709fc9a90ccde",
+      "bytes": 10206,
+      "lines": 238,
+      "link": "D:/LocalAI/Faustus/src/chat_outbox.py"
+    },
+    {
+      "id": "F27",
+      "repository": "Faustus",
+      "path": "docs/api/sse_events.json",
+      "sha256": "51b113e02747824a2e1ef18ad8fba17ea393a376e01bb170e449f0dac6471a0d",
+      "bytes": 13542,
+      "lines": 107,
+      "link": "D:/LocalAI/Faustus/docs/api/sse_events.json"
+    },
+    {
+      "id": "F28",
+      "repository": "Faustus",
+      "path": "src/agent_tools/subprocess_tools.py",
+      "sha256": "45fa5b35ae64e3b4a11786a43107c391c5e792bd04f4816e16da2173a363ef29",
+      "bytes": 48495,
+      "lines": 1066,
+      "link": "D:/LocalAI/Faustus/src/agent_tools/subprocess_tools.py"
+    },
+    {
+      "id": "F29",
+      "repository": "Faustus",
+      "path": "src/external_worker.py",
+      "sha256": "84fe2ad68ee639cd6753c1175cfa3776b48ebf5bfbe0864f6d9c85a602ea19c8",
+      "bytes": 47053,
+      "lines": 997,
+      "link": "D:/LocalAI/Faustus/src/external_worker.py"
+    },
+    {
+      "id": "F30",
+      "repository": "Faustus",
+      "path": "src/plugin_runtime.py",
+      "sha256": "eab6701dc6a0506eace8040b0ff97527e8f7b57a3c8cc3ec32b5af4106f7185a",
+      "bytes": 14920,
+      "lines": 325,
+      "link": "D:/LocalAI/Faustus/src/plugin_runtime.py"
+    },
+    {
+      "id": "F31",
+      "repository": "Faustus",
+      "path": "src/workspace_checkpoints.py",
+      "sha256": "5c76fabf19e5933e5f764fd0abc6d15e3d8467514ac1f8f7762011dc3bb83c87",
+      "bytes": 36451,
+      "lines": 833,
+      "link": "D:/LocalAI/Faustus/src/workspace_checkpoints.py"
+    },
+    {
+      "id": "F32",
+      "repository": "Faustus",
+      "path": "src/project_tests.py",
+      "sha256": "e5edc1e8274ca82d41c1178daea51142a5f645225754174c7be0d9006713d93e",
+      "bytes": 45880,
+      "lines": 971,
+      "link": "D:/LocalAI/Faustus/src/project_tests.py"
+    },
+    {
+      "id": "F33",
+      "repository": "Faustus",
+      "path": "src/agent_harness.py",
+      "sha256": "0a3455dcad6da4d186ff7edeb1d6b0c6696d46474177243de6dabde6e8e1d8c6",
+      "bytes": 140398,
+      "lines": 2713,
+      "link": "D:/LocalAI/Faustus/src/agent_harness.py"
+    },
+    {
+      "id": "F34",
+      "repository": "Faustus",
+      "path": "src/llm_core.py",
+      "sha256": "2d889f6f2f1d759fc4287ab4a3d62c78d454c0eb94f7e8ffb8ae1aa13983ca33",
+      "bytes": 383292,
+      "lines": 7805,
+      "link": "D:/LocalAI/Faustus/src/llm_core.py"
+    },
+    {
+      "id": "F35",
+      "repository": "Faustus",
+      "path": "src/model_router.py",
+      "sha256": "4d47cf22c8ed96ea46557632532b98ac83fe1da6f88b09da9c26dd1b0e003b25",
+      "bytes": 29208,
+      "lines": 651,
+      "link": "D:/LocalAI/Faustus/src/model_router.py"
+    },
+    {
+      "id": "F36",
+      "repository": "Faustus",
+      "path": "src/project_instructions.py",
+      "sha256": "4d8173a8d48438c184fd374e34dffce856d128828f0fd2a89bca2c6a0987bac4",
+      "bytes": 22640,
+      "lines": 495,
+      "link": "D:/LocalAI/Faustus/src/project_instructions.py"
+    },
+    {
+      "id": "F37",
+      "repository": "Faustus",
+      "path": "src/skills_runtime/disclosure.py",
+      "sha256": "d1a251f1590965886fab1381220c4a933b121b9138370cdd949c6055a4f2c951",
+      "bytes": 8214,
+      "lines": 194,
+      "link": "D:/LocalAI/Faustus/src/skills_runtime/disclosure.py"
+    },
+    {
+      "id": "F38",
+      "repository": "Faustus",
+      "path": "src/mcp_manager.py",
+      "sha256": "c959d1026764618798959b4d0a87f0e425db98b6b40b7862743c43c28b69e682",
+      "bytes": 121236,
+      "lines": 2508,
+      "link": "D:/LocalAI/Faustus/src/mcp_manager.py"
+    },
+    {
+      "id": "F39",
+      "repository": "Faustus",
+      "path": "src/llm_trace.py",
+      "sha256": "5a0b7d440d5199a5d3455ce09e1d22bd61dd32c2e6be4343ff14426bae63122f",
+      "bytes": 20384,
+      "lines": 537,
+      "link": "D:/LocalAI/Faustus/src/llm_trace.py"
+    },
+    {
+      "id": "F40",
+      "repository": "Faustus",
+      "path": "src/agent_runners.py",
+      "sha256": "4a978d4a804c63960246e3644a4e2daa9917b9c0050f749a71fa6be3183e87f0",
+      "bytes": 41118,
+      "lines": 822,
+      "link": "D:/LocalAI/Faustus/src/agent_runners.py"
+    },
+    {
+      "id": "F41",
+      "repository": "Faustus",
+      "path": "LICENSE",
+      "sha256": "79735a75d0274d2a5dcc240d11a0f81e34cfc3533939b7fce8e84e35a150a238",
+      "bytes": 34255,
+      "lines": 235,
+      "link": "D:/LocalAI/Faustus/LICENSE"
+    },
+    {
+      "id": "F42",
+      "repository": "Faustus",
+      "path": "src/code_mode/bridge.py",
+      "sha256": "bf14903fdf58c6d890130030365e20f1f854d49fef13d10175430869aac2bb01",
+      "bytes": 21223,
+      "lines": 464,
+      "link": "D:/LocalAI/Faustus/src/code_mode/bridge.py"
+    },
+    {
+      "id": "F43",
+      "repository": "Faustus",
+      "path": "src/agent_tools/code_mode_tool.py",
+      "sha256": "3252f351e46e315dedc2882ff5dc7a6522c464ccf91a2c69ef7982ba3fd85026",
+      "bytes": 2352,
+      "lines": 60,
+      "link": "D:/LocalAI/Faustus/src/agent_tools/code_mode_tool.py"
+    },
+    {
+      "id": "F44",
+      "repository": "Faustus",
+      "path": "src/context_engine/wiring.py",
+      "sha256": "6a0204474321d641ced6745ce4596aab5ca9ae80104f8eaadd968d921ae17deb",
+      "bytes": 41137,
+      "lines": 871,
+      "link": "D:/LocalAI/Faustus/src/context_engine/wiring.py"
+    },
+    {
+      "id": "F45",
+      "repository": "Faustus",
+      "path": "src/context_engine/budgets.py",
+      "sha256": "5e9afe4d8e4d261c14844c3ede001f0e99ef2ffde5f5bc305848a596cf478c03",
+      "bytes": 23579,
+      "lines": 596,
+      "link": "D:/LocalAI/Faustus/src/context_engine/budgets.py"
+    },
+    {
+      "id": "F46",
+      "repository": "Faustus",
+      "path": "src/tool_result.py",
+      "sha256": "1329bbb5c12ade0892aeab48df1ad1c7777a0deb11d3615230d481560b09de77",
+      "bytes": 6503,
+      "lines": 132,
+      "link": "D:/LocalAI/Faustus/src/tool_result.py:55",
+      "symbol_line": 55
+    },
+    {
+      "id": "F47",
+      "repository": "Faustus",
+      "path": "src/retry_policy.py",
+      "sha256": "8fc7e602dc8e1204fa931cfda3517db2d99dda590e3c85520a771577a3962212",
+      "bytes": 12853,
+      "lines": 278,
+      "link": "D:/LocalAI/Faustus/src/retry_policy.py"
+    },
+    {
+      "id": "F48",
+      "repository": "Faustus",
+      "path": "src/completion_engine/service.py",
+      "sha256": "c77932d00f80e551de6f13fcfa135f23719b82a34f4e7b1b2ee0fc4803c7558e",
+      "bytes": 30002,
+      "lines": 620,
+      "link": "D:/LocalAI/Faustus/src/completion_engine/service.py"
+    },
+    {
+      "id": "F49",
+      "repository": "Faustus",
+      "path": "src/context_engine/cache.py",
+      "sha256": "13a06260297619a0a29ccc6d0974cea4491ccafb6fcbcc2774a980b230bb0a74",
+      "bytes": 22486,
+      "lines": 495,
+      "link": "D:/LocalAI/Faustus/src/context_engine/cache.py"
+    },
+    {
+      "id": "C01",
+      "repository": "openai/codex",
+      "path": "codex-rs/core/src/tools/handlers/dynamic.rs",
+      "sha256": "d498ac91f137d9fa8a1f5e8da9d6161e46a22e03b5f4759dbaae76bfadb49692",
+      "bytes": 8215,
+      "lines": 251,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/core/src/tools/handlers/dynamic.rs"
+    },
+    {
+      "id": "C02",
+      "repository": "openai/codex",
+      "path": "codex-rs/app-server-protocol/src/protocol/v2/thread.rs",
+      "sha256": "9d7168633cfc4eccab6ac99621488e6154b588f4c60c512c78bfaff13e641ed0",
+      "bytes": 80425,
+      "lines": 2058,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/app-server-protocol/src/protocol/v2/thread.rs"
+    },
+    {
+      "id": "C03",
+      "repository": "openai/codex",
+      "path": "codex-rs/tools/src/tool_executor.rs",
+      "sha256": "b0c8f2c9ed414a7e49f5a20ce0d2cc1813354456ec497fed0c7b95f9ce4abc0e",
+      "bytes": 4789,
+      "lines": 130,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/tools/src/tool_executor.rs"
+    },
+    {
+      "id": "C04",
+      "repository": "openai/codex",
+      "path": "codex-rs/core/src/tools/registry.rs",
+      "sha256": "f2e65f09427c5f9466513c02106b3e6bad7c51ee8d80d5538532304c793cc804",
+      "bytes": 32369,
+      "lines": 861,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/core/src/tools/registry.rs"
+    },
+    {
+      "id": "C05",
+      "repository": "openai/codex",
+      "path": "codex-rs/core/src/tools/parallel.rs",
+      "sha256": "e9dd6481d777058e652c682124b0e34552099b595533cc401ed951c234d9032c",
+      "bytes": 34110,
+      "lines": 816,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/core/src/tools/parallel.rs#L125",
+      "symbol_line": 125
+    },
+    {
+      "id": "C06",
+      "repository": "openai/codex",
+      "path": "codex-rs/core/src/session/step_context.rs",
+      "sha256": "2f993c34a8a79ab85070eae41bb93c1fe8a59153c8378d93f3e5196cff5c7400",
+      "bytes": 3132,
+      "lines": 64,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/core/src/session/step_context.rs#L21",
+      "symbol_line": 21
+    },
+    {
+      "id": "C07",
+      "repository": "openai/codex",
+      "path": "codex-rs/code-mode-runtime/src/runtime/globals.rs",
+      "sha256": "7f217154e40e71a8d78ba7582c62d9ede5a149e1d03b8a9ad2a9a0ee7dd959b2",
+      "bytes": 6758,
+      "lines": 163,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/code-mode-runtime/src/runtime/globals.rs"
+    },
+    {
+      "id": "C08",
+      "repository": "openai/codex",
+      "path": "codex-rs/code-mode-runtime/src/runtime/module_loader.rs",
+      "sha256": "a1436211b8641f118cb45b42a29f34ece60328a61f5d0aa0314d9626080040c1",
+      "bytes": 8549,
+      "lines": 241,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/code-mode-runtime/src/runtime/module_loader.rs"
+    },
+    {
+      "id": "C09",
+      "repository": "openai/codex",
+      "path": "codex-rs/sandboxing/src/lib.rs",
+      "sha256": "696733bd902a072a1524fca3b0c7de4040c154b24837272f4e05527d35601e17",
+      "bytes": 4058,
+      "lines": 100,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/sandboxing/src/lib.rs"
+    },
+    {
+      "id": "C10",
+      "repository": "openai/codex",
+      "path": "codex-rs/core/src/tools/orchestrator.rs",
+      "sha256": "7b30e5bfe7eb7e0f6cd2e26649fc0c4fa98c18d2a409e3ebce98be58453a5645",
+      "bytes": 24820,
+      "lines": 556,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/core/src/tools/orchestrator.rs"
+    },
+    {
+      "id": "C11",
+      "repository": "openai/codex",
+      "path": "codex-rs/core/src/guardian/mod.rs",
+      "sha256": "688ce500c6d2ffac2c6cc6e9e05731955a4be2f7bbd8b171fe3fbfecb7a88f78",
+      "bytes": 8338,
+      "lines": 210,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/core/src/guardian/mod.rs"
+    },
+    {
+      "id": "C12",
+      "repository": "openai/codex",
+      "path": "codex-rs/core/src/context_manager/updates.rs",
+      "sha256": "a7a83d113b2f3bb1849be6043fa9ae82c00192a3acf4693d665a643e01e47906",
+      "bytes": 2153,
+      "lines": 60,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/core/src/context_manager/updates.rs"
+    },
+    {
+      "id": "C13",
+      "repository": "openai/codex",
+      "path": "codex-rs/core/src/client.rs",
+      "sha256": "cbf3b4c701d176eb73a34826db42b568dbd1c313a01d06a1abb4843cd9239ec0",
+      "bytes": 121641,
+      "lines": 2942,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/core/src/client.rs"
+    },
+    {
+      "id": "C14",
+      "repository": "openai/codex",
+      "path": "codex-rs/core/src/compact.rs",
+      "sha256": "f6a957526673d3ff36f1fe975f925192e34a08d85b84c5096753e64345aa440a",
+      "bytes": 31239,
+      "lines": 836,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/core/src/compact.rs"
+    },
+    {
+      "id": "C15",
+      "repository": "openai/codex",
+      "path": "codex-rs/history/src/compaction_checkpoint.rs",
+      "sha256": "18f08c7dd55ff496e680c2d25859176f1a17ec1e65dd7daa6a3e48ad6818cca3",
+      "bytes": 2010,
+      "lines": 61,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/history/src/compaction_checkpoint.rs"
+    },
+    {
+      "id": "C16",
+      "repository": "openai/codex",
+      "path": "codex-rs/memories/README.md",
+      "sha256": "79d0eaf0a0a34fa0a6db97fd3dbfde0de6b2ac9451b342f2ebcb02ce581babce",
+      "bytes": 7645,
+      "lines": 157,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/memories/README.md"
+    },
+    {
+      "id": "C17",
+      "repository": "openai/codex",
+      "path": "codex-rs/core/src/unified_exec/mod.rs",
+      "sha256": "cb4b0c8d15f57ce9c713b9ed4df2914d11e3ffd04ce1699d36edea725014c3bc",
+      "bytes": 8416,
+      "lines": 249,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/core/src/unified_exec/mod.rs"
+    },
+    {
+      "id": "C18",
+      "repository": "openai/codex",
+      "path": "codex-rs/exec-server/README.md",
+      "sha256": "2283cb198b39782ff6317d11d1dde8f97d3c59afac689f0567ff578345e887e1",
+      "bytes": 17270,
+      "lines": 537,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/exec-server/README.md"
+    },
+    {
+      "id": "C19",
+      "repository": "openai/codex",
+      "path": "codex-rs/core/src/agent/control/user_authorization.rs",
+      "sha256": "79f4f6b3e78c2f99fd81d0bc2c013f674d09d7e33ce75d8275d23a9e9147a45d",
+      "bytes": 19697,
+      "lines": 431,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/core/src/agent/control/user_authorization.rs"
+    },
+    {
+      "id": "C20",
+      "repository": "openai/codex",
+      "path": "codex-rs/core/src/agent/control/budget.rs",
+      "sha256": "e539febf5aab8bca4f2d710206726fa045733eea631578b8ae2fc9c4ba159617",
+      "bytes": 1280,
+      "lines": 39,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/core/src/agent/control/budget.rs"
+    },
+    {
+      "id": "C21",
+      "repository": "openai/codex",
+      "path": "codex-rs/rollout/src/recorder.rs",
+      "sha256": "b80847d5713576e57a06d6f46257b7c9e3fb5f61b138e400863e78826cc6e254",
+      "bytes": 78434,
+      "lines": 2249,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/rollout/src/recorder.rs"
+    },
+    {
+      "id": "C22",
+      "repository": "openai/codex",
+      "path": "codex-rs/core/src/session/daemon_recovery.rs",
+      "sha256": "7eba9ced1913baf5f289e207cbc4046aac5f92e831613420ae70fdf219ffe265",
+      "bytes": 2084,
+      "lines": 46,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/core/src/session/daemon_recovery.rs"
+    },
+    {
+      "id": "C23",
+      "repository": "openai/codex",
+      "path": "codex-rs/app-server-protocol/src/protocol/v2/turn.rs",
+      "sha256": "ee4eaadc4dde45dcba9e678df827fa2110240484a4e14af4a53ef554273d8b13",
+      "bytes": 22604,
+      "lines": 609,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/app-server-protocol/src/protocol/v2/turn.rs"
+    },
+    {
+      "id": "C24",
+      "repository": "openai/codex",
+      "path": "codex-rs/core/src/tools/handlers/apply_patch.rs",
+      "sha256": "f83bdc3c2a99e58f0e27ba2c8dbfc39e605183526e2923fc63d21caa53474619",
+      "bytes": 22754,
+      "lines": 626,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/core/src/tools/handlers/apply_patch.rs"
+    },
+    {
+      "id": "C25",
+      "repository": "openai/codex",
+      "path": "AGENTS.md",
+      "sha256": "f6937d6d37ec246aa58ab16cb308e3cec66506c592eb278d7bfa3f9ede6f1d88",
+      "bytes": 22717,
+      "lines": 320,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/AGENTS.md"
+    },
+    {
+      "id": "C26",
+      "repository": "openai/codex",
+      "path": "codex-rs/core/src/agents_md.rs",
+      "sha256": "c45a5e6fbd477c2c9e2008639e06fc4d26b5ea7ab503173a11414b6cb5d1be8a",
+      "bytes": 20666,
+      "lines": 562,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/core/src/agents_md.rs"
+    },
+    {
+      "id": "C27",
+      "repository": "openai/codex",
+      "path": "codex-rs/skills/src/lib.rs",
+      "sha256": "7c5c7021ff455c65abf7e7218c313d792285e25ea9df0bdd35c89ad3b289e36b",
+      "bytes": 7744,
+      "lines": 214,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/skills/src/lib.rs"
+    },
+    {
+      "id": "C28",
+      "repository": "openai/codex",
+      "path": "LICENSE",
+      "sha256": "aa5e89edcbbd01fc3fb188a527d8bdc0da5812305cab220c84348c14ea427288",
+      "bytes": 11127,
+      "lines": 201,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/LICENSE"
+    },
+    {
+      "id": "C29",
+      "repository": "openai/codex",
+      "path": "codex-rs/core/src/compact_model_fallback.rs",
+      "sha256": "f7b2577f7f19d4b0e988daf3577c0faaa8258584ba2a1b810eb3138435289050",
+      "bytes": 1939,
+      "lines": 59,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/core/src/compact_model_fallback.rs"
+    },
+    {
+      "id": "C30",
+      "repository": "openai/codex",
+      "path": "codex-rs/memories/write/src/phase1.rs",
+      "sha256": "d471280d19ecd9274c926481fa5ca26f3f680ba82ae33d8d3dd2b37940f892b6",
+      "bytes": 28462,
+      "lines": 802,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/memories/write/src/phase1.rs#L56",
+      "symbol_line": 56
+    },
+    {
+      "id": "C31",
+      "repository": "openai/codex",
+      "path": "codex-rs/memories/write/src/phase2.rs",
+      "sha256": "6b3bfe800bd38c17db70fae989effa05761d0497052c781834691523bb1398f2",
+      "bytes": 23015,
+      "lines": 613,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/memories/write/src/phase2.rs#L49",
+      "symbol_line": 49
+    },
+    {
+      "id": "C32",
+      "repository": "openai/codex",
+      "path": "codex-rs/core/src/session/turn.rs",
+      "sha256": "23a180601fd47de3fd15569b5c4203de8c097e3439179b2601b2c2c8bd02dd4d",
+      "bytes": 130734,
+      "lines": 3212,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/core/src/session/turn.rs#L163",
+      "symbol_line": 163
+    },
+    {
+      "id": "C33",
+      "repository": "openai/codex",
+      "path": "codex-rs/core/src/context_manager/normalize.rs",
+      "sha256": "ae5a5dca0320b9399f0925021082aa37d3dfc6bd4987ae4ca55a44b8fb14069a",
+      "bytes": 16993,
+      "lines": 420,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/core/src/context_manager/normalize.rs#L21",
+      "symbol_line": 21
+    },
+    {
+      "id": "C34",
+      "repository": "openai/codex",
+      "path": "codex-rs/core/src/context_manager/history.rs",
+      "sha256": "fa1e63d6d70369430b8cac3ea5f803ce9a8414456b7a56e85a67b50e4cc0c9bb",
+      "bytes": 58876,
+      "lines": 1367,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/core/src/context_manager/history.rs#L91",
+      "symbol_line": 91
+    },
+    {
+      "id": "C35",
+      "repository": "openai/codex",
+      "path": "codex-rs/core/src/context/world_state/mod.rs",
+      "sha256": "e0d4d611ba5c67fcb50612c93d0aa1b0eca1b3e4209678bbcba2e4e5e97631d2",
+      "bytes": 19536,
+      "lines": 557,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/core/src/context/world_state/mod.rs#L226",
+      "symbol_line": 226
+    },
+    {
+      "id": "C36",
+      "repository": "openai/codex",
+      "path": "codex-rs/core/src/session/step_activation.rs",
+      "sha256": "e47aee54c2ac8e9c19d8c8884fc4f0b5ae0a93ff7e264f28c73d7853212595ca",
+      "bytes": 21293,
+      "lines": 472,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/core/src/session/step_activation.rs#L30",
+      "symbol_line": 30
+    },
+    {
+      "id": "C37",
+      "repository": "openai/codex",
+      "path": "codex-rs/core/src/responses_retry.rs",
+      "sha256": "d703d828beac29648895e0db9f911d46fc4066a6d1998d166010098972968258",
+      "bytes": 7519,
+      "lines": 206,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/core/src/responses_retry.rs#L31",
+      "symbol_line": 31
+    },
+    {
+      "id": "C38",
+      "repository": "openai/codex",
+      "path": "codex-rs/code-mode-runtime/src/cell_actor/mod.rs",
+      "sha256": "aa30c40a16d39066cdea4ad822c1eaace00dec2ccc98671b2d5ca978a8f86eb9",
+      "bytes": 27039,
+      "lines": 632,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/code-mode-runtime/src/cell_actor/mod.rs"
+    },
+    {
+      "id": "C39",
+      "repository": "openai/codex",
+      "path": "codex-rs/core/src/tools/executed_tool_calls.rs",
+      "sha256": "ebb95cd16502f386ec4179ba299b63bdc26d480783879e6aba09e1f24b3c6006",
+      "bytes": 30974,
+      "lines": 773,
+      "link": "https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/core/src/tools/executed_tool_calls.rs"
+    }
+  ],
+  "web": {
+    "W01": "https://openai.com/index/unlocking-the-codex-harness/",
+    "W02": "https://developers.openai.com/api/docs/guides/agents-api/overview/",
+    "W03": "https://learn.chatgpt.com/docs/app-server"
+  }
+}

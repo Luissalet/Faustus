@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "id": "atlas",
+  "name": "Atlas's Hoard",
+  "purpose": "Shared local filesystem: projects contain shared live files and native folders for each Hoard. All project members open the same actual file paths. Tracks revisions and reusable derived results without rewriting originals.",
+  "capabilities": ["shared-storage", "projects", "live-files", "file-revisions", "derived-cache", "task-context", "project-membership"],
+  "placeholders": ["ATLAS_DIR", "APP_URL", "TOKEN_FILE", "PYTHON"],
+  "defaults": {"APP_URL": "http://127.0.0.1:5203", "TOKEN_FILE": "{ATLAS_DIR}/data/mcp-token", "PYTHON": "{ATLAS_DIR}/venv/Scripts/python.exe"},
+  "app": {
+    "url_default": "http://127.0.0.1:5203", "ui_url": "{APP_URL}",
+    "health": {"path": "/api/health", "expect": {"service": "atlas-hoard"}},
+    "identify": {"service": ["atlas-hoard"], "title": ["atlas's hoard"]},
+    "launch_hint": {"kind": "process", "executable": "{PYTHON}", "argv": ["-m", "atlas_hoard", "--no-browser"], "cwd": "{ATLAS_DIR}", "readiness": {"url": "{APP_URL}/api/health", "timeout_s": 20}}
+  },
+  "mcp": {"transport": "stdio", "command": "{PYTHON}", "args": ["{ATLAS_DIR}/mcp_server.py"], "env": {"ATLAS_URL": "{APP_URL}", "ATLAS_TOKEN_FILE": "{TOKEN_FILE}"}, "optional_env": []},
+  "notes": "Local-only. Native tools save/open the same shared file paths. Atlas never automatically moves existing projects. API membership is cooperative and does not impose OS filesystem ACLs. A reusable result needs exact source hashes and a recipe including model revision when applicable."
+}

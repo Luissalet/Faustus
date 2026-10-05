@@ -9,6 +9,7 @@ Error convention: flat `{"error_class": ..., "detail": ...}`
 from __future__ import annotations
 
 import logging
+import asyncio
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Request
@@ -16,6 +17,12 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from core.middleware import require_admin
+from src.reach.extract import ExtractRequest
+from src.reach.batch import BatchReadRequest
+from src.reach.browser import BrowserRequest
+from src.reach.crawl import CrawlRequest
+from src.reach.recipes import RecipeRequest
+from src.auth_helpers import effective_user
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +49,51 @@ class SearchBody(BaseModel):
 def setup_reach_routes() -> APIRouter:
     router = APIRouter(prefix="/api/reach", tags=["reach"])
 
+    @router.post("/crawl")
+    async def post_crawl(request: Request, body: CrawlRequest) -> Any:
+        require_admin(request)
+        from src.reach.crawl import run_crawl
+        try:
+            return await asyncio.to_thread(run_crawl, body, owner=effective_user(request))
+        except Exception as exc:
+            return _error(400, "crawl_failed", str(exc))
+
+    @router.post("/browser")
+    async def post_browser(request: Request, body: BrowserRequest) -> Any:
+        require_admin(request)
+        from src.reach.browser import run_browser
+        try:
+            return await run_browser(body, owner=effective_user(request))
+        except Exception as exc:
+            return _error(400, "browser_failed", str(exc))
+
+    @router.post("/extract")
+    async def post_extract(request: Request, body: ExtractRequest) -> Any:
+        require_admin(request)
+        from src.reach.extract import extract
+        try:
+            return await extract(body, owner=effective_user(request))
+        except Exception as exc:
+            return _error(400, "extraction_failed", str(exc))
+
+    @router.post("/read-many")
+    async def post_read_many(request: Request, body: BatchReadRequest) -> Any:
+        require_admin(request)
+        from src.reach.batch import read_many
+        try:
+            return await read_many(body, ctx={"owner": effective_user(request)})
+        except ValueError as exc:
+            return _error(400, "invalid_request", str(exc))
+
+    @router.post("/recipe")
+    async def post_recipe(request: Request, body: RecipeRequest) -> Any:
+        require_admin(request)
+        from src.reach.recipes import run_recipe
+        try:
+            return await run_recipe(body, owner=effective_user(request))
+        except Exception as exc:
+            return _error(400, 'recipe_failed', str(exc))
+
     @router.get("/doctor")
     async def get_doctor(request: Request, live: int = 0) -> Dict[str, Any]:
         require_admin(request)
@@ -55,7 +107,7 @@ def setup_reach_routes() -> APIRouter:
             return _error(400, "invalid_request", "url is required")
         from src.reach import router as reach_router
         try:
-            result = await reach_router.read(body.url.strip(), channel=body.channel)
+            result = await reach_router.read(body.url.strip(), channel=body.channel, ctx={"owner": effective_user(request)})
         except Exception as exc:  # noqa: BLE001
             logger.warning("reach.read failed for %r: %s", body.url, exc)
             return _error(502, "reach_read_failed", str(exc))

@@ -1,5 +1,4 @@
-"""`web` channel: (1) Faustus's own `web_fetch` (services.search.content),
-(2) Jina Reader (`r.jina.ai`), (3) an active Faustus browser session.
+"""`web` channel: built-in fetch, dedicated local browser, optional Jina mirror.
 """
 from __future__ import annotations
 
@@ -30,6 +29,17 @@ class FaustusWebFetchBackend(Backend):
     rule 4."""
 
     name = "faustus_web_fetch"
+
+    async def search(self, query: str, **kwargs: Any) -> list[ReachResult]:
+        from services.search import comprehensive_web_search
+        text, sources = await asyncio.to_thread(
+            comprehensive_web_search, query, max_pages=3, return_sources=True)
+        if not sources:
+            raise ReachBackendError(text[:200] or "web search returned no sources")
+        return [ReachResult(channel="web", url=str(source.get("url") or ""),
+                            title=str(source.get("title") or ""),
+                            text=str(source.get("snippet") or source.get("content") or "")[:2000],
+                            source_trust="scrape") for source in sources if source.get("url")]
 
     async def _probe(self, live: bool) -> Availability:
         return Availability(status="ready", reason="uses Faustus's built-in fetcher", checked_live=live)
@@ -67,7 +77,7 @@ class JinaReaderBackend(Backend):
             return ""
 
     async def _probe(self, live: bool) -> Availability:
-        if not get_setting("reach_jina_enabled", True):
+        if not get_setting("reach_jina_enabled", False):
             return Availability(status="unavailable", reason="reach_jina_enabled is off", checked_live=live)
         if not live:
             return Availability(status="ready", reason="Jina Reader (no auth required for basic use)", checked_live=live)
@@ -81,7 +91,7 @@ class JinaReaderBackend(Backend):
             return Availability(status="unavailable", reason=str(exc), checked_live=True)
 
     async def read(self, url_or_id: str, **kwargs: Any) -> ReachResult:
-        if not get_setting("reach_jina_enabled", True):
+        if not get_setting("reach_jina_enabled", False):
             raise ReachBackendError("reach_jina_enabled is off")
         url = _normalize_url(url_or_id)
         headers = {}
@@ -107,34 +117,26 @@ class JinaReaderBackend(Backend):
 
 
 class BrowserSessionBackend(Backend):
-    """Reads a page through an already-logged-in Faustus browser session
-    (`src.browser_sessions`), for pages a plain HTTP fetch cannot reach
-    (login walls, JS-only content).
-
-    HALF-BUILT, DECLARED (contract rule 1): Faustus's browser automation is
-    driven by the agent's own tool-call loop (the browser MCP tools), not by
-    a synchronous Python driver this module can call directly. This backend
-    wires the seam -- it looks for a `browser_session_reader` callable
-    passed in `kwargs["ctx"]` (an owner-supplied `async def(url) -> dict`
-    that goes through the live session) -- and degrades to `unavailable`
-    with a clear reason when no such reader is wired, rather than
-    pretending to have read the page.
+    """Reads through an owner-scoped local profile or an injected session reader.
+    Cookies survive manual login; the normal personal browser is never reused.
     """
 
     name = "browser_session"
 
     async def _probe(self, live: bool) -> Availability:
-        return Availability(
-            status="needs_config",
-            reason="requires an active Faustus browser session; not wired to a synchronous reader in this environment",
-            checked_live=live,
-        )
+        from src.reach.browser import browser_for
+        browser = browser_for()
+        return Availability(status="ready" if browser.available() else "unavailable",
+                            reason=browser.unavailable_reason() or "local owner-scoped browser",
+                            checked_live=False)
 
     async def read(self, url_or_id: str, **kwargs: Any) -> ReachResult:
         ctx = kwargs.get("ctx") or {}
         reader = ctx.get("browser_session_reader") if isinstance(ctx, dict) else None
         if not callable(reader):
-            raise ReachBackendError("no active browser session reader wired for this call")
+            from src.reach.browser import BrowserRequest, run_browser
+            async def reader(target):
+                return await run_browser(BrowserRequest(url=target), owner=ctx.get("owner"))
         url = _normalize_url(url_or_id)
         data = await reader(url)
         text = (data or {}).get("text") or ""
@@ -148,4 +150,4 @@ class BrowserSessionBackend(Backend):
 
 class WebChannel(Channel):
     name = "web"
-    backends = [FaustusWebFetchBackend(), JinaReaderBackend(), BrowserSessionBackend()]
+    backends = [FaustusWebFetchBackend(), BrowserSessionBackend(), JinaReaderBackend()]

@@ -142,7 +142,8 @@ _SCHEMA = (
     )
     """,
 )
-register_schema("brain_entities", _SCHEMA)
+from src.brain.relation_history import schema as _relation_history_schema
+register_schema("brain_entities", _SCHEMA + _relation_history_schema())
 
 
 class BrainEntityError(ValueError):
@@ -886,7 +887,7 @@ def _relation_window_covers(relation: Dict[str, Any], instant: datetime) -> bool
     return True
 
 
-def list_relations(owner: Any, *, entity_id: Any = None, as_of: Any = None,
+def list_relations(owner: Any, *, entity_id: Any = None, as_of: Any = None, known_at: Any = None,
                    include_closed: bool = True,
                    include_retracted: bool = False) -> List[Dict[str, Any]]:
     """Relations of `owner` (optionally touching `entity_id`). A RETRACTED
@@ -907,7 +908,11 @@ def list_relations(owner: Any, *, entity_id: Any = None, as_of: Any = None,
             rows = conn.execute(
                 "SELECT * FROM relations WHERE owner = ? ORDER BY created_at", (owner,)
             ).fetchall()
-    items = [_row_to_relation(row) for row in rows]
+    if known_at is not None:
+        from src.brain.relation_history import at
+        items = at(owner, known_at, entity_id=entity_id)
+    else:
+        items = [_row_to_relation(row) for row in rows]
     if not include_retracted:
         items = [r for r in items if r["status"] != "retracted"]
     if as_of is not None:
@@ -1042,6 +1047,8 @@ def forget_source(owner: Any, source_ref: Any) -> int:
                 updated = [ref for ref in evidence if ref != source_ref]
                 conn.execute("UPDATE relations SET evidence = ?, updated_at = ? WHERE id = ?",
                             (dumps(updated), now, row["id"]))
+            from src.brain.relation_history import forget_reference
+            forget_reference(conn, owner, source_ref)
     except Exception as exc:  # noqa: BLE001 - a cleanup pass must never raise
         logger.debug("brain.entities: forget_source(%s) failed (%s)", source_ref, exc)
     return removed

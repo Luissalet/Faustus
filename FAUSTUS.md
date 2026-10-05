@@ -9977,6 +9977,14 @@ Visto en el uso real: en dos semanas hubo 33 mensajes «continúa»/«sigue» pa
 
 **Límites:** el modelo local suele cerrar bien las tareas solo, así que `plan_continue` actúa sobre todo cuando se para pronto o pregunta; no se ha reconstruido el Studio (sin `node_modules` en este árbol), de modo que las dos etiquetas nuevas de `Harness.tsx` salen con el texto crudo del estado hasta la próxima compilación.
 
+## 258. Tantalus lee los agregadores de stock de cartas: tiendas una a una y días de lanzamiento (02-10-2026)
+
+Luis se quejó de que Tantalus no seguía bien el stock de Pokémon: no miraba Carrefour, GAME ni las web de stock TCG, y el día que salía la oleada 2 del 30.º aniversario no avisó ni de que salía ni de dónde. Causas: la app estaba parada desde la noche anterior; Carrefour contesta Cloudflare 403 a HTTP y a Edge sin ventana; el vigilante de GAME había llenado su tope de 15 objetivos y los packs con figura de Mew y Mewtwo se quedaron propuestos; y no existía el concepto de lanzamiento.
+
+Nuevo en Tantalus (commits `ce88dc1` y `c3c9a34` en `main`, sin push): el **radar de agregadores** (`tantalus_hoard/radar/`). Lee stocktcg.net (feed `/api/pulse.json`, páginas de cadena `/tiendas/<cadena>`, calendario `/lanzamientos`, página de cada lanzamiento y fichas `/p/<producto>`) y stocktcg.es (feed y calendario). Cada oferta de tienda es una fila; si pasa a comprable salta `RESTOCK`/`PREORDER_OPEN` con la tienda como vendedor (las cadenas siempre; las demás solo en ES/EN, en euros y a precio de cadena × multiplicador anti-reventa). Nuevo evento `RELEASE`: al entrar en el calendario, tres días antes y el día, con dónde hay preventa o stock y dónde ya está agotado. Las páginas leídas por primera vez son línea base (sin avisos). Novedades muestra los lanzamientos arriba y un panel por cadena. Cinco tools nuevas: `radar_status`, `radar_run`, `releases_list`, `radar_offers`, `radar_setup` (53 en total). También: un nivel de lectura «ventana» (Edge normal minimizado, una página y se cierra) para las fichas de Carrefour, que sirve a un navegador normal pero no al headless; sin parches de sigilo, sin resolver nada, y si Cloudflare se niega el objetivo pasa a «necesita tu ayuda». La búsqueda y las categorías de Carrefour devuelven una regla de bloqueo de Cloudflare incluso en ventana, así que los productos nuevos de Carrefour llegan por el radar y por búsqueda web. Además: el tope de objetivos cuenta solo fichas y sube a 40, y el modelo local reintenta sin gramática JSON cuando llama.cpp falla con «Unexpected empty grammar stack».
+
+Verificado en el PC: primer ciclo real (18 páginas) avisó por toast, bus y correo «Hoy (vie 2 oct) sale «30 Aniversario Oleada 2…». Cadenas: GAME agotado · Carrefour agotado · Alcampo agotado · Amazon agotado · Toys R Us agotado · Toy Planet agotado. Preventa o stock: …»; panel de cadenas y botón «Comprobar ahora» probados en Chrome; ficha de Carrefour leída por la ventana (200, en stock, 5,99 €) y, tras varias pruebas seguidas, Cloudflare empezó a negarse (queda en «necesita tu ayuda»). `plugins/tantalus/plugin.json` actualizado con el manifiesto nuevo.
+
 ## 259. Vuelta de investigación del 01-10: Vulcan ordena colecciones, Tantalus lee las ofertas del correo y Cassandra vigila las webs públicas (02-10-2026)
 
 Luis pidió «otra vuelta de investigación» y eligió las cuatro propuestas. El detalle de la investigación está en `claude/investigacion-ecosistema-01-10.md`. Se hizo sobre datos reales: 2.518 cabeceras de correo de 90 días, el uso de Faustus en `data/app.db` y los pendientes. Los planes que se siguen solos son §257, y el arreglo de `update_plan` es §256.
@@ -10142,3 +10150,79 @@ Los 34 paquetes de la unificación están aplicados en Windows y se han cerrado 
 Faustus utiliza fetch del Hub, transcripción de Funes y OCR acotado de Kafka para PDFs escaneados, con sus alternativas locales cuando el servicio no está disponible. Comparte las políticas de URL (sin impedir los motores locales), RSS/Atom, escape y plegado de ICS, y búsqueda de binarios multimedia. Writers de escritorio comparte el motor de descargas y la política de captura web. La recuperación ante bibliotecas CUDA ausentes permite continuar los siguientes trabajos de transcripción con CPU.
 
 Validación de las áreas modificadas de Faustus: 277 pruebas correctas y 2 omitidas. Los servicios reales devolvieron descargas, transcripciones, voz, OCR y embeddings. Queda documentado un fallo previo de la silueta estrella en Plato (IoU 0.975507 frente a 0.98); no se alteró esa geometría ni su umbral. Detalle y límites en `claude/hoards-commons-02-10.md`. Commits locales; Faustus conserva su rama principal `master`, sin push.
+
+## 269. Adaptaciones de los repos de tweets y capturas (03-10-2026)
+
+Revisados 29 repos contra Faustus y la familia; comparación, enlaces, licencias, diferencias y límites en `docs/adaptations/REPOS_TWEETS_2026-10-03.md`. No se han ejecutado instrucciones de los documentos de referencia ni reemplazado motores que ya cubren la función.
+
+- **Reach:** `reach_extract` extrae filas/campos de HTML con alternativas explícitas de selectores, JSON con punteros y respuestas JSON de HAR guardados; paginación y límites, campos ausentes, selectores usados, hash y procedencia. `reach_read_many` lee hasta 100 URL explícitas con deduplicado, orden y fallos independientes. Ambas herramientas comparten sus contratos con HTTP y se registran como contenido externo no fiable. La búsqueda web de Reach reutiliza ahora el buscador existente. El fetch conserva la URL final del Hub para resolver bien enlaces relativos.
+- **Decisiones:** proveedor opcional `ollaya` para varias preguntas en una petición nativa `/v1/systemone`, sólo loopback, con validación, privacidad, presupuesto y abstención. El predeterminado sigue siendo `logprobs`. No se ha instalado ni medido un modelo Ollaya real.
+- **Kafka:** backend nativo opcional `light-ocr` 0.5.8 instalado, CPU, cajas/confianza y alternativa al fallar, dentro de su servicio OCR compartido. Prueba real con la captura de Shapeshift: 13 bloques en 1,625 s; sin afirmar superioridad sobre los otros motores.
+- **Lumiere:** `project_contact_sheet` devuelve fotogramas con tiempos del renderizador real, repartidos o a ambos lados de comienzos de clips, y evita mezclar revisiones. Catálogo de 49 herramientas.
+
+Validación: 194 pruebas de integración de Reach/decisiones/registro, más 70 del transporte y extracción web (con solapamiento); suite completa de Kafka, 581 pruebas y API generada sin diferencias; 13 pruebas de Lumiere/API con píxeles renderizados y cambio de revisión. Extracción web real y hoja de fotogramas inspeccionada. Cambios guardados sin push; las instancias abiertas cargan las novedades al reiniciarse. No hay captura automática de webs autenticadas ni descubrimiento de cronologías de 100 cuentas.
+
+## 270. Segunda fase de las adaptaciones, priorizando ejecución local (03-10-2026)
+
+Tras la petición de implementar lo complementario con prioridad local:
+
+- **Navegador:** `reach_browser` lee y captura respuestas JSON reales sobre el transporte compartido, con perfiles separados por usuario y login manual mediante `scripts/reach_browser_login.py`. Es alternativa del lector web y de `reach_extract`. Jina queda desactivado por defecto y en ajustes locales.
+- **Recorridos:** `reach_crawl` guarda checkpoints, continúa tras interrupciones, permite cancelación/exportación y respeta robots.txt, orígenes, profundidad, páginas, volumen y concurrencia. `reach_recipe` guarda selectores y recupera cambios de clases sólo mediante atributos exactos y únicos, con ausencias/adaptaciones visibles.
+- **Grafo:** `brain_graph` combina tiempo válido y tiempo registrado en el SQLite existente; snapshots transaccionales, horizonte de migración explícito, sin resucitar borrados ni citas olvidadas. Las etiquetas siguen siendo actuales.
+- **Trazas:** analítica local, checks de presupuestos y exportaciones Chrome Trace/OTLP JSON por sesión, con los mismos gates de propiedad. Omite contenidos; no instala servidor de telemetría ni valora calidad mediante otro modelo.
+- **Composer:** cálculo, unidades, temporizador, checklist, color/contraste y reparto por céntimos, reconocidos por reglas locales. Las acciones copian o reemplazan el borrador sin enviarlo. Temporizadores limitados a la vista/sesión. Studio compilado y componente revisado a 1280/390 px; revisión independiente `ship`, sólo al alcance de componente.
+- **Ollaya:** runtime v0.9.0 verificado por checksum y dos modelos locales instalados; arranque/parada/warm CPU comprobados con `Start-Local-Decisions.ps1`. La prueba ES/EN de 20 casos del modelo multilingüe obtuvo 13 aciertos, 2 abstenciones y 5 errores de alta confianza, mediana 179,44 ms. El helper predeterminado sigue siendo `logprobs`; no se activa un sustituto de peor fiabilidad.
+
+Corrida conjunta de 339 pruebas correctas en 53,64 s, TypeScript y build correctos, pruebas reales de lectura/captura JSON/crawl/exportación y doce capturas del componente con interacción. No se ha probado login real ni garantizado el mes completo de 100 cronologías de X. Las instancias backend existentes necesitan su reinicio normal; no se han parado trabajos previos. Uso, evidencias y límites actualizados en `docs/adaptations/REPOS_TWEETS_2026-10-03.md`.
+
+## 271. Cohesión de Faustus y los Hoards (04-10-2026)
+
+Pedido de Luis: revisar solapes y carencias para que la familia trabaje como una sola máquina, manteniendo la prioridad local. Inventario de 35 manifiestos (Hub y 34 apps) y Faustus como raíz adicional; BookHoard y WatchHoard revisados aparte. El reparto de responsabilidades y las carencias están en `HoardLink/docs/commons/cohesion.md`; el registro de pruebas, en `cohesion-validation.md` de esa carpeta.
+
+- **Contrato común:** propietarios de descargas, transcripción, voz, documentos y embeddings definidos una vez, con paridad Python/Node. Sincronizado desde HoardLink en 34 consumidores (29 Python, cinco Node), incluyendo `src/hoard_link` de Faustus. Corregidas las diferencias previas de `launch.py`; inventario final y comprobador de sincronización sin diferencias.
+- **Hub:** diagnóstico `hub_cohesion` de propietarios, capacidades compartidas, diferencias de copias y requisitos de flujos. Links → Funes → Borges conserva journal atómico, IDs, procedencia y hash; pausa al reiniciar y reanuda explícitamente. Una respuesta perdida requiere conciliación con el proveedor. El panel común conserva los trabajos en pausa. Terminar ese flujo significa solicitar indexación, no probar que Borges ya pueda recuperar el texto.
+- **Consumidores:** Argus prioriza Windows OCR y después Kafka antes de cargar otro modelo, con alternativa local al caer el servicio. El traspaso de Scheherazade a Writer usa el descubrimiento y autenticación del Hub. El proxy acepta capítulos de hasta 4 MiB bajo autenticación; el transporte compartido no reenvía credenciales al seguir redirecciones.
+- **Carencias abiertas:** faltan recuperación e idempotencia persistentes en otros flujos y un protocolo común de invalidación de derivados. Hay adaptadores REST heredados y métricas remotas de Mercator que deben distinguirse del estado local. No se creó otro Hoard porque los dominios ya tienen propietario. Luis aclaró después que BookHoard y WatchHoard son independientes; quedan fuera del plan de cohesión de esta familia.
+
+Validación: suite completa de HoardLink, 3.498 correctas y 74 omitidas; comprobaciones posteriores de transporte y flujos correctas, con solapamiento entre corridas. Diez consumidores pasan sus comprobaciones (Funes, alcance específico del backend); Babel y Daguerre compilan, Daguerre inspeccionado con 87 fotos sintéticas en demo aislada. Selección de Faustus: 88 correctas y siete casos repetidos tras la última copia. No se migraron datos reales, publicaron cambios ni reiniciaron instancias del usuario. Las novedades se cargarán con su reinicio normal.
+
+## 272. Atlas: el disco compartido de la familia (04-10-2026)
+
+La aclaración de Luis cambió el reparto: quiere el equivalente al SSD que permite
+a Paint y Gimp trabajar sobre el mismo PNG, con los proyectos nativos de cada
+Hoard junto a sus archivos compartidos. Esa responsabilidad no la cubre un índice
+de Borges, el coordinador Hub o el medidor de DiskHoard.
+
+- **Atlas's Hoard:** aplicación nueva, local y sin dependencias de ejecución
+  externas, en el puerto 5203. Proyectos con `shared/` y `hoards/<app>/`; registro
+  sin modificar o copiar originales, rutas estables al renombrar/archivar,
+  revisiones por contenido y recibos persistentes para reintentos.
+- **Clientes y Hub:** contrato único Python/Node, `hub_workspace`, pertenencia y
+  ámbito de proyecto, once herramientas HTTP/MCP. Faustus incluye el manifiesto
+  local; no se inventa un repositorio público en el catálogo de descarga.
+- **Reutilización:** referencias a resultados con hashes de fuentes/salida y
+  receta versionada. Publicar exige las revisiones previas para rechazar fuentes
+  editadas durante el trabajo. El contexto de tarea contiene objetivo, ámbito y
+  archivos explícitos; el texto de fuentes sigue siendo evidencia, no instrucciones.
+- **Lumiere:** `media_shared` abre el original de Atlas sin copiarlo. Repetirlo
+  tras editar conserva el ID del medio en los montajes y renueva sus cachés y
+  análisis; respeta las restricciones locales de carpeta y los trabajos activos.
+- **Conservación y recursos:** el Hub copia también el disco externo de Atlas y
+  restaura archivos compartidos en una carpeta aparte. Nuevo presupuesto
+  cooperativo de CPU/RAM/disco, complementario al árbitro GPU, con cola, caducidad,
+  propiedad y conservación tras reinicio.
+
+La pertenencia limita la API, no el acceso al sistema de archivos. No se migran
+datos reales ni bases privadas. Los importadores que antes copiaban siguen
+haciéndolo hasta adoptar referencias vivas: la carpeta común no cambia por sí
+sola todos los guardados nativos. Las reservas de recursos necesitan adopción
+explícita; no se anuncian límites forzosos sobre todos los procesos. BookHoard y
+WatchHoard siguen independientes. Guía: `docs/api/shared-storage.md`.
+
+Se comprueban Atlas y Hub reales en loopback, acceso de dos consumidores al mismo
+original, clientes Python/Node, invalidación, pertenencia y restauración que
+conserva la edición en uso. Los archivos y consumidores son sintéticos, sin
+benchmark de modelos. Interfaz inspeccionada en escritorio, móvil y tamaño
+habitual; revisión independiente del cambio de proyecto: `ship` para la corrección
+de respuestas fuera de orden. El registro detallado vive en
+`HoardLink/docs/commons/atlas-validation.md`.

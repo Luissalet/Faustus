@@ -22,7 +22,10 @@
     "jobs",
     "backups",
     "app-proxy",
-    "family-audit"
+    "family-audit",
+    "family-capability-discovery",
+    "live-tool-schema-discovery",
+    "cross-hoard-recipes"
   ],
   "placeholders": [
     "HOARDLINK_DIR",

@@ -31,4 +31,4 @@ if ($result.stopped) {
 } else {
     Write-Host 'Faustus was not running.'
 }
-Write-Host 'Ollama, llama-server, and unrelated Python processes were preserved.'
+& (Join-Path $PSScriptRoot 'Stop-Local-Models.ps1')

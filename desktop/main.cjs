@@ -10,9 +10,8 @@ const port=Number(process.env.FAUSTUS_PORT||7000),origin=`http://127.0.0.1:${por
 let mainWindow,tray=null,ownedToken='',quitting=false,startup=null,stopDesktopControl=()=>{},stopDictation=()=>{};
 // A faustus:// link waiting for the app to load, and whether it has.
 let pendingLink=findDeepLink(process.argv),appLoaded=false;
-// Closing the window parks Faustus in the tray (hidden icons), like the chat
-// desktop apps do; the tray menu's Quit is what really stops it. The smoke
-// test keeps the old close-means-quit path so it can finish on its own.
+// Closing the window parks Faustus in the tray (hidden icons). Quitting from
+// the tray stops its server and releases the local models it uses.
 const trayEnabled=!process.argv.includes('--smoke-test')&&!process.argv.includes('--no-tray');
 
 const alive=w=>w&&!w.isDestroyed();
@@ -119,6 +118,9 @@ async function shutdown(){
   try{await startup;}catch{/* A failed page load must not skip server cleanup. */}
   try{if(ownedToken)await runtime(['stop','--token',ownedToken]);}
   catch(error){console.error('Faustus shutdown:',error.message);}
+  try{
+    if(ownedToken&&process.platform==='win32')await execute('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',join(root,'Stop-Local-Models.ps1')],{cwd:root,windowsHide:true,timeout:45000});
+  }catch(error){console.error('Faustus model shutdown:',error.message);}
   finally{try{tray?.destroy();}catch{/* already gone */}app.exit(0);}
 }
 if(!Number.isInteger(port)||port<1024||port>65535){app.quit();}

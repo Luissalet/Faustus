@@ -1,0 +1,4903 @@
+{
+  "created_at": "2026-10-04T21:43:43.033830+00:00",
+  "sources": [
+    {
+      "repo": "bitwarden/clients",
+      "url": "https://github.com/bitwarden/clients",
+      "revision": "245879a5e3269da22197d3306a2f8b0355794095",
+      "branch": "main",
+      "archived": false,
+      "pushed_at": "2026-10-04T16:34:14Z",
+      "license": "NOASSERTION",
+      "readme_sha256": "c5ea2d6804adf6756a7960464af86cfcbcbf4e0218377a86797dcd9cf1fa6db8",
+      "description": "Bitwarden client apps (web, browser extension, desktop, and cli)."
+    },
+    {
+      "repo": "calcom/cal.diy",
+      "url": "https://github.com/calcom/cal.diy",
+      "revision": "54343aa685ae8f33159d2f485ec4a57bad5c574a",
+      "branch": "main",
+      "archived": false,
+      "pushed_at": "2026-09-26T07:48:40Z",
+      "license": "MIT",
+      "readme_sha256": "a9a6121c41b37242a4aac18704037dcff14f23d41dbf74b8a18c9e3d393b01e7",
+      "description": "Scheduling infrastructure for absolutely everyone."
+    },
+    {
+      "repo": "penpot/penpot",
+      "url": "https://github.com/penpot/penpot",
+      "revision": "7c039231f79022f26b252776817c41fa61476aa3",
+      "branch": "develop",
+      "archived": false,
+      "pushed_at": "2026-10-04T17:29:30Z",
+      "license": "MPL-2.0",
+      "readme_sha256": "8c79712fea5fb2d98462817e65f5eba37ef66f652611da23bc64275ac008ad53",
+      "description": "Penpot: The open-source design platform for Product teams that need scalable collaboration."
+    },
+    {
+      "repo": "AppFlowy-IO/AppFlowy",
+      "url": "https://github.com/AppFlowy-IO/AppFlowy",
+      "revision": "5cf3a365dec0d59f64bad1ee4bb1050471a39b93",
+      "branch": "main",
+      "archived": false,
+      "pushed_at": "2026-10-01T03:32:57Z",
+      "license": "AGPL-3.0",
+      "readme_sha256": "f59d3e49037d392f36d7ea13d25485c5d54317f9aee7c61c4c2a47f067aa996d",
+      "description": "Bring projects, wikis, and teams together with AI. AppFlowy is the AI collaborative workspace where you achieve more without losing control of your data. The leading open source Notion alternative."
+    },
+    {
+      "repo": "plausible/analytics",
+      "url": "https://github.com/plausible/analytics",
+      "revision": "d21298d9015e277b5be9d4521983d23726efd1f3",
+      "branch": "master",
+      "archived": false,
+      "pushed_at": "2026-10-04T18:42:06Z",
+      "license": "AGPL-3.0",
+      "readme_sha256": "48cb983fc85b3fbd91d9cdeaba6864b13d35de5a1e7cd160ab6764b9318ae69f",
+      "description": "Open source, privacy-first web analytics. Lightweight, cookie-free Google Analytics alternative. Self-hosted or cloud."
+    },
+    {
+      "repo": "openai/whisper",
+      "url": "https://github.com/openai/whisper",
+      "revision": "86098128c0b4f24f0e2aa2994de830614b474227",
+      "branch": "main",
+      "archived": false,
+      "pushed_at": "2026-08-31T17:19:19Z",
+      "license": "MIT",
+      "readme_sha256": "38c180c2a8d8ba628a3e131ad42bf06c8a51bb681efb30fbe28d5a0f4b65f288",
+      "description": "Robust Speech Recognition via Large-Scale Weak Supervision"
+    },
+    {
+      "repo": "lllyasviel/Fooocus",
+      "url": "https://github.com/lllyasviel/Fooocus",
+      "revision": "ae05379cc97bc4361ec8b4ec90193dab21be763f",
+      "branch": "main",
+      "archived": false,
+      "pushed_at": "2025-12-01T19:17:07Z",
+      "license": "GPL-3.0",
+      "readme_sha256": "89e1efb0ef1245a6b2abc4db41d5b76e3179656f875db99675900dc477e067bf",
+      "description": "Focus on prompting and generating"
+    },
+    {
+      "repo": "tobi/disktree",
+      "url": "https://github.com/tobi/disktree",
+      "revision": "6c8d4ce6211bf135ff4e42890faebff1040e1846",
+      "branch": "main",
+      "archived": false,
+      "pushed_at": "2026-10-04T19:07:54Z",
+      "license": "MIT",
+      "readme_sha256": "259e218ec484bd0882bb665cc15f8ec167c55a73ceef11de3c80ffcaaf8ee0b3",
+      "description": "A treemap for finding and removing what fills your disk, for Omarchy. Rust + GPUI."
+    },
+    {
+      "repo": "CopilotKit/OpenDots",
+      "url": "https://github.com/CopilotKit/OpenDots",
+      "revision": "c2569bb6a13a22e565cf3eb791c62267d06babb1",
+      "branch": "main",
+      "archived": false,
+      "pushed_at": "2026-10-02T21:16:45Z",
+      "license": "MIT",
+      "readme_sha256": "b5c3bd4920f780c1136346330cc99a180e49fe8975a559d8f007d92fe504c3a6",
+      "description": "Your always-on AI coworkers that move between text, calls, and Slack."
+    },
+    {
+      "repo": "Anil-matcha/Open-Generative-AI",
+      "url": "https://github.com/Anil-matcha/Open-Generative-AI",
+      "revision": "ce82e99365ee25271427442e92310c6b0c05e94c",
+      "branch": "main",
+      "archived": false,
+      "pushed_at": "2026-10-03T09:39:02Z",
+      "license": "MIT",
+      "readme_sha256": "40cd4a346cff4880f5f82cecb308e20b0766da235a4f9a540fb77759f1ead2b6",
+      "description": "Unrestricted Open-source alternative to AI video platforms — Free AI image & video generation studio with 600+ models (Flux, Midjourney, Kling, Sora, Veo). No content filters. Self-hosted, MIT licensed."
+    },
+    {
+      "repo": "leemysw/yovoice",
+      "url": "https://github.com/leemysw/yovoice",
+      "revision": "88c1e8d932b09c1e99a98fd6820c76b0083ace35",
+      "branch": "main",
+      "archived": false,
+      "pushed_at": "2026-10-04T15:30:29Z",
+      "license": "Apache-2.0",
+      "readme_sha256": "b8aec535fd03955675dd076bf949f4e6143e77ff09e921a31f670b46735b4f53",
+      "description": "Open-source voice creation for macOS and Windows. Local TTS, voice cloning, and emotion control — no cloud APIs or per-character fees."
+    },
+    {
+      "repo": "xixihhhh/hotclip",
+      "url": "https://github.com/xixihhhh/hotclip",
+      "revision": "62aef3919fdd7d8a974f80a9b721e0177eb408c2",
+      "branch": "main",
+      "archived": false,
+      "pushed_at": "2026-09-23T15:40:12Z",
+      "license": "AGPL-3.0",
+      "readme_sha256": "6c306ea68959294a00a1580299ca3179a8f4caaef79c7ac5f78798b43f9b0032",
+      "description": "免费开源的 AI 剪辑 / 直播切片工具:长视频、直播回放、播客一键切成爆款竖屏短视频,直发抖音/快手/B站/小红书/视频号——AI 找高光金句、弹幕热度进爆点判断、自动加字幕、横屏转竖屏,本地运行无水印不上传 | Free open-source Opus Clip alternative, 100% local: AI clips long videos & livestream VODs into viral 9:16 shorts for TikTok & YouTube Shorts. No credits, no watermark, no uploads. Win/macOS/Linux."
+    },
+    {
+      "repo": "blixvip/NullMotion",
+      "url": "https://github.com/blixvip/NullMotion",
+      "revision": "2795457432a63e7e28879210601cede25915e561",
+      "branch": "main",
+      "archived": false,
+      "pushed_at": "2026-10-04T17:38:44Z",
+      "license": null,
+      "readme_sha256": "0e80dd5e36c70fa4e941c6fb68c9acd21415bda9594211925b30d4cd6dcbe3f8",
+      "description": "Watch a finished motion-graphics ad play over the HyperFrames drafts it grew from, frame-synced, and export the breakdown as an MP4. Local, zero dependencies. Join the Discord: discord.gg/zEB4VjmfSb"
+    },
+    {
+      "repo": "msitarzewski/agency-agents",
+      "url": "https://github.com/msitarzewski/agency-agents",
+      "revision": "83294689da3832c0a9f223221148c411fd3eacc0",
+      "readme_sha256": "c3b62b8f48b021ecc8aea23f823a8ddb23afafdf65aaa32d2de88efba6815860",
+      "license": "MIT",
+      "inspection": "local pinned checkout; no upstream installer executed",
+      "branch": "main",
+      "archived": false,
+      "pushed_at": "2026-10-04T21:17:44Z",
+      "description": "A complete AI agency at your fingertips - From frontend wizards to Reddit community ninjas, from whimsy injectors to reality checkers. Each agent is a specialized expert with personality, processes, and proven deliverables."
+    },
+    {
+      "repo": "kargulstudio/sales-crm",
+      "url": "https://github.com/kargulstudio/sales-crm",
+      "revision": "8954a187812285f69d954a1faf9a9773dafa20c2",
+      "readme_sha256": "f0650a2fe4effb226920080ed477eb5570e70289098685226100ceb1730972b7",
+      "license": null,
+      "inspection": "local pinned checkout; no upstream installer executed",
+      "branch": "main",
+      "archived": false,
+      "pushed_at": "2026-10-04T10:58:32Z",
+      "description": null
+    }
+  ],
+  "hoards": [
+    {
+      "id": "argus",
+      "name": "Argus's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Argus's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "screen-history",
+        "ocr",
+        "timeline",
+        "full-text-search",
+        "activity-by-app",
+        "recent-screen",
+        "pause",
+        "private-mode",
+        "exclusions",
+        "retention",
+        "delete-range"
+      ],
+      "purpose": "Private screen memory: periodic screenshots of the user's own PC, OCR'd and searchable by text, app, window and time, stored only on the machine.",
+      "specialists": [
+        "Memoria personal"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "argus",
+        "name": "Argus",
+        "agent": "hoard-argus",
+        "method": "evidence",
+        "mission": "Recuperar contexto de pantalla con OCR, ventanas y franjas horarias dentro de las exclusiones.",
+        "deliverable": "Cronología con capturas citadas, hora, aplicación y huecos de cobertura.",
+        "related": [
+          "funes",
+          "dorian"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/testing/testing-evidence-collector.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "atlas",
+      "name": "Atlas's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Atlas's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "shared-storage",
+        "projects",
+        "live-files",
+        "file-revisions",
+        "derived-cache",
+        "task-context",
+        "project-membership"
+      ],
+      "purpose": "Shared local filesystem: projects contain shared live files and native folders for each Hoard. All project members open the same actual file paths. Tracks revisions and reusable derived results without rewriting originals.",
+      "specialists": [
+        "Ingeniero de IA",
+        "Taller 3D",
+        "Centro de mando",
+        "Ingeniero de software"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "atlas",
+        "name": "Atlas",
+        "agent": "hoard-atlas",
+        "method": "project",
+        "mission": "Organizar archivos compartidos, revisiones y derivados sin reescribir originales.",
+        "deliverable": "Mapa de entradas y derivados con rutas resueltas, revisiones y procedencia.",
+        "related": [
+          "hoardhub"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/project-management/project-management-project-shepherd.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "babel",
+      "name": "Babel's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Babel's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "api-lookup",
+        "code-check",
+        "docs-search",
+        "docsets",
+        "environments",
+        "localization-audit"
+      ],
+      "purpose": "Gives the model the exact, version-installed API signatures and docs for this project instead of its training-data guesses, and can check code it wrote for hallucinated APIs.",
+      "specialists": [
+        "Ingeniero de software"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "babel",
+        "name": "Babel",
+        "agent": "hoard-babel",
+        "method": "mcp",
+        "mission": "Verificar APIs instaladas, firmas y traducciones contra los docsets del proyecto.",
+        "deliverable": "Contratos y diferencias con versión exacta, ejemplos comprobados y referencias.",
+        "related": [
+          "laplace",
+          "atlas"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/specialized/specialized-mcp-builder.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "borges",
+      "name": "Borges's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Borges's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "library",
+        "documents",
+        "hybrid-search",
+        "citations",
+        "passages",
+        "pdf",
+        "docx",
+        "markdown",
+        "epub",
+        "html",
+        "collections",
+        "folder-watch",
+        "reindex",
+        "similar-passages",
+        "local-embeddings",
+        "faustus-conversations",
+        "saved-links",
+        "sources",
+        "date-range-search"
+      ],
+      "purpose": "The user's personal library: folders of their own documents, and their own Faustus conversations and the links they saved in Links Hoard, indexed locally so the assistant can answer 'where did I read/write/decide X' with exact page, section and chat-turn citations.",
+      "specialists": [
+        "Investigador",
+        "Empleo y proyectos"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "borges",
+        "name": "Borges",
+        "agent": "hoard-borges",
+        "method": "evidence",
+        "mission": "Responder desde biblioteca y pasajes recuperados, con citas localizables.",
+        "deliverable": "Síntesis con documento, página o sección y evidencia a favor y en contra.",
+        "related": [
+          "links",
+          "hypatia"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/testing/testing-evidence-collector.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "cassandra",
+      "name": "Cassandra's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Cassandra's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "service-status",
+        "health-checks",
+        "incidents",
+        "probable-cause",
+        "uptime-history",
+        "log-search",
+        "log-tailing",
+        "gpu-timeline",
+        "vram",
+        "restart-policies",
+        "restart",
+        "watch-list",
+        "reboot-detection",
+        "audit-trail",
+        "agent-calls",
+        "secrets-audit",
+        "event-bus",
+        "public-sites",
+        "site-uptime",
+        "tls-certificates",
+        "domain-expiry",
+        "faustus-attention",
+        "faustus-farm",
+        "running-agents",
+        "period-budget"
+      ],
+      "purpose": "Observability for the local AI stack: which local services (the workspace, llama-server, Ollama, ComfyUI, the launcher and every Hoard app) are up, what went down and when, what else changed at that moment, what the logs said, what the GPUs were doing, whether the user's public websites are up (HTTP, TLS certificate, DNS, domain expiry), and opt-in restarts.",
+      "specialists": [
+        "Ingeniero de IA",
+        "Centro de mando",
+        "Ingeniero de software"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "cassandra",
+        "name": "Cassandra",
+        "agent": "hoard-cassandra",
+        "method": "infra",
+        "mission": "Diagnosticar servicios, GPU e incidentes correlacionando logs y cambios.",
+        "deliverable": "Línea temporal, hipótesis ordenadas y comprobación de recuperación; no detener procesos ajenos.",
+        "related": [
+          "hoardhub",
+          "diskhoard"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/support/support-infrastructure-maintainer.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "cicero",
+      "name": "Cicero's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Cicero's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "presentation-decks",
+        "source-documents",
+        "outline-generation",
+        "slide-generation",
+        "per-slide-review",
+        "slide-revisions",
+        "number-check-against-sources",
+        "native-pptx-export",
+        "pdf-export",
+        "html-export",
+        "markdown-export",
+        "themes",
+        "theme-from-design-system",
+        "image-studio"
+      ],
+      "purpose": "A local workspace that turns a brief and source documents into an editable presentation: outline, slides with speaker notes, per-slide review and revisions, themes, and export to PPTX (native text and charts), PDF, HTML and Markdown, for assistants over MCP.",
+      "specialists": [
+        "Director de diseño",
+        "Narrativa y edición"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "cicero",
+        "name": "Cicero",
+        "agent": "hoard-cicero",
+        "method": "visual",
+        "mission": "Construir una presentación desde fuentes conservando narrativa y referencias.",
+        "deliverable": "Guion y deck editable con exportación abierta y revisión visual de todas las diapositivas.",
+        "related": [
+          "borges",
+          "platos",
+          "vitruvius"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/design/design-visual-storyteller.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "cookhoard",
+      "name": "CookHoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\CookHoard\\faustus-plugin.json",
+      "capabilities": [
+        "recipes",
+        "cooking steps",
+        "fridge",
+        "shopping list",
+        "seasonal recommendations",
+        "weekly menu",
+        "daily servings",
+        "scaled menu ingredient totals",
+        "pantry stock deficits",
+        "video-recipe-import",
+        "reel-import",
+        "recipe-text-import",
+        "recipe-drafts",
+        "ingredient-dictionary",
+        "pantry-places",
+        "expiry-tracking",
+        "leftovers",
+        "what-to-cook",
+        "tickets",
+        "ticket-ocr",
+        "mail-receipts",
+        "price-book",
+        "recipe-cost",
+        "menu-cost",
+        "food-spending",
+        "price-watch",
+        "cooking-mode",
+        "shopping-sections",
+        "daily-reminders",
+        "dashboard"
+      ],
+      "purpose": "Local cooking assistant for recipes, fridge-aware recommendations, a weekly menu and a unified shopping list. It imports recipes from video links (Instagram, TikTok, YouTube, Facebook) and pasted text into reviewable drafts, keeps a pantry with places and expiry dates, reads supermarket tickets into prices, costs recipes and menus against a weekly budget and warns every morning about food that is about to expire. Everything stays on the computer.",
+      "specialists": [
+        "Casa y compras"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "cookhoard",
+        "name": "Cookhoard",
+        "agent": "hoard-cookhoard",
+        "method": "finance",
+        "mission": "Relacionar recetas, existencias, menú y coste real de la compra.",
+        "deliverable": "Menú con cantidades, déficits y costes separados de estimaciones; no asumir stock.",
+        "related": [
+          "ledger",
+          "tantalus"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/support/support-finance-tracker.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "daguerre",
+      "name": "Daguerre's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Daguerre's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "photo search",
+        "visual similarity",
+        "duplicate detection",
+        "EXIF and places",
+        "albums",
+        "contact sheets"
+      ],
+      "purpose": "Lets the assistant search, look at and organize the user's local photo library by content, place and time.",
+      "specialists": [
+        "Taller 3D"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "daguerre",
+        "name": "Daguerre",
+        "agent": "hoard-daguerre",
+        "method": "evidence",
+        "mission": "Encontrar referencias visuales y organizar álbumes, EXIF y duplicados.",
+        "deliverable": "Selección con ruta y metadata, hoja de contacto revisada y candidatos a duplicado sin borrado.",
+        "related": [
+          "vulcan",
+          "atlas"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/testing/testing-evidence-collector.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "diskhoard",
+      "name": "DiskHoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Disk Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "disk-usage",
+        "scan",
+        "hotspots",
+        "junk-catalog",
+        "stale-folders",
+        "largest-files",
+        "file-types",
+        "find-files",
+        "explain-folder",
+        "cleanup-script",
+        "delete-to-recycle-bin",
+        "delete-permanent",
+        "rescan",
+        "zip-split",
+        "split-archives",
+        "disk-treemap",
+        "keyboard-treemap-navigation"
+      ],
+      "purpose": "Measures what fills the user's disks, knows which folders are regenerable junk (caches, node_modules, build output, temp files) and can clean them: to the Recycle Bin, permanently with explicit confirmation, or through a reviewable PowerShell script. It also splits a folder into ZIPs that each stay under a size limit (upload sites with a per-file cap), cutting a file bigger than the limit into raw .zip.001 volumes.",
+      "specialists": [
+        "Centro de mando"
+      ],
+      "new_domain_features": [
+        "accessible spatial treemap navigation"
+      ],
+      "domain_evidence": "implemented and tested",
+      "domain_specialist": {
+        "hoard": "diskhoard",
+        "name": "Diskhoard",
+        "agent": "hoard-diskhoard",
+        "method": "infra",
+        "mission": "Analizar uso de disco y archivos grandes con alcance explícito.",
+        "deliverable": "Distribución y candidatos de limpieza con tamaño y ruta; distinguir propuesta de borrado ejecutado.",
+        "related": [
+          "cassandra",
+          "atlas"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/support/support-infrastructure-maintainer.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "dorian",
+      "name": "Dorian's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Dorian's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "personal-context",
+        "reflection",
+        "source-evidence",
+        "reviewed-updates"
+      ],
+      "purpose": "Consult the user's reviewed personal context and reflection with source attribution, and submit new information for the user's review through Dorian's Hoard's permissioned MCP server.",
+      "specialists": [
+        "Memoria personal"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "dorian",
+        "name": "Dorian",
+        "agent": "hoard-dorian",
+        "method": "evidence",
+        "mission": "Reconstruir contexto personal desde evidencia y proponer actualizaciones revisables.",
+        "deliverable": "Hechos citados, conflictos y propuesta; no guardar inferencias personales como hechos.",
+        "related": [
+          "argus",
+          "funes",
+          "people"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/testing/testing-evidence-collector.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "echo",
+      "name": "Echo's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Echo's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "clipboard-history",
+        "search",
+        "pin",
+        "sensitive-detection",
+        "images"
+      ],
+      "purpose": "Everything the user copies, kept on their own PC, searchable, with frequent copies pinned; the assistant can search the clipboard history and set the clipboard.",
+      "specialists": [
+        "Centro de mando",
+        "Memoria personal"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "echo",
+        "name": "Echo",
+        "agent": "hoard-echo",
+        "method": "evidence",
+        "mission": "Recuperar fragmentos del portapapeles respetando detección sensible y permisos.",
+        "deliverable": "Fragmentos con fecha y procedencia, evitando trasladar secretos al contexto persistente.",
+        "related": [
+          "funes",
+          "dorian"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/testing/testing-evidence-collector.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "funes",
+      "name": "Funes's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Funes's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "activity timeline",
+        "day summaries",
+        "resume context",
+        "recent files",
+        "git commits",
+        "activity search",
+        "audio recording",
+        "live and final transcription",
+        "meeting search and notes",
+        "audio import and export",
+        "meeting minutes with action items",
+        "import audio by file path",
+        "federated recall (screen, clipboard, audio)"
+      ],
+      "purpose": "Gives the assistant a local memory of desktop activity and audio sessions. Records and transcribes meetings and voice notes, searches transcripts, and merges them with screen and clipboard memory in one citable timeline.",
+      "specialists": [
+        "Centro de mando",
+        "Memoria personal"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "funes",
+        "name": "Funes",
+        "agent": "hoard-funes",
+        "method": "meeting",
+        "mission": "Convertir actividad, notas o transcripción de reunión en contexto recuperable.",
+        "deliverable": "Decisiones, acciones, dueños, fechas y preguntas con referencias a la entrada completa.",
+        "related": [
+          "people",
+          "kafka"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/project-management/project-management-meeting-notes-specialist.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "galton",
+      "name": "Galton's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Galton's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "model-benchmarks",
+        "model-evaluation",
+        "model-comparison",
+        "model-routing",
+        "leaderboard",
+        "regression-watch",
+        "gguf",
+        "llama-cpp",
+        "ollama",
+        "long-context",
+        "tool-calling",
+        "vision-benchmarks",
+        "code-benchmarks",
+        "spanish",
+        "statistics",
+        "arena",
+        "gpu-leases",
+        "job-events",
+        "dashboard"
+      ],
+      "purpose": "A local test bench for the language and vision models on this computer: it asks each model tasks whose answers can be checked (reasoning, maths, Python with hidden tests, JSON extraction, tool calling, instruction following, long-context retrieval, citations, vision, translation, summaries, Spanish writing, and cases you add), stores every answer with its timing and memory use, compares models with confidence intervals and paired tests, watches for new or changed models and regressions, and publishes a routing table (routes.json) that Hoard Link reads so every app of the family uses the measured best model for each task. GGUF files run on a llama-server of its own on the GPUs you allow, under a lease; running servers and Ollama models are called as they are. Everything stays on the computer.",
+      "specialists": [
+        "Ingeniero de IA",
+        "Ingeniero de software"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "galton",
+        "name": "Galton",
+        "agent": "hoard-galton",
+        "method": "ai",
+        "mission": "Comparar modelos y rutas con datasets, configuración y benchmarks reproducibles.",
+        "deliverable": "Base, candidato, métricas y regresiones con receta y muestras; no confundir catálogo con disponibilidad.",
+        "related": [
+          "pygmalion",
+          "nightingale",
+          "cassandra"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/engineering/engineering-ai-engineer.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "gamerhoard",
+      "name": "GamerHoard",
+      "kind": "mcp-only",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\GamerHoard\\faustus-plugin.json",
+      "capabilities": [
+        "games",
+        "library",
+        "backlog",
+        "ratings",
+        "notes",
+        "dlc",
+        "stats",
+        "play-sessions",
+        "playtime-history",
+        "steam-import",
+        "steam-achievements",
+        "json-import-export"
+      ],
+      "purpose": "Biblioteca local de videojuegos: sesiones y tiempo jugado, catálogo RAWG opcional, seguimiento, DLC, estadísticas e importación de Steam.",
+      "specialists": [
+        "Biblioteca de juegos"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "gamerhoard",
+        "name": "Gamerhoard",
+        "agent": "hoard-gamerhoard",
+        "method": "project",
+        "mission": "Ordenar biblioteca, sesiones y backlog según preferencias explícitas.",
+        "deliverable": "Plan de juego con propiedad, instalación y precio distinguidos; no iniciar compras.",
+        "related": [
+          "tantalus",
+          "ledger"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/project-management/project-management-project-shepherd.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "gepetto",
+      "name": "Gepetto's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Gepetto's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "projects",
+        "analysis",
+        "jobs"
+      ],
+      "purpose": "Drive Gepetto's Hoard's 3D projects, analysis and jobs through its REST API.",
+      "specialists": [
+        "Taller 3D"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "gepetto",
+        "name": "Gepetto",
+        "agent": "hoard-gepetto",
+        "method": "visual",
+        "mission": "Desarrollar proyectos de modelado artístico preservando material original.",
+        "deliverable": "Derivados editables, renders revisados y comprobación de geometría y exportaciones.",
+        "related": [
+          "vulcan",
+          "heron",
+          "atlas"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/design/design-visual-storyteller.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "heron",
+      "name": "Heron's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Heron's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "parametric-cad",
+        "measured-solids",
+        "boolean-geometry",
+        "editable-cad-recipes",
+        "step-export",
+        "stl-export",
+        "stl-watertight-check",
+        "step-roundtrip",
+        "cad-views"
+      ],
+      "purpose": "Measured parametric CAD: declarative solid primitives, Boolean operations, rotations, fillets, editable recipes and verified STEP/STL exports with three orthographic/isometric views. Complements artistic modelling and model catalogues.",
+      "specialists": [
+        "Taller 3D"
+      ],
+      "new_domain_features": [
+        "new measured CAD app",
+        "STEP/STL checks",
+        "REST/MCP/UI"
+      ],
+      "domain_evidence": "implemented and tested",
+      "domain_specialist": {
+        "hoard": "heron",
+        "name": "Heron",
+        "agent": "hoard-heron",
+        "method": "stats",
+        "mission": "Construir sólidos CAD con medidas y operaciones declaradas.",
+        "deliverable": "Receta, unidades, volumen esperado, STEP reimportado y STL comprobado; no afirmar simulación.",
+        "related": [
+          "vulcan",
+          "laplace"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/academic/academic-statistician.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "hoardhub",
+      "name": "Hoard Hub",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\HoardLink\\faustus-plugin.json",
+      "capabilities": [
+        "app-inventory",
+        "app-status",
+        "start-app",
+        "stop-app",
+        "restart-app",
+        "open-window",
+        "close-window",
+        "start-all",
+        "stop-all",
+        "model-backends",
+        "gpu-leases",
+        "profiles",
+        "rescan",
+        "event-bus",
+        "rules",
+        "jobs",
+        "backups",
+        "app-proxy",
+        "family-audit",
+        "family-capability-discovery",
+        "live-tool-schema-discovery",
+        "cross-hoard-recipes"
+      ],
+      "purpose": "Desktop hub for the family of local apps: lists them with their state, starts and stops their servers, opens them as their own desktop windows, reports which local model servers Hoard Link resolves and arbitrates GPU memory between the apps with a single lease queue.",
+      "specialists": [
+        "Centro de mando"
+      ],
+      "new_domain_features": [
+        "family capability discovery",
+        "live catalogues",
+        "15 capability recipes",
+        "3 client/AI/3D workflow plans; 18 total"
+      ],
+      "domain_evidence": "implemented and tested",
+      "domain_specialist": {
+        "hoard": "hoardhub",
+        "name": "Hoard Hub",
+        "agent": "hoard-hoardhub",
+        "method": "mcp",
+        "mission": "Descubrir proveedores y preparar recorridos entre Hoards sin duplicar dueños del dato.",
+        "deliverable": "Plan por etapa con herramienta, esquema, requisitos, huecos y recibos de lo realmente ejecutado.",
+        "related": [
+          "atlas",
+          "cassandra"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/specialized/specialized-mcp-builder.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "homehoard",
+      "name": "HomeHoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\HomeHoard\\faustus-plugin.json",
+      "capabilities": [
+        "household-inventory",
+        "item-location",
+        "local-search",
+        "appliance-card",
+        "warranty",
+        "maintenance",
+        "maintenance-reminders",
+        "home-sync",
+        "papers-link",
+        "purchase-intake",
+        "family-agenda",
+        "prefilled-add-form"
+      ],
+      "purpose": "Inventario doméstico local que guarda la casa en el ordenador: dónde está cada objeto, la ficha de cada aparato (marca, modelo, compra, garantía, recambios, papeles en Kafka's Hoard) y las tareas de mantenimiento con su base legal o recomendación, avisadas a través de Kafka.",
+      "specialists": [
+        "Casa y compras"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "homehoard",
+        "name": "Homehoard",
+        "agent": "hoard-homehoard",
+        "method": "project",
+        "mission": "Gestionar inventario doméstico, garantía y mantenimiento desde documentos reales.",
+        "deliverable": "Ficha enlazada a compra y garantía, próximos mantenimientos y datos que faltan.",
+        "related": [
+          "kafka",
+          "phileas",
+          "ledger"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/project-management/project-management-project-shepherd.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "hypatia",
+      "name": "Hypatia's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Hypatia's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "exam-prep",
+        "question-bank",
+        "spaced-repetition",
+        "quiz",
+        "mock-exams",
+        "answer-grading",
+        "weak-topics",
+        "key-concepts",
+        "deliverables",
+        "question-suggestions",
+        "notebook-sources",
+        "citations",
+        "study-guides",
+        "podcast",
+        "mind-map",
+        "tutor",
+        "search",
+        "stats",
+        "symbolic-math",
+        "teacher-classes",
+        "exam-generation",
+        "rubrics",
+        "batch-grading",
+        "class-analysis",
+        "family-agenda",
+        "job-events",
+        "card-source-refs"
+      ],
+      "purpose": "The user's exam-prep bank (Exam Coach) on their PC: subjects, topics and questions with spaced repetition, quizzes and mock exams in chat, answer grading, and a notebook of their own sources with cited answers, study guides, podcast, mind maps and a Socratic tutor. A teacher role adds classes, exams generated from the teacher's bank and sources with citations and versions, rubrics, batch correction with model proposals the teacher confirms, grades and class analysis (student data stays local). The Exam Coach PWA served by the same app shows and syncs the same data.",
+      "specialists": [
+        "Investigador"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "hypatia",
+        "name": "Hypatia",
+        "agent": "hoard-hypatia",
+        "method": "evidence",
+        "mission": "Preparar estudio y evaluación desde material con citas.",
+        "deliverable": "Guía, preguntas y criterios de corrección sustentados en pasajes; huecos identificados.",
+        "related": [
+          "borges",
+          "links"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/testing/testing-evidence-collector.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "jobhunter",
+      "name": "Jobhunter's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\JobHunter's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "contexts",
+        "jobs",
+        "applications",
+        "answers"
+      ],
+      "purpose": "Track job searches, applications, answers and context through the Jobhunter MCP bridge.",
+      "specialists": [
+        "Empleo y proyectos"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "jobhunter",
+        "name": "Jobhunter",
+        "agent": "hoard-jobhunter",
+        "method": "project",
+        "mission": "Relacionar ofertas, contexto y candidaturas conservando borradores y evidencia.",
+        "deliverable": "Adecuación a oferta, documentos y estado de candidatura; enviar sólo ante encargo explícito.",
+        "related": [
+          "people",
+          "platos",
+          "borges"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/project-management/project-management-project-shepherd.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "kafka",
+      "name": "Kafka's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Kafka's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "paperwork",
+        "documents",
+        "deadlines",
+        "invoices",
+        "contracts",
+        "insurance",
+        "warranties",
+        "fines",
+        "renewals",
+        "working-days",
+        "ocr",
+        "pdf",
+        "pdf-tools",
+        "pdf-merge",
+        "pdf-compress",
+        "image-compress",
+        "mail-import",
+        "folder-watch",
+        "reminders",
+        "notifications",
+        "windows-toast",
+        "ntfy",
+        "telegram",
+        "email",
+        "price-changes",
+        "search",
+        "citations",
+        "dashboard",
+        "family-agenda",
+        "hub-notifications",
+        "hub-mail",
+        "tax-pack",
+        "ledger-link",
+        "minutes-deadlines"
+      ],
+      "purpose": "A local paperwork keeper: it reads invoices, contracts, insurance policies, receipts and warranties, letters from the tax office, the traffic authority or the town hall, fines, ITV and ID documents from uploads, watched folders and the mail account configured in Faustus (attachments included), extracts who issued them, the amounts and every date that matters, turns those dates into deadlines (payments, renewals, the last day to cancel a renewal, end of warranty, end of a commitment period, deadlines to appeal or pay a fine with discount, expiry of IDs, next ITV) counting Spanish working days where the law does, reminds you before each one (the family hub, Windows toast, ntfy, Telegram, email), shows its deadlines in the family agenda, reads paperwork mail through the hub's mail gateway, links invoices to the matching ledger movement, turns meeting action items into deadlines and prepares a tax-return folder and answers questions with citations to the document and page. It also has a workshop for the files themselves: merge, split, reorder, rotate, compress, password-protect, watermark and describe PDFs, turn photos or Word documents into PDF, render pages as images and shrink PNG, JPEG and WEBP images under a size limit, always into new files. Everything stays on the computer.",
+      "specialists": [
+        "Investigador",
+        "Analista de finanzas",
+        "Casa y compras"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "kafka",
+        "name": "Kafka",
+        "agent": "hoard-kafka",
+        "method": "evidence",
+        "mission": "Extraer documentos, facturas, contratos y plazos conservando procedencia.",
+        "deliverable": "Campos con página o fragmento, fechas verificadas y ambigüedades de OCR por revisar.",
+        "related": [
+          "people",
+          "ledger",
+          "homehoard"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/testing/testing-evidence-collector.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "laplace",
+      "name": "Laplace's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Laplace's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "arithmetic",
+        "symbolic-math",
+        "units",
+        "statistics",
+        "dates",
+        "sql-over-files"
+      ],
+      "purpose": "Gives the model exact arithmetic, symbolic math, unit conversion, statistics, date arithmetic and read-only SQL over local files, with every computation logged and citable.",
+      "specialists": [
+        "Ingeniero de software",
+        "Analista de finanzas"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "laplace",
+        "name": "Laplace",
+        "agent": "hoard-laplace",
+        "method": "stats",
+        "mission": "Comprobar cálculo, unidades, estadística y consultas sobre archivos.",
+        "deliverable": "Procedimiento reproducible, unidades y supuestos; validar resultados numéricos contra una referencia.",
+        "related": [
+          "nightingale",
+          "galton"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/academic/academic-statistician.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "ledger",
+      "name": "Ledger's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Ledger's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "accounts",
+        "entries",
+        "categories",
+        "budgets",
+        "summary",
+        "reports",
+        "csv-import",
+        "transfers",
+        "mail-import",
+        "subscriptions",
+        "payment-receipts",
+        "auto-categorisation",
+        "notifications",
+        "windows-toast",
+        "family-agenda",
+        "hub-mail",
+        "tx-find",
+        "document-links",
+        "forecast",
+        "shared-expenses",
+        "income-from-sales",
+        "year-report"
+      ],
+      "purpose": "Household money ledger: accounts, categorised entries, monthly budgets, reports, bank CSV imports, and payments and subscriptions read from the mail account connected to Faustus, shared expenses split among people, a month-end balance forecast, income booked from sales, documents of other apps attached to movements, and a place on the family agenda (subscription renewals, trial ends, expected charges, money owed), all stored locally.",
+      "specialists": [
+        "Analista de finanzas",
+        "Casa y compras",
+        "Biblioteca de juegos"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "ledger",
+        "name": "Ledger",
+        "agent": "hoard-ledger",
+        "method": "finance",
+        "mission": "Conciliar gastos, presupuestos, suscripciones e ingresos registrados.",
+        "deliverable": "Totales por moneda y periodo, duplicados y diferencias con fuente; distinguir previsto de pagado.",
+        "related": [
+          "kafka",
+          "mercator"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/support/support-finance-tracker.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "links",
+      "name": "Links Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Links Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "bookmarks",
+        "read-later",
+        "extraction",
+        "tags",
+        "highlights",
+        "search",
+        "digest",
+        "import",
+        "watches",
+        "feeds",
+        "github-releases",
+        "page-changes",
+        "event-bus",
+        "media-download",
+        "video-download",
+        "audio-download",
+        "highlights-to-flashcards",
+        "resurface",
+        "daily-digest",
+        "job-events"
+      ],
+      "purpose": "Read-later bookmark library with extracted article text, tags and highlights, stored locally; also downloads the video, audio or photos behind a link (YouTube, X, Instagram, TikTok…) to disk.",
+      "specialists": [
+        "Investigador"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "links",
+        "name": "Links",
+        "agent": "hoard-links",
+        "method": "evidence",
+        "mission": "Guardar y seguir fuentes, feeds y extracción con fecha y origen.",
+        "deliverable": "Selección de fuentes primarias con cambios observados y documentos enlazados.",
+        "related": [
+          "borges",
+          "hypatia"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/testing/testing-evidence-collector.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "lumiere",
+      "name": "Lumiere's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Lumiere's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "video-editing",
+        "multitrack-timeline",
+        "media-library",
+        "proxies",
+        "ripple-edit",
+        "speed-ramp",
+        "speed-curves",
+        "nested-sequences",
+        "shape-masks",
+        "transitions",
+        "titles",
+        "picture-in-picture",
+        "keyframes",
+        "color-effects",
+        "audio-effects",
+        "text-based-editing",
+        "transcription",
+        "word-timestamps",
+        "filler-word-removal",
+        "silence-removal",
+        "jump-cuts",
+        "scene-detection",
+        "auto-reframe",
+        "vertical-video",
+        "captions",
+        "burned-subtitles",
+        "srt-export",
+        "beat-sync",
+        "highlights",
+        "shorts-from-long-video",
+        "loudness-normalization",
+        "audio-ducking",
+        "stabilization",
+        "freeze-frame",
+        "natural-language-edit-plans",
+        "undo-history",
+        "gpu-encoding",
+        "lossless-cut",
+        "gif-export",
+        "audio-export",
+        "edl-export",
+        "frame-snapshot",
+        "multicam",
+        "audio-sync",
+        "speaker-diarization",
+        "project-templates",
+        "music-picker",
+        "b-roll-suggestions",
+        "subtitle-translation",
+        "multi-format-export",
+        "webgl-preview",
+        "face-detection",
+        "model-highlights",
+        "timeline-import",
+        "fcp7-xml-import",
+        "edl-import",
+        "family-job-events",
+        "hub-notifications"
+      ],
+      "purpose": "A local video editor: media library with proxies, a multitrack timeline (cuts, ripple edits, speed and speed curves, nested sequences, shape masks, transitions, titles, picture-in-picture, keyframes, effects, multicam synced by sound), text-based editing on word-level transcripts with speaker separation, automatic tools (silence and filler-word removal, scene cuts, vertical reframing that follows faces, captions, cuts on the beat, highlights of long videos read by the local model, background music picking, b-roll suggestions, loudness matching, stabilization), project templates with slots, edit plans written from plain language, translated subtitles, several formats in one export and frame-exact ffmpeg renders with GPU encoding, for people and for assistants over MCP.",
+      "specialists": [
+        "Director de diseño",
+        "Narrativa y edición"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "lumiere",
+        "name": "Lumiere",
+        "agent": "hoard-lumiere",
+        "method": "visual",
+        "mission": "Crear montaje, clips, transcripción, reencuadre y subtítulos desde medios conservados.",
+        "deliverable": "Proyecto y vídeo reproducible con revisión de cortes, tiempos, subtítulos y formato final.",
+        "related": [
+          "prospero",
+          "vitruvius",
+          "mercator"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/design/design-visual-storyteller.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "mercator",
+      "name": "Mercator's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Mercator's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "project-metrics",
+        "user-growth",
+        "worker-traffic",
+        "product-catalog",
+        "sales-import",
+        "catalog-search",
+        "sales-query",
+        "posts",
+        "publishing-calendar",
+        "post-metrics",
+        "metrics-csv-import",
+        "best-hours",
+        "caption-counter",
+        "cults-catalog-sync",
+        "website-analytics",
+        "plausible-stats-v2",
+        "analytics-query-provenance",
+        "commercial-crm",
+        "companies",
+        "opportunities-pipeline",
+        "crm-followups",
+        "crm-activity-history",
+        "crm-export"
+      ],
+      "purpose": "Panel local de WatchHoard y BookHoard, catálogo y ventas de Cults, y calendario de publicación (posts, métricas, mejores horas).",
+      "specialists": [
+        "Taller 3D",
+        "Analista de finanzas"
+      ],
+      "new_domain_features": [
+        "Plausible queries",
+        "history/export",
+        "analytics UI",
+        "persistent commercial CRM",
+        "companies/deals and project filters",
+        "revision conflicts",
+        "real activity history",
+        "JSON/CSV exports",
+        "CRM family followups"
+      ],
+      "domain_evidence": "implemented and tested",
+      "domain_specialist": {
+        "hoard": "mercator",
+        "name": "Mercator",
+        "agent": "hoard-mercator",
+        "method": "sales",
+        "mission": "Seguir empresas y oportunidades de IA, desarrollo y 3D por proyecto, junto a productos y publicaciones.",
+        "deliverable": "Pipeline por moneda, próxima acción e historial real; ganado no es cobrado ni probabilidad una predicción.",
+        "related": [
+          "people",
+          "kafka",
+          "platos",
+          "ledger"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/sales/sales-pipeline-analyst.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "midas",
+      "name": "Midas's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Midas's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "market-data-snapshots",
+        "provider-search",
+        "series-compare",
+        "fx-conversion",
+        "investment-theses",
+        "invalidation-rules",
+        "thesis-checks",
+        "strategy-spec",
+        "backtest",
+        "sealed-holdout",
+        "walk-forward",
+        "permutation-test",
+        "bootstrap-ci",
+        "multiple-testing-log",
+        "committee-review",
+        "number-ledger",
+        "portfolio-analysis",
+        "report-export"
+      ],
+      "purpose": "A local market-research lab: frozen, provenance-tagged market snapshots from free providers, falsifiable investment theses with invalidation rules, an honest backtester with sealed holdout and overfitting checks, a number-checked advocate/risk/arbiter committee, and portfolio analysis. Research only: no trading, no advice.",
+      "specialists": [
+        "Analista de finanzas"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "midas",
+        "name": "Midas",
+        "agent": "hoard-midas",
+        "method": "stats",
+        "mission": "Evaluar hipótesis de mercado y backtests con datos y supuestos reproducibles.",
+        "deliverable": "Periodos, costes, sesgos y sensibilidad; no garantizar rentabilidad ni ejecutar operaciones.",
+        "related": [
+          "nightingale",
+          "laplace",
+          "ledger"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/academic/academic-statistician.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "nightingale",
+      "name": "Nightingale's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Nightingale's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "ingest",
+        "transform",
+        "quality-rules",
+        "charts",
+        "dashboards",
+        "dashboards-as-code",
+        "models",
+        "forecasting",
+        "sql-query",
+        "analysis-log",
+        "ask-your-data"
+      ],
+      "purpose": "The user's own data workbench: ingest files/folders/URLs into a local DuckDB workbench, clean data with versioned steps (undo/redo, lineage, replay), run quality rules, build charts and dashboards, and train quick models — every operation recorded and explained.",
+      "specialists": [
+        "Ingeniero de IA",
+        "Investigador",
+        "Analista de finanzas"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "nightingale",
+        "name": "Nightingale",
+        "agent": "hoard-nightingale",
+        "method": "stats",
+        "mission": "Ingerir datos, revisar calidad, calcular y visualizar con procedencia.",
+        "deliverable": "Dataset, reglas, consulta y gráfico comprobados, denominadores y límites de inferencia.",
+        "related": [
+          "laplace",
+          "atlas"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/academic/academic-statistician.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "people",
+      "name": "People's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\People's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "people",
+        "aliases",
+        "facts",
+        "interactions",
+        "reminders",
+        "birthdays",
+        "circles",
+        "search",
+        "conversation_brief",
+        "commitments",
+        "commitments_from_meetings",
+        "commitments_from_text",
+        "commitments_digest",
+        "people_from_minutes",
+        "last_contact_from_mail",
+        "gift_ideas",
+        "gift_watch",
+        "family_agenda",
+        "duplicate_people"
+      ],
+      "purpose": "Personal CRM: who people are, what to remember about them, when you last talked and what to follow up on, all stored locally.",
+      "specialists": [
+        "Memoria personal",
+        "Casa y compras",
+        "Empleo y proyectos"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "people",
+        "name": "People",
+        "agent": "hoard-people",
+        "method": "meeting",
+        "mission": "Relacionar contactos, conversaciones, compromisos y recordatorios desde evidencia.",
+        "deliverable": "Ficha y próxima acción con responsable y fecha explícitos; no inventar interacciones ni enviar mensajes.",
+        "related": [
+          "funes",
+          "mercator",
+          "kafka"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/project-management/project-management-meeting-notes-specialist.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "phileas",
+      "name": "Phileas's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Phileas's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "shipment-tracking",
+        "parcel-tracking",
+        "mail-import",
+        "order-tracking",
+        "tracking-number-detection",
+        "carrier-detection",
+        "ups",
+        "correos",
+        "dhl",
+        "17track",
+        "amazon-orders",
+        "pickup-points",
+        "delivery-estimates",
+        "eta-explanations",
+        "delivery-history",
+        "delivery-statistics",
+        "business-days",
+        "notifications",
+        "windows-toast",
+        "ntfy",
+        "telegram",
+        "email",
+        "dashboard",
+        "travel-bookings",
+        "trips",
+        "flight-check-in",
+        "booking-mail-import",
+        "trip-reminders",
+        "trip-expenses",
+        "expense-splitting",
+        "calendar-export",
+        "document-expiry-check",
+        "ledger-handoff",
+        "hub-notifications",
+        "hub-mail-gateway",
+        "family-agenda",
+        "shipment-events"
+      ],
+      "purpose": "A local shipment and trip tracker: reads shipping mail from the inbox configured in Faustus (shops, Amazon, carriers), turns it into shipments, follows each one with its carrier (UPS, Correos, DHL, 17TRACK for the rest) and estimates the arrival day from the carrier's date, the shop's date and promise and your own past parcels, with notifications by Windows toast, the family bus, ntfy, Telegram or email. It also reads travel bookings from the same mail (flights, trains, buses, ferries, car rental, stays), groups them into trips, reminds about online check-in, checks identity-document expiry through Kafka, shares trip expenses with balances and passes a person's share to Ledger, and exports trips to the calendar.",
+      "specialists": [
+        "Casa y compras",
+        "Empleo y proyectos"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "phileas",
+        "name": "Phileas",
+        "agent": "hoard-phileas",
+        "method": "project",
+        "mission": "Coordinar envíos, viajes, check-in y gastos compartidos.",
+        "deliverable": "Itinerario o envío con fechas, zona horaria, estado y comprobantes; no reservar sin encargo.",
+        "related": [
+          "kafka",
+          "ledger",
+          "people"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/project-management/project-management-project-shepherd.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "platos",
+      "name": "Plato's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Plato's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "documents",
+        "editor",
+        "exports"
+      ],
+      "purpose": "Create, edit and export documents through Plato's Hoard's editor API.",
+      "specialists": [
+        "Taller 3D",
+        "Empleo y proyectos"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "platos",
+        "name": "Plato",
+        "agent": "hoard-platos",
+        "method": "project",
+        "mission": "Preparar documentos y proyectos editables manteniendo estructura y referencias.",
+        "deliverable": "Documento editable y exportaciones abiertas con revisión de contenido y disposición.",
+        "related": [
+          "borges",
+          "atlas",
+          "cicero"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/project-management/project-management-project-shepherd.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "prospero",
+      "name": "Prospero's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Prospero's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "image generation",
+        "video editing",
+        "graphic design",
+        "audio analysis",
+        "text-to-speech",
+        "music composition",
+        "speech-to-text",
+        "voice cloning",
+        "dubbing",
+        "audiobooks",
+        "timeline export to the video editor",
+        "storyboard to production",
+        "cast import",
+        "job events",
+        "hub notifications",
+        "music video production pipeline",
+        "production recipes",
+        "quality assurance",
+        "animatic previews",
+        "character consistency",
+        "lora training",
+        "character library",
+        "narrated shorts",
+        "stock footage",
+        "script writing",
+        "captions",
+        "outpainting",
+        "expanded-canvas-mask",
+        "audio.cpp-local-tts",
+        "yovoice-adapter"
+      ],
+      "purpose": "Directs a media studio (ComfyUI, ffmpeg, TTS) to produce consistent characters (model sheets, local LoRA training, portable character packs), photocards, album art, beat-cut music videos as resumable productions and reusable recipes, narrated vertical shorts from a topic or a script (voice-over, word-by-word captions, stock or generated pictures, ducked music), cloned voices, audiobooks and dubbed video.",
+      "specialists": [
+        "Director de diseño",
+        "Narrativa y edición"
+      ],
+      "new_domain_features": [
+        "outpainting",
+        "Yovoice adapter",
+        "UI action"
+      ],
+      "domain_evidence": "implemented and tested",
+      "domain_specialist": {
+        "hoard": "prospero",
+        "name": "Prospero",
+        "agent": "hoard-prospero",
+        "method": "visual",
+        "mission": "Preparar recursos de imagen, voz y producciones con motores configurados.",
+        "deliverable": "Receta, modelo disponible, archivos generados y verificación de medios; distinguir job encolado de resultado.",
+        "related": [
+          "lumiere",
+          "vitruvius",
+          "mercator"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/design/design-visual-storyteller.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "pygmalion",
+      "name": "Pygmalion's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Pygmalion's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "fine-tuning",
+        "lora",
+        "qlora",
+        "datasets",
+        "synthetic-data",
+        "dedupe",
+        "pii-scan",
+        "model-merge",
+        "slerp",
+        "ties",
+        "dare",
+        "context-extension",
+        "yarn",
+        "gguf",
+        "quantization",
+        "imatrix",
+        "perplexity",
+        "evaluation",
+        "lineage",
+        "recipes",
+        "ollama-publish",
+        "llama-cpp-backend",
+        "huggingface-download",
+        "vram-estimate",
+        "gpu-lease",
+        "job-queue",
+        "job-events",
+        "dashboard"
+      ],
+      "purpose": "A local model tuning and extension studio: it prepares datasets (from files, the family's other apps or synthetic generation with a teacher model), trains LoRA and QLoRA adapters on the allowed GPUs, merges adapters and whole models (linear, slerp, ties, dare), extends the context length with YaRN, converts to GGUF, builds importance matrices, quantizes, measures perplexity, evaluates every result against its baseline through Galton's Hoard, and publishes the winner to Ollama or as a llama.cpp backend for Faustus. Every artifact keeps its lineage and a recipe that can be exported and replayed. All jobs queue on two lanes (gpu and cpu), hold a GPU lease from the hub while they run, can be cancelled and resumed, and everything stays on the computer.",
+      "specialists": [
+        "Ingeniero de IA"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "pygmalion",
+        "name": "Pygmalion",
+        "agent": "hoard-pygmalion",
+        "method": "ai",
+        "mission": "Preparar datasets, LoRA, mezclas y GGUF con linaje preservado.",
+        "deliverable": "Datos y licencia, receta y revisiones, exportación comprobada y comparación antes/después.",
+        "related": [
+          "galton",
+          "nightingale",
+          "cassandra"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/engineering/engineering-ai-engineer.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "scheherazade",
+      "name": "Scheherazade's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Scheherazade's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "storytelling",
+        "world-state",
+        "continuity",
+        "dice",
+        "tabletop",
+        "narration"
+      ],
+      "purpose": "Keeps a story world's state (entities, facts, threads, dice) outside the model and hands the narrator exactly the slice it needs for the next scene.",
+      "specialists": [
+        "Narrativa y edición"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "scheherazade",
+        "name": "Scheherazade",
+        "agent": "hoard-scheherazade",
+        "method": "narrative",
+        "mission": "Mantener canon, hechos, cronología e hilos narrativos con evidencia.",
+        "deliverable": "Mapa de continuidad y contradicciones con referencias; cambios al canon siempre explícitos.",
+        "related": [
+          "writer",
+          "prospero"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/academic/academic-narratologist.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "tantalus",
+      "name": "Tantalus's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Tantalus's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "restock-watch",
+        "price-tracking",
+        "price-threshold-alerts",
+        "preorder-detection",
+        "new-sku-detection",
+        "retailer-search-watch",
+        "confidence-scoring",
+        "revalidation",
+        "anti-scalper-policy",
+        "fetch-ladder",
+        "headless-browser-fallback",
+        "needs-human-handoff",
+        "product-extraction",
+        "json-ld",
+        "nvidia-marketplace-api",
+        "secondhand-search",
+        "wallapop",
+        "facebook-marketplace",
+        "listing-scoring",
+        "free-books-radar",
+        "information-sentry",
+        "page-diff",
+        "feed-watch",
+        "web-search",
+        "url-discovery",
+        "notifications",
+        "windows-toast",
+        "ntfy",
+        "telegram",
+        "email",
+        "dashboard",
+        "declarative-config",
+        "mail-deals",
+        "mailbox-read-only",
+        "wishlist-match",
+        "game-store-deals",
+        "book-retailer-deals",
+        "mail-noise-report",
+        "aggregator-radar",
+        "release-calendar",
+        "shop-stock-by-chain",
+        "visible-window-tier",
+        "hub-notifications",
+        "hub-mail-gateway",
+        "family-agenda",
+        "purchase-matching",
+        "gift-idea-watchers",
+        "budget-in-alerts"
+      ],
+      "purpose": "A local product watcher: restocks, price drops, pre-orders and new SKUs at retailers (typed events with a confidence score, revalidation and cooldown), shop-by-shop stock (chains such as Carrefour included) and release days of trading-card products from public stock aggregators, second-hand finds on Wallapop and Facebook Marketplace scored by explainable packs, material news from official pages, feeds and searches, and the sale mails of game stores and book retailers read (read-only) from the Faustus mailbox and matched to wishlists and watchers, plus a mail noise report, with a dashboard of what is new and notifications by Windows toast, the family bus, ntfy, Telegram or email.",
+      "specialists": [
+        "Casa y compras",
+        "Biblioteca de juegos"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "tantalus",
+        "name": "Tantalus",
+        "agent": "hoard-tantalus",
+        "method": "finance",
+        "mission": "Comparar precios, disponibilidad, ofertas y lanzamientos con fecha de consulta.",
+        "deliverable": "Opciones con fuente, moneda, coste total conocido y disponibilidad; no asumir descuentos vigentes.",
+        "related": [
+          "ledger",
+          "gamerhoard",
+          "homehoard"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/support/support-finance-tracker.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "vitruvius",
+      "name": "Vitruvius's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Vitruvius's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "design-criterion-library",
+        "design-rules",
+        "style-catalog",
+        "palette-catalog",
+        "font-pairing-catalog",
+        "html-render",
+        "url-render",
+        "screenshot-capture",
+        "scroll-video-capture",
+        "design-lint",
+        "design-critique",
+        "vision-critique",
+        "render-diff",
+        "design-tokens",
+        "oklch-palettes",
+        "tailwind-export",
+        "css-export",
+        "reference-gallery",
+        "source-ingestion",
+        "motion-compositions",
+        "motion-timeline",
+        "motion-mp4",
+        "motion-html",
+        "composition-revisions"
+      ],
+      "purpose": "A local frontend-design workbench: a criterion library ingested from open design-skill repos, a render-capture-critique loop on real Chromium, a design-system (tokens) generator with a live playground, and a reference gallery of captured websites.",
+      "specialists": [
+        "Director de diseño"
+      ],
+      "new_domain_features": [
+        "motion compositions",
+        "HTML/SVG preview",
+        "MP4 export",
+        "UI/editor"
+      ],
+      "domain_evidence": "implemented and tested",
+      "domain_specialist": {
+        "hoard": "vitruvius",
+        "name": "Vitruvius",
+        "agent": "hoard-vitruvius",
+        "method": "design",
+        "mission": "Diseñar y revisar interfaces, tokens y movimiento conforme al brief.",
+        "deliverable": "Sistema y estados comprobados, capturas de tamaños pertinentes y exportación temporal verificada.",
+        "related": [
+          "prospero",
+          "lumiere",
+          "cicero"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/design/design-ui-designer.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "vulcan",
+      "name": "Vulcan's Hoard",
+      "kind": "app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Vulcan's Hoard\\faustus-plugin.json",
+      "capabilities": [
+        "3d-models",
+        "stl",
+        "3mf",
+        "obj",
+        "mesh-metrics",
+        "thumbnails",
+        "duplicates",
+        "near-duplicates",
+        "listings",
+        "tags",
+        "notes",
+        "collections",
+        "albums",
+        "folder-scan",
+        "folder-watch",
+        "fts-search",
+        "stats",
+        "folder-listings",
+        "cults3d",
+        "listing-validator",
+        "listing-drafting",
+        "listing-export",
+        "collection-organizer",
+        "organize-plan",
+        "organize-undo",
+        "sheets-batch",
+        "skeleton-listings"
+      ],
+      "purpose": "The user's personal library of 3D-printable models: folders of STL, 3MF and OBJ files scanned locally (dimensions, triangles, watertightness, thumbnails, duplicates) so the assistant can find models and write their marketplace listings. It also sorts a loose folder into one folder per group from a list the user pastes (plan, apply, undo; never deletes or overwrites) and drafts the sheet of every folder in one call.",
+      "specialists": [
+        "Taller 3D"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "vulcan",
+        "name": "Vulcan",
+        "agent": "hoard-vulcan",
+        "method": "evidence",
+        "mission": "Catalogar modelos STL/3MF/OBJ, medidas, duplicados y fichas sin alterar originales.",
+        "deliverable": "Ficha con medidas calculadas, previews y derivados enlazados; no inventar dimensiones de catálogo.",
+        "related": [
+          "gepetto",
+          "heron",
+          "daguerre",
+          "mercator"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/testing/testing-evidence-collector.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    },
+    {
+      "id": "writer",
+      "name": "Writer's Hoard",
+      "kind": "window-app",
+      "manifest": "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Writers hoard desktop\\faustus-plugin.json",
+      "capabilities": [
+        "documents",
+        "notes",
+        "outline",
+        "search",
+        "manuscripts",
+        "worldbuilding",
+        "ai-bridge"
+      ],
+      "purpose": "Draft, edit and query manuscripts through the Writer's Hoard AI bridge: projects, chapters, notes, outline, search, worldbuilding.",
+      "specialists": [
+        "Narrativa y edición"
+      ],
+      "new_domain_features": [],
+      "domain_evidence": "existing manifest; not an end-to-end test of every tool",
+      "domain_specialist": {
+        "hoard": "writer",
+        "name": "Writer",
+        "agent": "hoard-writer",
+        "method": "narrative",
+        "mission": "Redactar y revisar capítulos, notas y worldbuilding respetando voz y canon.",
+        "deliverable": "Manuscrito versionado con continuidad, cambios justificables y referencias al canon.",
+        "related": [
+          "scheherazade",
+          "platos",
+          "cicero"
+        ],
+        "source": "https://github.com/msitarzewski/agency-agents/blob/83294689da3832c0a9f223221148c411fd3eacc0/academic/academic-narratologist.md"
+      },
+      "common_extensions": [
+        "domain-specific procedure and output contract through existing Faustus runner; tools subject to session permissions"
+      ]
+    }
+  ],
+  "coworker_templates": [
+    {
+      "name": "Director de diseño",
+      "agent": "implementer",
+      "responsibility": "Diseñar interfaces y movimiento, revisar capturas reales y mejorar hasta satisfacer el brief. Usar Vitruvius para criterio, tokens, crítica y composiciones; Prospero para generar recursos y Lumiere para el montaje.",
+      "hoards": [
+        "vitruvius",
+        "prospero",
+        "lumiere",
+        "cicero"
+      ]
+    },
+    {
+      "name": "Ingeniero de IA",
+      "agent": "implementer",
+      "responsibility": "Preparar datasets con procedencia, medir modelos contra una base, detectar regresiones y conservar recetas reproducibles. Usar Nightingale, Pygmalion y Galton; comprobar disponibilidad con Cassandra y el Hub antes de reservar GPU.",
+      "hoards": [
+        "nightingale",
+        "pygmalion",
+        "galton",
+        "cassandra",
+        "atlas"
+      ]
+    },
+    {
+      "name": "Taller 3D",
+      "agent": "implementer",
+      "responsibility": "Conservar modelos, poses, texturas y colores originales. Crear derivados editables; verificar geometría, exportaciones STL y renders con evidencia visual. Usar Heron para sólidos con medidas y exportación STEP, Gepetto para modelado artístico. Catalogar y preparar fichas sin inventar medidas ni publicar por defecto.",
+      "hoards": [
+        "heron",
+        "gepetto",
+        "platos",
+        "vulcan",
+        "daguerre",
+        "mercator",
+        "atlas"
+      ]
+    },
+    {
+      "name": "Centro de mando",
+      "agent": "reviewer",
+      "responsibility": "Revisar salud de servicios, trabajo pendiente, espacio en disco y agenda. Informar de cambios accionables con evidencia; respetar pausas manuales y procesos ajenos. No borrar, detener servicios ni enviar mensajes sin una petición concreta.",
+      "hoards": [
+        "cassandra",
+        "diskhoard",
+        "hoardhub",
+        "funes",
+        "echo",
+        "atlas"
+      ]
+    },
+    {
+      "name": "Investigador",
+      "agent": "reviewer",
+      "responsibility": "Buscar fuentes primarias, extraer y citar evidencia, distinguir hechos de inferencias y guardar material con procedencia. Consultar Reach, Borges, Kafka y Links; organizar estudio y análisis con Hypatia y Nightingale.",
+      "hoards": [
+        "borges",
+        "kafka",
+        "links",
+        "hypatia",
+        "nightingale"
+      ]
+    },
+    {
+      "name": "Ingeniero de software",
+      "agent": "implementer",
+      "responsibility": "Consultar contratos y documentación vigentes con Babel; comprobar unidades y cálculos con Laplace. Conservar revisiones en Atlas, verificar servicios con Cassandra y evaluar cambios en el código real con pruebas apropiadas.",
+      "hoards": [
+        "babel",
+        "laplace",
+        "atlas",
+        "cassandra",
+        "galton"
+      ]
+    },
+    {
+      "name": "Memoria personal",
+      "agent": "reviewer",
+      "responsibility": "Recuperar contexto desde actividad, pantalla y portapapeles sólo dentro de los permisos y exclusiones existentes. Citar la evidencia y proponer actualizaciones revisables en Dorian; nunca convertir inferencias en hechos personales guardados sin revisión.",
+      "hoards": [
+        "argus",
+        "echo",
+        "funes",
+        "dorian",
+        "people"
+      ]
+    },
+    {
+      "name": "Analista de finanzas",
+      "agent": "reviewer",
+      "responsibility": "Relacionar gastos, documentos, ventas y estadísticas reproducibles con Ledger, Kafka, Mercator, Nightingale y Laplace. Usar Midas para hipótesis y backtests con procedencia. No ejecutar operaciones financieras ni presentar resultados históricos como rentabilidad garantizada.",
+      "hoards": [
+        "ledger",
+        "kafka",
+        "mercator",
+        "nightingale",
+        "laplace",
+        "midas"
+      ]
+    },
+    {
+      "name": "Casa y compras",
+      "agent": "reviewer",
+      "responsibility": "Relacionar inventario, garantías, mantenimiento, compras, envíos y menú con HomeHoard, Kafka, Tantalus, Phileas y CookHoard. Comprobar presupuesto con Ledger y contexto de regalos con People. Mostrar propuestas y fuentes; comprar o enviar mensajes sólo ante una petición concreta.",
+      "hoards": [
+        "homehoard",
+        "cookhoard",
+        "kafka",
+        "tantalus",
+        "phileas",
+        "ledger",
+        "people"
+      ]
+    },
+    {
+      "name": "Empleo y proyectos",
+      "agent": "implementer",
+      "responsibility": "Preparar candidaturas con Jobhunter, documentación con Plato y referencias con Borges. Relacionar contactos con People y viajes con Phileas. Conservar borradores y evidencia; enviar candidaturas o contactar a terceros sólo cuando esté solicitado.",
+      "hoards": [
+        "jobhunter",
+        "platos",
+        "borges",
+        "people",
+        "phileas"
+      ]
+    },
+    {
+      "name": "Narrativa y edición",
+      "agent": "implementer",
+      "responsibility": "Conservar canon y continuidad con Scheherazade; redactar y revisar manuscritos con Writer. Convertirlos en presentaciones con Cicero o producciones de voz y vídeo con Prospero y Lumiere, manteniendo referencias y versiones.",
+      "hoards": [
+        "scheherazade",
+        "writer",
+        "cicero",
+        "prospero",
+        "lumiere"
+      ]
+    },
+    {
+      "name": "Biblioteca de juegos",
+      "agent": "reviewer",
+      "responsibility": "Consultar biblioteca, partidas y backlog con GamerHoard por MCP; relacionar ofertas y lanzamientos con Tantalus y presupuestos con Ledger. No asumir que un juego está instalado ni iniciar compras a partir de su ficha.",
+      "hoards": [
+        "gamerhoard",
+        "tantalus",
+        "ledger"
+      ]
+    },
+    {
+      "name": "Especialista de Argus",
+      "agent": "hoard-argus",
+      "responsibility": "Recuperar contexto de pantalla con OCR, ventanas y franjas horarias dentro de las exclusiones. Entrega: Cronología con capturas citadas, hora, aplicación y huecos de cobertura.",
+      "hoards": [
+        "argus",
+        "funes",
+        "dorian"
+      ]
+    },
+    {
+      "name": "Especialista de Atlas",
+      "agent": "hoard-atlas",
+      "responsibility": "Organizar archivos compartidos, revisiones y derivados sin reescribir originales. Entrega: Mapa de entradas y derivados con rutas resueltas, revisiones y procedencia.",
+      "hoards": [
+        "atlas",
+        "hoardhub"
+      ]
+    },
+    {
+      "name": "Especialista de Babel",
+      "agent": "hoard-babel",
+      "responsibility": "Verificar APIs instaladas, firmas y traducciones contra los docsets del proyecto. Entrega: Contratos y diferencias con versión exacta, ejemplos comprobados y referencias.",
+      "hoards": [
+        "babel",
+        "laplace",
+        "atlas"
+      ]
+    },
+    {
+      "name": "Especialista de Borges",
+      "agent": "hoard-borges",
+      "responsibility": "Responder desde biblioteca y pasajes recuperados, con citas localizables. Entrega: Síntesis con documento, página o sección y evidencia a favor y en contra.",
+      "hoards": [
+        "borges",
+        "links",
+        "hypatia"
+      ]
+    },
+    {
+      "name": "Especialista de Cassandra",
+      "agent": "hoard-cassandra",
+      "responsibility": "Diagnosticar servicios, GPU e incidentes correlacionando logs y cambios. Entrega: Línea temporal, hipótesis ordenadas y comprobación de recuperación; no detener procesos ajenos.",
+      "hoards": [
+        "cassandra",
+        "hoardhub",
+        "diskhoard"
+      ]
+    },
+    {
+      "name": "Especialista de Cicero",
+      "agent": "hoard-cicero",
+      "responsibility": "Construir una presentación desde fuentes conservando narrativa y referencias. Entrega: Guion y deck editable con exportación abierta y revisión visual de todas las diapositivas.",
+      "hoards": [
+        "cicero",
+        "borges",
+        "platos",
+        "vitruvius"
+      ]
+    },
+    {
+      "name": "Especialista de Cookhoard",
+      "agent": "hoard-cookhoard",
+      "responsibility": "Relacionar recetas, existencias, menú y coste real de la compra. Entrega: Menú con cantidades, déficits y costes separados de estimaciones; no asumir stock.",
+      "hoards": [
+        "cookhoard",
+        "ledger",
+        "tantalus"
+      ]
+    },
+    {
+      "name": "Especialista de Daguerre",
+      "agent": "hoard-daguerre",
+      "responsibility": "Encontrar referencias visuales y organizar álbumes, EXIF y duplicados. Entrega: Selección con ruta y metadata, hoja de contacto revisada y candidatos a duplicado sin borrado.",
+      "hoards": [
+        "daguerre",
+        "vulcan",
+        "atlas"
+      ]
+    },
+    {
+      "name": "Especialista de Diskhoard",
+      "agent": "hoard-diskhoard",
+      "responsibility": "Analizar uso de disco y archivos grandes con alcance explícito. Entrega: Distribución y candidatos de limpieza con tamaño y ruta; distinguir propuesta de borrado ejecutado.",
+      "hoards": [
+        "diskhoard",
+        "cassandra",
+        "atlas"
+      ]
+    },
+    {
+      "name": "Especialista de Dorian",
+      "agent": "hoard-dorian",
+      "responsibility": "Reconstruir contexto personal desde evidencia y proponer actualizaciones revisables. Entrega: Hechos citados, conflictos y propuesta; no guardar inferencias personales como hechos.",
+      "hoards": [
+        "dorian",
+        "argus",
+        "funes",
+        "people"
+      ]
+    },
+    {
+      "name": "Especialista de Echo",
+      "agent": "hoard-echo",
+      "responsibility": "Recuperar fragmentos del portapapeles respetando detección sensible y permisos. Entrega: Fragmentos con fecha y procedencia, evitando trasladar secretos al contexto persistente.",
+      "hoards": [
+        "echo",
+        "funes",
+        "dorian"
+      ]
+    },
+    {
+      "name": "Especialista de Funes",
+      "agent": "hoard-funes",
+      "responsibility": "Convertir actividad, notas o transcripción de reunión en contexto recuperable. Entrega: Decisiones, acciones, dueños, fechas y preguntas con referencias a la entrada completa.",
+      "hoards": [
+        "funes",
+        "people",
+        "kafka"
+      ]
+    },
+    {
+      "name": "Especialista de Galton",
+      "agent": "hoard-galton",
+      "responsibility": "Comparar modelos y rutas con datasets, configuración y benchmarks reproducibles. Entrega: Base, candidato, métricas y regresiones con receta y muestras; no confundir catálogo con disponibilidad.",
+      "hoards": [
+        "galton",
+        "pygmalion",
+        "nightingale",
+        "cassandra"
+      ]
+    },
+    {
+      "name": "Especialista de Gamerhoard",
+      "agent": "hoard-gamerhoard",
+      "responsibility": "Ordenar biblioteca, sesiones y backlog según preferencias explícitas. Entrega: Plan de juego con propiedad, instalación y precio distinguidos; no iniciar compras.",
+      "hoards": [
+        "gamerhoard",
+        "tantalus",
+        "ledger"
+      ]
+    },
+    {
+      "name": "Especialista de Gepetto",
+      "agent": "hoard-gepetto",
+      "responsibility": "Desarrollar proyectos de modelado artístico preservando material original. Entrega: Derivados editables, renders revisados y comprobación de geometría y exportaciones.",
+      "hoards": [
+        "gepetto",
+        "vulcan",
+        "heron",
+        "atlas"
+      ]
+    },
+    {
+      "name": "Especialista de Heron",
+      "agent": "hoard-heron",
+      "responsibility": "Construir sólidos CAD con medidas y operaciones declaradas. Entrega: Receta, unidades, volumen esperado, STEP reimportado y STL comprobado; no afirmar simulación.",
+      "hoards": [
+        "heron",
+        "vulcan",
+        "laplace"
+      ]
+    },
+    {
+      "name": "Especialista de Hoard Hub",
+      "agent": "hoard-hoardhub",
+      "responsibility": "Descubrir proveedores y preparar recorridos entre Hoards sin duplicar dueños del dato. Entrega: Plan por etapa con herramienta, esquema, requisitos, huecos y recibos de lo realmente ejecutado.",
+      "hoards": [
+        "hoardhub",
+        "atlas",
+        "cassandra"
+      ]
+    },
+    {
+      "name": "Especialista de Homehoard",
+      "agent": "hoard-homehoard",
+      "responsibility": "Gestionar inventario doméstico, garantía y mantenimiento desde documentos reales. Entrega: Ficha enlazada a compra y garantía, próximos mantenimientos y datos que faltan.",
+      "hoards": [
+        "homehoard",
+        "kafka",
+        "phileas",
+        "ledger"
+      ]
+    },
+    {
+      "name": "Especialista de Hypatia",
+      "agent": "hoard-hypatia",
+      "responsibility": "Preparar estudio y evaluación desde material con citas. Entrega: Guía, preguntas y criterios de corrección sustentados en pasajes; huecos identificados.",
+      "hoards": [
+        "hypatia",
+        "borges",
+        "links"
+      ]
+    },
+    {
+      "name": "Especialista de Jobhunter",
+      "agent": "hoard-jobhunter",
+      "responsibility": "Relacionar ofertas, contexto y candidaturas conservando borradores y evidencia. Entrega: Adecuación a oferta, documentos y estado de candidatura; enviar sólo ante encargo explícito.",
+      "hoards": [
+        "jobhunter",
+        "people",
+        "platos",
+        "borges"
+      ]
+    },
+    {
+      "name": "Especialista de Kafka",
+      "agent": "hoard-kafka",
+      "responsibility": "Extraer documentos, facturas, contratos y plazos conservando procedencia. Entrega: Campos con página o fragmento, fechas verificadas y ambigüedades de OCR por revisar.",
+      "hoards": [
+        "kafka",
+        "people",
+        "ledger",
+        "homehoard"
+      ]
+    },
+    {
+      "name": "Especialista de Laplace",
+      "agent": "hoard-laplace",
+      "responsibility": "Comprobar cálculo, unidades, estadística y consultas sobre archivos. Entrega: Procedimiento reproducible, unidades y supuestos; validar resultados numéricos contra una referencia.",
+      "hoards": [
+        "laplace",
+        "nightingale",
+        "galton"
+      ]
+    },
+    {
+      "name": "Especialista de Ledger",
+      "agent": "hoard-ledger",
+      "responsibility": "Conciliar gastos, presupuestos, suscripciones e ingresos registrados. Entrega: Totales por moneda y periodo, duplicados y diferencias con fuente; distinguir previsto de pagado.",
+      "hoards": [
+        "ledger",
+        "kafka",
+        "mercator"
+      ]
+    },
+    {
+      "name": "Especialista de Links",
+      "agent": "hoard-links",
+      "responsibility": "Guardar y seguir fuentes, feeds y extracción con fecha y origen. Entrega: Selección de fuentes primarias con cambios observados y documentos enlazados.",
+      "hoards": [
+        "links",
+        "borges",
+        "hypatia"
+      ]
+    },
+    {
+      "name": "Especialista de Lumiere",
+      "agent": "hoard-lumiere",
+      "responsibility": "Crear montaje, clips, transcripción, reencuadre y subtítulos desde medios conservados. Entrega: Proyecto y vídeo reproducible con revisión de cortes, tiempos, subtítulos y formato final.",
+      "hoards": [
+        "lumiere",
+        "prospero",
+        "vitruvius",
+        "mercator"
+      ]
+    },
+    {
+      "name": "Especialista de Mercator",
+      "agent": "hoard-mercator",
+      "responsibility": "Seguir empresas y oportunidades de IA, desarrollo y 3D por proyecto, junto a productos y publicaciones. Entrega: Pipeline por moneda, próxima acción e historial real; ganado no es cobrado ni probabilidad una predicción.",
+      "hoards": [
+        "mercator",
+        "people",
+        "kafka",
+        "platos",
+        "ledger"
+      ]
+    },
+    {
+      "name": "Especialista de Midas",
+      "agent": "hoard-midas",
+      "responsibility": "Evaluar hipótesis de mercado y backtests con datos y supuestos reproducibles. Entrega: Periodos, costes, sesgos y sensibilidad; no garantizar rentabilidad ni ejecutar operaciones.",
+      "hoards": [
+        "midas",
+        "nightingale",
+        "laplace",
+        "ledger"
+      ]
+    },
+    {
+      "name": "Especialista de Nightingale",
+      "agent": "hoard-nightingale",
+      "responsibility": "Ingerir datos, revisar calidad, calcular y visualizar con procedencia. Entrega: Dataset, reglas, consulta y gráfico comprobados, denominadores y límites de inferencia.",
+      "hoards": [
+        "nightingale",
+        "laplace",
+        "atlas"
+      ]
+    },
+    {
+      "name": "Especialista de People",
+      "agent": "hoard-people",
+      "responsibility": "Relacionar contactos, conversaciones, compromisos y recordatorios desde evidencia. Entrega: Ficha y próxima acción con responsable y fecha explícitos; no inventar interacciones ni enviar mensajes.",
+      "hoards": [
+        "people",
+        "funes",
+        "mercator",
+        "kafka"
+      ]
+    },
+    {
+      "name": "Especialista de Phileas",
+      "agent": "hoard-phileas",
+      "responsibility": "Coordinar envíos, viajes, check-in y gastos compartidos. Entrega: Itinerario o envío con fechas, zona horaria, estado y comprobantes; no reservar sin encargo.",
+      "hoards": [
+        "phileas",
+        "kafka",
+        "ledger",
+        "people"
+      ]
+    },
+    {
+      "name": "Especialista de Plato",
+      "agent": "hoard-platos",
+      "responsibility": "Preparar documentos y proyectos editables manteniendo estructura y referencias. Entrega: Documento editable y exportaciones abiertas con revisión de contenido y disposición.",
+      "hoards": [
+        "platos",
+        "borges",
+        "atlas",
+        "cicero"
+      ]
+    },
+    {
+      "name": "Especialista de Prospero",
+      "agent": "hoard-prospero",
+      "responsibility": "Preparar recursos de imagen, voz y producciones con motores configurados. Entrega: Receta, modelo disponible, archivos generados y verificación de medios; distinguir job encolado de resultado.",
+      "hoards": [
+        "prospero",
+        "lumiere",
+        "vitruvius",
+        "mercator"
+      ]
+    },
+    {
+      "name": "Especialista de Pygmalion",
+      "agent": "hoard-pygmalion",
+      "responsibility": "Preparar datasets, LoRA, mezclas y GGUF con linaje preservado. Entrega: Datos y licencia, receta y revisiones, exportación comprobada y comparación antes/después.",
+      "hoards": [
+        "pygmalion",
+        "galton",
+        "nightingale",
+        "cassandra"
+      ]
+    },
+    {
+      "name": "Especialista de Scheherazade",
+      "agent": "hoard-scheherazade",
+      "responsibility": "Mantener canon, hechos, cronología e hilos narrativos con evidencia. Entrega: Mapa de continuidad y contradicciones con referencias; cambios al canon siempre explícitos.",
+      "hoards": [
+        "scheherazade",
+        "writer",
+        "prospero"
+      ]
+    },
+    {
+      "name": "Especialista de Tantalus",
+      "agent": "hoard-tantalus",
+      "responsibility": "Comparar precios, disponibilidad, ofertas y lanzamientos con fecha de consulta. Entrega: Opciones con fuente, moneda, coste total conocido y disponibilidad; no asumir descuentos vigentes.",
+      "hoards": [
+        "tantalus",
+        "ledger",
+        "gamerhoard",
+        "homehoard"
+      ]
+    },
+    {
+      "name": "Especialista de Vitruvius",
+      "agent": "hoard-vitruvius",
+      "responsibility": "Diseñar y revisar interfaces, tokens y movimiento conforme al brief. Entrega: Sistema y estados comprobados, capturas de tamaños pertinentes y exportación temporal verificada.",
+      "hoards": [
+        "vitruvius",
+        "prospero",
+        "lumiere",
+        "cicero"
+      ]
+    },
+    {
+      "name": "Especialista de Vulcan",
+      "agent": "hoard-vulcan",
+      "responsibility": "Catalogar modelos STL/3MF/OBJ, medidas, duplicados y fichas sin alterar originales. Entrega: Ficha con medidas calculadas, previews y derivados enlazados; no inventar dimensiones de catálogo.",
+      "hoards": [
+        "vulcan",
+        "gepetto",
+        "heron",
+        "daguerre",
+        "mercator"
+      ]
+    },
+    {
+      "name": "Especialista de Writer",
+      "agent": "hoard-writer",
+      "responsibility": "Redactar y revisar capítulos, notas y worldbuilding respetando voz y canon. Entrega: Manuscrito versionado con continuidad, cambios justificables y referencias al canon.",
+      "hoards": [
+        "writer",
+        "scheherazade",
+        "platos",
+        "cicero"
+      ]
+    }
+  ],
+  "workflow_plans": [
+    {
+      "id": "design-motion",
+      "title": "Diseño y movimiento",
+      "stages": [
+        {
+          "stage": 1,
+          "needs": [
+            "design-criterion-library",
+            "design-tokens"
+          ],
+          "providers": [
+            {
+              "app": "vitruvius",
+              "name": "Vitruvius's Hoard",
+              "matches": [
+                "design-criterion-library",
+                "design-tokens"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5191"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 2,
+          "needs": [
+            "image generation"
+          ],
+          "providers": [
+            {
+              "app": "prospero",
+              "name": "Prospero's Hoard",
+              "matches": [
+                "image generation"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:8815"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 3,
+          "needs": [
+            "motion-compositions"
+          ],
+          "providers": [
+            {
+              "app": "vitruvius",
+              "name": "Vitruvius's Hoard",
+              "matches": [
+                "motion-compositions"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5191"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 4,
+          "needs": [
+            "video-editing"
+          ],
+          "providers": [
+            {
+              "app": "lumiere",
+              "name": "Lumiere's Hoard",
+              "matches": [
+                "video-editing"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5198"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 5,
+          "needs": [
+            "posts"
+          ],
+          "providers": [
+            {
+              "app": "mercator",
+              "name": "Mercator's Hoard",
+              "matches": [
+                "posts"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5195"
+            }
+          ],
+          "missing": []
+        }
+      ]
+    },
+    {
+      "id": "ai-engineering",
+      "title": "Dataset → modelo → evaluación",
+      "stages": [
+        {
+          "stage": 1,
+          "needs": [
+            "ingest",
+            "quality-rules"
+          ],
+          "providers": [
+            {
+              "app": "nightingale",
+              "name": "Nightingale's Hoard",
+              "matches": [
+                "ingest",
+                "quality-rules"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5189"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 2,
+          "needs": [
+            "fine-tuning",
+            "lineage"
+          ],
+          "providers": [
+            {
+              "app": "pygmalion",
+              "name": "Pygmalion's Hoard",
+              "matches": [
+                "fine-tuning",
+                "lineage"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5202"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 3,
+          "needs": [
+            "model-evaluation",
+            "regression-watch"
+          ],
+          "providers": [
+            {
+              "app": "galton",
+              "name": "Galton's Hoard",
+              "matches": [
+                "model-evaluation",
+                "regression-watch"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5201"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 4,
+          "needs": [
+            "service-status",
+            "gpu-timeline"
+          ],
+          "providers": [
+            {
+              "app": "cassandra",
+              "name": "Cassandra's Hoard",
+              "matches": [
+                "service-status",
+                "gpu-timeline"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5190"
+            }
+          ],
+          "missing": []
+        }
+      ]
+    },
+    {
+      "id": "3d-production",
+      "title": "Modelo 3D → catálogo → publicación",
+      "stages": [
+        {
+          "stage": 1,
+          "needs": [
+            "projects",
+            "analysis",
+            "jobs"
+          ],
+          "providers": [
+            {
+              "app": "gepetto",
+              "name": "Gepetto's Hoard",
+              "matches": [
+                "projects",
+                "analysis",
+                "jobs"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:8767"
+            },
+            {
+              "app": "atlas",
+              "name": "Atlas's Hoard",
+              "matches": [
+                "projects"
+              ],
+              "coverage": 0.3333333333333333,
+              "url": "http://127.0.0.1:5203"
+            },
+            {
+              "app": "hoardhub",
+              "name": "Hoard Hub",
+              "matches": [
+                "jobs"
+              ],
+              "coverage": 0.3333333333333333,
+              "url": "http://127.0.0.1:8810"
+            },
+            {
+              "app": "jobhunter",
+              "name": "Jobhunter's Hoard",
+              "matches": [
+                "jobs"
+              ],
+              "coverage": 0.3333333333333333,
+              "url": "http://127.0.0.1:5178"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 2,
+          "needs": [
+            "3d-models",
+            "mesh-metrics"
+          ],
+          "providers": [
+            {
+              "app": "vulcan",
+              "name": "Vulcan's Hoard",
+              "matches": [
+                "3d-models",
+                "mesh-metrics"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5186"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 3,
+          "needs": [
+            "photo search",
+            "contact sheets"
+          ],
+          "providers": [
+            {
+              "app": "daguerre",
+              "name": "Daguerre's Hoard",
+              "matches": [
+                "photo search",
+                "contact sheets"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:8814"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 4,
+          "needs": [
+            "product-catalog",
+            "posts"
+          ],
+          "providers": [
+            {
+              "app": "mercator",
+              "name": "Mercator's Hoard",
+              "matches": [
+                "product-catalog",
+                "posts"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5195"
+            }
+          ],
+          "missing": []
+        }
+      ]
+    },
+    {
+      "id": "source-to-study",
+      "title": "Fuentes → investigación → estudio",
+      "stages": [
+        {
+          "stage": 1,
+          "needs": [
+            "bookmarks",
+            "extraction"
+          ],
+          "providers": [
+            {
+              "app": "links",
+              "name": "Links Hoard",
+              "matches": [
+                "bookmarks",
+                "extraction"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5181"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 2,
+          "needs": [
+            "documents",
+            "ocr"
+          ],
+          "providers": [
+            {
+              "app": "kafka",
+              "name": "Kafka's Hoard",
+              "matches": [
+                "documents",
+                "ocr"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5200"
+            },
+            {
+              "app": "argus",
+              "name": "Argus's Hoard",
+              "matches": [
+                "ocr"
+              ],
+              "coverage": 0.5,
+              "url": "http://127.0.0.1:5183"
+            },
+            {
+              "app": "borges",
+              "name": "Borges's Hoard",
+              "matches": [
+                "documents"
+              ],
+              "coverage": 0.5,
+              "url": "http://127.0.0.1:5184"
+            },
+            {
+              "app": "platos",
+              "name": "Plato's Hoard",
+              "matches": [
+                "documents"
+              ],
+              "coverage": 0.5,
+              "url": "http://127.0.0.1:5000"
+            },
+            {
+              "app": "writer",
+              "name": "Writer's Hoard",
+              "matches": [
+                "documents"
+              ],
+              "coverage": 0.5,
+              "url": "http://127.0.0.1:8766"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 3,
+          "needs": [
+            "hybrid-search",
+            "citations"
+          ],
+          "providers": [
+            {
+              "app": "borges",
+              "name": "Borges's Hoard",
+              "matches": [
+                "hybrid-search",
+                "citations"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5184"
+            },
+            {
+              "app": "hypatia",
+              "name": "Hypatia's Hoard",
+              "matches": [
+                "citations"
+              ],
+              "coverage": 0.5,
+              "url": "http://127.0.0.1:5187"
+            },
+            {
+              "app": "kafka",
+              "name": "Kafka's Hoard",
+              "matches": [
+                "citations"
+              ],
+              "coverage": 0.5,
+              "url": "http://127.0.0.1:5200"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 4,
+          "needs": [
+            "study-guides",
+            "question-bank"
+          ],
+          "providers": [
+            {
+              "app": "hypatia",
+              "name": "Hypatia's Hoard",
+              "matches": [
+                "study-guides",
+                "question-bank"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5187"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 5,
+          "needs": [
+            "presentation-decks"
+          ],
+          "providers": [
+            {
+              "app": "cicero",
+              "name": "Cicero's Hoard",
+              "matches": [
+                "presentation-decks"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5194"
+            }
+          ],
+          "missing": []
+        }
+      ]
+    },
+    {
+      "id": "pc-command",
+      "title": "Centro de mando del PC",
+      "stages": [
+        {
+          "stage": 1,
+          "needs": [
+            "service-status",
+            "incidents"
+          ],
+          "providers": [
+            {
+              "app": "cassandra",
+              "name": "Cassandra's Hoard",
+              "matches": [
+                "service-status",
+                "incidents"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5190"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 2,
+          "needs": [
+            "disk-usage"
+          ],
+          "providers": [
+            {
+              "app": "diskhoard",
+              "name": "DiskHoard",
+              "matches": [
+                "disk-usage"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:8817"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 3,
+          "needs": [
+            "activity timeline",
+            "resume context"
+          ],
+          "providers": [
+            {
+              "app": "funes",
+              "name": "Funes's Hoard",
+              "matches": [
+                "activity timeline",
+                "resume context"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:8813"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 4,
+          "needs": [
+            "shared-storage",
+            "file-revisions"
+          ],
+          "providers": [
+            {
+              "app": "atlas",
+              "name": "Atlas's Hoard",
+              "matches": [
+                "shared-storage",
+                "file-revisions"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5203"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 5,
+          "needs": [
+            "jobs",
+            "event-bus"
+          ],
+          "providers": [
+            {
+              "app": "hoardhub",
+              "name": "Hoard Hub",
+              "matches": [
+                "jobs",
+                "event-bus"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:8810"
+            },
+            {
+              "app": "cassandra",
+              "name": "Cassandra's Hoard",
+              "matches": [
+                "event-bus"
+              ],
+              "coverage": 0.5,
+              "url": "http://127.0.0.1:5190"
+            },
+            {
+              "app": "gepetto",
+              "name": "Gepetto's Hoard",
+              "matches": [
+                "jobs"
+              ],
+              "coverage": 0.5,
+              "url": "http://127.0.0.1:8767"
+            },
+            {
+              "app": "jobhunter",
+              "name": "Jobhunter's Hoard",
+              "matches": [
+                "jobs"
+              ],
+              "coverage": 0.5,
+              "url": "http://127.0.0.1:5178"
+            },
+            {
+              "app": "links",
+              "name": "Links Hoard",
+              "matches": [
+                "event-bus"
+              ],
+              "coverage": 0.5,
+              "url": "http://127.0.0.1:5181"
+            }
+          ],
+          "missing": []
+        }
+      ]
+    },
+    {
+      "id": "meeting-actions",
+      "title": "Reunión → compromisos → plazos",
+      "stages": [
+        {
+          "stage": 1,
+          "needs": [
+            "audio recording",
+            "meeting minutes with action items"
+          ],
+          "providers": [
+            {
+              "app": "funes",
+              "name": "Funes's Hoard",
+              "matches": [
+                "audio recording",
+                "meeting minutes with action items"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:8813"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 2,
+          "needs": [
+            "commitments_from_meetings"
+          ],
+          "providers": [
+            {
+              "app": "people",
+              "name": "People's Hoard",
+              "matches": [
+                "commitments_from_meetings"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5182"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 3,
+          "needs": [
+            "minutes-deadlines"
+          ],
+          "providers": [
+            {
+              "app": "kafka",
+              "name": "Kafka's Hoard",
+              "matches": [
+                "minutes-deadlines"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5200"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 4,
+          "needs": [
+            "family-agenda"
+          ],
+          "providers": [
+            {
+              "app": "homehoard",
+              "name": "HomeHoard",
+              "matches": [
+                "family-agenda"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5196"
+            },
+            {
+              "app": "hypatia",
+              "name": "Hypatia's Hoard",
+              "matches": [
+                "family-agenda"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5187"
+            },
+            {
+              "app": "kafka",
+              "name": "Kafka's Hoard",
+              "matches": [
+                "family-agenda"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5200"
+            },
+            {
+              "app": "ledger",
+              "name": "Ledger's Hoard",
+              "matches": [
+                "family-agenda"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5180"
+            },
+            {
+              "app": "phileas",
+              "name": "Phileas's Hoard",
+              "matches": [
+                "family-agenda"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5199"
+            },
+            {
+              "app": "tantalus",
+              "name": "Tantalus's Hoard",
+              "matches": [
+                "family-agenda"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5197"
+            }
+          ],
+          "missing": []
+        }
+      ]
+    },
+    {
+      "id": "purchase-lifecycle",
+      "title": "Compra → envío → garantía → mantenimiento",
+      "stages": [
+        {
+          "stage": 1,
+          "needs": [
+            "price-tracking",
+            "restock-watch"
+          ],
+          "providers": [
+            {
+              "app": "tantalus",
+              "name": "Tantalus's Hoard",
+              "matches": [
+                "price-tracking",
+                "restock-watch"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5197"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 2,
+          "needs": [
+            "shipment-tracking"
+          ],
+          "providers": [
+            {
+              "app": "phileas",
+              "name": "Phileas's Hoard",
+              "matches": [
+                "shipment-tracking"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5199"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 3,
+          "needs": [
+            "warranties",
+            "invoices"
+          ],
+          "providers": [
+            {
+              "app": "kafka",
+              "name": "Kafka's Hoard",
+              "matches": [
+                "warranties",
+                "invoices"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5200"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 4,
+          "needs": [
+            "accounts",
+            "entries"
+          ],
+          "providers": [
+            {
+              "app": "ledger",
+              "name": "Ledger's Hoard",
+              "matches": [
+                "accounts",
+                "entries"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5180"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 5,
+          "needs": [
+            "maintenance",
+            "household-inventory"
+          ],
+          "providers": [
+            {
+              "app": "homehoard",
+              "name": "HomeHoard",
+              "matches": [
+                "maintenance",
+                "household-inventory"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5196"
+            }
+          ],
+          "missing": []
+        }
+      ]
+    },
+    {
+      "id": "writing-production",
+      "title": "Canon → manuscrito → voz → edición",
+      "stages": [
+        {
+          "stage": 1,
+          "needs": [
+            "world-state",
+            "continuity"
+          ],
+          "providers": [
+            {
+              "app": "scheherazade",
+              "name": "Scheherazade's Hoard",
+              "matches": [
+                "world-state",
+                "continuity"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:8816"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 2,
+          "needs": [
+            "manuscripts",
+            "outline"
+          ],
+          "providers": [
+            {
+              "app": "writer",
+              "name": "Writer's Hoard",
+              "matches": [
+                "manuscripts",
+                "outline"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:8766"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 3,
+          "needs": [
+            "text-to-speech",
+            "audiobooks"
+          ],
+          "providers": [
+            {
+              "app": "prospero",
+              "name": "Prospero's Hoard",
+              "matches": [
+                "text-to-speech",
+                "audiobooks"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:8815"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 4,
+          "needs": [
+            "video-editing"
+          ],
+          "providers": [
+            {
+              "app": "lumiere",
+              "name": "Lumiere's Hoard",
+              "matches": [
+                "video-editing"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5198"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 5,
+          "needs": [
+            "posts"
+          ],
+          "providers": [
+            {
+              "app": "mercator",
+              "name": "Mercator's Hoard",
+              "matches": [
+                "posts"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5195"
+            }
+          ],
+          "missing": []
+        }
+      ]
+    },
+    {
+      "id": "home-menu",
+      "title": "Menú → compra → gasto",
+      "stages": [
+        {
+          "stage": 1,
+          "needs": [
+            "weekly menu",
+            "pantry stock deficits"
+          ],
+          "providers": [
+            {
+              "app": "cookhoard",
+              "name": "CookHoard",
+              "matches": [
+                "weekly menu",
+                "pantry stock deficits"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5210"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 2,
+          "needs": [
+            "shopping list",
+            "recipe-cost"
+          ],
+          "providers": [
+            {
+              "app": "cookhoard",
+              "name": "CookHoard",
+              "matches": [
+                "shopping list",
+                "recipe-cost"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5210"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 3,
+          "needs": [
+            "purchase-intake"
+          ],
+          "providers": [
+            {
+              "app": "homehoard",
+              "name": "HomeHoard",
+              "matches": [
+                "purchase-intake"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5196"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 4,
+          "needs": [
+            "entries",
+            "food-spending"
+          ],
+          "providers": [
+            {
+              "app": "cookhoard",
+              "name": "CookHoard",
+              "matches": [
+                "food-spending"
+              ],
+              "coverage": 0.5,
+              "url": "http://127.0.0.1:5210"
+            },
+            {
+              "app": "ledger",
+              "name": "Ledger's Hoard",
+              "matches": [
+                "entries"
+              ],
+              "coverage": 0.5,
+              "url": "http://127.0.0.1:5180"
+            }
+          ],
+          "missing": []
+        }
+      ]
+    },
+    {
+      "id": "developer-reference",
+      "title": "Ingeniería de software con evidencia",
+      "stages": [
+        {
+          "stage": 1,
+          "needs": [
+            "environments",
+            "api-lookup",
+            "code-check"
+          ],
+          "providers": [
+            {
+              "app": "babel",
+              "name": "Babel's Hoard",
+              "matches": [
+                "environments",
+                "api-lookup",
+                "code-check"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:8811"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 2,
+          "needs": [
+            "api-lookup",
+            "localization-audit"
+          ],
+          "providers": [
+            {
+              "app": "babel",
+              "name": "Babel's Hoard",
+              "matches": [
+                "api-lookup",
+                "localization-audit"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:8811"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 3,
+          "needs": [
+            "shared-storage",
+            "file-revisions"
+          ],
+          "providers": [
+            {
+              "app": "atlas",
+              "name": "Atlas's Hoard",
+              "matches": [
+                "shared-storage",
+                "file-revisions"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5203"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 4,
+          "needs": [
+            "service-status",
+            "log-search"
+          ],
+          "providers": [
+            {
+              "app": "cassandra",
+              "name": "Cassandra's Hoard",
+              "matches": [
+                "service-status",
+                "log-search"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5190"
+            }
+          ],
+          "missing": []
+        }
+      ]
+    },
+    {
+      "id": "career",
+      "title": "Empleo → contactos → documentos",
+      "stages": [
+        {
+          "stage": 1,
+          "needs": [
+            "jobs",
+            "applications",
+            "answers"
+          ],
+          "providers": [
+            {
+              "app": "jobhunter",
+              "name": "Jobhunter's Hoard",
+              "matches": [
+                "jobs",
+                "applications",
+                "answers"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5178"
+            },
+            {
+              "app": "gepetto",
+              "name": "Gepetto's Hoard",
+              "matches": [
+                "jobs"
+              ],
+              "coverage": 0.3333333333333333,
+              "url": "http://127.0.0.1:8767"
+            },
+            {
+              "app": "hoardhub",
+              "name": "Hoard Hub",
+              "matches": [
+                "jobs"
+              ],
+              "coverage": 0.3333333333333333,
+              "url": "http://127.0.0.1:8810"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 2,
+          "needs": [
+            "people",
+            "conversation_brief"
+          ],
+          "providers": [
+            {
+              "app": "people",
+              "name": "People's Hoard",
+              "matches": [
+                "people",
+                "conversation_brief"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5182"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 3,
+          "needs": [
+            "documents",
+            "editor",
+            "exports"
+          ],
+          "providers": [
+            {
+              "app": "platos",
+              "name": "Plato's Hoard",
+              "matches": [
+                "documents",
+                "editor",
+                "exports"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5000"
+            },
+            {
+              "app": "borges",
+              "name": "Borges's Hoard",
+              "matches": [
+                "documents"
+              ],
+              "coverage": 0.3333333333333333,
+              "url": "http://127.0.0.1:5184"
+            },
+            {
+              "app": "kafka",
+              "name": "Kafka's Hoard",
+              "matches": [
+                "documents"
+              ],
+              "coverage": 0.3333333333333333,
+              "url": "http://127.0.0.1:5200"
+            },
+            {
+              "app": "writer",
+              "name": "Writer's Hoard",
+              "matches": [
+                "documents"
+              ],
+              "coverage": 0.3333333333333333,
+              "url": "http://127.0.0.1:8766"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 4,
+          "needs": [
+            "travel-bookings",
+            "trips"
+          ],
+          "providers": [
+            {
+              "app": "phileas",
+              "name": "Phileas's Hoard",
+              "matches": [
+                "travel-bookings",
+                "trips"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5199"
+            }
+          ],
+          "missing": []
+        }
+      ]
+    },
+    {
+      "id": "research-numbers",
+      "title": "Fuentes → cálculo → análisis",
+      "stages": [
+        {
+          "stage": 1,
+          "needs": [
+            "library",
+            "citations"
+          ],
+          "providers": [
+            {
+              "app": "borges",
+              "name": "Borges's Hoard",
+              "matches": [
+                "library",
+                "citations"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5184"
+            },
+            {
+              "app": "gamerhoard",
+              "name": "GamerHoard",
+              "matches": [
+                "library"
+              ],
+              "coverage": 0.5,
+              "url": ""
+            },
+            {
+              "app": "hypatia",
+              "name": "Hypatia's Hoard",
+              "matches": [
+                "citations"
+              ],
+              "coverage": 0.5,
+              "url": "http://127.0.0.1:5187"
+            },
+            {
+              "app": "kafka",
+              "name": "Kafka's Hoard",
+              "matches": [
+                "citations"
+              ],
+              "coverage": 0.5,
+              "url": "http://127.0.0.1:5200"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 2,
+          "needs": [
+            "symbolic-math",
+            "statistics"
+          ],
+          "providers": [
+            {
+              "app": "laplace",
+              "name": "Laplace's Hoard",
+              "matches": [
+                "symbolic-math",
+                "statistics"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:8812"
+            },
+            {
+              "app": "galton",
+              "name": "Galton's Hoard",
+              "matches": [
+                "statistics"
+              ],
+              "coverage": 0.5,
+              "url": "http://127.0.0.1:5201"
+            },
+            {
+              "app": "hypatia",
+              "name": "Hypatia's Hoard",
+              "matches": [
+                "symbolic-math"
+              ],
+              "coverage": 0.5,
+              "url": "http://127.0.0.1:5187"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 3,
+          "needs": [
+            "charts",
+            "dashboards"
+          ],
+          "providers": [
+            {
+              "app": "nightingale",
+              "name": "Nightingale's Hoard",
+              "matches": [
+                "charts",
+                "dashboards"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5189"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 4,
+          "needs": [
+            "market-data-snapshots",
+            "backtest"
+          ],
+          "providers": [
+            {
+              "app": "midas",
+              "name": "Midas's Hoard",
+              "matches": [
+                "market-data-snapshots",
+                "backtest"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5192"
+            }
+          ],
+          "missing": []
+        }
+      ]
+    },
+    {
+      "id": "measured-cad",
+      "title": "CAD medido → STL → catálogo",
+      "stages": [
+        {
+          "stage": 1,
+          "needs": [
+            "parametric-cad",
+            "step-roundtrip",
+            "stl-watertight-check"
+          ],
+          "providers": [
+            {
+              "app": "heron",
+              "name": "Heron's Hoard",
+              "matches": [
+                "parametric-cad",
+                "step-roundtrip",
+                "stl-watertight-check"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5204"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 2,
+          "needs": [
+            "3d-models",
+            "mesh-metrics"
+          ],
+          "providers": [
+            {
+              "app": "vulcan",
+              "name": "Vulcan's Hoard",
+              "matches": [
+                "3d-models",
+                "mesh-metrics"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5186"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 3,
+          "needs": [
+            "contact sheets"
+          ],
+          "providers": [
+            {
+              "app": "daguerre",
+              "name": "Daguerre's Hoard",
+              "matches": [
+                "contact sheets"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:8814"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 4,
+          "needs": [
+            "product-catalog",
+            "sales-import"
+          ],
+          "providers": [
+            {
+              "app": "mercator",
+              "name": "Mercator's Hoard",
+              "matches": [
+                "product-catalog",
+                "sales-import"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5195"
+            }
+          ],
+          "missing": []
+        }
+      ]
+    },
+    {
+      "id": "personal-continuity",
+      "title": "Actividad → recuerdo → contexto revisado",
+      "stages": [
+        {
+          "stage": 1,
+          "needs": [
+            "screen-history",
+            "clipboard-history"
+          ],
+          "providers": [
+            {
+              "app": "argus",
+              "name": "Argus's Hoard",
+              "matches": [
+                "screen-history"
+              ],
+              "coverage": 0.5,
+              "url": "http://127.0.0.1:5183"
+            },
+            {
+              "app": "echo",
+              "name": "Echo's Hoard",
+              "matches": [
+                "clipboard-history"
+              ],
+              "coverage": 0.5,
+              "url": "http://127.0.0.1:5188"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 2,
+          "needs": [
+            "activity timeline",
+            "federated recall (screen, clipboard, audio)"
+          ],
+          "providers": [
+            {
+              "app": "funes",
+              "name": "Funes's Hoard",
+              "matches": [
+                "activity timeline",
+                "federated recall (screen, clipboard, audio)"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:8813"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 3,
+          "needs": [
+            "source-evidence",
+            "reviewed-updates"
+          ],
+          "providers": [
+            {
+              "app": "dorian",
+              "name": "Dorian's Hoard",
+              "matches": [
+                "source-evidence",
+                "reviewed-updates"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:8741"
+            }
+          ],
+          "missing": []
+        }
+      ]
+    },
+    {
+      "id": "games-library",
+      "title": "Biblioteca de juegos → radar → presupuesto",
+      "stages": [
+        {
+          "stage": 1,
+          "needs": [
+            "games",
+            "backlog",
+            "steam-import"
+          ],
+          "providers": [
+            {
+              "app": "gamerhoard",
+              "name": "GamerHoard",
+              "matches": [
+                "games",
+                "backlog",
+                "steam-import"
+              ],
+              "coverage": 1.0,
+              "url": ""
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 2,
+          "needs": [
+            "game-store-deals",
+            "release-calendar"
+          ],
+          "providers": [
+            {
+              "app": "tantalus",
+              "name": "Tantalus's Hoard",
+              "matches": [
+                "game-store-deals",
+                "release-calendar"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5197"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 3,
+          "needs": [
+            "budgets",
+            "subscriptions"
+          ],
+          "providers": [
+            {
+              "app": "ledger",
+              "name": "Ledger's Hoard",
+              "matches": [
+                "budgets",
+                "subscriptions"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5180"
+            }
+          ],
+          "missing": []
+        }
+      ]
+    },
+    {
+      "id": "client-pipeline",
+      "title": "Cliente → oportunidad → propuesta → seguimiento",
+      "stages": [
+        {
+          "stage": 1,
+          "needs": [
+            "people",
+            "conversation_brief"
+          ],
+          "providers": [
+            {
+              "app": "people",
+              "name": "People's Hoard",
+              "matches": [
+                "people",
+                "conversation_brief"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5182"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 2,
+          "needs": [
+            "commercial-crm",
+            "opportunities-pipeline"
+          ],
+          "providers": [
+            {
+              "app": "mercator",
+              "name": "Mercator's Hoard",
+              "matches": [
+                "commercial-crm",
+                "opportunities-pipeline"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5195"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 3,
+          "needs": [
+            "documents",
+            "editor",
+            "exports"
+          ],
+          "providers": [
+            {
+              "app": "platos",
+              "name": "Plato's Hoard",
+              "matches": [
+                "documents",
+                "editor",
+                "exports"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5000"
+            },
+            {
+              "app": "borges",
+              "name": "Borges's Hoard",
+              "matches": [
+                "documents"
+              ],
+              "coverage": 0.3333333333333333,
+              "url": "http://127.0.0.1:5184"
+            },
+            {
+              "app": "kafka",
+              "name": "Kafka's Hoard",
+              "matches": [
+                "documents"
+              ],
+              "coverage": 0.3333333333333333,
+              "url": "http://127.0.0.1:5200"
+            },
+            {
+              "app": "writer",
+              "name": "Writer's Hoard",
+              "matches": [
+                "documents"
+              ],
+              "coverage": 0.3333333333333333,
+              "url": "http://127.0.0.1:8766"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 4,
+          "needs": [
+            "crm-followups",
+            "crm-activity-history"
+          ],
+          "providers": [
+            {
+              "app": "mercator",
+              "name": "Mercator's Hoard",
+              "matches": [
+                "crm-followups",
+                "crm-activity-history"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5195"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 5,
+          "needs": [
+            "accounts",
+            "entries"
+          ],
+          "providers": [
+            {
+              "app": "ledger",
+              "name": "Ledger's Hoard",
+              "matches": [
+                "accounts",
+                "entries"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5180"
+            }
+          ],
+          "missing": []
+        }
+      ]
+    },
+    {
+      "id": "client-ai-delivery",
+      "title": "Servicio de IA → evaluación → entrega al cliente",
+      "stages": [
+        {
+          "stage": 1,
+          "needs": [
+            "commercial-crm",
+            "opportunities-pipeline"
+          ],
+          "providers": [
+            {
+              "app": "mercator",
+              "name": "Mercator's Hoard",
+              "matches": [
+                "commercial-crm",
+                "opportunities-pipeline"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5195"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 2,
+          "needs": [
+            "ingest",
+            "quality-rules"
+          ],
+          "providers": [
+            {
+              "app": "nightingale",
+              "name": "Nightingale's Hoard",
+              "matches": [
+                "ingest",
+                "quality-rules"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5189"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 3,
+          "needs": [
+            "fine-tuning",
+            "lineage"
+          ],
+          "providers": [
+            {
+              "app": "pygmalion",
+              "name": "Pygmalion's Hoard",
+              "matches": [
+                "fine-tuning",
+                "lineage"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5202"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 4,
+          "needs": [
+            "model-evaluation",
+            "regression-watch"
+          ],
+          "providers": [
+            {
+              "app": "galton",
+              "name": "Galton's Hoard",
+              "matches": [
+                "model-evaluation",
+                "regression-watch"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5201"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 5,
+          "needs": [
+            "shared-storage",
+            "file-revisions"
+          ],
+          "providers": [
+            {
+              "app": "atlas",
+              "name": "Atlas's Hoard",
+              "matches": [
+                "shared-storage",
+                "file-revisions"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5203"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 6,
+          "needs": [
+            "crm-activity-history"
+          ],
+          "providers": [
+            {
+              "app": "mercator",
+              "name": "Mercator's Hoard",
+              "matches": [
+                "crm-activity-history"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5195"
+            }
+          ],
+          "missing": []
+        }
+      ]
+    },
+    {
+      "id": "client-3d-commission",
+      "title": "Encargo 3D → modelo → catálogo → entrega",
+      "stages": [
+        {
+          "stage": 1,
+          "needs": [
+            "commercial-crm",
+            "opportunities-pipeline"
+          ],
+          "providers": [
+            {
+              "app": "mercator",
+              "name": "Mercator's Hoard",
+              "matches": [
+                "commercial-crm",
+                "opportunities-pipeline"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5195"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 2,
+          "needs": [
+            "projects",
+            "analysis",
+            "jobs",
+            "parametric-cad"
+          ],
+          "providers": [
+            {
+              "app": "gepetto",
+              "name": "Gepetto's Hoard",
+              "matches": [
+                "projects",
+                "analysis",
+                "jobs"
+              ],
+              "coverage": 0.75,
+              "url": "http://127.0.0.1:8767"
+            },
+            {
+              "app": "atlas",
+              "name": "Atlas's Hoard",
+              "matches": [
+                "projects"
+              ],
+              "coverage": 0.25,
+              "url": "http://127.0.0.1:5203"
+            },
+            {
+              "app": "heron",
+              "name": "Heron's Hoard",
+              "matches": [
+                "parametric-cad"
+              ],
+              "coverage": 0.25,
+              "url": "http://127.0.0.1:5204"
+            },
+            {
+              "app": "hoardhub",
+              "name": "Hoard Hub",
+              "matches": [
+                "jobs"
+              ],
+              "coverage": 0.25,
+              "url": "http://127.0.0.1:8810"
+            },
+            {
+              "app": "jobhunter",
+              "name": "Jobhunter's Hoard",
+              "matches": [
+                "jobs"
+              ],
+              "coverage": 0.25,
+              "url": "http://127.0.0.1:5178"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 3,
+          "needs": [
+            "3d-models",
+            "mesh-metrics"
+          ],
+          "providers": [
+            {
+              "app": "vulcan",
+              "name": "Vulcan's Hoard",
+              "matches": [
+                "3d-models",
+                "mesh-metrics"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5186"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 4,
+          "needs": [
+            "product-catalog"
+          ],
+          "providers": [
+            {
+              "app": "mercator",
+              "name": "Mercator's Hoard",
+              "matches": [
+                "product-catalog"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5195"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 5,
+          "needs": [
+            "shared-storage",
+            "file-revisions"
+          ],
+          "providers": [
+            {
+              "app": "atlas",
+              "name": "Atlas's Hoard",
+              "matches": [
+                "shared-storage",
+                "file-revisions"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5203"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "stage": 6,
+          "needs": [
+            "crm-followups",
+            "crm-activity-history"
+          ],
+          "providers": [
+            {
+              "app": "mercator",
+              "name": "Mercator's Hoard",
+              "matches": [
+                "crm-followups",
+                "crm-activity-history"
+              ],
+              "coverage": 1.0,
+              "url": "http://127.0.0.1:5195"
+            }
+          ],
+          "missing": []
+        }
+      ]
+    }
+  ],
+  "not_executed": [
+    "All 15 complete workflows",
+    "paid/provider account calls",
+    "GPU outpainting inference",
+    "real Yovoice model synthesis",
+    "Penpot document connection",
+    "isolated OpenBot computers",
+    "automatic learning from coworker output"
+  ],
+  "unresolved_source_identities": [
+    "GrokBots",
+    "OpenAI dots product/repository",
+    "Swokei",
+    "Soro"
+  ],
+  "continuation": {
+    "date": "2026-10-05",
+    "checked_at": "2026-10-04T22:52:35.648933+00:00",
+    "specialist_profiles": 38,
+    "templates": 50,
+    "agency_source_methods": 12,
+    "recipes": 18,
+    "health": [
+      {
+        "hoard": "argus",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "atlas",
+        "state": "responding",
+        "service": "atlas-hoard",
+        "probe": "GET health only"
+      },
+      {
+        "hoard": "babel",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "borges",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "cassandra",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "cicero",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "cookhoard",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "daguerre",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "diskhoard",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "dorian",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "echo",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "funes",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "galton",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "gamerhoard",
+        "state": "stdio-only",
+        "note": "No HTTP probe; not started"
+      },
+      {
+        "hoard": "gepetto",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "heron",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "hoardhub",
+        "state": "responding",
+        "service": "hoard-hub",
+        "probe": "GET health only"
+      },
+      {
+        "hoard": "homehoard",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "hypatia",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "jobhunter",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "kafka",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "laplace",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "ledger",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "links",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "lumiere",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "mercator",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "midas",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "nightingale",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "people",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "phileas",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "platos",
+        "state": "unavailable",
+        "error": "JSONDecodeError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "prospero",
+        "state": "responding",
+        "service": "prosperos-hoard",
+        "probe": "GET health only"
+      },
+      {
+        "hoard": "pygmalion",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "scheherazade",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "tantalus",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "vitruvius",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "vulcan",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      },
+      {
+        "hoard": "writer",
+        "state": "unavailable",
+        "error": "URLError",
+        "note": "Not started or restarted"
+      }
+    ],
+    "scope": "Common specialist coverage for every Hoard, plus domain changes in Mercator and Hub. Not an end-to-end execution of every tool."
+  }
+}

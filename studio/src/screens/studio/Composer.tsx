@@ -94,6 +94,7 @@ import { addMaterial } from '../../adapters/sideThreads';
 import { modeDescription, modeLabel, type BehaviorMode } from '../../adapters/behaviorModes';
 import { getSessionConnectors, getSessionToolSupport, setSessionConnectors, type ConnectorSelection, type ToolSupport } from '../../adapters/sessions';
 import { ConnectorPicker } from '../connectors/ConnectorPicker';
+import { QuickTools } from './QuickTools';
 
 export type Mode = 'chat' | 'agent';
 
@@ -913,6 +914,8 @@ export function Composer({
       <p className="fs-studio__drop-hint" data-active={dragging || undefined} aria-hidden={!dragging}>
         {t('Drop to attach')}
       </p>
+
+      <QuickTools key={sessionId ?? 'draft'} draft={draft} onInsert={setDraft} onNotice={onNotice} />
 
       <div className="fs-studio__bar">
         <div className="fs-studio__bar-start">

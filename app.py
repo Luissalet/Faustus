@@ -1334,6 +1334,8 @@ app.include_router(setup_agent_runner_routes())
 # files that would not load, each with its reason.
 from routes.agent_def_routes import setup_agent_def_routes
 app.include_router(setup_agent_def_routes())
+from routes.coworker_routes import setup_coworker_routes
+app.include_router(setup_coworker_routes())
 
 # Agent profiles: the orthogonal half of a definition (src/agent_profiles/) —
 # how far a mission pushes, which versioned policies it references, and what

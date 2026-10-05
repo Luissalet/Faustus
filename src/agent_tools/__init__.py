@@ -68,6 +68,7 @@ from .design_canvas_tools import DesignCanvasTool
 from .context_recall_tools import ContextRecallTool
 from .brain_tools import BrainTool
 from .plugin_tools import PluginAppTool, PluginsListTool
+from .coworker_tools import CoworkerListTool, CoworkerRunTool, CoworkerSaveTool
 from .alternatives_tools import (
     AltStartTool, AltCompareTool, AltApplyTool,
 )
@@ -77,7 +78,8 @@ from .fanout_tools import (
 )
 from .context_overflow_tool import ReadOverflowTool
 from .artifact_read_tool import ReadArtifactTool, ArtifactSearchTool
-from .reach_tools import ReachReadTool, ReachSearchTool, ReachDoctorTool
+from .reach_tools import ReachReadTool, ReachSearchTool, ReachDoctorTool, ReachExtractTool, ReachReadManyTool, ReachBrowserTool, ReachCrawlTool, ReachRecipeTool
+from .brain_graph_tool import BrainGraphTool
 from .code_graph_tools import (
     CodeGraphIndexTool, CodeGraphSearchTool, CodeGraphTraceTool,
     CodeGraphChangesTool, CodeGraphImpactTool, CodeGraphArchitectureTool,
@@ -221,6 +223,9 @@ TOOL_HANDLERS = {
     # free; starting one is an act and is gated as such. See
     # src/agent_tools/plugin_tools.py and src/plugin_runtime.py.
     "plugins_list": PluginsListTool().execute,
+    "coworker_list": CoworkerListTool().execute,
+    "coworker_run": CoworkerRunTool().execute,
+    "coworker_save": CoworkerSaveTool().execute,
     "plugin_app": PluginAppTool().execute,
     # Isolated, comparable alternatives (CMP-13, W2-G): thin executors over
     # src.alternatives. See src/agent_tools/alternatives_tools.py.
@@ -236,6 +241,12 @@ TOOL_HANDLERS = {
     "reach_read": ReachReadTool().execute,
     "reach_search": ReachSearchTool().execute,
     "reach_doctor": ReachDoctorTool().execute,
+    "reach_extract": ReachExtractTool().execute,
+    "reach_read_many": ReachReadManyTool().execute,
+    "reach_browser": ReachBrowserTool().execute,
+    "reach_crawl": ReachCrawlTool().execute,
+    "reach_recipe": ReachRecipeTool().execute,
+    "brain_graph": BrainGraphTool().execute,
     # Code graph (R2, Reach wave): architecture/tracing queries over
     # src.context_engine.code_index's resolved graph. See src/code_graph/.
     "code_graph_index": CodeGraphIndexTool().execute,
@@ -489,7 +500,7 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              # src/agent_tools/alternatives_tools.py.
              "alt_start", "alt_compare", "alt_apply",
              # Reach (R1) -- src/agent_tools/reach_tools.py.
-             "reach_read", "reach_search", "reach_doctor",
+             "reach_read", "reach_search", "reach_doctor", "reach_extract", "reach_read_many", "reach_browser", "reach_crawl", "reach_recipe", "brain_graph",
              # Code graph (R2, Reach wave) -- src/agent_tools/code_graph_tools.py.
              "code_graph_index", "code_graph_search", "code_graph_trace",
              "code_graph_changes", "code_graph_impact", "code_graph_architecture",

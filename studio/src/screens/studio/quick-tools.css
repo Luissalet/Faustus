@@ -1,0 +1,21 @@
+.fs-quick-tool { border-top: 1px solid var(--fs-border); margin-top: 8px; padding: 12px 2px 2px; color: var(--fs-text-1); font-size: 13px; }
+.fs-quick-tool__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.fs-quick-tool__head strong { font-size: 13px; font-weight: 600; }
+.fs-quick-tool button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 4px 10px; border: 1px solid var(--fs-border); border-radius: 6px; background: var(--fs-surface-2); color: var(--fs-text-1); font: inherit; cursor: pointer; }
+.fs-quick-tool button:hover { background: var(--fs-surface-3); border-color: var(--fs-border-strong); }
+.fs-quick-tool button:focus-visible, .fs-quick-tool input:focus-visible { outline: 2px solid var(--fs-focus); outline-offset: 2px; }
+.fs-quick-tool .fs-quick-tool__icon { border: 0; padding: 4px; width: 32px; background: transparent; }
+.fs-quick-tool__result { display: block; font-family: var(--fs-font-code); font-size: 18px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.fs-quick-tool__actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.fs-quick-tool__hint { color: var(--fs-text-2); margin: 8px 0 0; font-size: 12px; }
+.fs-quick-tool__timer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fs-quick-tool__timer output { margin-right: 8px; font-family: var(--fs-font-code); font-size: 22px; font-variant-numeric: tabular-nums; }
+.fs-quick-tool__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.fs-quick-tool__list label { display: flex; align-items: start; gap: 8px; cursor: pointer; }
+.fs-quick-tool__list input { accent-color: var(--fs-brand); margin: 3px 0 0; }
+.fs-quick-tool__list span { overflow-wrap: anywhere; line-height: 1.5; }
+.fs-quick-tool__list input:checked + span { text-decoration: line-through; color: var(--fs-text-2); }
+.fs-quick-tool__color { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fs-quick-tool__color input { width: 36px; height: 32px; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.fs-quick-tool__color output { border-radius: 4px; padding: 6px 10px; font-family: var(--fs-font-code); }
+.fs-quick-tool__color span { color: var(--fs-text-2); font-variant-numeric: tabular-nums; }

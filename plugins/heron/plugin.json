@@ -1,0 +1,77 @@
+{
+  "schema": 1,
+  "id": "heron",
+  "name": "Heron's Hoard",
+  "purpose": "Measured parametric CAD: declarative solid primitives, Boolean operations, rotations, fillets, editable recipes and verified STEP/STL exports with three orthographic/isometric views. Complements artistic modelling and model catalogues.",
+  "capabilities": [
+    "parametric-cad",
+    "measured-solids",
+    "boolean-geometry",
+    "editable-cad-recipes",
+    "step-export",
+    "stl-export",
+    "stl-watertight-check",
+    "step-roundtrip",
+    "cad-views"
+  ],
+  "placeholders": [
+    "HERON_DIR",
+    "APP_URL",
+    "TOKEN_FILE",
+    "PYTHON"
+  ],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:5204",
+    "TOKEN_FILE": "{HERON_DIR}/data/mcp-token",
+    "PYTHON": "{HERON_DIR}/.venv/Scripts/python.exe",
+    "HERON_DIR": "C:/Users/luism/Desktop/Proyectos independientes/Heron's Hoard"
+  },
+  "app": {
+    "url_default": "http://127.0.0.1:5204",
+    "ui_url": "{APP_URL}",
+    "health": {
+      "path": "/api/health",
+      "expect": {
+        "service": "herons-hoard"
+      }
+    },
+    "identify": {
+      "service": [
+        "herons-hoard"
+      ],
+      "title": [
+        "heron's hoard",
+        "heron"
+      ]
+    },
+    "launch_hint": {
+      "kind": "process",
+      "executable": "{PYTHON}",
+      "argv": [
+        "-m",
+        "heron",
+        "--no-browser"
+      ],
+      "cwd": "{HERON_DIR}",
+      "readiness": {
+        "url": "{APP_URL}/api/health",
+        "timeout_s": 30
+      }
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{PYTHON}",
+    "args": [
+      "{HERON_DIR}/mcp_server.py"
+    ],
+    "env": {
+      "HERON_URL": "{APP_URL}",
+      "HERON_TOKEN_FILE": "{TOKEN_FILE}"
+    },
+    "optional_env": [
+      "HERON_DATA_DIR"
+    ]
+  },
+  "notes": "Local CPU CAD; no GPU or model downloads. Every recipe revision uses a new request_id; reuse IDs after uncertainty to avoid duplicates. Files served only after hash/geometry checks. Manufacturing strength and printer settings are not certified. Install sibling HoardLink editable alongside requirements."
+}

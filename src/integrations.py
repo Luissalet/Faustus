@@ -26,25 +26,45 @@ DATA_FILE = INTEGRATIONS_FILE
 # ---------------------------------------------------------------------------
 
 INTEGRATION_PRESETS: Dict[str, Dict[str, Any]] = {
+    "plausible": {
+        "name": "Plausible Analytics", "base_url": "https://plausible.io", "auth_type": "bearer",
+        "hint": "Statistics API key. Use Mercator for saved snapshots; this connection also supports site provisioning.",
+        "description": "Plausible Stats API v2. POST /api/v2/query with {site_id, date_range, metrics, dimensions?, filters?}; metrics include visitors, pageviews, visits, bounce_rate, visit_duration and conversions. API access depends on server edition/account. Preserve source query and metric warnings; never treat null revenue as zero. Source: https://plausible.io/docs/stats-api",
+    },
+    "calcom": {
+        "name": "Cal.com / Cal.diy", "base_url": "https://api.cal.com", "auth_type": "bearer",
+        "hint": "Replace the origin for self-hosted Cal.diy. Endpoint version headers are selected automatically; booking writes require an explicit request.",
+        "description": "Scheduling API v2. GET /v2/slots with eventTypeId, start, end (ISO dates); GET /v2/bookings; POST /v2/bookings with {eventTypeId, start, attendee:{name,email,timeZone}}. Creates invitations: only book, reschedule or cancel on explicit user instruction. Read returned UID/status; never retry an uncertain booking blindly. Versions depend on the endpoint and self-hosted release. Source: https://cal.com/docs/api-reference/v2/bookings/create-a-booking",
+    },
+    "apollo": {
+        "name": "Apollo", "base_url": "https://api.apollo.io", "auth_type": "header", "auth_header": "x-api-key",
+        "hint": "Use a key with the required endpoint scopes. Enrichment and other endpoints may consume credits.",
+        "description": "Apollo prospect research API. POST /api/v1/mixed_people/api_search with person_titles[], q_organization_domains_list[], page, per_page. Search results may omit email/phone; do not invent contact details. Research does not authorize outreach, enrollment in sequences or enrichment charges. GET /api/v1/users/api_profile checks access. Import selected verified records into People/Jobhunter rather than duplicating their CRM. Source: https://docs.apollo.io/reference/people-api-search",
+    },
+    "cloudflare": {
+        "name": "Cloudflare", "base_url": "https://api.cloudflare.com", "auth_type": "bearer",
+        "hint": "Use a scoped API token. Read zones, DNS and account resources; writes require an explicit instruction.",
+        "description": "Cloudflare API v4. GET /client/v4/zones; GET /client/v4/zones/{zone_id}/dns_records; GET /client/v4/accounts. Permissions are token-scoped. Use Cassandra for site health and Mercator for metrics; inspect actual IDs before changes. Do not deploy, change DNS or send messages merely because research requests mention Cloudflare. Source: https://developers.cloudflare.com/api/resources/zones/methods/list/",
+    },
     "miniflux": {
         "name": "Miniflux",
         "auth_type": "header",
         "auth_header": "X-Auth-Token",
         "description": (
             "Miniflux RSS reader (v1 API). Key endpoints:\n"
-            "  GET /v1/feeds — list all feeds\n"
-            "  GET /v1/feeds/{id} — get feed details\n"
-            "  POST /v1/feeds — create feed {\"feed_url\": \"...\", \"category_id\": N}\n"
-            "  PUT /v1/feeds/{id} — update feed\n"
-            "  DELETE /v1/feeds/{id} — delete feed\n"
-            "  GET /v1/feeds/{id}/entries — list entries for feed\n"
-            "  GET /v1/entries — list all entries (params: status, limit, order, direction, category_id)\n"
-            "  GET /v1/entries/{id} — get single entry\n"
-            "  PUT /v1/entries — update entries {\"entry_ids\": [...], \"status\": \"read|unread\"}\n"
-            "  GET /v1/categories — list categories\n"
-            "  POST /v1/categories — create category {\"title\": \"...\"}\n"
-            "  GET /v1/feeds/{id}/icon — get feed icon\n"
-            "  PUT /v1/entries/{id}/bookmark — toggle bookmark"
+            "  GET /v1/feeds â€” list all feeds\n"
+            "  GET /v1/feeds/{id} â€” get feed details\n"
+            "  POST /v1/feeds â€” create feed {\"feed_url\": \"...\", \"category_id\": N}\n"
+            "  PUT /v1/feeds/{id} â€” update feed\n"
+            "  DELETE /v1/feeds/{id} â€” delete feed\n"
+            "  GET /v1/feeds/{id}/entries â€” list entries for feed\n"
+            "  GET /v1/entries â€” list all entries (params: status, limit, order, direction, category_id)\n"
+            "  GET /v1/entries/{id} â€” get single entry\n"
+            "  PUT /v1/entries â€” update entries {\"entry_ids\": [...], \"status\": \"read|unread\"}\n"
+            "  GET /v1/categories â€” list categories\n"
+            "  POST /v1/categories â€” create category {\"title\": \"...\"}\n"
+            "  GET /v1/feeds/{id}/icon â€” get feed icon\n"
+            "  PUT /v1/entries/{id}/bookmark â€” toggle bookmark"
         ),
     },
     "gitea": {
@@ -53,15 +73,15 @@ INTEGRATION_PRESETS: Dict[str, Dict[str, Any]] = {
         "auth_header": "Authorization",
         "description": (
             "Gitea git forge API (v1). Auth header value format: 'token YOUR_TOKEN'. Key endpoints:\n"
-            "  GET /api/v1/repos/search — search repositories\n"
-            "  GET /api/v1/repos/{owner}/{repo} — get repo details\n"
-            "  GET /api/v1/repos/{owner}/{repo}/issues — list issues\n"
-            "  POST /api/v1/repos/{owner}/{repo}/issues — create issue {\"title\": \"...\"}\n"
-            "  GET /api/v1/repos/{owner}/{repo}/pulls — list pull requests\n"
-            "  GET /api/v1/repos/{owner}/{repo}/commits — list commits\n"
-            "  GET /api/v1/user/repos — list your repos\n"
-            "  GET /api/v1/orgs — list organizations\n"
-            "  GET /api/v1/repos/{owner}/{repo}/contents/{filepath} — get file content"
+            "  GET /api/v1/repos/search â€” search repositories\n"
+            "  GET /api/v1/repos/{owner}/{repo} â€” get repo details\n"
+            "  GET /api/v1/repos/{owner}/{repo}/issues â€” list issues\n"
+            "  POST /api/v1/repos/{owner}/{repo}/issues â€” create issue {\"title\": \"...\"}\n"
+            "  GET /api/v1/repos/{owner}/{repo}/pulls â€” list pull requests\n"
+            "  GET /api/v1/repos/{owner}/{repo}/commits â€” list commits\n"
+            "  GET /api/v1/user/repos â€” list your repos\n"
+            "  GET /api/v1/orgs â€” list organizations\n"
+            "  GET /api/v1/repos/{owner}/{repo}/contents/{filepath} â€” get file content"
         ),
     },
     "linkding": {
@@ -70,13 +90,13 @@ INTEGRATION_PRESETS: Dict[str, Dict[str, Any]] = {
         "auth_header": "Authorization",
         "description": (
             "Linkding bookmark manager API. Auth header value format: 'Token YOUR_TOKEN'. Key endpoints:\n"
-            "  GET /api/bookmarks/ — list bookmarks (params: q, limit, offset)\n"
-            "  GET /api/bookmarks/{id}/ — get bookmark\n"
-            "  POST /api/bookmarks/ — create bookmark {\"url\": \"...\", \"title\": \"...\", \"tag_names\": [...]}\n"
-            "  PUT /api/bookmarks/{id}/ — update bookmark\n"
-            "  DELETE /api/bookmarks/{id}/ — delete bookmark\n"
-            "  GET /api/bookmarks/archived/ — list archived bookmarks\n"
-            "  GET /api/tags/ — list tags"
+            "  GET /api/bookmarks/ â€” list bookmarks (params: q, limit, offset)\n"
+            "  GET /api/bookmarks/{id}/ â€” get bookmark\n"
+            "  POST /api/bookmarks/ â€” create bookmark {\"url\": \"...\", \"title\": \"...\", \"tag_names\": [...]}\n"
+            "  PUT /api/bookmarks/{id}/ â€” update bookmark\n"
+            "  DELETE /api/bookmarks/{id}/ â€” delete bookmark\n"
+            "  GET /api/bookmarks/archived/ â€” list archived bookmarks\n"
+            "  GET /api/tags/ â€” list tags"
         ),
     },
     "homeassistant": {
@@ -84,15 +104,15 @@ INTEGRATION_PRESETS: Dict[str, Dict[str, Any]] = {
         "auth_type": "bearer",
         "description": (
             "Home Assistant smart home API. Key endpoints:\n"
-            "  GET /api/ — API status check\n"
-            "  GET /api/states — list all entity states\n"
-            "  GET /api/states/{entity_id} — get state of entity\n"
-            "  POST /api/states/{entity_id} — update entity state\n"
-            "  POST /api/services/{domain}/{service} — call service (e.g. light/turn_on)\n"
-            "  GET /api/history/period/{timestamp} — get state history\n"
-            "  GET /api/logbook/{timestamp} — get logbook entries\n"
-            "  POST /api/events/{event_type} — fire event\n"
-            "  GET /api/config — get configuration"
+            "  GET /api/ â€” API status check\n"
+            "  GET /api/states â€” list all entity states\n"
+            "  GET /api/states/{entity_id} â€” get state of entity\n"
+            "  POST /api/states/{entity_id} â€” update entity state\n"
+            "  POST /api/services/{domain}/{service} â€” call service (e.g. light/turn_on)\n"
+            "  GET /api/history/period/{timestamp} â€” get state history\n"
+            "  GET /api/logbook/{timestamp} â€” get logbook entries\n"
+            "  POST /api/events/{event_type} â€” fire event\n"
+            "  GET /api/config â€” get configuration"
         ),
     },
     "ntfy": {
@@ -100,10 +120,10 @@ INTEGRATION_PRESETS: Dict[str, Dict[str, Any]] = {
         "auth_type": "none",
         "description": (
             "ntfy push notification service. Key endpoints:\n"
-            "  POST /{topic} — send notification. Body is the message text.\n"
+            "  POST /{topic} â€” send notification. Body is the message text.\n"
             "    Headers: Title (notification title), Priority (1-5), Tags (comma-separated emoji tags)\n"
-            "  POST / — send JSON notification {\"topic\": \"...\", \"message\": \"...\", \"title\": \"...\", \"priority\": N}\n"
-            "  GET /{topic}/json?poll=1 — poll for messages"
+            "  POST / â€” send JSON notification {\"topic\": \"...\", \"message\": \"...\", \"title\": \"...\", \"priority\": N}\n"
+            "  GET /{topic}/json?poll=1 â€” poll for messages"
         ),
     },
     "discord_webhook": {
@@ -112,7 +132,7 @@ INTEGRATION_PRESETS: Dict[str, Dict[str, Any]] = {
         "description": (
             "Discord Incoming Webhook. Paste the full webhook URL (including the token) as the Base URL.\n"
             "To get a URL: Discord server -> Server Settings -> Integrations -> Webhooks -> New Webhook -> Copy Webhook URL.\n"
-            "The secret is embedded in the URL — leave auth type as None.\n\n"
+            "The secret is embedded in the URL â€” leave auth type as None.\n\n"
             "Use this integration as the target in Settings -> Reminders -> Webhook channel.\n"
             "Payload template examples:\n"
             "  Simple:  {\"content\": \"{{title}}: {{message}}\"}\n"
@@ -127,17 +147,17 @@ INTEGRATION_PRESETS: Dict[str, Dict[str, Any]] = {
             "Vaultwarden (Bitwarden-compatible) password manager API. Auth header value format: 'Bearer ACCESS_TOKEN'.\n"
             "To get an access token: POST /identity/connect/token with grant_type=client_credentials&client_id=...&client_secret=...\n"
             "Key endpoints:\n"
-            "  GET /api/ciphers — list all vault items (logins, notes, cards, identities)\n"
-            "  GET /api/ciphers/{id} — get a single vault item\n"
-            "  POST /api/ciphers — create vault item {\"type\": 1, \"name\": \"...\", \"login\": {\"uri\": \"...\", \"username\": \"...\", \"password\": \"...\"}}\n"
-            "  PUT /api/ciphers/{id} — update vault item\n"
-            "  DELETE /api/ciphers/{id} — delete vault item\n"
-            "  GET /api/folders — list folders\n"
-            "  POST /api/folders — create folder {\"name\": \"...\"}\n"
-            "  GET /api/collections — list collections (org vaults)\n"
-            "  POST /api/ciphers/{id}/password-history — get password history\n"
-            "  GET /api/sends — list Bitwarden Send items\n"
-            "  POST /api/sends — create a Send (secure sharing)\n"
+            "  GET /api/ciphers â€” list all vault items (logins, notes, cards, identities)\n"
+            "  GET /api/ciphers/{id} â€” get a single vault item\n"
+            "  POST /api/ciphers â€” create vault item {\"type\": 1, \"name\": \"...\", \"login\": {\"uri\": \"...\", \"username\": \"...\", \"password\": \"...\"}}\n"
+            "  PUT /api/ciphers/{id} â€” update vault item\n"
+            "  DELETE /api/ciphers/{id} â€” delete vault item\n"
+            "  GET /api/folders â€” list folders\n"
+            "  POST /api/folders â€” create folder {\"name\": \"...\"}\n"
+            "  GET /api/collections â€” list collections (org vaults)\n"
+            "  POST /api/ciphers/{id}/password-history â€” get password history\n"
+            "  GET /api/sends â€” list Bitwarden Send items\n"
+            "  POST /api/sends â€” create a Send (secure sharing)\n"
             "  Note: Vault data is end-to-end encrypted. The API returns encrypted fields\n"
             "  that must be decrypted client-side with the user's master key."
         ),
@@ -148,11 +168,11 @@ INTEGRATION_PRESETS: Dict[str, Dict[str, Any]] = {
         "auth_header": "Authorization",
         "description": (
             "FreshRSS RSS reader (GReader API). Auth header value format: 'GoogleLogin auth=YOUR_TOKEN'. Key endpoints:\n"
-            "  GET /api/greader.php/reader/api/0/subscription/list?output=json — list feeds\n"
-            "  GET /api/greader.php/reader/api/0/stream/contents/feed/{feed_id}?output=json&n=20 — get entries\n"
-            "  GET /api/greader.php/reader/api/0/tag/list?output=json — list tags/categories\n"
-            "  POST /api/greader.php/reader/api/0/edit-tag — mark read/starred\n"
-            "  GET /api/greader.php/reader/api/0/unread-count?output=json — unread counts"
+            "  GET /api/greader.php/reader/api/0/subscription/list?output=json â€” list feeds\n"
+            "  GET /api/greader.php/reader/api/0/stream/contents/feed/{feed_id}?output=json&n=20 â€” get entries\n"
+            "  GET /api/greader.php/reader/api/0/tag/list?output=json â€” list tags/categories\n"
+            "  POST /api/greader.php/reader/api/0/edit-tag â€” mark read/starred\n"
+            "  GET /api/greader.php/reader/api/0/unread-count?output=json â€” unread counts"
         ),
     },
 }
@@ -335,6 +355,16 @@ def delete_integration(integration_id: str) -> bool:
 # API execution
 # ---------------------------------------------------------------------------
 
+def preset_headers(integration: Dict[str, Any], path: str) -> Dict[str, str]:
+    """Cal v2 versions differ by endpoint; explicit call headers may override for a self-hosted release."""
+    if integration.get("preset") == "calcom":
+        clean_path = path.split("?", 1)[0]
+        if clean_path == "/v2/slots" or clean_path.startswith("/v2/slots/"):
+            return {"cal-api-version": "2024-09-04"}
+        if clean_path == "/v2/bookings" or clean_path.startswith("/v2/bookings/"):
+            return {"cal-api-version": "2024-08-13"}
+    return {}
+
 def _strip_html_tags(html: str) -> str:
     """Rough HTML tag stripping."""
     text = re.sub(r"<[^>]+>", "", html)
@@ -379,7 +409,7 @@ class _PinnedAsyncBackend(httpcore.AsyncNetworkBackend):
     """Network backend that connects only to the pre-validated IPs, in order.
 
     Every address here came out of the single SSRF resolution, so moving to the
-    next one after a connect failure is not re-resolution — it's ordinary
+    next one after a connect failure is not re-resolution â€” it's ordinary
     multi-address fallback restricted to the set the guard already approved.
     httpcore takes TLS SNI and the ``Host`` header from the request URL rather
     than the connect host, so pinning the socket destination leaves certificate
@@ -483,7 +513,7 @@ def _validated_ips(raw_ips: List[str]) -> List[ipaddress._BaseAddress]:
 
     De-duplication matters because the resolver is getaddrinfo(host, None) with
     no socktype filter, so glibc reports the same address once per socktype
-    (SOCK_STREAM/SOCK_DGRAM/SOCK_RAW) — a single-homed host comes back three
+    (SOCK_STREAM/SOCK_DGRAM/SOCK_RAW) â€” a single-homed host comes back three
     times. Without this, the connect fallback would spend the shared deadline
     retrying one dead address instead of moving on to a genuinely different one.
     """
@@ -551,7 +581,7 @@ async def execute_api_call(
         return {"error": str(exc), "exit_code": 1}
 
     # Strip common API path suffixes users might accidentally include
-    # (e.g. "http://host/v1/" → "http://host"). The integration's preset
+    # (e.g. "http://host/v1/" â†’ "http://host"). The integration's preset
     # endpoints include the full path, so the base should be bare.
     preset = (integration.get("preset") or integration.get("name", "")).lower()
     strip_suffixes = {
@@ -576,9 +606,9 @@ async def execute_api_call(
 
     url = _join_integration_url(base_url, path)
 
-    # SSRF guard — same check used by the gallery endpoint, embeddings,
+    # SSRF guard â€” same check used by the gallery endpoint, embeddings,
     # CardDAV, and the reminder webhook sender. Link-local / metadata
-    # addresses (169.254.x.x — the cloud credential-exfil vector) are always
+    # addresses (169.254.x.x â€” the cloud credential-exfil vector) are always
     # rejected; INTEGRATION_API_BLOCK_PRIVATE_IPS=true also blocks RFC-1918 /
     # loopback for locked-down deployments. Private stays allowed by default
     # because LAN integrations (Home Assistant, Miniflux, ntfy) are the
@@ -597,7 +627,7 @@ async def execute_api_call(
     # Resolve the host exactly once and remember the IPs the guard validated so
     # the request below can be pinned to them. check_outbound_url only reports
     # (ok, reason); a plain httpx client re-resolves the host at connect time,
-    # which reopens a DNS-rebinding TOCTOU — a base_url host that answers with a
+    # which reopens a DNS-rebinding TOCTOU â€” a base_url host that answers with a
     # public IP for the guard and then flips to 169.254.169.254 for the connect
     # would reach cloud metadata with the integration's auth headers attached.
     resolved_ips: List[str] = []
@@ -619,7 +649,7 @@ async def execute_api_call(
     method = method.upper()
 
     # Build headers
-    headers: Dict[str, str] = {}
+    headers: Dict[str, str] = preset_headers(integration, path)
     if extra_headers:
         headers.update(extra_headers)
 
@@ -646,7 +676,7 @@ async def execute_api_call(
         param_name = integration.get("auth_param", "api_key")
         params[param_name] = api_key
 
-    # auth_type == "basic" — expects api_key as "user:password"
+    # auth_type == "basic" â€” expects api_key as "user:password"
     auth = None
     if auth_type == "basic" and api_key:
         parts = api_key.split(":", 1)
@@ -889,7 +919,7 @@ def migrate_from_settings() -> None:
         "api_key": miniflux_key,
     })
 
-    # Clear migrated keys. B-012: through the store — this was a plain
+    # Clear migrated keys. B-012: through the store â€” this was a plain
     # truncating write, so a crash mid-migration left settings.json empty and
     # a concurrent writer lost its change either way.
     settings.pop("miniflux_url", None)

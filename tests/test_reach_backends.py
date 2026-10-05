@@ -18,12 +18,22 @@ def _mock_client_factory(handler):
     return _make_client
 
 
+@pytest.fixture(autouse=True)
+def opt_in_mock_mirror_and_disable_real_browser(monkeypatch):
+    """Legacy mirror cases explicitly opt in; these fixtures never launch a real browser."""
+    monkeypatch.setattr('src.reach.web.get_setting', lambda key, default=None: True if key == 'reach_jina_enabled' else default)
+    async def unavailable(*args, **kwargs):
+        raise ValueError('fixture browser unavailable')
+    monkeypatch.setattr('src.reach.browser.run_browser', unavailable)
+
+
 # ---------------------------------------------------------------------------
 # web
 # ---------------------------------------------------------------------------
 
 def test_web_falls_back_from_faustus_fetch_to_jina(monkeypatch):
     import src.reach.web as web_mod
+    monkeypatch.setattr('src.settings.get_setting', lambda key, default=None: True if key == 'reach_jina_enabled' else default)
 
     def fake_fetch(url, timeout=5, **kw):
         return {"content": "", "error": "NetworkError: dns failure"}
@@ -36,6 +46,9 @@ def test_web_falls_back_from_faustus_fetch_to_jina(monkeypatch):
         return httpx.Response(200, text="Title: Example\n\nHello from Jina")
 
     monkeypatch.setattr(web_mod, "make_client", _mock_client_factory(handler))
+    async def unavailable(*a, **k):
+        raise ValueError("fixture browser unavailable")
+    monkeypatch.setattr("src.reach.browser.run_browser", unavailable)
 
     result = asyncio.run(web_mod.WebChannel().read("example.com"))
     assert result.backend == "jina_reader"
@@ -43,7 +56,8 @@ def test_web_falls_back_from_faustus_fetch_to_jina(monkeypatch):
     assert "Hello from Jina" in result.text
     assert result.attempts[0]["backend"] == "faustus_web_fetch"
     assert result.attempts[0]["ok"] is False
-    assert result.attempts[1] == {"backend": "jina_reader", "ok": True, "reason": ""}
+    assert result.attempts[1]["backend"] == "browser_session" and not result.attempts[1]["ok"]
+    assert result.attempts[2] == {"backend": "jina_reader", "ok": True, "reason": ""}
 
 
 def test_web_faustus_fetch_backend_succeeds_directly(monkeypatch):
@@ -61,12 +75,17 @@ def test_web_faustus_fetch_backend_succeeds_directly(monkeypatch):
     assert result.attempts == [{"backend": "faustus_web_fetch", "ok": True, "reason": ""}]
 
 
-def test_web_browser_session_backend_needs_a_wired_reader():
+def test_web_browser_session_backend_uses_local_owner_scoped_reader(monkeypatch):
     import src.reach.web as web_mod
 
     backend = web_mod.BrowserSessionBackend()
-    with pytest.raises(web_mod.ReachBackendError):
-        asyncio.run(backend.read("https://example.com"))
+    seen = []
+    async def read(request, *, owner):
+        seen.append((request.url, owner))
+        return {"text": "Rendered text", "title": "Rendered title"}
+    monkeypatch.setattr("src.reach.browser.run_browser", read)
+    result = asyncio.run(backend.read("https://example.com", ctx={"owner": "alice"}))
+    assert result.text == "Rendered text" and seen == [("https://example.com", "alice")]
 
 
 # ---------------------------------------------------------------------------

@@ -790,6 +790,11 @@ DEFAULT_SETTINGS = {
     "typed_decisions_enabled": True,
     # Hard wall-clock budget for one decide() call (all its fields).
     "typed_decision_timeout_ms": 1500,
+    # Optional local native multi-question endpoint; the default keeps the
+    # current logprob helper. No remote API, model download or implicit load.
+    "typed_decision_provider": "logprobs",
+    "typed_decision_ollaya_url": "http://127.0.0.1:11435",
+    "typed_decision_ollaya_model": "laya:multilingual",
     # Below this renormalised probability the answer is "unknown".
     "typed_decision_min_confidence": 0.7,
     # Below this total probability on the allowed letters the model wanted
@@ -1778,9 +1783,9 @@ DEFAULT_SETTINGS = {
     "reach_github_token": "",
     "reach_reddit_token": "",
     "reach_x_token": "",
-    # Jina Reader (r.jina.ai) fallback: on by default (no auth needed for
-    # basic use); an API key raises its rate limit.
-    "reach_jina_enabled": True,
+    # Jina Reader (r.jina.ai) is an optional external extraction service.
+    # Disabled by default: prefer the shared fetcher and local browser.
+    "reach_jina_enabled": False,
     "reach_jina_api_key": "",
     # Self-hosted Nitter instance for X search when no browser session is
     # available (src/reach/x.py). Empty -> X search only works through an

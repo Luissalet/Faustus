@@ -2,29 +2,91 @@
   "schema": 1,
   "id": "mercator",
   "name": "Mercator's Hoard",
-  "purpose": "Panel local de WatchHoard y BookHoard, catálogo y ventas de Cults, y calendario de publicación (posts, métricas, mejores horas).",
-  "capabilities": ["project-metrics", "user-growth", "worker-traffic", "product-catalog", "sales-import", "catalog-search", "sales-query", "posts", "publishing-calendar", "post-metrics", "metrics-csv-import", "best-hours", "caption-counter", "cults-catalog-sync"],
-  "placeholders": ["MERCATOR_DIR", "APP_URL", "PYTHON"],
-  "defaults": {"APP_URL": "http://127.0.0.1:5195", "PYTHON": "python"},
+  "purpose": "Métricas de proyectos, catálogo y ventas de Cults, publicaciones, analítica web y CRM local de empresas y oportunidades de IA, desarrollo y 3D.",
+  "capabilities": [
+    "project-metrics",
+    "user-growth",
+    "worker-traffic",
+    "product-catalog",
+    "sales-import",
+    "catalog-search",
+    "sales-query",
+    "posts",
+    "publishing-calendar",
+    "post-metrics",
+    "metrics-csv-import",
+    "best-hours",
+    "caption-counter",
+    "cults-catalog-sync",
+    "website-analytics",
+    "plausible-stats-v2",
+    "analytics-query-provenance",
+    "commercial-crm",
+    "companies",
+    "opportunities-pipeline",
+    "crm-followups",
+    "crm-activity-history",
+    "crm-export"
+  ],
+  "placeholders": [
+    "MERCATOR_DIR",
+    "APP_URL",
+    "PYTHON"
+  ],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:5195",
+    "PYTHON": "python"
+  },
   "app": {
     "url_default": "http://127.0.0.1:5195",
     "ui_url": "{APP_URL}",
-    "health": {"path": "/api/health", "expect": {"service": "mercator-hoard"}},
-    "identify": {"service": ["mercator-hoard"], "title": ["mercator's hoard"]},
+    "health": {
+      "path": "/api/health",
+      "expect": {
+        "service": "mercator-hoard"
+      }
+    },
+    "identify": {
+      "service": [
+        "mercator-hoard"
+      ],
+      "title": [
+        "mercator's hoard"
+      ]
+    },
     "launch_hint": {
       "kind": "process",
       "executable": "{PYTHON}",
-      "argv": ["mercator.py"],
+      "argv": [
+        "mercator.py"
+      ],
       "cwd": "{MERCATOR_DIR}",
-      "readiness": {"url": "{APP_URL}/api/health", "timeout_s": 20}
+      "readiness": {
+        "url": "{APP_URL}/api/health",
+        "timeout_s": 20
+      }
     }
   },
   "mcp": {
     "transport": "stdio",
     "command": "{PYTHON}",
-    "args": ["{MERCATOR_DIR}/mcp_server.py"],
-    "env": {}
+    "args": [
+      "{MERCATOR_DIR}/mcp_server.py"
+    ],
+    "env": {},
+    "optional_env": [
+      "MERCATOR_BRIDGE_AUTOSTART",
+      "MERCATOR_DATA_DIR",
+      "MERCATOR_URL",
+      "PLAUSIBLE_URL",
+      "PLAUSIBLE_API_KEY"
+    ]
   },
-  "x-family": {"agenda": true, "agent_contract": true, "events": true, "stack": "python"},
-  "notes": "Las cifras se leen desde servicios externos al actualizar. El servidor escucha solo en 127.0.0.1 y guarda los históricos en data/. Publicación: posts (instagram_reel, instagram_post, tiktok, youtube_short, youtube, x, cults3d, other) con estados idea/draft/scheduled/published/archived y snapshots de métricas; import CSV con presets heurísticos (YouTube Studio, Instagram, TikTok) sin verificar contra exportaciones reales. Emite mercator.post.scheduled|published|drafted y mercator.sales.imported {batch}; GET /api/family/agenda devuelve los posts programados. Las sugerencias de pie de foto solo funcionan si hay un LLM residente."
+  "x-family": {
+    "agenda": true,
+    "agent_contract": true,
+    "events": true,
+    "stack": "python"
+  },
+  "notes": "Las cifras se leen desde servicios externos al actualizar. El servidor escucha solo en 127.0.0.1 y guarda los históricos en data/. Publicación: posts (instagram_reel, instagram_post, tiktok, youtube_short, youtube, x, cults3d, other) con estados idea/draft/scheduled/published/archived y snapshots de métricas; import CSV con presets heurísticos (YouTube Studio, Instagram, TikTok) sin verificar contra exportaciones reales. Emite mercator.post.scheduled|published|drafted y mercator.sales.imported {batch}; GET /api/family/agenda devuelve los posts programados. Las sugerencias de pie de foto solo funcionan si hay un LLM residente. CRM: empresas, oportunidades por proyecto/etapa/responsable, importe estimado por moneda, revisiones e historial de actividad, exportación JSON/CSV y seguimientos en la agenda. Las referencias People/Atlas/Kafka/Plato conservan su dueño; ganado no significa cobrado."
 }

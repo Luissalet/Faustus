@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -27,6 +27,8 @@ from pydantic import BaseModel, Field
 from src.auth_helpers import require_user, effective_user
 from routes.session_routes import _verify_session_owner
 from src import llm_trace
+from src import trace_analytics
+from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +46,30 @@ def setup_llm_trace_routes() -> APIRouter:
         require_user(request)
         _verify_session_owner(request, session_id)
         return {"session_id": session_id, "calls": llm_trace.list_calls(session_id)}
+
+    @router.get("/{session_id}/analytics")
+    def analytics(request: Request, session_id: str):
+        require_user(request)
+        _verify_session_owner(request, session_id)
+        records, truncated = trace_analytics.read(session_id)
+        return trace_analytics.summarize(records, truncated=truncated)
+
+    @router.post("/{session_id}/evaluate")
+    def evaluate(request: Request, session_id: str, body: trace_analytics.TraceBudgets):
+        require_user(request)
+        _verify_session_owner(request, session_id)
+        records, truncated = trace_analytics.read(session_id)
+        return trace_analytics.evaluate(records, body, truncated=truncated)
+
+    @router.get("/{session_id}/export")
+    def export(request: Request, session_id: str, format: Literal['chrome', 'otlp'] = 'chrome'):
+        require_user(request)
+        _verify_session_owner(request, session_id)
+        records, truncated = trace_analytics.read(session_id)
+        skipped = sum(r['ts'] is None or r['duration_ms'] is None or r['ts'] < (r['duration_ms'] or 0) / 1000 for r in records)
+        return JSONResponse(trace_analytics.export(records, format, truncated=truncated), headers={
+            'Content-Disposition': f'attachment; filename="faustus-trace-{format}.json"',
+            'X-Faustus-Truncated': str(truncated).lower(), 'X-Faustus-Skipped-Timing': str(skipped)})
 
     @router.get("/{session_id}/{seq}")
     def get_trace(request: Request, session_id: str, seq: int):

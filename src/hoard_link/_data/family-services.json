@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "services": {
+    "media": {"owner": "links", "tools": ["media_download", "media_status", "media_cancel", "media_audio_for_asr", "media_subtitles"]},
+    "stt": {"owner": "funes", "tools": ["transcribe_file", "transcribe_status", "transcribe_cancel"]},
+    "tts": {"owner": "prospero", "tools": ["voice_tts"]},
+    "docs": {"owner": "kafka", "tools": ["doc_extract", "ocr_image", "ocr_pdf", "ocr_status"]},
+    "embed": {"owner": "borges", "tools": ["embed_texts", "embed_status"]},
+    "storage": {"owner": "atlas", "tools": ["atlas_projects", "atlas_project", "atlas_location", "atlas_file_register", "atlas_file_resolve", "atlas_derived_lookup", "atlas_derived_publish", "atlas_context"]}
+  }
+}

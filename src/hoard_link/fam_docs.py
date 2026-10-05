@@ -39,7 +39,7 @@ __all__ = ["pdf_info", "pdf_merge", "pdf_split", "pdf_pages", "pdf_compress", "p
            "pdf_to_images", "images_to_pdf", "pdf_from_office", "images_compress", "extract", "ocr_image", "ocr_pdf", "ocr_status",
            "available", "forget_availability"]
 
-KAFKA = "kafka"
+KAFKA = _s.OWNERS["docs"]
 MAX_LOCAL_BYTES = 200_000_000
 
 

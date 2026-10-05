@@ -36,6 +36,13 @@ from typing import Any, Optional
 from urllib.parse import urlsplit
 
 DEFAULT_URL = "http://127.0.0.1:8810"
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    """API calls stay with their configured owner; never forward tokens."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 SERVICE = "hoard-hub"
 AUTOSTART_WAIT_S = 20.0
 #: After a failed auto-start, do not try again for this long (an app that
@@ -100,7 +107,7 @@ def fetch(url: str, body: Optional[dict[str, Any]] = None, *, method: Optional[s
     req = urllib.request.Request(url, data=data, method=method or ("POST" if data is not None else "GET"),
                                  headers={"Content-Type": "application/json", "Accept": "application/json",
                                           "User-Agent": "hoard-link", **(headers or {})})
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
     try:
         with opener.open(req, timeout=timeout) as resp:
             raw, status = resp.read(), resp.status
@@ -126,7 +133,7 @@ def fetch_detailed(url: str, body: Optional[dict[str, Any]] = None, *, method: O
     req = urllib.request.Request(url, data=data, method=method or ("POST" if data is not None else "GET"),
                                  headers={"Content-Type": "application/json", "Accept": "application/json",
                                           "User-Agent": "hoard-link", **(headers or {})})
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
     try:
         with opener.open(req, timeout=timeout) as resp:
             raw, status = resp.read(), resp.status

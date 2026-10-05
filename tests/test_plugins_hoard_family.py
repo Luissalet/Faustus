@@ -35,6 +35,8 @@ FAMILY = {
     "kafka": ("kafka-hoard", 5200, "kafka"),
     "galton": ("galton-hoard", 5201, "galton"),
     "pygmalion": ("pygmalion-hoard", 5202, "pygmalion"),
+    "atlas": ("atlas-hoard", 5203, "atlas"),
+    "heron": ("herons-hoard", 5204, "heron"),
 }
 
 

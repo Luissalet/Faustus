@@ -1,0 +1,191 @@
+{
+  "model": "laya:multilingual",
+  "device": "cpu",
+  "cases": 20,
+  "known": 18,
+  "correct": 13,
+  "wrong_high_confidence": 5,
+  "median_ms": 179.44,
+  "results": [
+    {
+      "text": "¿Quién es el presidente de Francia hoy?",
+      "expected": "yes",
+      "value": "no",
+      "best": "no",
+      "confidence": 0.9993,
+      "ms": 241.93,
+      "reason": ""
+    },
+    {
+      "text": "¿Qué tiempo hará mañana en Madrid?",
+      "expected": "yes",
+      "value": "no",
+      "best": "no",
+      "confidence": 0.9889,
+      "ms": 177.16,
+      "reason": ""
+    },
+    {
+      "text": "Busca las últimas noticias de tecnología.",
+      "expected": "yes",
+      "value": "yes",
+      "best": "yes",
+      "confidence": 0.9565,
+      "ms": 177.48,
+      "reason": ""
+    },
+    {
+      "text": "¿Cuánto cuesta ahora una RTX 5090?",
+      "expected": "yes",
+      "value": "yes",
+      "best": "yes",
+      "confidence": 0.8306,
+      "ms": 180.86,
+      "reason": ""
+    },
+    {
+      "text": "¿Cuál es la versión más reciente de Python?",
+      "expected": "yes",
+      "value": "yes",
+      "best": "yes",
+      "confidence": 0.8316,
+      "ms": 175.36,
+      "reason": ""
+    },
+    {
+      "text": "¿Quién ganó el partido de ayer?",
+      "expected": "yes",
+      "value": "no",
+      "best": "no",
+      "confidence": 0.9945,
+      "ms": 170.93,
+      "reason": ""
+    },
+    {
+      "text": "¿Sigue abierto este restaurante?",
+      "expected": "yes",
+      "value": "no",
+      "best": "no",
+      "confidence": 0.983,
+      "ms": 171.73,
+      "reason": ""
+    },
+    {
+      "text": "Dame el tipo de cambio de hoy.",
+      "expected": "yes",
+      "value": "no",
+      "best": "no",
+      "confidence": 0.966,
+      "ms": 176.43,
+      "reason": ""
+    },
+    {
+      "text": "What is the weather tomorrow in Madrid?",
+      "expected": "yes",
+      "value": null,
+      "best": "no",
+      "confidence": 0.6003000000000001,
+      "ms": 173.36,
+      "reason": "low_confidence"
+    },
+    {
+      "text": "Who is the current CEO of this company?",
+      "expected": "yes",
+      "value": "yes",
+      "best": "yes",
+      "confidence": 0.9173,
+      "ms": 180.07,
+      "reason": ""
+    },
+    {
+      "text": "Explica el teorema de Pitágoras.",
+      "expected": "no",
+      "value": "no",
+      "best": "no",
+      "confidence": 0.9977,
+      "ms": 180.87,
+      "reason": ""
+    },
+    {
+      "text": "Traduce al inglés: mañana iré al mercado.",
+      "expected": "no",
+      "value": "no",
+      "best": "no",
+      "confidence": 0.9256,
+      "ms": 181.17,
+      "reason": ""
+    },
+    {
+      "text": "Escribe un poema sobre la lluvia.",
+      "expected": "no",
+      "value": "no",
+      "best": "no",
+      "confidence": 0.9341,
+      "ms": 177.14,
+      "reason": ""
+    },
+    {
+      "text": "Calcula 12 por 15.",
+      "expected": "no",
+      "value": "no",
+      "best": "no",
+      "confidence": 0.9609,
+      "ms": 178.82,
+      "reason": ""
+    },
+    {
+      "text": "Ordena esta lista: 5, 1, 3.",
+      "expected": "no",
+      "value": "no",
+      "best": "no",
+      "confidence": 0.9843,
+      "ms": 177.12,
+      "reason": ""
+    },
+    {
+      "text": "Resume este texto: el gato duerme en el sofá.",
+      "expected": "no",
+      "value": "no",
+      "best": "no",
+      "confidence": 0.9738,
+      "ms": 182.11,
+      "reason": ""
+    },
+    {
+      "text": "Corrige las faltas de esta frase.",
+      "expected": "no",
+      "value": "no",
+      "best": "no",
+      "confidence": 0.9897,
+      "ms": 214.7,
+      "reason": ""
+    },
+    {
+      "text": "¿Cómo funciona una búsqueda binaria?",
+      "expected": "no",
+      "value": "no",
+      "best": "no",
+      "confidence": 0.9969,
+      "ms": 223.79,
+      "reason": ""
+    },
+    {
+      "text": "Translate this sentence into Spanish: Good morning.",
+      "expected": "no",
+      "value": "no",
+      "best": "no",
+      "confidence": 0.9838,
+      "ms": 195.21,
+      "reason": ""
+    },
+    {
+      "text": "Write a Python function to reverse a list.",
+      "expected": "no",
+      "value": null,
+      "best": "yes",
+      "confidence": 0.5985,
+      "ms": 185.73,
+      "reason": "low_confidence"
+    }
+  ]
+}

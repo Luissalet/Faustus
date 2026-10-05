@@ -56,6 +56,11 @@ export interface McpPreset {
 
 export const MCP_PRESETS: McpPreset[] = [
   {
+    name: 'Penpot (native design workspace)', command: '', args: [], env: {},
+    transport: 'http', url: 'http://localhost:4401/mcp', optional: true,
+    help: 'Official Penpot MCP: inspect and edit native designs, components, layout and tokens. Run the MCP service from penpot/penpot and connect its plugin at http://localhost:4400/manifest.json in your open Penpot file. The standalone service uses http://localhost:4401/mcp. The self-hosted Docker bundle instead exposes http://localhost:9001/mcp/stream?userToken=YOUR_TOKEN: replace the URL with your actual endpoint. Requires a running Penpot workspace and connected plugin; adding this preset alone does not install either. Documentation: https://github.com/penpot/penpot/blob/develop/mcp/README.md',
+  },
+  {
     // Remote, no key, public repositories: the agent reads a dependency's
     // own docs and code instead of searching the web for them.
     name: 'Docs of a GitHub repository',

@@ -22,7 +22,12 @@
     "tailwind-export",
     "css-export",
     "reference-gallery",
-    "source-ingestion"
+    "source-ingestion",
+    "motion-compositions",
+    "motion-timeline",
+    "motion-mp4",
+    "motion-html",
+    "composition-revisions"
   ],
   "placeholders": [
     "VITRUVIUS_DIR",

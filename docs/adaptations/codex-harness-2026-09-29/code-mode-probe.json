@@ -1,0 +1,15 @@
+{
+  "purpose": "Benign synthetic write outside guest cwd, without tools.call; same guest and -I entrypoint as runner. Does not exercise the full chat approval flow.",
+  "exit_code": 0,
+  "marker_created_outside_guest_cwd": true,
+  "guest_response": {
+    "type": "final",
+    "status": "ok",
+    "error": null,
+    "output": "synthetic-audit-marker\n",
+    "output_bytes": 23,
+    "calls_made": 0,
+    "last_call": null
+  },
+  "temporary_directory": "C:\\Users\\luism\\AppData\\Local\\Temp\\faustus-codex-audit-x8ufy9nu"
+}

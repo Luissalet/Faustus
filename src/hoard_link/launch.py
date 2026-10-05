@@ -702,8 +702,9 @@ class Launcher:
             time.sleep(0.5)
         gone = not _port_open(svc.health)
         tail = ((out.stdout or "") + (out.stderr or "")).strip()[-400:]
-        return {"ok": gone, "service": svc.id, "via": "stop command", "output": tail,
-                **({} if gone else {"error": "it still answers after its stop command"})}
+        ok = gone and out.returncode == 0
+        return {"ok": ok, "service": svc.id, "via": "stop command", "output": tail,
+                **({} if ok else {"error": "its stop command failed" if out.returncode else "it still answers after its stop command"})}
 
     def stop(self, service_id: str) -> dict[str, Any]:
         """Stop a service the family started. One started elsewhere is
@@ -715,6 +716,22 @@ class Launcher:
                 service_id = f"cmd:{service_id}"
             own = self._owned(service_id)
             state = self._state()
+            try:
+                svc = self.get(service_id)
+            except KeyError:
+                svc = None
+            # A configured stop command owns the supervisor as well as the listener.
+            # Killing only the listener (or only our recorded launcher) can respawn it.
+            if svc is not None and svc.stop_argv:
+                result = self._run_stop_script(svc)
+                if result.get("ok") and own is not None and self._owned(service_id) is not None:
+                    _kill_tree(int(own["pid"]))
+                    if self._owned(service_id) is not None:
+                        return {"ok": False, "service": service_id, "error": "the service supervisor is still alive"}
+                if result.get("ok"):
+                    state.pop(service_id, None)
+                    self._save_state(state)
+                return result
             if own is None:
                 state.pop(service_id, None)
                 self._save_state(state)

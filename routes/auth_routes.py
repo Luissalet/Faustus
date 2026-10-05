@@ -1139,6 +1139,10 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
         # All other presets: GET against a known health endpoint.
         # Fall back to detecting from name if preset is missing.
         health_paths = {
+            "calcom": "/v2/me",
+            "apollo": "/api/v1/users/api_profile",
+            "cloudflare": "/client/v4/user/tokens/verify",
+            "plausible": "/api/v1/sites",
             "miniflux": "/v1/me",
             "gitea": "/api/v1/version",
             "linkding": "/api/tags/",

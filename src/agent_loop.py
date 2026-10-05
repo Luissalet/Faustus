@@ -684,6 +684,7 @@ _DOMAIN_TOOL_MAP = {
     "contacts": {"resolve_contact", "manage_contact"},
     "whatsapp": {"whatsapp_read", "whatsapp_send", "whatsapp_react"},
     "integrations": {"api_call"},
+    "coworkers": {"coworker_list", "coworker_save", "coworker_run"},
     "desktop": {"desktop_screenshot", "desktop_list_windows", "desktop_focus_window",
                 "desktop_click", "desktop_type", "desktop_key", "desktop_scroll"},
     # See the "media" _DOMAIN_RULES entry above for why this domain exists.
@@ -710,6 +711,7 @@ _DOMAIN_HOT_TOOLS = {
     "sessions": {"search_chats"},
     "ui": {"ui_control"},
     "integrations": {"api_call"},
+    "coworkers": {"coworker_list", "coworker_save", "coworker_run"},
     "desktop": {"desktop_screenshot", "desktop_list_windows"},
     "media": {"inspect_media"},
 }
@@ -3308,8 +3310,10 @@ def _classify_agent_request(messages: List[Dict], last_user: str, *,
     # "integrations" domain seeds api_call deterministically (see
     # _DOMAIN_TOOL_MAP), independent of embedding retrieval.
     if has(r"\bapi[ _]call\b", r"\bintegrations?\b",
-           r"\b(?:home ?assistant|miniflux|gitea|linkding|jellyfin)\b"):
+           r"\b(?:home ?assistant|miniflux|gitea|linkding|jellyfin|plausible|apollo|cloudflare|cal\.diy|cal\.com)\b"):
         domains.add("integrations")
+    if has(r"\b(?:coworkers?|companeros?|compañeros?|dots?)\b", r"\bcoworker_(?:list|save|run)\b"):
+        domains.add("coworkers")
     # Desktop control (FAUSTUS): seeing / driving the screen of the box the
     # server runs on. ES + EN, phrased so "desktop app" or "a window function"
     # do not match; the ToolIndex keyword hints cover the looser wording.

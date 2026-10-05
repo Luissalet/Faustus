@@ -48,9 +48,9 @@ from . import family as _f
 __all__ = ["download", "status", "cancel", "info", "subtitles", "audio_for_asr", "tools", "transcribe", "transcribe_status",
            "transcribe_cancel", "speak", "speak_bytes", "available", "forget_availability"]
 
-LINKS = "links"
-FUNES = "funes"
-PROSPERO = "prospero"
+LINKS = _s.OWNERS["media"]
+FUNES = _s.OWNERS["stt"]
+PROSPERO = _s.OWNERS["tts"]
 ACTIVE_DOWNLOAD = ("queued", "downloading", "processing")
 MAX_TTS_CHARS = 20000
 

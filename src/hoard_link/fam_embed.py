@@ -33,7 +33,7 @@ from .docs import vecmath
 
 __all__ = ["status", "embed_texts", "embed_query", "available", "forget_availability"]
 
-BORGES = "borges"
+BORGES = _s.OWNERS["embed"]
 
 
 def available(timeout: float = 1.0) -> bool:

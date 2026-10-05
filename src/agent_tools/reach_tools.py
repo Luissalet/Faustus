@@ -143,3 +143,106 @@ class ReachDoctorTool:
             "ready_count": report["ready_count"],
             "total_count": report["total_count"],
         }
+
+
+def _structured_output(data: dict) -> dict:
+    # Diagnostic samples must not crowd out the extracted rows.
+    data = dict(data)
+    if len(data.get("missing", [])) > 100:
+        data["missing_count"] = len(data["missing"])
+        data["missing"] = data["missing"][:100]
+        data["metadata_truncated"] = True
+    if "selectors_used" in data:
+        samples = []
+        for page in data["selectors_used"]:
+            sample = {}
+            for name, used in page.items():
+                if isinstance(used, dict) and len(used) > 20:
+                    sample[name] = dict(list(used.items())[:20])
+                    data["metadata_truncated"] = True
+                else:
+                    sample[name] = used
+            samples.append(sample)
+        data["selectors_used"] = samples
+    output = json.dumps(data, ensure_ascii=False, allow_nan=False)
+    if len(output) > MAX_OUTPUT_CHARS:
+        # Keep a valid JSON payload. Never cut in the middle of a row.
+        key = "items" if "items" in data else "results"
+        rows = data.get(key, [])
+        data["output_truncated"] = True
+        low, high = 0, len(rows)
+        while low < high:
+            count = (low + high + 1) // 2
+            candidate = {**data, key: rows[:count], "returned_count": count}
+            if len(json.dumps(candidate, ensure_ascii=False, allow_nan=False)) <= MAX_OUTPUT_CHARS:
+                low = count
+            else:
+                high = count - 1
+        data[key], data["returned_count"] = rows[:low], low
+        output = json.dumps(data, ensure_ascii=False, allow_nan=False)
+        if len(output) > MAX_OUTPUT_CHARS:
+            return {"error": "metadata exceeds output budget; reduce fields or use the HTTP endpoint", "exit_code": 1}
+    return {"output": output, "exit_code": 0, "untrusted_content": True}
+
+
+class ReachExtractTool:
+    async def execute(self, content: str, ctx: dict) -> dict:
+        from src.reach.extract import ExtractRequest, extract
+        try:
+            request = ExtractRequest.model_validate_json(content)
+            return _structured_output(await extract(request, owner=(ctx or {}).get("owner")))
+        except Exception as exc:
+            # Pydantic's full error includes input_value, which may be a HAR
+            # with cookies. Return the reason without echoing the input.
+            from pydantic import ValidationError
+            reason = "; ".join(e["msg"] for e in exc.errors(include_input=False)) if isinstance(exc, ValidationError) else str(exc)
+            return {"error": "reach_extract: " + reason, "exit_code": 1}
+
+
+class ReachReadManyTool:
+    async def execute(self, content: str, ctx: dict) -> dict:
+        from src.reach.batch import BatchReadRequest, read_many
+        try:
+            request = BatchReadRequest.model_validate_json(content)
+            return _structured_output(await read_many(request, ctx=ctx if isinstance(ctx, dict) else {}))
+        except Exception as exc:
+            from pydantic import ValidationError
+            reason = "; ".join(e["msg"] for e in exc.errors(include_input=False)) if isinstance(exc, ValidationError) else str(exc)
+            return {"error": "reach_read_many: " + reason, "exit_code": 1}
+
+
+class ReachBrowserTool:
+    async def execute(self, content: str, ctx: dict) -> dict:
+        from src.reach.browser import BrowserRequest, run_browser
+        try:
+            request = BrowserRequest.model_validate_json(content)
+            return _structured_output(await run_browser(request, owner=(ctx or {}).get("owner")))
+        except Exception as exc:
+            from pydantic import ValidationError
+            reason = "; ".join(e["msg"] for e in exc.errors(include_input=False)) if isinstance(exc, ValidationError) else str(exc)
+            return {"error": "reach_browser: " + reason, "exit_code": 1}
+
+
+class ReachCrawlTool:
+    async def execute(self, content: str, ctx: dict) -> dict:
+        from src.reach.crawl import CrawlRequest, run_crawl
+        try:
+            request = CrawlRequest.model_validate_json(content)
+            import asyncio
+            return _structured_output(await asyncio.to_thread(run_crawl, request, owner=(ctx or {}).get("owner")))
+        except Exception as exc:
+            from pydantic import ValidationError
+            reason = "; ".join(e["msg"] for e in exc.errors(include_input=False)) if isinstance(exc, ValidationError) else str(exc)
+            return {"error": "reach_crawl: " + reason, "exit_code": 1}
+
+
+class ReachRecipeTool:
+    async def execute(self, content: str, ctx: dict) -> dict:
+        from src.reach.recipes import RecipeRequest, run_recipe
+        try:
+            request = RecipeRequest.model_validate_json(content)
+            return _structured_output(await run_recipe(request, owner=(ctx or {}).get('owner')))
+        except Exception as exc:
+            from pydantic import ValidationError
+            reason = '; '.join(e['msg'] for e in exc.errors(include_input=False)) if isinstance(exc, ValidationError) else str(exc)
+            return {'error': 'reach_recipe: ' + reason, 'exit_code': 1}

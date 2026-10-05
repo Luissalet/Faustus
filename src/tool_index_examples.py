@@ -40,6 +40,9 @@ BOARD_TOOL_NAMES: frozenset[str] = frozenset({
 })
 
 EXAMPLES: Dict[str, List[str]] = {
+    "coworker_list": ["qué compañeros tengo", "enséñame los encargos del diseñador", "show my persistent coworkers", "what did my AI engineer finish"],
+    "coworker_save": ["crea un compañero para mi taller 3D", "guarda este contexto para el diseñador", "create my personal AI engineer", "pause that coworker"],
+    "coworker_run": ["encarga al diseñador este proyecto", "pide al ingeniero de IA que compare estos modelos", "assign this mission to my coworker", "have my researcher inspect these sources"],
     # ── Media inspection/conversion ──────────────────────────────────────
     "plan_media_transform": [
         "¿puedo convertir esta imagen a PNG sin perder calidad?",
@@ -1015,6 +1018,31 @@ EXAMPLES: Dict[str, List[str]] = {
         "read this GitHub issue and its comments",
         "qué dice este hilo de reddit",
         "get me the text of this tweet",
+    ],
+    "brain_graph": [
+        "qué relaciones conocíamos entonces y cuáles eran válidas en esa fecha",
+        "muestra los vecinos de esta persona con sus fuentes y fechas",
+    ],
+    "reach_browser": [
+        "lee esta página dinámica con el navegador local",
+        "captura las respuestas JSON que carga esta web al desplazarse",
+    ],
+    "reach_crawl": [
+        "recorre esta documentación y guarda las páginas en el PC",
+        "continúa el recorrido web que quedó interrumpido",
+    ],
+    "reach_recipe": [
+        "Guarda una receta local para extraer esta tabla y recuperar sus campos si cambian las clases CSS.",
+        "Reutiliza la receta de productos y señala los campos ambiguos o ausentes.",
+    ],
+    "reach_extract": [
+        "extrae nombre, precio y enlace de cada producto de esta página",
+        "extract structured rows with CSS selectors and pagination",
+        "saca los datos JSON de esta captura HAR del navegador",
+    ],
+    "reach_read_many": [
+        "lee estos 50 enlaces y señala cuáles han fallado",
+        "collect these YouTube, Reddit and GitHub URLs in a batch",
     ],
     "reach_search": [
         "busca repos de GitHub sobre agentes de IA",

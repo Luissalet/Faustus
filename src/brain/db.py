@@ -90,6 +90,8 @@ def _connect(path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(path, timeout=10.0)
     try:
         conn.row_factory = sqlite3.Row
+        from src.brain.relation_history import recorded_now
+        conn.create_function("brain_relation_now", 0, recorded_now)
         with contextlib.suppress(sqlite3.Error):
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")

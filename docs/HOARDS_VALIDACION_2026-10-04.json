@@ -1,0 +1,419 @@
+{
+  "created_at": "2026-10-04T21:43:43.126100+00:00",
+  "tests": [
+    {
+      "project": "faustus",
+      "unique_test_cases": {
+        "passed": 220,
+        "skipped": 0,
+        "failed": 0
+      },
+      "runs": [
+        {
+          "file": "D:\\LocalAI\\_hoard_research_20261004\\faustus-tests.xml",
+          "passed": 219,
+          "skipped": 0,
+          "failed": 0
+        },
+        {
+          "file": "D:\\LocalAI\\_hoard_research_20261004\\coworkers-final.xml",
+          "passed": 7,
+          "skipped": 0,
+          "failed": 0
+        }
+      ]
+    },
+    {
+      "project": "vitruvius",
+      "unique_test_cases": {
+        "passed": 329,
+        "skipped": 0,
+        "failed": 0
+      },
+      "runs": [
+        {
+          "file": "D:\\LocalAI\\_hoard_research_20261004\\vitruvius-tests.xml",
+          "passed": 329,
+          "skipped": 0,
+          "failed": 0
+        },
+        {
+          "file": "D:\\LocalAI\\_hoard_research_20261004\\motion-final.xml",
+          "passed": 4,
+          "skipped": 0,
+          "failed": 0
+        }
+      ]
+    },
+    {
+      "project": "prospero",
+      "unique_test_cases": {
+        "passed": 718,
+        "skipped": 3,
+        "failed": 0
+      },
+      "runs": [
+        {
+          "file": "D:\\LocalAI\\_hoard_research_20261004\\prospero-full.xml",
+          "passed": 718,
+          "skipped": 3,
+          "failed": 0
+        }
+      ]
+    },
+    {
+      "project": "mercator",
+      "unique_test_cases": {
+        "passed": 81,
+        "skipped": 0,
+        "failed": 0
+      },
+      "runs": [
+        {
+          "file": "D:\\LocalAI\\_hoard_research_20261004\\mercator-tests.xml",
+          "passed": 81,
+          "skipped": 0,
+          "failed": 0
+        }
+      ]
+    },
+    {
+      "project": "hoardlink",
+      "unique_test_cases": {
+        "passed": 697,
+        "skipped": 1,
+        "failed": 0
+      },
+      "runs": [
+        {
+          "file": "D:\\LocalAI\\_hoard_research_20261004\\hub-tests.xml",
+          "passed": 695,
+          "skipped": 1,
+          "failed": 0
+        },
+        {
+          "file": "D:\\LocalAI\\_hoard_research_20261004\\hub-final-targeted.xml",
+          "passed": 18,
+          "skipped": 0,
+          "failed": 0
+        }
+      ]
+    },
+    {
+      "project": "heron",
+      "unique_test_cases": {
+        "passed": 6,
+        "skipped": 0,
+        "failed": 0
+      },
+      "runs": [
+        {
+          "file": "D:\\LocalAI\\_hoard_research_20261004\\heron-tests.xml",
+          "passed": 6,
+          "skipped": 0,
+          "failed": 0
+        }
+      ]
+    }
+  ],
+  "non_overlapping_test_totals": {
+    "passed": 2051,
+    "skipped": 4,
+    "failed": 0
+  },
+  "scope_note": "Faustus ran the affected/integration test selection, not its entire large suite. Other named projects ran their full stated suites, followed by targeted checks where code changed.",
+  "builds": {
+    "Faustus Studio": "passed",
+    "Vitruvius frontend": "passed",
+    "Prospero frontend typecheck and Vite": "passed"
+  },
+  "build_notes": [
+    "Faustus Vite retains existing font URL resolution and bundle-size warnings."
+  ],
+  "qa": {
+    "qa-motion-2": {
+      "exact_clock_and_video": true,
+      "desktop_mobile": true,
+      "video": {
+        "frames": 8,
+        "fps": 4,
+        "duration": 2.0,
+        "file": "D:\\LocalAI\\_hoard_research_20261004\\qa-motion-2\\video\\motion.mp4",
+        "audio": false
+      },
+      "probe": {
+        "streams": [
+          {
+            "index": 0,
+            "codec_name": "h264",
+            "codec_long_name": "H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10",
+            "profile": "High",
+            "codec_type": "video",
+            "codec_tag_string": "avc1",
+            "codec_tag": "0x31637661",
+            "width": 640,
+            "height": 360,
+            "coded_width": 640,
+            "coded_height": 360,
+            "has_b_frames": 2,
+            "pix_fmt": "yuv420p",
+            "level": 22,
+            "chroma_location": "left",
+            "field_order": "progressive",
+            "refs": 1,
+            "is_avc": "true",
+            "nal_length_size": "4",
+            "id": "0x1",
+            "r_frame_rate": "4/1",
+            "avg_frame_rate": "4/1",
+            "time_base": "1/16384",
+            "start_pts": 0,
+            "start_time": "0.000000",
+            "duration_ts": 32768,
+            "duration": "2.000000",
+            "bit_rate": "7192",
+            "bits_per_raw_sample": "8",
+            "nb_frames": "8",
+            "extradata_size": 46,
+            "disposition": {
+              "default": 1,
+              "dub": 0,
+              "original": 0,
+              "comment": 0,
+              "lyrics": 0,
+              "karaoke": 0,
+              "forced": 0,
+              "hearing_impaired": 0,
+              "visual_impaired": 0,
+              "clean_effects": 0,
+              "attached_pic": 0,
+              "timed_thumbnails": 0,
+              "non_diegetic": 0,
+              "captions": 0,
+              "descriptions": 0,
+              "metadata": 0,
+              "dependent": 0,
+              "still_image": 0,
+              "multilayer": 0
+            },
+            "tags": {
+              "language": "und",
+              "handler_name": "VideoHandler",
+              "vendor_id": "[0][0][0][0]",
+              "encoder": "Lavc62.11.100 libx264"
+            }
+          }
+        ],
+        "format": {
+          "filename": "D:\\LocalAI\\_hoard_research_20261004\\qa-motion-2\\video\\motion.mp4",
+          "nb_streams": 1,
+          "nb_programs": 0,
+          "nb_stream_groups": 0,
+          "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+          "format_long_name": "QuickTime / MOV",
+          "start_time": "0.000000",
+          "duration": "2.000000",
+          "size": "2744",
+          "bit_rate": "10976",
+          "probe_score": 100,
+          "tags": {
+            "major_brand": "isom",
+            "minor_version": "512",
+            "compatible_brands": "isomiso2avc1mp41",
+            "encoder": "Lavf62.3.100"
+          }
+        }
+      }
+    },
+    "qa-family-ui": {
+      "coworkers": {
+        "save": true,
+        "manual_close_gate": true,
+        "viewports": [
+          1280,
+          390
+        ],
+        "api": "isolated fixture"
+      },
+      "disk": {
+        "arrows": true,
+        "file_details": true,
+        "enter_folder": true,
+        "parent": true,
+        "data": "isolated fixture"
+      }
+    },
+    "qa-mercator": {
+      "rest_ui_mcp_same_source": true,
+      "source": "isolated API fixture, not production analytics",
+      "requests": 2,
+      "desktop_mobile": [
+        1440,
+        390
+      ],
+      "json_export": true
+    },
+    "qa-new-ui": {
+      "cad": {
+        "real_build": true,
+        "views": true,
+        "download": true,
+        "viewports": [
+          1440,
+          390
+        ]
+      },
+      "hub": {
+        "38_manifests": true,
+        "search": true,
+        "workflow_plans": 15,
+        "component": "actual shipped JS, real manifests and facet handlers"
+      }
+    },
+    "cad-stdio": {
+      "file": "D:\\LocalAI\\_hoard_research_20261004\\qa-heron\\report.json",
+      "real_build": true,
+      "known_analytic_volume_checked": true
+    }
+  },
+  "visual_review": [
+    "motion desktop/mobile",
+    "coworkers desktop/mobile",
+    "Plausible desktop/mobile",
+    "CAD desktop/mobile",
+    "capability component desktop/mobile",
+    "Prospero 4 documentation screenshots"
+  ],
+  "final_cad_view_fix": "After captures, corrected exporter margins; all projected SVG vertices are tested to fit within viewBox for all 3 templates and all 3 views.",
+  "provider_validation": "API/TTS tests use controlled protocol fixtures. No real paid/provider account or TTS/GPU generation was consumed.",
+  "inventory": {
+    "hoards": 38,
+    "Faustus_plugin_errors": 0,
+    "coworker_templates": 12,
+    "workflow_plans": 15,
+    "missing_declared_workflow_requirements": 0
+  },
+  "continuation": {
+    "date": "2026-10-05",
+    "tests": [
+      {
+        "project": "faustus",
+        "scope": "coworkers, agent library and definitions",
+        "file": "D:\\LocalAI\\_hoard_research_20261004\\agency-extension-tests.xml",
+        "passed": 92,
+        "failed": 0,
+        "skipped": 0
+      },
+      {
+        "project": "mercator",
+        "scope": "complete suite including CRM",
+        "file": "D:\\LocalAI\\_hoard_research_20261004\\crm-extension-tests.xml",
+        "passed": 95,
+        "failed": 0,
+        "skipped": 0
+      },
+      {
+        "project": "hoardlink",
+        "scope": "capability planner tests",
+        "file": "D:\\LocalAI\\_hoard_research_20261004\\crm-recipes-tests.xml",
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0
+      }
+    ],
+    "ui": {
+      "crm": {
+        "real_local_http_ui_stdio": true,
+        "isolated_test_data": true,
+        "create_company_deal": true,
+        "project_filters": [
+          "Servicios IA",
+          "Encargos 3D"
+        ],
+        "edit_stage": true,
+        "note_history": true,
+        "json_csv_exports": true,
+        "keyboard_table_scroll_and_visible_focus": true,
+        "viewports": [
+          1440,
+          390
+        ]
+      },
+      "specialists": {
+        "shipped_component_api_fixture": true,
+        "hoard_filter": true,
+        "search": true,
+        "save_specialist": true,
+        "filter_visible_focus": true,
+        "filter_keyboard_focus": true,
+        "templates": 50,
+        "viewports": [
+          1440,
+          390
+        ]
+      },
+      "browser_errors": []
+    },
+    "build": {
+      "faustus": "npm run build succeeded",
+      "typescript": "tsc --noEmit succeeded",
+      "design_detector": "no findings on changed surfaces"
+    },
+    "additional_attempt": {
+      "scope": "agent_loop floor tests",
+      "result": "timed out while an unchanged tool-index background task encoded embeddings; not counted as passing"
+    },
+    "coverage": {
+      "hoards": 38,
+      "specialist_profiles_loaded": 38,
+      "templates_validated": 50,
+      "workflow_plans": 18,
+      "missing_provider_requirements": 0
+    },
+    "not_executed": [
+      "Real model mission for every specialist",
+      "All 18 complete workflow executions",
+      "Production customer data import",
+      "Outreach/publication",
+      "External provider configurations still pending in initial report"
+    ],
+    "finish_review": {
+      "date": "2026-10-05",
+      "skill": "C:/Users/luism/.agents/skills/impeccable/SKILL.md",
+      "reviewer": "impeccable_finish_reviewer",
+      "initial_disposition": "fix",
+      "final_disposition": "ship",
+      "scope": "Scored findings from the scoped CRM and Coworkers review, including the concrete Faustus focus-token finding raised by the documenter; not a full application audit.",
+      "findings": [
+        {
+          "finding": "Keyboard operation of the mobile CRM horizontal table",
+          "score": "resolved",
+          "evidence": "role=region, tabindex=0, aria-labelledby=crm-count; Edge keyboard scroll and visible focus checked in report.json and mobile capture"
+        },
+        {
+          "finding": "Persisted Faustus product context",
+          "score": "resolved",
+          "evidence": "Existing README.md, README.es.md and DESIGN.md verified by reviewer; no additional necessary product fact missing"
+        },
+        {
+          "finding": "Visible keyboard focus on Faustus specialty filters",
+          "score": "resolved",
+          "evidence": "Existing --fs-focus token replaces undefined --fs-accent; keyboard Tab focus, solid 2px outline and both viewports verified in report.json; reviewer scored resolved with ship disposition"
+        }
+      ],
+      "remaining_from_first_review": [],
+      "qa_report": "D:/LocalAI/_hoard_research_20261004/qa-crm-specialists/report.json"
+    },
+    "surface_documentation": {
+      "paths": [
+        "D:\\LocalAI\\Faustus\\docs\\ui\\coworkers\\DESIGN.md",
+        "D:\\LocalAI\\Faustus\\docs\\ui\\coworkers\\.impeccable\\design.json",
+        "D:\\LocalAI\\Faustus\\.impeccable\\surfaces\\coworkers-specialists.md",
+        "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Mercator's Hoard\\docs\\ui\\crm\\DESIGN.md",
+        "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Mercator's Hoard\\docs\\ui\\crm\\.impeccable\\design.json",
+        "C:\\Users\\luism\\Desktop\\Proyectos independientes\\Mercator's Hoard\\.impeccable\\surfaces\\crm.md"
+      ],
+      "scope": "Narrow inherited extensions; project-root design systems preserved"
+    }
+  }
+}

@@ -57,6 +57,8 @@ actually parses):
 
 from __future__ import annotations
 
+from src.brain.temporal_graph import GraphQuery
+
 import asyncio
 import contextlib
 import logging
@@ -179,6 +181,14 @@ def _settings_snapshot() -> Dict[str, Any]:
 
 def setup_brain_routes() -> APIRouter:
     router = APIRouter(prefix="/api/brain", tags=["brain"])
+
+    @router.post("/temporal-graph")
+    async def post_temporal_graph(request: Request, body: GraphQuery, _u: str = Depends(require_user)):
+        from src.brain.temporal_graph import retrieve
+        try:
+            return await asyncio.to_thread(retrieve, _owner(request), body)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
 
     # ── status & sync ────────────────────────────────────────────────────
 
