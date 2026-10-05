@@ -10272,8 +10272,9 @@ URL final, hora original de captura y cabeceras seleccionadas. Incluye respuesta
 HTTP de error y binarias, conserva la caché, excluye cookies y declara los
 controles no realizados. El recibo identifica el perfil y no el cuerpo de la
 página. Cassandra ya cubre la vigilancia: no se crea otro Hoard ni se instala
-un escáner. La captura compartida apunta al producto de lissy93; el fork visible
-no fue accesible durante la investigación.
+un escáner. La captura coincide con `mwakidenis/WebCheck-OSINT`, que enlaza
+el mismo sitio Web-Check; el upstream conocido es `lissy93/web-check`. La
+primera lectura del nombre tenía un error: no acredita una cadena de forks.
 
 La restricción explícita «solo MCP» se aplica a esquemas y ejecución; el suelo
 de herramientas del workspace no puede revocar esa decisión. Descubrimiento y
@@ -10300,3 +10301,33 @@ Evidencia: `D:/LocalAI/qa/why-web-20261005/state-final.json` y trazas de esa car
 Los cambios heredados y el trabajo concurrente de Rambler se preservan por
 separado; estas comprobaciones no afirman que todos los repositorios estén
 limpios ni sincronizados. SABER, Watch y Book quedan fuera de esta ronda.
+
+
+## 275. Grupos personalizados y puertos del Hub (05-10-2026)
+
+El Hub permite crear, editar, arrancar y parar grupos de apps, escoger ventanas
+opcionalmente y seleccionar un grupo concreto para iniciar con Windows. Reutiliza
+los perfiles existentes y conserva sus comandos configurados. El archivo de Inicio
+incluye el directorio de datos, el puerto y el nombre exacto del grupo; un archivo
+ajeno se conserva. No se selecciona un grupo real ni se activa Inicio por defecto.
+
+La asignación de puertos es explícita y persistente para apps cuyo manifiesto
+declara una opción compatible. DiskHoard declara `--port` y su sidecar de URL.
+Se evitan listeners y puertos preferidos de otras apps, se comprueba la identidad
+del servicio y no se detiene al ocupante de un puerto. El sidecar queda confinado
+a los datos de la app y se valida contra el servicio vivo. Una carrera con un
+proceso externo falla de forma segura; la limpieza solo apunta al hijo recién
+lanzado y a su tiempo de creación. No se promete coordinación de lanzadores ajenos.
+
+Prueba real aislada: DiskHoard arranca en 5398 mientras un servicio distinto ocupa
+5397; repetir el grupo conserva el PID. Grupo y asignación quedan guardados; el
+archivo de Inicio se crea y retira desde la interfaz en APPDATA aislado. Desktop
+y móvil no muestran desbordamiento ni errores de página. La revisión añade
+protecciones para borrar grupos activos, PID reciclado, coincidencias engañosas
+del marcador de Inicio y rutas con porcentaje y Unicode en Windows.
+
+Cambios guardados: HoardLink `a5983e2`, DiskHoard `269d826`. Se aplican parches
+incrementales: los diffs heredados permanecen iguales, fuera de estos commits.
+El Hub real se recarga solo cuando está sin tareas activas y conserva las apps,
+los perfiles y la configuración de Inicio. Q8 y procesos SABER no se reinician.
+Informe y resultados finales: `docs/RELIABILITY_WHY_WEB_2026-10-05.md`.
