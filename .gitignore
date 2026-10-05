@@ -77,18 +77,51 @@ output.txt.txt
 
 # …except shipped static assets
 !static/icons/*.png
+# docs/ is local by default: implementation plans, backlogs, inspiration,
+# research reports and UI captures must not enter the repository.
+# Keep directories traversable so the explicit file exceptions below work.
+/docs/**
+!/docs/**/
 
-# …except shipped demo assets in docs/ that the README links to.
-!docs/*.jpg
-!docs/*.jpeg
-!docs/*.png
-!docs/*.gif
-!docs/*.webp
-# …and curated docs/ subfolder assets (e.g. accessibility before/after shots).
-!docs/**/*.png
-!docs/**/*.jpg
-!docs/**/*.gif
-!docs/**/*.webp
+# Public API contracts and guides linked from the README.
+!/docs/api/*.md
+!/docs/api/sse_events.json
+!/docs/requirements-format.md
+!/docs/showcase.md
+!/docs/ui/charts.md
+!/docs/ui/reply-blocks.md
+!/docs/design/durable-change-evidence.md
+!/docs/design/state-mirror-recovery.md
+!/docs/design/voice-jarvis.md
+!/docs/design/diogenes-adaptations.md
+!/docs/design/workflow-script-skills.md
+!/docs/design/natural-dictation.md
+!/docs/design/bounded-workflow-iterations.md
+!/docs/evals/typed-decisions.md
+
+# Runtime resources, translation source and executable contract fixtures.
+!/docs/recipes/*.json
+!/docs/ui/i18n/es.tsv
+!/docs/spec/v2/schemas/*.json
+!/docs/spec/v2/examples/*.json
+!/docs/evals/context_engine_queries.json
+!/docs/evals/typed_decision_cases.json
+!/docs/spec/paridad/acceptance_cases.json
+!/docs/spec/v2/acceptance_scenarios.json
+!/docs/HOARDS_INVENTARIO_2026-10-04.json
+
+# Attribution manifest and documents required by existing regression checks.
+!/docs/adaptations/provenance.json
+!/docs/adaptations/decisions/CMP-01.md
+!/docs/adaptations/decisions/CMP-01-layout.md
+!/docs/adaptations/decisions/CMP-07.md
+!/docs/adaptations/decisions/CMP-11.md
+!/docs/adaptations/decisions/CMP-13.md
+!/docs/spec/paridad/ESTADO_ACEPTACION.md
+!/docs/spec/paridad/SUPERFICIE_PRODUCTO.md
+!/docs/spec/v2/QA_ESTADO.md
+!/docs/spec/v2/EVAL_ESTADO.md
+!/docs/spec/v2/lab/HW-07_spark_pc_egpu.md
 
 # …except shipped website and branding media.
 !website/**/*.jpg
