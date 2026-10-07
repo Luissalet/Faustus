@@ -329,6 +329,7 @@ def search_catalog(
     disabled: Optional[Iterable[str]] = None,
     admin: bool = True,
     candidate_filter: Optional[Callable[[str], bool]] = None,
+    offline_mcp_limit: Optional[int] = None,
 ) -> List[str]:
     """Ranked tool names for a natural-language query and/or exact names."""
     blocked = {str(n) for n in (disabled or ()) if n}
@@ -396,6 +397,27 @@ def search_catalog(
         for name in _keyword_hits(q):
             if _callable(name):
                 _add(name)
+        # Semantic retrieval can be healthy while its top-k contains only
+        # stale or unrelated built-ins. Always merge live MCP lexical matches
+        # ahead of that list; the lexical lane returns only descriptions that
+        # match the query, and _add still applies permissions and category.
+        offline_mcp = _offline_mcp_hits(q)
+        # Keep the lexical MCP lane complementary to native search rather
+        # than letting a large connected catalog crowd built-ins out.
+        offline_budget = (
+            max(int(offline_mcp_limit), 1) if offline_mcp_limit is not None
+            else min(max(int(k or _DEFAULT_K) // 2, 1), 4)
+        )
+        offline_added = 0
+        for name in offline_mcp:
+            if offline_added >= offline_budget:
+                break
+            if not _callable(name):
+                continue
+            before = len(ordered)
+            _add(name)
+            if len(ordered) > before:
+                offline_added += 1
         for name in retrieved:
             if _callable(name):
                 _add(name)
@@ -410,9 +432,6 @@ def search_catalog(
             except Exception:
                 logger.debug("tool catalog: permitted-pool completion failed", exc_info=True)
         if not retrieved:
-            for name in _offline_mcp_hits(q):
-                if _callable(name):
-                    _add(name)
             from src.tool_index import BUILTIN_TOOL_DESCRIPTIONS
             needle = q.lower()
             for name, desc in BUILTIN_TOOL_DESCRIPTIONS.items():
@@ -555,6 +574,25 @@ def serve_categories(*, category: str = "", disabled: Optional[Iterable[str]] = 
             "detail": "categories",
             "hint": 'Pick one with {"category": "<name>"}, or search with {"query": "..."}.',
         }
+    if wanted == "mcp":
+        servers = [
+            {"name": key, "count": len(values), "examples": values[:4]}
+            for key, values in sorted(cats.items()) if key.startswith("mcp:") and values
+        ]
+        # Include a bounded catalog across connected servers. The per-server
+        # summaries retain the complete usable counts beyond this tool cap.
+        catalog_names = sorted({name for key, values in cats.items() if key.startswith("mcp:") for name in values})
+        names = catalog_names[:_CATEGORY_LIST_LIMIT]
+        tools = [catalog_entry(name, detail=_DETAIL_CATALOG) for name in names]
+        return {
+            "category": "mcp",
+            "servers": servers,
+            "tools": tools,
+            "promote": [tool["name"] for tool in tools],
+            "detail": _DETAIL_CATALOG,
+            "more": max(0, len(catalog_names) - len(names)),
+            "hint": "Connected MCP server catalog. Choose a server category or search for a tool.",
+        }
     key = wanted if wanted in cats else next(
         (k for k in cats if k.lower() == wanted or k.lower() == f"mcp:{wanted}"), "")
     if not key:
@@ -596,6 +634,8 @@ def serve(
     wanted_category = str(category or "").strip().lower()
 
     def _in_category(name: str) -> bool:
+        if wanted_category == "mcp":
+            return name.startswith("mcp__")
         if not wanted_category.startswith("mcp:"):
             return True
         server = wanted_category[4:]
@@ -606,6 +646,8 @@ def serve(
         candidate_filter=lambda name: _in_category(name) and is_permitted(
             name, disabled_tools=disabled, tool_policy=tool_policy, admin=admin,
         ),
+        offline_mcp_limit=(max(1, min(int(k or _DEFAULT_K), _MAX_RETURN))
+                           if wanted_category == "mcp" or wanted_category.startswith("mcp:") else None),
     )
     tools = [catalog_entry(name, detail=mode) for name in found]
     payload: Dict[str, Any] = {
