@@ -11,10 +11,12 @@ Supported extraction:
 - CSV/TSV: detected delimiter, header and rows, with a 20,000-row scan limit.
 - Raster images/SVG: decoder metadata (dimensions, format, mode/frame count or SVG dimensions/viewBox).
 - Audio/video: metadata provided by the existing media inspector; compressed formats may need FFprobe.
+- DesignCraft `.designcraft`: page and spread counts, text/graphic/group item counts, story text, asset-record counts, and counts/bytes of non-metadata package parts. It reads only `document.json`; other package parts are counted but are not assumed to be assets, their bytes are not decoded, and linked paths are not followed.
+- VectorCraft `.vectorcraft`: artboard and layer/group/path/text/image node counts plus image-record count. It reads the bounded JSON document and does not decode image pixels or rasterize geometry.
 
-The tool reads files without modifying them. Office package relationships are treated as data; external relationships are ignored and macros are never run. Package parts, file sizes, entries, and returned content have explicit bounds. A hash is computed from the inspected file and a before/after stat check rejects files that changed during the operation.
+The tool reads files without modifying them. Office package relationships are treated as data; external relationships are ignored and macros are never run. Native project references are also treated as data; linked files are never opened and embedded code is never run. Package parts, file sizes, entries, native item counts, and returned content have explicit bounds. A hash is computed from the inspected file and a before/after stat check rejects files that changed during the operation.
 
-This is structural and extractable-content evidence, not a quality gate. It does not render documents, verify visual layout, judge semantic correctness or completeness, recalculate spreadsheets, listen to media, transcribe audio, or interpret image pixels. A successful inspection means the listed parser facts were extracted; it does not certify that a deliverable meets its brief.
+This is structural and extractable-content evidence, not a quality gate. It does not render documents or native projects, verify visual layout, judge semantic correctness or completeness, recalculate spreadsheets, listen to media, transcribe audio, or interpret image pixels. A counted frame, node, story, asset record, or package part does not prove that it is visible, editable, complete, or faithful to a brief. A successful inspection means the listed parser facts were extracted; it does not certify that a deliverable meets its brief.
 
 Example:
 

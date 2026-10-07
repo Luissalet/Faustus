@@ -521,7 +521,7 @@ Consulta el [modelo de amenazas](THREAT_MODEL.md), la [política de seguridad](S
 
 ## Archivos entregados y actividad de modelos
 
-`inspect_deliverable` lee archivos reales PDF, PPTX, DOCX, XLSX, CSV, imágenes, audio y vídeo y devuelve su identidad, texto acotado y hechos estructurales. No renderiza ni califica el contenido. Consulta [inspección de archivos](docs/api/deliverable-inspection.es.md).
+`inspect_deliverable` lee archivos reales PDF, PPTX, DOCX, XLSX, CSV, proyectos DesignCraft/VectorCraft, imágenes, audio y vídeo y devuelve su identidad, texto acotado y hechos estructurales. No renderiza ni califica el contenido. Consulta [inspección de archivos](docs/api/deliverable-inspection.es.md).
 
 El panel desplegable Actividad del chat muestra los datos informados del principal, workers, asesor y ayudantes, pasos de herramientas, tokens y tiempos de prefill/decode cuando están disponibles. Conserva recibos por ronda y distingue la duración observada de la petición del tiempo del motor. No deduce GPU ni nodo a partir del nombre del modelo. Consulta [actividad de modelos](docs/api/round_activity.es.md).
 

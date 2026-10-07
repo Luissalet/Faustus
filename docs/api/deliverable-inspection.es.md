@@ -11,10 +11,12 @@ Extracción disponible:
 - CSV/TSV: delimitador detectado, encabezado y filas, con límite de lectura de 20.000 filas.
 - Imágenes raster/SVG: metadatos del decodificador (dimensiones, formato, modo/número de fotogramas o dimensiones/viewBox SVG).
 - Audio/vídeo: metadatos del inspector multimedia existente; algunos formatos comprimidos necesitan FFprobe.
+- DesignCraft `.designcraft`: número de páginas/pliegos, elementos de texto/gráfico/grupo, texto de historias, registros de recursos y número/tamaño de partes del paquete que no son metadatos. Solo lee `document.json`; cuenta las demás partes sin asumir que sean recursos, no decodifica sus bytes ni sigue rutas enlazadas.
+- VectorCraft `.vectorcraft`: número de mesas de trabajo y nodos de capa/grupo/trazado/texto/imagen, además del número de registros de imagen. Lee el JSON acotado, pero no decodifica píxeles ni rasteriza la geometría.
 
-La herramienta no modifica archivos. Trata las relaciones de paquetes Office como datos, ignora relaciones externas y nunca ejecuta macros. Los tamaños de archivo y partes, el número de entradas y el contenido devuelto tienen límites. Calcula el hash del archivo inspeccionado y compara sus metadatos antes y después; rechaza archivos que cambien durante la operación.
+La herramienta no modifica archivos. Trata las relaciones de paquetes Office como datos, ignora relaciones externas y nunca ejecuta macros. También trata las referencias de proyectos nativos como datos: nunca abre archivos enlazados ni ejecuta código incrustado. El tamaño del archivo y de las partes, el número de entradas y elementos nativos y el contenido devuelto tienen límites. Calcula el hash del archivo inspeccionado y compara sus metadatos antes y después; rechaza archivos que cambien durante la operación.
 
-Esto aporta evidencia estructural y de contenido extraíble, no un control de calidad. No renderiza documentos, no verifica su diseño visual, no juzga la corrección semántica ni su completitud, no recalcula hojas, no escucha medios, no transcribe audio ni interpreta píxeles. Una inspección correcta confirma que se extrajeron los datos indicados; no certifica que el entregable cumpla el encargo.
+Esto aporta evidencia estructural y de contenido extraíble, no un control de calidad. No renderiza documentos ni proyectos nativos, no verifica su diseño visual, no juzga la corrección semántica ni su completitud, no recalcula hojas, no escucha medios, no transcribe audio ni interpreta píxeles. Contar un marco, nodo, historia, registro de recurso o parte del paquete no demuestra que sea visible, editable, completo ni fiel al encargo. Una inspección correcta confirma que se extrajeron los datos indicados; no certifica que el entregable cumpla el encargo.
 
 Ejemplo:
 

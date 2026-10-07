@@ -21,11 +21,13 @@ import xml.etree.ElementTree as ET
 MAX_FILE_BYTES = 512 * 1024 * 1024
 MAX_ZIP_ENTRIES = 20_000
 MAX_XML_BYTES = 32 * 1024 * 1024
+MAX_NATIVE_DOCUMENT_BYTES = 32 * 1024 * 1024
 DEFAULT_CONTENT_CHARS = 24_000
 MAX_CONTENT_CHARS = 80_000
 MAX_ROWS = 20_000
 MAX_PDF_PAGES = 5_000
 MAX_EXTRACTED_CELLS = 100_000
+MAX_NATIVE_ITEMS = 100_000
 NS = {
     'p': 'http://schemas.openxmlformats.org/presentationml/2006/main',
     'a': 'http://schemas.openxmlformats.org/drawingml/2006/main',
@@ -224,6 +226,139 @@ def _check_zip(infos: list[zipfile.ZipInfo]) -> None:
         raise DeliverableInspectionError('Office package contains an oversized XML part.', 'part_too_large')
 
 
+def _native_json(data: bytes, label: str) -> dict:
+    if len(data) > MAX_NATIVE_DOCUMENT_BYTES:
+        raise DeliverableInspectionError(f'{label} exceeds the native document inspection limit.', 'part_too_large')
+    try:
+        value = json.loads(data)
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
+        raise DeliverableInspectionError(f'{label} is malformed JSON.', 'invalid_package') from exc
+    if not isinstance(value, dict):
+        raise DeliverableInspectionError(f'{label} must contain a JSON object.', 'invalid_package')
+    return value
+
+
+def _designcraft(path: Path) -> dict:
+    """Extract bounded structural facts from DesignCraft's ZIP native package."""
+    with zipfile.ZipFile(path) as z:
+        infos = z.infolist()
+        _check_zip(infos)
+        names = [item.filename for item in infos]
+        if len(names) != len(set(names)):
+            raise DeliverableInspectionError('DesignCraft package contains duplicate part names.', 'invalid_package')
+        try:
+            mime_info = z.getinfo('mimetype')
+            document_info = z.getinfo('document.json')
+        except KeyError as exc:
+            raise DeliverableInspectionError('DesignCraft package is missing a required part.', 'missing_part') from exc
+        if mime_info.file_size > 64:
+            raise DeliverableInspectionError('DesignCraft mimetype part is oversized.', 'part_too_large')
+        mime = z.read('mimetype')
+        if mime != b'application/vnd.designcraft+zip':
+            raise DeliverableInspectionError('Package mimetype is not DesignCraft.', 'invalid_package')
+        if document_info.file_size > MAX_NATIVE_DOCUMENT_BYTES:
+            raise DeliverableInspectionError('DesignCraft document exceeds the native document inspection limit.', 'part_too_large')
+        document = _native_json(z.read('document.json'), 'DesignCraft document.json')
+
+        spreads = document.get('spreads', [])
+        parents = document.get('parents', [])
+        stories = document.get('stories', {})
+        assets = document.get('assets', {})
+        if not isinstance(spreads, list) or not isinstance(parents, list) or not isinstance(stories, dict) or not isinstance(assets, dict):
+            raise DeliverableInspectionError('DesignCraft document has invalid spreads, stories, or assets fields.', 'invalid_package')
+        if len(spreads) + len(parents) > MAX_NATIVE_ITEMS or len(stories) > MAX_NATIVE_ITEMS or len(assets) > MAX_NATIVE_ITEMS:
+            raise DeliverableInspectionError(f'DesignCraft document exceeds {MAX_NATIVE_ITEMS} structural records.', 'item_limit')
+
+        counts = {'text': 0, 'graphic': 0, 'group': 0, 'unassigned': 0, 'other': 0}
+        item_total = 0
+        stack = []
+        for spread in [*spreads, *parents]:
+            if not isinstance(spread, dict):
+                continue
+            items = spread.get('items', [])
+            if isinstance(items, list):
+                stack.extend((item, 0) for item in items)
+        while stack:
+            item, depth = stack.pop()
+            item_total += 1
+            if item_total > MAX_NATIVE_ITEMS:
+                raise DeliverableInspectionError(f'DesignCraft document exceeds {MAX_NATIVE_ITEMS} items.', 'item_limit')
+            if depth > 256:
+                raise DeliverableInspectionError('DesignCraft item nesting exceeds the inspection limit.', 'item_limit')
+            content = item.get('content') if isinstance(item, dict) else None
+            kind = content.get('type') if isinstance(content, dict) else None
+            counts[kind if kind in {'text', 'graphic', 'group', 'unassigned'} else 'other'] += 1
+            if kind == 'group' and isinstance(content.get('items'), list):
+                stack.extend((child, depth + 1) for child in content['items'])
+
+        text = []
+        for story in stories.values():
+            if isinstance(story, dict) and isinstance(story.get('text'), str):
+                text.append(story['text'])
+
+        pages = sum(len(spread.get('pages', [])) for spread in spreads if isinstance(spread, dict) and isinstance(spread.get('pages', []), list))
+        parent_pages = sum(len(spread.get('pages', [])) for spread in parents if isinstance(spread, dict) and isinstance(spread.get('pages', []), list))
+        if pages + parent_pages > MAX_NATIVE_ITEMS:
+            raise DeliverableInspectionError(f'DesignCraft document exceeds {MAX_NATIVE_ITEMS} pages.', 'item_limit')
+        asset_parts = [info for info in infos if info.filename not in {'mimetype', 'meta.json', 'document.json'}]
+        linked_assets = sum(isinstance(asset, dict) and bool(asset.get('link')) for asset in assets.values())
+        return {
+            'native_format': 'DesignCraft', 'title': document.get('title'),
+            'spread_count': len(spreads), 'page_count': pages,
+            'parent_spread_count': len(parents), 'parent_page_count': parent_pages,
+            'item_count': item_total, 'text_frame_count': counts['text'],
+            'image_frame_count': counts['graphic'], 'group_count': counts['group'],
+            'unassigned_item_count': counts['unassigned'], 'other_item_count': counts['other'],
+            'story_count': len(stories), 'stories': text,
+            'asset_record_count': len(assets), 'linked_asset_record_count': linked_assets,
+            'non_metadata_package_part_count': len(asset_parts),
+            'non_metadata_package_bytes': sum(info.file_size for info in asset_parts),
+            'asset_note': 'Non-metadata package parts are counted without loading their bytes and are not assumed to be assets or attributed to frames; linked file paths are not followed.'}
+
+
+def _vectorcraft(path: Path) -> dict:
+    if path.stat().st_size > MAX_NATIVE_DOCUMENT_BYTES:
+        raise DeliverableInspectionError('VectorCraft document exceeds the native document inspection limit.', 'part_too_large')
+    with path.open('rb') as stream:
+        raw = stream.read(MAX_NATIVE_DOCUMENT_BYTES + 1)
+    document = _native_json(raw, 'VectorCraft document')
+    if document.get('format') != 'vectorcraft' or not isinstance(document.get('document'), dict):
+        raise DeliverableInspectionError('JSON does not contain a recognized VectorCraft document.', 'invalid_package')
+    source = document['document']
+    artboards = source.get('artboards', [])
+    layers = source.get('layers', [])
+    images = source.get('images', {})
+    if not isinstance(artboards, list) or not isinstance(layers, list):
+        raise DeliverableInspectionError('VectorCraft document has invalid artboards or layers.', 'invalid_package')
+    if not isinstance(images, (dict, list)):
+        raise DeliverableInspectionError('VectorCraft document has invalid image records.', 'invalid_package')
+    if len(artboards) > MAX_NATIVE_ITEMS or len(images) > MAX_NATIVE_ITEMS:
+        raise DeliverableInspectionError(f'VectorCraft document exceeds {MAX_NATIVE_ITEMS} structural records.', 'item_limit')
+    counts = {'layer': 0, 'group': 0, 'path': 0, 'text': 0, 'image': 0, 'compound': 0, 'other': 0}
+    stack = list(layers)
+    total = 0
+    while stack:
+        node = stack.pop()
+        total += 1
+        if total > MAX_NATIVE_ITEMS:
+            raise DeliverableInspectionError(f'VectorCraft document exceeds {MAX_NATIVE_ITEMS} nodes.', 'item_limit')
+        kind_obj = node.get('kind') if isinstance(node, dict) else None
+        kind = kind_obj.get('type') if isinstance(kind_obj, dict) else None
+        counts[kind if kind in counts else 'other'] += 1
+        if isinstance(kind_obj, dict):
+            children = kind_obj.get('children', kind_obj.get('content', []))
+            if isinstance(children, list):
+                stack.extend(children)
+    return {
+        'native_format': 'VectorCraft', 'title': source.get('title'),
+        'artboard_count': len(artboards), 'layer_count': counts['layer'],
+        'group_count': counts['group'], 'path_count': counts['path'],
+        'text_object_count': counts['text'], 'image_object_count': counts['image'],
+        'compound_path_count': counts['compound'], 'other_node_count': counts['other'],
+        'node_count': total, 'image_record_count': len(images),
+        'image_note': 'Image records are counted without decoding pixels or following linked files.'}
+
+
 def _pdf(path: Path) -> dict:
     try:
         from pypdf import PdfReader
@@ -336,6 +471,8 @@ async def inspect_deliverable(path_value: str, *, max_content_chars: int = DEFAU
         elif ext == '.pptx': kind = 'presentation'; facts = _pptx(resolved)
         elif ext == '.docx': kind = 'document'; facts = _docx(resolved)
         elif ext == '.xlsx': kind = 'spreadsheet'; facts = _xlsx(resolved)
+        elif ext == '.designcraft': kind = 'native_design_project'; facts = _designcraft(resolved)
+        elif ext == '.vectorcraft': kind = 'native_vector_project'; facts = _vectorcraft(resolved)
         elif ext in {'.csv', '.tsv'}: kind = 'delimited_text'; facts = _csv(resolved, '\t' if ext == '.tsv' else None)
         elif ext in {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tif', '.tiff', '.svg'}:
             kind = 'image'
@@ -382,4 +519,8 @@ def _limitations(kind: str, facts: dict) -> list[str]:
     if kind == 'spreadsheet': values.append('Formula text and cached values are reported; formulas are not recalculated.')
     if kind == 'media': values.append('Media is not transcribed, listened to, or visually reviewed; metadata depends on available decoders.')
     if kind == 'image': values.append('Image pixels are not visually interpreted by this inspection.')
+    if kind in {'native_design_project', 'native_vector_project'}:
+        values.append('Native document structure and stored text are reported; the project is not rendered, and frame/node counts do not prove visibility, editability, completeness, or fidelity.')
+    if kind == 'native_design_project': values.append('Embedded package parts are counted but not decoded or linked to frames; external linked file paths are never read.')
+    if kind == 'native_vector_project': values.append('Image payloads and vector geometry are not rasterized or visually inspected; image records do not prove the referenced pixels are available.')
     return values

@@ -16,6 +16,26 @@ def _zip(path, parts):
         for name, data in parts.items(): z.writestr(name, data)
 
 
+def _designcraft_fixture(path, *, with_asset=False):
+    doc = {
+        'title': 'Caption-only proof',
+        'spreads': [{'pages': [{'id': 1}], 'items': [
+            {'id': 2, 'content': {'type': 'text', 'story': 7}},
+            {'id': 3, 'content': {'type': 'group', 'items': [
+                {'id': 4, 'content': {'type': 'graphic', 'asset': 8}},
+            ]}},
+        ]}],
+        'parents': [],
+        'stories': {'7': {'id': 7, 'text': 'Triangle shown in caption only', 'frames': [2]}},
+        'assets': {'8': {'id': 8, 'name': 'triangle.svg', 'mime': 'image/svg+xml', 'link': None}},
+    }
+    parts = {'mimetype': b'application/vnd.designcraft+zip',
+             'meta.json': b'{}', 'document.json': json.dumps(doc).encode()}
+    if with_asset:
+        parts['assets/8'] = b'<svg/>'
+    _zip(path, parts)
+
+
 @pytest.mark.asyncio
 async def test_csv_returns_real_content_identity_and_no_quality_claim(tmp_path):
     path = tmp_path / 'sample.csv'
@@ -150,6 +170,84 @@ async def test_invalid_package_and_bad_content_limit_have_actionable_codes(tmp_p
     with pytest.raises(DeliverableInspectionError) as err:
         await inspect_deliverable(str(good), max_content_chars=10)
     assert err.value.code == 'invalid_arguments'
+
+
+@pytest.mark.asyncio
+async def test_designcraft_counts_pages_frames_stories_and_package_parts_without_claiming_rendering(tmp_path, monkeypatch):
+    monkeypatch.setattr('src.tool_execution._resolve_tool_path', lambda value: value)
+    path = tmp_path / 'handout.designcraft'
+    _designcraft_fixture(path, with_asset=True)
+    original = path.read_bytes()
+    result = await inspect_deliverable(str(path))
+    facts = result['facts']
+    assert result['kind'] == 'native_design_project'
+    assert result['sha256'] == hashlib.sha256(original).hexdigest()
+    assert facts['page_count'] == 1
+    assert facts['text_frame_count'] == 1
+    assert facts['image_frame_count'] == 1
+    assert facts['group_count'] == 1 and facts['item_count'] == 3
+    assert facts['stories'] == ['Triangle shown in caption only']
+    assert facts['asset_record_count'] == 1 and facts['non_metadata_package_part_count'] == 1
+    assert any('not rendered' in value for value in result['limitations'])
+    assert path.read_bytes() == original
+
+
+@pytest.mark.asyncio
+async def test_designcraft_requires_native_mimetype(tmp_path, monkeypatch):
+    monkeypatch.setattr('src.tool_execution._resolve_tool_path', lambda value: value)
+    path = tmp_path / 'wrong.designcraft'
+    _zip(path, {'mimetype': b'not-designcraft', 'document.json': b'{}'})
+    with pytest.raises(DeliverableInspectionError) as err:
+        await inspect_deliverable(str(path))
+    assert err.value.code == 'invalid_package'
+
+
+@pytest.mark.asyncio
+async def test_designcraft_enforces_document_json_size_limit(tmp_path, monkeypatch):
+    import src.deliverable_inspection as inspection
+    monkeypatch.setattr('src.tool_execution._resolve_tool_path', lambda value: value)
+    monkeypatch.setattr(inspection, 'MAX_NATIVE_DOCUMENT_BYTES', 32)
+    path = tmp_path / 'large.designcraft'
+    _zip(path, {'mimetype': b'application/vnd.designcraft+zip', 'document.json': b' ' * 33})
+    with pytest.raises(DeliverableInspectionError) as err:
+        await inspect_deliverable(str(path))
+    assert err.value.code == 'part_too_large'
+
+
+@pytest.mark.asyncio
+async def test_vectorcraft_counts_nodes_artboards_and_images_without_decoding(tmp_path, monkeypatch):
+    monkeypatch.setattr('src.tool_execution._resolve_tool_path', lambda value: value)
+    path = tmp_path / 'drawing.vectorcraft'
+    source = {
+        'format': 'vectorcraft', 'version': 3,
+        'document': {'title': 'Star', 'artboards': [{'id': 1}],
+                     'layers': [{'kind': {'type': 'layer', 'children': [
+                         {'kind': {'type': 'path'}},
+                         {'kind': {'type': 'text'}},
+                         {'kind': {'type': 'image'}},
+                     ]}}], 'images': {'image-1': {'mime': 'image/png'}}},
+    }
+    path.write_text(json.dumps(source), encoding='utf-8')
+    original = path.read_bytes()
+    result = await inspect_deliverable(str(path))
+    facts = result['facts']
+    assert result['kind'] == 'native_vector_project'
+    assert result['sha256'] == hashlib.sha256(original).hexdigest()
+    assert facts['artboard_count'] == 1 and facts['node_count'] == 4
+    assert facts['layer_count'] == 1 and facts['path_count'] == 1
+    assert facts['text_object_count'] == 1 and facts['image_object_count'] == 1
+    assert facts['image_record_count'] == 1
+    assert any('not rasterized' in value for value in result['limitations'])
+
+
+@pytest.mark.asyncio
+async def test_vectorcraft_rejects_unknown_json_format(tmp_path, monkeypatch):
+    monkeypatch.setattr('src.tool_execution._resolve_tool_path', lambda value: value)
+    path = tmp_path / 'not-vectorcraft.vectorcraft'
+    path.write_text('{"format":"other","document":{}}', encoding='utf-8')
+    with pytest.raises(DeliverableInspectionError) as err:
+        await inspect_deliverable(str(path))
+    assert err.value.code == 'invalid_package'
 
 
 def test_tool_is_discoverable_read_only_and_workspace_untrusted():
