@@ -32,6 +32,7 @@ del texto, las notas, las imágenes y los gráficos. `facts.template` incluye:
 - `themes`: el nombre, la paleta (de `dk1` a `accent6`, `hlink` y `folHlink`), las fuentes (titulares y cuerpo) y
   la huella.
 - `template_fingerprint`: un hash que reúne las huellas de todos los patrones, diseños y temas.
+- `unreadable_parts`: partes de la plantilla que faltan o están dañadas (`part`, `kind`, `error`). Se dejan fuera en lugar de abortar la inspección; entonces `template_fingerprint` es nulo y la comparación nunca da la plantilla por conservada.
 
 Cada diapositiva indica además su `layout`, su `layout_name` y su `master`.
 

@@ -269,3 +269,49 @@ async def test_aspect_ratio_of_a_non_standard_canvas(decks, tmp_path):
     big.save(path)
     size = (await inspect_deliverable(str(path)))["facts"]["template"]["slide_size"]
     assert size["named"] is None and size["aspect"] == "16:9" and size["width_in"] == 20.0
+
+
+@pytest.mark.asyncio
+async def test_damaged_or_missing_template_parts_do_not_abort_the_inspection(decks, tmp_path):
+    template, preserved = decks
+    _rewrite(preserved, "ppt/slideLayouts/slideLayout11.xml", lambda x: x[: len(x) // 2])     # truncated XML
+    result = await inspect_deliverable(str(preserved), compare_with=str(template))
+    t = result["facts"]["template"]
+    assert t["unreadable_parts"] == [{"part": "ppt/slideLayouts/slideLayout11.xml", "kind": "layout",
+                                      "error": "invalid_package"}]
+    assert len(t["layouts"]) == 10 and t["template_fingerprint"] is None
+    assert [s["layout_name"] for s in result["facts"]["slides"]] == ["Title Slide", "Title and Content"]
+    cmp = result["template_comparison"]
+    assert cmp["template_preserved"] is False and cmp["unreadable_parts"]["deck"]
+    no_theme = tmp_path / "no-theme.pptx"
+    with zipfile.ZipFile(template) as src, zipfile.ZipFile(no_theme, "w") as dst:
+        for info in src.infolist():
+            if info.filename != "ppt/theme/theme1.xml":
+                dst.writestr(info, src.read(info.filename))
+    t = (await inspect_deliverable(str(no_theme)))["facts"]["template"]
+    assert t["themes"] == [] and {"part": "ppt/theme/theme1.xml", "kind": "theme", "error": "missing_part"} in t["unreadable_parts"]
+
+
+@pytest.mark.asyncio
+async def test_external_link_targets_count_in_the_fingerprint(decks, tmp_path):
+    template, _ = decks
+
+    def with_link(dst, url):
+        link = ('<p:sp><p:nvSpPr><p:cNvPr id="98" name="Link"><a:hlinkClick r:id="rId98"/></p:cNvPr><p:cNvSpPr/>'
+                '<p:nvPr/></p:nvSpPr><p:spPr/></p:sp>')
+        with zipfile.ZipFile(template) as z, zipfile.ZipFile(dst, "w") as out:
+            for info in z.infolist():
+                data = z.read(info.filename)
+                if info.filename == "ppt/slideLayouts/slideLayout7.xml":
+                    data = data.decode().replace("</p:spTree>", link + "</p:spTree>", 1).encode()
+                elif info.filename == "ppt/slideLayouts/_rels/slideLayout7.xml.rels":
+                    data = data.decode().replace("</Relationships>", (
+                        '<Relationship Id="rId98" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+                        f'relationships/hyperlink" Target="{url}" TargetMode="External"/></Relationships>')).encode()
+                out.writestr(info, data)
+
+    a, b = tmp_path / "a.pptx", tmp_path / "b.pptx"
+    with_link(a, "https://example.org/a")
+    with_link(b, "https://example.org/b")
+    cmp = (await inspect_deliverable(str(b), compare_with=str(a)))["template_comparison"]
+    assert cmp["layouts"]["changed_same_name"] == ["Blank"]

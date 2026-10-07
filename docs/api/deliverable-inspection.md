@@ -32,6 +32,7 @@ text, notes, images and charts. `facts.template` contains:
 - `themes`: name, colour scheme (`dk1` … `accent6`, `hlink`, `folHlink`), font scheme (major and minor Latin
   typefaces) and fingerprint.
 - `template_fingerprint`: one hash over every master, layout and theme fingerprint.
+- `unreadable_parts`: template parts that are missing or malformed (`part`, `kind`, `error`). They are left out instead of aborting the inspection; `template_fingerprint` is then null and the comparison never reports the template as preserved.
 
 Every slide also reports its `layout`, `layout_name` and `master`.
 

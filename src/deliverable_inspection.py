@@ -159,10 +159,10 @@ def _part_fingerprint(package: zipfile.ZipFile, name: str) -> str:
     tokens: dict[str, str] = {}
     try:
         rel_root = ET.fromstring(package.read(relpath))
-    except (KeyError, ET.ParseError):
-        rel_root = None
-    if rel_root is not None:
         typed = _typed_rels(package, name)
+    except (KeyError, ET.ParseError, DeliverableInspectionError):
+        rel_root, typed = None, {}
+    if rel_root is not None:
         for rel in rel_root.findall('rel:Relationship', NS):
             rid, kind = rel.get('Id', ''), rel.get('Type', '').rsplit('/', 1)[-1]
             if rel.get('TargetMode') == 'External':
@@ -212,50 +212,78 @@ def _theme_facts(package: zipfile.ZipFile, part: str) -> dict:
 
 
 def _pptx_template(package: zipfile.ZipFile, pres: ET.Element, rels: dict[str, str]) -> dict:
-    """Masters, layouts and themes actually present in the package, how they link, and comparable fingerprints."""
+    """Masters, layouts and themes actually present in the package, how they link, and comparable fingerprints.
+
+    A missing or unreadable template part does not abort the inspection: it is listed in ``unreadable_parts`` and left
+    out, and the comparison then never reports the template as preserved."""
     size = pres.find('p:sldSz', NS)
     slide_size = None
     if size is not None:
-        cx, cy = int(size.get('cx') or 0), int(size.get('cy') or 0)
+        try:
+            cx, cy = int(size.get('cx') or 0), int(size.get('cy') or 0)
+        except ValueError:
+            cx = cy = 0
         slide_size = {'cx_emu': cx, 'cy_emu': cy, 'width_in': round(cx / 914400, 3), 'height_in': round(cy / 914400, 3),
                       'type': size.get('type'), 'named': _named_slide_size(cx, cy), 'aspect': _slide_aspect(cx, cy)}
-    masters, layouts, themes = [], {}, {}
+    masters, layouts, themes, unreadable = [], {}, {}, []
+    names = set(package.namelist())
+
+    def readable(part: str, kind: str) -> bool:
+        if part in names:
+            return True
+        unreadable.append({'part': part or None, 'kind': kind, 'error': 'missing_part'})
+        return False
+
     master_ids = pres.findall('.//p:sldMasterIdLst/p:sldMasterId', NS)
     if len(master_ids) > MAX_ROWS:
         raise DeliverableInspectionError(f'Presentation has more than {MAX_ROWS} masters.', 'item_limit')
     for item in master_ids:
         part = rels.get(item.get(f"{{{NS['r']}}}id", ''), '')
-        if not part or part not in package.namelist():
+        if not readable(part, 'master'):
             continue
-        root = _xml(package, part)
-        typed = _typed_rels(package, part)
+        try:
+            root = _xml(package, part)
+            typed = _typed_rels(package, part)
+            fingerprint = _part_fingerprint(package, part)
+        except DeliverableInspectionError as exc:
+            unreadable.append({'part': part, 'kind': 'master', 'error': exc.code})
+            continue
         mrels = {rid: target for rid, (target, _kind) in typed.items()}
-        theme_part = next((t for t, kind in typed.values() if kind == 'theme' and t in package.namelist()), None)
-        if theme_part and theme_part not in themes:
-            themes[theme_part] = _theme_facts(package, theme_part)
+        theme_part = next((t for t, kind in typed.values() if kind == 'theme'), None)
+        if theme_part and theme_part not in themes and readable(theme_part, 'theme'):
+            try:
+                themes[theme_part] = _theme_facts(package, theme_part)
+            except DeliverableInspectionError as exc:
+                unreadable.append({'part': theme_part, 'kind': 'theme', 'error': exc.code})
         layout_parts = []
         for lid in root.findall('.//p:sldLayoutIdLst/p:sldLayoutId', NS):
             lpart = mrels.get(lid.get(f"{{{NS['r']}}}id", ''), '')
-            if not lpart or lpart in layouts or lpart not in package.namelist():
+            if lpart in layouts or not readable(lpart, 'layout'):
                 continue
-            lroot = _xml(package, lpart)
+            try:
+                lroot = _xml(package, lpart)
+                lfingerprint = _part_fingerprint(package, lpart)
+            except DeliverableInspectionError as exc:
+                unreadable.append({'part': lpart, 'kind': 'layout', 'error': exc.code})
+                continue
             csld = lroot.find('p:cSld', NS)
             placeholders = []
             for ph in lroot.findall('.//p:nvPr/p:ph', NS):
                 placeholders.append({'type': ph.get('type') or 'body', 'idx': ph.get('idx')})
             layouts[lpart] = {'part': lpart, 'name': csld.get('name') if csld is not None else None,
                               'type': lroot.get('type'), 'master': part, 'placeholders': placeholders,
-                              'fingerprint': _part_fingerprint(package, lpart), 'used_by_slides': []}
+                              'fingerprint': lfingerprint, 'used_by_slides': []}
             layout_parts.append(lpart)
         csld = root.find('p:cSld', NS)
         masters.append({'part': part, 'name': csld.get('name') if csld is not None else None, 'theme': theme_part,
-                        'layouts': layout_parts, 'fingerprint': _part_fingerprint(package, part)})
+                        'layouts': layout_parts, 'fingerprint': fingerprint})
     combined = hashlib.sha256()
     for item in sorted([m['fingerprint'] for m in masters] + [l['fingerprint'] for l in layouts.values()] +
                        [t['fingerprint'] for t in themes.values()]):
         combined.update(item.encode('ascii'))
     return {'slide_size': slide_size, 'masters': masters, 'layouts': list(layouts.values()),
-            'themes': list(themes.values()), 'template_fingerprint': combined.hexdigest() if masters else None}
+            'themes': list(themes.values()), 'unreadable_parts': unreadable,
+            'template_fingerprint': combined.hexdigest() if masters and not unreadable else None}
 
 
 def _pptx(path: Path) -> dict:
@@ -372,7 +400,8 @@ def compare_presentation_templates(reference: dict, deck: dict) -> dict:
                                'reason': 'edited layout' if layout.get('name') in ref_layout_names else 'layout not in reference'})
     ref_size, deck_size = ref.get('slide_size') or {}, out.get('slide_size') or {}
     same_size = bool(ref_size) and (ref_size.get('cx_emu'), ref_size.get('cy_emu')) == (deck_size.get('cx_emu'), deck_size.get('cy_emu'))
-    preserved = (bool(ref.get('masters')) and same_size and not themes['changed_same_name'] and not themes['not_in_reference']
+    unreadable = {'reference': ref.get('unreadable_parts') or [], 'deck': out.get('unreadable_parts') or []}
+    preserved = (bool(ref.get('masters')) and same_size and not unreadable['reference'] and not unreadable['deck'] and not themes['changed_same_name'] and not themes['not_in_reference']
                  and not masters['changed_same_name'] and not masters['not_in_reference']
                  and not layouts['changed_same_name'] and not foreign_slides)
     color_changes = {}
@@ -391,6 +420,7 @@ def compare_presentation_templates(reference: dict, deck: dict) -> dict:
             'slide_size': {'same': same_size, 'reference': ref_size or None, 'deck': deck_size or None},
             'themes': themes, 'theme_color_changes': color_changes, 'theme_font_changes': font_changes,
             'masters': masters, 'layouts': layouts, 'slides_on_layouts_outside_reference': foreign_slides,
+            'unreadable_parts': unreadable,
             'scope': 'Structural parts only. Equal parts do not prove visual quality, filled placeholders or correct text; '
                      'unused reference layouts may have been dropped legitimately.'}
 
