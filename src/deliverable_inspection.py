@@ -859,13 +859,15 @@ async def inspect_deliverable(path_value: str, *, max_content_chars: int = DEFAU
         if (info.st_size, info.st_mtime_ns, info.st_ino) != (current.st_size, current.st_mtime_ns, current.st_ino):
             raise DeliverableInspectionError('File changed during inspection; retry against a stable copy.', 'file_changed')
         result = {'path': str(resolved), 'filename': resolved.name, 'extension': ext,
-                'kind': kind, 'size_bytes': info.st_size, 'sha256': digest.hexdigest(),
-                'status': 'inspected', 'facts': facts, 'content': content,
+                'kind': kind, 'size_bytes': info.st_size, 'sha256': digest.hexdigest(), 'status': 'inspected'}
+        if comparison is not None:
+            # Before the facts: tool output shown to a model is cut to a budget, and the slide text of a long deck must
+            # not push the verdict out of view.
+            result['template_comparison'] = comparison
+        result |= {'facts': facts, 'content': content,
                 'content_truncated': limited,
                 'inspection_scope': 'Structural and extractable metadata only. No visual, audio, semantic, or overall quality rating is made.',
                 'limitations': _limitations(kind, facts)}
-        if comparison is not None:
-            result['template_comparison'] = comparison
         return result
     except DeliverableInspectionError: raise
     except OSError as exc:

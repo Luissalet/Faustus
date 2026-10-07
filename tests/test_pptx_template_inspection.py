@@ -388,3 +388,11 @@ def test_theme_changes_are_reported_per_master_pair():
                                      "fonts": {}}]
     assert cmp["theme_color_changes"] == {}            # the first master kept its theme
     assert cmp["themes"]["changed_same_name"] == ["B"] and cmp["template_preserved"] is False
+
+
+@pytest.mark.asyncio
+async def test_comparison_comes_before_the_slide_facts_in_the_serialised_result(decks):
+    import json
+    template, preserved = decks
+    text = json.dumps(await inspect_deliverable(str(preserved), compare_with=str(template)), ensure_ascii=False)
+    assert text.index('"template_comparison"') < text.index('"facts"') < text.index('"slides"')
