@@ -21,7 +21,12 @@ past the point Stop was pressed); revert `agent_runs.stop_with_reason` back
 to the old bare-bool `stop` to see the reason test fail.
 """
 import asyncio
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import select
+import socket
+import time
+import threading
 
 import src.agent_loop as al
 from src import agent_runs
@@ -264,3 +269,196 @@ def test_wall_clock_ceiling_ends_turn_with_a_question(monkeypatch):
     # Never ran to the (absurd) round cap -- the wall clock stopped it long
     # before that, even though nothing else would have.
     assert counter["n"] < 1000, counter
+
+
+def test_turn_ceiling_cancels_a_silent_inference_and_closes_its_stream(monkeypatch):
+    # The full loop performs ordinary turn setup before starting inference;
+    # leave enough wall time to prove cancellation of the provider await.
+    _patch_common(monkeypatch, {"agent_turn_max_seconds": 5,
+                                "agent_auto_continue_on_progress": True})
+    state = {"started": False, "closed": False}
+
+    async def _silent_stream(_candidates, _messages, **_kwargs):
+        state["started"] = True
+        try:
+            await asyncio.sleep(30)
+            yield "data: [DONE]\n\n"
+        finally:
+            state["closed"] = True
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _silent_stream, raising=False)
+    chunks = _collect(al.stream_agent_loop(
+        "http://x/v1", "m", [{"role": "user", "content": "wait for the answer"}],
+        max_rounds=10, relevant_tools={"bash"},
+    ))
+    events = _types(chunks)
+    assert state == {"started": True, "closed": True}
+    assert any(event.get("type") == "ask_user" for event in events), events
+    assert not any(event.get("type") == "round_info" for event in events), events
+
+
+def test_turn_ceiling_stops_a_continuous_stream_without_running_buffered_tools(monkeypatch):
+    _patch_common(monkeypatch, {"agent_turn_max_seconds": 5,
+                                "agent_auto_continue_on_progress": True})
+    state = {"closed": False, "executed": 0}
+
+    async def _fake_exec(*_args, **_kwargs):
+        state["executed"] += 1
+        return "bash", {"output": "unexpected", "exit_code": 0}
+
+    monkeypatch.setattr(al, "execute_tool_block", _fake_exec, raising=False)
+
+    async def _stream(_candidates, _messages, **_kwargs):
+        try:
+            yield 'data: ' + json.dumps({"delta": "Partial progress."}) + "\n\n"
+            yield 'data: ' + json.dumps({"type": "tool_calls", "calls": [{
+                "name": "bash", "arguments": json.dumps({"command": "echo must-not-run"}),
+            }]}) + "\n\n"
+            while True:
+                await asyncio.sleep(0.02)
+                yield 'data: ' + json.dumps({"delta": " more"}) + "\n\n"
+        finally:
+            state["closed"] = True
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _stream, raising=False)
+    chunks = _collect(al.stream_agent_loop(
+        "http://x/v1", "m", [{"role": "user", "content": "do something"}],
+        max_rounds=10, relevant_tools={"bash"},
+    ))
+    events = _types(chunks)
+    assert state["closed"] is True
+    assert state["executed"] == 0
+    assert any(event.get("type") == "ask_user" for event in events), events
+    assert any(event.get("type") == "response_replace" and "Partial progress." in event.get("text", "")
+               for event in events), events
+
+
+def test_turn_deadline_disabled_and_fast_completion_keep_existing_behavior(monkeypatch):
+    _patch_common(monkeypatch, {"agent_turn_max_seconds": -1,
+                                "agent_auto_continue_on_progress": True})
+    calls = {"count": 0}
+
+    async def _fast_stream(_candidates, _messages, **_kwargs):
+        calls["count"] += 1
+        yield 'data: ' + json.dumps({"delta": "Completed inside the limit."}) + "\n\n"
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fast_stream, raising=False)
+    events = _types(_collect(al.stream_agent_loop(
+        "http://x/v1", "m", [{"role": "user", "content": "answer quickly"}],
+        max_rounds=2, relevant_tools={"bash"},
+    )))
+    assert calls["count"] == 1
+    assert not any(event.get("type") == "ask_user" for event in events), events
+    assert any(event.get("delta") == "Completed inside the limit." for event in events), events
+
+
+def test_turn_finishing_inside_an_active_wall_clock_limit_is_unchanged(monkeypatch):
+    _patch_common(monkeypatch, {"agent_turn_max_seconds": 20,
+                                "agent_auto_continue_on_progress": True})
+
+    async def _fast_stream(_candidates, _messages, **_kwargs):
+        yield 'data: ' + json.dumps({"delta": "Finished before the deadline."}) + "\n\n"
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _fast_stream, raising=False)
+    events = _types(_collect(al.stream_agent_loop(
+        "http://x/v1", "m", [{"role": "user", "content": "answer"}],
+        max_rounds=2, relevant_tools={"bash"},
+    )))
+    assert not any(event.get("type") == "ask_user" for event in events), events
+    assert any(event.get("delta") == "Finished before the deadline." for event in events), events
+
+
+def test_turn_ceiling_closes_a_real_http_sse_stream(monkeypatch):
+    """Exercise llm_core/httpx close propagation without any model server."""
+    _patch_common(monkeypatch, {"agent_turn_max_seconds": 5,
+                                "agent_auto_continue_on_progress": True})
+    state = {"request": threading.Event(), "disconnected": threading.Event(), "body": None, "path": None}
+
+    class _SSEHandler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def log_message(self, *_args):
+            pass
+
+        def do_POST(self):
+            state["path"] = self.path
+            length = int(self.headers.get("Content-Length", "0"))
+            state["body"] = json.loads(self.rfile.read(length).decode("utf-8"))
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Transfer-Encoding", "chunked")
+            self.end_headers()
+
+            events = [
+                {"choices": [{"delta": {"content": "Partial progress."}, "finish_reason": None}]},
+                {"choices": [{"delta": {"tool_calls": [{
+                    "index": 0, "id": "call_deadline", "type": "function",
+                    "function": {"name": "bash", "arguments": '{"command":"echo must-not-run"}'},
+                }]}, "finish_reason": None}]},
+            ]
+            for event in events:
+                chunk = ("data: " + json.dumps(event) + "\n\n").encode("utf-8")
+                self.wfile.write(f"{len(chunk):X}\r\n".encode("ascii") + chunk + b"\r\n")
+                self.wfile.flush()
+            state["request"].set()
+
+            # Wait without sending bytes so the real HTTPX SSE reader is
+            # pending silently after seeing text and a buffered tool fragment.
+            until = time.monotonic() + 12
+            while time.monotonic() < until:
+                readable, _, _ = select.select([self.connection], [], [], 0.05)
+                if not readable:
+                    continue
+                try:
+                    probe = self.connection.recv(1, socket.MSG_PEEK)
+                except OSError:
+                    state["disconnected"].set()
+                    return
+                if not probe:
+                    state["disconnected"].set()
+                    return
+
+    class _SSEServer(ThreadingHTTPServer):
+        daemon_threads = True
+        allow_reuse_address = True
+
+    server = _SSEServer(("127.0.0.1", 0), _SSEHandler)
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    executed = {"count": 0}
+
+    async def _fake_exec(*_args, **_kwargs):
+        executed["count"] += 1
+        return "bash", {"output": "unexpected", "exit_code": 0}
+
+    monkeypatch.setattr(al, "execute_tool_block", _fake_exec, raising=False)
+    # Loopback /v1 is otherwise intentionally classified as Ollama by the
+    # provider detector. This fixture speaks the generic OpenAI-compatible
+    # SSE contract, so disable only that adapter classification.
+    from src import llm_core
+    monkeypatch.setattr(llm_core, "_is_ollama_native_url", lambda _url: False)
+    monkeypatch.setattr(llm_core, "_is_ollama_openai_compat_url", lambda _url: False)
+    started = time.monotonic()
+    try:
+        chunks = _collect(al.stream_agent_loop(
+            f"http://127.0.0.1:{server.server_port}/v1", "synthetic-test-model",
+            [{"role": "user", "content": "do something"}],
+            max_rounds=10, relevant_tools={"bash"},
+        ))
+        elapsed = time.monotonic() - started
+        events = _types(chunks)
+        assert state["request"].is_set(), "the real stream client never reached the local SSE server"
+        assert state["disconnected"].wait(2), "the client left the pending HTTP response open"
+        assert executed["count"] == 0
+        assert any(event.get("type") == "ask_user" for event in events), events
+        assert any(event.get("type") == "response_replace" and "Partial progress." in event.get("text", "")
+                   for event in events), events
+        assert elapsed < 15, f"deadline did not stop the live HTTP stream promptly: {elapsed:.2f}s"
+        assert state["path"] == "/v1/chat/completions"
+        assert state["body"].get("stream") is True
+    finally:
+        server.shutdown()
+        server.server_close()
+        server_thread.join(2)

@@ -4480,6 +4480,40 @@ async def _observe_main_inference_awaits(source, observer=None):
                 logger.debug("main inference stream close also failed")
 
 
+async def _iterate_main_inference_until(source, deadline_monotonic, expired_state):
+    """Yield a main inference stream until its monotonic turn deadline.
+
+    The timeout wraps each pending ``__anext__`` so a silent provider cannot
+    hold the turn open. On expiry, close the observed stream explicitly; its
+    close chain releases the HTTP response and records pending usage.
+    """
+    iterator = source.__aiter__()
+    try:
+        if deadline_monotonic is None:
+            async for chunk in iterator:
+                yield chunk
+            return
+        while True:
+            remaining = deadline_monotonic - time.monotonic()
+            if remaining <= 0:
+                expired_state["expired"] = True
+                return
+            try:
+                chunk = await asyncio.wait_for(iterator.__anext__(), timeout=remaining)
+            except StopAsyncIteration:
+                return
+            except asyncio.TimeoutError:
+                if time.monotonic() >= deadline_monotonic:
+                    expired_state["expired"] = True
+                    return
+                raise
+            yield chunk
+    finally:
+        close = getattr(iterator, "aclose", None)
+        if close is not None:
+            await close()
+
+
 def _recovery_usage_snapshot(raw):
     """Keep observed stream fields only; no estimates or missing-count zeroes."""
     if not isinstance(raw, dict):
@@ -11807,6 +11841,9 @@ async def _stream_agent_loop_body(
         _turn_max_seconds = float(get_setting("agent_turn_max_seconds", 3600) or 3600)
     except (TypeError, ValueError):
         _turn_max_seconds = 3600.0
+    _turn_deadline_monotonic = (
+        _turn_started_monotonic + _turn_max_seconds if _turn_max_seconds > 0 else None
+    )
     _turn_ceiling_hit = False
     _handoff_nudged = False
     _draft_first_nudged = False
@@ -12910,7 +12947,8 @@ async def _stream_agent_loop_body(
             _round_overrides = gen_overrides
         _tool_trouble_since_stream = False
         _inference_started_monotonic = time.monotonic()
-        async for chunk in _observe_main_inference_awaits(stream_llm_with_fallback(
+        _stream_deadline_state = {"expired": False}
+        async for chunk in _iterate_main_inference_until(_observe_main_inference_awaits(stream_llm_with_fallback(
             _candidates,
             messages,
             temperature=temperature,
@@ -12926,7 +12964,8 @@ async def _stream_agent_loop_body(
             candidate_request_factory=_candidate_request,
             candidate_route_descriptors=_candidate_route_descriptors,
             gen_overrides=_round_overrides or None,
-        ), functools.partial(_pending_main_active_observe, _pending_main_usage, round_num)):
+        ), functools.partial(_pending_main_active_observe, _pending_main_usage, round_num)),
+                _turn_deadline_monotonic, _stream_deadline_state):
             if not _round_first_event_logged:
                 _round_first_event_logged = True
                 logger.info(
@@ -13551,6 +13590,51 @@ async def _stream_agent_loop_body(
                 logger.info("[steer] interrupting round %s mid-generation (%d message(s))",
                             round_num, len(_steer_interrupted))
                 break
+
+        if _stream_deadline_state["expired"]:
+            # An incomplete provider stream is not a completed model turn.
+            # Keep only user-visible text already received; never parse or run
+            # tool calls that were buffered before the stream completed.
+            _turn_ceiling_hit = True
+            _elapsed_s = round(time.monotonic() - _turn_started_monotonic, 1)
+            logger.warning(
+                "[agent] turn wall-clock ceiling (%ss) reached during inference at round %s (elapsed=%ss)",
+                _turn_max_seconds, round_num, _elapsed_s,
+            )
+            _ledger.notes.append(f"turn_wall_clock_ceiling@{round_num}:{_elapsed_s}s")
+            _finalize_round_usage()
+            _main_active_credit = max(0, time.monotonic() - _inference_started_monotonic)
+            _budget_ledger.add_active_seconds(_main_active_credit)
+            _pending_main_usage_settle(
+                _pending_main_usage, round_num, tokens=0, remote_units=0,
+                active_seconds=_main_active_credit,
+            )
+            full_response = strip_tool_blocks(full_response).strip()
+            _partial = strip_tool_blocks(
+                round_response,
+                skip_fenced=(_is_api_model and not native_tool_calls and not guide_only),
+            ).strip()
+            if _ody_qwen_finetune_model:
+                _partial = _strip_doc_model_artifacts(_partial).strip()
+            if _partial:
+                _assistant_partial = {"role": "assistant", "content": _partial}
+                if round_reasoning:
+                    _assistant_partial["reasoning_content"] = round_reasoning
+                messages.append(_assistant_partial)
+            round_texts.append(_partial)
+            provider_round_texts.append(round_response)
+            round_models.append(_round_actual_model)
+            round_endpoint_ids.append(_round_actual_endpoint_id)
+            round_endpoint_labels.append(_round_actual_endpoint_label)
+            yield f"data: {json.dumps({'type': 'response_replace', 'text': full_response})}\n\n"
+            for _rk, _rpayload in _end_turn_with_question(
+                reason="turn_wall_clock_ceiling",
+                round_num=round_num, session_id=session_id, owner=owner,
+                ledger=_ledger, elapsed_s=_elapsed_s,
+            ):
+                yield _rpayload
+            _awaiting_user = True
+            break
 
         if (_compaction_budget_exhaustion is not None or _recovery_cancelled
                 or _recovery_budget_exhaustion is not None):
