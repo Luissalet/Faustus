@@ -9094,6 +9094,12 @@ async def _stream_agent_loop_body(
             # Hoard operations). disabled_tools and policy filters still apply
             # when schemas are assembled below.
             _caller_pinned_tools = set(relevant_tools or ())
+            # The earlier project-board gate also filtered the original
+            # selection, but workspace replacement unions caller pins back in.
+            # Keep that gate effective across the replacement when no project
+            # is attached; MCP pins and other caller-selected tools remain.
+            if not str(_hopts.get("project_id") or "").strip():
+                _caller_pinned_tools -= _DOMAIN_TOOL_MAP["project_board"]
             # Explicit MCP-only tasks still need semantically selected MCP
             # schemas when workspace routing replaces the retrieval set.
             # Ordinary coding tasks continue to drop unpinned retrieval noise.
