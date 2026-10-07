@@ -248,58 +248,69 @@ async def recover_after_connect_failure(url: str) -> bool:
 
 _GARBAGE_RE = None
 _RESTART_PAUSE_S = 2.0  # let the port close before starting it again
-_SANITY_PROMPT = "Reply with one short friendly greeting."
+_SANITY_PROBES = (
+    ("What is 7 + 5? Reply only with the number.", "12"),
+    ("What is 3 + 4? Reply only with the number.", "7"),
+)
 
 
 def _is_garbage(text: str) -> bool:
     """A reply made of one short unit repeated: symbols (``////``, ``0000``)
     or letters (``жнымжнымжным…``, seen live on 26-09 after an exam: the
     27B answered "The capital of France is" with one Cyrillic syllable
-    twelve times, which the letters-free rule let through). The sanity
-    prompt asks for a greeting, so a unit of up to 8 characters filling
-    the reply is never a real answer."""
+    twelve times, which the letters-free rule let through). This schedules a
+    separate generation-health check; repetition alone does not justify a
+    process restart."""
     import re
     global _GARBAGE_RE
     if _GARBAGE_RE is None:
-        _GARBAGE_RE = re.compile(r"^(.{1,8}?)\1{4,}.{0,8}$", re.DOTALL)
+        # A collapsed reply can start with a few stray tokens before the loop.
+        _GARBAGE_RE = re.compile(r"^.{0,8}?(.{1,8}?)\1{4,}.{0,8}$", re.DOTALL)
     body = "".join(str(text or "").split())
     m = _GARBAGE_RE.match(body) if body else None
     if not m:
         return False
     unit = m.group(1)
+    if unit.casefold() in {"ha", "he"}:
+        return False
     if not any(ch.isalpha() for ch in unit):
         return True
     # Letters: a laugh ("hahaha") is a model's choice, not a broken engine;
     # a syllable of 3+ letters or one outside ASCII filling the whole reply
     # to a greeting prompt is.
-    return len(unit) >= 3 or any(ord(ch) > 127 for ch in unit)
+    return (len(unit) >= 3 or any(ord(ch) > 127 for ch in unit)
+            or (len(unit) >= 2 and unit.isupper()))
 
 
 async def generates_sanely(url: str, model: str, *, timeout_s: float = 30.0) -> Optional[bool]:
-    """Ask the engine behind `url` for a one-line greeting with reasoning off.
+    """Check a generated answer, rather than HTTP health or repetition alone.
 
-    False when it answers with one symbol repeated -- the state seen live
-    (25-09) in which a llama-server on a GPU that another process had just
-    squeezed answered every prompt, even "Di hola.", with ``/`` until it was
-    restarted. None when the probe itself could not run (no answer, not a
-    chat endpoint): nothing is concluded from that. Never raises."""
+    A correct trivial arithmetic answer passes. Two incorrect generated answers
+    fail; an unavailable or empty response is inconclusive. The second probe
+    confirms a failure before recovery can restart the engine. This catches
+    corruption with a non-repeating prefix, such as ``kowaVCVC...``. Never raises.
+    """
     import httpx
     base = str(url or "").rstrip("/")
     if not base.endswith("/v1"):
         base = base.split("/v1/")[0].rstrip("/") + "/v1"
-    body = {"model": model, "messages": [{"role": "user", "content": _SANITY_PROMPT}],
-            "max_tokens": 16, "temperature": 0.0,
-            "chat_template_kwargs": {"enable_thinking": False}}
     try:
+        import re
         async with httpx.AsyncClient(timeout=timeout_s, trust_env=False) as client:
-            resp = await client.post(base + "/chat/completions", json=body)
-        if resp.status_code != 200:
-            return None
-        msg = ((resp.json().get("choices") or [{}])[0].get("message") or {})
-        text = str(msg.get("content") or "") + str(msg.get("reasoning_content") or "")
-        if not text.strip():
-            return None
-        return not _is_garbage(text)
+            for prompt, expected in _SANITY_PROBES:
+                body = {"model": model, "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 16, "temperature": 0.0,
+                        "chat_template_kwargs": {"enable_thinking": False}}
+                resp = await client.post(base + "/chat/completions", json=body)
+                if resp.status_code != 200:
+                    return None
+                msg = ((resp.json().get("choices") or [{}])[0].get("message") or {})
+                text = msg.get("content")
+                if not isinstance(text, str) or not text.strip():
+                    return None
+                if re.fullmatch(r"\s*" + expected + r"[.!]?\s*", text):
+                    return True
+        return False
     except Exception as exc:  # noqa: BLE001
         logger.debug("[engine-swap] sanity probe failed for %s: %s", url, exc)
         return None

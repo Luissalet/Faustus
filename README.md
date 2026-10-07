@@ -435,8 +435,16 @@ Windows desktop app: a global "dictate anywhere" hotkey (off by default; Setting
 
 **Natural dictation (experimental):** Studio's composer and voice panel can clean
 fillers and spoken self-corrections using the configured default chat model.
+Spoken “new line” / “nueva línea” and “new paragraph” / “punto y aparte”
+format the draft with line and paragraph breaks; literal mentions stay as words.
 For draft editing, turn off automatic sending and choose **Correct by voice**;
 the result stays in review. The panel can restore the original transcription.
+Long dictation and corrections to long drafts have more time to finish;
+the editing deadline grows with the text length.
+Faustus periodically confirms model health only when local slots are idle and
+report no retained prompt tokens, preserving cached chat prefixes. Symptom-triggered
+checks still confirm corruption before recovery; an identifiable external
+llama-server keeps its current model, context size and launch flags.
 Recognition errors, especially names, still need review. This editor is not yet
 used by desktop-wide dictation or meeting notes. See the [research, open-source
 references and measured results](docs/design/natural-dictation.md).

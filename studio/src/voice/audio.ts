@@ -1,5 +1,5 @@
 import { locale, t } from '../i18n';
-import { BARGE_IN_MS, BARGE_IN_THRESHOLD, SpeculativeTranscript, TurnDetector, spokenText, isStopPhrase, isHallucination } from './engine';
+import { BARGE_IN_MS, BARGE_IN_THRESHOLD, SpeculativeTranscript, TurnDetector, spokenText, isStopPhrase, isHallucination, dictationEditTimeout } from './engine';
 
 export interface SpeechCapabilities {
   provider: string;
@@ -130,7 +130,7 @@ export async function capture(config: SpeechCapabilities, options: CaptureOption
       const response = await fetch('/api/stt/polish', {
         method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, mode: 'clean' }),
-        signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
+        signal: AbortSignal.any([signal, AbortSignal.timeout(dictationEditTimeout(text))]),
       });
       signal.throwIfAborted();
       if (!response.ok) return text;

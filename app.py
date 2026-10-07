@@ -2367,6 +2367,12 @@ async def _startup_event():
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Engine swap reaper not started (non-critical): {e}")
 
+    try:
+        from src import model_server_heal
+        model_server_heal.start()
+    except Exception as e:
+        logger.warning(f"Model generation monitor not started (non-critical): {e}")
+
     # Tool index warmup is ON by default: without it the first agent turn pays
     # the index build (and, with the per-request selection timeout, usually
     # lands on keyword-only tool selection). The build runs in a worker thread
@@ -2758,6 +2764,11 @@ async def _shutdown_event():
             from src import engine_swap
             await engine_swap.stop()
         except Exception:  # noqa: BLE001
+            pass
+        try:
+            from src import model_server_heal
+            await model_server_heal.stop()
+        except Exception:
             pass
         try:
             from src.chat_bridges import stop_telegram_bridge

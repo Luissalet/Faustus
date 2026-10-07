@@ -215,3 +215,9 @@ export class SpeculativeTranscript {
     this.wanted = 0;
   }
 }
+
+/** Match the editor's length-based budget, with room for network/route overhead. */
+export function dictationEditTimeout(text: string, draft = ''): number {
+  const seconds = Math.min(90, Math.max(12, Math.ceil(Array.from(text + draft).length / 25)));
+  return (seconds + 5) * 1000;
+}

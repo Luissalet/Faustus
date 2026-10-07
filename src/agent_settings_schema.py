@@ -1363,11 +1363,13 @@ GROUPS: list[dict[str, Any]] = [
     ),
     _group(
         "model_server_heal", "Local model servers",
-        "When a model server on this machine gets stuck answering every prompt with one symbol "
-        "repeated (\"////\", \"????\"), Faustus checks it with a one-line greeting and restarts it "
-        "(src/model_server_heal.py): a managed engine is stopped and started, a server started by a "
-        "launcher script that is still running is ended so the launcher starts it again, and any "
-        "other server uses the restart command set here.",
+        "For a local endpoint that appears stuck, Faustus confirms the problem with up to two "
+        "trivial arithmetic probes before recovery. It can restart a managed engine, ask a verified "
+        "launcher loop to restart its child, relaunch an identifiable llama-server only when its "
+        "live model and launch arguments match, or run the configured host:port command. The "
+        "background monitor probes only when all slots are idle and report zero retained prompt tokens; "
+        "request-time recovery also handles repeated garbage and malformed dictation output "
+        "(src/model_server_heal.py). Only loopback endpoints are eligible.",
         [
             _bool("model_server_auto_heal", "Restart a server stuck on garbage",
                   "Off: Faustus only says the server needs a restart."),

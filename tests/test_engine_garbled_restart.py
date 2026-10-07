@@ -1,8 +1,38 @@
 """A managed engine that answers a trivial prompt with one repeated symbol is
 restarted (src/engine_swap.py restart_if_garbled)."""
 import asyncio
+import json
+
+import httpx
+import pytest
 
 import src.engine_swap as es
+
+
+@pytest.mark.parametrize("answers,expected,calls", [
+    (["12"], True, 1),
+    ([" 12. "], True, 1),
+    (["kowaVCVCVCVCVCVC", "kowaVCVCVCVCVCVC"], False, 2),
+    (["Hello!", "7"], True, 2),
+    (["13", "8"], False, 2),
+    ([""], None, 1),
+    ([None], None, 1),
+    (["bad", None], None, 2),
+])
+def test_semantic_health_confirms_corruption_without_restarting(monkeypatch, answers, expected, calls):
+    pending = iter(answers)
+    requests = []
+    def handler(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        text = next(pending)
+        return httpx.Response(200, json={"choices": [{"message": {"content": text}}]})
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: original_client(
+        transport=httpx.MockTransport(handler), **kw))
+    assert asyncio.run(es.generates_sanely("http://127.0.0.1:8081/v1", "m")) is expected
+    assert len(requests) == calls
+    assert all(body["chat_template_kwargs"]["enable_thinking"] is False for body in requests)
 
 
 def test_garbage_is_one_symbol_repeated():
@@ -14,10 +44,18 @@ def test_garbage_is_one_symbol_repeated():
     assert not es._is_garbage("Hello! Hope you are having a lovely day.")
     assert not es._is_garbage("¡Hola! ¿Qué tal estás hoy?")
     assert not es._is_garbage("hahahahahahaha")  # letters: a model's choice, not a broken engine
+    assert not es._is_garbage("HAHAHAHAHAHAHAHA")
+    assert es._is_garbage("kowaVCVCVCVCVCVCVCVCVCVCVCVCVCVCVCVCVCVCVC")
+    assert not es._is_garbage("The value VC appears in this sentence.")
     assert not es._is_garbage("")
 
 
 def test_a_garbled_engine_is_restarted(monkeypatch):
+    from src import model_server_heal
+    async def idle(url):
+        return True
+    monkeypatch.setattr(model_server_heal, "_server_idle", idle)
+    monkeypatch.setattr(model_server_heal, "listener_pid", lambda port: None)
     engine = {"id": "e1", "host": "127.0.0.1", "port": 8081}
     monkeypatch.setattr(es, "restartable_engine_for_url", lambda url: engine)
     answers = iter([False, True])

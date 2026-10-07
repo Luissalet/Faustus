@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 const result = await build({ entryPoints: ['studio/src/voice/engine.ts'], bundle: true, format: 'esm', platform: 'node', write: false });
-const { SentenceBuffer, TurnDetector, spokenText, speechLanguage } = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`);
+const { SentenceBuffer, TurnDetector, spokenText, speechLanguage, dictationEditTimeout } = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`);
+assert.equal(dictationEditTimeout('Hola.'), 17000);
+assert.ok(dictationEditTimeout('Long speech. '.repeat(100)) > 15000);
+assert.ok(dictationEditTimeout('Change Friday to Saturday', 'Meet Friday. '.repeat(100)) > 15000);
+assert.equal(dictationEditTimeout('x'.repeat(10000)), 95000);
 assert.equal(speechLanguage('Here is the answer you requested.', 'es'), 'en');
 assert.equal(speechLanguage('Aquí tienes una respuesta para tu proyecto.', 'en'), 'es');
 assert.equal(speechLanguage('Hello.', 'es'), 'en');

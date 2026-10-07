@@ -26,6 +26,10 @@ def clean_state(monkeypatch, tmp_path):
     monkeypatch.setattr(heal.tempfile, "gettempdir", lambda: str(tmp_path))
     monkeypatch.setattr(heal, "_settings", lambda: {"enabled": True, "commands": [], "timeout_s": 5.0})
     monkeypatch.setattr(engine_swap, "restartable_engine_for_url", lambda url: None)
+    monkeypatch.setattr(heal, "_llama_snapshot", lambda *args: None)
+    async def idle(url):
+        return True
+    monkeypatch.setattr(heal, "_server_idle", idle)
     yield
     heal._INFLIGHT.clear()
     heal._LAST_RESTART.clear()
@@ -143,6 +147,115 @@ def test_a_configured_command_is_run(monkeypatch):
     assert out["action"] == "restarted" and ran == ["restart-it"]
 
 
+def test_unsupervised_live_runner_preserves_its_command_instead_of_registered_model(monkeypatch):
+    _sanity(monkeypatch, [False])
+    spec = {"pid": 4242, "argv": ["llama-server", "-m", "current-q8.gguf", "-c", "131072"]}
+    monkeypatch.setattr(heal, "listener_pid", lambda port: 4242)
+    monkeypatch.setattr(heal, "supervisor_of", lambda pid: None)
+    monkeypatch.setattr(heal, "_llama_snapshot", lambda *args: spec)
+    monkeypatch.setattr(engine_swap, "restartable_engine_for_url", lambda url: {"id": "old-q4"})
+    used = []
+    async def restart(snapshot, port):
+        used.append((snapshot, port))
+        return True
+    async def back(*args):
+        return True
+    async def wrong_profile(*args):
+        pytest.fail("must preserve the live model")
+    monkeypatch.setattr(heal, "_restart_live_llama", restart)
+    monkeypatch.setattr(heal, "_wait_back", back)
+    monkeypatch.setattr(engine_swap, "restart_managed_engine", wrong_profile)
+    out = asyncio.run(heal.heal(URL, "m"))
+    assert out["action"] == "restarted" and used == [(spec, 8081)]
+
+
+@pytest.mark.parametrize("slots", [[False], [True, False], [True, None]])
+def test_busy_or_unverified_live_runner_is_deferred(monkeypatch, slots):
+    _sanity(monkeypatch, [False])
+    values = iter(slots)
+    async def idle(url):
+        return next(values)
+    monkeypatch.setattr(heal, "_server_idle", idle)
+    monkeypatch.setattr(heal, "listener_pid", lambda port: 4242)
+    monkeypatch.setattr(heal, "supervisor_of", lambda pid: None)
+    monkeypatch.setattr(heal, "_llama_snapshot", lambda *args: {"pid": 4242})
+    async def no_restart(*args):
+        pytest.fail("must not interrupt a busy or unverified runner")
+    monkeypatch.setattr(heal, "_restart_live_llama", no_restart)
+    assert asyncio.run(heal.heal(URL, "m"))["action"] == "deferred"
+    assert not heal._LAST_RESTART
+    assert not os.path.exists(heal._lock_path(8081))
+
+
+@pytest.mark.parametrize("slots,expected", [
+    ([{"is_processing": False, "n_prompt_tokens": 0}], True),
+    ([{"is_processing": False, "n_prompt_tokens": 28}], False),
+    ([{"is_processing": True, "n_prompt_tokens": 0}], False),
+    ([{"is_processing": False}], False),
+    ([{"is_processing": False, "n_prompt_tokens": "0"}], False),
+    ([{"is_processing": False, "n_prompt_tokens": 0},
+      {"is_processing": False, "n_prompt_tokens": 7}], False),
+    (None, False),
+])
+def test_idle_monitor_checks_only_empty_verified_slots(monkeypatch, slots, expected):
+    from src import endpoint_resolver
+    monkeypatch.setattr(endpoint_resolver, "resolve_endpoint", lambda role: (URL, "m", {}))
+    async def read_slots(url):
+        return slots
+    monkeypatch.setattr(heal, "_server_slots", read_slots)
+    calls = []
+    async def check(url, model, **kwargs):
+        calls.append((url, model))
+    monkeypatch.setattr(heal, "heal", check)
+    asyncio.run(heal._monitor_once())
+    assert calls == ([(URL, "m")] if expected else [])
+
+
+def test_periodic_monitor_does_not_probe_or_heal_when_prefix_is_retained(monkeypatch):
+    from src import endpoint_resolver, engine_swap
+    monkeypatch.setattr(endpoint_resolver, "resolve_endpoint", lambda role: (URL, "m", {}))
+    async def read_slots(url):
+        return [{"is_processing": False, "n_prompt_tokens": 28, "n_ctx": 16384}]
+    monkeypatch.setattr(heal, "_server_slots", read_slots)
+    async def no_generation(*args, **kwargs):
+        pytest.fail("periodic check must preserve the retained prompt")
+    monkeypatch.setattr(engine_swap, "generates_sanely", no_generation)
+    async def no_heal(*args, **kwargs):
+        pytest.fail("must not schedule recovery for retained prompt state")
+    monkeypatch.setattr(heal, "heal", no_heal)
+    asyncio.run(heal._monitor_once())
+
+
+def test_monitor_start_stop_is_idempotent():
+    async def run():
+        heal.start()
+        task = heal._MONITOR_TASK
+        heal.start()
+        assert heal._MONITOR_TASK is task and heal.status()["monitor_running"]
+        await heal.stop()
+        assert task.cancelled() and not heal.status()["monitor_running"]
+    asyncio.run(run())
+
+
+def test_shutdown_cancels_shared_recovery_instead_of_relaunching_after_stop(monkeypatch):
+    entered = asyncio.Event()
+    cancelled = []
+    async def attempt(*args):
+        entered.set()
+        try:
+            await asyncio.sleep(60)
+        finally:
+            cancelled.append(True)
+    monkeypatch.setattr(heal, "_heal_once", attempt)
+    async def run():
+        caller = asyncio.create_task(heal.heal(URL, "m"))
+        await entered.wait()
+        await heal.stop()
+        await asyncio.gather(caller, return_exceptions=True)
+        assert cancelled == [True] and not heal._INFLIGHT
+    asyncio.run(run())
+
+
 def test_a_server_still_broken_right_after_a_restart_is_not_restarted_in_a_loop(monkeypatch):
     _sanity(monkeypatch, [False])
     heal._LAST_RESTART["8081"] = time.time() - 10
@@ -228,6 +341,33 @@ def test_a_whole_reply_of_question_marks_schedules_a_check(monkeypatch):
     assert scheduled == ["http://127.0.0.1:8082/v1/chat/completions"]
 
 
+def test_observed_corrupt_prefix_triggers_recovery_check(monkeypatch):
+    from src import llm_core
+    scheduled = []
+    monkeypatch.setattr(heal, "schedule", lambda url, model, reason="": scheduled.append((url, model)) or True)
+    llm_core._schedule_heal_on_garbage(URL, "q", "kowaVCVCVCVCVCVCVCVCVCVCVCVCVCVCVCVCVCVCVC")
+    assert scheduled == [(URL, "q")]
+
+
+@pytest.mark.parametrize("response,prompt_type,should_check", [
+    ('{"textVC', "natural_dictation", True),
+    ('{"text":"Hola"}', "natural_dictation", False),
+    ("A plain title", "title", False),
+])
+def test_malformed_dictation_schedules_confirmation_without_delaying_result(monkeypatch, response, prompt_type, should_check):
+    from src import llm_core, llm_trace
+    scheduled = []
+    async def impl(*args, **kwargs):
+        return response
+    monkeypatch.setattr(llm_core, "_llm_call_async_impl", impl)
+    monkeypatch.setattr(llm_trace, "record_call", lambda **kwargs: None)
+    monkeypatch.setattr(heal, "schedule", lambda url, model, reason="": scheduled.append((url, model)) or True)
+    result = asyncio.run(llm_core.llm_call_async(URL, "q", [], prompt_type=prompt_type,
+        response_schema={"type": "object"}))
+    assert result == response
+    assert scheduled == ([(URL, "q")] if should_check else [])
+
+
 @pytest.mark.skipif(sys.platform == "win32" or shutil.which("bash") is None, reason="POSIX shell launcher")
 def test_a_launcher_shell_is_found_as_the_supervisor_and_the_listener_by_port():
     srv = socket.socket()
@@ -238,8 +378,7 @@ def test_a_launcher_shell_is_found_as_the_supervisor_and_the_listener_by_port():
         assert heal.listener_pid(port) == os.getpid()
     finally:
         srv.close()
-    # bash keeps running after its child (the trailing command stops an exec)
-    launcher = subprocess.Popen(["bash", "-c", f"{sys.executable} -c 'import time; time.sleep(20)'; true"])
+    launcher = subprocess.Popen(["bash", "-c", f"while true; do {sys.executable} -c 'import time; time.sleep(20)'; done"])
     try:
         import psutil
         child = None

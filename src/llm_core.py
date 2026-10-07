@@ -4563,6 +4563,18 @@ async def llm_call_async(
         else:
             _text = result
         _schedule_heal_on_garbage(url, model, _text)
+        if prompt_type == "natural_dictation" and response_schema and is_local_endpoint(url):
+            try:
+                json.loads(_text)
+            except (ValueError, TypeError):
+                # A broken local runtime may emit malformed JSON without a
+                # long repetition. Confirm generation health asynchronously;
+                # dictation still returns its original draft immediately.
+                try:
+                    from src import model_server_heal
+                    model_server_heal.schedule(url, model, "malformed natural dictation output")
+                except Exception:
+                    pass
         return result
     except asyncio.CancelledError:
         _spend_outcome = "cancelled"

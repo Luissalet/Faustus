@@ -79,6 +79,25 @@ const natural = await capture({ ...config, execution: 'browser' }, { signal: new
 rec.onresult({ results: [[{ transcript: 'um book Friday no Saturday' }]] }); natural.stop();
 assert.equal(await natural.done, 'Book Saturday.'); assert.equal(natural.rawText, 'um book Friday no Saturday');
 assert.equal(polishRequests, 1);
+// Long natural dictation must not inherit the old 15-second browser deadline.
+const originalTimeout = AbortSignal.timeout;
+let editDeadline;
+const longSpeech = 'Keep every sentence in this long dictation. '.repeat(30);
+try {
+  AbortSignal.timeout = milliseconds => {
+    editDeadline = milliseconds;
+    return originalTimeout(milliseconds);
+  };
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, '/api/stt/polish');
+    assert.equal(JSON.parse(options.body).text, longSpeech.trim());
+    return new Response(JSON.stringify({ status: 'edited', text: longSpeech.trim() }));
+  };
+  const longNatural = await capture({ ...config, execution: 'browser' }, { signal: new AbortController().signal, natural: true });
+  rec.onresult({ results: [[{ transcript: longSpeech }]] }); longNatural.stop();
+  assert.equal(await longNatural.done, longSpeech.trim());
+  assert.ok(editDeadline > 15000, `long dictation deadline: ${editDeadline}`);
+} finally { AbortSignal.timeout = originalTimeout; }
 // Stop commands must never reach the editor.
 const stopCommand = await capture({ ...config, execution: 'browser' }, { signal: new AbortController().signal, natural: true });
 rec.onresult({ results: [[{ transcript: 'stop' }]] }); stopCommand.stop();

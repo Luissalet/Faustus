@@ -221,6 +221,202 @@ numbers, pauses inside corrections, repeated draft edits and undo, and long spee
 Measure content preservation separately from WER and end-to-end latency. Keep this
 integrated in Faustus until a genuinely reusable standalone component emerges.
 
+## Spoken formatting (2026-10-05)
+
+The natural editor now interprets spoken `nueva línea` / `new line`,
+`punto y aparte` / `new paragraph`, and `punto final` / `full stop` as
+formatting when used as commands. Quoted phrases and discussion of the words
+remain literal. This is part of the existing cleanup call, with no extra model
+request or blind phrase replacement.
+
+An isolated text-stage comparison against `qwen3.8-27b-q8-llamacpp` on port 8081
+improved four formatting cases from 1/4 to 4/4, taking 2.30–4.56 seconds per
+case after the change. The evaluator now checks line and paragraph boundaries:
+word-only normalization previously hid missing paragraph breaks. These are
+synthetic transcript tests, not evidence of recognizing those commands from audio.
+Reports: `D:/LocalAI/qa-rambler-format-baseline-20261005.json` and
+`D:/LocalAI/qa-rambler-format-after-20261005.json`. Re-score the baseline with
+the current `matches_expected` function; its original word-only scores missed
+two formatting failures.
+
+A subsequent 25-case production-editor run matched 18 expected outputs but
+encountered 11 model timeouts, preserving the original transcript or draft each
+time. All completed model responses matched their expected text. This does not
+pass the end-to-end reliability gate: the formatting feature worked in the
+focused run, while model latency remains an unresolved limit. The model health
+endpoint still returned `ok`; the cause of the slow responses was not established.
+See `D:/LocalAI/qa-rambler-format-full-20261005.json`. The focused backend suite
+(natural dictation, STT cleanup and Parakeet) passed 50 tests.
+
+Three additional cases exposed remaining limits: quoted formatting phrases were
+preserved, a combined correction plus line break timed out, and an English list
+was rejected as a non-faithful edit. An instrumented repeat showed the model
+returning `Ingredients\nmilk\ne`, truncating `eggs` to `e`; Faustus correctly
+kept the original rather than accepting it. Do not treat English list formatting
+or combined correction/formatting as reliably validated yet. Follow-up report:
+`D:/LocalAI/qa-rambler-format-heldout-20261005.json`.
+
+### Follow-up: explicit lines (2026-10-05)
+
+The editor can now return `{"text": ["first line", "", "next paragraph"]}`;
+Faustus joins validated strings with newlines and keeps the public API's `text`
+field a string. Single-string model responses remain supported. This avoids
+requiring the model to combine JSON newline escapes with the following word.
+The previously truncated English list now retains `eggs` in full. Blank entries
+preserve paragraph boundaries, and the same fidelity checks run after joining.
+
+The updated production editor matched all 28 expected outputs on Qwen 3.8,
+with no timeouts in this run. One quoted-hesitation proposal was rejected and
+fell back to the already correct original; the other 27 cases passed without
+fallback (four short responses bypass the model). Model-completed calls had
+median latency 2.56 seconds. Three additional unseen cases also passed: signed
+quantities/percentages/fractions in a list, another English list, and a Spanish
+paragraph. Reports: `D:/LocalAI/qa-rambler-lines-full-20261005.json` and
+`D:/LocalAI/qa-rambler-lines-heldout-20261005.json`. The backend suite passed
+56 tests, including malformed arrays and paragraph preservation. This remains
+text-stage evidence; it does not establish microphone recognition quality or
+explain the previous run's server timeouts.
+
+Research checked [llama.cpp's request sampling options](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)
+and [vLLM's transcription defaults](https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/speech_to_text/transcription/protocol.py).
+An isolated attempt with repetition penalties disabled still produced the same
+truncated word, so sampling defaults were not changed. Raw server output confirmed
+the truncation came from generation with `finish_reason: stop`, not JSON parsing.
+
+### Revision-chain failure investigation (2026-10-05, later run)
+
+`scripts/eval_dictation_revisions.py` now tests six consecutive edits, feeding
+each actual result into the next turn: change a day, contradict that change,
+insert a paragraph, change the time, remove the last sentence, and append a
+paragraph. The expected draft is never substituted for a failed actual result.
+All six turns failed in the initial live run: the first timed out, then later
+responses contained malformed JSON such as `{"textVC`. The draft stayed intact.
+The server health endpoint still reported `ok`.
+
+A diagnostic repeat with per-request `cache_prompt: false` also failed all six
+turns (four timeouts and two malformed responses). This option is documented in
+the [llama.cpp server API](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md).
+No server settings or sampling defaults were changed; disabling prompt reuse
+did not establish or fix the root cause. Reports:
+`D:/LocalAI/qa-rambler-revision-chain-20261005.json` (original run) and
+`D:/LocalAI/qa-rambler-revision-chain-diagnostic-20261005.json` (no-cache run).
+
+The editor now reports malformed JSON, missing text and invalid line arrays as
+`invalid_model_output`, separately from transport failures (`editor_unavailable`).
+Both preserve the draft; raw private text is not added to diagnostics. The
+focused backend suite passes 60 tests. Earlier successful runs should not be
+read as evidence that the current live server is reliable.
+
+### Confirmed engine failure, not editor parsing (2026-10-05)
+
+A direct HTTP request to Qwen 3.8 on 8081 for `7+5`, reasoning disabled,
+returned `kowaVCVC...` and reached the 20-token limit. Repeating with
+`cache_prompt: false` gave the same output with `cache_n: 0`. The rendered
+chat template contains real newlines and correct ChatML boundaries. Runtime:
+`b11040-5b335f413`, Q8_0, 131072 context, one slot, four GPUs, speculative
+decoding disabled. HTTP `/health` still says `ok`.
+
+The recovery probe now checks generated arithmetic answers instead of accepting
+anything that lacks a whole-response repetition pattern. It confirms an
+incorrect answer with a second trivial problem; a transport error or empty
+response remains inconclusive. The updated probe classified this live engine
+as broken. Combined recovery, engine and dictation tests: 99 passed, one
+POSIX-only integration test skipped on Windows.
+
+Clearing a slot through `/slots/0?action=erase` was unavailable (HTTP 501:
+requires `--slot-save-path`). A process restart was denied by Windows because
+the engine belongs to `luism`, while this session runs as `codexsandboxoffline`.
+`D:/LocalAI/Restart-RamblerEngine.ps1` is prepared for the owning account: it
+validates the model/executable and idle slot, reloads the current configuration,
+and checks an actual answer after loading. The owning account subsequently ran
+it successfully; post-reload measurements are recorded below. The underlying
+runtime defect is not claimed fixed.
+
+Primary research reports similar [Qwen CUDA DeltaNet corruption](https://github.com/ggml-org/llama.cpp/discussions/27164)
+and [recurrent-state leakage on HIP](https://github.com/ggml-org/llama.cpp/issues/29092).
+Neither establishes the cause here: this CUDA build is newer than the older
+DeltaNet fix, and HIP is a different backend. The next discriminator is a
+matched runtime/backend comparison if corruption returns after the verified
+fresh load. All local executable/DLL timestamps match the same release date;
+that alone does not prove which DLLs were loaded.
+
+### Verified reload and long-dictation deadline (2026-10-05)
+
+The user reloaded the same model and runtime configuration at 18:32; PID 212024
+answered `7+5` with `12`. The production editor then passed the six-turn revision
+chain and all 31 existing text cases. One quoted-hesitation proposal fell back to
+the already correct original; the other cases needed no fallback. Reports:
+`D:/LocalAI/qa-rambler-revision-reloaded-20261005.json` and
+`D:/LocalAI/qa-rambler-full-reloaded-20261005.json`. This confirms recovery after
+reload, without establishing which runtime component originally corrupted state.
+
+A separate long Spanish dictation still exhausted the fixed 12-second request
+deadline at 12.25 seconds, while a generated arithmetic probe confirmed the engine
+remained sane (`D:/LocalAI/qa-rambler-long-reloaded-20261005.json`). The editor now
+budgets 12–90 seconds according to the combined transcript and draft length.
+Both natural cleanup and spoken revision in Studio use a matching deadline with
+network headroom; short corrections to long drafts count the draft too.
+
+Two added production-editor cases passed with the new budget: complete long
+dictation in 15.78 seconds and a correction preserving that draft in 13.99 seconds.
+Report: `D:/LocalAI/qa-rambler-long-adaptive-20261005.json`. The text suite now
+contains 33 cases. The previous 31-case run and this focused two-case run are
+separate measurements, not a single full run after the deadline change.
+
+The recovery detector also recognizes repeated output with a short corrupt prefix.
+Malformed structured dictation output schedules a background generation-health
+check, while returning the original draft. An inconclusive health check does not
+trigger a restart; engine reload still requires an accessible managed process or
+configured launcher. These changes detect and recover from symptoms; they do not
+repair a CUDA kernel or guarantee corruption cannot recur.
+
+Verification: 105 backend tests passed, one POSIX-only integration test skipped on
+Windows; four frontend voice checks, TypeScript checking and the production
+frontend build passed. The frontend
+checks exercise actual capture and revision paths with mocked recognition/fetch,
+including the long-text deadlines. These are text-editor and regression results,
+not a microphone-recognition or running-app end-to-end evaluation.
+
+### Automatic recovery of external runners (2026-10-05)
+
+The remaining manual-recovery gap was an unsupervised runner started outside
+Faustus. Recovery now snapshots an identifiable local llama-server's executable,
+argv, working directory and environment and relaunches that exact configuration.
+This path precedes a managed profile which might describe a different model on
+the same port. A shell parent counts as a supervisor only when its script or
+inline command contains a continuous relaunch loop; an interactive terminal or
+one-shot start script cannot keep a killed server running.
+
+Faustus's startup/shutdown owns a generation-health monitor. Every 120 seconds it
+reads `/slots` for the running default local endpoint and sends arithmetic probes
+only when every slot is idle and reports `n_prompt_tokens: 0`. An idle slot retaining
+chat tokens is skipped so the probe cannot evict a reusable prefix; missing or
+malformed prompt-token state is also skipped. Malformed output and repeated garbage
+retain their symptom-triggered background checks.
+Two incorrect arithmetic probes confirm corruption; unavailable generation is
+inconclusive. Busy slots defer recovery, and slots are checked again after the
+probe before stopping a runner. The PID identity is checked before termination.
+Existing per-port coordination and restart cooldown remain in effect. Shutdown
+cancels shared recovery attempts so they cannot relaunch a model after Stop All.
+
+An isolated Windows process integration test produced corrupt responses, then
+exercised the real HTTP probes, process termination, replacement spawn and
+post-reload verification. The replacement used a different PID and preserved an
+injected environment value. The fixture was a tiny HTTP server, not a model;
+the live Qwen 3.8 was separately checked as healthy and left running. This does not exercise a real CUDA reload. In the recorded Windows check, normal
+`PROCESS_TERMINATE` succeeded and the Qwen listener returned as PID 61412. That
+result applies to this observed process and account; it does not establish a
+general permission rule for other processes or Windows accounts.
+
+The combined engine, recovery, dictation and STT suite passed 124 tests, with one
+POSIX integration skipped on Windows. The live Qwen 3.8 then passed all six
+chained spoken-revision text cases again, without fallback:
+`D:/LocalAI/qa-rambler-revision-autoheal-20261005.json`.
+
+The monitor becomes active when the updated Faustus application starts. The
+already-running Qwen server does not acquire a watchdog merely from editing this
+module.
+
 ## Reproduce
 
 Use a directory outside the repository. The scripts download selected public
@@ -229,6 +425,7 @@ clips only; neither downloads the whole corpus nor changes Faustus settings.
 ```powershell
 python scripts/eval_natural_dictation.py --output D:/LocalAI/qa-natural-dictation/text.json
 python scripts/eval_natural_dictation.py --production-editor --output D:/LocalAI/qa-natural-dictation/production-text.json
+python scripts/eval_dictation_revisions.py --output D:/LocalAI/qa-natural-dictation/revision-chain.json
 python scripts/eval_dictation_audio.py --prepare --directory D:/LocalAI/qa-natural-dictation/chm150
 python scripts/eval_dictation_audio.py --prepare --corpus disfluency --language en --polish --directory D:/LocalAI/qa-natural-dictation/repairs
 python scripts/eval_dictation_audio.py --prepare --corpus disfluency --sample-offset 100 --language en --polish --directory D:/LocalAI/qa-natural-dictation/heldout

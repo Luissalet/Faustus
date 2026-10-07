@@ -77,6 +77,35 @@ try {
   assert.equal(host.querySelector('textarea').value, 'Meet Saturday at noon.');
   await flush(() => button('Undo voice correction').click());
   assert.equal(host.querySelector('textarea').value, 'Meet Friday at noon.');
+  // A short correction to a long draft needs the draft's editing budget too.
+  const longDraft = 'Meet Friday at noon. '.repeat(80).trim();
+  await flush(() => {
+    const textarea = host.querySelector('textarea');
+    Object.getOwnPropertyDescriptor(dom.HTMLTextAreaElement.prototype, 'value').set.call(textarea, longDraft);
+    textarea.dispatchEvent(new dom.Event('input', { bubbles: true }));
+  });
+  const originalTimeout = AbortSignal.timeout;
+  let revisionDeadline;
+  try {
+    AbortSignal.timeout = milliseconds => {
+      revisionDeadline = milliseconds;
+      return originalTimeout(milliseconds);
+    };
+    globalThis.fetch = async (_, options) => {
+      assert.equal(JSON.parse(options.body).draft, longDraft);
+      return new Response(JSON.stringify({ status: 'edited', text: longDraft.replaceAll('Friday', 'Saturday') }));
+    };
+    await flush(() => button('Correct by voice').click()); await flush(() => button('Finish speaking').click());
+    assert.ok(revisionDeadline > 15000, `long draft deadline: ${revisionDeadline}`);
+    assert.equal(host.querySelector('textarea').value, longDraft.replaceAll('Friday', 'Saturday'));
+  } finally { AbortSignal.timeout = originalTimeout; }
+  await flush(() => button('Undo voice correction').click());
+  assert.equal(host.querySelector('textarea').value, longDraft);
+  await flush(() => {
+    const textarea = host.querySelector('textarea');
+    Object.getOwnPropertyDescriptor(dom.HTMLTextAreaElement.prototype, 'value').set.call(textarea, 'Meet Friday at noon.');
+    textarea.dispatchEvent(new dom.Event('input', { bubbles: true }));
+  });
   // A microphone permission/device response arriving after cancel is closed.
   let finishOpen, closedLateMic = 0;
   openMicResult = new Promise(resolve => { finishOpen = resolve; });

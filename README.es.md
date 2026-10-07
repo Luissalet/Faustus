@@ -413,9 +413,18 @@ App de escritorio de Windows: un atajo global de «dictar en cualquier lugar» (
 
 **Dictado natural (experimental):** el cuadro de escritura y el panel de voz de
 Studio pueden limpiar muletillas y autocorrecciones usando el modelo principal
-configurado. Para editar el borrador, desactiva el envío automático y elige
+configurado. «Nueva línea» y «punto y aparte» permiten dar formato al borrador
+con saltos de línea y párrafo; las menciones literales se conservan como palabras.
+Para editar el borrador, desactiva el envío automático y elige
 **Corregir con la voz**; el resultado se queda en revisión. El panel permite recuperar
-la transcripción original. Los errores de reconocimiento, sobre todo nombres,
+la transcripción original. Los dictados largos y las correcciones de borradores
+extensos tienen más tiempo para terminar; el plazo crece con la longitud del texto.
+Faustus solo confirma periódicamente la salud cuando todos los slots locales
+están libres y no conservan tokens de una conversación, para preservar sus prefijos
+cacheados. Las comprobaciones tras un síntoma siguen confirmando la corrupción antes
+de recuperarla; un llama-server externo identificable conserva su modelo, contexto
+y parámetros de arranque.
+Los errores de reconocimiento, sobre todo nombres,
 siguen necesitando revisión. Este editor aún no se usa en el dictado global ni en
 notas de reunión. Consulta la [investigación, referencias abiertas y resultados
 medidos](docs/design/natural-dictation.md).

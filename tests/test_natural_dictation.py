@@ -13,6 +13,13 @@ def resolve(*args, **kwargs):
     return "http://127.0.0.1:8081/v1/chat/completions", "test-main", {}
 
 
+def test_formatting_evaluation_checks_line_and_paragraph_boundaries():
+    from scripts.eval_natural_dictation import matches_expected
+    assert not matches_expected("Hola Ana. Nos vemos mañana.", ["Hola Ana.\n\nNos vemos mañana."])
+    assert not matches_expected("Hola Ana.\nNos vemos mañana.", ["Hola Ana.\n\nNos vemos mañana."])
+    assert matches_expected("Hola, Ana.\n\nNos vemos mañana.", ["Hola Ana.\n\nNos vemos mañana."])
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("text", ["Sí.", "No", "¡Gracias!", "OK", "42", "Thank you."])
 async def test_short_answers_need_no_model(text):
@@ -45,6 +52,30 @@ def test_cleanup_cannot_add_or_reorder_words(raw, edited, accepted):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("lines,expected", [
+    (["Ingredients", "milk", "eggs"], "Ingredients\nmilk\neggs"),
+    (["Ingredients", "", "milk", "eggs"], "Ingredients\n\nmilk\neggs"),
+])
+async def test_line_arrays_preserve_words_and_paragraph_breaks(lines, expected):
+    async def complete(**kwargs):
+        return json.dumps({"text": lines})
+    result = await polish("Ingredients new line milk new line eggs", complete=complete, resolve=resolve)
+    assert result["text"] == expected
+    assert result["status"] == "edited"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("lines", [["Ingredients", None], [["milk"]], ["Ingredients", "e"], [""] * 8001])
+async def test_invalid_line_arrays_keep_original(lines):
+    async def complete(**kwargs):
+        return json.dumps({"text": lines})
+    source = "Ingredients new line milk new line eggs"
+    result = await polish(source, complete=complete, resolve=resolve)
+    assert result["text"] == source
+    assert result["status"] == "fallback"
+
+
+@pytest.mark.asyncio
 async def test_editor_returns_original_and_has_no_tools_or_chat_history():
     calls = []
     async def complete(**kwargs):
@@ -57,6 +88,22 @@ async def test_editor_returns_original_and_has_no_tools_or_chat_history():
     assert calls[0]["gen_overrides"] == {"think": False}
     assert len(calls[0]["messages"]) == 2
     assert "tools" not in calls[0]
+    assert calls[0]["timeout"] == 12
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["clean", "revise"])
+async def test_long_dictation_and_long_draft_get_time_to_return_complete_text(mode):
+    draft = "La propuesta requiere revisar las cifras y mantener las notas anteriores. " * 15
+    instruction = draft if mode == "clean" else "Conserva el texto tal cual."
+    calls = []
+    async def complete(**kwargs):
+        calls.append(kwargs)
+        return json.dumps({"text": draft})
+    result = await polish(instruction, mode, draft if mode == "revise" else "", complete=complete, resolve=resolve)
+    assert result["text"] == draft.strip()
+    assert result["status"] != "fallback"
+    assert 12 < calls[0]["timeout"] <= 90
 
 
 @pytest.mark.asyncio
@@ -70,12 +117,25 @@ async def test_failed_edit_preserves_user_words(response):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("response", ['{"textVC', '{}', 'null', '{"text":[null]}'])
+async def test_malformed_model_output_is_distinct_from_transport_failure(response):
+    async def complete(**kwargs):
+        return response
+    draft = "Hola Ana. Nos vemos el martes."
+    result = await polish("Cambia martes por jueves", "revise", draft, complete=complete, resolve=resolve)
+    assert result["text"] == draft
+    assert result["reason"] == "invalid_model_output"
+    assert result["status"] == "fallback"
+
+
+@pytest.mark.asyncio
 async def test_timeout_preserves_draft_and_cancel_propagates():
     async def timeout(**kwargs):
         raise TimeoutError()
     result = await polish("Cambia martes por jueves", "revise", "El martes.", complete=timeout, resolve=resolve)
     assert result["text"] == "El martes."
     assert result["status"] == "fallback"
+    assert result["reason"] == "editor_unavailable"
     async def cancel(**kwargs):
         raise asyncio.CancelledError()
     with pytest.raises(asyncio.CancelledError):

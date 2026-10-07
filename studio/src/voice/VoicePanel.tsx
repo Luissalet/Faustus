@@ -4,7 +4,7 @@ import { Mic, Square, VolumeX, X, Send, Settings2 } from 'lucide-react';
 import { locale, t } from '../i18n';
 import type { Turn } from '../screens/studio/model';
 import { capabilities, capture, openMic, playSpeech, watchForSpeech, type Capture, type OpenMic, type SpeechCapabilities } from './audio';
-import { SentenceBuffer, isEcho, isHallucination, isStopPhrase, speechLanguage, stripWakeWord, type VoicePhase } from './engine';
+import { SentenceBuffer, isEcho, isHallucination, isStopPhrase, speechLanguage, stripWakeWord, dictationEditTimeout, type VoicePhase } from './engine';
 import { VoiceOrb } from './VoiceOrb';
 import './voice.css';
 
@@ -215,7 +215,7 @@ export default function VoicePanel(props: Props) {
       const response = await fetch('/api/stt/polish', {
         method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: instruction, mode: 'revise', draft }),
-        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]),
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(dictationEditTimeout(instruction, draft))]),
       });
       if (!response.ok) throw new Error('revision failed');
       const result = await response.json() as { text?: string; status?: string };
