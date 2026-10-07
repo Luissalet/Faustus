@@ -27,6 +27,10 @@ The recurring idea is that the agent has to show its work: which context a turn 
 
 Local-first means you choose where inference happens. Cloud APIs and authenticated official clients use their provider's billing or subscription quota; local inference uses your own hardware. Selecting a remote provider sends it the context needed for that request.
 
+### Local generation defaults
+
+Local agent turns default to temperature `0.6`. The `agent_local_temperature_cap` setting defaults to `0.4` and applies only when the request indicates coding work; binding a workspace for a data or document task does not trigger it. An explicit per-turn temperature takes precedence, and remote endpoints are unaffected. The cap changes temperature only; it does not lower reasoning effort or token budgets.
+
 The connected Hoard family includes local [CookHoard](https://github.com/Luissalet/CookHoard) and [GamerHoard](https://github.com/Luissalet/GamerHoard) MCP tools, [HomeHoard](https://github.com/Luissalet/HomeHoard) for finding belongings from a photo-free local inventory snapshot, and [Mercator's Hoard](https://github.com/Luissalet/Mercators-Hoard) for a local usage and sales dashboard. HomeHoard's web inventory refreshes its Faustus snapshot after the first manual connection while its localhost bridge is running; its mobile copy is transferred manually. Scribe's audio capabilities live in Funes.
 
 ## Quick start

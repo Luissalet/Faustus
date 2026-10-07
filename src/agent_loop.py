@@ -2587,11 +2587,11 @@ def _asks_for_a_text(text: str) -> bool:
 
 
 def _looks_like_workspace_coding_request(text: str) -> bool:
-    """Best-effort signal for when an active workspace should become code mode.
+    """Best-effort signal that a request itself asks for coding work.
 
-    Tool retrieval is intentionally selective, but a bound workspace is a strong
-    signal that requests like "fix the failing test" or "wire this button" mean
-    "work in this repo". This guard only runs when a workspace is active.
+    Tool retrieval is intentionally selective, so concrete requests like
+    "fix the failing test" or "wire this button" should enter code mode even
+    when workspace binding is handled separately.
     """
     text = str(text or "")
     if not text.strip():
@@ -8215,17 +8215,19 @@ async def _stream_agent_loop_body(
     # shipped default) fabricate paths and "done" narratives far more often.
     # Cap unless the user pinned a temperature for this session.
     _temperature_capped_from = None
-    # Scope: turns where the model is expected to act on a codebase (a bound
-    # workspace, or a coding-looking request). Creative/agent chats without a
-    # workspace keep the preset temperature; a pinned per-chat temperature
-    # (model controls) always wins.
-    _cap_scope = bool(workspace) or _looks_like_workspace_coding_request(_last_user)
+    # Apply the stability cap only when the request itself signals coding
+    # work. A bound workspace also supports document/data tasks and is not
+    # sufficient evidence of coding intent. Explicit per-turn temperatures
+    # and remote endpoints retain their existing precedence.
+    _temperature_cap = None
+    _cap_scope = _looks_like_workspace_coding_request(_last_user)
     if not temperature_explicit and not _ody_qwen_finetune_model and _cap_scope:
         try:
             from src.model_context import is_local_endpoint as _is_local_ep
             _cap = float(get_setting("agent_local_temperature_cap", 0.4) or 0)
             if _cap > 0 and _is_local_ep(endpoint_url) and temperature is not None and temperature > _cap:
                 _temperature_capped_from = temperature
+                _temperature_cap = _cap
                 temperature = _cap
                 _requested_temperature = _cap
                 logger.info("[harness] local agent temperature capped %.2f -> %.2f (agent_local_temperature_cap)",
@@ -14075,6 +14077,9 @@ async def _stream_agent_loop_body(
                 "output_tokens": _round_real_output_tokens or None,
                 # Effective generation settings for this round (model controls readout).
                 "temperature": temperature,
+                "temperature_capped_from": _temperature_capped_from,
+                "temperature_cap": _temperature_cap,
+                # Legacy field: historically this stores the pre-cap value.
                 "temperature_capped": _temperature_capped_from,
                 "max_tokens": max_tokens,
                 "think": (gen_overrides or {}).get("think") if isinstance(gen_overrides, dict) else None,

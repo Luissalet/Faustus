@@ -565,8 +565,9 @@ DEFAULT_SETTINGS = {
     # prefill a long prompt: on a local endpoint the per-read inactivity
     # timeout is raised to at least this many seconds (src/agent_loop.py).
     "agent_local_stream_timeout_seconds": 900,
-    # Coding turns on a local endpoint run at most at this temperature unless
-    # the chat pins one explicitly (FAUSTUS harness). 0 = never cap.
+    # Requests identified as coding work on a local endpoint run at most at
+    # this temperature unless the chat pins one explicitly. Workspace binding
+    # alone does not apply the cap. 0 = never cap.
     "agent_local_temperature_cap": 0.4,
     # Thinking watchdog for local thinking models: a round that has produced
     # only reasoning for longer than this is cut off once and retried with

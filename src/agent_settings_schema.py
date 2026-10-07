@@ -206,8 +206,8 @@ GROUPS: list[dict[str, Any]] = [
                  "stay silent for minutes while they prefill a long prompt.",
                  0, 7200),
             _float("agent_local_temperature_cap", "Local temperature cap",
-                   "Coding turns on a local endpoint run at most at this temperature unless the chat pins "
-                   "one. 0 = never cap.",
+                   "Requests identified as coding work on a local endpoint run at most at this temperature "
+                   "unless the chat pins one. Workspace binding alone does not apply the cap. 0 = never cap.",
                    0, 2, 0.05),
             _int("agent_local_think_budget_seconds", "Thinking budget (s, local)",
                  "A local thinking model that has produced only reasoning for this long is cut off once "
