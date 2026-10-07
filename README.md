@@ -544,6 +544,12 @@ Doubt review (`src/doubt_review.py`, off by default: `agent_doubt_review`) asks 
 
 See the [threat model](THREAT_MODEL.md), [security policy](SECURITY.md) and [setup security notes](website/setup.md#security-notes).
 
+## Deliverable files and model activity
+
+`inspect_deliverable` reads actual PDF, PPTX, DOCX, XLSX, CSV, image, audio and video files, returning their identity, bounded text and structural facts. It does not render or grade the content. See [deliverable inspection](docs/api/deliverable-inspection.md).
+
+The chat's collapsible Activity panel shows reported principal, worker, advisor and helper activity, tool steps, token counts, and engine prefill/decode timings when available. It preserves per-round receipts and distinguishes observed request duration from engine time. GPU or node placement is never inferred from model names. See [model activity](docs/api/round_activity.md).
+
 ## Credits and licence
 
 Faustus builds on [Odysseus](https://github.com/odysseus-dev/odysseus). See [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md) for additional credits, [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance and [LICENSE](LICENSE) for **AGPL-3.0-or-later**.

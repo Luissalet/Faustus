@@ -585,6 +585,7 @@ _DOMAIN_RULES = {
 - "Research X" means `trigger_research`, not a one-off `web_search`, unless the user explicitly asks for a quick lookup.""",
     "documents": """\
 ## Document rules
+- To inspect an actual output file, use `inspect_deliverable` for PDF/PPTX/DOCX/XLSX/CSV, images, audio or video. Report its extracted facts and limitations; file existence or successful parsing alone does not establish quality or completion.
 - For long code/content (>15 lines), use `create_document` instead of pasting into chat.
 - If an active document is open, "fix this", "add X", "change Y", etc. usually refers to that document.
 - Use `edit_document` for targeted changes. Use `update_document` only for genuine full rewrites.
@@ -682,7 +683,7 @@ _DOMAIN_RULES = {
 
 _DOMAIN_TOOL_MAP = {
     "web": set(WEB_TOOL_NAMES),
-    "documents": {"create_document", "edit_document", "update_document", "suggest_document", "manage_documents", "expert_review"},
+    "documents": {"create_document", "edit_document", "update_document", "suggest_document", "manage_documents", "expert_review", "inspect_deliverable"},
     "email": {"list_email_accounts", "list_emails", "read_email", "scan_email_unsubscribes", "unsubscribe_email", "send_email", "reply_to_email", "bulk_email", "archive_email", "delete_email", "mark_email_read", "resolve_contact", "manage_contact", "review_candidature_mail"},
     "cookbook": {"download_model", "serve_model", "serve_preset", "list_serve_presets", "list_served_models", "stop_served_model", "tail_serve_output", "list_downloads", "cancel_download", "search_hf_models", "list_cached_models", "list_cookbook_servers", "adopt_served_model"},
     "notes_calendar_tasks": {"manage_notes", "manage_calendar", "manage_tasks"},
@@ -716,7 +717,7 @@ _DOMAIN_HOT_TOOLS = {
     "email": {"list_emails", "read_email", "reply_to_email", "send_email"},
     "whatsapp": {"whatsapp_read", "whatsapp_send"},
     "contacts": {"resolve_contact"},
-    "documents": {"create_document", "edit_document", "manage_documents"},
+    "documents": {"create_document", "edit_document", "manage_documents", "inspect_deliverable"},
     "sessions": {"search_chats"},
     "ui": {"ui_control"},
     "integrations": {"api_call"},
@@ -7093,6 +7094,8 @@ def _usage_bucket(
     cost_usd: Optional[float] = None,
     cached_tokens: Optional[int] = None,
     reasoning_tokens: Optional[int] = None,
+    engine_timings: Optional[dict] = None,
+    request_duration_ms: Optional[float] = None,
     billing: Optional[str] = None,
     network: Optional[str] = None,
     fallback_scope: Optional[str] = None,
@@ -7145,6 +7148,17 @@ def _usage_bucket(
         bucket["cached_tokens"] = int(cached_tokens)
     if isinstance(reasoning_tokens, (int, float)) and not isinstance(reasoning_tokens, bool) and reasoning_tokens >= 0:
         bucket["reasoning_tokens"] = int(reasoning_tokens)
+    if isinstance(engine_timings, dict):
+        # These fields were normalized from a backend usage receipt. Keep
+        # absent values absent; the UI can show precisely what the engine
+        # did and did not report for this model invocation.
+        allowed = ("load_ms", "prompt_ms", "predicted_ms", "prompt_n", "predicted_n", "cache_n", "source")
+        timings = {key: engine_timings[key] for key in allowed if key in engine_timings}
+        if timings:
+            bucket["engine_timings"] = timings
+    if isinstance(request_duration_ms, (int, float)) and not isinstance(request_duration_ms, bool) and request_duration_ms >= 0:
+        bucket["request_duration_ms"] = round(float(request_duration_ms), 3)
+        bucket["request_duration_source"] = "observed_client"
     if isinstance(billing, str) and billing.strip():
         bucket["billing"] = billing
     if isinstance(network, str) and network.strip():
@@ -12686,6 +12700,8 @@ async def _stream_agent_loop_body(
         # else this data flows.
         _round_cost_usd = None
         _round_cached_tokens = None
+        _round_engine_timings = None
+        _round_request_duration_ms = None
         _round_reasoning_tokens = None
         candidate_index = 0
 
@@ -12724,6 +12740,8 @@ async def _stream_agent_loop_body(
                 usage_source=usage_source,
                 cost_usd=_round_cost_usd,
                 cached_tokens=_round_cached_tokens,
+                engine_timings=_round_engine_timings,
+                request_duration_ms=_round_request_duration_ms,
                 reasoning_tokens=_round_reasoning_tokens,
                 route_decision=_hopts.get("route_decision"),
             ))
@@ -12822,6 +12840,7 @@ async def _stream_agent_loop_body(
             logger.debug("[agent] follow-up reasoning budget skipped: %s", _rr_err)
             _round_overrides = gen_overrides
         _tool_trouble_since_stream = False
+        _inference_started_monotonic = time.monotonic()
         async for chunk in _observe_main_inference_awaits(stream_llm_with_fallback(
             _candidates,
             messages,
@@ -13191,6 +13210,8 @@ async def _stream_agent_loop_body(
                             _round_cached_tokens = int(u["cached_tokens"])
                         if isinstance(u.get("reasoning_tokens"), (int, float)) and not isinstance(u.get("reasoning_tokens"), bool):
                             _round_reasoning_tokens = int(u["reasoning_tokens"])
+                        if isinstance(u.get("engine_timings"), dict):
+                            _round_engine_timings = dict(u["engine_timings"])
                         # Backend-reported TRUE generation speed (llama.cpp
                         # timings.predicted_per_second) — pure decode, excludes
                         # prefill/network. Preferred over tokens/wall-clock, which
@@ -13700,6 +13721,7 @@ async def _stream_agent_loop_body(
             yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
             continue
 
+        _round_request_duration_ms = max(0.0, (time.monotonic() - _inference_started_monotonic) * 1000.0)
         logger.info(
             "[agent-timing] round_stream_done round=%s elapsed=%.3fs text_chars=%s tool_calls=%s first_event=%s first_token=%s",
             round_num,
@@ -13975,6 +13997,13 @@ async def _stream_agent_loop_body(
                 # Wall-clock for the model call — with output_tokens gives tok/s.
                 "elapsed_s": round(time.time() - _round_start, 2),
                 "reasoning_chars": len(round_reasoning),
+                "actor": "principal",
+                "model": _round_actual_model,
+                "usage_source": "reported_engine" if _round_has_real_usage else "estimated",
+                "cached_tokens": _round_cached_tokens,
+                "engine_timings": _round_engine_timings,
+                "request_duration_ms": round(_round_request_duration_ms, 3),
+                "request_duration_source": "observed_client",
             }) + "\n\n"
         )
 

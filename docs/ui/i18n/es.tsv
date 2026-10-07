@@ -7126,6 +7126,10 @@ finished the ask, and this mode goes no further	cumplió lo pedido, y este modo 
 finished unverified	terminó sin verificar
 finished: nothing left was worth doing	terminado: nada de lo que quedaba valía la pena
 fits	cabe
+weights fit	pesos caben
+weights tight	pesos justos
+weights exceed VRAM	pesos superan VRAM
+weights split	pesos repartidos
 fitted over the observed range	ajustado sobre el rango observado
 fitted over {min}–{max}	ajustado sobre {min}–{max}
 fixture name	nombre del fixture
@@ -9060,3 +9064,29 @@ Lean chat: no skills index, repo map, instincts or plugin tools; only the core t
 Normal chat: the full harness. Click for Lean (fewer prompt blocks, core tools only).	Chat normal: el arnés completo. Haz clic para Ligero (menos bloques de prompt, solo herramientas básicas).
 Continues the plan on its own	Sigue con el plan sin esperar
 Plan paused: asking you	Plan en pausa: te pregunta
+Cached tokens	Tokens en caché
+Finish	Finalización
+GPU attribution appears only when the runtime reports it.	La atribución de GPU solo aparece cuando el runtime la informa.
+Helper	Ayudante
+Hoard tools	Herramientas del Hoard
+Principal	Principal
+Runtime helpers	Ayudantes del runtime
+{n} model rounds	{n} rondas del modelo
+{n} models reported	{n} modelos informados
+Active sphere (Hoard Hub): {name}	Esfera activa (Hoard Hub): {name}
+Choose color	Elegir color
+Close quick tool	Cerrar herramienta rápida
+Copy is unavailable. Use the result in your message.	No se pudo copiar. Usa el resultado en tu mensaje.
+Could not switch the sphere.	No se pudo cambiar de esfera.
+Lesson approved. It applies from the next turn.	Lección aprobada. Se aplica desde el próximo turno.
+New lessons are only proposed here. None of them is used until you approve it, and an approved one applies from the next turn.	Aquí solo se proponen lecciones nuevas. No se usa ninguna hasta que la apruebes; las aprobadas se aplican desde el siguiente turno.
+Nothing is waiting.	No hay nada pendiente.
+Open in the Hub	Abrir en el Hub
+Quick tools	Herramientas rápidas
+Reset timer	Reiniciar temporizador
+Runs while this view is open.	Sigue en marcha mientras esta vista esté abierta.
+Sphere	Esfera
+Text contrast	Contraste del texto
+The hub refused the switch.	El Hub rechazó el cambio.
+Timer finished	Temporizador finalizado
+Use in message	Usar en el mensaje

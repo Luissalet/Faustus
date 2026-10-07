@@ -5,6 +5,7 @@ import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState, 
 import { lazyChunk } from '../../shell/lazyChunk';
 import { createPortal } from 'react-dom';
 import { Button, describeError, ExecutionTimeline, friendlyError, IconButton, TurnCostBreakdown } from '../../components';
+import { TurnActivity } from './TurnActivity';
 import { fetchCompactionEvent, pinCompactionFragment, fetchLlmTraces, forkLlmTrace, faviconStripEntries, type AdvisorAdvice, type AskUser, type CompactionEvent, type ContextLedger, type ContextReceipt, type DelegationTask, type LlmTraceRow, type WebSource } from '../../adapters/chat';
 import { createRecipeFromRun } from '../../adapters/strategy';
 import type { AnswerVersion } from '../../adapters/sessions';
@@ -1987,6 +1988,7 @@ function AssistantTurn({
             <SubagentBoard workers={turn.workers} live={turn.streaming} onRerun={onRerun ?? (() => undefined)} onNotice={onNotice} />
           </Suspense>
         )}
+        <TurnActivity turn={turn} />
         {turn.research && !turn.research.done && turn.streaming && <ResearchLine research={turn.research} />}
         {body && <Rich text={body} onOpenFile={onOpenFile} />}
         {turn.streaming && body && <span className="fs-studio__cursor" aria-hidden="true" />}

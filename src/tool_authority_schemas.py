@@ -219,6 +219,12 @@ CORE_SCHEMAS = {
                                                            'not a URL or playlist'}},
                     'required': ['path'],
                     'additionalProperties': False}},
+    'inspect_deliverable': {'description': 'Inspect a real local deliverable and extract bounded structural facts and text from PDF, PPTX, DOCX, XLSX, CSV/TSV, images, audio or video. Returns path, SHA-256 and size plus format-specific facts. Read-only and workspace-confined. This reports extractable structure only; it never rates quality, renders pages, recalculates formulas, transcribes, or claims that the deliverable is complete.',
+     'parameters': {'type': 'object', 'properties': {
+         'path': {'type': 'string', 'description': 'Local file path inside the allowed workspace; not a URL'},
+         'max_content_chars': {'type': 'integer', 'minimum': 1000, 'maximum': 80000,
+                               'description': 'Maximum extracted content excerpt size; default 24000'}},
+                    'required': ['path'], 'additionalProperties': False}},
     'image_job': {'description': 'Check, collect or cancel an existing Prospero image request after a timeout or restart. Use '
                     'the request_id returned by generate_image or edit_image. This never starts another render; '
                     'action=cancel stops a queued or running render of that request only.',

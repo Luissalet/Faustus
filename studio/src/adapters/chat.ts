@@ -205,9 +205,30 @@ export interface TurnMetrics {
    *  tokens processed, tokens reused, and rounds whose cache stopped short
    *  of the previous request. */
   prompt_cache?: PromptCacheUse;
+  /** Per-invocation records from live round events and persisted usage
+   *  buckets. Missing engine phases remain missing; client stream duration
+   *  is labelled separately from backend timings. */
+  round_activity?: RoundActivity[];
+  recovery_usage?: Record<string, unknown>[];
+  compaction_usage?: Record<string, unknown>[];
   /** The detached run that produced this reply: the key of its cost view
    *  (`GET /api/runs/{session}/turn-cost?run_id=`). Absent on older history. */
   runId?: string;
+}
+
+export interface RoundActivity {
+  actor: 'principal' | 'subagent';
+  round: number;
+  model?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  cachedTokens?: number;
+  promptMs?: number;
+  decodeMs?: number;
+  requestDurationMs?: number;
+  requestDurationSource?: string;
+  timingSource?: string;
+  finishReason?: string;
 }
 
 export interface AskOption {
@@ -621,6 +642,7 @@ export type ChatEvent =
   | { type: 'doc_update'; doc: DocSnapshot }
   | { type: 'doc_suggestions'; docId: string; suggestions: DocSuggestion[] }
   | { type: 'round'; round: number }
+  | { type: 'round_info'; activity: RoundActivity }
   | { type: 'ask_user'; ask: AskUser }
   | { type: 'ask_resolved' }
   /** UX-02/TASK-03: the outbox reconnected to a turn whose true outcome
@@ -734,6 +756,38 @@ function num(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+export function roundActivityFrom(raw: unknown, actor: RoundActivity['actor'] = 'principal'): RoundActivity | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const round = num(r.round);
+  if (round === undefined || round < 1) return null;
+  const timing = r.engine_timings && typeof r.engine_timings === 'object'
+    ? r.engine_timings as Record<string, unknown> : {};
+  return {
+    actor,
+    round,
+    model: str(r.model) || undefined,
+    inputTokens: num(r.input_tokens),
+    outputTokens: num(r.output_tokens),
+    cachedTokens: num(r.cached_tokens) ?? num(timing.cache_n),
+    promptMs: num(timing.prompt_ms),
+    decodeMs: num(timing.predicted_ms),
+    requestDurationMs: num(r.request_duration_ms),
+    requestDurationSource: str(r.request_duration_source) || undefined,
+    timingSource: str(timing.source) || undefined,
+    finishReason: str(r.finish_reason) || undefined,
+  };
+}
+
+function roundActivityList(raw: unknown): RoundActivity[] {
+  const byRound = new Map<number, RoundActivity>();
+  for (const item of asArray<unknown>(raw)) {
+    const activity = roundActivityFrom(item);
+    if (activity) byRound.set(activity.round, activity);
+  }
+  return [...byRound.values()].sort((a, b) => a.round - b.round);
+}
+
 /**
  * OBS-01/OBS-03/ARCH-01 passthrough for the `error`/`terminal` ChatEvent
  * variants: `error_class` (`src/contracts/errors.py`'s taxonomy),
@@ -844,6 +898,9 @@ export function metricsFrom(meta: Record<string, unknown>): TurnMetrics {
     contextPercent: num(meta.context_percent),
     execution: executionMetricsFrom(meta.execution),
     prompt_cache: promptCacheFrom(meta.prompt_cache),
+    round_activity: roundActivityList(meta.usage_buckets),
+    recovery_usage: asArray<Record<string, unknown>>(meta.recovery_usage),
+    compaction_usage: asArray<Record<string, unknown>>(meta.compaction_usage),
     runId: str(meta.run_id) || str(meta.trace_id) || undefined,
   };
 }
@@ -1622,6 +1679,10 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
       };
     case 'agent_step':
       return { type: 'round', round: num(raw.round) ?? 1 };
+    case 'round_info': {
+      const activity = roundActivityFrom(raw);
+      return activity ? { type: 'round_info', activity } : null;
+    }
     case 'steer':
       return {
         type: 'steer',

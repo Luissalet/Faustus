@@ -519,6 +519,12 @@ Revisión con duda (`src/doubt_review.py`, apagada por defecto: `agent_doubt_rev
 
 Consulta el [modelo de amenazas](THREAT_MODEL.md), la [política de seguridad](SECURITY.md) y las [notas de seguridad de instalación](website/setup.md#security-notes).
 
+## Archivos entregados y actividad de modelos
+
+`inspect_deliverable` lee archivos reales PDF, PPTX, DOCX, XLSX, CSV, imágenes, audio y vídeo y devuelve su identidad, texto acotado y hechos estructurales. No renderiza ni califica el contenido. Consulta [inspección de archivos](docs/api/deliverable-inspection.es.md).
+
+El panel desplegable Actividad del chat muestra los datos informados del principal, workers, asesor y ayudantes, pasos de herramientas, tokens y tiempos de prefill/decode cuando están disponibles. Conserva recibos por ronda y distingue la duración observada de la petición del tiempo del motor. No deduce GPU ni nodo a partir del nombre del modelo. Consulta [actividad de modelos](docs/api/round_activity.es.md).
+
 ## Créditos y licencia
 
 Faustus parte de [Odysseus](https://github.com/odysseus-dev/odysseus). Más créditos en [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md), contribuciones en [CONTRIBUTING.md](CONTRIBUTING.md) y licencia **AGPL-3.0-or-later** en [LICENSE](LICENSE).

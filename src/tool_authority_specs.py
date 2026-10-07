@@ -7,6 +7,7 @@ Families migrated so far, each registered as data:
               get_workspace
   core_web    web_search, web_fetch
   media       plan_media_transform, transform_media, inspect_media, image_job
+  documents   inspect_deliverable
   pdf         pdf_outline, pdf_read_section, pdf_find_section (spec owned by
               `src.pdf_tool_contracts`; adopted here, never copied)
 
@@ -184,6 +185,9 @@ _CORE: dict = {
     "inspect_media": ("media", "media.inspect",
                       ParserContract(_json_args, required_any=(("path",),)),
                       ToolResources(path_args=("path",), access="read"), ToolLimits(), ()),
+    "inspect_deliverable": ("documents", "deliverable.inspect",
+                             ParserContract(_json_args, required_any=(("path",),)),
+                             ToolResources(path_args=("path",), access="read"), ToolLimits(), ()),
     "image_job": ("media", "media.image_job", ParserContract(_json_args),
                   ToolResources(network=True), ToolLimits(), ()),
 }

@@ -21,7 +21,9 @@ import {
   type ContextReceipt,
   type ToolOutcomeFields,
   type ToolResultStatus,
+  type RoundActivity,
 } from '../../adapters/chat';
+import { roundActivityFrom } from '../../adapters/chat';
 import type { EvidenceRef } from '../../adapters/evidence';
 import type { Attachment } from '../../adapters/composer';
 import type { VramBlocked } from '../../adapters/vramAdmission';
@@ -160,6 +162,7 @@ export interface Worker {
   round: number | null;
   maxRounds: number | null;
   rounds: number | null;
+  roundActivity: RoundActivity[];
   toolCalls: number;
   failedCalls: number;
   lastTool: string;
@@ -486,6 +489,7 @@ export function newWorker(id: string, delegation: string, now: number): Worker {
     sessionId: '', status: 'running', firstSeen: now, startedLocal: null, startedAt: null, endedAt: null, endedLocal: null,
     lastEventAt: now, sawTick: false, tickElapsed: null, tickAt: null, round: null, maxRounds: null, rounds: null,
     toolCalls: 0, failedCalls: 0, lastTool: '', lastCmd: '', lastToolOk: null, lastOut: '', tail: '', toolElapsed: null,
+    roundActivity: [],
     toolInFlight: false, inTok: null, outTok: null, idleS: null, stalled: false, stallReason: '', stallAt: null,
     timeoutS: null, steers: [], supervisor: [], note: '', error: '', stopReason: '', finalText: '', mutations: [],
     durationS: null, stopRequested: false,
@@ -551,6 +555,12 @@ export function applyWorker(prev: Worker, sa: SubagentPayload, now: number): Wor
   if (n(sa.input_tokens) !== null) w.inTok = n(sa.input_tokens);
   if (n(sa.output_tokens) !== null) w.outTok = n(sa.output_tokens);
   if (n(sa.rounds) !== null) w.rounds = n(sa.rounds);
+  const roundRaw = Array.isArray(sa.round_activity) ? sa.round_activity : sa.round_activity ? [sa.round_activity] : [];
+  for (const raw of roundRaw) {
+    const activity = roundActivityFrom(raw, 'subagent');
+    if (activity) w.roundActivity = [...w.roundActivity.filter((item) => item.round !== activity.round), activity]
+      .sort((a, b) => a.round - b.round).slice(-100);
+  }
   switch (sa.event) {
     case 'queued':
       w.status = 'queued';
@@ -962,6 +972,16 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
     }
     case 'round':
       return { ...turn, rounds: Math.max(turn.rounds, event.round), live: livePhase(live, now, 'waiting') };
+    case 'round_info': {
+      const existing = turn.metrics?.round_activity ?? [];
+      const round_activity = [...existing.filter((item) => item.round !== event.activity.round), event.activity]
+        .sort((a, b) => a.round - b.round);
+      return {
+        ...turn,
+        rounds: Math.max(turn.rounds, event.activity.round),
+        metrics: { ...turn.metrics, round_activity },
+      };
+    }
     case 'ask_user': {
       // The tool that needs permission is either still running or was just
       // closed by the server with an empty output (some approval paths emit

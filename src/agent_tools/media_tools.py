@@ -40,6 +40,24 @@ class InspectMediaTool:
             return {'error': 'inspect_media: the installed media probe could not be started. Check the local runtime.', 'error_code': 'probe_unavailable', 'exit_code': 1}
 
 
+class InspectDeliverableTool:
+    async def execute(self, content: str, ctx: dict) -> dict:
+        from src.deliverable_inspection import inspect_deliverable, DeliverableInspectionError
+        try:
+            args = json.loads(content)
+            if (not isinstance(args, dict) or set(args) - {'path', 'max_content_chars'}
+                    or not isinstance(args.get('path'), str)):
+                raise ValueError('Expected a local file path and optional content limit')
+            result = await inspect_deliverable(args['path'], max_content_chars=args.get('max_content_chars', 24000))
+            return {'output': json.dumps(result, ensure_ascii=False, allow_nan=False),
+                    'deliverable': result, 'exit_code': 0}
+        except DeliverableInspectionError as exc:
+            return {'error': f'inspect_deliverable: {exc}', 'error_code': exc.code, 'exit_code': 1}
+        except (ValueError, TypeError):
+            return {'error': 'inspect_deliverable: expected {"path":"local file", "max_content_chars":24000}.',
+                    'error_code': 'invalid_arguments', 'exit_code': 1}
+
+
 class MediaTransformTool:
     def __init__(self, *, preview=False):
         self.preview = preview

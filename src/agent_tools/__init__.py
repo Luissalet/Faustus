@@ -31,7 +31,7 @@ from .code_history_tools import CodeHistoryTool
 from .document_tools import CreateDocumentTool, UpdateDocumentTool, EditDocumentTool, SuggestDocumentTool, ManageDocumentTool
 from .interaction_tools import AskUserTool, UpdatePlanTool, LookupToolsTool
 from .model_interaction_tools import ChatWithModelTool, AskTeacherTool, ListModelsTool
-from .media_tools import InspectMediaTool, MediaTransformTool, ImageJobTool
+from .media_tools import InspectMediaTool, InspectDeliverableTool, MediaTransformTool, ImageJobTool
 from .bg_job_tools import ManageBgJobsTool
 from .session_tools import CreateSessionTool, ListSessionsTool, SendToSessionTool, ManageSessionTool
 from .admin_tools import (
@@ -114,6 +114,7 @@ TOOL_HANDLERS = {
     "web_fetch": WebFetchTool().execute,
     "read_file": ReadFileTool().execute,
     "inspect_media": InspectMediaTool().execute,
+    "inspect_deliverable": InspectDeliverableTool().execute,
     "image_job": ImageJobTool().execute,
     # Targeted look at ONE image/PDF page: ask a specific question about a
     # region, crop/rotate/zoom/enhance, overlay a grid, detect shapes locally,
@@ -404,7 +405,7 @@ SHELL_TIMEOUT = 60
 PYTHON_TIMEOUT = 30
 
 # Tool types that trigger execution
-TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_file", "inspect_media", "write_file", "edit_file",
+TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_file", "inspect_media", "inspect_deliverable", "write_file", "edit_file",
              "plan_media_transform", "transform_media",
              "apply_patch", "todowrite", "delegate_agents",
              "grep", "glob", "ls", "find_symbol", "callers", "tests_for", "rename_symbol",

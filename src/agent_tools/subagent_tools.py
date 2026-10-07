@@ -198,7 +198,7 @@ _WRITE_TOOLS = frozenset({"write_file", "edit_file", "apply_patch", "transform_m
 #: tree, so a `read` rule is not applied to them: refusing a listing on a path
 #: rule would be theatre, and allowing one while claiming the rule held would
 #: be worse.
-_READ_TOOLS = frozenset({"read_file", "inspect_media", "plan_media_transform", "transform_media"})
+_READ_TOOLS = frozenset({"read_file", "inspect_media", "inspect_deliverable", "plan_media_transform", "transform_media"})
 
 
 def _targets(tool: str, content: Any) -> Optional[List[str]]:
@@ -1272,6 +1272,8 @@ class SubagentRun:
         self.delegation_id: Optional[str] = None
         self.text = ""
         self.tool_calls = 0
+        # Bounded, backend-reported model-call details for activity review.
+        self.round_activity: List[Dict[str, Any]] = []
         self.failed_calls = 0
         self.mutations: List[str] = []
         self.rejections = 0
@@ -1412,6 +1414,7 @@ class SubagentRun:
             "role": self.role, "files": self.files, "model": self.model_override or None,
             "instruction": self.instruction[:2000],
             "input_tokens": self.input_tokens, "output_tokens": self.output_tokens,
+            **({"round_activity": list(self.round_activity)} if self.round_activity else {}),
             "started_at": self.started, "ended_at": self.finished,
             "steered": self.steered, "supervisor": list(self.supervisor),
             # Conditional, like `outcome` above: a worker with no definition
@@ -1759,11 +1762,18 @@ async def _run_subagent(
                 await emit({"event": "tool", "tool": ev.get("tool"), "ok": ok, "phase": "done", "output": _short(ev.get("output"), 120), **fields})
             elif et == "round_info":
                 run.rounds = max(run.rounds, int(ev.get("round") or 0))
+                if len(run.round_activity) < 100:
+                    run.round_activity.append({key: ev[key] for key in (
+                        "round", "model", "input_tokens", "output_tokens", "cached_tokens",
+                        "engine_timings", "request_duration_ms", "request_duration_source",
+                        "finish_reason", "elapsed_s", "usage_source",
+                    ) if key in ev})
                 if not _input_from_metrics:
                     run.input_tokens += _token_count(ev.get("input_tokens")) or 0
                 if not _output_from_metrics:
                     run.output_tokens += _token_count(ev.get("output_tokens")) or 0
-                await emit({"event": "round", "round": run.rounds})
+                await emit({"event": "round", "round": run.rounds,
+                            "round_activity": run.round_activity[-1] if run.round_activity else None})
             elif et == "steer":
                 _observe_steering_applied(run, ev)
                 run.steered += 1
