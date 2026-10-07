@@ -542,6 +542,8 @@ El lanzador de escritorio administrado inicia Faustus en loopback con `AUTH_ENAB
 
 Si una ronda con herramientas contiene solo narración simple en el idioma incorrecto, Faustus la quita de la respuesta visible y del historial de rondas recargable. El texto visible original del proveedor queda aparte en las métricas `provider_round_texts` cuando se ha retirado texto. El contenido estructurado o entrecomillado se conserva.
 
+La comprobación de idioma excluye objetos y arrays JSON válidos, también dentro de bloques. Las claves y los valores de origen mantienen su forma; el texto alrededor de un bloque JSON sigue comprobándose. Constantes JSON no válidas como `NaN` e `Infinity` no quedan exentas.
+
 ## Créditos y licencia
 
 Faustus parte de [Odysseus](https://github.com/odysseus-dev/odysseus). Más créditos en [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md), contribuciones en [CONTRIBUTING.md](CONTRIBUTING.md) y licencia **AGPL-3.0-or-later** en [LICENSE](LICENSE).

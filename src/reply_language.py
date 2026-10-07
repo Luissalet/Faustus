@@ -24,9 +24,10 @@ did, no message is built.
 from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+import json
 import re
 
-from src.research_citations import language_signal
+from src.research_citations import language_signal, _fenced_spans
 
 # One very common word ("de", "the") is shared by four of the six languages
 # and scores 0.25, so a single hit at that weight is noise. This asks for the
@@ -399,8 +400,29 @@ def reply_language_mismatch(required_code: Optional[str], reply_text: Any) -> Op
     """
     if not required_code or required_code not in _DIRECTIVE:
         return None
-    # Score the narration only: strip think/tool chrome callers may leave in.
-    observed = language_of(reply_text)
+    # Structured data keeps its schema and source values. Scoring JSON keys
+    # (e.g. rice_to_buy_g) as narration caused a correct Spanish user's JSON
+    # answer to be rewritten with prose, breaking the requested output format.
+    text = visible_text(reply_text).strip()
+    def is_json_structure(value: str) -> bool:
+        if not value.lstrip().startswith(('{', '[')):
+            return False
+        def reject_constant(token: str) -> None:
+            raise ValueError(f'Non-JSON constant: {token}')
+        try:
+            return isinstance(json.loads(value, parse_constant=reject_constant), (dict, list))
+        except (ValueError, RecursionError):
+            return False
+    if is_json_structure(text):
+        return None
+    for start, end in reversed(_fenced_spans(text)):
+        block = text[start:end].splitlines()
+        # Only complete, valid JSON structures are data here. Invalid JSON
+        # and narration around the block still go through the language check.
+        if len(block) >= 3 and re.fullmatch(r'[ \t]*(`{3,}|~{3,})[ \t]*', block[-1]) \
+                and is_json_structure('\n'.join(block[1:-1])):
+            text = text[:start] + '\n' + text[end:]
+    observed = language_of(text)
     if not observed or observed == required_code:
         return None
     return observed
