@@ -1166,7 +1166,16 @@ Acordado con Luis el 02-10: dos apps separadas de la familia (Galton, puerto 520
 
 ## OBJ-55 · Cierre de evidencias y próximas verificaciones (07-10-2026)
 
-**Estado: en curso.** Este objetivo conserva como pendientes las verificaciones trasladadas desde `PENDIENTES.md`; no las marca como completadas. Las próximas tandas del modelo seguirán el criterio vigente: Q4, contexto menor y uso de las GPU 2 y 3, dejando las GPU 0 y 1 disponibles para Luis. Una QA iniciada con Q8 se interrumpió al actualizarse el criterio; no produjo un pase completo y no debe contarse como tal.
+**Estado: en curso.** Este objetivo conserva como pendientes las verificaciones trasladadas desde `PENDIENTES.md`; no las marca como completadas. La QA iniciada con Q8 se interrumpió al actualizarse el criterio y no produjo un pase completo. Las comprobaciones Q4 breves (7 + 5) tampoco son una evaluación de capacidad. No se atribuye un grado completo a Qwen.
+
+### Estado actual y próximas puertas operativas
+
+- Ágora 5 (`7c507e876c9f3804fed15aeff0b31ac989bfa410`), Ágora 6 (`990…`) y Ágora 10 (`83a…`) esperan revisión de Claude y no están integradas. En 6 y 10 se detectó una parametrización errónea de IDs en pruebas de selección por proveedor y se están repitiendo los casos positivos; los resultados anteriores 47/66 son previos a corregir verbos y no los acreditan.
+- El delta de Ágora 12 (`bf2b2d3`) espera revisión. La aprobación anterior fue para el commit `8c8e55f` y no cubre este delta.
+- La revisión de protocolo de Ágora 4 (`9345016`) completó 23 pruebas, MCP stdio (120/23 herramientas) y navegador (13 apps). HoardLink #13 (`dbbf9d4`) con los README de las 23 herramientas ya está integrado.
+- El diagnóstico #15 de la etiqueta «resident» terminó. La corrección nativa #16 está en el commit candidato `fed2011bfcaf939e8410ac50c02a370f243c03a9`, con 41 pruebas reportadas y sin integración.
+- El inspector PPTX #11 sigue en revisión: se reprodujeron falsos positivos de `template_preserved` para un layout ausente y un master sin relación `relTheme`; la preservación aún no está acreditada.
+- Para futuras evaluaciones: usar Q4 y un contexto menor; tomar `lock model:principal` y leases de GPU 2/3; dejar GPU 0/1 disponibles para Luis; registrar configuración efectiva y efectos reales. No tratar un smoke test como evaluación de capacidad. SABER, sus procesos y sus chats siguen aparcados.
 
 - **Corte por deadline e22:** se observó una desconexión HTTP silenciosa y un checkpoint parcial; no hubo despacho de llamadas a herramientas que hubieran quedado en búfer. La recuperación y el despacho tras ese corte siguen siendo una puerta pendiente.
 - **Parada forzada 674:** el fixture sintético comprobó la identidad válida del proceso antes de finalizarlo; terminó el helper y la aplicación persistente permaneció viva. Es evidencia de ese fixture, no de una parada forzada sobre la aplicación real.
