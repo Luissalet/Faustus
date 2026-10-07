@@ -31,7 +31,8 @@ text, notes, images and charts. `facts.template` contains:
   use it; `unused_layouts` lists the ones no slide uses.
 - `themes`: name, colour scheme (`dk1` … `accent6`, `hlink`, `folHlink`), font scheme (major and minor Latin
   typefaces) and fingerprint.
-- `template_fingerprint`: one hash over every master, layout and theme fingerprint.
+- `template_fingerprint`: one hash over every master, layout and theme fingerprint and over the graph that links them (layout to master, master to theme).
+- `broken_links`: links that do not resolve: a slide without a layout or pointing at a missing one, a layout whose master link is absent or points elsewhere, a master without a theme (`from`, `kind`, `target`, `error`). With any of them `template_fingerprint` is null.
 - `unreadable_parts`: template parts that are missing or malformed (`part`, `kind`, `error`). They are left out instead of aborting the inspection; `template_fingerprint` is then null and the comparison never reports the template as preserved.
 
 Every slide also reports its `layout`, `layout_name` and `master`.
@@ -54,7 +55,9 @@ matched by their part path.
 - `identical_template_fingerprint`: every master, layout and theme is identical, including the unused ones.
 - For themes, masters and layouts: `identical`, `changed_same_name` (an edited copy of a reference part),
   `missing_from_deck` and `not_in_reference`.
-- `theme_color_changes` and `theme_font_changes` between the first theme of each file.
+- `theme_changes`: colour and font differences for each pair of masters (paired by fingerprint, then name, then part path). `theme_color_changes` and `theme_font_changes` repeat the first master's pair.
+- `arcs_outside_reference`: links of the deck's graph that the reference does not have, such as an unchanged layout hung from another master.
+- `broken_links` and `unreadable_parts` of both files; any of them in the deck or the reference makes `template_preserved` false.
 - `slides_on_layouts_outside_reference`: slides on an edited layout or on one that is not in the reference.
 
 Limits: these are facts about package parts. Equal fingerprints do not prove that the slides render well, that

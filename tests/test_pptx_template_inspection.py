@@ -315,3 +315,76 @@ async def test_external_link_targets_count_in_the_fingerprint(decks, tmp_path):
     with_link(b, "https://example.org/b")
     cmp = (await inspect_deliverable(str(b), compare_with=str(a)))["template_comparison"]
     assert cmp["layouts"]["changed_same_name"] == ["Blank"]
+
+
+@pytest.mark.asyncio
+async def test_broken_slide_layout_and_master_theme_links_are_not_preserved(decks):
+    template, preserved = decks
+    _rewrite(preserved, "ppt/slides/_rels/slide1.xml.rels",
+             lambda x: x.replace("../slideLayouts/slideLayout1.xml", "../slideLayouts/missing.xml"))
+    result = await inspect_deliverable(str(preserved), compare_with=str(template))
+    assert result["facts"]["slides"][0]["layout_name"] is None
+    assert result["facts"]["template"]["template_fingerprint"] is None
+    cmp = result["template_comparison"]
+    assert cmp["template_preserved"] is False and cmp["identical_template_fingerprint"] is False
+    assert cmp["broken_links"]["deck"] == [{"from": "ppt/slides/slide1.xml", "kind": "slideLayout",
+                                            "target": "ppt/slideLayouts/missing.xml", "error": "missing_part"}]
+
+    import re
+    _rewrite(preserved, "ppt/slides/_rels/slide1.xml.rels",
+             lambda x: re.sub(r'<Relationship [^>]*slideLayout"[^>]*/>', "", x))
+    cmp = (await inspect_deliverable(str(preserved), compare_with=str(template)))["template_comparison"]
+    assert {"from": "ppt/slides/slide1.xml", "kind": "slideLayout", "target": None,
+            "error": "no_relationship"} in cmp["broken_links"]["deck"]
+    assert cmp["template_preserved"] is False
+
+
+@pytest.mark.asyncio
+async def test_master_without_theme_relationship_is_not_preserved(decks):
+    template, preserved = decks
+    import re
+    _rewrite(preserved, "ppt/slideMasters/_rels/slideMaster1.xml.rels",
+             lambda x: re.sub(r'<Relationship [^>]*relationships/theme"[^>]*/>', "", x))
+    result = await inspect_deliverable(str(preserved), compare_with=str(template))
+    t = result["facts"]["template"]
+    assert t["themes"] == [] and t["template_fingerprint"] is None
+    cmp = result["template_comparison"]
+    assert cmp["template_preserved"] is False and cmp["identical_template_fingerprint"] is False
+    assert {"from": "ppt/slideMasters/slideMaster1.xml", "kind": "theme", "target": None,
+            "error": "no_relationship"} in cmp["broken_links"]["deck"]
+
+
+def _facts(masters, layouts, themes):
+    return {"template": {"slide_size": {"cx_emu": 1, "cy_emu": 1}, "masters": masters, "layouts": layouts,
+                         "themes": themes, "template_fingerprint": "x", "unreadable_parts": [], "broken_links": []},
+            "slides": []}
+
+
+def test_same_parts_hung_differently_are_reported_as_foreign_arcs():
+    themes = [{"part": "t1", "name": "A", "fingerprint": "T1", "colors": {}, "fonts": {}},
+              {"part": "t2", "name": "B", "fingerprint": "T2", "colors": {}, "fonts": {}}]
+    masters = [{"part": "m1", "name": "M1", "fingerprint": "M1", "theme": "t1", "theme_fingerprint": "T1"},
+               {"part": "m2", "name": "M2", "fingerprint": "M2", "theme": "t2", "theme_fingerprint": "T2"}]
+    layouts = [{"part": "l1", "name": "Title", "fingerprint": "L1", "master": "m1", "master_fingerprint": "M1"}]
+    ref = _facts(masters, layouts, themes)
+    moved = _facts(masters, [dict(layouts[0], master="m2", master_fingerprint="M2")], themes)
+    cmp = compare_presentation_templates(ref, moved)
+    assert cmp["layouts"]["identical"] == ["Title"] and cmp["masters"]["changed_same_name"] == []
+    assert cmp["arcs_outside_reference"] == [{"from": "Title", "to": "M2"}]
+    assert cmp["template_preserved"] is False
+    assert compare_presentation_templates(ref, ref)["template_preserved"] is True
+
+
+def test_theme_changes_are_reported_per_master_pair():
+    ref_themes = [{"part": "t1", "name": "A", "fingerprint": "T1", "colors": {"accent1": "111111"}, "fonts": {"major": "Calibri"}},
+                  {"part": "t2", "name": "B", "fingerprint": "T2", "colors": {"accent1": "222222"}, "fonts": {"major": "Arial"}}]
+    deck_themes = [ref_themes[0], dict(ref_themes[1], fingerprint="T2x", colors={"accent1": "999999"})]
+    masters = [{"part": "m1", "name": "Main", "fingerprint": "M1", "theme": "t1", "theme_fingerprint": "T1"},
+               {"part": "m2", "name": "Closing", "fingerprint": "M2", "theme": "t2", "theme_fingerprint": "T2"}]
+    deck_masters = [masters[0], dict(masters[1], theme_fingerprint="T2x")]
+    cmp = compare_presentation_templates(_facts(masters, [], ref_themes), _facts(deck_masters, [], deck_themes))
+    assert cmp["theme_changes"] == [{"master": "Closing", "reference_master": "Closing", "reference_theme": "t2",
+                                     "deck_theme": "t2", "colors": {"accent1": {"reference": "222222", "deck": "999999"}},
+                                     "fonts": {}}]
+    assert cmp["theme_color_changes"] == {}            # the first master kept its theme
+    assert cmp["themes"]["changed_same_name"] == ["B"] and cmp["template_preserved"] is False

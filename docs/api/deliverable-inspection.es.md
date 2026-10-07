@@ -31,7 +31,8 @@ del texto, las notas, las imágenes y los gráficos. `facts.template` incluye:
   usan. `unused_layouts` lista los que no usa ninguna.
 - `themes`: el nombre, la paleta (de `dk1` a `accent6`, `hlink` y `folHlink`), las fuentes (titulares y cuerpo) y
   la huella.
-- `template_fingerprint`: un hash que reúne las huellas de todos los patrones, diseños y temas.
+- `template_fingerprint`: un hash que reúne las huellas de todos los patrones, diseños y temas y el grafo que los une (diseño con patrón, patrón con tema).
+- `broken_links`: enlaces que no se resuelven: una diapositiva sin diseño o que apunta a uno inexistente, un diseño sin enlace a su patrón o que apunta a otro, un patrón sin tema (`from`, `kind`, `target`, `error`). Con cualquiera de ellos `template_fingerprint` es nulo.
 - `unreadable_parts`: partes de la plantilla que faltan o están dañadas (`part`, `kind`, `error`). Se dejan fuera en lugar de abortar la inspección; entonces `template_fingerprint` es nulo y la comparación nunca da la plantilla por conservada.
 
 Cada diapositiva indica además su `layout`, su `layout_name` y su `master`.
@@ -55,7 +56,9 @@ emparejan por la ruta de su parte.
 - `identical_template_fingerprint`: todos los patrones, diseños y temas son idénticos, también los que no se usan.
 - Para temas, patrones y diseños: `identical`, `changed_same_name` (copia editada de una parte de la referencia),
   `missing_from_deck` y `not_in_reference`.
-- `theme_color_changes` y `theme_font_changes` entre el primer tema de cada archivo.
+- `theme_changes`: diferencias de color y fuente de cada pareja de patrones (emparejados por huella, luego por nombre y luego por ruta). `theme_color_changes` y `theme_font_changes` repiten la pareja del primer patrón.
+- `arcs_outside_reference`: enlaces del grafo del archivo que la referencia no tiene, como un diseño sin cambios colgado de otro patrón.
+- `broken_links` y `unreadable_parts` de los dos archivos; cualquiera de ellos en el archivo o en la referencia hace falso `template_preserved`.
 - `slides_on_layouts_outside_reference`: diapositivas sobre un diseño editado o que no está en la referencia.
 
 Límites: son hechos sobre las partes del paquete. Que las huellas coincidan no demuestra que las diapositivas se vean

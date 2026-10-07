@@ -225,7 +225,7 @@ def _pptx_template(package: zipfile.ZipFile, pres: ET.Element, rels: dict[str, s
             cx = cy = 0
         slide_size = {'cx_emu': cx, 'cy_emu': cy, 'width_in': round(cx / 914400, 3), 'height_in': round(cy / 914400, 3),
                       'type': size.get('type'), 'named': _named_slide_size(cx, cy), 'aspect': _slide_aspect(cx, cy)}
-    masters, layouts, themes, unreadable = [], {}, {}, []
+    masters, layouts, themes, unreadable, broken = [], {}, {}, [], []
     names = set(package.namelist())
 
     def readable(part: str, kind: str) -> bool:
@@ -250,6 +250,8 @@ def _pptx_template(package: zipfile.ZipFile, pres: ET.Element, rels: dict[str, s
             continue
         mrels = {rid: target for rid, (target, _kind) in typed.items()}
         theme_part = next((t for t, kind in typed.values() if kind == 'theme'), None)
+        if theme_part is None:
+            broken.append({'from': part, 'kind': 'theme', 'target': None, 'error': 'no_relationship'})
         if theme_part and theme_part not in themes and readable(theme_part, 'theme'):
             try:
                 themes[theme_part] = _theme_facts(package, theme_part)
@@ -263,9 +265,13 @@ def _pptx_template(package: zipfile.ZipFile, pres: ET.Element, rels: dict[str, s
             try:
                 lroot = _xml(package, lpart)
                 lfingerprint = _part_fingerprint(package, lpart)
+                lmaster = next((t for t, kind in _typed_rels(package, lpart).values() if kind == 'slideMaster'), None)
             except DeliverableInspectionError as exc:
                 unreadable.append({'part': lpart, 'kind': 'layout', 'error': exc.code})
                 continue
+            if lmaster != part:
+                broken.append({'from': lpart, 'kind': 'slideMaster', 'target': lmaster,
+                               'error': 'no_relationship' if lmaster is None else 'master_mismatch'})
             csld = lroot.find('p:cSld', NS)
             placeholders = []
             for ph in lroot.findall('.//p:nvPr/p:ph', NS):
@@ -277,13 +283,25 @@ def _pptx_template(package: zipfile.ZipFile, pres: ET.Element, rels: dict[str, s
         csld = root.find('p:cSld', NS)
         masters.append({'part': part, 'name': csld.get('name') if csld is not None else None, 'theme': theme_part,
                         'layouts': layout_parts, 'fingerprint': fingerprint})
+    for master in masters:
+        master['theme_fingerprint'] = themes[master['theme']]['fingerprint'] if master['theme'] in themes else None
+    masters_by_part = {m['part']: m for m in masters}
+    for layout in layouts.values():
+        layout['master_fingerprint'] = masters_by_part[layout['master']]['fingerprint']
     combined = hashlib.sha256()
     for item in sorted([m['fingerprint'] for m in masters] + [l['fingerprint'] for l in layouts.values()] +
-                       [t['fingerprint'] for t in themes.values()]):
+                       [t['fingerprint'] for t in themes.values()] + [f"{a}>{b}" for a, b in _template_arcs(masters, layouts.values())]):
         combined.update(item.encode('ascii'))
     return {'slide_size': slide_size, 'masters': masters, 'layouts': list(layouts.values()),
-            'themes': list(themes.values()), 'unreadable_parts': unreadable,
-            'template_fingerprint': combined.hexdigest() if masters and not unreadable else None}
+            'themes': list(themes.values()), 'unreadable_parts': unreadable, 'broken_links': broken,
+            'template_fingerprint': combined.hexdigest() if masters and not unreadable and not broken else None}
+
+
+def _template_arcs(masters, layouts) -> set[tuple[str, str]]:
+    """Template graph as fingerprint pairs: layout -> its master, master -> its theme."""
+    arcs = {(l['fingerprint'], l['master_fingerprint']) for l in layouts}
+    arcs |= {(m['fingerprint'], m.get('theme_fingerprint') or 'none') for m in masters}
+    return arcs
 
 
 def _pptx(path: Path) -> dict:
@@ -331,12 +349,25 @@ def _pptx(path: Path) -> dict:
                     charts.append(_chart(z, target))
             layout_part = next((t for t, kind in _typed_rels(z, part).values() if kind == 'slideLayout'), None)
             layout = layout_index.get(layout_part)
+            if layout is None:
+                if layout_part is None:
+                    error = 'no_relationship'
+                elif layout_part not in z.namelist():
+                    error = 'missing_part'
+                elif any(u['part'] == layout_part for u in template['unreadable_parts']):
+                    error = 'unreadable_part'
+                else:
+                    error = 'not_in_any_master'
+                template['broken_links'].append({'from': part, 'kind': 'slideLayout', 'target': layout_part,
+                                                 'error': error})
             if layout is not None:
                 layout['used_by_slides'].append(index)
             slides.append({'index': index, 'part': part, 'layout': layout_part,
                            'layout_name': layout['name'] if layout else None,
                            'master': layout['master'] if layout else None, 'texts': shapes,
                            'notes': notes, 'images': media, 'charts': charts})
+        if template['broken_links']:
+            template['template_fingerprint'] = None      # a deck whose slides do not reach the template
         template['unused_layouts'] = [l['name'] or l['part'] for l in template['layouts'] if not l['used_by_slides']]
         # The template summary goes before the slides so a tight content budget keeps it.
         return {'slide_count': len(slides), 'template': template, 'slides': slides,
@@ -401,28 +432,60 @@ def compare_presentation_templates(reference: dict, deck: dict) -> dict:
     ref_size, deck_size = ref.get('slide_size') or {}, out.get('slide_size') or {}
     same_size = bool(ref_size) and (ref_size.get('cx_emu'), ref_size.get('cy_emu')) == (deck_size.get('cx_emu'), deck_size.get('cy_emu'))
     unreadable = {'reference': ref.get('unreadable_parts') or [], 'deck': out.get('unreadable_parts') or []}
-    preserved = (bool(ref.get('masters')) and same_size and not unreadable['reference'] and not unreadable['deck'] and not themes['changed_same_name'] and not themes['not_in_reference']
+    broken = {'reference': ref.get('broken_links') or [], 'deck': out.get('broken_links') or []}
+    # The graph counts, not only the parts: the same layouts hung from another master, or a master on another theme,
+    # is a different template even when every part fingerprint exists in the reference.
+    ref_arcs = _template_arcs(ref.get('masters') or [], ref.get('layouts') or [])
+    deck_masters, deck_layouts_list = out.get('masters') or [], out.get('layouts') or []
+    label_of = {i['fingerprint']: label(i) for i in [*deck_masters, *deck_layouts_list, *(out.get('themes') or [])]}
+    arcs_outside = [{'from': label_of.get(a, a[:12]), 'to': label_of.get(b, 'none' if b == 'none' else b[:12])}
+                    for a, b in sorted(_template_arcs(deck_masters, deck_layouts_list) - ref_arcs)]
+    preserved = (bool(ref.get('masters')) and bool(deck_masters) and same_size
+                 and not unreadable['reference'] and not unreadable['deck'] and not broken['reference'] and not broken['deck']
+                 and not themes['changed_same_name'] and not themes['not_in_reference']
                  and not masters['changed_same_name'] and not masters['not_in_reference']
-                 and not layouts['changed_same_name'] and not foreign_slides)
-    color_changes = {}
-    ref_theme = (ref.get('themes') or [{}])[0]
-    deck_theme = (out.get('themes') or [{}])[0]
-    for slot in sorted(set(ref_theme.get('colors') or {}) | set(deck_theme.get('colors') or {})):
-        a, b = (ref_theme.get('colors') or {}).get(slot), (deck_theme.get('colors') or {}).get(slot)
-        if a != b:
-            color_changes[slot] = {'reference': a, 'deck': b}
-    font_changes = {role: {'reference': (ref_theme.get('fonts') or {}).get(role), 'deck': (deck_theme.get('fonts') or {}).get(role)}
-                    for role in ('major', 'minor')
-                    if (ref_theme.get('fonts') or {}).get(role) != (deck_theme.get('fonts') or {}).get(role)}
+                 and not layouts['changed_same_name'] and not foreign_slides and not arcs_outside)
+
+    def theme_diff(ref_theme: dict, deck_theme: dict) -> tuple[dict, dict]:
+        colors = {}
+        for slot in sorted(set(ref_theme.get('colors') or {}) | set(deck_theme.get('colors') or {})):
+            a, b = (ref_theme.get('colors') or {}).get(slot), (deck_theme.get('colors') or {}).get(slot)
+            if a != b:
+                colors[slot] = {'reference': a, 'deck': b}
+        fonts = {role: {'reference': (ref_theme.get('fonts') or {}).get(role), 'deck': (deck_theme.get('fonts') or {}).get(role)}
+                 for role in ('major', 'minor')
+                 if (ref_theme.get('fonts') or {}).get(role) != (deck_theme.get('fonts') or {}).get(role)}
+        return colors, fonts
+
+    # Theme differences per master pair: a deck master is paired with the reference master it equals, else the one with
+    # its name, else the one at its part path.
+    ref_masters = ref.get('masters') or []
+    ref_themes = {t['part']: t for t in ref.get('themes') or []}
+    deck_themes = {t['part']: t for t in out.get('themes') or []}
+    theme_changes = []
+    for m in deck_masters:
+        pair = (next((r for r in ref_masters if r['fingerprint'] == m['fingerprint']), None)
+                or next((r for r in ref_masters if m.get('name') and r.get('name') == m.get('name')), None)
+                or next((r for r in ref_masters if r['part'] == m['part']), None))
+        if pair is None:
+            continue
+        colors, fonts = theme_diff(ref_themes.get(pair.get('theme'), {}), deck_themes.get(m.get('theme'), {}))
+        if colors or fonts:
+            theme_changes.append({'master': label(m), 'reference_master': label(pair),
+                                  'reference_theme': pair.get('theme'), 'deck_theme': m.get('theme'),
+                                  'colors': colors, 'fonts': fonts})
+    first = theme_changes[0] if theme_changes and deck_masters and theme_changes[0]['master'] == label(deck_masters[0]) else None
     return {'template_preserved': preserved,
             'identical_template_fingerprint': bool(ref.get('template_fingerprint'))
             and ref.get('template_fingerprint') == out.get('template_fingerprint'),
             'slide_size': {'same': same_size, 'reference': ref_size or None, 'deck': deck_size or None},
-            'themes': themes, 'theme_color_changes': color_changes, 'theme_font_changes': font_changes,
+            'themes': themes, 'theme_changes': theme_changes,
+            'theme_color_changes': first['colors'] if first else {}, 'theme_font_changes': first['fonts'] if first else {},
             'masters': masters, 'layouts': layouts, 'slides_on_layouts_outside_reference': foreign_slides,
-            'unreadable_parts': unreadable,
+            'arcs_outside_reference': arcs_outside, 'unreadable_parts': unreadable, 'broken_links': broken,
             'scope': 'Structural parts only. Equal parts do not prove visual quality, filled placeholders or correct text; '
-                     'unused reference layouts may have been dropped legitimately.'}
+                     'unused reference layouts may have been dropped legitimately. theme_color_changes and '
+                     'theme_font_changes describe the first master; theme_changes lists every master pair.'}
 
 
 def _docx(path: Path) -> dict:
