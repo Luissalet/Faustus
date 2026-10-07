@@ -93,6 +93,62 @@ def terminate_tree(process):
     if alive:psutil.wait_procs(alive,timeout=5)
 
 
+def terminate_managed_server_tree(process, *, ledger_path=None):
+    """Force-stop a managed server tree without killing verified detached apps.
+
+    A normal server shutdown already consults the detached ledger in
+    ``_children_to_terminate``. This companion is only for the managed
+    ``stop()`` timeout path, where recursively terminating the server would
+    otherwise kill its detached app children too. A ledger entry protects a
+    process only when its PID and creation time still match a descendant of
+    this exact server; all currently observed descendants of that verified
+    root are preserved as well. Invalid/stale entries protect nothing.
+    """
+    try:children=process.children(recursive=True)
+    except psutil.Error:children=[]
+    descendants={child.pid:child for child in children if child.pid!=process.pid}
+    ledger_file=Path(ledger_path) if ledger_path is not None else RUNTIME / "detached.json"
+    try:
+        ledger=json.loads(ledger_file.read_text(encoding="utf-8"))
+        if not isinstance(ledger,dict):ledger={}
+    except (OSError,ValueError):ledger={}
+
+    protected=set()
+    for raw_pid,record in ledger.items():
+        try:
+            pid=int(raw_pid)
+            if pid==process.pid or not isinstance(record,dict):continue
+            candidate=descendants.get(pid)
+            expected=float(record.get("created") or 0)
+            if candidate is not None and expected>0 and abs(candidate.create_time()-expected)<=.01:
+                protected.add(pid)
+        except (psutil.Error,ValueError,TypeError):
+            continue
+
+    # Keep complete subtrees rooted at verified detached processes, including
+    # stdio helpers they launched after their own ledger entry was recorded.
+    changed=True
+    while changed:
+        changed=False
+        for child in children:
+            if child.pid in protected:continue
+            try:parent_pid=child.ppid()
+            except psutil.Error:continue
+            if parent_pid in protected:
+                protected.add(child.pid);changed=True
+
+    doomed=[child for child in reversed(children) if child.pid not in protected]
+    doomed.append(process)
+    for item in doomed:
+        try:item.terminate()
+        except psutil.Error:pass
+    _,alive=psutil.wait_procs(doomed,timeout=3)
+    for item in alive:
+        try:item.kill()
+        except psutil.Error:pass
+    if alive:psutil.wait_procs(alive,timeout=5)
+
+
 def _normal_path(value):
     """Comparable path text without requiring the process path to exist."""
     if value is None or str(value).strip()=="":return ""
@@ -288,7 +344,7 @@ def stop(expected_token="",wait_seconds=30):
         try:process.wait(timeout=wait_seconds)
         except psutil.TimeoutExpired:
             process=owned_process(record)
-            if process:terminate_tree(process)
+            if process:terminate_managed_server_tree(process,ledger_path=RUNTIME / "detached.json")
         if read_record().get("token")==record["token"]:RECORD.unlink(missing_ok=True)
         STOP.unlink(missing_ok=True)
         return {"stopped":True,"port":record["port"]}

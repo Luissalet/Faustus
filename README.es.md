@@ -540,7 +540,7 @@ El panel desplegable Actividad del chat muestra los datos informados del princip
 
 ## Modo local de un solo usuario
 
-El lanzador de escritorio administrado inicia Faustus en loopback con `AUTH_ENABLED=false` por defecto. Este modo usa el espacio de trabajo local sin inicio de sesión de cuentas ni administradores y no crea ni modifica almacenes de credenciales. Se conserva la propiedad de los datos existentes. Configura `AUTH_ENABLED=true` explícitamente para un despliegue de red o servidor que requiera autenticación. Los perfiles de trabajo se gestionan en HoardHub como contexto de configuración; no son cuentas de acceso de Faustus.
+El lanzador de escritorio administrado inicia Faustus en loopback con `AUTH_ENABLED=false` por defecto. Este modo usa el espacio de trabajo local sin inicio de sesión de cuentas ni administradores y no crea ni modifica almacenes de credenciales. Se conserva la propiedad de los datos existentes. Configura `AUTH_ENABLED=true` explícitamente para un despliegue de red o servidor que requiera autenticación. Los perfiles de trabajo se gestionan en HoardHub como contexto de configuración; no son cuentas de acceso de Faustus. Si el servidor administrado necesita forzar el cierre tras agotar el tiempo de apagado normal, Faustus conserva solo las aplicaciones desacopladas cuyo PID y hora de creación registrados aún coinciden, junto con sus procesos hijos observados; detiene los demás hijos administrados.
 
 ## Idioma de respuesta durante el streaming
 

@@ -564,7 +564,7 @@ The chat's collapsible Activity panel shows reported principal, worker, advisor 
 
 ## Local single-user mode
 
-The managed desktop launcher starts Faustus on loopback with `AUTH_ENABLED=false` by default. This mode uses the local workspace without account or administrator sign-in and does not create or rewrite credential stores. Existing data ownership is preserved. Set `AUTH_ENABLED=true` explicitly for a network/server deployment that requires authentication. Work profiles are managed by HoardHub as setup context; they are not Faustus login accounts.
+The managed desktop launcher starts Faustus on loopback with `AUTH_ENABLED=false` by default. This mode uses the local workspace without account or administrator sign-in and does not create or rewrite credential stores. Existing data ownership is preserved. Set `AUTH_ENABLED=true` explicitly for a network/server deployment that requires authentication. Work profiles are managed by HoardHub as setup context; they are not Faustus login accounts. If a managed server needs forced shutdown after its graceful-stop timeout, Faustus preserves only detached applications whose recorded PID and creation time still match, along with their current child processes; ordinary managed children are stopped.
 
 ## Streaming reply language
 
