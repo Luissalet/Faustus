@@ -94,6 +94,97 @@ def test_spanish_project_objective_order_is_unicode_normalization_safe():
 
 
 @pytest.mark.parametrize("message", [
+    "Create a new project with the goal of finishing the release",
+    "Set up a project including the objective to ship the release",
+    "Crea un nuevo proyecto con la meta de preparar la defensa",
+    "Update the project's goal to ship the release",
+])
+def test_native_project_mutation_scope_owns_generic_project_goal_intent(message):
+    from src.action_intents import requires_builtin_project_objective_action
+    assert classify_tool_intent(message).category == "project"
+    assert not requires_builtin_project_objective_action(message, {"mcp__hub__project_goal_update"})
+
+
+@pytest.mark.parametrize("message", [
+    "Add this item to the active project's objectives board",
+    "Update Faustus Objectives board after creating the project",
+    "Create a project with a goal and apply it to Faustus Objectives board",
+    "Call project_objectives to update the active project goal",
+    "Añade este documento al tablero de objetivos del proyecto activo",
+])
+def test_explicit_active_project_objective_action_keeps_builtin_obligation(message):
+    from src.action_intents import requires_builtin_project_objective_action
+    assert requires_builtin_project_objective_action(message, {"mcp__hub__project_goal_update"})
+
+
+def test_ambiguous_project_objective_keeps_legacy_builtin_default_without_native_scope():
+    from src.action_intents import requires_builtin_project_objective_action
+    assert requires_builtin_project_objective_action("Update the project's goal to ship the release")
+
+
+@pytest.mark.parametrize(("tool_name", "message"), [
+    ("mcp__hub__projects_new", "Create a project with the goal of shipping the release"),
+    ("mcp__hub__goal_put", "Update the project's goal to ship the release"),
+    ("mcp__hub__case_update", "Update the project's case goal to ship the release"),
+])
+def test_native_mutation_aliases_work_in_mixed_tool_scope(tool_name, message):
+    from src.action_intents import requires_builtin_project_objective_action
+    assert not requires_builtin_project_objective_action(
+        message, {tool_name, "read_file", "web_search", "project_objectives"}
+    )
+
+
+def test_read_only_project_tool_does_not_claim_mutation_scope():
+    from src.action_intents import requires_builtin_project_objective_action
+    assert requires_builtin_project_objective_action(
+        "Update the project's goal to ship the release",
+        {"mcp__hub__project_get", "read_file", "web_search"},
+    )
+
+
+def test_project_objectives_capability_question_is_not_a_mutation_order():
+    from src.action_intents import requires_builtin_project_objective_action
+    tool_scope = {"mcp__hub__project_goal_update"}
+    for message in (
+        "Can I use project_objectives to track this?",
+        "Could we use project_objectives to add goals?",
+        "Why should we use project_objectives to update a goal?",
+        "¿Puedo usar project_objectives para añadir una meta?",
+        "List the available project_objectives actions",
+        "Can you use project_objectives to show the settings?",
+        "¿Puedes usar project_objectives para ver la ponencia?",
+        "Ok, use project_objectives to address a creative project, find the closest item, check the linked note, and finish completely",
+    ):
+        assert not requires_builtin_project_objective_action(message, tool_scope), message
+
+
+@pytest.mark.parametrize("message", [
+    "Use project_objectives to update the active project goal",
+    "Ok, use project_objectives to add the goal: finish chapter3",
+    "Then, use project_objectives to add the next goal",
+    "Can you use project_objectives to add this goal?",
+    "Could you use project_objectives to add this goal?",
+    "Usa project_objectives para actualizar la meta",
+    "Vale, usa project_objectives para añadir la meta",
+    "Y ahora, usa project_objectives para añadir la meta",
+    "¿Puedes usar project_objectives para añadir esta meta?",
+])
+def test_actionable_project_objectives_tool_invocation_keeps_builtin_obligation(message):
+    from src.action_intents import requires_builtin_project_objective_action
+    assert requires_builtin_project_objective_action(
+        message, {"mcp__hub__project_goal_update"}
+    )
+
+
+def test_objectives_board_question_does_not_create_a_mutation_obligation():
+    from src.action_intents import requires_builtin_project_objective_action
+    assert not requires_builtin_project_objective_action(
+        "Does the Faustus Objectives board track project goals?",
+        {"mcp__hub__project_goal_update"},
+    )
+
+
+@pytest.mark.parametrize("message", [
     "Controla mi pantalla y cierra la ventana de chatgpt",
     "Puedes controlar mi pantalla?",
     "Cierra la ventana de Spotify",

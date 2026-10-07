@@ -9990,11 +9990,9 @@ async def _stream_agent_loop_body(
     _requires_project_objective_apply = False
     _project_objective_unavailable = False
     try:
-        from src.action_intents import classify_tool_intent as _classify_action_intent
-        _project_intent = _classify_action_intent(_last_user)
-        _project_objective_requested = bool(
-            _project_intent.category == "project"
-            and "objective" in _project_intent.reason.lower()
+        from src.action_intents import requires_builtin_project_objective_action
+        _project_objective_requested = requires_builtin_project_objective_action(
+            _last_user, _relevant_tools
         )
         _requires_project_objective_apply = bool(
             _project_objective_requested

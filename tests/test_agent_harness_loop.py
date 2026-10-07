@@ -9,6 +9,8 @@ test_agent_rounds_exhausted.py (real loop body, fake LLM stream / tool exec).
 import asyncio
 import json
 
+import pytest
+
 import src.agent_loop as al
 
 
@@ -490,6 +492,84 @@ def test_missing_project_cannot_be_reported_as_a_successful_objective_change(tmp
     unavailable = [e for e in events if e.get("type") == "harness_check"
                    and e.get("status") == "required_action_unavailable"]
     assert len(unavailable) == 1
+    assert calls["n"] == 2
+
+
+@pytest.mark.parametrize("user", [
+    "Update Faustus Objectives board with the release goal",
+    "Create a new project with a goal and apply it to Faustus Objectives board",
+])
+def test_explicit_faustus_board_request_stays_unavailable_in_mcp_only_scope(tmp_path, monkeypatch, user):
+    _patch_common(monkeypatch)
+    calls = _scripted_stream(monkeypatch, [
+        ("Completed the requested update to Faustus Objectives board.", "stop"),
+        ("Nothing was changed because the built-in tool is unavailable.", "stop"),
+    ])
+    gen = al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": user}],
+        max_rounds=4, relevant_tools={"mcp__hub__project_goal_update"}, workspace=str(tmp_path),
+        session_id="sess-explicit-faustus-board", security_gate_bypass=True,
+    )
+    events = _events(_collect(gen))
+    unavailable = [e for e in events if e.get("type") == "harness_check"
+                   and e.get("status") == "required_action_unavailable"
+                   and e.get("tool") == "project_objectives"]
+    assert len(unavailable) == 1
+    assert calls["n"] == 2
+
+
+@pytest.mark.parametrize(("tool_name", "arguments", "user"), [
+    (
+        "mcp__hub__project_create",
+        {"name": "Release", "goal": "Ship it"},
+        "Create a new project with the goal of shipping the release",
+    ),
+    (
+        "mcp__hub__project_goal_update",
+        {"goal": "Ship it"},
+        "Update the project's goal to shipping the release",
+    ),
+])
+def test_external_project_goal_mutation_does_not_get_retracted_as_board_mutation(
+        tmp_path, monkeypatch, tool_name, arguments, user):
+    executed = []
+
+    async def _successful_external_tool(block, *args, **kwargs):
+        executed.append(block.tool_type)
+        return (block.tool_type, {"output": "Project created with goal", "exit_code": 0})
+
+    _patch_common(monkeypatch)
+    monkeypatch.setattr(al, "execute_tool_block", _successful_external_tool, raising=False)
+    calls = {"n": 0}
+
+    async def _native_stream(_candidates, _messages, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            yield 'data: ' + json.dumps({"type": "tool_calls", "calls": [{
+                "name": tool_name,
+                "arguments": arguments,
+            }]}) + "\n\n"
+            yield 'data: ' + json.dumps({"type": "finish", "finish_reason": "tool_calls"}) + "\n\n"
+        else:
+            yield 'data: ' + json.dumps({"delta": "Created the project and its goal."}) + "\n\n"
+            yield 'data: ' + json.dumps({"type": "finish", "finish_reason": "stop"}) + "\n\n"
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(al, "stream_llm_with_fallback", _native_stream, raising=False)
+    gen = al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": user}],
+        max_rounds=4, relevant_tools={tool_name, "read_file", "web_search", "project_objectives"}, workspace=str(tmp_path),
+        session_id="sess-external-project-goal", security_gate_bypass=True,
+    )
+    events = _events(_collect(gen))
+    assert executed == [tool_name]
+    metrics = [e for e in events if e.get("type") == "metrics"][-1]["data"]
+    assert any(e.get("tool") == tool_name and e.get("exit_code") == 0
+               for e in metrics["tool_events"])
+    assert not any(e.get("status") == "required_action_unavailable" for e in events)
+    assert not any(e.get("status") == "required_action" and e.get("tool") == "project_objectives" for e in events)
     assert calls["n"] == 2
 
 

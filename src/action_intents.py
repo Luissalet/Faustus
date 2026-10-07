@@ -295,6 +295,75 @@ def classify_tool_intent(text: str) -> ToolIntent:
     return ToolIntent(False, reason="no tool-action pattern matched")
 
 
+_EXPLICIT_FAUSTUS_OBJECTIVES_BOARD = re.compile(
+    r"\bfaustus(?:'s)?\s+(?:project\s+)?objectives?\s+board\b|"
+    r"\b(?:active|current)\s+project(?:'s)?\s+objectives?\s+board\b|"
+    r"\btablero\s+(?:de\s+objetivos\s+)?(?:del\s+proyecto\s+)?activo\b|"
+    r"\btablero\s+de\s+objetivos\s+de\s+faustus\b",
+    re.IGNORECASE,
+)
+_EXPLICIT_OBJECTIVES_TOOL = re.compile(
+    r"^\s*(?:(?:ok(?:ay)?|vale|sure|please|por\s+favor|all\s+right|bien|then)[,:]?\s+)?"
+    r"(?:use|call|invoke|run)\b.{0,50}\bproject_objectives\b|"
+    r"^\s*(?:(?:ok(?:ay)?|vale|sure|please|por\s+favor|all\s+right|bien|then)[,:]?\s+)?"
+    r"(?:can|could)\s+you\s+use\b.{0,50}\bproject_objectives\b|"
+    r"^\s*(?:(?:ok(?:ay)?|vale|por\s+favor|bien|y\s+ahora)[,:]?\s+)?"
+    r"(?:usa|use|llama|invoca)\b.{0,50}\bproject_objectives\b|"
+    r"^\s*(?:[¿¡]\s*)?(?:(?:vale|bien)[,:]?\s+)?"
+    r"(?:puedes|podrias|podrías)\s+usar\b.{0,50}\bproject_objectives\b",
+    re.IGNORECASE,
+)
+_PROJECT_MUTATION_ACTION = re.compile(
+    r"\b(?:create|add|put|set|upsert|update|edit|change|rename|archive|close|complete|"
+    r"remove|delete|link|attach|crea|crear|anade|anadir|añade|añadir|agrega|agregar|"
+    r"pon|poner|actualiza|actualizar|edita|editar|cambia|cambiar|renombra|renombrar|"
+    r"archiva|archivar|cierra|cerrar|completa|completar|elimina|eliminar|borra|borrar|"
+    r"vincula|vincular|adjunta|adjuntar)\b",
+    re.IGNORECASE,
+)
+_NATIVE_PROJECT_MUTATION_TOOL = re.compile(
+    r"(?:^|_)(?:new|create|add|put|set|upsert|update|edit|change|rename|archive|close|complete|"
+    r"remove|delete|link|attach)(?:_|$)",
+    re.IGNORECASE,
+)
+
+
+def requires_builtin_project_objective_action(text: str, relevant_tools=None) -> bool:
+    """Whether the request targets Faustus' active-project objectives board.
+
+    A caller-selected toolset with a relevant MCP project/goal mutation tool
+    can own generic project-goal changes, even when ordinary tools are also
+    selected. Explicit references to the built-in board take precedence. With
+    no such scoped integration, retain the legacy built-in obligation for
+    ambiguous project-objective requests.
+    """
+    routing_text = _routing_text(text)
+    if (_EXPLICIT_OBJECTIVES_TOOL.search(routing_text)
+            and _PROJECT_MUTATION_ACTION.search(routing_text)):
+        return True
+
+    intent = classify_tool_intent(text)
+    if intent.category != "project" or "objective" not in intent.reason.lower():
+        return False
+    if _EXPLICIT_FAUSTUS_OBJECTIVES_BOARD.search(routing_text):
+        return True
+
+    tools = set(relevant_tools or ())
+    project_mutation_scoped = any(
+        isinstance(name, str)
+        and name.startswith("mcp__")
+        and _NATIVE_PROJECT_MUTATION_TOOL.search(name)
+        and (
+            re.search(r"project|goal|objective", name, re.IGNORECASE)
+            or re.search(r"(?:^|_)case(?:_|$)", name, re.IGNORECASE)
+        )
+        for name in tools
+    )
+    if project_mutation_scoped:
+        return False
+    return True
+
+
 def message_needs_tools(text: str, patterns: Iterable[Pattern[str]] = _TOOL_INTENT_PATTERNS) -> bool:
     """Return True when a plain chat message should be promoted to agent mode."""
     if not text:
