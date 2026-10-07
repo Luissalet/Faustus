@@ -146,13 +146,24 @@ def _spawn_devtools_mcp_restart() -> None:
 
 
 def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
-    router = APIRouter(prefix="/api/auth", tags=["auth"])
+    from fastapi import Depends
+    def account_mode(request: Request):
+        if not getattr(auth_manager, 'local_only', False):
+            return
+        from core.middleware import get_application_route_path
+        path = get_application_route_path(request.scope).removeprefix('/api/auth')
+        if path in ('/setup', '/signup', '/login', '/logout', '/change-password', '/signup-toggle', '/open-signup') or path.startswith(('/users', '/2fa', '/oidc')):
+            raise HTTPException(404, 'This installation uses a local workspace.')
+    router = APIRouter(prefix="/api/auth", tags=["auth"], dependencies=[Depends(account_mode)])
 
     _login_limiter = RateLimiter(max_requests=15, window_seconds=60)
     _signup_limiter = RateLimiter(max_requests=3, window_seconds=300)
     _setup_limiter = RateLimiter(max_requests=3, window_seconds=300)
 
     def _get_current_user(request: Request) -> Optional[str]:
+        if getattr(auth_manager, 'local_only', False):
+            from src.owner_identity import DEFAULT_LOCAL_OWNER
+            return DEFAULT_LOCAL_OWNER
         token = request.cookies.get(SESSION_COOKIE)
         return auth_manager.get_username_for_token(token)
 
@@ -370,7 +381,9 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
         token = request.cookies.get(SESSION_COOKIE)
         result = auth_manager.status(token)
         result["signup_enabled"] = auth_manager.signup_enabled
-        if _auth_disabled() and not result.get("authenticated"):
+        result["auth_enabled"] = not _auth_disabled()
+        result["auth_disabled"] = _auth_disabled()
+        if _auth_disabled():
             # AUTH_ENABLED=false: the server already lets every request act as
             # the operator (require_user/require_admin pass), so the UI must
             # not hide admin controls behind a login that does not exist.

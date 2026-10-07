@@ -331,7 +331,11 @@ app.add_middleware(_SlowRequestLogMiddleware)
 # ========= AUTH =========
 from routes.auth_routes import setup_auth_routes, SESSION_COOKIE
 
-auth_manager = AuthManager()
+if auth_disabled():
+    from core.local_auth import LocalWorkspaceAccess
+    auth_manager = LocalWorkspaceAccess()
+else:
+    auth_manager = AuthManager()
 app.state.auth_manager = auth_manager
 AUTH_ENABLED = not auth_disabled()
 LOCALHOST_BYPASS = os.getenv("LOCALHOST_BYPASS", "false").lower() == "true"

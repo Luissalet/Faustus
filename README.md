@@ -550,6 +550,10 @@ See the [threat model](THREAT_MODEL.md), [security policy](SECURITY.md) and [set
 
 The chat's collapsible Activity panel shows reported principal, worker, advisor and helper activity, tool steps, token counts, and engine prefill/decode timings when available. It preserves per-round receipts and distinguishes observed request duration from engine time. GPU or node placement is never inferred from model names. See [model activity](docs/api/round_activity.md).
 
+## Local single-user mode
+
+The managed desktop launcher starts Faustus on loopback with `AUTH_ENABLED=false` by default. This mode uses the local workspace without account or administrator sign-in and does not create or rewrite credential stores. Existing data ownership is preserved. Set `AUTH_ENABLED=true` explicitly for a network/server deployment that requires authentication. Work profiles are managed by HoardHub as setup context; they are not Faustus login accounts.
+
 ## Credits and licence
 
 Faustus builds on [Odysseus](https://github.com/odysseus-dev/odysseus). See [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md) for additional credits, [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance and [LICENSE](LICENSE) for **AGPL-3.0-or-later**.

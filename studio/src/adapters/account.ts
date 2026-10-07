@@ -9,6 +9,7 @@ import { getJson } from './api';
 export interface AuthStatus {
   authenticated?: boolean;
   auth_enabled?: boolean;
+  auth_disabled?: boolean;
   username?: string;
   is_admin?: boolean;
   signup_enabled?: boolean;
@@ -34,6 +35,7 @@ async function ok(r: Response, what: string): Promise<Response> {
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 export const authStatus = () => getJson<AuthStatus>('/api/auth/status');
+export const isLocalInstallation = (status: AuthStatus) => status.auth_disabled === true || status.auth_enabled === false;
 export const authPolicy = () => getJson<AuthPolicy>('/api/auth/policy');
 
 export async function changePassword(current: string, next: string): Promise<void> {

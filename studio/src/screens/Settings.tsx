@@ -77,7 +77,7 @@ import { ThisDeviceSection } from './settings/ThisDevice';
 import { ChatBridgeStatus } from './settings/ChatBridgeStatus';
 import { BehaviorModesSection } from './settings/BehaviorModes';
 import { PiperVoices } from './settings/PiperVoices';
-import { authStatus } from '../adapters/account';
+import { authStatus, isLocalInstallation } from '../adapters/account';
 import { listActiveApprovals, listFolderGrants, revokeApproval, revokeFolderGrant, type Approval, type FolderGrant } from '../adapters/approvals';
 import { addCommandAllowlistEntry, listCommandAllowlist, removeCommandAllowlistEntry, type AllowlistEntry } from '../adapters/commandGuard';
 import { getGlobalPolicy, setGlobalPolicy, type AgentGitPolicy } from '../adapters/git';
@@ -1636,6 +1636,7 @@ export function SettingsScreen() {
   const [failedStatus, setFailedStatus] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [admin, setAdmin] = useState(false);
+  const [localInstallation, setLocalInstallation] = useState<boolean | null>(null);
   // OBJ-8 / Lote B1: which OpenRouter endpoint the "OpenRouter preferences"
   // button on Models jumps to — read once by OpenRouterPrefsSection on
   // arrival, not a controlled selection (the section owns its own tabs
@@ -1647,7 +1648,12 @@ export function SettingsScreen() {
   }, []);
   const epReload = useRef(0);
   useEffect(() => {
-    authStatus().then((st) => setAdmin(st.is_admin === true || st.auth_enabled === false)).catch(() => {});
+    authStatus().then((st) => {
+      const local = isLocalInstallation(st);
+      setLocalInstallation(local);
+      setAdmin(local || st.is_admin === true);
+      if (local) setSection((current) => current === 'account' || current === 'users' ? 'general' : current);
+    }).catch(() => setLocalInstallation(false));
   }, []);
 
   const say = useCallback((t: string) => {
@@ -1727,7 +1733,7 @@ export function SettingsScreen() {
       </header>
       <div className="fs-set__layout">
         <nav className="fs-set__nav" aria-label={t('Sections')}>
-          {SECTIONS.filter((s) => !s.admin || admin).map((s) => (
+          {SECTIONS.filter((s) => (!s.admin || admin) && (localInstallation === false || (s.key !== 'account' && s.key !== 'users'))).map((s) => (
             <button key={s.key} type="button" className="fs-set__nav-item" data-on={section === s.key || undefined} onClick={() => setSection(s.key)}>
               <s.icon size={14} aria-hidden="true" />
               {t(s.label)}
@@ -1757,8 +1763,8 @@ export function SettingsScreen() {
           {section === 'tools' && <ToolsSection say={say} />}
           {section === 'effective_config' && <EffectiveConfigSection say={say} />}
           {section === 'shortcuts' && <ShortcutsSection settings={settings} onSave={onSave} say={say} />}
-          {section === 'account' && <AccountSection say={say} />}
-          {section === 'users' && <UsersSection say={say} />}
+          {section === 'account' && localInstallation === false && <AccountSection say={say} />}
+          {section === 'users' && localInstallation === false && <UsersSection say={say} />}
           {section === 'system' && <SystemSection settings={settings} onSave={onSave} say={say} admin={admin} />}
           {section === 'health' && <HealthSection say={say} onJump={setSection} />}
           {section === 'security' && <SecuritySection settings={settings} onSave={onSave} say={say} />}

@@ -525,6 +525,10 @@ Consulta el [modelo de amenazas](THREAT_MODEL.md), la [política de seguridad](S
 
 El panel desplegable Actividad del chat muestra los datos informados del principal, workers, asesor y ayudantes, pasos de herramientas, tokens y tiempos de prefill/decode cuando están disponibles. Conserva recibos por ronda y distingue la duración observada de la petición del tiempo del motor. No deduce GPU ni nodo a partir del nombre del modelo. Consulta [actividad de modelos](docs/api/round_activity.es.md).
 
+## Modo local de un solo usuario
+
+El lanzador de escritorio administrado inicia Faustus en loopback con `AUTH_ENABLED=false` por defecto. Este modo usa el espacio de trabajo local sin inicio de sesión de cuentas ni administradores y no crea ni modifica almacenes de credenciales. Se conserva la propiedad de los datos existentes. Configura `AUTH_ENABLED=true` explícitamente para un despliegue de red o servidor que requiera autenticación. Los perfiles de trabajo se gestionan en HoardHub como contexto de configuración; no son cuentas de acceso de Faustus.
+
 ## Créditos y licencia
 
 Faustus parte de [Odysseus](https://github.com/odysseus-dev/odysseus). Más créditos en [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md), contribuciones en [CONTRIBUTING.md](CONTRIBUTING.md) y licencia **AGPL-3.0-or-later** en [LICENSE](LICENSE).

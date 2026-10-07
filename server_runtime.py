@@ -359,6 +359,9 @@ def start(port=7000,owner="web"):
 def serve(port,token):
     os.chdir(ROOT)
     os.environ["APP_PORT"]=str(port)
+    # This entrypoint binds to loopback and is the desktop's local workspace.
+    # Network/server deployments can still explicitly enable authentication.
+    os.environ.setdefault("AUTH_ENABLED", "false")
     import uvicorn
     server=uvicorn.Server(uvicorn.Config("app:app",host="127.0.0.1",port=port,timeout_graceful_shutdown=20))
     finished=threading.Event()
