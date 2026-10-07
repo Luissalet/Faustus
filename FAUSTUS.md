@@ -8,7 +8,7 @@
 - **Suite completa, medida en esta máquina (Windows, 05-09):** **9.579 en verde**, 38 fallos, 6 errores, 79 saltados, **13 min 42 s**. Los 44 rojos están comprobados **uno a uno** contra el commit anterior a este trabajo, con el método que este documento defiende (misma carpeta, mismo `data/`, misma lista de ficheros, cambiando sólo el commit): **ninguno es nuevo**, y hay **dos que el commit anterior falla y este no**. **17 de ellos los provoca el `data/` local**: el mismo commit en una worktree limpia baja de 44 a 27. En Linux la suite iba por **9.100 en verde** el 03-09 (~6 min, 2 fallos de entorno: `markitdown` sin conversor docx y el escáner de marca sobre un docstring en español); e2e Playwright, 12 flujos.
 - **Y por qué se dice «medida en esta máquina»:** entre el 03-09 y el 04-09 la suite **no se podía ni recolectar en Windows**. Un `import resource` sin usar —módulo que no existe allí— aborta la recolección entera: `Interrupted: 1 error during collection`, cero tests ejecutados, invisible en Linux porque allí el módulo sí está (§40.6, con un test que fija la regla). Una cifra de tests verdes solo vale para la plataforma, la carpeta y el `data/` donde se midió.
 - Máquina de referencia: RTX 4070 Ti 12 GB **+ RTX 5060 Ti 16 GB (eGPU, desde el 02-09)**, 128 GB RAM, Windows 11, Ollama 0.33.x; modelos `qwen3-coder:30b`, `qwen3.5:9b` (visión), `qwen3.8:27b`, `qwen3-coder-next`.
-- **Nota de vigencia:** los recuentos de arriba (commits, líneas, suite) son la foto del 05-09-2026. El documento ha seguido creciendo desde entonces — la última entrada es la §111 (18-09-2026); ver el índice de secciones para el trabajo más reciente. No se repiten aquí porque requieren una pasada de suite completa en la máquina de referencia, no un recuento de líneas.
+- **Nota de vigencia:** los recuentos de arriba (commits, líneas, suite) son la foto del 05-09-2026. El documento ha seguido creciendo desde entonces — la última entrada es la §276 (07-10-2026); ver el índice de secciones para el trabajo más reciente. No se repiten aquí porque requieren una pasada de suite completa en la máquina de referencia, no un recuento de líneas.
 
 ---
 
@@ -10331,3 +10331,12 @@ incrementales: los diffs heredados permanecen iguales, fuera de estos commits.
 El Hub real se recarga solo cuando está sin tareas activas y conserva las apps,
 los perfiles y la configuración de Inicio. Q8 y procesos SABER no se reinician.
 Informe y resultados finales: `docs/RELIABILITY_WHY_WEB_2026-10-05.md`.
+
+## 276. Evidencias de cierre y límites de la verificación (07-10-2026)
+
+- **Corte por deadline (e22).** Se observó una desconexión HTTP silenciosa y un checkpoint parcial; no se despachó ninguna llamada a herramienta que hubiera quedado en búfer. No es un pase de recuperación ni de finalización completa.
+- **Parada forzada (fixture 674).** La prueba sintética validó la identidad del proceso antes de forzar su parada, terminó el helper y conservó viva la aplicación persistente. No se paró una aplicación real.
+- **Edición UIA dirigida (fuente cbe5d275).** En una ventana sintética de Windows, un proveedor UIA permitió editar un valor con `ValuePattern` y leerlo de vuelta sin cambiar el foreground ni el cursor. La prueba cubre un proveedor; no acredita compatibilidad general con UIA. La ventana Electron se comprobó por separado mediante mocks de su contrato de no activación; no se ejecutó una superposición física.
+- **Revisión cruzada.** La tarea Ágora 5 (arbitraje de objetivos) y la tarea Ágora 6 (alcance de temperatura) siguen pendientes de revisión de Claude; no se han integrado en este estado.
+- **Evaluación del principal.** Una QA iniciada con Q8 se interrumpió al actualizarse el criterio de pruebas. No hubo pase completo. Las próximas evaluaciones seguirán el criterio vigente de Q4, contexto menor y GPU 2/3, dejando las GPU 0/1 disponibles para Luis; la evidencia parcial anterior no se convierte en un resultado aprobado.
+- Las verificaciones antiguas de PENDIENTES C/D se trasladaron a OBJ-55 y siguen pendientes, con sus límites y condiciones originales.

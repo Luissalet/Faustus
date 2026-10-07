@@ -1164,3 +1164,110 @@ Hecho en §260 y §261. **Por hacer:**
 
 Acordado con Luis el 02-10: dos apps separadas de la familia (Galton, puerto 5201, banco de pruebas; Pygmalion, puerto 5202, LoRA/QLoRA, fusiones, cuantización propia con matriz de importancia y contexto largo con YaRN); el árbitro de VRAM del Hub decide; las GPU 0 y 1 nunca sin su permiso; nunca se descarga un modelo que haya cargado otro. Hecho y probado en el PC (FAUSTUS.md §264, §266 y §267): medida completa del 27B q8 con rutas publicadas, QLoRA real de Qwen3.5-0.8B y de Qwen3.5-9B con su evaluación, repositorios públicos `Luissalet/GaltonsHoard` y `Luissalet/PygmalionsHoard`, conectores en Faustus. Lo aprendido: con 160 preguntas y respuestas, un ajuste de dos o tres épocas apenas mete hechos nuevos en el modelo (el 9B gana 3 de 20 casos reservados, empata 17); para eso hace falta un dataset con varias preguntas parafraseadas por hecho o dejar los hechos a la búsqueda.
 
+## OBJ-55 · Cierre de evidencias y próximas verificaciones (07-10-2026)
+
+**Estado: en curso.** Este objetivo conserva como pendientes las verificaciones trasladadas desde `PENDIENTES.md`; no las marca como completadas. Las próximas tandas del modelo seguirán el criterio vigente: Q4, contexto menor y uso de las GPU 2 y 3, dejando las GPU 0 y 1 disponibles para Luis. Una QA iniciada con Q8 se interrumpió al actualizarse el criterio; no produjo un pase completo y no debe contarse como tal.
+
+- **Corte por deadline e22:** se observó una desconexión HTTP silenciosa y un checkpoint parcial; no hubo despacho de llamadas a herramientas que hubieran quedado en búfer. La recuperación y el despacho tras ese corte siguen siendo una puerta pendiente.
+- **Parada forzada 674:** el fixture sintético comprobó la identidad válida del proceso antes de finalizarlo; terminó el helper y la aplicación persistente permaneció viva. Es evidencia de ese fixture, no de una parada forzada sobre la aplicación real.
+- **UIA dirigida, fuente cbe5d275:** en una ventana sintética de Windows se usó un único proveedor UIA para editar mediante `ValuePattern` y leer el valor de vuelta; el foreground y el cursor permanecieron estables. La cobertura física corresponde a un proveedor y no demuestra compatibilidad con todos los proveedores UIA. El contrato de ventana Electron se probó aparte con mocks; no hubo una ejecución física de la superposición Electron.
+- **Revisión cruzada pendiente:** la tarea Ágora 5 (arbitraje de objetivos) y la tarea Ágora 6 (alcance de temperatura) siguen pendientes de revisión de Claude; no se integran ni se describen como terminadas hasta superar esa revisión.
+- **Cobertura y finalización:** las siguientes tareas heredadas siguen siendo puertas futuras. Hay que conservar la evidencia por caso, respetar los límites actuales de hardware/modelo y distinguir comprobaciones parciales de pases completos.
+
+### C. Verificaciones previas sin modelo (inventario trasladado)
+
+Lo que se podía ver sin modelo ya está visto (§247: tope de memoria, cuarentena de un servidor crítico, conceptos con datos). Lo que queda aquí necesita datos que solo produce un turno del modelo (registro en sombra, conflictos de memoria, deriva tras un refactor) o arrancar un motor en las GPU (Optimize, `llama-server` desde la UI), así que va con la tanda de D.
+
+- **Pantallas nuevas del 26-09 sin datos para verlas llenas** (§209): el desglose por decisión del panel de autonomía (el registro en sombra está vacío mientras el modo sea `off`), los conflictos de memoria sugeridos (hoy no hay ninguno) y «Relaunch with this profile» (sale tras activar un perfil que deja algo pendiente; no se activó con el examen en marcha). Verificadas en vivo: la revisión de skills importadas (proyecto › Reglas, dos skills con su riesgo y el botón Aprobar) y el nombre del servidor MCP en Procesos.
+
+- **Optimize con una medición real, y lo que cuelga de una tarea** (spec INF): la pestaña Optimize del Cookbook ya se abrió en el 7000 el 26-09. Muestra el plan (endpoint, modelo, objetivo y la suite `es_conversation`) y no arranca nada al abrirla. Falta lanzar una medición con el 8081 libre y ver en vivo el chip de arquitectura, «Capabilities», el `ReceiptPanel` de una tarea y la cronología bajo una respuesta.
+- **`llama-server` gestionado desde la UI, resto de casos** (FAUSTUS §119 Parte B): crear un engine real desde Ajustes contra `llama-server.exe`, ver Start pasar de `stopped` a `unhealthy` a `running`, el rechazo si el puerto ya está ocupado por otro proceso, el Stop con confirmación cuando sirve el modelo por defecto, y «Rellenar desde lo que ya escucha en este puerto».
+- **Deriva de arquitectura contra un refactor real** (FAUSTUS §180): provocar una deriva real (mover un fichero, introducir un ciclo) en un repo de verdad y comprobar la nota en el resumen del turno; dejar `approval_autonomy` en `shadow` una sesión entera y revisar el historial del panel.
+
+### D. Verificaciones previas con el modelo local (inventario trasladado)
+
+Este inventario conserva la solicitud histórica de agrupar comprobaciones largas; «cuando digas» no es un requisito vigente. Las siguientes ejecuciones usarán los permisos ya dados y el criterio actual: `lock model:principal`, leases de GPU 2/3 y el 27B Q4 con contexto menor, dejando las GPU 0/1 disponibles para Luis. Las referencias históricas a exámenes —incluidos el examen 32 y Eldoria— no autorizan activar SABER: el examen, sus procesos y sus chats siguen aparcados.
+
+- **Hoards con su nivel de razonamiento** (26-09, §212): una guía de estudio de Hypatia (`max`) y un lote de subtítulos de Daguerre (`off`) contra el 8081; la guía debe pensar y responder entera y los subtítulos no deben quedarse vacíos.
+- **Compactación `extract` en una tarea larga** (26-09): poner `compaction_summary_mode=extract` en una ejecución larga (el examen o `daily_eval`), comprobar que la compactación ya no llama al Utility y comparar si el 27B conserva la tarea tan bien como con el resumen por modelo.
+- **Bloques `choices`/`decision` escritos por el 27B** (26-09): ver si el modelo local los usa cuando hay una elección real y no los mete donde no toca; el renderizado y el clic ya se comprobaron con una respuesta fijada.
+- **Un enlace `faustus://` real** (26-09): al abrir la app de escritorio registra el esquema en el registro de Windows del usuario; no se arrancó desde aquí para no cambiarlo sin Luis. Probar `faustus://studio?s=<id>` desde el navegador con la app abierta y cerrada.
+
+- **Tope del juego de herramientas por chat** (26-09, §211): en el 7000, dos turnos seguidos del mismo chat pidieron herramientas distintas (correo y luego imagen) y, al pasar de 28, el segundo empezó juego nuevo: 19k tokens releídos, 57 s. Correr la batería con `scripts/daily_eval.py --set agent_sticky_toolset_max=N` (28 y 48, el nuevo valor por defecto) y comparar aciertos y el «caché del prompt» de la cabecera; fijar el valor por defecto con eso.
+- **A/B del razonamiento en rondas de continuación** (26-09, §210): tras el examen, correr `scripts/daily_eval.py --set agent_followup_reasoning_budget=N` con N = 0, 1536 y 2048 (el ajuste se restaura solo al acabar), comparar aciertos y tiempo por ronda, y fijar el valor por defecto con el resultado.
+- **Calibración de tokens reaprendida** (26-09, §210): tras desplegar, comprobar en `GET /api/token-calibration` que `qwen3.8-27b-q8-llamacpp` vuelve a un factor cercano a 0,9 en chats de texto, y que el ledger del turno enseña la línea «Razonamiento del modelo que se conserva» en una tarea larga.
+- **Relevo antes del tope de tiempo** (26-09, §209): en la próxima tarea larga (examen 32; el 31 no llegó al tope, lo cortó el detector de bucles), comprobar que al 85 % del tope el 27B deja el plan con resultados y un fichero de notas, y que el turno siguiente arranca desde ahí en vez de releerlo todo.
+- **Un slot por chat en el 8081** (27-09, §213): al pasar el 7006 a master tras el examen 32, en la tarea larga siguiente buscar `[engine] chat … keeps llama-server slot` en su log y comprobar que las rondas con un cambio temprano (imágenes plegadas, reintento tras bucle) reutilizan lo anterior al cambio en vez de salir con «0 from cache». En el 3B sólo se pudo ver a medias por la caché compartida de 16k.
+- **Tarjeta del guardián de comandos destructivos y línea de estado** (26-09, §209): en un turno real, que la tarjeta nombre el comando y su motivo, y que durante una herramienta larga la línea de estado diga qué herramienta corre. Los veredictos por cita del informe de investigación salen con la siguiente investigación.
+- **`context_*` automáticos en una tarea larga** (25-09, §197): ver si el 27B los usa solo, a partir de qué punto, y si el aviso al umbral blando ayuda o estorba.
+- **`swarm_map` en modo `agent`** (25-09, §197): probarlo con el 8081 compartido por otros chats (el modo `llm` ya se probó con 6 ciudades).
+- **Reescritura de día de la semana y paráfrasis de «recuerda que…»** (25-09, §184): confirmar en turnos reales que el bug lunes→viernes y el razonamiento en voz alta ya no aparecen.
+- **Ruta ofrecida vs inventada** (25-09, §184): medir en turnos reales que una oferta ya no provoca rechazo y que un «he guardado X» falso sí.
+- **`fix_memory` en un chat real** (24-09, §189): comprobar que un turno con ficheros cambiados deja línea en `DATA_DIR/fix_memory/<owner>/` y que el turno siguiente muestra «Past fixes».
+- **Carriles de `enforce` con `delegate_agents` real** (24-09, §189): probar con un `AGENT.md` de biblioteca y el diálogo de Studio con clics reales.
+- **Turno de noche real** (24-09, §189): 2-3 tareas de `dispatch` con presupuesto corto; comprobar la tarjeta de Inicio vía `night_shift_report`.
+- **Examen Eldoria, escalera de racha y prueba 02** (24-09, §184): probar la tercera tanda en la ejecución 14; si sigue sin cerrar, medir con un modelo principal que vea; ejecutar la Prueba 02 (Ingenio).
+- **Elementos del examen que dependen de visión** (24-09, §184): identificar los círculos, el numeral cisterciense y la unidad (185,2 m/cable). Todo local: la visión es la del propio 27B (mmproj en el 8081).
+- **`unconsulted_sources` en conversación real** (24-09, §184): medir falsos positivos.
+- **`inspect_image` contra Visión real** (24-09, §181): probar con un modelo de Visión real y un modelo principal con visión real, foto con `action: "ask"` y pregunta concreta.
+- **`eval_typed_decision.py` contra el modelo grande de Ollama** (23-09, §177): repetirlo cuando esté libre (el ayudante 3B ya está medido).
+- **Latencia real de la llamada de actualidad** (23-09, §177): confirmar el p50 (hasta 1,5 s); si molesta, bajar presupuesto o estrechar la regla.
+- **Nightingale's Hoard con un turno real** (23-09, §178): adoptarla tras reiniciar el 7000 y probarla («limpia este CSV y hazme un gráfico por ciudad»); probar «pregúntale a tus datos» con un modelo compartido resuelto.
+- **Resumen de entidad tras inactividad real** (23-09, §176): confirmar que aparece de verdad, no sólo en el pase forzado a mano.
+- **Presupuesto de pensamiento y corte a 240 s** (22-09): medir si debería depender de lo ya escrito en el razonamiento, dado que el 27B q8 corta la ronda 2 en 4/4 corridas de tareas de código.
+- **Instintos en segundo plano con modelo cargado** (23-09, §169): probar con `qwen3.5:4b` residente y un turno con corrección del usuario; mirar `[instincts]` en el log del 7001.
+- **Adopción de default entre instancias** (23-09, §169): probar con dos instancias con modelo cargado la adopción del default residente de una vecina y el veto a desalojar un modelo activo en otra.
+- **Perspectivas insuficientes en modelos pequeños** (19-09, §133): medir si siguen devolviendo sólo 1 en vez de 2-4.
+- **Regla `action:"ask"` en conversación real** (19-09, §132): disparar una dentro de un turno con modelo de verdad y ver la tarjeta de aprobación en el chat.
+- **Auto-continuación de tarea larga y repetitiva** (18-09, §115): contra llama-server real, confirmar que las rondas se extienden solas con la línea de progreso, y que un atasco real dispara un `ask_user` concreto.
+- **Memoria procedural de dueño global** (18-09, §115): confirmar contra el store real que una nota con `owner=""` aparece en el bloque de memoria aprendida de otro usuario.
+- **Síntoma de turno cortado tras 0-1 llamadas** (18-09, §115): si reaparece, revisar `_stuck_rounds`/`_tool_call_signature` en `agent_loop.py` y confirmar que `loop_breaker.py` actúa.
+- **Efecto del recorte del prompt MCP en un modelo pequeño** (18-09, §110): medirlo con qwen3 o similar, que antes se atascaba con el volcado de 14.657 tokens.
+- **Por qué el 27B emite `<<faustus_ctx_ack>>` solo** (18-09, §107): investigar con memoria recuperada grande (~14k tokens) y si conviene recortarla.
+- **Aviso de pregunta sensible al tiempo respetado** (18-09, §107): confirmar en un chat real que un modelo local (qwen3.5 o similar) busca en la primera ronda.
+- **Falsos positivos de «buscar sin pedir permiso»** (18-09, §107): vigilar en uso real en preguntas límite que mezclan opinión y actualidad.
+- **Hora actual mal usada en el prompt** (17-09, §98): el 27B dijo «en menos de una hora» de una entrevista ya pasada (13:00 vs 15:07); revisar cómo llega la hora al prompt.
+- **`presence_penalty` 1.5 para Qwen cuantizado** (20-09, §90): probarlo (recomendación oficial contra la repetición) y medir antes/después con el mismo lote.
+- **Persona de `AGENT.md` en un turno real** (16-09, §90-94): comprobar en el Studio que `persona: security-auditor` antepone de verdad el bloque al prompt.
+- **Caso completo del sampler local** (18-09, §108): repetir en vivo la coherencia desde el primer token, la ruta a `/api/chat` nativo, el escalón 2 de la escalera saltado, `min_p`/`repeat_penalty` como campos de primer nivel, y el corte antes de 300 caracteres en una racha de gibberish provocada a propósito.
+
+- **Modelos pequeños y las etiquetas [Certain]/[Likely]/[Guessing]** (Modos de comportamiento, 12-09): ver si modelos de 9B o menos las respetan; si fallan sistemáticamente, un modo «adversarial-lite» sin etiquetas.
+- **`remember_answer` con Qwen** (Conectores Hoard, 13-09): probarlo en un contexto de prueba real.
+- **Stop en un turno de agente realmente largo** (BUG-STOP-01, FAUSTUS §116): confirmar contra `llama-server` real que un clic de Stop para el turno en la ronda siguiente en una tarea de cientos de rondas, y que `runIdRef` del Studio no se desincroniza.
+- **Auditoría nocturna con `background_jobs_may_load_models` activado** (FAUSTUS §117): confirmar que esa noche la auditoría sí corre con el modelo de utilidad descargado.
+- **Snapshot de memoria por sesión en el Studio real** (FAUSTUS §120 Parte A): abrir una sesión, confirmar la nota "(snapshot taken …)" estable entre turnos, y que una sesión nueva sí recoge una regla añadida mientras tanto.
+- **Tok/s con MTP on/off en el 27B real** (FAUSTUS §122): la detección de capas MTP ya funciona; falta medir la ganancia real con GPU disponible y `-np 1` (con varias ranuras paralelas la ganancia se pierde casi entera).
+- **Batería de sondas de inyección contra el 27B** (FAUSTUS §148): verificada solo con el modelo pequeño; repetir con el grande, que obedece más y es el caso interesante.
+- **Sondas del canario redirigidas a una herramienta real** (FAUSTUS §148): comprobar que el resultado en modo vivo coincide con lo esperado de la sonda determinista.
+- **Extracción SSE `tool_start`/`tool_output` con tráfico real** (FAUSTUS §148): best-effort; probar con un modelo real que hace varias llamadas a la misma herramienta en la misma vuelta.
+- **Encender `agent_context_engine` en un turno de agente real** (FAUSTUS §174): correr `scripts/bench_context_engine.py` y un turno real con la bandera activa (SSE `context_packet`, memoria aprendida sin duplicarse, timeout conserva el bloque clásico).
+- **Encender el Context Engine para chat simple** (FAUSTUS §174): un turno de chat real con la bandera activa, mismos chequeos.
+- **Revisión con duda contra el helper real** (FAUSTUS §150): confirmar que el modelo pequeño (`qwen2.5-3b-helper`, `:8082`) detecta de verdad un diff roto en un fichero de alto riesgo real del repo.
+- **Pase de sueño de skills contra un modelo real** (FAUSTUS §151): sembrar una skill + sesiones sintéticas, correr el pase con el helper real, ver la propuesta en la pestaña Proposals y rechazarla.
+- **Agrupación automática de diffs grandes contra el helper real** (FAUSTUS §152): un diff sintético de ~10 ficheros con un bug inyectado a mano contra `http://127.0.0.1:8082/v1`; confirmar `groups > 1` y que el bug aparece entre los hallazgos.
+- **Inyección automática de conceptos de proyecto en un turno real** (FAUSTUS §154): con el ajuste encendido, confirmar que el bloque "project concepts" llega al prompt y aparece en el ledger bajo `instructions`.
+- **Grabación real de una reunión con micrófono** (FAUSTUS §156): el pipeline ya se probó en vivo por script (20-09); falta una grabación real con `MediaRecorder` o un audio subido y ver la barra de progreso y el Markdown final.
+- **Prueba de dictado en Windows real** (FAUSTUS §157): correr `scripts/dictation_windows_live_test.py` (listo, nunca ejecutado) con la voz Piper `es_ES-davefx-medium` de principio a fin.
+- **`learn-this-repo` usada por un modelo de verdad** (FAUSTUS §180): nadie la ha usado todavía para estudiar un repositorio; ver si `LEARN_REPO_NOTES.md` resulta útil para retomar una sesión días después.
+- **El 27B llamando a `git_radar` sin que se lo pidan** (FAUSTUS §185/§187): el banco de frases pasa; falta la conversación real con «¿qué tengo sin subir?».
+- **Temperatura más baja para respuestas largas en prosa** (uso diario 25-09, §198): las erratas del 27B en castellano no las causa `repeat_penalty` (ya descartado por A/B); falta probar con una temperatura más baja.
+- **Huecos del calendario y búsqueda en memoria** (25-09, §184): comprobar en el 7006 el hueco ocupado (32) y una búsqueda en memoria por pregunta sobre el usuario (31).
+- **Borrador rechazado en el Studio** (25-09, §184): confirmar que desaparece también ahí vía el evento `response_replace`.
+- **`seen_urls` de alcance amplio** (25-09, §184): vigilar en uso real si conviene limitarlo a resultados de búsqueda y páginas abiertas (hoy recoge cualquier enlace visto en el turno).
+- **Suelo de temperatura en modo chat** (19-09, §117): repetir la sonda `/slots` a mitad de petición en chat llano y confirmar `temperature=0.6`; confirmar que `/temp 0.9` de turno y un preset con temperatura propia siguen ganando al suelo.
+- **Arreglo `--jinja`** (18-09, §114): repetir la conversación que colgaba y confirmar en `/slots` que `enable_thinking` llega en `false` por defecto y que `/think on` sigue funcionando con `reasoning_budget:4096`; comprobar lo mismo si algún día se usa otro motor compatible OpenAI.
+- **Sampler de llama-server** (18-09, §114): repetir la conversación de 7800 tokens y confirmar en `/slots` `max_tokens`/`repeat_penalty`/`min_p`, que el tope de 8192 no corta una respuesta legítima, y que el razonamiento va al panel de pensamiento sin mezclarse con la respuesta.
+- **Recorte del bloque MCP del prompt** (18-09, §110): confirmar la bajada de tokens en un «hola», que un tool MCP concreto sigue siendo llamable, que `lookup_tools` encuentra uno no seleccionado, que el volcado completo se restaura con el ajuste, y probarlo con integraciones reales (Gitea, Linkding, Home Assistant).
+- **Recuperación sin `ctx_ack`** (18-09, §108): contra el 27B real, confirmar que ya no aparece «0000…», que no responde sólo `<<faustus_ctx_ack>>` repetidamente con memoria recuperada grande, y que fundir contexto y pregunta en un mensaje no le hace citar la etiqueta.
+- **Escalón de recuperación en pantalla** (18-09, §108): ver renderizado `harness_check status:"recovery"` («Recuperando…») y el mensaje final de los 4 escalones fallidos; confirmar que el endpoint de utilidad responde rápido.
+- **Escalera de recuperación tras w110/w111** (18-09, §108): repetirla con un caso real que degenere (no reproducido desde el cambio) y ver «Recovering…» en Studio; vigilar que el por defecto no se descargue en una pasada larga.
+- **Code Mode con la pestaña visible** (19-09, §133): repetir la pregunta que se respondió por API porque la pestaña de Chrome estaba oculta.
+- **Bloques ` ```chart ` en el navegador** (19-09, §131): confirmar el SVG, el interruptor «Show/Hide data», el fallback de un JSON roto, y comparar modo oscuro y claro.
+- **Historial tras aprobar una tarjeta** (20-09, §90): reproducir gate de contexto externo → aprobar → comprobar que `/api/history/<sid>` guarda la parte posterior (hoy se pierde).
+- **KV cache real del 27B** (17-09, §98): medirla antes de subir `num_ctx` en candidaturas (hoy 65.536, bajado de 199.680 por ir a 2 tok/s).
+- **Harness con plan grande** (17-09, §95): repetir con un plan ≥60 KB / 20+ tareas y un segundo chat sin adjunto («Continua»); probar `ui_smoke` contra un proyecto FastAPI y con `npm start` (sólo Flask probado).
+- **ADP-32, medir los pools de admisión** (11-09): `src/resource_admission.py` define pools de prioridad pero no se ha medido en producción si `llm_core._LOCAL_MODEL_LOCK` limita tareas reales.
+- **Niveles 1 y 2 de skills en el log** (FAUSTUS §120 Parte D): en los logs del 7000 y del 7006 sólo aparece el nivel 0 (49 turnos); falta un turno que elija una skill y confirmar que sube a 1 o 2.
+- **Tablas de frases en/es del pase de sueño de skills** (FAUSTUS §151): heurísticas de subcadena; probarlas contra un corpus real de respuestas de usuarios.
+- **Tarjeta de revisión con un diff realmente grande** (FAUSTUS §152): ver cómo se ve la tarjeta `harness_check` (`review_issues`/`review_running`) con un diff multi-archivo genuinamente grande.
+- **Vision con un modelo sin proyector** (FAUSTUS §194): con la casilla activada ya se probó (etiqueta «Visión», espera de 180 s); falta el caso con la casilla desactivada.
