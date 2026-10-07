@@ -9058,8 +9058,23 @@ async def _stream_agent_loop_body(
             # Hoard operations). disabled_tools and policy filters still apply
             # when schemas are assembled below.
             _caller_pinned_tools = set(relevant_tools or ())
+            # Explicit MCP-only tasks still need semantically selected MCP
+            # schemas when workspace routing replaces the retrieval set.
+            # Ordinary coding tasks continue to drop unpinned retrieval noise.
+            # Disabled filters still apply at schema assembly and dispatch.
+            _retrieved_mcp_tools = (
+                {
+                    name for name in _retrieved_tools
+                    if str(name).startswith("mcp__")
+                }
+                if tool_policy is not None and tool_policy.mode == "mcp_only"
+                else set()
+            )
             _relevant_tools = (
-                set(_WORKSPACE_TERMINUS_TOOLS) | _kept_code_intel | _caller_pinned_tools
+                set(_WORKSPACE_TERMINUS_TOOLS)
+                | _kept_code_intel
+                | _caller_pinned_tools
+                | _retrieved_mcp_tools
             )
             if _kept_code_intel:
                 logger.info("[tool-rag] Workspace question about code structure; adding %s",
@@ -9084,7 +9099,10 @@ async def _stream_agent_loop_body(
             # "email"/"model" word does not dump those families as schemas.
             if _hot_seed is not None:
                 _hot_seed = (
-                    set(_WORKSPACE_TERMINUS_TOOLS) | _kept_code_intel | _caller_pinned_tools
+                    set(_WORKSPACE_TERMINUS_TOOLS)
+                    | _kept_code_intel
+                    | _caller_pinned_tools
+                    | _retrieved_mcp_tools
                 )
                 # One schema, and the only way to do what a UI request asks:
                 # a theme or a panel named in the latest message keeps it
