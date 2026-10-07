@@ -8813,7 +8813,7 @@ async def _stream_agent_loop_body(
 
     # RAG-based tool selection: retrieve relevant tools for this query.
     # If caller provided a pre-computed set (e.g. task_scheduler), use that.
-    _relevant_tools = relevant_tools
+    _relevant_tools = set(relevant_tools) if relevant_tools is not None else None
     # Names whose full schemas stay in the native tools list. Domain-map
     # extras beyond this seed are deferred to the compact catalog + lookup_tools.
     # A caller-pinned set is an authorization decision: nothing is deferred.
