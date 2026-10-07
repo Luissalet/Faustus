@@ -595,16 +595,44 @@ class Link:
                     "(only_resident=True)"
                 )
                 return None
+        elif provider == "llamacpp":
+            # Faustus' registry describes configured endpoints, not live
+            # processes. Verify this exact URL before reporting it resident.
+            # The shared probe checks llama.cpp's /props signature (so a
+            # generic OpenAI-compatible server is not mistaken for it) and
+            # also reads model identity from /v1/models or model_path.
+            server = await _probes.probe_llamacpp_base(self._client, _server_root(url))
+            if server is None:
+                reasons.append(
+                    f"Faustus registry names llama.cpp at {_host(url)} but it is offline, "
+                    "not ready, or did not identify itself as llama.cpp"
+                )
+                return None
+            aliases = self._llamacpp_aliases(server)
+            matching = [name for name in listed if any(_routes.names_match(name, alias) for alias in aliases)]
+            if not matching:
+                actual = self._llamacpp_model_name(server) or "unknown model"
+                reasons.append(
+                    f"Faustus registry model does not match the llama.cpp model at {_host(url)} "
+                    f"({actual})"
+                )
+                return None
+            ranked, base = self._rank(matching, preferred, ctx)
+            model = ranked[0]
+            by_routes = _promoted(model, ranked, base)
+            resident = True
         else:
             ranked, base = self._rank(listed, preferred, ctx)
             model = ranked[0] if listed else None
             by_routes = bool(listed) and _promoted(model, ranked, base)
-            # A llama-server serves exactly the model it loaded at start.
-            resident = True if provider == "llamacpp" else None
+            resident = None
 
         details_extra: dict[str, Any] = {}
         if api == "ollama" and resident is False and size_mb is not None:
             details_extra["size_mb"] = size_mb
+        if provider == "llamacpp":
+            details_extra["served_model"] = self._llamacpp_model_name(server)
+            details_extra["resident"] = True
         tail = {True: "; resident", False: "; would load", None: ""}[resident]
         reason = (
             f"{capability} -> {backend} at {_host(url)} ({model}), from Faustus registry{tail}"
