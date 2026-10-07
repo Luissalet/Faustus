@@ -9052,7 +9052,15 @@ async def _stream_agent_loop_body(
             # replacement threw it away, and the model spent the turn grepping
             # for what one impact call answers.
             _kept_code_intel = _code_intel_family_for(_retrieval_query or _last_user)
-            _relevant_tools = set(_WORKSPACE_TERMINUS_TOOLS) | _kept_code_intel
+            # Keep the caller's explicit tool scope across workspace routing.
+            # The workspace bundle supplements a pinned set; it must not replace
+            # MCP schemas selected by the caller (for example, a task's connected
+            # Hoard operations). disabled_tools and policy filters still apply
+            # when schemas are assembled below.
+            _caller_pinned_tools = set(relevant_tools or ())
+            _relevant_tools = (
+                set(_WORKSPACE_TERMINUS_TOOLS) | _kept_code_intel | _caller_pinned_tools
+            )
             if _kept_code_intel:
                 logger.info("[tool-rag] Workspace question about code structure; adding %s",
                             sorted(_kept_code_intel))
@@ -9075,7 +9083,9 @@ async def _stream_agent_loop_body(
             # message stay executable (catalog + lookup_tools) so a stray
             # "email"/"model" word does not dump those families as schemas.
             if _hot_seed is not None:
-                _hot_seed = set(_WORKSPACE_TERMINUS_TOOLS) | _kept_code_intel
+                _hot_seed = (
+                    set(_WORKSPACE_TERMINUS_TOOLS) | _kept_code_intel | _caller_pinned_tools
+                )
                 # One schema, and the only way to do what a UI request asks:
                 # a theme or a panel named in the latest message keeps it
                 # offered next to the workspace tools.
