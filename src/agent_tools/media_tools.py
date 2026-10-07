@@ -45,10 +45,12 @@ class InspectDeliverableTool:
         from src.deliverable_inspection import inspect_deliverable, DeliverableInspectionError
         try:
             args = json.loads(content)
-            if (not isinstance(args, dict) or set(args) - {'path', 'max_content_chars'}
-                    or not isinstance(args.get('path'), str)):
+            if (not isinstance(args, dict) or set(args) - {'path', 'max_content_chars', 'compare_with'}
+                    or not isinstance(args.get('path'), str)
+                    or not isinstance(args.get('compare_with', ''), (str, type(None)))):
                 raise ValueError('Expected a local file path and optional content limit')
-            result = await inspect_deliverable(args['path'], max_content_chars=args.get('max_content_chars', 24000))
+            result = await inspect_deliverable(args['path'], max_content_chars=args.get('max_content_chars', 24000),
+                                           compare_with=args.get('compare_with') or None)
             return {'output': json.dumps(result, ensure_ascii=False, allow_nan=False),
                     'deliverable': result, 'exit_code': 0}
         except DeliverableInspectionError as exc:

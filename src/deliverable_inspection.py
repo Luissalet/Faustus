@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import posixpath
 import io
 import json
 import os
@@ -59,6 +60,13 @@ def _xml(package: zipfile.ZipFile, name: str) -> ET.Element:
 
 
 def _rels(package: zipfile.ZipFile, source: str) -> dict[str, str]:
+    return {rid: target for rid, (target, _kind) in _typed_rels(package, source).items()}
+
+
+def _typed_rels(package: zipfile.ZipFile, source: str) -> dict[str, tuple[str, str]]:
+    """Internal relationships of a part: id -> (package path, relationship type suffix such as 'theme').
+
+    Accepts relative targets and absolute part names ('/ppt/theme/theme1.xml'), which some producers write."""
     folder, filename = source.rsplit('/', 1) if '/' in source else ('', source)
     relpath = f"{folder}/_rels/{filename}.rels" if folder else f"_rels/{filename}.rels"
     try:
@@ -72,10 +80,13 @@ def _rels(package: zipfile.ZipFile, source: str) -> dict[str, str]:
         if rel.get('TargetMode') == 'External':
             continue
         target = rel.get('Target', '')
-        full = os.path.normpath(os.path.join(folder, target)).replace('\\', '/')
+        if target.startswith('/'):
+            full = posixpath.normpath(target.lstrip('/'))
+        else:
+            full = posixpath.normpath(posixpath.join(folder, target))
         if full.startswith('../') or full == '..':
             continue
-        result[rel.get('Id', '')] = full.lstrip('/')
+        result[rel.get('Id', '')] = (full.lstrip('/'), rel.get('Type', '').rsplit('/', 1)[-1])
     return result
 
 
@@ -100,12 +111,161 @@ def _chart(package: zipfile.ZipFile, path: str) -> dict:
     return {'path': path, 'title': title or None, 'series': series}
 
 
+_THEME_COLOR_SLOTS = ('dk1', 'lt1', 'dk2', 'lt2', 'accent1', 'accent2', 'accent3', 'accent4', 'accent5', 'accent6',
+                      'hlink', 'folHlink')
+_NAMED_SLIDE_SIZES = {(12192000, 6858000): '16:9', (9144000, 6858000): '4:3', (9144000, 5143500): '16:9 (10 in)',
+                      (9144000, 5715000): '16:10', (12192000, 9144000): '4:3 (13.33 in)'}
+
+
+_ASPECT_RATIOS = {'16:9': 16 / 9, '4:3': 4 / 3, '16:10': 16 / 10, '3:2': 3 / 2, '1:1': 1.0}
+
+
+def _slide_aspect(cx: int, cy: int):
+    """Common aspect ratio of any slide size (a 20 x 11.25 in canvas is 16:9 too), within 0.5 %."""
+    if cx <= 0 or cy <= 0:
+        return None
+    ratio = cx / cy
+    for name, value in _ASPECT_RATIOS.items():
+        if abs(ratio - value) <= value * 0.005:
+            return name
+    return None
+
+
+def _named_slide_size(cx: int, cy: int):
+    """Common slide sizes, tolerating the rounding of sizes set in inches or centimetres (0.5 %)."""
+    for (w, h), name in _NAMED_SLIDE_SIZES.items():
+        if abs(cx - w) <= w * 0.005 and abs(cy - h) <= h * 0.005:
+            return name
+    return None
+
+
+_REL_ATTR_PREFIX = f"{{{NS['r']}}}"
+
+
+def _part_fingerprint(package: zipfile.ZipFile, name: str) -> str:
+    """SHA-256 of the part's canonical XML (C14N, insignificant whitespace removed).
+
+    Re-serialising an unchanged part keeps its fingerprint, and so does renumbering its relationships: every
+    relationship id (r:id, r:embed, r:link...) is replaced by what it points to, i.e. the relationship type, plus the
+    content hash for media and other binary parts and the target for external links. Swapping an image or editing any
+    XML content gives a new fingerprint."""
+    data = package.read(name)
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError:
+        return hashlib.sha256(data).hexdigest()
+    folder, filename = name.rsplit('/', 1) if '/' in name else ('', name)
+    relpath = f"{folder}/_rels/{filename}.rels" if folder else f"_rels/{filename}.rels"
+    tokens: dict[str, str] = {}
+    try:
+        rel_root = ET.fromstring(package.read(relpath))
+    except (KeyError, ET.ParseError):
+        rel_root = None
+    if rel_root is not None:
+        typed = _typed_rels(package, name)
+        for rel in rel_root.findall('rel:Relationship', NS):
+            rid, kind = rel.get('Id', ''), rel.get('Type', '').rsplit('/', 1)[-1]
+            if rel.get('TargetMode') == 'External':
+                tokens[rid] = f"{kind}:external:{rel.get('Target', '')}"
+                continue
+            target = typed.get(rid, ('', kind))[0]
+            if target and not target.endswith('.xml'):
+                try:
+                    tokens[rid] = f"{kind}:{hashlib.sha256(package.read(target)).hexdigest()[:16]}"
+                except KeyError:
+                    tokens[rid] = f"{kind}:missing"
+            else:
+                tokens[rid] = kind
+    for node in root.iter():
+        for attr, value in list(node.attrib.items()):
+            if attr.startswith(_REL_ATTR_PREFIX) and value in tokens:
+                node.set(attr, tokens[value])
+    canonical = ET.canonicalize(xml_data=ET.tostring(root, encoding='unicode'), strip_text=True).encode('utf-8')
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def _theme_facts(package: zipfile.ZipFile, part: str) -> dict:
+    root = _xml(package, part)
+    scheme = root.find('.//a:themeElements/a:clrScheme', NS)
+    colors = {}
+    if scheme is not None:
+        for slot in _THEME_COLOR_SLOTS:
+            node = scheme.find(f'a:{slot}', NS)
+            if node is None:
+                continue
+            value = node.find('a:srgbClr', NS)
+            system = node.find('a:sysClr', NS)
+            if value is not None:
+                colors[slot] = value.get('val')
+            elif system is not None:
+                colors[slot] = system.get('lastClr') or system.get('val')
+    fonts = {}
+    for role, tag in (('major', 'a:majorFont'), ('minor', 'a:minorFont')):
+        latin = root.find(f'.//a:fontScheme/{tag}/a:latin', NS)
+        if latin is not None:
+            fonts[role] = latin.get('typeface')
+    font_scheme = root.find('.//a:fontScheme', NS)
+    return {'part': part, 'name': root.get('name'),
+            'color_scheme': scheme.get('name') if scheme is not None else None, 'colors': colors,
+            'font_scheme': font_scheme.get('name') if font_scheme is not None else None, 'fonts': fonts,
+            'fingerprint': _part_fingerprint(package, part)}
+
+
+def _pptx_template(package: zipfile.ZipFile, pres: ET.Element, rels: dict[str, str]) -> dict:
+    """Masters, layouts and themes actually present in the package, how they link, and comparable fingerprints."""
+    size = pres.find('p:sldSz', NS)
+    slide_size = None
+    if size is not None:
+        cx, cy = int(size.get('cx') or 0), int(size.get('cy') or 0)
+        slide_size = {'cx_emu': cx, 'cy_emu': cy, 'width_in': round(cx / 914400, 3), 'height_in': round(cy / 914400, 3),
+                      'type': size.get('type'), 'named': _named_slide_size(cx, cy), 'aspect': _slide_aspect(cx, cy)}
+    masters, layouts, themes = [], {}, {}
+    master_ids = pres.findall('.//p:sldMasterIdLst/p:sldMasterId', NS)
+    if len(master_ids) > MAX_ROWS:
+        raise DeliverableInspectionError(f'Presentation has more than {MAX_ROWS} masters.', 'item_limit')
+    for item in master_ids:
+        part = rels.get(item.get(f"{{{NS['r']}}}id", ''), '')
+        if not part or part not in package.namelist():
+            continue
+        root = _xml(package, part)
+        typed = _typed_rels(package, part)
+        mrels = {rid: target for rid, (target, _kind) in typed.items()}
+        theme_part = next((t for t, kind in typed.values() if kind == 'theme' and t in package.namelist()), None)
+        if theme_part and theme_part not in themes:
+            themes[theme_part] = _theme_facts(package, theme_part)
+        layout_parts = []
+        for lid in root.findall('.//p:sldLayoutIdLst/p:sldLayoutId', NS):
+            lpart = mrels.get(lid.get(f"{{{NS['r']}}}id", ''), '')
+            if not lpart or lpart in layouts or lpart not in package.namelist():
+                continue
+            lroot = _xml(package, lpart)
+            csld = lroot.find('p:cSld', NS)
+            placeholders = []
+            for ph in lroot.findall('.//p:nvPr/p:ph', NS):
+                placeholders.append({'type': ph.get('type') or 'body', 'idx': ph.get('idx')})
+            layouts[lpart] = {'part': lpart, 'name': csld.get('name') if csld is not None else None,
+                              'type': lroot.get('type'), 'master': part, 'placeholders': placeholders,
+                              'fingerprint': _part_fingerprint(package, lpart), 'used_by_slides': []}
+            layout_parts.append(lpart)
+        csld = root.find('p:cSld', NS)
+        masters.append({'part': part, 'name': csld.get('name') if csld is not None else None, 'theme': theme_part,
+                        'layouts': layout_parts, 'fingerprint': _part_fingerprint(package, part)})
+    combined = hashlib.sha256()
+    for item in sorted([m['fingerprint'] for m in masters] + [l['fingerprint'] for l in layouts.values()] +
+                       [t['fingerprint'] for t in themes.values()]):
+        combined.update(item.encode('ascii'))
+    return {'slide_size': slide_size, 'masters': masters, 'layouts': list(layouts.values()),
+            'themes': list(themes.values()), 'template_fingerprint': combined.hexdigest() if masters else None}
+
+
 def _pptx(path: Path) -> dict:
     with zipfile.ZipFile(path) as z:
         infos = z.infolist()
         _check_zip(infos)
         pres = _xml(z, 'ppt/presentation.xml')
         rels = _rels(z, 'ppt/presentation.xml')
+        template = _pptx_template(z, pres, rels)
+        layout_index = {l['part']: l for l in template['layouts']}
         slides = []
         for index, item in enumerate(pres.findall('.//p:sldId', NS), 1):
             if index > MAX_ROWS:
@@ -141,11 +301,98 @@ def _pptx(path: Path) -> dict:
                             media[-1]['metadata_error'] = 'SVG XML could not be parsed'
                 elif target.startswith('ppt/charts/') and target.endswith('.xml'):
                     charts.append(_chart(z, target))
-            slides.append({'index': index, 'part': part, 'texts': shapes,
+            layout_part = next((t for t, kind in _typed_rels(z, part).values() if kind == 'slideLayout'), None)
+            layout = layout_index.get(layout_part)
+            if layout is not None:
+                layout['used_by_slides'].append(index)
+            slides.append({'index': index, 'part': part, 'layout': layout_part,
+                           'layout_name': layout['name'] if layout else None,
+                           'master': layout['master'] if layout else None, 'texts': shapes,
                            'notes': notes, 'images': media, 'charts': charts})
-        return {'slide_count': len(slides), 'slides': slides,
+        template['unused_layouts'] = [l['name'] or l['part'] for l in template['layouts'] if not l['used_by_slides']]
+        # The template summary goes before the slides so a tight content budget keeps it.
+        return {'slide_count': len(slides), 'template': template, 'slides': slides,
                 'embedded_media_count': sum(len(s['images']) for s in slides),
                 'chart_count': sum(len(s['charts']) for s in slides)}
+
+
+def compare_presentation_templates(reference: dict, deck: dict) -> dict:
+    """Structural comparison of a deck's template parts against a reference template (both ``_pptx`` facts).
+
+    Reports which themes, masters and layouts are byte-for-byte equivalent after canonicalisation, which ones match by
+    name only (the template was edited), which are missing or new, whether the slide size is the same, and which slides
+    use layouts that are not in the reference. Equal fingerprints prove the parts are the same; they do not prove the
+    slides look right, that placeholders were filled, or that the text is correct."""
+    ref, out = reference.get('template') or {}, deck.get('template') or {}
+
+    def label(item: dict) -> str:
+        return item.get('name') or item['part']
+
+    def compare(kind: str, ref_items: list[dict], deck_items: list[dict]) -> dict:
+        """Match by fingerprint first; an edited copy is matched by name, or by part path when a side has no name."""
+        ref_fp = {i['fingerprint'] for i in ref_items}
+        ref_by_name = {i.get('name'): n for n, i in enumerate(ref_items) if i.get('name')}
+        ref_by_part = {i['part']: n for n, i in enumerate(ref_items)}
+        matched: set[int] = {n for n, i in enumerate(ref_items) if i['fingerprint'] in {d['fingerprint'] for d in deck_items}}
+        identical, changed, new = [], [], []
+        seen: set[str] = set()
+        for item in deck_items:
+            if item['fingerprint'] in seen:
+                continue
+            seen.add(item['fingerprint'])
+            if item['fingerprint'] in ref_fp:
+                identical.append(label(item))
+                continue
+            n = ref_by_name.get(item.get('name')) if item.get('name') else None
+            if n is None and item['part'] in ref_by_part:
+                candidate = ref_by_part[item['part']]
+                if not item.get('name') or not ref_items[candidate].get('name'):
+                    n = candidate
+            if n is not None and n not in matched:
+                matched.add(n)
+                changed.append(label(item))
+            else:
+                new.append(label(item))
+        missing = [label(i) for n, i in enumerate(ref_items) if n not in matched]
+        return {'reference': len(ref_items), 'deck': len(deck_items), 'identical': identical,
+                'changed_same_name': changed, 'missing_from_deck': missing, 'not_in_reference': new}
+
+    themes = compare('theme', ref.get('themes') or [], out.get('themes') or [])
+    masters = compare('master', ref.get('masters') or [], out.get('masters') or [])
+    layouts = compare('layout', ref.get('layouts') or [], out.get('layouts') or [])
+    ref_layout_fps = {l['fingerprint'] for l in ref.get('layouts') or []}
+    ref_layout_names = {l.get('name') for l in ref.get('layouts') or []}
+    deck_layouts = {l['part']: l for l in out.get('layouts') or []}
+    foreign_slides = []
+    for slide in deck.get('slides') or []:
+        layout = deck_layouts.get(slide.get('layout'))
+        if layout is None or layout['fingerprint'] in ref_layout_fps:
+            continue
+        foreign_slides.append({'slide': slide['index'], 'layout': layout.get('name'),
+                               'reason': 'edited layout' if layout.get('name') in ref_layout_names else 'layout not in reference'})
+    ref_size, deck_size = ref.get('slide_size') or {}, out.get('slide_size') or {}
+    same_size = bool(ref_size) and (ref_size.get('cx_emu'), ref_size.get('cy_emu')) == (deck_size.get('cx_emu'), deck_size.get('cy_emu'))
+    preserved = (bool(ref.get('masters')) and same_size and not themes['changed_same_name'] and not themes['not_in_reference']
+                 and not masters['changed_same_name'] and not masters['not_in_reference']
+                 and not layouts['changed_same_name'] and not foreign_slides)
+    color_changes = {}
+    ref_theme = (ref.get('themes') or [{}])[0]
+    deck_theme = (out.get('themes') or [{}])[0]
+    for slot in sorted(set(ref_theme.get('colors') or {}) | set(deck_theme.get('colors') or {})):
+        a, b = (ref_theme.get('colors') or {}).get(slot), (deck_theme.get('colors') or {}).get(slot)
+        if a != b:
+            color_changes[slot] = {'reference': a, 'deck': b}
+    font_changes = {role: {'reference': (ref_theme.get('fonts') or {}).get(role), 'deck': (deck_theme.get('fonts') or {}).get(role)}
+                    for role in ('major', 'minor')
+                    if (ref_theme.get('fonts') or {}).get(role) != (deck_theme.get('fonts') or {}).get(role)}
+    return {'template_preserved': preserved,
+            'identical_template_fingerprint': bool(ref.get('template_fingerprint'))
+            and ref.get('template_fingerprint') == out.get('template_fingerprint'),
+            'slide_size': {'same': same_size, 'reference': ref_size or None, 'deck': deck_size or None},
+            'themes': themes, 'theme_color_changes': color_changes, 'theme_font_changes': font_changes,
+            'masters': masters, 'layouts': layouts, 'slides_on_layouts_outside_reference': foreign_slides,
+            'scope': 'Structural parts only. Equal parts do not prove visual quality, filled placeholders or correct text; '
+                     'unused reference layouts may have been dropped legitimately.'}
 
 
 def _docx(path: Path) -> dict:
@@ -449,7 +696,11 @@ def _bounded(value, budget: int):
     return value
 
 
-async def inspect_deliverable(path_value: str, *, max_content_chars: int = DEFAULT_CONTENT_CHARS) -> dict:
+_PRESENTATION_EXTENSIONS = {'.pptx', '.potx', '.pptm', '.potm'}
+
+
+async def inspect_deliverable(path_value: str, *, max_content_chars: int = DEFAULT_CONTENT_CHARS,
+                              compare_with: str | None = None) -> dict:
     from src.tool_execution import _resolve_tool_path
     try: resolved = Path(_resolve_tool_path(path_value))
     except (TypeError, ValueError) as exc:
@@ -468,7 +719,7 @@ async def inspect_deliverable(path_value: str, *, max_content_chars: int = DEFAU
             for chunk in iter(lambda: stream.read(1024 * 1024), b''): digest.update(chunk)
         kind = 'other'; facts = {}; content = {}
         if ext == '.pdf': kind = 'pdf'; facts = _pdf(resolved)
-        elif ext == '.pptx': kind = 'presentation'; facts = _pptx(resolved)
+        elif ext in _PRESENTATION_EXTENSIONS: kind = 'presentation'; facts = _pptx(resolved)
         elif ext == '.docx': kind = 'document'; facts = _docx(resolved)
         elif ext == '.xlsx': kind = 'spreadsheet'; facts = _xlsx(resolved)
         elif ext == '.designcraft': kind = 'native_design_project'; facts = _designcraft(resolved)
@@ -490,6 +741,21 @@ async def inspect_deliverable(path_value: str, *, max_content_chars: int = DEFAU
                 raise DeliverableInspectionError(str(exc), exc.code) from exc
         else:
             facts = {'metadata': 'No format parser is available; only file identity and hash were measured.'}
+        comparison = None
+        if compare_with:
+            if kind != 'presentation':
+                raise DeliverableInspectionError('compare_with is only supported for PowerPoint presentations and templates.',
+                                                 'invalid_arguments')
+            try: reference_path = Path(_resolve_tool_path(compare_with))
+            except (TypeError, ValueError) as exc:
+                raise DeliverableInspectionError(str(exc), 'path_not_allowed') from exc
+            if reference_path.suffix.lower() not in _PRESENTATION_EXTENSIONS or not reference_path.is_file():
+                raise DeliverableInspectionError('compare_with must be a local .pptx or .potx file.', 'invalid_arguments')
+            if reference_path.stat().st_size > MAX_FILE_BYTES:
+                raise DeliverableInspectionError('Reference template exceeds the inspection limit.', 'file_too_large')
+            reference_facts = _pptx(reference_path)
+            comparison = compare_presentation_templates(reference_facts, facts)
+            comparison['reference_path'] = str(reference_path)
         if kind not in {'image', 'media', 'other'}: content = facts
         limited = _content_size(content) > max_content_chars
         if limited:
@@ -499,12 +765,15 @@ async def inspect_deliverable(path_value: str, *, max_content_chars: int = DEFAU
         current = resolved.stat()
         if (info.st_size, info.st_mtime_ns, info.st_ino) != (current.st_size, current.st_mtime_ns, current.st_ino):
             raise DeliverableInspectionError('File changed during inspection; retry against a stable copy.', 'file_changed')
-        return {'path': str(resolved), 'filename': resolved.name, 'extension': ext,
+        result = {'path': str(resolved), 'filename': resolved.name, 'extension': ext,
                 'kind': kind, 'size_bytes': info.st_size, 'sha256': digest.hexdigest(),
                 'status': 'inspected', 'facts': facts, 'content': content,
                 'content_truncated': limited,
                 'inspection_scope': 'Structural and extractable metadata only. No visual, audio, semantic, or overall quality rating is made.',
                 'limitations': _limitations(kind, facts)}
+        if comparison is not None:
+            result['template_comparison'] = comparison
+        return result
     except DeliverableInspectionError: raise
     except OSError as exc:
         raise DeliverableInspectionError(f'File could not be read: {exc.strerror or type(exc).__name__}.', 'io_error') from exc
@@ -519,6 +788,9 @@ def _limitations(kind: str, facts: dict) -> list[str]:
     if kind == 'spreadsheet': values.append('Formula text and cached values are reported; formulas are not recalculated.')
     if kind == 'media': values.append('Media is not transcribed, listened to, or visually reviewed; metadata depends on available decoders.')
     if kind == 'image': values.append('Image pixels are not visually interpreted by this inspection.')
+    if kind == 'presentation':
+        values.append('Template facts (masters, layouts, themes, fingerprints) describe the package parts; they do not show '
+                      'how the slides render or whether placeholders were filled sensibly.')
     if kind in {'native_design_project', 'native_vector_project'}:
         values.append('Native document structure and stored text are reported; the project is not rendered, and frame/node counts do not prove visibility, editability, completeness, or fidelity.')
     if kind == 'native_design_project': values.append('Embedded package parts are counted but not decoded or linked to frames; external linked file paths are never read.')

@@ -223,7 +223,10 @@ CORE_SCHEMAS = {
      'parameters': {'type': 'object', 'properties': {
          'path': {'type': 'string', 'description': 'Local file path inside the allowed workspace; not a URL'},
          'max_content_chars': {'type': 'integer', 'minimum': 1000, 'maximum': 80000,
-                               'description': 'Maximum extracted content excerpt size; default 24000'}},
+                               'description': 'Maximum extracted content excerpt size; default 24000'},
+        'compare_with': {'type': 'string', 'description': 'Optional reference PowerPoint template (.pptx or .potx) '
+                         'inside the workspace: adds template_comparison (theme, masters, layouts, slide size and '
+                         'slides on edited or foreign layouts)'}},
                     'required': ['path'], 'additionalProperties': False}},
     'image_job': {'description': 'Check, collect or cancel an existing Prospero image request after a timeout or restart. Use '
                     'the request_id returned by generate_image or edit_image. This never starts another render; '
