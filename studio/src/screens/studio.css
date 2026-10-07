@@ -973,6 +973,27 @@ details.fs-studio__step > summary:hover .fs-trace__label {
   border-inline-start: 2px solid var(--fs-brand);
 }
 
+/* A long tool output says where it stops, with the way to the rest. */
+.fs-studio__out-more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-1) var(--fs-space-3);
+  margin: 0 0 var(--fs-space-2) 22px;
+  font-size: var(--fs-code-size);
+  color: var(--fs-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.fs-studio__out-more .fs-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  min-block-size: auto;
+}
+
 .fs-trace__meta {
   font-size: 11px;
   color: var(--fs-text-3);

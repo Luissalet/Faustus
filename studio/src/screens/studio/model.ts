@@ -714,6 +714,9 @@ const TOOL_WORDS: Record<string, string> = {
   update_plan: 'Plan',
   todowrite: 'Tasks',
   manage_memory: 'Memory',
+  inspect_deliverable: 'Inspect deliverable',
+  inspect_media: 'Inspect media',
+  lookup_tools: 'Look up tools',
 };
 
 export function stepLabel(tool: string, command: string): string {

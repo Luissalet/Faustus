@@ -20,7 +20,7 @@ import { safeExternal } from '../../lib/markdown';
 import { stripExecutedFences, toolFenceRegex } from '../../lib/fences';
 import { frameBatcher } from '../../lib/frame-batch';
 import { formatMetrics, liveTps, type CoverageItem, type LiveRate, type PlanStepView, type Step, type Thought, type Turn, type TurnStrategy } from './model';
-import { t, tn, useLang } from '../../i18n';
+import { locale, t, tn, useLang } from '../../i18n';
 import { getDisplay } from '../../shell/display';
 import { nextStreamAnnouncement } from '../../adapters/streamAnnounce';
 import { listModes, modeLabel, violationsLabel, type BehaviorMode } from '../../adapters/behaviorModes';
@@ -438,10 +438,21 @@ export function toolRailSummary(count: number, live: boolean): { one: string; ot
   return { one: 'Ran 1 command', other: 'Ran {n} commands', n };
 }
 
+/** Same headline for a tool that is not a shell: an inspection, a lookup,
+ *  a memory write is not "a command" and reading it as one misdescribes
+ *  what the turn did. */
+export function toolUseSummary(count: number, live: boolean): RailPart {
+  const n = Math.max(0, count);
+  if (live) return { one: 'Using a tool', other: 'Using {n} tools', n };
+  return { one: 'Used 1 tool', other: 'Used {n} tools', n };
+}
+
 const SEARCH_TOOLS = /^(grep|glob|web_search|web_fetch|fetch_url|search_chats|search_project_chats)$/;
-const EXPLORE_TOOLS = /^(read_file|ls)$/;
+// Read-only tools that look at one file by `path` (src/tool_capabilities.py
+// lists them with read_file/ls as read-only): they explore a file.
+const EXPLORE_TOOLS = /^(read_file|ls|inspect_deliverable|inspect_media)$/;
 const EDIT_TOOLS = /^(write_file|edit_file|apply_patch|create_file|multi_edit|replace_across_files)$/;
-const COMMAND_TOOLS = /^(bash|python|powershell|run_shell)$/;
+const COMMAND_TOOLS = /^(bash|python|powershell|run_shell|run_code)$/;
 
 export function stepPath(step: { command?: string }): string {
   const raw = (step.command || '').trim();
@@ -458,25 +469,27 @@ export function stepPath(step: { command?: string }): string {
 }
 
 export function toolRailCounts(steps: { tool: string; command?: string }[]): {
-  searches: number; files: number; edits: number; commands: number;
+  searches: number; files: number; edits: number; commands: number; tools: number;
 } {
   const files = new Set<string>();
   const edits = new Set<string>();
   let searches = 0;
   let commands = 0;
+  let tools = 0;
   for (const step of steps) {
     if (SEARCH_TOOLS.test(step.tool)) searches += 1;
     else if (EXPLORE_TOOLS.test(step.tool)) files.add(stepPath(step) || `${step.tool}:${files.size}`);
     else if (EDIT_TOOLS.test(step.tool)) edits.add(stepPath(step) || `${step.tool}:${edits.size}`);
-    else commands += 1;
+    else if (COMMAND_TOOLS.test(step.tool)) commands += 1;
+    else tools += 1;
   }
-  return { searches, files: files.size, edits: edits.size, commands };
+  return { searches, files: files.size, edits: edits.size, commands, tools };
 }
 
 export type RailPart = { one: string; other: string; n: number };
 
 export function toolRailParts(
-  counts: { searches: number; files: number; edits: number; commands: number },
+  counts: { searches: number; files: number; edits: number; commands: number; tools?: number },
   live: boolean,
 ): RailPart[] {
   const parts: RailPart[] = [];
@@ -496,7 +509,80 @@ export function toolRailParts(
       : { one: '1 search', other: '{n} searches', n: counts.searches });
   }
   if (counts.commands) parts.push(toolRailSummary(counts.commands, live));
+  if (counts.tools) parts.push(toolUseSummary(counts.tools, live));
   return parts;
+}
+
+/** What a tool card renders of a tool's output before the reader asks for
+ *  more: enough to read, cheap to paint on a long transcript. */
+export const OUTPUT_PREVIEW_CHARS = 6000;
+/** The most the card ever paints, even unfolded; past it, "Copy full
+ *  output" still carries every character. */
+export const OUTPUT_EXPANDED_CHARS = 200_000;
+
+/** The slice of a tool's output the card shows, and whether it is the whole
+ *  of it. Never splits a surrogate pair (an emoji cut in half paints as a
+ *  replacement box). Pure: checked in studio/checks/tool-output-preview. */
+export function outputPreview(text: string, expanded: boolean): {
+  shown: string; total: number; truncated: boolean; long: boolean;
+} {
+  const total = text.length;
+  const long = total > OUTPUT_PREVIEW_CHARS;
+  const limit = expanded ? OUTPUT_EXPANDED_CHARS : OUTPUT_PREVIEW_CHARS;
+  if (total <= limit) return { shown: text, total, truncated: false, long };
+  let end = limit;
+  const last = text.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return { shown: text.slice(0, end), total, truncated: true, long };
+}
+
+/** A tool's output on its card. A long one used to stop at 6,000
+ *  characters mid-string with nothing saying so; now the cut is stated,
+ *  with the way to the rest right under it. */
+function ToolOutput({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const view = outputPreview(text, expanded);
+  // 'always': es-ES leaves four-digit numbers ungrouped, and "6000 de
+  // 10.035" side by side reads as two different kinds of number. (The
+  // ES2022 lib types `useGrouping` as boolean; browsers take the string.)
+  const fmt = new Intl.NumberFormat(locale(), { useGrouping: 'always' } as unknown as Intl.NumberFormatOptions);
+  return (
+    <>
+      <pre className="fs-studio__out" data-testid="tool-output">{view.shown}</pre>
+      {view.long && (
+        <p className="fs-studio__out-more" data-testid="tool-output-truncated">
+          <span>
+            {view.truncated
+              ? t('Showing {shown} of {total} characters', { shown: fmt.format(view.shown.length), total: fmt.format(view.total) })
+              : t('Showing all {total} characters', { total: fmt.format(view.total) })}
+          </span>
+          {!expanded ? (
+            <button type="button" className="fs-link" data-testid="tool-output-expand" onClick={() => setExpanded(true)}>
+              {t('Show full output')}
+            </button>
+          ) : (
+            <button type="button" className="fs-link" data-testid="tool-output-collapse" onClick={() => setExpanded(false)}>
+              {t('Show less')}
+            </button>
+          )}
+          <CopyButton text={text} label={t('Copy full output')} />
+        </p>
+      )}
+    </>
+  );
+}
+
+/** A cheap fingerprint of "what the transcript holds": a new turn, or the
+ *  last one growing (streamed text, another tool step), changes it; a
+ *  reader unfolding a card or scrolling does not. */
+export function transcriptMark(turns: { id: string; text: string; steps: unknown[] }[]): string {
+  const last = turns[turns.length - 1];
+  return last ? `${turns.length}:${last.id}:${last.text.length}:${last.steps.length}` : '0';
+}
+
+/** True when something arrived after the reader left the bottom. */
+export function hasArrivedSince(leftAt: string | null, now: string): boolean {
+  return leftAt !== null && leftAt !== now;
 }
 
 export function thoughtSummary(seconds: number, live: boolean): RailPart {
@@ -537,7 +623,7 @@ export function buildActivity(stepCount: number, thoughts: { afterStep: number }
 function railTitle(steps: Step[], live: boolean): string {
   const parts = toolRailParts(toolRailCounts(steps), live);
   if (!parts.length) {
-    const fallback = toolRailSummary(steps.length, live);
+    const fallback = toolUseSummary(steps.length, live);
     return tn(fallback.n, fallback.one, fallback.other);
   }
   return parts.map((part, i) => {
@@ -675,7 +761,7 @@ function ToolRail({
                 )}
                 {step.diff && (
                   <span className="fs-trace__meta fs-diff-stat">
-                    {step.diff.newFile && <em>nuevo</em>}
+                    {step.diff.newFile && <em>{t('new')}</em>}
                     {step.diff.added > 0 && <ins>+{step.diff.added}</ins>}
                     {step.diff.removed > 0 && <del>−{step.diff.removed}</del>}
                   </span>
@@ -686,12 +772,12 @@ function ToolRail({
                 <p className="fs-studio__step-links">
                   {onOpenFile && FILE_TOOLS.test(step.tool) && step.command && (
                     <button type="button" className="fs-link" onClick={() => onOpenFile((step.diff?.file || step.command || '').split('\n')[0].trim())}>
-                      Ver el fichero
+                      {t('View the file')}
                     </button>
                   )}
                   {onOpenDoc && step.docId && (
                     <button type="button" className="fs-link" onClick={() => onOpenDoc(step.docId as string)}>
-                      Abrir el documento
+                      {t('Open the document')}
                     </button>
                   )}
                 </p>
@@ -752,7 +838,7 @@ function ToolRail({
                   <span>{t('Attempt')} {step.attemptId}{step.effectId ? ` · ${t('Effect')} ${step.effectId}` : ''}</span>
                 </p>
               )}
-              {step.output && <pre className="fs-studio__out">{step.output.slice(0, 6000)}</pre>}
+              {step.output && <ToolOutput text={step.output} />}
               {step.screenshot && <img className="fs-studio__shot" src={step.screenshot} alt={t('Tool screenshot')} loading="lazy" />}
             </details>
           ) : (
@@ -2449,6 +2535,21 @@ export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdi
     };
   }, [jumpHost, turns.length]);
 
+  // What the transcript held when the reader left the bottom. The pill only
+  // says "New messages" once something actually arrived after that;
+  // unfolding a long tool card or scrolling up to reread also leaves the
+  // bottom, and calling that "new messages" announced messages nobody sent.
+  const mark = transcriptMark(turns);
+  const markRef = useRef(mark);
+  useEffect(() => {
+    markRef.current = mark;
+  }, [mark]);
+  const [leftAtMark, setLeftAtMark] = useState<string | null>(null);
+  useEffect(() => {
+    setLeftAtMark(pastBottom ? markRef.current : null);
+  }, [pastBottom]);
+  const arrived = hasArrivedSince(leftAtMark, mark);
+
   const items = rowVirtualizer.getVirtualItems();
 
   const jumpButton = pastBottom && jumpHost
@@ -2462,9 +2563,10 @@ export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdi
             setPastBottom(false);
           }}
           data-testid="turn-back-to-bottom"
-          aria-label={t('Jump to the latest messages')}
+          data-arrived={arrived || undefined}
+          aria-label={arrived ? t('New messages: jump to the latest') : t('Jump to the latest messages')}
         >
-          <ArrowDown size={14} aria-hidden="true" /> {t('New messages')}
+          <ArrowDown size={14} aria-hidden="true" /> {arrived ? t('New messages') : t('Latest messages')}
         </button>,
         jumpHost,
       )

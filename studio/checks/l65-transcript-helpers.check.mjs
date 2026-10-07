@@ -63,7 +63,17 @@ assert.deepEqual(toolRailCounts([
   { tool: 'read_file', command: 'studio/src/screens/Studio.tsx' },
   { tool: 'bash', command: 'pytest tests/test_steer.py' },
   { tool: 'edit_file', command: 'docs/ui/i18n/es.tsv' },
-]), { searches: 2, files: 2, edits: 1, commands: 1 });
+]), { searches: 2, files: 2, edits: 1, commands: 1, tools: 0 });
+
+// A read-only inspection explores a file; a non-shell tool is a tool, not
+// "a command" (the rail used to say "Ran 2 commands" for a lookup plus an
+// inspection).
+assert.deepEqual(toolRailCounts([
+  { tool: 'lookup_tools', command: '{"names":["inspect_deliverable"]}' },
+  { tool: 'inspect_deliverable', command: '{"path": "defensa.pptx", "compare_with": "plantilla.pptx"}' },
+]), { searches: 0, files: 1, edits: 0, commands: 0, tools: 1 });
+assert.deepEqual(toolRailCounts([{ tool: 'run_code', command: 'print(1)' }, { tool: 'powershell', command: 'dir' }]),
+  { searches: 0, files: 0, edits: 0, commands: 2, tools: 0 });
 
 assert.deepEqual(
   toolRailParts({ searches: 18, files: 29, edits: 0, commands: 0 }, false),
@@ -84,6 +94,20 @@ assert.deepEqual(
 assert.deepEqual(
   toolRailParts({ searches: 1, files: 0, edits: 0, commands: 0 }, true),
   [{ one: 'Searching', other: '{n} searches', n: 1 }],
+);
+assert.deepEqual(
+  toolRailParts({ searches: 0, files: 1, edits: 0, commands: 0, tools: 1 }, false),
+  [
+    { one: 'Explored 1 file', other: 'Explored {n} files', n: 1 },
+    { one: 'Used 1 tool', other: 'Used {n} tools', n: 1 },
+  ],
+);
+assert.deepEqual(
+  toolRailParts({ searches: 0, files: 0, edits: 0, commands: 1, tools: 3 }, true),
+  [
+    { one: 'Running a command', other: 'Running commands', n: 1 },
+    { one: 'Using a tool', other: 'Using {n} tools', n: 3 },
+  ],
 );
 
 assert.deepEqual(thoughtSummary(0, true), { one: 'Thinking', other: 'Thinking', n: 0 });
