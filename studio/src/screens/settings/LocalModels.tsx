@@ -1358,7 +1358,7 @@ function untilAge(seconds: number): string {
 
 /* ── installed ── */
 
-const FIT_WORD: Record<string, string> = { fits: 'fits', tight: 'tight', over: 'no fit', split: 'split' };
+const FIT_WORD: Record<string, string> = { fits: 'weights fit', tight: 'weights tight', over: 'weights exceed VRAM', split: 'weights split' };
 
 function FitBadge({ fit, size }: { fit?: Fit; size?: number }) {
   const state = fitState(fit);

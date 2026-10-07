@@ -46,8 +46,9 @@ export function TurnActivity({ turn }: { turn: Turn }) {
   const hasActivity = rounds.length || workers.length || tools.length || advisors.length || auxiliaries.length || principalWaiting || hasLegacyPrincipalMetrics;
   if (!hasActivity) return null;
 
-  const widestRound = Math.max(1, ...rounds.map((r) => Math.max(r.promptMs ?? 0, r.decodeMs ?? 0)));
-  const widestRequest = Math.max(1, ...rounds.map((r) => r.requestDurationMs ?? 0));
+  const allRounds = [...rounds, ...workers.flatMap((worker) => worker.roundActivity)];
+  const widestRound = Math.max(1, ...allRounds.map((r) => Math.max(r.promptMs ?? 0, r.decodeMs ?? 0)));
+  const widestRequest = Math.max(1, ...allRounds.map((r) => r.requestDurationMs ?? 0));
   const summary = [
     rounds.length ? t('{n} model rounds', { n: rounds.length }) : '',
     workers.length ? t('{n} sub-agents', { n: workers.length }) : '',
@@ -145,7 +146,7 @@ export function TurnActivity({ turn }: { turn: Turn }) {
           <section className="fs-turn-activity__group">
             <h3>{t('Runtime helpers')}</h3>
             {auxiliaries.map((item, index) => (
-              <article className="fs-turn-activity__actor" key={`${s(item.phase)}-${index}`} data-state="succeeded">
+              <article className="fs-turn-activity__actor" key={`${s(item.phase)}-${index}`} data-state={s(item.status) || 'observed'}>
                 <h4>{s(item.phase) || t('Helper')}{n(item.round) !== undefined ? ` · ${t('Round {n}', { n: n(item.round) })}` : ''}</h4>
                 {s(item.model) && <p>{t('Model')}: <code>{s(item.model)}</code></p>}
                 {(n(item.input_tokens) !== undefined || n(item.output_tokens) !== undefined) && (
