@@ -153,6 +153,7 @@ class Snapshot:
     elements: Tuple[Element, ...]
     truncated: bool
     taken_at: float
+    target_window: Optional[Dict[str, Any]] = None
 
     def ref(self, n: int) -> str:
         return f"{self.session_id}:{self.generation}:{self.snapshot_id}:{n}"
@@ -172,6 +173,7 @@ class Snapshot:
             "window": self.window,
             "truncated": self.truncated,
             "taken_at": self.taken_at,
+            "target_window": self.target_window,
             "elements": [
                 {**el.to_dict(), "ref": self.ref(el.n)} for el in self.elements
             ],

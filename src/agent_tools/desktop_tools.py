@@ -365,9 +365,21 @@ class WindowsBackend(DesktopBackend):
                 out.append({
                     "title": title,
                     "handle": int(hwnd),
+                    "hwnd": int(hwnd),
                     "rect": self._window_rect(hwnd),
                     "foreground": int(hwnd) == int(foreground),
                 })
+                try:
+                    import psutil
+                    pid = wintypes.DWORD()
+                    get_window_pid = self.user32.GetWindowThreadProcessId
+                    get_window_pid.argtypes = (wintypes.HWND, self.ctypes.POINTER(wintypes.DWORD))
+                    get_window_pid.restype = wintypes.DWORD
+                    get_window_pid(hwnd, self.ctypes.byref(pid))
+                    out[-1]["pid"] = int(pid.value)
+                    out[-1]["create_time"] = float(psutil.Process(int(pid.value)).create_time())
+                except Exception:  # noqa: BLE001 - omit targetability if identity cannot be established
+                    pass
             except Exception:  # noqa: BLE001 - keep enumerating
                 pass
             return True

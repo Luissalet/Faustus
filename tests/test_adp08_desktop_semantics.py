@@ -38,6 +38,7 @@ import asyncio
 import json
 
 import pytest
+import sys
 
 import src.agent_tools as agent_tools  # noqa: F401 - resolves circular schema imports first
 from src import desktop_semantics as ds
@@ -309,7 +310,8 @@ def test_package_and_windows_uia_module_import_cleanly_on_linux():
     import src.desktop_semantics.windows_uia  # noqa: F401
 
 
-def test_windows_uia_backend_reports_unavailable_on_linux():
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="negative availability case is specific to non-Windows hosts")
+def test_windows_uia_backend_reports_unavailable_on_non_windows():
     from src.desktop_semantics.windows_uia import WindowsUiaSemanticBackend
 
     backend = WindowsUiaSemanticBackend()

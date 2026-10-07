@@ -23,6 +23,7 @@ from .contracts import (
     SemanticError,
     Snapshot,
     StaleRefError,
+    UnsupportedOperationError,
     WrongSessionError,
     parse_ref,
 )
@@ -44,8 +45,11 @@ def reset_state() -> None:
         _STATE.clear()
 
 
-def _window_key(app: str, window: str) -> Tuple[str, str]:
-    return (str(app or ""), str(window or ""))
+def _window_key(app: str, window: str, target_window: Optional[Dict[str, Any]] = None) -> Tuple[Any, ...]:
+    identity = None
+    if target_window:
+        identity = tuple(target_window.get(key) for key in ("hwnd", "pid", "create_time"))
+    return (str(app or ""), str(window or ""), identity)
 
 
 def current_generation(session_id: str) -> int:
@@ -101,12 +105,19 @@ def take_snapshot(session_id: str, raw: Dict[str, Any]) -> Snapshot:
         for i, e in enumerate(raw_elements)
     )
     truncated = bool(raw.get("truncated", False))
+    target_window = raw.get("target_window")
+    if target_window is not None:
+        target_window = {
+            "hwnd": int(target_window["hwnd"]),
+            "pid": int(target_window["pid"]),
+            "create_time": float(target_window["create_time"]),
+        }
 
     with _LOCK:
         state = _STATE.setdefault(
             session_id, {"generation": 0, "window_key": None, "snapshots": {}, "latest": None}
         )
-        key = _window_key(app, window)
+        key = _window_key(app, window, target_window)
         if state["window_key"] != key:
             state["generation"] += 1
             state["window_key"] = key
@@ -124,6 +135,7 @@ def take_snapshot(session_id: str, raw: Dict[str, Any]) -> Snapshot:
             elements=elements,
             truncated=truncated,
             taken_at=time.time(),
+            target_window=target_window,
         )
         state["snapshots"][snapshot_id] = snap
         state["latest"] = snapshot_id
@@ -286,7 +298,21 @@ def act(
             "this platform/backend has no semantic desktop support "
             "(desktop_click/desktop_type/desktop_key still work by coordinates)"
         )
-    fresh_raw = semantic.snapshot(session_id=session_id, **(snapshot_kwargs or {}))
+    kwargs = dict(snapshot_kwargs or {})
+    ref_session, _generation, origin_id, _n = parse_ref(ref)
+    origin = get_snapshot(ref_session, origin_id) if ref_session == str(session_id or "") else None
+    target_window = origin.target_window if origin is not None else None
+    if target_window is not None:
+        if op != "set_value":
+            raise UnsupportedOperationError(
+                "targeted background actions support only set_value through UIA ValuePattern"
+            )
+        kwargs["target_window"] = target_window
+    elif "target_window" in kwargs:
+        raise UnsupportedOperationError(
+            "target_window is bound to the snapshot ref; take a targeted desktop_snapshot first"
+        )
+    fresh_raw = semantic.snapshot(session_id=session_id, **kwargs)
     fresh = take_snapshot(session_id, fresh_raw)
     element = resolve(ref, fresh, caller_session_id=session_id)
     check_precondition(element, precondition)

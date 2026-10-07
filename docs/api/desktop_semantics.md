@@ -12,7 +12,8 @@ adivinar un píxel.
 ## Vocabulario (`src/desktop_semantics/contracts.py`)
 
 - **`Snapshot`**: una lectura acotada (profundidad/tamaño) del árbol de
-  controles de la ventana activa de una sesión — `snapshot_id`, `session_id`,
+  controles de la ventana activa o, si se solicita explícitamente, de una
+  ventana Windows identificada — `snapshot_id`, `session_id`,
   `generation`, `app`, `window`, `elements[...]`, `truncated`, `taken_at`.
 - **`Ref`**: `f"{session_id}:{generation}:{snapshot_id}:{n}"` — NUNCA un
   índice desnudo tipo `"e7"` (misma lección que WEB-04 en
@@ -62,9 +63,11 @@ adivinar un píxel.
   `snapshot()`/`invoke()` lanzan `RuntimeError` con el motivo. Nunca eleva
   privilegios; un control que UIA no ve simplemente no aparece en el
   snapshot (sin promesa de compatibilidad universal).
-  **Verificación física en Windows queda pendiente, declarada** — todo lo
-  de este módulo se ha ejercitado aquí solo contra `fake_backend.py`
-  (entorno Linux); nada ha corrido contra un escritorio Windows real.
+  La verificación física usa dos ventanas sintéticas fuera de pantalla con
+  `WS_EX_NOACTIVATE`/`SW_SHOWNOACTIVATE`: un `Edit` y un control testigo. Se
+  comprobó `ValuePattern.SetValue`, lectura de vuelta y conservación de la
+  ventana en primer plano y el cursor. Esto no demuestra compatibilidad de
+  todos los proveedores UIA.
 - **`src/agent_tools/desktop_tools.py::DesktopBackend.semantic()`** —
   capacidad opcional nueva, devuelve `None` por defecto (todo backend
   existente sigue funcionando sin cambios); `WindowsBackend.semantic()` la
@@ -88,9 +91,9 @@ trabajo de `capture_evidence`/`desktop_screenshot`, no de este módulo).
 ## Tools del agente (`src/agent_tools/desktop_semantic_tools.py`)
 
 ```
-desktop_snapshot   lectura   árbol de controles de la ventana activa, con un ref por control
+desktop_snapshot   lectura   árbol de controles activo por defecto; `target_window` permite seleccionar una ventana Windows identificada
 desktop_find        lectura   busca en un desktop_snapshot YA TOMADO (sin captura nueva)
-desktop_act         acción    invoke | select | set_value | scroll | focus sobre un ref
+desktop_act         acción    operaciones existentes en refs activos; refs dirigidos a ventana inactiva solo permiten `set_value` por ValuePattern
 ```
 
 `desktop_snapshot`/`desktop_find` están clasificadas `READ_PRIVATE` (misma
@@ -120,6 +123,29 @@ quien posea ese test: ampliar sus dos aserciones a superconjunto y añadir
 cambio de ventana/app lo invalida (`StaleRefError`); `desktop_find` no toma
 una captura nueva, busca sobre el `desktop_snapshot` más reciente de la
 sesión (o uno concreto por `snapshot_id`).
+
+### Ventana explícita en segundo plano (Windows UIA)
+
+`desktop_list_windows` incluye `hwnd`, `pid` y `create_time` cuando Faustus
+puede verificarlos. Pasa ese objeto a `desktop_snapshot.target_window`; las
+refs y generaciones quedan asociadas a esa identidad para re-resolver el
+mismo HWND y rechazar HWND reciclados o procesos reiniciados. Si se omite el
+campo, sigue usándose la ventana activa como antes.
+
+En snapshots dirigidos, `desktop_act` solo admite `set_value` y llama al
+patrón UIA `ValuePattern.SetValue` de un control writable. No enfoca, no usa
+`click_input` ni degrada a entrada por píxeles. La respuesta incluye la lectura
+posterior y si primer plano y cursor siguieron iguales; un control sin
+ValuePattern writable devuelve `not_delivered`. El proveedor UIA de cada
+aplicación decide qué controles exponer, por lo que la cobertura es parcial y
+no equivale a controlar cualquier aplicación en segundo plano.
+
+El backend es opcional. Instálalo en el entorno propio de Faustus con
+`python -m pip install pywinauto`. La prueba física de UIA usa un acuse
+sintético del handshake Python dentro de un directorio temporal; la prueba
+JavaScript existente verifica por separado que el overlay de producción sea
+`focusable: false` y se muestre con `showInactive()`. La prueba física no abre
+la ventana Electron real.
 
 ## Errores
 

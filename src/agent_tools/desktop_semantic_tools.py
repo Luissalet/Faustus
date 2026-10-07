@@ -112,6 +112,19 @@ class DesktopSnapshotTool:
         depth = args.get("depth")
         max_elements = args.get("max_elements")
         kwargs: Dict[str, Any] = {}
+        target_window = args.get("target_window")
+        if target_window is not None:
+            if not isinstance(backend, WindowsBackend):
+                raise DesktopError("target_window is currently supported only by Windows UIA")
+            if not isinstance(target_window, dict) or not all(
+                key in target_window for key in ("hwnd", "pid", "create_time")
+            ):
+                raise DesktopError("target_window requires hwnd, pid, and create_time from desktop_list_windows")
+            kwargs["target_window"] = {
+                "hwnd": int(target_window["hwnd"]),
+                "pid": int(target_window["pid"]),
+                "create_time": float(target_window["create_time"]),
+            }
         if depth is not None:
             kwargs["depth"] = int(depth)
         if max_elements is not None:
@@ -135,6 +148,7 @@ class DesktopSnapshotTool:
             "generation": snap.generation,
             "app": snap.app,
             "window": snap.window,
+            "target_window": snap.target_window,
             "truncated": snap.truncated,
             "elements": elements,
         }

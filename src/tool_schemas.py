@@ -1039,12 +1039,13 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "desktop_snapshot",
-            "description": "Read the control tree of the user's active desktop window: a bounded list of controls (role, name, automation_id, enabled, value) each with a stable `ref`. Use this INSTEAD of guessing pixel coordinates from desktop_screenshot when you need to click/type into a specific named control. A `ref` is only valid for this session and only until the window/app changes (take a new desktop_snapshot after that). Falls back cleanly (an error) on platforms without a semantic backend yet (Windows UIA only) — use desktop_screenshot + desktop_click there instead.",
+            "description": "Read a bounded UIA control tree from the active window (default) or an explicitly selected Windows window. For a non-active target, pass target_window with hwnd, pid, and create_time copied from desktop_list_windows; refs retain that identity. Background desktop_act then supports only set_value via writable UIA ValuePattern, with no focus or click fallback. A ref is session-scoped and expires when its window identity changes. UIA support depends on the app/control provider.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "depth": {"type": "integer", "description": "Optional max tree depth to walk (backend default otherwise)."},
-                    "max_elements": {"type": "integer", "description": "Optional max number of controls to return (backend default otherwise)."}
+                    "max_elements": {"type": "integer", "description": "Optional max number of controls to return (backend default otherwise)."},
+                    "target_window": {"type": "object", "description": "Optional explicit Windows window identity copied from desktop_list_windows. Omit to keep the active-window default.", "properties": {"hwnd": {"type": "integer"}, "pid": {"type": "integer"}, "create_time": {"type": "number"}}, "required": ["hwnd", "pid", "create_time"]}
                 },
                 "required": []
             }
@@ -1071,7 +1072,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "desktop_act",
-            "description": "Act on ONE control by its `ref` (from desktop_snapshot/desktop_find): `invoke` (click/press/activate), `select` (pick a value, e.g. in a list/combo — pass `value`), `set_value` (replace an edit control's text — pass `value`), `scroll`, or `focus`. Re-resolves the ref against a FRESH read right before acting — fails clearly (never guesses) if the control moved, was deleted, or is now ambiguous. Optional `precondition` ({attribute: expected_value}, e.g. {\"enabled\": true}) must hold on the re-resolved control or nothing is executed. Returns `delivery` ('delivered'|'not_delivered'|'unknown' — a timeout is 'unknown', never treated as failure or success) and `verified` (whether the result was actually re-checked) as SEPARATE facts. Requires user approval on every call, like desktop_click.",
+            "description": "Act on one control by ref, freshly re-resolved. Active-window snapshots retain existing operations. For refs from an explicitly targeted non-active window, only set_value is supported and it requires writable UIA ValuePattern; no focus, click, or fallback input is used. The result reports readback and whether foreground and cursor stayed unchanged. UIA provider support varies. Requires the normal desktop action approval.",
             "parameters": {
                 "type": "object",
                 "properties": {
