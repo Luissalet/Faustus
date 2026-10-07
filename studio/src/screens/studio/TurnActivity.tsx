@@ -32,14 +32,18 @@ export function TurnActivity({ turn }: { turn: Turn }) {
     ...(turn.metrics?.compaction_usage ?? []),
   ];
   const models = new Set([
+    s(turn.metrics?.model),
     ...rounds.map((item) => item.model).filter((value): value is string => Boolean(value)),
     ...workers.map((item) => item.model).filter(Boolean),
     ...advisors.map((item) => item.model).filter((value): value is string => Boolean(value)),
     ...auxiliaries.map((item) => s(item.model)).filter(Boolean),
-  ]);
+  ].filter(Boolean));
   const latestRound = rounds.reduce((max, item) => Math.max(max, item.round), 0);
   const principalWaiting = turn.streaming && turn.rounds > latestRound;
-  const hasActivity = rounds.length || workers.length || tools.length || advisors.length || auxiliaries.length || principalWaiting;
+  const hasLegacyPrincipalMetrics = rounds.length === 0 && Boolean(
+    turn.metrics?.model || turn.metrics?.inputTokens !== undefined || turn.metrics?.outputTokens !== undefined || turn.metrics?.responseTime !== undefined,
+  );
+  const hasActivity = rounds.length || workers.length || tools.length || advisors.length || auxiliaries.length || principalWaiting || hasLegacyPrincipalMetrics;
   if (!hasActivity) return null;
 
   const widestRound = Math.max(1, ...rounds.map((r) => Math.max(r.promptMs ?? 0, r.decodeMs ?? 0)));
@@ -55,9 +59,23 @@ export function TurnActivity({ turn }: { turn: Turn }) {
       <summary>{t('Activity')}{summary ? ` · ${summary}` : ''}</summary>
       <div className="fs-turn-activity__body">
         <p className="fs-turn-activity__key">
-          {t('{n} models reported', { n: models.size })}
+          {t('Models')}: {models.size}
           <span>{t('GPU attribution appears only when the runtime reports it.')}</span>
         </p>
+        {hasLegacyPrincipalMetrics && (
+          <section className="fs-turn-activity__actor" data-testid="activity-legacy-principal">
+            <h4>{t('Principal')} · {t('Rounds')}: {turn.rounds || t('not reported')}</h4>
+            {turn.metrics?.model && <p>{t('Model')}: <code>{turn.metrics.model}</code></p>}
+            {(turn.metrics?.inputTokens !== undefined || turn.metrics?.outputTokens !== undefined) && (
+              <p className="fs-turn-activity__tokens">
+                {t('Prompt tokens')}: {count(turn.metrics.inputTokens)} · {t('Generated tokens')}: {count(turn.metrics.outputTokens)}
+              </p>
+            )}
+            {turn.metrics?.responseTime !== undefined && (
+              <p className="fs-turn-activity__tokens">{t('Observed')}: {duration(turn.metrics.responseTime * 1000)}</p>
+            )}
+          </section>
+        )}
         {principalWaiting && (
           <section className="fs-turn-activity__actor" data-state="running">
             <h4>{t('Principal')} · {t('Round {n}', { n: turn.rounds })} · {t('running')}</h4>
