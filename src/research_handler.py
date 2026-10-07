@@ -883,6 +883,24 @@ class ResearchHandler:
                 pass
         return None
 
+    def get_blind_review(self, session_id: str) -> Optional[dict]:
+        """§144's blind review of a finished run: in memory first, then the
+        saved JSON, like `get_sources`. `None` when it never ran (the setting
+        is off, or the report predates it) -- a recorded failure is a dict
+        with `error`, and is returned as such."""
+        entry = self._active_tasks.get(session_id)
+        if entry is not None and isinstance(entry.get("blind_review"), dict):
+            return entry["blind_review"]
+        path = _research_json_path(session_id)
+        if path is None or not path.exists():
+            return None
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        review = data.get("blind_review") if isinstance(data, dict) else None
+        return review if isinstance(review, dict) else None
+
     def get_sources(self, session_id: str) -> Optional[list]:
         """Get deduplicated source list from research findings."""
         # Check in-memory first
@@ -982,6 +1000,10 @@ class ResearchHandler:
             return
         if not verdicts_by_number:
             return
+        try:
+            checks_by_number = ResearchHandler._citation_checks_by_number(checked)
+        except Exception:  # noqa: BLE001 - the detail is optional, the verdict is not
+            checks_by_number = {}
         for src in sources:
             url = src.get("url")
             if not url:
@@ -989,6 +1011,67 @@ class ResearchHandler:
             number = registry.number_for(url)
             if number and number in verdicts_by_number:
                 src["citation_verdict"] = verdicts_by_number[number]
+                detail = checks_by_number.get(number)
+                if detail:
+                    src["citation_check_counts"] = detail["counts"]
+                    src["citation_checks"] = detail["checks"]
+
+    #: How many citing sentences each source keeps as readable detail. The
+    #: counts always cover every one of them; only the list is capped, so a
+    #: source cited forty times does not bloat the saved JSON.
+    CITATION_CHECKS_PER_SOURCE = 12
+
+    @staticmethod
+    def _citation_checks_by_number(checked: list) -> dict:
+        """Per numbered source: how many citing sentences checked out, did
+        not, or could not be checked (`counts`), and the sentences themselves
+        with the checker's own reason (`checks`, worst first, capped).
+
+        `per_source_verdicts` reduces a source to ONE word and lets
+        `supported` win over `not_supported`, which is right for a badge but
+        hides a source that backs one sentence and contradicts another. The
+        counts keep that visible ("partially verified" in the report view)
+        and the sentence + reason are what a reader needs to judge it.
+        Uses the same API words as `citation_verdict`.
+        """
+        from src.research_citations import (
+            VERDICT_REFUTED, VERDICT_SUPPORTED, VERDICT_UNCHECKED,
+            CITATION_VERDICT_NOT_SUPPORTED, CITATION_VERDICT_SUPPORTED,
+            CITATION_VERDICT_UNVERIFIABLE, strip_markers,
+        )
+        api_word = {
+            VERDICT_SUPPORTED: CITATION_VERDICT_SUPPORTED,
+            VERDICT_REFUTED: CITATION_VERDICT_NOT_SUPPORTED,
+            VERDICT_UNCHECKED: CITATION_VERDICT_UNVERIFIABLE,
+        }
+        # Worst first: what a reader most needs to see is what failed.
+        order = {CITATION_VERDICT_NOT_SUPPORTED: 0, CITATION_VERDICT_UNVERIFIABLE: 1,
+                 CITATION_VERDICT_SUPPORTED: 2}
+        out: dict = {}
+        for item in checked or []:
+            number = getattr(item, "number", 0)
+            verdict = api_word.get(getattr(item, "verdict", None))
+            if not number or verdict is None:
+                continue
+            slot = out.setdefault(number, {
+                "counts": {CITATION_VERDICT_SUPPORTED: 0, CITATION_VERDICT_NOT_SUPPORTED: 0,
+                           CITATION_VERDICT_UNVERIFIABLE: 0},
+                "checks": [],
+            })
+            slot["counts"][verdict] += 1
+            claim = getattr(item, "claim", None)
+            sentence = strip_markers(getattr(claim, "text", "") if claim is not None else "")
+            layer = getattr(item, "layer", None)
+            slot["checks"].append({
+                "verdict": verdict,
+                "sentence": sentence[:400],
+                "why": str(getattr(item, "why", "") or "")[:300],
+                "layer": layer if isinstance(layer, int) else None,
+            })
+        for slot in out.values():
+            slot["checks"].sort(key=lambda c: order[c["verdict"]])
+            del slot["checks"][ResearchHandler.CITATION_CHECKS_PER_SOURCE:]
+        return out
 
     @staticmethod
     def _extract_raw_findings(findings: list) -> list:

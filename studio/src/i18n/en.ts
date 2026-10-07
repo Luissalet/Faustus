@@ -15,6 +15,8 @@ export const en: Record<string, string> = {
   'Published {n}#': 'Published {n}',
   '{n} removed#': '{n} removed',
   '{n} rewritten#': '{n} rewritten',
+  // OBJ-25: a research source, feminine in Spanish.
+  'verified#source': 'verified',
   // Lote 94 (OBJ-6): the project board reuses plain English words ("Open",
   // "Blocked", "Done", "Duplicate", "Blocks", "Link") that already exist as
   // `t()` keys elsewhere with a different sense (a verb, a different

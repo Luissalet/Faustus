@@ -47,8 +47,11 @@ import {
   type ResearchProgress,
   type ResearchResult,
   type ResearchSettings,
+  type ResearchSource,
   type SearchProvider,
 } from '../../adapters/research';
+import { summarise } from '../../lib/researchVerdicts';
+import { BlindReviewPanel, SourceVerdict, VerificationSummary } from './Verification';
 import { relativeTime } from '../../adapters/home';
 import { t, tn } from '../../i18n';
 import { safeExternal } from '../../lib/markdown';
@@ -248,6 +251,47 @@ function ResearchStats({ stats }: { stats: Record<string, string> }) {
   );
 }
 
+/** The sources of a report, each with what the citation check made of it.
+ *  When the check never ran for this report the chips are left out — the
+ *  summary above says "not checked" once instead of on every line. */
+export function SourceList({ sources }: { sources: ResearchSource[] }) {
+  if (sources.length === 0) return null;
+  const checked = summarise(sources).checked;
+  return (
+    <details className="fs-rs__sources" data-testid="research-sources">
+      <summary>{tn(sources.length, '{n} source', '{n} sources')}</summary>
+      <ol>
+        {sources.map((s, i) => (
+          <li key={`${s.url}-${i}`}>
+            {/* The source list is data from outside: a `javascript:`
+                URL there is a script, so it shows as text. */}
+            {safeExternal(s.url) ? (
+              <a href={safeExternal(s.url) as string} target="_blank" rel="noopener noreferrer">
+                {s.title || s.url}
+              </a>
+            ) : (
+              <span>{s.title || s.url}</span>
+            )}
+            {/* WEB-02: duplicate-content and staleness signals —
+                shown when the backend stamps them. */}
+            {s.duplicateOf && (
+              <span className="fs-rs__source-flag" data-tone="info" title={s.duplicateOf}>
+                {t('duplicate content')}
+              </span>
+            )}
+            {s.stale && (
+              <span className="fs-rs__source-flag" data-tone="warning">
+                {s.ageDays != null ? t('stale · {n}d old', { n: Math.round(s.ageDays) }) : t('stale')}
+              </span>
+            )}
+            {checked && <SourceVerdict source={s} />}
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+
 /** The report of a run this browser did not start (it is listed from the server
  *  after a reload): read on demand, with what the run recorded about itself. */
 function RecentReport({ id }: { id: string }) {
@@ -277,11 +321,14 @@ function RecentReport({ id }: { id: string }) {
           {loading && <Skeleton label={t('Loading the report')} count={3} height="20px" />}
           {error && <p className="fs-rs__meta">{t('Could not load the report: {e}', { e: error })}</p>}
           {result?.stats && <ResearchStats stats={result.stats} />}
+          {result && <VerificationSummary sources={result.sources} review={result.blindReview} />}
+          {result && <BlindReviewPanel review={result.blindReview} />}
           {result && (
             <div className="fs-prose fs-rs__prose">
               <Rich text={result.result} />
             </div>
           )}
+          {result && <SourceList sources={result.sources} />}
         </div>
       )}
     </>
@@ -325,52 +372,12 @@ function ResultCard({ job, formats, onDiscuss, onDelete, onDismiss, say }: { job
           {open && (
             <div className="fs-rs__report">
               {r.stats && <ResearchStats stats={r.stats} />}
+              <VerificationSummary sources={sources} review={r.blindReview} />
+              <BlindReviewPanel review={r.blindReview} />
               <div className="fs-prose fs-rs__prose">
                 <Rich text={r.result} />
               </div>
-              {sources.length > 0 && (
-                <details className="fs-rs__sources">
-                  <summary>{tn(sources.length, '{n} source', '{n} sources')}</summary>
-                  <ol>
-                    {sources.map((s, i) => (
-                      <li key={`${s.url}-${i}`}>
-                        {/* The source list is data from outside: a `javascript:`
-                            URL there is a script, so it shows as text. */}
-                        {safeExternal(s.url) ? (
-                          <a href={safeExternal(s.url) as string} target="_blank" rel="noopener noreferrer">
-                            {s.title || s.url}
-                          </a>
-                        ) : (
-                          <span>{s.title || s.url}</span>
-                        )}
-                        {/* WEB-02: duplicate-content and staleness signals —
-                            shown when the backend stamps them (see this
-                            lote's report for the passthrough it still needs). */}
-                        {s.duplicateOf && (
-                          <span className="fs-rs__source-flag" data-tone="info" title={s.duplicateOf}>
-                            {t('duplicate content')}
-                          </span>
-                        )}
-                        {s.stale && (
-                          <span className="fs-rs__source-flag" data-tone="warning">
-                            {s.ageDays != null ? t('stale · {n}d old', { n: Math.round(s.ageDays) }) : t('stale')}
-                          </span>
-                        )}
-                        {s.citationVerdict && (
-                          <span
-                            className="fs-rs__source-flag"
-                            data-tone={s.citationVerdict === 'supported' ? 'ok' : s.citationVerdict === 'not_supported' ? 'danger' : 'info'}
-                            data-testid="research-citation-verdict"
-                            title={t('From this run\'s own citation-checking pass')}
-                          >
-                            {s.citationVerdict === 'supported' ? t('supported') : s.citationVerdict === 'not_supported' ? t('not supported') : t('unverifiable')}
-                          </span>
-                        )}
-                      </li>
-                    ))}
-                  </ol>
-                </details>
-              )}
+              <SourceList sources={sources} />
             </div>
           )}
         </>

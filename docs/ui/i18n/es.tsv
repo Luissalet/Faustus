@@ -9106,3 +9106,50 @@ Latest messages	Mensajes más recientes
 Inspect deliverable	Inspeccionar entregable
 Inspect media	Inspeccionar multimedia
 Look up tools	Buscar herramientas
+partially verified	verificada en parte
+could not be checked	no se pudo comprobar
+Verified: {n}	Verificadas: {n}
+Partially: {n}	En parte: {n}
+Not supported: {n}	No respaldadas: {n}
+Could not be checked: {n}	No se pudieron comprobar: {n}
+Not checked: {n}	Sin comprobar: {n}
+matches the source	coincide con la fuente
+not in the source	no está en la fuente
+Every sentence citing this source matched the text stored for it.	Todas las frases que citan esta fuente coinciden con el texto guardado de ella.
+Some sentences citing this source matched it; the others did not, or could not be checked.	Algunas frases que citan esta fuente coinciden con ella; las demás no, o no se pudieron comprobar.
+A sentence citing this source carries a figure or code that the text stored for it does not contain.	Una frase que cita esta fuente lleva una cifra o un código que el texto guardado de ella no contiene.
+The sentences citing this source had nothing the checker can compare, such as figures or code, so they were neither confirmed nor refuted.	Las frases que citan esta fuente no tenían nada que el comprobador pueda cotejar, como cifras o código, así que ni se confirmaron ni se refutaron.
+No sentence citing this source was checked. It may not be cited in the report at all.	No se comprobó ninguna frase que cite esta fuente. Puede que el informe ni siquiera la cite.
+Why: from this run's own citation check	Por qué: de la propia comprobación de citas de esta ejecución
+This report was saved before per-sentence detail was kept: the word above is the best result among the sentences citing it, so one that failed would not show.	Este informe se guardó antes de que se conservara el detalle por frase: la palabra de arriba es el mejor resultado entre las frases que la citan, así que una que fallara no se vería.
+Citing sentences: {ok} matched, {bad} not in the source, {unk} could not be checked.	Frases que la citan: {ok} coinciden, {bad} no están en la fuente, {unk} no se pudieron comprobar.
+Checker's note: {note}	Nota del comprobador: {note}
+not run for this report	no se hizo en este informe
+What the checks found	Qué encontraron las comprobaciones
+not checked for this report	no se comprobaron en este informe
+Per citing sentence: {ok} matched, {bad} not in the source, {unk} could not be checked.	Por frase con cita: {ok} coinciden, {bad} no están en la fuente, {unk} no se pudieron comprobar.
+Blind review	Revisión ciega
+Answers the question	Responde a la pregunta
+Claims backed by its sources	Afirmaciones respaldadas por sus fuentes
+Source quality	Calidad de las fuentes
+Internal consistency	Coherencia interna
+Completeness	Exhaustividad
+The writer rated its own evidence higher than the reviewer did (gap {gap} on a 0-1 scale).	Quien escribió el informe valoró su propia evidencia por encima del revisor (diferencia de {gap} en una escala de 0 a 1).
+The writer rated its own evidence lower than the reviewer did (gap {gap} on a 0-1 scale).	Quien escribió el informe valoró su propia evidencia por debajo del revisor (diferencia de {gap} en una escala de 0 a 1).
+The writer's own rating of its evidence agrees with the reviewer's.	La valoración que quien escribió el informe hizo de su evidencia coincide con la del revisor.
+Reviewed by {model}, which saw only the question, the report and its sources — not the plan, the searches or which model wrote it.	Revisado por {model}, que solo vio la pregunta, el informe y sus fuentes; no el plan, ni las búsquedas, ni qué modelo lo escribió.
+A second model saw only the question, the report and its sources — not the plan, the searches or which model wrote it.	Un segundo modelo solo vio la pregunta, el informe y sus fuentes; no el plan, ni las búsquedas, ni qué modelo lo escribió.
+The review failed: {reason}	La revisión falló: {reason}
+The review returned no grade.	La revisión no devolvió ninguna nota.
+{n} of 5	{n} de 5
+Findings	Hallazgos
+Unsupported claim	Afirmación sin respaldo
+Weakness	Debilidad
+The reviewer listed no weaknesses or unsupported claims.	El revisor no señaló debilidades ni afirmaciones sin respaldo.
+Severity follows the kind of finding: a claim its own sources do not back is high, a weakness is medium.	La gravedad depende del tipo de hallazgo: una afirmación que sus propias fuentes no respaldan es alta; una debilidad, media.
+verified#source	verificada
+{n} of 5 · good	{n} de 5 · buena
+{n} of 5 · mixed	{n} de 5 · regular
+{n} of 5 · poor	{n} de 5 · floja
+Sources	Fuentes
+Reviewer: {model}	Revisor: {model}

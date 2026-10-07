@@ -1,6 +1,7 @@
 import { ApiError, asArray, getJson } from './api';
 import { vramBlockedFrom, type VramBlocked } from './vramAdmission';
 import { t } from '../i18n';
+import { blindReviewFrom, checksFrom, countsFrom, type BlindReview, type CheckCounts, type CitationCheck } from '../lib/researchVerdicts';
 
 /**
  * Deep Research reports (routes/research): the library of finished reports,
@@ -43,10 +44,16 @@ export interface ResearchSource {
    *  Undefined when unchecked (blind review off, or no checkable figure ever
    *  cited it) — never guessed. */
   citationVerdict?: 'supported' | 'not_supported' | 'unverifiable';
+  /** OBJ-25: how many sentences citing this source checked out, did not, or
+   *  could not be checked — reports saved before it carry only the word above. */
+  citationCounts?: CheckCounts;
+  /** OBJ-25: those sentences with the checker's reason, worst first (capped server-side). */
+  citationChecks?: CitationCheck[];
 }
 
 function sourceFrom(s: Record<string, unknown>): ResearchSource {
   const verdict = typeof s.citation_verdict === 'string' ? s.citation_verdict : '';
+  const checks = checksFrom(s.citation_checks);
   return {
     title: String(s.title ?? s.url ?? ''),
     url: typeof s.url === 'string' ? s.url : '',
@@ -54,6 +61,8 @@ function sourceFrom(s: Record<string, unknown>): ResearchSource {
     stale: typeof s.stale === 'boolean' ? s.stale : undefined,
     ageDays: typeof s.age_days === 'number' ? s.age_days : undefined,
     citationVerdict: verdict === 'supported' || verdict === 'not_supported' || verdict === 'unverifiable' ? verdict : undefined,
+    citationCounts: countsFrom(s.citation_check_counts),
+    citationChecks: checks.length ? checks : undefined,
   };
 }
 
@@ -62,6 +71,8 @@ export interface ResearchDetail {
   report: string;
   sources: ResearchSource[];
   stats: Record<string, string>;
+  /** §144's blind review; null when it never ran for this report. */
+  blindReview: BlindReview | null;
 }
 
 export type ResearchSort = 'recent' | 'oldest' | 'most-sources' | 'alpha';
@@ -102,6 +113,7 @@ export async function researchDetail(id: string): Promise<ResearchDetail> {
     report: String(raw.result ?? raw.raw_report ?? ''),
     sources,
     stats,
+    blindReview: blindReviewFrom(raw.blind_review),
   };
 }
 
@@ -210,6 +222,8 @@ export interface ResearchResult {
   /** What the run recorded about itself: rounds, URLs, pruning, confidence,
    *  why it stopped, how much is cited. Keys as the server names them. */
   stats?: Record<string, string>;
+  /** §144's blind review; null when it never ran for this report. */
+  blindReview: BlindReview | null;
 }
 
 async function postJson(path: string, body: unknown): Promise<Record<string, unknown>> {
@@ -430,6 +444,7 @@ function resultFrom(raw: Record<string, unknown>): ResearchResult {
     resumedFrom,
     resumedKept: resumedFrom ? checkpointFrom(raw.resumed_kept) : undefined,
     stats: statsFrom(raw.stats),
+    blindReview: blindReviewFrom(raw.blind_review),
   };
 }
 

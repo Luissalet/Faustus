@@ -8,6 +8,9 @@ import { t, tn } from '../../i18n';
 import { safeExternal } from '../../lib/markdown';
 import { BulkBar, Highlight, SelectToggle, useSelection } from './parts';
 import { PodcastPanel } from '../research/Podcast';
+import { BlindReviewPanel, SourceVerdict, VerificationSummary } from '../research/Verification';
+import { summarise } from '../../lib/researchVerdicts';
+import '../research.css';
 
 /**
  * Finished Deep Research reports: what was asked, how many sources, how
@@ -168,11 +171,16 @@ export function ResearchLibrary({ query, say, archived = false }: { query: strin
                     {d === undefined && <p className="fs-gal__muted">{t('Loading…')}</p>}
                     {typeof d === 'object' && (
                       <>
+                        <VerificationSummary sources={d.sources} review={d.blindReview} />
                         <p className="fs-lib__summary">{d.summary || d.report.slice(0, 1200) || t('No summary')}</p>
+                        <BlindReviewPanel review={d.blindReview} />
                         {d.sources.length > 0 && (
                           <ol className="fs-lib__sources">
                             {d.sources.slice(0, 20).map((s, i) => (
-                              <li key={i}>{safeExternal(s.url) ? <a href={safeExternal(s.url) as string} target="_blank" rel="noopener noreferrer">{s.title || s.url}</a> : s.title}</li>
+                              <li key={i}>
+                                {safeExternal(s.url) ? <a href={safeExternal(s.url) as string} target="_blank" rel="noopener noreferrer">{s.title || s.url}</a> : s.title}
+                                {summarise(d.sources).checked && <SourceVerdict source={s} />}
+                              </li>
                             ))}
                           </ol>
                         )}

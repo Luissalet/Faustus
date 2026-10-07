@@ -354,11 +354,20 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
         out = {"result": result, "sources": sources, "raw_findings": raw_findings}
         if isinstance(entry.get("stats"), dict):
             out["stats"] = entry["stats"]
+        _add_blind_review(out, research_handler.get_blind_review(session_id))
         if entry.get("resumed_from"):
             out["resumed_from"] = entry["resumed_from"]
             out["resumed_kept"] = entry.get("resumed_kept")
         research_handler.clear_result(session_id)
         return out
+
+    def _add_blind_review(out: dict, review: object) -> None:
+        """§144's blind review travels with the result it judged. Only when
+        the run produced one (a dict, success or recorded failure): its
+        absence means the review never ran, which the report view says as
+        such, so nothing is invented here."""
+        if isinstance(review, dict):
+            out["blind_review"] = review
 
     def _assert_owns_research(session_id: str, user: str) -> None:
         """404-not-403 ownership gate for a research session's on-disk JSON.
@@ -877,6 +886,7 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
                 }
                 if isinstance(d.get("stats"), dict):
                     out["stats"] = d["stats"]
+                _add_blind_review(out, d.get("blind_review"))
                 if d.get("resumed_from"):
                     out["resumed_from"] = d["resumed_from"]
                     out["resumed_kept"] = d.get("resumed_kept")
@@ -888,6 +898,7 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
         entry = research_handler._active_tasks.get(session_id) or {}
         if isinstance(entry.get("stats"), dict):
             out["stats"] = entry["stats"]
+        _add_blind_review(out, research_handler.get_blind_review(session_id))
         if entry.get("resumed_from"):
             out["resumed_from"] = entry["resumed_from"]
             out["resumed_kept"] = entry.get("resumed_kept")

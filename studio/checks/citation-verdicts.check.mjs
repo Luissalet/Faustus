@@ -12,8 +12,12 @@ assert.match(adapter, /citationVerdict\?:\s*'supported'\s*\|\s*'not_supported'\s
   'ResearchSource carries the per-citation verdict from src/research_handler.py');
 assert.match(adapter, /s\.citation_verdict/, 'sourceFrom() reads citation_verdict off the raw payload');
 
+// OBJ-25: the badge moved into screens/research/Verification.tsx (a button
+// that opens its reason) and every source of a checked report gets one —
+// including "not checked" — so the screen renders <SourceVerdict> per source.
 const screen = readFileSync(new URL('../src/screens/research/Research.tsx', import.meta.url), 'utf8');
-assert.match(screen, /s\.citationVerdict\s*&&/, 'a source with a verdict renders it');
-assert.match(screen, /data-testid="research-citation-verdict"/, 'the verdict badge has its own testid');
+assert.match(screen, /<SourceVerdict source=\{s\} \/>/, 'each source of a checked report renders its verdict');
+const verification = readFileSync(new URL('../src/screens/research/Verification.tsx', import.meta.url), 'utf8');
+assert.match(verification, /data-testid="research-citation-verdict"/, 'the verdict badge has its own testid');
 
 console.log('citation-verdicts: ALL OK');
