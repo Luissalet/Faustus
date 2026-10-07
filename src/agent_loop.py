@@ -6986,6 +6986,7 @@ def _compute_final_metrics(
     queue_wait_s: Optional[float] = None,
     engine_timings: Optional[Dict[str, Any]] = None,
     engine: Optional["EngineIdentity"] = None,
+    provider_round_texts: Optional[list] = None,
 ) -> dict:
     """Compute token counts, TPS, and build the final metrics dict."""
     if has_real_usage:
@@ -7053,6 +7054,8 @@ def _compute_final_metrics(
         metrics["round_models"] = list(round_models or [])
         metrics["round_endpoint_ids"] = list(round_endpoint_ids or [])
         metrics["round_endpoint_labels"] = list(round_endpoint_labels or [])
+    if provider_round_texts:
+        metrics["provider_round_texts"] = list(provider_round_texts)
     # INF-03: the "why did it take this long" breakdown, built from the
     # SAME clock readings/usage the fields above already used — never a
     # second, possibly-disagreeing measurement. Only attempted when the
@@ -7735,6 +7738,7 @@ async def _stream_agent_loop_body(
         reply_language_mismatch as _reply_language_mismatch,
         mismatch_nudge_message as _mismatch_nudge_message,
         localize_runtime_note as _localize_runtime_note,
+        drop_mismatched_interim_progress as _drop_mismatched_interim_progress,
     )
     from src import research_streak as _research_streak
     _reply_language_hint = _turn_language(messages)
@@ -10311,6 +10315,8 @@ async def _stream_agent_loop_body(
     first_token_received = False
     tool_events = []   # Persist tool executions for history reload
     round_texts = []   # Cleaned text per round for history reload
+    provider_round_texts = []  # Pre-display visible text, retained only if retracted
+    provider_round_text_was_removed = False
     round_models = []  # Actual model for each corresponding round
     round_endpoint_ids = []
     round_endpoint_labels = []
@@ -13973,6 +13979,7 @@ async def _stream_agent_loop_body(
         # on reload (#3222 follow-up).
         cleaned_round = strip_tool_blocks(round_response, skip_fenced=(_is_api_model and not used_native and not guide_only)).strip()
         round_texts.append(cleaned_round)
+        provider_round_texts.append(cleaned_round)
         round_models.append(_round_actual_model)
         round_endpoint_ids.append(_round_actual_endpoint_id)
         round_endpoint_labels.append(_round_actual_endpoint_label)
@@ -14001,6 +14008,22 @@ async def _stream_agent_loop_body(
             if (_observed_wrong_lang and tool_blocks and _deferred_lang_nudges < 3
                     and round_num - _last_lang_nudge_round >= 5):
                 _pending_language_nudge = True
+            _cleaned_visible_response, _dropped_interim = _drop_mismatched_interim_progress(
+                full_response, round_response, _narr_for_lang,
+                language_mismatch=bool(_observed_wrong_lang),
+                has_tool_calls=bool(tool_blocks or native_tool_calls),
+            )
+            if _dropped_interim:
+                full_response = _cleaned_visible_response
+                # Reload/history consumers read round_texts; raw provider
+                # wording stays in its separate audit field.
+                if round_texts:
+                    round_texts[-1] = ""
+                provider_round_text_was_removed = True
+                _ledger.notes.append(f"wrong_language_interim_dropped@{round_num}")
+                yield "data: " + json.dumps({
+                    "type": "response_replace", "text": full_response.strip(),
+                }) + "\n\n"
 
         # Per-round instrumentation (what the provider actually returned).
         _ledger.finish_reasons.append(_round_finish_reason)
@@ -18590,6 +18613,7 @@ async def _stream_agent_loop_body(
         _last_route_request_messages, full_response, total_duration, time_to_first_token,
         _last_route_context_length, real_input_tokens, real_output_tokens,
         has_real_usage, tool_events, round_texts, model=actual_model,
+        provider_round_texts=(provider_round_texts if provider_round_text_was_removed else None),
         round_models=round_models,
         round_endpoint_ids=round_endpoint_ids,
         round_endpoint_labels=round_endpoint_labels,

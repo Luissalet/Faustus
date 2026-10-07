@@ -406,6 +406,38 @@ def reply_language_mismatch(required_code: Optional[str], reply_text: Any) -> Op
     return observed
 
 
+def drop_mismatched_interim_progress(
+    full_response: str,
+    round_response: str,
+    narration: str,
+    *,
+    language_mismatch: bool,
+    has_tool_calls: bool,
+) -> Tuple[str, bool]:
+    """Remove a plain wrong-language progress-only round from the live answer.
+
+    The agent streams each round before it knows whether that round is interim.
+    When the round both calls tools and consists only of mismatched narration,
+    that text is transient progress: remove its suffix from the visible answer.
+    Structured or quoted content is retained. Tool calls/results are stored
+    separately and are never inspected or rewritten here.
+    """
+    if not language_mismatch or not has_tool_calls:
+        return full_response, False
+    if not round_response or not round_response.strip():
+        return full_response, False
+    if round_response.strip() != narration.strip():
+        return full_response, False
+    text = narration.strip()
+    if (any(mark in text for mark in ("```", "~~~", "`", "{", "}", "[", "]",
+                                      "\"", "'", "“", "”", "«", "»"))
+            or re.search(r"https?://|www\.", text, re.IGNORECASE)):
+        return full_response, False
+    if not full_response.endswith(round_response):
+        return full_response, False
+    return full_response[:-len(round_response)].rstrip(), True
+
+
 # ---------------------------------------------------------------------------
 # LANG-02 — editing conserves language and accents
 # ---------------------------------------------------------------------------

@@ -554,6 +554,10 @@ The chat's collapsible Activity panel shows reported principal, worker, advisor 
 
 The managed desktop launcher starts Faustus on loopback with `AUTH_ENABLED=false` by default. This mode uses the local workspace without account or administrator sign-in and does not create or rewrite credential stores. Existing data ownership is preserved. Set `AUTH_ENABLED=true` explicitly for a network/server deployment that requires authentication. Work profiles are managed by HoardHub as setup context; they are not Faustus login accounts.
 
+## Streaming reply language
+
+When a tool round contains only plain narration in the wrong reply language, Faustus removes that interim text from the visible answer and reloadable round history. The original visible provider text remains separately available in the `provider_round_texts` metrics field when text was retracted. Structured or quoted text is retained.
+
 ## Credits and licence
 
 Faustus builds on [Odysseus](https://github.com/odysseus-dev/odysseus). See [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md) for additional credits, [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance and [LICENSE](LICENSE) for **AGPL-3.0-or-later**.

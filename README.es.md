@@ -529,6 +529,10 @@ El panel desplegable Actividad del chat muestra los datos informados del princip
 
 El lanzador de escritorio administrado inicia Faustus en loopback con `AUTH_ENABLED=false` por defecto. Este modo usa el espacio de trabajo local sin inicio de sesión de cuentas ni administradores y no crea ni modifica almacenes de credenciales. Se conserva la propiedad de los datos existentes. Configura `AUTH_ENABLED=true` explícitamente para un despliegue de red o servidor que requiera autenticación. Los perfiles de trabajo se gestionan en HoardHub como contexto de configuración; no son cuentas de acceso de Faustus.
 
+## Idioma de respuesta durante el streaming
+
+Si una ronda con herramientas contiene solo narración simple en el idioma incorrecto, Faustus la quita de la respuesta visible y del historial de rondas recargable. El texto visible original del proveedor queda aparte en las métricas `provider_round_texts` cuando se ha retirado texto. El contenido estructurado o entrecomillado se conserva.
+
 ## Créditos y licencia
 
 Faustus parte de [Odysseus](https://github.com/odysseus-dev/odysseus). Más créditos en [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md), contribuciones en [CONTRIBUTING.md](CONTRIBUTING.md) y licencia **AGPL-3.0-or-later** en [LICENSE](LICENSE).
