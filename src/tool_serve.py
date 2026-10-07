@@ -297,6 +297,30 @@ def _explicit_mcp_hits(query: str) -> List[str]:
     return [name for _, _, name in sorted(targeted)]
 
 
+def _offline_mcp_hits(query: str) -> List[str]:
+    """Rank the live plugin descriptions without constructing an embedder.
+
+    A disconnected embedding service must not make a connected MCP tool
+    disappear. The caller applies the normal permission filter and cap.
+    """
+    try:
+        from src.tool_utils import get_mcp_manager
+        from src.two_tier_search import bm25_scores
+        manager = get_mcp_manager()
+        schemas = manager.get_all_openai_schemas({}) if manager and hasattr(manager, "get_all_openai_schemas") else []
+        docs = []
+        for entry in schemas or []:
+            fn = entry.get("function") if isinstance(entry, dict) else None
+            name = str((fn or {}).get("name") or "")
+            if name.startswith("mcp__"):
+                docs.append((name, f"{name.rsplit('__', 1)[-1].replace('_', ' ')} {(fn or {}).get('description') or ''}"))
+        scores = bm25_scores(query, docs)
+        return [name for name, score in sorted(scores.items(), key=lambda row: (-row[1], row[0])) if score > 0]
+    except Exception:
+        logger.debug("tool catalog: offline MCP search failed", exc_info=True)
+        return []
+
+
 def search_catalog(
     query: str = "",
     names: Optional[Sequence[str]] = None,
@@ -386,6 +410,9 @@ def search_catalog(
             except Exception:
                 logger.debug("tool catalog: permitted-pool completion failed", exc_info=True)
         if not retrieved:
+            for name in _offline_mcp_hits(q):
+                if _callable(name):
+                    _add(name)
             from src.tool_index import BUILTIN_TOOL_DESCRIPTIONS
             needle = q.lower()
             for name, desc in BUILTIN_TOOL_DESCRIPTIONS.items():
@@ -556,6 +583,7 @@ def serve(
     disabled: Optional[Iterable[str]] = None,
     admin: bool = True,
     tool_policy: Any = None,
+    category: str = "",
 ) -> Dict[str, Any]:
     """Search/index result the model can act on. Never executes the listed tools."""
     disabled = tuple(disabled or ())
@@ -565,9 +593,17 @@ def serve(
         if query and not names:
             mode = _DETAIL_SCHEMA
     from src.tool_discovery import is_permitted
+    wanted_category = str(category or "").strip().lower()
+
+    def _in_category(name: str) -> bool:
+        if not wanted_category.startswith("mcp:"):
+            return True
+        server = wanted_category[4:]
+        return bool(server) and name.startswith(f"mcp__{server}__")
+
     found = search_catalog(
         query, names, k=k, disabled=disabled, admin=admin,
-        candidate_filter=lambda name: is_permitted(
+        candidate_filter=lambda name: _in_category(name) and is_permitted(
             name, disabled_tools=disabled, tool_policy=tool_policy, admin=admin,
         ),
     )
@@ -660,6 +696,7 @@ def execute_lookup(content: str, ctx: Optional[Mapping[str, Any]] = None) -> Tup
         disabled=ctx.get("disabled_tools"),
         admin=admin,
         tool_policy=ctx.get("tool_policy"),
+        category=category,
     )
     listed = ", ".join(payload.get("promote") or []) or "none"
     desc = f"{LOOKUP_TOOL}: {listed}"
