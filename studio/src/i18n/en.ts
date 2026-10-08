@@ -39,4 +39,14 @@ export const en: Record<string, string> = {
   'Fast#think_mode': 'Fast',
   'Think#think_mode': 'Think',
   'Deep#think_mode': 'Deep',
+  // Reasoning-effort levels: Spanish needs distinct rows (Bajo/Alto/…);
+  // English drops the #effort tag so the UI never shows "Low#effort".
+  'Off#effort': 'Off',
+  'Minimal#effort': 'Minimal',
+  'Low#effort': 'Low',
+  'Medium#effort': 'Medium',
+  'High#effort': 'High',
+  'Maximum#effort': 'Maximum',
+  'Level#effort': 'Level',
+  'Follow the mode#effort': 'Follow the mode',
 };

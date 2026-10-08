@@ -108,6 +108,14 @@ const chat = await bundle(['adapters', 'chat.ts'], 'chat.mjs');
   const adapter = readFileSync(join(root, 'studio', 'src', 'adapters', 'composer.ts'), 'utf8');
   assert(adapter.includes('thinking_supported') && adapter.includes('thinking_toggle'), 'composer adapter parses API thinking caps');
   assert(adapter.includes("q.set('model', model)"), 'getReasoningLevels passes model');
+  const en = readFileSync(join(root, 'studio', 'src', 'i18n', 'en.ts'), 'utf8');
+  for (const key of ['Low#effort', 'High#effort', 'Level#effort', 'Follow the mode#effort', 'Off#effort', 'Maximum#effort']) {
+    assert(en.includes(`'${key}':`), `English maps ${key} so the UI never shows the #effort tag`);
+  }
+  assert(en.includes("'Low#effort': 'Low'"), 'Low#effort renders as Low in English');
+  assert(en.includes("'High#effort': 'High'"), 'High#effort renders as High in English');
+  const es = readFileSync(join(root, 'docs', 'ui', 'i18n', 'es.tsv'), 'utf8');
+  assert(es.includes('Low#effort\tBajo') && es.includes('High#effort\tAlto'), 'Spanish #effort rows stay intact');
 }
 
 console.log(failed ? `${failed} failure(s)` : 'ok think_mode');

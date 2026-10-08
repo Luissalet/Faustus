@@ -9,23 +9,22 @@ const FIRST_TOKEN_MIN = 5;
 const FIRST_TOKEN_MAX = 120;
 const FIRST_TOKEN_DEFAULT = 30;
 
-/** Backend #106 adds this on SparksState; keep a local view until that adapter lands on master. */
-type SparksStatus = SparksState & { first_token_timeout_s?: number };
-
 /**
  * Settings → Sparks: where Prometheus's Hoard answers, whether the DGX Sparks are the default chat backend while a
  * recipe serves, and which recipe is preferred. The local GPUs keep their models and become the default again when
  * nothing serves on the Sparks (src/sparks.py). Nothing about the cluster is fixed in code.
+ *
+ * `first_token_timeout_s` comes from the typed Sparks adapter (#106 on master).
  */
 export function SparksSection({ say }: { say: (text: string) => void }) {
-  const [state, setState] = useState<SparksStatus | null>(null);
+  const [state, setState] = useState<SparksState | null>(null);
   const [url, setUrl] = useState('');
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [firstTokenDraft, setFirstTokenDraft] = useState(String(FIRST_TOKEN_DEFAULT));
 
   const reload = async () => {
-    const s = (await loadSparks()) as SparksStatus | null;
+    const s = await loadSparks();
     setState(s);
     if (s) {
       setUrl((u) => u || s.url);
@@ -41,7 +40,7 @@ export function SparksSection({ say }: { say: (text: string) => void }) {
 
   const save = async (patch: { enabled?: boolean; url?: string; default_backend?: boolean; recipe?: string; first_token_timeout_s?: number }) => {
     setSaving(true);
-    const res = await saveSparksSettings(patch as { enabled?: boolean; url?: string; default_backend?: boolean; recipe?: string });
+    const res = await saveSparksSettings(patch);
     setSaving(false);
     if (res.ok === false) say(String(res.error || t('Could not save.')));
     else say(t('Saved.'));
