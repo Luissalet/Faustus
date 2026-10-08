@@ -1026,6 +1026,12 @@ EXAMPLES: Dict[str, List[str]] = {
         "inspecta las notas, imágenes y gráficos de este PPTX",
         "extract the paragraphs and tables from this DOCX",
     ],
+    "extract_to_schema": [
+        "saca de esta factura el emisor, la fecha y el total en JSON",
+        "fill this JSON schema from the contract, with a quote for every value",
+        "extrae los campos de este PDF escaneado según este esquema",
+        "pull the parties, dates and amounts out of this document as structured data",
+    ],
     "brain_graph": [
         "qué relaciones conocíamos entonces y cuáles eran válidas en esa fecha",
         "muestra los vecinos de esta persona con sus fuentes y fechas",
