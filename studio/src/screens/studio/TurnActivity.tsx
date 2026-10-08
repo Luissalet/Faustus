@@ -87,9 +87,9 @@ export function TurnActivity({ turn }: { turn: Turn }) {
           <section className="fs-turn-activity__actor" key={`round-${round.round}`} data-testid={`activity-round-${round.round}`}>
             <h4>{t('Principal')} · {t('Round {n}', { n: round.round })}{round.model ? ` · ${round.model}` : ''}</h4>
             <div className="fs-turn-activity__metrics">
-              {timingBar('Prefill', round.promptMs, widestRound, 'engine', '#6e9de6')}
-              {timingBar('Decode', round.decodeMs, widestRound, 'engine', '#9a79db')}
-              {round.requestDurationMs !== undefined && timingBar('Request stream', round.requestDurationMs, widestRequest, 'observed', '#70b7a1')}
+              {timingBar('Prefill', round.promptMs, widestRound, 'engine', 'var(--fs-info)')}
+              {timingBar('Decode', round.decodeMs, widestRound, 'engine', 'var(--fs-kind-config)')}
+              {round.requestDurationMs !== undefined && timingBar('Request stream', round.requestDurationMs, widestRequest, 'observed', 'var(--fs-kind-component)')}
             </div>
             <p className="fs-turn-activity__tokens">
               {t('Prompt tokens')}: {count(round.inputTokens)} · {t('Generated tokens')}: {count(round.outputTokens)} · {t('Cached tokens')}: {count(round.cachedTokens)}
@@ -115,9 +115,9 @@ export function TurnActivity({ turn }: { turn: Turn }) {
                   <div className="fs-turn-activity__subround" key={`${worker.id}-round-${round.round}`} data-testid={`worker-round-${worker.id}-${round.round}`}>
                     <strong>{t('Round {n}', { n: round.round })}{round.model ? ` · ${round.model}` : ''}</strong>
                     <div className="fs-turn-activity__metrics">
-                      {timingBar('Prefill', round.promptMs, widestRound, 'engine', '#6e9de6')}
-                      {timingBar('Decode', round.decodeMs, widestRound, 'engine', '#9a79db')}
-                      {round.requestDurationMs !== undefined && timingBar('Request stream', round.requestDurationMs, widestRequest, 'observed', '#70b7a1')}
+                      {timingBar('Prefill', round.promptMs, widestRound, 'engine', 'var(--fs-info)')}
+                      {timingBar('Decode', round.decodeMs, widestRound, 'engine', 'var(--fs-kind-config)')}
+                      {round.requestDurationMs !== undefined && timingBar('Request stream', round.requestDurationMs, widestRequest, 'observed', 'var(--fs-kind-component)')}
                     </div>
                     <small>{t('Prompt tokens')}: {count(round.inputTokens)} · {t('Generated tokens')}: {count(round.outputTokens)} · {t('Cached tokens')}: {count(round.cachedTokens)}</small>
                   </div>
@@ -145,15 +145,18 @@ export function TurnActivity({ turn }: { turn: Turn }) {
         {auxiliaries.length > 0 && (
           <section className="fs-turn-activity__group">
             <h3>{t('Runtime helpers')}</h3>
-            {auxiliaries.map((item, index) => (
-              <article className="fs-turn-activity__actor" key={`${s(item.phase)}-${index}`} data-state={s(item.status) || 'observed'}>
-                <h4>{s(item.phase) || t('Helper')}{n(item.round) !== undefined ? ` · ${t('Round {n}', { n: n(item.round) })}` : ''}</h4>
-                {s(item.model) && <p>{t('Model')}: <code>{s(item.model)}</code></p>}
-                {(n(item.input_tokens) !== undefined || n(item.output_tokens) !== undefined) && (
-                  <p className="fs-turn-activity__tokens">{t('Prompt tokens')}: {count(n(item.input_tokens))} · {t('Generated tokens')}: {count(n(item.output_tokens))}</p>
-                )}
-              </article>
-            ))}
+            {auxiliaries.map((item, index) => {
+              const helperRound = n(item.round);
+              return (
+                <article className="fs-turn-activity__actor" key={`${s(item.phase)}-${index}`} data-state={s(item.status) || 'observed'}>
+                  <h4>{s(item.phase) || t('Helper')}{helperRound !== undefined ? ` · ${t('Round {n}', { n: helperRound })}` : ''}</h4>
+                  {s(item.model) && <p>{t('Model')}: <code>{s(item.model)}</code></p>}
+                  {(n(item.input_tokens) !== undefined || n(item.output_tokens) !== undefined) && (
+                    <p className="fs-turn-activity__tokens">{t('Prompt tokens')}: {count(n(item.input_tokens))} · {t('Generated tokens')}: {count(n(item.output_tokens))}</p>
+                  )}
+                </article>
+              );
+            })}
           </section>
         )}
         {tools.length > 0 && (
