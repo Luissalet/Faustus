@@ -1325,3 +1325,18 @@ Coordinador `codex-relevo`; misma automatización, traspaso y checkpoints activo
 ## Sparks: controles activados — 08-10-2026
 
 Thinking independiente y niveles GLM bajo/alto/máximo, configuración de espera inicial y arreglo de explicaciones integrados y activados en 7000 tras revisión. Se conserva GLM en tres Sparks y la ventana 1M. El refresco de Prometheus está revisado y activado (#108). El arranque concurrente está integrado y probado (#65). Siguen las correcciones de extracción Studio y curvas al partir clips de Lumiere, además de los cierres y evaluaciones restantes del Ágora; no se da por terminado el backlog.
+
+## OBJ-57 · Que toda la familia use las Sparks antes que las GPU del PC (09-10-2026)
+
+**Estado: hecho en lo básico; abierto en dos mejoras.**
+
+Hecho:
+
+- Hoard Link trata como locales los modelos que sirven las Sparks en la red de casa y los prueba primero (`3a3a91c`). Antes de usar cualquier servidor del registro de Faustus comprueba que responde (`458dc94`).
+- Si Faustus está ocupado y no contesta a tiempo a `/api/models` o a su comprobación de salud, Hoard Link usa el registro que dio en los últimos 15 minutos. Cada servidor se sigue comprobando antes de usarlo. Antes, en ese caso, se cargaba un modelo en las GPU del PC. Este comportamiento está en Hoard Link y en todas sus copias.
+- Galton mide los modelos de las Sparks. La vigilancia ya no carga modelos en las GPU del PC salvo que se active `watch.load_local`, y recuerda las cargas que fallaron.
+
+Abierto:
+
+- **Visión en las Sparks.** GLM-5.3-Flash solo procesa texto, así que la visión sigue usando el 27B local (8081). Para liberar también esa GPU haría falta una receta con un modelo de visión en una Spark. Decidir cuál y en qué Spark sin quitar memoria a la receta TP3.
+- **Sondeos de contexto a servidores locales caídos.** `model_context` vuelve a consultar los endpoints locales en cada llamada, a propósito, porque pueden reiniciarse con otra ventana. En Windows, una conexión rechazada a localhost tarda unos 2 s, y un turno contra un Ollama apagado puede pagar 6–9 s antes de la primera herramienta (medido con cProfile en `test_resource_claims`). Mejora propuesta: recordar el resultado unos segundos dentro del mismo turno.

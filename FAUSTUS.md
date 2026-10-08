@@ -10462,3 +10462,22 @@ Verificado por API/MCP normal y navegador aislado: Thinking OFF sin pensamiento 
 Prometheus consulta los endpoints en paralelo y sirve el último estado de salud mientras lo renueva en segundo plano. Sin estado previo muestra verificación en curso y no da el endpoint por disponible. El arranque de una receta sigue esperando la comprobación real; apagar el controlador libera sus grupos de consulta. Los dos commits ya presentes en main se revisaron retrospectivamente de forma explícita (#108), con 77 pruebas del autor de la revisión y 77 independientes. Activación mediante el reinicio gestionado del Hub: GLM sigue cargado en los tres nodos. Cuatro consultas normales de overview/endpoints tardaron 0,24–0,45 s; MCP y navegador confirman GLM TP3/1M. Recibos `prometheus108-live-api.json`, `prometheus108-live-mcp.json` y `prometheus108-live-glm3.jpg`. El producto de #95 está integrado y verificado; su cierre administrativo corresponde a su autor.
 
 El primer arranque de dos procesos sobre la misma SQLite nueva serializa la creación del esquema y las migraciones con un bloqueo del sistema operativo; la muerte del propietario libera el bloqueo sin renombrar su fichero estable (#65). No cambia el mecanismo de bloqueo de ajustes. Revisión CAS6 e integración `1d7a51a0` + `453b6efd`; 8 pruebas pasan y 7 de permisos POSIX se omiten en Windows. Dos servidores aislados arrancan simultáneamente sobre datos nuevos y responden por MCP; Studio se abre con el historial vacío. Evidencia `faustus65-live-proof.json` y `faustus65-new-db-studio.jpg`. No se reinició 7000 para esta corrección de inicio: se aplica en el siguiente arranque.
+
+## 280. La familia usa las Sparks y cierres del 09-10 (09-10-2026)
+
+Luis vio que el trabajo de vigilancia de Galton fallaba al intentar cargar `qwen3-vl:8b-instruct` en las GPU del PC (notificación «Every model failed»). Su petición: si Faustus y el Hub tienen las Sparks, las demás apps deben usar esos modelos en vez de cargar en las gráficas.
+
+- **Hoard Link** (la biblioteca que vendoriza cada app):
+  - `3a3a91c`: una entrada `local` del registro de Faustus en una dirección privada o con nombre `.local` cuenta como de la red propia y va antes que lo que haya en el PC. Solo se elige mientras su `/v1/models` siga listando el modelo.
+  - `458dc94`: se comprueba cada servidor compatible con OpenAI antes de elegirlo.
+  - Hoy: si Faustus no responde a `/api/health` o a `/api/models` en 1,5 s (un turno largo lo ocupa), se usa el último registro que dio, siempre que tenga menos de 15 minutos. Cada servidor se sigue comprobando, así que una entrada caducada se salta en vez de usarse.
+  - 4 pruebas nuevas en `tests/test_resolution_policies.py` y una fixture que reinicia esa memoria entre pruebas. Propagado a todas las copias vendorizadas.
+- **Galton** (`e5c87e0`): mide los modelos de las Sparks como concursantes `server:lan:…`. `watch.load_local` está apagado por defecto, así que la vigilancia no carga modelos en el PC. Recuerda las cargas que fallaron para no repetirlas.
+- **Visión:** GLM-5.3-Flash solo procesa texto, así que la visión resuelve al 27B local del 8081. Para mover también la visión a las Sparks hace falta una receta con un modelo de visión (OBJ-57).
+- **Cierres:**
+  - `test_resource_claims::test_loop_call_that_cannot_get_its_claims_is_refused_not_started` mantenía la reserva de escritura 3 s fijos. Con cProfile se vio que el turno tardaba unos 9 s en llegar a la llamada: `model_context` consulta en cada llamada un Ollama apagado, y en Windows cada conexión rechazada a localhost cuesta unos 2 s. La prueba ahora suelta la reserva al acabar el bucle (`f0f16648`).
+  - `extract_to_schema` tiene ejemplos en el índice de herramientas (`604f046d`).
+  - El endpoint `capture-8090` del 7000, de una prueba antigua sin servidor detrás, queda desactivado (no borrado).
+  - #80 r2 enviado: el gancho de cierre del canvas en `agent_loop` con su prueba.
+- **Manual en Google Docs:** una edición por navegador borró por error todo el texto (atajo de selección con el foco en el documento). Se restauró desde el historial a la versión del 08-10 a las 23:16 y se comprobó leyéndolo entero. Las novedades se añadieron con Buscar y reemplazar, que no toca la selección del documento.
+

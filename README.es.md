@@ -586,6 +586,8 @@ La reducción del contexto conserva la última instrucción del usuario, sin con
 
 La configuración elegida es GLM-5.3-Flash NVFP4 en tres Sparks, con una ventana de 1.048.576 tokens. Pasan tres pruebas frías de recuperación en entradas de un millón de tokens con recuentos concordantes. Generación medida: 40,1 tokens/s; preparar una entrada nueva tarda unos 421 segundos y, con entrada en caché, el primer token llega en 2,4 segundos. La comparación usa razonamiento bajo, no xhigh. La prueba en dos Sparks se atasca antes de completar su referencia de 64K. Qwen en una Spark completa 1M pero genera unos 4 tokens/s y se descarta ese reparto. Las preferencias siguen en Ajustes → Sparks y Prometheus; se mantienen las opciones de GPU del PC y su pill de memoria. FAUSTUS.md recoge la evidencia y la integración pendiente.
 
+El resto de la familia también usa las Sparks. Hoard Link, la biblioteca que llevan todas las apps, trata como locales los modelos que las Sparks sirven en la red de casa y los prueba antes de cargar nada en las GPU del PC. Antes de usar un servidor del registro comprueba que responde. Si Faustus está demasiado ocupado para contestar a tiempo, usa el registro que Faustus dio en los últimos 15 minutos. Galton mide los modelos de las Sparks, y su vigilancia ya no carga modelos en el PC salvo que se active. La visión sigue en el 27B local, porque GLM solo procesa texto.
+
 ## Créditos y licencia
 
 Faustus parte de [Odysseus](https://github.com/odysseus-dev/odysseus). Más créditos en [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md), contribuciones en [CONTRIBUTING.md](CONTRIBUTING.md) y licencia **AGPL-3.0-or-later** en [LICENSE](LICENSE).

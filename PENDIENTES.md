@@ -1,6 +1,6 @@
 # Pendientes de cierre
 
-Actualizado: 08-10-2026. REGLA: nunca nombres de empresas/personas del buzón de Luis en commits, docs, tests ni comentarios — ejemplos siempre ficticios. Sólo trabajo vigente; quitar cada entrada al cerrarla.
+Actualizado: 09-10-2026. REGLA: nunca nombres de empresas/personas del buzón de Luis en commits, docs, tests ni comentarios — ejemplos siempre ficticios. Sólo trabajo vigente; quitar cada entrada al cerrarla.
 
 Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya cerradas u obsoletas, con la prueba de cada cierre en FAUSTUS.md, los tests o el historial de git). Dentro de cada sección, lo más reciente primero.
 
@@ -87,9 +87,4 @@ Acciones físicas o de cuentas que sólo puede hacer Luis (micrófono, móvil, W
 
 ## B. Código por hacer
 
-Nada abierto a 01-10: lo que era una mejora pasó a OBJETIVOS (OBJ-47 y siguientes).
-
-- **Prueba rota en master (visto el 08-10):** `tests/test_resource_claims.py::test_loop_call_that_cannot_get_its_claims_is_refused_not_started` falla sobre `e36d1504` sin cambios encima (comprobado con `git stash` en el worktree del radar). Las otras 35 de ese fichero pasan. Probablemente viene del trabajo del bucle en curso (`agent_loop.py` tiene cambios sin versionar en la copia principal): revisarla al integrar ese trabajo.
-
-- **Recargar solo Hoard Hub para activar41/46**: revisión automática rechazó el snapshot/stop/start autorizado con «blocked by policy», sin motivo específico. Fuente2886aef lista y98pruebas; runtime76960 aún sin CAS. Hace falta cerrar/abrir soloHub por el operador o resolver ese rechazo del ejecutor; no volver a dar permisos genéricos ni parar apps/modelos. Hasta entonces no inventar revisión para votar con el CLI nuevo.
-
+Nada abierto a 09-10. Cerrado el 09-10: la prueba `test_loop_call_that_cannot_get_its_claims_is_refused_not_started` (mantenía la reserva 3 s fijos y en Windows el turno tardaba más en llegar a la llamada; ahora la suelta al acabar el bucle, `f0f16648`), `extract_to_schema` sin ejemplos en el índice de herramientas (`604f046d`), el endpoint de pruebas `capture-8090` del 7000 sin servidor detrás (desactivado, no borrado) y la recarga del Hub para la revisión ligada a entregas (el Hub corre desde las 21:14 del 08-10 con `2886aef` dentro).
