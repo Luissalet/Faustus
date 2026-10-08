@@ -609,6 +609,10 @@ Context reduction keeps the user's latest instruction rather than a synthetic to
 
 On 8 October 2026: explicit reasoning effort kept through chat generation, read-only mode enforced at the chat API and every tool execution gate, tool documentation in guide-only turns and type checks on `manage_research` arguments, together with the execution-continuity work (approval resumes with evidence, answer-only maths turns, room for an answer after thinking). The DGX Spark backend (§278) is active. Measurements of the Spark models are in FAUSTUS.md.
 
+## Verified Spark deployment
+
+The selected deployment is GLM-5.3-Flash NVFP4 on three Sparks, with a 1,048,576-token window. Three cold million-token retrieval tests passed with matching input counts. Measured generation was 40.1 tokens/s; cold input preparation took about 421 seconds and cached input reached its first token in 2.4 seconds. These comparison measurements used low reasoning, not xhigh. The two-Spark trial stalled before completing its 64K baseline. Qwen on one Spark completed 1M but generated about 4 tokens/s, so that split was discarded. Preferences remain editable in Settings → Sparks and Prometheus; local GPU options and their memory pill remain available. See FAUSTUS.md for evidence and remaining integration work.
+
 ## Credits and licence
 
 Faustus builds on [Odysseus](https://github.com/odysseus-dev/odysseus). See [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md) for additional credits, [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance and [LICENSE](LICENSE) for **AGPL-3.0-or-later**.

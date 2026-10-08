@@ -1,7 +1,7 @@
 # Objetivos acordados
 
 Acordado con Luis; sólo lo que está por hacer. Al cerrar una entrada, se
-borra de aquí y su evidencia va a PENDIENTES.md.
+borra de aquí y su evidencia va a FAUSTUS.md. PENDIENTES.md conserva las decisiones y respuestas que necesita Luis.
 
 ## OBJ-1 · Puerta de admisión de VRAM: preguntar antes de cargar
 

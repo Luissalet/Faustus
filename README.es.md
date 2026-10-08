@@ -581,6 +581,10 @@ Al reanudar permisos se identifican la herramienta aprobada, sus argumentos y el
 
 La reducción del contexto conserva la última instrucción del usuario, sin confundirla con una respuesta sintética de herramientas. Un registro breve conserva operaciones recientes e IDs devueltos para continuar sin recrear objetos. Si un resultado se descarga a un artefacto, se ofrecen sus herramientas de recuperación cuando la política lo permite; un turno limitado a MCP puede recuperar sus propios resultados sin recurrir a una consola.
 
+## Despliegue Sparks comprobado
+
+La configuración elegida es GLM-5.3-Flash NVFP4 en tres Sparks, con una ventana de 1.048.576 tokens. Pasan tres pruebas frías de recuperación en entradas de un millón de tokens con recuentos concordantes. Generación medida: 40,1 tokens/s; preparar una entrada nueva tarda unos 421 segundos y, con entrada en caché, el primer token llega en 2,4 segundos. La comparación usa razonamiento bajo, no xhigh. La prueba en dos Sparks se atasca antes de completar su referencia de 64K. Qwen en una Spark completa 1M pero genera unos 4 tokens/s y se descarta ese reparto. Las preferencias siguen en Ajustes → Sparks y Prometheus; se mantienen las opciones de GPU del PC y su pill de memoria. FAUSTUS.md recoge la evidencia y la integración pendiente.
+
 ## Créditos y licencia
 
 Faustus parte de [Odysseus](https://github.com/odysseus-dev/odysseus). Más créditos en [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md), contribuciones en [CONTRIBUTING.md](CONTRIBUTING.md) y licencia **AGPL-3.0-or-later** en [LICENSE](LICENSE).
