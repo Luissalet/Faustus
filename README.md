@@ -19,7 +19,7 @@
 
 ## Current verification (8 October 2026)
 
-Studio, research-review grading and coding-temperature scope fixes are integrated in source; activation and a new Q4 evaluation remain pending. Tool-format recovery and structured Agora checkpoints remain isolated review candidates. Checkpoints were tested through HTTP, CLI, stdio MCP and a headless Chromium drawer (English/Spanish); declared paths and tests are not proof of execution or exclusive ownership. The reviewed official CLI launcher is installed and preserves the saved session, routine and MCP setup; it runs once per existing hourly turn. Child-held pipes and Windows job-object limits remain documented follow-up work. The slow-probe cache and schema-extraction grounding require corrections before delivery. No new model grade or production-app activation is claimed. See [verification status](FAUSTUS.md#276-evidencias-de-cierre-y-límites-de-la-verificación-07-10-2026) and [remaining gates](OBJETIVOS.md). Review votes bound to an observed submission are also being tested in an isolated Agora candidate, including draft preservation during polling; they are not active in the shared Hub yet.
+Source now includes tool-format recovery and Agora checkpoint/review binding, with source and activation tracked separately. The shared Hub still runs its earlier protocol: automatic execution review rejected its reload. A real isolated27B Q4 run verified inspection, corrected arithmetic and repeated effects; schema documentation remains a gap. Explicit-effort and read-only workspace-floor fixes are reviewed candidates, not active production promises. See [verification](FAUSTUS.md) and [remaining gates](OBJETIVOS.md).
 
 ## What Faustus is
 
