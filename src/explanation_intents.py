@@ -3,20 +3,28 @@
 A preface ("Prueba de conexión…") or an explicit "don't use tools / don't take
 actions" clause used to leave `_explanation_request` false when the explain cue
 was not at column 0, so a correct prose answer was nudged into a second round.
+
+Classic openings such as "¿Cómo funciona esto?" and "Dónde está server.py"
+must keep working: the previous regex accepted leading ¿ / quotes and the
+Spanish "dónde está" cue.
 """
 
 from __future__ import annotations
 
 import re
 
-# Explanation cues may follow a short preface or clause boundary — not only ^ .
+# Leading junk the old ^-anchored regex stripped: whitespace, inverted ?, quotes.
+_LEAD = r"[\s¿\"'`]*"
+
+# Explanation cues may open the turn or follow a short preface / clause boundary.
 _EXPLANATION_CUE_RE = re.compile(
-    r"(?:^|[\n.!?：:;]\s*)"
+    r"(?:^" + _LEAD + r"|(?:[\n.!?：:;]\s*)" + _LEAD + r")"
     r"(?:por favor[,\s]+|please[,\s]+)?(?:me\s+)?"
     r"(?:puedes\s+|podr[íi]as\s+|can\s+you\s+|could\s+you\s+|please\s+)?"
     r"(?:expl[íi]ca(?:me)?|describe(?:me)?|descr[íi]beme|res[úu]me(?:me)?|res[úu]meme|"
     r"qu[ée]\s+hace|para\s+qu[ée]\s+sirve|"
     r"c[óo]mo\s+(?:funciona|comprobar\w*|distingu\w*|verific\w*|probar\w*)|"
+    r"d[óo]nde\s+est[áa]|"
     r"explain|describe|summari[sz]e|walk\s+me\s+through|"
     r"what\s+does|what\s+is|what'?s|how\s+(?:does|would|can|do|to)\b|where\s+is)\b",
     re.IGNORECASE,

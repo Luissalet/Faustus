@@ -1,4 +1,9 @@
-"""Preface + action negation must count as explanation-only (Agora #98)."""
+"""Preface + action negation must count as explanation-only (Agora #98).
+
+Also preserves classic openings the pre-#98 regex already accepted
+(¿Cómo funciona… / Dónde está…) without treating real implement requests
+as explanation-only.
+"""
 
 from __future__ import annotations
 
@@ -31,6 +36,19 @@ def test_classic_explain_at_start_still_counts():
         "explica qué hace server.py",
         coding_action_re=_CODING,
     )
+
+
+def test_inverted_question_como_funciona_still_counts():
+    """Regression: old regex allowed leading ¿ before cómo funciona."""
+    assert is_explanation_request("¿Cómo funciona esto?", coding_action_re=_CODING)
+    assert is_explanation_request('¿Cómo funciona "el servidor"?', coding_action_re=_CODING)
+
+
+def test_donde_esta_path_still_counts():
+    """Regression: old regex matched Spanish dónde está (and quoted openers)."""
+    assert is_explanation_request("Dónde está server.py", coding_action_re=_CODING)
+    assert is_explanation_request("¿Dónde está server.py?", coding_action_re=_CODING)
+    assert is_explanation_request('"Dónde está server.py"', coding_action_re=_CODING)
 
 
 def test_explain_without_negation_but_coding_verb_is_not_explanation():
