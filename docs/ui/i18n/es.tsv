@@ -9279,3 +9279,28 @@ Different	Distintos
 Renamed files	Renombrados
 Initial wait (seconds)#sparks	Espera inicial (segundos)
 How long a Sparks turn may wait in the queue and while the model prepares before the first token. Default {n} s ({min}–{max}). When the limit expires you get a notice; you can shrink the context or pick another model. There is no automatic retry.	Cuánto puede esperar un turno en Sparks en la cola y mientras el modelo se prepara antes del primer token. Por defecto {n} s ({min}–{max}). Al vencer el límite aparece un aviso; puedes reducir el contexto o elegir otro modelo. No hay reintento automático.
+Delete schema	Borrar schema
+Extraction	Extracción
+Fill a JSON Schema from a document. Dropped values stay dropped.	Rellena un JSON Schema a partir de un documento. Los valores descartados siguen descartados.
+Lexical check only — does not prove the value belongs to the field.	Comprobación léxica únicamente: no demuestra que el valor pertenezca al campo.
+Loading schemas	Cargando schemas
+Missing required	Requeridos que faltan
+No saved schemas yet	Aún no hay schemas guardados
+No valid fields	Sin campos válidos
+Nothing dropped	Nada descartado
+Or paste text	O pega texto
+Paste text or give a workspace path	Pega texto o indica una ruta del workspace
+Route	Ruta
+Run an extraction to see data and evidence	Ejecuta una extracción para ver datos y evidencia
+Save a schema to reuse it.	Guarda un schema para reutilizarlo.
+Save schema	Guardar schema
+Saved schemas	Schemas guardados
+Schema JSON	Schema JSON
+Schema name must match A-Za-z0-9_- (max 64)	El nombre del schema debe coincidir con A-Za-z0-9_- (máx. 64)
+Schema saved	Schema guardado
+Valid fields appear with quotes; dropped values stay in their own list.	Los campos válidos aparecen con citas; los descartados quedan en su propia lista.
+schema invalid	schema inválido
+schema valid	schema válido
+Data	Datos
+Dropped	Descartados
+Workspace path	Ruta del workspace
