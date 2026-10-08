@@ -42,6 +42,7 @@ EXTRA_KEYS: tuple[str, ...] = ("llm_projection_mode", "llm_fence_history_without
                                "budget_period_window", "budget_period_targets", "budget_period_band_pct",
                                "budget_period_min_workers", "budget_gpu_daily_seconds", "budget_backoff_when_interactive",
                                "unattended_failure_breaker", "unattended_breaker_cooldown_min",
+                               "skills_sleep_pass_enabled", "skills_sleep_pass_hour",
                                "provider_cooldown_default_min", "dispatch_spec_lint",
                                "sandbox_missing_policy", "compaction_summary_mode", "llamacpp_pin_session_slot", "tool_gate_own_context_trusted", "code_graph_community_summaries",
                                "code_graph_drift_check", "approval_autonomy",
@@ -1577,6 +1578,13 @@ GROUPS: list[dict[str, Any]] = [
                   "(Skills > Instincts)."),
             _int("instincts_offer_min_tool_calls", "Lessons: minimum tool calls in the turn",
                  "A lesson is proposed only after a turn with at least this many tool calls.", 1, 200),
+            _bool("skills_sleep_pass_enabled", "Skills: improve them overnight",
+                  "Once a day, at the hour below, proposes a revised SKILL.md for the skills whose recent use "
+                  "shows failures. It only proposes (Skills > Proposals); nothing is applied without your approval. "
+                  "It waits while you work or while a model would have to be loaded, and runs up to 3 hours "
+                  "late if the machine was asleep at the hour."),
+            _int("skills_sleep_pass_hour", "Skills overnight pass: hour",
+                 "Local hour of the day (0-23) from which the overnight pass may start.", 0, 23),
             _select("agent_default_chat_mode", "Default chat mode",
                     "Mode for chats that have not chosen one with /mode or the composer chip. lean drops the skills "
                     "index, repo map, instincts and MCP/plugin tools for a much shorter prompt; each chat pins its "

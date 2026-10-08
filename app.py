@@ -2689,6 +2689,17 @@ async def _startup_event():
 
     _supervisor.spawn(_skill_audit_nightly_loop(), name="skill-audit-nightly")
 
+    # Skill sleep pass on a schedule - same family as the nightly audit above:
+    # a system loop, not a user task. Off unless `skills_sleep_pass_enabled`;
+    # runs once per local day from `skills_sleep_pass_hour` (3 h catch-up),
+    # waits while the machine is busy and only PROPOSES. See
+    # src/skills_runtime/sleep_schedule.py.
+    try:
+        from src.skills_runtime.sleep_schedule import scheduler_loop as _sleep_pass_loop
+        _supervisor.spawn(_sleep_pass_loop(skills_manager), name="skills-sleep-pass")
+    except Exception as _e:
+        logger.warning("Failed to start the skills sleep pass schedule: %s", _e)
+
     # Cookbook serve lifecycle — kills scheduler-launched serves whose
     # window-end has passed. Paired with the cookbook_serve builtin
     # action; both are no-ops unless a scheduled task actually launches

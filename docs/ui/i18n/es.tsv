@@ -9154,3 +9154,8 @@ verified#source	verificada
 Sources	Fuentes
 Reviewer: {model}	Revisor: {model}
 What the reviewer wrote before it stopped. These are partial notes, not the result of a finished review.	Lo que escribió el revisor antes de detenerse. Son notas parciales, no el resultado de una revisión terminada.
+Overnight pass: off. Turn it on in Settings > Tools.	Pasada nocturna: desactivada. Actívala en Ajustes > Herramientas.
+Overnight pass: running now.	Pasada nocturna: en marcha ahora.
+Overnight pass: due, waiting until you stop working or the model is free.	Pasada nocturna: toca ejecutarla, espera a que dejes de trabajar o a que el modelo esté libre.
+Overnight pass: next run {when}.	Pasada nocturna: próxima ejecución {when}.
+Last overnight run: {when} · {n} proposal(s).	Última ejecución nocturna: {when} · {n} propuesta(s).

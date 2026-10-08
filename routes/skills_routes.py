@@ -1504,6 +1504,16 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
         return {"proposals": sleep_optimize.list_proposals_for(
             skill_id=skill_id, owner=user, status=status)}
 
+    @router.get("/sleep-pass/status")
+    async def sleep_pass_status(request: Request):
+        """The overnight schedule of the sleep pass (`skills_sleep_pass_enabled`
+        / `skills_sleep_pass_hour`): whether it is on, when it runs next and how
+        the last scheduled run went. Counts only, no skill names - the schedule
+        is machine-wide. Declared before the generic `/{skill_id}` GET."""
+        _owner(request)
+        from src.skills_runtime import sleep_schedule
+        return sleep_schedule.status()
+
     @router.post("/{skill_id}/sleep-pass")
     async def run_sleep_pass(request: Request, skill_id: str, since_days: int = 30,
                              limit: int = 20):
@@ -1513,13 +1523,15 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
         a pending proposal for a human to approve/reject."""
         require_admin(request)
         user = _owner(request)
-        from src.skills_runtime import sleep_optimize
-        evidence = sleep_optimize.collect_evidence(
-            skill_id, since_days=since_days, limit=limit, owner=user)
-        try:
-            record = await sleep_optimize.propose(skill_id, evidence, owner=user)
-        except sleep_optimize.SleepPassError as e:
-            raise HTTPException(422, {"error_class": e.error_class, "message": e.message})
+        from src.skills_runtime import sleep_optimize, sleep_schedule
+        # Registered while it runs so the overnight schedule never overlaps it.
+        with sleep_schedule.track("manual"):
+            evidence = sleep_optimize.collect_evidence(
+                skill_id, since_days=since_days, limit=limit, owner=user)
+            try:
+                record = await sleep_optimize.propose(skill_id, evidence, owner=user)
+            except sleep_optimize.SleepPassError as e:
+                raise HTTPException(422, {"error_class": e.error_class, "message": e.message})
         return {"proposal": record}
 
     @router.post("/proposals/{proposal_id}/approve")

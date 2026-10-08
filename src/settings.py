@@ -1661,6 +1661,14 @@ DEFAULT_SETTINGS = {
     # is read one file at a time, already the cheapest possible unit.
     "skill_list_budget_tokens": 400,
     "skill_body_budget_tokens": 1500,
+    # Skill sleep pass on a schedule (src/skills_runtime/sleep_schedule.py): once
+    # per local day, from `skills_sleep_pass_hour` (0-23) and for up to 3 hours
+    # after it (catch-up for a machine that was asleep), propose revisions for
+    # the skills whose recent use shows failures. It only PROPOSES - every
+    # proposal still needs approval - and waits while you work or while a model
+    # would have to be loaded. Off by default.
+    "skills_sleep_pass_enabled": False,
+    "skills_sleep_pass_hour": 3,
     # Reminders
     "reminder_channel": "browser",   # "browser" | "email" | "ntfy" | "webhook"
     "reminder_llm_synthesis": False,

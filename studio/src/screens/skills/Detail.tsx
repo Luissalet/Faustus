@@ -12,6 +12,7 @@ import {
   necessityKind,
   rejectProposal,
   runSleepPass,
+  sleepPassSchedule,
   saveSkillMarkdown,
   shortModel,
   skillMarkdown,
@@ -20,6 +21,7 @@ import {
   type DuplicateInfo,
   type Skill,
   type SleepPassProposal,
+  type SleepPassSchedule,
   type TestJob,
 } from '../../adapters/skills';
 import { t, tn } from '../../i18n';
@@ -156,17 +158,38 @@ function MarkdownPane({ skill, say, onSaved }: { skill: Skill; say: (msg: string
 
 /* ── Sleep pass: offline-mined proposals for this skill's SKILL.md ── */
 
+/** One line on the overnight schedule: off, next run, running, or due and waiting. */
+function ScheduleLine({ schedule }: { schedule: SleepPassSchedule }) {
+  const when = (iso: string) => new Date(iso).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+  let text: string;
+  if (!schedule.enabled) text = t('Overnight pass: off. Turn it on in Settings > Tools.');
+  else if (schedule.phase === 'running') text = t('Overnight pass: running now.');
+  else if (schedule.phase === 'due') text = t('Overnight pass: due, waiting until you stop working or the model is free.');
+  else if (schedule.nextRunAt) text = t('Overnight pass: next run {when}.', { when: when(schedule.nextRunAt) });
+  else text = t('Overnight pass: off. Turn it on in Settings > Tools.');
+  const last = schedule.lastRun;
+  return (
+    <p className="fs-sk__hint" data-testid="skill-sleep-pass-schedule">
+      {text}
+      {last && last.finishedAt ? ` ${t('Last overnight run: {when} · {n} proposal(s).', { when: when(last.finishedAt), n: last.proposals })}` : ''}
+    </p>
+  );
+}
+
 function ProposalsPane({ skill, say }: { skill: Skill; say: (msg: string) => void }) {
   const [proposals, setProposals] = useState<SleepPassProposal[] | null>(null);
   const [running, setRunning] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [schedule, setSchedule] = useState<SleepPassSchedule | null>(null);
 
   const load = useCallback(() => {
     listProposals(skill.name)
       .then(setProposals)
       .catch((e: Error) => setError(e.message));
+    // Advisory: the schedule line is never worth an error banner.
+    sleepPassSchedule().then(setSchedule).catch(() => setSchedule(null));
   }, [skill.name]);
 
   useEffect(() => {
@@ -219,6 +242,7 @@ function ProposalsPane({ skill, say }: { skill: Skill; say: (msg: string) => voi
       <div className="fs-sk__row">
         <Button variant="primary" size="sm" icon={Zap} label={t('Run sleep pass now')} loading={running} onClick={() => void run()} testId="skill-sleep-pass-run" />
       </div>
+      {schedule && <ScheduleLine schedule={schedule} />}
       {error && <p className="fs-sk__error">{error}</p>}
       {proposals === null && !error && <p className="fs-sk__hint">{t('Loading…')}</p>}
       {proposals !== null && proposals.length === 0 && <p className="fs-sk__hint">{t('No proposals yet.')}</p>}

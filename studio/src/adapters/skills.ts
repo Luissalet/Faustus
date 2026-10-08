@@ -359,6 +359,42 @@ export async function runSleepPass(skillId: string): Promise<SleepPassProposal> 
   return proposalFrom(data.proposal);
 }
 
+/** The overnight schedule of the sleep pass (`GET /api/skills/sleep-pass/status`). */
+export interface SleepPassSchedule {
+  enabled: boolean;
+  hour: number;
+  catchupHours: number;
+  phase: 'disabled' | 'scheduled' | 'due' | 'running' | string;
+  /** ISO local time of the next run; null when off or running. */
+  nextRunAt: string | null;
+  lastRun: null | {
+    status: string;
+    finishedAt: string;
+    proposals: number;
+    errors: number;
+  };
+}
+
+export async function sleepPassSchedule(): Promise<SleepPassSchedule> {
+  const raw = await getJson<Record<string, unknown>>('/api/skills/sleep-pass/status');
+  const last = raw.last_run as Record<string, unknown> | null | undefined;
+  return {
+    enabled: raw.enabled === true,
+    hour: num(raw.hour),
+    catchupHours: num(raw.catchup_hours),
+    phase: str(raw.phase) || 'disabled',
+    nextRunAt: typeof raw.next_run_at === 'string' ? raw.next_run_at : null,
+    lastRun: last
+      ? {
+          status: str(last.status),
+          finishedAt: str(last.finished_at) || str(last.started_at),
+          proposals: num(last.proposals),
+          errors: num(last.errors),
+        }
+      : null,
+  };
+}
+
 export async function approveProposal(proposalId: string): Promise<SleepPassProposal> {
   const response = await ok(await fetch(`/api/skills/proposals/${enc(proposalId)}/approve`, json({})), 'skills/proposal-approve');
   const data = (await response.json()) as { proposal: Record<string, unknown> };
