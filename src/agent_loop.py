@@ -9007,6 +9007,14 @@ async def _stream_agent_loop_body(
         return floor
 
     _workspace_tool_floor = _resolve_workspace_floor()
+    if _autonomy_preset == "read_only" and _workspace_tool_floor:
+        # The workspace floor restores tools to both the offered and
+        # executable sets, so it must contain only effects this preset allows.
+        # Use the same capability classification as the turn's read_only
+        # denylist so future workspace tools cannot bypass it either.
+        _workspace_tool_floor.difference_update(
+            autonomy_budget.read_only_disabled_names(_workspace_tool_floor)
+        )
     if _workspace_tool_floor:
         logger.info("[tool-floor] workspace floor=%s", sorted(_workspace_tool_floor))
 
@@ -9031,7 +9039,8 @@ async def _stream_agent_loop_body(
     # block-all, the non-admin denylist, plan mode's read-only allowlist, the
     # operator's own `disabled_tools` setting and the running worker's agent
     # definition — so what is subtracted here is exactly the set the loop had
-    # already decided must reach the model.
+    # already decided may reach the model. The read_only capability filter
+    # above also keeps mutating effects out of this floor.
     # Clamps composed AFTER this point (the preflight, which is handed the
     # floor as `protected` and cannot name one; the odysseus-finetune no-tool
     # clamp, which disables everything for a route that ships no schemas
