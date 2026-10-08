@@ -3386,12 +3386,14 @@ def init_db():
     Initialize the database by creating all tables.
     Should be called when starting the application.
     """
-    from core.file_lock import FileLock
+    from core.kernel_file_lock import KernelFileLock
 
     # Hold across create_all + formal migrations so a second process waits for a
-    # complete schema instead of racing CREATE TABLE. timeout/stale comfortably
-    # cover a cold first boot with many migration steps.
-    with FileLock(_schema_init_lock_path(), timeout=120.0, stale_after=300.0):
+    # complete schema instead of racing CREATE TABLE. KernelFileLock keeps a
+    # stable path and relies on OS advisory locks (fcntl/msvcrt): the kernel
+    # releases them when the holder dies, so we never rename a successor's lock
+    # aside to decide ownership (the O_EXCL takeover TOCTOU in FileLock).
+    with KernelFileLock(_schema_init_lock_path(), timeout=120.0):
         _migrate_model_endpoints()
         Base.metadata.create_all(bind=engine)
         # Lock the DB file (and any SQLite sidecars) to 0o600 — it holds bearer-token
