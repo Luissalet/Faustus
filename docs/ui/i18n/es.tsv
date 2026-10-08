@@ -9230,3 +9230,50 @@ unloading…	descargando…
 {other} is using those Sparks. Unload it and load {name}?	{other} está usando esas Sparks. ¿Lo descargo y cargo {name}?
 Started outside a recipe: stop it from Prometheus or where it was started.	Arrancado fuera de una receta: páralo desde Prometheus o donde se lanzó.
 configured, not verified	configurado, sin verificar
+Add a second alternative to compare two of them.	Añade una segunda alternativa para poder compararlas.
+Alternative A	Alternativa A
+Alternative B	Alternativa B
+Binary file: the contents differ but cannot be shown as text.	Fichero binario: el contenido difiere, pero no se puede mostrar como texto.
+Both changed {n} file(s) relative to the base: {i} the same edit, {m} merge cleanly, {c} conflict.	Ambas cambiaron {n} fichero(s) respecto a la base: {i} con la misma edición, {m} se fusiona(n) sin problema, {c} en conflicto.
+Changed against the base by: {who}	Cambiado respecto a la base por: {who}
+Compare two alternatives	Comparar dos alternativas
+Comparing the two alternatives	Comparando las dos alternativas
+Diff cut: showing {shown} of {total} lines.	Diferencias recortadas: se muestran {shown} de {total} líneas.
+Diff layout	Disposición de las diferencias
+Diff of {path}	Diferencias de {path}
+Files that differ	Ficheros que difieren
+Filter by kind of difference	Filtrar por tipo de diferencia
+Filter files by path	Filtrar ficheros por ruta
+Merges cleanly	Se fusiona sin problema
+No file matches the filter.	Ningún fichero coincide con el filtro.
+No textual difference to show.	No hay diferencias de texto que mostrar.
+Only A changed {a} file(s); only B changed {b}.	Solo A cambió {a} fichero(s); solo B cambió {b}.
+Reload comparison	Recargar la comparación
+Same content in both; only the path changed.	Mismo contenido en ambas; solo cambió la ruta.
+Same edit	Misma edición
+See, file by file, how one alternative differs from another, and where choosing both would collide.	Mira, fichero a fichero, en qué se diferencia una alternativa de otra y dónde chocarían si eliges las dos.
+Select a file to see its diff.	Elige un fichero para ver sus diferencias.
+Showing the first {shown} of {total} files; {omitted} more are not listed.	Se muestran los primeros {shown} de {total} ficheros; {omitted} más no aparecen en la lista.
+Side by side	En paralelo
+Swap A and B	Intercambiar A y B
+The total diff size limit was reached; later diffs are shortened.	Se alcanzó el límite total de tamaño de las diferencias; las siguientes se acortan.
+These two alternatives are identical: no file differs.	Estas dos alternativas son idénticas: ningún fichero difiere.
+This file is too large to compare line by line: the contents differ, no diff is made.	Este fichero es demasiado grande para compararlo línea a línea: el contenido difiere, pero no se calcula la diferencia.
+added line	línea añadida
+binary	binario
+removed line	línea eliminada
+renamed	renombrado
+renamed from {path}	renombrado desde {path}
+size in A: {a}, in B: {b}	tamaño en A: {a}, en B: {b}
+too large	demasiado grande
+unchanged line	línea sin cambios
+{n} diff(s) were cut short: at most {lines} lines of each are shown.	{n} diferencia(s) se recortaron: de cada una se muestran como máximo {lines} líneas.
+{n} file(s) are binary or larger than {size}: listed, not compared line by line.	{n} fichero(s) son binarios o pesan más de {size}: aparecen en la lista, pero no se comparan línea a línea.
+{n} file(s) differ going from {a} to {b}	{n} fichero(s) difieren al pasar de {a} a {b}
+only in B	solo en B
+only in A	solo en A
+different	distinto
+Only in B	Solo en B
+Only in A	Solo en A
+Different	Distintos
+Renamed files	Renombrados

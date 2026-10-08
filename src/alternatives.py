@@ -64,6 +64,7 @@ CALLER supplied, run only inside the alternative's own isolated directory.
 from __future__ import annotations
 
 import difflib
+import hashlib
 import json
 import logging
 import os
@@ -597,7 +598,10 @@ def _alt_changed_files(exp: Dict[str, Any], alt: Dict[str, Any]) -> Dict[str, Di
     root = alt["path"]
     changed: Dict[str, Dict[str, Any]] = {}
     if exp["base_kind"] == "git_sha":
-        proc = git_panel.run_git(root, "diff", "--no-color", "--no-ext-diff", "-M", "--numstat", exp["base_ref"])
+        # --no-renames: a rename is reported as the delete + add it is, so
+        # every key is a real path (with -M the key came back as
+        # "old => new", which names no file `apply` could write).
+        proc = git_panel.run_git(root, "diff", "--no-color", "--no-ext-diff", "--no-renames", "--numstat", exp["base_ref"])
         if proc.returncode == 0:
             for line in proc.stdout.splitlines():
                 parts = line.split("\t")
@@ -611,6 +615,14 @@ def _alt_changed_files(exp: Dict[str, Any], alt: Dict[str, Any]) -> Dict[str, Di
                 if not os.path.isfile(os.path.join(root, rel)):
                     change = "deleted"
                 changed[rel] = {"change": change, "additions": add, "deletions": dele}
+        # A file the alternative created and never `git add`ed is invisible
+        # to `git diff <commit>`; it is still part of what the alternative did.
+        for rel, change in _git_changed_vs_base(exp, root).items():
+            if rel not in changed and change == "added":
+                text = _read_text(os.path.join(root, rel))
+                changed[rel] = {"change": "added",
+                                "additions": None if text is None else len(text.splitlines()),
+                                "deletions": None if text is None else 0}
     else:  # snapshot
         base_root = os.path.join(_exp_dir(exp["id"]), _BASE_SNAPSHOT_DIR)
         all_rel = set(_rel_files(base_root)) | set(_rel_files(root))
@@ -657,6 +669,410 @@ def compare(owner: str, exp_id: str) -> Dict[str, Any]:
             for a in exp["alternatives"]
         ],
         "contested_files": contested,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Pairwise comparison: ALTERNATIVE vs ALTERNATIVE (OBJ-47)
+#
+# `compare` answers "what did each alternative change against the base, and
+# which files do several of them touch". It never answers "how does
+# alternative A differ from alternative B", which is the question a person
+# actually asks before picking one. `compare_pair` answers it file by file:
+# a unified diff from A to B, the added/removed/changed/renamed files, binary
+# and oversize files flagged instead of diffed, every cap stated in the
+# result (nothing is silently cut), and, for the files BOTH alternatives
+# touched relative to the base, whether their edits are identical, would
+# merge cleanly, or would conflict -- the same `git merge-file` verdict
+# `apply`/`combine` use, so the preview and the real merge cannot disagree.
+# Read-only: it writes nothing, not even the experiment record.
+# ---------------------------------------------------------------------------
+MAX_PAIR_FILE_BYTES = 512_000        # a file above this is listed but never diffed line by line
+MAX_PAIR_DIFF_LINES = 1_500          # lines of unified diff kept per file
+MAX_PAIR_FILES = 400                 # files listed in one answer
+MAX_PAIR_TOTAL_DIFF_CHARS = 600_000  # diff text kept across the whole answer
+RENAME_SIMILARITY = 0.6
+_RENAME_FUZZY_MAX_BYTES = 64_000
+_RENAME_CANDIDATE_CAP = 40
+_BINARY_SNIFF_BYTES = 8_000
+_PAIR_DOC_PATH = "(document)"
+_OVERLAP_RANK = {"conflict": 0, "unknown": 1, "mergeable": 2, "identical": 3, None: 4}
+
+
+class _Blob:
+    """What one alternative holds at one path: size, content hash, and the
+    decoded text only when it is small enough and really text."""
+
+    __slots__ = ("size", "sha", "text", "binary", "too_large")
+
+    def __init__(self, size: int, sha: str, text: Optional[str], binary: bool, too_large: bool):
+        self.size = size
+        self.sha = sha
+        self.text = text
+        self.binary = binary
+        self.too_large = too_large
+
+
+def _blob_from_bytes(data: bytes, cap: int) -> _Blob:
+    binary = b"\0" in data[:_BINARY_SNIFF_BYTES]
+    text: Optional[str] = None
+    if not binary and len(data) <= cap:
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            binary = True
+    return _Blob(len(data), hashlib.sha256(data).hexdigest(), text, binary,
+                 too_large=(not binary and text is None))
+
+
+def _blob_from_file(path: str, cap: int) -> Optional[_Blob]:
+    """None: no such file. The file is streamed through the hash, and only
+    held in memory when it is within `cap`."""
+    try:
+        if not os.path.isfile(path):
+            return None
+        size = os.path.getsize(path)
+        digest = hashlib.sha256()
+        head = b""
+        parts: Optional[List[bytes]] = [] if size <= cap else None
+        with open(path, "rb") as fh:
+            first = True
+            while True:
+                chunk = fh.read(1 << 20)
+                if not chunk:
+                    break
+                if first:
+                    head = chunk[:_BINARY_SNIFF_BYTES]
+                    first = False
+                digest.update(chunk)
+                if parts is not None:
+                    parts.append(chunk)
+    except OSError:
+        return None
+    binary = b"\0" in head
+    text: Optional[str] = None
+    if not binary and parts is not None:
+        try:
+            text = b"".join(parts).decode("utf-8")
+        except UnicodeDecodeError:
+            binary = True
+    return _Blob(size, digest.hexdigest(), text, binary, too_large=(not binary and text is None))
+
+
+def _git_changed_vs_base(exp: Dict[str, Any], root: str) -> Dict[str, str]:
+    """`{path: added|modified|deleted}` for a worktree alternative, renames
+    reported as the delete + add they are (a rename is not a path), and
+    files the alternative created without `git add` included."""
+    out: Dict[str, str] = {}
+    proc = git_panel.run_git(root, "diff", "--no-color", "--no-ext-diff", "--no-renames",
+                             "--name-status", "-z", exp["base_ref"])
+    if proc.returncode == 0:
+        tokens = proc.stdout.split("\0")
+        i = 0
+        while i + 1 < len(tokens):
+            code, rel = tokens[i], tokens[i + 1]
+            i += 2
+            if not rel:
+                continue
+            out[rel] = {"A": "added", "D": "deleted"}.get(code[:1], "modified")
+    other = git_panel.run_git(root, "ls-files", "--others", "--exclude-standard", "-z")
+    if other.returncode == 0:
+        for rel in other.stdout.split("\0"):
+            if rel and rel not in out:
+                out[rel] = "added"
+    return out
+
+
+def _fs_changed_vs_base(base_root: str, root: str, cap: int) -> Dict[str, str]:
+    out: Dict[str, str] = {}
+    for rel in sorted(set(_rel_files(base_root)) | set(_rel_files(root))):
+        before = _blob_from_file(os.path.join(base_root, rel), cap)
+        after = _blob_from_file(os.path.join(root, rel), cap)
+        if before is None and after is None:
+            continue
+        if before is None:
+            out[rel] = "added"
+        elif after is None:
+            out[rel] = "deleted"
+        elif before.sha != after.sha:
+            out[rel] = "modified"
+    return out
+
+
+def _pair_touched(exp: Dict[str, Any], alt: Dict[str, Any], cap: int) -> Dict[str, str]:
+    if alt["isolation"] == "doc_version":
+        changed = str(alt.get("content") or "") != base_doc_content(exp)
+        return {_PAIR_DOC_PATH: "modified"} if changed else {}
+    if exp["base_kind"] == "git_sha":
+        return _git_changed_vs_base(exp, alt["path"])
+    return _fs_changed_vs_base(os.path.join(_exp_dir(exp["id"]), _BASE_SNAPSHOT_DIR), alt["path"], cap)
+
+
+def _pair_reader(alt: Dict[str, Any], cap: int):
+    if alt["isolation"] == "doc_version":
+        content = str(alt.get("content") or "")
+        return lambda rel: _blob_from_bytes(content.encode("utf-8"), cap) if rel == _PAIR_DOC_PATH else None
+    root = alt["path"]
+    return lambda rel: _blob_from_file(os.path.join(root, rel), cap)
+
+
+def _pair_base_text(exp: Dict[str, Any], rel: str) -> Optional[str]:
+    if exp["base_kind"] == "doc":
+        return base_doc_content(exp)
+    if exp["base_kind"] == "git_sha":
+        return _git_show(exp["workspace"], exp["base_ref"], rel)
+    return _read_text(os.path.join(_exp_dir(exp["id"]), _BASE_SNAPSHOT_DIR, rel))
+
+
+def _pair_overlap(exp: Dict[str, Any], rel: str, blob_a: Optional[_Blob], blob_b: Optional[_Blob]) -> str:
+    """Both alternatives touched `rel` relative to the base: would picking
+    both be a no-op (`identical`), a clean three-way merge (`mergeable`) or
+    a collision a human has to settle (`conflict`)? `unknown` only when git
+    itself is missing and the merge could not be attempted."""
+    if blob_a is None and blob_b is None:
+        return "identical"
+    if blob_a is None or blob_b is None:
+        return "conflict"
+    if blob_a.sha == blob_b.sha:
+        return "identical"
+    if blob_a.text is None or blob_b.text is None:
+        return "conflict"
+    try:
+        _merged, had_conflict = _merge_text(_pair_base_text(exp, rel) or "", blob_a.text, blob_b.text)
+    except AlternativesError:
+        return "unknown"
+    return "conflict" if had_conflict else "mergeable"
+
+
+def _unified_lines(old_path: Optional[str], new_path: Optional[str],
+                   old_text: str, new_text: str) -> List[str]:
+    """A unified diff as a list of lines without their line endings, headers
+    included (`--- a/x` / `+++ b/x`, `/dev/null` for an absent side). A last
+    line without a newline gets git's own marker so an end-of-file-only
+    difference is not an invisible one."""
+    old_lines = old_text.splitlines(keepends=True)
+    new_lines = new_text.splitlines(keepends=True)
+    out: List[str] = []
+    gen = difflib.unified_diff(
+        old_lines, new_lines,
+        fromfile=f"a/{old_path}" if old_path is not None else "/dev/null",
+        tofile=f"b/{new_path}" if new_path is not None else "/dev/null",
+        n=3,
+    )
+    for line in gen:
+        if line.endswith("\n"):
+            out.append(line[:-1])
+        else:
+            out.append(line)
+            if line[:1] in ("+", "-", " ") and not line.startswith(("+++", "---")):
+                out.append("\\ No newline at end of file")
+    return out
+
+
+def _pair_entry(rel: str, status: str, blob_a: Optional[_Blob], blob_b: Optional[_Blob], *,
+                old_path: Optional[str], max_lines: int, chars_left: int) -> Dict[str, Any]:
+    entry: Dict[str, Any] = {
+        "path": rel, "status": status, "old_path": old_path,
+        "size_a": blob_a.size if blob_a else None, "size_b": blob_b.size if blob_b else None,
+        "binary": bool((blob_a and blob_a.binary) or (blob_b and blob_b.binary)),
+        "too_large": False, "additions": None, "deletions": None,
+        "diff": "", "diff_truncated": False, "omitted_lines": 0, "diff_total_lines": 0,
+    }
+    if entry["binary"]:
+        return entry
+    if (blob_a and blob_a.too_large) or (blob_b and blob_b.too_large):
+        entry["too_large"] = True
+        return entry
+    old_text = blob_a.text if blob_a else ""
+    new_text = blob_b.text if blob_b else ""
+    lines = _unified_lines(
+        (old_path or rel) if blob_a is not None else None,
+        rel if blob_b is not None else None,
+        old_text or "", new_text or "",
+    )
+    body = lines[2:] if len(lines) >= 2 else lines
+    entry["additions"] = sum(1 for ln in body if ln.startswith("+"))
+    entry["deletions"] = sum(1 for ln in body if ln.startswith("-"))
+    entry["diff_total_lines"] = len(lines)
+    kept = lines[:max_lines]
+    used = 0
+    cut: List[str] = []
+    for ln in kept:
+        used += len(ln) + 1
+        if used > chars_left:
+            break
+        cut.append(ln)
+    entry["diff"] = "\n".join(cut)
+    entry["omitted_lines"] = len(lines) - len(cut)
+    entry["diff_truncated"] = entry["omitted_lines"] > 0
+    return entry
+
+
+def _pair_renames(removed: Dict[str, _Blob], added: Dict[str, _Blob]) -> Dict[str, str]:
+    """`{new_path: old_path}`: a path only A has and a path only B has are
+    one rename when their content is identical, or (small text files) at
+    least `RENAME_SIMILARITY` alike. Deterministic: sorted, each path used
+    once, the exact matches first."""
+    pairs: Dict[str, str] = {}
+    used_old: set = set()
+    by_sha: Dict[str, List[str]] = {}
+    for old in sorted(removed):
+        by_sha.setdefault(removed[old].sha, []).append(old)
+    for new in sorted(added):
+        for old in by_sha.get(added[new].sha, []):
+            if old not in used_old:
+                pairs[new] = old
+                used_old.add(old)
+                break
+    fuzzy_new = [n for n in sorted(added) if n not in pairs
+                 and added[n].text is not None and added[n].size <= _RENAME_FUZZY_MAX_BYTES]
+    fuzzy_old = [o for o in sorted(removed) if o not in used_old
+                 and removed[o].text is not None and removed[o].size <= _RENAME_FUZZY_MAX_BYTES]
+    for new in fuzzy_new[:_RENAME_CANDIDATE_CAP]:
+        best, best_ratio = None, RENAME_SIMILARITY
+        new_text = added[new].text or ""
+        for old in fuzzy_old[:_RENAME_CANDIDATE_CAP]:
+            if old in used_old:
+                continue
+            sm = difflib.SequenceMatcher(None, removed[old].text or "", new_text, autojunk=False)
+            if sm.real_quick_ratio() < best_ratio or sm.quick_ratio() < best_ratio:
+                continue
+            ratio = sm.ratio()
+            if ratio >= best_ratio:
+                best, best_ratio = old, ratio
+        if best is not None:
+            pairs[new] = best
+            used_old.add(best)
+    return pairs
+
+
+def compare_pair(owner: str, exp_id: str, alt_a: str, alt_b: str, *,
+                 max_file_bytes: int = MAX_PAIR_FILE_BYTES,
+                 max_diff_lines: int = MAX_PAIR_DIFF_LINES,
+                 max_files: int = MAX_PAIR_FILES) -> Dict[str, Any]:
+    """Alternative `alt_a` against alternative `alt_b`, file by file.
+
+    Direction is A -> B: a file `added` exists only in B, `removed` only in
+    A, `renamed` moved (path in B, `old_path` in A), `changed` differs.
+    Files identical in both are not listed (they are counted). Every cap is
+    stated back in `limits`/`truncation`; a binary or oversize file is
+    listed with `binary`/`too_large` and no diff, never diffed as empty.
+    Read-only."""
+    exp = _load_experiment(owner, exp_id)
+    if alt_a == alt_b:
+        raise AlternativesError("pick two different alternatives to compare",
+                                 error_class="alternatives.invalid_request")
+    a = _alt_or_404(exp, alt_a)
+    b = _alt_or_404(exp, alt_b)
+    if (a["isolation"] == "doc_version") != (b["isolation"] == "doc_version"):
+        raise AlternativesError("a document alternative cannot be compared with a file alternative",
+                                 error_class="alternatives.invalid_request")
+    cap = max(1_000, min(int(max_file_bytes), MAX_FILE_BYTES))
+    line_cap = max(20, min(int(max_diff_lines), 20_000))
+    file_cap = max(1, min(int(max_files), 5_000))
+
+    touched_a = _pair_touched(exp, a, cap)
+    touched_b = _pair_touched(exp, b, cap)
+    read_a, read_b = _pair_reader(a, cap), _pair_reader(b, cap)
+
+    identical_files = 0
+    differing: Dict[str, Tuple[Optional[_Blob], Optional[_Blob]]] = {}
+    for rel in sorted(set(touched_a) | set(touched_b)):
+        blob_a, blob_b = read_a(rel), read_b(rel)
+        same = (blob_a is None and blob_b is None) or (
+            blob_a is not None and blob_b is not None and blob_a.sha == blob_b.sha)
+        if same:
+            identical_files += 1
+        else:
+            differing[rel] = (blob_a, blob_b)
+
+    removed = {r: ab[0] for r, ab in differing.items() if ab[1] is None and ab[0] is not None}
+    added = {r: ab[1] for r, ab in differing.items() if ab[0] is None and ab[1] is not None}
+    renames = _pair_renames(removed, added)  # new -> old
+
+    entries: List[Dict[str, Any]] = []
+    overlap_of: Dict[str, str] = {}
+    for rel in sorted(set(touched_a) & set(touched_b)):
+        blob_a, blob_b = read_a(rel), read_b(rel)
+        overlap_of[rel] = _pair_overlap(exp, rel, blob_a, blob_b)
+
+    renamed_old = set(renames.values())
+    plan: List[Tuple[str, str, Optional[str], Optional[_Blob], Optional[_Blob]]] = []
+    for rel, (blob_a, blob_b) in differing.items():
+        if rel in renamed_old:
+            continue
+        if rel in renames:
+            old = renames[rel]
+            plan.append((rel, "renamed", old, differing[old][0], blob_b))
+        else:
+            status = "added" if blob_a is None else "removed" if blob_b is None else "changed"
+            plan.append((rel, status, None, blob_a, blob_b))
+
+    def _rank(item):
+        rel, _s, old, _a, _b = item
+        ranks = [_OVERLAP_RANK[overlap_of.get(p)] for p in (rel, old) if p]
+        return (min(ranks), rel)
+
+    plan.sort(key=_rank)
+    chars_left = MAX_PAIR_TOTAL_DIFF_CHARS
+    budget_hit = False
+    for rel, status, old, blob_a, blob_b in plan[:file_cap]:
+        entry = _pair_entry(rel, status, blob_a, blob_b, old_path=old, max_lines=line_cap,
+                            chars_left=max(0, chars_left))
+        chars_left -= len(entry["diff"]) + 1
+        if entry["diff_truncated"] and chars_left <= 0:
+            budget_hit = True
+        sides = [p for p in (rel, old) if p]
+        entry["touched_by"] = [k for k, t in (("a", touched_a), ("b", touched_b)) if any(p in t for p in sides)]
+        entry["base_change"] = {
+            "a": next((touched_a[p] for p in sides if p in touched_a), None),
+            "b": next((touched_b[p] for p in sides if p in touched_b), None),
+        }
+        entry["overlap"] = next((overlap_of[p] for p in sides if p in overlap_of), None)
+        entries.append(entry)
+
+    both = sorted(set(touched_a) & set(touched_b))
+    only_a = sorted(set(touched_a) - set(touched_b))
+    only_b = sorted(set(touched_b) - set(touched_a))
+    summary = {
+        "files_differing": len(plan),
+        "added": sum(1 for p in plan if p[1] == "added"),
+        "removed": sum(1 for p in plan if p[1] == "removed"),
+        "changed": sum(1 for p in plan if p[1] == "changed"),
+        "renamed": sum(1 for p in plan if p[1] == "renamed"),
+        "binary": sum(1 for e in entries if e["binary"]),
+        "too_large": sum(1 for e in entries if e["too_large"]),
+        "additions": sum(e["additions"] or 0 for e in entries),
+        "deletions": sum(e["deletions"] or 0 for e in entries),
+        "identical_files": identical_files,
+        "overlap": {k: sum(1 for v in overlap_of.values() if v == k)
+                    for k in ("identical", "mergeable", "conflict", "unknown")},
+    }
+    truncated_diffs = sum(1 for e in entries if e["diff_truncated"])
+    return {
+        "experiment_id": exp["id"],
+        "base_ref": exp["base_ref"],
+        "base_kind": exp["base_kind"],
+        "a": {"id": a["id"], "label": a["label"], "isolation": a["isolation"], "files_touched": len(touched_a)},
+        "b": {"id": b["id"], "label": b["label"], "isolation": b["isolation"], "files_touched": len(touched_b)},
+        "identical": not plan,
+        "summary": summary,
+        "touched": {
+            "a": len(touched_a), "b": len(touched_b), "both": len(both),
+            "only_a": len(only_a), "only_b": len(only_b),
+            "paths": {"only_a": only_a[:file_cap], "only_b": only_b[:file_cap], "both": both[:file_cap]},
+        },
+        "files": entries,
+        "limits": {"max_file_bytes": cap, "max_diff_lines_per_file": line_cap, "max_files": file_cap,
+                   "max_total_diff_chars": MAX_PAIR_TOTAL_DIFF_CHARS},
+        "truncation": {
+            "any": bool(len(plan) > file_cap or truncated_diffs or summary["too_large"]),
+            "files": len(plan) > file_cap,
+            "files_omitted": max(0, len(plan) - file_cap),
+            "diffs": truncated_diffs,
+            "diff_budget_exhausted": budget_hit,
+            "files_not_diffed": summary["too_large"] + summary["binary"],
+        },
     }
 
 

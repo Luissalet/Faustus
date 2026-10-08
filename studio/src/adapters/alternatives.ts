@@ -93,6 +93,77 @@ export interface CompareResult {
   contested_files: Record<string, string[]>;
 }
 
+/** OBJ-47 — one alternative against another (`GET …/compare/{a}/{b}`),
+ *  direction A → B: `added` exists only in B, `removed` only in A. */
+export type PairStatus = 'added' | 'removed' | 'changed' | 'renamed';
+export type PairOverlap = 'identical' | 'mergeable' | 'conflict' | 'unknown';
+
+export interface PairFile {
+  path: string;
+  old_path: string | null;
+  status: PairStatus;
+  size_a: number | null;
+  size_b: number | null;
+  binary: boolean;
+  too_large: boolean;
+  additions: number | null;
+  deletions: number | null;
+  diff: string;
+  diff_truncated: boolean;
+  omitted_lines: number;
+  diff_total_lines: number;
+  touched_by: ('a' | 'b')[];
+  base_change: { a: string | null; b: string | null };
+  overlap: PairOverlap | null;
+}
+
+export interface PairSide {
+  id: string;
+  label: string;
+  isolation: IsolationKind;
+  files_touched: number;
+}
+
+export interface PairResult {
+  experiment_id: string;
+  base_ref: string;
+  base_kind: BaseKind;
+  a: PairSide;
+  b: PairSide;
+  identical: boolean;
+  summary: {
+    files_differing: number;
+    added: number;
+    removed: number;
+    changed: number;
+    renamed: number;
+    binary: number;
+    too_large: number;
+    additions: number;
+    deletions: number;
+    identical_files: number;
+    overlap: Record<PairOverlap, number>;
+  };
+  touched: {
+    a: number;
+    b: number;
+    both: number;
+    only_a: number;
+    only_b: number;
+    paths: { only_a: string[]; only_b: string[]; both: string[] };
+  };
+  files: PairFile[];
+  limits: { max_file_bytes: number; max_diff_lines_per_file: number; max_files: number; max_total_diff_chars: number };
+  truncation: {
+    any: boolean;
+    files: boolean;
+    files_omitted: number;
+    diffs: number;
+    diff_budget_exhausted: boolean;
+    files_not_diffed: number;
+  };
+}
+
 export class AlternativesApiError extends ApiError {
   readonly errorClass: string | null;
   readonly conflicts: string[];
@@ -175,6 +246,15 @@ export function deleteExperiment(projectId: string, expId: string): Promise<{ ok
 
 export function compareExperiment(projectId: string, expId: string, signal?: AbortSignal): Promise<CompareResult> {
   return get(`${base(projectId)}/${encodeURIComponent(expId)}/compare`, signal);
+}
+
+export function comparePair(
+  projectId: string, expId: string, altA: string, altB: string, signal?: AbortSignal,
+): Promise<PairResult> {
+  return get(
+    `${base(projectId)}/${encodeURIComponent(expId)}/compare/${encodeURIComponent(altA)}/${encodeURIComponent(altB)}`,
+    signal,
+  );
 }
 
 export function addAlternative(

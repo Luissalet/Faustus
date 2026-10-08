@@ -68,12 +68,44 @@ Diff de cada alternativa contra `base_ref` (`diff_summary`:
 {added,modified,deleted,none}`), más `contested_files`: qué rutas toca MÁS
 DE UNA alternativa — el conjunto que un `apply`/`combine` posterior
 necesitará fusionar o que colisionará si se combinan sobre el mismo
-fichero. **Alcance declarado**: esto es "diffs contra base y qué ficheros
-se disputan las alternativas", no una diferencia de texto completa de cada
-alternativa contra cada otra alternativa por pares — sería *O(n²)* de coste
-sin que el caso de uso (decidir qué aplicar) lo necesite; el conjunto
-`contested_files` ya dice exactamente dónde haría falta mirar dos
-alternativas una junto a otra.
+fichero. **Alcance**: `compare` es "cada alternativa contra la base y qué ficheros
+se disputan"; la diferencia de una alternativa contra OTRA es
+`compare_pair`, justo debajo. Un fichero que la alternativa creó sin
+`git add` cuenta como `added` (antes `git diff <base>` no lo veía), y un
+renombrado se informa como borrado + alta con rutas reales (con `-M` la
+clave salía como `old => new`, que no nombra ningún fichero que `apply`
+pueda escribir).
+
+## `compare_pair(owner, exp_id, alt_a, alt_b, *, max_file_bytes, max_diff_lines, max_files)` (OBJ-47)
+
+Una alternativa contra otra, fichero a fichero, en sentido **A → B**:
+`added` existe solo en B, `removed` solo en A, `renamed` se movió (ruta en B,
+`old_path` en A), `changed` difiere. Los ficheros idénticos en ambas no se
+listan (se cuentan en `summary.identical_files`). Solo lectura: no escribe
+nada, ni siquiera el registro del experimento.
+
+* **Diff**: `diff` es un diff unificado (`--- a/<ruta>` / `+++ b/<ruta>`,
+  `/dev/null` en el lado ausente; una última línea sin salto lleva
+  `\ No newline at end of file`). `additions`/`deletions` cuentan TODO el
+  diff, no solo la parte conservada.
+* **Binarios y grandes**: un fichero con NUL, UTF-8 inválido o más de
+  `max_file_bytes` (por defecto 512 000) se lista con `binary` / `too_large`,
+  sin diff y con `additions`/`deletions` a `null`; nunca se diffa como vacío.
+* **Topes, siempre declarados** (`limits` y `truncation`): `max_diff_lines`
+  por fichero (1 500; `diff_truncated`, `omitted_lines`, `diff_total_lines`),
+  `max_files` (400; `truncation.files`, `files_omitted`) y un presupuesto
+  total de 600 000 caracteres de diff (`diff_budget_exhausted`). Los
+  conflictos van primero, así que un tope nunca esconde uno.
+* **Renombrados**: una ruta solo de A y otra solo de B son un renombrado si
+  su contenido es idéntico o, en texto pequeño, se parece al menos un 60 %.
+* **Solape contra la base** (`touched`, y por fichero `touched_by`,
+  `base_change`, `overlap`): para lo que AMBAS tocaron, `identical` (misma
+  edición), `mergeable` (fusión a tres bandas limpia) o `conflict` - el mismo
+  `git merge-file` que usa `apply`, así que la vista previa y la fusión real
+  no pueden discrepar. `unknown` solo si git no está.
+* Errores: la misma alternativa dos veces o mezclar una alternativa de
+  documento con una de ficheros es `400 alternatives.invalid_request`; una
+  alternativa inexistente, `404 alternatives.alt_not_found`.
 
 ## Cableado a `core.database.Document` (W3-D, CMP-13 seguimiento)
 
@@ -140,6 +172,7 @@ copia principal del usuario son la misma clase de sorpresa que
 | `GET /{exp_id}` | Un experimento completo. |
 | `DELETE /{exp_id}` | Borra el experimento y limpia sus worktrees/directorios. |
 | `GET /{exp_id}/compare` | Ver arriba. |
+| `GET /{exp_id}/compare/{alt_a}/{alt_b}` | `?max_file_bytes&max_diff_lines&max_files` - `compare_pair`, ver arriba. Solo lectura (`require_user`). |
 | `POST /{exp_id}/alternatives` | `{label, isolation?}` — añade una alternativa. |
 | `PUT /{exp_id}/alternatives/{alt_id}/content` | `{content}` — solo `doc_version`. |
 | `POST /{exp_id}/alternatives/{alt_id}/tests` | `{command, timeout?}` — corre `command` (siempre `shlex.split`, nunca shell) dentro del propio directorio aislado de la alternativa. |
@@ -199,8 +232,9 @@ segunda, para probar que ningún intento mezcló nada.
   `set_doc_version_content` y `apply_alternative` están probados end-to-end
   por el backend y ahora también la ruta `POST /doc`, listos para que un
   lote de documentos/pantalla los cablee a una pantalla.
-* `compare` no calcula diffs por pares entre alternativas (solo cada una
-  contra la base, más `contested_files`) — ver la nota de alcance arriba.
+* `compare_pair` compara de dos en dos; no hay una matriz de las N alternativas
+  entre sí (sería O(n²) sin que decidir qué aplicar lo necesite). El agente
+  (`alt_compare`) sigue usando `compare`.
 * No hay seguimiento de coste real de ejecución (`run_id` queda `None`
   salvo que un futuro cableado del motor de agentes lo rellene).
 * `combine` (fusión por fichero) no tiene el mismo cableado a

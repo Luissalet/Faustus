@@ -269,3 +269,272 @@
   font-family: var(--fs-font-mono, ui-monospace, monospace);
   font-size: 11px;
 }
+
+
+/* ── pair diff (OBJ-47): one alternative against another ──
+   Rules enforced here rather than left to chance:
+   1. Nothing scrolls sideways except the diff viewer itself (and it does so
+      in its own focusable region); paths and labels wrap, the file list
+      scrolls vertically only.
+   2. Colour is never the only carrier: every file keeps its status word and
+      glyph, every diff line its sign; the tints below only reinforce.
+   3. Tokens only, so light and dark follow the theme. */
+
+.fs-alt__pair {
+  display: grid;
+  gap: var(--fs-space-3);
+  min-inline-size: 0;
+  padding: var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-md);
+  background: var(--fs-surface-1);
+}
+
+.fs-alt__pair-title {
+  margin: 0;
+  font-size: 14px;
+}
+
+.fs-alt__pair-pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+  align-items: flex-end;
+}
+
+.fs-alt__pair-pick .fs-alt__row-field {
+  flex: 1 1 140px;
+  min-inline-size: 0;
+}
+
+.fs-alt__pair-pick .fs-field {
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.fs-alt__pair-summary {
+  display: grid;
+  gap: var(--fs-space-1);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.fs-alt__pair-summary p {
+  margin: 0;
+}
+
+.fs-alt__pair-tools {
+  display: grid;
+  gap: var(--fs-space-2);
+}
+
+.fs-alt__pair-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-1);
+}
+
+.fs-alt__chip {
+  display: inline-flex;
+  gap: var(--fs-space-1);
+  align-items: center;
+  padding: 2px var(--fs-space-2);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-2);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.fs-alt__chip[aria-pressed='true'] {
+  border-color: var(--fs-text-2);
+  background: var(--fs-surface-3);
+  color: var(--fs-text-1);
+  font-weight: 600;
+}
+
+.fs-alt__chip[data-tone='bad'] {
+  border-color: color-mix(in srgb, var(--fs-danger) 45%, var(--fs-border));
+}
+
+.fs-alt__chip-n {
+  color: var(--fs-text-3);
+}
+
+.fs-alt__tag[data-tone='warn'] {
+  border-color: color-mix(in srgb, var(--fs-warning) 45%, var(--fs-border));
+  color: var(--fs-warning);
+}
+
+.fs-alt__pair-split {
+  display: grid;
+  grid-template-columns: minmax(200px, 300px) minmax(0, 1fr);
+  gap: var(--fs-space-3);
+  align-items: start;
+  min-inline-size: 0;
+}
+
+.fs-alt__pair-files {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-block-size: 420px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  min-inline-size: 0;
+}
+
+.fs-alt__pair-file {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0 var(--fs-space-2);
+  padding: var(--fs-space-1) var(--fs-space-2);
+  border: 1px solid transparent;
+  border-radius: var(--fs-radius-sm, 4px);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.fs-alt__pair-file:hover {
+  background: var(--fs-surface-2);
+}
+
+.fs-alt__pair-file[data-current='yes'] {
+  border-color: var(--fs-border);
+  background: var(--fs-surface-3);
+}
+
+.fs-alt__pair-glyph {
+  grid-row: 1 / span 2;
+  inline-size: 1.2em;
+  text-align: center;
+  font-weight: 700;
+}
+
+.fs-alt__pair-file[data-status='added'] .fs-alt__pair-glyph {
+  color: var(--fs-success);
+}
+
+.fs-alt__pair-file[data-status='removed'] .fs-alt__pair-glyph {
+  color: var(--fs-danger);
+}
+
+.fs-alt__pair-path {
+  min-inline-size: 0;
+}
+
+.fs-alt__pair-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-1) var(--fs-space-2);
+  align-items: center;
+  font-size: 11px;
+}
+
+.fs-alt__pair-view {
+  display: grid;
+  gap: var(--fs-space-2);
+  min-inline-size: 0;
+}
+
+.fs-alt__pair-view-head {
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+  min-inline-size: 0;
+}
+
+.fs-alt__pair-viewer {
+  max-inline-size: 100%;
+  max-block-size: 520px;
+  overflow-x: auto;
+  overflow-y: auto;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-sm, 4px);
+  background: var(--fs-surface-2);
+}
+
+.fs-alt__pair-empty {
+  margin: 0;
+  padding: var(--fs-space-3);
+  color: var(--fs-text-2);
+  font-size: 12px;
+}
+
+.fs-alt__pair-cut {
+  display: flex;
+  gap: var(--fs-space-1);
+  align-items: center;
+  margin: 0;
+  color: var(--fs-warning);
+  font-size: 11px;
+}
+
+.fs-alt__diff {
+  inline-size: max-content;
+  min-inline-size: 100%;
+  border-collapse: collapse;
+  font-family: var(--fs-font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.fs-alt__diff td {
+  padding: 0 var(--fs-space-2);
+  vertical-align: top;
+  white-space: pre;
+}
+
+.fs-alt__diff-no {
+  inline-size: 1%;
+  min-inline-size: 3ch;
+  color: var(--fs-text-3);
+  text-align: end;
+  user-select: none;
+}
+
+.fs-alt__diff-sign {
+  inline-size: 1%;
+  min-inline-size: 2ch;
+  text-align: center;
+}
+
+.fs-alt__diff[data-layout='unified'] .fs-alt__diff-code {
+  inline-size: 100%;
+}
+
+.fs-alt__diff[data-layout='side'] .fs-alt__diff-code {
+  inline-size: 50%;
+}
+
+.fs-alt__diff tr[data-kind='add'],
+.fs-alt__diff td[data-kind='add'] {
+  background: color-mix(in srgb, var(--fs-success) 16%, transparent);
+}
+
+.fs-alt__diff tr[data-kind='del'],
+.fs-alt__diff td[data-kind='del'] {
+  background: color-mix(in srgb, var(--fs-danger) 16%, transparent);
+}
+
+.fs-alt__diff td[data-kind='empty'] {
+  background: var(--fs-surface-3);
+}
+
+.fs-alt__diff-meta td {
+  background: var(--fs-surface-3);
+  color: var(--fs-text-2);
+}
+
+@media (max-width: 720px) {
+  .fs-alt__pair-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fs-alt__pair-files {
+    max-block-size: 220px;
+  }
+}

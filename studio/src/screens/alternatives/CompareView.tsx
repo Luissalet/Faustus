@@ -5,6 +5,7 @@ import {
 import { Button, Dialog, Skeleton, Toast } from '../../components';
 import * as api from '../../adapters/alternatives';
 import { t } from '../../i18n';
+import { PairDiff } from './PairDiff';
 
 /**
  * CompareView — one experiment, in full: every alternative's diff against
@@ -323,6 +324,15 @@ export function CompareView({ projectId, expId, onBack, onDeleted }: {
             </ul>
           </div>
         </section>
+      )}
+
+      {data.alternatives.length > 0 && (
+        <PairDiff
+          projectId={projectId}
+          expId={expId}
+          alternatives={data.alternatives.map((a) => ({ id: a.id, label: a.label }))}
+          signature={data.alternatives.map((a) => `${a.id}:${JSON.stringify(a.diff_summary)}`).join('|')}
+        />
       )}
 
       {data.alternatives.length === 0 ? (

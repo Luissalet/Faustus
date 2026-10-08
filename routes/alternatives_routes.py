@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -166,6 +166,27 @@ def setup_alternatives_routes() -> APIRouter:
         try:
             _exp_or_error(owner, exp_id, project_id)
             return alternatives.compare(owner, exp_id)
+        except alternatives.AlternativesError as exc:
+            return _alt_error(exc)
+
+    @router.get("/{exp_id}/compare/{alt_a}/{alt_b}")
+    def compare_pair(project_id: str, exp_id: str, alt_a: str, alt_b: str, request: Request,
+                     max_file_bytes: int = Query(alternatives.MAX_PAIR_FILE_BYTES, ge=1000,
+                                                  le=alternatives.MAX_FILE_BYTES),
+                     max_diff_lines: int = Query(alternatives.MAX_PAIR_DIFF_LINES, ge=20, le=20000),
+                     max_files: int = Query(alternatives.MAX_PAIR_FILES, ge=1, le=5000),
+                     _u: str = Depends(require_user)) -> Any:
+        """OBJ-47: alternative A against alternative B, file by file (a unified
+        diff from A to B, added/removed/changed/renamed files, binary and
+        oversize files flagged, every cap stated back, and where the two
+        collide relative to the base). Read-only."""
+        owner = effective_user(request)
+        _project_or_404(project_id, owner)
+        try:
+            _exp_or_error(owner, exp_id, project_id)
+            return alternatives.compare_pair(
+                owner, exp_id, alt_a, alt_b,
+                max_file_bytes=max_file_bytes, max_diff_lines=max_diff_lines, max_files=max_files)
         except alternatives.AlternativesError as exc:
             return _alt_error(exc)
 
