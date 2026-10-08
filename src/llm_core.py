@@ -2349,10 +2349,14 @@ def httpx_get_kimi_aware(url: str, headers: Optional[Dict], **kwargs):
     return last
 
 
-def httpx_post_kimi_aware(url: str, headers: Optional[Dict], **kwargs):
+def httpx_post_kimi_aware(url: str, headers: Optional[Dict], *, _automatic_min_p=False, **kwargs):
     h = apply_kimi_code_headers(headers, url)
     if not _is_kimi_code_url(url):
-        return httpx.post(url, headers=h, **kwargs)
+        response = httpx.post(url, headers=h, **kwargs)
+        if _automatic_min_p and response.status_code == 400 and _neutralize_rejected_automatic_min_p(kwargs.get("json"), url, response.status_code,
+                                               response.text, automatic=_automatic_min_p):
+            response = httpx.post(url, headers=h, **kwargs)
+        return response
     last = None
     for ua in _kimi_code_ua_candidates(url):
         trial = dict(h)
@@ -2365,10 +2369,14 @@ def httpx_post_kimi_aware(url: str, headers: Optional[Dict], **kwargs):
     return last
 
 
-async def httpx_post_kimi_aware_async(client, url: str, headers: Optional[Dict], **kwargs):
+async def httpx_post_kimi_aware_async(client, url: str, headers: Optional[Dict], *, _automatic_min_p=False, **kwargs):
     h = await apply_kimi_code_headers_async(client, headers, url)
     if not _is_kimi_code_url(url):
-        return await client.post(url, headers=h, **kwargs)
+        response = await client.post(url, headers=h, **kwargs)
+        if _automatic_min_p and response.status_code == 400 and _neutralize_rejected_automatic_min_p(kwargs.get("json"), url, response.status_code,
+                                               response.text, automatic=_automatic_min_p):
+            response = await client.post(url, headers=h, **kwargs)
+        return response
     last = None
     for ua in _kimi_code_ua_candidates(url):
         trial = dict(h)
@@ -2563,7 +2571,32 @@ def _is_local_minimax_mlx_request(url: str, model: str) -> bool:
         return False
 
 
-def _apply_local_generation_stability(payload: Dict, url: str, model: str) -> None:
+def _neutralize_rejected_automatic_min_p(payload, url: str, status: int, error,
+                                        *, automatic: bool, partial: bool = False) -> bool:
+    """One compatibility correction after an explicit speculative sampler rejection.
+
+    Only our injected default may become neutral. Explicit sampling, reasoning,
+    logit bias, and any response that already produced output stay untouched.
+    No model names, device addresses or speculative engine guesses are used.
+    """
+    if (not automatic or partial or status != 400 or not isinstance(payload, dict)
+            or "logit_bias" in payload or not _is_self_hosted_openai_compatible(url)):
+        return False
+    message = error.get("message", "") if isinstance(error, dict) else str(error)
+    signature = "min_p and logit_bias sampling parameters are not yet supported with speculative decoding"
+    if signature not in message.lower():
+        return False
+    try:
+        if float(payload.get("min_p", 0)) <= 0:
+            return False
+    except (TypeError, ValueError):
+        return False
+    payload["min_p"] = 0.0
+    logger.info("Local server rejected the automatic min_p default; retrying once with neutral min_p")
+    return True
+
+
+def _apply_local_generation_stability(payload: Dict, url: str, model: str) -> bool:
     """Sampling/output-length safety net for a local OpenAI-compatible
     server's JSON body, applied AFTER `_apply_gen_overrides_openai` (an
     explicit saved/per-turn value always wins — everything here is
@@ -2591,6 +2624,7 @@ def _apply_local_generation_stability(payload: Dict, url: str, model: str) -> No
         `local_repeat_penalty_default`/`local_min_p_default` floor settings
         apply directly here.
     """
+    automatic_min_p = False
     if _is_local_minimax_mlx_request(url, model):
         if "temperature" in payload:
             try:
@@ -2614,7 +2648,7 @@ def _apply_local_generation_stability(payload: Dict, url: str, model: str) -> No
         # endpoints. Keep simple chats from running forever when the model loops.
         if not payload.get("max_tokens") and not payload.get("max_completion_tokens"):
             payload["max_tokens"] = 2048
-        return
+        return False
 
     if _is_self_hosted_openai_compatible(url) and not _is_local_ollama_target(url):
         # Real Ollama /v1 traffic never reaches this branch on the actual
@@ -2624,6 +2658,7 @@ def _apply_local_generation_stability(payload: Dict, url: str, model: str) -> No
         # double-applying the floor if this helper is ever called directly
         # or the reroute is bypassed.
         payload.setdefault("repeat_penalty", _local_sampler_default("local_repeat_penalty_default", 1.05))
+        automatic_min_p = "min_p" not in payload
         payload.setdefault("min_p", _local_sampler_default("local_min_p_default", 0.05))
         # `local_top_p_default`/`local_top_k_default`: same floor as the two
         # above (`setdefault` only — an explicit `/topp`/`/topk` already
@@ -2648,6 +2683,7 @@ def _apply_local_generation_stability(payload: Dict, url: str, model: str) -> No
             except (TypeError, ValueError):
                 cap = 8192
             payload["max_tokens"] = cap if cap > 0 else 8192
+    return automatic_min_p
 
 
 def _provider_headers(provider: str, headers: Optional[Dict] = None) -> Dict[str, str]:
@@ -4034,6 +4070,7 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
         logger.debug(f"Returning cached response for key: {cache_key}")
         return cached_response
 
+    _automatic_min_p = False
     if provider == "anthropic":
         target_url = _normalize_anthropic_url(url)
         h = _build_anthropic_headers(headers)
@@ -4067,7 +4104,7 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
         if max_tokens and max_tokens > 0:
             tok_key = "max_completion_tokens" if _uses_max_completion_tokens(model) else "max_tokens"
             payload[tok_key] = max_tokens
-        _apply_local_generation_stability(payload, target_url, model)
+        _automatic_min_p = _apply_local_generation_stability(payload, target_url, model)
         # `url`, not `target_url`: the gate in `_resolve_response_schema` was
         # decided on the endpoint as configured, and the backend registry is
         # keyed the same way. Asking about the normalised /chat/completions
@@ -4107,7 +4144,8 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
     timeout = resolve_timeout(url, timeout)
     try:
         note_model_activity(target_url, model)
-        r = httpx_post_kimi_aware(target_url, h, json=payload, timeout=timeout)
+        r = httpx_post_kimi_aware(target_url, h, json=payload, timeout=timeout,
+                                 _automatic_min_p=_automatic_min_p)
     except Exception as e:
         raise HTTPException(502, f"POST {target_url} failed: {e}")
     if not r.is_success:
@@ -4708,6 +4746,7 @@ async def _llm_call_async_impl(
                         model, False if _native_think_off else None)
             url = _routed_schema
     provider = _detect_provider(url)
+    _automatic_min_p = False
     messages_copy = _sanitize_llm_messages(messages, provider=provider)
 
     # Consolidate multiple system messages into one at the start.
@@ -4865,7 +4904,7 @@ async def _llm_call_async_impl(
             _widen_output_for_reasoning(payload, _asked, key=("max_completion_tokens"
                                         if "max_completion_tokens" in payload else "max_tokens",))
         _apply_local_cache_affinity(payload, url, session_id)
-        _apply_local_generation_stability(payload, target_url, model)
+        _automatic_min_p = _apply_local_generation_stability(payload, target_url, model)
         _apply_openai_response_format(payload, url, schema, model=model)  # `url`: see llm_call
         # No `tools` here: this path is the tool-less completion helper.
         _suppress_thinking_for_small_talk(payload, model, messages_copy)
@@ -4946,12 +4985,14 @@ async def _llm_call_async_impl(
                         r = await httpx_post_kimi_aware_async(
                             client, target_url, h, json=payload,
                             timeout=call_timeout,
+                            _automatic_min_p=_automatic_min_p,
                         )
                 else:
                     client = _get_http_client()
                     r = await httpx_post_kimi_aware_async(
                         client, target_url, h, json=payload,
                         timeout=call_timeout,
+                        _automatic_min_p=_automatic_min_p,
                     )
             duration = time.time() - start
             if not r.is_success and _asked and _reasoning_steps < 2:
@@ -5528,13 +5569,13 @@ def _apply_gen_overrides_openai(payload: Dict, overrides: Dict, url: str) -> Non
         for k in ("top_k", "repeat_penalty", "min_p"):
             if k in overrides:
                 payload[k] = overrides[k]
-    elif _is_loopback_url(url):
+    elif _is_self_hosted_openai_compatible(url):
         # A non-Ollama local OpenAI-compatible server (llama-server et al.)
         # also accepts these as top-level fields on /v1/chat/completions and
         # a broken sampler there degenerates the same way a fresh Ollama
-        # session does. Restricted to loopback: an arbitrary remote OpenAI
-        # provider may 400 on an unknown field, and there is no way to know
-        # from the URL alone whether it will.
+        # session does. Apply to configured self-hosted servers on the LAN
+        # too: restricting overrides to loopback silently replaced a Spark's
+        # explicit sampler with our automatic default. Hosted APIs stay out.
         for k in ("top_k", "repeat_penalty", "min_p"):
             if k in overrides:
                 payload[k] = overrides[k]
@@ -6071,8 +6112,9 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                             max_retries: int = LLMConfig.MAX_RETRIES,
                             availability_only_transport: bool = False,
                             _attempt: int = 1, _budget: Optional[RetryBudget] = None,
-                            _engine_wait_used: bool = False):
+                            _engine_wait_used: bool = False, _sampler_retry_used: bool = False):
     _overrides = _clean_gen_overrides(gen_overrides)
+    _automatic_min_p = False
     """Stream LLM responses with improved error handling.
 
     Yields SSE chunks:
@@ -6233,7 +6275,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         _apply_local_cache_affinity(payload, url, session_id)
         if session_id:
             _apply_llamacpp_slot(payload, url, session_id)
-        _apply_local_generation_stability(payload, target_url, model)
+        _automatic_min_p = _apply_local_generation_stability(payload, target_url, model)
         _scrub_openai_chat_tool_reasoning(payload, target_url, model)
         # The streaming path is the one the user is watching, and agent mode
         # is the default here, so this is where a greeting arrives with the
@@ -7250,14 +7292,15 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
             _delta_emitted = True
         return events
 
-    def _retry(next_attempt: int):
+    def _retry(next_attempt: int, *, sampling_compatible: bool = False):
         return _stream_llm_inner(
             url, model, messages, temperature=temperature, max_tokens=max_tokens,
             headers=headers, timeout=timeout, prompt_type=prompt_type, tools=tools,
             session_id=session_id, tool_choice_none=tool_choice_none,
-            gen_overrides=gen_overrides, max_retries=max_retries,
+            gen_overrides=({**(_overrides or {}), "min_p": 0.0} if sampling_compatible else gen_overrides), max_retries=max_retries,
             availability_only_transport=availability_only_transport,
             _attempt=next_attempt, _budget=_budget, _engine_wait_used=_engine_wait_used,
+            _sampler_retry_used=_sampler_retry_used or sampling_compatible,
         )
 
     def _retry_after_engine_recovery():
@@ -7275,6 +7318,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
             gen_overrides=gen_overrides, max_retries=max_retries,
             availability_only_transport=availability_only_transport,
             _attempt=1, _budget=fresh_budget, _engine_wait_used=True,
+            _sampler_retry_used=_sampler_retry_used,
         )
 
     _dump_stream_payload(target_url, payload)
@@ -7285,6 +7329,12 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
             _clear_host_dead(target_url)
             if r.status_code != 200:
                 raw = (await r.aread()).decode(errors="replace")
+                if _neutralize_rejected_automatic_min_p(payload, target_url, r.status_code, raw,
+                                                        automatic=_automatic_min_p and not _sampler_retry_used):
+                    await r.aclose()
+                    async for chunk in _retry(_attempt, sampling_compatible=True):
+                        yield chunk
+                    return
                 friendly = _format_upstream_error(r.status_code, raw, target_url)
                 _should_retry, _wait, _classification, _retryable = _stream_retry_decision(
                     status=r.status_code, headers=r.headers, attempt=_attempt,
@@ -7337,6 +7387,13 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                     err = j.get("error")
                                     status = _provider_stream_error_status(err, default=400)
                                     text = err.get("message") if isinstance(err, dict) else str(err)
+                                    if _neutralize_rejected_automatic_min_p(payload, target_url, status, text,
+                                            automatic=_automatic_min_p and not _sampler_retry_used,
+                                            partial=_delta_emitted or _tc_assembler.has_calls()):
+                                        await r.aclose()
+                                        async for chunk in _retry(_attempt, sampling_compatible=True):
+                                            yield chunk
+                                        return
                                     yield f'event: error\ndata: {json.dumps({"error": text or "Upstream request failed", "status": status})}\n\n'
                                     return
                                 chunk_model = j.get("model")
