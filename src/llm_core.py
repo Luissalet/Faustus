@@ -3031,7 +3031,7 @@ _MISTRAL_REASONING_EFFORT = os.getenv("ODYSSEUS_MISTRAL_REASONING_EFFORT", "high
 _THINKING_MODEL_PATTERNS = (
     "qwen3", "qwq", "deepseek-r1", "deepseek-reasoner", "deepseek-v4",
     "minimax", "m2-reap", "gemma", "stepfun", "step-3", "step3",
-    "magistral", "mistral-small", "mistral-medium",
+    "magistral", "mistral-small", "mistral-medium", "glm-5.3-flash", "glm-5-3-flash",
 )
 
 def _supports_thinking(model: str) -> bool:
@@ -4120,6 +4120,7 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
                 payload["chat_template_kwargs"] = _ctk
             _ctk.setdefault("enable_thinking", False)
         _suppress_thinking_for_small_talk(payload, model, messages_copy)
+        _apply_verified_engine_controls(payload, url, model)
         if provider == "mistral" and _supports_thinking(model):
             payload["reasoning_effort"] = _MISTRAL_REASONING_EFFORT
         if provider == "openrouter":
@@ -4585,7 +4586,7 @@ async def llm_call_async(
             _usage_observer(dict(usage), endpoint_local=endpoint_local)
 
     try:
-        result = await _llm_call_async_impl(
+        pending = _llm_call_async_impl(
             url, model, messages,
             temperature=temperature, max_tokens=max_tokens, headers=headers,
             timeout=timeout, max_retries=max_retries, prompt_type=prompt_type,
@@ -4596,6 +4597,18 @@ async def llm_call_async(
             on_outcome_unknown=on_outcome_unknown, gen_overrides=gen_overrides,
             _on_observed_usage=_capture_usage,
         )
+        _initial_wait = _sparks_initial_wait(url)
+        if _initial_wait is not None and workload == "foreground":
+            try:
+                result = await asyncio.wait_for(pending, timeout=_initial_wait)
+            except TimeoutError as exc:
+                error = HTTPException(status_code=504, detail="Initial model response wait limit exceeded")
+                error.fallback_eligible = False
+                error.retryable = False
+                error.error_class = "first_token_timeout"
+                raise error from exc
+        else:
+            result = await pending
         if isinstance(result, tuple):
             _text, _model_out = result[0], result[1]
         else:
@@ -4908,6 +4921,7 @@ async def _llm_call_async_impl(
         _apply_openai_response_format(payload, url, schema, model=model)  # `url`: see llm_call
         # No `tools` here: this path is the tool-less completion helper.
         _suppress_thinking_for_small_talk(payload, model, messages_copy)
+        _apply_verified_engine_controls(payload, url, model)
         if provider == "openrouter":
             # Same OpenRouter options application as llm_call (OBJ-8 Lote A2)
             # -- see that call site for the full rationale.
@@ -5533,6 +5547,12 @@ def _step_down_reasoning(payload: Dict) -> bool:
     return strip_reasoning(payload)
 
 
+def _apply_verified_engine_controls(payload: Dict, url: str, model: str) -> None:
+    if _is_self_hosted_openai_compatible(url) and not _is_local_ollama_target(url):
+        from src.engine_controls import apply_controls
+        apply_controls(payload, url, model)
+
+
 def _fit_reasoning_effort_to_template(payload: Dict, url: str) -> None:
     """A local llama-server renders `reasoning_effort` into the model's chat
     template, which may raise on a value it does not list (HTTP 500)."""
@@ -6054,7 +6074,31 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
             logger.debug("[llm_trace] streaming record failed", exc_info=True)
 
 
-async def _stream_llm_traced_source(url: str, model: str, messages: List[Dict], temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
+def _sparks_initial_wait(url: str) -> Optional[float]:
+    from src.settings import load_settings
+    from src.sparks import first_token_timeout
+    settings = load_settings()
+    endpoint = _endpoint_id_for_url(url)
+    managed = set((settings.get("sparks_endpoints") or {}).values())
+    return first_token_timeout(settings) if endpoint and endpoint in managed else None
+
+
+async def _stream_llm_traced_source(url: str, model: str, *args, **kwargs):
+    source = _stream_llm_unbounded_source(url, model, *args, **kwargs)
+    initial_wait = _sparks_initial_wait(url)
+    if initial_wait is not None:
+        from src.first_token_deadline import bounded
+        async for chunk in bounded(source, initial_wait):
+            yield chunk
+    else:
+        try:
+            async for chunk in source:
+                yield chunk
+        finally:
+            await source.aclose()
+
+
+async def _stream_llm_unbounded_source(url: str, model: str, messages: List[Dict], temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
                      max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS, headers: Optional[Dict] = None,
                      timeout: int = LLMConfig.STREAM_TIMEOUT, prompt_type: Optional[str] = None,
                      tools: Optional[List[Dict]] = None, session_id: Optional[str] = None,
@@ -6282,6 +6326,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         # whole toolset attached. `turn_effort` decides; a conversation that
         # has already run a tool always keeps its reasoning.
         _suppress_thinking_for_small_talk(payload, model, messages_copy, tools)
+        _apply_verified_engine_controls(payload, url, model)
         _drop_tools_for_small_talk(payload, messages_copy)
         if provider == "openrouter":
             # Same OpenRouter options application as llm_call (OBJ-8 Lote A2)

@@ -54,7 +54,8 @@ def test_levels_for_a_llama_server_come_from_its_template(monkeypatch):
 
     monkeypatch.setattr(chat_helpers, "llamacpp_reasoning_efforts", lambda url: ("xhigh", "medium", "low"))
     assert reasoning_levels.levels_for("http://127.0.0.1:8081/v1") == {
-        "levels": ["low", "medium", "xhigh"], "default": "xhigh", "source": "template"}
+        "levels": ["low", "medium", "xhigh"], "default": "xhigh", "source": "template",
+        "engine": "llama_cpp", "thinking_supported": True, "thinking_toggle": True}
     monkeypatch.setattr(chat_helpers, "llamacpp_reasoning_efforts", lambda url: None)
     assert reasoning_levels.levels_for("http://127.0.0.1:8081/v1") is None
 

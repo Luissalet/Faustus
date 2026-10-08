@@ -52,10 +52,19 @@ def config() -> Dict[str, Any]:
         "url": url,
         "default_backend": bool(s.get("sparks_default_backend", True)),
         "recipe": str(s.get("sparks_recipe") or "").strip(),
+        "first_token_timeout_s": first_token_timeout(s),
         "endpoints": dict(s.get("sparks_endpoints") or {}),
         "local_default": dict(s.get("sparks_local_default") or {}),
         "applied": dict(s.get("sparks_applied_default") or {}),
     }
+
+
+def first_token_timeout(settings: Dict[str, Any]) -> float:
+    try:
+        value = float(settings.get("sparks_first_token_timeout_s", 30))
+        return min(120.0, max(5.0, value)) if value == value else 30.0
+    except (TypeError, ValueError):
+        return 30.0
 
 
 def _update(patch: Dict[str, Any]) -> None:
@@ -128,6 +137,7 @@ def _detected_nodes(server: Dict[str, Any]) -> List[str]:
 def status(*, with_recipes: bool = True) -> Dict[str, Any]:
     cfg = config()
     base = {"enabled": cfg["enabled"], "url": cfg["url"], "default_backend": cfg["default_backend"], "recipe": cfg["recipe"],
+            "first_token_timeout_s": cfg["first_token_timeout_s"],
             "local_default": cfg["local_default"]}
     if not cfg["enabled"]:
         return {"ok": False, "error": "disabled", **base}
@@ -375,7 +385,7 @@ def deploy(recipe: str, action: str, *, stop_conflicts: bool = False) -> Dict[st
 
 
 def set_preferences(*, enabled: Optional[bool] = None, url: Optional[str] = None, default_backend: Optional[bool] = None,
-                    recipe: Optional[str] = None) -> Dict[str, Any]:
+                    recipe: Optional[str] = None, first_token_timeout_s: Optional[float] = None) -> Dict[str, Any]:
     patch: Dict[str, Any] = {}
     if enabled is not None:
         patch["sparks_enabled"] = bool(enabled)
@@ -390,13 +400,17 @@ def set_preferences(*, enabled: Optional[bool] = None, url: Optional[str] = None
             patch["sparks_applied_default"] = {}
     if recipe is not None:
         patch["sparks_recipe"] = recipe.strip()
+    if first_token_timeout_s is not None:
+        if not 5 <= first_token_timeout_s <= 120:
+            return {"ok": False, "error": "Initial response wait must be between 5 and 120 seconds"}
+        patch["sparks_first_token_timeout_s"] = first_token_timeout_s
     if patch:
         _update(patch)
     try:
         result = sync()
     except Exception as exc:  # noqa: BLE001
         result = {"ok": False, "error": str(exc)}
-    return {"ok": True, "config": {k: v for k, v in config().items() if k in ("enabled", "url", "default_backend", "recipe", "local_default")},
+    return {"ok": True, "config": {k: v for k, v in config().items() if k in ("enabled", "url", "default_backend", "recipe", "local_default", "first_token_timeout_s")},
             "sync": result}
 
 

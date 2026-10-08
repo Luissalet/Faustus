@@ -2184,7 +2184,7 @@ def setup_model_routes(model_discovery):
         return out
 
     @router.get("/models/reasoning-levels")
-    async def api_models_reasoning_levels(request: Request, endpoint_id: str = ""):
+    async def api_models_reasoning_levels(request: Request, endpoint_id: str = "", model: str = ""):
         """The reasoning levels the model behind one configured endpoint
         accepts (`src/reasoning_levels.py`), for the composer's effort
         control: `{"levels": [...], "default": ..., "source": "template"}`,
@@ -2205,7 +2205,7 @@ def setup_model_routes(model_discovery):
             return {"levels": []}
         import asyncio as _asyncio
         from src.reasoning_levels import levels_for
-        found = await _asyncio.to_thread(levels_for, base)
+        found = await _asyncio.to_thread(levels_for, base, model)
         return found or {"levels": []}
 
     @router.get("/models/fit")

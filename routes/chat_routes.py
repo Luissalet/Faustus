@@ -1860,7 +1860,7 @@ def setup_chat_routes(
         # Build shared context (preset, preprocess, preface, compact)
         result: Optional[Dict[str, Any]] = None
         try:
-            ctx = await build_chat_context(
+            _context_pending = build_chat_context(
                 sess, request, chat_handler, chat_processor,
                 message=message,
                 session_id=session,
@@ -1873,6 +1873,15 @@ def setup_chat_routes(
                 defer_context_shaping=foreground_policy.enabled,
                 behavior_mode=behavior_mode,
             )
+            from src.llm_core import _sparks_initial_wait
+            _context_wait = _sparks_initial_wait(sess.endpoint_url)
+            if _context_wait is not None:
+                try:
+                    ctx = await asyncio.wait_for(_context_pending, timeout=_context_wait)
+                except TimeoutError as exc:
+                    raise HTTPException(504, "La preparacion del chat ha superado el limite de espera. Puedes reducir el contexto o elegir otro modelo.") from exc
+            else:
+                ctx = await _context_pending
 
             # Research injection
             research_blocked_by_policy = (
@@ -1936,6 +1945,14 @@ def setup_chat_routes(
             )
             if _chat_temp_floor is not None:
                 ctx.preset.temperature = _chat_temp_floor
+            _plain_overrides = _parse_gen_overrides(chat_request.gen_overrides)
+            _plain_overrides, _ = _resolve_think_mode(chat_request.think_mode, _plain_overrides, message,
+                                                    model=sess.model, endpoint_url=sess.endpoint_url,
+                                                    chat_mode="chat", workspace=None)
+            from src.reasoning_levels import overrides_for, thinking_switch
+            if chat_request.reasoning_effort and chat_request.reasoning_effort != "auto":
+                _plain_overrides.update(overrides_for(chat_request.reasoning_effort))
+            _plain_overrides = thinking_switch(_plain_overrides, chat_request.thinking_enabled)
             reply, actual_candidate, actual_model = await llm_call_async_with_route_fallback(
                 foreground_candidates,
                 request_messages,
@@ -1945,6 +1962,7 @@ def setup_chat_routes(
                 max_tokens=ctx.preset.max_tokens,
                 prompt_type=preset_id,
                 session_id=session,
+                gen_overrides=_plain_overrides,
             )
             actual_index = _candidate_index(foreground_candidates, actual_candidate)
             apply_compaction_state(
@@ -2031,6 +2049,7 @@ def setup_chat_routes(
     # ------------------------------------------------------------------ #
     @router.post("/api/chat_stream")
     async def chat_stream(request: Request) -> StreamingResponse:
+        _initial_request_started = time.monotonic()
         # ARCH-01: reject BEFORE any work when a client identifies itself as
         # older than this server supports, with a message it can act on,
         # instead of streaming events it cannot parse. A client that sends no
@@ -2723,7 +2742,7 @@ def setup_chat_routes(
 
         async with _session_admission_lock(session):
             # Build shared context (stream path uses enhanced_message for context preface)
-            ctx = await build_chat_context(
+            _context_pending = build_chat_context(
                 sess, request, chat_handler, chat_processor,
                 message=message,
                 session_id=session,
@@ -2754,6 +2773,18 @@ def setup_chat_routes(
                 persist_user_message=not tool_approval_continuation,
                 behavior_mode=behavior_mode,
             )
+            from src.llm_core import _sparks_initial_wait
+            _context_wait = _sparks_initial_wait(sess.endpoint_url)
+            if _context_wait is not None:
+                try:
+                    ctx = await asyncio.wait_for(_context_pending, timeout=max(0.001, _context_wait - (time.monotonic() - _initial_request_started)))
+                except TimeoutError as exc:
+                    if client_message_id and not tool_approval_id:
+                        chat_outbox.mark_finished(owner=owner, session_id=session,
+                                                  client_message_id=client_message_id, status="failed")
+                    raise HTTPException(504, "La preparacion del chat ha superado el limite de espera. Puedes reducir el contexto o elegir otro modelo.") from exc
+            else:
+                ctx = await _context_pending
 
             # W3-INT (CONTRATO_CMP_W2.md § W2-A1/CMP-03): doc_context chips —
             # owner-checked (`_doc_context_messages`) and inserted right before
@@ -2835,6 +2866,18 @@ def setup_chat_routes(
                             }
                     except Exception as _eff_err:  # noqa: BLE001
                         logger.debug("[think-mode] effort skipped: %s", _eff_err)
+                from src.reasoning_levels import thinking_switch
+                _toggle_requested = form_data.get("thinking_enabled", (body or {}).get("thinking_enabled"))
+                try:
+                    _gen_overrides = thinking_switch(_gen_overrides, _toggle_requested)
+                except ValueError as exc:
+                    raise HTTPException(400, str(exc)) from exc
+                if _toggle_requested is not None and _toggle_requested != "":
+                    _think_mode_event = {
+                        **(_think_mode_event or {}), "mode": "think" if _gen_overrides.get("think") else "fast",
+                        "source": "explicit_toggle", "thinking_enabled": _gen_overrides.get("think"),
+                        "effort": _gen_overrides.get("reasoning_effort"),
+                    }
                 if _think_mode_event:
                     logger.info("[think-mode] session=%s requested=%s -> %s (%s%s) budget=%s",
                                 session, _think_mode_event.get("requested"), _think_mode_event.get("mode"),
@@ -4674,8 +4717,12 @@ def setup_chat_routes(
             # the run keeps going and saves the assistant message on completion
             # regardless. Reconnect via /api/chat/resume.
             if compare_mode:
+                _compare_stream = _safe_stream()
+                if _context_wait is not None:
+                    from src.first_token_deadline import bounded
+                    _compare_stream = bounded(_compare_stream, max(0.001, _context_wait - (time.monotonic() - _initial_request_started)))
                 return StreamingResponse(
-                    _safe_stream(), media_type="text/event-stream",
+                    _compare_stream, media_type="text/event-stream",
                     headers={api_version.API_VERSION_HEADER: api_version.API_VERSION},
                 )
 
@@ -4697,7 +4744,9 @@ def setup_chat_routes(
             _run_label = (getattr(sess, "name", "") or "").strip() or " ".join(str(message or "").split())[:60]
             _detached_run = agent_runs.start(session, _safe_stream(), lane=_lane, label=_run_label[:80],
                                              model=str(getattr(sess, "model", "") or ""),
-                                             endpoint_url=str(getattr(sess, "endpoint_url", "") or ""))
+                                             endpoint_url=str(getattr(sess, "endpoint_url", "") or ""),
+                                             initial_wait_s=(max(0.001, _context_wait - (time.monotonic() - _initial_request_started))
+                                                             if _context_wait is not None else None))
             if client_message_id and not tool_approval_id:
                 try:
                     chat_outbox.mark_running(

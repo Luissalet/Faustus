@@ -27,6 +27,7 @@ class PrefsBody(BaseModel):
     url: Optional[str] = Field(default=None, max_length=300)
     default_backend: Optional[bool] = None
     recipe: Optional[str] = Field(default=None, max_length=64)
+    first_token_timeout_s: Optional[float] = Field(default=None, ge=5, le=120)
 
 
 def setup_sparks_routes() -> APIRouter:
@@ -50,6 +51,7 @@ def setup_sparks_routes() -> APIRouter:
     async def put_settings(body: PrefsBody, request: Request) -> Dict[str, Any]:
         require_admin(request)
         return await asyncio.to_thread(sparks.set_preferences, enabled=body.enabled, url=body.url,
-                                       default_backend=body.default_backend, recipe=body.recipe)
+                                       default_backend=body.default_backend, recipe=body.recipe,
+                                       first_token_timeout_s=body.first_token_timeout_s)
 
     return router

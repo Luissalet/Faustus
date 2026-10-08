@@ -1472,7 +1472,7 @@ def _ledger_run_event(session_id: str, run: _Run, state: Optional[str]) -> None:
 
 
 async def _drain(session_id: str, run: _Run, agen: AsyncGenerator[str, None],
-                 prev_task: Optional[asyncio.Task] = None) -> None:
+                 prev_task: Optional[asyncio.Task] = None, initial_wait_s: Optional[float] = None) -> None:
     """Pull every event from the wrapped generator into the run buffer, fanning
     each out to live subscribers. Runs to completion regardless of subscribers."""
     subscribers_woken = False
@@ -1492,15 +1492,33 @@ async def _drain(session_id: str, run: _Run, agen: AsyncGenerator[str, None],
     # one to fully finish first. Its CancelledError handler calls aclose(), which
     # persists its partial response — letting it complete before we start writing
     # keeps the two runs' session saves sequential instead of interleaved.
+    async def _queued_source():
+        nonlocal acquired
+        try:
+            if prev_task is not None and not prev_task.done():
+                await asyncio.wait({prev_task})
+            if lane is not None:
+                await lane.acquire(run)
+                acquired = lane.limit > 0
+            async for event in agen:
+                yield event
+        finally:
+            await agen.aclose()
+
     try:
-        if prev_task is not None and not prev_task.done():
-            await asyncio.wait({prev_task})
-        if lane is not None:
-            await lane.acquire(run)
-            acquired = lane.limit > 0
+        from src.llm_core import _sparks_initial_wait
+        initial_wait = initial_wait_s
+        if initial_wait is None:
+            initial_wait = _sparks_initial_wait(run.endpoint_url) if run.endpoint_url else None
+        events = _queued_source()
+        if initial_wait is not None:
+            from src.first_token_deadline import bounded
+            events = bounded(events, initial_wait)
         _ended_paused = False
-        async for ev in agen:
+        async for ev in events:
             _publish(run, ev)
+            if '"error_class": "first_token_timeout"' in ev:
+                run.status = "error"
             # UX-04: stream_agent_loop's `pending_pause` break emits exactly
             # this event right before ending the generator normally -- same
             # shape as every other typed SSE event this loop already checks
@@ -1571,7 +1589,7 @@ async def _drain(session_id: str, run: _Run, agen: AsyncGenerator[str, None],
 
 
 def start(session_id: str, agen: AsyncGenerator[str, None], lane: Optional[str] = None, label: str = "",
-          model: str = "", endpoint_url: str = "") -> _Run:
+          model: str = "", endpoint_url: str = "", initial_wait_s: Optional[float] = None) -> _Run:
     """Start a detached run draining `agen` for a session. If a run is already in
     flight for this session (e.g. a rapid double-send), it's cancelled first.
 
@@ -1625,7 +1643,7 @@ def start(session_id: str, agen: AsyncGenerator[str, None], lane: Optional[str] 
             logger.debug("[agent-run] log init failed: %s", e)
             run.log = None
     _ledger_run_event(session_id, run, None)
-    run.task = asyncio.create_task(_drain(session_id, run, agen, prev_task))
+    run.task = asyncio.create_task(_drain(session_id, run, agen, prev_task, initial_wait_s))
     return run
 
 

@@ -1,0 +1,55 @@
+import asyncio
+import json
+
+from src.first_token_deadline import bounded
+
+
+def test_hung_first_read_closes_source():
+    async def run():
+        closed = []
+        async def source():
+            try:
+                await asyncio.sleep(10)
+                yield "unused"
+            finally:
+                closed.append(True)
+        chunks = [chunk async for chunk in bounded(source(), 0.03)]
+        assert closed == [True]
+        assert len(chunks) == 1
+        assert '"error_class": "first_token_timeout"' in chunks[0]
+        assert '"retryable": false' in chunks[0]
+    asyncio.run(run())
+
+
+def test_heartbeats_do_not_reset_deadline():
+    async def run():
+        async def source():
+            while True:
+                await asyncio.sleep(0.01)
+                yield 'data: {"type":"status","delta":""}\n\n'
+        chunks = [chunk async for chunk in bounded(source(), 0.04)]
+        assert 'first_token_timeout' in chunks[-1]
+        assert len(chunks) < 8
+    asyncio.run(run())
+
+
+def test_thinking_starts_response_and_removes_initial_deadline():
+    async def run():
+        async def source():
+            yield 'data: {"delta":"Checking","thinking":true}\n\n'
+            await asyncio.sleep(0.06)
+            yield 'data: {"delta":"Answer"}\n\n'
+        chunks = [chunk async for chunk in bounded(source(), 0.02)]
+        assert len(chunks) == 2
+        assert "Answer" in chunks[-1]
+    asyncio.run(run())
+
+
+def test_error_and_empty_completion_are_preserved():
+    async def run():
+        async def source():
+            yield 'event: error\ndata: {"error":"unavailable"}\n\n'
+        chunks = [chunk async for chunk in bounded(source(), 0.05)]
+        assert len(chunks) == 1
+        assert "unavailable" in chunks[0]
+    asyncio.run(run())

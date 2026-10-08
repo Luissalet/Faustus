@@ -13,6 +13,10 @@ class ChatRequest(BaseModel):
     time_filter: Optional[str] = Field(default=None, description="Time filter for search")
     preset_id: Optional[str] = Field(default=None, description="Preset identifier")
     selected_endpoint_id: Optional[str] = Field(default=None, description="Selected model endpoint ID")
+    think_mode: Optional[str] = Field(default=None, description="Per-turn reasoning mode: auto, fast, think, deep")
+    reasoning_effort: Optional[str] = Field(default=None, description="One of the levels reported by the configured model's reasoning-levels API")
+    thinking_enabled: Optional[bool] = Field(default=None, description="Explicit reasoning switch, independent of effort; null keeps automatic mode")
+    gen_overrides: Optional[Dict[str, Any]] = Field(default=None, description="Per-turn generation settings")
     
     @field_validator('message')
     @classmethod
