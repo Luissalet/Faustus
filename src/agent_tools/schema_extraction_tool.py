@@ -2,10 +2,12 @@
 
 Thin wrapper over `src.schema_extraction.extract_to_schema`: a document in the
 workspace (or a text) and a JSON Schema in, the data in that shape out, with a
-quote from the document behind every value that was kept and a list of what
-was dropped and why. Read-only: it reads the file (through the family's
-document service, with OCR for scans) and calls a model of its own in a
-separate, tool-less request; it writes nothing.
+quote and the reader's page for every value that was kept and a list of what
+was dropped and why. The check behind it is lexical (the words of the value
+are in the document where the quote points); `limits` in the result says it
+cannot show a value belongs to its field. Read-only: it reads the file
+(through the family's document service, with OCR for scans) and calls a model
+of its own in a separate, tool-less request; it writes nothing.
 
 `path` goes through the same workspace confinement as `read_file` and
 `inspect_deliverable` (`src.tool_execution._resolve_tool_path`).
@@ -36,6 +38,7 @@ def _summary(result: Dict[str, Any]) -> str:
         "dropped": [{"path": d.get("path"), "why": d.get("why")} for d in result.get("dropped") or []][:40],
         "conflicts": result.get("conflicts")[:20] if result.get("conflicts") else [],
         "inferred": result.get("inferred"),
+        "limits": [lim.get("note") for lim in result.get("limits") or [] if isinstance(lim, dict)],
         "errors": result.get("errors")[:10] if result.get("errors") else [],
         "evidence": [{"path": e.get("path"), "quote": e.get("quote"), "unit": e.get("unit")}
                      for e in result.get("evidence") or []][:80],

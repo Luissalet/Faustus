@@ -121,6 +121,23 @@ def test_the_handler_extracts_text_into_the_schema_with_evidence(wired):
     assert "response_schema" in wired.calls[0] and "tools" not in wired.calls[0]
 
 
+def test_the_handler_drops_a_rewritten_quote_and_reports_the_readers_page_and_the_limits(wired):
+    forged = {"data": {"invoice_number": "F-2026-0042", "total": 9234.56, "issue_date": "2026-03-15"},
+              "evidence": [{"path": "invoice_number", "quote": "FACTURA N.º F-2026-0042", "unit": 9},
+                           {"path": "total", "quote": "Total factura: 9.234,56 €", "unit": 1},
+                           {"path": "issue_date", "quote": "Fecha: 15/03/2026", "unit": 1}]}
+    wired.answers[:] = [forged]
+    out = _call({"text": TEXT, "schema": INVOICE})
+    result = out["extraction"]
+    assert result["data"]["total"] is None and result["missing_required"] == ["total"]
+    assert result["schema_valid"] is False
+    assert [d["path"] for d in result["dropped"]] == ["total"]
+    page = {e["path"]: e["unit"] for e in result["evidence"]}
+    assert page["invoice_number"] == 1 and "9" not in {str(v) for v in page.values()}
+    summary = json.loads(out["output"])
+    assert any("does not prove" in note for note in summary["limits"])
+
+
 def test_the_handler_reads_a_workspace_document_through_the_confined_path(wired, monkeypatch, tmp_path):
     doc = tmp_path / "factura.txt"
     doc.write_text(TEXT, encoding="utf-8")

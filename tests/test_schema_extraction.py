@@ -6,9 +6,14 @@ What is pinned here:
   arrays of objects, long input) and the purpose each tier routes to;
 * local $ref inlining, and a clear refusal for recursive or remote ones;
 * the envelope: every field present and nullable, constraints left out;
-* grounding: an invented value never survives, an OCR-noisy quote does,
-  European and English numbers and written dates match, a required field the
-  document lacks stays null with `schema_valid: false`;
+* grounding: a value the document text at the quoted place does not contain is
+  dropped (also when the model rewrote the quote to match it), an OCR-noisy
+  quote with intact figures is kept, the page is the reader's (never the
+  model's), European and English numbers and written dates match, a required
+  field the document lacks stays null with `schema_valid: false`, and the
+  result says the check is lexical (`limits`);
+* a `$ref` with sibling keywords is a conjunction (the stricter bound wins) or
+  the schema is refused by name; a sibling never loosens the definition;
 * one repair and at most one escalation, never to a paid endpoint;
 * merging the chunks of a long document, with conflicts recorded;
 * `resolve_endpoint("extraction")` falling back to the utility model.
@@ -194,6 +199,99 @@ def test_refs_that_cannot_be_inlined_are_refused_by_name(schema, code):
         assert "#/$defs/N -> #/$defs/N" in str(err.value)
 
 
+def _with_def(definition, beside):
+    return {"type": "object", "$defs": {"D": definition},
+            "properties": {"n": {"$ref": "#/$defs/D", **beside}}, "required": ["n"]}
+
+
+def test_a_ref_sibling_never_loosens_the_definition_it_points_to():
+    schema = _with_def({"type": "integer", "maximum": 5}, {"maximum": 10})
+    assert se.inline_refs(schema)["properties"]["n"] == {"type": "integer", "maximum": 5}
+    for value, valid in ((3, True), (5, True), (8, False), (11, False)):
+        assert se.finalize({"n": value}, schema)["schema_valid"] is valid, value
+    # ...and a stricter sibling tightens it, so the answer must satisfy both.
+    schema = _with_def({"type": "integer", "maximum": 10}, {"maximum": 5, "minimum": 2})
+    assert se.inline_refs(schema)["properties"]["n"] == {"type": "integer", "maximum": 5, "minimum": 2}
+    assert [se.finalize({"n": v}, schema)["schema_valid"] for v in (1, 2, 5, 6)] == [False, True, True, False]
+    # The shape the model is shown and the envelope carry the merged bounds as well.
+    assert se.inline_refs(schema) == se.prepare_schema(schema)[0]
+
+
+@pytest.mark.parametrize("definition,beside,expected", [
+    ({"type": "string", "minLength": 3}, {"minLength": 6}, {"type": "string", "minLength": 6}),
+    ({"type": "string", "maxLength": 9}, {"maxLength": 4}, {"type": "string", "maxLength": 4}),
+    ({"type": "number", "minimum": 0, "exclusiveMaximum": 100}, {"exclusiveMaximum": 50, "minimum": -5},
+     {"type": "number", "minimum": 0, "exclusiveMaximum": 50}),
+    ({"type": ["string", "null"]}, {"type": "string"}, {"type": "string"}),
+    ({"type": "number"}, {"type": "integer"}, {"type": "integer"}),
+    ({"enum": ["a", "b", "c"]}, {"enum": ["c", "b", "z"]}, {"enum": ["b", "c"]}),
+    ({"type": "string", "description": "def"}, {"description": "mine"}, {"type": "string", "description": "mine"}),
+])
+def test_ref_siblings_combine_by_the_stricter_keyword(definition, beside, expected):
+    assert se.inline_refs(_with_def(definition, beside))["properties"]["n"] == expected
+
+
+def test_required_and_properties_are_combined_across_a_ref():
+    party = obj({"name": S, "tax_id": S}, required=("name",))
+    schema = {"type": "object", "$defs": {"Party": party},
+              "properties": {"seller": {"$ref": "#/$defs/Party", "required": ["tax_id"],
+                                        "properties": {"tax_id": {"type": "string", "minLength": 9},
+                                                       "email": S}}}}
+    seller = se.inline_refs(schema)["properties"]["seller"]
+    assert seller["required"] == ["name", "tax_id"] and set(seller["properties"]) == {"name", "tax_id", "email"}
+    assert seller["properties"]["tax_id"] == {"type": "string", "minLength": 9}
+    assert se.finalize({"seller": {"name": "A", "tax_id": "123"}}, schema)["schema_valid"] is False
+    assert se.finalize({"seller": {"name": "A", "tax_id": "123456789"}}, schema)["schema_valid"] is True
+    assert se.finalize({"seller": {"name": "A"}}, schema)["missing_required"] == ["seller.tax_id"]
+
+
+def test_a_condition_that_cannot_be_merged_is_kept_as_an_extra_requirement():
+    schema = _with_def({"type": "string", "pattern": "^[A-Z]+$"}, {"pattern": "^.{3}$"})
+    node = se.inline_refs(schema)["properties"]["n"]
+    assert node["pattern"] == "^[A-Z]+$" and node["allOf"] == [{"pattern": "^.{3}$"}]
+    assert [se.finalize({"n": v}, schema)["schema_valid"] for v in ("ABC", "ABCD", "abc")] == [True, False, False]
+
+
+@pytest.mark.parametrize("definition,beside", [
+    ({"type": "integer", "maximum": 5}, {"minimum": 10}),
+    ({"type": "string"}, {"type": "number"}),
+    ({"enum": ["a"]}, {"enum": ["b"]}),
+    ({"const": "x"}, {"const": "y"}),
+    ({"type": "string", "minLength": 5}, {"maxLength": 2}),
+    ({"type": "array", "items": S, "minItems": 3}, {"maxItems": 1}),
+    ({"type": "integer"}, {"const": 2.5}),
+])
+def test_contradictory_ref_siblings_are_refused_by_name(definition, beside):
+    with pytest.raises(se.SchemaExtractionError) as err:
+        se.inline_refs(_with_def(definition, beside))
+    assert err.value.code == "contradictory_schema" and "#/$defs/D" in str(err.value)
+    with pytest.raises(se.SchemaExtractionError):
+        se.finalize({"n": 1}, _with_def(definition, beside))
+
+
+def test_siblings_whose_meaning_depends_on_the_enclosing_schema_are_refused():
+    base = obj({"a": S})
+    for beside in ({"additionalProperties": False}, {"unevaluatedProperties": False},
+                   {"patternProperties": {"^x": S}}):
+        with pytest.raises(se.SchemaExtractionError) as err:
+            se.inline_refs(_with_def(base, beside))
+        assert err.value.code == "unsupported_ref_siblings"
+    closed = {**obj({"a": S}), "additionalProperties": False}
+    with pytest.raises(se.SchemaExtractionError) as err:
+        se.inline_refs(_with_def(closed, {"properties": {"b": S}}))
+    assert err.value.code == "unsupported_ref_siblings"
+    # The same keyword written identically on both sides is not a conflict.
+    se.inline_refs(_with_def(closed, {"additionalProperties": False}))
+
+
+def test_the_extraction_itself_refuses_a_contradictory_schema_before_calling_a_model():
+    with pytest.raises(se.SchemaExtractionError) as err:
+        asyncio.run(se.extract_to_schema("u", text="Total 5", schema=_with_def({"type": "integer", "maximum": 5},
+                                                                               {"minimum": 10}),
+                                         models=object()))
+    assert err.value.code == "contradictory_schema"
+
+
 def test_prepare_refuses_what_it_cannot_check_and_names_what_it_did_not():
     with pytest.raises(se.SchemaExtractionError) as err:
         se.prepare_schema(obj({"x": {"type": "string", "if": {"const": "a"}}}))
@@ -242,7 +340,7 @@ INVOICE_TEXT = ("FACTURA N.º F-2026-0042\n"
                 "Estado: PAGADO")
 
 
-def test_an_invented_value_never_survives_and_says_why():
+def test_an_unsupported_value_is_dropped_and_says_why():
     data = {"invoice_number": "F-2026-0042", "total": 1234.56, "currency": "USD", "issue_date": "2026-04-01"}
     evidence = [{"path": "invoice_number", "quote": "FACTURA N.º F-2026-0042", "unit": 1},
                 {"path": "total", "quote": "Total factura: 1.234,56 €", "unit": 1},
@@ -267,7 +365,8 @@ def test_a_value_with_no_quote_is_only_kept_when_the_document_itself_has_it():
 
 
 def test_an_ocr_noisy_quote_is_accepted_and_marked_fuzzy():
-    scanned = "FACTURA N.º F-2026-0042\nTotaI factura: l.234,56 €\nCIiente: Distribuciones Arnedo S.L."
+    # Noise in the words around the figures; the figures themselves are intact.
+    scanned = "FACTURA N.º F-2026-0042\nTotaI factura: 1.234,56 €\nCIiente: Distribuciones Arnedo S.L."
     out = se.ground({"invoice_number": "F-2026-0042", "total": 1234.56},
                     [{"path": "invoice_number", "quote": "FACTURA N.º F-2026-0042", "unit": 1},
                      {"path": "total", "quote": "Total factura: 1.234,56 €", "unit": 1}],
@@ -275,6 +374,14 @@ def test_an_ocr_noisy_quote_is_accepted_and_marked_fuzzy():
     assert out["data"]["total"] == 1234.56
     total = next(e for e in out["evidence"] if e["path"] == "total")
     assert total["match"] == "fuzzy" and total["unit"] == 1
+    assert "1.234,56" in total["document_text"] and "totai" in total["document_text"]
+    # An amount the scan garbled ("l.234,56") is not "read" by the model into 1234.56: the document does not
+    # contain that number, so it is dropped rather than corrected.
+    garbled = scanned.replace("1.234,56", "l.234,56")
+    bad = se.ground({"invoice_number": "F-2026-0042", "total": 1234.56},
+                    [{"path": "total", "quote": "Total factura: 1.234,56 €", "unit": 1}],
+                    garbled, [{"number": 1, "text": garbled}], schema=INVOICE)
+    assert bad["data"]["total"] is None and bad["missing_required"] == ["total"]
     # ...but a quote that is merely similar to nothing in the page is not.
     off = se.ground({"invoice_number": "F-2026-0042", "total": 1234.56},
                     [{"path": "total", "quote": "Importe pendiente: 1.234,56 €", "unit": 1}],
@@ -335,6 +442,132 @@ def test_a_required_field_the_document_lacks_is_never_filled():
     assert out["data"] == {"invoice_number": None, "total": None}
     assert sorted(out["missing_required"]) == ["invoice_number", "total"]
     assert out["schema_valid"] is False and out["errors"]
+
+
+TOTAL = obj({"total": N}, required=("total",))
+BANK = obj({"iban": S}, required=("iban",))
+
+
+def test_a_quote_rewritten_to_carry_a_changed_amount_does_not_ground_it():
+    source = "Invoice total payable is 100.00 EUR for the supplied services."
+    quote = "Invoice total payable is 900.00 EUR for the supplied services."
+    out = se.ground({"total": 900}, [{"path": "total", "quote": quote, "unit": 77}], source,
+                    [{"number": 1, "text": source}], schema=TOTAL)
+    assert out["data"] == {"total": None} and out["evidence"] == []
+    assert out["dropped"] == [{"path": "total", "value": 900,
+                               "why": "the value is not in the document text the quote points to"}]
+    assert out["missing_required"] == ["total"] and out["schema_valid"] is False
+    # What the document does say at that place is accepted, whatever the quote says.
+    real = se.ground({"total": 100}, [{"path": "total", "quote": quote, "unit": 1}], source,
+                     [{"number": 1, "text": source}], schema=TOTAL)
+    assert real["data"] == {"total": 100}
+    kept = real["evidence"][0]
+    assert kept["match"] == "fuzzy" and "100.00" in kept["document_text"] and "900" not in kept["document_text"]
+
+
+def test_a_quote_rewritten_to_carry_a_changed_identifier_does_not_ground_it():
+    source = "The bank account to pay is ES1234567890123456789012 for this invoice."
+    forged = source.replace("ES1234567890123456789012", "ES9234567890123456789012")
+    out = se.ground({"iban": "ES9234567890123456789012"}, [{"path": "iban", "quote": forged}], source,
+                    [{"number": 1, "text": source}], schema=BANK)
+    assert out["data"] == {"iban": None} and out["evidence"] == []
+    assert out["dropped"][0]["why"] == "the value is not in the document text the quote points to"
+    assert out["schema_valid"] is False
+    # The same, one character at a time over a long identifier: none of them is read as the real one.
+    for position in (2, 8, 14, 23):
+        digit = "9" if source[source.index("ES12") + position] != "9" else "8"
+        twisted = list("ES1234567890123456789012")
+        twisted[position] = digit
+        twisted = "".join(twisted)
+        got = se.ground({"iban": twisted}, [{"path": "iban", "quote": source.replace("ES1234567890123456789012",
+                                                                                 twisted)}],
+                        source, [{"number": 1, "text": source}], schema=BANK)
+        assert got["data"] == {"iban": None}, twisted
+
+
+def test_a_changed_date_in_a_fuzzy_quote_is_dropped():
+    source = "Fecha de vencimiento: 15/03/2026 según el contrato firmado entre las partes."
+    quote = "Fecha de vencimiento: 25/03/2026 según el contrato firmado entre las partes."
+    schema = obj({"due": {"type": "string", "format": "date"}})
+    out = se.ground({"due": "2026-03-25"}, [{"path": "due", "quote": quote}], source,
+                    [{"number": 1, "text": source}], schema=schema)
+    assert out["data"] == {} and out["dropped"][0]["path"] == "due"
+    ok = se.ground({"due": "2026-03-15"}, [{"path": "due", "quote": quote}], source,
+                   [{"number": 1, "text": source}], schema=schema)
+    assert ok["data"] == {"due": "2026-03-15"}
+
+
+def test_ocr_noise_around_an_intact_identifier_or_amount_is_still_accepted():
+    source = "TheI bank acc0unt to pay is ES1234567890123456789012 for thiS invoice. Totaal: 1.234,56 EUR"
+    out = se.ground({"iban": "ES1234567890123456789012", "total": 1234.56},
+                    [{"path": "iban", "quote": "The bank account to pay is ES1234567890123456789012 for this invoice."},
+                     {"path": "total", "quote": "Total: 1.234,56 EUR"}],
+                    source, [{"number": 3, "text": source}], schema=obj({"iban": S, "total": N}))
+    assert out["data"] == {"iban": "ES1234567890123456789012", "total": 1234.56}, out["dropped"]
+    assert {e["match"] for e in out["evidence"]} == {"fuzzy"} and {e["unit"] for e in out["evidence"]} == {3}
+    # An identifier the document prints in blocks is the same identifier.
+    grouped = se.ground({"iban": "ES1234567890123456789012"},
+                        [{"path": "iban", "quote": "IBAN: ES12 3456 7890 1234 5678 9012"}],
+                        "IBAN: ES12 3456 7890 1234 5678 9012", schema=BANK)
+    assert grouped["data"] == {"iban": "ES1234567890123456789012"}
+
+
+def test_a_number_is_not_found_inside_a_longer_number():
+    assert se._contains("total: 1100,00", "100") is False
+    assert se._contains("total: 100,00", "100") is True
+    out = se.ground({"ref": "100"}, [{"path": "ref", "quote": "Ref 1100"}], "Ref 1100", schema=obj({"ref": S}))
+    assert out["data"] == {} and out["dropped"][0]["path"] == "ref"
+
+
+def test_a_page_the_model_invents_is_never_reported():
+    out = se.ground({"value": "Alpha Beta"}, [{"path": "value", "quote": "Alpha Beta", "unit": 777}],
+                    "Alpha Beta", schema=obj({"value": S}, required=("value",)))
+    assert out["data"] == {"value": "Alpha Beta"}
+    assert [e["unit"] for e in out["evidence"]] == [None]
+    assert "777" not in json.dumps(out)
+    assert {lim["code"] for lim in out["limits"]} >= {"no_units", "lexical_check_only"}
+    # With pages, a page that does not exist is replaced by the one the reader gave.
+    paged = se.ground({"value": "Alpha Beta"}, [{"path": "value", "quote": "Alpha Beta", "unit": 777}],
+                      "Alpha Beta", [{"number": 4, "text": "Alpha Beta"}], schema=obj({"value": S}))
+    assert paged["evidence"][0]["unit"] == 4 and paged["evidence"][0]["unit_claim_ignored"] is True
+    assert "777" not in json.dumps(paged) and "no_units" not in {lim["code"] for lim in paged["limits"]}
+
+
+def test_a_quote_on_page_one_is_reported_on_page_one_when_the_model_says_two():
+    units = [{"number": 1, "text": "Invoice F-77 total 500.00 EUR"}, {"number": 2, "text": "Terms and conditions"}]
+    text = "\n\n".join(u["text"] for u in units)
+    out = se.ground({"total": 500}, [{"path": "total", "quote": "total 500.00 EUR", "unit": 2}], text, units,
+                    schema=TOTAL)
+    ev = out["evidence"][0]
+    assert ev["unit"] == 1 and ev["unit_claim_ignored"] is True
+    # A quote found on several pages goes to the page the model named when it is one of them.
+    twice = [{"number": 1, "text": "total 500.00 EUR"}, {"number": 2, "text": "total 500.00 EUR"}]
+    again = se.ground({"total": 500}, [{"path": "total", "quote": "total 500.00 EUR", "unit": 2}],
+                      "total 500.00 EUR\n\ntotal 500.00 EUR", twice, schema=TOTAL)
+    assert again["evidence"][0]["unit"] == 2 and "unit_claim_ignored" not in again["evidence"][0]
+
+
+def test_a_quote_that_spans_two_pages_reports_both_and_a_fuzzy_one_too():
+    units = [{"number": 7, "text": "Total payable carried over"}, {"number": 8, "text": "to next page: 880.00 EUR"}]
+    text = "\n\n".join(u["text"] for u in units)
+    out = se.ground({"total": 880}, [{"path": "total", "quote": "carried over to next page: 880.00 EUR",
+                                      "unit": 8}], text, units, schema=TOTAL)
+    ev = out["evidence"][0]
+    assert ev["unit"] == 7 and ev["units"] == [7, 8] and "unit_claim_ignored" not in ev
+    fuzzy = se.ground({"total": 880}, [{"path": "total", "quote": "carried 0ver to next page: 880.00 EUR"}],
+                      text, units, schema=TOTAL)
+    assert fuzzy["evidence"][0]["units"] == [7, 8] and fuzzy["evidence"][0]["match"] == "fuzzy"
+    # ...and a changed amount in such a quote is dropped as everywhere else.
+    forged = se.ground({"total": 980}, [{"path": "total", "quote": "carried 0ver to next page: 980.00 EUR"}],
+                       text, units, schema=TOTAL)
+    assert forged["data"] == {"total": None}
+
+
+def test_the_result_says_the_check_is_lexical():
+    out = se.ground({"total": 500}, [{"path": "total", "quote": "Total 500.00 EUR (other invoice)"}],
+                    "Total 500.00 EUR (other invoice)", schema=TOTAL)
+    note = next(lim["note"] for lim in out["limits"] if lim["code"] == "lexical_check_only")
+    assert "does not prove" in note and "another invoice" in note
 
 
 def test_paths_are_normalised_from_the_spellings_models_use():

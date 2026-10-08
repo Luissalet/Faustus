@@ -2,8 +2,12 @@
 
 The user hands over a document (a path read through the family's document
 service, or plain text) and a JSON Schema. What comes back is the data in that
-shape, where every value can be traced to the words of the document that
-contain it, and every value that cannot is null and listed as dropped.
+shape. Each value that is kept comes with a quote and the page or part where
+the quote was located; a value the document text at that place does not
+contain is null and listed as dropped. That is a lexical check: it shows the
+words of the value are in the document where the quote points, not that they
+answer the field (a total from another invoice would pass), and the result
+says so in ``limits``.
 
 The pipeline, and where each rule lives:
 
@@ -21,12 +25,19 @@ The pipeline, and where each rule lives:
   (patterns, lengths, ranges, minItems) are left out of the envelope on
   purpose: a grammar that insists on a matching value is how a model is pushed
   into inventing one. They are checked afterwards, on the original schema.
-* :func:`ground` keeps a value only when a quote for it appears in the source
-  (accent/case/space-insensitive, OCR noise tolerated at a 0.9 similarity) and
-  the value is in that quote (numbers read in both European and English
-  notation, ISO dates against the usual written forms). Anything else becomes
-  null and goes to ``dropped`` with the reason. Booleans and enum values that
-  map a wording ("PAGADO" -> "paid") are kept as ``inferred``.
+* :func:`ground` keeps a value only when a quote for it is located in the
+  source (accent/case/space-insensitive; OCR noise tolerated at a 0.9
+  similarity) and the value is in the DOCUMENT text found there -- never just
+  in the model's quote: amounts, identifiers and dates must be in the real
+  text as written (numbers in European and English notation, ISO dates
+  against the usual written forms); only words tolerate OCR noise. Anything
+  else becomes null and goes to ``dropped`` with the reason. The page or part
+  is the reader's, never the model's (null when the reader gave none).
+  Booleans and enum values that map a wording ("PAGADO" -> "paid") are kept
+  as ``inferred``.
+* :func:`inline_refs` reads a ``$ref`` with siblings as a conjunction (the
+  stricter bound wins) or refuses the schema; it never lets a sibling loosen
+  the target's constraints.
 * :func:`finalize` validates against the user's ORIGINAL schema. A required
   field that ended up null stays null and is listed in ``missing_required``
   with ``schema_valid: false``; it is never filled in.
@@ -132,11 +143,158 @@ def _pointer_token(name: str) -> str:
     return str(name).replace("~", "~0").replace("/", "~1")
 
 
+# ── $ref siblings: the conjunction of the target and what sits beside it ──
+
+_UPPER_BOUNDS = ("maximum", "exclusiveMaximum", "maxLength", "maxItems", "maxProperties")
+_LOWER_BOUNDS = ("minimum", "exclusiveMinimum", "minLength", "minItems", "minProperties")
+#: Keywords whose meaning depends on the schema they sit in (which properties
+#: "this schema" knows about): merging them across a `$ref` would change what
+#: they say, so a sibling that sets one is refused.
+_SCOPED = ("additionalProperties", "unevaluatedProperties", "additionalItems", "unevaluatedItems",
+           "patternProperties")
+_PLAIN_ANNOTATIONS = frozenset({"title", "description", "default", "examples", "$comment", "readOnly",
+                                "writeOnly", "deprecated", "format", "contentMediaType", "contentEncoding",
+                                "$schema", "$id"})
+
+
+def _same(a: Any, b: Any) -> bool:
+    try:
+        return json.dumps(a, sort_keys=True, default=str) == json.dumps(b, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        return a == b
+
+
+def _number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _type_set(value: Any) -> set:
+    if isinstance(value, str):
+        return {value}
+    if isinstance(value, (list, tuple)):
+        return {t for t in value if isinstance(t, str)}
+    return set()
+
+
+def _intersect_types(a: set, b: set) -> set:
+    out = set()
+    for left in a:
+        for right in b:
+            if left == right:
+                out.add(left)
+            elif {left, right} == {"number", "integer"}:
+                out.add("integer")
+    return out
+
+
+def _conjoin(target: Dict[str, Any], extra: Mapping[str, Any], ref: str) -> Dict[str, Any]:
+    """`target` AND `extra`, as one schema that accepts only what both accept.
+    See :func:`inline_refs` for the rules; `ref` only names the culprit."""
+    out = dict(target)
+
+    def refuse(code: str, message: str) -> None:
+        raise SchemaExtractionError(f"{ref}: {message}", code)
+
+    for key, value in extra.items():
+        have = key in out
+        if key in _PLAIN_ANNOTATIONS:
+            out[key] = value
+        elif not have and key not in _SCOPED:
+            out[key] = copy.deepcopy(value)
+        elif have and _same(out[key], value):
+            continue
+        elif key in _SCOPED:
+            refuse("unsupported_ref_siblings",
+                   f"'{key}' next to a $ref depends on which properties the schema it sits in knows about, "
+                   "and extraction cannot tell what the draft in use means by it; put it inside the "
+                   "definition instead")
+        elif key in _UPPER_BOUNDS and _number(out[key]) and _number(value):
+            out[key] = min(out[key], value)
+        elif key in _LOWER_BOUNDS and _number(out[key]) and _number(value):
+            out[key] = max(out[key], value)
+        elif key == "required" and isinstance(out[key], list) and isinstance(value, list):
+            out[key] = list(out[key]) + [name for name in value if name not in out[key]]
+        elif key == "type":
+            both = _intersect_types(_type_set(out[key]), _type_set(value))
+            if not both:
+                refuse("contradictory_schema", f"the definition has type {out[key]!r} and the keywords beside "
+                                               f"the $ref have type {value!r}: no value fits both")
+            out[key] = next(iter(both)) if len(both) == 1 else sorted(both)
+        elif key == "enum" and isinstance(out[key], list) and isinstance(value, list):
+            both = [item for item in out[key] if any(_same(item, other) for other in value)]
+            if not both:
+                refuse("contradictory_schema", "the enum beside the $ref shares no value with the definition's")
+            out[key] = both
+        elif key == "const":
+            refuse("contradictory_schema", f"const {value!r} beside the $ref differs from the definition's "
+                                           f"{out[key]!r}")
+        elif key == "allOf" and isinstance(out[key], list) and isinstance(value, list):
+            out[key] = list(out[key]) + list(value)
+        elif key == "properties" and isinstance(out[key], Mapping) and isinstance(value, Mapping):
+            closed = any(out.get(k) not in (None, True) for k in ("additionalProperties", "unevaluatedProperties"))
+            merged_props = dict(out[key])
+            for name, sub in value.items():
+                if name in merged_props:
+                    if isinstance(merged_props[name], Mapping) and isinstance(sub, Mapping):
+                        merged_props[name] = _conjoin(dict(merged_props[name]), sub, f"{ref}/properties/{name}")
+                    elif not _same(merged_props[name], sub):
+                        refuse("unsupported_ref_siblings", f"property {name!r} is described twice")
+                elif closed:
+                    refuse("unsupported_ref_siblings", f"property {name!r} beside the $ref would be added to a "
+                                                       "closed object")
+                else:
+                    merged_props[name] = sub
+            out[key] = merged_props
+        elif key == "items" and isinstance(out[key], Mapping) and isinstance(value, Mapping):
+            out[key] = _conjoin(dict(out[key]), value, f"{ref}/items")
+        else:
+            # Anything else that is checked as a condition holds on its own: both are required.
+            out.setdefault("allOf", [])
+            out["allOf"] = list(out["allOf"]) + [{key: copy.deepcopy(value)}]
+    _check_satisfiable(out, ref)
+    return out
+
+
+def _check_satisfiable(node: Mapping[str, Any], ref: str) -> None:
+    """Refuse a merged node no value can satisfy (crossed bounds, a `const` or
+    an `enum` that its own type or bounds exclude): extraction would otherwise
+    report every answer as invalid for a reason the schema's author never saw."""
+    def bad(message: str) -> None:
+        raise SchemaExtractionError(f"{ref}: {message}", "contradictory_schema")
+
+    for low_key, high_key, strict_ok in (("minimum", "maximum", True), ("exclusiveMinimum", "maximum", False),
+                                         ("minimum", "exclusiveMaximum", False),
+                                         ("exclusiveMinimum", "exclusiveMaximum", False),
+                                         ("minLength", "maxLength", True), ("minItems", "maxItems", True),
+                                         ("minProperties", "maxProperties", True)):
+        low, high = node.get(low_key), node.get(high_key)
+        if _number(low) and _number(high) and (low > high if strict_ok else low >= high):
+            bad(f"{low_key} {low} and {high_key} {high} cannot both hold")
+    from src.workflows import schema_check
+    rest = {k: v for k, v in node.items() if k not in ("enum", "const", "allOf")}
+    if "const" in node and schema_check.validate(node["const"], rest):
+        bad(f"const {node['const']!r} does not satisfy the other keywords")
+    if "const" in node and isinstance(node.get("enum"), list) and \
+            not any(_same(node["const"], item) for item in node["enum"]):
+        bad(f"const {node['const']!r} is not one of the enum values")
+    if isinstance(node.get("enum"), list) and node["enum"] and \
+            all(schema_check.validate(item, rest) for item in node["enum"]):
+        bad("no value of the enum satisfies the other keywords")
+
+
 def inline_refs(schema: Any) -> Dict[str, Any]:
     """`schema` with every local ``$ref`` (``#/$defs/X``, ``#/definitions/X``)
     replaced by a copy of its target and the definition blocks removed.
 
-    A ``$ref`` beside other keywords keeps them (they override the target's).
+    A ``$ref`` beside other keywords is a conjunction (JSON Schema 2019-09 and
+    later evaluate the target AND the siblings; Draft 7 and earlier ignore the
+    siblings, so the conjunction is never looser than either reading): the
+    stricter bound wins, ``required`` is the union, ``type`` and ``enum`` are
+    intersected, and anything that cannot be merged keyword by keyword is kept
+    as an extra ``allOf`` member. Siblings that are unsatisfiable together with
+    the target (``maximum`` 5 with ``minimum`` 10, disjoint types or enums) are
+    refused with code ``contradictory_schema``; scope-dependent siblings
+    (``additionalProperties`` and friends) with ``unsupported_ref_siblings``.
     Raises :class:`SchemaExtractionError` for a remote or dangling reference
     and, with code ``recursive_schema``, for one that refers back to itself:
     a recursive shape cannot be written out as a finite schema."""
@@ -167,10 +325,9 @@ def inline_refs(schema: Any) -> Dict[str, Any]:
                     f"$ref {ref!r} is recursive ({chain}); a recursive schema cannot be extracted as a finite "
                     "shape. Give the nesting a fixed depth instead", "recursive_schema")
             merged = dict(resolve(defs[ref], stack + (ref,), depth + 1))
-            for key, value in node.items():
-                if key != "$ref":
-                    merged[key] = _resolve_child(key, value, stack, depth, resolve)
-            return merged
+            siblings = {key: _resolve_child(key, value, stack, depth, resolve)
+                        for key, value in node.items() if key != "$ref"}
+            return _conjoin(merged, siblings, ref) if siblings else merged
         out: Dict[str, Any] = {}
         for key, value in node.items():
             if key in ("$defs", "definitions"):
@@ -551,12 +708,23 @@ def norm_text(text: Any) -> str:
 
 def _fuzzy_find(needle: str, hay: str, threshold: float = FUZZY_QUOTE_RATIO) -> float:
     """The best similarity of `needle` to a same-length window of `hay` near
-    a place where a piece of it occurs exactly; 0.0 when nothing comes close.
-    Anchored on short exact pieces so a long document is not compared
-    character by character."""
+    a place where a piece of it occurs exactly; 0.0 when nothing comes close."""
+    return _fuzzy_span(needle, hay, threshold)[0]
+
+
+_SPAN_SLACK = 40
+
+
+def _fuzzy_span(needle: str, hay: str, threshold: float = FUZZY_QUOTE_RATIO) -> Tuple[float, str]:
+    """`(similarity, text)`: the best match of `needle` in `hay` and the REAL
+    text of `hay` it matched (grown to whole words, so a number cut by the
+    window is complete). `(0.0, "")` when nothing comes close. Anchored on
+    short exact pieces so a long document is not compared character by
+    character. What the needle says is never part of the answer: callers
+    check values against the returned document text, not against the needle."""
     size = len(needle)
     if size < 6 or not hay:
-        return 0.0
+        return 0.0, ""
     gram = 4 if size < 16 else 6
     starts: set = set()
     step = max(1, (size - gram) // 10)
@@ -571,7 +739,8 @@ def _fuzzy_find(needle: str, hay: str, threshold: float = FUZZY_QUOTE_RATIO) -> 
         if len(starts) > 80:
             break
     best = 0.0
-    for start in starts:
+    best_at = (0, 0)
+    for start in sorted(starts):
         for shift in (-2, -1, 0, 1, 2):
             begin = max(0, start + shift)
             for length in (size - 1, size, size + 1):
@@ -580,10 +749,22 @@ def _fuzzy_find(needle: str, hay: str, threshold: float = FUZZY_QUOTE_RATIO) -> 
                     continue
                 ratio = difflib.SequenceMatcher(None, needle, window, autojunk=False).ratio()
                 if ratio > best:
-                    best = ratio
+                    best, best_at = ratio, (begin, begin + len(window))
                     if best >= 0.999:
-                        return best
-    return best if best >= threshold else 0.0
+                        break
+            if best >= 0.999:
+                break
+        if best >= 0.999:
+            break
+    if best < threshold:
+        return 0.0, ""
+    begin, end = best_at
+    low, high = max(0, begin - _SPAN_SLACK), min(len(hay), end + _SPAN_SLACK)
+    while begin > low and not hay[begin - 1].isspace():
+        begin -= 1
+    while end < high and not hay[end].isspace():
+        end += 1
+    return best, hay[begin:end]
 
 
 # Numbers as written: digits with optional thousands/decimal separators.
@@ -684,10 +865,28 @@ def _enum_values(node: Any) -> List[Any]:
     return out
 
 
+def _contains(text: str, piece: str) -> bool:
+    """`piece` occurs in `text`; where it starts or ends with a digit it must not
+    be the middle of a longer number (``100`` is not in ``1100``)."""
+    if not piece:
+        return False
+    start = text.find(piece)
+    while start >= 0:
+        end = start + len(piece)
+        if not (piece[0].isdigit() and start > 0 and text[start - 1].isdigit()) and \
+                not (piece[-1].isdigit() and end < len(text) and text[end].isdigit()):
+            return True
+        start = text.find(piece, start + 1)
+    return False
+
+
 def _value_in_quote(value: Any, quote_n: str, node: Any) -> Optional[str]:
-    """How `value` is supported by the (normalised) quote, or None:
-    ``verbatim``, ``number``, ``percent``, ``date``, ``fuzzy`` or ``inferred``
-    (a boolean, or an enum value the document words differently)."""
+    """How `value` is supported by the (normalised) text of the DOCUMENT that
+    a quote was located at -- never by the quote as the model wrote it -- or
+    None: ``verbatim``, ``number``, ``percent``, ``date``, ``fuzzy`` or
+    ``inferred`` (a boolean, or an enum value the document words differently).
+    ``fuzzy`` is only for values made of words; anything with a digit has to
+    be in the text as written (numbers and dates in their usual notations)."""
     if isinstance(value, bool):
         return "inferred"
     number = _as_decimal(value)
@@ -698,16 +897,24 @@ def _value_in_quote(value: Any, quote_n: str, node: Any) -> Optional[str]:
     value_n = norm_text(value)
     if not value_n:
         return None
-    if value_n in quote_n:
+    if _contains(quote_n, value_n):
         return "verbatim"
     if _date_in(value_n, quote_n):
         return "date"
+    has_digit = any(ch.isdigit() for ch in value_n)
+    if has_digit and len(value_n) >= 8:
+        # An identifier the document groups differently (an IBAN in blocks of four).
+        squeezed = re.sub(r"[\s\-.]", "", value_n)
+        if len(squeezed) >= 8 and _contains(re.sub(r"[\s\-.]", "", quote_n), squeezed):
+            return "verbatim"
     if re.fullmatch(r"[-\u2212]?[\d.,'\s]+%?", value_n) and any(ch.isdigit() for ch in value_n):
         readings = _readings(value_n.rstrip("%"))
         for reading in readings:
             if _number_in(reading, quote_n):
                 return "number"
-    if len(value_n) >= 5 and _fuzzy_find(value_n, quote_n):
+    # Wording noise (OCR) is tolerated only in words: a value with a digit in
+    # it (an amount, an identifier, a date) must be in the document text as is.
+    if not has_digit and len(value_n) >= 5 and _fuzzy_find(value_n, quote_n):
         return "fuzzy"
     if value in _enum_values(node):
         return "inferred"
@@ -723,24 +930,61 @@ class _Source:
         self.norm = norm_text(self.text)
         self.units = [(u.get("number"), norm_text(u.get("text") or "")) for u in (units or [])
                       if isinstance(u, Mapping)]
+        self.joined = " ".join(text for _number_, text in self.units)
 
-    def locate(self, quote: str) -> Optional[Tuple[Any, str]]:
-        """`(unit number or None, "exact"|"fuzzy")` when the quote is in the document."""
+    def _spanning(self, quote_n: str) -> Optional[List[Any]]:
+        """The numbers of the units a quote that crosses unit boundaries covers."""
+        at = self.joined.find(quote_n)
+        if at < 0:
+            return None
+        end, cursor, covered = at + len(quote_n), 0, []
+        for number, text in self.units:
+            if cursor < end and cursor + len(text) > at:
+                covered.append(number)
+            cursor += len(text) + 1
+        return covered or None
+
+    def locate(self, quote: str, claimed_unit: Any = None) -> Optional[Dict[str, Any]]:
+        """Where `quote` is in the document, or None. The answer is built from
+        the document alone:
+
+        * ``span``: the REAL (normalised) document text the quote matched.
+          For an exact match that is the quote itself; for a fuzzy match it is
+          what the document says there, which may differ from the quote.
+          Values are checked against this, never against the model's wording.
+        * ``unit``: the page/part number the reader gave to that text (None
+          when the reader gave none). `claimed_unit` -- the model's guess -- is
+          only used to choose between units that all contain the quote, and is
+          never returned unless the document has it there.
+        * ``units``: all of them, when the quote crosses a unit boundary.
+        * ``match``: "exact" or "fuzzy"."""
         quote_n = norm_text(quote)
         if len(quote_n) < 1:
             return None
-        for number, text in self.units:
-            if quote_n in text:
-                return number, "exact"
-        if quote_n in self.norm:
-            return None, "exact"
+        hits = [number for number, text in self.units if quote_n in text]
+        if hits:
+            unit = claimed_unit if (claimed_unit in hits and not isinstance(claimed_unit, bool)) else hits[0]
+            return {"unit": unit, "match": "exact", "span": quote_n}
+        if quote_n in self.norm or quote_n in self.joined:
+            covered = self._spanning(quote_n) if self.units else None
+            return {"unit": covered[0] if covered else None,
+                    "units": covered if covered and len(covered) > 1 else None,
+                    "match": "exact", "span": quote_n}
         if len(quote_n) < 6:
             return None
+        best: Optional[Tuple[float, Any, str]] = None
         for number, text in self.units:
-            if _fuzzy_find(quote_n, text):
-                return number, "fuzzy"
-        if not self.units and _fuzzy_find(quote_n, self.norm):
-            return None, "fuzzy"
+            ratio, span = _fuzzy_span(quote_n, text)
+            if ratio and (best is None or ratio > best[0]):
+                best = (ratio, number, span)
+        if best is not None:
+            return {"unit": best[1], "match": "fuzzy", "span": best[2]}
+        ratio, span = _fuzzy_span(quote_n, self.joined if self.units else self.norm)
+        if ratio:
+            covered = self._spanning(span) if self.units else None
+            return {"unit": covered[0] if covered else None,
+                    "units": covered if covered and len(covered) > 1 else None,
+                    "match": "fuzzy", "span": span}
         return None
 
     def find_value(self, value: Any) -> Optional[Dict[str, Any]]:
@@ -827,17 +1071,26 @@ class _Grounding:
             candidates, synthesised = [found], True
         why = "its quote is not in the document"
         for item in candidates:
-            located = self.source.locate(item["quote"])
+            claimed = item.get("unit")
+            located = self.source.locate(item["quote"], claimed)
             if located is None:
                 continue
-            unit, match = located
-            how = _value_in_quote(value, norm_text(item["quote"]), node)
+            # The value is checked against the document text found at the
+            # quote's place, never against the quote as the model wrote it.
+            how = _value_in_quote(value, located["span"], node)
             if how is None:
-                why = "the value is not in the quote given for it"
+                why = ("the value is not in the document text the quote points to"
+                       if located["match"] == "fuzzy" else "the value is not in the quote given for it")
                 continue
-            record = {"path": path, "quote": item["quote"],
-                      "unit": unit if unit is not None else item.get("unit"),
-                      "match": match, "value_match": how}
+            record = {"path": path, "quote": item["quote"], "unit": located["unit"],
+                      "match": located["match"], "value_match": how}
+            if located.get("units"):
+                record["units"] = located["units"]
+            if located["match"] == "fuzzy":
+                record["document_text"] = located["span"]
+            if isinstance(claimed, int) and not isinstance(claimed, bool) and claimed != located["unit"] \
+                    and claimed not in (located.get("units") or []):
+                record["unit_claim_ignored"] = True          # the model named another page; the reader's wins
             if synthesised:
                 record["synthesised"] = True
             self.evidence.append(record)
@@ -908,17 +1161,51 @@ def _remap(path: str, mapping: Mapping[str, str]) -> str:
     return mapping[best] + path[len(best):] if best else path
 
 
+LIMIT_NOTES = {
+    "lexical_check_only": "Grounding is lexical: each kept value's words were found in the document at the "
+                          "place quoted. That does not prove the value belongs to the field (a total from "
+                          "another invoice, a date of another event passes); check the evidence.",
+    "no_units": "The reader gave no pages or parts for this text, so the evidence has no page numbers "
+                "(unit is null); anything the model said about pages was ignored.",
+    "approximate_match": "Some quotes were matched approximately (OCR noise); their evidence carries "
+                         "`document_text`, what the document says there. Values were checked against that "
+                         "text, not against the quote.",
+    "enum_or_boolean_inferred": "Booleans and enum values that map a wording are listed in `inferred`: the "
+                                "document supports them by its words, not by containing the value.",
+}
+
+
+def _limits(evidence: Sequence[Mapping[str, Any]], has_units: bool, inferred: bool = False) -> List[Dict[str, str]]:
+    codes = ["lexical_check_only"]
+    if evidence and not has_units:
+        codes.append("no_units")
+    if any(e.get("match") == "fuzzy" for e in evidence):
+        codes.append("approximate_match")
+    if inferred or any(e.get("value_match") == "inferred" for e in evidence):
+        codes.append("enum_or_boolean_inferred")
+    return [{"code": c, "note": LIMIT_NOTES[c]} for c in codes]
+
+
 def ground(data: Any, evidence: Any, source_text: str, units: Optional[Sequence[Mapping[str, Any]]] = None,
            *, schema: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
-    """Keep only the values the document supports.
+    """Keep only the values whose words the document contains.
 
     Every non-null leaf needs a quote (given for its path or for an enclosing
     object or list item) that occurs in `source_text`, and the value has to be
-    in that quote. A value with no quote is looked up in the document itself
-    (``synthesised`` evidence) unless it is a short string or a small whole
-    number. Anything unsupported becomes null and is listed in ``dropped`` with
-    the reason; nothing invented survives. With `schema` (the user's inlined
-    schema) the result is also checked by :func:`finalize`."""
+    in the DOCUMENT text found at that place: a quote matched approximately
+    (OCR noise) points at the real words there, and the value is checked
+    against those, never against the model's wording; amounts, identifiers and
+    dates must be in them as written (in any of the usual notations). A
+    value with no quote is looked up in the document itself (``synthesised``
+    evidence) unless it is a short string or a small whole number. The page or
+    part of each piece of evidence comes from `units` (the reader's), never
+    from the model; without `units` it is None. Anything unsupported becomes
+    null and is listed in ``dropped`` with the reason. With `schema` (the
+    user's schema) the result is also checked by :func:`finalize`.
+
+    This is a lexical check. It shows that the words of the value are in the
+    document at the place quoted; it cannot show that they answer the field
+    (a total from another invoice passes), so ``limits`` says so."""
     source = _Source(source_text, units)
     state = _Grounding(source, evidence)
     node = inline_refs(schema) if isinstance(schema, Mapping) else None
@@ -929,7 +1216,8 @@ def ground(data: Any, evidence: Any, source_text: str, units: Optional[Sequence[
     kept = _compact(kept, "", "", mapping)
     evidence_out = [{**e, "path": _remap(e["path"], mapping)} for e in state.evidence]
     result = {"data": kept, "evidence": evidence_out, "dropped": state.dropped,
-              "inferred": [_remap(p, mapping) for p in state.inferred]}
+              "inferred": [_remap(p, mapping) for p in state.inferred],
+              "limits": _limits(evidence_out, bool(source.units))}
     if node is not None:
         result.update(finalize(kept, node))
     return result
@@ -1016,8 +1304,15 @@ def merge_chunks(results: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
             dropped.append({**item, "chunk": index})
         inferred.extend(_remap(p, mapping) for p in result.get("inferred") or [])
         conflicts.extend(lost.values())
+    codes: List[str] = ["lexical_check_only"]
+    for result in results:
+        for limit in result.get("limits") or []:
+            code = limit.get("code") if isinstance(limit, Mapping) else None
+            if code in LIMIT_NOTES and code not in codes:
+                codes.append(code)
     return {"data": merged if merged is not None else {}, "evidence": evidence, "dropped": dropped,
-            "inferred": sorted(set(inferred)), "conflicts": conflicts}
+            "inferred": sorted(set(inferred)), "conflicts": conflicts,
+            "limits": [{"code": c, "note": LIMIT_NOTES[c]} for c in codes]}
 
 
 def _merge(kept: Any, new: Any, path: str, mapping: Dict[str, str], lost: Dict[str, Dict[str, Any]],
@@ -1523,6 +1818,7 @@ async def extract_to_schema(owner: Optional[str], *, path: Optional[str] = None,
         "inferred": merged["inferred"],
         "missing_required": final["missing_required"],
         "conflicts": merged["conflicts"],
+        "limits": merged["limits"],
         "schema_valid": final["schema_valid"],
         "complete": not failed,
         "errors": errors + final["errors"],
