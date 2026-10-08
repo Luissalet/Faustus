@@ -29,7 +29,10 @@ The pipeline, and where each rule lives:
   source (accent/case/space-insensitive; OCR noise tolerated at a 0.9
   similarity) and the value is in the DOCUMENT text found there -- never just
   in the model's quote: amounts, identifiers and dates must be in the real
-  text as written (numbers in European and English notation, ISO dates
+  text as written (numbers in European and English notation compared
+  exactly, with their sign: a minus that sticks to the digits is never read as
+  positive, and a sign the text leaves open -- a dash apart from the digits,
+  brackets, a trailing minus -- is dropped as ``sign_ambiguous``; ISO dates
   against the usual written forms); only words tolerate OCR noise. Anything
   else becomes null and goes to ``dropped`` with the reason. The page or part
   is the reader's, never the model's (null when the reader gave none).
@@ -714,6 +717,11 @@ def _fuzzy_find(needle: str, hay: str, threshold: float = FUZZY_QUOTE_RATIO) -> 
 
 _SPAN_SLACK = 40
 
+#: `value_match` of a figure whose digits are in the document but whose sign is not decided by it.
+SIGN_AMBIGUOUS = "sign_ambiguous"
+SIGN_AMBIGUOUS_WHY = ("the digits are in the document but their sign is not: a dash apart from the digits, "
+                      "an amount in brackets or a trailing minus can mean negative or not")
+
 
 def _fuzzy_span(needle: str, hay: str, threshold: float = FUZZY_QUOTE_RATIO) -> Tuple[float, str]:
     """`(similarity, text)`: the best match of `needle` in `hay` and the REAL
@@ -767,37 +775,87 @@ def _fuzzy_span(needle: str, hay: str, threshold: float = FUZZY_QUOTE_RATIO) -> 
     return best, hay[begin:end]
 
 
-# Numbers as written: digits with optional thousands/decimal separators.
-_NUM_TOKEN = re.compile(r"[-\u2212]?\d(?:[\d.,'\u00a0\u202f ]*\d)?")
-_SPACE_GROUPED = re.compile(r"^[-\u2212]?\d{1,3}(?: \d{3})+(?:[.,]\d+)?$")
+# Numbers as written: digits with optional thousands/decimal separators. The sign is NOT part of the
+# token: it is read from the text around it (see `_sign_context`).
+_NUM_TOKEN = re.compile(r"\d(?:[\d.,'\u00a0\u202f ]*\d)?")
+_SPACE_GROUPED = re.compile(r"^\d{1,3}(?: \d{3})+(?:[.,]\d+)?$")
+_SIGN_CHARS = "-\u2212\u2013\u2014"
+_BLANKS = " \t\u00a0\u202f"
+_AMOUNT_LIKE = re.compile(r"^\d[\d.,'\u00a0\u202f ]*[.,]\d{2}$")
+_CURRENCY_TAIL = re.compile(r"^[ \t\u00a0\u202f]*(?:\u20ac|\$|\u00a3|eur|usd|gbp)?[ \t\u00a0\u202f]*\)", re.IGNORECASE)
 
 
 def _readings(token: str) -> List[Decimal]:
-    """Every value a written number can mean (``1.234`` is 1234 or 1.234)."""
+    """Every value a written number can mean (``1.234`` is 1234 or 1.234), with
+    the sign it is written with: a leading minus makes every reading negative
+    and none of them positive."""
     from src.grounding_ledger import _candidates
-    clean = token.replace("\u2212", "-").strip()
+    clean = token.replace("\u2212", "-").replace("\u2013", "-").strip()
     negative = clean.startswith("-")
     body = clean.lstrip("-").strip()
-    out: List[Decimal] = []
-    for value, _decimals in _candidates(body):
-        out.append(-value if negative else value)
-        if negative:
-            out.append(value)          # "- 12,00" in a column is often a layout dash
-    return out
+    return [-value if negative else value for value, _decimals in _candidates(body)]
 
 
-def _number_values(text: str) -> List[Decimal]:
-    values: List[Decimal] = []
+def _sign_context(text: str, start: int, end: int, token: str) -> str:
+    """How the number written at ``text[start:end]`` is signed:
+
+    * ``"negative"``: a minus sticks to the digits and does not follow a letter or a digit
+      (``-120.00``, ``balance:-120``, ``= \u2212120``);
+    * ``"ambiguous"``: it could be a minus or not and the text does not say: a dash apart from the
+      digits (``- 120,00``) unless a figure precedes it (``10 - 20`` is a range), an amount in
+      brackets (``(120.00)``, accounting for a loss, but also an aside) and an amount with a
+      trailing minus (``120.00-``);
+    * ``"positive"``: everything else, including a hyphen that separates (``F-2026``, ``10-20``,
+      ``2026-03-15``)."""
+    before = text[start - 1] if start > 0 else ""
+    after_at = end
+    if before and before in _SIGN_CHARS:
+        earlier = text[start - 2] if start > 1 else ""
+        if earlier.isalnum():
+            return "positive"
+        return "negative"
+    amount_like = bool(_AMOUNT_LIKE.match(token.strip()))
+    if before and before in _BLANKS:
+        i = start - 1
+        while i >= 0 and text[i] in _BLANKS:
+            i -= 1
+        if i >= 0 and text[i] in _SIGN_CHARS:
+            j = i - 1
+            while j >= 0 and text[j] in _BLANKS:
+                j -= 1
+            if j >= 0 and text[j].isdigit():
+                return "positive"                       # "10 - 20"
+            return "ambiguous"                          # "- 120,00", "Total - 45.00"
+    if amount_like:
+        i = start - 1
+        while i >= 0 and text[i] in _BLANKS:
+            i -= 1
+        if i >= 0 and text[i] == "(" and _CURRENCY_TAIL.match(text[after_at:after_at + 12] or ""):
+            return "ambiguous"                          # "(120.00)"
+        if after_at < len(text) and text[after_at] in _SIGN_CHARS and not (
+                after_at + 1 < len(text) and text[after_at + 1].isalnum()):
+            return "ambiguous"                          # "120.00-"
+    return "positive"
+
+
+def _number_values(text: str) -> List[Tuple[Decimal, bool]]:
+    """Every ``(value, sign_is_ambiguous)`` the numbers of `text` can mean. For an ambiguous one
+    the value is given positive: the document does not say which sign it has."""
+    values: List[Tuple[Decimal, bool]] = []
     for match in _NUM_TOKEN.finditer(text):
         token = match.group(0)
-        values.extend(_readings(token))
+        sign = _sign_context(text, match.start(), match.end(), token)
+        prefix = "-" if sign == "negative" else ""
+        flag = sign == "ambiguous"
+        values.extend((value, flag) for value in _readings(prefix + token))
         parts = re.split(r"[\s\u00a0\u202f]+", token)
         if len(parts) > 1 and _SPACE_GROUPED.match(" ".join(parts)):
-            values.extend(_readings("".join(parts)))     # "1 234,56": a space as the thousands mark
+            values.extend((value, flag) for value in _readings(prefix + "".join(parts)))   # "1 234,56"
         if len(parts) > 1:
-            for part in parts:
+            for index, part in enumerate(parts):
                 if part:
-                    values.extend(_readings(part))
+                    # only the first piece can carry the sign that stands before the whole token
+                    values.extend((value, flag) for value in _readings((prefix if index == 0 else "") + part))
     return values
 
 
@@ -813,16 +871,25 @@ def _as_decimal(value: Any) -> Optional[Decimal]:
 
 
 def _number_in(value: Decimal, text: str) -> Optional[str]:
-    """"number" when `text` writes `value`, "percent" when it writes it as a percentage."""
-    tolerance = Decimal("0.000001") * max(Decimal(1), abs(value))
+    """``"number"`` when `text` writes exactly `value` (same sign, every digit), ``"percent"`` when
+    it writes it as a percentage, ``"sign_ambiguous"`` when the digits are there but the sign is
+    not decided by the text (see :func:`_sign_context`), else None.
+
+    The comparison is exact on decimals: there is no tolerance, so the cents or the units of a large
+    amount are never altered, and a negative figure is never matched by its positive twin."""
     readings = _number_values(text)
-    for reading in readings:
-        if abs(reading - value) <= tolerance:
+    ambiguous = False
+    for reading, flag in readings:
+        if flag:
+            ambiguous = ambiguous or abs(reading) == abs(value)
+        elif reading == value:
             return "number"
-    for reading in readings:
-        if abs(reading / 100 - value) <= tolerance and "%" in text:
+    for reading, flag in readings:
+        if "%" in text and not flag and reading / 100 == value:
             return "percent"
-    return None
+    if "%" in text:
+        ambiguous = ambiguous or any(flag and abs(reading / 100) == abs(value) for reading, flag in readings)
+    return "sign_ambiguous" if ambiguous else None
 
 
 _MONTHS = {
@@ -891,27 +958,34 @@ def _value_in_quote(value: Any, quote_n: str, node: Any) -> Optional[str]:
         return "inferred"
     number = _as_decimal(value)
     if number is not None:
-        return _number_in(number, quote_n)
+        got = _number_in(number, quote_n)
+        return SIGN_AMBIGUOUS if got == "sign_ambiguous" else got
     if not isinstance(value, str):
         return None
     value_n = norm_text(value)
     if not value_n:
         return None
+    has_digit = any(ch.isdigit() for ch in value_n)
+    if has_digit and re.fullmatch(r"[-\u2212]?[\d.,'\s]+%?", value_n):
+        # A number written as text is a number: same sign, same digits, any of the usual notations
+        # (a substring test would read "120.00" in "-120.00" or "1.000" in "1.000,50").
+        ambiguous = False
+        for reading in _readings(value_n.rstrip("%")):
+            got = _number_in(reading, quote_n)
+            if got == "sign_ambiguous":
+                ambiguous = True
+            elif got:
+                return "number"
+        return SIGN_AMBIGUOUS if ambiguous else None
     if _contains(quote_n, value_n):
         return "verbatim"
     if _date_in(value_n, quote_n):
         return "date"
-    has_digit = any(ch.isdigit() for ch in value_n)
     if has_digit and len(value_n) >= 8:
         # An identifier the document groups differently (an IBAN in blocks of four).
         squeezed = re.sub(r"[\s\-.]", "", value_n)
         if len(squeezed) >= 8 and _contains(re.sub(r"[\s\-.]", "", quote_n), squeezed):
             return "verbatim"
-    if re.fullmatch(r"[-\u2212]?[\d.,'\s]+%?", value_n) and any(ch.isdigit() for ch in value_n):
-        readings = _readings(value_n.rstrip("%"))
-        for reading in readings:
-            if _number_in(reading, quote_n):
-                return "number"
     # Wording noise (OCR) is tolerated only in words: a value with a digit in
     # it (an amount, an identifier, a date) must be in the document text as is.
     if not has_digit and len(value_n) >= 5 and _fuzzy_find(value_n, quote_n):
@@ -1007,7 +1081,7 @@ class _Source:
         if number is None or (number == number.to_integral_value() and abs(number) < 10):
             return None
         for line in lines:
-            if _number_in(number, norm_text(line)):
+            if _number_in(number, norm_text(line)) in ("number", "percent"):
                 return {"quote": line.strip()[:MAX_QUOTE_CHARS]}
         return None
 
@@ -1050,8 +1124,11 @@ class _Grounding:
         self.dropped: List[Dict[str, Any]] = []
         self.inferred: List[str] = []
 
-    def drop(self, path: str, value: Any, why: str) -> None:
-        self.dropped.append({"path": path, "value": value, "why": why})
+    def drop(self, path: str, value: Any, why: str, code: Optional[str] = None) -> None:
+        entry = {"path": path, "value": value, "why": why}
+        if code:
+            entry["code"] = code
+        self.dropped.append(entry)
 
     def leaf(self, value: Any, node: Any, path: str) -> Any:
         if value is None:
@@ -1070,6 +1147,7 @@ class _Grounding:
                 return None
             candidates, synthesised = [found], True
         why = "its quote is not in the document"
+        code: Optional[str] = None
         for item in candidates:
             claimed = item.get("unit")
             located = self.source.locate(item["quote"], claimed)
@@ -1078,9 +1156,14 @@ class _Grounding:
             # The value is checked against the document text found at the
             # quote's place, never against the quote as the model wrote it.
             how = _value_in_quote(value, located["span"], node)
+            if how == SIGN_AMBIGUOUS:
+                code = SIGN_AMBIGUOUS
+                why = SIGN_AMBIGUOUS_WHY
+                continue
             if how is None:
-                why = ("the value is not in the document text the quote points to"
-                       if located["match"] == "fuzzy" else "the value is not in the quote given for it")
+                if code is None:
+                    why = ("the value is not in the document text the quote points to"
+                           if located["match"] == "fuzzy" else "the value is not in the quote given for it")
                 continue
             record = {"path": path, "quote": item["quote"], "unit": located["unit"],
                       "match": located["match"], "value_match": how}
@@ -1097,7 +1180,7 @@ class _Grounding:
             if how == "inferred":
                 self.inferred.append(path)
             return value
-        self.drop(path, value, why)
+        self.drop(path, value, why, code)
         return None
 
     def walk(self, value: Any, node: Any, path: str) -> Any:

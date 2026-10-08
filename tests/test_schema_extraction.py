@@ -519,6 +519,100 @@ def test_a_number_is_not_found_inside_a_longer_number():
     assert out["data"] == {} and out["dropped"][0]["path"] == "ref"
 
 
+BALANCE = obj({"balance": N}, required=("balance",))
+
+
+def _ground_number(source, value, schema=BALANCE):
+    return se.ground({"balance": value}, [{"path": "balance", "quote": source}], source,
+                     [{"number": 1, "text": source}], schema=schema)
+
+
+@pytest.mark.parametrize("source,value", [
+    # the opposite sign
+    ("Closing balance: -120.00 EUR.", 120),
+    ("Saldo final: -120,00 €", 120),
+    ("Saldo final:-120.00", 120),
+    ("Balance = −120.00 EUR", 120),
+    ("Net movement\n-120.00 EUR", 120),
+    ("Closing balance: 120.00 EUR.", -120),
+    ("Total: 5 -120.00 EUR", 120),
+    # one unit, one cent, one thousandth of a large amount
+    ("Invoice total: 1000000.00 EUR.", 1000001),
+    ("Invoice total: 1000000.00 EUR.", 999999),
+    ("Invoice total: 1000000.00 EUR.", 1000000.01),
+    ("Total: 1.000.000,00 EUR", 1000001),
+    ("Total: 1,000,000.00 EUR", 1000000.01),
+    ("Total: 1 000 000,00 EUR", 1000001),
+    ("Total: 12345678.90 EUR", 12345678.91),
+    ("Total: 100000000.00 EUR", 100000001),
+    ("Total: 0.30 EUR", 0.31),
+])
+def test_a_number_with_the_other_sign_or_a_different_amount_is_never_certified(source, value):
+    out = _ground_number(source, value)
+    assert out["data"] == {"balance": None} and out["evidence"] == [], out
+    assert out["dropped"][0]["path"] == "balance" and out["schema_valid"] is False
+
+
+@pytest.mark.parametrize("source,value", [
+    ("Closing balance: -120.00 EUR.", -120),
+    ("Saldo final: -120,00 €", -120),
+    ("Saldo final:-120.00", -120),
+    ("Balance = −120.00 EUR", -120),
+    ("Closing balance: 120.00 EUR.", 120),
+    ("Invoice total: 1000000.00 EUR.", 1000000),
+    ("Total: 1.000.000,00 EUR", 1000000),
+    ("Total: 1,000,000.00 EUR", 1000000),
+    ("Total: 1 000 000,00 EUR", 1000000),
+    ("Total: 1000000", 1000000),
+    ("Total: 1 000 000,00 EUR", 1000000),
+    ("Total: -1.234,56", -1234.56),
+    ("Total: 12345678.90 EUR", 12345678.90),
+    ("Total: 0.30 EUR", 0.3),
+    ("IVA (21 %)", 0.21),
+    ("Cantidad (3) unidades", 3),
+    # a hyphen between digits or after a letter is a separator, not a sign
+    ("Plazo de 10-20 dias", 20),
+    ("Pedido F-2026-0042", 2026),
+    ("Fecha 2026-03-15 importe 120.00", 15),
+])
+def test_valid_notations_and_separator_hyphens_are_still_certified(source, value):
+    out = _ground_number(source, value)
+    assert out["data"] == {"balance": value}, out["dropped"]
+    assert out["evidence"][0]["value_match"] in ("number", "percent") and out["schema_valid"] is True
+
+
+@pytest.mark.parametrize("source,values", [
+    ("Descuento: - 120,00 €", (120, -120)),      # a dash apart from the digits
+    ("Notas\n- 120 EUR", (120, -120)),                 # list bullet or minus?
+    ("Total - 45.00", (45, -45)),
+    ("Saldo (120.00)", (120, -120)),                   # accounting brackets or an aside?
+    ("Saldo 120.00-", (120, -120)),                    # trailing minus
+    ("Saldo 1.234,56-", (1234.56, -1234.56)),
+])
+def test_an_ambiguous_sign_is_reported_not_converted(source, values):
+    for value in values:
+        out = _ground_number(source, value)
+        assert out["data"] == {"balance": None} and out["evidence"] == [], (source, value)
+        drop = out["dropped"][0]
+        assert drop["code"] == "sign_ambiguous" and "sign" in drop["why"], drop
+
+
+def test_an_unambiguous_occurrence_wins_over_an_ambiguous_one():
+    source = "Descuento: - 120,00 EUR\nTotal a pagar: 120,00 EUR"
+    assert _ground_number(source, 120)["data"] == {"balance": 120}
+    assert _ground_number(source, -120)["data"] == {"balance": None}
+    # and a figure that sits next to the dash only as a range is not a sign at all
+    assert _ground_number("Plazo 10 - 20 dias", 20)["data"] == {"balance": 20}
+
+
+def test_a_numeric_string_follows_the_same_sign_and_exactness_rules():
+    ref = obj({"amount": S})
+    for source, value, kept in (("Saldo: -120.00", "120.00", False), ("Saldo: -120.00", "-120.00", True),
+                                ("Total: 1000000.00", "1000001.00", False), ("Total: 1000000,00", "1.000.000,00", True)):
+        out = se.ground({"amount": value}, [{"path": "amount", "quote": source}], source, schema=ref)
+        assert (out["data"].get("amount") == value) is kept, (source, value, out["dropped"])
+
+
 def test_a_page_the_model_invents_is_never_reported():
     out = se.ground({"value": "Alpha Beta"}, [{"path": "value", "quote": "Alpha Beta", "unit": 777}],
                     "Alpha Beta", schema=obj({"value": S}, required=("value",)))
