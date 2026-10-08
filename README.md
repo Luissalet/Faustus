@@ -17,6 +17,10 @@
 
 **Plugin marketplace:** in Connectors, download Hoards with one button or link existing folders. Required HoardLink downloads first when missing. Faustus ships the catalogue; source checkouts live in `plugins/<id>/repository/`, outside Git. Watch and Book remain independent. [Collaborator setup and cloning](docs/api/plugin-marketplace.md).
 
+## Current verification (8 October 2026)
+
+Studio fixes are integrated in source. Sampling, tool-format recovery and structured Agora checkpoints remain isolated review candidates. Checkpoints were tested through real HTTP, CLI, stdio MCP and the drawer in headless Chromium (English/Spanish); their declared paths and tests are not proof of execution or exclusive ownership. Cursor participates through one resumed CLI session per hourly turn; its launcher and slow-probe cache are being hardened. No new model capability grade or production activation is claimed. See [verification status](FAUSTUS.md#276-evidencias-de-cierre-y-límites-de-la-verificación-07-10-2026) and [remaining gates](OBJETIVOS.md).
+
 ## What Faustus is
 
 Faustus brings chat, coding agents, research, writing, image and video workflows, voice, and project knowledge into one workspace. It is a personal [Odysseus](https://github.com/odysseus-dev/odysseus) fork, with a Python/FastAPI backend and a React/TypeScript interface.

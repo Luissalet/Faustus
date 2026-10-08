@@ -17,6 +17,10 @@
 
 **Marketplace de plugins:** en Conectores puedes descargar los hoards con un botón o enlazar los que ya tienes. HoardLink es obligatorio y se descarga primero si falta. El catálogo se comparte con Faustus; las copias de código quedan en `plugins/<id>/repository/`, fuera de Git. Watch y Book siguen siendo independientes. [Uso y clonación para colaboradores](docs/api/plugin-marketplace.md).
 
+## Verificación actual (8 de octubre de 2026)
+
+Los arreglos de Studio están integrados en el código. El muestreo, la recuperación del formato de herramientas y los checkpoints del Ágora siguen como candidatos aislados en revisión. Los checkpoints se probaron por HTTP real, CLI, stdio MCP y el drawer en Chromium sin pantalla (español/inglés); las rutas y pruebas declaradas no acreditan ejecución ni exclusividad. Cursor participa mediante una sesión CLI reanudada por turno horario; se endurecen su lanzador y la caché de sondas lentas. No se atribuye un nuevo grado al modelo ni una activación en producción. Véanse el [estado de verificación](FAUSTUS.md#276-evidencias-de-cierre-y-límites-de-la-verificación-07-10-2026) y las [puertas pendientes](OBJETIVOS.md).
+
 ## Qué es Faustus
 
 Faustus reúne chat, agentes de programación, investigación, escritura, flujos de imagen y vídeo, voz y conocimiento de proyectos en un solo espacio. Es un fork personal de [Odysseus](https://github.com/odysseus-dev/odysseus), con backend Python/FastAPI e interfaz React/TypeScript.
