@@ -9277,3 +9277,5 @@ Only in B	Solo en B
 Only in A	Solo en A
 Different	Distintos
 Renamed files	Renombrados
+Initial wait (seconds)#sparks	Espera inicial (segundos)
+How long a Sparks turn may wait in the queue and while the model prepares before the first token. Default {n} s ({min}–{max}). When the limit expires you get a notice; you can shrink the context or pick another model. There is no automatic retry.	Cuánto puede esperar un turno en Sparks en la cola y mientras el modelo se prepara antes del primer token. Por defecto {n} s ({min}–{max}). Al vencer el límite aparece un aviso; puedes reducir el contexto o elegir otro modelo. No hay reintento automático.

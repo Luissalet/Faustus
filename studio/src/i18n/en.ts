@@ -49,4 +49,6 @@ export const en: Record<string, string> = {
   'Maximum#effort': 'Maximum',
   'Level#effort': 'Level',
   'Follow the mode#effort': 'Follow the mode',
+  // Sparks initial-wait setting (distinct from latency stats wording).
+  'Initial wait (seconds)#sparks': 'Initial wait (seconds)',
 };

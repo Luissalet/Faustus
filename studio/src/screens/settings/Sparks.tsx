@@ -98,9 +98,9 @@ export function SparksSection({ say }: { say: (text: string) => void }) {
         <Select id="sparks-recipe" value={state.recipe} options={recipes} allowEmpty={t('The one Prometheus marks as default, else the first serving')} onChange={(v) => void save({ recipe: v })} />
       </Field>
       <Field
-        label={t('Seconds to wait for the answer')}
+        label={t('Initial wait (seconds)#sparks')}
         htmlFor="sparks-first-token"
-        help={t('Time to first token (median · p95 · n)')}
+        help={t('How long a Sparks turn may wait in the queue and while the model prepares before the first token. Default {n} s ({min}–{max}). When the limit expires you get a notice; you can shrink the context or pick another model. There is no automatic retry.', { n: FIRST_TOKEN_DEFAULT, min: FIRST_TOKEN_MIN, max: FIRST_TOKEN_MAX })}
       >
         <div className="fs-set__inline">
           <Text
