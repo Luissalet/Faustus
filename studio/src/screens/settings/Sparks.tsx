@@ -1,8 +1,7 @@
 import { ExternalLink, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '../../components';
-import { getJson } from '../../adapters/api';
-import { loadSparks, parseSparks, saveSparksSettings, syncSparks, type SparksState } from '../../adapters/sparks';
+import { loadSparks, saveSparksSettings, syncSparks, type SparksState } from '../../adapters/sparks';
 import { t } from '../../i18n';
 import { Field, Select, Text, Toggle } from './fields';
 
@@ -10,47 +9,37 @@ const FIRST_TOKEN_MIN = 5;
 const FIRST_TOKEN_MAX = 120;
 const FIRST_TOKEN_DEFAULT = 30;
 
+/** Backend #106 adds this on SparksState; keep a local view until that adapter lands on master. */
+type SparksStatus = SparksState & { first_token_timeout_s?: number };
+
 /**
  * Settings → Sparks: where Prometheus's Hoard answers, whether the DGX Sparks are the default chat backend while a
  * recipe serves, and which recipe is preferred. The local GPUs keep their models and become the default again when
  * nothing serves on the Sparks (src/sparks.py). Nothing about the cluster is fixed in code.
- *
- * `first_token_timeout_s` is read from status when the backend exposes it; saving goes through the same settings
- * PUT (adapter types may lag behind #106 — the field is still sent).
  */
 export function SparksSection({ say }: { say: (text: string) => void }) {
-  const [state, setState] = useState<SparksState | null>(null);
+  const [state, setState] = useState<SparksStatus | null>(null);
   const [url, setUrl] = useState('');
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [firstTokenS, setFirstTokenS] = useState<number | null>(null);
   const [firstTokenDraft, setFirstTokenDraft] = useState(String(FIRST_TOKEN_DEFAULT));
-  const [timeoutKnown, setTimeoutKnown] = useState(false);
 
   const reload = async () => {
-    // One status read so we can pick up first_token_timeout_s without waiting on sparks.ts (#99 lock).
-    try {
-      const raw = await getJson<Record<string, unknown>>('/api/sparks/status?recipes=true');
-      const s = parseSparks(raw);
-      setState(s);
-      if (s) setUrl((u) => u || s.url);
-      if (typeof raw?.first_token_timeout_s === 'number' && Number.isFinite(raw.first_token_timeout_s)) {
-        const n = Math.min(FIRST_TOKEN_MAX, Math.max(FIRST_TOKEN_MIN, Math.round(raw.first_token_timeout_s)));
-        setFirstTokenS(n);
-        setFirstTokenDraft(String(n));
-        setTimeoutKnown(true);
-      }
-    } catch {
-      const s = await loadSparks();
-      setState(s);
-      if (s) setUrl((u) => u || s.url);
+    const s = (await loadSparks()) as SparksStatus | null;
+    setState(s);
+    if (s) {
+      setUrl((u) => u || s.url);
+      const n = typeof s.first_token_timeout_s === 'number' && Number.isFinite(s.first_token_timeout_s)
+        ? Math.min(FIRST_TOKEN_MAX, Math.max(FIRST_TOKEN_MIN, Math.round(s.first_token_timeout_s)))
+        : FIRST_TOKEN_DEFAULT;
+      setFirstTokenDraft(String(n));
     }
   };
   useEffect(() => {
     void reload();
   }, []);
 
-  const save = async (patch: Record<string, unknown>) => {
+  const save = async (patch: { enabled?: boolean; url?: string; default_backend?: boolean; recipe?: string; first_token_timeout_s?: number }) => {
     setSaving(true);
     const res = await saveSparksSettings(patch as { enabled?: boolean; url?: string; default_backend?: boolean; recipe?: string });
     setSaving(false);
@@ -65,23 +54,14 @@ export function SparksSection({ say }: { say: (text: string) => void }) {
       say(t('Could not save.'));
       return;
     }
-    setSaving(true);
-    const res = await saveSparksSettings({ first_token_timeout_s: n } as { enabled?: boolean });
-    setSaving(false);
-    if (res.ok === false) say(String(res.error || t('Could not save.')));
-    else {
-      setFirstTokenS(n);
-      setTimeoutKnown(true);
-      say(t('Saved.'));
-    }
-    await reload();
+    await save({ first_token_timeout_s: n });
   };
 
   if (!state) return <p className="fs-prose">{t('Loading')}</p>;
   const recipes = state.recipes.filter((r) => !r.invalid).map((r) => ({ value: r.name, label: r.title }));
   const eff = state.effective;
   const online = state.nodes.filter((n) => n.online).length;
-  const shownTimeout = firstTokenS ?? FIRST_TOKEN_DEFAULT;
+  const shownTimeout = typeof state.first_token_timeout_s === 'number' ? state.first_token_timeout_s : FIRST_TOKEN_DEFAULT;
 
   return (
     <section className="fs-set__section" aria-labelledby="fs-set-sparks" data-testid="settings-sparks">
@@ -137,7 +117,7 @@ export function SparksSection({ say }: { say: (text: string) => void }) {
             onClick={() => void saveFirstToken()}
             testId="sparks-first-token-save"
           />
-          {!timeoutKnown && (
+          {typeof state.first_token_timeout_s !== 'number' && (
             <span className="fs-prose" data-testid="sparks-first-token-proposed">
               {FIRST_TOKEN_DEFAULT} s ({FIRST_TOKEN_MIN}–{FIRST_TOKEN_MAX})
             </span>
