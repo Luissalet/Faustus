@@ -13,9 +13,11 @@ ordinary tool error, not an exception.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any, Dict, Optional
 
+from src import plan_goals
 from src import plan_tracker as pt
 
 
@@ -118,6 +120,11 @@ class PlanTaskTool:
         if task.get("files"):
             out.append("")
             out.append("Files: " + ", ".join(task["files"]))
+        if task.get("goals"):
+            out.append("")
+            out.append("Typed goals (plan_done runs them; a failing one keeps the task open):")
+            out.extend(f'- {g.get("kind")}: {(g.get("spec") or {}).get("cmd") or (g.get("spec") or {}).get("url") or (g.get("spec") or {}).get("text") or ""}'
+                       for g in task["goals"])
         return {
             "output": "\n".join(out),
             "exit_code": 0,
@@ -146,14 +153,49 @@ class PlanDoneTool:
         if not task:
             return {"error": f"plan_done: no such task {ident!r}", "exit_code": 1}
         turn = (ctx or {}).get("turn")
-        updated = pt.mark(scope, tracker["hash"], task["id"], "done", evidence, turn)
+        # Typed goals (OBJ-47): run them BEFORE sealing. A failing goal leaves
+        # the task open and hands the failures back; skipped goals (not
+        # checkable, or refused by policy) are reported, never counted as passed.
+        report: Optional[Dict[str, Any]] = None
+        goals = task.get("goals") or []
+        if goals and plan_goals.enabled():
+            from src.tool_execution import get_active_workspace
+            report = await asyncio.to_thread(
+                plan_goals.evaluate_goals, goals,
+                workspace=get_active_workspace(), policy=(ctx or {}).get("tool_policy"),
+            )
+            if not report.get("ok"):
+                pt.record_goals(scope, tracker["hash"], task["id"], report)
+                detail = plan_goals.format_failures(report)
+                return {
+                    "error": (
+                        f'plan_done: {task.get("id")} {task.get("key")} NOT sealed -- '
+                        f'{report["failed"]} of {report["total"]} typed goal(s) failed:\n{detail}\n'
+                        "Fix the cause, then call plan_done again (the goals run again)."
+                    ),
+                    "exit_code": 1,
+                    "sealed": False,
+                    "goals": report,
+                    "progress": pt.progress(tracker),
+                }
+        updated = pt.mark(scope, tracker["hash"], task["id"], "done", evidence, turn, goals=report)
         if not updated:
             return {"error": "plan_done: failed to persist", "exit_code": 1}
         result: Dict[str, Any] = {
             "output": f'{task.get("id")} {task.get("key")} marked done',
             "exit_code": 0,
+            "sealed": True,
             "progress": pt.progress(updated),
         }
+        if report is not None:
+            result["goals"] = report
+            if report.get("skipped"):
+                result["output"] += (
+                    f' ({report["passed"]} goal(s) passed, {report["skipped"]} NOT verified:\n'
+                    + plan_goals.format_failures(report) + ")"
+                )
+            else:
+                result["output"] += f' ({report["passed"]} typed goal(s) passed)'
         ledger_mutations = (ctx or {}).get("ledger_mutations")
         files = task.get("files") or []
         if isinstance(ledger_mutations, (list, tuple, set)) and files:

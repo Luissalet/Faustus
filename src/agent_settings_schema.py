@@ -1540,6 +1540,16 @@ GROUPS: list[dict[str, Any]] = [
                  "Most times one turn may send the model on to the next plan task by itself before it "
                  "stops and asks.",
                  1, 500),
+            _bool("agent_plan_goals", "Plan: run the typed goals of a task before sealing it",
+                  "A plan task can declare 'test_passes: <test command>' and 'http_ok: <url>' lines. "
+                  "plan_done runs them (tests through the harness test runner without a shell, confined "
+                  "to the workspace; URLs through the public-only outbound broker) and leaves the task "
+                  "open while one fails. Goals the turn's policy or the sandbox forbids are reported as "
+                  "skipped, never as passed."),
+            _int("agent_plan_goal_timeout_seconds", "Plan: time limit per typed goal",
+                 "Most seconds one typed goal of a plan task may run before it is killed and counted "
+                 "as failed.",
+                 10, 600),
         ],
     ),
     _group(

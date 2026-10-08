@@ -3595,7 +3595,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "plan_done",
-            "description": "Mark one task of the active persisted plan (P1) done, with concrete evidence (>= 20 chars -- what you ran/saw, not 'done'). If files were mutated this turn and the task named files that were not among them, the response lists them as unverified_files -- informative, not a refusal.",
+            "description": "Mark one task of the active persisted plan (P1) done, with concrete evidence (>= 20 chars -- what you ran/saw, not 'done'). If files were mutated this turn and the task named files that were not among them, the response lists them as unverified_files -- informative, not a refusal. If the task declares typed goals in the plan (lines such as 'test_passes: pytest tests/test_x.py' or 'http_ok: https://host/health 200'), plan_done RUNS them before sealing: tests through the harness test runner (no shell, workspace-confined, time-bounded), URLs through the public-only outbound fetch. Any failed goal leaves the task open (sealed=false, exit_code 1) and returns the failures as evidence -- fix them and call plan_done again. Goals that cannot be checked (other kinds, policy- or sandbox-forbidden, non-public URL) come back as skipped with the reason, never as passed. Results are in 'goals' (per goal: passed/failed/skipped, evidence).",
             "parameters": {
                 "type": "object",
                 "properties": {

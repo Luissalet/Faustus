@@ -1418,6 +1418,11 @@ DEFAULT_SETTINGS = {
     # continuations that close no task, on loop-breaker recovery, or at the cap.
     "agent_plan_autocontinue": True,
     "agent_plan_autocontinue_max": 40,
+    # Typed goals of a plan task (`test_passes:` / `http_ok:` lines in the plan,
+    # src/plan_goals.py): plan_done runs them and does not seal the task while
+    # one fails. Each goal is bounded by the timeout below (10-600 s).
+    "agent_plan_goals": True,
+    "agent_plan_goal_timeout_seconds": 120,
     # Shell commands whose target (script, package.json, compose file, test path)
     # lives in one subfolder run from that folder; several candidates are listed
     # instead of running (src/command_preflight.py).

@@ -38,7 +38,7 @@ from src.constants import DATA_DIR
 PLAN_TRACKER_DIR = os.path.join(DATA_DIR, "plan_tracker")
 #: Bump when parse_plan changes shape: a stored tracker from an older parser
 #: is re-parsed on next sight, keeping per-task state by key/title.
-PARSER_VERSION = 3
+PARSER_VERSION = 4
 
 # ---------------------------------------------------------------------------
 # Attachment detection
@@ -244,6 +244,9 @@ class PlanTask:
     acceptance: List[str] = field(default_factory=list)
     files: List[str] = field(default_factory=list)
     depends_on: List[str] = field(default_factory=list)
+    #: Typed goals declared in the task's text (`test_passes: ...`,
+    #: `http_ok: ...`); `plan_done` runs them (src/plan_goals.py).
+    goals: List[Dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -301,6 +304,14 @@ def _extract_acceptance(text: str) -> List[str]:
             seen.add(it)
             out.append(it)
     return out
+
+
+def _extract_goals(text: str) -> List[Dict[str, Any]]:
+    try:
+        from src.plan_goals import extract_goals
+        return extract_goals(text)
+    except Exception:
+        return []
 
 
 def _extract_depends(text: str) -> List[str]:
@@ -419,6 +430,7 @@ def parse_plan(title: str, body: str) -> PlanSpec:
                 acceptance=_extract_acceptance(sec_body),
                 files=_extract_files(sec_body),
                 depends_on=_extract_depends(sec_body),
+                goals=_extract_goals(sec_body),
             ))
         return PlanSpec(hash=h, title=plan_title, tasks=tasks)
     except Exception:
@@ -584,20 +596,63 @@ def current_task(tracker: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 def mark(
     scope: str, hash_: str, task_id: str, status: str,
     evidence: str = "", turn: Optional[int] = None,
+    goals: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
+    """Set a task's status. `goals` is the report `plan_goals.evaluate_goals`
+    produced for the `plan_done` that sealed it (kept with the evidence)."""
     tracker = load(scope, hash_)
     if not tracker:
         return None
     t = _task_by_id_or_key(tracker, task_id)
     if not t:
         return None
-    tracker.setdefault("state", {})[t["id"]] = {
+    entry: Dict[str, Any] = {
         "status": status,
         "evidence": evidence or "",
         "updated_at": time.time(),
         "turn": turn,
     }
+    if goals:
+        entry["goals"] = compact_goals(goals)
+    tracker.setdefault("state", {})[t["id"]] = entry
     tracker["last_seen_at"] = time.time()
+    save(scope, tracker)
+    return tracker
+
+
+def compact_goals(report: Dict[str, Any]) -> Dict[str, Any]:
+    """The part of a goals report worth persisting: counts plus one short row
+    per goal (no unbounded output)."""
+    rows = []
+    for r in (report or {}).get("results") or []:
+        rows.append({
+            "id": r.get("id"), "kind": r.get("kind"), "target": str(r.get("target") or "")[:160],
+            "status": r.get("status"), "evidence": str(r.get("evidence") or "")[:400],
+        })
+    return {
+        "ok": bool((report or {}).get("ok")),
+        "passed": int((report or {}).get("passed") or 0),
+        "failed": int((report or {}).get("failed") or 0),
+        "skipped": int((report or {}).get("skipped") or 0),
+        "checked_at": (report or {}).get("checked_at"),
+        "results": rows,
+    }
+
+
+def record_goals(scope: str, hash_: str, task_id: str, report: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Persist the latest goals report on a task WITHOUT changing its status
+    (a failed run leaves the task open but remembers why)."""
+    tracker = load(scope, hash_)
+    if not tracker:
+        return None
+    t = _task_by_id_or_key(tracker, task_id)
+    if not t:
+        return None
+    state = tracker.setdefault("state", {})
+    entry = dict(state.get(t["id"]) or {"status": "pending", "evidence": "", "turn": None})
+    entry["goals"] = compact_goals(report)
+    entry["updated_at"] = time.time()
+    state[t["id"]] = entry
     save(scope, tracker)
     return tracker
 
@@ -642,6 +697,14 @@ def reconcile(
             st = state.get(task["id"], {}).get("status")
             if st in ("done", "skipped"):
                 continue
+            # A task with typed goals is sealed by plan_done (which runs them),
+            # never by a todo or a written file.
+            try:
+                from src.plan_goals import holds_auto_close
+                if holds_auto_close(task, state.get(task["id"])):
+                    continue
+            except Exception:
+                pass
             evidence = ""
             if any(_task_matches_todo(task, td) for td in done_todos):
                 evidence = "todo completed: " + next(
