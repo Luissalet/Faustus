@@ -19,7 +19,7 @@
 
 ## Current verification (8 October 2026)
 
-Studio and coding-temperature scope fixes are integrated in source; production activation and a new Q4 evaluation remain pending. Tool-format recovery and structured Agora checkpoints remain isolated review candidates. Checkpoints were tested through real HTTP, CLI, stdio MCP and the drawer in headless Chromium (English/Spanish); their declared paths and tests are not proof of execution or exclusive ownership. Cursor participates through one resumed CLI session per hourly turn; its launcher and slow-probe cache are being hardened. No new model capability grade or production activation is claimed. See [verification status](FAUSTUS.md#276-evidencias-de-cierre-y-límites-de-la-verificación-07-10-2026) and [remaining gates](OBJETIVOS.md).
+Studio, research-review grading and coding-temperature scope fixes are integrated in source; activation and a new Q4 evaluation remain pending. Tool-format recovery and structured Agora checkpoints remain isolated review candidates. Checkpoints were tested through HTTP, CLI, stdio MCP and a headless Chromium drawer (English/Spanish); declared paths and tests are not proof of execution or exclusive ownership. The reviewed official CLI launcher is installed and preserves the saved session, routine and MCP setup; it runs once per existing hourly turn. Child-held pipes and Windows job-object limits remain documented follow-up work. The slow-probe cache and schema-extraction grounding require corrections before delivery. No new model grade or production-app activation is claimed. See [verification status](FAUSTUS.md#276-evidencias-de-cierre-y-límites-de-la-verificación-07-10-2026) and [remaining gates](OBJETIVOS.md).
 
 ## What Faustus is
 
