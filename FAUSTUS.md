@@ -10362,3 +10362,26 @@ Informe y resultados finales: `docs/RELIABILITY_WHY_WEB_2026-10-05.md`.
 - **Evaluación del principal.** Una QA iniciada con Q8 se interrumpió al actualizarse el criterio de pruebas. No hubo pase completo. Solo se hicieron comprobaciones breves con Q4 (7 + 5); no son una evaluación de capacidad. Las próximas evaluaciones seguirán el criterio vigente de Q4, contexto menor y GPU 2/3, dejando las GPU 0/1 disponibles para Luis; la evidencia parcial anterior no se convierte en un resultado aprobado.
 - **Herramientas fijadas sin proyecto (#18), integradas.** `2e65432a` reaplica el delta aprobado `7e3df9c` conservando MCP y el caso con proyecto. Root repitió ocho pruebas en clon sobre HEAD fresco, tras la prueba antes-falla/después-pasa de Claude. No es una conversación autónoma nueva con Qwen.
 - Las verificaciones antiguas de PENDIENTES C/D se trasladaron a OBJ-55 y siguen pendientes, con sus límites y condiciones originales.
+
+## 277. Huella del catálogo de herramientas (08-10-2026, radar diario)
+
+Idea del radar #434 (`mcp-footprint`, informe de tamaño y duplicados de un catálogo MCP). El Context Engine ya medía la lista de herramientas como un solo número (`tool_schema_tokens`); ahora se puede ver de dónde sale ese número y qué sobra.
+
+- **`src/tool_footprint.py`**, sin modelo. Mide cada herramienta con la forma que recibe el modelo (`{"type":"function","function":{…}}`), separando descripción y esquema, con el mismo estimador del Context Engine. Da los totales por origen (`builtin` o cada servidor MCP) y por exposición (`direct`, `deferred`, `code_only`), las herramientas más pesadas, las descripciones de más de 250 tokens, los nombres cortos publicados por varios orígenes (`mcp__a__search` y `mcp__b__search`) y las parejas de descripciones casi iguales (Jaccard de palabras ≥ 0,6). Los gemelos nativos (`builtin_mcp.NATIVE_TWIN_SERVERS`), que el índice de herramientas nunca ofrece al agente, cuentan aparte (`hidden_tokens`) y no salen como colisión.
+- **`GET /api/tools/footprint`** (admin), con `?source=` (`builtin` o un servidor), `?top=`, `?similarity=` y `?model=`.
+- **MCP:** herramienta `tool_footprint` en el servidor integrado `harness`. Sin argumentos audita el catálogo integrado; con `tools` audita cualquier lista MCP (`tools/list`) o de funciones, y califica los nombres por servidor.
+- **Fallo encontrado al probar por stdio:** la primera versión importaba el catálogo al llamarla y la llamada se colgaba en Windows. Esa importación inspecciona los descriptores estándar, y el lector JSON-RPC tiene una lectura síncrona pendiente sobre stdin, así que no vuelve hasta que llegue otro mensaje, que nunca llega. Las pruebas en proceso no lo veían. Ahora el servidor carga el catálogo (y calienta el estimador) antes de abrir stdio.
+
+**Evidencia.**
+- Pruebas: `test_tool_footprint.py` (11, incluido el catálogo integrado real), `test_harness_mcp.py`, `test_tool_registry.py` (ruta con dos servidores falsos), `test_tool_registry_roundtrip.py`, `test_tool_authority.py` y `test_builtin_mcp*`: 113 pasan.
+- `test_resource_claims.py::test_loop_call_that_cannot_get_its_claims_is_refused_not_started` falla igual sin este cambio (comprobado con `git stash` sobre `e36d1504`); va a PENDIENTES B.
+- En vivo, en una instancia aparte (7006, worktree `radar-1008`, datos nuevos), porque el 7000 estaba parado y la copia principal tenía 26 ficheros sin versionar de otra sesión:
+  - 339 herramientas y 110 151 tokens en total. 78 927 se ofrecerían de golpe, 25 538 son diferidas y 5 686 son de 26 gemelos ocultos.
+  - El integrado pesa el 77 %; luego el navegador (6 297), `context` (5 007) y `email` (4 921).
+  - Las más pesadas: `inspect_image` (2 235), `manage_tasks` (1 698) y `pdf_ops` (1 499).
+  - 19 colisiones reales. 18 son copias MCP de herramientas nativas que el índice sí ofrece al agente: las 16 de `email`, `context_recall`, `manage_memory` y `generate_image`. Esto queda en OBJ-56.
+  - 7 parejas casi iguales: `archive_email`/`delete_email` (0,86), `manage_memory` y su copia MCP (0,77) y `git_branch`/`git_checkout` (0,64).
+  - `?source=email`: 16 herramientas y 4 921 tokens.
+- Por MCP de verdad, con un cliente JSON-RPC por stdio contra `mcp_servers/harness_server.py`: `tools/list` da 4 herramientas. `tool_footprint` responde en 0,1 s con el catálogo integrado (243 herramientas, 84 599 tokens, 59 061 directos) y en 0,0 s con una lista suministrada. Antes del arreglo, la llamada sin `tools` no volvía.
+- El 7006 conecta el servidor `harness` con sus 4 herramientas tras el cambio.
+- No hubo turno del modelo: el 8081 estaba parado.

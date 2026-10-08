@@ -1298,3 +1298,13 @@ Este inventario conserva la solicitud histórica de agrupar comprobaciones larga
 - **Tablas de frases en/es del pase de sueño de skills** (FAUSTUS §151): heurísticas de subcadena; probarlas contra un corpus real de respuestas de usuarios.
 - **Tarjeta de revisión con un diff realmente grande** (FAUSTUS §152): ver cómo se ve la tarjeta `harness_check` (`review_issues`/`review_running`) con un diff multi-archivo genuinamente grande.
 - **Vision con un modelo sin proyector** (FAUSTUS §194): con la casilla activada ya se probó (etiqueta «Visión», espera de 180 s); falta el caso con la casilla desactivada.
+
+## OBJ-56 · Adelgazar el catálogo de herramientas con la huella (08-10-2026)
+
+**Estado: abierto.** La huella ya existe (FAUSTUS §277, `GET /api/tools/footprint` y `tool_footprint` en el MCP `harness`). Lo que sacó en vivo y queda por hacer:
+
+- **Copias MCP que el agente sí ve.** `email` (16), `context_recall`, `manage_memory` y `generate_image` publican por MCP herramientas con el mismo nombre que las nativas, y sus servidores no están en `NATIVE_TWIN_SERVERS`, así que el índice de herramientas puede poner las dos copias en el mismo turno (el problema que ese conjunto evitaba con `code_graph`). Antes de añadirlos hay que comprobar que son copias 1:1: las descripciones no son idénticas (`manage_memory`, 0,77) y `email` puede depender del dueño.
+- **Interfaz.** Una sección en Ajustes → Herramientas con la tabla por origen, las colisiones y las parejas casi iguales. Hay que hacerla cuando `studio/` no tenga cambios sin versionar de otra sesión.
+- **Descripciones largas.** Hay 8 de más de 250 tokens; las más largas son `blender_scene` (414), `manage_tasks` (410) e `inspect_image` (390). Recortarlas sin perder los ejemplos que usa el índice.
+- **Huella por turno.** Guardar en el ledger del turno qué herramientas se ofrecieron y cuánto pesaron, no sólo el total.
+- **README.** Añadir la capacidad a `README.md` y `README.es.md`. Hoy esos ficheros tienen cambios sin versionar de otra sesión y no se tocaron.

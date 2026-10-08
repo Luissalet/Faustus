@@ -89,4 +89,6 @@ Acciones físicas o de cuentas que sólo puede hacer Luis (micrófono, móvil, W
 
 Nada abierto a 01-10: lo que era una mejora pasó a OBJETIVOS (OBJ-47 y siguientes).
 
+- **Prueba rota en master (visto el 08-10):** `tests/test_resource_claims.py::test_loop_call_that_cannot_get_its_claims_is_refused_not_started` falla sobre `e36d1504` sin cambios encima (comprobado con `git stash` en el worktree del radar). Las otras 35 de ese fichero pasan. Probablemente viene del trabajo del bucle en curso (`agent_loop.py` tiene cambios sin versionar en la copia principal): revisarla al integrar ese trabajo.
+
 - **Recargar solo Hoard Hub para activar41/46**: revisión automática rechazó el snapshot/stop/start autorizado con «blocked by policy», sin motivo específico. Fuente2886aef lista y98pruebas; runtime76960 aún sin CAS. Hace falta cerrar/abrir soloHub por el operador o resolver ese rechazo del ejecutor; no volver a dar permisos genéricos ni parar apps/modelos. Hasta entonces no inventar revisión para votar con el CLI nuevo.
