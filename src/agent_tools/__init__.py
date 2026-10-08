@@ -90,6 +90,7 @@ from .structural_search_tools import StructuralSearchTool, StructuralRewriteTool
 from .doc_claims_tool import DocClaimsCheckTool
 from .prune_tools import PagePruneTool
 from .blender_scene_tool import BlenderSceneTool
+from .schema_extraction_tool import ExtractToSchemaTool
 from .process_tools import (
     ProcessListTool, ProcessReadTool, ProcessStartTool, ProcessStopTool, ProcessWriteStdinTool,
 )
@@ -115,6 +116,9 @@ TOOL_HANDLERS = {
     "read_file": ReadFileTool().execute,
     "inspect_media": InspectMediaTool().execute,
     "inspect_deliverable": InspectDeliverableTool().execute,
+    # A document (or text) into the user's JSON Schema, every kept value
+    # backed by a quote of the document -- src/schema_extraction.py.
+    "extract_to_schema": ExtractToSchemaTool().execute,
     "image_job": ImageJobTool().execute,
     # Targeted look at ONE image/PDF page: ask a specific question about a
     # region, crop/rotate/zoom/enhance, overlay a grid, detect shapes locally,
@@ -407,6 +411,8 @@ PYTHON_TIMEOUT = 30
 # Tool types that trigger execution
 TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_file", "inspect_media", "inspect_deliverable", "write_file", "edit_file",
              "plan_media_transform", "transform_media",
+             # A document into the user's JSON Schema -- src/agent_tools/schema_extraction_tool.py.
+             "extract_to_schema",
              "apply_patch", "todowrite", "delegate_agents",
              "grep", "glob", "ls", "find_symbol", "callers", "tests_for", "rename_symbol",
              # Lote 54 — cableado de tools sobre librerías ya existentes:

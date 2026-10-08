@@ -77,8 +77,15 @@ def run_coroutine(coro: Coroutine[Any, Any, Any]) -> Any:
 
 def complete_text(messages: List[Dict[str, str]], *, owner: str = "",
                   purpose: str = DEFAULT_PURPOSE, timeout_s: float = 60.0,
-                  max_tokens: int = 1200, temperature: float = 0.0) -> str:
-    """One non-streaming completion on the model resolved for `purpose`."""
+                  max_tokens: int = 1200, temperature: float = 0.0,
+                  response_schema: Optional[Dict[str, Any]] = None) -> str:
+    """One non-streaming completion on the model resolved for `purpose`.
+
+    `response_schema` (a JSON Schema) is handed to `llm_call_async`, which
+    puts it on the wire only for a backend that decodes under a schema (native
+    Ollama, llama-server) and drops it for everything else; the caller still
+    parses and checks the answer either way. The request carries no tools, so
+    the constrained decoding never competes with a tool-call decoder."""
     from src.endpoint_resolver import resolve_endpoint
     try:
         url, model, headers = resolve_endpoint(purpose or DEFAULT_PURPOSE, owner=owner or None)
@@ -101,6 +108,7 @@ def complete_text(messages: List[Dict[str, str]], *, owner: str = "",
             url=url, model=model, messages=messages, headers=headers,
             temperature=temperature, max_tokens=max_tokens,
             timeout=max(1, int(timeout_s)), max_retries=1, workload=workload,
+            response_schema=response_schema or None,
             _spend_purpose="workflow_model")
         return raw[0] if isinstance(raw, tuple) else raw
 

@@ -105,12 +105,15 @@ _REPAIR_SYSTEM = (
 
 
 def structured(text: str, schema: Mapping[str, Any], *, models: Optional[ModelCalls],
-               owner: str, purpose: str, task: str, timeout_s: float) -> Dict[str, Any]:
+               owner: str, purpose: str, task: str, timeout_s: float,
+               response_schema: Optional[Mapping[str, Any]] = None,
+               max_tokens: int = 1500) -> Dict[str, Any]:
     """`{"ok": True, "data", "repaired"}` or `{"ok": False, "errors": [...]}`.
 
     One repair retry, never more: a model that cannot fix its own JSON when
     shown the errors is not going to on the third try, and every extra call is
-    spent on the owner's GPU."""
+    spent on the owner's GPU. With `response_schema` the repair call asks the
+    server to decode under it too (only backends that can do so receive it)."""
     value, why = schema_check.extract_json(text)
     errors = [why] if why else schema_check.validate(value, schema)
     if not errors:
@@ -122,10 +125,12 @@ def structured(text: str, schema: Mapping[str, Any], *, models: Optional[ModelCa
               "\n\nTask:\n" + task[:4000] +
               "\n\nAnswer to fix:\n" + str(text)[:8000] +
               "\n\nProblems:\n- " + "\n- ".join(first_errors[:12]))
+    extra: Dict[str, Any] = {"response_schema": dict(response_schema)} if response_schema else {}
     try:
         fixed = models.complete(
             [{"role": "system", "content": _REPAIR_SYSTEM}, {"role": "user", "content": prompt}],
-            owner=owner, purpose=purpose, timeout_s=timeout_s, max_tokens=1500, temperature=0.0)
+            owner=owner, purpose=purpose, timeout_s=timeout_s, max_tokens=max_tokens, temperature=0.0,
+            **extra)
     except ModelUnavailable as exc:
         return {"ok": False, "errors": first_errors, "repair": f"the repair call failed: {exc}"}
     value, why = schema_check.extract_json(fixed)
@@ -469,13 +474,32 @@ _EXTRACT_SYSTEM = (
     "and the schema allows it, leave the field out or use null.")
 
 
+def _route_extract(schema: Mapping[str, Any], chars: int, owner: str) -> Dict[str, Any]:
+    """The purpose an `extract` node with no fixed `purpose` uses: the
+    schema's complexity tier (src/schema_extraction.py) picks utility,
+    extraction or default. Routing trouble is never a node failure: it falls
+    back to utility and says why."""
+    try:
+        from src.schema_extraction import public_route, route_for_schema, schema_profile
+        profile = schema_profile(schema, input_chars=chars)
+        return public_route(route_for_schema(profile, owner=owner or None))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("extract: schema routing unavailable", exc_info=True)
+        return {"purpose": "utility", "tier": None,
+                "reasons": [f"schema routing unavailable ({type(exc).__name__}); used utility"]}
+
+
 def extract_handler(models: Optional[ModelCalls] = None) -> Callable:
     """`extract`: pull the parameters a JSON schema describes out of a text.
 
     Config: `text` (template — a run input or an upstream output), `schema`
     (object schema), `instructions`, `purpose`, `timeout_s` (default 60).
-    The model's answer is parsed and validated; one repair call with the exact
-    errors, then the node fails. Output: `{data, repaired, input_truncated}`."""
+    Without `purpose` the schema's complexity picks it (simple -> utility,
+    medium -> extraction, complex -> default; see `src.schema_extraction`).
+    The schema is sent as the response schema, so a local engine decodes under
+    it; the answer is still parsed and validated, with one repair call with the
+    exact errors, then the node fails. Output:
+    `{data, repaired, input_truncated, route}`."""
 
     def handle(node: WorkflowNode, context: Mapping[str, Any]) -> Dict[str, Any]:
         config = node.config or {}
@@ -506,26 +530,32 @@ def extract_handler(models: Optional[ModelCalls] = None) -> Callable:
             return _failed("there is nothing to extract from: the text rendered to nothing")
         truncated = len(text) > MAX_EXTRACT_CHARS
         body = text[:MAX_EXTRACT_CHARS]
-        purpose = str(config.get("purpose") or "utility")
         owner = str(context.get("owner") or "")
+        fixed = config.get("purpose")
+        if isinstance(fixed, str) and fixed.strip():
+            purpose, route = fixed.strip(), {"purpose": fixed.strip(), "fixed": True}
+        else:
+            route = _route_extract(schema, len(body), owner)
+            purpose = str(route.get("purpose") or "utility")
         task = ("Schema:\n" + json.dumps(schema, ensure_ascii=False, sort_keys=True) +
                 (("\n\nInstructions:\n" + instructions) if instructions else "") +
                 "\n\nText:\n\"\"\"\n" + body + "\n\"\"\"")
         try:
             reply = models.complete(
                 [{"role": "system", "content": _EXTRACT_SYSTEM}, {"role": "user", "content": task}],
-                owner=owner, purpose=purpose, timeout_s=timeout_s, max_tokens=1500, temperature=0.0)
+                owner=owner, purpose=purpose, timeout_s=timeout_s, max_tokens=1500, temperature=0.0,
+                response_schema=dict(schema))
         except ModelUnavailable as exc:
             return _failed(f"the model could not be reached: {exc}")
         verdict = structured(reply, schema, models=models, owner=owner, purpose=purpose,
-                             task=task, timeout_s=min(timeout_s, 120.0))
+                             task=task, timeout_s=min(timeout_s, 120.0), response_schema=schema)
         if not verdict["ok"]:
             return _failed("the extracted parameters do not satisfy `schema`: "
                            + "; ".join(verdict["errors"][:6])
                            + (f" ({verdict['repair']})" if verdict.get("repair") else ""),
-                           raw=str(reply)[:2000])
+                           raw=str(reply)[:2000], route=route)
         return {"data": verdict["data"], "repaired": bool(verdict["repaired"]),
-                "input_truncated": truncated}
+                "input_truncated": truncated, "route": route}
 
     return handle
 

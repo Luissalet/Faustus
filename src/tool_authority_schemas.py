@@ -228,6 +228,29 @@ CORE_SCHEMAS = {
                          'inside the workspace: adds template_comparison (theme, masters, layouts, slide size and '
                          'slides on edited or foreign layouts)'}},
                     'required': ['path'], 'additionalProperties': False}},
+    'extract_to_schema': {'description': 'Extract a document (PDF, scan with OCR, DOCX, XLSX, PPTX, email, HTML, '
+                          'text) or a given text into a JSON Schema the user provides, e.g. the fields of an '
+                          'invoice, a contract or a form. Every value kept is backed by a quote of the document '
+                          '(evidence with page); a value the document does not support is set to null and listed '
+                          'in dropped with the reason, never invented. Required fields the document lacks are '
+                          'listed in missing_required with schema_valid false. The schema complexity picks the '
+                          'model (simple: utility model, nested or long: the default model). Read-only. Give '
+                          'path or text, and schema or schema_name (a schema saved under /api/extract/schemas).',
+     'parameters': {'type': 'object', 'properties': {
+         'path': {'type': 'string', 'description': 'Document inside the allowed workspace; not a URL'},
+         'text': {'type': 'string', 'description': 'Text to extract from, instead of path'},
+         'schema': {'type': 'object', 'description': 'JSON Schema of an object: the fields to extract. Local '
+                    '$ref/$defs are allowed; recursive schemas are not'},
+         'schema_name': {'type': 'string', 'description': 'Name of a saved schema, instead of schema'},
+         'instructions': {'type': 'string', 'description': 'Extra guidance, e.g. which of several dates is the '
+                          'issue date'},
+         'ocr': {'type': 'string', 'enum': ['auto', 'off', 'force'],
+                 'description': 'OCR for scanned pages: auto (default) only pages without text'},
+         'tier': {'type': 'string', 'enum': ['auto', 'simple', 'medium', 'complex'],
+                  'description': 'Force a complexity tier instead of measuring the schema (default auto)'},
+         'max_chars': {'type': 'integer', 'minimum': 1000, 'maximum': 400000,
+                       'description': 'Characters of the document to read at most (default 96000)'}},
+                    'additionalProperties': False}},
     'image_job': {'description': 'Check, collect or cancel an existing Prospero image request after a timeout or restart. Use '
                     'the request_id returned by generate_image or edit_image. This never starts another render; '
                     'action=cancel stops a queued or running render of that request only.',

@@ -786,6 +786,81 @@ def test_extract_clips_a_huge_input_and_says_so(store):
     assert len(json.dumps(models.complete_calls[0]["messages"])) < 25_000
 
 
+def _routes(monkeypatch, table):
+    monkeypatch.setattr("src.schema_extraction._default_resolver", lambda purpose, owner: table[purpose])
+    monkeypatch.setattr("src.schema_extraction._json_mode_ok", lambda model: None)
+
+
+ROUTE_TABLE = {"utility": ("http://127.0.0.1:8081/v1/chat/completions", "small", {}),
+               "extraction": ("http://127.0.0.1:8081/v1/chat/completions", "small", {}),
+               "default": ("http://127.0.0.1:8081/v1/chat/completions", "big", {})}
+
+
+def test_extract_sends_its_schema_as_the_response_schema_and_routes_by_complexity(store, monkeypatch):
+    _routes(monkeypatch, ROUTE_TABLE)
+    models = FakeModels(completions=['{"order_id": "A-1042", "quantity": 3}'])
+    run_id, result = run_flow(store, extract_flow(), default_handlers(models=models.as_calls(),
+                              skill=lambda n, c: {}), inputs={"email": "Please ship 3 of order A-1042"})
+    assert result["status"] == "completed"
+    call = models.complete_calls[0]
+    assert call["response_schema"] == ORDER_SCHEMA
+    assert call["purpose"] == "utility"
+    route = store.node_runs(run_id)["pull"].result["route"]
+    assert route["tier"] == "simple" and route["purpose"] == "utility" and route["model"] == "small"
+
+    deep = {"type": "object", "properties": {"a": {"type": "object", "properties": {"b": {
+        "type": "object", "properties": {"c": {"type": "object", "properties": {"d": {"type": "string"}}}}}}}}}
+    models = FakeModels(completions=['{"a": {"b": {"c": {"d": "x"}}}}'])
+    run_id, result = run_flow(store, extract_flow(schema=deep), default_handlers(
+        models=models.as_calls(), skill=lambda n, c: {}), inputs={"email": "x"})
+    assert result["status"] == "completed"
+    assert models.complete_calls[0]["purpose"] == "default"
+    assert store.node_runs(run_id)["pull"].result["route"]["tier"] == "complex"
+
+
+def test_extract_keeps_a_fixed_purpose_and_the_repair_carries_the_schema_too(store, monkeypatch):
+    _routes(monkeypatch, ROUTE_TABLE)
+    models = FakeModels(completions=['{"order_id": "1042", "quantity": 0}',
+                                     '{"order_id": "A-1042", "quantity": 1}'])
+    run_id, result = run_flow(store, extract_flow(purpose="research"), default_handlers(
+        models=models.as_calls(), skill=lambda n, c: {}), inputs={"email": "order A-1042"})
+    assert result["status"] == "completed"
+    assert [c["purpose"] for c in models.complete_calls] == ["research", "research"]
+    assert models.complete_calls[1]["response_schema"] == ORDER_SCHEMA
+    assert store.node_runs(run_id)["pull"].result["route"] == {"purpose": "research", "fixed": True}
+
+
+def test_extract_routing_trouble_falls_back_to_utility_instead_of_failing(store, monkeypatch):
+    def broken(*a, **k):
+        raise RuntimeError("settings unreadable")
+    monkeypatch.setattr("src.schema_extraction.route_for_schema", broken)
+    models = FakeModels(completions=['{"order_id": "A-1", "quantity": 1}'])
+    run_id, result = run_flow(store, extract_flow(), default_handlers(models=models.as_calls(),
+                              skill=lambda n, c: {}), inputs={"email": "A-1"})
+    assert result["status"] == "completed" and models.complete_calls[0]["purpose"] == "utility"
+    assert "routing unavailable" in store.node_runs(run_id)["pull"].result["route"]["reasons"][0]
+
+
+def test_complete_text_hands_the_response_schema_to_the_model_call(monkeypatch):
+    from src.workflows import model_calls
+    seen = {}
+
+    async def fake_call(**kwargs):
+        seen.update(kwargs)
+        return '{"ok": true}'
+
+    monkeypatch.setattr("src.endpoint_resolver.resolve_endpoint",
+                        lambda *a, **k: ("http://127.0.0.1:11434/api/chat", "m", {}))
+    monkeypatch.setattr("src.llm_core.llm_call_async", fake_call)
+    schema = {"type": "object", "properties": {"ok": {"type": "boolean"}}}
+    out = model_calls.complete_text([{"role": "user", "content": "x"}], purpose="extraction",
+                                    response_schema=schema)
+    assert out == '{"ok": true}' and seen["response_schema"] == schema
+    assert "tools" not in seen
+    model_calls.complete_text([{"role": "user", "content": "x"}])
+    assert seen["response_schema"] is None
+
+
 def test_the_schema_checker_enforces_what_it_claims_and_names_what_it_does_not():
     from src.workflows import schema_check as sc
     schema = {"type": "object", "required": ["a"], "additionalProperties": False,

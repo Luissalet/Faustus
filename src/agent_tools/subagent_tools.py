@@ -198,7 +198,8 @@ _WRITE_TOOLS = frozenset({"write_file", "edit_file", "apply_patch", "transform_m
 #: tree, so a `read` rule is not applied to them: refusing a listing on a path
 #: rule would be theatre, and allowing one while claiming the rule held would
 #: be worse.
-_READ_TOOLS = frozenset({"read_file", "inspect_media", "inspect_deliverable", "plan_media_transform", "transform_media"})
+_READ_TOOLS = frozenset({"read_file", "inspect_media", "inspect_deliverable", "extract_to_schema",
+                         "plan_media_transform", "transform_media"})
 
 
 def _targets(tool: str, content: Any) -> Optional[List[str]]:

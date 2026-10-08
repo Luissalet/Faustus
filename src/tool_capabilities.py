@@ -132,6 +132,16 @@ _register(
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
 _register(
+    # extract_to_schema (src/schema_extraction.py): reads a workspace document
+    # (through the family's document service, OCR included) or a given text,
+    # and asks the configured local model, in a tool-less request of its own,
+    # to fill the caller's schema. Writes nothing. The result quotes the
+    # document, so it is as untrusted as the document itself.
+    {"extract_to_schema"},
+    ToolEffect.READ_WORKSPACE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
+_register(
     # find_symbol/callers/tests_for (Lote 38, IDX-02/IDX-03) only read what
     # `src.code_index` has already indexed from the workspace — same class as
     # grep/glob/ls: a workspace-scoped reader whose result quotes source text
