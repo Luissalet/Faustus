@@ -67,7 +67,7 @@ import {
   genWithoutOverride,
   isImage,
   searchWorkspaceFiles,
-  supportsThinking,
+  thinkingControlsAvailable,
   THINK_MODES,
   thinkModeChipText,
   thinkModeLabel,
@@ -148,18 +148,27 @@ export interface ComposerProps {
    *  slash commands (`/temp`, `/gen`…) — same state, same setter. */
   onSetGen: (update: GenOverrides) => void;
   /** The active model name, so the panel knows whether to show the think
-   *  switch (`supportsThinking`, adapters/composer.ts) — `null` while the
+   *  switch (`thinkingControlsAvailable`, adapters/composer.ts) — `null` while the
    *  route has not resolved yet. */
   modelName: string | null;
   /** Lot T: this chat's reasoning mode and what Auto chose on the last
-   *  turn (null before any). The chip shows only for a thinking model. */
+   *  turn (null before any). The chip shows only when the API (or name list) says so. */
   thinkMode?: ThinkMode;
   thinkChosen?: ThinkMode | null;
   onSetThinkMode?: (mode: ThinkMode) => void;
   /** The reasoning levels the current model's template accepts (may be empty). */
   reasoningLevels?: string[];
+  /** From GET /api/models/reasoning-levels; when set, wins over the name list. */
+  thinkingSupported?: boolean;
+  /** Native Thinking on/off (e.g. vLLM thinking_token_budget=0). */
+  thinkingToggle?: boolean;
+  /** Independent Thinking switch state; null when the engine has no toggle. */
+  thinkingOn?: boolean | null;
+  onSetThinkingOn?: (on: boolean) => void;
   /** This chat's explicit level, or null to follow the mode. */
   thinkEffort?: string | null;
+  /** Stored effort pick even while Thinking is off (so turning it back on restores it). */
+  effortPick?: string | null;
   onSetThinkEffort?: (effort: string | null) => void;
   attachments: Attachment[];
   setAttachments: (update: (list: Attachment[]) => Attachment[]) => void;
@@ -300,7 +309,12 @@ export function Composer({
   thinkChosen = null,
   onSetThinkMode,
   reasoningLevels = [],
+  thinkingSupported,
+  thinkingToggle,
+  thinkingOn = null,
+  onSetThinkingOn,
   thinkEffort = null,
+  effortPick = null,
   onSetThinkEffort,
   attachments,
   setAttachments,
@@ -1048,7 +1062,8 @@ export function Composer({
           </button>
           {presetChip}
           <span className="fs-studio__chipgroup">
-            <GenSettingsPopover gen={gen} onSetGen={onSetGen} modelName={modelName} genLabel={genLabel} />
+            <GenSettingsPopover gen={gen} onSetGen={onSetGen} modelName={modelName}
+              thinkingSupported={thinkingSupported} genLabel={genLabel} />
             {genLabel && (
               <button type="button" className="fs-studio__chip-x" aria-label={t('Remove the generation settings')} onClick={onClearGen}>
                 <X size={11} aria-hidden="true" />
@@ -1098,9 +1113,11 @@ export function Composer({
         {/* Next to the model, where it is seen: how much it reasons (the mode,
             or one of the model's own levels). It used to sit inside the "+"
             menu, out of sight. */}
-        {onSetThinkMode && supportsThinking(modelName) && (
+        {onSetThinkMode && thinkingControlsAvailable(modelName, { thinking_supported: thinkingSupported }) && (
           <ThinkModeChip mode={thinkMode} chosen={thinkChosen} onPick={onSetThinkMode}
-            levels={reasoningLevels} effort={thinkEffort} onPickEffort={onSetThinkEffort} />
+            levels={reasoningLevels} effort={thinkEffort} effortPick={effortPick}
+            onPickEffort={onSetThinkEffort}
+            thinkingToggle={thinkingToggle} thinkingOn={thinkingOn} onSetThinkingOn={onSetThinkingOn} />
         )}
         <div className="fs-studio__model-control">{modelPicker}</div>
           <span className="fs-studio__mic" data-recording={dictation ? true : undefined}>
@@ -1628,13 +1645,18 @@ function ApprovalSelector({ disabled, onNotice }: { disabled: boolean; onNotice:
  * Popover + radiogroup shape as `ApprovalSelector` above. After an Auto turn
  * the chip says what Auto chose ("Auto · Think").
  */
-function ThinkModeChip({ mode, chosen, onPick, levels = [], effort = null, onPickEffort }: {
+function ThinkModeChip({ mode, chosen, onPick, levels = [], effort = null, effortPick = null, onPickEffort,
+  thinkingToggle, thinkingOn = null, onSetThinkingOn }: {
   mode: ThinkMode;
   chosen: ThinkMode | null;
   onPick: (mode: ThinkMode) => void;
   levels?: string[];
   effort?: string | null;
+  effortPick?: string | null;
   onPickEffort?: (effort: string | null) => void;
+  thinkingToggle?: boolean;
+  thinkingOn?: boolean | null;
+  onSetThinkingOn?: (on: boolean) => void;
 }) {
   const details: Record<ThinkMode, string> = {
     auto: t('Decides per message: quick for small talk, reasoning for code, maths or analysis.'),
@@ -1642,14 +1664,26 @@ function ThinkModeChip({ mode, chosen, onPick, levels = [], effort = null, onPic
     think: t('Reasons before answering, with the normal budget.'),
     deep: t('Reasons at length, with a larger budget. Slower.'),
   };
-  const text = effort ? `${t('Level#effort')}: ${reasoningLevelLabel(effort)}` : thinkModeChipText(mode, chosen);
+  const shownEffort = effort ?? (thinkingOn === false ? effortPick : null);
+  const text = thinkingOn === false
+    ? `${t('Thinking')}: ${t('Off.')}`
+    : shownEffort
+      ? `${t('Level#effort')}: ${reasoningLevelLabel(shownEffort)}`
+      : thinkModeChipText(mode, chosen);
   // Collapsed to its icon in a narrow composer, the chip still says what is
   // set when it is not the default: the first letters of the level or mode.
   const short = (label: string) => {
     const word = label.replace(/^\p{L}\s+/u, '').split(/\s+/)[0] || '';
     return word.length <= 5 ? word : word.slice(0, 3);
   };
-  const badge = effort ? short(reasoningLevelLabel(effort)) : (mode !== 'auto' ? short(thinkModeLabel(mode)) : '');
+  const badge = thinkingOn === false
+    ? t('Off#effort')
+    : shownEffort
+      ? short(reasoningLevelLabel(shownEffort))
+      : (mode !== 'auto' ? short(thinkModeLabel(mode)) : '');
+  const nativeToggle = Boolean(thinkingToggle && onSetThinkingOn);
+  /** Effort is posted only while Thinking is on; the pick itself stays editable either way. */
+  const effortApplies = !nativeToggle || thinkingOn !== false;
   return (
     <Popover
       placement="composer"
@@ -1657,6 +1691,7 @@ function ThinkModeChip({ mode, chosen, onPick, levels = [], effort = null, onPic
       testId="studio-think-mode-menu"
       trigger={
         <button type="button" className="fs-studio__chip fs-studio__chip--compact" data-think-mode={mode}
+          data-thinking-on={thinkingOn === false ? 'false' : thinkingOn === true ? 'true' : undefined}
           title={t('Reasoning: {label}', { label: text })} aria-label={t('Reasoning: {label}', { label: text })}
           data-testid="studio-think-mode-chip">
           <Brain size={14} aria-hidden="true" /><span className="fs-studio__chip-label">{text}</span>
@@ -1664,24 +1699,51 @@ function ThinkModeChip({ mode, chosen, onPick, levels = [], effort = null, onPic
         </button>
       }
     >
+      {nativeToggle && (
+        <>
+          <p>{t('Reasoning (think)')}</p>
+          <div role="group" aria-label={t('Thinking')} data-testid="studio-thinking-toggle">
+            <button type="button" role="switch" aria-checked={thinkingOn !== false}
+              data-testid="studio-thinking-on"
+              onClick={() => onSetThinkingOn?.(true)}>
+              <strong>{t('Thinking')}</strong>
+              <span>{t('Reasons before answering, with the normal budget.')}</span>
+            </button>
+            <button type="button" role="switch" aria-checked={thinkingOn === false}
+              data-testid="studio-thinking-off"
+              onClick={() => onSetThinkingOn?.(false)}>
+              <strong>{t('Off.')}</strong>
+              <span>{t('Answers without reasoning. Quick, but it gets dates and counts wrong.')}</span>
+            </button>
+          </div>
+        </>
+      )}
       {levels.length > 0 && onPickEffort && (
         <>
           <p>{t("This model's own reasoning levels. A level picked here wins over the modes below.")}</p>
-          <div role="radiogroup" aria-label={t('Reasoning level')} data-testid="studio-think-levels">
-            <button type="button" role="radio" aria-checked={!effort} onClick={() => onPickEffort(null)}
+          <div role="radiogroup" aria-label={t('Reasoning level')} data-testid="studio-think-levels"
+            data-effort-applies={effortApplies ? 'true' : 'false'}>
+            <button type="button" role="radio" aria-checked={!effortPick}
+              onClick={() => onPickEffort(null)}
               data-testid="studio-think-level-auto">
               <strong>{t('Follow the mode#effort')}</strong>
             </button>
             {levels.map((lv) => (
-              <button key={lv} type="button" role="radio" aria-checked={effort === lv} onClick={() => onPickEffort(lv)}
+              <button key={lv} type="button" role="radio"
+                aria-checked={effortPick === lv}
+                onClick={() => onPickEffort(lv)}
                 data-testid={`studio-think-level-${lv}`}>
                 <strong>{reasoningLevelLabel(lv)}</strong><span>{lv}</span>
               </button>
             ))}
-            <button type="button" role="radio" aria-checked={effort === 'none'} onClick={() => onPickEffort('none')}
-              data-testid="studio-think-level-none">
-              <strong>{reasoningLevelLabel('none')}</strong><span>{t('Answers without reasoning. Quick, but it gets dates and counts wrong.')}</span>
-            </button>
+            {/* Synthetic "none" only when there is no native Thinking switch. */}
+            {!nativeToggle && (
+              <button type="button" role="radio" aria-checked={effortPick === 'none'}
+                onClick={() => onPickEffort('none')}
+                data-testid="studio-think-level-none">
+                <strong>{reasoningLevelLabel('none')}</strong><span>{t('Answers without reasoning. Quick, but it gets dates and counts wrong.')}</span>
+              </button>
+            )}
           </div>
         </>
       )}
@@ -1690,7 +1752,8 @@ function ThinkModeChip({ mode, chosen, onPick, levels = [], effort = null, onPic
         {THINK_MODES.map((m) => (
           // A level picked above wins, so no mode shows as the one in use
           // while it is set, and picking a mode hands control back to it.
-          <button key={m} type="button" role="radio" aria-checked={!effort && mode === m}
+          <button key={m} type="button" role="radio"
+            aria-checked={effortApplies && !effort && mode === m}
             onClick={() => { if (effort) onPickEffort?.(null); onPick(m); }}
             data-testid={`studio-think-mode-${m}`}>
             <strong>{thinkModeLabel(m)}</strong><span>{details[m]}</span>
@@ -1753,10 +1816,11 @@ function GenNumberBox({ id, value, min, max, step, placeholder, label, onCommit 
   );
 }
 
-function GenSettingsPopover({ gen, onSetGen, modelName, genLabel }: {
+function GenSettingsPopover({ gen, onSetGen, modelName, thinkingSupported, genLabel }: {
   gen: GenOverrides;
   onSetGen: (update: GenOverrides) => void;
   modelName: string | null;
+  thinkingSupported?: boolean;
   genLabel: string;
 }) {
   const [defaults, setDefaults] = useState<SamplingDefaults>({});
@@ -1773,7 +1837,7 @@ function GenSettingsPopover({ gen, onSetGen, modelName, genLabel }: {
     return () => { live = false; };
   }, []);
 
-  const thinkApplies = supportsThinking(modelName);
+  const thinkApplies = thinkingControlsAvailable(modelName, { thinking_supported: thinkingSupported });
   const set = (key: 'temperature' | 'max_tokens' | 'top_p' | 'top_k' | 'think', value: number | boolean) =>
     onSetGen(genWithOverride(gen, key, value));
   const reset = (key: 'temperature' | 'max_tokens' | 'top_p' | 'top_k' | 'think') =>

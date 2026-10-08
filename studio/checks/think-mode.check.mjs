@@ -1,7 +1,8 @@
 // Lot T: the composer's reasoning-mode chip (Auto / Fast / Think / Deep).
 // adapters/composer.ts (parseThinkMode, thinkModeChipText, readThinkMode/
-// writeThinkMode), adapters/chat.ts (decode of the `think_mode` SSE event)
-// and the wiring in Composer.tsx / Studio.tsx / commands.ts.
+// writeThinkMode, thinkingControlsAvailable, readThinkingOn), adapters/chat.ts
+// (decode of the `think_mode` SSE event) and the wiring in Composer.tsx /
+// Studio.tsx / commands.ts.
 // Bundled with esbuild on the fly; run by tests/test_think_mode_js.py, or:
 //   node studio/checks/think-mode.check.mjs
 import { pathToFileURL, fileURLToPath } from 'node:url';
@@ -57,6 +58,20 @@ const c = await bundle(['adapters', 'composer.ts'], 'composer.mjs');
   try { c.writeThinkMode('s3', 'fast'); c.readThinkMode('s3'); } catch { threw = true; }
   assert(!threw, 'blocked storage never throws');
   globalThis.window.localStorage = saved;
+
+  assert(c.reasoningLevelLabel('max') === c.reasoningLevelLabel('xhigh'), 'max shares the Maximum label with xhigh');
+  assert(c.thinkingControlsAvailable('qwen3', null) === true, 'name-list fallback still recognises qwen');
+  assert(c.thinkingControlsAvailable('glm-5.3-flash', null) === false, 'name list alone does not invent GLM support');
+  assert(c.thinkingControlsAvailable('glm-5.3-flash', { thinking_supported: true }) === true, 'API thinking_supported wins for GLM');
+  assert(c.thinkingControlsAvailable('qwen3', { thinking_supported: false }) === false, 'API can hide controls');
+  c.writeThinkingOn('s1', false);
+  assert(c.readThinkingOn('s1') === false, 'Thinking off is kept per chat');
+  c.writeThinkingOn('s1', true);
+  assert(c.readThinkingOn('s1') === true, 'Thinking on is kept per chat');
+  const withThink = c.genWithThinking({ temperature: 0.5 }, false);
+  assert(withThink.think === false && withThink.temperature === 0.5, 'genWithThinking sets think without dropping other knobs');
+  assert(JSON.stringify(c.genWithThinking({ temperature: 0.5 }, null)) === JSON.stringify({ temperature: 0.5 }),
+    'genWithThinking leaves gen alone when Thinking is unset');
 }
 
 const chat = await bundle(['adapters', 'chat.ts'], 'chat.mjs');
@@ -71,14 +86,24 @@ const chat = await bundle(['adapters', 'chat.ts'], 'chat.mjs');
 {
   const composer = readFileSync(join(root, 'studio', 'src', 'screens', 'studio', 'Composer.tsx'), 'utf8');
   assert(composer.includes('function ThinkModeChip'), 'the chip component exists');
-  assert(composer.includes('onSetThinkMode && supportsThinking(modelName)'), 'the chip shows only for a thinking model');
+  assert(composer.includes('thinkingControlsAvailable(modelName'), 'the chip gates on API-aware thinkingControlsAvailable');
+  assert(composer.includes('studio-thinking-toggle'), 'independent Thinking toggle is wired');
+  assert(composer.includes('thinkingToggle'), 'native thinking_toggle from the API is consumed');
   const studio = readFileSync(join(root, 'studio', 'src', 'screens', 'Studio.tsx'), 'utf8');
-  assert(studio.includes('thinkMode,') && studio.includes("think_mode_default"), 'the send carries the mode; the default comes from settings');
+  assert(studio.includes('thinkMode,') || studio.includes("thinkMode:"), 'the send carries the mode');
+  assert(studio.includes("think_mode_default"), 'the default comes from settings');
+  assert(studio.includes("getReasoningLevels(endpointId, route?.model"), 'levels reload with endpoint and model');
+  assert(studio.includes('genWithThinking'), 'Thinking on/off merges into gen_overrides');
   assert(studio.includes("name === 'think' ? parseThinkMode(args)"), '/think auto|fast|think|deep picks the mode');
   const chatSrc = readFileSync(join(root, 'studio', 'src', 'adapters', 'chat.ts'), 'utf8');
   assert(chatSrc.includes("fd.append('think_mode', options.thinkMode)"), 'think_mode is posted as a form field');
   const cmds = readFileSync(join(root, 'studio', 'src', 'screens', 'studio', 'commands.ts'), 'utf8');
   assert(cmds.includes('/think auto|fast|think|deep|on|off'), 'the command usage lists the modes and keeps on/off');
+  const sparks = readFileSync(join(root, 'studio', 'src', 'screens', 'settings', 'Sparks.tsx'), 'utf8');
+  assert(sparks.includes('first_token_timeout_s'), 'Sparks settings expose first_token_timeout_s');
+  const adapter = readFileSync(join(root, 'studio', 'src', 'adapters', 'composer.ts'), 'utf8');
+  assert(adapter.includes('thinking_supported') && adapter.includes('thinking_toggle'), 'composer adapter parses API thinking caps');
+  assert(adapter.includes("q.set('model', model)"), 'getReasoningLevels passes model');
 }
 
 console.log(failed ? `${failed} failure(s)` : 'ok think_mode');

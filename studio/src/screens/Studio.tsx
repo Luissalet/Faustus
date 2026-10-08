@@ -43,12 +43,16 @@ import {
   parseThinkMode,
   readThinkMode,
   getReasoningLevels,
+  genWithThinking,
   readThinkEffort,
   writeThinkEffort,
+  readThinkingOn,
+  writeThinkingOn,
   thinkModeLabel,
   writeThinkMode,
   type Attachment,
   type GenOverrides,
+  type ReasoningLevels,
   type ThinkMode,
 } from '../adapters/composer';
 import {
@@ -552,7 +556,11 @@ export function StudioScreen() {
   // The model's own reasoning level for this chat (null = follow the mode),
   // and the levels the current model accepts.
   const [effortPick, setEffortPick] = useState<string | null>(null);
-  const [reasoningLevels, setReasoningLevels] = useState<string[]>([]);
+  const [reasoningCaps, setReasoningCaps] = useState<ReasoningLevels>({ levels: [] });
+  const reasoningLevels = reasoningCaps.levels;
+  /** Explicit Thinking on/off when the engine exposes a native toggle; null = follow modes. */
+  const [thinkingOnPick, setThinkingOnPick] = useState<boolean | null>(null);
+  const thinkingOn = thinkingOnPick ?? (reasoningCaps.thinking_toggle ? true : null);
   const [modelSignal, setModelSignal] = useState(0);
   const [panel, panelDispatch] = useChatPanel(sessionId,knobs.incognito);
   // CMP-01-layout (W2-A2): conversation / document / review, per session
@@ -987,11 +995,14 @@ export function StudioScreen() {
       const storedThink = readThinkMode(sessionId);
       if (!storedThink && thinkPickRef.current) writeThinkMode(sessionId, thinkPickRef.current);
       else setThinkPick(storedThink);
+      setEffortPick(readThinkEffort(sessionId));
+      setThinkingOnPick(readThinkingOn(sessionId));
       return;
     }
     setGen(sessionId ? readJson<GenOverrides>(`${GEN_KEY}_${sessionId}`, {}) : {});
     setThinkPick(readThinkMode(sessionId));
     setEffortPick(readThinkEffort(sessionId));
+    setThinkingOnPick(readThinkingOn(sessionId));
   }, [sessionId]);
   useEffect(() => {
     if (sessionId) writeJson(`${GEN_KEY}_${sessionId}`, gen);
@@ -1004,25 +1015,41 @@ export function StudioScreen() {
     // A mode picked after a level: the mode decides again.
     setEffortPick(null);
     writeThinkEffort(sessionId, null);
-  }, [sessionId]);
+    // Think/Deep imply Thinking on; Fast leaves the independent switch alone
+    // (turning Thinking off is the dedicated switch, not picking Fast).
+    if ((mode === 'think' || mode === 'deep') && reasoningCaps.thinking_toggle) {
+      setThinkingOnPick(true);
+      writeThinkingOn(sessionId, true);
+    }
+  }, [sessionId, reasoningCaps.thinking_toggle]);
   const pickThinkEffort = useCallback((effort: string | null) => {
+    // Effort never silently re-enables Thinking; it only stores the level.
     setEffortPick(effort);
     writeThinkEffort(sessionId, effort);
   }, [sessionId]);
-  // The levels the current model accepts, from its own template.
+  const pickThinkingOn = useCallback((on: boolean) => {
+    setThinkingOnPick(on);
+    writeThinkingOn(sessionId, on);
+  }, [sessionId]);
+  // Levels + thinking caps for the current endpoint/model (reload when either changes).
   useEffect(() => {
     const endpointId = route?.endpointId ?? '';
     const controller = new AbortController();
-    setReasoningLevels([]);
+    setReasoningCaps({ levels: [] });
     if (endpointId) {
-      void getReasoningLevels(endpointId, controller.signal).then((r) => {
-        if (!controller.signal.aborted) setReasoningLevels(r.levels);
+      void getReasoningLevels(endpointId, route?.model ?? null, controller.signal).then((r) => {
+        if (!controller.signal.aborted) setReasoningCaps(r);
       });
     }
     return () => controller.abort();
   }, [route?.endpointId, route?.model]);
-  // A level the current model does not list is not sent.
-  const thinkEffort = effortPick && (effortPick === 'none' || reasoningLevels.includes(effortPick)) ? effortPick : null;
+  // A level the current model does not list is not sent. When Thinking is off
+  // via the independent switch, effort is kept in storage but not posted.
+  const thinkEffort = (() => {
+    if (thinkingOn === false) return null;
+    if (effortPick && (effortPick === 'none' || reasoningLevels.includes(effortPick))) return effortPick;
+    return null;
+  })();
   useEffect(() => {
     let live = true;
     void getSettings()
@@ -1438,8 +1465,11 @@ export function StudioScreen() {
           workspace: knobs.mode === 'agent' || options.delegation || teamEnabled ? workspace || undefined : undefined,
           route,
           attachments: options.attachments?.map((a) => a.id),
-          genOverrides: Object.keys(gen).length ? (gen as Record<string, number | boolean>) : undefined,
-          thinkMode,
+          genOverrides: (() => {
+            const merged = genWithThinking(gen, reasoningCaps.thinking_toggle ? thinkingOn : undefined);
+            return Object.keys(merged).length ? (merged as Record<string, number | boolean>) : undefined;
+          })(),
+          thinkMode: thinkingOn === false ? 'fast' : thinkMode,
           reasoningEffort: thinkEffort ?? undefined,
           approval: options.approval,
           questionId: options.questionId,
@@ -1496,7 +1526,7 @@ export function StudioScreen() {
         refreshStaleWires(sid);
       }
     },
-    [knobs, workspace, route, gen, thinkMode, thinkEffort, patchLast, refreshSessions, syncIds, preset, panel.doc,teamEnabled,panelDispatch,refreshStaleWires],
+    [knobs, workspace, route, gen, thinkMode, thinkEffort, thinkingOn, reasoningCaps.thinking_toggle, patchLast, refreshSessions, syncIds, preset, panel.doc,teamEnabled,panelDispatch,refreshStaleWires],
   );
 
   /**
@@ -3479,7 +3509,12 @@ export function StudioScreen() {
           thinkChosen={thinkChosen}
           onSetThinkMode={pickThinkMode}
           reasoningLevels={reasoningLevels}
+          thinkingSupported={reasoningCaps.thinking_supported}
+          thinkingToggle={reasoningCaps.thinking_toggle}
+          thinkingOn={thinkingOn}
+          onSetThinkingOn={reasoningCaps.thinking_toggle ? pickThinkingOn : undefined}
           thinkEffort={thinkEffort}
+          effortPick={effortPick}
           onSetThinkEffort={pickThinkEffort}
           attachments={attachments}
           setAttachments={(update) => setAttachments(update)}

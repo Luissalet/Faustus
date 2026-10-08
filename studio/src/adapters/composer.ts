@@ -407,6 +407,15 @@ export function supportsThinking(model: string | null | undefined): boolean {
   return THINKING_MODEL_PATTERNS.some((p) => m.includes(p));
 }
 
+/** Prefer the API's verified `thinking_supported`; fall back to the name list only when the API omits it. */
+export function thinkingControlsAvailable(
+  model: string | null | undefined,
+  caps?: Pick<ReasoningLevels, 'thinking_supported'> | null,
+): boolean {
+  if (caps && typeof caps.thinking_supported === 'boolean') return caps.thinking_supported;
+  return supportsThinking(model);
+}
+
 /* ── Reasoning mode (Auto / Rápido / Pensar / A fondo) ──
  * Sent per turn as the `think_mode` form field; the server
  * (`src/think_mode.py`) turns it into think/reasoning_budget overrides and
@@ -467,19 +476,47 @@ export function writeThinkMode(sessionId: string | null | undefined, mode: Think
 }
 
 /* ── The model's own reasoning levels ──
- * Read from the running server (`GET /api/models/reasoning-levels`, from the
- * model's chat template): Qwen3.8 lists low / medium / xhigh and rejects a
- * generic "high". A pick is kept per chat and sent per turn as
- * `reasoning_effort`; it wins over the reasoning mode. */
+ * Read from the running server (`GET /api/models/reasoning-levels`): verified
+ * per engine/model (template for local llama-server / Qwen; low/high/max for
+ * GLM5.3 vLLM when the backend confirms). A pick is kept per chat and sent
+ * per turn as `reasoning_effort`; it wins over the reasoning mode. */
 
-export interface ReasoningLevels { levels: string[]; default?: string | null; source?: string }
+export interface ReasoningLevels {
+  levels: string[];
+  default?: string | null;
+  source?: string;
+  /** When set, the composer shows/hides thinking controls from this flag, not the name list. */
+  thinking_supported?: boolean;
+  /** Native off/fast path exists (e.g. thinking_token_budget=0 on vLLM). */
+  thinking_toggle?: boolean;
+  engine?: string | null;
+}
 
-export async function getReasoningLevels(endpointId: string, signal?: AbortSignal): Promise<ReasoningLevels> {
+export async function getReasoningLevels(
+  endpointId: string,
+  modelOrSignal?: string | null | AbortSignal,
+  signal?: AbortSignal,
+): Promise<ReasoningLevels> {
   if (!endpointId) return { levels: [] };
+  let model: string | undefined;
+  let sig: AbortSignal | undefined = signal;
+  if (typeof modelOrSignal === 'string' || modelOrSignal === null || modelOrSignal === undefined) {
+    model = modelOrSignal ? String(modelOrSignal) : undefined;
+  } else {
+    sig = modelOrSignal;
+  }
   try {
-    const raw = await getJson<ReasoningLevels>(
-      `/api/models/reasoning-levels?endpoint_id=${encodeURIComponent(endpointId)}`, signal);
-    return { levels: asArray<string>(raw?.levels), default: raw?.default ?? null, source: raw?.source };
+    const q = new URLSearchParams({ endpoint_id: endpointId });
+    if (model) q.set('model', model);
+    const raw = await getJson<ReasoningLevels>(`/api/models/reasoning-levels?${q}`, sig);
+    return {
+      levels: asArray<string>(raw?.levels),
+      default: raw?.default ?? null,
+      source: raw?.source,
+      thinking_supported: typeof raw?.thinking_supported === 'boolean' ? raw.thinking_supported : undefined,
+      thinking_toggle: typeof raw?.thinking_toggle === 'boolean' ? raw.thinking_toggle : undefined,
+      engine: typeof raw?.engine === 'string' ? raw.engine : null,
+    };
   } catch {
     return { levels: [] };
   }
@@ -492,6 +529,7 @@ export function reasoningLevelLabel(level: string): string {
     case 'low': return t('Low#effort');
     case 'medium': return t('Medium#effort');
     case 'high': return t('High#effort');
+    case 'max':
     case 'xhigh': return t('Maximum#effort');
     default: return level;
   }
@@ -517,6 +555,41 @@ export function writeThinkEffort(sessionId: string | null | undefined, effort: s
   } catch {
     /* the pick lasts this visit only */
   }
+}
+
+/* ── Independent Thinking on/off (per chat) ──
+ * Distinct from effort: turning Thinking off sends think:false and keeps the
+ * effort pick; changing effort never turns Thinking back on. Used when the
+ * API reports thinking_toggle (native budget 0 path). */
+
+const THINKING_ON_KEY = 'faustus_studio_thinking_on';
+
+export function readThinkingOn(sessionId: string | null | undefined): boolean | null {
+  if (!sessionId) return null;
+  try {
+    const v = window.localStorage.getItem(`${THINKING_ON_KEY}_${sessionId}`);
+    if (v === '1') return true;
+    if (v === '0') return false;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeThinkingOn(sessionId: string | null | undefined, on: boolean | null): void {
+  if (!sessionId) return;
+  try {
+    if (on === null) window.localStorage.removeItem(`${THINKING_ON_KEY}_${sessionId}`);
+    else window.localStorage.setItem(`${THINKING_ON_KEY}_${sessionId}`, on ? '1' : '0');
+  } catch {
+    /* visit-only */
+  }
+}
+
+/** Merge an explicit think flag into gen overrides without dropping other knobs. */
+export function genWithThinking(gen: GenOverrides, thinkingOn: boolean | null | undefined): GenOverrides {
+  if (typeof thinkingOn !== 'boolean') return gen;
+  return { ...gen, think: thinkingOn };
 }
 
 /* ── Sampling panel (composer chip -> real controls, not just /temp etc.) ──
