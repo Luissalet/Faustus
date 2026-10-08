@@ -8060,6 +8060,9 @@ async def _stream_agent_loop_body(
     from src.context_budget import parse_turn_input_budget
     _turn_input_budget = parse_turn_input_budget(_hopts.get("input_token_budget"))
     mcp_mgr = get_mcp_manager()
+    # Preserve only the in-memory registry for documentation. Guide-only still
+    # drops the executable manager below and never discovers/connects tools.
+    _documentation_mcp_mgr = mcp_mgr
     prep_timings: Dict[str, float] = {}
     disabled_tools = set(disabled_tools or [])
     # Where each denied name entered `disabled_tools`, so a block can name its
@@ -8096,12 +8099,14 @@ async def _stream_agent_loop_body(
         # MCP tools are namespaced dynamically, so hide all MCP schemas for
         # public/non-admin users rather than trying to enumerate every tool.
         mcp_mgr = None
+        _documentation_mcp_mgr = None
 
     # Lean chat (src/chat_mode.py): no MCP or plugin tools and none of their
     # prompt blocks; the rest of what lean drops is gated on `_lean` below.
     _lean = _chat_mode.is_lean()
     if _lean:
         mcp_mgr = None
+        _documentation_mcp_mgr = None
 
     # TASK-06: autonomy budget for this turn (src/autonomy_budget.py). Every
     # preset gets a Budget; only `read_only` additionally narrows what is
@@ -8270,6 +8275,34 @@ async def _stream_agent_loop_body(
     _t0 = time.time()
     _needs_admin = _detect_admin_intent(messages)
     _last_user = _extract_last_user_message(messages)
+    _tool_documentation_context = ""
+    _guide_documentation_example = False
+    if guide_only:
+        from src.tool_documentation import build_documentation_context
+        _documentation_schemas = [
+            schema for schema in FUNCTION_TOOL_SCHEMAS
+            if (schema.get("function") or {}).get("name") not in public_blocked_tools
+            and (_needs_admin or (schema.get("function") or {}).get("name") not in _ADMIN_SCHEMA_NAMES)
+        ]
+        if _documentation_mcp_mgr is not None:
+            try:
+                from src.connector_policy import resolve_allowed_servers_for_session, is_tool_allowed
+                _doc_allowed = resolve_allowed_servers_for_session(session_id, owner)
+                for _doc_row in _documentation_mcp_mgr.get_all_tools(_load_mcp_disabled_map()):
+                    _doc_name = _doc_row.get("qualified_name") or ""
+                    if (_doc_row.get("is_disabled") or not _doc_name
+                            or not is_tool_allowed(_doc_name, _doc_allowed)):
+                        continue
+                    _documentation_schemas.append({"function": {
+                        "name": _doc_name, "description": _doc_row.get("description", ""),
+                        "parameters": _doc_row.get("input_schema") or {},
+                    }})
+            except Exception:
+                logger.debug("cached MCP documentation unavailable", exc_info=True)
+        _tool_documentation_context = build_documentation_context(
+            _last_user, _documentation_schemas, messages)
+        _guide_documentation_example = bool(
+            _tool_documentation_context and _is_tool_documentation_request(_last_user))
     # Repository map (src/repo_map.py): files + top-level symbols of the
     # workspace, ranked for this request, injected once per turn as reference
     # data right before the user's message. Frozen for the whole turn so the
@@ -10525,6 +10558,15 @@ async def _stream_agent_loop_body(
             _prepend_agent_directive(route_messages, build_active_plan_note(approved_plan))
         if guide_only:
             _prepend_agent_directive(route_messages, GUIDE_ONLY_DIRECTIVE)
+            if _tool_documentation_context:
+                from src.tool_documentation import DOCUMENTATION_DIRECTIVE
+                _prepend_agent_directive(route_messages, DOCUMENTATION_DIRECTIVE)
+                _doc_reference = untrusted_context_message(
+                    "tool registry syntax", _tool_documentation_context)
+                _doc_reference["_agent_injected"] = "tool_documentation"
+                _doc_insert = next((i for i in range(len(route_messages) - 1, -1, -1)
+                                    if route_messages[i].get("role") == "user"), len(route_messages))
+                route_messages.insert(_doc_insert, _doc_reference)
         elif tool_policy is not None and tool_policy.mode == "mcp_only":
             _prepend_agent_directive(route_messages, MCP_ONLY_DIRECTIVE)
         if _project_objective_unavailable:
@@ -14133,6 +14175,15 @@ async def _stream_agent_loop_body(
         _answer_step_snapshot = step_snapshot_for_answer(
             _candidate_request_states, candidate_index, round_num=round_num,
         )
+        if _guide_documentation_example and not native_tool_calls:
+            from src.tool_documentation import render_documentation_examples
+            _doc_rendered = render_documentation_examples(round_response, (
+                (schema.get("function") or {}).get("name", "") for schema in _documentation_schemas))
+            if _doc_rendered != round_response:
+                round_response = _doc_rendered
+                _normalized_doc_round = _doc_rendered
+                full_response = _full_response_before_round + _doc_rendered
+                yield f"data: {json.dumps({'type': 'response_replace', 'text': full_response})}\n\n"
         tool_blocks, used_native, converted_calls = _resolve_tool_blocks(
             _normalized_doc_round,
             native_tool_calls,
@@ -14150,6 +14201,11 @@ async def _stream_agent_loop_body(
             argument_snapshot=_answer_argument_snapshot,
             schema_receipt=_answer_schema_receipt,
         )
+        # Explicit syntax examples are prose. Actual structured calls still go
+        # through the unchanged guide-only denial gate and report the refusal.
+        if _guide_documentation_example and not native_tool_calls:
+            tool_blocks = []
+            converted_calls = []
         # Native API providers must return function calls through their
         # structured channel. A parsed, fenced request is useful evidence of a
         # format mistake, but it is never executed here. Retry once while
@@ -14379,7 +14435,7 @@ async def _stream_agent_loop_body(
         # model with no real native_tool_calls) must not be stripped from the
         # persisted text either — otherwise it streams once and then disappears
         # on reload (#3222 follow-up).
-        cleaned_round = strip_tool_blocks(round_response, skip_fenced=(_is_api_model and not used_native and not guide_only)).strip()
+        cleaned_round = strip_tool_blocks(round_response, skip_fenced=(_guide_documentation_example or (_is_api_model and not used_native and not guide_only))).strip()
         round_texts.append(cleaned_round)
         provider_round_texts.append(cleaned_round)
         round_models.append(_round_actual_model)
@@ -18654,7 +18710,7 @@ async def _stream_agent_loop_body(
     # Do not persist raw textual tool-call JSON / role markers as assistant
     # prose. Local finetunes may emit those before the parser catches and
     # executes them; saved history should contain only the user-facing answer.
-    full_response = strip_tool_blocks(full_response).strip()
+    full_response = strip_tool_blocks(full_response, skip_fenced=_guide_documentation_example).strip()
     if _ody_qwen_finetune_model:
         full_response = _normalize_ody_qwen_text_artifacts(full_response)
         if (

@@ -1,5 +1,23 @@
 # Tool selection & connector policy (CONTRATO_CONECTORES Lote F2)
 
+## Documentation when execution is forbidden
+
+Guide-only turns still send no callable schemas and retain the execution gate.
+A request naming a registered tool can receive up to three complete JSON Schemas
+as bounded reference data (16,000 characters total), separately from `tools=`.
+Native schemas come from the product registry. MCP schemas use only the current
+in-memory cache, respect disabled tools and connector allowlists, and never
+connect, refresh, retrieve embeddings, or invoke tools for documentation.
+
+Use the exact qualified MCP name when a short name is ambiguous. Unknown,
+uncached, oversized, and truncated selections are reported explicitly; schemas
+are never cut midway or replaced with invented arguments. A reference such as
+“that tool” can use the latest structured assistant tool call, not tool-output
+text or a document's instructions. Tool descriptions remain untrusted user-role
+reference data. JSON examples persist as visible code blocks in Studio; their
+presence grants no permission to execute. A spontaneous native call remains
+blocked even when its schema appears in documentation.
+
 Fase E: per-task/project/session connector allowlists, enforced in the real
 dispatcher (not just hidden in the prompt), plus an honest tool-support
 signal. F2 does not touch `src/connectors.py` / `src/connector_sidecar.py` /
