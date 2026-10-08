@@ -1585,6 +1585,11 @@ class TurnLedger:
         self.review_runs = 0
         self.review_fix_rounds = 0
         self.review_mutations_at_fix = -1     # len(mutations) when the review fix round started
+        # OBJ-47: the work compared against the design canvas drafted for it
+        # (src/design_canvas_check.py). None when no canvas was drafted.
+        self.canvas_check: Optional[Dict[str, Any]] = None
+        self.canvas_check_runs = 0
+        self.canvas_check_mutations_at_run = -1
         self.asked_user = False
         # Paths named by a bash/python call that the mutating-command regex read
         # as read-only but whose body writes files anyway (`python - <<EOF …
@@ -2595,6 +2600,7 @@ class TurnLedger:
             "ui_smoke": self.ui_smoke,
             "review": self.review,
             "review_fix_rounds": self.review_fix_rounds,
+            "canvas_check": self.canvas_check,
             "asked_user": self.asked_user,
             "ui_verify": self.ui_verify_status(),
         }

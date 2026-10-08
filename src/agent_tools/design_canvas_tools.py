@@ -60,7 +60,19 @@ def _workspace(ctx: dict) -> str:
                 return ws
         except Exception:
             logger.debug("design_canvas_tools._workspace: project lookup failed", exc_info=True)
-    return str((ctx or {}).get("workspace") or "")
+    explicit = str((ctx or {}).get("workspace") or "")
+    if explicit:
+        return explicit
+    # The tool context carries no `workspace` key; the folder the chat is
+    # working in travels as the active workspace of the turn. Without this a
+    # canvas drafted in a plain workspace chat (no project) was never filed,
+    # and with nothing filed there is no canvas for the closure check to
+    # write its verdict into.
+    try:
+        from src.tool_execution import get_active_workspace
+        return str(get_active_workspace() or "")
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def _canvas_model(ctx: dict) -> Optional[str]:
@@ -117,6 +129,8 @@ class DesignCanvasTool:
                     "error_class": "design_canvas.no_canvas"}
 
         canvas = drafted["canvas"]
+        project_id = _project_id(ctx)
+        workspace = _workspace(ctx)
         result: Dict[str, Any] = {
             "output": drafted["markdown"],
             "exit_code": 0,
@@ -127,16 +141,16 @@ class DesignCanvasTool:
 
         if args.get("save") is False:
             result["saved"] = False
+            _arm_closure(result, ctx, goal, canvas, None, project_id, workspace)
             return result
 
-        project_id = _project_id(ctx)
-        workspace = _workspace(ctx)
         if not project_id and not workspace:
             # The canvas is still worth having in the turn; only the filing
             # needs a project. Say so rather than throwing the work away.
             result["saved"] = False
             result["note"] = ("not filed: no project or workspace is bound to this chat, "
                               "so there is no graph to store the design in")
+            _arm_closure(result, ctx, goal, canvas, None, project_id, workspace)
             return result
 
         name = str(args.get("name") or "").strip() or design_canvas.summarise(canvas, goal)[:80]
@@ -149,9 +163,38 @@ class DesignCanvasTool:
         except Exception as exc:  # noqa: BLE001
             result["saved"] = False
             result["note"] = f"not filed: {exc}"
+            _arm_closure(result, ctx, goal, canvas, None, project_id, workspace)
             return result
 
         result["saved"] = True
         result["concept"] = concept
         result["output"] = f"{drafted['markdown']}\n\nFiled as concept `{concept.get('id')}`."
+        _arm_closure(result, ctx, goal, canvas, concept.get("id"), project_id, workspace)
         return result
+
+
+def _arm_closure(result: Dict[str, Any], ctx: dict, goal: str, canvas: Dict[str, Any],
+                 concept_id: Optional[str], project_id: Optional[str], workspace: str) -> None:
+    """Remember this canvas for the end of the work (OBJ-47).
+
+    `src/design_canvas_check.py` compares what the work did against it when
+    the turn finishes and writes the verdict into the canvas. Best effort: a
+    canvas that cannot be armed is still a canvas, so this never fails the
+    tool.
+    """
+    session_id = str((ctx or {}).get("session_id") or "").strip()
+    if not session_id:
+        return
+    try:
+        from src import design_canvas_check
+        armed = design_canvas_check.register(
+            session_id, goal=goal, canvas=canvas, concept_id=concept_id,
+            project_id=project_id, workspace=workspace or None,
+            turn_id=str((ctx or {}).get("turn_id") or ""))
+    except Exception:  # noqa: BLE001
+        logger.debug("design_canvas_tools: could not arm the closure check", exc_info=True)
+        return
+    if armed:
+        result["closure"] = "armed"
+        result["output"] = (f"{result['output']}\n\nWhen the work is done the harness compares it "
+                            "with this canvas and records a verdict per item.")

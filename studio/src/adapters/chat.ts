@@ -459,6 +459,55 @@ export function adviceFrom(raw: unknown): AdvisorAdvice | null {
   };
 }
 
+/** One item of the design-canvas closure check (src/design_canvas_check.py).
+ *  The words (`title`, `label`, `verdictLabel`, `evidence`) come from the
+ *  server already in the language of the turn. */
+export interface CanvasCheckItem {
+  id: string;
+  kind: string;
+  text: string;
+  verdict: 'met' | 'partial' | 'not_met' | 'unverified';
+  verdictLabel: string;
+  evidence: string;
+}
+
+export interface CanvasCheck {
+  overall: 'met' | 'partial' | 'not_met' | 'unverified';
+  title: string;
+  label: string;
+  goal?: string;
+  conceptId?: string;
+  items: CanvasCheckItem[];
+}
+
+const CANVAS_VERDICTS = ['met', 'partial', 'not_met', 'unverified'] as const;
+
+function canvasVerdict(value: unknown): CanvasCheckItem['verdict'] {
+  return (CANVAS_VERDICTS as readonly string[]).includes(String(value)) ? (value as CanvasCheckItem['verdict']) : 'unverified';
+}
+
+export function canvasCheckFrom(raw: unknown): CanvasCheck | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  const items = asArray<Record<string, unknown>>(r.items).map((i) => ({
+    id: str(i.id),
+    kind: str(i.kind),
+    text: str(i.text),
+    verdict: canvasVerdict(i.verdict),
+    verdictLabel: str(i.verdict_label) || str(i.verdict),
+    evidence: str(i.evidence),
+  }));
+  if (!items.length) return undefined;
+  return {
+    overall: canvasVerdict(r.overall),
+    title: str(r.title),
+    label: str(r.label),
+    goal: str(r.goal) || undefined,
+    conceptId: str(r.concept_id) || undefined,
+    items,
+  };
+}
+
 export interface HarnessSummary {
   toolCalls: number;
   failedCalls: number;
@@ -469,6 +518,7 @@ export interface HarnessSummary {
   workspace?: string;
   tests?: Record<string, unknown>;
   review?: Record<string, unknown>;
+  canvasCheck?: CanvasCheck;
   staticAnalysis?: Record<string, unknown>;
   uiVerify?: 'ok' | 'ok_smoke' | 'missing' | 'skipped';
   changeset?: {
@@ -1518,6 +1568,7 @@ export function summaryFrom(data: Record<string, unknown>): HarnessSummary {
     workspace: str(data.workspace) || undefined,
     tests: data.tests && typeof data.tests === 'object' ? (data.tests as Record<string, unknown>) : undefined,
     review: data.review && typeof data.review === 'object' ? (data.review as Record<string, unknown>) : undefined,
+    canvasCheck: canvasCheckFrom(data.canvas_check),
     staticAnalysis:
       data.static_analysis && typeof data.static_analysis === 'object' ? (data.static_analysis as Record<string, unknown>) : undefined,
     uiVerify:

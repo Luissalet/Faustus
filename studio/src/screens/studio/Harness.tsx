@@ -1,7 +1,7 @@
 import { Check, ChevronDown, CircleDashed, FileDiff, GitCommitHorizontal, History, ShieldAlert, ShieldCheck, Undo2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button, IconButton } from '../../components';
-import type { HarnessCheck, HarnessSummary } from '../../adapters/chat';
+import type { CanvasCheck, HarnessCheck, HarnessSummary } from '../../adapters/chat';
 import { commitFiles, commitProposal, fileDiff, restoreCheckpoint, revertFile } from '../../adapters/workspace';
 import { Rich } from '../rich';
 import { t, tn } from '../../i18n';
@@ -66,8 +66,19 @@ export function CheckList({ checks }: { checks: HarnessCheck[] }) {
   return (
     <ul className="fs-harness__checks" aria-label={t('Harness checks')}>
       {checks.map((c, i) => {
-        const bad = ['unverified', 'rejected', 'syntax_error', 'tests_failed', 'review_issues', 'target_substituted', 'unknown_tool', 'ui_smoke_failed', 'completion_gated', 'rewrite_policy'].includes(c.status);
-        const good = c.status === 'verified' || c.status === 'ui_smoke_ok';
+        const bad = ['unverified', 'rejected', 'syntax_error', 'tests_failed', 'review_issues', 'target_substituted', 'unknown_tool', 'ui_smoke_failed', 'completion_gated', 'rewrite_policy', 'canvas_not_met', 'canvas_partial'].includes(c.status);
+        const good = c.status === 'verified' || c.status === 'ui_smoke_ok' || c.status === 'canvas_met';
+        // The design-canvas closure check (src/design_canvas_check.py) sends
+        // its sentence already written in the turn's language.
+        if (c.status.startsWith('canvas_') && c.label) {
+          return (
+            <li key={`${c.status}-${i}`} className="fs-harness__check" data-tone={bad ? 'danger' : good ? 'success' : 'info'} data-testid="canvas-check-event">
+              {good ? <ShieldCheck size={13} aria-hidden="true" /> : bad ? <ShieldAlert size={13} aria-hidden="true" /> : <CircleDashed size={13} aria-hidden="true" />}
+              <span>{c.label}</span>
+              {c.round !== undefined && <span className="fs-trace__meta">{t('round {n}', {n: c.round})}</span>}
+            </li>
+          );
+        }
         const detail = c.status === 'completion_gated' && c.detail && GATE_WORDS[c.detail] ? t(GATE_WORDS[c.detail]) : c.detail;
         return (
           <li key={`${c.status}-${i}`} className="fs-harness__check" data-tone={bad ? 'danger' : good ? 'success' : 'info'}>
@@ -84,6 +95,27 @@ export function CheckList({ checks }: { checks: HarnessCheck[] }) {
         );
       })}
     </ul>
+  );
+}
+
+/** The design canvas against the finished work, item by item. */
+export function CanvasCheckList({ check }: { check: CanvasCheck }) {
+  return (
+    <details className="fs-harness__canvas" open={check.overall !== 'met'} data-testid="canvas-check" data-verdict={check.overall}>
+      <summary>
+        {check.overall === 'met' ? <ShieldCheck size={13} aria-hidden="true" /> : check.overall === 'unverified' ? <CircleDashed size={13} aria-hidden="true" /> : <ShieldAlert size={13} aria-hidden="true" />}
+        <span>{check.label}</span>
+      </summary>
+      <ul className="fs-harness__canvas-items">
+        {check.items.map((item) => (
+          <li key={item.id} data-verdict={item.verdict} data-testid="canvas-check-item">
+            <strong className="fs-harness__canvas-verdict">{item.verdictLabel}</strong>
+            <span> {item.text}</span>
+            {item.evidence && <span className="fs-trace__meta"> — {item.evidence}</span>}
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 
@@ -240,6 +272,8 @@ export function HarnessCard({
       </summary>
 
       <CheckList checks={checks} />
+
+      {summary.canvasCheck && <CanvasCheckList check={summary.canvasCheck} />}
 
       {summary.uiVerify === 'missing' && (
         <p className="fs-notice" data-tone="warning" data-testid="ui-verify-missing">

@@ -2305,6 +2305,44 @@ button.fs-studio__git-chip:hover {
   flex: 1;
 }
 
+.fs-harness__canvas {
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-2);
+}
+
+.fs-harness__canvas > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  cursor: pointer;
+}
+
+.fs-harness__canvas[data-verdict='met'] > summary {
+  color: var(--fs-success);
+}
+
+.fs-harness__canvas[data-verdict='partial'] > summary,
+.fs-harness__canvas[data-verdict='not_met'] > summary {
+  color: var(--fs-danger);
+}
+
+.fs-harness__canvas-items {
+  list-style: none;
+  margin: var(--fs-space-1) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--fs-space-1);
+}
+
+.fs-harness__canvas-items li[data-verdict='met'] .fs-harness__canvas-verdict {
+  color: var(--fs-success);
+}
+
+.fs-harness__canvas-items li[data-verdict='partial'] .fs-harness__canvas-verdict,
+.fs-harness__canvas-items li[data-verdict='not_met'] .fs-harness__canvas-verdict {
+  color: var(--fs-danger);
+}
+
 .fs-harness__line,
 .fs-harness__notes {
   font-size: var(--fs-label-size);
