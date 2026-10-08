@@ -80,6 +80,20 @@ assert.equal(failed.state, 'failed');
 assert.equal(failed.error, 'blind review timed out after 135s');
 const noGrade = v.blindReviewFrom({ model: 'm', weaknesses: ['x'] });
 assert.equal(noGrade.state, 'failed', 'a review without a grade is not a review');
+assert.equal(noGrade.partial, true, 'findings of a failed review are partial');
+assert.equal(failed.partial, false);
+// A failed review never shows a grade, a score or a calibration, even when the dict carries them.
+const errWithScores = v.blindReviewFrom({ error: 'provider failed', overall: 4, scores: { answers_question: 5, evidence_support: 4 }, calibration_gap: 2 });
+assert.equal(errWithScores.state, 'failed');
+assert.equal(errWithScores.overall, null);
+assert.deepEqual(errWithScores.scores, {});
+assert.equal(errWithScores.calibrationGap, null);
+assert.equal(errWithScores.raw.overall, 4, 'the original dict is kept for tracing');
+const scoresNoOverall = v.blindReviewFrom({ scores: { answers_question: 5, evidence_support: 4 }, calibration_gap: 0.3, weaknesses: ['half'] });
+assert.equal(scoresNoOverall.state, 'failed');
+assert.deepEqual(scoresNoOverall.scores, {});
+assert.equal(scoresNoOverall.calibrationGap, null);
+assert.equal(scoresNoOverall.partial, true);
 assert.equal(v.reviewTone(4), 'good');
 assert.equal(v.reviewTone(3), 'mixed');
 
@@ -91,7 +105,10 @@ assert.equal((adapter.match(/blindReview: blindReviewFrom\(raw\.blind_review\)/g
 const view = readFileSync(join(root, 'studio/src/screens/research/Verification.tsx'), 'utf8');
 assert.match(view, /<button\s+type="button"\s+className="fs-rs__verdict"/, 'the reason opens from a real button');
 assert.match(view, /aria-expanded=\{open\}/);
-assert.match(view, /aria-controls=\{panelId\}/);
+assert.match(view, /aria-controls=\{open \? panelId : undefined\}/, 'aria-controls only names a panel that exists');
+assert.match(view, /review\.state === 'done' && Object\.keys\(review\.scores\)/, 'scores only for a finished review');
+assert.match(view, /review\.state === 'done' && calibrationText/, 'calibration only for a finished review');
+assert.match(view, /review\.partial &&/, 'partial findings are labelled as such');
 for (const s of ['verified', 'partial', 'not_supported', 'unverifiable', 'unchecked']) {
   assert.match(view, new RegExp(`${s}: \\{ icon: \\w+, word: '`), `${s} has an icon and a word`);
 }

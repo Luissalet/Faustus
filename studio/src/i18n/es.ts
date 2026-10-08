@@ -7484,6 +7484,7 @@ export const es: Record<string, string> = {
   "What the machine is doing: GPU, VRAM, the model that is loaded. Click it for the detail.": "Lo que está haciendo la máquina: GPU, VRAM, el modelo cargado. Haz clic para el detalle.",
   "What the model receives, literally": "Lo que recibe el modelo, literalmente",
   "What the model sees": "Lo que ve el modelo",
+  "What the reviewer wrote before it stopped. These are partial notes, not the result of a finished review.": "Lo que escribió el revisor antes de detenerse. Son notas parciales, no el resultado de una revisión terminada.",
   "What the tidy did": "Lo que ha hecho la limpieza",
   "What this app is, in a few words": "Qué es esta app, en pocas palabras",
   "What this cannot promise:": "Lo que esto no puede prometer:",

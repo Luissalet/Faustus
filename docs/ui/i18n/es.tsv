@@ -9153,3 +9153,4 @@ verified#source	verificada
 {n} of 5 · poor	{n} de 5 · floja
 Sources	Fuentes
 Reviewer: {model}	Revisor: {model}
+What the reviewer wrote before it stopped. These are partial notes, not the result of a finished review.	Lo que escribió el revisor antes de detenerse. Son notas parciales, no el resultado de una revisión terminada.

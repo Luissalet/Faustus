@@ -179,6 +179,11 @@ export interface BlindReview {
   calibrationGap: number | null;
   durationS: number | null;
   error: string;
+  /** True when a failed review still listed findings: they are what it wrote
+   *  before stopping, never the outcome of a finished review. */
+  partial: boolean;
+  /** The persisted dict as it came, for tracing; the view never reads grades from it. */
+  raw: Record<string, unknown>;
 }
 
 function strings(raw: unknown): string[] {
@@ -207,18 +212,22 @@ export function blindReviewFrom(raw: unknown): BlindReview | null {
     ...strings(r.weaknesses).map((text) => ({ kind: 'weakness' as const, severity: 'medium' as const, text })),
   ];
   const gap = typeof r.calibration_gap === 'number' && Number.isFinite(r.calibration_gap) ? r.calibration_gap : null;
+  // A result without a grade is not a review, whatever else it carries; and a
+  // failed review shows no grade at all, not the half it produced before failing.
+  const failed = Boolean(error) || overall === null;
   return {
-    // A result without a grade is not a review, whatever else it carries.
-    state: error || overall === null ? 'failed' : 'done',
+    state: failed ? 'failed' : 'done',
     model: typeof r.model === 'string' ? r.model : '',
-    overall,
-    scores,
+    overall: failed ? null : overall,
+    scores: failed ? {} : scores,
     findings,
-    calibrationGap: gap,
+    calibrationGap: failed ? null : gap,
     durationS: typeof r.duration_s === 'number' && Number.isFinite(r.duration_s) ? r.duration_s : null,
     // The server's own words; empty for a failed review that gave no reason
     // (the view says "no grade" in the reader's language).
     error,
+    partial: failed && findings.length > 0,
+    raw: r,
   };
 }
 

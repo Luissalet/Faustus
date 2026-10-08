@@ -70,7 +70,7 @@ export function SourceVerdict({ source }: { source: VerdictSource }) {
         data-standing={standing}
         data-testid="research-citation-verdict"
         aria-expanded={open}
-        aria-controls={panelId}
+        aria-controls={open ? panelId : undefined}
         onClick={() => setOpen((o) => !o)}
         title={t('Why: from this run\'s own citation check')}
       >
@@ -196,7 +196,7 @@ export function BlindReviewPanel({ review }: { review: BlindReview | null }) {
           {review.error ? t('The review failed: {reason}', { reason: review.error }) : t('The review returned no grade.')}
         </p>
       )}
-      {Object.keys(review.scores).length > 0 && (
+      {review.state === 'done' && Object.keys(review.scores).length > 0 && (
         <dl className="fs-rs__review-scores">
           {REVIEW_SCORE_KEYS.filter((k) => review.scores[k] !== undefined).map((k) => (
             <div key={k} className="fs-rs__stat">
@@ -206,7 +206,10 @@ export function BlindReviewPanel({ review }: { review: BlindReview | null }) {
           ))}
         </dl>
       )}
-      {calibrationText(review.calibrationGap) && <p className="fs-rs__verify-note">{calibrationText(review.calibrationGap)}</p>}
+      {review.state === 'done' && calibrationText(review.calibrationGap) && <p className="fs-rs__verify-note">{calibrationText(review.calibrationGap)}</p>}
+      {review.partial && (
+        <p className="fs-rs__verify-note" data-testid="research-review-partial">{t('What the reviewer wrote before it stopped. These are partial notes, not the result of a finished review.')}</p>
+      )}
       {review.findings.length > 0 ? (
         <ul className="fs-rs__findings" aria-label={t('Findings')}>
           {review.findings.map((f, i) => (
