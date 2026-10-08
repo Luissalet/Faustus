@@ -2555,17 +2555,6 @@ def _answer_only_math_request(text: str, earlier_user_texts: Sequence[str] = ())
 #: A turn that OPENS by asking to be told something. Anchored at the start on
 #: purpose: "explain why you changed it, then fix Y" is not one of these, and
 #: neither is anything with a change verb anywhere in it.
-_EXPLANATION_REQUEST_RE = re.compile(
-    r"^[\s¿\"'`]*(?:por favor[,\s]+|please[,\s]+)?(?:me\s+)?"
-    r"(?:puedes\s+|podr[íi]as\s+|can\s+you\s+|could\s+you\s+|please\s+)?"
-    r"(?:expl[íi]ca(?:me)?|describe(?:me)?|descr[íi]beme|res[úu]me(?:me)?|res[úu]meme|"
-    r"qu[ée]\s+hace|para\s+qu[ée]\s+sirve|c[óo]mo\s+funciona|d[óo]nde\s+est[áa]|"
-    r"explain|describe|summari[sz]e|walk\s+me\s+through|"
-    r"what\s+does|what\s+is|what'?s|how\s+does|where\s+is)\b",
-    re.IGNORECASE,
-)
-
-
 def _explanation_request(text: str) -> bool:
     """Did the user ask to be told something, rather than to have it changed?
 
@@ -2573,14 +2562,12 @@ def _explanation_request(text: str) -> bool:
     workspace is bound. "hola" was exempted when that turned a greeting into
     "your original request requires work in the active workspace" -- but the
     same thing happens to "explain what server.py does", which is answered in
-    prose BY DEFINITION. Being told an acknowledgement is not completion, and
-    to start the next response with a tool call, is the wrong answer to a
-    question, and it costs a round to say it.
+    prose BY DEFINITION. Prefaces and an explicit "don't use tools / don't take
+    actions" clause are recognised too (see ``src.explanation_intents``).
     """
-    text = str(text or "").strip()
-    if not text or not _EXPLANATION_REQUEST_RE.match(text):
-        return False
-    return not _WORKSPACE_CODE_ACTION_RE.search(text)
+    from src.explanation_intents import is_explanation_request
+
+    return is_explanation_request(text, coding_action_re=_WORKSPACE_CODE_ACTION_RE)
 
 
 _TEXT_FOR_THE_USER_RE = re.compile(
