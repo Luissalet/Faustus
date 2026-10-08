@@ -559,7 +559,7 @@ See the [threat model](THREAT_MODEL.md), [security policy](SECURITY.md) and [set
 
 ## Deliverable files and model activity
 
-`inspect_deliverable` reads actual PDF, PPTX, DOCX, XLSX, CSV, DesignCraft/VectorCraft projects, image, audio and video files, returning their identity, bounded text and structural facts. It does not render or grade the content. See [deliverable inspection](docs/api/deliverable-inspection.md).
+`inspect_deliverable` reads actual PDF, PPTX, DOCX, XLSX, CSV, DesignCraft/VectorCraft projects, image, audio and video files, returning their identity, bounded text and structural facts. PPTX inspection also reports layouts, masters, themes and their relationships; `compare_with` checks structural preservation against a template. Equal parts do not establish visual quality. It does not render or grade the content. See [deliverable inspection](docs/api/deliverable-inspection.md).
 
 The chat's collapsible Activity panel shows reported principal, worker, advisor and helper activity, tool steps, token counts, and engine prefill/decode timings when available. It preserves per-round receipts and distinguishes observed request duration from engine time. GPU or node placement is never inferred from model names. See [model activity](docs/api/round_activity.md).
 

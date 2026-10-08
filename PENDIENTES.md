@@ -1,13 +1,12 @@
 # Pendientes de cierre
 
-Actualizado: 07-10-2026. REGLA: nunca nombres de empresas/personas del buzón de Luis en commits, docs, tests ni comentarios — ejemplos siempre ficticios. Sólo trabajo vigente; quitar cada entrada al cerrarla.
+Actualizado: 08-10-2026. REGLA: nunca nombres de empresas/personas del buzón de Luis en commits, docs, tests ni comentarios — ejemplos siempre ficticios. Sólo trabajo vigente; quitar cada entrada al cerrarla.
 
 Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya cerradas u obsoletas, con la prueba de cada cierre en FAUSTUS.md, los tests o el historial de git). Dentro de cada sección, lo más reciente primero.
 
 ## A. Decisiones o acciones de Luis
 
 - **Borrar datos de prueba del 02-10 que no puedo borrar yo**: en Hypatia, el examen de profesor «Examen · Tema 4- Análisis sintáctico» (`9076685c…`, botón «Borrar examen»), su copia practicable en Exámenes de la asignatura (`11334f6c…`) y la pregunta aprobada en la prueba «¿Para qué se utiliza la programación dinámica en el análisis sintáctico?» (`93e30fab…`, en el banco del Tema 4); en Funes, las sesiones `20261002-035830-1a78` (falló al grabar) y `20261002-035920-d55c` («Prueba de reunión (borrar)»). El resto de datos de prueba (CookHoard, HomeHoard, el plazo espejo de Kafka y las 3 propuestas de People) ya está limpio.
-- **Autor de los commits `c2864141`** (Cicero en el marketplace, 30-09), **`ab0219a6` y `96be78e8`** (avisos del cortabucles y ficheros de reglas, 02-10): llevan tu correo personal en vez del no-reply y **ya están subidos** (pushes del 01-10 y del 02-10). No es el único: 230 de los últimos 400 commits de `origin/master` llevan ese mismo correo. Cambiarlo ahora exige reescribir la historia publicada y forzar el push. ¿Lo dejamos así? (Lo recomiendo; los commits nuevos ya salen con el no-reply.)
 - **Probar el puente de Telegram con un bot real** (01-10, §245): está probado contra un servidor falso de la API. Para la prueba real hace falta que crees un bot (en Telegram, el chat de creación de bots → `/newbot`) y pegues su token en Ajustes del agente → Telegram, con tu id de chat en la lista (el bot te lo dice la primera vez que le escribes). ¿Lo hacemos?
 - **Medir MTP y MoE en CPU (#332, #345)**: necesitan el 8081 en exclusiva durante un rato. Hoy no se puede, porque pediste dejar GPU libre. Dime cuándo.
 
