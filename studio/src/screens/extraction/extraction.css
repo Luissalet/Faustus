@@ -1,0 +1,229 @@
+.fs-extract {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 1rem);
+  padding: var(--space-4, 1rem);
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.fs-extract__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3, 0.75rem);
+}
+
+.fs-extract__head h1 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.fs-extract__head p {
+  margin: 0.25rem 0 0;
+  color: var(--muted, var(--fg-muted, inherit));
+  max-width: 42rem;
+}
+
+.fs-extract__error {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--danger, var(--red, currentColor));
+  background: var(--danger-bg, transparent);
+  border-radius: var(--radius, 6px);
+}
+
+.fs-extract__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4, 1rem);
+}
+
+.fs-extract__panel {
+  min-width: 0;
+  border: 1px solid var(--border, var(--line, currentColor));
+  border-radius: var(--radius, 6px);
+  padding: var(--space-3, 0.75rem);
+  background: var(--panel, transparent);
+}
+
+.fs-extract__panel--wide {
+  grid-column: 1 / -1;
+}
+
+.fs-extract__panel h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+
+.fs-extract__panel h3 {
+  margin: 1rem 0 0.5rem;
+  font-size: 0.95rem;
+}
+
+.fs-extract__list {
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.fs-extract__list li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.fs-extract__link {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  padding: 0.35rem 0.4rem;
+  border-radius: var(--radius, 4px);
+}
+
+.fs-extract__link:hover,
+.fs-extract__link:focus-visible {
+  background: var(--hover, transparent);
+  outline: 2px solid var(--focus, currentColor);
+  outline-offset: 1px;
+}
+
+.fs-extract__icon {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  padding: 0.25rem;
+}
+
+.fs-extract__label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.fs-extract__label input,
+.fs-extract__label textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  font: inherit;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  background: var(--input-bg, transparent);
+  color: inherit;
+  border: 1px solid var(--border, currentColor);
+  border-radius: var(--radius, 4px);
+  padding: 0.45rem 0.55rem;
+}
+
+.fs-extract__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.fs-extract__profile,
+.fs-extract__meta,
+.fs-extract__hint {
+  margin: 0 0 0.75rem;
+  color: var(--muted, inherit);
+  font-size: 0.9rem;
+}
+
+.fs-extract__limits {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--amber, var(--warning, currentColor));
+  border-radius: var(--radius, 4px);
+  margin-bottom: 0.75rem;
+}
+
+.fs-extract__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.fs-extract__table th,
+.fs-extract__table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--border, currentColor);
+  word-break: break-word;
+}
+
+.fs-extract__table--dropped td {
+  color: var(--muted, inherit);
+}
+
+.fs-extract__badge {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.35rem;
+  border: 1px solid var(--border, currentColor);
+  border-radius: 999px;
+  font-size: 0.75rem;
+}
+
+.fs-extract__unit {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.8rem;
+  color: var(--muted, inherit);
+}
+
+@media (max-width: 900px) {
+  .fs-extract__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 420px) {
+  .fs-extract {
+    padding: 0.75rem;
+  }
+
+  .fs-extract__table th:nth-child(3),
+  .fs-extract__table td:nth-child(3) {
+    /* keep evidence reachable without horizontal scroll: stack under value */
+  }
+
+  .fs-extract__table,
+  .fs-extract__table thead,
+  .fs-extract__table tbody,
+  .fs-extract__table tr,
+  .fs-extract__table th,
+  .fs-extract__table td {
+    display: block;
+    width: 100%;
+  }
+
+  .fs-extract__table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .fs-extract__table tr {
+    border-bottom: 1px solid var(--border, currentColor);
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+}

@@ -15,6 +15,7 @@ export const PANEL_ROUTES: Record<string, string> = {
   notes: '/notes',
   memories: '/memory',
   skills: '/skills',
+  extraction: '/extraction',
   settings: '/settings',
   cookbook: '/cookbook',
 };
