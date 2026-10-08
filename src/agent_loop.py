@@ -2608,6 +2608,116 @@ def _looks_like_workspace_coding_request(text: str) -> bool:
     return bool(_WORKSPACE_CODE_ACTION_RE.search(text) and _WORKSPACE_CODE_TARGET_RE.search(text))
 
 
+_SOURCE_ARTIFACT_SIGNAL_RE = re.compile(
+    r"\b(?:source\s+code|c[oó]digo\s+fuente|stack\s*trace|traceback|"
+    r"pytest|unittest|jest|vitest|cargo\s+test|go\s+test|npm\s+test|"
+    r"dotnet\s+test)\b"
+    r"|\b[\w.-]+\.(?:py|pyi|js|mjs|cjs|jsx|ts|tsx|vue|svelte|go|rs|rb|php|"
+    r"java|kt|kts|swift|scala|c|h|cc|cpp|hpp|cs|sh|bash|zsh|ps1|sql|"
+    r"css|html|json|yaml|yml|toml)\b"
+    r"|`[^`\n]{1,100}`"
+    r"|\b(?:script|program|programa)\s+(?:in|en|de)\s+(?:bash|python)\b"
+    r"|\b[A-Za-z_]\w*\([^\n)]{0,80}\)"
+    r"|\b(?![A-Za-z0-9_]+\.(?:docx|pdf|txt|md|xlsx|pptx|csv)\b)"
+    r"[a-z][a-z0-9]*_[a-z0-9_]+\b"
+    r"|\b(?:funci[oó]n|function)\s+(?!(?:del|de|la|el|los|las|of|the)\b)"
+    r"(?-i:[a-z_][a-z0-9_]*)\b",
+    re.IGNORECASE,
+)
+_PROGRAMMING_ACTION_SIGNAL_RE = re.compile(
+    r"\b(?:fix|debug|implement|refactor|compile|build|lint|run|test|verify|"
+    r"create|write|edit|update|change|review|add|remove|delete|"
+    r"arregl\w*|corrig\w*|depur\w*|implement\w*|refactor\w*|compil\w*|"
+    r"constru\w*|ejecut\w*|prob\w*|verific\w*|revis\w*|modific\w*|"
+    r"cambi\w*|actualiz\w*|a[ñn]ad\w*|agreg\w*|elimin\w*|"
+    r"crea\w*|escrib\w*|edit\w*)\b",
+    re.IGNORECASE,
+)
+_NONCODE_CONTENT_REQUEST_RE = re.compile(
+    r"\b(?:write|draft|compose|create|prepare|update|edit|revise|correct|review|"
+    r"escribe|redacta|crea|prepara|actualiza|edita|revisa|corrige|modifica)\b"
+    r"[^.!?\n]{0,100}\b(?:documents?|reports?|poems?|chapters?|stories|recipes?|"
+    r"emails?|letters?|essays?|presentations?|lists?|articles?|"
+    r"documentos?|informes?|poemas?|cap[ií]tulos?|cuentos?|recetas?|"
+    r"correos?|cartas?|ensayos?|presentaciones?|listas?|guiones?|art[ií]culos?)\b"
+    r"|\b(?:update|actualiza|cambia)\b[^.!?\n]{0,80}\b(?:postal\s+code|"
+    r"c[oó]digo\s+postal)\b[^.!?\n]{0,80}\b(?:document|documento)\b",
+    re.IGNORECASE,
+)
+
+
+def _has_concrete_programming_signal(text: str) -> bool:
+    """Require coding intent plus code-shaped evidence for the local cap.
+
+    Documentation and creative-writing requests can mention APIs, functions,
+    code snippets, or identifiers. They remain prose tasks unless the request
+    also carries a programming action; explicit prose targets take precedence.
+    """
+    text = str(text or "")
+    if _NONCODE_CONTENT_REQUEST_RE.search(text):
+        return False
+    return bool(
+        _PROGRAMMING_ACTION_SIGNAL_RE.search(text)
+        and _SOURCE_ARTIFACT_SIGNAL_RE.search(text)
+    )
+
+
+_SHORT_NEUTRAL_FOLLOWUP_RE = re.compile(
+    r"^\s*(?:sigue(?:\s+por\s+favor)?|contin[uú]a(?:r)?(?:\s+por\s+favor)?|"
+    r"dale(?:\s+ya)?|vale|seguimos|go\s+on|"
+    r"hazlo(?:\s+por\s+favor)?|adelante|continue(?:\s+please)?|"
+    r"keep\s+going|go\s+ahead|do\s+it|proceed)[.!?…\s]*$",
+    re.IGNORECASE,
+)
+
+
+def _user_text_for_sampling_scope(message: Dict[str, Any]) -> str:
+    """Read text from a real user turn, excluding injected untrusted context."""
+    if not isinstance(message, dict) or message.get("role") != "user":
+        return ""
+    if _is_untrusted_context_message(message):
+        return ""
+    content = message.get("content", "")
+    if isinstance(content, list):
+        content = " ".join(
+            str(block.get("text", ""))
+            for block in content
+            if isinstance(block, dict) and isinstance(block.get("text"), str)
+        )
+    return str(content or "").strip()
+
+
+def _sampling_cap_scope_from_history(messages: List[Dict], last_user: str) -> bool:
+    """Keep a coding cap for a short neutral continuation in this history only.
+
+    The current turn must be a small, intent-free acknowledgement. Walk back
+    across only consecutive neutral acknowledgements to the latest real user
+    request, which must satisfy the same direct coding cap rule. Any other user
+    request breaks inheritance; no module- or session-global state is needed.
+    """
+    if (
+        _looks_like_workspace_coding_request(last_user)
+        and _has_concrete_programming_signal(last_user)
+    ):
+        return True
+    if not _SHORT_NEUTRAL_FOLLOWUP_RE.fullmatch(str(last_user or "")):
+        return False
+    turns = [
+        text for message in (messages or [])
+        if (text := _user_text_for_sampling_scope(message))
+    ]
+    if len(turns) < 2:
+        return False
+    for previous_user in reversed(turns[:-1]):
+        if _SHORT_NEUTRAL_FOLLOWUP_RE.fullmatch(previous_user):
+            continue
+        return (
+            _looks_like_workspace_coding_request(previous_user)
+            and _has_concrete_programming_signal(previous_user)
+        )
+    return False
+
+
 def _looks_like_local_computer_request(text: str) -> bool:
     text = str(text or "")
     return bool(text.strip() and _LOCAL_COMPUTER_REFERENCE_RE.search(text))
@@ -8254,7 +8364,7 @@ async def _stream_agent_loop_body(
     # sufficient evidence of coding intent. Explicit per-turn temperatures
     # and remote endpoints retain their existing precedence.
     _temperature_cap = None
-    _cap_scope = _looks_like_workspace_coding_request(_last_user)
+    _cap_scope = _sampling_cap_scope_from_history(messages, _last_user)
     if not temperature_explicit and not _ody_qwen_finetune_model and _cap_scope:
         try:
             from src.model_context import is_local_endpoint as _is_local_ep
