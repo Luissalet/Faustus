@@ -1320,3 +1320,8 @@ Coordinador `codex-relevo`; misma automatización, traspaso y checkpoints activo
 6. Conservar la revisión posterior67 y el cierre histórico sin revisión previa. Revisar la descomposición de cambios heredados1/2 y cerrar46 solo con recibos de equivalencia.
 7. Coase14: identidad nativa, evaluación integral Q4 y manual común;59/61 ya activadas por su coordinador. No repetir su integración ni reexportar datos reales.
 8. Watch/Book fuera, SABER aparcado, GPUs0/1 libres para Luis, commits preparados sin push.
+
+
+## Sparks: controles activados — 08-10-2026
+
+Thinking independiente y niveles GLM bajo/alto/máximo, configuración de espera inicial y arreglo de explicaciones integrados y activados en 7000 tras revisión. Se conserva GLM en tres Sparks y la ventana 1M. Queda completar la revisión adicional de refresco de Prometheus y cerrar las tareas del backlog con evidencia; no se da por terminado el conjunto.

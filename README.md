@@ -617,3 +617,6 @@ The selected deployment is GLM-5.3-Flash NVFP4 on three Sparks, with a 1,048,576
 ## Credits and licence
 
 Faustus builds on [Odysseus](https://github.com/odysseus-dev/odysseus). See [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md) for additional credits, [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance and [LICENSE](LICENSE) for **AGPL-3.0-or-later**.
+
+
+GLM on Sparks now offers a per-chat Thinking switch, separate from the engine's low/high/max effort levels. Settings → Sparks bounds the initial queue/preparation wait: 30 s by default (5–120), with a notice on expiry and no automatic retry. This guard does not accelerate a cold million-token input. See FAUSTUS.md for verification and limits.

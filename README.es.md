@@ -589,3 +589,6 @@ La configuración elegida es GLM-5.3-Flash NVFP4 en tres Sparks, con una ventana
 ## Créditos y licencia
 
 Faustus parte de [Odysseus](https://github.com/odysseus-dev/odysseus). Más créditos en [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md), contribuciones en [CONTRIBUTING.md](CONTRIBUTING.md) y licencia **AGPL-3.0-or-later** en [LICENSE](LICENSE).
+
+
+GLM en Sparks dispone de Thinking encendido/apagado por chat y esfuerzo bajo, alto o máximo según el motor. Ajustes → Sparks limita la espera inicial de cola/preparación: 30 s por defecto (5–120), con aviso al vencer y sin reintento automático. Esta protección no acelera una entrada fría de un millón de tokens. Verificación y límites en FAUSTUS.md.
