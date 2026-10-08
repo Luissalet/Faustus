@@ -115,6 +115,16 @@ def _trim_node(n: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _detected_nodes(server: Dict[str, Any]) -> List[str]:
+    """Keep the controller's worker residency; older controllers report only a head."""
+    nodes = server.get("nodes")
+    if not isinstance(nodes, list):
+        nodes = []
+    reported = list(dict.fromkeys(n for n in nodes if isinstance(n, str) and n.strip()))
+    head = server.get("node")
+    return reported or ([head] if isinstance(head, str) and head.strip() else [])
+
+
 def status(*, with_recipes: bool = True) -> Dict[str, Any]:
     cfg = config()
     base = {"enabled": cfg["enabled"], "url": cfg["url"], "default_backend": cfg["default_backend"], "recipe": cfg["recipe"],
@@ -132,7 +142,7 @@ def status(*, with_recipes: bool = True) -> Dict[str, Any]:
                                                                    "served", "served_model_name", "max_model_len", "external", "context_verified")}
                                            for d in overview.get("deployments", [])]
                            + [{"recipe": x.get("recipe"), "title": x.get("title"), "state": "running" if x.get("up") else "starting",
-                               "nodes": [x.get("node")], "head": x.get("node"), "base_url": x.get("base_url"), "served": x.get("models") or [],
+                               "nodes": _detected_nodes(x), "head": x.get("node"), "base_url": x.get("base_url"), "served": x.get("models") or [],
                                "max_model_len": x.get("max_model_len"), "detected": True}
                               for x in overview.get("detected", []) if isinstance(x, dict)]}
     if with_recipes:
