@@ -450,9 +450,15 @@ def test_loop_call_that_cannot_get_its_claims_is_refused_not_started(tmp_path, m
     target = tmp_path / "f.py"
     target.write_text("x")
     monkeypatch.setattr(rc, "wait_seconds_setting", lambda: 0.1)
-    thread = _hold_in_thread(str(target), Mode.WRITE, 3.0)
-    events, ran = _run_loop(tmp_path, monkeypatch, '```read_file\n{"path": "f.py"}\n```')
-    thread.join(5)
+    # Held until the loop is done: on Windows a turn can take several seconds to reach the call
+    # (a refused localhost connection costs about 2 s per probe), and a fixed hold would expire first.
+    release = threading.Event()
+    thread = _hold_in_thread(str(target), Mode.WRITE, 60, release=release)
+    try:
+        events, ran = _run_loop(tmp_path, monkeypatch, '```read_file\n{"path": "f.py"}\n```')
+    finally:
+        release.set()
+        thread.join(5)
     assert ran == []
     out = [e for e in events if e.get("type") == "tool_output"]
     assert out and "RESOURCE_CLAIM_TIMEOUT" in json.dumps(out) or "another call holds" in json.dumps(out)
