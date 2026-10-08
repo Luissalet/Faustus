@@ -6562,6 +6562,103 @@ def _resolve_tool_blocks(
     return tool_blocks, used_native, converted_calls
 
 
+_TOOL_EXAMPLE_REQUEST_RE = re.compile(
+    r"(?<![\w./\\-])(?:examples?|samples?|syntax|code\s+snippets?|snippets?|"
+    r"ejemplos?|sintaxis|fragmentos?|muestras?)\b(?![./\\-][\w/\\])",
+    re.I,
+)
+_TOOL_DOCUMENTATION_VERB_RE = re.compile(
+    r"\b(?:what\s+is(?:\s+the)?|cu[aá]l\s+es(?:\s+la)?|"
+    r"explain|describe|show|give|provide|demonstrate|document|"
+    r"walk\s+me\s+through|expl[ií]ca(?:r|me|nos|d)?|describe|mu[eé]stra(?:r|me|nos|d)?|"
+    r"dame|da|dime|pon|proporciona(?:r)?|ens[eé][ñn]a(?:r|me|nos|d)?|documenta(?:r)?)\b",
+    re.I,
+)
+_TOOL_METHOD_QUESTION_RE = re.compile(
+    r"\b(?:how\s+(?:do\s+I|can\s+I|to)|c[oó]mo)\s+(?:se\s+|puedo\s+)?"
+    r"(?:call|invoke|use|llam(?:ar|a)|invoc(?:ar|a)|us(?:ar|a))\b|"
+    r"\b(?:what\s+format|qu[eé]\s+formato)\b[\s\S]{0,100}"
+    r"\b(?:call|calling|llamada|invocaci[oó]n)\b",
+    re.I,
+)
+_EXPLICIT_TOOL_ACTION_CLAUSE_RE = re.compile(
+    r"(?:^|[.!?;:]\s+|\b(?:and|then|also|y|despu[eé]s|adem[aá]s)\s+)"
+    r"(?:(?:please|por\s+favor|can\s+you|could\s+you|puedes|podr[ií]as)\s+)?"
+    r"(?:inspect|check|verify|compare|review|run|execute|create|write|save|"
+    r"export|delete|remove|erase|build|generate|update|edit|copy|move|open|"
+    r"inspecciona(?:r|d)?|comprueba(?:r|d)?|verifica(?:r|d)?|compara(?:r|d)?|"
+    r"revisa(?:r|d)?|ejecut(?:a|ar|ad)|ejec[uú]t(?:alo|ala|arlos?|arlas?|elos?|elas?)|"
+    r"corre|crea(?:r|d)?|escribe(?:r|d)?|"
+    r"guarda(?:r|d)?|exporta(?:r|d)?|borra(?:r|d)?|elimina(?:r|d)?|"
+    r"construye|genera(?:r|d)?|actualiza(?:r|d)?|edita(?:r|d)?|"
+    r"copia(?:r|d)?|mueve|abre(?:r|d)?)\b",
+    re.I,
+)
+
+
+def _is_tool_documentation_request(user_request: str) -> bool:
+    """Whether the user explicitly asked for an example rather than an action."""
+    request = str(user_request or "")
+    if _EXPLICIT_TOOL_ACTION_CLAUSE_RE.search(request):
+        return False
+    # A method/format question about a named tool can ask for documentation
+    # without saying "example" or "syntax". Keep action clauses authoritative.
+    if (_TOOL_METHOD_QUESTION_RE.search(request)
+            and re.search(r"\b[A-Za-z_][A-Za-z0-9]*_[A-Za-z0-9_]+\b", request)):
+        return True
+    marker = _TOOL_EXAMPLE_REQUEST_RE.search(request)
+    if not marker:
+        return False
+    # Markers embedded in file/path tokens are excluded by the pattern.
+    # A remaining example marker must be introduced by a documentation verb.
+    if not any(match.start() < marker.start() for match in _TOOL_DOCUMENTATION_VERB_RE.finditer(request)):
+        return False
+    # A direct action in the request takes priority over a later request to
+    # explain or show an example. Verbs nested under "how to" remain docs.
+    return True
+
+
+def _scoped_fenced_tool_names(
+    response: str,
+    offered_tool_names: Set[str],
+    *,
+    user_request: str = "",
+) -> List[str]:
+    """Return parsed fenced tool calls whose schemas were sent this round.
+
+    This is diagnostic only. Native API routes still execute calls exclusively
+    through the structured provider channel; fenced text is never promoted to
+    an executable call. When the user explicitly requested example syntax and
+    did not request a tool action, a matching fence is documentation.
+    """
+    if (not response or not offered_tool_names
+            or _is_tool_documentation_request(user_request)):
+        return []
+    from src.tool_parsing import _TOOL_BLOCK_RE, _fenced_tool_call
+
+    found = set()
+    for match in _TOOL_BLOCK_RE.finditer(response):
+        parsed = _fenced_tool_call(match)
+        if parsed and parsed[0] in offered_tool_names:
+            found.add(parsed[0])
+    # Some API models label the fence as "tool_name JSON". The ordinary
+    # executor intentionally does not accept this noncanonical header; this
+    # second pattern only recognizes it for the format-error recovery above.
+    for name in offered_tool_names:
+        pattern = re.compile(
+            rf"```{re.escape(name)}[ \t]+json[ \t]*\r?\n([\s\S]*?)```",
+            re.I,
+        )
+        for match in pattern.finditer(response):
+            try:
+                args = json.loads(match.group(1).strip())
+            except (TypeError, ValueError):
+                continue
+            if isinstance(args, dict):
+                found.add(name)
+    return sorted(found)
+
+
 _TOOL_IMAGE_SOURCE_PREFIX = "tool result: "
 # Persisted with the tool event; a bigger data URL is not worth a history row.
 _MAX_PERSISTED_SCREENSHOT_CHARS = 2_000_000
@@ -9067,10 +9164,9 @@ async def _stream_agent_loop_body(
     if not guide_only and not _relevant_tools and _retrieval_query:
         from src.tool_index import ALWAYS_AVAILABLE, ToolIndex
         _relevant_tools = set(ALWAYS_AVAILABLE)
-        ql = _retrieval_query.lower()
-        for keywords, tools in ToolIndex._KEYWORD_HINTS.items():
-            if any(kw in ql for kw in keywords):
-                _relevant_tools.update(tools)
+        _relevant_tools.update(ToolIndex.keyword_tools_for_query(
+            _retrieval_query, match_substrings=True,
+        ))
         logger.info(f"[tool-rag] Keyword fallback selected: {sorted(_relevant_tools - ALWAYS_AVAILABLE)}")
         if _hot_seed is None:
             _hot_seed = set(_relevant_tools)
@@ -11942,6 +12038,7 @@ async def _stream_agent_loop_body(
         except Exception as _dd_err:
             logger.debug("[harness] dependency drift check skipped: %s", _dd_err)
     round_num = 0
+    _fenced_api_recovery_used = False
     # Preparation can exhaust the turn before the first model round exists.
     round_response = ""
     round_reasoning = ""
@@ -12360,6 +12457,7 @@ async def _stream_agent_loop_body(
                         "round": max(1, round_num - 1), "attempt": 1, "max_attempts": 1,
                     }) + "\n\n"
                 )
+        _full_response_before_round = full_response
         round_response = ""
         round_reasoning = ""  # reasoning_content deltas (DeepSeek-thinking, vLLM --reasoning-parser)
         native_tool_calls = []  # populated if model uses function calling
@@ -14034,6 +14132,64 @@ async def _stream_agent_loop_body(
             argument_snapshot=_answer_argument_snapshot,
             schema_receipt=_answer_schema_receipt,
         )
+        # Native API providers must return function calls through their
+        # structured channel. A parsed, fenced request is useful evidence of a
+        # format mistake, but it is never executed here. Retry once while
+        # keeping exactly the schemas sent on this round; if the provider
+        # repeats the mistake, finish with a visible explanation instead of
+        # silently ending with an empty answer.
+        if (_is_api_model and not guide_only and not _ody_doc_finetune_mode
+                and not native_tool_calls and not tool_blocks):
+            _fenced_names = _scoped_fenced_tool_names(
+                round_response, set(_tool_names_sent),
+                user_request=_user_request_text(messages),
+            )
+            if _fenced_names:
+                full_response = _full_response_before_round
+                _fenced_names = sorted(set(_fenced_names))
+                if not _fenced_api_recovery_used:
+                    _fenced_api_recovery_used = True
+                    messages.append({
+                        "role": "system",
+                        "content": _lang_note(
+                            "Your last response contained a fenced request for a tool "
+                            "instead of a native function call. Do not put tool calls in "
+                            "Markdown fences. Use only the native function-call channel "
+                            "and only the tools already provided to you. If you cannot "
+                            "make a native call, explain that plainly."
+                        ),
+                    })
+                    logger.warning(
+                        "[agent] API provider returned fenced tool text for offered tools %s; retrying once",
+                        _fenced_names,
+                    )
+                    yield "data: " + json.dumps({
+                        "type": "response_replace", "text": full_response.strip(),
+                    }) + "\n\n"
+                    yield "data: " + json.dumps({
+                        "type": "agent_step", "round": round_num + 1,
+                    }) + "\n\n"
+                    continue
+                if str(_required_reply_lang or "").lower() == "es":
+                    _format_error = (
+                        "No se pudo completar esta llamada a la herramienta porque el modelo "
+                        "devolvió la solicitud en un bloque de código dos veces. Vuelve a intentarlo."
+                    )
+                else:
+                    _format_error = (
+                        "This tool call could not be completed because the model returned it "
+                        "in a code fence twice. Please retry."
+                    )
+                full_response = (full_response.rstrip() + "\n\n" + _format_error).strip()
+                _ledger.stop_reason = "provider_tool_format_error"
+                logger.error(
+                    "[agent] API provider repeated fenced tool text for offered tools %s; no tool executed",
+                    _fenced_names,
+                )
+                yield "data: " + json.dumps({
+                    "type": "response_replace", "text": full_response,
+                }) + "\n\n"
+                break
         if _ody_doc_stream_create_mode and tool_blocks:
             create_idx = next(
                 (idx for idx, block in enumerate(tool_blocks) if block.tool_type == "create_document"),

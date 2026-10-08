@@ -2854,7 +2854,26 @@ def format_tool_result(description: str, result: Dict, *, tool: str = "", comman
     # documents, attachments, etc.) that the dedicated branches above don't show.
     # Without this, tools that return {"response": "...", "events": [...]} would
     # silently drop the events list and the model would only see the summary line.
-    extra = {k: v for k, v in result.items() if k not in _FORMATTER_HANDLED_KEYS}
+    _duplicate_payload_keys = set()
+    if (tool == "inspect_deliverable" and isinstance(result, dict)
+            and isinstance(result.get("output"), str) and "deliverable" in result):
+        try:
+            from src.tool_result_offload import OFFLOAD_MARKER, _truncate_field
+
+            if result.get(OFFLOAD_MARKER):
+                expected_preview = _truncate_field(json.dumps(
+                    result["deliverable"], ensure_ascii=False, allow_nan=False,
+                ))
+                if result["output"] == expected_preview:
+                    _duplicate_payload_keys.add("deliverable")
+            elif json.loads(result["output"]) == result["deliverable"]:
+                _duplicate_payload_keys.add("deliverable")
+        except (TypeError, ValueError):
+            pass
+    extra = {
+        k: v for k, v in result.items()
+        if k not in _FORMATTER_HANDLED_KEYS and k not in _duplicate_payload_keys
+    }
     if extra:
         try:
             extra_json = json.dumps(extra, indent=2, default=str, ensure_ascii=False)

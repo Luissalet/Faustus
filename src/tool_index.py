@@ -1094,6 +1094,15 @@ class ToolIndex:
     #: not anchored to a filename shape beyond the dot+letters: the acceptance
     #: case is exactly "a file with this extension", not a specific path.
     _FILE_EXT_RE = re.compile(r"\.[A-Za-z]{1,6}\b")
+    _DELIVERABLE_INSPECTION_RE = re.compile(
+        r"\b(?:inspect|inspection|check|checks|verify|compare|review|"
+        r"inspecta|inspecciona|inspeccionad|inspeccionar|inspecci[oó]n|comprueba|comprobar|verifica|"
+        r"verificar|revisa|revisar|compara|comparar)\b",
+        re.I,
+    )
+    _DELIVERABLE_EXT_RE = re.compile(
+        r"\.(?:pptx?|potx?|docx?|xlsx?|pdf)\b", re.I,
+    )
 
     # Keyword hints: if the query mentions these words, force-include the tools.
     _KEYWORD_HINTS = {
@@ -1318,6 +1327,27 @@ class ToolIndex:
             {"prior_art"},
     }
 
+    @classmethod
+    def keyword_tools_for_query(
+        cls, query: str, *, match_substrings: bool = False,
+    ) -> Set[str]:
+        """Return deterministic keyword hints with caller-selected matching semantics."""
+        ql = (query or "").lower()
+        selected: Set[str] = set()
+        for keywords, tools in cls._KEYWORD_HINTS.items():
+            if any(
+                kw in ql if match_substrings else re.search(rf"\b{re.escape(kw)}\b", ql)
+                for kw in keywords
+            ):
+                selected.update(tools)
+        # Inspection is a distinct intent from reading/editing a file. Keep
+        # this tool conditional on both an inspection verb and a deliverable
+        # extension, so ordinary mentions of presentations do not add it.
+        if (cls._DELIVERABLE_INSPECTION_RE.search(ql)
+                and cls._DELIVERABLE_EXT_RE.search(ql)):
+            selected.add("inspect_deliverable")
+        return selected
+
     def get_tools_for_query(
         self, query: str, k: int = 8, always_include: Optional[Set[str]] = None,
         *, owner: Optional[str] = None, rerank_tools: bool = False,
@@ -1336,9 +1366,7 @@ class ToolIndex:
         # ("prefix", "deadline"/"online", "observe"/"reserve", "replying",
         # "unreadable"). Same word-boundary matching used in topic_analyzer.
         ql = query.lower()
-        for keywords, tools in self._KEYWORD_HINTS.items():
-            if any(re.search(rf"\b{re.escape(kw)}\b", ql) for kw in keywords):
-                base.update(tools)
+        base.update(self.keyword_tools_for_query(query))
         # Structural scheduling-intent detection — typo-resilient (the literal
         # keyword "every day" misses "every dya"). Catches "every <word>",
         # daily/nightly/etc., or a clock time like "at 7:30 am" / "7am", which
