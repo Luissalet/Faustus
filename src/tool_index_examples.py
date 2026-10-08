@@ -1019,6 +1019,13 @@ EXAMPLES: Dict[str, List[str]] = {
         "qué dice este hilo de reddit",
         "get me the text of this tweet",
     ],
+    "inspect_deliverable": [
+        "inspect the PowerPoint and tell me what is actually inside",
+        "revisa el entregable final y verifica qué texto contiene el PDF",
+        "check this spreadsheet's sheets and formulas",
+        "inspecta las notas, imágenes y gráficos de este PPTX",
+        "extract the paragraphs and tables from this DOCX",
+    ],
     "brain_graph": [
         "qué relaciones conocíamos entonces y cuáles eran válidas en esa fecha",
         "muestra los vecinos de esta persona con sus fuentes y fechas",

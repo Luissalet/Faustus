@@ -25,7 +25,7 @@ def _handlers():
 
 AUTHORED = ("bash", "python", "powershell", "web_search", "web_fetch", "read_file", "grep", "glob", "ls",
             "get_workspace", "write_file", "edit_file", "apply_patch", "plan_media_transform",
-            "transform_media", "inspect_media", "image_job")
+            "transform_media", "inspect_media", "inspect_deliverable", "image_job")
 
 
 def _native(name):

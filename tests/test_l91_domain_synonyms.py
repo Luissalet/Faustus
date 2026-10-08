@@ -56,6 +56,8 @@ from src import agent_loop
         ("investiga los precios de la gasolina", "web"),
         ("qué dice internet sobre esto", "web"),
         ("lee el archivo config.py", "files"),
+        ("revisa el entregable final y comprueba este PDF", "documents"),
+        ("inspect this presentation and its charts", "documents"),
         ("abre la carpeta de proyectos", "files"),
         ("qué hay pendiente en este proyecto", "project_board"),
         ("hay un bug en el login", "project_board"),

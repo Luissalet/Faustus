@@ -75,7 +75,9 @@ Launchers live in this repository and resolve paths relative to the checkout:
 
 Python and Node.js are required for first-time setup. The launchers prepare missing dependencies, rebuild stale Studio assets and install the pinned desktop runtime when needed. `Start-Faustus.ps1 -NoBrowser` starts web mode without opening a tab; `-Port 7001` selects another port.
 
-Closing the desktop window stops the backend **only if that window started it**. An already-running web server is reused and remains running when the window closes. Process ownership is verified; unrelated Python processes and external model servers are not stopped. Desktop authentication is separate from your browser, so sign in once in the window.
+Closing the desktop window stops the backend **only if that window started it**. An already-running web server is reused and remains running when the window closes. Process ownership is verified; unrelated Python processes and external model servers are not stopped.
+
+The managed local launchers bind to localhost and default to `AUTH_ENABLED=false`: open the app and use its models and settings directly. Account and user-management pages are hidden in this mode, and no credential store is created. Profiles organize your work and setup; they do not require a login. Existing data is preserved. An installation explicitly configured with `AUTH_ENABLED=true` uses separate desktop and browser sign-in sessions.
 
 Scheduled work requires a running Faustus server and an awake computer. Use web mode to leave the backend running after closing browser tabs; closing an owning desktop window stops scheduling too. In Agent chat, request a recurrence in English or Spanish, specify a time and time zone, and manage the saved task under **Automations**. Recurring tasks support IANA time zones and daylight-saving changes; existing tasks without a zone retain their UTC behavior.
 
@@ -93,6 +95,8 @@ Studio installs as a standalone app (a PWA) straight from the browser — no app
 - **Meeting notes:** record or upload an audio file and get back Markdown notes — summary, decisions, action items (owner/due date when stated), open questions and the full timestamped transcript — from a background job that chunks long recordings, transcribes each chunk with the configured STT engine, and runs one local-model pass to write the notes. If that model pass is unavailable, the transcript is still saved with a warning instead of being lost. Listed under Library → Meetings. From a saved meeting, preview its explicit action items and add them to a project board in one step; each issue links back to the source, and repeating the transfer reuses existing issues. Project chats can do the same with `meeting_actions_to_board`.
 
 ### Chat and a persistent workbench
+
+- **Correct a calculation across turns:** revise which rows or document pages contribute to a total, or ask to repeat the calculation. A bound workspace does not turn these follow-ups into requests to edit files; arithmetic can use the available Python tool.
 
 - Switch between local and API models; connect OpenAI, Claude, Gemini and OpenRouter through guided API setup with connection testing. OpenRouter calls report their real cost, per-endpoint preferences (data collection, provider order, web search only when asked) are explicit, and a local-only privacy profile refuses outbound calls instead of downgrading silently.
 - A switch in Settings → Default AI (mirrored in Settings → Local models) chooses whether the default chat model loads at startup and stays resident — flips live, no restart: on loads it now, off releases it right away (VRAM freed within seconds, never mid chat turn). Works for both local backends: kept resident in Ollama via `keep_alive`, or a managed llama.cpp `llama-server` started and exempted from its own idle-unload timer while the switch is on. Every model listing (Default AI, Local models, the chat picker) shows who actually serves it — Ollama, llama.cpp, or a remote API — detected once and shared everywhere.
@@ -116,6 +120,7 @@ Studio installs as a standalone app (a PWA) straight from the browser — no app
 - **Each chat keeps its own llama-server slot.** On a llama-server with three or more slots, every round of a chat names the same slot (`id_slot`), so when an early part of a long prompt changes (old images folded, a retry) the server re-reads only what follows the change instead of the whole prompt on another slot; typed decisions share one slot no chat holds. After a reasoning loop the retry keeps the turn's context, which sits near the start of the prompt. Setting `llamacpp_pin_session_slot`; `FAUSTUS_DUMP_LLM_PAYLOADS=<folder>` writes what each streamed round sent, to see why a cache missed.
 - **The context count includes the model's own kept reasoning.** Qwen3-family templates replay every assistant turn's reasoning since the last question. The token estimate and the per-turn context ledger count it now, on its own line. Token calibration relearns after an estimator change instead of carrying a skewed factor.
 - Reasoning that goes round in circles is cut short: when the model's thinking restates the same long sentence for the third time, the round is retried with the sampler pushed out of the loop instead of burning the whole reasoning budget.
+- **Room for an answer after thinking.** If an automatic local reasoning round uses every output token without producing text, the existing continuation retries first reserve at least half the token budget for the answer; a second such stop disables thinking for that turn. Explicit reasoning choices and visible partial answers are preserved.
 - **A turn that gets stopped still answers.** When the loop breaker ends a run for repeating itself without progress, everything needed for an answer is already in the conversation, so one tool-free pass writes it — on the route that was actually answering, so the cost lands where the work did. A stopped turn is never a blank reply.
 - Asking a question is not treated as dodging work: with a workspace open, a request to explain something is answered in prose without being sent back for a tool call, and the standing reply-language reminder is placed so the last thing the model reads is the step it was just given.
 - Paste screenshots directly with **Ctrl+V**, upload attachments and reference workspace files.
@@ -578,12 +583,32 @@ When a tool round contains only plain narration in the wrong reply language, Fau
 
 The reply-language check excludes valid JSON objects and arrays, including fenced payloads. Schema keys and source values keep their form; narration around a JSON block is still checked. Invalid JSON constants such as `NaN` and `Infinity` do not qualify.
 
+## Exact maths and requested output formats
+
+With Hypatia's Hoard connected, Faustus can use `math_linear_system` for exact rational systems: unique, infinite or inconsistent solutions, ranks, row reduction and substitution checks. `math_compute` preserves written decimal digits. These calculations use Hypatia's existing local symbolic backend.
+
+The main chat prompts make tool-success confirmations yield to the user's explicit output format, including JSON-only replies; ordinary conversation can still confirm briefly in prose.
+
+Runtime continuation, language and context notes do not replace the human request when selecting intent or counting user turns. A continuation carries the original requested answer format.
+
+Approval resumes carry numbered execution records and a compact count by tool and complete JSON arguments. The current approved execution is included explicitly; successful, failed and unknown attempts stay separate. These are context records: they do not cache results, skip requested calls or expand an approval.
+
+Completed tool effects remain available to the answer checks when a turn resumes after approval. The server keeps a compact evidence snapshot with that exact pending action; the approval options and tool permissions stay the same.
+
+## Plugin discovery without an embedding service
+
+`lookup_tools` can search the names and English/Spanish descriptions of connected MCP tools locally when the embedding index cannot start or returns no candidates. It uses the existing lexical scorer, applies the usual tool permissions and result limit, and returns the real callable schema. Disconnected tools are removed. This keeps operations such as Prospero's frame interpolation discoverable without downloading an embedding model or browsing a whole plugin catalog.
+
+Approval resumes identify the current approved tool, its arguments and execution status separately from earlier attempts. `lookup_tools` exposes its existing `k` result limit in the native schema; lookup hints use the conversation's tool-call format. These changes preserve the approval scope and tool-result boundaries.
+
+### Continuity during long document tasks
+
+Context reduction keeps the user's latest instruction rather than a synthetic tool reply. A compact receipt records recently executed tools and returned object IDs, so an ongoing task can continue without recreating its objects. When a tool result is offloaded, the artifact retrieval helpers are exposed if permitted by the current policy; MCP-only turns can retrieve their own offloaded results without a shell fallback.
+
+## Recently integrated
+
+On 8 October 2026: explicit reasoning effort kept through chat generation, read-only mode enforced at the chat API and every tool execution gate, tool documentation in guide-only turns and type checks on `manage_research` arguments, together with the execution-continuity work (approval resumes with evidence, answer-only maths turns, room for an answer after thinking). The DGX Spark backend (§278) is active. Measurements of the Spark models are in FAUSTUS.md.
+
 ## Credits and licence
 
 Faustus builds on [Odysseus](https://github.com/odysseus-dev/odysseus). See [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md) for additional credits, [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance and [LICENSE](LICENSE) for **AGPL-3.0-or-later**.
-
-## Current verification and pending activation
-
-The guide-only tool documentation candidate (#60) passed four native chat turns with the 27B Q4 model at 131072 context on GPUs2/3, with verified xhigh reasoning: schema explanation, a CSV correction, hostile cached reference text and an unknown tool. No tools ran; protected input stayed unchanged; REST, persisted sessions, MCP events/usage and Studio examples were checked. This bounded test does not establish general model performance. The candidate awaits cross-review and integration. A prior request that accidentally disabled thinking is recorded separately and is not an xhigh result.
-
-The read-only execution fix (#64) is approved but not activated. Agora handover, checkpoints and revision-specific votes are active in HoardHub. Backup protection (#58) is integrated in its source tree and still awaits activation in the running Hub. The Financialitas PDF revision is active in Coase; its preserved source date and original report are unchanged.

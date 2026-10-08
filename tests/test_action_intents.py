@@ -93,6 +93,16 @@ def test_spanish_project_objective_order_is_unicode_normalization_safe():
     assert intent.category == "project"
 
 
+@pytest.mark.parametrize('message', [
+    'Actualiza el brief con deck_update sobre el borrador. Corrige: CINCO objetivos específicos del TFM.',
+    'Update the presentation brief. The thesis has five objectives.',
+    'Crea una presentación del TFM; contiene cinco objetivos específicos.',
+])
+def test_thesis_objectives_after_document_request_are_not_dashboard_mutations(message):
+    intent = classify_tool_intent(message)
+    assert not (intent.category == 'project' and 'objective' in intent.reason.lower())
+
+
 @pytest.mark.parametrize("message", [
     "Create a new project with the goal of finishing the release",
     "Set up a project including the objective to ship the release",

@@ -413,6 +413,15 @@ def test_degenerate_round_ends_the_turn_with_plain_message_after_the_whole_ladde
     # calls happen.
     assert round_no == 2
     joined = "".join(chunks)
+    # Replay the events the renderer sees. A terminal recovery failure must
+    # also replace the last streamed garbage prefix, not only persisted text.
+    visible = ""
+    for event in _types(chunks):
+        if event.get("type") == "response_replace":
+            visible = event.get("text", "")
+        elif not event.get("type") and not event.get("thinking"):
+            visible += event.get("delta", "")
+    assert "0000000000" not in visible
     assert "looped" in joined.lower()
     assert not any(
         c.startswith("data: ") and '"status": "recovery"' in c and json.loads(c[6:]).get("step") == 2

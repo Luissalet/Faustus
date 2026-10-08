@@ -663,7 +663,7 @@ def serve(
         )
     else:
         payload["hint"] = (
-            "These tools are callable this turn (fenced block with JSON args). "
+            "These tools are callable this turn. Use their function names and arguments. "
             "Native function schemas load on the next round."
         )
     return payload

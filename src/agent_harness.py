@@ -666,6 +666,58 @@ def _finishes_an_investigation(match_text: str, following: str) -> bool:
     return bool(_INVESTIGATION_OBJECT_RE.search(following[:50]))
 
 
+def _computed_list_claim_text(text: str) -> str:
+    """Disambiguate adding an entry to a computed list, not saving a record.
+
+    Used only after a successful packing-list result matches its requests.
+    Other claims (saving the list, changing inventory, writing files) remain.
+    """
+    pattern = re.compile(
+        r"\b(?P<verb>(?:he|hemos)\s+a[ñn]adido|i(?:'ve|\s+have)?\s+added)\b"
+        r"[^.!?\n]{0,140}?\b(?:a|en|to)\s+"
+        r"(?:la\s+(?:(?:misma|[úu]ltima|nueva)\s+)?lista|"
+        r"(?:the\s+)?(?:(?:same|last|packing)\s+)?list)\b", re.IGNORECASE)
+
+    def replace(match):
+        if re.search(r"\b(?:inventario|inventory|archivo|file|database|datos|shopping|compra)\b",
+                     match.group(0), re.IGNORECASE):
+            return match.group(0)
+        following = text[match.end():match.end() + 40]
+        if re.match(r"\s+(?:(?:de|of)\s+(?:(?:la|las|el|los|the)\s+)?"
+                    r"(?:compras?|inventario|tareas|shopping|groceries|inventory|tasks)|"
+                    r"in\s+the\s+database)\b", following, re.IGNORECASE):
+            return match.group(0)
+        return "La lista incluye" + match.group(0)[len(match.group("verb")):]
+
+    return pattern.sub(replace, text)
+
+
+def _has_computed_list_result(tool: str, content: str, result: dict) -> bool:
+    """A HomeHoard check returned the requested rows; this is read evidence."""
+    if not tool.startswith("mcp__") or tool.split("__")[-1] != "home_check_list":
+        return False
+    try:
+        requests = json.loads(content)["requests"]
+        if not isinstance(requests, list) or not 1 <= len(requests) <= 100:
+            return False
+        required = {}
+        for row in requests:
+            id, quantity = row["item_id"], row["quantity"]
+            if not isinstance(id, str) or not id or type(quantity) is not int or quantity <= 0:
+                return False
+            required[id] = required.get(id, 0) + quantity
+        raw = _result_text(result)
+        payload = json.loads(raw) if raw else result
+        rows = payload["items"]
+        return (type(payload["inventory_version"]) is int
+                and type(payload["ready"]) is bool and type(payload["totals_complete"]) is bool
+                and len(rows) == len(required)
+                and all(type(row["requested"]) is int for row in rows)
+                and {row["item_id"]: row["requested"] for row in rows} == required)
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
 def find_mutation_claims(
     text: str, limit: int = 4, include_bare_done: bool = True,
     patterns: Optional[List[re.Pattern]] = None,
@@ -1575,6 +1627,8 @@ class TurnLedger:
             "round": round_num, "tool": tool, "ok": ok, "kind": kind,
             "paths": paths, "error": (result or {}).get("error") if not ok else None,
         }
+        if ok and _has_computed_list_result(tool, content, result):
+            ev["computed_list"] = True
         if (result or {}).get('approval_required') is True:
             ev['approval_required'] = True
         if isinstance(result, dict):
@@ -1669,6 +1723,39 @@ class TurnLedger:
         return max(0, len(self.events) - self._events_at_last_progress)
 
     # -- evidence -----------------------------------------------------------
+    def approval_evidence(self) -> str:
+        """Compact runtime evidence kept by the server with a pending action.
+
+        This is not a permission grant or a chat-metadata import. Raw tool
+        output is deliberately absent; completed effects and their paths are
+        enough to keep the same claim checks across an approval boundary.
+        """
+        keys = {"round", "tool", "ok", "kind", "paths", "error", "computed_list", "exit_code"}
+        # Long runs can have many reads after a completed write. Keep effects
+        # separately so those reads do not evict the work being reported.
+        kept = {id(e) for e in self.effects[-128:] + self.events[-128:]}
+        events = [{k: v for k, v in e.items() if k in keys} for e in self.events if id(e) in kept]
+        body = {"version": 1, "events": events, "observed_paths": sorted(self.observed_paths)[:512],
+                "seen_cites": sorted(self.seen_cites)[:512], "shell_write_hints": sorted(self.shell_write_hints)[:128]}
+        encoded = json.dumps(body, ensure_ascii=False, separators=(",", ":"), default=str)
+        return encoded if len(encoded) <= 65536 else ""
+
+    def restore_approval_evidence(self, encoded: str) -> None:
+        """Only for a server-owned snapshot after ExactToolApproval.matches.
+
+        The caller must authenticate the pending action first. Never pass
+        message metadata here; restoring evidence cannot authorize any tool.
+        """
+        if not encoded:
+            return
+        body = json.loads(encoded)
+        if body.get("version") != 1:
+            return
+        self.events.extend(body["events"])
+        self.observed_paths.update(body["observed_paths"])
+        self.seen_cites.update(body["seen_cites"])
+        self.shell_write_hints.update(body["shell_write_hints"])
+
     @property
     def mutations(self) -> List[Dict[str, Any]]:
         return [e for e in self.events if e["ok"] and e["kind"] == "mutation"]
@@ -2066,7 +2153,9 @@ class TurnLedger:
                  "intent": str|None}
         """
         body = text or ""
-        claims = find_mutation_claims(body)
+        claim_body = (_computed_list_claim_text(body)
+                      if any(e.get("ok") and e.get("computed_list") for e in self.events) else body)
+        claims = find_mutation_claims(claim_body)
         bad_paths = self.unverified_paths(body)
         intent = find_intent_announcement(body)
         permission = None if self.asked_user else find_permission_stall(body)
@@ -2077,12 +2166,12 @@ class TurnLedger:
             # whatever ran, not a fabricated edit: reject only when the text
             # describes changes, or when nothing at all was executed.
             did_something = any(e["ok"] for e in self.events)
-            action_claims = find_mutation_claims(body, include_bare_done=False, patterns=_ACTION_CLAIM_PATTERNS)
+            action_claims = find_mutation_claims(claim_body, include_bare_done=False, patterns=_ACTION_CLAIM_PATTERNS)
             if action_claims:
                 # "I changed X" / "he creado Y" names a specific mutation:
                 # never excused by the tracker, only by an actual effect.
                 reasons.append("claims_without_mutation")
-            elif ((not did_something or find_mutation_claims(body, include_bare_done=False))
+            elif ((not did_something or find_mutation_claims(claim_body, include_bare_done=False))
                     and not self._no_change_verified()):
                 reasons.append("claims_without_mutation")
         offered = ([p for p in bad_paths if _only_offered(body, p)]

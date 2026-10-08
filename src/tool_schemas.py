@@ -46,6 +46,7 @@ FUNCTION_TOOL_SCHEMAS = [
     _emit_schema("plan_media_transform"),
     _emit_schema("transform_media"),
     _emit_schema("inspect_media"),
+    _emit_schema("inspect_deliverable"),
     _emit_schema("bash"),
     _emit_schema("python"),
     _emit_schema("powershell"),
@@ -817,6 +818,8 @@ FUNCTION_TOOL_SCHEMAS = [
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "Natural-language description of the action (Spanish or English), e.g. 'send email', 'commit these files'."},
+                    "k": {"type": "integer", "minimum": 1, "maximum": 12, "default": 8,
+                          "description": "Maximum matching tools to return for a search or exact names. Use 1 for a narrow schema lookup."},
                     "names": {
                         "type": "array",
                         "items": {"type": "string"},

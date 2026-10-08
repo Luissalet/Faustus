@@ -134,9 +134,9 @@ _ROUTING_PATTERNS: tuple[tuple[str, str, Pattern[str]], ...] = tuple(
         # from coding intent: adding an objective or attaching a document needs
         # a typed project tool, but must not enable shell/file mutation merely
         # because the noun "project" appeared.
-        ("project", "project objective action request", rf"{_PLEASE}(?:add|create|put|set|update|edit|change|remove|delete|mark|complete)\b.{{0,160}}\b(?:project\s+)?(?:objectives?|goals?)\b"),
+        ("project", "project objective action request", rf"{_PLEASE}(?:add|create|put|set|update|edit|change|remove|delete|mark|complete)\b[^.\n;]{{0,160}}\b(?:project\s+)?(?:objectives?|goals?)\b"),
         ("project", "project objective follow-up", r"\b(?:put|add|move)\s+(?:it|this|that|them|these)\b.{0,120}\b(?:project\s+)?(?:objectives?|goals?)\b"),
-        ("project", "Spanish project objective action request", r"\b(?:aÃ±ade|anade|agrega|mete|pon|crea|actualiza|edita|cambia|elimina|borra|marca|completa)\b.{0,160}\b(?:objetivos?|metas?)(?:\s+del?\s+proyecto)?\b"),
+        ("project", "Spanish project objective action request", r"\b(?:aÃ±ade|anade|agrega|mete|pon|crea|actualiza|edita|cambia|elimina|borra|marca|completa)\b[^.\n;]{0,160}\b(?:objetivos?|metas?)(?:\s+del?\s+proyecto)?\b"),
         ("project", "project context attachment request", rf"{_PLEASE}(?:add|attach|link|put|move)\b.{{0,160}}\b(?:to|into|in)\s+(?:this|the|my)\s+project(?:\s+context)?\b"),
         ("project", "Spanish project context attachment request", r"\b(?:aÃ±ade|anade|agrega|adjunta|vincula|enlaza|mete|pon)\b.{0,160}\b(?:al|en el|dentro del)\s+(?:contexto\s+del\s+)?proyecto\b"),
 

@@ -21,6 +21,20 @@ from src import context_compactor as cc
 from src import context_overflow as co
 
 
+def test_fenced_tool_reply_does_not_displace_real_task_in_integrity_compaction():
+    task = {"role": "user", "content": "Create 17 slides using my template. Add three sources. Cite page 71."}
+    messages = [task]
+    for i in range(10):
+        messages.extend([
+            {"role": "assistant", "content": "reading"},
+            {"role": "user", "content": f"tool result {i}",
+             "metadata": {"trusted": False, "source": "tool execution results"}},
+        ])
+    out, _ = cc.compact_with_integrity(messages, keep_recent=4)
+    assert task in out
+    assert cc._last_convo_user_index(messages) == 0
+
+
 @pytest.fixture()
 def overflow_root(tmp_path, monkeypatch):
     root = tmp_path / "context_overflow"

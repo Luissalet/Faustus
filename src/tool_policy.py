@@ -18,7 +18,8 @@ GUIDE_ONLY_DIRECTIVE = (
 )
 
 WEB_TOOL_NAMES = frozenset({"web_search", "web_fetch"})
-MCP_ONLY_HELPERS = frozenset({"lookup_tools", "todowrite", "update_plan", "ask_user"})
+MCP_ONLY_HELPERS = frozenset({"lookup_tools", "todowrite", "update_plan", "ask_user",
+                              "read_artifact", "artifact_search"})
 
 
 @lru_cache(maxsize=1)
@@ -202,7 +203,12 @@ class ToolPolicy:
     read_only: bool = False
 
     def all_disabled_names(self) -> Set[str]:
-        return set(self.disabled_tools) | set(self.hidden_tools)
+        denied = set(self.disabled_tools) | set(self.hidden_tools)
+        if self.mode == 'mcp_only':
+            # Schema/catalog selection and execution must share the same
+            # scope: advertising native tools here caused futile denied calls.
+            denied.update(name for name in known_tool_names() if self.blocks(name))
+        return denied
 
     def blocks(self, tool_name: Optional[str]) -> bool:
         if not tool_name:

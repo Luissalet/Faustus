@@ -1,13 +1,15 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { resolve } from 'path';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
+const configRoot = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   plugins: [react()],
   root: 'studio',
   base: '/static/studio/',
   build: {
-    outDir: resolve(__dirname, 'static/studio'),
+    outDir: resolve(configRoot, 'static/studio'),
     emptyOutDir: true,
     sourcemap: false,
     rollupOptions: {
@@ -47,7 +49,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@studio': resolve(__dirname, 'studio/src'),
+      '@studio': resolve(configRoot, 'studio/src'),
     },
   },
   server: {

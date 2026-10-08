@@ -152,8 +152,9 @@ def _binding_payload(
     continuation_query: Any,
     effects: tuple[str, ...],
     result_integrity: str,
+    harness_evidence: str = "",
 ) -> dict[str, Any]:
-    return {
+    payload = {
         "owner": _normalized_owner(owner),
         "session_id": str(session_id or ""),
         "origin_run_id": str(origin_run_id or ""),
@@ -173,6 +174,11 @@ def _binding_payload(
         "effects": list(effects),
         "result_integrity": str(result_integrity),
     }
+    # Empty snapshots retain the legacy binding, so existing pending cards
+    # still work. Evidence is server-derived, never part of the public card.
+    if harness_evidence:
+        payload["harness_evidence"] = harness_evidence
+    return payload
 
 
 # Both denial shapes the destructive-command guard produces
@@ -239,6 +245,7 @@ class PendingToolApproval:
     # parked it). Not part of the digest and never shown in the card; the
     # execution ledger links the later grant and execution back to it.
     call_id: str = ""
+    harness_evidence: str = ""
 
     def public_payload(self, *, reason: str | None = None) -> dict[str, Any]:
         question = _approval_card_question(reason, self.content)
@@ -390,6 +397,7 @@ class ExactToolApproval:
             ),
             selected_tools=self.pending.selected_tools,
             continuation_query=self.pending.continuation_query,
+            harness_evidence=self.pending.harness_evidence,
             effects=effects,
             result_integrity=result_integrity,
         )
@@ -662,6 +670,7 @@ class ToolApprovalStore:
         external_untrusted_context_seen: bool,
         capabilities: ToolCapabilities,
         call_id: Any = None,
+        harness_evidence: str = "",
     ) -> PendingToolApproval:
         now = time.time()
         effects = tuple(sorted(effect.value for effect in capabilities.effects))
@@ -681,6 +690,7 @@ class ToolApprovalStore:
             continuation_query=continuation_query,
             effects=effects,
             result_integrity=result_integrity,
+            harness_evidence=harness_evidence,
         )
         approval_id = secrets.token_urlsafe(32)
         autonomy_note = _autonomy_shadow_log(
@@ -711,6 +721,7 @@ class ToolApprovalStore:
             continuation_query=payload["continuation_query"],
             autonomy_note=autonomy_note,
             call_id=str(call_id or ""),
+            harness_evidence=harness_evidence,
         )
         with self._lock:
             self._purge_expired_locked(now)

@@ -41,6 +41,7 @@ import os
 import sys
 import tempfile
 import threading
+import uuid
 import time
 from typing import Any, Dict, List, Optional, Set
 from urllib.parse import urlparse
@@ -228,7 +229,11 @@ def reset_for_tests() -> None:
 def _atomic_write(path: str, data: Dict[str, Any]) -> None:
     d = os.path.dirname(path)
     os.makedirs(d, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(prefix=".tmp-lease-", dir=d)
+    # Windows mkstemp can retry PermissionError indefinitely when access()
+    # reports a directory as writable. A single exclusive sibling creation
+    # surfaces the failure immediately instead of freezing startup.
+    tmp = os.path.join(d, '.tmp-lease-' + uuid.uuid4().hex)
+    fd = os.open(tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f)

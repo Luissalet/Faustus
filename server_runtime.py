@@ -418,6 +418,10 @@ def serve(port,token):
     # This entrypoint binds to loopback and is the desktop's local workspace.
     # Network/server deployments can still explicitly enable authentication.
     os.environ.setdefault("AUTH_ENABLED", "false")
+    trace_seconds = int(os.environ.get('FAUSTUS_STARTUP_TRACE_SECONDS', '0') or 0)
+    if trace_seconds > 0:
+        import faulthandler
+        faulthandler.dump_traceback_later(trace_seconds, file=sys.stderr)
     import uvicorn
     server=uvicorn.Server(uvicorn.Config("app:app",host="127.0.0.1",port=port,timeout_graceful_shutdown=20))
     finished=threading.Event()

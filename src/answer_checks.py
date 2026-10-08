@@ -210,8 +210,8 @@ def weekday_mismatches(text: str, context: str = "",
 _THINKING_ALOUD = re.compile(
     r"(?:\b(?:espera|wait)\s*[,.:!…]"
     r"|\bno,?\s+espera\b"
-    r"|\brecalcul(?:o|emos|ando)\b"
-    r"|\brevisemos\b"
+    # "Recalculo el plan con 12 minutos" can report a completed tool action.
+    # The verb alone is not evidence of exposed internal working.
     r"|\bd[eé]jame\s+(?:ser\s+riguros[oa]|recalcular|calcularlo|revisarlo|volver\s+a\s+calcular|pensar)"
     r"|\blet\s+me\s+(?:re-?check|recalculate|recount|redo|double[- ]check|think\s+again)"
     r"|\bactually,?\s+no\b"

@@ -51,6 +51,8 @@ def test_visible_working_is_found(text):
     "Trabajas en remoto, o sea, desde casa.",
     # correcting the user's premise is wanted, not working
     "Corrección: hoy es viernes 25 de septiembre, no jueves.",
+    "Recalculo el plan con Cicero: objetivo 12 minutos, estimación 16:44.",
+    "Revisemos las opciones disponibles para ensayar la presentación.",
 ])
 def test_ordinary_text_is_not_working(text):
     assert ac.thinking_aloud(text) == []

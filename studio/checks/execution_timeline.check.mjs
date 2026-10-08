@@ -173,6 +173,30 @@ function execution(phases, tokens = {}, notes = []) {
   assert(tl.bars.length === 1 && tl.bars[0].valueMs === 42, 'T05: total_ms alone still bars, all other phases absent');
 }
 
+// Per-round records preserve backend timings and distinguish the observed
+// client stream from missing engine measurements, including after history reload.
+{
+  const metrics = chat.metricsFrom({ usage_buckets: [
+    { round: 2, model: 'local-q8', input_tokens: 4000, output_tokens: 280,
+      cached_tokens: 1200, request_duration_ms: 15430, request_duration_source: 'observed_client',
+      engine_timings: { source: 'llamacpp', prompt_ms: 5400, predicted_ms: 9100, cache_n: 1200 } },
+    { round: 1, model: 'cloud-model', input_tokens: 20, output_tokens: 10, usage_source: 'real' },
+  ] });
+  assert(metrics.round_activity?.length === 2, 'T06: history restores real per-round usage buckets');
+  assert(metrics.round_activity?.[0].round === 1 && metrics.round_activity?.[1].round === 2, 'T06: rounds sort in actual order');
+  assert(metrics.round_activity?.[1].promptMs === 5400 && metrics.round_activity?.[1].decodeMs === 9100, 'T06: backend prefill/decode timings survive');
+  assert(metrics.round_activity?.[1].requestDurationSource === 'observed_client', 'T06: request stream duration remains client-labelled');
+  assert(metrics.round_activity?.[0].promptMs === undefined, 'T06: absent timing stays absent');
+}
+
+{
+  const event = chat.decode({ type: 'round_info', round: 1, actor: 'principal', model: 'q8-main',
+    input_tokens: 100, output_tokens: 30, cached_tokens: 40, request_duration_ms: 900,
+    request_duration_source: 'observed_client', engine_timings: { source: 'llamacpp', prompt_ms: 300, predicted_ms: 500 } }, null);
+  assert(event?.type === 'round_info' && event.activity.model === 'q8-main', 'T07: live round_info decodes into a principal activity record');
+  assert(event?.type === 'round_info' && event.activity.cachedTokens === 40, 'T07: live cached token count survives');
+}
+
 if (failed) {
   console.error(`\n${failed} check(s) failed.`);
   process.exit(1);

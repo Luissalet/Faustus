@@ -84,3 +84,24 @@ def harness_note_pending(messages: Any) -> bool:
         if msg.get("_harness_note"):
             return True
     return False
+
+
+def truncated_thinking_overrides(
+    gen_overrides: Optional[Mapping[str, Any]], *, attempt: int,
+    max_tokens: int, light_budget: int = 1024,
+) -> Dict[str, Any]:
+    """Recover a local thinking-only length stop inside existing retry limits.
+
+    First keep low-effort reasoning with at least half the output budget left
+    for the answer/tools. If that also gives no output, turn thinking off.
+    Caller excludes explicit user choices and visible partial answers.
+    """
+    out = dict(gen_overrides or {})
+    if attempt >= 2:
+        out["think"] = False
+        out.pop("reasoning_budget", None)
+    else:
+        cap = max(1, min(_int(light_budget) or 1024, (_int(max_tokens) or 2048) // 2))
+        current = _int(out.get("reasoning_budget"))
+        out.update(think=True, reasoning_effort="low", reasoning_budget=min(current, cap) if current > 0 else cap)
+    return out

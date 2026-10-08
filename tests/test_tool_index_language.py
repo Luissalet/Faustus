@@ -84,6 +84,7 @@ def test_a_request_in_another_language_still_finds_its_tool(index):
     assert "plugins_list" in index.retrieve("qué aplicaciones mías puedes usar", k=8)
     assert "plugin_app" in index.retrieve("abre mi app de escribir y enséñamela", k=8)
     assert "desktop_screenshot" in index.retrieve("hazme una captura de pantalla", k=8)
+    assert "inspect_deliverable" in index.retrieve("revisa el entregable final y comprueba este PDF", k=8)
 
 
 def test_english_requests_did_not_pay_for_it(index):
@@ -91,6 +92,7 @@ def test_english_requests_did_not_pay_for_it(index):
     assert "read_file" in index.retrieve("read the file server.py", k=8)
     assert "plugins_list" in index.retrieve("what plugins do you have connected", k=8)
     assert "bash" in index.retrieve("run a shell command", k=8)
+    assert "inspect_deliverable" in index.retrieve("inspect this presentation and its charts", k=8)
 
 
 def test_the_lexical_lane_votes_even_when_the_embedder_is_confident(index, monkeypatch):

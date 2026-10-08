@@ -1804,6 +1804,10 @@ def _last_convo_user_index(convo: List[Dict[str, Any]]) -> Optional[int]:
     for i in range(len(convo) - 1, -1, -1):
         msg = convo[i]
         if isinstance(msg, dict) and msg.get("role") == "user":
+            # Fenced tool replies also use the user role. They must never
+            # replace the person's request as the turn preserved verbatim.
+            if not _is_user_instruction_message(msg):
+                continue
             if msg.get("_harness_note") or msg.get("_agent_injected"):
                 if fallback is None:
                     fallback = i
