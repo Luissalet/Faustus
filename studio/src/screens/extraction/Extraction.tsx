@@ -105,11 +105,20 @@ export function ExtractionScreen() {
     }
   };
 
-  const onLoad = (saved: api.SavedSchema) => {
-    setName(saved.name);
-    setSchemaText(JSON.stringify(saved.schema, null, 2));
+  const onLoad = async (saved: api.SavedSchema) => {
+    setBusy(true);
+    setError(null);
     setResult(null);
     setProfile(null);
+    setName(saved.name);
+    try {
+      const full = await api.getSchema(saved.name);
+      setSchemaText(JSON.stringify(full.schema ?? {}, null, 2));
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : String(exc));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const onRun = async () => {
@@ -159,7 +168,7 @@ export function ExtractionScreen() {
           <ul className="fs-extract__list">
             {schemas.map((s) => (
               <li key={s.name}>
-                <button type="button" className="fs-extract__link" onClick={() => onLoad(s)}>
+                <button type="button" className="fs-extract__link" onClick={() => void onLoad(s)}>
                   {s.name}
                 </button>
                 <button
@@ -237,9 +246,37 @@ export function ExtractionScreen() {
               {result.limits ? (
                 <div className="fs-extract__limits" role="note">
                   <strong>{result.limits.message}</strong>
-                  {result.limits.detail ? <span>{result.limits.detail}</span> : null}
+                  {result.limits.items.length ? (
+                    <ul>
+                      {result.limits.items.map((item) => (
+                        <li key={`${item.code}:${item.note}`}>
+                          {item.note || item.code}
+                          {item.code ? <span className="fs-extract__badge">{item.code}</span> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {result.limits.detail && !result.limits.items.length ? <span>{result.limits.detail}</span> : null}
                   <em>{t('Lexical check only — does not prove the value belongs to the field.')}</em>
                 </div>
+              ) : null}
+
+              {result.errors.length ? (
+                <>
+                  <h3>{t('Errors')}</h3>
+                  <ul className="fs-extract__errors">{result.errors.map((err) => <li key={err}>{err}</li>)}</ul>
+                </>
+              ) : null}
+
+              {result.conflicts.length ? (
+                <>
+                  <h3>{t('Conflicts')}</h3>
+                  <ul>
+                    {result.conflicts.map((c, i) => (
+                      <li key={i}><code>{typeof c === 'string' ? c : JSON.stringify(c)}</code></li>
+                    ))}
+                  </ul>
+                </>
               ) : null}
 
               <h3>{t('Data')}</h3>
