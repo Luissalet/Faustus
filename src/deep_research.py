@@ -1079,7 +1079,8 @@ class DeepResearcher:
         if not self.category and not prior_report:
             self.category = await self._classify_category(question)
             if self.category:
-                logger.info(f"Auto-detected category: {self.category}")
+                logger.info(f"Auto-detected category: {self.category} "
+                            f"(path={(getattr(self, 'category_decision', None) or {}).get('path') or 'free_text'})")
 
         if prior_urls:
             self.urls_fetched.update(prior_urls)
@@ -1878,8 +1879,54 @@ class DeepResearcher:
                         "matched_sources": distinct})
         return out
 
+    #: What the model answers when no category fits; it maps to "no category".
+    CATEGORY_NONE_LABEL = "general"
+
     async def _classify_category(self, question: str) -> Optional[str]:
-        """Fast LLM call to classify the research question into a category."""
+        """Classify the research question into a report category (or None).
+
+        A closed choice among the categories plus "general", so it goes through
+        `src.constrained_choice.choose_one` (OBJ-27 phase 1): on llama-server
+        the sampler can only emit one of the labels (GBNF grammar), on Ollama
+        the same set travels as an `enum` in `format`, and on any other backend
+        the free-text answer is parsed against the set and repaired once. The
+        answer is therefore always a known category or None, never a string
+        the report builder has to second-guess. `constrained_choice_enabled`
+        off restores the previous free-text call exactly."""
+        try:
+            from src import constrained_choice
+            from src.settings import get_setting
+            if not get_setting("constrained_choice_enabled", True):
+                return await self._classify_category_free_text(question)
+        except Exception:  # noqa: BLE001 - the old path is always available
+            return await self._classify_category_free_text(question)
+        options = list(CATEGORY_PROMPTS.keys()) + [self.CATEGORY_NONE_LABEL]
+        prompt = (
+            "Classify this research question into exactly ONE category. "
+            f"If none fit well, answer: {self.CATEGORY_NONE_LABEL}.\n\n"
+            f"Question: {question}"
+        )
+        try:
+            result = await constrained_choice.choose_one(
+                options, prompt,
+                url=self.llm_endpoint, model=self.llm_model, headers=self.llm_headers,
+                timeout=self._call_budget(24, 15), caller="deep_research.category",
+                spend_purpose="deep_research",
+            )
+        except Exception as e:
+            logger.warning(f"Category classification failed: {e}")
+            self._failures.append(f"category: {type(e).__name__}: {e}")
+            return None
+        self.category_decision = {k: v for k, v in result.to_dict().items() if k != "attempts"}
+        if result.reason in ("error", "timeout", "no_endpoint"):
+            self._failures.append(f"category: {result.reason}")
+        return result.choice if result.choice in CATEGORY_PROMPTS else None
+
+    async def _classify_category_free_text(self, question: str) -> Optional[str]:
+        """The pre-OBJ-27 classifier: a free-text call parsed by keyword scan.
+        Kept as the switch-off path and as the baseline the benchmark
+        (`scripts/constrained_choice_bench.py`) measures the constrained one
+        against."""
         valid = ", ".join(CATEGORY_PROMPTS.keys())
         prompt = (
             f"Classify this research question into exactly ONE category.\n"
