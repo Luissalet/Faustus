@@ -66,6 +66,7 @@ export interface SparksState {
   default_backend: boolean;
   recipe: string;
   local_default?: { endpoint_id?: string; model?: string };
+  first_token_timeout_s?: number;
   nodes: SparkNode[];
   cluster?: { online?: number; total?: number; memory_total?: number; memory_used?: number; gpu_util?: number | null; power_w?: number | null };
   deployments: SparkDeployment[];
@@ -87,6 +88,7 @@ export function parseSparks(raw: unknown): SparksState | null {
     url: typeof b.url === 'string' ? b.url : '',
     default_backend: b.default_backend !== false,
     recipe: typeof b.recipe === 'string' ? b.recipe : '',
+    first_token_timeout_s: typeof b.first_token_timeout_s === 'number' && Number.isFinite(b.first_token_timeout_s) ? b.first_token_timeout_s : undefined,
     local_default: (b.local_default as SparksState['local_default']) ?? {},
     nodes: Array.isArray(b.nodes) ? (b.nodes as SparkNode[]) : [],
     cluster: (b.cluster as SparksState['cluster']) ?? {},
@@ -127,7 +129,7 @@ export function deployRecipe(recipe: string, action: 'start' | 'stop', stopConfl
   return send('POST', '/api/sparks/deploy', { recipe, action, stop_conflicts: stopConflicts }, action === 'stop' ? 900000 : 90000);
 }
 
-export function saveSparksSettings(patch: { enabled?: boolean; url?: string; default_backend?: boolean; recipe?: string }) {
+export function saveSparksSettings(patch: { enabled?: boolean; url?: string; default_backend?: boolean; recipe?: string; first_token_timeout_s?: number }) {
   return send('PUT', '/api/sparks/settings', patch, 30000);
 }
 

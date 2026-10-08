@@ -58,3 +58,52 @@ def test_error_and_empty_completion_are_preserved():
         assert len(chunks) == 1
         assert "unavailable" in chunks[0]
     asyncio.run(run())
+
+
+def test_timeout_is_visible_before_slow_cleanup_completes():
+    async def run():
+        released = asyncio.Event()
+        async def source():
+            try:
+                await asyncio.sleep(10)
+                yield "unused"
+            finally:
+                await released.wait()
+        stream = bounded(source(), 0.02)
+        event = await asyncio.wait_for(anext(stream), 0.2)
+        assert 'first_token_timeout' in event
+        released.set()
+        await stream.aclose()
+    asyncio.run(run())
+
+
+def test_generator_context_is_owned_by_one_task():
+    import contextvars
+    async def run():
+        value = contextvars.ContextVar("stream_owner", default="outside")
+        async def source():
+            token = value.set("inside")
+            try:
+                yield 'data: {"type":"status"}\n\n'
+                yield 'data: {"delta":"answer"}\n\n'
+            finally:
+                value.reset(token)
+        chunks = [chunk async for chunk in bounded(source(), 0.05)]
+        assert len(chunks) == 2
+        assert value.get() == "outside"
+    asyncio.run(run())
+
+
+def test_session_wait_timeout_preserves_the_active_turn_lock():
+    import pytest
+    from fastapi import HTTPException
+    from routes.chat_routes import _session_admission_lock, _admission_locks
+    async def run():
+        async with _session_admission_lock("deadline-test"):
+            with pytest.raises(HTTPException) as raised:
+                async with _session_admission_lock("deadline-test", wait_s=0.02):
+                    raise AssertionError("The second turn must not enter")
+            assert raised.value.status_code == 504
+            assert _admission_locks["deadline-test"].locked()
+        assert "deadline-test" not in _admission_locks
+    asyncio.run(run())

@@ -121,14 +121,23 @@ _admission_lock_waiters: Dict[str, int] = {}
 
 
 @contextlib.asynccontextmanager
-async def _session_admission_lock(session_id: str):
+async def _session_admission_lock(session_id: str, wait_s: Optional[float] = None):
     """Serialize turn admission for one session_id. See module comment above."""
     key = str(session_id or "")
     lock = _admission_locks.setdefault(key, asyncio.Lock())
     _admission_lock_waiters[key] = _admission_lock_waiters.get(key, 0) + 1
     try:
-        async with lock:
+        try:
+            if wait_s is None:
+                await lock.acquire()
+            else:
+                await asyncio.wait_for(lock.acquire(), timeout=wait_s)
+        except TimeoutError as exc:
+            raise HTTPException(504, "El chat sigue ocupado y ha superado el limite de espera inicial.") from exc
+        try:
             yield
+        finally:
+            lock.release()
     finally:
         remaining = _admission_lock_waiters.get(key, 1) - 1
         if remaining <= 0:
@@ -2740,7 +2749,20 @@ def setup_chat_routes(
             # writes the "result after" half once the turn actually ends.
             chat_outbox.record_intent(owner=owner, session_id=session, client_message_id=client_message_id)
 
-        async with _session_admission_lock(session):
+        from src.llm_core import _sparks_initial_wait
+        _admission_wait = _sparks_initial_wait(sess.endpoint_url)
+        @contextlib.asynccontextmanager
+        async def _turn_admission():
+            try:
+                async with _session_admission_lock(session, wait_s=(max(0.001, _admission_wait - (time.monotonic() - _initial_request_started))
+                                                                  if _admission_wait is not None else None)):
+                    yield
+            except HTTPException as exc:
+                if exc.status_code == 504 and client_message_id and not tool_approval_id:
+                    chat_outbox.mark_finished(owner=owner, session_id=session,
+                                              client_message_id=client_message_id, status="failed")
+                raise
+        async with _turn_admission():
             # Build shared context (stream path uses enhanced_message for context preface)
             _context_pending = build_chat_context(
                 sess, request, chat_handler, chat_processor,
