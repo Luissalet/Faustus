@@ -1635,6 +1635,7 @@ DEFAULT_SETTINGS = {
     "sparks_url": "http://127.0.0.1:5205",
     "sparks_default_backend": True,
     "sparks_recipe": "",
+    "sparks_first_token_timeout_s": 30.0,
     "sparks_endpoints": {},
     "sparks_local_default": {},
     "sparks_applied_default": {},

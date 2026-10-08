@@ -4,6 +4,11 @@ import json
 from src.first_token_deadline import bounded
 
 
+def test_wait_setting_is_supported_by_the_real_store():
+    from src.settings import _validate_patch
+    assert _validate_patch({"sparks_first_token_timeout_s": 5.0}) == {"sparks_first_token_timeout_s": 5.0}
+
+
 def test_hung_first_read_closes_source():
     async def run():
         closed = []
