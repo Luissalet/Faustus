@@ -9182,3 +9182,50 @@ Closed-set decisions (for now the Deep Research report category) are answered th
 Constrained choice backend	Backend de la elección restringida
 Constrained choice for closed decisions	Elección restringida en decisiones cerradas
 auto detects the server from its URL. llamacpp and ollama force that constraint on every endpoint; free never constrains.	auto detecta el servidor por su URL. llamacpp y ollama fuerzan esa restricción en todos los endpoints; free nunca restringe.
+DGX Sparks	DGX Sparks
+DGX Sparks (click for the detail)	DGX Sparks (pulsa para ver el detalle)
+DGX Sparks: GPU, memory and loaded model	DGX Sparks: GPU, memoria y modelo cargado
+Default backend	Backend por defecto
+Default now	Por defecto ahora
+Load a model	Cargar un modelo
+Loaded	Cargado
+Loading {name}: the panel shows its progress.	Cargando {name}: el panel muestra el progreso.
+New chats	Chats nuevos
+Nothing is loaded on the Sparks: new chats use this PC until a recipe serves.	No hay nada cargado en las Sparks: los chats nuevos usan este PC hasta que una receta sirva.
+Open Prometheus's Hoard	Abrir Prometheus's Hoard
+Preferred recipe	Receta preferida
+Prometheus does not answer at {url}.	Prometheus no responde en {url}.
+Prometheus refused it.	Prometheus lo ha rechazado.
+Prometheus's Hoard address	Dirección de Prometheus's Hoard
+Prometheus's Hoard does not answer at {url}. Start it from the Hoard Hub, or change the address in Settings → Sparks.	Prometheus's Hoard no responde en {url}. Arráncalo desde Hoard Hub o cambia la dirección en Ajustes → Sparks.
+Recipes	Recetas
+Show the Sparks pill and offer their models	Mostrar la pastilla de las Sparks y ofrecer sus modelos
+Sparks	Sparks
+Sparks · {model}	Sparks · {model}
+Sparks: unreachable	Sparks: sin conexión
+Synced.	Sincronizado.
+The Sparks by default	Las Sparks por defecto
+The cluster runs in Prometheus's Hoard. Faustus offers each model it serves as an endpoint and, if you want, makes it the default for new chats; this PC's GPUs keep their own models.	El clúster lo maneja Prometheus's Hoard. Faustus ofrece cada modelo que sirve como un endpoint y, si quieres, lo pone por defecto para los chats nuevos; las GPUs de este PC conservan sus propios modelos.
+The one Prometheus marks as default, else the first serving	La que Prometheus marque por defecto; si no, la primera que sirva
+There are no recipes in Prometheus's Hoard yet.	Todavía no hay recetas en Prometheus's Hoard.
+This PC · {model}	Este PC · {model}
+Unload and load	Descargar y cargar
+Use the Sparks	Usar las Sparks
+Use the Sparks by default while a model is loaded there	Usar las Sparks por defecto mientras tengan un modelo cargado
+When several recipes serve at once, the default goes to this one.	Si sirven varias recetas a la vez, el modelo por defecto será el de esta.
+Where the app that runs the Sparks answers. Default: http://127.0.0.1:5205.	Dónde responde la app que maneja las Sparks. Por defecto: http://127.0.0.1:5205.
+While a recipe serves on the Sparks, new chats use it. When nothing serves, the default goes back to the model this PC had. Choosing another default by hand turns this off.	Mientras una receta sirva en las Sparks, los chats nuevos la usan. Cuando no sirve ninguna, el modelo por defecto vuelve al que tenía este PC. Si eliges otro por defecto a mano, esto se desactiva.
+context not verified yet	contexto aún sin verificar
+head	cabeza
+invalid	no válida
+loading…	cargando…
+off or unreachable	apagada o sin conexión
+restarting	reiniciando
+this PC when the Sparks stop: {model}	este PC cuando paren las Sparks: {model}
+turning on	encendiéndose
+unloading…	descargando…
+{a} of {b} Sparks on · {n} model(s) serving	{a} de {b} Sparks encendidas · {n} modelo(s) sirviendo
+{a} of {b} on	{a} de {b} encendidas
+{name} unloaded.	{name} descargado.
+{other} is using those Sparks. Unload it and load {name}?	{other} está usando esas Sparks. ¿Lo descargo y cargo {name}?
+Started outside a recipe: stop it from Prometheus or where it was started.	Arrancado fuera de una receta: páralo desde Prometheus o donde se lanzó.

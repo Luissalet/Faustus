@@ -23,8 +23,7 @@
   "defaults": {
     "APP_URL": "http://127.0.0.1:5204",
     "TOKEN_FILE": "{HERON_DIR}/data/mcp-token",
-    "PYTHON": "{HERON_DIR}/.venv/Scripts/python.exe",
-    "HERON_DIR": "C:/Users/luism/Desktop/Proyectos independientes/Heron's Hoard"
+    "PYTHON": "{HERON_DIR}/.venv/Scripts/python.exe"
   },
   "app": {
     "url_default": "http://127.0.0.1:5204",

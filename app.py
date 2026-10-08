@@ -1515,6 +1515,8 @@ app.include_router(setup_plugin_marketplace_routes())
 # Spheres (personal / work) of the family hub, proxied for the Studio header chip.
 from routes.hoard_hub_routes import setup_hoard_hub_routes
 app.include_router(setup_hoard_hub_routes())
+from routes.sparks_routes import setup_sparks_routes
+app.include_router(setup_sparks_routes())
 
 # Control center (17-09): what runs because of Faustus — ports, bg jobs,
 # launched profiles, MCP children, watched apps — and a human-only Stop.
@@ -2713,6 +2715,12 @@ async def _startup_event():
     # removes the feature.
     from src.cookbook_serve_lifecycle import cookbook_serve_lifecycle_loop
     _supervisor.spawn(cookbook_serve_lifecycle_loop(), name="cookbook-serve-lifecycle")
+
+    # DGX Spark cluster: keep one endpoint per Prometheus recipe and, when
+    # sparks_default_backend is on, the chat default on the Sparks while a
+    # recipe serves (src/sparks.py). Best-effort; idle when Prometheus is closed.
+    from src.sparks import sync_loop as _sparks_sync_loop
+    _supervisor.spawn(_sparks_sync_loop(), name="sparks-sync")
 
     # A snapshot for diagnostics only. The supervisor owns these; nothing may
     # rely on this list to keep a task alive or to find it at shutdown.

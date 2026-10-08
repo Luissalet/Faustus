@@ -77,6 +77,7 @@ import { ThisDeviceSection } from './settings/ThisDevice';
 import { ChatBridgeStatus } from './settings/ChatBridgeStatus';
 import { BehaviorModesSection } from './settings/BehaviorModes';
 import { PiperVoices } from './settings/PiperVoices';
+import { SparksSection } from './settings/Sparks';
 import { authStatus, isLocalInstallation } from '../adapters/account';
 import { listActiveApprovals, listFolderGrants, revokeApproval, revokeFolderGrant, type Approval, type FolderGrant } from '../adapters/approvals';
 import { addCommandAllowlistEntry, listCommandAllowlist, removeCommandAllowlistEntry, type AllowlistEntry } from '../adapters/commandGuard';
@@ -101,13 +102,15 @@ import { t, tn } from '../i18n';
  * there at their tab.
  */
 
-type SectionKey = 'general' | 'device' | 'models' | 'openrouter' | 'local' | 'model_router' | 'defaults' | 'voice' | 'search' | 'reminders' | 'integrations' | 'agent' | 'repositories' | 'tools' | 'modes' | 'effective_config' | 'shortcuts' | 'account' | 'users' | 'system' | 'health' | 'security';
+type SectionKey = 'general' | 'device' | 'models' | 'sparks' | 'openrouter' | 'local' | 'model_router' | 'defaults' | 'voice' | 'search' | 'reminders' | 'integrations' | 'agent' | 'repositories' | 'tools' | 'modes' | 'effective_config' | 'shortcuts' | 'account' | 'users' | 'system' | 'health' | 'security';
 
 const SECTIONS: { key: SectionKey; label: string; icon: typeof Bot; admin?: boolean }[] = [
   { key: 'general', label: 'Appearance', icon: Palette },
   // Lot P-B: install-as-app + push notifications for this browser/device.
   { key: 'device', label: 'This device', icon: Smartphone },
   { key: 'models', label: 'Models', icon: Server },
+  // DGX Sparks through Prometheus's Hoard (src/sparks.py): address, default backend, preferred recipe.
+  { key: 'sparks', label: 'Sparks', icon: Server, admin: true },
   // OBJ-8 / Lote B1: per-endpoint OpenRouter routing/privacy/cost prefs
   // (docs/api/openrouter.md) — admin-only, same gate as the backend routes.
   { key: 'openrouter', label: 'OpenRouter', icon: Globe, admin: true },
@@ -1747,6 +1750,7 @@ export function SettingsScreen() {
           {section === 'openrouter' && <OpenRouterPrefsSection endpoints={endpoints} focusEndpointId={openRouterFocusId} say={say} />}
           {section === 'local' && <LocalModelsSection admin={admin} say={say} />}
           {section === 'model_router' && <ModelRouterSection say={say} />}
+          {section === 'sparks' && <SparksSection say={say} />}
           {section === 'defaults' && <DefaultsSection settings={settings} endpoints={endpoints ?? []} onSave={onSave} say={say} />}
           {section === 'voice' && <VoiceSection settings={settings} endpoints={endpoints ?? []} onSave={onSave} say={say} />}
           {section === 'search' && <SearchSection settings={settings} onSave={onSave} say={say} />}

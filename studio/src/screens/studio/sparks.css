@@ -1,0 +1,121 @@
+/* ══ SparkVitals — the DGX Spark cluster, next to this PC's pill ═══════
+   Reuses the vitals pill and popover; only what the cluster adds lives here. */
+
+.fs-sparks__icon {
+  flex: none;
+  color: var(--fs-text-3);
+}
+
+.fs-sparks .fs-vitals__tank[data-off] {
+  opacity: 0.35;
+}
+
+.fs-sparks__count {
+  font-size: var(--fs-caption-size, 11px);
+}
+
+.fs-sparks__busy {
+  color: var(--fs-warning);
+}
+
+.fs-sparks-panel {
+  inline-size: min(420px, calc(100vw - 24px));
+}
+
+.fs-sparks__node {
+  display: grid;
+  gap: 2px;
+  padding-block: 4px;
+}
+
+.fs-sparks__node[data-off] {
+  opacity: 0.6;
+}
+
+.fs-sparks__sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  color: var(--fs-text-3);
+  font-size: var(--fs-caption-size, 11px);
+  font-variant-numeric: tabular-nums;
+}
+
+.fs-sparks__chip {
+  padding: 0 6px;
+  border-radius: var(--fs-radius-pill);
+  background: color-mix(in srgb, var(--fs-brand) 16%, transparent);
+  color: var(--fs-text-1);
+}
+
+.fs-sparks__dep,
+.fs-sparks__recipe {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-md, 8px);
+  margin-block-end: 6px;
+}
+
+.fs-sparks__dep[data-state='failed'] {
+  border-color: var(--fs-danger);
+}
+
+.fs-sparks__dep[data-state='starting'],
+.fs-sparks__dep[data-state='stopping'] {
+  border-color: var(--fs-warning);
+}
+
+.fs-sparks__dep-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.fs-sparks__dep-title {
+  color: var(--fs-text-1);
+  font-weight: 600;
+}
+
+.fs-sparks__state {
+  color: var(--fs-text-2);
+  font-size: var(--fs-caption-size, 11px);
+}
+
+.fs-sparks__state[data-state='failed'] {
+  color: var(--fs-danger);
+}
+
+.fs-sparks__url {
+  overflow-wrap: anywhere;
+  color: var(--fs-text-2);
+  font-size: var(--fs-caption-size, 11px);
+}
+
+.fs-sparks__switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fs-text-2);
+  cursor: pointer;
+}
+
+.fs-sparks__conflict {
+  display: grid;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: var(--fs-radius-md, 8px);
+  background: color-mix(in srgb, var(--fs-warning) 14%, transparent);
+  color: var(--fs-text-1);
+}
+
+.fs-sparks__conflict-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.fs-sparks__notice {
+  color: var(--fs-text-1);
+}

@@ -107,6 +107,7 @@ import { getStaleTurns } from '../adapters/sideThreads';
 import { expandCondensed } from '../adapters/condense';
 import { VramAdmissionDialog } from './VramAdmissionDialog';
 import { Vitals } from './studio/Vitals';
+import { SparkVitals } from './studio/SparkVitals';
 import { SphereChip } from './studio/SphereChip';
 import './projects.css';
 import './home.css';
@@ -3227,6 +3228,7 @@ export function StudioScreen() {
             </Link>
           )}
           <Vitals busy={busy} />
+          <SparkVitals />
           <SphereChip />
           {/* CMP-01-layout (W2-A2): three arrangements of the same
               conversation+panel — pure presentation, see `layout` above. */}

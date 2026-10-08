@@ -1622,6 +1622,17 @@ DEFAULT_SETTINGS = {
     "task_model": "",
     "default_endpoint_id": "",
     "default_model": "",
+    # DGX Spark cluster through Prometheus's Hoard (src/sparks.py): where it
+    # answers, whether the Sparks become the chat default while a recipe
+    # serves, which recipe is preferred, and the bookkeeping of the switch
+    # (endpoint per recipe, the local default to give back, what was applied).
+    "sparks_enabled": True,
+    "sparks_url": "http://127.0.0.1:5205",
+    "sparks_default_backend": True,
+    "sparks_recipe": "",
+    "sparks_endpoints": {},
+    "sparks_local_default": {},
+    "sparks_applied_default": {},
     # Optional prose style used only for normal document writing/editing.
     # Email replies use email_writing_style instead because greetings,
     # signatures, and mailbox identity rules are medium-specific.

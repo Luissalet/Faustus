@@ -85,7 +85,7 @@ def test_selected_coworkers_have_prompt_rules():
 def test_specialist_templates_cover_the_whole_family():
     from src.coworkers import templates
     rows=templates()
-    expected=set('argus atlas babel borges cassandra cicero cookhoard daguerre diskhoard dorian echo funes galton gamerhoard gepetto heron hoardhub homehoard hypatia jobhunter kafka laplace ledger links lumiere mercator midas nightingale people phileas platos prospero pygmalion scheherazade tantalus vitruvius vulcan writer'.split())
+    expected=set('argus atlas babel borges cassandra cicero cookhoard daguerre diskhoard dorian echo funes galton gamerhoard gepetto heron hoardhub homehoard hypatia jobhunter kafka laplace ledger links lumiere mercator midas nightingale people phileas platos prometheus prospero pygmalion scheherazade tantalus vitruvius vulcan writer'.split())
     assert {id for row in rows for id in row['hoards']}==expected
     assert len({row['name'] for row in rows})==50
     for row in rows:
