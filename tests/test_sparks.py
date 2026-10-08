@@ -202,17 +202,33 @@ def test_prometheus_closed_keeps_a_server_that_still_answers(fake, monkeypatch):
     fake.running = [fake.endpoint("glm53-tp3")]
     sparks.sync()
     ep_id = load_settings()["default_endpoint_id"]
-    answers = {"v": True}
+    answers = {"v": {"data": [{"id": "glm-5.3-flash"}]}}
     orig = fake.request
 
     def request(method, path, body=None, *, timeout=4.0, url=None):
         if url and url.startswith("http://spark:"):
-            return (200, {"data": []}) if answers["v"] else (None, None)
+            return (200, answers["v"]) if answers["v"] is not None else (None, None)
         fake.up = False
         return orig(method, path, body, timeout=timeout, url=url)
 
     monkeypatch.setattr(sparks, "_request", request)
     assert sparks.sync()["action"] == "none" and load_settings()["default_endpoint_id"] == ep_id
-    answers["v"] = False
+    answers["v"] = None
     assert sparks.sync()["action"] == "to_local"
     assert load_settings()["default_endpoint_id"] == "local1" and _endpoint(ep_id).is_enabled is False
+
+
+@pytest.mark.parametrize("served", [{"data": []}, {"data": [{"id": "otro"}]}, {"error": "x"}])
+def test_prometheus_closed_drops_a_port_that_serves_something_else(fake, monkeypatch, served):
+    fake.running = [fake.endpoint("glm53-tp3")]
+    sparks.sync()
+    orig = fake.request
+
+    def request(method, path, body=None, *, timeout=4.0, url=None):
+        if url and url.startswith("http://spark:"):
+            return 200, served
+        fake.up = False
+        return orig(method, path, body, timeout=timeout, url=url)
+
+    monkeypatch.setattr(sparks, "_request", request)
+    assert sparks.sync()["action"] == "to_local" and load_settings()["default_endpoint_id"] == "local1"

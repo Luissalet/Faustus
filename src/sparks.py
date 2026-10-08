@@ -254,7 +254,7 @@ def sync() -> Dict[str, Any]:
         if running is None:
             # Prometheus closed is not the same as the model gone: keep the Sparks default only while its server still answers.
             eff = effective_default()
-            if eff["on_sparks"] and not _endpoint_answers(eff["endpoint_id"]):
+            if eff["on_sparks"] and not _endpoint_answers(eff["endpoint_id"], eff.get("model") or ""):
                 _disable_managed({k: v for k, v in cfg["endpoints"].items() if v == eff["endpoint_id"]})
                 return {**_UNREACHABLE, "action": _restore_local(cfg)}
             return {**_UNREACHABLE, "action": "none"}
@@ -317,7 +317,8 @@ def _disable_managed(ids: Dict[str, str]) -> None:
         db.close()
 
 
-def _endpoint_answers(endpoint_id: str) -> bool:
+def _endpoint_answers(endpoint_id: str, model: str = "") -> bool:
+    """The Sparks endpoint still serves the default model: an answer on the port is not enough, another server may hold it now."""
     from core.database import ModelEndpoint, SessionLocal
 
     db = SessionLocal()
@@ -328,8 +329,11 @@ def _endpoint_answers(endpoint_id: str) -> bool:
         db.close()
     if not base:
         return False
-    code, _ = _request("GET", "/models", url=base.rstrip("/"), timeout=3.0)
-    return code == 200
+    code, body = _request("GET", "/models", url=base.rstrip("/"), timeout=3.0)
+    if code != 200 or not isinstance(body, dict) or not isinstance(body.get("data"), list):
+        return False
+    ids = {m.get("id") for m in body["data"] if isinstance(m, dict)}
+    return bool(ids) and (not model or model in ids)
 
 
 def deploy(recipe: str, action: str, *, stop_conflicts: bool = False) -> Dict[str, Any]:
