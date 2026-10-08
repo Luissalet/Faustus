@@ -1466,11 +1466,14 @@ export function StudioScreen() {
           route,
           attachments: options.attachments?.map((a) => a.id),
           genOverrides: (() => {
+            // Keep gen.think in sync for the sampling chip; the authoritative
+            // switch for engines with thinking_toggle is thinking_enabled below.
             const merged = genWithThinking(gen, reasoningCaps.thinking_toggle ? thinkingOn : undefined);
             return Object.keys(merged).length ? (merged as Record<string, number | boolean>) : undefined;
           })(),
           thinkMode: thinkingOn === false ? 'fast' : thinkMode,
           reasoningEffort: thinkEffort ?? undefined,
+          thinkingEnabled: reasoningCaps.thinking_toggle ? thinkingOn : undefined,
           approval: options.approval,
           questionId: options.questionId,
           optionIds: options.optionIds,

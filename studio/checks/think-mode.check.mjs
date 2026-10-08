@@ -97,6 +97,8 @@ const chat = await bundle(['adapters', 'chat.ts'], 'chat.mjs');
   assert(studio.includes("name === 'think' ? parseThinkMode(args)"), '/think auto|fast|think|deep picks the mode');
   const chatSrc = readFileSync(join(root, 'studio', 'src', 'adapters', 'chat.ts'), 'utf8');
   assert(chatSrc.includes("fd.append('think_mode', options.thinkMode)"), 'think_mode is posted as a form field');
+  assert(chatSrc.includes("fd.append('thinking_enabled'"), 'thinking_enabled is posted as its own form field');
+  assert(studio.includes('thinkingEnabled:'), 'Studio sends thinkingEnabled when the engine has a toggle');
   const cmds = readFileSync(join(root, 'studio', 'src', 'screens', 'studio', 'commands.ts'), 'utf8');
   assert(cmds.includes('/think auto|fast|think|deep|on|off'), 'the command usage lists the modes and keeps on/off');
   const sparks = readFileSync(join(root, 'studio', 'src', 'screens', 'settings', 'Sparks.tsx'), 'utf8');
