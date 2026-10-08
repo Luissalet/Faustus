@@ -9159,3 +9159,4 @@ Overnight pass: running now.	Pasada nocturna: en marcha ahora.
 Overnight pass: due, waiting until you stop working or the model is free.	Pasada nocturna: toca ejecutarla, espera a que dejes de trabajar o a que el modelo esté libre.
 Overnight pass: next run {when}.	Pasada nocturna: próxima ejecución {when}.
 Last overnight run: {when} · {n} proposal(s).	Última ejecución nocturna: {when} · {n} propuesta(s).
+Last overnight run was interrupted ({when}); it will not be repeated.	La última pasada nocturna se interrumpió ({when}); no se repetirá.

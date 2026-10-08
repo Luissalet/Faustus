@@ -171,7 +171,9 @@ function ScheduleLine({ schedule }: { schedule: SleepPassSchedule }) {
   return (
     <p className="fs-sk__hint" data-testid="skill-sleep-pass-schedule">
       {text}
-      {last && last.finishedAt ? ` ${t('Last overnight run: {when} · {n} proposal(s).', { when: when(last.finishedAt), n: last.proposals })}` : ''}
+      {last && last.status === 'interrupted' && last.finishedAt
+        ? ` ${t('Last overnight run was interrupted ({when}); it will not be repeated.', { when: when(last.finishedAt) })}`
+        : last && last.finishedAt ? ` ${t('Last overnight run: {when} · {n} proposal(s).', { when: when(last.finishedAt), n: last.proposals })}` : ''}
     </p>
   );
 }

@@ -1524,8 +1524,16 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
         require_admin(request)
         user = _owner(request)
         from src.skills_runtime import sleep_optimize, sleep_schedule
-        # Registered while it runs so the overnight schedule never overlaps it.
-        with sleep_schedule.track("manual"):
+        # Registered while it runs (run lease shared across processes) so the
+        # overnight schedule never overlaps it, nor a pass in another process.
+        import contextlib
+        with contextlib.ExitStack() as stack:
+            try:
+                stack.enter_context(sleep_schedule.track("manual", exclusive=True))
+            except sleep_schedule.SleepPassBusy:
+                raise HTTPException(409, {
+                    "error_class": "sleep_pass.already_running",
+                    "message": "A skills sleep pass is already running; try again when it ends."})
             evidence = sleep_optimize.collect_evidence(
                 skill_id, since_days=since_days, limit=limit, owner=user)
             try:

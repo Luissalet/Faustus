@@ -33,7 +33,9 @@ When it runs
   again before every skill, and a "not now" does NOT use up the day, it is
   retried on the next tick until the window closes:
     - another sleep pass is in progress (on demand from the UI/API, or a
-      previous scheduled one) - `track()` is the shared registry;
+      previous scheduled one), in this process or in ANOTHER Faustus process
+      sharing the data directory - `track()` is the shared registry (see
+      "Cross-process exclusion");
     - the unattended-failure breaker is open (`src.unattended_breaker`);
     - the person is working (`src.interactive_gate.has_foreground_activity`:
       a request, a browser tab, a chat stream, an agent run);
@@ -45,6 +47,38 @@ When it runs
       used the runner in the last `SIBLING_ACTIVE_S` seconds (`src.model_lease`).
 * A pass whose every model call failed (endpoint down, no endpoint) is retried
   at the next tick too, at most `MAX_ATTEMPTS` times per slot.
+* The guard is re-run immediately before EVERY proposal, the first one
+  included (evidence collection can take a while). If it says "not now"
+  before a single proposal was made, nothing was done: the day and the attempt
+  are given back and the next tick tries again.
+
+Cross-process exclusion
+-----------------------
+Two Faustus processes can share one data directory, so in-process locks are
+not enough. Two small files under `skill_proposals/` coordinate them:
+
+* `sleep_schedule.json.lock` - a `core.file_lock.FileLock` (O_EXCL create, stale
+  takeover). Every read-decide-claim and every write of the state file happens
+  under it, and the decision is re-taken under it, so the second process
+  re-reads the day the first one already claimed and skips.
+* `sleep_pass.running` - the run lease, created (O_EXCL) by whoever runs a pass,
+  scheduled or on demand, naming its owner by pid AND process start time and
+  removed when the pass ends. A lease whose owner is dead (or whose pid was
+  reused) is taken over; one older than `MAX_LEASE_AGE_S` is ignored. The
+  on-demand route takes the same lease through `track()` and answers 409 when
+  another process holds it.
+
+At-most-once, and what a crash leaves behind
+--------------------------------------------
+The day is claimed (`last_run_date`, `running_since`, `running_slot`) BEFORE
+any work, so a scheduled day runs AT MOST ONCE per slot. Graceful outcomes give
+the day back (shutdown during the pass, a deferral before any proposal, a pass
+whose every model call failed, up to `MAX_ATTEMPTS`). A HARD crash (power cut,
+kill -9) after the claim cannot give anything back: the next tick, or the
+status API, finds `running_since` with no live owner and records the run as
+`interrupted`, readable in `last_run`. That day is NOT retried blindly - a
+half-finished pass may already have stored proposals - and the schedule simply
+continues with the next slot.
 
 What one pass does
 ------------------
@@ -60,6 +94,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import os
 import threading
@@ -69,6 +104,7 @@ from datetime import date, datetime, timedelta
 from typing import Any, Awaitable, Callable, Dict, Iterator, List, Mapping, Optional, Sequence
 
 from core.atomic_io import atomic_write_json
+from core.file_lock import FileLock, LockTimeout
 
 from . import sleep_optimize
 
@@ -97,20 +133,185 @@ SIBLING_ACTIVE_S = 120
 _SKIP_STATUSES = frozenset({"draft", "archived", "disabled"})
 _FATAL_MODEL_CLASSES = frozenset({"sleep_pass.model_call_failed", "sleep_pass.no_endpoint"})
 
-_STATE_LOCK = threading.RLock()
+#: How long a process may wait for the short state lock (read-decide-claim and
+#: result writes are milliseconds; a timeout means something is wrong).
+STATE_LOCK_TIMEOUT_S = 10.0
+STATE_LOCK_STALE_S = 60.0
+#: A run lease older than this is treated as abandoned even if its owner pid is
+#: still alive (a hung process must not block the schedule forever).
+MAX_LEASE_AGE_S = 6 * 3600
+
 _ACTIVE_LOCK = threading.Lock()
 _ACTIVE: Dict[int, Dict[str, Any]] = {}
 _ACTIVE_SEQ = 0
+_LEASE_GUARD = threading.RLock()
+_LEASE_REFS = 0
+
+
+class SleepPassBusy(Exception):
+    """Another process holds the run lease, or the state lock never freed."""
+
+    def __init__(self, owner: Optional[Mapping[str, Any]] = None):
+        super().__init__("a sleep pass is already running")
+        self.owner = dict(owner or {})
+
+
+# -- cross-process exclusion ------------------------------------------------
+#
+# Two files next to the proposals, both under `PROPOSALS_ROOT`:
+#   sleep_schedule.json.lock - a short `core.file_lock.FileLock` taken around
+#       every read-decide-claim and every result write of the state file.
+#   sleep_pass.running - the run lease: created with O_EXCL by whoever runs a
+#       pass (scheduled or on demand) and removed when it ends. It names the
+#       owner by pid AND process start time, so a crashed owner (or a pid the
+#       OS has since reused) is recognised as gone and the lease taken over.
+
+def _lease_path() -> str:
+    return os.path.join(sleep_optimize.PROPOSALS_ROOT, "sleep_pass.running")
+
+
+def _state_lock() -> FileLock:
+    return FileLock(_state_path() + ".lock", timeout=STATE_LOCK_TIMEOUT_S,
+                    stale_after=STATE_LOCK_STALE_S)
+
+
+def _process_start(pid: int) -> Optional[float]:
+    try:
+        import psutil
+        return float(psutil.Process(int(pid)).create_time())
+    except Exception:  # noqa: BLE001 - no psutil / no such process
+        return None
+
+
+def _me() -> Dict[str, Any]:
+    pid = os.getpid()
+    return {"pid": pid, "pstart": _process_start(pid)}
+
+
+def _same_process(owner: Mapping[str, Any], other: Mapping[str, Any]) -> bool:
+    if owner.get("pid") != other.get("pid"):
+        return False
+    a, b = owner.get("pstart"), other.get("pstart")
+    return a is None or b is None or abs(float(a) - float(b)) < 2.0
+
+
+def _owner_alive(owner: Mapping[str, Any]) -> bool:
+    try:
+        pid = int(owner.get("pid"))
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    try:
+        import psutil
+        proc = psutil.Process(pid)
+        started = owner.get("pstart")
+        if started is not None and abs(float(proc.create_time()) - float(started)) >= 2.0:
+            return False                       # the pid was reused by another process
+        return proc.is_running() and proc.status() != psutil.STATUS_ZOMBIE
+    except ImportError:
+        pass
+    except Exception:  # noqa: BLE001 - NoSuchProcess / AccessDenied
+        try:
+            import psutil
+            return bool(psutil.pid_exists(pid))
+        except Exception:  # noqa: BLE001
+            return False
+    try:
+        from src import model_lease
+        return bool(model_lease._pid_alive(pid))
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def read_lease() -> Optional[Dict[str, Any]]:
+    try:
+        with open(_lease_path(), "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def lease_holder() -> Optional[Dict[str, Any]]:
+    """The OTHER live process holding the run lease, if any. A lease owned by
+    this very process, by a dead one or by one older than `MAX_LEASE_AGE_S` is
+    not a holder."""
+    lease = read_lease()
+    if not lease:
+        return None
+    if _same_process(lease, _me()):
+        return None
+    try:
+        if time.time() - float(lease.get("since") or 0) > MAX_LEASE_AGE_S:
+            return None
+    except (TypeError, ValueError):
+        return None
+    return lease if _owner_alive(lease) else None
+
+
+def overlap_reason() -> Optional[str]:
+    """`sleep_pass_running` when a pass is in progress in this process or in
+    another one."""
+    if _LEASE_REFS > 0 or active_runs() or lease_holder():
+        return "sleep_pass_running"
+    return None
+
+
+def _lease_acquire(label: str, *, state_locked: bool, exclusive: bool = False) -> None:
+    global _LEASE_REFS
+    with _LEASE_GUARD:
+        if _LEASE_REFS > 0:
+            if exclusive:
+                raise SleepPassBusy({**_me(), "label": "this_process"})
+            _LEASE_REFS += 1
+            return
+        try:
+            guard = contextlib.nullcontext() if state_locked else _state_lock()
+            with guard:
+                holder = lease_holder()
+                if holder:
+                    raise SleepPassBusy(holder)
+                os.makedirs(sleep_optimize.PROPOSALS_ROOT, exist_ok=True)
+                with contextlib.suppress(OSError):
+                    os.remove(_lease_path())            # dead, own-leftover or expired
+                try:
+                    fd = os.open(_lease_path(), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                except FileExistsError:
+                    raise SleepPassBusy(read_lease()) from None
+                try:
+                    os.write(fd, json.dumps({**_me(), "label": label,
+                                             "since": time.time()}).encode("utf-8"))
+                finally:
+                    os.close(fd)
+        except LockTimeout:
+            raise SleepPassBusy({"reason": "state_lock_timeout"}) from None
+        _LEASE_REFS = 1
+
+
+def _lease_release() -> None:
+    global _LEASE_REFS
+    with _LEASE_GUARD:
+        _LEASE_REFS = max(0, _LEASE_REFS - 1)
+        if _LEASE_REFS == 0:
+            lease = read_lease()
+            if lease and _same_process(lease, _me()):
+                with contextlib.suppress(OSError):
+                    os.remove(_lease_path())
 
 
 # -- shared "a pass is running" registry ------------------------------------
 
 @contextlib.contextmanager
-def track(label: str = "manual") -> Iterator[None]:
-    """Marks a sleep pass as in progress for the duration of the block. The
-    on-demand route and the scheduled run both wrap their work in it, which is
-    what lets the scheduler refuse to overlap either of them."""
+def track(label: str = "manual", *, _state_locked: bool = False,
+          exclusive: bool = False) -> Iterator[None]:
+    """Marks a sleep pass as in progress for the duration of the block, in this
+    process (`active_runs`) and, through the run lease, in every other one.
+    The on-demand route and the scheduled run both wrap their work in it,
+    which is what stops them overlapping. Raises `SleepPassBusy` when another
+    process already holds the lease, or (`exclusive=True`) when this one does."""
     global _ACTIVE_SEQ
+    _lease_acquire(label, state_locked=_state_locked, exclusive=exclusive)
     with _ACTIVE_LOCK:
         _ACTIVE_SEQ += 1
         token = _ACTIVE_SEQ
@@ -120,6 +321,7 @@ def track(label: str = "manual") -> Iterator[None]:
     finally:
         with _ACTIVE_LOCK:
             _ACTIVE.pop(token, None)
+        _lease_release()
 
 
 def active_runs() -> List[Dict[str, Any]]:
@@ -128,8 +330,11 @@ def active_runs() -> List[Dict[str, Any]]:
 
 
 def reset_for_tests() -> None:
+    global _LEASE_REFS
     with _ACTIVE_LOCK:
         _ACTIVE.clear()
+    with _LEASE_GUARD:
+        _LEASE_REFS = 0
 
 
 # -- settings ---------------------------------------------------------------
@@ -221,12 +426,15 @@ def _resolve_pass_endpoint():
     return resolve_endpoint("skills_sleep_pass")
 
 
-def admission_blocker(*, url: Optional[str] = None, model: Optional[str] = None) -> Optional[str]:
+def admission_blocker(*, url: Optional[str] = None, model: Optional[str] = None,
+                      ignore_running: bool = False) -> Optional[str]:
     """None when the pass may start; otherwise a short stable reason. Every
     probe is the existing one the other unattended jobs use, and each is
     wrapped: a probe that itself fails never blocks forever (the model-load
-    guard, which is the one that matters for VRAM, fails closed on its own)."""
-    if active_runs():
+    guard, which is the one that matters for VRAM, fails closed on its own).
+    `ignore_running` is for the checks a pass makes on ITSELF in the middle of
+    its own run, when the pass in progress is that very pass."""
+    if not ignore_running and overlap_reason():
         return "sleep_pass_running"
     try:
         from src import unattended_breaker
@@ -366,11 +574,14 @@ async def _run_pass(deps: Deps, slot_date: str, started: datetime) -> Dict[str, 
     url, model, _headers = deps.endpoint()
     model_failures = 0
     for index, cand in enumerate(candidates):
-        if index:
-            blocker = deps.blocker(url=url, model=model)
-            if blocker:
-                result["stopped"] = blocker
-                break
+        # Revalidate immediately before EVERY proposal, the first one included:
+        # evidence collection above can take a while and the person may have
+        # sat down meanwhile. A "not now" before any proposal is work not done.
+        blocker = deps.blocker(url=url, model=model, ignore_running=True)
+        if blocker:
+            result["stopped"] = blocker
+            result["no_work"] = index == 0
+            break
         try:
             record = await deps.propose(
                 cand["skill_id"], cand["evidence"], url=url, model=model,
@@ -394,86 +605,177 @@ async def _run_pass(deps: Deps, slot_date: str, started: datetime) -> Dict[str, 
         result["retry"] = not result["proposals"]
     elif result["errors"] and not result["proposals"]:
         result["status"] = "failed"     # validation refusals: retrying would repeat them
+    if not result.get("no_work"):
+        result.pop("no_work", None)
     return result
+
+
+def _update_state(apply: Callable[[Dict[str, Any]], None]) -> bool:
+    """Read-modify-write of the state file under the cross-process lock.
+    False (and a warning) when the lock never freed - never raises."""
+    try:
+        with _state_lock():
+            state = load_state()
+            apply(state)
+            save_state(state)
+        return True
+    except LockTimeout:
+        logger.warning("skills sleep pass: state lock timeout, update skipped")
+        return False
+
+
+def _settle_locked(state: Dict[str, Any], now: datetime) -> bool:
+    """`running_since` with no live owner is a hard crash (power cut, kill -9)
+    after the day was claimed. Record it as an `interrupted` last result and
+    clear the marker; `last_run_date` is left alone, so the day is NOT run a
+    second time (at-most-once). The caller holds the state lock."""
+    started = state.get("running_since")
+    if not started or overlap_reason():
+        return False
+    slot = str(state.get("running_slot") or state.get("last_run_date") or "")
+    state["last_result"] = {
+        "trigger": "scheduled", "slot_date": slot, "started_at": started,
+        "finished_at": _iso(now), "status": "interrupted", "considered": 0,
+        "candidates": 0, "proposals": [], "errors": [], "stopped": "",
+    }
+    state["last_run_at"] = _iso(now)
+    state.pop("running_since", None)
+    state.pop("running_slot", None)
+    logger.warning("skills sleep pass: the run for %s was interrupted (process died); "
+                   "the day is not repeated", slot)
+    return True
+
+
+def _settle_interrupted(now: datetime) -> None:
+    _update_state(lambda state: _settle_locked(state, now))
+
+
+def _note_deferred(now: datetime, reason: str, slot_date: str) -> None:
+    def apply(state: Dict[str, Any]) -> None:
+        last = state.get("last_deferred") or {}
+        if last.get("reason") != reason or last.get("slot_date") != slot_date:
+            state["last_deferred"] = {"at": _iso(now), "reason": reason, "slot_date": slot_date}
+    _update_state(apply)
+    logger.info("skills sleep pass: deferred (%s)", reason)
+
+
+def _give_back_attempt(state: Dict[str, Any], slot_date: str) -> None:
+    attempts = state.get("attempts")
+    if isinstance(attempts, dict) and attempts.get("slot_date") == slot_date:
+        attempts["n"] = max(0, int(attempts.get("n") or 0) - 1)
 
 
 async def tick(skills_manager=None, *, deps: Optional[Deps] = None) -> Dict[str, Any]:
     """One look at the clock. Cheap when nothing is due. Returns
-    `{"status": ..., "reason": ...}` for logs and tests."""
+    `{"status": ..., "reason": ...}` for logs and tests.
+
+    The decision is taken twice. The first, lock-free, pass keeps an idle tick
+    cheap; the one that matters is repeated while holding the cross-process
+    state lock, together with the claim of the day and the run lease, so two
+    Faustus processes sharing the data directory cannot both start."""
     deps = deps or Deps()
     if deps.skills is None and skills_manager is not None:
         deps.skills = _default_skills(skills_manager)
     now = deps.now()
     enabled, hour = is_enabled(), configured_hour()
-    with _STATE_LOCK:
+    state = load_state()
+    if state.get("running_since"):
+        _settle_interrupted(now)           # a previous process died mid-pass
         state = load_state()
     decision = evaluate(now, enabled=enabled, hour=hour, last_run_date=state.get("last_run_date"))
 
     if decision.action == "skip":
         if decision.reason == "outside_window" and state.get("last_missed_date") != decision.slot_date:
-            with _STATE_LOCK:
-                state = load_state()
-                state["last_missed_date"] = decision.slot_date
-                save_state(state)
+            _update_state(lambda s: s.__setitem__("last_missed_date", decision.slot_date))
             logger.info("skills sleep pass: slot %s missed (outside the %dh catch-up window)",
                         decision.slot_date, CATCHUP_HOURS)
         return {"status": "skipped", "reason": decision.reason}
 
     blocker = deps.blocker()
     if blocker:
-        with _STATE_LOCK:
-            state = load_state()
-            last = state.get("last_deferred") or {}
-            if last.get("reason") != blocker or last.get("slot_date") != decision.slot_date:
-                state["last_deferred"] = {"at": _iso(now), "reason": blocker,
-                                          "slot_date": decision.slot_date}
-                save_state(state)
-        logger.info("skills sleep pass: deferred (%s)", blocker)
+        _note_deferred(now, blocker, decision.slot_date)
         return {"status": "deferred", "reason": blocker}
 
-    # Claim the day BEFORE any work (restart-safe), release it if the work
-    # turns out to be a retryable nothing.
-    with _STATE_LOCK:
-        state = load_state()
-        attempts = state.get("attempts") if isinstance(state.get("attempts"), dict) else {}
-        n = int(attempts.get("n") or 0) if attempts.get("slot_date") == decision.slot_date else 0
-        state["attempts"] = {"slot_date": decision.slot_date, "n": n + 1}
-        state["last_run_date"] = decision.slot_date
-        state["running_since"] = _iso(now)
-        state.pop("last_deferred", None)
-        save_state(state)
-
     result: Dict[str, Any]
-    try:
-        with track("scheduled"):
-            result = await _run_pass(deps, decision.slot_date, now)
-    except asyncio.CancelledError:
-        # Shutdown in the middle of the pass: give the day back so the next
-        # start inside the window can run it (a partial pass left no record).
-        with _STATE_LOCK:
-            state = load_state()
-            state.pop("running_since", None)
-            state["last_run_date"] = _previous_run_date(state, decision.slot_date)
-            save_state(state)
-        raise
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("skills sleep pass failed: %s", exc, exc_info=True)
-        result = {"trigger": "scheduled", "slot_date": decision.slot_date,
-                  "started_at": _iso(now), "status": "failed", "considered": 0,
-                  "candidates": 0, "proposals": [],
-                  "errors": [{"skill_id": "", "error_class": f"unexpected.{type(exc).__name__}"}],
-                  "stopped": "", "retry": True}
-    result["finished_at"] = _iso(deps.now())
+    with contextlib.ExitStack() as stack:
+        # Claim + revalidate under the common lock. Whoever gets here second
+        # re-reads the state the first one already wrote and skips.
+        busy: Optional[str] = None
+        try:
+            with _state_lock():
+                state = load_state()
+                busy = overlap_reason()
+                if busy is None:
+                    settled = _settle_locked(state, now)
+                    decision = evaluate(now, enabled=is_enabled(), hour=configured_hour(),
+                                        last_run_date=state.get("last_run_date"))
+                    if decision.action == "skip":
+                        if settled:
+                            save_state(state)
+                        return {"status": "skipped", "reason": decision.reason}
+                    # The lease is created before the claim is written, so a
+                    # visible `running_since` always has an owner behind it.
+                    stack.enter_context(track("scheduled", _state_locked=True))
+                    attempts = state.get("attempts") if isinstance(state.get("attempts"), dict) else {}
+                    n = int(attempts.get("n") or 0) if attempts.get("slot_date") == decision.slot_date else 0
+                    state["attempts"] = {"slot_date": decision.slot_date, "n": n + 1}
+                    state["last_run_date"] = decision.slot_date
+                    state["running_since"] = _iso(now)
+                    state["running_slot"] = decision.slot_date
+                    state.pop("last_deferred", None)
+                    save_state(state)
+        except SleepPassBusy:
+            busy = "sleep_pass_running"
+        except LockTimeout:
+            busy = "state_lock_timeout"
+        if busy:
+            _note_deferred(now, busy, decision.slot_date)
+            return {"status": "deferred", "reason": busy}
 
-    retryable = bool(result.pop("retry", False))
-    with _STATE_LOCK:
-        state = load_state()
-        state.pop("running_since", None)
-        state["last_result"] = result
-        state["last_run_at"] = result["finished_at"]
-        if retryable and int((state.get("attempts") or {}).get("n") or 0) < MAX_ATTEMPTS:
-            state["last_run_date"] = _previous_run_date(state, decision.slot_date)
-        save_state(state)
+        # From here the lease is held until the stack unwinds, i.e. after the
+        # result is written: nobody can mistake a finished run for a dead one.
+        try:
+            result = await _run_pass(deps, decision.slot_date, now)
+        except asyncio.CancelledError:
+            # Shutdown in the middle of the pass: give the day back so the next
+            # start inside the window can run it (a partial pass left no record).
+            def give_back(s: Dict[str, Any]) -> None:
+                s.pop("running_since", None)
+                s.pop("running_slot", None)
+                s["last_run_date"] = _previous_run_date(s, decision.slot_date)
+                _give_back_attempt(s, decision.slot_date)
+            _update_state(give_back)
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("skills sleep pass failed: %s", exc, exc_info=True)
+            result = {"trigger": "scheduled", "slot_date": decision.slot_date,
+                      "started_at": _iso(now), "status": "failed", "considered": 0,
+                      "candidates": 0, "proposals": [],
+                      "errors": [{"skill_id": "", "error_class": f"unexpected.{type(exc).__name__}"}],
+                      "stopped": "", "retry": True}
+        result["finished_at"] = _iso(deps.now())
+        retryable = bool(result.pop("retry", False))
+        no_work = bool(result.pop("no_work", False))
+
+        def finish(s: Dict[str, Any]) -> None:
+            s.pop("running_since", None)
+            s.pop("running_slot", None)
+            if no_work:
+                # Deferred before a single proposal: nothing was done, so the
+                # day and the attempt are given back, and it is not a "last run".
+                s["last_run_date"] = _previous_run_date(s, decision.slot_date)
+                _give_back_attempt(s, decision.slot_date)
+                s["last_deferred"] = {"at": result["finished_at"], "reason": result["stopped"],
+                                      "slot_date": decision.slot_date}
+                return
+            s["last_result"] = result
+            s["last_run_at"] = result["finished_at"]
+            if retryable and int((s.get("attempts") or {}).get("n") or 0) < MAX_ATTEMPTS:
+                s["last_run_date"] = _previous_run_date(s, decision.slot_date)
+        _update_state(finish)
+    if no_work:
+        logger.info("skills sleep pass: deferred before any work (%s)", result["stopped"])
+        return {"status": "deferred", "reason": result["stopped"]}
     logger.info("skills sleep pass: %s (%d proposal(s), %d error(s))", result["status"],
                 len(result["proposals"]), len(result["errors"]))
     return {"status": "ran", "reason": result["status"], "result": result}
@@ -515,7 +817,15 @@ def status(now: Optional[datetime] = None) -> Dict[str, Any]:
     enabled, hour = is_enabled(), configured_hour()
     state = load_state()
     decision = evaluate(now, enabled=enabled, hour=hour, last_run_date=state.get("last_run_date"))
-    running = bool(active_runs())
+    running = overlap_reason() is not None          # this process or another one
+    # A claimed day whose owner is gone: shown as interrupted until the next
+    # tick (or the next claim) writes it down; never repeated.
+    if state.get("running_since") and not running:
+        # A run that ended between the two reads clears the marker BEFORE it
+        # drops the lease, so a second read tells a finished run from a dead one.
+        state = load_state()
+        running = overlap_reason() is not None
+    interrupted = bool(state.get("running_since")) and not running
     if not enabled:
         phase, next_run = "disabled", None
     elif running:
@@ -534,10 +844,16 @@ def status(now: Optional[datetime] = None) -> Dict[str, Any]:
             "proposals": len(last.get("proposals") or []),
             "errors": len(last.get("errors") or []), "stopped": last.get("stopped") or "",
         }
+    if interrupted:
+        last_view = {
+            "status": "interrupted", "slot_date": state.get("running_slot") or state.get("last_run_date"),
+            "started_at": state.get("running_since"), "finished_at": None,
+            "considered": 0, "candidates": 0, "proposals": 0, "errors": 0, "stopped": "",
+        }
     deferred = state.get("last_deferred") if isinstance(state.get("last_deferred"), dict) else None
     return {
         "enabled": enabled, "hour": hour, "catchup_hours": CATCHUP_HOURS,
-        "phase": phase, "running": running, "next_run_at": next_run,
+        "phase": phase, "running": running, "interrupted": interrupted, "next_run_at": next_run,
         "last_run_date": state.get("last_run_date"),
         "last_missed_date": state.get("last_missed_date"),
         "waiting_for": (deferred or {}).get("reason") if phase == "due" else None,

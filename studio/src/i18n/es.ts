@@ -3131,6 +3131,7 @@ export const es: Record<string, string> = {
   "Last indexed": "Última indexación",
   "Last known activity": "Última actividad conocida",
   "Last known activity. Refresh before taking action.": "Última actividad conocida. Actualiza antes de realizar acciones.",
+  "Last overnight run was interrupted ({when}); it will not be repeated.": "La última pasada nocturna se interrumpió ({when}); no se repetirá.",
   "Last overnight run: {when} · {n} proposal(s).": "Última ejecución nocturna: {when} · {n} propuesta(s).",
   "Last progress": "Último avance",
   "Last query: “{q}”": "Última consulta: «{q}»",
