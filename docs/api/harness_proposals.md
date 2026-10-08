@@ -63,7 +63,28 @@ response schema. It never loads a model on its own and never runs in the
 foreground. A session with a pending proposal gets no second one, and the same
 evidence is not proposed twice.
 
+## Authority and concurrency
+
+- A sub-agent spec edit never widens authority. Permission rules are ordered
+  and the last match wins, so only two edits count as narrowing: dropping
+  `allow` rules, and appending `deny` rules at the end. Reordering, inserting,
+  or dropping a `deny` is refused (`harness.widens_authority`).
+- Approve and undo compare the target with what the proposal was made against
+  immediately before writing. For project instructions the compare and the
+  write happen under the project store's own lock; for memory entries and
+  agent files the compare sits next to the write, with no store lock to share.
+  A change made by a person in between is never overwritten
+  (`harness.target_changed`, `harness.target_changed_since_apply`).
+
 ## Limits
+
+- With authentication disabled (single-user mode) any local HTTP caller that
+  is not the agent's own internal token can approve. The model is kept out by
+  `require_human` refusing that token, not by a secret the model cannot obtain;
+  run with authentication on if the model has a shell that can reach the port.
+- Memory entries and agent files have no store lock that edits made elsewhere
+  also take, so a change landing in the few microseconds between the final
+  compare and the write is still possible there.
 
 - The prompt layer is the project instructions; there is no per-user custom
   instruction store to edit.

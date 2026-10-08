@@ -192,6 +192,35 @@ def _parse_agent(slug: str, text: str):
         raise HarnessError("harness.invalid_agent_spec", f"the sub-agent spec does not load: {exc}") from exc
 
 
+def _permission_widening(old_rules: List[str], new_rules: List[str]) -> List[str]:
+    """Permission rules are ORDERED and the LAST match wins (``subagent_permissions.decide``),
+    so a set comparison is blind to a reordering that flips a verdict. The only
+    edits that provably cannot make the agent more permissive are:
+
+    * the same rules, in the same order, with some ``allow`` rules dropped, and
+    * ``deny`` rules appended at the END (nothing after them can override them).
+
+    Anything else (a reorder, a dropped ``deny``, an inserted rule, an added
+    ``allow``) is reported, even when it happens to be harmless: telling a
+    harmless reorder from a harmful one is a decision for a person."""
+    if list(old_rules) == list(new_rules):
+        return []
+    j = 0
+    for rule in old_rules:
+        if j < len(new_rules) and new_rules[j] == rule:
+            j += 1
+        elif rule.startswith("allow "):
+            continue                      # an allow that was dropped can only narrow
+        else:
+            return ["removes or moves a permission deny rule"]
+    tail = new_rules[j:]
+    if all(rule.startswith("deny ") for rule in tail):
+        return []
+    if any(rule.startswith("allow ") for rule in tail):
+        return ["adds, reorders or inserts a permission allow rule (the last matching rule wins)"]
+    return ["changes the order of the permission rules (the last matching rule wins)"]
+
+
 def authority_widening(old, new) -> List[str]:
     """What the new spec may do that the old one could not. Empty means the edit
     only keeps or narrows authority. A refinement that needs MORE authority is a
@@ -203,12 +232,8 @@ def authority_widening(old, new) -> List[str]:
         reasons.append("adds tools")
     if set(old.deny) - set(new.deny):
         reasons.append("removes a deny entry")
-    old_rules = {r.as_text() for r in old.permission}
-    new_rules = {r.as_text() for r in new.permission}
-    if any(r.startswith("deny ") for r in old_rules - new_rules):
-        reasons.append("removes a permission deny rule")
-    if any(r.startswith("allow ") for r in new_rules - old_rules):
-        reasons.append("adds a permission allow rule")
+    reasons.extend(_permission_widening([r.as_text() for r in old.permission],
+                                        [r.as_text() for r in new.permission]))
     if old.mode != "coordinator" and new.mode == "coordinator":
         reasons.append("lets the agent delegate")
     if old.files and set(new.files) - set(old.files):
@@ -327,11 +352,12 @@ def apply_write(record: Dict[str, Any], owner: str = "") -> None:
     ident = parse_target(axis, target)
     after = record.get("after")
     meta = record.setdefault("meta", {})
+    expect = (record.get("before"), _CHANGED_BEFORE_APPLY)
 
     if axis == "prompt_layer":
         _project(ident, owner)
         value = "" if op == "delete" else str(after or "").strip()
-        _set_instructions(ident, value, owner)
+        _set_instructions(ident, value, owner, guard=(axis, target, expect))
     elif axis == "skill":
         delegate = meta.get("delegate") or {}
         if not delegate.get("id"):
@@ -345,6 +371,7 @@ def apply_write(record: Dict[str, Any], owner: str = "") -> None:
     elif axis == "memory":
         entries = _memory_entries_for_update()
         index = next((i for i, e in enumerate(entries) if e.get("id") == ident and _visible(e, owner)), -1)
+        _guard(axis, target, owner, *expect)
         if op == "create":
             if index >= 0:
                 raise HarnessError("harness.target_exists", "a memory with this id already exists")
@@ -370,6 +397,7 @@ def apply_write(record: Dict[str, Any], owner: str = "") -> None:
             _vector_add(ident, entries[index]["text"])
     elif axis == "subagent_spec":
         path = _agent_path(ident)
+        _guard(axis, target, owner, *expect)
         _remember_raw(meta, path)
         if op == "delete":
             _remove_agent_file(path)
@@ -388,20 +416,23 @@ def apply_restore(record: Dict[str, Any], owner: str = "") -> None:
     ident = parse_target(axis, target)
     before = record.get("before")
     meta = record.get("meta") or {}
+    expect = (record.get("applied_content"), _CHANGED_SINCE_APPLY)
 
     if axis == "prompt_layer":
         _project(ident, owner)
-        _set_instructions(ident, before or "", owner)
+        _set_instructions(ident, before or "", owner, guard=(axis, target, expect))
     elif axis == "skill":
         path = _skill_path(ident, owner)
         if not path:
             raise HarnessError("harness.target_missing", f"skill {ident!r} no longer exists")
+        _guard(axis, target, owner, *expect)
         # Raw bytes: the skill store re-serialises what it is handed (and Windows
         # turns LF into CRLF), and the point of undo is the exact previous bytes.
         _restore_raw(meta, path, before)
     elif axis == "memory":
         entries = _memory_entries_for_update()
         index = next((i for i, e in enumerate(entries) if e.get("id") == ident), -1)
+        _guard(axis, target, owner, *expect)
         if op == "create":
             if index >= 0:
                 entries.pop(index)
@@ -426,6 +457,7 @@ def apply_restore(record: Dict[str, Any], owner: str = "") -> None:
             _memory_manager().save(entries)
             _vector_add(ident, str(entry.get("text") or ""))
     elif axis == "subagent_spec":
+        _guard(axis, target, owner, *expect)
         _restore_raw(meta, _agent_path(ident), before)
     else:
         raise HarnessError("harness.bad_axis", f"unknown axis {axis!r}")
@@ -483,10 +515,37 @@ def _restore_raw(meta: Mapping[str, Any], path: str, fallback_text: Optional[str
         _write_bytes(path, data)
 
 
-def _set_instructions(project_id: str, value: str, owner: str) -> None:
+_CHANGED_BEFORE_APPLY = ("harness.target_changed",
+                         "The target changed after this proposal was made, so applying it now would overwrite that "
+                         "change. Reject this proposal and run a new one.")
+_CHANGED_SINCE_APPLY = ("harness.target_changed_since_apply",
+                        "The target was edited after this proposal was applied. Undoing now would discard that later "
+                        "change, so nothing was touched. Edit it by hand if you still want the old text back.")
+
+
+def _guard(axis: str, target: str, owner: str, expected: Optional[str], error: Tuple[str, str]) -> None:
+    """Compare the target with what the edit was made against, RIGHT before the
+    write. :func:`store.approve` / :func:`store.undo` check once up front; this
+    is the check that sits next to the write (and, for projects, inside the
+    store's own lock), so a change made by a person in between is not overwritten."""
+    if not same_content(read_current(axis, target, owner), expected):
+        raise HarnessError(*error)
+
+
+def _set_instructions(project_id: str, value: str, owner: str, guard: Optional[Tuple[str, str, Tuple[Any, Tuple[str, str]]]] = None) -> None:
+    """Write the project's instructions. With ``guard`` the compare-and-write runs
+    under the project store's own mutation lock (the one ``ProjectStore.update``
+    takes), so an edit made through that store cannot land between the two."""
+    import contextlib
     from services.projects import ProjectError
+    store = _project_store()
+    lock = getattr(store, "_lock", None)
     try:
-        updated = _project_store().update(project_id, {"instructions": value}, owner=owner or None)
+        with (lock if lock is not None else contextlib.nullcontext()):
+            if guard is not None:
+                axis, target, (expected, error) = guard
+                _guard(axis, target, owner, expected, error)
+            updated = store.update(project_id, {"instructions": value}, owner=owner or None)
     except ProjectError as exc:
         raise HarnessError("harness.apply_failed", str(exc)) from exc
     if not updated:
