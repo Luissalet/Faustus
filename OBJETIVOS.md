@@ -647,9 +647,9 @@ Pedido: conectar la cuenta de WhatsApp para leer, resumir y enviar («dile a X�
 
 Pedido implícito en la comparación continua con otros entornos de trabajo para LLM: cerrar diez huecos concretos encontrados en esa comparación. Hecho en una ronda (FAUSTUS.md §121-130): motores llama.cpp bajo demanda con apagado por inactividad (§121), decodificación especulativa MTP detectada del propio GGUF (§122), búsqueda de texto completo en resultados descargados con `artifact_search` (§123), consultas de impacto en el grafo de código con alias resueltos e indexado de todo el workspace (§124), independencia de fuentes sindicadas en Deep Research (§125), traza de cada llamada al modelo con bifurcación a otro modelo (§126), aviso de conflictos en memoria aprendida (§127), navegación de PDF por su propia estructura (§128), ranking de búsqueda web explicable (§129) y auditoría de accesibilidad/rendimiento en el smoke de UI (§130). **Siguiente.** Medir tok/s con MTP on/off en el 27B real (PENDIENTES.md, 19-09 tarde); decidir si se integra la idea del modelo pequeño de tool-calling on-device (aplazada, ver PENDIENTES.md).
 
-## OBJ-24 · Extracción estructurada a un schema del usuario (herramienta de extracción + enrutado por complejidad del schema) — PENDIENTE
+## OBJ-24 · Extracción estructurada a un schema del usuario — IMPLEMENTADO (09-10-2026)
 
-El enrutado de modelo por schema (#170) queda sin destino mientras no exista una herramienta de cara al usuario que extraiga texto/documentos a un schema propio. Falta definir la herramienta de extracción y, a partir de ahí, decidir el enrutado por complejidad del schema.
+La herramienta `extract_to_schema`, sus rutas API/MCP y la pantalla `/extraction` están integradas y activas (#66). Permiten guardar y editar esquemas JSON, analizar texto o archivos, consultar el perfil y la ruta de extracción, y revisar citas/páginas, inferencias, descartes, campos ausentes, conflictos y límites de validación. El transporte MCP nativo se probó con cuerpos OpenAPI reales y un PDF aislado; la pantalla se comprobó a 1440 y 420 px, en claro y oscuro. La validación léxica no demuestra por sí sola la verdad de una afirmación.
 
 ## OBJ-25 · Mostrar en Research los veredictos de citas y la revisión ciega — PENDIENTE
 
@@ -1046,10 +1046,10 @@ PENDIENTES queda para fallos y comprobaciones; lo que es una mejora o una funci�
 
 - **Tipado de entidades sólo mira la primera frase** que las nombra (23-09, §177): una entidad mencionada de formas distintas podría merecer varios tipos.
 - **Migrar a esquema los puntos de decisión de cada turno** (22-09, §160b, OBJ-27): clasificación de intención, enrutado de modelo, selección de herramienta siguen en texto libre; hoy sólo `auto_review`/`doubt_review`/`research_review` piden esquema.
-- **Falta la herramienta de agente `design_canvas_pass.draft`** (22-09, §160b): registrarla y cerrar el ciclo (volver al canvas al acabar la tarea y comprobar que lo hecho cumple lo diseñado).
+- **Cerrado: herramienta de agente `design_canvas_pass.draft` y comprobación de cierre** (09-10, #80): registrada e integrada, con revisión tras cambios, evidencias por requisito y resultado guardado en chat/concepto. Prueba del flujo con modelo simulado; calidad autónoma de GLM no certificada por esa prueba.
 - **Razonamiento + salida restringida no conviven** (22-09, §160b): si algún día se quieren juntos, hacerlo en dos llamadas (pensar libre, luego rellenar); el esquema tampoco viaja hoy junto a `tools`.
 - **Sin UI para el localizador de una cita** (20-09, §146): hoy sólo viaja en el texto inyectado al modelo.
-- **Enrutado de modelo por schema bloqueado** (19-09, §133): no puede aplicarse hasta que exista una herramienta de extracción a schema de cara al usuario.
+- **Desbloqueado: enrutado de modelo por schema** (09-10, #66): existe la herramienta de extracción y su pantalla; ampliar la evaluación comparativa del enrutado sigue siendo una mejora futura.
 - **Idea: STT en streaming por WebSocket** con parciales en vez de esperar al silencio (17-09, §105), si la latencia de «oído en» molesta.
 - **WS de móvil no reenvía histórico al conectar** (17-09, mobile M-A): sólo manda `hello.last_id`; el cliente Android (lote M-B) debe pedir `since_id` una vez y fiarse del socket después.
 - **`watch_page` no ve stock renderizado sólo con JavaScript** (17-09, §99): decide disponibilidad por palabras clave en el HTML; valorar el navegador integrado para esos casos.
@@ -1058,7 +1058,7 @@ PENDIENTES queda para fallos y comprobaciones; lo que es una mejora o una funci�
 - **Ideas de Apps sin hacer** (17-09, §101): autostart de perfiles al arrancar Faustus, grupos por proyecto, importar/exportar perfiles, herramienta de solo lectura para el agente, consola en vivo por SSE.
 - **Apps abiertas por Windows-MCP sin atribución** (17-09, §97): si hace falta, anotar en Faustus lo que el asistente lanza.
 - **La puerta dura no abre ronda de arreglo propia** (17-09, §95): sólo impide sellar `complete`; valorar si conviene que dispare una.
-- **`extract_to_schema` sin ejemplos en el índice de herramientas** (08-10, §279): `tests/test_l91_tool_index_examples.py::test_every_registered_tool_has_examples` falla en master (comprobado en un worktree limpio de `fb8602e0`); falta su entrada en `EXAMPLES` de `src/tool_index_examples.py`.
+- **Cerrado: ejemplos de `extract_to_schema` en el índice de herramientas** (09-10, `604f046d`): entrada publicada en `src/tool_index_examples.py`.
 - **`delegation_receipts` con un solo reintento** (17-09, §95): si el segundo intento vuelve vacío no hay tercero; valorar si hace falta.
 - **Vista móvil / disposición bajo 1280px** (CMP-01): las tres disposiciones del Studio no tienen efecto de rejilla en pantalla estrecha; el panel sigue siendo una capa superpuesta.
 - **Canal `app_api`/`dom_cdp` sin llamador real** (CMP-10): `choose_channel` los admite como lógica pura, pero solo `native_a11y`/`pixels` tienen consumidor.

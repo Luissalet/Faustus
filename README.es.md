@@ -17,9 +17,9 @@
 
 **Marketplace de plugins:** en Conectores puedes descargar los hoards con un botón o enlazar los que ya tienes. HoardLink es obligatorio y se descarga primero si falta. El catálogo se comparte con Faustus; las copias de código quedan en `plugins/<id>/repository/`, fuera de Git. Watch y Book siguen siendo independientes. [Uso y clonación para colaboradores](docs/api/plugin-marketplace.md).
 
-## Verificación actual (8 de octubre de 2026)
+## Verificación actual (9 de octubre de 2026)
 
-El código incluye recuperación del formato de herramientas y checkpoints/votos por envío del Ágora; fuente y activación se siguen por separado. El Hub sigue con el protocolo anterior: la revisión automática rechazó su recarga. Una prueba real aislada del27B Q4 verificó inspección, corrección aritmética y repetición; documentar schemas sigue siendo un hueco. Esfuerzo explícito y readonly del workspace floor son candidatos en revisión, sin promesa de activación en producción.  Véanse [verificación](FAUSTUS.md) y [puertas restantes](OBJETIVOS.md).
+GLM en tres Sparks es el modelo por defecto configurable. Thinking, esfuerzo según motor y plazo inicial están activos. Studio incluye esquemas JSON guardables y extracción documental con evidencias, inferencias, descartes, conflictos y límites de validación. Los canvas tienen una comprobación final persistida, y el modo de solo lectura resuelve los alias antes de permitir lecturas. Estos cambios están revisados y activados. La evaluación aislada Q4 anterior es histórica: las pruebas con modelo usan las Sparks y dejan las cuatro GPU del PC para Luis. Véanse [verificación y límites medidos](FAUSTUS.md) y [objetivos restantes](OBJETIVOS.md).
 
 ## Qué es Faustus
 
@@ -386,6 +386,12 @@ una decisión cuyas referencias son esos ficheros, de modo que cuando uno deja d
 existir la comprobación de obsolescencia encuentra el diseño que ya no cuadra.
 Lo escribe el modelo con el que ya corre el turno, no el que sea el por defecto
 global.
+
+Tras modificar archivos, el agente contrasta el resultado con ese canvas. La
+tarjeta de cierre y el concepto guardado distinguen requisitos cumplidos,
+parciales, no cumplidos y sin verificar, con evidencias. La prueba con modelo
+simulado comprueba el flujo completo; no establece una puntuación de calidad
+autónoma del modelo elegido.
 
 En el otro extremo, un turno que es claramente conversación se responde sin el
 razonamiento del modelo y sin el juego de herramientas adjunto. Medido en un 27B

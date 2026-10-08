@@ -17,9 +17,9 @@
 
 **Plugin marketplace:** in Connectors, download Hoards with one button or link existing folders. Required HoardLink downloads first when missing. Faustus ships the catalogue; source checkouts live in `plugins/<id>/repository/`, outside Git. Watch and Book remain independent. [Collaborator setup and cloning](docs/api/plugin-marketplace.md).
 
-## Current verification (8 October 2026)
+## Current verification (9 October 2026)
 
-Source now includes tool-format recovery and Agora checkpoint/review binding, with source and activation tracked separately. The shared Hub still runs its earlier protocol: automatic execution review rejected its reload. A real isolated27B Q4 run verified inspection, corrected arithmetic and repeated effects; schema documentation remains a gap. Explicit-effort and read-only workspace-floor fixes are reviewed candidates, not active production promises. See [verification](FAUSTUS.md) and [remaining gates](OBJETIVOS.md).
+GLM on three Sparks is the configurable default. Thinking, engine-specific effort and the initial response deadline are active. Studio now includes saved JSON schemas and document extraction with evidence, inferred and dropped fields, conflicts and validation limits. Design canvases receive a persisted closing check, and read-only permissions resolve tool aliases before allowing reads. These changes were independently reviewed and activated. The earlier isolated Q4 evaluation is historical; model-backed QA now uses the Sparks and leaves all PC GPUs available to the user. See [verification and measured limits](FAUSTUS.md) and [remaining objectives](OBJETIVOS.md).
 
 ## What Faustus is
 
@@ -406,6 +406,11 @@ stored in the project concept graph as a decision whose refs are those files, so
 when one of them disappears the staleness check finds the design that no longer
 matches. It is written by the model the turn is already running on, not by
 whatever the global default happens to be.
+
+After files change, the agent checks the result against that canvas. The closing
+card and saved concept distinguish met, partially met, unmet and unverified
+requirements, with evidence. A scripted-model check proves the complete flow;
+it does not establish an autonomous quality score for the selected model.
 
 At the other end of the scale, a turn that is plainly small talk is answered
 without the model’s reasoning and without the toolset attached. Measured on a
