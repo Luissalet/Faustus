@@ -195,6 +195,24 @@ def test_client_budget_reaches_llama_server(client, settings):
     assert client.payload["reasoning_budget"] == 12000
 
 
+@pytest.mark.parametrize("effort", ["minimal", "xhigh", "max"])
+def test_explicit_effort_survives_route_auto_and_provider_payload(client, settings, effort):
+    """A pinned effort must reach the engine, even for Auto's small-talk case."""
+    gen = _parse_gen_overrides(json.dumps({"think": True, "reasoning_effort": effort,
+                                         "reasoning_budget": 16384, "num_ctx": 131072}))
+    gen, event = _resolve("auto", gen, "hola")
+    _stream(gen)
+    assert event["source"] == "override"
+    assert client.payload["reasoning_effort"] == effort
+    assert client.payload["reasoning_budget"] == 16384
+    assert client.payload["chat_template_kwargs"]["enable_thinking"] is True
+
+
+@pytest.mark.parametrize("bad", ["ultra", "XHIGH", 5, True, [], {}])
+def test_route_does_not_forward_unknown_effort_values(bad):
+    assert "reasoning_effort" not in _parse_gen_overrides({"reasoning_effort": bad})
+
+
 def test_deep_mode_reaches_llama_server(client, settings):
     gen, _ = _resolve("deep", {}, "hola")
     _stream(gen)

@@ -899,7 +899,9 @@ def _parse_gen_overrides(raw) -> Dict[str, Any]:
         if "think" in data and data.get("think") not in (None, ""):
             v = data["think"]
             out["think"] = bool(v) if not isinstance(v, str) else v.strip().lower() in ("1", "true", "on", "yes")
-        if data.get("reasoning_effort") in ("low", "medium", "high", "none"):
+        # Preserve every effort llm_core already validates. Provider/template
+        # fitting remains downstream; the route must not silently lose a pin.
+        if data.get("reasoning_effort") in ("minimal", "low", "medium", "high", "xhigh", "max", "none"):
             out["reasoning_effort"] = data["reasoning_effort"]
         # llm_core already honours a per-request budget (GEN_OVERRIDE_KEYS);
         # it used to be dropped right here, so a client could never set it.
