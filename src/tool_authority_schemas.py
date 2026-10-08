@@ -226,7 +226,8 @@ CORE_SCHEMAS = {
                                'description': 'Maximum extracted content excerpt size; default 24000'},
         'compare_with': {'type': 'string', 'description': 'Optional reference PowerPoint template (.pptx or .potx) '
                          'inside the workspace: adds template_comparison (theme, masters, layouts, slide size and '
-                         'slides on edited or foreign layouts)'}},
+                         'slides on edited or foreign layouts). The source path must also be .pptx or .potx; '
+                         'other source formats (including CSV and PDF) return invalid_arguments, not a no-op.'}},
                     'required': ['path'], 'additionalProperties': False}},
     'extract_to_schema': {'description': 'Extract a document (PDF, scan with OCR, DOCX, XLSX, PPTX, email, HTML, '
                           'text) or a given text into a JSON Schema the user provides, e.g. the fields of an '
