@@ -10473,7 +10473,7 @@ Luis vio que el trabajo de vigilancia de Galton fallaba al intentar cargar `qwen
   - Hoy: si Faustus no responde a `/api/health` o a `/api/models` en 1,5 s (un turno largo lo ocupa), se usa el último registro que dio, siempre que tenga menos de 15 minutos. Cada servidor se sigue comprobando, así que una entrada caducada se salta en vez de usarse.
   - 4 pruebas nuevas en `tests/test_resolution_policies.py` y una fixture que reinicia esa memoria entre pruebas. Propagado a todas las copias vendorizadas.
 - **Galton** (`e5c87e0`): mide los modelos de las Sparks como concursantes `server:lan:…`. `watch.load_local` está apagado por defecto, así que la vigilancia no carga modelos en el PC. Recuerda las cargas que fallaron para no repetirlas.
-- **Visión:** GLM-5.3-Flash solo procesa texto, así que la visión resuelve al 27B local del 8081. Para mover también la visión a las Sparks hace falta una receta con un modelo de visión (OBJ-57).
+- **Visión:** GLM-5.3-Flash solo procesa texto. Desde #111 (GPU del PC reservadas para Luis, 8081 parado) ningún servidor ofrece visión. El Hub lo comprobó tras reiniciarlo: `llm` resuelve a `192.168.0.236:8002` y `vision` queda «no server». Cargar un modelo de visión en una Spark es decisión de Luis (PENDIENTES A, OBJ-57).
 - **Cierres:**
   - `test_resource_claims::test_loop_call_that_cannot_get_its_claims_is_refused_not_started` mantenía la reserva de escritura 3 s fijos. Con cProfile se vio que el turno tardaba unos 9 s en llegar a la llamada: `model_context` consulta en cada llamada un Ollama apagado, y en Windows cada conexión rechazada a localhost cuesta unos 2 s. La prueba ahora suelta la reserva al acabar el bucle (`f0f16648`).
   - `extract_to_schema` tiene ejemplos en el índice de herramientas (`604f046d`).

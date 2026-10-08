@@ -1338,5 +1338,5 @@ Hecho:
 
 Abierto:
 
-- **Visión en las Sparks.** GLM-5.3-Flash solo procesa texto, así que la visión sigue usando el 27B local (8081). Para liberar también esa GPU haría falta una receta con un modelo de visión en una Spark. Decidir cuál y en qué Spark sin quitar memoria a la receta TP3.
+- **Visión en las Sparks.** GLM-5.3-Flash solo procesa texto. Con las GPU del PC reservadas (#111) no hay servidor de visión. Hace falta una receta con un modelo de visión en una Spark. Cada una tiene unos 24–28 GB libres con TP3 cargado. Decisión de Luis en PENDIENTES A.
 - **Sondeos de contexto a servidores locales caídos.** `model_context` vuelve a consultar los endpoints locales en cada llamada, a propósito, porque pueden reiniciarse con otra ventana. En Windows, una conexión rechazada a localhost tarda unos 2 s, y un turno contra un Ollama apagado puede pagar 6–9 s antes de la primera herramienta (medido con cProfile en `test_resource_claims`). Mejora propuesta: recordar el resultado unos segundos dentro del mismo turno.
