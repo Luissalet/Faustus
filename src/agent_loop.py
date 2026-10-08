@@ -16027,6 +16027,28 @@ async def _stream_agent_loop_body(
                             _note = "review_defects:" + str(len(_rev_errors))
                             if _note not in _ledger.notes:
                                 _ledger.notes.append(_note)
+                    # (6) Design canvas closure (src/design_canvas_check.py, OBJ-47):
+                    # when a `design_canvas` was drafted for this chat, compare the
+                    # finished work with it and record a verdict per item. Never
+                    # blocks the turn; re-runs only when more files changed.
+                    if (_ledger.mutations and _ledger.canvas_check_runs < 2
+                            and len(_ledger.mutations) != _ledger.canvas_check_mutations_at_run):
+                        try:
+                            from src import design_canvas_check as _dcc
+                            _cvc = await _dcc.close_turn(
+                                _ledger, session_id=str(session_id or ""), turn_id=_context_turn_id,
+                                endpoint_url=endpoint_url, model=model, headers=headers, workload=workload,
+                            )
+                        except Exception as _cv_err:
+                            logger.debug("[harness] design canvas closure skipped: %s", _cv_err)
+                            _cvc = None
+                        if _cvc:
+                            yield (
+                                "data: " + json.dumps({
+                                    "type": "harness_check", "status": "canvas_" + str(_cvc.get("overall") or "unverified"),
+                                    "round": round_num, "label": _cvc.get("label"), "canvas_check": _cvc,
+                                }) + "\n\n"
+                            )
                     # Advisor, third trigger: the model is about to give its
                     # final answer after writing files. One bounded extra
                     # round when the advisor has something to correct.
@@ -19361,7 +19383,7 @@ async def _stream_agent_loop_body(
                 "length_continues", "finish_reasons", "git", "notes", "progress", "language",
                 "static_checks", "static_analysis", "static_fix_rounds",
                 "workspace", "checkpoint", "tests", "tests_fix_rounds",
-                "review", "review_fix_rounds", "asked_user", "changeset", "round_count",
+                "review", "review_fix_rounds", "canvas_check", "asked_user", "changeset", "round_count",
             )
         }
         metrics["harness"]["review_mode"] = bool(_hopts.get("review_mode")) and bool(_hsum.get("mutations"))
