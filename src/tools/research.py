@@ -26,6 +26,16 @@ async def do_manage_research(content: str, owner: Optional[str] = None) -> Dict:
         args = {}
     if not isinstance(args, dict):
         args = {}
+    # Reject malformed arguments before looking up or changing saved reports.
+    # Do not coerce containers into report ids or silently treat them as list.
+    for field in ("action", "id", "session_id", "research_id", "search"):
+        value = args.get(field)
+        if value is not None and not isinstance(value, str):
+            return {
+                "error": f"Invalid research argument '{field}': expected a string.",
+                "error_code": "invalid_arguments",
+                "exit_code": 1,
+            }
     action = (args.get("action") or "list").lower()
     rid = (args.get("id") or args.get("session_id") or args.get("research_id") or "").strip()
     data_dir = _Path(DEEP_RESEARCH_DIR)
