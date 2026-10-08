@@ -119,6 +119,9 @@ __all__ = [
     "RERANK_HEAD",
     "bm25_scores",
     "exact_scores",
+    "exact_lane",
+    "front_load_full",
+    "promote_exact_full",
     "rare_terms",
     "rrf",
     "search",
@@ -232,8 +235,13 @@ _BACKTICK_RE = re.compile(r"`([^`\n]{2,80})`")
 _STRIP_CHARS = " \t\r\n.,;:!?()[]{}<>\"'\u00ab\u00bb\u201c\u201d\u2018\u2019\u00bf\u00a1"
 
 
-def _looks_rare(token: str) -> bool:
+def _looks_rare(token: str, plain: bool = True) -> bool:
     if len(token) < 2 or len(token) > 120:
+        return False
+    if not plain and re.fullmatch(r"[A-Z]{2,16}|\d+", token):
+        # `plain=False` keeps only what a word tokenizer can mangle. A bare
+        # acronym (QA, MCP) or number (2026) survives it intact, so BM25
+        # already ranks it and the lane would only re-score ordinary prose.
         return False
     if re.fullmatch(r"[A-Z][A-Z0-9]{1,15}", token) and any(c.isalpha() for c in token):
         return True                                  # MCP, RAG, GPU2
@@ -255,11 +263,12 @@ def _looks_rare(token: str) -> bool:
     return False
 
 
-def rare_terms(query: Any) -> List[str]:
+def rare_terms(query: Any, *, plain: bool = True) -> List[str]:
     """The identifier-like terms of ``query``, in order, deduplicated.
 
     Backticked spans are taken whole. Everything else is split on whitespace,
     stripped of surrounding punctuation and kept only if :func:`_looks_rare`.
+    ``plain=False`` leaves out bare acronyms and bare numbers (see there).
     """
     text = str(query if query is not None else "")
     found: List[str] = []
@@ -276,7 +285,7 @@ def rare_terms(query: Any) -> List[str]:
     rest = _BACKTICK_RE.sub(" ", text)
     for raw in rest.split():
         token = raw.strip(_STRIP_CHARS)
-        if _looks_rare(token):
+        if _looks_rare(token, plain):
             _add(token)
     return found
 
@@ -288,7 +297,8 @@ def _term_pattern(term: str) -> "re.Pattern[str]":
     return re.compile(r"(?:(?<![\w])|(?<=__))" + re.escape(term) + r"(?![\w])", re.IGNORECASE)
 
 
-def exact_scores(query: Any, docs: Sequence[Tuple[str, Any]]) -> Tuple[Dict[str, float], List[str], set]:
+def exact_scores(query: Any, docs: Sequence[Tuple[str, Any]], *,
+                 plain: bool = True) -> Tuple[Dict[str, float], List[str], set]:
     """``(scores, kept_terms, full_ids)`` for the rare-term lane.
 
     ``scores`` is Σ log(1 + N/df) over the rare terms a document contains
@@ -296,7 +306,7 @@ def exact_scores(query: Any, docs: Sequence[Tuple[str, Any]]) -> Tuple[Dict[str,
     of a corpus of four or more is not rare there and is dropped. ``full_ids``
     are the documents holding every kept term.
     """
-    terms = rare_terms(query)
+    terms = rare_terms(query, plain=plain)
     if not terms or not docs:
         return {}, [], set()
     texts = [(str(doc_id), "" if text is None else str(text)) for doc_id, text in docs]
@@ -320,6 +330,75 @@ def exact_scores(query: Any, docs: Sequence[Tuple[str, Any]]) -> Tuple[Dict[str,
     kept = [term for term in terms if term in matches]
     full = set.intersection(*matches.values()) if matches else set()
     return scores, kept, full
+
+
+def exact_lane(query: Any, docs: Sequence[Tuple[str, Any]], *,
+               plain: bool = False) -> Dict[str, Any]:
+    """The rare-term lane packaged for the searches that run their own fusion.
+
+    :func:`search` fuses this lane inside itself; the memory engine and the
+    expert corpora keep their own scoring (trust and decay, page-aware chunks)
+    and need the same evidence in a form they can add to it. Those callers
+    already rank a bare acronym or number through their own BM25, so unlike
+    :func:`search` this defaults to ``plain=False``: only terms a word
+    tokenizer mangles (``ERR_CONN_RESET``, ``0x80070005``, ``foo_bar.py``,
+    ``useEffect``, ``a1b2c3d``, ``v0.35.1``) open the lane, and an ordinary
+    prose query leaves their scores untouched. Returns
+
+    ``scores``      raw Σ log(1 + N/df) per document, as :func:`exact_scores`
+    ``ranked``      document ids, best first, ties by id
+    ``normalised``  ``scores`` scaled to 0..1 by the top document
+    ``terms``       the rare terms that occur in the corpus (and are not common)
+    ``full``        ids of the documents holding every one of ``terms``
+
+    A query with no identifier-like term, or one that occurs nowhere (or in
+    most of the corpus), gives every value empty: the caller's ranking is then
+    left exactly as it was.
+    """
+    scores, terms, full = exact_scores(query, docs, plain=plain)
+    return {"scores": scores, "ranked": _ordered(scores),
+            "normalised": _normalised(scores), "terms": terms, "full": full}
+
+
+def promote_exact_full(ordered: Sequence[str], exact_ranked: Sequence[str],
+                       exact_full: Iterable[str], k: int) -> Tuple[List[str], List[str]]:
+    """Make sure the documents holding every rare term reach the top ``k``.
+
+    The rule :func:`search` has always applied: the query named an identifier
+    and these are the documents that carry it, so whatever the other lanes
+    thought of their prose they enter the head, displacing only documents that
+    do not carry it, at most half of it. Returns ``(ordered, rescued)`` where
+    ``rescued`` are the ids that were not in the head before. Pure.
+    """
+    full = set(exact_full)
+    order = list(ordered)
+    if not full or k <= 0:
+        return order, []
+    head = order[:k]
+    missing = [doc_id for doc_id in exact_ranked if doc_id in full and doc_id not in head]
+    not_full = [doc_id for doc_id in head if doc_id not in full]
+    budget = min(len(missing), max(1, k // 2), max(len(not_full), k - len(head)))
+    if not (missing and budget):
+        return order, []
+    room = max(0, budget - (k - len(head)))
+    dropped = set(not_full[-room:]) if room else set()
+    kept = [doc_id for doc_id in head if doc_id not in dropped]
+    promoted = kept + missing[:budget]
+    promoted_set = set(promoted)
+    return promoted + [doc_id for doc_id in order if doc_id not in promoted_set], missing[:budget]
+
+
+def front_load_full(ordered: Sequence[str], exact_full: Iterable[str]) -> List[str]:
+    """Stable partition: documents holding every rare term first.
+
+    Each group keeps the order it had. For a caller whose contract is that an
+    exact identifier hit ranks above whatever a fuzzy lane preferred.
+    """
+    full = set(exact_full)
+    order = list(ordered)
+    if not full:
+        return order
+    return [d for d in order if d in full] + [d for d in order if d not in full]
 
 
 # ---------------------------------------------------------------------------
@@ -738,20 +817,9 @@ def _search(corpus: Iterable[Any], query: Any, k: int, embedder: Any,
     # it. Whatever the other lanes thought of their prose, they go in the
     # head, displacing only documents that do not carry it, at most half.
     if exact_full and k > 0:
-        head = ordered[:k]
-        missing = [doc_id for doc_id in exact_ranked
-                   if doc_id in exact_full and doc_id not in head]
-        not_full = [doc_id for doc_id in head if doc_id not in exact_full]
-        budget = min(len(missing), max(1, k // 2), max(len(not_full), k - len(head)))
-        if missing and budget:
-            room = max(0, budget - (k - len(head)))
-            dropped = set(not_full[-room:]) if room else set()
-            kept = [doc_id for doc_id in head if doc_id not in dropped]
-            promoted = kept + missing[:budget]
-            promoted_set = set(promoted)
-            ordered = promoted + [doc_id for doc_id in ordered if doc_id not in promoted_set]
-            for doc_id in missing[:budget]:
-                scores.setdefault(doc_id, 0.0)
+        ordered, rescued = promote_exact_full(ordered, exact_ranked, exact_full, k)
+        for doc_id in rescued:
+            scores.setdefault(doc_id, 0.0)
 
     # ── tier 3: a cross-encoder over the fused head, opt-in ────────────────
     rerank_reason: Optional[str] = None

@@ -58,6 +58,7 @@ from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from src import two_tier_search
 from src.memory import tokenize
 
 logger = logging.getLogger(__name__)
@@ -157,6 +158,12 @@ RECENT_HELPFUL_DAYS = 30.0
 W_LEXICAL = 0.45
 W_SEMANTIC = 0.45
 W_GRAPH = 0.10
+# Rare-term lane (identifiers read verbatim, see src.two_tier_search): ADDED to
+# the three lanes above rather than taken out of them, so a memory that holds
+# the identifier the query names outranks any memory the other lanes can reach
+# without it (their best case is 0.45 + 0.45 + 0.10 = 1.0). Zero for a query
+# with no identifier in it.
+W_EXACT = 1.0
 W_LEXICAL_DEGRADED = 0.90
 
 BM25_K1 = 1.5
@@ -1631,17 +1638,33 @@ def _query_fields(items, query, lexical, semantic, degraded, semantic_enabled):
     w_lex = W_LEXICAL_DEGRADED if (degraded or not semantic_enabled) else W_LEXICAL
     w_sem = 0.0 if (degraded or not semantic_enabled) else W_SEMANTIC
     query_keys = graph_keys(query, include_path_basenames=False)
+    # Rare-term lane (OBJ-51): identifiers read verbatim from the raw text,
+    # because ``tokenize`` keeps ``(foo_bar.py:42)`` or ``error=0x80070005``
+    # glued to its punctuation and so BM25 never sees them as the query's
+    # token. Empty for a query without identifiers: nothing below changes.
+    try:
+        exact_norm = two_tier_search.exact_lane(
+            query, [(item['id'], item.get('text')) for item in items])['normalised']
+    except Exception as exc:  # noqa: BLE001 - an extra lane must never cost the recall
+        logger.debug("memory engine: rare-term lane failed (%s); other lanes only", exc)
+        exact_norm = {}
     out = []
     for item in items:
         lex = lexical.get(item['id'], 0.0)
         sem = semantic.get(item['id'], 0.0)
         graph = len(query_keys & _item_graph_keys(item)) / len(query_keys) if query_keys else 0.0
         relevance = w_lex * lex + w_sem * sem + W_GRAPH * graph
+        relevance += W_EXACT * exact_norm.get(item['id'], 0.0)
         if relevance <= 0:
             continue
-        out.append((item, {'relevance': round(relevance, 6), 'lexical': round(lex, 6),
+        fields = {'relevance': round(relevance, 6), 'lexical': round(lex, 6),
             'semantic': round(sem, 6), 'graph': round(graph, 6), 'degraded': degraded,
-            '_unrounded_relevance': relevance}))
+            '_unrounded_relevance': relevance}
+        if exact_norm:
+            # Present only when the lane ran, so rows for ordinary prose
+            # queries keep exactly the fields they always had.
+            fields['exact'] = round(exact_norm.get(item['id'], 0.0), 6)
+        out.append((item, fields))
     return out
 
 
@@ -1754,6 +1777,12 @@ def search(
 ) -> List[Dict[str, Any]]:
     """Hybrid retrieval: lexical 0.45 + semantic 0.45 + evidence graph 0.10,
     multiplied by the item's own ``max(effective_score, 0.05)``.
+
+    A query that names identifiers (``ERR_CONN_RESET``, ``0x80070005``,
+    ``foo_bar.py``, ``useEffect``, a commit hash) gains a fourth, rare-term
+    lane worth up to ``W_EXACT`` for the items that contain them verbatim; the
+    row then also carries ``exact``. A query without identifiers is scored as
+    before.
 
     With no vector store the lexical lane is renormalised to 0.90 and every
     row carries ``degraded: True`` — the caller can SEE the lane is missing

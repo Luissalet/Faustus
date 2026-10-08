@@ -191,7 +191,11 @@ def test_search_renormalises_the_lexical_lane_when_vectors_are_absent(store):
     hit = hits[0]
     assert hit["degraded"] is True and hit["semantic"] == 0.0
     # 0.45 renormalised to 0.90; the top lexical hit is 1.0 after normalisation.
-    assert hit["relevance"] == pytest.approx(engine.W_LEXICAL_DEGRADED * hit["lexical"])
+    # The query names an identifier (`edit_file`), so the rare-term lane (OBJ-51)
+    # adds its W_EXACT on top of the lexical lane; `exact` says so.
+    assert hit["exact"] == 1.0
+    assert hit["relevance"] == pytest.approx(
+        engine.W_LEXICAL_DEGRADED * hit["lexical"] + engine.W_EXACT * hit["exact"])
     assert hit["score"] == pytest.approx(hit["relevance"] * hit["effective_score"])
     assert hit["id"] == item["id"]
 

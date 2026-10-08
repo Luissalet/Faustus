@@ -64,6 +64,7 @@ from services.memory.skill_format import (
     parse_frontmatter,
     slugify,
 )
+from src import two_tier_search
 from src.personal_docs import (
     config as docs_config,
     extract_office_text,
@@ -102,6 +103,11 @@ RRF_K = 60.0                     # the report's Reciprocal Rank Fusion constant
 # purpose: a reranker earns its cost by promoting a chunk fusion buried at
 # rank 20, which it can only do if it is shown rank 20.
 RERANK_HEAD = 30
+# Rare-term lane (OBJ-51). A chunk holding EVERY identifier the query names
+# (error code, hash, file name, API name) is lifted by this much, which is more
+# than any fused or lexical score reaches, so it ranks above whatever the fuzzy
+# lanes preferred; the lanes still order the chunks inside each group.
+EXACT_FULL_BONUS = 1.0
 BM25_K1 = 1.5
 BM25_B = 0.75
 MAX_EXCERPT_CHARS = 600          # per-citation excerpt cap
@@ -1182,6 +1188,17 @@ def bm25_scores(query: str, docs: Sequence[Tuple[str, str]]) -> Dict[str, float]
     return {doc_id: value / top for doc_id, value in scores.items()} if top > 0 else {}
 
 
+def _rare_lane(query: str, by_id: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """The shared rare-term lane (:func:`src.two_tier_search.exact_lane`) over
+    this expert's chunks. Never raises: a failed extra lane is an absent one."""
+    try:
+        return two_tier_search.exact_lane(
+            query, [(cid, c.get("text") or "") for cid, c in by_id.items()])
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("experts: rare-term lane failed (%s); serving the other lanes", exc)
+        return {"scores": {}, "ranked": [], "normalised": {}, "terms": [], "full": set()}
+
+
 def _semantic_ranking(slug: str, query: str, k: int) -> Tuple[List[str], bool]:
     """``([chunk_id ranked best-first], available)``. Never raises: a store
     that blows up is a degradation, not an error."""
@@ -1329,9 +1346,26 @@ def search(slug: Any, query: Any, k: int = DEFAULT_SEARCH_K, *,
     degraded = not available
     tier = "hybrid" if (available and semantic_ranked) else "lexical"
 
+    # Rare-term lane: identifiers read from the raw query and the raw chunk,
+    # because `personal_docs.tokenize` breaks `app.log`, `v0.35.1` or
+    # `C:\Users\x\a.txt` into words that match unrelated chunks. Empty (and the
+    # code below is the code that always ran) for a query without identifiers.
+    exact = _rare_lane(text, by_id)
+    exact_ranked: List[str] = exact["ranked"]
+    exact_full = exact["full"]
+
     if tier == "hybrid":
         fused: Dict[str, float] = {}
-        for ranking in (lexical_ranked, semantic_ranked):
+        for ranking in ((lexical_ranked, semantic_ranked, exact_ranked) if exact_ranked
+                        else (lexical_ranked, semantic_ranked)):
+            for rank, chunk_id in enumerate(ranking, start=1):
+                fused[chunk_id] = fused.get(chunk_id, 0.0) + 1.0 / (RRF_K + rank)
+        ordered = sorted(fused, key=lambda cid: (-fused[cid], cid))
+        scores = fused
+    elif exact_ranked:
+        # Lexical tier plus the identifier lane: the same RRF, two rankings.
+        fused = {}
+        for ranking in (lexical_ranked, exact_ranked):
             for rank, chunk_id in enumerate(ranking, start=1):
                 fused[chunk_id] = fused.get(chunk_id, 0.0) + 1.0 / (RRF_K + rank)
         ordered = sorted(fused, key=lambda cid: (-fused[cid], cid))
@@ -1340,8 +1374,19 @@ def search(slug: Any, query: Any, k: int = DEFAULT_SEARCH_K, *,
         ordered = list(lexical_ranked)
         scores = lexical
 
+    if exact_full:
+        # An exact identifier hit ranks above the fuzzy matches, in the score
+        # as well as in the order, so a caller that re-sorts by score agrees.
+        scores = {cid: value + (EXACT_FULL_BONUS if cid in exact_full else 0.0)
+                  for cid, value in scores.items()}
+        ordered = sorted(scores, key=lambda cid: (-scores[cid], cid))
+
     ordered, rerank_scores, rerank_reason = _rerank_ranking(
         reranker, text, ordered, by_id, owner)
+    if exact_full and rerank_reason is None:
+        # A cross-encoder judges meaning, which is what an identifier lacks;
+        # it still orders the chunks inside each group.
+        ordered = two_tier_search.front_load_full(ordered, exact_full)
     if rerank_reason is None:
         tier = "reranked"
         # The cross-encoder's score is what produced this order, so it is what
@@ -1353,8 +1398,13 @@ def search(slug: Any, query: Any, k: int = DEFAULT_SEARCH_K, *,
 
     hits = [_hit(by_id[cid], scores.get(cid, 0.0), tier) for cid in ordered[:k] if cid in by_id]
 
-    return {"hits": hits, "tier": tier, "degraded": degraded,
-            "rerank_reason": rerank_reason}
+    out = {"hits": hits, "tier": tier, "degraded": degraded,
+           "rerank_reason": rerank_reason}
+    if exact["terms"]:
+        # Present only when the identifier lane ran: which terms it read
+        # verbatim, so the caller can see why a chunk was lifted.
+        out["exact_terms"] = list(exact["terms"])
+    return out
 
 
 # ---------------------------------------------------------------------------
