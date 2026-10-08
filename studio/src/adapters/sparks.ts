@@ -147,7 +147,11 @@ export function useSparks(active: boolean): { state: SparksState | null; history
     if (next?.ok) {
       setHistory((prev) => {
         const out: Record<string, number[]> = {};
-        for (const n of next.nodes) out[n.id] = [...(prev[n.id] ?? []), n.gpu?.util ?? 0].slice(-40);
+        // Only measured samples enter the trace: a missing reading is a gap, not a zero.
+        for (const n of next.nodes) {
+          const v = n.online ? n.gpu?.util : null;
+          out[n.id] = typeof v === 'number' ? [...(prev[n.id] ?? []), v].slice(-40) : prev[n.id] ?? [];
+        }
         return out;
       });
     }

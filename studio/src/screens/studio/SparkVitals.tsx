@@ -29,9 +29,12 @@ export function SparkVitals() {
   if (!state || (!state.ok && state.error === 'disabled')) return null;
 
   const online = state.nodes.filter((n) => n.online);
-  const util = online.length ? online.reduce((a, n) => a + (n.gpu?.util ?? 0), 0) / online.length : 0;
-  const memUsed = online.reduce((a, n) => a + (n.memory?.used ?? 0), 0);
-  const memTotal = online.reduce((a, n) => a + (n.memory?.total ?? 0), 0);
+  // A figure a Spark did not report is unknown, never zero: average and add only what was measured.
+  const utils = online.map((n) => n.gpu?.util).filter((v): v is number => typeof v === 'number');
+  const util = utils.length ? utils.reduce((a, v) => a + v, 0) / utils.length : null;
+  const measured = online.filter((n) => typeof n.memory?.used === 'number' && typeof n.memory?.total === 'number');
+  const memUsed = measured.length ? measured.reduce((a, n) => a + (n.memory.used as number), 0) : null;
+  const memTotal = measured.length ? measured.reduce((a, n) => a + (n.memory.total as number), 0) : null;
   const running = state.deployments.filter((d) => d.state === 'running');
   const starting = state.deployments.find((d) => d.state === 'starting' || d.state === 'stopping');
   const avgTrace = averageTrace(history, online.map((n) => n.id));
@@ -50,19 +53,21 @@ export function SparkVitals() {
         <span className="fs-vitals__of">{t('Sparks: unreachable')}</span>
       ) : (
         <>
-          <Trace samples={avgTrace} />
-          <span className="fs-vitals__pct">{Math.round(util)}%</span>
+          {avgTrace.length > 0 && <Trace samples={avgTrace} />}
+          <span className="fs-vitals__pct">{util == null ? '—' : `${Math.round(util)}%`}</span>
           <span className="fs-vitals__tanks" aria-hidden="true">
             {state.nodes.map((n) => (
-              <span key={n.id} className="fs-vitals__tank" data-off={!n.online || undefined} data-level={levelOf(n.memory?.percent) || undefined} style={{ flexGrow: 1 }}>
-                <span style={{ inlineSize: `${n.online ? Math.min(100, n.memory?.percent ?? 0) : 0}%` }} />
+              <span key={n.id} className="fs-vitals__tank" data-off={!n.online || n.memory?.percent == null || undefined} data-level={levelOf(n.memory?.percent) || undefined} style={{ flexGrow: 1 }}>
+                <span style={{ inlineSize: `${n.online && n.memory?.percent != null ? Math.min(100, n.memory.percent) : 0}%` }} />
               </span>
             ))}
           </span>
-          <span className="fs-vitals__vram">
-            {gbOf(memUsed)}
-            <span className="fs-vitals__of">/{gbOf(memTotal)} GB</span>
-          </span>
+          {memUsed != null && memTotal != null && (
+            <span className="fs-vitals__vram">
+              {gbOf(memUsed)}
+              <span className="fs-vitals__of">/{gbOf(memTotal)} GB</span>
+            </span>
+          )}
           {starting ? (
             <span className="fs-vitals__model fs-sparks__busy">{starting.state === 'starting' ? t('loading…') : t('unloading…')}</span>
           ) : running.length ? (
@@ -90,7 +95,7 @@ export function SparkVitals() {
 
 function averageTrace(history: Record<string, number[]>, ids: string[]): number[] {
   const series = ids.map((id) => history[id] ?? []).filter((s) => s.length);
-  if (!series.length) return [0, 0];
+  if (!series.length) return [];
   const n = Math.max(...series.map((s) => s.length));
   const out: number[] = [];
   for (let i = 0; i < n; i++) {
@@ -250,22 +255,23 @@ function NodeRow({ n }: { n: SparkNode }) {
       </div>
     );
   }
-  const used = n.memory?.used ?? 0;
-  const total = n.memory?.total ?? 0;
+  const used = n.memory?.used;
+  const total = n.memory?.total;
+  const num = (v: number | null | undefined, unit: string) => (typeof v === 'number' ? `${Math.round(v)}${unit}` : '—');
   return (
     <div className="fs-sparks__node" data-testid={`spark-node-${n.id}`}>
       <div className="fs-vt__row">
         <span className="fs-vt__label">{n.name}</span>
-        <Meter value={used} total={total} />
+        {typeof used === 'number' && typeof total === 'number' ? <Meter value={used} total={total} /> : <span />}
         <span className="fs-vt__val">
           {gbOf(used, 0)}/{gbOf(total, 0)} GB
         </span>
       </div>
       <div className="fs-sparks__sub">
-        <span>GPU {Math.round(n.gpu?.util ?? 0)}%</span>
+        <span>GPU {num(n.gpu?.util, '%')}</span>
         {n.gpu?.temp_c != null && <span>{Math.round(n.gpu.temp_c)}°</span>}
         {n.gpu?.power_w != null && <span>{Math.round(n.gpu.power_w)} W</span>}
-        <span>CPU {Math.round(n.cpu?.percent ?? 0)}%</span>
+        <span>CPU {num(n.cpu?.percent, '%')}</span>
         <span>
           CX7 {n.fabric?.up ?? 0}/{n.fabric?.total ?? 0}
         </span>

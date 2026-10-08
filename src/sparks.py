@@ -246,10 +246,18 @@ def sync() -> Dict[str, Any]:
     with _lock:
         cfg = config()
         if not cfg["enabled"]:
-            return {"ok": False, "error": "disabled"}
+            # Switched off: nothing of the Sparks may stay in use — disable their endpoints and give the default back.
+            _disable_managed(cfg["endpoints"])
+            action = _restore_local(cfg) if effective_default()["on_sparks"] else "none"
+            return {"ok": False, "error": "disabled", "action": action}
         running = _endpoints_from_prometheus()
         if running is None:
-            return dict(_UNREACHABLE)
+            # Prometheus closed is not the same as the model gone: keep the Sparks default only while its server still answers.
+            eff = effective_default()
+            if eff["on_sparks"] and not _endpoint_answers(eff["endpoint_id"]):
+                _disable_managed({k: v for k, v in cfg["endpoints"].items() if v == eff["endpoint_id"]})
+                return {**_UNREACHABLE, "action": _restore_local(cfg)}
+            return {**_UNREACHABLE, "action": "none"}
         rec = _call("recipes_list", {}, timeout=10)
         recipes = rec["result"].get("recipes", []) if rec.get("ok") else []
         ids = _upsert_endpoints(running, recipes, cfg["endpoints"])
@@ -277,15 +285,51 @@ def sync() -> Dict[str, Any]:
                 patch["sparks_applied_default"] = {"endpoint_id": ep_id, "model": model, "recipe": target["recipe"]}
                 action = "to_sparks"
         elif eff["endpoint_id"] in managed and eff["endpoint_id"]:
-            local = cfg["local_default"]
-            if local.get("endpoint_id"):
-                _set_default(local["endpoint_id"], local.get("model", ""))
-                action = "to_local"
-            patch["sparks_applied_default"] = {}
+            action = _restore_local(cfg)
         if patch:
             _update(patch)
         return {"ok": True, "running": [e["recipe"] for e in running], "endpoints": ids, "action": action,
                 "default": effective_default()}
+
+
+def _restore_local(cfg: Dict[str, Any]) -> str:
+    """Give the chat default back to the local model it had before the Sparks (or leave it empty if there was none)."""
+    local = cfg.get("local_default") or {}
+    _set_default(local.get("endpoint_id", ""), local.get("model", ""))
+    _update({"sparks_applied_default": {}})
+    return "to_local"
+
+
+def _disable_managed(ids: Dict[str, str]) -> None:
+    if not ids:
+        return
+    from core.database import ModelEndpoint, SessionLocal
+
+    db = SessionLocal()
+    try:
+        for row in db.query(ModelEndpoint).filter(ModelEndpoint.id.in_(list(ids.values()))).all():
+            row.is_enabled = False
+        db.commit()
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        logger.debug("sparks: could not disable endpoints", exc_info=True)
+    finally:
+        db.close()
+
+
+def _endpoint_answers(endpoint_id: str) -> bool:
+    from core.database import ModelEndpoint, SessionLocal
+
+    db = SessionLocal()
+    try:
+        row = db.query(ModelEndpoint).filter(ModelEndpoint.id == endpoint_id).first()
+        base = (row.base_url if row else "") or ""
+    finally:
+        db.close()
+    if not base:
+        return False
+    code, _ = _request("GET", "/models", url=base.rstrip("/"), timeout=3.0)
+    return code == 200
 
 
 def deploy(recipe: str, action: str, *, stop_conflicts: bool = False) -> Dict[str, Any]:

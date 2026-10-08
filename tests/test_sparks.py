@@ -83,7 +83,7 @@ def test_status_unreachable_is_not_an_error(fake):
     fake.up = False
     out = sparks.status()
     assert out["ok"] is False and out["error"] == "prometheus unreachable"
-    assert sparks.sync() == {"ok": False, "error": "prometheus unreachable"}
+    assert sparks.sync() == {"ok": False, "error": "prometheus unreachable", "action": "none"}
 
 
 def test_disabled(fake):
@@ -186,3 +186,33 @@ def test_detected_servers_show_as_loaded(fake, monkeypatch):
     monkeypatch.setattr(sparks, "_request", request)
     dep = sparks.status()["deployments"][-1]
     assert dep["detected"] and dep["state"] == "running" and dep["served"] == ["qwen3.8-27b-nvfp4"]
+
+
+def test_disabling_gives_the_default_back(fake):
+    fake.running = [fake.endpoint("glm53-tp3")]
+    sparks.sync()
+    ep_id = load_settings()["default_endpoint_id"]
+    update_settings({"sparks_enabled": False})
+    out = sparks.sync()
+    assert out["action"] == "to_local" and load_settings()["default_endpoint_id"] == "local1"
+    assert _endpoint(ep_id).is_enabled is False
+
+
+def test_prometheus_closed_keeps_a_server_that_still_answers(fake, monkeypatch):
+    fake.running = [fake.endpoint("glm53-tp3")]
+    sparks.sync()
+    ep_id = load_settings()["default_endpoint_id"]
+    answers = {"v": True}
+    orig = fake.request
+
+    def request(method, path, body=None, *, timeout=4.0, url=None):
+        if url and url.startswith("http://spark:"):
+            return (200, {"data": []}) if answers["v"] else (None, None)
+        fake.up = False
+        return orig(method, path, body, timeout=timeout, url=url)
+
+    monkeypatch.setattr(sparks, "_request", request)
+    assert sparks.sync()["action"] == "none" and load_settings()["default_endpoint_id"] == ep_id
+    answers["v"] = False
+    assert sparks.sync()["action"] == "to_local"
+    assert load_settings()["default_endpoint_id"] == "local1" and _endpoint(ep_id).is_enabled is False
