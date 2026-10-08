@@ -1325,8 +1325,18 @@ FAUSTUS.md, «Relevo del bucle y revisión de autonomía».
    Voto changes r0/ccc8f1ac con repros independientes confirmados por root.
 3. Corregir #63: un objeto de respuesta con etiquetas contradictorias es
    ambiguo y debe repararse o rechazarse. Voto changes r0/5a01ecd2; no inferencia.
-4. Revisar #45 de Cursor y continuar su reparto disjunto. #44 está integrado;
-   los siguientes turnos reanudan la sesión oficial, con un único lanzador.
+4. #45 de Cursor está revisado, corregido e integrado como `c2f1f06`; continuar
+   con revisión #65 y candidato #66. Los siguientes turnos reanudan la sesión
+   oficial con un único lanzador y respetan los bloqueos i18n de #57.
 5. Resolver #60, catálogo de extracción OBJ-24 y activaciones pendientes con
    sus bloqueos y comprobaciones de conjunto. Mantener Watch/Book fuera,
    SABER aparcado, las GPU 0/1 libres para Luis y ningún push.
+
+6. Corregir y volver a revisar #67 antes del traspaso: los locks del agente
+   saliente asociados a tareas de revisión también deben seguir al sucesor.
+   Revisiones, estados y evidencias no se reinician ni se falsifican.
+7. Revisar #58 (`a76c6af`) y componer su delta con los cambios Atlas heredados
+   del Hub. El candidato separa inventario/errores de ejecución, conserva la
+   protección de los originales compartidos y no oculta una copia incompleta.
+   Mantener el checkout compartido y su índice intactos hasta la integración
+   revisada, con su bloqueo y comprobación del HEAD vigente.

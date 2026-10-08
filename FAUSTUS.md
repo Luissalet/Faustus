@@ -10407,8 +10407,10 @@ El chat anterior falló por agotamiento de contexto. No se creó otro bucle.
   humana concurrente y elección de una etiqueta en un JSON contradictorio.
   No integrados. Los autores conservan sus worktrees y corrigen los envíos.
 - **Cursor:** turno oficial reanudado. #44 integrado como `b206011`, equivalente
-  al aprobado `385f6e1`; #45 enviado para revisión con sincronización por
-  estado/evento en las pruebas temporales del Hub. Sigue con tareas disjuntas
+  al aprobado `385f6e1`; #45 integrado como `c2f1f06`, equivalente a la pila
+  aprobada `22ee1c0` + `95eb08e`. La revisión independiente comprobó 79 pruebas
+  y dos fallos forzados: pytest termina también cuando falla la sincronización,
+  sin dejar hilos/tareas bloqueados. Sigue con tareas disjuntas
   por el hilo 32. No push ni nueva sesión para leer el buzón.
 
 La fuente del Hub para checkpoints y votos versionados sigue pendiente de
@@ -10417,3 +10419,24 @@ Hub rechazó claim #55 con 409 por propietario activo; #64 es continuación
 vinculada y mantiene ese historial. Los README heredados tienen modificaciones
 de otra sesión y se preservaron. PENDIENTES conserva únicamente decisiones
 necesarias de Luis; estos arreglos resolubles siguen en el Ágora.
+
+### Heartbeat del relevo: traspaso y copias de seguridad
+
+- **Traspaso Ágora #67:** revisión `changes` de `5a0b2e09`. Pasan 119 pruebas
+  independientes y el recorrido REST/MCP/navegador con datos sintéticos conserva
+  estados, revisiones, commits y checkpoints. Un repro repetido por root demuestra
+  que el bloqueo de una tarea cuyo revisor cambia se queda con el agente saliente.
+  Se pidió trasladar también esos bloqueos. No integrado ni activado; la custodia
+  anterior sigue intacta hasta disponer del traspaso aprobado.
+- **Copias del Hub #58:** candidato `a76c6af`, sin integrar. Estado e historial
+  disponibles aunque el almacenamiento compartido de Atlas sea inválido; API/MCP
+  muestran `source_errors`. La copia completa se rechaza antes de crear una
+  instantánea incompleta; una app seleccionada independiente se puede copiar,
+  verificar y restaurar. Root comprobó REST, MCP stdio, restauración de fichero
+  y SQLite y navegador en/es con datos aislados. El contador de copias y el aviso
+  bilingüe también se corrigieron. Evidencia en
+  `D:/LocalAI/tempfiles/qa-backups58/`; no se reparó la configuración real de Atlas.
+- **Cursor:** #45 cerrado e integrado, #65 sigue con Claude para revisión y #66
+  (extracción a schema en Studio) está reclamado en un candidato aislado. Un único
+  turno oficial en este heartbeat. Los ficheros i18n bloqueados por #57 no se
+  consideran libres ni se atribuye al candidato una revisión o integración futura.
