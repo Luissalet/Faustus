@@ -11,6 +11,7 @@ every request is bounded by a wall-clock ``TIMEOUT_S``.
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 from typing import Any, Optional
 from urllib.parse import urlsplit
 
@@ -19,6 +20,8 @@ import httpx
 TIMEOUT_S = 1.5
 
 _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
+# Names that only resolve inside the person's own network (mDNS and the home/LAN conventions).
+_LAN_SUFFIXES = (".local", ".lan", ".home.arpa", ".internal")
 
 
 async def _request(
@@ -74,20 +77,44 @@ async def find_reachable(
     return None
 
 
+def host_scope(url: Any) -> str:
+    """``"loopback"`` (this machine), ``"lan"`` (a private address or a local-network name: the person's own
+    machines, such as a DGX Spark cluster next to the PC) or ``"remote"`` (anything else, cloud included)."""
+    if not isinstance(url, str) or not url:
+        return "remote"
+    host = (urlsplit(url).hostname or "").lower().strip("[]")
+    if host in _LOOPBACK_HOSTS or host == "::1":
+        return "loopback"
+    if host.endswith(_LAN_SUFFIXES):
+        return "lan"
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return "remote"
+    if ip.is_loopback:
+        return "loopback"
+    if (ip.is_private or ip.is_link_local) and not ip.is_unspecified and not ip.is_multicast:
+        return "lan"
+    return "remote"
+
+
 def is_local_item(item: dict) -> bool:
-    """Only use registry entries that keep data on this machine.
+    """Only use registry entries that keep data on the person's own machines.
 
     Faustus may also list cloud endpoints; a plugin must never send the
-    user's data off the machine just because Faustus knows an API key.
+    user's data out of the home network just because Faustus knows an API key.
+    Servers on this machine and on the local network (private addresses,
+    ``.local`` names) that Faustus files as ``local`` are the person's own.
     """
     category = item.get("category")
     if category is not None and category != "local":
         return False
-    url = item.get("url")
-    if not isinstance(url, str) or not url:
-        return False
-    host = (urlsplit(url).hostname or "").lower()
-    return host in _LOOPBACK_HOSTS
+    return host_scope(item.get("url")) in ("loopback", "lan")
+
+
+def is_lan_item(item: dict) -> bool:
+    """A registry entry served by another of the person's machines (not this one)."""
+    return host_scope(item.get("url")) == "lan"
 
 
 def model_items(data: Any) -> list[dict]:

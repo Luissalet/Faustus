@@ -489,10 +489,13 @@ class Link:
         if status == 200 and isinstance(data, dict):
             matches = _faustus.find_model_items(_faustus.model_items(data), capability)
             local = [i for i in matches if _faustus.is_local_item(i)]
+            # A model another of the person's machines is already serving (the Sparks) goes before anything this
+            # PC would have to hold or load on its own GPUs; the registry's order decides within each group.
+            local.sort(key=lambda i: 0 if _faustus.is_lan_item(i) else 1)
             if matches and not local:
                 reasons.append(
                     f"Faustus registry lists only non-local servers for '{capability}'; "
-                    "skipped to keep data on this machine"
+                    "skipped to keep data on this machine and its local network"
                 )
             elif not matches:
                 reasons.append(f"Faustus registry has no server for capability '{capability}'")
@@ -616,6 +619,23 @@ class Link:
                     f"Faustus registry model does not match the llama.cpp model at {_host(url)} "
                     f"({actual})"
                 )
+                return None
+            ranked, base = self._rank(matching, preferred, ctx)
+            model = ranked[0]
+            by_routes = _promoted(model, ranked, base)
+            resident = True
+        elif _faustus.is_lan_item(item):
+            # Another machine's OpenAI-compatible server (vLLM on the Sparks...): it is only worth choosing while it
+            # answers and still serves the model Faustus lists, and then it is resident by definition (nothing loads here).
+            status, served_data = await _faustus.get(self._client, _openai_endpoint(url, "/models"))
+            served = [m.get("id") for m in (served_data or {}).get("data", []) if isinstance(m, dict) and m.get("id")] \
+                if status == 200 and isinstance(served_data, dict) else []
+            if not served:
+                reasons.append(f"Faustus registry names {backend} at {_host(url)} but it does not answer /v1/models")
+                return None
+            matching = [m for m in listed if m in served] or ([] if listed else served)
+            if not matching:
+                reasons.append(f"the server at {_host(url)} serves {', '.join(served)}, not {', '.join(listed)}")
                 return None
             ranked, base = self._rank(matching, preferred, ctx)
             model = ranked[0]
