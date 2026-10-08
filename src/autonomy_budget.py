@@ -126,6 +126,13 @@ def is_read_only_tool(name: Any) -> bool:
     everything else."""
     if not isinstance(name, str) or not name:
         return False
+    # A step checks revocation under every registered spelling. Classify the
+    # same executable for its canonical id and aliases, rather than treating
+    # each spelling as an unknown mutator. Unregistered names still fail high.
+    from src.tool_authority import AUTHORITY
+    resolution = AUTHORITY.resolve(name)
+    if resolution is not None:
+        name = resolution.canonical
     caps = capabilities_for_tool(name)
     return caps.effects <= READ_ONLY_ALLOWED_EFFECTS
 
