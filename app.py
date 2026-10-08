@@ -1797,6 +1797,11 @@ async def serve_research(request: Request):
     """Studio Deep Research (lot AC)."""
     return await serve_index(request)
 
+@app.get("/extraction")
+async def serve_extraction(request: Request):
+    """Studio Extraction: fill a user JSON Schema from a document (OBJ-24)."""
+    return await serve_index(request)
+
 @app.get("/compare")
 async def serve_compare(request: Request):
     """Studio Compare (lot AD)."""
