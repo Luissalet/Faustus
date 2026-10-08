@@ -55,6 +55,7 @@ EXTRA_KEYS: tuple[str, ...] = ("llm_projection_mode", "llm_fence_history_without
                                "advisor_max_tokens", "advisor_context_tokens",
                                "typed_decision_error_fork", "typed_decision_tool_tie",
                                "typed_decision_tool_tie_tolerance", "typed_decision_compaction_keep",
+                               "constrained_choice_enabled", "constrained_choice_backend",
                                "self_declared_risk",
                                "mode_effort_bug_hunt", "mode_effort_ci_analysis",
                                "workflow_eval_model_judge",
@@ -774,6 +775,12 @@ GROUPS: list[dict[str, Any]] = [
             _bool("typed_decision_compaction_keep", "Typed decision in extractive compaction",
                   "Per old tool result, the classifier decides whether to keep it verbatim in the "
                   "digest; the last six messages are never folded. Off by default."),
+            # Constrained choice for closed-set decisions (src/constrained_choice.py).
+            _bool("constrained_choice_enabled", "Constrained choice for closed decisions",
+                  "Closed-set decisions (for now the Deep Research report category) are answered through a grammar on llama.cpp servers or a JSON-schema enum on Ollama, so the answer is always one of the allowed options. Other backends get a validated parse and one repair. Off: the previous free-text path."),
+            _select("constrained_choice_backend", "Constrained choice backend",
+                    "auto detects the server from its URL. llamacpp and ollama force that constraint on every endpoint; free never constrains.",
+                    options=["auto", "llamacpp", "ollama", "free"]),
             # Self-declared risk (src/self_declared_risk.py).
             _bool("self_declared_risk", "Models declare the risk of state-changing calls",
                   "State-changing tools get an optional security_risk parameter (LOW, MEDIUM, HIGH, "

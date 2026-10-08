@@ -213,21 +213,54 @@ def _clean(text: Any) -> str:
     return raw.strip()
 
 
-def _json_answer(text: str) -> Optional[str]:
+class _Pairs(dict):
+    """A JSON object that remembers every ``key: value`` pair it was written
+    with, duplicates included (``json`` keeps only the last of a repeated key)."""
+
+    def __init__(self, pairs):
+        super().__init__(pairs)
+        self.pairs = list(pairs)
+
+
+# Returned by ``_json_answer`` when the JSON names two different answers.
+_CONFLICT = object()
+
+
+def _answer_text(value: Any) -> Optional[str]:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list) and len(value) == 1 and isinstance(value[0], str):
+        return value[0]
+    return None
+
+
+def _same_answer(a: str, b: str) -> bool:
+    return _fold(a).strip(_EDGE) == _fold(b).strip(_EDGE)
+
+
+def _json_answer(text: str) -> Any:
+    """The answer a JSON reply carries: a string, ``None`` when it carries none
+    (the plain-text reader takes over) or ``_CONFLICT`` when two answer fields
+    (or one repeated key) name different answers."""
     if text[:1] not in ('{', '[', '"'):
         return None
     try:
-        obj = json.loads(text)
+        obj = json.loads(text, object_pairs_hook=_Pairs)
     except (ValueError, TypeError):
         return None
     if isinstance(obj, str):
         return obj
-    if isinstance(obj, list) and len(obj) == 1 and isinstance(obj[0], str):
-        return obj[0]
-    if isinstance(obj, dict):
-        for key in _ANSWER_KEYS:
-            if isinstance(obj.get(key), str):
-                return obj[key]
+    if isinstance(obj, list):
+        return obj[0] if len(obj) == 1 and isinstance(obj[0], str) else None
+    if isinstance(obj, _Pairs):
+        wanted = set(_ANSWER_KEYS)
+        found = [t for k, v in obj.pairs
+                 if str(k).casefold() in wanted and (t := _answer_text(v)) is not None]
+        if not found:
+            return None
+        if any(not _same_answer(found[0], other) for other in found[1:]):
+            return _CONFLICT
+        return found[0]
     return None
 
 
@@ -251,6 +284,8 @@ def match_option(text: Any, options: Sequence[str]) -> Optional[str]:
     if not cleaned:
         return None
     unwrapped = _json_answer(cleaned)
+    if unwrapped is _CONFLICT:
+        return None  # two different answers in one reply: ambiguous, never a guess
     if unwrapped is not None:
         cleaned = _clean(unwrapped)
         if not cleaned:
@@ -575,17 +610,14 @@ async def _attempt_generation(path: str, url: str, model: str, headers: Dict[str
 
 
 def _ollama_value(raw: str) -> Optional[str]:
-    """The label of an Ollama ``format`` answer (a JSON string), or None."""
+    """The label of an Ollama ``format`` answer (a JSON string), or None. A
+    server that wrapped it in an object anyway is read through the same rules as
+    any JSON reply, so a self-contradicting wrapper gives None."""
     text = _clean(raw)
-    try:
-        obj = json.loads(text)
-    except (ValueError, TypeError):
+    if text[:1] not in ('"', '{'):
         return None
-    if isinstance(obj, str):
-        return obj
-    if isinstance(obj, dict) and isinstance(obj.get(_SCHEMA_KEY), str):
-        return obj[_SCHEMA_KEY]  # a server that wrapped it anyway
-    return None
+    value = _json_answer(text)
+    return value if isinstance(value, str) else None
 
 
 # ---------------------------------------------------------------------------

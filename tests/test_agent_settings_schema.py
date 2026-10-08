@@ -140,6 +140,8 @@ def test_groups_follow_the_requested_layout():
             # Typed decisions at the loop's forks.
             "typed_decision_error_fork", "typed_decision_tool_tie",
             "typed_decision_tool_tie_tolerance", "typed_decision_compaction_keep",
+            # Closed-set decisions through a grammar / JSON-schema enum (OBJ-27).
+            "constrained_choice_enabled", "constrained_choice_backend",
             # The model's own risk estimate on state-changing tools.
             "self_declared_risk",
             # R3 (Reach wave): src/fanout/ -- fan-out candidate concurrency

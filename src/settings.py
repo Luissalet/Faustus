@@ -820,6 +820,12 @@ DEFAULT_SETTINGS = {
     # Relative gap to the best lexical score within which two tools tie.
     "typed_decision_tool_tie_tolerance": 0.03,
     "typed_decision_compaction_keep": False,
+    # Constrained choice (src/constrained_choice.py): closed-set decisions through a
+    # grammar (llama.cpp) or a JSON-schema enum (Ollama), validated parse + one repair
+    # elsewhere. Off restores the previous free-text path of each migrated point.
+    "constrained_choice_enabled": True,
+    # "auto" detects the backend from the URL; "llamacpp" / "ollama" force it; "free" never constrains.
+    "constrained_choice_backend": "auto",
     # Models declare the risk of state-changing calls (src/self_declared_risk.py):
     # an optional `security_risk` parameter on those tools; HIGH forces the
     # approval card, nothing ever lowers the gate. The parameter is removed

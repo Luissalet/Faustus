@@ -30,13 +30,20 @@ Fallbacks, in order:
 2. Free-text replies go through a validated parse: exact match, NFKC
    case-folded unique match, trimmed punctuation, unique whole-word match
    (longest label first), JSON unwrapping, think-block stripping. Two different
-   options in one reply are ambiguous and count as no match.
+   options in one reply are ambiguous and count as no match. That includes a
+   JSON object whose answer fields disagree (`{"choice":"a","answer":"b"}`,
+   keys compared case-insensitively, a one-element list counts as a value) and
+   a repeated key with different values; the reply goes to the repair, never
+   to the first field. Fields that agree (also once folded) are accepted, and
+   prose fields such as a reason are not answers.
 3. One repair call restates the allowed answers. After that the result is
    `None` with the reason recorded.
 
-Hidden settings (read with `get_setting`, defaults shown, not yet registered
-in the settings UI): `constrained_choice_enabled` (true) and
-`constrained_choice_backend` (`auto`, or force `llamacpp`, `ollama`, `free`).
+Settings (registered in `DEFAULT_SETTINGS`, shown on the Agent settings screen with
+a Spanish label and help): `constrained_choice_enabled` (default true) and
+`constrained_choice_backend` (`auto`; or force `llamacpp`, `ollama`, `free`).
+The defaults keep the behaviour of this note; a test pins that the module
+defaults and `DEFAULT_SETTINGS` agree.
 
 ## Migrated decision point
 
@@ -113,6 +120,8 @@ Findings:
 
 ## Verification
 
+- `tests/test_constrained_choice_conflicts.py` (27 tests): contradicting JSON
+  replies, duplicate keys, the repair path, and the settings registration.
 - `tests/test_constrained_choice.py` (69 tests): builders and escaping,
   matching, backend routing, HTTP behaviour against the stub (constraint on
   the wire, free text, repair, ignored grammar, rejected-and-remembered

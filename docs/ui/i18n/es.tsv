@@ -9178,3 +9178,7 @@ Review this session	Revisar esta sesión
 Applied. You can undo it from the history.	Aplicada. Puedes deshacerla desde el historial.
 Undone. The previous content is back.	Deshecha. El contenido anterior ha vuelto.
 No decisions yet.	Aún no hay decisiones.
+Closed-set decisions (for now the Deep Research report category) are answered through a grammar on llama.cpp servers or a JSON-schema enum on Ollama, so the answer is always one of the allowed options. Other backends get a validated parse and one repair. Off: the previous free-text path.	Las decisiones de conjunto cerrado (por ahora la categoría del informe de Deep Research) se responden con una gramática en servidores llama.cpp o un enum de esquema JSON en Ollama, de modo que la respuesta siempre es una de las opciones permitidas. Otros backends reciben un análisis validado y una reparación. Desactivado: el camino anterior de texto libre.
+Constrained choice backend	Backend de la elección restringida
+Constrained choice for closed decisions	Elección restringida en decisiones cerradas
+auto detects the server from its URL. llamacpp and ollama force that constraint on every endpoint; free never constrains.	auto detecta el servidor por su URL. llamacpp y ollama fuerzan esa restricción en todos los endpoints; free nunca restringe.
