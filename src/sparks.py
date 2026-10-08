@@ -137,7 +137,7 @@ def _detected_nodes(server: Dict[str, Any]) -> List[str]:
 def status(*, with_recipes: bool = True) -> Dict[str, Any]:
     cfg = config()
     base = {"enabled": cfg["enabled"], "url": cfg["url"], "default_backend": cfg["default_backend"], "recipe": cfg["recipe"],
-            "first_token_timeout_s": cfg["first_token_timeout_s"],
+            "first_token_timeout_s": cfg.get("first_token_timeout_s", 30.0),
             "local_default": cfg["local_default"]}
     if not cfg["enabled"]:
         return {"ok": False, "error": "disabled", **base}
