@@ -624,9 +624,10 @@ class Link:
             model = ranked[0]
             by_routes = _promoted(model, ranked, base)
             resident = True
-        elif _faustus.is_lan_item(item):
-            # Another machine's OpenAI-compatible server (vLLM on the Sparks...): it is only worth choosing while it
-            # answers and still serves the model Faustus lists, and then it is resident by definition (nothing loads here).
+        elif _faustus.is_lan_item(item) or api == "openai":
+            # Any other OpenAI-compatible server (vLLM on the Sparks, a server on this PC Faustus only knows by URL): it is
+            # only worth choosing while it answers and still serves the model Faustus lists, and then it is resident by
+            # definition (nothing loads). A registry entry left behind by a stopped server is skipped instead of called.
             status, served_data = await _faustus.get(self._client, _openai_endpoint(url, "/models"))
             served = [m.get("id") for m in (served_data or {}).get("data", []) if isinstance(m, dict) and m.get("id")] \
                 if status == 200 and isinstance(served_data, dict) else []
