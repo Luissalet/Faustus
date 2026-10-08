@@ -19,7 +19,7 @@
 
 ## Verificación actual (8 de octubre de 2026)
 
-Los arreglos de Studio están integrados en el código. El muestreo, la recuperación del formato de herramientas y los checkpoints del Ágora siguen como candidatos aislados en revisión. Los checkpoints se probaron por HTTP real, CLI, stdio MCP y el drawer en Chromium sin pantalla (español/inglés); las rutas y pruebas declaradas no acreditan ejecución ni exclusividad. Cursor participa mediante una sesión CLI reanudada por turno horario; se endurecen su lanzador y la caché de sondas lentas. No se atribuye un nuevo grado al modelo ni una activación en producción. Véanse el [estado de verificación](FAUSTUS.md#276-evidencias-de-cierre-y-límites-de-la-verificación-07-10-2026) y las [puertas pendientes](OBJETIVOS.md).
+Los arreglos de Studio y del ámbito de temperatura de programación están integrados en el código; faltan la activación y una nueva evaluación Q4. La recuperación del formato de herramientas y los checkpoints del Ágora siguen como candidatos aislados en revisión. Los checkpoints se probaron por HTTP real, CLI, stdio MCP y el drawer en Chromium sin pantalla (español/inglés); las rutas y pruebas declaradas no acreditan ejecución ni exclusividad. Cursor participa mediante una sesión CLI reanudada por turno horario; se endurecen su lanzador y la caché de sondas lentas. No se atribuye un nuevo grado al modelo ni una activación en producción. Véanse el [estado de verificación](FAUSTUS.md#276-evidencias-de-cierre-y-límites-de-la-verificación-07-10-2026) y las [puertas pendientes](OBJETIVOS.md).
 
 ## Qué es Faustus
 
