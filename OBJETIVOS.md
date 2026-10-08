@@ -1308,3 +1308,25 @@ Este inventario conserva la solicitud histórica de agrupar comprobaciones larga
 - **Descripciones largas.** Hay 8 de más de 250 tokens; las más largas son `blender_scene` (414), `manage_tasks` (410) e `inspect_image` (390). Recortarlas sin perder los ejemplos que usa el índice.
 - **Huella por turno.** Guardar en el ledger del turno qué herramientas se ofrecieron y cuánto pesaron, no sólo el total.
 - **README.** Añadir la capacidad a `README.md` y `README.es.md`. Hoy esos ficheros tienen cambios sin versionar de otra sesión y no se tocaron.
+
+## Continuidad del bucle — 08-10-2026, relevo autorizado
+
+Coordinación `codex-relevo` en el chat nuevo; la misma automatización horaria
+está activa y trasladada, sin duplicado. Estado detallado y evidencia en
+FAUSTUS.md, «Relevo del bucle y revisión de autonomía».
+
+1. Revisar e integrar una sola vez la pila #54/#55/#64. #64 (`43c148c8`)
+   conserva lecturas clasificadas y deniega escrituras no enumeradas por sus
+   efectos en el dispatcher. Pasan 79 pruebas del área, siete del ejecutor
+   real y API/MCP/navegador con fixture determinista. Sigue candidato; no
+   acredita una evaluación de modelo real ni activación de producción.
+2. Corregir #57: el orden de permisos de AGENT.md no puede ampliar autoridad;
+   aprobar y deshacer deben preservar una edición concurrente del destino.
+   Voto changes r0/ccc8f1ac con repros independientes confirmados por root.
+3. Corregir #63: un objeto de respuesta con etiquetas contradictorias es
+   ambiguo y debe repararse o rechazarse. Voto changes r0/5a01ecd2; no inferencia.
+4. Revisar #45 de Cursor y continuar su reparto disjunto. #44 está integrado;
+   los siguientes turnos reanudan la sesión oficial, con un único lanzador.
+5. Resolver #60, catálogo de extracción OBJ-24 y activaciones pendientes con
+   sus bloqueos y comprobaciones de conjunto. Mantener Watch/Book fuera,
+   SABER aparcado, las GPU 0/1 libres para Luis y ningún push.

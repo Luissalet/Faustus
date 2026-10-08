@@ -10385,3 +10385,35 @@ Idea del radar #434 (`mcp-footprint`, informe de tamaño y duplicados de un cat�
 - Por MCP de verdad, con un cliente JSON-RPC por stdio contra `mcp_servers/harness_server.py`: `tools/list` da 4 herramientas. `tool_footprint` responde en 0,1 s con el catálogo integrado (243 herramientas, 84 599 tokens, 59 061 directos) y en 0,0 s con una lista suministrada. Antes del arreglo, la llamada sin `tools` no volvía.
 - El 7006 conecta el servidor `harness` con sus 4 herramientas tras el cambio.
 - No hubo turno del modelo: el 8081 estaba parado.
+
+## Relevo del bucle y revisión de autonomía — 08-10-2026
+
+Luis autorizó continuar el bucle en el chat nuevo. La automatización existente
+`mejorar-faustus-y-hoards` está activa y apunta al chat
+`01a11a8a-1caa-73f1-a7a4-3f6ba97621d6`; el coordinador es `codex-relevo`.
+El chat anterior falló por agotamiento de contexto. No se creó otro bucle.
+
+- **Solo lectura, tarea Ágora #64:** candidato `43c148c8`, sobre #55/#54,
+  todavía sin integrar ni activar. La política comprueba efectos en la puerta
+  de ejecución, incluyendo alias, builtins fuera del catálogo y MCP tardío.
+  Los list/read clasificados se conservan. Root: 79 pruebas del área y siete
+  del ejecutor real; tres turnos de API nativa con proveedor determinista,
+  MCP stdio (40 tools, session_events/session_usage) y Chromium con estado
+  persistido. El informe temporal mantiene su SHA. No es evaluación Qwen.
+  Evidencias: `D:/LocalAI/tempfiles/qa-readonly64-20261008/summary.txt`.
+- **Refinamiento #57 y decisiones tipadas #63:** votos `changes` sobre los
+  hashes enviados. Repros independientes y repetidos por root detectan
+  ampliación de autoridad por reordenar permisos, pérdida de una edición
+  humana concurrente y elección de una etiqueta en un JSON contradictorio.
+  No integrados. Los autores conservan sus worktrees y corrigen los envíos.
+- **Cursor:** turno oficial reanudado. #44 integrado como `b206011`, equivalente
+  al aprobado `385f6e1`; #45 enviado para revisión con sincronización por
+  estado/evento en las pruebas temporales del Hub. Sigue con tareas disjuntas
+  por el hilo 32. No push ni nueva sesión para leer el buzón.
+
+La fuente del Hub para checkpoints y votos versionados sigue pendiente de
+activación. Las tareas del chat anterior no se declararon transferidas: el
+Hub rechazó claim #55 con 409 por propietario activo; #64 es continuación
+vinculada y mantiene ese historial. Los README heredados tienen modificaciones
+de otra sesión y se preservaron. PENDIENTES conserva únicamente decisiones
+necesarias de Luis; estos arreglos resolubles siguen en el Ágora.
