@@ -46,7 +46,6 @@ FUNCTION_TOOL_SCHEMAS = [
     _emit_schema("plan_media_transform"),
     _emit_schema("transform_media"),
     _emit_schema("inspect_media"),
-    _emit_schema("inspect_deliverable"),
     _emit_schema("bash"),
     _emit_schema("python"),
     _emit_schema("powershell"),

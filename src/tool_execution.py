@@ -2021,7 +2021,8 @@ async def _execute_tool_block_impl(
     ):
         desc = f"{tool}: BLOCKED"
         result = {
-            "error": tool_policy.reason_for(tool),
+            "error": (tool_policy.reason_for(tool) if callable(getattr(tool_policy, "reason_for", None))
+                      else f"Execution of tool '{tool}' is forbidden by the active guide-only policy."),
             "exit_code": 1,
             "blocked": True,
             "policy": "tool_policy",
