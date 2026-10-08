@@ -3364,49 +3364,72 @@ def rollback_artifact_identity_tables():
 # Any future migrations or schema changes that temporarily violate foreign-key
 # constraints will fail. To perform such operations, foreign_keys must be
 # temporarily disabled around the migration workflow.
+
+
+def _schema_init_lock_path() -> str:
+    """Path for the cross-process lock that serializes first-boot schema creation.
+
+    ``create_all(checkfirst=True)`` still races across processes: both see the
+    table missing and both issue ``CREATE TABLE``. Two fresh interpreters that
+    import ``core.database`` (or ``app``) against the same empty file-backed DB
+    then die with ``table … already exists``. The lock sits next to the SQLite
+    file when there is one; otherwise under ``DATA_DIR``.
+    """
+    db_path = _sqlite_db_path(engine.url)
+    if db_path is not None:
+        return f"{db_path}.init.lock"
+    return str(Path(DATA_DIR) / "db_init.lock")
+
+
 def init_db():
     """
     Initialize the database by creating all tables.
     Should be called when starting the application.
     """
-    _migrate_model_endpoints()
-    Base.metadata.create_all(bind=engine)
-    # Lock the DB file (and any SQLite sidecars) to 0o600 — it holds bearer-token
-    # + bcrypt hashes and encrypted provider keys. POSIX only; safe_chmod no-ops
-    # on Windows (ACL-restricted profile dir) and the path helper returns None for
-    # Postgres / in-memory. Must stay AFTER create_all: the file is born here at
-    # the umask default, and nothing below resets the mode. The path comes from
-    # engine.url (SQLAlchemy's parsed URL), so a driver-qualified or query-tagged
-    # DATABASE_URL still resolves to the real file instead of slipping through.
-    db_path = _sqlite_db_path(engine.url)
-    if db_path is not None:
-        # Fail closed-loud on the main file: this is the only access control on
-        # it, so if the chmod genuinely fails (read-only FS, foreign owner) an
-        # operator should hear about it. safe_chmod also returns False as a
-        # Windows no-op, so guard on IS_WINDOWS to avoid a spurious warning there.
-        if not safe_chmod(db_path, 0o600) and not IS_WINDOWS:
-            logger.warning(
-                "Could not restrict %s to 0o600; it holds secrets and may be "
-                "world-readable. Check filesystem permissions and ownership.",
-                db_path,
-            )
-        # Re-lock any sidecars present at startup. New ones inherit the main
-        # file's mode (now 0o600, since we set it first), and they're usually
-        # absent here, but a stale -wal/-shm/-journal left by an older 0o644
-        # install could still expose secret pages. Absent sidecars are the
-        # normal case, not an error — only a failed chmod warrants a warning.
-        for suffix in _SQLITE_SIDECARS:
-            sidecar = db_path + suffix
-            if (
-                os.path.exists(sidecar)
-                and not safe_chmod(sidecar, 0o600)
-                and not IS_WINDOWS
-            ):
+    from core.file_lock import FileLock
+
+    # Hold across create_all + formal migrations so a second process waits for a
+    # complete schema instead of racing CREATE TABLE. timeout/stale comfortably
+    # cover a cold first boot with many migration steps.
+    with FileLock(_schema_init_lock_path(), timeout=120.0, stale_after=300.0):
+        _migrate_model_endpoints()
+        Base.metadata.create_all(bind=engine)
+        # Lock the DB file (and any SQLite sidecars) to 0o600 — it holds bearer-token
+        # + bcrypt hashes and encrypted provider keys. POSIX only; safe_chmod no-ops
+        # on Windows (ACL-restricted profile dir) and the path helper returns None for
+        # Postgres / in-memory. Must stay AFTER create_all: the file is born here at
+        # the umask default, and nothing below resets the mode. The path comes from
+        # engine.url (SQLAlchemy's parsed URL), so a driver-qualified or query-tagged
+        # DATABASE_URL still resolves to the real file instead of slipping through.
+        db_path = _sqlite_db_path(engine.url)
+        if db_path is not None:
+            # Fail closed-loud on the main file: this is the only access control on
+            # it, so if the chmod genuinely fails (read-only FS, foreign owner) an
+            # operator should hear about it. safe_chmod also returns False as a
+            # Windows no-op, so guard on IS_WINDOWS to avoid a spurious warning there.
+            if not safe_chmod(db_path, 0o600) and not IS_WINDOWS:
                 logger.warning(
-                    "Could not restrict %s to 0o600; it may expose DB pages.",
-                    sidecar,
+                    "Could not restrict %s to 0o600; it holds secrets and may be "
+                    "world-readable. Check filesystem permissions and ownership.",
+                    db_path,
                 )
-    _run_formal_migrations()
+            # Re-lock any sidecars present at startup. New ones inherit the main
+            # file's mode (now 0o600, since we set it first), and they're usually
+            # absent here, but a stale -wal/-shm/-journal left by an older 0o644
+            # install could still expose secret pages. Absent sidecars are the
+            # normal case, not an error — only a failed chmod warrants a warning.
+            for suffix in _SQLITE_SIDECARS:
+                sidecar = db_path + suffix
+                if (
+                    os.path.exists(sidecar)
+                    and not safe_chmod(sidecar, 0o600)
+                    and not IS_WINDOWS
+                ):
+                    logger.warning(
+                        "Could not restrict %s to 0o600; it may expose DB pages.",
+                        sidecar,
+                    )
+        _run_formal_migrations()
 
 
 # OPS-02 / QA-45: the sequence below used to run as bare calls, each one on
