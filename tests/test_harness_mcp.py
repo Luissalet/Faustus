@@ -25,7 +25,7 @@ def test_server_identity_and_tool_surface():
     assert srv.server.name == "harness"
     tools = asyncio.run(srv.list_tools())
     assert [t.name for t in tools] == ["history_projection", "resource_claims", "paired_bench_reports",
-                                       "tool_footprint"]
+                                       "tool_footprint", "harness_proposals"]
     for t in tools:
         assert len(t.description) > 60
         for required in t.inputSchema.get("required", []):
@@ -147,3 +147,24 @@ def test_tool_footprint_builtin_and_supplied_catalogues():
     assert supplied["near_duplicates"][0]["same_source"] is False
     assert supplied["name_collisions"][0]["tools"] == ["mcp__borges__search", "mcp__links__search"]
     assert "must be a list" in _payload("tool_footprint", {"tools": "nope"})["error"]
+
+
+def test_harness_proposals_lists_and_reads_but_cannot_apply(tmp_path, monkeypatch):
+    from src.harness_refinement import store
+
+    monkeypatch.setattr(store, "DATA_DIR", str(tmp_path))
+    rec = store.create_proposal(
+        axis="memory", target="memory:new", op="create", before=None, after="Dates in ISO format.",
+        rationale="corrected", evidence=[{"id": "e1", "kind": "correction", "quote": "ISO please"}],
+        trigger="manual", session_id="s1")
+    listing = _payload("harness_proposals", {})
+    assert [p["id"] for p in listing["proposals"]] == [rec["id"]]
+    assert "before" not in listing["proposals"][0] and listing["counts"]["pending"] == 1
+    one = _payload("harness_proposals", {"id": rec["id"]})
+    assert one["proposal"]["after"] == "Dates in ISO format." and one["proposal"]["status"] == "pending"
+    assert _payload("harness_proposals", {"status": "applied"})["proposals"] == []
+    assert "no proposal" in _payload("harness_proposals", {"id": "nope"})["error"]
+    # there is no way to decide through this server
+    tools = {t.name: t for t in asyncio.run(srv.list_tools())}
+    assert set(tools["harness_proposals"].inputSchema["properties"]) == {"id", "status", "axis", "limit"}
+    assert store.get(rec["id"])["status"] == "pending"

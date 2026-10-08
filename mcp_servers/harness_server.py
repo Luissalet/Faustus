@@ -19,6 +19,10 @@ running a turn:
   list) costs in the prompt: tokens per tool, source and exposure, the
   heaviest tools, name collisions and near-duplicate descriptions.
 
+* ``harness_proposals`` - list or read the refinement proposals the assistant
+  made after a task (diff, rationale, evidence, status). Approving, rejecting
+  and undoing stay human actions in Studio or the REST routes.
+
 Nothing here writes anything or starts a run. The in-process receipt log and
 claim broker of the running app are not reachable from this separate process;
 these tools compute from what they are given, and read the reports on disk.
@@ -147,6 +151,29 @@ async def list_tools() -> list[Tool]:
                             "description": "How many heaviest tools to list (default 15)."},
                     "similarity": {"type": "number", "minimum": 0.1, "maximum": 1,
                                    "description": "Description similarity for near duplicates (default 0.6)."},
+                },
+            },
+        ),
+        Tool(
+            name="harness_proposals",
+            description=(
+                "List or read the harness refinement proposals: the smallest edits the assistant "
+                "suggested after a task to its project instructions, a skill, a memory or a "
+                "sub-agent spec. Without `id` the newest proposals are listed (axis, target, op, "
+                "status, rationale, diff) with counts per status; with `id` one proposal comes "
+                "back with its exact before/after and its trigger-to-result log. Approving, "
+                "rejecting and undoing are human actions in Studio (Skills > Harness proposals) "
+                "or the REST routes; this tool cannot apply anything. Read-only."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "Proposal id from the listing."},
+                    "status": {"type": "string", "enum": ["pending", "applied", "rejected", "undone"],
+                               "description": "Only proposals in this state."},
+                    "axis": {"type": "string", "enum": ["prompt_layer", "skill", "memory", "subagent_spec"]},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 50,
+                              "description": "How many to list (default 10)."},
                 },
             },
         ),
@@ -300,11 +327,31 @@ def _tool_footprint(args: dict) -> dict:
     return report
 
 
+def _harness_proposals(args: dict) -> dict:
+    from src.harness_refinement import store
+
+    ident = args.get("id")
+    if ident:
+        record = store.get(str(ident))
+        if not record:
+            return {"error": f"no proposal {ident!r}"}
+        full = {k: v for k, v in record.items() if k not in ("meta", "applied_content")}
+        return {"proposal": full, "log": store.read_log(limit=20, proposal_id=str(ident))}
+    try:
+        limit = max(1, min(50, int(args.get("limit") or 10)))
+    except (TypeError, ValueError):
+        limit = 10
+    rows = store.list_proposals(status=args.get("status") or None, axis=args.get("axis") or None, limit=limit)
+    light = [{k: v for k, v in r.items() if k not in ("before", "after", "meta", "applied_content")} for r in rows]
+    return {"proposals": light, "counts": store.counts()}
+
+
 _TOOLS = {
     "history_projection": _history_projection,
     "resource_claims": _resource_claims,
     "paired_bench_reports": _paired_bench_reports,
     "tool_footprint": _tool_footprint,
+    "harness_proposals": _harness_proposals,
 }
 
 

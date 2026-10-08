@@ -1418,6 +1418,15 @@ def save_assistant_response(
                 })
             except Exception:
                 logger.debug("[lifecycle_hooks] turn_end run failed", exc_info=True)
+            # Harness refinement (src/harness_refinement/): queue this turn for the
+            # background proposer. Off by default; when off this is one setting
+            # read. It only ever queues: the proposer runs on its own thread, after
+            # the model guard, and what it produces is a pending proposal.
+            try:
+                from src.harness_refinement import runner as _harness_runner
+                _harness_runner.maybe_queue_after_turn(session_id, _post_turn_owner)
+            except Exception:
+                logger.debug("[harness_refinement] queueing failed", exc_info=True)
             # Fix memory (src/fix_memory.py): remember what this turn changed and
             # how it was verified, before the instincts branch may return early.
             if not _post_turn_owner:

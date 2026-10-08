@@ -829,6 +829,11 @@ from routes.skill_selector_routes import setup_skill_selector_routes
 app.include_router(setup_skill_selector_routes())
 from routes.skills_routes import setup_skills_routes
 app.include_router(setup_skills_routes(skills_manager))
+# Harness refinement proposals (src/harness_refinement/): pending edits to the
+# project instructions, a skill, a memory or a sub-agent spec. Approve/reject/undo
+# are human-only (require_human).
+from routes.harness_proposals_routes import setup_harness_proposals_routes
+app.include_router(setup_harness_proposals_routes(memory_vector=memory_vector))
 # A25: git-backed skill sources (pinned revision, verified update, rollback).
 from routes.skill_source_routes import setup_skill_source_routes
 app.include_router(setup_skill_source_routes())

@@ -9160,3 +9160,21 @@ Overnight pass: due, waiting until you stop working or the model is free.	Pasada
 Overnight pass: next run {when}.	Pasada nocturna: próxima ejecución {when}.
 Last overnight run: {when} · {n} proposal(s).	Última ejecución nocturna: {when} · {n} propuesta(s).
 Last overnight run was interrupted ({when}); it will not be repeated.	La última pasada nocturna se interrumpió ({when}); no se repetirá.
+Harness proposals	Propuestas al harness
+Subagent spec	Ficha de subagente
+Applied	Aplicada
+Undone	Deshecha
+No textual change.	Sin cambio de texto.
+turn {n}	turno {n}
+The target changed since this was proposed. Approving is refused until you propose again.	El destino ha cambiado desde que se propuso. No se puede aprobar hasta que se vuelva a proponer.
+Harness proposals could not be loaded	No se pudieron cargar las propuestas al harness
+A proposal is waiting for your approval.	Hay una propuesta esperando tu aprobación.
+Nothing to propose	Nada que proponer
+After a task, the assistant can suggest the smallest change to its own working state: project instructions, a skill, a memory or a subagent spec. The base system prompt is never touched. Nothing applies until you approve it, and every applied change can be undone.	Tras una tarea, el asistente puede sugerir el cambio más pequeño en su propio estado de trabajo: las instrucciones del proyecto, una skill, un recuerdo o la ficha de un subagente. El prompt de sistema base nunca se toca. Nada se aplica hasta que lo apruebas y todo cambio aplicado se puede deshacer.
+Automatic proposals after each task: on.	Propuestas automáticas tras cada tarea: activadas.
+Automatic proposals after each task: off. Turn on "Harness: propose refinements after a task" in Settings.	Propuestas automáticas tras cada tarea: desactivadas. Actívalas en Ajustes con «Harness: proponer refinamientos tras una tarea».
+Session id	ID de sesión
+Review this session	Revisar esta sesión
+Applied. You can undo it from the history.	Aplicada. Puedes deshacerla desde el historial.
+Undone. The previous content is back.	Deshecha. El contenido anterior ha vuelto.
+No decisions yet.	Aún no hay decisiones.

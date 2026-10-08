@@ -870,3 +870,25 @@
     transition: none;
   }
 }
+
+/* Harness refinement proposals (Skills > Harness proposals) */
+.fs-hp__list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--fs-space-3); }
+.fs-hp__card { border: 1px solid var(--fs-border); border-radius: var(--fs-radius-panel); background: var(--fs-surface-1); padding: var(--fs-space-3) var(--fs-space-4); display: grid; gap: var(--fs-space-2); }
+.fs-hp__card[data-status='applied'] { border-color: var(--fs-success); }
+.fs-hp__card[data-status='rejected'], .fs-hp__card[data-status='undone'] { opacity: 0.8; }
+.fs-hp__head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--fs-space-2); }
+.fs-hp__target { font-family: var(--fs-font-code); font-size: 0.8rem; color: var(--fs-text-2); overflow-wrap: anywhere; }
+.fs-hp__status { margin-inline-start: auto; font-size: 0.75rem; color: var(--fs-text-2); }
+.fs-hp__status[data-status='pending'] { color: var(--fs-warning); }
+.fs-hp__status[data-status='applied'] { color: var(--fs-success); }
+.fs-hp__why { margin: 0; color: var(--fs-text-1); }
+.fs-hp__diff { margin: 0; max-block-size: 40vh; overflow: auto; padding: var(--fs-space-3); border: 1px solid var(--fs-border); border-radius: var(--fs-radius-control); background: var(--fs-canvas); font-family: var(--fs-font-code); font-size: 0.78rem; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.fs-hp__line { display: block; color: var(--fs-text-2); }
+.fs-hp__line[data-kind='add'] { color: var(--fs-success); }
+.fs-hp__line[data-kind='del'] { color: var(--fs-danger); }
+.fs-hp__line[data-kind='hunk'] { color: var(--fs-text-3); }
+.fs-hp__evidence { font-size: 0.85rem; color: var(--fs-text-2); }
+.fs-hp__evidence ul { margin: var(--fs-space-2) 0 0; padding-inline-start: var(--fs-space-5); }
+.fs-hp__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--fs-space-2); }
+.fs-hp__run { display: flex; flex-wrap: wrap; gap: var(--fs-space-2); align-items: center; }
+.fs-hp__run .fs-field { flex: 1 1 16rem; }

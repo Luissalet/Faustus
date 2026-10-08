@@ -1955,6 +1955,13 @@ DEFAULT_SETTINGS = {
     # Whether a coding-task turn automatically recalls and injects past
     # fixes, vs. only ever being available through the `recall_fixes` tool.
     "fix_memory_auto_recall": True,
+    # Harness refinement (src/harness_refinement/): after a task that shows a real
+    # problem (a correction, a repeated request, a failed-and-repeated tool call),
+    # a local model may PROPOSE one small edit to the project instructions, a
+    # skill, a memory entry or a sub-agent spec. It only proposes; applying
+    # needs your approval and can be undone by id. Runs in the background, after
+    # the reply, and never loads a model on its own. Off by default.
+    "harness_refinement_enabled": False,
     # Autonomous bug hunter (src/bug_hunt.py): "" = the resolved utility
     # endpoint's own model, generating and triaging the edge-case tests.
     "bug_hunt_model": "",

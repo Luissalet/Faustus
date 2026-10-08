@@ -39,6 +39,7 @@ EXTRA_KEYS: tuple[str, ...] = ("llm_projection_mode", "llm_fence_history_without
                                "vision_max_tokens", "vision_num_ctx",
                                "dispatch_model", "dispatch_endpoint_id", "gpu_placement_prefer",
                                "shell_preflight_enabled", "instincts_require_approval", "instincts_offer_min_tool_calls",
+                               "harness_refinement_enabled",
                                "budget_period_window", "budget_period_targets", "budget_period_band_pct",
                                "budget_period_min_workers", "budget_gpu_daily_seconds", "budget_backoff_when_interactive",
                                "unattended_failure_breaker", "unattended_breaker_cooldown_min",
@@ -1585,6 +1586,12 @@ GROUPS: list[dict[str, Any]] = [
                   "late if the machine was asleep at the hour."),
             _int("skills_sleep_pass_hour", "Skills overnight pass: hour",
                  "Local hour of the day (0-23) from which the overnight pass may start.", 0, 23),
+            _bool("harness_refinement_enabled", "Harness: propose refinements after a task",
+                  "After a task where you corrected the assistant, repeated yourself or a tool failed and was "
+                  "repeated, a local model may propose ONE small edit to the project instructions, a skill, a "
+                  "memory or a sub-agent spec (Skills > Harness proposals). It only proposes: nothing is applied without "
+                  "your approval and every applied edit can be undone. It runs in the background after the reply "
+                  "and never loads a model on its own."),
             _select("agent_default_chat_mode", "Default chat mode",
                     "Mode for chats that have not chosen one with /mode or the composer chip. lean drops the skills "
                     "index, repo map, instincts and MCP/plugin tools for a much shorter prompt; each chat pins its "
