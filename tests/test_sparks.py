@@ -232,3 +232,34 @@ def test_prometheus_closed_drops_a_port_that_serves_something_else(fake, monkeyp
 
     monkeypatch.setattr(sparks, "_request", request)
     assert sparks.sync()["action"] == "to_local" and load_settings()["default_endpoint_id"] == "local1"
+
+
+def test_a_sparks_model_picked_by_hand_stays_with_the_switch_off(fake):
+    update_settings({"sparks_default_backend": False})
+    fake.running = [fake.endpoint("glm53-tp3")]
+    ep = sparks.sync()["endpoints"]["glm53-tp3"]
+    s = load_settings()
+    s["default_endpoint_id"], s["default_model"] = ep, "glm-5.3-flash"
+    save_settings(s)
+    assert sparks.sync()["action"] == "none" and load_settings()["default_endpoint_id"] == ep
+    fake.running = []                                   # it stops serving: back to the local default
+    assert sparks.sync()["action"] == "to_local" and load_settings()["default_endpoint_id"] == "local1"
+
+
+def test_turning_the_switch_off_undoes_the_automatic_default(fake):
+    fake.running = [fake.endpoint("glm53-tp3")]
+    assert sparks.sync()["action"] == "to_sparks"
+    update_settings({"sparks_default_backend": False})
+    assert sparks.sync()["action"] == "to_local" and load_settings()["default_endpoint_id"] == "local1"
+
+
+def test_another_sparks_model_picked_by_hand_is_an_override(fake):
+    fake.running = [fake.endpoint("glm53-tp3"), fake.endpoint("qwen38-27b-1m")]
+    ids = sparks.sync()["endpoints"]
+    s = load_settings()
+    s["default_endpoint_id"], s["default_model"] = ids["qwen38-27b-1m"], "qwen3.8-27b"
+    save_settings(s)
+    assert sparks.sync()["action"] == "user_override"
+    s = load_settings()
+    assert s["sparks_default_backend"] is False and s["default_model"] == "qwen3.8-27b"
+    assert sparks.sync()["action"] == "none" and load_settings()["default_model"] == "qwen3.8-27b"

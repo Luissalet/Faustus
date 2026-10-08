@@ -268,8 +268,15 @@ def sync() -> Dict[str, Any]:
         eff = effective_default()
         applied = cfg["applied"]
         action = "none"
-        # The person picked another default by hand while the Sparks were the default: respect it and stop switching.
-        if applied.get("endpoint_id") and eff["endpoint_id"] and eff["endpoint_id"] != applied["endpoint_id"] and not eff["on_sparks"]:
+        # Remember the latest local default, so whatever puts the Sparks in its place (the switch or a pick by hand) can give it back.
+        if not eff["on_sparks"] and eff["endpoint_id"]:
+            here = {"endpoint_id": eff["endpoint_id"], "model": eff["model"]}
+            if cfg.get("local_default") != here:
+                patch["sparks_local_default"] = here
+                cfg["local_default"] = here
+        # The person picked another default by hand (local, or another model on the Sparks) after the automatic one: respect it
+        # and stop switching.
+        if applied.get("endpoint_id") and eff["endpoint_id"] and (eff["endpoint_id"], eff["model"]) != (applied["endpoint_id"], applied.get("model", "")):
             patch["sparks_default_backend"] = False
             patch["sparks_applied_default"] = {}
             cfg["default_backend"] = False
@@ -285,7 +292,13 @@ def sync() -> Dict[str, Any]:
                 patch["sparks_applied_default"] = {"endpoint_id": ep_id, "model": model, "recipe": target["recipe"]}
                 action = "to_sparks"
         elif eff["endpoint_id"] in managed and eff["endpoint_id"]:
-            action = _restore_local(cfg)
+            # The default is on the Sparks while the automatic switch is off (or nothing serves). Give it back only when it no longer
+            # serves, or when it is still the automatic choice being undone; a Sparks model picked by hand stays.
+            serving = {ids.get(e["recipe"]): set(e.get("models") or []) for e in running}
+            still_serves = eff["model"] in serving.get(eff["endpoint_id"], set())
+            automatic = bool(applied.get("endpoint_id")) and action != "user_override"
+            if not still_serves or automatic:
+                action = _restore_local(cfg)
         if patch:
             _update(patch)
         return {"ok": True, "running": [e["recipe"] for e in running], "endpoints": ids, "action": action,
