@@ -43,7 +43,6 @@ import {
   parseThinkMode,
   readThinkMode,
   getReasoningLevels,
-  genWithThinking,
   readThinkEffort,
   writeThinkEffort,
   readThinkingOn,
@@ -558,9 +557,9 @@ export function StudioScreen() {
   const [effortPick, setEffortPick] = useState<string | null>(null);
   const [reasoningCaps, setReasoningCaps] = useState<ReasoningLevels>({ levels: [] });
   const reasoningLevels = reasoningCaps.levels;
-  /** Explicit Thinking on/off when the engine exposes a native toggle; null = follow modes. */
+  /** Explicit Thinking on/off when the engine exposes a native toggle; null = Auto (do not send thinking_enabled). */
   const [thinkingOnPick, setThinkingOnPick] = useState<boolean | null>(null);
-  const thinkingOn = thinkingOnPick ?? (reasoningCaps.thinking_toggle ? true : null);
+  const thinkingOn = thinkingOnPick;
   const [modelSignal, setModelSignal] = useState(0);
   const [panel, panelDispatch] = useChatPanel(sessionId,knobs.incognito);
   // CMP-01-layout (W2-A2): conversation / document / review, per session
@@ -1015,9 +1014,16 @@ export function StudioScreen() {
     // A mode picked after a level: the mode decides again.
     setEffortPick(null);
     writeThinkEffort(sessionId, null);
-    // Think/Deep imply Thinking on; Fast leaves the independent switch alone
-    // (turning Thinking off is the dedicated switch, not picking Fast).
-    if ((mode === 'think' || mode === 'deep') && reasoningCaps.thinking_toggle) {
+    if (!reasoningCaps.thinking_toggle) return;
+    // Keep the Thinking switch coherent with the mode without inventing a third state in the UI:
+    // Auto clears the override; Fast forces off; Think/Deep force on.
+    if (mode === 'auto') {
+      setThinkingOnPick(null);
+      writeThinkingOn(sessionId, null);
+    } else if (mode === 'fast') {
+      setThinkingOnPick(false);
+      writeThinkingOn(sessionId, false);
+    } else {
       setThinkingOnPick(true);
       writeThinkingOn(sessionId, true);
     }
@@ -1465,15 +1471,11 @@ export function StudioScreen() {
           workspace: knobs.mode === 'agent' || options.delegation || teamEnabled ? workspace || undefined : undefined,
           route,
           attachments: options.attachments?.map((a) => a.id),
-          genOverrides: (() => {
-            // Keep gen.think in sync for the sampling chip; the authoritative
-            // switch for engines with thinking_toggle is thinking_enabled below.
-            const merged = genWithThinking(gen, reasoningCaps.thinking_toggle ? thinkingOn : undefined);
-            return Object.keys(merged).length ? (merged as Record<string, number | boolean>) : undefined;
-          })(),
-          thinkMode: thinkingOn === false ? 'fast' : thinkMode,
+          genOverrides: Object.keys(gen).length ? (gen as Record<string, number | boolean>) : undefined,
+          thinkMode,
           reasoningEffort: thinkEffort ?? undefined,
-          thinkingEnabled: reasoningCaps.thinking_toggle ? thinkingOn : undefined,
+          // Only an explicit on/off (not Auto/null) is posted; backend applies it last.
+          thinkingEnabled: reasoningCaps.thinking_toggle && typeof thinkingOn === 'boolean' ? thinkingOn : undefined,
           approval: options.approval,
           questionId: options.questionId,
           optionIds: options.optionIds,

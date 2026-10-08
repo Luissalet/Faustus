@@ -1667,9 +1667,9 @@ function ThinkModeChip({ mode, chosen, onPick, levels = [], effort = null, effor
   const shownEffort = effort ?? (thinkingOn === false ? effortPick : null);
   const text = thinkingOn === false
     ? `${t('Thinking')}: ${t('Off.')}`
-    : shownEffort
-      ? `${t('Level#effort')}: ${reasoningLevelLabel(shownEffort)}`
-      : thinkModeChipText(mode, chosen);
+    : thinkingOn === true
+      ? (shownEffort ? `${t('Level#effort')}: ${reasoningLevelLabel(shownEffort)}` : `${t('Thinking')}`)
+      : (shownEffort ? `${t('Level#effort')}: ${reasoningLevelLabel(shownEffort)}` : thinkModeChipText(mode, chosen));
   // Collapsed to its icon in a narrow composer, the chip still says what is
   // set when it is not the default: the first letters of the level or mode.
   const short = (label: string) => {
@@ -1682,7 +1682,7 @@ function ThinkModeChip({ mode, chosen, onPick, levels = [], effort = null, effor
       ? short(reasoningLevelLabel(shownEffort))
       : (mode !== 'auto' ? short(thinkModeLabel(mode)) : '');
   const nativeToggle = Boolean(thinkingToggle && onSetThinkingOn);
-  /** Effort is posted only while Thinking is on; the pick itself stays editable either way. */
+  /** Effort is posted only while Thinking is not explicitly off; the pick stays editable either way. */
   const effortApplies = !nativeToggle || thinkingOn !== false;
   return (
     <Popover
@@ -1702,19 +1702,28 @@ function ThinkModeChip({ mode, chosen, onPick, levels = [], effort = null, effor
       {nativeToggle && (
         <>
           <p>{t('Reasoning (think)')}</p>
-          <div role="group" aria-label={t('Thinking')} data-testid="studio-thinking-toggle">
-            <button type="button" role="switch" aria-checked={thinkingOn !== false}
-              data-testid="studio-thinking-on"
-              onClick={() => onSetThinkingOn?.(true)}>
-              <strong>{t('Thinking')}</strong>
-              <span>{t('Reasons before answering, with the normal budget.')}</span>
-            </button>
-            <button type="button" role="switch" aria-checked={thinkingOn === false}
-              data-testid="studio-thinking-off"
-              onClick={() => onSetThinkingOn?.(false)}>
-              <strong>{t('Off.')}</strong>
-              <span>{t('Answers without reasoning. Quick, but it gets dates and counts wrong.')}</span>
-            </button>
+          <div className="fs-gen-panel__row fs-gen-panel__row--switch" data-testid="studio-thinking-toggle">
+            <label htmlFor="studio-thinking-switch">
+              {t('Thinking')}
+            </label>
+            <div className="fs-gen-panel__controls">
+              <input
+                id="studio-thinking-switch"
+                type="checkbox"
+                role="switch"
+                aria-checked={thinkingOn === true}
+                checked={thinkingOn === true}
+                data-testid="studio-thinking-switch"
+                onChange={(e) => onSetThinkingOn?.(e.target.checked)}
+              />
+              <span className="fs-prose">
+                {thinkingOn === true
+                  ? t('Reasons before answering, with the normal budget.')
+                  : thinkingOn === false
+                    ? t('Answers straight away, without reasoning first.')
+                    : t('Decides per message: quick for small talk, reasoning for code, maths or analysis.')}
+              </span>
+            </div>
           </div>
         </>
       )}
