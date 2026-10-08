@@ -300,6 +300,7 @@ function LoadedSection({ s, working, onStop }: { s: SparksState; working: string
           <div className="fs-sparks__sub">
             <span>{d.served?.[0] || d.served_model_name}</span>
             {d.max_model_len ? <span>{fmtCtxShort(d.max_model_len)} {t('context')}</span> : null}
+            {d.max_model_len && !d.detected && d.context_verified !== true ? <span>{t('configured, not verified')}</span> : null}
             <span>{d.nodes.join(' + ')}</span>
           </div>
           {(d.state === 'starting' || d.state === 'failed') && d.message && <p className="fs-vt__muted">{d.message}</p>}

@@ -9229,3 +9229,4 @@ unloading…	descargando…
 {name} unloaded.	{name} descargado.
 {other} is using those Sparks. Unload it and load {name}?	{other} está usando esas Sparks. ¿Lo descargo y cargo {name}?
 Started outside a recipe: stop it from Prometheus or where it was started.	Arrancado fuera de una receta: páralo desde Prometheus o donde se lanzó.
+configured, not verified	configurado, sin verificar

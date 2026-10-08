@@ -7917,6 +7917,7 @@ export const es: Record<string, string> = {
   "configuration": "configuración",
   "configured worker model": "modelo de worker configurado",
   "configured {n} ({detail})": "configurado {n} ({detail})",
+  "configured, not verified": "configurado, sin verificar",
   "configured: not reported": "configurado: no reportado",
   "connected": "conectado",
   "connected, but struggling": "conectado, pero con dificultades",

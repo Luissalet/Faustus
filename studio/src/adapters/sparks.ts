@@ -183,9 +183,10 @@ export function useSparks(active: boolean): { state: SparksState | null; history
   return { state, history, refresh };
 }
 
+/** Binary gigabytes, like the GPU pill and Prometheus's Hoard, so the same Spark reads the same number everywhere. */
 export function gbOf(bytes?: number | null, digits = 0): string {
   if (bytes == null) return '—';
-  return (bytes / 1e9).toFixed(digits);
+  return (bytes / 1073741824).toFixed(digits);
 }
 
 export function fmtCtxShort(n?: number | null): string {
