@@ -1324,4 +1324,4 @@ Coordinador `codex-relevo`; misma automatización, traspaso y checkpoints activo
 
 ## Sparks: controles activados — 08-10-2026
 
-Thinking independiente y niveles GLM bajo/alto/máximo, configuración de espera inicial y arreglo de explicaciones integrados y activados en 7000 tras revisión. Se conserva GLM en tres Sparks y la ventana 1M. Queda completar la revisión adicional de refresco de Prometheus y cerrar las tareas del backlog con evidencia; no se da por terminado el conjunto.
+Thinking independiente y niveles GLM bajo/alto/máximo, configuración de espera inicial y arreglo de explicaciones integrados y activados en 7000 tras revisión. Se conserva GLM en tres Sparks y la ventana 1M. El refresco de Prometheus está revisado y activado (#108). El arranque concurrente está integrado y probado (#65). Siguen las correcciones de extracción Studio y curvas al partir clips de Lumiere, además de los cierres y evaluaciones restantes del Ágora; no se da por terminado el backlog.
