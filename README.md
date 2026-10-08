@@ -580,3 +580,9 @@ The reply-language check excludes valid JSON objects and arrays, including fence
 ## Credits and licence
 
 Faustus builds on [Odysseus](https://github.com/odysseus-dev/odysseus). See [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md) for additional credits, [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance and [LICENSE](LICENSE) for **AGPL-3.0-or-later**.
+
+## Current verification and pending activation
+
+The guide-only tool documentation candidate (#60) passed four native chat turns with the 27B Q4 model at 131072 context on GPUs2/3, with verified xhigh reasoning: schema explanation, a CSV correction, hostile cached reference text and an unknown tool. No tools ran; protected input stayed unchanged; REST, persisted sessions, MCP events/usage and Studio examples were checked. This bounded test does not establish general model performance. The candidate awaits cross-review and integration. A prior request that accidentally disabled thinking is recorded separately and is not an xhigh result.
+
+The read-only execution fix (#64) is approved but not activated. Agora handover, checkpoints and revision-specific votes are active in HoardHub. Backup protection (#58) is integrated in its source tree and still awaits activation in the running Hub. The Financialitas PDF revision is active in Coase; its preserved source date and original report are unchanged.

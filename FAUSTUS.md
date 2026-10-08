@@ -10386,66 +10386,17 @@ Idea del radar #434 (`mcp-footprint`, informe de tamaño y duplicados de un cat�
 - El 7006 conecta el servidor `harness` con sus 4 herramientas tras el cambio.
 - No hubo turno del modelo: el 8081 estaba parado.
 
-## Relevo del bucle y revisión de autonomía — 08-10-2026
+## Relevo del bucle y cobertura comprobada — 08-10-2026, 13:25
 
-Luis autorizó continuar el bucle en el chat nuevo. La automatización existente
-`mejorar-faustus-y-hoards` está activa y apunta al chat
-`01a11a8a-1caa-73f1-a7a4-3f6ba97621d6`; el coordinador es `codex-relevo`.
-El chat anterior falló por agotamiento de contexto. No se creó otro bucle.
+La misma automatización horaria continúa en el chat `01a11a8a-1caa-73f1-a7a4-3f6ba97621d6`, con identidad `codex-relevo`. No hay segundo bucle.
 
-- **Solo lectura, tarea Ágora #64:** candidato `43c148c8`, sobre #55/#54,
-  todavía sin integrar ni activar. La política comprueba efectos en la puerta
-  de ejecución, incluyendo alias, builtins fuera del catálogo y MCP tardío.
-  Los list/read clasificados se conservan. Root: 79 pruebas del área y siete
-  del ejecutor real; tres turnos de API nativa con proveedor determinista,
-  MCP stdio (40 tools, session_events/session_usage) y Chromium con estado
-  persistido. El informe temporal mantiene su SHA. No es evaluación Qwen.
-  Evidencias: `D:/LocalAI/tempfiles/qa-readonly64-20261008/summary.txt`.
-- **Refinamiento #57 y decisiones tipadas #63:** votos `changes` sobre los
-  hashes enviados. Repros independientes y repetidos por root detectan
-  ampliación de autoridad por reordenar permisos, pérdida de una edición
-  humana concurrente y elección de una etiqueta en un JSON contradictorio.
-  No integrados. Los autores conservan sus worktrees y corrigen los envíos.
-- **Cursor:** turno oficial reanudado. #44 integrado como `b206011`, equivalente
-  al aprobado `385f6e1`; #45 integrado como `c2f1f06`, equivalente a la pila
-  aprobada `22ee1c0` + `95eb08e`. La revisión independiente comprobó 79 pruebas
-  y dos fallos forzados: pytest termina también cuando falla la sincronización,
-  sin dejar hilos/tareas bloqueados. Sigue con tareas disjuntas
-  por el hilo 32. No push ni nueva sesión para leer el buzón.
+- **Ágora #67 activa:** Claude integró `380b727` + `829a2bb`, activó las migraciones de checkpoints/votos versionados y ejecutó el traspaso autorizado de las tareas 1, 2, 46, 53, 54 y 55. El arreglo traslada también locks de tareas cuyo revisor cambia. Revisión retrospectiva independiente: 122 tests y repro repetido por root pasan. Se conserva el cierre histórico sin revisión previa; no se reabre para fingir un voto.
+- **Solo lectura #64 aprobada:** `43c148c8` sobre #55/#54, sin integrar. Root comprobó 79 tests del área, siete del ejecutor, tres turnos REST deterministas, MCP40 y navegador/persistencia. Claude revisó efectos, alias y MCP tardío y aprobó. #55 se reenvió con esa misma corrección como r2 para resolver formalmente su `changes`; no es código adicional ni evaluación Qwen.
+- **#57 y #63 corregidas y aprobadas r1:** los nuevos hashes `613707dd` y `cea909a5` bloquean ampliación de permisos por reordenación, conservan ediciones humanas concurrentes y reparan/rechazan respuestas contradictorias o claves duplicadas. Revisiones independientes: 152 y 269 pruebas enfocadas, con repros repetidos por root. Sin modelo ni navegador en estas revisiones; no se atribuye activación antes de integrarlas.
+- **Copias #58:** Cursor revisó realmente `a76c6af` + `fd89a2b`; fuente integrada como `1d78f30` + `302ff23` en HoardLink tras recibir custodia #2. Índice verificado, cambios ajenos conservados. El Hub en marcha aún carga la fuente anterior: activación pendiente. El candidato mantiene historial/inventario ante configuración Atlas inválida, informa `source_errors`, rechaza copias completas incompletas y protege los originales antes de restaurar. REST, MCP, navegador en/es y restauración de fichero/SQLite comprobados con datos aislados; el árbol compuesto pasa 9 tests de inventario y 2 de backup familiar. La suite de 794 del primer árbol no se atribuye al delta final. Evidencia: `D:/LocalAI/tempfiles/qa-backups58/` y `hub58-integration/receipt.json`.
+- **Documentación sin ejecución #60, en revisión:** `d88ab040` + `b80aec92` conservan hasta tres esquemas registrados completos con límite total de 16000 caracteres, sin llamadas, descubrimiento ni embeddings. Los ejemplos se muestran y persisten sin habilitar herramientas. CSV no admite `compare_with`; fuente y referencia deben ser PowerPoint. En b80 pasan 44 tests; 82 del área pasaron antes del último ajuste descriptivo. Los fallos de presupuesto/ambigüedad e historial mal formado se corrigieron y 9 casos auxiliares pasan.
+- **Cobertura real Q4 de #60:** cuatro turnos nativos: esquema, corrección CSV, descripción hostil de MCP sintético ya cacheado y nombre desconocido. 27B pesos Q4, KV q8_0, contexto131072, GPUs2/3, think=true, esfuerzo xhigh y presupuesto16384 verificados en la solicitud; cero herramientas y SHA del CSV intacto. REST, sesión persistida, MCP40/eventos/uso y ejemplos visibles en Studio comprobados. No prueba competencia general ni servidor MCP externo real. Un diagnóstico anterior enviaba think como cadena y acabó false: queda separado como configuración inválida, no grado xhigh ni Q8. Evidencia final: `D:/LocalAI/tempfiles/qa-tool-docs60-q4/xhigh`. Procesos propios, leases y lock del modelo liberados.
+- **Cursor:** único turno oficial reanudado en este heartbeat, completado con exit0 y sin descendientes retenidos. #45 integrado `c2f1f06`; #65 requiere corregir un lock de arranque tras caída y #66 espera rutas i18n de #57. La rutina #71 exige leer la revisión real y prohíbe inventar su número. El voto antiguo de #58 llegó antes de la migración CAS: se conserva esa limitación de auditoría y su revisión efectiva por hashes.
+- **Coase #59/#61 activadas por su coordinador:** main `7ac1d517`, 295 pruebas; informe revisado Financialitas de 16 páginas, 31 hallazgos, 12 fuentes y 5 gráficos. Original de 18 páginas preservado y fecha de fuentes 07-10; sin investigación nueva ni grado Q4 integral. #14 sigue abierta para identidad nativa/evaluación y publicación en manual común.
 
-La fuente del Hub para checkpoints y votos versionados sigue pendiente de
-activación. Las tareas del chat anterior no se declararon transferidas: el
-Hub rechazó claim #55 con 409 por propietario activo; #64 es continuación
-vinculada y mantiene ese historial. Los README heredados tienen modificaciones
-de otra sesión y se preservaron. PENDIENTES conserva únicamente decisiones
-necesarias de Luis; estos arreglos resolubles siguen en el Ágora.
-
-### Heartbeat del relevo: traspaso y copias de seguridad
-
-- **Traspaso Ágora #67:** revisión `changes` de `5a0b2e09`. Pasan 119 pruebas
-  independientes y el recorrido REST/MCP/navegador con datos sintéticos conserva
-  estados, revisiones, commits y checkpoints. Un repro repetido por root demuestra
-  que el bloqueo de una tarea cuyo revisor cambia se queda con el agente saliente.
-  Se pidió trasladar también esos bloqueos. No integrado ni activado; la custodia
-  anterior sigue intacta hasta disponer del traspaso aprobado.
-- **Copias del Hub #58:** pila `a76c6af` + `fd89a2b`, enviada a Cursor para
-  revisión y sin integrar. Estado e historial
-  disponibles aunque el almacenamiento compartido de Atlas sea inválido; API/MCP
-  muestran `source_errors`. La copia completa se rechaza antes de crear una
-  instantánea incompleta; una app seleccionada independiente se puede copiar,
-  verificar y restaurar. Root comprobó REST, MCP stdio, restauración de fichero
-  y SQLite y navegador en/es con datos aislados. El contador de copias y el aviso
-  bilingüe también se corrigieron. Evidencia en
-  `D:/LocalAI/tempfiles/qa-backups58/`; no se reparó la configuración real de Atlas.
-  La suite independiente del primer árbol pasa (794 pruebas, dos skips), pero
-  detectó que un destino explícito podía restaurar dentro de los originales.
-  El delta `fd89a2b` lo cierra antes de crear carpetas o escribir, incluso para
-  destino automático, raíz actual ausente y alias por symlink. Se comprobaron
-  22 pruebas del área y recorridos REST/MCP del árbol final; el repro independiente
-  confirma que raíces anteriores/actuales permanecen intactas y la restauración
-  externa sigue funcionando. La suite global del primer árbol no se atribuye
-  al delta posterior como si se hubiera repetido.
-- **Cursor:** #45 cerrado e integrado, #65 sigue con Claude para revisión y #66
-  (extracción a schema en Studio) está reclamado en un candidato aislado. Un único
-  turno oficial en este heartbeat. Los ficheros i18n bloqueados por #57 no se
-  consideran libres ni se atribuye al candidato una revisión o integración futura.
+PENDIENTES conserva decisiones necesarias de Luis. Watch y Book quedan fuera y SABER sigue aparcado. Las GPUs0/1 son de Luis; no se hizo push. Los checkpoints de Ágora guardan los siguientes pasos y límites, separados de la revisión del envío.

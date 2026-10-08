@@ -1309,35 +1309,15 @@ Este inventario conserva la solicitud histórica de agrupar comprobaciones larga
 - **Huella por turno.** Guardar en el ledger del turno qué herramientas se ofrecieron y cuánto pesaron, no sólo el total.
 - **README.** Añadir la capacidad a `README.md` y `README.es.md`. Hoy esos ficheros tienen cambios sin versionar de otra sesión y no se tocaron.
 
-## Continuidad del bucle — 08-10-2026, relevo autorizado
+## Continuidad del bucle — 08-10-2026, 13:25
 
-Coordinación `codex-relevo` en el chat nuevo; la misma automatización horaria
-está activa y trasladada, sin duplicado. Estado detallado y evidencia en
-FAUSTUS.md, «Relevo del bucle y revisión de autonomía».
+Coordinador `codex-relevo`; misma automatización, traspaso y checkpoints activos. Historial y pruebas en FAUSTUS.md y Ágora, sin segundo bucle.
 
-1. Revisar e integrar una sola vez la pila #54/#55/#64. #64 (`43c148c8`)
-   conserva lecturas clasificadas y deniega escrituras no enumeradas por sus
-   efectos en el dispatcher. Pasan 79 pruebas del área, siete del ejecutor
-   real y API/MCP/navegador con fixture determinista. Sigue candidato; no
-   acredita una evaluación de modelo real ni activación de producción.
-2. Corregir #57: el orden de permisos de AGENT.md no puede ampliar autoridad;
-   aprobar y deshacer deben preservar una edición concurrente del destino.
-   Voto changes r0/ccc8f1ac con repros independientes confirmados por root.
-3. Corregir #63: un objeto de respuesta con etiquetas contradictorias es
-   ambiguo y debe repararse o rechazarse. Voto changes r0/5a01ecd2; no inferencia.
-4. #45 de Cursor está revisado, corregido e integrado como `c2f1f06`; continuar
-   con revisión #65 y candidato #66. Los siguientes turnos reanudan la sesión
-   oficial con un único lanzador y respetan los bloqueos i18n de #57.
-5. Resolver #60, catálogo de extracción OBJ-24 y activaciones pendientes con
-   sus bloqueos y comprobaciones de conjunto. Mantener Watch/Book fuera,
-   SABER aparcado, las GPU 0/1 libres para Luis y ningún push.
-
-6. Corregir y volver a revisar #67 antes del traspaso: los locks del agente
-   saliente asociados a tareas de revisión también deben seguir al sucesor.
-   Revisiones, estados y evidencias no se reinician ni se falsifican.
-7. Revisar #58 (`a76c6af` + `fd89a2b`, enviado a Cursor) y componer su delta
-   con los cambios Atlas heredados
-   del Hub. El candidato separa inventario/errores de ejecución, conserva la
-   protección de los originales compartidos y no oculta una copia incompleta.
-   Mantener el checkout compartido y su índice intactos hasta la integración
-   revisada, con su bloqueo y comprobación del HEAD vigente.
+1. Resolver el voto #55r2 e integrar una sola vez #54/#55/#64 (64 aprobada) preservando cambios custodiados de #1. Comprobar HEAD e índice bajo merge:Faustus. Falta activación; la prueba de64 usa proveedor determinista.
+2. Integrar #57 y #63 corregidas/aprobadas r1, conservando revisiones y verificando conjunto. No atribuirles inferencia o pruebas visuales que no se hicieron.
+3. Atender revisión #60r1. Pasan cuatro turnos documentales Q4xhigh con REST/MCP/Studio y cero llamadas; ampliar cobertura tras integrar. Mantener separado el diagnóstico think=false inválido. Catálogo de extracción OBJ-24 sigue pendiente.
+4. Completar activación de #58: fuente302ff23 ya integrada y protegidos los originales; la instancia Hub sigue con código anterior. No declarar terminado el fallo real ni reintentar el reinicio rechazado.
+5. Cursor: siguiente turno oficial único para corregir #65changes; #66 espera rutas i18n. No lanzar segunda sesión ni fingir mensajes. Su rutina exige revisión real del envío.
+6. Conservar la revisión posterior67 y el cierre histórico sin revisión previa. Revisar la descomposición de cambios heredados1/2 y cerrar46 solo con recibos de equivalencia.
+7. Coase14: identidad nativa, evaluación integral Q4 y manual común;59/61 ya activadas por su coordinador. No repetir su integración ni reexportar datos reales.
+8. Watch/Book fuera, SABER aparcado, GPUs0/1 libres para Luis, commits preparados sin push.
