@@ -24,7 +24,8 @@ def _payload(name, arguments):
 def test_server_identity_and_tool_surface():
     assert srv.server.name == "harness"
     tools = asyncio.run(srv.list_tools())
-    assert [t.name for t in tools] == ["history_projection", "resource_claims", "paired_bench_reports"]
+    assert [t.name for t in tools] == ["history_projection", "resource_claims", "paired_bench_reports",
+                                       "tool_footprint"]
     for t in tools:
         assert len(t.description) > 60
         for required in t.inputSchema.get("required", []):
@@ -130,3 +131,19 @@ def test_registered_as_a_builtin_server():
     assert script == "mcp_servers/harness_server.py"
     assert (Path(__file__).parent.parent / script).is_file()
     assert "harness" not in builtin_mcp.NATIVE_TWIN_SERVERS  # there is no native twin of these tools
+
+
+def test_tool_footprint_builtin_and_supplied_catalogues():
+    builtin = _payload("tool_footprint", {"top": 3})
+    assert builtin["catalogue"] == "builtin"
+    assert builtin["count"] > 50 and len(builtin["heaviest"]) == 3
+    assert builtin["total_tokens"] == builtin["offered_tokens"] + builtin["deferred_tokens"]
+    supplied = _payload("tool_footprint", {"similarity": 0.5, "tools": [
+        {"name": "search", "description": "Search saved articles by keyword, tag and date range.", "server": "links"},
+        {"name": "search", "description": "Search indexed documents by keyword, tag and date range.", "server": "borges"},
+    ]})
+    assert supplied["catalogue"] == "supplied" and supplied["count"] == 2
+    assert {b["source"] for b in supplied["by_source"]} == {"links", "borges"}
+    assert supplied["near_duplicates"][0]["same_source"] is False
+    assert supplied["name_collisions"][0]["tools"] == ["mcp__borges__search", "mcp__links__search"]
+    assert "must be a list" in _payload("tool_footprint", {"tools": "nope"})["error"]

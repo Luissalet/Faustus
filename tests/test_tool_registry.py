@@ -262,3 +262,20 @@ def test_dry_run_on_a_fence_only_tool_says_no_schema_to_check(monkeypatch):
 def test_dry_run_rejects_a_non_object_body(monkeypatch):
     r = _client(monkeypatch).post("/api/tools/catalog/bash/dry-run", json={"arguments": "nope"})
     assert r.status_code == 400
+
+
+def test_footprint_route_reports_sources_collisions_and_filters(monkeypatch):
+    manager = _FakeMcpManager(
+        tools=[_mcp_tool("srv_a", "read_file", readonly=True), _mcp_tool("srv_b", "read_file", readonly=True)],
+        statuses={"srv_a": {"status": "connected"}, "srv_b": {"status": "connected"}},
+    )
+    client = _client(monkeypatch, manager)
+    body = client.get("/api/tools/footprint", params={"top": 5}).json()
+    sources = {b["source"] for b in body["by_source"]}
+    assert {"builtin", "srv_a", "srv_b"} <= sources
+    assert body["total_tokens"] == sum(b["tokens"] for b in body["by_source"])
+    assert len(body["heaviest"]) == 5 and body["fingerprint"] and body["mcp_attached"] is True
+    collision = next(c for c in body["name_collisions"] if c["short_name"] == "read_file")
+    assert {"mcp__srv_a__read_file", "mcp__srv_b__read_file", "read_file"} <= set(collision["tools"])
+    only_a = client.get("/api/tools/footprint", params={"source": "srv_a"}).json()
+    assert only_a["count"] == 1 and only_a["by_source"][0]["source"] == "srv_a"

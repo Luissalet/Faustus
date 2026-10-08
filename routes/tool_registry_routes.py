@@ -19,6 +19,14 @@ from fastapi import APIRouter, HTTPException, Request
 from core.middleware import require_admin
 from src.contracts.base import now_iso
 from src.tool_authority import AUTHORITY
+from src.tool_footprint import (
+    DEFAULT_SIMILARITY,
+    DEFAULT_TOP,
+    builtin_exposure,
+    footprint_report,
+    native_twin,
+    source_of as footprint_source_of,
+)
 from src.tool_registry import by_name, catalog_fingerprint, mcp_status_label, snapshot
 from src.tool_schemas import repair_tool_arguments, validate_tool_arguments
 from src.tool_utils import get_mcp_manager
@@ -96,6 +104,29 @@ def setup_tool_registry_routes():
             "count": len(rows),
             "tools": [_row_summary(d, mcp_manager) for d in rows],
         }
+
+    @router.get("/footprint")
+    def footprint(request: Request, model: str = "", top: int = DEFAULT_TOP,
+                  similarity: float = DEFAULT_SIMILARITY, source: str = ""):
+        """What the catalogue costs in the prompt (src/tool_footprint.py):
+        tokens per tool, per source (built-in or each MCP server) and per
+        exposure, the heaviest tools, descriptions worth trimming, the same
+        short name published by several sources, and near-duplicate
+        descriptions. Read-only; measured with the context engine's own
+        estimator for `model` (the default one when empty). `source` narrows
+        the report to `builtin` or one MCP server id."""
+        require_admin(request)
+        mcp_manager = get_mcp_manager()
+        rows = snapshot(owner=_owner_of(request), mcp_manager=mcp_manager)
+        wanted = source.strip()
+        if wanted:
+            rows = [d for d in rows if footprint_source_of(d.executor) == wanted]
+        report = footprint_report(rows, model=model.strip(), top=top, similarity=similarity,
+                                  exposure_of=builtin_exposure, hidden_of=native_twin)
+        report["checked_at"] = now_iso()
+        report["fingerprint"] = catalog_fingerprint(rows)
+        report["mcp_attached"] = mcp_manager is not None
+        return report
 
     @router.get("/catalog/{name}")
     def catalog_entry(name: str, request: Request):

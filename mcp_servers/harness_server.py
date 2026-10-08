@@ -1,6 +1,6 @@
 """harness_server.py
 
-MCP server with three read-only diagnostics over the agent harness, so a
+MCP server with four read-only diagnostics over the agent harness, so a
 local assistant (or any MCP client) can see what the harness would do without
 running a turn:
 
@@ -15,6 +15,9 @@ running a turn:
 * ``paired_bench_reports`` - list the paired harness bench reports (same model,
   before vs after) or read one: verdict, success, seconds, tokens and boundary
   violations per arm and case.
+* ``tool_footprint`` - what the built-in tool catalogue (or a supplied tool
+  list) costs in the prompt: tokens per tool, source and exposure, the
+  heaviest tools, name collisions and near-duplicate descriptions.
 
 Nothing here writes anything or starts a run. The in-process receipt log and
 claim broker of the running app are not reachable from this separate process;
@@ -124,6 +127,29 @@ async def list_tools() -> list[Tool]:
                 },
             },
         ),
+        Tool(
+            name="tool_footprint",
+            description=(
+                "What a tool catalogue costs in the prompt and where it overlaps: tokens per tool "
+                "(measured on the function-call shape the model receives), totals per source and "
+                "per exposure (deferred tools are not offered up front), the heaviest tools, "
+                "descriptions worth trimming, the same short name published by several servers, "
+                "and near-duplicate descriptions. Without `tools` it audits the built-in catalogue; "
+                "with `tools` (an MCP tools/list or OpenAI tool list, each item optionally with "
+                "`server`) it audits that list. Read-only, no model."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "tools": {"type": "array", "items": {"type": "object"},
+                              "description": "Optional catalogue to audit instead of the built-in one."},
+                    "top": {"type": "integer", "minimum": 1, "maximum": 200,
+                            "description": "How many heaviest tools to list (default 15)."},
+                    "similarity": {"type": "number", "minimum": 0.1, "maximum": 1,
+                                   "description": "Description similarity for near duplicates (default 0.6)."},
+                },
+            },
+        ),
     ]
 
 
@@ -223,10 +249,62 @@ def _paired_bench_reports(args: dict) -> dict:
     return {"reports": hpair.list_reports(limit), "directory": hpair.reports_dir()}
 
 
+#: The built-in catalogue, loaded once before the stdio loop starts (see
+#: `run`). On Windows, importing the agent tools while the JSON-RPC reader is
+#: blocked on stdin hung the call: something in that import inspects the
+#: standard handles, and a synchronous pipe read pending on stdin blocks that
+#: inspection until the next message arrives -- which never comes, because
+#: the client is waiting for this answer. Seen live on 08-10 with a raw
+#: stdio client; in-process tests never hit it.
+_BUILTIN_CATALOGUE = None
+
+
+def _load_builtin_catalogue():
+    global _BUILTIN_CATALOGUE
+    from src import tool_footprint as tf
+    from src.tool_registry import snapshot
+
+    rows = snapshot()
+    # Warm what a report touches lazily (estimator, tool authority) too.
+    tf.default_counter("")("warm")
+    tf.builtin_exposure(rows[0].name if rows else "")
+    _BUILTIN_CATALOGUE = rows
+    return _BUILTIN_CATALOGUE
+
+
+def _tool_footprint(args: dict) -> dict:
+    from src import tool_footprint as tf
+
+    try:
+        top = int(args.get("top") or tf.DEFAULT_TOP)
+    except (TypeError, ValueError):
+        top = tf.DEFAULT_TOP
+    try:
+        similarity = float(args.get("similarity") or tf.DEFAULT_SIMILARITY)
+    except (TypeError, ValueError):
+        similarity = tf.DEFAULT_SIMILARITY
+    supplied = args.get("tools")
+    if supplied is not None:
+        if not isinstance(supplied, list):
+            return {"error": "tools must be a list of tool objects"}
+        rows = tf.rows_from_mappings(supplied[:2000])
+        report = tf.footprint_report(rows, top=top, similarity=similarity, hidden_of=tf.native_twin)
+        report["catalogue"] = "supplied"
+        return report
+    rows = _BUILTIN_CATALOGUE if _BUILTIN_CATALOGUE is not None else _load_builtin_catalogue()
+    report = tf.footprint_report(rows, top=top, similarity=similarity,
+                                 exposure_of=tf.builtin_exposure)
+    report["catalogue"] = "builtin"
+    report["note"] = ("Built-in tools only: this server runs in its own process and cannot see the "
+                      "MCP servers connected to the app. GET /api/tools/footprint covers both.")
+    return report
+
+
 _TOOLS = {
     "history_projection": _history_projection,
     "resource_claims": _resource_claims,
     "paired_bench_reports": _paired_bench_reports,
+    "tool_footprint": _tool_footprint,
 }
 
 
@@ -244,6 +322,11 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
 
 async def run():
+    with stdout_guard():
+        try:
+            _load_builtin_catalogue()
+        except Exception:  # noqa: BLE001 - the other tools must still serve
+            pass
     async with stdio_server() as (read_stream, write_stream):
         with stdout_guard():
             await server.run(read_stream, write_stream, server.create_initialization_options())
