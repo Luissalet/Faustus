@@ -2223,6 +2223,7 @@ export const es: Record<string, string> = {
   "Erase the masked content and continue the background; the prompt is ignored": "Borra lo enmascarado y continúa el fondo; el prompt se ignora",
   "Eraser": "Goma",
   "Error": "Error",
+  "Errors": "Errores",
   "Escalated": "Escalado",
   "Escalated — a paid model would be needed; nothing was chosen automatically.": "Escalado — haría falta un modelo de pago; no se ha elegido nada automáticamente.",
   "Escape": "Escape",

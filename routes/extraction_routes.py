@@ -12,9 +12,13 @@ Every route needs a signed-in user and works on that user's saved schemas
 `path` reads the server's disk, so it is also admin-only, like the other
 routes that take a local path. A schema name is letters, digits, `_` and `-`
 only: it can never name a file outside the owner's folder.
+
+Handlers still read ``Request.json`` (validation unchanged). ``openapi_extra``
+publishes the JSON bodies so the REST→MCP bridge can generate tools with a
+requestBody schema.
 """
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -25,6 +29,51 @@ from src.auth_helpers import require_user, storage_owner_for_request
 logger = logging.getLogger(__name__)
 
 _STATUS = {"unknown_schema": 404, "unreadable": 422, "no_text": 422}
+
+# OpenAPI bodies for MCP/bridge discovery (handlers keep reading Request.json).
+_JSON_OBJECT = {"type": "object", "additionalProperties": True}
+
+
+def _json_body(properties: Dict[str, Any], required: Optional[List[str]] = None) -> Dict[str, Any]:
+    schema: Dict[str, Any] = {
+        "type": "object",
+        "properties": properties,
+        "additionalProperties": True,
+    }
+    if required:
+        schema["required"] = required
+    return {
+        "requestBody": {
+            "required": True,
+            "content": {"application/json": {"schema": schema}},
+        }
+    }
+
+
+_EXTRACT_OPENAPI = _json_body({
+    "path": {"type": "string", "description": "Workspace file path (admin)."},
+    "text": {"type": "string", "description": "Inline document text."},
+    "schema": _JSON_OBJECT,
+    "schema_name": {"type": "string"},
+    "instructions": {"type": "string"},
+    "ocr": {"type": "string"},
+    "tier": {"type": "string"},
+    "max_chars": {"type": "integer"},
+    "timeout_s": {"type": "number"},
+})
+
+_PROFILE_OPENAPI = _json_body({
+    "schema": _JSON_OBJECT,
+    "schema_name": {"type": "string"},
+    "text": {"type": "string"},
+    "text_chars": {"type": "integer"},
+    "tier": {"type": "string"},
+})
+
+_SAVE_SCHEMA_OPENAPI = _json_body({
+    "schema": _JSON_OBJECT,
+    "description": {"type": "string"},
+}, required=["schema"])
 
 
 def _error(exc: se.SchemaExtractionError) -> HTTPException:
@@ -39,7 +88,7 @@ def _owner(request: Request) -> str:
 def setup_extraction_routes():
     router = APIRouter(prefix="/api/extract")
 
-    @router.post("")
+    @router.post("", openapi_extra=_EXTRACT_OPENAPI)
     async def extract(request: Request):
         owner = _owner(request)
         body = await _json(request)
@@ -61,7 +110,7 @@ def setup_extraction_routes():
         except ModelUnavailable as exc:
             raise HTTPException(status_code=503, detail={"error": str(exc), "code": "model_unavailable"})
 
-    @router.post("/profile")
+    @router.post("/profile", openapi_extra=_PROFILE_OPENAPI)
     async def profile(request: Request):
         owner = _owner(request)
         body = await _json(request)
@@ -99,7 +148,7 @@ def setup_extraction_routes():
                                                          "code": "unknown_schema"})
         return record
 
-    @router.put("/schemas/{name}")
+    @router.put("/schemas/{name}", openapi_extra=_SAVE_SCHEMA_OPENAPI)
     async def put_schema(name: str, request: Request):
         owner = _owner(request)
         body = await _json(request)
