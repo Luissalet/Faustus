@@ -723,7 +723,7 @@ def _cache_header_identity(headers) -> str:
 
 def _get_cache_key(url: str, model: str, messages: List[Dict],
                    temperature: float, max_tokens: int, headers=None,
-                   response_schema=None) -> str:
+                   response_schema=None, gen_overrides=None) -> str:
     """Generate a cache key partitioned by endpoint and credential identity."""
     hashable_messages = []
     for msg in messages:
@@ -741,6 +741,8 @@ def _get_cache_key(url: str, model: str, messages: List[Dict],
         # being returned under another route with the same URL and model.
         'header_identity': _cache_header_identity(headers),
     }
+    if gen_overrides:
+        payload['generation'] = gen_overrides
     if response_schema:
         # A constrained answer and a free-form one are different answers to
         # the same prompt; they must not share a cache entry. The field is
@@ -4779,6 +4781,7 @@ async def _llm_call_async_impl(
     cache_key = _get_cache_key(
         url, model, messages_copy, temperature, max_tokens, headers=headers,
         response_schema=schema,
+        gen_overrides=_all_overrides,
     )
     cached_response = _get_cached_response(cache_key)
     if cached_response:
