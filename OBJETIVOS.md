@@ -1335,7 +1335,8 @@ FAUSTUS.md, «Relevo del bucle y revisión de autonomía».
 6. Corregir y volver a revisar #67 antes del traspaso: los locks del agente
    saliente asociados a tareas de revisión también deben seguir al sucesor.
    Revisiones, estados y evidencias no se reinician ni se falsifican.
-7. Revisar #58 (`a76c6af`) y componer su delta con los cambios Atlas heredados
+7. Revisar #58 (`a76c6af` + `fd89a2b`, enviado a Cursor) y componer su delta
+   con los cambios Atlas heredados
    del Hub. El candidato separa inventario/errores de ejecución, conserva la
    protección de los originales compartidos y no oculta una copia incompleta.
    Mantener el checkout compartido y su índice intactos hasta la integración

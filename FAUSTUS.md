@@ -10428,7 +10428,8 @@ necesarias de Luis; estos arreglos resolubles siguen en el Ágora.
   que el bloqueo de una tarea cuyo revisor cambia se queda con el agente saliente.
   Se pidió trasladar también esos bloqueos. No integrado ni activado; la custodia
   anterior sigue intacta hasta disponer del traspaso aprobado.
-- **Copias del Hub #58:** candidato `a76c6af`, sin integrar. Estado e historial
+- **Copias del Hub #58:** pila `a76c6af` + `fd89a2b`, enviada a Cursor para
+  revisión y sin integrar. Estado e historial
   disponibles aunque el almacenamiento compartido de Atlas sea inválido; API/MCP
   muestran `source_errors`. La copia completa se rechaza antes de crear una
   instantánea incompleta; una app seleccionada independiente se puede copiar,
@@ -10436,6 +10437,14 @@ necesarias de Luis; estos arreglos resolubles siguen en el Ágora.
   y SQLite y navegador en/es con datos aislados. El contador de copias y el aviso
   bilingüe también se corrigieron. Evidencia en
   `D:/LocalAI/tempfiles/qa-backups58/`; no se reparó la configuración real de Atlas.
+  La suite independiente del primer árbol pasa (794 pruebas, dos skips), pero
+  detectó que un destino explícito podía restaurar dentro de los originales.
+  El delta `fd89a2b` lo cierra antes de crear carpetas o escribir, incluso para
+  destino automático, raíz actual ausente y alias por symlink. Se comprobaron
+  22 pruebas del área y recorridos REST/MCP del árbol final; el repro independiente
+  confirma que raíces anteriores/actuales permanecen intactas y la restauración
+  externa sigue funcionando. La suite global del primer árbol no se atribuye
+  al delta posterior como si se hubiera repetido.
 - **Cursor:** #45 cerrado e integrado, #65 sigue con Claude para revisión y #66
   (extracción a schema en Studio) está reclamado en un candidato aislado. Un único
   turno oficial en este heartbeat. Los ficheros i18n bloqueados por #57 no se
