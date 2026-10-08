@@ -953,6 +953,7 @@ def _denial_for_tool(
     disabled_tools: Optional[Set[str]] = None,
     preflight_pruned: Optional[Dict[str, str]] = None,
     denial_origin: Optional[Dict[str, str]] = None,
+    tool_content: Optional[str] = None,
 ) -> Optional[ToolDenial]:
     """The single answer to "may this turn run this tool?", or None.
 
@@ -973,7 +974,10 @@ def _denial_for_tool(
     origin_of = next((origins[n] for n in policy_names if n in origins), "")
 
     if tool_policy is not None:
-        matched = next((n for n in policy_names if tool_policy.blocks(n)), None)
+        matched = next((n for n in policy_names if (
+            tool_policy.blocks_action(n, tool_content)
+            if tool_content is not None else tool_policy.blocks(n)
+        )), None)
         if matched is not None:
             named = f"tool_policy[mode={tool_policy.mode}]"
             if tool_policy.block_all_tool_calls:
@@ -8107,6 +8111,11 @@ async def _stream_agent_loop_body(
     # WORKSPACE_TOOL_FLOOR below (see
     # tests/test_agent_loop_offer_execute_coherence.py).
     _autonomy_preset = autonomy_budget.normalize_preset(autonomy_preset)
+    if _autonomy_preset == "read_only":
+        # The catalogue denylist controls offers; this carried policy also
+        # checks effects at dispatch for aliases and tools registered later.
+        from dataclasses import replace as _replace_tool_policy
+        tool_policy = _replace_tool_policy(tool_policy or ToolPolicy(), read_only=True)
     try:
         from src.model_context import is_local_endpoint as _is_local_budget_endpoint
         _local_completion_unbounded = bool(_is_local_budget_endpoint(endpoint_url))
@@ -16457,6 +16466,7 @@ async def _stream_agent_loop_body(
                     _pblock.tool_type, tool_policy=tool_policy,
                     disabled_tools=disabled_tools, preflight_pruned=_preflight_pruned,
                     denial_origin=_denial_origin,
+                    tool_content=_pblock.content,
                 ) is not None:
                     break
                 _pmeta = _arg_validation.get(id(_pblock))
@@ -16691,13 +16701,14 @@ async def _stream_agent_loop_body(
             # One decision function, so the answer cannot depend on which of
             # two lookalike predicates the reader happens to be tracing.
             _denial = (
-                None if _ody_clamped_tool_allowed
+                None if _ody_clamped_tool_allowed and _autonomy_preset != "read_only"
                 else _denial_for_tool(
                     block.tool_type,
                     tool_policy=tool_policy,
                     disabled_tools=disabled_tools,
                     preflight_pruned=_preflight_pruned,
                     denial_origin=_denial_origin,
+                    tool_content=block.content,
                 )
             )
             if _denial is not None:

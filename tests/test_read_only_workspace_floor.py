@@ -167,6 +167,26 @@ def test_read_only_rejects_native_python_call_before_executor(monkeypatch, tmp_p
     assert denied and (denied[0].get("blocked") or denied[0].get("error"))
 
 
+@pytest.mark.parametrize("name", ["manage_research", "delete_research", "mcp__late__write"])
+def test_read_only_rejects_calls_missing_from_initial_schema_catalog(monkeypatch, tmp_path, name):
+    monkeypatch.setitem(_ARGS, name, {"action": "delete", "id": "isolated-report"})
+    result = _run_turn(
+        monkeypatch, tmp_path, autonomy_preset="read_only",
+        relevant_tools={"read_file"}, calls=[name],
+    )
+    assert not result["executed"]
+    assert any(event.get("blocked") or event.get("error") for event in result["tool_outputs"])
+
+
+def test_read_only_still_allows_unenumerated_research_read(monkeypatch, tmp_path):
+    monkeypatch.setitem(_ARGS, "manage_research", {"action": "list"})
+    result = _run_turn(
+        monkeypatch, tmp_path, autonomy_preset="read_only",
+        relevant_tools={"read_file"}, calls=["manage_research"],
+    )
+    assert result["executed"] == ["manage_research"]
+
+
 def test_read_only_keeps_workspace_inspection_tools_usable(monkeypatch, tmp_path):
     (tmp_path / "input.txt").write_text("safe to inspect\n", encoding="utf-8")
     result = _run_turn(

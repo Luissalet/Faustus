@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from types import MappingProxyType
 from typing import Iterable, Mapping, Optional, Set, Tuple
@@ -199,6 +199,7 @@ class ToolPolicy:
     mode: str = "normal"
     block_all_tool_calls: bool = False
     disable_mcp: bool = False
+    read_only: bool = False
 
     def all_disabled_names(self) -> Set[str]:
         return set(self.disabled_tools) | set(self.hidden_tools)
@@ -208,7 +209,20 @@ class ToolPolicy:
             return False
         scope_denied = (self.mode == "mcp_only" and not tool_name.startswith("mcp__")
                         and tool_name not in _mcp_helper_policy_names())
-        return scope_denied or self.block_all_tool_calls or tool_name in self.disabled_tools or tool_name in self.hidden_tools
+        named_denial = scope_denied or self.block_all_tool_calls or tool_name in self.disabled_tools or tool_name in self.hidden_tools
+        if named_denial or not self.read_only:
+            return named_denial
+        from src.autonomy_budget import is_read_only_tool
+        return not is_read_only_tool(tool_name)
+
+    def blocks_action(self, tool_name: Optional[str], content: object) -> bool:
+        """Recheck effects at execution, even for an unenumerated tool."""
+        if replace(self, read_only=False).blocks(tool_name):
+            return True
+        if not self.read_only:
+            return False
+        from src.autonomy_budget import is_read_only_action
+        return not is_read_only_action(tool_name, content)
 
     def reason_for(self, tool_name: Optional[str]) -> str:
         if tool_name and tool_name in self.reasons:
@@ -217,6 +231,8 @@ class ToolPolicy:
             return "Tool use is disabled for this guide-only turn."
         if self.mode == "mcp_only":
             return "The user restricted this turn to MCP tools; native fallbacks are disabled."
+        if self.read_only:
+            return "The read-only autonomy preset forbids this tool action."
         return "Tool use is disabled for this turn."
 
     def exempting(self, names: Iterable[str]) -> "ToolPolicy":
@@ -259,6 +275,7 @@ class ToolPolicy:
             mode=self.mode,
             block_all_tool_calls=self.block_all_tool_calls,
             disable_mcp=self.disable_mcp,
+            read_only=self.read_only,
         )
 
 

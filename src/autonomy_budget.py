@@ -139,6 +139,23 @@ def read_only_disabled_names(names: Iterable[Any]) -> set[str]:
     return {str(n) for n in names if n and not is_read_only_tool(n)}
 
 
+def is_read_only_action(name: Any, content: Any) -> bool:
+    """Classify the actual call, including tools absent from the offer catalogue.
+
+    Mixed tools keep their classified read actions; unknown or ambiguous calls
+    remain denied. Resolve aliases before classifying the executable action.
+    """
+    if not isinstance(name, str) or not name:
+        return False
+    from src.tool_authority import AUTHORITY
+    from src.tool_parsing import _TOOL_NAME_MAP
+    from src.tool_capabilities import capabilities_for_action
+    resolution = AUTHORITY.resolve(name)
+    canonical = resolution.canonical if resolution else _TOOL_NAME_MAP.get(name, name)
+    caps = capabilities_for_action(canonical, content)
+    return caps.effects <= READ_ONLY_ALLOWED_EFFECTS
+
+
 @dataclass(frozen=True)
 class Budget:
     """Six independent ceilings for one agent turn. `None` (or `0`, matching

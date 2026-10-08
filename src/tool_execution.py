@@ -2014,11 +2014,17 @@ async def _execute_tool_block_impl(
         logger.info(f"Tool blocked by user: {tool}")
         return desc, result
 
-    if tool_policy and any(tool_policy.blocks(name) for name in policy_names):
+    if tool_policy and any(
+        tool_policy.blocks_action(name, content)
+        if callable(getattr(tool_policy, "blocks_action", None)) else tool_policy.blocks(name)
+        for name in policy_names
+    ):
         desc = f"{tool}: BLOCKED"
         result = {
-            "error": f"Execution of tool '{tool}' is forbade by the active guide-only policy.",
+            "error": tool_policy.reason_for(tool),
             "exit_code": 1,
+            "blocked": True,
+            "policy": "tool_policy",
         }
         logger.warning("Tool policy blocked tool=%s", tool)
         return desc, result
