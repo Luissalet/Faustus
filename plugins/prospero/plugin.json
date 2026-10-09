@@ -6,6 +6,7 @@
   "capabilities": [
     "image generation",
     "video editing",
+    "local frame interpolation",
     "graphic design",
     "audio analysis",
     "text-to-speech",
@@ -23,6 +24,8 @@
     "production recipes",
     "quality assurance",
     "animatic previews",
+    "code-rendered title cards and kinetic lyrics",
+    "style cards",
     "character consistency",
     "lora training",
     "character library",
@@ -87,7 +90,12 @@
       "YOVOICE_URL",
       "YOVOICE_API_TOKEN",
       "YOVOICE_TOKEN_FILE",
-      "YOVOICE_MODEL"
+      "YOVOICE_MODEL",
+      "PROSPERO_TOKEN",
+      "PROSPERO_TOKEN_FILE",
+      "PROSPERO_DATA_DIR",
+      "HOARD_AGENT_ID",
+      "HOARD_AGENT_SESSION"
     ]
   },
   "provides": {

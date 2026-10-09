@@ -17,7 +17,9 @@
     "markdown-export",
     "themes",
     "theme-from-design-system",
-    "image-studio"
+    "image-studio",
+    "native-vectorcraft-mcp",
+    "designcraft-handouts"
   ],
   "placeholders": [
     "CICERO_DIR",
@@ -78,8 +80,10 @@
     },
     "optional_env": [
       "CICERO_BRIDGE_AUTOSTART",
-      "CICERO_DATA_DIR"
+      "CICERO_DATA_DIR",
+      "CICERO_VECTORCRAFT_CLI",
+      "CICERO_DESIGNCRAFT_CLI"
     ]
   },
-  "notes": "Keep the app running (python -m cicero_hoard): the MCP bridge proxies every call to the local server, never opens the database, and starts the app itself when it is not answering. Tools that change or delete something: deck_create, deck_update, deck_delete, source_add, source_remove, outline_generate, outline_update, slides_generate, slide_update, slide_regenerate, slide_approve, slide_revert, slide_add, slide_delete, slides_reorder, deck_theme (with a theme), theme_from_tokens (saves a theme and can apply it), deck_export (writes a file), slide_image. Deletes need confirm=true and only when the user asks; outline_generate, outline_update and slides_generate replace what the outline or the draft slides held. Figures on slides must come from the sources; deck_check lists the ones that do not. Approving a slide is the person's decision. PDF export needs Chromium (python -m playwright install chromium); without it deck_export with format pdf fails with pdf_unavailable and the other formats still work. theme_from_tokens reads the design system through the family hub and fails with family_unavailable when the hub or the design-system app is not running; without tokens_id it only lists them. slide_image needs the family image studio and fails with image_studio_unavailable otherwise."
+  "notes": "Keep the app running (python -m cicero_hoard): the MCP bridge proxies every call to the local server, never opens the database, and starts the app itself when it is not answering. Tools that change or delete something: deck_create, deck_update, deck_delete, source_add, source_remove, outline_generate, outline_update, slides_generate, slide_update, slide_regenerate, slide_approve, slide_revert, slide_add, slide_delete, slides_reorder, slides_add, slide_edit_text, slide_set_image, asset_import, deck_template, deck_theme (with a theme), theme_from_tokens (saves a theme and can apply it), deck_export (writes a file), slide_image, craft_call (runs native VectorCraft or DesignCraft commands), vector_figure_create (adds an editable SVG figure to a slide), deck_handout_designcraft (writes an editable document and PNG previews). Deletes need confirm=true and only when the user asks; outline_generate, outline_update and slides_generate replace what the outline or the draft slides held. Approving a slide is the person's decision. PDF export needs Chromium (python -m playwright install chromium); without it deck_export with format pdf fails with pdf_unavailable and the other formats still work. Configure CICERO_VECTORCRAFT_CLI and CICERO_DESIGNCRAFT_CLI to enable their local MCP tools."
 }

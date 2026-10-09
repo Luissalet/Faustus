@@ -6,6 +6,8 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 
 ## A. Decisiones o acciones de Luis
 
+- **Coase's Hoard está en GitHub como privado** (09-10): `Luissalet/CoasesHoard`. Lo dejé privado porque el ejemplo de `docs/` es un expediente sobre una empresa real con veredicto «No pagar todavía» y textos de otra empresa real. ¿Lo hago público tal cual, quito el ejemplo y reescribo su historia, o se queda privado?
+- **Manual de Google con los cambios del 09-10** (#125 en el Ágora): el texto está listo en la tarea; no pude escribirlo porque con la pantalla bloqueada Docs no guarda las ediciones. Cuando el PC esté desbloqueado lo hago yo (o déjame la sesión abierta).
 - **Visión sin servidor desde que las GPU del PC son tuyas** (09-10, OBJ-57): las apps de la familia ya usan GLM en las Sparks para texto. GLM no tiene visión, y con el 8081 parado ningún servidor la ofrece, así que lo que necesite visión falla. Cada Spark tiene ahora unos 24–28 GB libres de 131, menos los 6 GiB de margen que se reservan. Cabría un modelo de visión pequeño (clase 8B) en una Spark, pero resta margen al KV de GLM. ¿Lo cargamos en una Spark (cuál y qué modelo), permites uno pequeño en una GPU del PC o lo dejamos sin visión?
 - **Borrar datos de prueba del 02-10 que no puedo borrar yo**: en Hypatia, el examen de profesor «Examen · Tema 4- Análisis sintáctico» (`9076685c…`, botón «Borrar examen»), su copia practicable en Exámenes de la asignatura (`11334f6c…`) y la pregunta aprobada en la prueba «¿Para qué se utiliza la programación dinámica en el análisis sintáctico?» (`93e30fab…`, en el banco del Tema 4); en Funes, las sesiones `20261002-035830-1a78` (falló al grabar) y `20261002-035920-d55c` («Prueba de reunión (borrar)»). El resto de datos de prueba (CookHoard, HomeHoard, el plazo espejo de Kafka y las 3 propuestas de People) ya está limpio.
 - **Probar el puente de Telegram con un bot real** (01-10, §245): está probado contra un servidor falso de la API. Para la prueba real hace falta que crees un bot (en Telegram, el chat de creación de bots → `/newbot`) y pegues su token en Ajustes del agente → Telegram, con tu id de chat en la lista (el bot te lo dice la primera vez que le escribes). ¿Lo hacemos?
@@ -23,7 +25,6 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 - **Encender `agent_context_engine`** en la instancia principal (23-09, §176): sigue `False` por defecto; recomendado tras que Luis pruebe `/brain` unos días.
 - **Renombrar el prefijo `odysseus_*`** (colecciones vectoriales, columnas `odysseus_kind`/`odysseus_ref`) (18-09, §112): sólo tiene sentido junto a una migración de datos real; decidir cuándo.
 - **Borrar `origin/dev`** en GitHub si ya no sirve (18-09, §112): necesita push de Luis.
-- **Publicar Nightingale's Hoard en GitHub** (23-09, §178): decidir, igual que el resto de la familia.
 - **`data/skills/general/design-before-code`** vive sólo en una máquina y está en `.gitignore` (19-09, §132): decidir si se versiona y dónde.
 - **Perfil dev «Jobhunter (test data, 5179)»** arranca en 5179 con conector apuntando a 5178 (23-09, §169): dejado así a propósito; no tocar sin decidir.
 - **`NewRepositoryDialog` visible en modo compacto** del panel de control de versiones (22-09): decidir si es capacidad nueva (actualizar `CONTRATO_GIT_4.md` punto 3) o descuido a cerrar.

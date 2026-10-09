@@ -6,6 +6,7 @@
   "capabilities": [
     "paperwork",
     "documents",
+    "document-text-comparison",
     "deadlines",
     "invoices",
     "contracts",
