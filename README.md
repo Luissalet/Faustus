@@ -432,12 +432,16 @@ it does not establish an autonomous quality score for the selected model.
 
 Spend with paid remote providers is capped per local day, on by default
 (`paid_spend_cap_daily_usd` 5.0, `paid_spend_cap_daily_tokens` 2,000,000; 0 turns
-a limit off). One check in the model client covers the main loop, sub-agents, the
-advisor and utility calls: once the day's total is reached the next paid call is
-refused with a typed `spend_cap.reached` error and a single notification is sent;
-calls already running finish, and local models are never counted or limited.
-A paid call that reports no price counts tokens only and is shown as such, never
-as free dollars. Status in Settings > Agent, `GET /api/spend-cap`, and the
+a limit off). The check sits in the model client right before every billable send (each
+retry and fallback too), so it covers the main loop, sub-agents, the advisor and
+utility calls: once the day's total is reached the next paid attempt is refused
+with a typed `spend_cap.reached` error and a single notification is sent; calls
+already running finish. Only providers that actually bill per call count: local
+models, CLI clients, flat-rate subscriptions, `:free` models and cache hits never
+do. A paid call that reports no price counts tokens only and is shown as such,
+never as free dollars, and a provider that reports cost 0 is never blocked. Only a
+person can change the limits (not an agent tool, the settings API with the tool
+token, or `manage_settings`), and the counter is safe across processes. Status in Settings > Agent, `GET /api/spend-cap`, and the
 `spend_cap_status` tool of the built-in `harness` MCP server; see
 [docs/api/spend-cap.md](docs/api/spend-cap.md). It does not cover paid calls that
 bypass the model client, such as image or video generation APIs.

@@ -9,26 +9,55 @@ Design
 ------
 * One accumulator, persisted to DATA_DIR/spend_cap.json and keyed by the LOCAL
   calendar date. A new date starts from zero (the old day is simply dropped).
-* One choke point: ``src/llm_core.py`` calls :func:`gate` before it sends a
-  request (``llm_call``, ``llm_call_async``, ``stream_llm``) and :func:`record`
-  with the provider-reported usage once it has it. Everything that reaches a
-  model through those three functions is covered: the main loop, sub-agents,
-  the advisor, typed decisions, compaction, research, memory upkeep, workflows.
-* A call counts only when its endpoint is PAID: not a local/private/tailscale
-  address, not a configured ``local`` endpoint (llama-server, Ollama, Sparks),
-  not a ``faustus-cli://`` client. Local models are never affected.
-* Spend is the provider's real ``cost_usd`` when it reports one. A paid call
-  without a cost counts its tokens only and is tallied as ``unknown_cost_calls``
-  (never booked as free dollars). The token cap therefore still bites on
-  providers that never report a price.
-* When the day's total has reached a limit, :func:`gate` raises
-  :class:`SpendCapReached` (HTTP 429, ``error_class = "spend_cap.reached"``)
-  before the request goes out, and sends ONE notification for that day. Calls
-  already in flight finish and are booked; nothing is cut mid-stream.
+  Every load-modify-save runs under a real mutual exclusion shared by all the
+  processes that use the same DATA_DIR (a lock file: msvcrt.locking on
+  Windows, fcntl.flock elsewhere, plus a thread lock inside one process), so
+  two workers can never overwrite each other's booking.
+* One choke point: ``src/llm_core.py`` calls :func:`gate` immediately before
+  EVERY billable HTTP attempt - the first send, each retry and each fallback
+  candidate of ``llm_call``, ``llm_call_async`` and ``stream_llm`` - and
+  :func:`record` with the provider-reported usage as soon as a response (even a
+  failed one that carries a usage receipt) is in. A call that was already
+  accepted is never cut mid-stream; only the NEXT attempt is refused.
+* A response-cache hit, a ``faustus-cli://`` client and a local endpoint never
+  reach :func:`gate`/:func:`record` as paid calls: they are not new paid
+  requests, so they are neither refused nor counted.
+
+What counts as PAID (see :func:`classify`)
+------------------------------------------
+Paid means "the provider/model is actually billed per call", not "the URL is
+remote". In order:
+
+1. empty URL or ``faustus-cli://`` (a CLI the user already pays a flat fee
+   for)                                                       -> not paid
+2. a local endpoint: the configured ``endpoint_kind`` is ``local`` (llama
+   server, Ollama, Sparks...), or the address is loopback / RFC1918 /
+   tailscale and the endpoint is not declared ``api``/``proxy`` -> not paid
+3. a flat-rate subscription provider (ChatGPT subscription, GitHub Copilot)
+                                                              -> not paid
+4. a model the provider publishes as free (id ending in ``:free``, the
+   OpenRouter convention)                                     -> not paid
+5. anything else that is remote (``endpoint_kind`` api/proxy or a public
+   host)                                                      -> PAID
+
+Pricing: Faustus has no price table, so the money measured is the provider's
+own reported ``cost_usd``. A paid call whose response reports a cost counts
+that cost in dollars. A response that reports ``cost_usd: 0`` is, by the
+provider's own statement, free: it adds $0 and its tokens do NOT feed the token
+cap (so a free-in-practice provider is never blocked by a limit it cannot
+spend). A paid call that reports no cost has an UNKNOWN price: it counts its
+tokens (the token cap is the protection for exactly this case) and is tallied
+in ``unknown_cost_calls``; dollars are never guessed. If the dollar limit is
+0 (off), the token cap covers every paid token instead.
+
+When the day's total has reached a limit, :func:`gate` raises
+:class:`SpendCapReached` (HTTP 429, ``error_class = "spend_cap.reached"``)
+before the request goes out, and sends ONE notification for that day.
 
 Settings: ``paid_spend_cap_enabled`` (default true), ``paid_spend_cap_daily_usd``
 (default 5.0; 0 = no dollar cap), ``paid_spend_cap_daily_tokens`` (default
-2,000,000; 0 = no token cap).
+2,000,000; 0 = no token cap). They can only be changed by a person (see
+``routes/spend_cap_routes.py``, the settings API and ``manage_settings``).
 
 Every bookkeeping failure is swallowed: this module never breaks a model call
 except by the deliberate refusal.
@@ -36,14 +65,17 @@ except by the deliberate refusal.
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import json
 import logging
 import math
 import os
 import tempfile
 import threading
+import time
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterator, Optional
 from urllib.parse import urlparse
 
 from fastapi import HTTPException
@@ -62,6 +94,11 @@ DEFAULT_DAILY_TOKENS = 2_000_000
 SETTING_ENABLED = "paid_spend_cap_enabled"
 SETTING_USD = "paid_spend_cap_daily_usd"
 SETTING_TOKENS = "paid_spend_cap_daily_tokens"
+#: The settings only a person may change (never an agent channel).
+PROTECTED_SETTINGS = frozenset({SETTING_ENABLED, SETTING_USD, SETTING_TOKENS})
+
+#: Flat-rate subscription providers: a call is not billed per request.
+_FLAT_RATE_PROVIDERS = frozenset({"chatgpt-subscription", "copilot"})
 
 _lock = threading.RLock()
 
@@ -130,16 +167,34 @@ def limits() -> Dict[str, Any]:
 
 # --- classification ---------------------------------------------------------
 
-def is_paid_endpoint(url: str) -> bool:
-    """True for a remote endpoint that can bill money (everything not local)."""
+def classify(url: str, model: str = "") -> str:
+    """``"paid"`` or the reason the call is not billed (``"cli"``, ``"local"``,
+    ``"subscription"``, ``"free-model"``, ``"none"``). See the module docstring."""
     url = str(url or "").strip()
-    if not url or url.startswith("faustus-cli://"):
-        return False
+    if not url:
+        return "none"
+    if url.startswith("faustus-cli://"):
+        return "cli"
     try:
         from src.model_context import is_local_endpoint
-        return not is_local_endpoint(url)
+        if is_local_endpoint(url):
+            return "local"
+    except Exception:  # noqa: BLE001 - unknown endpoint: do not claim it is billed
+        return "local"
+    try:
+        from src.llm_core import _detect_provider
+        if _detect_provider(url) in _FLAT_RATE_PROVIDERS:
+            return "subscription"
     except Exception:  # noqa: BLE001
-        return False
+        pass
+    if str(model or "").strip().lower().endswith(":free"):
+        return "free-model"
+    return "paid"
+
+
+def is_paid_endpoint(url: str, model: str = "") -> bool:
+    """True only for a call that the provider actually bills (see :func:`classify`)."""
+    return classify(url, model) == "paid"
 
 
 def _provider_label(url: str) -> str:
@@ -160,8 +215,8 @@ def _now() -> datetime:
 
 
 def _fresh(day: str) -> Dict[str, Any]:
-    return {"day": day, "usd": 0.0, "tokens": 0, "calls": 0, "unknown_cost_calls": 0,
-            "by_provider": {}, "notified_day": ""}
+    return {"day": day, "usd": 0.0, "tokens": 0, "tokens_unpriced": 0, "calls": 0,
+            "unknown_cost_calls": 0, "by_provider": {}, "notified_day": ""}
 
 
 def _load(now: datetime) -> Dict[str, Any]:
@@ -174,6 +229,9 @@ def _load(now: datetime) -> Dict[str, Any]:
             base.update({k: state[k] for k in base if k in state})
             if not isinstance(base["by_provider"], dict):
                 base["by_provider"] = {}
+            if "tokens_unpriced" not in state:
+                # state written before the split: every token was counted
+                base["tokens_unpriced"] = int(base["tokens"])
             return base
     except (OSError, ValueError):
         pass
@@ -196,6 +254,63 @@ def _save(state: Dict[str, Any]) -> None:
         logger.debug("[spend_cap] could not persist state", exc_info=True)
 
 
+def _lock_path() -> str:
+    return STATE_FILE + ".lock"
+
+
+def _os_lock(fh) -> None:
+    """Block until this process holds the exclusive lock on ``fh``."""
+    if os.name == "nt":
+        import msvcrt
+        fh.seek(0)
+        deadline = time.monotonic() + 30.0
+        while True:
+            try:
+                msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+                return
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise
+                time.sleep(0.005)
+    else:
+        import fcntl
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+
+
+def _os_unlock(fh) -> None:
+    if os.name == "nt":
+        import msvcrt
+        fh.seek(0)
+        msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+        fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+
+
+@contextlib.contextmanager
+def _exclusive() -> Iterator[None]:
+    """Mutual exclusion for load-modify-save across threads AND processes."""
+    with _lock:
+        try:
+            os.makedirs(os.path.dirname(STATE_FILE) or ".", exist_ok=True)
+            fh = open(_lock_path(), "a+b")
+        except OSError:
+            # cannot create the lock file (read-only data dir): the save fails too
+            yield
+            return
+        try:
+            _os_lock(fh)
+            try:
+                yield
+            finally:
+                try:
+                    _os_unlock(fh)
+                except OSError:
+                    pass
+        finally:
+            fh.close()
+
+
 def resets_at(now: Optional[datetime] = None) -> str:
     now = now or _now()
     nxt = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -214,18 +329,25 @@ def _usage_tokens(usage: Dict[str, Any]) -> int:
     return split or count("total_tokens")
 
 
-def record(url: str, usage: Optional[Dict[str, Any]], *, now: Optional[datetime] = None) -> None:
+def _known_cost(usage: Dict[str, Any]) -> Optional[float]:
+    cost = usage.get("cost_usd")
+    if (not isinstance(cost, bool) and isinstance(cost, (int, float))
+            and math.isfinite(cost) and cost >= 0):
+        return float(cost)
+    return None
+
+
+def record(url: str, usage: Optional[Dict[str, Any]], *, model: str = "",
+           now: Optional[datetime] = None) -> None:
     """Book one paid call. ``usage`` may be empty: that is an unknown-cost call."""
     try:
-        if not is_paid_endpoint(url):
+        if not is_paid_endpoint(url, model):
             return
         usage = usage if isinstance(usage, dict) else {}
         tokens = _usage_tokens(usage)
-        cost = usage.get("cost_usd")
-        known = (not isinstance(cost, bool) and isinstance(cost, (int, float))
-                 and math.isfinite(cost) and cost >= 0)
+        cost = _known_cost(usage)
         label = _provider_label(url)
-        with _lock:
+        with _exclusive():
             state = _load(now or _now())
             state["tokens"] = int(state["tokens"]) + tokens
             state["calls"] = int(state["calls"]) + 1
@@ -233,10 +355,11 @@ def record(url: str, usage: Optional[Dict[str, Any]], *, now: Optional[datetime]
                 label, {"usd": 0.0, "tokens": 0, "calls": 0, "unknown_cost_calls": 0})
             row["tokens"] = int(row.get("tokens", 0)) + tokens
             row["calls"] = int(row.get("calls", 0)) + 1
-            if known:
-                state["usd"] = float(state["usd"]) + float(cost)
-                row["usd"] = float(row.get("usd", 0.0)) + float(cost)
+            if cost is not None:
+                state["usd"] = float(state["usd"]) + cost
+                row["usd"] = float(row.get("usd", 0.0)) + cost
             else:
+                state["tokens_unpriced"] = int(state["tokens_unpriced"]) + tokens
                 state["unknown_cost_calls"] = int(state["unknown_cost_calls"]) + 1
                 row["unknown_cost_calls"] = int(row.get("unknown_cost_calls", 0)) + 1
             _save(state)
@@ -244,10 +367,23 @@ def record(url: str, usage: Optional[Dict[str, Any]], *, now: Optional[datetime]
         logger.debug("[spend_cap] record failed", exc_info=True)
 
 
+def has_receipt(usage: Optional[Dict[str, Any]]) -> bool:
+    """True when ``usage`` carries tokens or a cost the provider reported."""
+    return isinstance(usage, dict) and (_usage_tokens(usage) > 0 or _known_cost(usage) is not None)
+
+
+def _token_basis(state: Dict[str, Any], lim: Dict[str, Any]) -> int:
+    """Tokens the token cap judges: the ones whose price is unknown. With the
+    dollar limit off, every paid token (nothing else would bound the day)."""
+    if lim["daily_usd"] > 0:
+        return int(state["tokens_unpriced"])
+    return int(state["tokens"])
+
+
 def _exceeded(state: Dict[str, Any], lim: Dict[str, Any]) -> Optional[str]:
     if lim["daily_usd"] > 0 and float(state["usd"]) >= lim["daily_usd"]:
         return "usd"
-    if lim["daily_tokens"] > 0 and int(state["tokens"]) >= lim["daily_tokens"]:
+    if lim["daily_tokens"] > 0 and _token_basis(state, lim) >= lim["daily_tokens"]:
         return "tokens"
     return None
 
@@ -269,23 +405,26 @@ def _notify_once(state: Dict[str, Any], error: SpendCapReached) -> None:
         logger.debug("[spend_cap] notification failed", exc_info=True)
 
 
-def gate(url: str, *, now: Optional[datetime] = None) -> None:
-    """Refuse a paid call once today's cap is reached; no-op for local/disabled."""
+def gate(url: str, model: str = "", *, now: Optional[datetime] = None) -> None:
+    """Refuse a paid HTTP attempt once today's cap is reached; no-op otherwise.
+
+    Call it immediately before each attempt that can bill (not before a cache
+    hit, a CLI client or a local endpoint)."""
     error: Optional[SpendCapReached] = None
     try:
         lim = limits()
-        if not lim["enabled"] or not is_paid_endpoint(url):
+        if not lim["enabled"] or not is_paid_endpoint(url, model):
             return
         now = now or _now()
-        with _lock:
+        with _exclusive():
             state = _load(now)
             kind = _exceeded(state, lim)
             if kind is None:
                 return
             error = SpendCapReached(
                 limit_kind=kind, spent_usd=float(state["usd"]), limit_usd=lim["daily_usd"],
-                spent_tokens=int(state["tokens"]), limit_tokens=lim["daily_tokens"],
-                resets_at=resets_at(now))
+                spent_tokens=_token_basis(state, lim) if kind == "tokens" else int(state["tokens"]),
+                limit_tokens=lim["daily_tokens"], resets_at=resets_at(now))
             _notify_once(state, error)
     except Exception:  # noqa: BLE001
         logger.debug("[spend_cap] gate failed open", exc_info=True)
@@ -294,10 +433,75 @@ def gate(url: str, *, now: Optional[datetime] = None) -> None:
         raise error
 
 
+# --- streams: one ledger per stream_llm call --------------------------------
+
+class AttemptLedger:
+    """Books a stream's usage per HTTP attempt, without double counting.
+
+    Inside one attempt every ``usage`` frame is a cumulative/partial update of
+    the SAME response (a repeated final frame, an input-only frame followed by
+    an output frame): later values overwrite earlier ones and nothing is
+    summed. A new attempt (a retry or a fallback re-send, announced by
+    :func:`attempt_gate`) is a genuinely new request and is booked on its own.
+    An attempt that produced no usage is booked as an unknown-cost call only
+    when it ended the stream successfully."""
+
+    def __init__(self, url: str, model: str):
+        self.url, self.model = url, model
+        self._current: Optional[Dict[str, Any]] = None
+
+    def begin_attempt(self) -> None:
+        self._flush(final=False, errored=True)
+        self._current = {}
+
+    def frame(self, usage: Any) -> None:
+        if not isinstance(usage, dict):
+            return
+        if self._current is None:
+            self._current = {}
+        for key in ("input_tokens", "output_tokens", "total_tokens", "cost_usd"):
+            value = usage.get(key)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                continue
+            if math.isfinite(value) and value >= 0:
+                self._current[key] = value
+
+    def _flush(self, *, final: bool, errored: bool) -> None:
+        current, self._current = self._current, None
+        if current is None:
+            return
+        if has_receipt(current):
+            record(self.url, current, model=self.model)
+        elif final and not errored:
+            record(self.url, {}, model=self.model)
+
+    def finish(self, *, errored: bool) -> None:
+        try:
+            self._flush(final=True, errored=errored)
+        except Exception:  # noqa: BLE001
+            logger.debug("[spend_cap] stream ledger failed", exc_info=True)
+
+
+_ledger: contextvars.ContextVar[Optional[AttemptLedger]] = contextvars.ContextVar(
+    "spend_cap_ledger", default=None)
+
+
+def use_ledger(ledger: Optional[AttemptLedger]) -> None:
+    _ledger.set(ledger)
+
+
+def attempt_gate(url: str, model: str = "") -> None:
+    """:func:`gate` for one stream attempt, then mark the attempt boundary."""
+    gate(url, model)
+    ledger = _ledger.get()
+    if ledger is not None:
+        ledger.begin_attempt()
+
+
 def status(*, now: Optional[datetime] = None) -> Dict[str, Any]:
     now = now or _now()
     lim = limits()
-    with _lock:
+    with _exclusive():
         state = _load(now)
     kind = _exceeded(state, lim) if lim["enabled"] else None
     providers = [
@@ -313,12 +517,15 @@ def status(*, now: Optional[datetime] = None) -> Dict[str, Any]:
         "day": state["day"],
         "spent_usd": round(float(state["usd"]), 6),
         "tokens_today": int(state["tokens"]),
+        "tokens_counted_for_cap": _token_basis(state, lim),
         "paid_calls": int(state["calls"]),
         "unknown_cost_calls": int(state["unknown_cost_calls"]),
         "reached": kind is not None,
         "reached_by": kind,
         "resets_at": resets_at(now),
         "by_provider": providers,
-        "note": ("Calls without a reported cost count tokens only; dollars are never guessed. "
-                 "Local models are never counted or limited."),
+        "note": ("Only providers that bill per call count (not local, CLI, subscription or "
+                 ":free models). Dollars are the provider's reported cost, never guessed; a "
+                 "paid call without a reported cost counts tokens against the token cap, and "
+                 "a call that reports cost 0 is free and not token-capped."),
     }

@@ -6,18 +6,40 @@ per-turn ceilings (`agent_turn_max_cost_usd`, the autonomy budget) bound only on
 turn.
 
 Code: `src/spend_cap.py`. The single choke point is `src/llm_core.py`:
-`llm_call`, `llm_call_async` and `stream_llm` call `spend_cap.gate(url)` before
-sending and `spend_cap.record(url, usage)` with the provider-reported usage.
+`llm_call`, `llm_call_async` and `stream_llm` call `spend_cap.gate(url, model)`
+immediately before EVERY billable HTTP attempt (the first send, each retry, each
+fallback candidate, the empty-completion re-send) and `spend_cap.record(...)` with
+the provider-reported usage as soon as a response is in.
 
 ## Rules
 
-- A call is "paid" when its endpoint is not local: not a loopback, private or
-  tailscale address, not a configured `local` endpoint (llama-server, Ollama,
-  Sparks), not a `faustus-cli://` client. Local models are never counted or
-  refused.
-- Dollars come from the provider's real `cost_usd`. A paid call without one
-  counts its tokens only and is tallied as `unknown_cost_calls`; a price is never
-  guessed. The token limit therefore still stops providers that report no price.
+- "Paid" means the provider/model is actually billed per call; a remote URL alone
+  is not proof. `spend_cap.classify(url, model)` decides, in order: empty or
+  `faustus-cli://` (flat-fee CLI) is not paid; a local endpoint (configured
+  `endpoint_kind` `local`, or loopback/private/tailscale that is not declared
+  `api`/`proxy`: llama-server, Ollama, Sparks) is not paid; a flat-rate
+  subscription provider (ChatGPT subscription, GitHub Copilot) is not paid; a
+  model id ending in `:free` (the OpenRouter convention) is not paid; everything
+  else that is remote (`endpoint_kind` `api`/`proxy`, or a public host) is paid.
+  Not-paid calls are never counted or refused.
+- Faustus has no price table, so dollars are only the provider's reported
+  `cost_usd`. A response that reports `cost_usd: 0` is free by the provider's own
+  statement: it adds $0 and its tokens do NOT count toward the token limit, so it
+  is never blocked. A paid call that reports no cost has an unknown price: it
+  counts its tokens (the token limit is the protection for exactly this case) and
+  is tallied as `unknown_cost_calls`; a price is never guessed. If the dollar
+  limit is `0` (off), the token limit covers every paid token.
+- The gate runs after the response cache: a cache hit is not a new paid request
+  and is neither refused nor counted. A refused retry never goes out; an attempt
+  already accepted is never cut.
+- Usage is booked per HTTP attempt, also when the response fails (a 503 that
+  carries a valid `usage` receipt is booked; a failure without a receipt books
+  nothing). In a stream, repeated or cumulative `usage` frames of one response
+  overwrite each other instead of adding up; a genuinely new attempt (retry) is
+  booked separately.
+- The accumulator is safe across processes sharing `DATA_DIR`: every
+  load-modify-save holds an exclusive lock file (`spend_cap.json.lock`,
+  `msvcrt.locking` on Windows, `fcntl.flock` elsewhere).
 - The account is keyed by the LOCAL calendar date and persisted in
   `DATA_DIR/spend_cap.json`; a new date starts from zero.
 - Once the day's USD or tokens reach the limit, the next paid call is refused
@@ -35,7 +57,13 @@ sending and `spend_cap.record(url, usage)` with the provider-reported usage.
 | `paid_spend_cap_daily_tokens` | `2000000` | Token limit; `0` = none. |
 
 They appear in Settings > Agent as "Daily paid spend cap", with a card showing
-today's usage.
+today's usage. The card refetches after every settings save, on focus and every
+15 s, so it never shows an old limit next to the control.
+
+Only a person can change them. `PATCH`/`POST /api/spend-cap` use `require_human`;
+`POST /api/auth/settings` refuses a change to these keys (403) when it arrives
+with the internal tool token; and the native `manage_settings` tool refuses
+`set`, `reset` and `delete` on them. Nothing else is blocked globally.
 
 ## API
 
@@ -72,4 +100,9 @@ The built-in `harness` server exposes the read-only tool `spend_cap_status`
 ## Not covered
 
 Paid calls that bypass `src/llm_core.py` (image/video generation APIs, a few
-direct provider probes in routes) are neither counted nor refused.
+direct provider probes in routes) are neither counted nor refused. A streamed
+attempt that fails with an error body is not parsed for a usage receipt. The cap
+is a check before each send, not a reservation: concurrent calls accepted before
+the limit is reached can overshoot it by their own cost. A backup restore or an
+edit of `settings.json` by a person (or a shell tool) can still change the
+settings.

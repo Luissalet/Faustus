@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getSpendCap, type SpendCapStatus } from '../../adapters/settings';
+import { getSpendCap, SETTINGS_SAVED_EVENT, type SpendCapStatus } from '../../adapters/settings';
 import { t } from '../../i18n';
 
 function usd(value: number): string {
@@ -22,16 +22,33 @@ export function SpendCapSection() {
   const [s, setS] = useState<SpendCapStatus | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
+  // Refetch on mount, after any settings save, when the tab regains focus and
+  // every 15 s: the limit shown here must never lag the control above it.
   useEffect(() => {
     let cancelled = false;
-    getSpendCap()
-      .then((d) => { if (!cancelled) setS(d); })
-      .catch((e: Error) => { if (!cancelled) setErr(e.message); });
-    return () => { cancelled = true; };
+    const load = () => {
+      getSpendCap()
+        .then((d) => { if (!cancelled) { setS(d); setErr(null); } })
+        .catch((e: Error) => { if (!cancelled) setErr(e.message); });
+    };
+    const onVisible = () => { if (document.visibilityState !== 'hidden') load(); };
+    load();
+    window.addEventListener(SETTINGS_SAVED_EVENT, load);
+    window.addEventListener('focus', load);
+    document.addEventListener('visibilitychange', onVisible);
+    const timer = window.setInterval(load, 15000);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(SETTINGS_SAVED_EVENT, load);
+      window.removeEventListener('focus', load);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.clearInterval(timer);
+    };
   }, []);
 
   const usdShare = s ? capShare(s.spent_usd, s.limit_usd) : null;
-  const tokShare = s ? capShare(s.tokens_today, s.limit_tokens) : null;
+  const tokensCounted = s ? (s.tokens_counted_for_cap ?? s.tokens_today) : 0;
+  const tokShare = s ? capShare(tokensCounted, s.limit_tokens) : null;
 
   return (
     <div className="fs-set__card" data-testid="spend-cap-card">
@@ -57,7 +74,7 @@ export function SpendCapSection() {
             {usdShare !== null && ` (${usdShare}%)`}
           </p>
           <p className="fs-set__help" data-testid="spend-cap-tokens">
-            {t('Tokens today')}: <strong>{s.tokens_today.toLocaleString()}</strong>
+            {t('Tokens today')}: <strong>{tokensCounted.toLocaleString()}</strong>
             {' / '}{s.limit_tokens > 0 ? s.limit_tokens.toLocaleString() : t('no limit')}
             {tokShare !== null && ` (${tokShare}%)`}
           </p>

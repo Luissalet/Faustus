@@ -93,6 +93,19 @@ def require_admin(request: Request):
         raise HTTPException(403, "Admin only")
 
 
+def is_agent_channel(request: Request) -> bool:
+    """True when the request comes from the model's own tool layer (the
+    in-process internal-tool token or the user it is stamped as) - the same
+    notion of "not a person" that `require_human` enforces."""
+    try:
+        hdr = request.headers.get(INTERNAL_TOOL_HEADER)
+        if hdr and secrets.compare_digest(hdr, INTERNAL_TOOL_TOKEN):
+            return True
+        return getattr(request.state, "current_user", None) == INTERNAL_TOOL_USER
+    except Exception:
+        return False
+
+
 def require_human(request: Request):
     """Admin, and **not the model**.
 

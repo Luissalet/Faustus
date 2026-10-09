@@ -4034,9 +4034,7 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
     if str(url or '').startswith('faustus-cli://'):
         from src.cli_model import complete
         return complete(url, model, messages, headers, timeout)
-    # Daily paid-spend cap (src/spend_cap.py): refuse before anything is sent.
     from src import spend_cap as _spend_cap
-    _spend_cap.gate(url)
     h = _provider_headers(_detect_provider(url))
     # Tolerate headers that arrive as a JSON string (some sessions stored them
     # double-encoded) — otherwise h.update() throws "dictionary update sequence
@@ -4148,6 +4146,9 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
     # A local backend reasons before it answers, and the shared default was
     # written for hosted APIs -- see `resolve_timeout`.
     timeout = resolve_timeout(url, timeout)
+    # Daily paid-spend cap (src/spend_cap.py): the check sits right before the
+    # send, after the response cache, so a cache hit is never a paid call.
+    _spend_cap.gate(url, model)
     try:
         note_model_activity(target_url, model)
         r = httpx_post_kimi_aware(target_url, h, json=payload, timeout=timeout,
@@ -4155,12 +4156,10 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
     except Exception as e:
         raise HTTPException(502, f"POST {target_url} failed: {e}")
     if not r.is_success:
+        _cap_book_failed_response(url, model, provider, r)
         raise HTTPException(502, f"Upstream {target_url} -> {r.status_code}: {r.text}")
     data = r.json()
-    try:
-        _spend_cap.record(url, _observed_nonstream_usage(data, provider, model))
-    except Exception:  # noqa: BLE001 - bookkeeping never breaks the call
-        pass
+    _cap_book_response(url, model, _observed_nonstream_usage(data, provider, model))
     try:
         if provider == "anthropic":
             response = _parse_anthropic_response(data)
@@ -4218,10 +4217,15 @@ def _retry_empty_completion(target_url: str, headers: Dict, payload: Dict,
     # answered correctly in 5.5 s. Whatever the model was working through, it
     # did not get to say it, so the retry does not pay for it twice.
     _suppress_thinking(retry, model)
+    from src import spend_cap as _spend_cap
+    _spend_cap.gate(target_url, model)
     try:
         r = httpx_post_kimi_aware(target_url, headers, json=retry, timeout=timeout)
+        if not r.is_success:
+            _cap_book_failed_response(target_url, model, provider, r)
         if r.is_success:
             data = r.json()
+            _cap_book_response(target_url, model, _observed_nonstream_usage(data, provider, model))
             if provider == "ollama":
                 text = _parse_ollama_response(data)
             else:
@@ -4522,6 +4526,40 @@ def _observed_nonstream_usage(data, provider: str, requested_model: str) -> dict
     return usage
 
 
+def _cap_book_response(url: str, model: str, usage) -> None:
+    """Book one answered paid HTTP attempt (an empty ``usage`` is an unknown-cost call)."""
+    try:
+        from src import spend_cap
+        spend_cap.record(url, usage if isinstance(usage, dict) else {}, model=model)
+    except Exception:  # noqa: BLE001 - bookkeeping never breaks the call
+        logger.debug("[spend_cap] booking failed", exc_info=True)
+
+
+def _cap_book_failed_response(url: str, model: str, provider: str, response) -> None:
+    """A failed response (503...) can still carry a valid usage receipt: book
+    it, and only it. A failure with no receipt books nothing (nothing is known
+    to have been billed)."""
+    try:
+        from src import spend_cap
+        usage = _observed_nonstream_usage(response.json(), provider, model)
+        if spend_cap.has_receipt(usage):
+            spend_cap.record(url, usage, model=model)
+    except Exception:  # noqa: BLE001
+        logger.debug("[spend_cap] failed-response booking skipped", exc_info=True)
+
+
+def _spend_cap_refusal_chunk(url: str, model: str) -> Optional[str]:
+    """Stream attempt gate: an ``event: error`` chunk when the cap is reached."""
+    from src import spend_cap
+    try:
+        spend_cap.attempt_gate(url, model)
+    except spend_cap.SpendCapReached as exc:
+        payload = exc.as_dict()
+        payload.update(text=exc.message, attempts=0, fallback_eligible=True)
+        return f'event: error\ndata: {json.dumps(payload)}\n\n'
+    return None
+
+
 async def llm_call_async(
     url: str,
     model: str,
@@ -4557,11 +4595,6 @@ async def llm_call_async(
     handled it, and a bug in tracing can never affect the call itself
     (record happens after the real work is done, in its own try/except).
     """
-    # Daily paid-spend cap (src/spend_cap.py): refuse a paid call before the
-    # turn account reserves anything for it. Local endpoints pass untouched.
-    from src import spend_cap as _spend_cap
-    _spend_cap.gate(url)
-    _cap_booked: List[bool] = []
     from src import llm_trace
     _trace_phase_snapshot = llm_trace._capture_call_phase()
     _trace_run_snapshot = llm_trace.current_run_id() or None
@@ -4594,9 +4627,6 @@ async def llm_call_async(
 
     def _capture_usage(usage, *, endpoint_local=False):
         _observed_usage.update(usage)
-        if not endpoint_local:
-            _cap_booked.append(True)
-            _spend_cap.record(url, usage)
         if _spend is not None:
             _spend.observe(usage, endpoint_local=endpoint_local)
         if _usage_observer is not None:
@@ -4652,9 +4682,6 @@ async def llm_call_async(
         _spend_outcome = "error"
         raise
     finally:
-        if not _cap_booked and _spend_outcome == "ok":
-            # a paid call whose provider reported nothing: tokens and cost unknown
-            _spend_cap.record(url, {})
         if _spend is not None:
             try:
                 _spend.settle(_spend_outcome)
@@ -5002,6 +5029,10 @@ async def _llm_call_async_impl(
     # "do not retry", but must still make the initial request.
     while attempt < max(1, max_retries):
         attempt += 1
+        # Daily paid-spend cap (src/spend_cap.py): checked right before EVERY
+        # send (first attempt and each retry), after the cache lookup above.
+        from src import spend_cap as _spend_cap
+        _spend_cap.gate(url, model)
         start = time.time()
         try:
             async with _local_model_slot(target_url, model, workload):
@@ -5030,6 +5061,8 @@ async def _llm_call_async_impl(
                         _automatic_min_p=_automatic_min_p,
                     )
             duration = time.time() - start
+            if not r.is_success:
+                _cap_book_failed_response(url, model, provider, r)
             if not r.is_success and _asked and _reasoning_steps < 2:
                 from src.provider_reasoning import looks_like_reasoning_error
                 if looks_like_reasoning_error(r.status_code, r.text) and _step_down_reasoning(payload):
@@ -5078,6 +5111,7 @@ async def _llm_call_async_impl(
             logger.info(f"LLM async call to {target_url} succeeded in {duration:.2f}s (attempt {attempt})")
             _clear_host_dead(target_url)
             data = r.json()
+            _cap_book_response(url, model, _observed_nonstream_usage(data, provider, model))
             # Capture before response-schema parsing: a billed reply can have
             # valid usage even when its message shape is unusable. Local to
             # this invocation; cache/CLI paths have no fresh provider receipt.
@@ -6018,20 +6052,17 @@ async def _stream_retry_or_fail(*, should_retry: bool, wait: float,
 async def stream_llm(url: str, model: str, messages: List[Dict], *args, **kwargs):
     """Daily paid-spend cap around the traced stream (src/spend_cap.py).
 
-    A paid call is refused up front with a typed ``event: error`` chunk once the
-    day's cap is reached; a call that starts is never cut, and the usage events
-    that pass through are booked against the day when the stream ends.
+    Every HTTP attempt of the stream (first send, each retry) is gated inside
+    ``_stream_llm_inner`` right before it is sent; a refused attempt becomes a
+    typed ``event: error`` chunk. A call that starts is never cut. The usage
+    frames that pass through are booked per attempt by a ledger: repeated or
+    cumulative frames of one response overwrite each other (they are not
+    summed), a new attempt is booked separately.
     """
     from src import spend_cap as _spend_cap
-    try:
-        _spend_cap.gate(url)
-    except _spend_cap.SpendCapReached as exc:
-        payload = exc.as_dict()
-        payload.update(text=exc.message, attempts=0, fallback_eligible=True)
-        yield f'event: error\ndata: {json.dumps(payload)}\n\n'
-        return
-    _usage_seen = []
+    _ledger = _spend_cap.AttemptLedger(url, model)
     _errored = []
+    _spend_cap.use_ledger(_ledger)
     _inner = _stream_llm_traced_entry(url, model, messages, *args, **kwargs)
     try:
         async for chunk in _inner:
@@ -6043,10 +6074,12 @@ async def stream_llm(url: str, model: str, messages: List[Dict], *args, **kwargs
                         if _line.startswith("data:"):
                             _evt = json.loads(_line[5:].strip() or "null")
                             if isinstance(_evt, dict) and _evt.get("type") == "usage" and isinstance(_evt.get("data"), dict):
-                                _usage_seen.append(_evt["data"])
+                                _ledger.frame(_evt["data"])
                 except Exception:  # noqa: BLE001
                     pass
+            _spend_cap.use_ledger(_ledger)
             yield chunk
+            _spend_cap.use_ledger(_ledger)
     finally:
         # close the traced stream now, not at garbage collection, so its own
         # bookkeeping (trace entry) is written when the caller closes early
@@ -6054,23 +6087,7 @@ async def stream_llm(url: str, model: str, messages: List[Dict], *args, **kwargs
             await _inner.aclose()
         except Exception:  # noqa: BLE001
             pass
-        try:
-            if _usage_seen:
-                _cost = [u["cost_usd"] for u in _usage_seen
-                         if isinstance(u.get("cost_usd"), (int, float)) and not isinstance(u.get("cost_usd"), bool)]
-                _merged = {
-                    "input_tokens": sum(int(u.get("input_tokens") or 0) for u in _usage_seen
-                                        if isinstance(u.get("input_tokens"), (int, float))),
-                    "output_tokens": sum(int(u.get("output_tokens") or 0) for u in _usage_seen
-                                         if isinstance(u.get("output_tokens"), (int, float))),
-                }
-                if _cost:
-                    _merged["cost_usd"] = float(sum(_cost))
-                _spend_cap.record(url, _merged)
-            elif not _errored:
-                _spend_cap.record(url, {})
-        except Exception:  # noqa: BLE001 - bookkeeping never breaks the stream
-            pass
+        _ledger.finish(errored=bool(_errored))
 
 
 async def _stream_llm_traced_entry(url: str, model: str, messages: List[Dict], temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
@@ -6461,6 +6478,10 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                 availability_only_transport=availability_only_transport,
                 _attempt=next_attempt, _budget=_budget,
             )
+        _cap_refusal = _spend_cap_refusal_chunk(url, model)
+        if _cap_refusal:
+            yield _cap_refusal
+            return
         _dump_stream_payload(target_url, payload)
         try:
             client = _get_http_client()
@@ -6726,6 +6747,10 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                 availability_only_transport=availability_only_transport,
                 _attempt=next_attempt, _budget=_budget,
             )
+        _cap_refusal = _spend_cap_refusal_chunk(url, model)
+        if _cap_refusal:
+            yield _cap_refusal
+            return
         _dump_stream_payload(target_url, payload)
         try:
             client = _get_http_client()
@@ -7033,6 +7058,10 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                 availability_only_transport=availability_only_transport,
                 _attempt=next_attempt, _budget=_budget,
             )
+        _cap_refusal = _spend_cap_refusal_chunk(url, model)
+        if _cap_refusal:
+            yield _cap_refusal
+            return
         _dump_stream_payload(target_url, payload)
         try:
             client = _get_http_client()
@@ -7447,6 +7476,10 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
             _sampler_retry_used=_sampler_retry_used,
         )
 
+    _cap_refusal = _spend_cap_refusal_chunk(url, model)
+    if _cap_refusal:
+        yield _cap_refusal
+        return
     _dump_stream_payload(target_url, payload)
     try:
         client = _get_http_client()

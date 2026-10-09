@@ -149,8 +149,13 @@ export async function saveSettings(patch: Settings): Promise<Settings> {
   );
   const s = (await r.json()) as Settings;
   settingsGeneration++;
+  // Cards that mirror a setting (the spend-cap usage card) refetch on this.
+  try { window.dispatchEvent(new Event(SETTINGS_SAVED_EVENT)); } catch { /* no window (tests) */ }
   return publishSettings(s, true);
 }
+
+/** Fired on `window` after `saveSettings` succeeds. */
+export const SETTINGS_SAVED_EVENT = 'faustus:settings-saved';
 
 export interface SchemaField {
   key: string;
@@ -439,6 +444,8 @@ export interface SpendCapStatus {
   day: string;
   spent_usd: number;
   tokens_today: number;
+  /** Tokens the token cap judges (paid calls whose price is unknown). */
+  tokens_counted_for_cap?: number;
   paid_calls: number;
   unknown_cost_calls: number;
   reached: boolean;

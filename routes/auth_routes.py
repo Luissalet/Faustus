@@ -928,6 +928,14 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
             raise HTTPException(403, "Admin only")
         body = await request.json()
         current = _load_settings()
+        # The daily paid spend cap is a person's decision: the model's own
+        # tool layer (internal token) may neither raise nor switch it off.
+        from core.middleware import is_agent_channel
+        if is_agent_channel(request):
+            from src.spend_cap import PROTECTED_SETTINGS as _cap_keys
+            for _cap_key in _cap_keys:
+                if _cap_key in body and body[_cap_key] != current.get(_cap_key, DEFAULT_SETTINGS.get(_cap_key)):
+                    raise HTTPException(403, "The daily paid spend cap can only be changed by a person, not by a tool call")
         if "tool_approval_mode" in body and body["tool_approval_mode"] not in ("ask", "auto", "full"):
             raise HTTPException(400, "tool_approval_mode must be ask, auto or full")
         # Per-key validation for numeric settings: coerce to int and clamp to a

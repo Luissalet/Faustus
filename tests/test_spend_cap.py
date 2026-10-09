@@ -44,6 +44,8 @@ def test_paid_vs_local_classification():
     assert not spend_cap.is_paid_endpoint("http://localhost:11434/v1")
     assert not spend_cap.is_paid_endpoint("faustus-cli://claude")
     assert not spend_cap.is_paid_endpoint("")
+    assert not spend_cap.is_paid_endpoint(PAID2, "meta-llama/llama-3.3-70b-instruct:free")
+    assert spend_cap.is_paid_endpoint(PAID2, "meta-llama/llama-3.3-70b-instruct")
 
 
 def test_local_calls_are_never_counted_or_refused(cap):
@@ -141,65 +143,8 @@ def _drain(agen):
     return asyncio.run(run())
 
 
-def test_stream_refuses_a_paid_call_with_an_error_event_and_lets_local_through(cap, monkeypatch):
-    from src import llm_core
-    called = []
-
-    async def fake(url, model, messages, *a, **k):
-        called.append(url)
-        yield 'data: {"delta": "hi"}\n\n'
-
-    monkeypatch.setattr(llm_core, "_stream_llm_traced_entry", fake)
-    spend_cap.record(PAID, {"cost_usd": 2.0})
-    chunks = _drain(llm_core.stream_llm(PAID, "m", [{"role": "user", "content": "x"}]))
-    assert called == [] and chunks[0].startswith("event: error")
-    body = json.loads(chunks[0].split("data: ", 1)[1])
-    assert body["status"] == 429 and body["error_class"] == "spend_cap.reached"
-    assert body["spent_usd"] == pytest.approx(2.0)
-    assert _drain(llm_core.stream_llm(LOCAL, "m", []))[0].startswith("data:")
-    assert called == [LOCAL]
-
-
-def test_in_flight_stream_finishes_and_is_booked_then_next_call_is_refused(cap, monkeypatch):
-    from src import llm_core
-
-    async def fake(url, model, messages, *a, **k):
-        yield 'data: {"delta": "a"}\n\n'
-        spend_cap.record("https://other.example.com/v1", {"cost_usd": 5.0})  # others push it over
-        yield 'data: {"delta": "b"}\n\n'
-        yield 'data: {"type": "usage", "data": {"input_tokens": 5, "output_tokens": 5, "cost_usd": 0.5}}\n\n'
-
-    monkeypatch.setattr(llm_core, "_stream_llm_traced_entry", fake)
-    chunks = _drain(llm_core.stream_llm(PAID, "m", []))
-    assert len(chunks) == 3 and not any(c.startswith("event: error") for c in chunks)
-    assert spend_cap.status()["spent_usd"] == pytest.approx(5.5)
-    assert _drain(llm_core.stream_llm(PAID, "m", []))[0].startswith("event: error")
-
-
-def test_async_call_is_gated_and_booked(cap, monkeypatch):
-    from src import llm_core
-
-    async def fake_impl(url, model, messages, **kw):
-        kw["_on_observed_usage"]({"input_tokens": 10, "output_tokens": 5, "cost_usd": 1.5})
-        return "ok"
-
-    monkeypatch.setattr(llm_core, "_llm_call_async_impl", fake_impl)
-    assert asyncio.run(llm_core.llm_call_async(PAID, "m", [{"role": "user", "content": "x"}])) == "ok"
-    assert spend_cap.status()["spent_usd"] == pytest.approx(1.5)
-    with pytest.raises(spend_cap.SpendCapReached):
-        asyncio.run(llm_core.llm_call_async(PAID, "m", []))
-    assert asyncio.run(llm_core.llm_call_async(LOCAL, "m", [])) == "ok"
-
-
-def test_async_call_without_reported_usage_is_an_unknown_cost_call(cap, monkeypatch):
-    from src import llm_core
-
-    async def fake_impl(url, model, messages, **kw):
-        return "ok"
-
-    monkeypatch.setattr(llm_core, "_llm_call_async_impl", fake_impl)
-    asyncio.run(llm_core.llm_call_async(PAID, "m", []))
-    assert spend_cap.status()["unknown_cost_calls"] == 1
+# The async/stream choke-point tests (per-attempt gate, cache, receipts) run against
+# a real HTTP fixture in tests/test_spend_cap_attempts.py.
 
 
 def test_sync_call_is_gated(cap):
