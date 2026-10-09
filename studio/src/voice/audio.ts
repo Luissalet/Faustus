@@ -38,6 +38,8 @@ function recognitionConstructor() {
 export interface Capture {
   readonly language?: string;
   readonly rawText?: string;
+  /** How long the server spent transcribing the last recording (its own clock), when it said. */
+  readonly sttServerMs?: number;
   done: Promise<string>;
   stop(): void;
   cancel(): void;
@@ -146,6 +148,7 @@ export async function capture(config: SpeechCapabilities, options: CaptureOption
   return {
     done, stop: recording.stop, cancel: () => { controller.abort(); recording.cancel(); },
     analyser: recording.analyser, get language() { return recording.language; }, get rawText() { return rawText; },
+    get sttServerMs() { return recording.sttServerMs; },
   };
 }
 
@@ -224,6 +227,7 @@ async function captureRaw(config: SpeechCapabilities, options: CaptureOptions): 
     }, 50);
     // One STT request for the recording so far; its own controller so a
     // withdrawn guess stops costing anything.
+    let serverMs: number | undefined;
     const transcribe = async (blob: Blob, extra: AbortSignal): Promise<string> => {
       const fd = new FormData();
       fd.append('file', blob, recorder.mimeType.includes('mp4') ? 'voice.mp4' : 'voice.webm');
@@ -231,7 +235,8 @@ async function captureRaw(config: SpeechCapabilities, options: CaptureOptions): 
       if (options.lang) fd.append('language', options.lang);
       const response = await fetch('/api/stt/transcribe', { method: 'POST', body: fd, credentials: 'same-origin', signal: AbortSignal.any([signal, extra, AbortSignal.timeout(120000)]) });
       if (!response.ok) throw new Error(t('Transcription failed. Check Settings → Voice and try again.'));
-      const result = await response.json() as { text?: string; language?: string };
+      const result = await response.json() as { text?: string; language?: string; server_ms?: number };
+      serverMs = typeof result.server_ms === 'number' ? result.server_ms : undefined;
       detectedLanguage = result.language || (options.lang !== 'auto' ? options.lang : '') || config.language;
       return result.text?.trim() || '';
     };
@@ -272,7 +277,7 @@ async function captureRaw(config: SpeechCapabilities, options: CaptureOptions): 
     };
     signal.addEventListener('abort', cancel, { once: true });
     recorder.start(250);
-    return { done, stop, cancel, analyser, get language() { return detectedLanguage; } };
+    return { done, stop, cancel, analyser, get language() { return detectedLanguage; }, get sttServerMs() { return serverMs; } };
   } catch (e) {
     if (!reused) stream.getTracks().forEach(t => t.stop());
     if (ctx?.state !== 'closed') void ctx?.close();
@@ -282,15 +287,17 @@ async function captureRaw(config: SpeechCapabilities, options: CaptureOptions): 
 
 /** Resolves at playback END. Abort stops audio and invalidates pending synthesis. */
 let outputLease: AbortController | null = null;
-export async function playSpeech(text: string, config: SpeechCapabilities, signal: AbortSignal, onAudio?: (analyser: AnalyserNode | null, playing: boolean) => void): Promise<void> {
+/** `onSynth` fires once the speech provider returned the audio, before it plays (the "first speech chunk ready" mark). */
+export type OnSynth = (info: { serverMs: number | null }) => void;
+export async function playSpeech(text: string, config: SpeechCapabilities, signal: AbortSignal, onAudio?: (analyser: AnalyserNode | null, playing: boolean) => void, onSynth?: OnSynth): Promise<void> {
   outputLease?.abort();
   const lease = new AbortController(); outputLease = lease;
   try {
-    await playSegment(text, config, AbortSignal.any([signal, lease.signal]), onAudio);
+    await playSegment(text, config, AbortSignal.any([signal, lease.signal]), onAudio, onSynth);
   } finally { if (outputLease === lease) outputLease = null; }
 }
 
-async function playSegment(text: string, config: SpeechCapabilities, signal: AbortSignal, onAudio?: (analyser: AnalyserNode | null, playing: boolean) => void): Promise<void> {
+async function playSegment(text: string, config: SpeechCapabilities, signal: AbortSignal, onAudio?: (analyser: AnalyserNode | null, playing: boolean) => void, onSynth?: OnSynth): Promise<void> {
   signal.throwIfAborted();
   const clean = spokenText(text).slice(0, 5000);
   if (!clean) return;
@@ -308,6 +315,7 @@ async function playSegment(text: string, config: SpeechCapabilities, signal: Abo
       const finish = (error?: Error) => { clearTimeout(timer); signal.removeEventListener('abort', cancel); onAudio?.(null, false); error ? reject(error) : resolve(); };
       const timer = window.setTimeout(() => { speechSynthesis.cancel(); finish(new Error(t('Speech playback timed out.'))); }, 120000);
       signal.addEventListener('abort', cancel, { once: true });
+      onSynth?.({ serverMs: null });   // the browser voice has no synthesis step to wait for
       utter.onstart = () => onAudio?.(null, true);
       utter.onend = () => finish(); utter.onerror = e => finish(new Error(e.error));
       speechSynthesis.speak(utter);
@@ -321,6 +329,8 @@ async function playSegment(text: string, config: SpeechCapabilities, signal: Abo
   });
   if (!response.ok) throw new Error(t('Speech output failed. The full response is still in the chat.'));
   const blob = await response.blob(); signal.throwIfAborted();
+  const synthHeader = Number(response.headers?.get?.('X-Faustus-Synth-Ms'));
+  onSynth?.({ serverMs: Number.isFinite(synthHeader) && response.headers?.get?.('X-Faustus-Synth-Ms') != null ? synthHeader : null });
   const url = URL.createObjectURL(blob), audio = new Audio(url);
   let ctx: AudioContext | null = null;
   try {

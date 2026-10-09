@@ -12,6 +12,7 @@ from services.speech_runtime import capabilities
 from core.middleware import require_admin
 import anyio
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,9 @@ def setup_tts_routes(tts_service):
                     kwargs["language"] = request.language
                 return tts_service.synthesize(request.text, use_cache=request.use_cache, **kwargs)
 
+            started = time.perf_counter()
             audio_data = await anyio.to_thread.run_sync(synthesize, limiter=limiter)
+            synth_ms = str(int((time.perf_counter() - started) * 1000))
             if not audio_data:
                 raise HTTPException(
                     status_code=503,
@@ -91,6 +94,7 @@ def setup_tts_routes(tts_service):
                     media_type=mime,
                     headers={
                         "Cache-Control": "no-store",
+                        "X-Faustus-Synth-Ms": synth_ms,
                         "Content-Disposition": "inline; filename=speech.mp3" if "mpeg" in mime else "inline; filename=speech.wav"
                     }
                 )

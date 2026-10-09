@@ -1104,6 +1104,10 @@ from routes.stt_routes import setup_stt_routes
 app.include_router(setup_stt_routes(stt_service))
 logger.info("STT service initialized (provider managed via settings)")
 
+# Voice turn latency timeline (speech end -> text -> first token -> first audio).
+from routes.voice_timeline_routes import setup_voice_timeline_routes
+app.include_router(setup_voice_timeline_routes())
+
 # Dictate anywhere (push-to-talk paste into whatever app has focus, Windows-only)
 from routes.dictation_routes import setup_dictation_routes
 app.include_router(setup_dictation_routes(stt_service))

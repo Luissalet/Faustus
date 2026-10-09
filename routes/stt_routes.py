@@ -8,6 +8,7 @@ from starlette.concurrency import run_in_threadpool
 from services.speech_runtime import capabilities
 import anyio
 import logging
+import time
 
 from src.upload_limits import read_upload_limited, STT_MAX_AUDIO_BYTES
 
@@ -69,7 +70,9 @@ def setup_stt_routes(stt_service):
                     kwargs.update(language_override=language, metadata=metadata)
                 return stt_service.transcribe(audio_bytes, **kwargs)
 
+            started = time.perf_counter()
             text = await anyio.to_thread.run_sync(transcribe, limiter=limiter)
+            metadata["server_ms"] = int((time.perf_counter() - started) * 1000)
             if text is None:
                 raise HTTPException(
                     status_code=500,

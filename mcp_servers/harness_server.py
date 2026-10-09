@@ -26,6 +26,9 @@ running a turn:
   made after a task (diff, rationale, evidence, status). Approving, rejecting
   and undoing stay human actions in Studio or the REST routes.
 
+* ``voice_turn_timeline`` - the latency timeline of voice turns (speech end,
+  transcript, first token, first audio) with p50/p90 per gap.
+
 Nothing here writes anything or starts a run. The in-process receipt log and
 claim broker of the running app are not reachable from this separate process;
 these tools compute from what they are given, and read the reports on disk.
@@ -215,6 +218,26 @@ async def list_tools() -> list[Tool]:
                 "Read-only; change it in Settings or PATCH /api/spend-cap."
             ),
             inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="voice_turn_timeline",
+            description=(
+                "Latency timeline of voice conversation turns: for each turn the instants and gaps "
+                "end of speech -> transcript ready -> request sent -> first model token -> first "
+                "speech chunk ready -> first audio played, plus the server's own speech-to-text, "
+                "text-to-speech and time-to-first-token durations, and p50/p90 of every gap over "
+                "the returned turns. Give a session_id for one conversation, or none for the most "
+                "recent turns everywhere. Timestamps and ids only, never any conversation text. "
+                "Muestra donde se va el tiempo en cada turno de voz. Read-only."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Only this chat session."},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 200,
+                              "description": "How many recent turns (default 20)."},
+                },
+            },
         ),
     ]
 
@@ -423,6 +446,19 @@ def _doc_lint(args: dict) -> dict:
     except ValueError as exc:
         return {"error": str(exc)}
 
+def _voice_turn_timeline(args: dict) -> dict:
+    from src import voice_timeline as vt
+
+    try:
+        limit = max(1, min(200, int(args.get("limit") or 20)))
+    except (TypeError, ValueError):
+        limit = 20
+    report = vt.session_report(str(args.get("session_id") or "") or None, limit)
+    for turn in report["turns"]:
+        turn.pop("owner", None)
+    report["note"] = "Gaps are in milliseconds; null means a mark was missing. Client marks share one clock."
+    return report
+
 
 def _spend_cap_status(args: dict) -> dict:
     from src import spend_cap
@@ -438,6 +474,7 @@ _TOOLS = {
     "paired_bench_reports": _paired_bench_reports,
     "tool_footprint": _tool_footprint,
     "harness_proposals": _harness_proposals,
+    "voice_turn_timeline": _voice_turn_timeline,
 }
 
 

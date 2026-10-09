@@ -6,6 +6,7 @@ import type { Turn } from '../screens/studio/model';
 import { capabilities, capture, openMic, playSpeech, watchForSpeech, type Capture, type OpenMic, type SpeechCapabilities } from './audio';
 import { SentenceBuffer, isEcho, isHallucination, isStopPhrase, speechLanguage, stripWakeWord, dictationEditTimeout, type VoicePhase } from './engine';
 import { VoiceOrb } from './VoiceOrb';
+import { postTimeline, timelineDetail, timelineLine, type VoiceMarks } from './timeline';
 import './voice.css';
 
 const labels: Record<VoicePhase, string> = {
@@ -13,7 +14,7 @@ const labels: Record<VoicePhase, string> = {
   transcribing: 'Turning your voice into text…', review: 'Is this what you meant?',
   thinking: 'Faustus is working', speaking: 'Faustus is speaking', approval: 'Your approval is needed', error: 'Let’s reconnect',
 };
-interface Props { busy: boolean; turn?: Turn; sessionName: string; onSend(text: string): void; onStop(): void; onClose(): void }
+interface Props { busy: boolean; turn?: Turn; sessionName: string; sessionId?: string | null; onSend(text: string): void; onStop(): void; onClose(): void }
 
 /* A conversation, not a dictation form: by default the panel listens as
    soon as it opens, sends what it heard when you stop talking, reads the
@@ -74,7 +75,7 @@ export default function VoicePanel(props: Props) {
   const input = useRef<AbortController | null>(null);
   const alive = useRef(true);
   const latest = useRef({ ...props, continuous, autoSend, readAloud }); latest.current = { ...props, continuous, autoSend, readAloud };
-  const reply = useRef({ id: props.turn?.id, controller: new AbortController(), buffer: new SentenceBuffer(), queue: [] as string[], draining: false, muted: false, speechEndAt: 0, heardMs: 0, firstAudioLogged: false });
+  const reply = useRef({ id: props.turn?.id, controller: new AbortController(), buffer: new SentenceBuffer(), queue: [] as string[], draining: false, muted: false, speechEndAt: 0, heardMs: 0, firstAudioLogged: false, marks: null as VoiceMarks | null, posted: false });
   const engaged = useRef(false);
   const autoStart = useRef(false);
   const nextListen = useRef<() => void>(() => {});
@@ -87,7 +88,18 @@ export default function VoicePanel(props: Props) {
   // end-of-speech timestamp for the in-flight utterance, used for the
   // "heard in / first reply audio in" latency readout.
   const timing = useRef({ endOfSpeech: 0, heardMs: 0 });
-  const pendingTiming = useRef<{ speechEndAt: number; heardMs: number } | null>(null);
+  const pendingTiming = useRef<{ speechEndAt: number; heardMs: number; marks: VoiceMarks | null } | null>(null);
+  // Wall-clock marks of the utterance being captured (see ./timeline.ts); handed to the reply when it is sent.
+  const utteranceMarks = useRef<VoiceMarks>({});
+  const [timeline, setTimeline] = useState<{ line: string; detail: string } | null>(null);
+  /** Show the line and store the turn; partial turns (no audio) are stored once, when the reply ends. */
+  const finishTimeline = useCallback((run: typeof reply.current) => {
+    if (!run.marks || run.posted || !run.id) return;
+    run.posted = true;
+    const line = timelineLine(run.marks);
+    if (line) setTimeline({ line, detail: timelineDetail(run.marks) });
+    postTimeline(latest.current.sessionId || '', String(run.id), run.marks);
+  }, []);
 
   const ensureMic = useCallback(async (signal: AbortSignal): Promise<OpenMic | null> => {
     if (mic.current) return mic.current;
@@ -136,9 +148,12 @@ export default function VoicePanel(props: Props) {
     return () => clearInterval(timer);
   }, [phase]);
 
-  const commit = useCallback((text: string) => {
+  /** `reviewed`: the person read and sent the transcript by hand, so the wait is theirs, not the system's: no timeline. */
+  const commit = useCallback((text: string, reviewed = false) => {
     if (!text.trim() || latest.current.busy) return;
-    pendingTiming.current = { speechEndAt: timing.current.endOfSpeech, heardMs: timing.current.heardMs };
+    const marks = reviewed || !utteranceMarks.current.speech_end ? null : { ...utteranceMarks.current, request_sent: Date.now() };
+    pendingTiming.current = { speechEndAt: timing.current.endOfSpeech, heardMs: timing.current.heardMs, marks };
+    setTimeline(null);
     engaged.current = true; setTranscript(''); setPhase('thinking'); setError('');
     latest.current.onSend(text.trim());
   }, []);
@@ -154,7 +169,7 @@ export default function VoicePanel(props: Props) {
         signal: controller.signal, deviceId, autoStop: true, lang: language,
         mic: openedMic ?? undefined, silenceMs, natural,
         onPartial: text => { if (!controller.signal.aborted) setTranscript(text); },
-        onTranscribing: () => { if (!controller.signal.aborted) { timing.current.endOfSpeech = performance.now(); setPhase('transcribing'); setAnalyser(null); } },
+        onTranscribing: () => { if (!controller.signal.aborted) { timing.current.endOfSpeech = performance.now(); utteranceMarks.current = { speech_end: Date.now() }; setPhase('transcribing'); setAnalyser(null); } },
       });
       if (controller.signal.aborted) { cap.cancel(); return; }
       recording.current = cap; setAnalyser(cap.analyser); setPhase('listening');
@@ -164,6 +179,10 @@ export default function VoicePanel(props: Props) {
       recording.current = null; setAnalyser(null);
       heardLanguage.current = cap.language || (language === 'auto' ? locale() : language);
       timing.current.heardMs = timing.current.endOfSpeech ? performance.now() - timing.current.endOfSpeech : 0;
+      if (utteranceMarks.current.speech_end) {
+        utteranceMarks.current.transcript_ready = Date.now();
+        if (typeof cap.sttServerMs === 'number') utteranceMarks.current.stt_server_ms = cap.sttServerMs;
+      }
       const rawText = cap.rawText || text;
       if (!text) { setPhase('idle'); setError(t('I did not hear anything. Try again closer to the microphone.')); setContinuous(false); return; }
       // Discard silently and keep listening: Whisper's own silence
@@ -257,6 +276,7 @@ export default function VoicePanel(props: Props) {
             setAnalyser(node);
             if (playing) {
               setPhase('speaking');
+              if (run.marks && !run.marks.first_audio) { run.marks.first_audio = Date.now(); finishTimeline(run); }
               if (!run.firstAudioLogged && run.speechEndAt) {
                 run.firstAudioLogged = true;
                 const heardSec = (run.heardMs / 1000).toFixed(1);
@@ -266,6 +286,11 @@ export default function VoicePanel(props: Props) {
                 console.debug('[voice]', label);
               }
             }
+          }
+        }, info => {
+          if (run.marks && !run.marks.tts_chunk) {
+            run.marks.tts_chunk = Date.now();
+            if (info.serverMs != null) run.marks.tts_server_ms = info.serverMs;
           }
         });
       }
@@ -279,7 +304,7 @@ export default function VoicePanel(props: Props) {
         if (!latest.current.busy && !latest.current.turn?.ask && latest.current.continuous && engaged.current && !document.hidden) nextListen.current();
       }
     }
-  }, [configs]);
+  }, [configs, finishTimeline]);
 
   useEffect(() => {
     const turn = props.turn;
@@ -298,10 +323,12 @@ export default function VoicePanel(props: Props) {
       reply.current = {
         id: turn.id, controller: new AbortController(), buffer: new SentenceBuffer(), queue: [], draining: false, muted: false,
         speechEndAt: timingForTurn?.speechEndAt ?? 0, heardMs: timingForTurn?.heardMs ?? 0, firstAudioLogged: false,
+        marks: timingForTurn?.marks ?? null, posted: false,
       };
       setShortened(false);
     }
     const run = reply.current;
+    if (run.marks && !run.marks.first_token && turn.text.trim()) run.marks.first_token = Date.now();
     if (turn.ask) { silence(); setPhase('approval'); setContinuous(false); return; }
     if (turn.error) { silence(); setPhase('error'); setError(turn.error); setContinuous(false); return; }
     if (['starting', 'listening', 'transcribing', 'review'].includes(phaseRef.current)) return;
@@ -311,10 +338,11 @@ export default function VoicePanel(props: Props) {
       if (run.queue.length) void drain();
     }
     if (!run.draining && !run.queue.length) {
+      if (!props.busy) finishTimeline(run);   // the reply ended without (more) audio: store what was measured
       setPhase(props.busy ? 'thinking' : 'idle');
       if (!props.busy && continuous && engaged.current && !document.hidden) nextListen.current();
     }
-  }, [props.turn, props.busy, drain, readAloud, continuous, silence]);
+  }, [props.turn, props.busy, drain, readAloud, continuous, silence, finishTimeline]);
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -358,7 +386,8 @@ export default function VoicePanel(props: Props) {
       <div className="fs-voice__status" role="status"><strong>{interrupted ? t('Go ahead') : t(labels[phase])}</strong>{elapsed > 0 && <span>{elapsed}s</span>}</div>
       {wakeWord && !revising.current && !interrupted && (phase === 'listening' || phase === 'starting') && <p className="fs-voice__hint">{t('Waiting for “Faustus”')}</p>}
       {revising.current && <p className="fs-voice__hint">{revisionInstruction || t('Say what to change in your draft. It will stay here for review.')}</p>}
-      {latency && <p className="fs-voice__hint fs-voice__latency">{latency}</p>}
+      {timeline && <p className="fs-voice__hint fs-voice__latency fs-voice__timeline" data-testid="voice-timeline" title={timeline.detail} tabIndex={0}>{timeline.line}</p>}
+      {latency && !timeline && <p className="fs-voice__hint fs-voice__latency">{latency}</p>}
       {phase === 'thinking' && <p className="fs-voice__hint">{tool ? `${t('Using tool')}: ${tool.label || tool.tool}` : t('The model may need time to load. You can keep using the app.')}</p>}
       {phase === 'approval' && <p>{t('Review the approval in the chat. Spoken answers cannot approve sensitive actions.')}</p>}
       {error && <p className="fs-voice__error" role="alert">{error}</p>}
@@ -368,7 +397,7 @@ export default function VoicePanel(props: Props) {
         {phase === 'review' && <button type="button" disabled={!configs?.stt.configured || !configs.stt.dependency_installed || !transcript.trim()} onClick={() => void revise()}><Mic size={16} />{t('Correct by voice')}</button>}
         {phase === 'review' && previousDraft !== null && previousDraft !== transcript && <button type="button" onClick={() => { setTranscript(previousDraft); setPreviousDraft(null); }}>{t('Undo voice correction')}</button>}
         {phase === 'review' && original && original !== transcript && <button type="button" onClick={() => setTranscript(original)}>{t('Use original transcription')}</button>}
-        {phase === 'review' ? <button type="button" className="fs-voice__primary" disabled={props.busy || !transcript.trim()} onClick={() => commit(transcript)}><Send size={16} />{t(props.busy ? 'Waiting for the current task' : 'Send message')}</button>
+        {phase === 'review' ? <button type="button" className="fs-voice__primary" disabled={props.busy || !transcript.trim()} onClick={() => commit(transcript, true)}><Send size={16} />{t(props.busy ? 'Waiting for the current task' : 'Send message')}</button>
         : <button type="button" className="fs-voice__primary" disabled={!configs || !configs.stt.configured || !configs.stt.dependency_installed || phase === 'starting' || phase === 'transcribing'} onClick={() => recording.current ? recording.current.stop() : void listen()}><Mic size={16} />{t(phase === 'listening' ? 'Finish speaking' : phase === 'speaking' ? 'Interrupt and speak' : 'Start speaking')}</button>}
         {phase === 'speaking' && <button type="button" onClick={() => { silence(); setPhase(props.busy ? 'thinking' : 'idle'); }}><VolumeX size={16} />{t('Silence voice')}</button>}
         <button type="button" onClick={pause}><Square size={14} />{t('Mute microphone')}</button>

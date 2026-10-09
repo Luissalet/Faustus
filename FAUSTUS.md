@@ -10667,3 +10667,31 @@ La sucesora #195 identifica una cadena de prioridades condicionales en vez de im
 Cuando el programa termina por límites de tiempo, continuaciones o falta de avance, conserva la respuesta y los pendientes y registra un aviso duradero, sin abrir una pregunta mecánica ni fabricar un dato que falte. Ese aviso deja el resultado sin verificar cuando corresponde. Las preguntas auténticas del modelo y las aprobaciones de seguridad conservan su mecanismo. La UI llama al plan sin terminar «Plan pendiente» y a una pregunta «Esperando tu respuesta», sin afirmar que haya una aprobación nueva. No cambian los límites de rondas, tiempo, recuperación o recursos; no se usa un flag especial del vigilante ni se borra el historial.
 
 **Verificación de la sucesora:** 115 pruebas del área pasan con metadatos y restauración de pin simulados sólo para el endpoint ficticio de los tests. Las condiciones independientes, las consultas con ejecución negada en castellano e inglés, los planes reales, los planes retomados y las preguntas auténticas tienen contrastes separados. Diecisiete comprobaciones aisladas de límites, progreso y agotamiento pasan. Dos tests estáticos antiguos de la política de rondas fallan igual en Main anterior (causas retiradas por #179 y un recuento fijo de sitios); se conservan como limitación, no se cuentan como pases. La QA nativa de API/MCP/Studio y la revisión cruzada están en curso: este texto no certifica que #195 esté activada ni que el flujo #185 ya sea fiable.
+
+## 290. Dónde se va el tiempo de un turno de voz (09-10-2026)
+
+Hasta ahora el panel de voz solo decía «escuchado en X s · primer audio en Y s», sin saber qué parte era voz a texto, qué parte el modelo y qué parte la voz de salida. Ahora cada turno de voz guarda una línea de tiempo con seis instantes: **fin del habla** (el detector de silencio cierra el turno o se suelta el pulsador), **texto listo** (termina la voz a texto), **petición enviada**, **primer token** del modelo, **primer trozo de voz listo** y **primer audio sonando**.
+
+**Qué se ve:**
+- En el panel de voz, bajo el estado, una línea compacta: «habla→texto 0,4 s · texto→1er token 1,3 s · 1er token→audio 0,6 s». Al pasar el ratón por encima (o con el foco) salen el resto de huecos (texto→petición, petición→primer token, primer token→trozo de voz, trozo→sonando, total) y lo que tardaron en el servidor la voz a texto y el texto a voz.
+- Un turno cuyo texto revisaste y enviaste a mano no se mide: esa espera es tuya, no del sistema.
+
+**Cómo funciona:**
+- Las marcas las anota el cliente donde ocurren, todas con el mismo reloj, así que los huecos son exactos: `studio/src/voice/timeline.ts` y `VoicePanel.tsx`. `capture()` expone `sttServerMs` y `playSpeech()` avisa con `onSynth` cuando vuelve el primer audio.
+- El servidor añade lo que solo él mide, como números aparte: `POST /api/stt/transcribe` devuelve `server_ms` y `POST /api/tts/synthesize` la cabecera `X-Faustus-Synth-Ms`.
+- Un solo `POST /api/voice/timeline` por turno, al sonar el primer audio (o al acabar la respuesta si no hubo audio). Una segunda llamada para el mismo turno lo completa.
+- `src/voice_timeline.py` guarda solo ids e instantes (nunca texto) en `DATA_DIR/voice_timeline.db` (SQLite, últimas 2000 filas), calcula los huecos (`null` si falta una marca o el orden es imposible) y p50/p90 por interpolación lineal.
+
+**Cómo se consulta:**
+- `GET /api/voice/timeline?session_id=&limit=`: turnos recientes de una conversación (o de todas) más el agregado.
+- `GET /api/voice/timeline/aggregate`: solo p50/p90 de cada hueco.
+- Herramienta MCP `voice_turn_timeline` (servidor integrado `harness`, solo lectura), que lee el mismo fichero.
+- Contrato completo en `docs/api/voice-timeline.md`.
+
+**Pruebas:** `tests/test_voice_timeline.py` (marcas sintéticas: huecos, completar un turno, valores basura, tope de filas, percentiles, REST, MCP) y `studio/checks/voice-timeline.check.mjs` (aritmética y el panel con audio simulado: marcas en orden, un POST por turno, turno enviado a mano sin medir), enganchado en `tests/test_studio_voice_js.py`. Sin micrófono ni audio real.
+
+**Límites conocidos:**
+- El tiempo hasta el primer token del propio servidor (`server_ttft_ms`) se acepta y se guarda, pero el estudio aún no lo envía: el primer token se mide en el cliente.
+- Si el panel se cierra antes del primer audio o del final de la respuesta, ese turno no se guarda.
+- Con la voz del navegador (`speechSynthesis`) no hay paso de síntesis: `tts_chunk` coincide con el arranque y no hay tiempo de servidor de voz.
+- Solo cuenta el primer trozo de voz del turno; las frases siguientes no se miden.

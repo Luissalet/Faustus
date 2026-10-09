@@ -41,7 +41,8 @@ def test_discovery_does_not_probe_or_claim_endpoint_health():
 
 def test_stt_success_and_empty():
     with client("stt", service("stt")) as c:
-        assert c.post("/api/stt/transcribe", files={"file": ("a.webm", b"audio")}).json() == {"text": "Hola Faustus"}
+        body = c.post("/api/stt/transcribe", files={"file": ("a.webm", b"audio")}).json()
+        assert isinstance(body.pop("server_ms"), int) and body == {"text": "Hola Faustus"}
         assert c.post("/api/stt/transcribe", files={"file": ("a.webm", b"")}).status_code == 400
 
 
