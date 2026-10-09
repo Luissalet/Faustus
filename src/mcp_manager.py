@@ -2361,6 +2361,30 @@ class McpManager:
                     qualified.add(f"mcp__{server_id}__{tool['name']}")
         return disabled_map, qualified
 
+    def annotated_readonly_tool_allowed(self, qualified_name: str) -> bool:
+        """Classify a live connector read from explicit annotations, never from its name.
+
+        This grants no dispatch authority: disabled tools, connector scope and
+        per-call approval are still enforced by their existing boundaries.
+        Unlike the no-network local carve-out, this read can contact a server.
+        """
+        try:
+            parts = str(qualified_name).split("__", 2)
+            if len(parts) != 3 or parts[0] != "mcp" or not parts[1] or not parts[2]:
+                return False
+            conn = self._connections.get(parts[1])
+            if not isinstance(conn, dict) or conn.get("status") != "connected":
+                return False
+            tool = next((t for t in self._tools.get(parts[1], ()) if isinstance(t, dict) and t.get("name") == parts[2]), None)
+            if tool is None:
+                return False
+            ann = tool.get("annotations")
+            read = ann.get("readOnlyHint") if isinstance(ann, dict) else getattr(ann, "readOnlyHint", None)
+            destructive = ann.get("destructiveHint") if isinstance(ann, dict) else getattr(ann, "destructiveHint", None)
+            return read is True and destructive is not True
+        except Exception:
+            return False
+
     def readonly_local_tool_allowed(self, qualified_name: str) -> bool:
         """Strict, annotations-only carve-out for the post-external-context
         approval gate (`src/tool_capabilities.py::capabilities_for_action`).

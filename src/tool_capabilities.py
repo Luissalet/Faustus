@@ -1380,6 +1380,23 @@ _MCP_READONLY_LOCAL_CAPABILITIES = _capabilities(
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
 
+# Connected providers can declare reads even when they use network transport.
+# Discovery/dispatch use the same classification. Results remain untrusted;
+# this is not the local no-network exemption from egress approval.
+_MCP_ANNOTATED_READ_CAPABILITIES = _capabilities(
+    ToolEffect.READ_PRIVATE, ToolEffect.BROKERED_NETWORK_READ,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+
+
+def _mcp_annotated_readonly_tool_ok(tool_name: str) -> bool:
+    try:
+        from src.tool_utils import get_mcp_manager
+        manager = get_mcp_manager()
+        return bool(manager and manager.annotated_readonly_tool_allowed(tool_name))
+    except Exception:
+        return False
+
 
 def _mcp_readonly_local_tool_ok(tool_name: str) -> bool:
     """Ask the live MCP manager whether `tool_name` qualifies for the
@@ -1511,6 +1528,8 @@ def capabilities_for_tool(tool_name: Any) -> ToolCapabilities:
             return capabilities
     if tool_name in _BROWSER_MCP_READ_TOOLS:
         return _BROWSER_MCP_READ_CAPABILITIES
+    if tool_name.startswith("mcp__") and _mcp_annotated_readonly_tool_ok(tool_name):
+        return _MCP_ANNOTATED_READ_CAPABILITIES
     return _UNKNOWN_CAPABILITIES
 
 
@@ -1704,7 +1723,7 @@ def capabilities_for_action(tool_name: Any, content: Any) -> ToolCapabilities:
     if not isinstance(tool_name, str):
         return base
 
-    if not base.known and tool_name.startswith("mcp__") and _mcp_readonly_local_tool_ok(tool_name):
+    if tool_name.startswith("mcp__") and _mcp_readonly_local_tool_ok(tool_name):
         return _MCP_READONLY_LOCAL_CAPABILITIES
 
     action = _action_from_content(tool_name, content)

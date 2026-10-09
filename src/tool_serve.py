@@ -229,7 +229,7 @@ def _keyword_hits(query: str) -> List[str]:
 
 _GENERIC_MCP_LABEL_WORDS = {
     "mcp", "server", "servers", "servidor", "servidores", "local", "tool", "tools",
-    "sesion", "session", "juego", "game", "games", "plugin", "connector", "conector",
+    "sesion", "session", "sessions", "juego", "game", "games", "plugin", "connector", "conector",
     "aislado", "aislada", "aislados", "aisladas", "test", "tests", "prueba", "pruebas",
     "isolated", "instancia", "instance", "library", "biblioteca",
 }
@@ -303,6 +303,8 @@ def _offline_mcp_hits(query: str) -> List[str]:
     A disconnected embedding service must not make a connected MCP tool
     disappear. The caller applies the normal permission filter and cap.
     """
+    if not (_label_tokens(query) - _GENERIC_MCP_LABEL_WORDS):
+        return []
     try:
         from src.tool_utils import get_mcp_manager
         from src.two_tier_search import bm25_scores
@@ -641,8 +643,21 @@ def serve(
         server = wanted_category[4:]
         return bool(server) and name.startswith(f"mcp__{server}__")
 
+    # A short connector name is useful, but two permitted providers with the
+    # same name are not an exact lookup. Return choices without silently
+    # promoting whichever happens to appear first in the manager's listing.
+    exact_names = []
+    ambiguous = []
+    for requested in names or []:
+        choices = [n for n in resolve_bare_name(requested) if _in_category(n) and is_permitted(
+            n, disabled_tools=disabled, tool_policy=tool_policy, admin=admin)]
+        if not str(requested).startswith("mcp__") and len(choices) > 1:
+            ambiguous.append({"requested": str(requested), "choices": sorted(set(choices))})
+        else:
+            exact_names.extend(choices)
+
     found = search_catalog(
-        query, names, k=k, disabled=disabled, admin=admin,
+        query, exact_names, k=k, disabled=disabled, admin=admin,
         candidate_filter=lambda name: _in_category(name) and is_permitted(
             name, disabled_tools=disabled, tool_policy=tool_policy, admin=admin,
         ),
@@ -656,7 +671,10 @@ def serve(
         "detail": mode,
         "query": query,
     }
-    if not tools:
+    if ambiguous:
+        payload["ambiguous"] = ambiguous
+        payload["hint"] = "More than one permitted connector has that tool. Request one of the qualified choices explicitly."
+    elif not tools:
         payload["hint"] = (
             "No matching tools. Try a shorter action phrase "
             '(e.g. "send email", "git commit", "list files").'
