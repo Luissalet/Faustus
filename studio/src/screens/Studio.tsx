@@ -1631,12 +1631,18 @@ export function StudioScreen() {
       // run under the same autonomy as any other send (a global read_only
       // included), never the server's fallback. If the project's preferences
       // cannot be resolved now, the message stays in the outbox for later.
+      const epoch = runEpoch.current;
       let resolvedExecution: SessionExecutionDefaults;
       try {
         resolvedExecution = await executionForSend(sid);
       } catch {
         return;
       }
+      // The wait above is a window: if the person moved to another
+      // conversation, or a turn started or was cancelled meanwhile, this
+      // recovery no longer belongs on screen. Leave the outbox, draft and
+      // clientMessageId untouched for a later, valid recovery.
+      if (visibleSession.current !== sid || runEpoch.current !== epoch || controllerRef.current) return;
       const autonomy = resolveExecutionAutonomy(executionPicks, resolvedExecution.defaults, knobs.autonomyPreset);
       const controller = new AbortController();
       controllerRef.current = controller;

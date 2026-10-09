@@ -60,4 +60,6 @@ for (const call of calls) {
 const reconcile = src.slice(src.indexOf('const reconcileOutbox = useCallback('), src.indexOf('const rejoin = useCallback('));
 assert.match(reconcile, /await executionForSend\(sid\)[\s\S]*resolveExecutionAutonomy\(executionPicks, resolvedExecution\.defaults, knobs\.autonomyPreset\)/,
   'the outbox resend resolves project preferences before sending');
+assert.match(reconcile, /await executionForSend\(sid\);[\s\S]*?\}\s*catch\s*\{[\s\S]*?return;\s*\}[\s\S]*?if \(visibleSession\.current !== sid \|\| runEpoch\.current !== epoch \|\| controllerRef\.current\) return;[\s\S]*?new AbortController\(\)/,
+  'after waiting for preferences, the resend checks it still belongs to the visible conversation before touching the view or sending');
 console.log('Studio.tsx: forwards knobs.autonomyPreset through shared precedence and guards unresolved projects');
