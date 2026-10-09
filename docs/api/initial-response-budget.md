@@ -4,7 +4,9 @@
 `initial_response_timeout_s` (finite number, 5–900 seconds). It applies only
 to this turn. Omitting it retains the selected endpoint's existing timeout;
 saved preferences, reasoning effort, model and fallback policy are unchanged.
-The form field is declared in OpenAPI for REST-to-MCP clients.
+The form and JSON fields are declared in OpenAPI. The existing generic
+REST-to-MCP bridge can expose the JSON operation, with session, message and
+the optional per-turn budget, without a task-specific manifest.
 
 `scripts/faustus_run.py --initial-response-timeout 300` sends this field through
 the same chat route. Native HTTP/MCP callers can supply it directly; it is not

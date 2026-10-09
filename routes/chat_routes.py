@@ -2060,7 +2060,16 @@ def setup_chat_routes(
     # ------------------------------------------------------------------ #
     from src.first_token_budget import request_budget
 
-    @router.post("/api/chat_stream")
+    @router.post("/api/chat_stream", openapi_extra={"requestBody": {"content": {
+        "application/json": {"schema": {"type": "object", "required": ["session", "message"], "properties": {
+            "session": {"type": "string"}, "message": {"type": "string"},
+            "mode": {"type": "string", "enum": ["chat", "agent"]},
+            "workspace": {"type": "string"}, "model": {"type": "string"},
+            "selected_endpoint_id": {"type": "string"},
+            "initial_response_timeout_s": {"type": "number", "minimum": 5, "maximum": 900,
+                "description": "Initial response budget for this turn only; includes admission, preparation and queue."},
+        }}}
+    }}})
     @request_budget
     async def chat_stream(request: Request, initial_response_timeout_s: Optional[float] = Form(
         None, ge=5, le=900,
