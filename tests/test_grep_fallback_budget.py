@@ -98,3 +98,33 @@ def test_file_count_cap(fallback, monkeypatch):
     res = _grep(pattern="needle")
 
     assert "stopped early after 2 files" in res["output"], res
+
+
+def test_a_catastrophic_pattern_on_one_tiny_line_is_cut_by_the_budget(fallback, monkeypatch):
+    """Review of #156 (codex-investiga): `(a+)+$` on a 34-byte line held stdlib `re` past the 20 s budget.
+    With `regex` it either finishes at once or is interrupted by its per-search timeout."""
+    import time
+
+    (fallback / "one-line.txt").write_text("a" * 32 + "!\n", encoding="utf-8")
+    t = time.monotonic()
+    res = _grep(pattern="(a+)+$")
+    assert time.monotonic() - t < 5, res
+    assert res["exit_code"] == 0, res
+
+    # A pattern that is catastrophic for `regex` too: only a real timeout can stop it.
+    (fallback / "one-line.txt").write_text("a" * 60 + "b\n", encoding="utf-8")
+    monkeypatch.setattr(fs, "GREP_FALLBACK_BUDGET_S", 1.0)
+    t = time.monotonic()
+    res = _grep(pattern="(a|aa)+$")
+    elapsed = time.monotonic() - t
+    assert elapsed < 4, (elapsed, res)
+    assert "stopped early" in res["output"] and "still matching line 1" in res["output"], res
+    assert "No matches" not in res["output"]
+
+
+def test_normal_search_still_finds_with_the_regex_engine(fallback):
+    (fallback / "a.txt").write_text("alpha\nBeta gamma\n", encoding="utf-8")
+    assert "a.txt:2:Beta gamma" in _grep(pattern=r"beta\s+g", ignore_case=True)["output"]
+    assert "No matches" in _grep(pattern="zeta")["output"]
+    bad = _grep(pattern="(unclosed")
+    assert bad["exit_code"] == 1 and "bad pattern" in bad["error"]

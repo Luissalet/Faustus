@@ -10533,7 +10533,11 @@ Tras la revisión de faustus y codex-investiga (r3):
 - El presupuesto también se comprueba cada 1000 líneas dentro de un mismo fichero; el aviso dice dentro de cuál se cortó.
 - Un fichero de texto de más de 2 MB ya no se salta en silencio. El resultado lista cuántos y cuáles no se buscaron, y que el resultado puede estar incompleto. Así un «No matches» nunca esconde un salto. Los binarios se siguen saltando sin aviso.
 - Los avisos no cuentan como coincidencias para el «capped at N matches».
+- r4, tras otra repro de codex-investiga: `(a+)+$` sobre una sola línea de 34 bytes dejaba el `re` de la biblioteca estándar más de 22 s sin respuesta, y ese motor no se puede interrumpir.
+  - La búsqueda de respaldo usa ahora `regex` (dependencia declarada en `requirements.txt`). Ese motor resuelve sin retroceso la mayoría de patrones catastróficos y acepta un `timeout` real por búsqueda, al que se pasa lo que queda del presupuesto.
+  - Si un patrón agota el tiempo, el aviso dice en qué línea y en qué fichero seguía, y pide simplificarlo.
+  - La repro de codex responde ahora en 0,011 s, y `(a|aa)+$`, que también es catastrófico para `regex`, se corta en el presupuesto.
 
 Pruebas:
-- `tests/test_grep_fallback_budget.py` (6): texto encontrado sin binarios, fichero grande anunciado, corte por tiempo con aviso, `glob` sin coincidencias acotado, tope de ficheros, aguja dentro de un fichero grande que no da «No matches» y presupuesto dentro de un fichero de 1,5 millones de líneas.
+- `tests/test_grep_fallback_budget.py` (8): texto encontrado sin binarios, fichero grande anunciado, corte por tiempo con aviso, `glob` sin coincidencias acotado, tope de ficheros, aguja dentro de un fichero grande que no da «No matches», presupuesto dentro de un fichero de 1,5 millones de líneas, patrón catastrófico en una línea diminuta cortado con aviso, y búsqueda normal, sin distinguir mayúsculas y con patrón inválido.
 - En vivo, la misma búsqueda del turno (`renderer-prelude` en `D:\LocalAI`) responde en 20,0 s con el aviso de parcial (39 178 ficheros leídos), frente a más de 10 minutos antes.

@@ -1375,10 +1375,26 @@ class GrepTool:
                     return None, "grep: timed out"
                 except Exception as _e:
                     return None, f"grep: {_e}"
+            # The third-party `regex` engine takes a real timeout per search (and avoids most
+            # catastrophic backtracking): the stdlib `re` cannot be interrupted once a search
+            # runs, so `(a+)+$` on a 34-byte line used to outlive any budget.
             try:
-                rx = _re.compile(pattern, _re.IGNORECASE if ignore_case else 0)
-            except _re.error as _e:
+                import regex as _rx_engine
+            except ImportError:  # pragma: no cover - a declared dependency
+                _rx_engine = None
+            try:
+                if _rx_engine is not None:
+                    rx = _rx_engine.compile(pattern, _rx_engine.IGNORECASE if ignore_case else 0)
+                else:
+                    rx = _re.compile(pattern, _re.IGNORECASE if ignore_case else 0)
+            except (_re.error, getattr(_rx_engine, "error", _re.error)) as _e:
                 return None, f"grep: bad pattern: {_e}"
+
+            def _search(line: str):
+                if _rx_engine is None:
+                    return rx.search(line)
+                return rx.search(line, timeout=max(0.01, deadline - time.monotonic()))
+
             hits = []
             deadline = time.monotonic() + GREP_FALLBACK_BUDGET_S
             stopped = ""
@@ -1429,7 +1445,13 @@ class GrepTool:
                             if i % 1000 == 0 and time.monotonic() > deadline:
                                 stopped = f"time budget of {GREP_FALLBACK_BUDGET_S:.0f}s (inside {fp})"
                                 break
-                            if rx.search(line):
+                            try:
+                                found = _search(line)
+                            except TimeoutError:
+                                stopped = (f"time budget of {GREP_FALLBACK_BUDGET_S:.0f}s (the pattern was still "
+                                           f"matching line {i} of {fp}; simplify it)")
+                                break
+                            if found:
                                 hits.append(f"{fp}:{i}:{line.rstrip()[:_CODENAV_MAX_LINE]}")
                                 if len(hits) >= max_hits:
                                     break

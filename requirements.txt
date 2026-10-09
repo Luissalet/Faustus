@@ -9,6 +9,10 @@ httpcore>=1.0,<2.0
 # unrelated process. Keep this a core dependency, not an optional extra.
 psutil>=5.9,<8
 pydantic>=2.13.4
+# The grep fallback (no ripgrep on PATH) matches with `regex`: it takes a real
+# per-search timeout, which the stdlib `re` cannot (a catastrophic pattern on a
+# 34-byte line used to hold a whole agent turn).
+regex>=2023.0
 pydantic-settings>=2.14.1
 SQLAlchemy
 pypdf
