@@ -10584,3 +10584,34 @@ Luis lo pidió así: «tiene que ser un agente en todo derecho, tan capaz y fiab
 - Los turnos son lentos (unos 15-20 min por revisión, la mayor parte esperando al modelo).
 - Las búsquedas amplias tienen un tope de 20 s. ripgrep ya está instalado en el PC (#169): no lee ficheros de más de 2 MB, para en cuanto tiene suficientes resultados y, si se agota el tiempo, devuelve lo que ya encontró avisando de que es parcial. En una prueba sobre todo D:\LocalAI dio 20 resultados en 13,5 s.
 - La coordinación nativa por proyecto (#151) aún no sustituye al lanzador.
+
+## 285. Linter de documentos Markdown, solo informe (09-10-2026)
+
+Tarea #183 del Ágora. `src/doc_lint.py` revisa un `.md` con reglas comprobables y **nunca lo reescribe**: cada hallazgo trae `rule`, `severity` (error, warning, info), `line`, `message` y `fix` (una pista).
+
+**Reglas** (ids en `docs/api/doc-lint.md`):
+- Cabeceras: niveles saltados, un solo H1, cabeceras duplicadas bajo el mismo padre.
+- Numeración de secciones (`## 12.`, `### 3.4`, `## §12`): huecos, duplicados, desorden y subsección sin padre.
+- Enlaces relativos rotos y rutas del repo entre comillas invertidas que no existen (respecto a la raíz del repo del documento; un destino fuera de la raíz se avisa, nunca se mira).
+- Fechas imposibles o mal formadas, en DD-MM-YYYY y YYYY-MM-DD.
+- Secciones obligatorias por documento (valores por defecto para `README.md` y `FAUSTUS.md`).
+- Contenido prohibido: patrones y nombres de la config; por defecto los pies de commit, y la lista de nombres vacía.
+- Espacios finales y tabuladores, desactivados por defecto.
+
+**Config:** `config/doc_lint.json` (o `.doc_lint.json` en otro repo), fusionada sobre los valores integrados.
+
+**Superficies:**
+- Herramienta de agente `doc_lint {paths, rules?}`, de solo lectura, con la misma guía de ruta que las herramientas de ficheros.
+- `GET/POST /api/doc-lint` y `GET /api/doc-lint/rules`, solo admin; una ruta fuera de las raíces permitidas da 403 y no se lee nada.
+- Herramienta MCP `doc_lint` del servidor `harness` (rutas dentro de la instalación o de la carpeta de trabajo del servidor).
+- CLI: `python -m src.doc_lint FICHERO... --json`.
+
+**Pruebas:** `tests/test_doc_lint.py` cubre cada regla con fixtures, la CLI, la herramienta de agente (catálogos incluidos), la seguridad de rutas de la API y la herramienta MCP; `tests/test_harness_mcp.py` cuenta ahora seis herramientas.
+
+**Pasada real sobre `FAUSTUS.md` y `README.md`:** ver el informe de la tarea #183; no se corrigió ningún documento.
+
+**Aviso de numeración:** este es el §285 sobre `master` del 09-10; otras ramas añaden §285 en adelante, así que al integrar puede tocar renumerarlo.
+
+**Límites:**
+- Es heurístico, no un parser: solo cabeceras ATX; `path-missing` ignora rutas cuyo primer segmento no sea una entrada de primer nivel del repo; las anclas `#seccion` no se comprueban.
+- `FAUSTUS.md` tiene una segunda serie de secciones 1-9 hacia la línea 6764, que el linter marca como duplicados: es un hallazgo real, no se ha tocado.
