@@ -2541,8 +2541,11 @@ def _answer_only_math_request(text: str, earlier_user_texts: Sequence[str] = ())
         match.group() if re.search(r"[\\/]|\b\S+\.[A-Za-z]", match.group()) else ""
     ), text)
     targets = re.sub(r"\b(?:p[aá]ginas?|pages?)\b", "", targets, flags=re.IGNORECASE)
-    if _WORKSPACE_CODE_TARGET_RE.search(targets):
+    if _WORKSPACE_CODE_TARGET_RE.search(targets) or _WORKSPACE_CODE_ACTION_RE.search(targets):
         return False
+    from src.answer_checks import verified_calculation
+    if verified_calculation(text) is not None:
+        return True
     if _ANSWER_ONLY_MATH_RE.match(text):
         return True
     if (_MATH_CORRECTION_RE.match(text) and _MATH_REFERENCE_RE.search(text)
@@ -18722,9 +18725,7 @@ async def _stream_agent_loop_body(
         _note_delta = ("\n\n" if full_response.strip() else "") + _harness_final_note
         full_response = (full_response.rstrip() + _note_delta).strip()
         yield f"data: {json.dumps({'delta': _note_delta})}\n\n"
-    # A very small class of answers has a complete, deterministic solution.
-    # If even the one rewrite above ignored it (observed with a local 3B),
-    # show that verified result instead of saving the wrong calculation.
+    # Preserve the report and show deterministic evidence beside it.
     try:
         from src import answer_checks as _final_calculation_checks
         _remaining_calculation = _final_calculation_checks.calculation_mismatch(
@@ -18736,6 +18737,7 @@ async def _stream_agent_loop_body(
         _ledger.record_answer_advisory(["wrong_calculation"], round_num)
         yield "data: " + json.dumps({"type": "harness_check", "status": "advisory", "advisory": True,
             "reason": "wrong_calculation", "calculation": _remaining_calculation}) + "\n\n"
+    _links_evidence_note = ""
     try:
         from src import answer_checks as _links_final_checks
         if _links_final_checks.saved_links_count_requested(_last_user or ""):
@@ -18743,12 +18745,49 @@ async def _stream_agent_loop_body(
             _links_answer = (f"Tienes {_links_total} enlaces guardados en Links Hoard."
                              if _links_total is not None else
                              "No pude consultar el total de enlaces guardados en Links Hoard.")
-            if full_response != _links_answer:
+            _links_count_evidence = _links_final_checks.saved_links_count_evidence(full_response, _links_total)
+            if not _links_count_evidence["ok"]:
                 _ledger.notes.append("saved_links_evidence_advisory")
+                _ledger.record_answer_advisory([str(_links_count_evidence["reason"])], round_num)
+                _links_evidence_note = _links_answer
                 yield "data: " + json.dumps({"type": "harness_check", "status": "advisory", "advisory": True,
-                    "reason": "saved_links_count", "observed_answer": _links_answer}) + "\n\n"
+                    "reason": _links_count_evidence["reason"], "evidence": _links_count_evidence,
+                    "observed_answer": _links_answer}) + "\n\n"
     except Exception:
         logger.debug("[harness] saved-links count check failed", exc_info=True)
+    _answer_evidence_reasons = list(dict.fromkeys(reason for diagnostic in _ledger.answer_diagnostics
+        for reason in diagnostic.get("reasons", [])))
+    if _answer_evidence_reasons:
+        _es_evidence = _ledger.language == "es"
+        _evidence_words = ({
+            "wrong_weekday": "Un día de la semana no coincide con su fecha.",
+            "thinking_aloud": "La respuesta contiene razonamiento de trabajo sin resolver.",
+            "busy_slot": "Un horario propuesto coincide con una ocupación observada.",
+            "wrong_calculation": "El cálculo de la respuesta no coincide con la comprobación.",
+            "ungrounded_figure": "Alguna cifra no está respaldada por las fuentes observadas.",
+            "saved_links_count": "El total de enlaces de la respuesta no coincide con lo observado.",
+            "saved_links_count_missing": "No se confirmó el total de enlaces en la respuesta.",
+            "saved_links_source_missing": "No hay una consulta válida que respalde el total de enlaces.",
+        } if _es_evidence else {
+            "wrong_weekday": "A weekday does not match its date.",
+            "thinking_aloud": "The report contains unresolved working reasoning.",
+            "busy_slot": "A proposed time overlaps an observed busy slot.",
+            "wrong_calculation": "The reported calculation does not match the checked result.",
+            "ungrounded_figure": "A figure is not backed by observed sources.",
+            "saved_links_count": "The reported saved-link count does not match the observed result.",
+            "saved_links_count_missing": "The answer did not confirm the saved-link total.",
+            "saved_links_source_missing": "No successful query supports the saved-link total.",
+        })
+        _notice_parts = [_evidence_words.get(reason) for reason in _answer_evidence_reasons if _evidence_words.get(reason)]
+        if _remaining_calculation and _remaining_calculation.get("explanation"):
+            _notice_parts.append(str(_remaining_calculation["explanation"]))
+        if _links_evidence_note:
+            _notice_parts.append(_links_evidence_note)
+        if _notice_parts:
+            _notice = ("Comprobación de evidencias: " if _es_evidence else "Evidence notice: ") + " ".join(_notice_parts)
+            _notice_delta = ("\n\n" if full_response.strip() else "") + _notice
+            full_response = (full_response.rstrip() + _notice_delta).strip()
+            yield "data: " + json.dumps({"delta": _notice_delta}) + "\n\n"
     # A link to an image a tool produced this turn must use the URL that tool
     # returned; small models keep the ID but invent a host (seen live with a
     # 3B model after a Prospero edit), which renders as a broken image.

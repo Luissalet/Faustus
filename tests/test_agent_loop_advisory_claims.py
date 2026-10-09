@@ -69,3 +69,25 @@ def test_factual_advisory_cannot_leave_the_result_marked_verified(tmp_path):
     ledger.check_completion("The total is 80.")
     ledger.record_answer_advisory(["ungrounded_figure"], 2)
     assert ledger.verify_outcome()["outcome"] == "unverified"
+
+
+def test_wrong_calculation_keeps_the_report_and_appends_checked_evidence(tmp_path, monkeypatch):
+    from src import scorecard
+    workspace = _workspace(tmp_path)
+    answer = "La letra r aparece 4 veces."
+    calls = _patch(monkeypatch, [(answer, "stop")], workspace)
+    rows = []
+    monkeypatch.setattr(scorecard, "record", rows.append)
+    events = _run(workspace, user="¿Cuántas veces aparece la letra r en la palabra strawberry?")
+    text = "".join(e.get("delta", "") for e in events if not e.get("thinking"))
+    assert calls["n"] == 1 and answer in text
+    assert "Comprobación de evidencias:" in text and "contiene 3 veces" in text
+    assert not any(e.get("type") == "response_replace" for e in events)
+    metrics = next(e["data"] for e in events if e.get("type") == "metrics")
+    assert metrics["harness"]["verification"]["outcome"] == "unverified"
+    assert rows and not rows[0]["verified"] and rows[0]["unverified"]
+
+
+def test_deterministic_calculation_does_not_exempt_requested_file_work():
+    assert al._answer_only_math_request("¿Cuántas veces aparece la letra l en la palabra alhelí?")
+    assert not al._answer_only_math_request("Edita cart.py para contar cuántas veces aparece la letra l en la palabra alhelí.")

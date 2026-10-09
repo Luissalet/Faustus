@@ -34,6 +34,7 @@ const CHECK_WORDS: Record<string, string> = {
   review_running: 'Reviewing the diff',
   review_issues: 'The review found problems',
   verified: 'Checks completed',
+  advisory: 'Evidence notice',
   model_notice: 'Model notice',
   ui_smoke_failed: 'UI smoke test failed',
   ui_smoke_ok: 'UI smoke test passed',
@@ -59,6 +60,14 @@ const REASON_WORDS: Record<string, string> = {
   no_tools: 'used no tools',
   ui_unverified: 'UI changes not verified in the browser',
   plan_without_action: 'an active plan was to be executed, but no tool was called',
+  wrong_calculation: 'the calculation does not match the checked result',
+  saved_links_count: 'the saved-link count does not match the observed result',
+  saved_links_count_missing: 'the answer did not confirm the saved-link total',
+  saved_links_source_missing: 'no successful query supports the saved-link total',
+  wrong_weekday: 'a weekday does not match its date',
+  thinking_aloud: 'the report contains unresolved working reasoning',
+  busy_slot: 'a proposed time overlaps an observed busy slot',
+  ungrounded_figure: 'a figure is not backed by observed sources',
 };
 
 export function CheckList({ checks }: { checks: HarnessCheck[] }) {

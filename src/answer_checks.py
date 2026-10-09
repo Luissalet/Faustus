@@ -502,6 +502,25 @@ def saved_links_count_requested(question: str) -> bool:
             and re.search(r"\b(?:cu[aá]ntos?|n[uú]mero|total)\b", body) is not None)
 
 
+def saved_links_count_evidence(answer: str, observed_total: Optional[int]) -> Dict[str, object]:
+    """Compare reported counts, not the wording of a library-count answer."""
+    if observed_total is None:
+        return {"ok": False, "reason": "saved_links_source_missing", "reported": []}
+    body = str(answer or "")
+    mentions = list(re.finditer(r"\b(\d+)\s+(?:enlaces?|links?)\b", body, re.IGNORECASE))
+    reported = [int(m.group(1)) for m in mentions
+                if not re.match(r"\s+(?:sin\s+leer|no\s+le[ií]dos?|le[ií]dos?|unread|read)\b",
+                                body[m.end():], re.IGNORECASE)]
+    if not reported and not mentions:
+        numbers = re.findall(r"(?<![\w/.-])\d+(?![\w/.-])", body)
+        if len(numbers) == 1:
+            reported = [int(numbers[0])]
+    if not reported:
+        return {"ok": False, "reason": "saved_links_count_missing", "reported": [], "observed_total": observed_total}
+    return {"ok": all(value == observed_total for value in reported), "reason": "saved_links_count",
+            "reported": reported, "observed_total": observed_total}
+
+
 def saved_links_total(tool_events: List[Dict[str, object]]) -> Optional[int]:
     """The total from a successful all-state list_links call in this turn."""
     for event in reversed(tool_events):

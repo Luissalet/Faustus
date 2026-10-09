@@ -43,7 +43,7 @@ def test_links_count_requires_the_all_state_data_result():
     assert answer_checks.saved_links_total([{**all_links, "exit_code": 1}]) is None
 
 
-def test_agent_rewrites_a_wrong_count_before_showing_it(monkeypatch):
+def test_agent_keeps_a_wrong_count_with_a_visible_checked_result(monkeypatch):
     calls = []
 
     async def stream(candidates, messages, **kwargs):
@@ -65,14 +65,14 @@ def test_agent_rewrites_a_wrong_count_before_showing_it(monkeypatch):
             harness_options={"checkpoints": False, "run_tests": False, "repo_map": False})]
 
     events = asyncio.run(drive())
-    assert len(calls) == 2
+    assert len(calls) == 1
     assert any("Verified calculation" in str(m.get("content")) for m in calls[0])
     assert any('"wrong_calculation"' in chunk for chunk in events)
-    assert any("contains 5" in str(m.get("content")) or "contiene 5" in str(m.get("content"))
-               for m in calls[1])
+    assert any("contiene 5" in chunk for chunk in events)
+    assert not any('"response_replace"' in chunk for chunk in events)
 
 
-def test_agent_falls_back_to_verified_result_when_rewrite_is_still_wrong(monkeypatch):
+def test_agent_keeps_wrong_tip_split_with_a_visible_checked_result(monkeypatch):
     calls = []
 
     async def stream(candidates, messages, **kwargs):
@@ -96,5 +96,6 @@ def test_agent_falls_back_to_verified_result_when_rewrite_is_still_wrong(monkeyp
     events = asyncio.run(drive())
     replacements = [json.loads(line[6:]) for chunk in events for line in chunk.splitlines()
                     if line.startswith("data: {") and '"response_replace"' in line]
-    assert len(calls) == 2
-    assert replacements[-1]["text"].endswith("24,84 € por persona.")
+    assert len(calls) == 1 and not replacements
+    assert any("99,36" in chunk for chunk in events)
+    assert any("24,84" in chunk for chunk in events)
