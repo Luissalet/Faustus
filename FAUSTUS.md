@@ -10529,6 +10529,11 @@ Visto en un turno de Faustus en el Ágora: un `grep` sin `path` sobre el workspa
 
 Ahora el recorrido es perezoso y tiene el mismo presupuesto que `rg` (20 s, `GREP_FALLBACK_BUDGET_S`). Ese presupuesto se comprueba en cada carpeta y en cada fichero, así que un `glob` que no encaja con nada tampoco recorre el árbol sin fin. Se saltan los ficheros de más de 2 MB y los binarios (un byte nulo en los primeros 4 KB). El tope es de 50 000 ficheros leídos. Si la búsqueda se corta, el resultado lo dice: «parcial», cuántos ficheros se leyeron y que se acote con `path=` o `glob=`. Con `rg` instalado nada cambia.
 
+Tras la revisión de faustus y codex-investiga (r3):
+- El presupuesto también se comprueba cada 1000 líneas dentro de un mismo fichero; el aviso dice dentro de cuál se cortó.
+- Un fichero de texto de más de 2 MB ya no se salta en silencio. El resultado lista cuántos y cuáles no se buscaron, y que el resultado puede estar incompleto. Así un «No matches» nunca esconde un salto. Los binarios se siguen saltando sin aviso.
+- Los avisos no cuentan como coincidencias para el «capped at N matches».
+
 Pruebas:
-- `tests/test_grep_fallback_budget.py` (4): texto encontrado sin binarios ni ficheros grandes, corte por tiempo con aviso, `glob` sin coincidencias acotado y tope de ficheros.
+- `tests/test_grep_fallback_budget.py` (6): texto encontrado sin binarios, fichero grande anunciado, corte por tiempo con aviso, `glob` sin coincidencias acotado, tope de ficheros, aguja dentro de un fichero grande que no da «No matches» y presupuesto dentro de un fichero de 1,5 millones de líneas.
 - En vivo, la misma búsqueda del turno (`renderer-prelude` en `D:\LocalAI`) responde en 20,0 s con el aviso de parcial (39 178 ficheros leídos), frente a más de 10 minutos antes.

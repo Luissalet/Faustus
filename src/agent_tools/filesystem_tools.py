@@ -1384,6 +1384,7 @@ class GrepTool:
             stopped = ""
             scanned = 0
             walk_cut = []
+            too_big: List[str] = []
 
             def _files():
                 # Lazy: the walk advances only as fast as files are searched,
@@ -1414,26 +1415,41 @@ class GrepTool:
                 if _is_sensitive_path(os.path.realpath(fp)):
                     continue
                 try:
-                    if os.path.getsize(fp) > GREP_FALLBACK_MAX_FILE_BYTES:
-                        continue
                     with open(fp, "rb") as fb:
                         if b"\0" in fb.read(4096):
-                            continue  # binary
+                            continue  # binary: never searched, nothing to report
+                    if os.path.getsize(fp) > GREP_FALLBACK_MAX_FILE_BYTES:
+                        too_big.append(fp)  # text that was NOT searched: reported below
+                        continue
                     scanned += 1
                     with open(fp, "r", encoding="utf-8", errors="strict") as f:
                         for i, line in enumerate(f, 1):
+                            # The budget also covers the lines of one file: a single slow
+                            # file must not outlive it either.
+                            if i % 1000 == 0 and time.monotonic() > deadline:
+                                stopped = f"time budget of {GREP_FALLBACK_BUDGET_S:.0f}s (inside {fp})"
+                                break
                             if rx.search(line):
                                 hits.append(f"{fp}:{i}:{line.rstrip()[:_CODENAV_MAX_LINE]}")
                                 if len(hits) >= max_hits:
                                     break
                 except (UnicodeDecodeError, OSError):
                     continue
+                if stopped:
+                    break
             if walk_cut and not stopped:
                 stopped = f"time budget of {GREP_FALLBACK_BUDGET_S:.0f}s"
             if stopped:
                 hits.append(
                     f"[grep stopped early after {stopped} ({scanned} files searched, no ripgrep on "
                     f"this machine): results are partial. Narrow the search with path= or glob=.]"
+                )
+            if too_big:
+                shown = ", ".join(too_big[:3]) + (f" and {len(too_big) - 3} more" if len(too_big) > 3 else "")
+                hits.append(
+                    f"[{len(too_big)} file(s) over "
+                    f"{(str(GREP_FALLBACK_MAX_FILE_BYTES // (1024 * 1024)) + ' MB') if GREP_FALLBACK_MAX_FILE_BYTES >= 1024 * 1024 else str(GREP_FALLBACK_MAX_FILE_BYTES) + ' bytes'} were not "
+                    f"searched ({shown}): results may be partial. Read them with read_file, or use bash grep.]"
                 )
             return hits, None
 
@@ -1442,8 +1458,9 @@ class GrepTool:
             return {"error": err, "exit_code": 1}
         if not lines:
             return {"output": f"No matches for {pattern!r} under {root}", "exit_code": 0}
-        out = "\n".join(ln[:_CODENAV_MAX_LINE] for ln in lines)
-        if len(lines) >= max_hits:
+        out = "\n".join(ln if ln.startswith("[") else ln[:_CODENAV_MAX_LINE] for ln in lines)
+        # Notices ("[grep stopped early…]", "[n file(s) … not searched…]") are not matches.
+        if sum(1 for ln in lines if not ln.startswith("[")) >= max_hits:
             out += f"\n... [capped at {max_hits} matches]"
         return {"output": _truncate(out), "exit_code": 0}
 
