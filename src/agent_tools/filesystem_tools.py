@@ -35,39 +35,10 @@ GREP_FALLBACK_MAX_FILE_BYTES = 2 * 1024 * 1024
 GREP_FALLBACK_MAX_FILES = 50_000
 
 
-def _oversized_files(root: str, glob_pat: str) -> Tuple[List[str], bool]:
-    """Text files over the size limit under root that grep did not search.
-
-    ripgrep skips them silently (--max-filesize), so the caller can declare the
-    omission instead of letting hits hide it. Stat-only walk, bounded by
-    GREP_FALLBACK_MAX_FILES entries; returns (paths, walk_was_complete).
-    """
-    from src.tool_execution import _is_sensitive_path
-
-    found: List[str] = []
-    seen = 0
-    if os.path.isfile(root):
-        try:
-            return ([root] if os.path.getsize(root) > GREP_FALLBACK_MAX_FILE_BYTES else [], True)
-        except OSError:
-            return [], True
-    for dp, dns, fns in os.walk(root):
-        dns[:] = [d for d in dns if d not in _CODENAV_SKIP_DIRS]
-        for fn in fns:
-            seen += 1
-            if seen > GREP_FALLBACK_MAX_FILES:
-                return found, False
-            if glob_pat and not fnmatch.fnmatch(fn, glob_pat):
-                continue
-            fp = os.path.join(dp, fn)
-            if _is_sensitive_path(os.path.realpath(fp)):
-                continue
-            try:
-                if os.path.getsize(fp) > GREP_FALLBACK_MAX_FILE_BYTES:
-                    found.append(fp)
-            except OSError:
-                continue
-    return found, True
+# ripgrep stderr is drained in its own thread and only this many bytes are kept:
+# a chatty rg (hundreds of KB of warnings) must never fill the OS pipe buffer and
+# deadlock the search until the timeout.
+GREP_STDERR_KEEP_BYTES = 8 * 1024
 
 
 def _glob_to_regex(pat: str) -> "re.Pattern":
@@ -1424,52 +1395,72 @@ class GrepTool:
                         finally:
                             enough.set()
 
+                    err_chunks: List[str] = []
+                    err_done = threading.Event()
+
+                    def _read_err():
+                        # Drained concurrently and bounded: a chatty rg (hundreds of
+                        # KB of warnings) must not fill the OS pipe buffer and stall
+                        # the search until the timeout.
+                        try:
+                            kept = 0
+                            for chunk in p.stderr:
+                                err_chunks.append(chunk)
+                                kept += len(chunk)
+                                if kept >= GREP_STDERR_KEEP_BYTES:
+                                    break
+                        except Exception:
+                            pass
+                        finally:
+                            err_done.set()
+
                     reader = threading.Thread(target=_read, daemon=True)
+                    err_reader = threading.Thread(target=_read_err, daemon=True)
                     reader.start()
+                    err_reader.start()
                     finished = enough.wait(GREP_FALLBACK_BUDGET_S)
                     timed_out = not finished
                     if p.poll() is None:
                         p.kill()      # enough matches, or out of time: keep what was found
                     reader.join(timeout=2)
-                    try:
-                        err_text = p.stderr.read() or ""
-                    except Exception:
-                        err_text = ""
+                    err_done.wait(timeout=2)
+                    err_text = "".join(err_chunks)
                     lines = got[:max_hits]
                     if timed_out:
                         lines.append(
                             f"[grep stopped early after the time budget of {GREP_FALLBACK_BUDGET_S:.0f}s: results "
                             f"are partial. Narrow the search with path= or glob=.]")
-                    elif p.poll() not in (0, 1, None) and not lines:
-                        # rg exit 2 is an error (bad regex, unreadable path...): never
-                        # dress it up as "No matches". Bounded: first stderr line only.
-                        err_first = err_text.strip().splitlines()
-                        detail = err_first[0][:200] if err_first else f"ripgrep exited with code {p.returncode}"
-                        return None, f"grep: {detail}"
-                    elif not lines:
-                        # Never a bare "No matches" that hides the size limit.
-                        lines = [f"[No matches for {pattern!r} under {root}. Files over "
-                                 f"{GREP_FALLBACK_MAX_FILE_BYTES // (1024 * 1024)} MB are not searched; use "
-                                 f"bash rg on a specific one if it matters.]"]
-                    if lines and not timed_out:
-                        # ripgrep skips oversized files silently: with hits on the small
-                        # files the caller would never learn the big ones were skipped.
-                        try:
-                            skipped, complete = _oversized_files(root, glob_pat)
-                        except Exception:
-                            skipped, complete = [], True
-                        if skipped:
-                            shown = ", ".join(os.path.basename(p_) for p_ in skipped[:3])
-                            more = f" and {len(skipped) - 3} more" if len(skipped) > 3 else ""
+                    else:
+                        failed = p.poll() not in (0, 1, None)
+                        if failed:
+                            # rg exit 2 is an error (bad regex, unreadable path...): never
+                            # dress it up as "No matches", and never drop it just because
+                            # some hits came back first. Bounded: first stderr line only.
+                            err_first = err_text.strip().splitlines()
+                            detail = err_first[0][:200] if err_first else f"ripgrep exited with code {p.returncode}"
+                            if lines:
+                                lines.append(
+                                    f"[grep: {detail} (ripgrep exited with code {p.returncode}): "
+                                    f"results may be incomplete.]")
+                            else:
+                                return None, f"grep: {detail}"
+                        elif not lines:
+                            # Never a bare "No matches" that hides the size limit.
+                            lines = [f"[No matches for {pattern!r} under {root}. Files over "
+                                     f"{GREP_FALLBACK_MAX_FILE_BYTES // (1024 * 1024)} MB are not searched; use "
+                                     f"bash rg on a specific one if it matters.]"]
+                        if lines and not timed_out:
+                            # The size limit is declared conservatively on every search
+                            # that returns something: ripgrep skips files over
+                            # --max-filesize silently, and telling exactly which ones
+                            # would need a second walk that re-implements glob and
+                            # .gitignore semantics and can blow the time budget. The
+                            # blanket notice costs nothing and never hides a partial
+                            # answer behind hits on small files.
                             lines.append(
-                                f"[{len(skipped)} file(s) over "
-                                f"{GREP_FALLBACK_MAX_FILE_BYTES // (1024 * 1024)} MB were not searched "
-                                f"({shown}{more}): results may be partial. Read them with read_file, "
-                                f"or use bash rg on a specific one.]")
-                        elif not complete:
-                            lines.append(
-                                f"[grep stopped listing after {GREP_FALLBACK_MAX_FILES} entries: some files "
-                                f"may not have been searched. Narrow the search with path= or glob=.]")
+                                f"[Files over {GREP_FALLBACK_MAX_FILE_BYTES // (1024 * 1024)} MB were not "
+                                f"searched (ripgrep --max-filesize): results may be partial. Read one with "
+                                f"read_file, or use bash rg on a specific one.]")
                     return lines, None
                 except Exception as _e:
                     return None, f"grep: {_e}"
