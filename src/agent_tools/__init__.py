@@ -88,6 +88,7 @@ from .code_graph_tools import (
 )
 from .structural_search_tools import StructuralSearchTool, StructuralRewriteTool
 from .doc_claims_tool import DocClaimsCheckTool
+from .doc_lint_tool import DocLintTool
 from .prune_tools import PagePruneTool
 from .blender_scene_tool import BlenderSceneTool
 from .schema_extraction_tool import ExtractToSchemaTool
@@ -276,6 +277,9 @@ TOOL_HANDLERS = {
     # settings keys, routes, tool names) in code evidence and flags stale
     # sections. See src/doc_claims.py.
     "doc_claims_check": DocClaimsCheckTool().execute,
+    # Report-only Markdown linter (headings, numbering, links, dates, required
+    # sections, forbidden content). See src/doc_lint.py.
+    "doc_lint": DocLintTool().execute,
     # Query-aware page pruning (src/research_prune.py): url/html/text + query
     # -> the blocks worth reading, with scores. See src/agent_tools/prune_tools.py.
     "page_prune": PagePruneTool().execute,
@@ -519,6 +523,8 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "structural_search", "structural_rewrite",
              # Doc-claim drift checker -- src/agent_tools/doc_claims_tool.py.
              "doc_claims_check",
+             # Report-only Markdown linter -- src/agent_tools/doc_lint_tool.py.
+             "doc_lint",
              # Query-aware page pruning -- src/agent_tools/prune_tools.py.
              "page_prune",
              # Typed 3D scenes rendered with Blender -- src/agent_tools/blender_scene_tool.py.
