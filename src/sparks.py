@@ -272,11 +272,16 @@ def sync() -> Dict[str, Any]:
             return {"ok": False, "error": "disabled", "action": action}
         running = _endpoints_from_prometheus()
         if running is None:
-            # Prometheus closed is not the same as the model gone: keep the Sparks default only while its server still answers.
+            # A failed observation is not evidence that the selected model disappeared.
             eff = effective_default()
-            if eff["on_sparks"] and not _endpoint_answers(eff["endpoint_id"], eff.get("model") or ""):
-                _disable_managed({k: v for k, v in cfg["endpoints"].items() if v == eff["endpoint_id"]})
-                return {**_UNREACHABLE, "action": _restore_local(cfg)}
+            if eff["on_sparks"]:
+                answers = _endpoint_answers(eff["endpoint_id"], eff.get("model") or "")
+                if answers is False:
+                    _disable_managed({k: v for k, v in cfg["endpoints"].items() if v == eff["endpoint_id"]})
+                    return {**_UNREACHABLE, "action": _restore_local(cfg)}
+                if answers is None:
+                    return {**_UNREACHABLE, "action": "none", "endpoint_status": "unknown",
+                            "advisory": "Could not verify the selected Sparks model; its endpoint and default were preserved."}
             return {**_UNREACHABLE, "action": "none"}
         rec = _call("recipes_list", {}, timeout=10)
         recipes = rec["result"].get("recipes", []) if rec.get("ok") else []
@@ -350,8 +355,8 @@ def _disable_managed(ids: Dict[str, str]) -> None:
         db.close()
 
 
-def _endpoint_answers(endpoint_id: str, model: str = "") -> bool:
-    """The Sparks endpoint still serves the default model: an answer on the port is not enough, another server may hold it now."""
+def _endpoint_answers(endpoint_id: str, model: str = "") -> Optional[bool]:
+    """True/False for a valid model catalog; None when availability is unknown."""
     from core.database import ModelEndpoint, SessionLocal
 
     db = SessionLocal()
@@ -364,7 +369,9 @@ def _endpoint_answers(endpoint_id: str, model: str = "") -> bool:
         return False
     code, body = _request("GET", "/models", url=base.rstrip("/"), timeout=3.0)
     if code != 200 or not isinstance(body, dict) or not isinstance(body.get("data"), list):
-        return False
+        return None
+    if any(not isinstance(m, dict) or not isinstance(m.get("id"), str) or not m["id"] for m in body["data"]):
+        return None
     ids = {m.get("id") for m in body["data"] if isinstance(m, dict)}
     return bool(ids) and (not model or model in ids)
 

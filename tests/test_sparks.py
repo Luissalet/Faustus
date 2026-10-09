@@ -214,11 +214,12 @@ def test_prometheus_closed_keeps_a_server_that_still_answers(fake, monkeypatch):
     monkeypatch.setattr(sparks, "_request", request)
     assert sparks.sync()["action"] == "none" and load_settings()["default_endpoint_id"] == ep_id
     answers["v"] = None
-    assert sparks.sync()["action"] == "to_local"
-    assert load_settings()["default_endpoint_id"] == "local1" and _endpoint(ep_id).is_enabled is False
+    out = sparks.sync()
+    assert out["action"] == "none" and out["endpoint_status"] == "unknown"
+    assert load_settings()["default_endpoint_id"] == ep_id and _endpoint(ep_id).is_enabled is True
 
 
-@pytest.mark.parametrize("served", [{"data": []}, {"data": [{"id": "otro"}]}, {"error": "x"}])
+@pytest.mark.parametrize("served", [{"data": []}, {"data": [{"id": "otro"}]}])
 def test_prometheus_closed_drops_a_port_that_serves_something_else(fake, monkeypatch, served):
     fake.running = [fake.endpoint("glm53-tp3")]
     sparks.sync()
@@ -232,6 +233,36 @@ def test_prometheus_closed_drops_a_port_that_serves_something_else(fake, monkeyp
 
     monkeypatch.setattr(sparks, "_request", request)
     assert sparks.sync()["action"] == "to_local" and load_settings()["default_endpoint_id"] == "local1"
+
+
+@pytest.mark.parametrize("response", [(None, None), (503, {"error": "busy"}),
+    (401, {"error": "unauthorized"}), (200, {"error": "x"}),
+    (200, {"data": [None]}), (200, {"data": [{"id": ""}]})])
+def test_uncertain_catalog_keeps_selection_and_recovers(fake, monkeypatch, response):
+    fake.running = [fake.endpoint("glm53-tp3")]
+    sparks.sync()
+    ep_id = load_settings()["default_endpoint_id"]
+    original = fake.request
+    observed = {"response": response}
+
+    def request(method, path, body=None, *, timeout=4.0, url=None):
+        if url and url.startswith("http://spark:"):
+            return observed["response"]
+        fake.up = False
+        return original(method, path, body, timeout=timeout, url=url)
+
+    monkeypatch.setattr(sparks, "_request", request)
+    for _ in range(3):
+        out = sparks.sync()
+        assert out["action"] == "none" and out["endpoint_status"] == "unknown"
+        assert out["advisory"]
+        assert load_settings()["default_endpoint_id"] == ep_id
+        assert load_settings()["default_model"] == "glm-5.3-flash"
+        assert _endpoint(ep_id).is_enabled
+    observed["response"] = (200, {"data": [{"id": "glm-5.3-flash"}]})
+    assert sparks.sync()["action"] == "none"
+    assert load_settings()["default_endpoint_id"] == ep_id
+    assert _endpoint(ep_id).is_enabled
 
 
 def test_a_sparks_model_picked_by_hand_stays_with_the_switch_off(fake):

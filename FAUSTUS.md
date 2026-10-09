@@ -10628,3 +10628,11 @@ Lo aprobado quedó integrado y activo en `0bc0839c9017c79f6602c43414feb010a0a9d6
 El cierre ordinario de respuestas (#179) conserva el texto y añade avisos cuando la evidencia no basta, sin otra llamada al modelo sólo para aprobar la respuesta. Los fixtures de pruebas no se confunden automáticamente con archivos entregados al usuario. El heartbeat nativo (#186) renueva sólo los bloqueos propios comprendidos en el alcance configurado; las reservas externas del controlador se informan sin impedir el latido. Ambas correcciones están revisadas y activas.
 
 **Pendiente de verificación:** la migración del vigilante externo a chats con proyecto e identidad nativos (#185), su alcance sobre los repositorios de la familia y la corrección de selección ante una sincronización incierta de Sparks (#189). La contribución aceptada y la recuperación del mismo chat están demostradas; una respuesta o un test verde no certifica fiabilidad general ni paridad con otros agentes. La ventana de 1M y TP0/1/2 están comprobados como configuración y procesos residentes, no como un nuevo benchmark de entrada de 1M.
+## 287. Disponibilidad incierta de Sparks — #189 (10-10-2026)
+
+Cuando Prometheus no responde, un timeout, error HTTP o catálogo mal formado del
+servidor de modelos conserva la conexión seleccionada y el modelo por defecto.
+`POST /api/sparks/sync` y su herramienta MCP devuelven `endpoint_status=unknown`
+y un aviso, sin iniciar otro modelo. Un catálogo válido sin el modelo elegido
+sigue restaurando el valor anterior; desactivar Sparks explícitamente mantiene
+su comportamiento. Conservar la elección no prueba que el servidor esté sano.
