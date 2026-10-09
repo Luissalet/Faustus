@@ -27,6 +27,7 @@ from src.brain import db as brain_db
 TOOL_NAMES = {
     "brain_search", "brain_read_note", "brain_write_note", "brain_append_note",
     "brain_entity", "brain_timeline", "brain_graph_neighbors", "brain_sync",
+    "brain_facts_as_of",
 }
 
 OWNER = "ada"
@@ -176,3 +177,25 @@ def test_sync_with_an_owner_runs(owned):
     out = _call("brain_sync", {})
     assert '"ok": true' in out[0].text.lower()
     assert "report" in out[0].text
+
+
+def test_facts_as_of_tool_both_time_axes(monkeypatch):
+    from src.brain import entities as ents, relation_history as history
+    clock = ["2026-01-01T00:00:00.000000Z"]
+    monkeypatch.setattr(history, "recorded_now", lambda: clock[0])
+    ada = ents.upsert_entity(OWNER, "Ada", type="person")
+    lab = ents.upsert_entity(OWNER, "Lab", type="org")
+    lab2 = ents.upsert_entity(OWNER, "Lab Two", type="org")
+    ents.add_relation(OWNER, ada["id"], "works_at", dst_id=lab["id"], valid_from="2024-01-01")
+    clock[0] = "2026-02-01T00:00:00.000000Z"
+    ents.add_relation(OWNER, ada["id"], "works_at", dst_id=lab2["id"], valid_from="2025-01-01")
+    monkeypatch.setenv("ODYSSEUS_MCP_BRAIN_OWNER", OWNER)
+    import json
+    cur = json.loads(_call("brain_facts_as_of", {"name": "Ada"})[0].text)
+    assert cur["mode"] == "current" and [r["dst"] for r in cur["facts"]] == [lab2["id"]]
+    known = json.loads(_call("brain_facts_as_of", {"entity_id": ada["id"], "known_at": "2026-01-15",
+                                                  "include_closed": True})[0].text)
+    assert known["mode"] == "known_at" and [r["dst"] for r in known["facts"]] == [lab["id"]]
+    world = json.loads(_call("brain_facts_as_of", {"entity_id": ada["id"], "as_of": "2024-06-01"})[0].text)
+    assert [r["dst"] for r in world["facts"]] == [lab["id"]]
+    assert "ISO" in _call("brain_facts_as_of", {"as_of": "nope"})[0].text

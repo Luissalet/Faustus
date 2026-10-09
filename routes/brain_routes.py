@@ -182,6 +182,21 @@ def _settings_snapshot() -> Dict[str, Any]:
 def setup_brain_routes() -> APIRouter:
     router = APIRouter(prefix="/api/brain", tags=["brain"])
 
+    @router.get("/facts")
+    async def get_facts(request: Request, entity_id: str = "", rel: str = "", as_of: str = "",
+                        known_at: str = "", include_closed: Optional[bool] = None,
+                        limit: int = 200, _u: str = Depends(require_user)) -> Dict[str, Any]:
+        """Bitemporal relations: current by default, `as_of` = world time,
+        `known_at` = what the brain believed on that date (recorded time)."""
+        from src.brain.bitemporal import facts
+        try:
+            return await asyncio.to_thread(
+                facts, _owner(request), entity_id=entity_id or None, rel=rel or None,
+                as_of=as_of or None, known_at=known_at or None,
+                include_closed=include_closed, limit=limit)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
     @router.post("/temporal-graph")
     async def post_temporal_graph(request: Request, body: GraphQuery, _u: str = Depends(require_user)):
         from src.brain.temporal_graph import retrieve

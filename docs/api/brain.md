@@ -141,6 +141,10 @@ o `null` si aún no se ha exportado. `profile(id, as_of)`:
 `PATCH`/`merge` re-exportan la nota de la entidad afectada a la bóveda de
 inmediato (best-effort — un fallo de exportación no rompe la respuesta).
 
+### Hechos bitemporales
+
+`GET /api/brain/facts` con `entity_id?`, `rel?`, `as_of?` (tiempo del mundo, ISO), `known_at?` (tiempo de registro, ISO), `include_closed?`, `limit?` (1-500). Sin fechas devuelve la vista vigente; con `as_of` lo que era cierto entonces (incluye relaciones cerradas); con `known_at` lo que el cerebro creia entonces; ambos se combinan. Respuesta: `{mode, as_of, known_at, count, truncated, facts, functional_relations}`; cada hecho trae `valid_from`, `valid_until`, `recorded_at`, `superseded_at`, `status`, `superseded_by`. Fecha no ISO: 400. Un valor nuevo de una relacion funcional (`works_at`, `lives_in`, `located_in`) cierra el anterior sin borrarlo.
+
 ### Línea de tiempo
 
 | Método | Ruta | Parámetros | Respuesta |
@@ -206,6 +210,7 @@ escribir en la bóveda de nadie en particular.
 | `brain_append_note` | `path`, `content` | Añade texto al final de la zona editable de una nota, sin borrar lo que ya había. |
 | `brain_entity` | `entity_id?` \| `name?`, `as_of?` | El perfil completo de una entidad (hechos, relaciones, línea de tiempo). Sólo lectura. |
 | `brain_timeline` | `entity_id?` \| `name?`, `query?`, `limit?` (1-500) | La historia de una entidad, o la línea de tiempo cruzada si no se da entidad. Sólo lectura. |
+| `brain_facts_as_of` | `entity_id?` \| `name?`, `rel?`, `as_of?`, `known_at?`, `include_closed?`, `limit?` | Relaciones con ambos ejes de tiempo (vigente por defecto; `as_of` = mundo, `known_at` = lo que se sabia). Solo lectura. |
 | `brain_graph_neighbors` | `path?`, `depth?` (1-4), `scope?` (`notes`\|`entities`) | El grafo local alrededor de una nota, o el grafo entero de entidades si no se da `path`. Sólo lectura. |
 | `brain_sync` | — | Sincroniza la bóveda ahora mismo (importa ediciones manuales, reexporta, reindexa). |
 
@@ -232,6 +237,7 @@ nunca de un argumento del modelo (misma disciplina que `context_recall` y
 | `timeline` | `entity_id?` \| `name?` \| `query?`, `limit?` | la historia de una entidad o la cruzada |
 | `neighbors` | `path?`, `scope?`, `depth?` | el grafo local de notas o el de entidades |
 | `daily` | `date?` | la nota diaria de hoy o de `date` |
+| `facts` | `entity_id?` \| `name?`, `rel?`, `as_of?`, `known_at?`, `include_closed?` | relaciones bitemporales (ver Hechos bitemporales) |
 
 Las acciones de sólo lectura (`search`, `read`, `entity`, `timeline`,
 `neighbors`) pasan la puerta de contexto externo (`src/context_tool_gate.py`,

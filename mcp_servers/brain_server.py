@@ -240,6 +240,34 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="brain_facts_as_of",
+            description=(
+                "Bitemporal facts (relations) of the brain with both time axes: "
+                "`valid_from`/`valid_until` (when it was true in the world) and "
+                "`recorded_at`/`superseded_at` (when the brain learned / retired "
+                "it). Default is the current view; `as_of` = what was true in the "
+                "world at that date; `known_at` = what the brain believed on that "
+                "date. Que era verdad en marzo / que creia yo entonces. A new "
+                "value for a single-valued relation (works_at, lives_in, "
+                "located_in) closes the old one, history is kept. Read-only."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "entity_id": {"type": "string"},
+                    "name": {"type": "string",
+                              "description": "Used when entity_id is not known."},
+                    "rel": {"type": "string", "description": "Only this relation type."},
+                    "as_of": {"type": "string",
+                              "description": "ISO date/time, world (valid) time."},
+                    "known_at": {"type": "string",
+                                  "description": "ISO date/time, recorded time."},
+                    "include_closed": {"type": "boolean"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 500},
+                },
+            },
+        ),
+        Tool(
             name="brain_graph_neighbors",
             description=(
                 "The local note or entity graph around one node: what links "
@@ -369,6 +397,25 @@ def _tool_timeline(owner: str, args: dict) -> list[TextContent]:
     return _json_result({"ok": True, "timeline": events})
 
 
+def _tool_facts(owner: str, args: dict) -> list[TextContent]:
+    from src.brain import bitemporal
+    entity_id = None
+    if args.get("entity_id") or args.get("name"):
+        try:
+            entity_id = _resolve_entity_id(owner, args)
+        except LookupError as exc:
+            return _text_result(f"brain_facts_as_of: {exc}")
+    try:
+        view = bitemporal.facts(
+            owner, entity_id=entity_id, rel=args.get("rel") or None,
+            as_of=args.get("as_of") or None, known_at=args.get("known_at") or None,
+            include_closed=args.get("include_closed"),
+            limit=_limit(args.get("limit"), 200, 500))
+    except ValueError as exc:
+        return _text_result(f"brain_facts_as_of: {exc}")
+    return _json_result({"ok": True, **view})
+
+
 def _tool_neighbors(owner: str, args: dict) -> list[TextContent]:
     notes, entities = _engine["notes"], _engine["entities"]
     path = str(args.get("path") or "").strip()
@@ -393,6 +440,7 @@ _HANDLERS = {
     "brain_append_note": _tool_append_note,
     "brain_entity": _tool_entity,
     "brain_timeline": _tool_timeline,
+    "brain_facts_as_of": _tool_facts,
     "brain_graph_neighbors": _tool_neighbors,
     "brain_sync": _tool_sync,
 }

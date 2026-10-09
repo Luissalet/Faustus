@@ -12,6 +12,8 @@ hands for the second brain: a markdown vault of notes plus typed entities
     brain  timeline  {entity_id | name | query?}     -> dated history
     brain  neighbors {path?, scope?, depth?}         -> the local graph
     brain  daily     {date?}                         -> today's daily note
+    brain  facts     {entity_id? | name?, rel?, as_of?, known_at?, include_closed?}
+                                                     -> bitemporal relations
 
 The owner comes from the tool context (the runtime), never from the
 arguments — same discipline as `context_recall` and `manage_memory`: a model
@@ -34,7 +36,7 @@ from src.tool_utils import _parse_tool_args
 logger = logging.getLogger(__name__)
 
 _ACTIONS = ("search", "read", "write", "append", "entity", "timeline",
-           "neighbors", "daily")
+           "neighbors", "daily", "facts")
 
 
 def _limit(value: Any, default: int, ceiling: int) -> int:
@@ -173,6 +175,18 @@ class BrainTool:
                                            limit=_limit(args.get("limit"), 200, 500))
                 return {"output": f"{len(events)} event(s)", "timeline": events,
                         "exit_code": 0}
+
+            if action == "facts":
+                from src.brain import bitemporal
+                entity_id = (_resolve_entity_id(entities, owner, args)
+                             if (args.get("entity_id") or args.get("name")) else None)
+                view = bitemporal.facts(
+                    owner, entity_id=entity_id, rel=args.get("rel") or None,
+                    as_of=args.get("as_of") or None, known_at=args.get("known_at") or None,
+                    include_closed=args.get("include_closed"),
+                    limit=_limit(args.get("limit"), 200, 500))
+                return {"output": f"{view['count']} fact(s) [{view['mode']}]",
+                        **view, "exit_code": 0}
 
             if action == "neighbors":
                 path = str(args.get("path") or "").strip()
