@@ -6,6 +6,27 @@ import json
 
 from src.agent_harness import TurnLedger
 from src.source_claims import find_source_claims, is_source_tool
+import pytest
+
+
+@pytest.mark.parametrize("tool", ["coordination_poll", "coordination_detail", "coordination_task", "coordination_board"])
+def test_native_record_read_is_a_source_but_not_a_webpage(tool):
+    from src.source_claims import is_page_tool
+    assert is_source_tool(tool)
+    assert not is_page_tool(tool)
+    ledger = TurnLedger(None, "Read the external record.")
+    ledger.record(tool, "{}", {"output": "External records", "exit_code": 0})
+    assert ledger.consulted_sources()
+    assert not ledger.opened_pages()
+    assert ledger.unconsulted_source_claims("I opened the website and read its pages.")
+
+
+def test_coordination_write_and_unknown_name_are_not_source_reads():
+    for tool in ("coordination_post", "coordination_imaginary"):
+        assert not is_source_tool(tool)
+        ledger = TurnLedger(None, "Check the source.")
+        ledger.record(tool, "{}", {"output": "Done", "exit_code": 0})
+        assert not ledger.consulted_sources()
 
 
 def test_claims_of_an_outside_check_are_found_in_both_languages():

@@ -28,6 +28,8 @@ from typing import List
 SOURCE_TOOL_NAMES = frozenset({
     "web_search", "web_fetch", "reach_read", "reach_search", "fetch_url",
     "browser_navigate", "browser_snapshot", "browser_get_text",
+    # Structured external records, not web-page retrieval.
+    "coordination_poll", "coordination_detail", "coordination_task", "coordination_board",
 })
 SOURCE_TOOL_PREFIXES = ("mcp__", "browser_", "reach_")
 

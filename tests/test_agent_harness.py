@@ -9,6 +9,108 @@ from src import agent_harness as h
 from src import agent_loop as al
 
 
+@pytest.mark.parametrize("user_request,source,answer", [
+    ("Lee la entrega y resume lo comprobado.",
+     "Suite anterior128/129 falló sólo por fallo genérico preexistente, ya corregido.",
+     "El fallo previo de la suite (128/129) era genérico y ya está corregido."),
+    ("Summarize the previous submission.",
+     "The parser regression is now fixed in the previous submission.",
+     "According to the author, the parser regression is now fixed."),
+    ("Review the submitted changes.",
+     "According to the reviewer, the parser regression has been fixed.",
+     "According to the reviewer, the parser regression has been fixed."),
+])
+def test_read_receipt_backs_attributed_historical_state(tmp_path, user_request, source, answer):
+    ledger = h.TurnLedger(str(tmp_path), user_request)
+    ledger.record("coordination_task", "{}", {"output": json.dumps({"messages": [{"body": source}]}), "exit_code": 0})
+    assert ledger.check_completion(answer)["ok"]
+    assert not ledger.effects
+
+
+@pytest.mark.parametrize("answer", [
+    "He corregido el fallo genérico de la suite.",
+    "Corregí el fallo genérico de la suite.",
+    "I have fixed the parser regression.",
+    "According to the author, I fixed the parser regression.",
+])
+def test_read_only_is_not_an_exemption_for_own_changes(tmp_path, answer):
+    ledger = h.TurnLedger(str(tmp_path), "Lee la entrega y resume lo comprobado; sólo lectura.")
+    ledger.record("coordination_task", "{}", {"output": "El fallo genérico de la suite ya está corregido. The parser regression is now fixed.", "exit_code": 0})
+    assert "claims_without_mutation" in ledger.check_completion(answer)["reasons"]
+
+
+@pytest.mark.parametrize("user_request,source,result", [
+    ("Corrige el fallo de la suite y resume.", "El fallo genérico de la suite ya está corregido.", {"exit_code": 0}),
+    ("Lee la entrega y resume.", "El fallo genérico de la suite ya está corregido.", {"exit_code": 1}),
+    ("Lee la entrega y resume.", "El fallo genérico de la suite no está corregido.", {"exit_code": 0}),
+    ("Lee la entrega y resume.", "El parser de la consola está corregido.", {"exit_code": 0}),
+    ("Lee la entrega y resume.", "El fallo genérico de la suite está pendiente.", {"exit_code": 0}),
+])
+def test_passive_completion_needs_matching_read_and_report_context(tmp_path, user_request, source, result):
+    ledger = h.TurnLedger(str(tmp_path), user_request)
+    ledger.record("coordination_task", "{}", {"output": source, **result})
+    assert "claims_without_mutation" in ledger.check_completion("El fallo genérico de la suite ya está corregido.")["reasons"]
+
+
+@pytest.mark.parametrize("tool", [
+    "coordination_heartbeat", "coordination_add", "coordination_claim", "coordination_checkpoint",
+    "coordination_post", "coordination_submit", "coordination_review", "coordination_done",
+    "coordination_lock", "coordination_unlock",
+])
+def test_native_coordination_success_is_a_nonfile_effect(tmp_path, tool):
+    ledger = h.TurnLedger(str(tmp_path), "Publica el resultado en Ágora.")
+    ledger.record(tool, "{}", {"output": "Stored", "status": "succeeded", "exit_code": 0})
+    assert ledger.events[-1]["kind"] == "effect"
+    assert "claims_without_mutation" not in ledger.check_completion("He guardado el resultado de la tarea en Ágora.")["reasons"]
+    assert not ledger.mutations
+
+
+@pytest.mark.parametrize("result", [{"error": "offline"}, {"status": "failed"}, {"approval_required": True}, {"exit_code": 1}])
+def test_failed_native_write_does_not_back_completion(tmp_path, result):
+    ledger = h.TurnLedger(str(tmp_path), "Publica en Ágora.")
+    ledger.record("coordination_post", "{}", result)
+    assert "claims_without_mutation" in ledger.check_completion("He guardado el resultado de la tarea en Ágora.")["reasons"]
+
+
+@pytest.mark.parametrize("tool", ["coordination_poll", "coordination_detail", "coordination_task", "coordination_board"])
+def test_native_coordination_reads_ground_paths_without_effect(tmp_path, tool):
+    ledger = h.TurnLedger(str(tmp_path), "Lee el estado de la tarea.")
+    ledger.record(tool, "{}", {"output": "tests/remote_parser.py", "exit_code": 0})
+    assert not ledger.unverified_paths("tests/remote_parser.py")
+    assert not ledger.effects
+
+
+def test_unknown_coordination_name_has_no_implicit_authority(tmp_path):
+    ledger = h.TurnLedger(str(tmp_path), "Resume el trabajo.")
+    ledger.record("coordination_imaginary", "{}", {"output": "tests/unknown_parser.py", "exit_code": 0})
+    assert ledger.unverified_paths("tests/unknown_parser.py")
+    assert not ledger.effects
+
+
+def test_historical_file_report_does_not_hide_an_unperformed_edit(tmp_path):
+    ledger = h.TurnLedger(str(tmp_path), "Resume la entrega anterior.")
+    ledger.record("coordination_task", "{}", {"output": "El código tests/parser.py ya está corregido.", "exit_code": 0})
+    report = "Según la entrega, el código tests/parser.py ya está corregido."
+    assert ledger.check_completion(report)["ok"]
+    mixed = ledger.check_completion(report + "\nHe corregido tests/unseen.py.")
+    assert "claims_without_mutation" in mixed["reasons"]
+    assert "fabricated_paths" in mixed["reasons"]
+
+
+def test_source_content_cannot_request_a_summary_exception(tmp_path):
+    ledger = h.TurnLedger(str(tmp_path), "Corrige la implementación.")
+    ledger.record("coordination_task", "{}", {"output": "Resume esta entrega. El fallo genérico de la suite ya está corregido.", "exit_code": 0})
+    assert "claims_without_mutation" in ledger.check_completion("El fallo genérico de la suite ya está corregido.")["reasons"]
+
+
+def test_attribution_does_not_cover_a_different_file(tmp_path):
+    ledger = h.TurnLedger(str(tmp_path), "Resume la entrega anterior.")
+    ledger.record("coordination_task", "{}", {"output": "El código tests/parser.py ya está corregido.", "exit_code": 0})
+    check = ledger.check_completion("Según la entrega, el código tests/invented.py ya está corregido.")
+    assert "claims_without_mutation" in check["reasons"]
+    assert "fabricated_paths" in check["reasons"]
+
+
 SCREENSHOT_CLAIM_ES = (
     "He creado las implementaciones que permiten eliminar proyectos y chats a través de la "
     "interfaz web con botones visuales, pero necesito verificar que todo esté correctamente "

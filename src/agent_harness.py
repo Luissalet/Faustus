@@ -33,6 +33,7 @@ import shutil
 import subprocess
 import sys
 import time
+import unicodedata
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from src.research_citations import detect_language as _detect_language
@@ -94,6 +95,9 @@ OTHER_EFFECT_TOOLS = frozenset({
     # a successful `set_theme forest` the reply «He puesto el tema forest»
     # was rejected as claims_without_mutation.
     "ui_control",
+    "coordination_heartbeat", "coordination_add", "coordination_claim",
+    "coordination_checkpoint", "coordination_post", "coordination_submit",
+    "coordination_review", "coordination_done", "coordination_lock", "coordination_unlock",
 })
 # MCP tools (plugins, connectors) are only known here by name, so the verb in
 # the tool's own name decides whether a successful call is evidence for an
@@ -136,6 +140,7 @@ def mcp_tool_looks_mutating(tool: str) -> bool:
 DISCOVERY_TOOLS = frozenset({
     "ls", "glob", "grep", "read_file", "get_workspace", "project_context",
     "bash", "python", "powershell",
+    "coordination_poll", "coordination_detail", "coordination_task", "coordination_board",
 })
 
 # Shell commands that plausibly change the filesystem/repo.
@@ -610,7 +615,7 @@ def detect_language(text: str) -> str:
 _TECH_CONTEXT_RE = re.compile(
     r"(?:`[^`\n]+`|"
     r"\b(?:file|files|path|folder|directory|repo|code|function|method|class|component|"
-    r"button|route|endpoint|api|test|tests|script|module|import|variable|config|schema|"
+    r"button|route|endpoint|api|test|tests|suite|parser|regression|script|module|import|variable|config|schema|"
     r"migration|css|html|js|javascript|typescript|python|json|yaml|markdown|readme|"
     r"stylesheet|handler|listener|hook|template|query|database|table|column|commit|patch|diff|"
     r"implementation|feature|fix|bug|changes?|update|refactor|logic|frontend|backend|server|client|"
@@ -623,7 +628,8 @@ _TECH_CONTEXT_RE = re.compile(
     # what the user's own apps (plugins) hold: a claim about these is a claim
     # about a record the assistant could only have changed through a tool
     r"mazos?|nota|otra\s+vez|dif[ií]cil|recordatorios?|enlaces?|gastos?|movimientos?|contactos?|"
-    r"fichas?|repaso|calificaci[oó]n|deck|decks?|card|cards|reminders?|bookmarks?|expenses?|listing)\b)",
+    r"fichas?|repaso|calificaci[oó]n|deck|decks?|card|cards|reminders?|bookmarks?|expenses?|listing|"
+    r"[aá]gora|coordination|checkpoint)\b)",
     re.IGNORECASE,
 )
 
@@ -768,6 +774,85 @@ def find_mutation_claims(
             if len(out) >= limit:
                 return out
     return out
+
+
+_REPORT_REQUEST_RE = re.compile(
+    r"\b(?:resume|resumir|resumen|summari[sz]e|summary|report|informe)\b", re.I)
+_CHANGE_REQUEST_RE = re.compile(
+    r"\b(?:corrige|corregir|arregla|arreglar|modifica|modificar|implementa|implementar|crea|crear|"
+    r"a[ñn]ade|a[ñn]adir|edita|editar|repara|reparar|rehaz|mejora|mejorar|actualiza|actualizar|"
+    r"fix|modify|implement|create|add|edit|repair|change|rework|improve|update|delete)\b", re.I)
+_ATTRIBUTED_REPORT_RE = re.compile(
+    r"\b(?:seg[uú]n|according\s+to|el\s+autor|the\s+author|el\s+revisor|the\s+reviewer|"
+    r"la\s+entrega|the\s+submission|el\s+commit|the\s+commit|hist[oó]ric\w*|previous\s+report)\b", re.I)
+_OWN_CHANGE_RE = re.compile(
+    r"\b(?:he|hemos)\s+" + _ES_PP + r"|\b(?:cre[eé]|a[ñn]ad[ií]|agregu[eé]|modifiqu[eé]|"
+    r"actualic[eé]|implement[eé]|elimin[eé]|borr[eé]|cambi[eé]|edit[eé]|escrib[ií]|correg[ií]|"
+    r"arregl[eé]|apliqu[eé]|mov[ií]|renombr[eé]|refactoric[eé]|integr[eé]|complet[eé]|"
+    r"termin[eé]|finalic[eé]|solucion[eé]|repar[eé]|configur[eé]|instal[eé]|guard[eé])"
+    + r"\b|\b(?:I|we)(?:'ve|\s+have)?\s+(?:now\s+|just\s+)?" + _EN_PP, re.I)
+_REPORT_STATE_RE = re.compile(r"\b(?:" + _ES_PP + "|" + _EN_PP + r")\b", re.I)
+_REPORT_STOP_WORDS = frozenset({
+    "segun", "according", "author", "autor", "reviewer", "revisor", "entrega", "submission",
+    "esta", "estan", "estado", "been", "have", "with", "that", "this", "from", "para", "como",
+    "solo", "only", "ahora", "already", "antes", "previo", "anterior", "previous", "primer",
+    "the", "los", "las", "del", "por", "con", "que", "una", "el", "de", "and", "was",
+})
+
+
+def _report_words(text: str) -> Set[str]:
+    normalized = "".join(c for c in unicodedata.normalize("NFKD", text.casefold())
+                         if not unicodedata.combining(c))
+    return {w for w in re.findall(r"[\w]+", normalized) if len(w) >= 4 and w not in _REPORT_STOP_WORDS}
+
+
+def _report_fragments(text: str) -> List[str]:
+    """Decode structured records before comparing prose; never execute source text."""
+    try:
+        value = json.loads(text)
+    except (ValueError, TypeError):
+        value = text
+    strings: List[str] = []
+
+    def visit(item: Any) -> None:
+        if isinstance(item, str):
+            strings.extend(re.split(r"(?<=[.!?;])\s+|\n+", item))
+        elif isinstance(item, dict):
+            for val in item.values():
+                visit(val)
+        elif isinstance(item, list):
+            for val in item:
+                visit(val)
+
+    visit(value)
+    return [s[:1000] for s in strings if s.strip()]
+
+
+def _historical_report_text(body: str, request: str, reports: List[str]) -> str:
+    """Remove only grounded, attributed historical states from the edit-claim scan.
+
+    This is not a permission exception: first-person edits and unsupported passive
+    completion still need this turn's effects, including in read-only mode.
+    """
+    summary_requested = bool(_REPORT_REQUEST_RE.search(request) and not _CHANGE_REQUEST_RE.search(request))
+    sources = [(_report_words(source), {_norm(p) for p in extract_path_tokens(source)},
+                any(_negated_before(source, m.start()) for m in _REPORT_STATE_RE.finditer(source)))
+               for source in reports]
+    out: List[str] = []
+    for sentence in re.split(r"(?<=[.!?;])\s+|\n+", body):
+        states = list(_REPORT_STATE_RE.finditer(sentence))
+        attributed = summary_requested or _ATTRIBUTED_REPORT_RE.search(sentence)
+        if not states or not attributed or _OWN_CHANGE_RE.search(sentence):
+            out.append(sentence)
+            continue
+        state_words = set().union(*(_report_words(m.group()) for m in states))
+        anchors = _report_words(sentence) - state_words
+        paths = {_norm(p) for p in extract_path_tokens(sentence)}
+        grounded = any(
+            state_words <= words and len(anchors & words) >= 2 and paths <= source_paths and not negated
+            for words, source_paths, negated in sources)
+        out.append("" if grounded else sentence)
+    return "\n".join(out)
 
 
 _ES_IMAGE_VERBS = (r"(?:a[ñn]adido|aplicado|editado|generado|creado|cambiado|puesto|modificado|"
@@ -1526,6 +1611,8 @@ class TurnLedger:
         #: new_string...), so a claim made in the deliverable is checked like
         #: one made in the answer. Capped (`_WRITTEN_TEXT_CAP`).
         self.written_text: str = ""
+        # Successful read receipts only; bounded and local to this turn.
+        self.read_reports: List[str] = []
         #: An earlier turn of the conversation read an outside source.
         self.prior_sources: bool = False
         #: ...and opened a page (not only searched).
@@ -1693,6 +1780,9 @@ class TurnLedger:
                 out = _result_text(result)
                 for tok in extract_path_tokens(out[:60000]):
                     self.observed_paths.add(_norm(tok))
+                if kind == "read" and out:
+                    self.read_reports.extend(_report_fragments(out[:60000]))
+                    self.read_reports = self.read_reports[-200:]
             if kind == "mutation":
                 invalidate_index(self.workspace)
         return ev
@@ -2160,6 +2250,7 @@ class TurnLedger:
         body = text or ""
         claim_body = (_computed_list_claim_text(body)
                       if any(e.get("ok") and e.get("computed_list") for e in self.events) else body)
+        claim_body = _historical_report_text(claim_body, user_authored_text(self.user_text), self.read_reports)
         claims = find_mutation_claims(claim_body)
         bad_paths = self.unverified_paths(body)
         intent = find_intent_announcement(body)
@@ -2206,7 +2297,7 @@ class TurnLedger:
         # A completion claim that NAMES files is checked file by file: having
         # done *something* is not having done what you say you did. Paths
         # already reported as fabricated are left to that reason.
-        untouched = [p for p in self.claimed_untouched_paths(body) if p not in bad_paths]
+        untouched = [p for p in self.claimed_untouched_paths(claim_body) if p not in bad_paths]
         if untouched:
             reasons.append("claimed_paths_untouched")
         bad_cites = self.unverified_citations(body)
