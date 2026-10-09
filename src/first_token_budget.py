@@ -92,6 +92,15 @@ def request_budget(endpoint):
             seconds = parse(value)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
+        from src.project_execution_defaults import for_session, merge
+        try:
+            preferences = for_session(request, str(body.get("session") or ""), verify=False)
+            resolved = merge(preferences["defaults"], body)
+            seconds = parse(resolved.get(FIELD))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        request.state.execution_defaults = resolved
+        request.state.project_execution_defaults = preferences
         token = _OVERRIDE.set(seconds)
         try:
             response = await endpoint(request, *args, **kwargs)
@@ -99,6 +108,8 @@ def request_budget(endpoint):
                 response.body_iterator = scoped_stream(response.body_iterator, seconds)
             if seconds is not None:
                 response.headers["X-Faustus-Initial-Response-Timeout-S"] = str(seconds)
+            if preferences.get("project_id"):
+                response.headers["X-Faustus-Execution-Defaults-Revision"] = str(preferences["revision"])
             return response
         finally:
             _OVERRIDE.reset(token)

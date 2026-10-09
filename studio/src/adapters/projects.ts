@@ -26,6 +26,8 @@ export interface Project {
   enabled?: boolean;
   pinned?: boolean;
   archived?: boolean;
+  execution_defaults?: ExecutionDefaults;
+  execution_defaults_revision?: number;
   trusted?: boolean;
   trusted_agents?: boolean;
   review_mode?: boolean;
@@ -42,6 +44,25 @@ export interface Project {
   connector_ids?: string[] | null;
   created_at?: number | null;
   updated_at?: number | null;
+}
+
+export interface ExecutionDefaults {
+  autonomy_preset?: 'supervised' | 'bounded_autonomous' | 'read_only';
+  reasoning_effort?: string;
+  thinking_enabled?: boolean;
+  initial_response_timeout_s?: number;
+}
+
+export type ExecutionDefaultsPatch = { [K in keyof ExecutionDefaults]?: ExecutionDefaults[K] | null };
+
+export interface SessionExecutionDefaults {
+  project_id: string | null;
+  defaults: ExecutionDefaults;
+  revision: number;
+}
+
+export function getSessionExecutionDefaults(sid: string, signal?: AbortSignal): Promise<SessionExecutionDefaults> {
+  return getJson<SessionExecutionDefaults>(`/api/projects/execution-defaults/session/${encodeURIComponent(sid)}`, signal);
 }
 
 export interface MemoryFile {
@@ -174,6 +195,8 @@ export interface ProjectInput {
   run_tests?: boolean;
   test_command?: string;
   review_model?: string;
+  execution_defaults?: ExecutionDefaultsPatch;
+  execution_defaults_expected_revision?: number;
   connector_ids?: string[] | null;
 }
 

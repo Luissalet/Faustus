@@ -16,10 +16,10 @@ answer is unchanged.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictInt, StrictBool, ConfigDict
 
 from core.middleware import require_admin
 from src import robot_envelope as robot
@@ -29,6 +29,7 @@ from services.projects import (
     MAX_INSTRUCTIONS,
     MAX_MEMORY_FILE,
     ProjectError,
+    ExecutionDefaultsConflict,
     get_store,
 )
 from src.project_identity import ProjectIdentityError
@@ -42,6 +43,14 @@ class ProjectCreateRequest(BaseModel):
     folder: str = Field("", max_length=80, description="Sidebar chat folder; defaults to name")
     workspace: str = Field("", max_length=4096, description="Absolute path to the project folder")
     instructions: str = Field("", max_length=MAX_INSTRUCTIONS)
+
+
+class ExecutionDefaultsPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    autonomy_preset: Optional[Literal['supervised', 'bounded_autonomous', 'read_only']] = None
+    reasoning_effort: Optional[Literal['auto', 'off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']] = None
+    thinking_enabled: Optional[StrictBool] = None
+    initial_response_timeout_s: Optional[float] = Field(None, strict=True, ge=5, le=900, allow_inf_nan=False)
 
 
 class ProjectUpdateRequest(BaseModel):
@@ -69,6 +78,8 @@ class ProjectUpdateRequest(BaseModel):
     # `model_fields_set` for this one field, so `exclude_none` stays as it
     # is for every other field).
     connectors: Optional[List[str]] = None
+    execution_defaults: Optional[ExecutionDefaultsPatch] = None
+    execution_defaults_expected_revision: Optional[StrictInt] = Field(None, ge=0)
 
 
 class MemoryWriteRequest(BaseModel):
@@ -172,6 +183,14 @@ def setup_project_routes() -> APIRouter:
             raise HTTPException(404, "Project not found")
         return project
 
+    @router.get("/execution-defaults/session/{session_id}")
+    def get_session_execution_defaults(session_id: str, request: Request) -> Dict[str, Any]:
+        from src.project_execution_defaults import for_session
+        try:
+            return for_session(request, session_id)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
     def _with_effective_connectors(project: Dict[str, Any]) -> Dict[str, Any]:
         """CONTRATO_CONECTORES F2.2: annotate a project response with its
         effective connector set + where it came from, same shape as the
@@ -245,6 +264,8 @@ def setup_project_routes() -> APIRouter:
         owner = effective_user(request)
         _get_or_404(project_id, owner)
         updates = payload.model_dump(exclude_none=True)
+        if payload.execution_defaults is not None:
+            updates["execution_defaults"] = payload.execution_defaults.model_dump(exclude_unset=True)
         # `"connectors": null` sent explicitly means "drop the project-level
         # restriction" (inherit "every enabled connector" again); the
         # exclude_none dump above cannot see it, `model_fields_set` can.
@@ -252,6 +273,8 @@ def setup_project_routes() -> APIRouter:
             updates["connectors"] = None
         try:
             updated = get_store().update(project_id, updates, owner)
+        except ExecutionDefaultsConflict as e:
+            raise HTTPException(409, str(e))
         except ProjectError as e:
             raise HTTPException(400, str(e))
         if not updated:

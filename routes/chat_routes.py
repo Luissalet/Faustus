@@ -2067,6 +2067,8 @@ def setup_chat_routes(
             "workspace": {"type": "string"}, "model": {"type": "string"},
             "selected_endpoint_id": {"type": "string"},
             "reasoning_effort": {"type": "string", "enum": ["auto", "off", "low", "medium", "high", "max"]},
+            "thinking_enabled": {"type": ["boolean", "null"]},
+            "think_mode": {"type": "string", "enum": ["auto", "fast", "think", "deep"]},
             "autonomy_preset": {"type": "string", "enum": ["supervised", "bounded_autonomous", "read_only"]},
             "plan_mode": {"type": "boolean"}, "no_memory": {"type": "boolean"},
             "no_skills": {"type": "boolean"},
@@ -2108,6 +2110,7 @@ def setup_chat_routes(
         _set_user_time_from_request(request)
 
         form_data = await request.form()
+        execution_defaults = getattr(request.state, "execution_defaults", {})
         from src.context_budget import parse_turn_input_budget
         try:
             turn_input_budget = parse_turn_input_budget(form_data.get("input_token_budget", (body or {}).get("input_token_budget")))
@@ -2147,7 +2150,7 @@ def setup_chat_routes(
         # also owns validating/defaulting the value; this route only reads it
         # off the request and forwards it.
         autonomy_preset = str(
-            form_data.get("autonomy_preset") or (body or {}).get("autonomy_preset") or ""
+            execution_defaults.get("autonomy_preset") or ""
         ).strip().lower()
         plan_mode = str(form_data.get("plan_mode") or (body or {}).get("plan_mode") or "").lower() == "true"
         chat_mode = str(form_data.get("mode") or (body or {}).get("mode") or "").lower()  # 'chat' or 'agent'
@@ -2891,7 +2894,7 @@ def setup_chat_routes(
                 # The model's own reasoning level, picked in the composer
                 # (src/reasoning_levels.py). An explicit level wins over the
                 # mode; "none" turns thinking off.
-                _effort_requested = str(form_data.get("reasoning_effort") or (body or {}).get("reasoning_effort") or "").strip().lower()
+                _effort_requested = str(execution_defaults.get("reasoning_effort") or "").strip().lower()
                 if _effort_requested and _effort_requested != "auto" and re.fullmatch(r"[a-z]{3,10}", _effort_requested):
                     try:
                         from src.reasoning_levels import overrides_for as _effort_overrides
@@ -2914,7 +2917,7 @@ def setup_chat_routes(
                     except Exception as _eff_err:  # noqa: BLE001
                         logger.debug("[think-mode] effort skipped: %s", _eff_err)
                 from src.reasoning_levels import thinking_switch
-                _toggle_requested = form_data.get("thinking_enabled", (body or {}).get("thinking_enabled"))
+                _toggle_requested = execution_defaults.get("thinking_enabled")
                 try:
                     _gen_overrides = thinking_switch(_gen_overrides, _toggle_requested)
                 except ValueError as exc:

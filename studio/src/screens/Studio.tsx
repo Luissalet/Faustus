@@ -27,7 +27,7 @@ import {
 } from '../adapters/chat';
 import { ApiError } from '../adapters/api';
 import { acknowledgeQueuedSend, claimQueuedSends } from '../adapters/runReport';
-import { listProjects, type Project } from '../adapters/projects';
+import { getSessionExecutionDefaults, listProjects, type Project, type ExecutionDefaults, type SessionExecutionDefaults } from '../adapters/projects';
 import { createDoc } from '../adapters/documents';
 import type { EvidenceRef } from '../adapters/evidence';
 import {
@@ -152,6 +152,7 @@ function pickedRouteId(): string | null {
   return stored.picked && stored.id ? stored.id : null;
 }
 const KNOBS_KEY = 'faustus_studio_knobs';
+const EXECUTION_KEY = 'faustus_studio_execution:';
 const GEN_KEY = 'faustus_studio_gen';
 const PRESET_KEY = 'faustus_studio_preset';
 const PANE_KEY = 'faustus_studio_pane';
@@ -439,6 +440,35 @@ export function StudioScreen() {
     // Nobody mode never survives a reload: a fresh page is a normal page.
     incognito: false,
   }));
+  const [executionPicks, setExecutionPicks] = useState<ExecutionDefaults>(() => readJson(`${EXECUTION_KEY}${sessionId ?? 'new'}`, {}));
+  const [executionProject, setExecutionProject] = useState<(SessionExecutionDefaults & { sid: string }) | null>(null);
+  const previousExecutionSession = useRef(sessionId);
+  useEffect(() => {
+    const born = !previousExecutionSession.current && Boolean(sessionId);
+    previousExecutionSession.current = sessionId;
+    const stored = readJson<ExecutionDefaults>(`${EXECUTION_KEY}${sessionId ?? 'new'}`, {});
+    if (born && !Object.keys(stored).length) {
+      writeJson(`${EXECUTION_KEY}${sessionId}`, executionPicks);
+    } else setExecutionPicks(stored);
+    setExecutionProject(null);
+    if (!sessionId) return;
+    const controller = new AbortController();
+    getSessionExecutionDefaults(sessionId, controller.signal).then((value) => {
+      if (!controller.signal.aborted) setExecutionProject({ ...value, sid: sessionId });
+    }).catch(() => undefined);
+    return () => controller.abort();
+  }, [sessionId]);
+  const executionDefaults = executionProject?.sid === sessionId ? executionProject.defaults : {};
+  const effectiveAutonomy = executionPicks.autonomy_preset ?? executionDefaults.autonomy_preset ?? knobs.autonomyPreset ?? 'supervised';
+  const pickExecution = useCallback((key: 'autonomy_preset' | 'initial_response_timeout_s', value: string | number | null) => {
+    setExecutionPicks(previous => {
+      const next = { ...previous };
+      if (value === null) delete next[key];
+      else Object.assign(next, { [key]: value });
+      writeJson(`${EXECUTION_KEY}${sessionId ?? 'new'}`, next);
+      return next;
+    });
+  }, [sessionId]);
   const [preset, setPreset] = useState<{ id: string; name: string } | null>(() => {
     const p = readJson<{ id?: string; name?: string }>(PRESET_KEY, {});
     return p.id && p.name ? { id: p.id, name: p.name } : null;
@@ -560,7 +590,7 @@ export function StudioScreen() {
   const reasoningLevels = reasoningCaps.levels;
   /** Explicit Thinking on/off when the engine exposes a native toggle; null = Auto (do not send thinking_enabled). */
   const [thinkingOnPick, setThinkingOnPick] = useState<boolean | null>(null);
-  const thinkingOn = thinkingOnPick;
+  const thinkingOn = thinkingOnPick ?? executionDefaults.thinking_enabled ?? null;
   const [modelSignal, setModelSignal] = useState(0);
   const [panel, panelDispatch] = useChatPanel(sessionId,knobs.incognito);
   // CMP-01-layout (W2-A2): conversation / document / review, per session
@@ -1054,7 +1084,8 @@ export function StudioScreen() {
   // via the independent switch, effort is kept in storage but not posted.
   const thinkEffort = (() => {
     if (thinkingOn === false) return null;
-    if (effortPick && (effortPick === 'none' || reasoningLevels.includes(effortPick))) return effortPick;
+    const wanted = effortPick ?? executionDefaults.reasoning_effort;
+    if (wanted && (wanted === 'none' || reasoningLevels.includes(wanted))) return wanted;
     return null;
   })();
   useEffect(() => {
@@ -1474,16 +1505,17 @@ export function StudioScreen() {
           attachments: options.attachments?.map((a) => a.id),
           genOverrides: Object.keys(gen).length ? (gen as Record<string, number | boolean>) : undefined,
           thinkMode,
-          reasoningEffort: thinkEffort ?? undefined,
+          reasoningEffort: effortPick && thinkEffort === effortPick ? effortPick : undefined,
           // Only an explicit on/off (not Auto/null) is posted; backend applies it last.
-          thinkingEnabled: reasoningCaps.thinking_toggle && typeof thinkingOn === 'boolean' ? thinkingOn : undefined,
+          thinkingEnabled: reasoningCaps.thinking_toggle && typeof thinkingOnPick === 'boolean' ? thinkingOnPick : undefined,
+          initialResponseTimeoutS: executionPicks.initial_response_timeout_s,
           approval: options.approval,
           questionId: options.questionId,
           optionIds: options.optionIds,
           revision: options.revision,
           delegateTasks: options.delegation,
           incognito: knobs.incognito,
-          autonomyPreset: knobs.autonomyPreset,
+          autonomyPreset: executionPicks.autonomy_preset ?? (executionProject && !executionProject.project_id ? knobs.autonomyPreset : undefined),
           docContext: knobs.docContext,
           presetId: preset?.id,
           behaviorMode: options.behaviorMode,
@@ -1532,7 +1564,7 @@ export function StudioScreen() {
         refreshStaleWires(sid);
       }
     },
-    [knobs, workspace, route, gen, thinkMode, thinkEffort, thinkingOn, reasoningCaps.thinking_toggle, patchLast, refreshSessions, syncIds, preset, panel.doc,teamEnabled,panelDispatch,refreshStaleWires],
+    [knobs, executionPicks, executionProject, workspace, route, gen, thinkMode, thinkEffort, thinkingOnPick, effortPick, reasoningCaps.thinking_toggle, patchLast, refreshSessions, syncIds, preset, panel.doc,teamEnabled,panelDispatch,refreshStaleWires],
   );
 
   /**
@@ -3503,7 +3535,11 @@ export function StudioScreen() {
           busy={busy}
           pending={pending}
           preparing={preparingMessage}
-          knobs={knobs}
+          knobs={{ ...knobs, autonomyPreset: effectiveAutonomy }}
+          onSetAutonomyPreset={value => pickExecution('autonomy_preset', value)}
+          initialResponseTimeoutS={executionPicks.initial_response_timeout_s ?? executionDefaults.initial_response_timeout_s}
+          initialResponseTimeoutPick={executionPicks.initial_response_timeout_s}
+          onSetInitialResponseTimeout={value => pickExecution('initial_response_timeout_s', value)}
           setKnobs={setKnobs}
           workspace={workspace}
           onPickWorkspace={() => void pickWorkspace()}

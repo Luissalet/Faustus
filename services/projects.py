@@ -178,6 +178,10 @@ class ProjectError(ValueError):
     """Invalid project input — routes map this to a 400."""
 
 
+class ExecutionDefaultsConflict(ProjectError):
+    """A settings editor must re-read before overwriting a newer revision."""
+
+
 @dataclass(frozen=True)
 class ProjectExecutionContext:
     """The effective project scope of one run, resolved once on the server.
@@ -497,6 +501,8 @@ class ProjectStore:
                 "archived": False,
                 "context_items": [],
                 "context_revision": 0,
+                "execution_defaults": {},
+                "execution_defaults_revision": 0,
                 "created_at": _now(),
                 "updated_at": _now(),
                 **fields,
@@ -536,6 +542,17 @@ class ProjectStore:
                 )
                 new_row = dict(r)
                 new_row.update(fields)
+                if "execution_defaults" in updates:
+                    from src.project_execution_defaults import patch
+                    revision = int(r.get("execution_defaults_revision") or 0)
+                    expected = updates.get("execution_defaults_expected_revision")
+                    if isinstance(expected, bool) or not isinstance(expected, int) or expected != revision:
+                        raise ExecutionDefaultsConflict("Execution preferences changed; reload before saving")
+                    try:
+                        new_row["execution_defaults"] = patch(r.get("execution_defaults") or {}, updates["execution_defaults"])
+                    except ValueError as exc:
+                        raise ProjectError(str(exc)) from exc
+                    new_row["execution_defaults_revision"] = revision + 1
                 # Agent knobs (all optional; see AGENT_OPTION_FIELDS).
                 for key, kind in AGENT_OPTION_FIELDS.items():
                     if key not in updates:

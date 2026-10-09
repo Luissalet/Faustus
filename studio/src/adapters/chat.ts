@@ -1367,6 +1367,7 @@ export interface SendOptions {
   thinkMode?: string;
   /** The model's own reasoning level picked in the composer (low/medium/xhigh…). */
   reasoningEffort?: string;
+  initialResponseTimeoutS?: number;
   /**
    * Independent Thinking switch (backend applies it after effort/mode so a
    * stored effort level cannot silently turn thinking back on). `null`/omit
@@ -2123,6 +2124,7 @@ export async function* sendTurn(options: SendOptions): AsyncGenerator<ChatEvent>
   }
   if (options.thinkMode) fd.append('think_mode', options.thinkMode);
   if (options.reasoningEffort) fd.append('reasoning_effort', options.reasoningEffort);
+  if (options.initialResponseTimeoutS != null) fd.append('initial_response_timeout_s', String(options.initialResponseTimeoutS));
   if (typeof options.thinkingEnabled === 'boolean') {
     fd.append('thinking_enabled', options.thinkingEnabled ? 'true' : 'false');
   }

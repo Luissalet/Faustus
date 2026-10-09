@@ -94,7 +94,7 @@ const chat = await bundle(['adapters', 'chat.ts'], 'chat.mjs');
   assert(studio.includes('thinkMode,') || studio.includes("thinkMode:"), 'the send carries the mode');
   assert(studio.includes("think_mode_default"), 'the default comes from settings');
   assert(studio.includes("getReasoningLevels(endpointId, route?.model"), 'levels reload with endpoint and model');
-  assert(studio.includes("typeof thinkingOn === 'boolean'"), 'thinking_enabled is sent only after an explicit pick');
+  assert(studio.includes("typeof thinkingOnPick === 'boolean' ? thinkingOnPick : undefined"), 'thinking_enabled is sent only after an explicit pick, never from inherited display state');
   assert(studio.includes("mode === 'auto'"), 'Auto clears the Thinking override');
   assert(studio.includes("name === 'think' ? parseThinkMode(args)"), '/think auto|fast|think|deep picks the mode');
   const chatSrc = readFileSync(join(root, 'studio', 'src', 'adapters', 'chat.ts'), 'utf8');

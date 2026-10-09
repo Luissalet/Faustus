@@ -43,6 +43,7 @@ import {
   type LinkKind,
   type LinkStatus,
   type Project,
+  type ExecutionDefaultsPatch,
   type RecentFolder,
   type RefreshReport,
   type RetrievalPolicy,
@@ -638,6 +639,70 @@ function FileNeighborhood({ projectId }: { projectId: string }) {
  * changed, the context block the model receives, and the settings.
  * `/projects/new` is the same page with only the form.
  */
+function projectReasoning(project: Project): string {
+  const defaults = project.execution_defaults ?? {};
+  if (defaults.thinking_enabled === false) return 'off';
+  return defaults.reasoning_effort ?? (defaults.thinking_enabled ? 'on' : '');
+}
+
+function ProjectExecutionPreferences({ project, onSaved }: { project: Project; onSaved: (project: Project) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [autonomy, setAutonomy] = useState('');
+  const [reasoning, setReasoning] = useState('');
+  const [wait, setWait] = useState('');
+  const [revision, setRevision] = useState(0);
+  const [initialReason, setInitialReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const begin = () => {
+    const defaults = project.execution_defaults ?? {};
+    setAutonomy(defaults.autonomy_preset ?? '');
+    setReasoning(projectReasoning(project)); setInitialReason(projectReasoning(project));
+    setWait(defaults.initial_response_timeout_s == null ? '' : String(defaults.initial_response_timeout_s));
+    setRevision(project.execution_defaults_revision ?? 0); setError(null); setEditing(true);
+  };
+  useEffect(() => { setEditing(false); setError(null); }, [project.id]);
+  const seconds = wait.trim() ? Number(wait) : null;
+  const valid = seconds === null || Number.isFinite(seconds) && seconds >= 5 && seconds <= 900;
+  const save = async () => {
+    if (!valid) return;
+    setSaving(true); setError(null);
+    const changes: ExecutionDefaultsPatch = { autonomy_preset: autonomy ? autonomy as NonNullable<ExecutionDefaultsPatch['autonomy_preset']> : null, initial_response_timeout_s: seconds };
+    if (reasoning !== initialReason) {
+      changes.reasoning_effort = reasoning && reasoning !== 'on' && reasoning !== 'off' ? reasoning : null;
+      changes.thinking_enabled = reasoning === 'off' ? false : reasoning ? true : null;
+    }
+    try {
+      const saved = await updateProject(project.id, { execution_defaults: changes, execution_defaults_expected_revision: revision });
+      onSaved(saved); setEditing(false);
+    } catch (failure) { setError((failure as Error).message); }
+    finally { setSaving(false); }
+  };
+  const defaults = project.execution_defaults ?? {};
+  const reasonLabels: Record<string, string> = { '': 'Automatic', on: 'Thinking', off: 'Off.', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Maximum' };
+  return <section className="fs-coordination" data-testid="project-execution-defaults" aria-label={t('Conversation defaults')}>
+    <div className="fs-pj__card-head"><h4>{t('Conversation defaults')}</h4>{!editing && <Button variant="ghost" size="sm" label={t('Change')} onClick={begin} testId="project-execution-edit" />}</div>
+    <p className="fs-pj__muted">{t('Used by every chat in this project. A chat can override them for its next turns.')}</p>
+    {editing ? <form className="fs-coordination__form" onSubmit={event => { event.preventDefault(); void save(); }}>
+      <label>{t('Execution budget')}<select className="fs-field" value={autonomy} onChange={event => setAutonomy(event.target.value)} data-testid="project-execution-autonomy">
+        <option value="">{t('Use app defaults')}</option><option value="supervised">{t('Supervised')}</option><option value="bounded_autonomous">{t('Bounded autonomous')}</option><option value="read_only">{t('Read only')}</option>
+      </select></label>
+      <label>{t('Reasoning')}<select className="fs-field" value={reasoning} onChange={event => setReasoning(event.target.value)} data-testid="project-execution-reasoning">
+        {Object.entries(reasonLabels).map(([value,label]) => <option key={value} value={value}>{t(label)}</option>)}
+        {reasoning && !reasonLabels[reasoning] && <option value={reasoning}>{reasoning}</option>}
+      </select></label>
+      <label>{t('Initial response wait (seconds)')}<input className="fs-field" type="number" min={5} max={900} value={wait} onChange={event => setWait(event.target.value)} placeholder={t('Use app defaults')} data-testid="project-execution-wait" /></label>
+      <p className="fs-pj__muted">{t('Includes preparation and queue. Leaves the model and its context window unchanged.')}</p>
+      <div className="fs-inline"><Button type="submit" size="sm" label={t('Save')} loading={saving} disabled={!valid} testId="project-execution-save" /><Button type="button" variant="ghost" size="sm" label={t('Cancel')} disabled={saving} onClick={() => setEditing(false)} /></div>
+    </form> : <ul className="fs-pj__flags">
+      <li>{t('Execution budget')}<small>{defaults.autonomy_preset === 'bounded_autonomous' ? t('Bounded autonomous') : defaults.autonomy_preset === 'read_only' ? t('Read only') : defaults.autonomy_preset === 'supervised' ? t('Supervised') : t('Use app defaults')}</small></li>
+      <li>{t('Reasoning')}<small>{t(reasonLabels[projectReasoning(project)] ?? projectReasoning(project))}</small></li>
+      <li>{t('Initial wait')}<small>{defaults.initial_response_timeout_s == null ? t('Use app defaults') : `${defaults.initial_response_timeout_s}s`}</small></li>
+    </ul>}
+    {error && <p role="alert" className="fs-notice" data-tone="danger">{error} <button type="button" className="fs-link" onClick={() => void getProject(project.id).then(value => { onSaved(value); setRevision(value.execution_defaults_revision ?? 0); setError(null); }).catch(failure => setError((failure as Error).message))}>{t('Reload')}</button></p>}
+  </section>;
+}
+
 export function ProjectScreen() {
   const { projectId = '' } = useParams();
   const [params, setParams] = useSearchParams();
@@ -1000,6 +1065,7 @@ export function ProjectScreen() {
                 )}
               </ul>
               <CoordinationPanel project={project} onNotice={say} />
+              <ProjectExecutionPreferences project={project} onSaved={setProject} />
             </section>
 
             <section className="fs-panel fs-pj__card">

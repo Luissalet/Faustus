@@ -31,6 +31,7 @@ import {
   Square,
   Terminal,
   Theater,
+  Timer,
   X,
 } from 'lucide-react';
 import type { Dictation } from '../../adapters/speech';
@@ -132,6 +133,10 @@ export interface Knobs {
 export type AutonomyPreset = 'supervised' | 'bounded_autonomous' | 'read_only';
 
 export interface ComposerProps {
+  onSetAutonomyPreset?: (value: AutonomyPreset | null) => void;
+  initialResponseTimeoutS?: number;
+  initialResponseTimeoutPick?: number;
+  onSetInitialResponseTimeout?: (value: number | null) => void;
   draft: string;
   setDraft: (value: string) => void;
   busy: boolean;
@@ -291,6 +296,10 @@ async function mediaIncompatibility(file: File): Promise<string | null> {
  * text instead of a floating menu.
  */
 export function Composer({
+  onSetAutonomyPreset,
+  initialResponseTimeoutS,
+  initialResponseTimeoutPick,
+  onSetInitialResponseTimeout,
   draft: draftProp,
   setDraft: setDraftProp,
   busy,
@@ -1099,11 +1108,13 @@ export function Composer({
         {knobs.mode === 'agent' && (
           <AutonomyPresetSelector
             preset={knobs.autonomyPreset ?? 'supervised'}
-            onPick={(value) => setKnobs((k) => ({ ...k, autonomyPreset: value }))}
+            onPick={(value) => onSetAutonomyPreset ? onSetAutonomyPreset(value) : setKnobs((k) => ({ ...k, autonomyPreset: value }))}
+            onReset={onSetAutonomyPreset ? () => onSetAutonomyPreset(null) : undefined}
           />
         )}
         <BehaviorModeSelector modes={behaviorModes} activeId={behaviorModeId} onPick={onPickBehaviorMode} />
         {chatModeChip}
+        {onSetInitialResponseTimeout && <InitialResponseSelector current={initialResponseTimeoutS} pick={initialResponseTimeoutPick} onPick={onSetInitialResponseTimeout} />}
         <SessionConnectorsSelector sessionId={sessionId} />
         <ApprovalSelector disabled={busy} onNotice={onNotice} />
         <StrategyProfileSelector profile={strategyProfile} onPick={pickStrategyProfile} />
@@ -1260,28 +1271,29 @@ const AttachmentList = memo(function AttachmentList({
 // turn via `Knobs.autonomyPreset` / `SendOptions.autonomyPreset`, exactly
 // like `plan`/`bash` above, so switching it never affects another chat.
 export const AUTONOMY_PRESET_CHOICES: { value: AutonomyPreset; label: string; detail: string }[] = [
-  { value: 'supervised', label: t('Supervised'),
-    detail: t('Asks before anything with an external or destructive effect; medium budgets.') },
-  { value: 'bounded_autonomous', label: t('Bounded autonomous'),
-    detail: t('Runs without asking except for irreversible effects; higher budgets.') },
-  { value: 'read_only', label: t('Read only'),
-    detail: t('Only read tools are offered — nothing changes on disk or anywhere else; low budgets.') },
+  { value: 'supervised', label: 'Supervised',
+    detail: 'Uses supervised execution budgets. Tool permissions stay unchanged.' },
+  { value: 'bounded_autonomous', label: 'Bounded autonomous',
+    detail: 'Uses bounded autonomous execution budgets. Tool permissions stay unchanged.' },
+  { value: 'read_only', label: 'Read only',
+    detail: 'Only read tools are offered. Tool permissions stay unchanged.' },
 ];
 
-function AutonomyPresetSelector({ preset, onPick }: { preset: AutonomyPreset; onPick: (value: AutonomyPreset) => void }) {
+function AutonomyPresetSelector({ preset, onPick, onReset }: { preset: AutonomyPreset; onPick: (value: AutonomyPreset) => void; onReset?: () => void }) {
   const current = AUTONOMY_PRESET_CHOICES.find((c) => c.value === preset) ?? AUTONOMY_PRESET_CHOICES[0];
   return (
     <Popover
       placement="composer"
       className="fs-studio__permission-menu"
       trigger={
-        <button type="button" className="fs-studio__chip fs-studio__chip--compact" data-autonomy={preset} data-testid="studio-autonomy-preset" title={current.label} aria-label={t('Autonomy: {label}', { label: current.label })}>
-          <Gauge size={14} aria-hidden="true" /> <span className="fs-studio__chip-label">{current.label}</span>
+        <button type="button" className="fs-studio__chip fs-studio__chip--compact" data-autonomy={preset} data-testid="studio-autonomy-preset" title={t(current.label)} aria-label={t('Autonomy: {label}', { label: t(current.label) })}>
+          <Gauge size={14} aria-hidden="true" /> <span className="fs-studio__chip-label">{t(current.label)}</span>
         </button>
       }
     >
       <p>{t('How far this turn may go before it must stop and check in.')}</p>
       <div role="radiogroup" aria-label={t('Autonomy')}>
+        {onReset && <button type="button" onClick={onReset}>{t('Use inherited setting')}</button>}
         {AUTONOMY_PRESET_CHOICES.map((choice) => (
           <button
             key={choice.value}
@@ -1291,13 +1303,28 @@ function AutonomyPresetSelector({ preset, onPick }: { preset: AutonomyPreset; on
             onClick={() => onPick(choice.value)}
             data-testid={`studio-autonomy-preset-${choice.value}`}
           >
-            <strong>{choice.label}</strong>
-            <span>{choice.detail}</span>
+            <strong>{t(choice.label)}</strong>
+            <span>{t(choice.detail)}</span>
           </button>
         ))}
       </div>
     </Popover>
   );
+}
+
+function InitialResponseSelector({ current, pick, onPick }: { current?: number; pick?: number; onPick: (value: number | null) => void }) {
+  const [draft, setDraft] = useState(pick == null ? '' : String(pick));
+  useEffect(() => setDraft(pick == null ? '' : String(pick)), [pick]);
+  const value = draft.trim() ? Number(draft) : null;
+  const valid = value === null || Number.isFinite(value) && value >= 5 && value <= 900;
+  return <Popover placement="composer" trigger={<button type="button" className="fs-studio__chip fs-studio__chip--compact" data-testid="studio-initial-wait" aria-label={`${t('Initial response wait')}${current == null ? '' : `: ${current}s`}`} title={t('Applies to the next turn, including preparation and queue.')}>
+    <Timer size={14} aria-hidden="true" /><span className="fs-studio__chip-label">{t('Initial wait')}{current == null ? '' : ` · ${current}s`}</span>{current != null && <span className="fs-studio__chip-badge">{current}</span>}
+  </button>}>
+    <p>{t('Applies to the next turn, including preparation and queue.')}</p>
+    <label>{t('Seconds')}<input className="fs-field" type="number" min={5} max={900} value={draft} placeholder={current == null ? t('Automatic') : String(current)} onChange={event => setDraft(event.target.value)} data-testid="studio-initial-wait-input" /></label>
+    <button type="button" className="fs-link" disabled={!valid} onClick={() => onPick(value)}>{t('Apply to this chat')}</button>
+    <button type="button" className="fs-link" onClick={() => { setDraft(''); onPick(null); }}>{t('Use inherited setting')}</button>
+  </Popover>;
 }
 
 // CONTRATO_MODOS Lote B: the behaviour-mode chip. `activeId` is `null` only
