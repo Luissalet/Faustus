@@ -26,6 +26,14 @@ _CODENAV_SKIP_DIRS = frozenset({
 from src.tool_authority_specs import CODENAV_MAX_HITS as _CODENAV_MAX_HITS
 from src.tool_authority_specs import CODENAV_MAX_LINE_CHARS as _CODENAV_MAX_LINE
 
+# The Python grep fallback (no ripgrep on PATH) gets the same wall-clock budget
+# as ripgrep's subprocess timeout, and never reads a file that cannot be source
+# text: on a workspace that holds model weights a single unbounded walk used
+# to stall a whole agent turn for more than ten minutes.
+GREP_FALLBACK_BUDGET_S = 20.0
+GREP_FALLBACK_MAX_FILE_BYTES = 2 * 1024 * 1024
+GREP_FALLBACK_MAX_FILES = 50_000
+
 
 def _glob_to_regex(pat: str) -> "re.Pattern":
     """Translate a forward-slash glob (**, *, ?) into a compiled regex.
@@ -1372,22 +1380,46 @@ class GrepTool:
             except _re.error as _e:
                 return None, f"grep: bad pattern: {_e}"
             hits = []
-            if os.path.isfile(root):
-                file_iter = [root]
-            else:
-                file_iter = []
+            deadline = time.monotonic() + GREP_FALLBACK_BUDGET_S
+            stopped = ""
+            scanned = 0
+            walk_cut = []
+
+            def _files():
+                # Lazy: the walk advances only as fast as files are searched,
+                # and checks the clock per folder, so a glob that matches
+                # nothing cannot walk a huge tree unbounded either.
+                if os.path.isfile(root):
+                    yield root
+                    return
                 for dp, dns, fns in os.walk(root):
+                    if time.monotonic() > deadline:
+                        walk_cut.append(True)
+                        return
                     dns[:] = [d for d in dns if d not in _CODENAV_SKIP_DIRS]
                     for fn in fns:
                         if glob_pat and not fnmatch.fnmatch(fn, glob_pat):
                             continue
-                        file_iter.append(os.path.join(dp, fn))
-            for fp in file_iter:
+                        yield os.path.join(dp, fn)
+
+            for fp in _files():
                 if len(hits) >= max_hits:
+                    break
+                if time.monotonic() > deadline:
+                    stopped = f"time budget of {GREP_FALLBACK_BUDGET_S:.0f}s"
+                    break
+                if scanned >= GREP_FALLBACK_MAX_FILES:
+                    stopped = f"{GREP_FALLBACK_MAX_FILES} files"
                     break
                 if _is_sensitive_path(os.path.realpath(fp)):
                     continue
                 try:
+                    if os.path.getsize(fp) > GREP_FALLBACK_MAX_FILE_BYTES:
+                        continue
+                    with open(fp, "rb") as fb:
+                        if b"\0" in fb.read(4096):
+                            continue  # binary
+                    scanned += 1
                     with open(fp, "r", encoding="utf-8", errors="strict") as f:
                         for i, line in enumerate(f, 1):
                             if rx.search(line):
@@ -1396,6 +1428,13 @@ class GrepTool:
                                     break
                 except (UnicodeDecodeError, OSError):
                     continue
+            if walk_cut and not stopped:
+                stopped = f"time budget of {GREP_FALLBACK_BUDGET_S:.0f}s"
+            if stopped:
+                hits.append(
+                    f"[grep stopped early after {stopped} ({scanned} files searched, no ripgrep on "
+                    f"this machine): results are partial. Narrow the search with path= or glob=.]"
+                )
             return hits, None
 
         lines, err = await asyncio.to_thread(_grep)

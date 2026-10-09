@@ -10522,3 +10522,13 @@ Pruebas (`tests/test_mcp_closed_stream_reconnect.py`, 7):
 - un **proceso stdio real** que se mata entre dos llamadas: con el código anterior la segunda daba `outcome_unknown`; ahora responde un proceso nuevo.
 
 Pasan las 504 pruebas de MCP (`tests/*mcp*.py`).
+
+## 283. grep sin ripgrep ya no deja colgado un turno (09-10-2026)
+
+Visto en un turno de Faustus en el Ágora: un `grep` sin `path` sobre el workspace `D:\LocalAI` estuvo más de diez minutos en la misma llamada. En este equipo no hay `rg`, así que se usaba la búsqueda en Python. Esa búsqueda listaba primero todos los ficheros del árbol (pesos de modelos, candidatos, copias) y después leía cada uno como texto, sin límite de tiempo, de tamaño ni de número.
+
+Ahora el recorrido es perezoso y tiene el mismo presupuesto que `rg` (20 s, `GREP_FALLBACK_BUDGET_S`). Ese presupuesto se comprueba en cada carpeta y en cada fichero, así que un `glob` que no encaja con nada tampoco recorre el árbol sin fin. Se saltan los ficheros de más de 2 MB y los binarios (un byte nulo en los primeros 4 KB). El tope es de 50 000 ficheros leídos. Si la búsqueda se corta, el resultado lo dice: «parcial», cuántos ficheros se leyeron y que se acote con `path=` o `glob=`. Con `rg` instalado nada cambia.
+
+Pruebas:
+- `tests/test_grep_fallback_budget.py` (4): texto encontrado sin binarios ni ficheros grandes, corte por tiempo con aviso, `glob` sin coincidencias acotado y tope de ficheros.
+- En vivo, la misma búsqueda del turno (`renderer-prelude` en `D:\LocalAI`) responde en 20,0 s con el aviso de parcial (39 178 ficheros leídos), frente a más de 10 minutos antes.
