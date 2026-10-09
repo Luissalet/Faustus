@@ -347,6 +347,18 @@ class Store:
             raise CoordinationError("read this task before acting on it")
         return json.loads(row["body"])
 
+    def observed_task_for_thread(self, snapshot, thread_id):
+        if type(thread_id) is not int or thread_id < 1:
+            raise CoordinationError("thread_id must be a positive integer")
+        with self.connect() as db:
+            self._live(db, snapshot)
+            rows = db.execute("SELECT body FROM observations WHERE owner=? AND binding=? AND delivered=1",
+                              (snapshot.owner, snapshot.id)).fetchall()
+        matches = [task for row in rows if (task := json.loads(row["body"])).get("thread_id") == thread_id]
+        if len(matches) != 1:
+            raise CoordinationError("read the task for this thread before posting, or use a configured coordination thread")
+        return matches[0]
+
     def reviewable_task(self, snapshot, task_id):
         task = self.observed_task(snapshot, task_id)
         required = task.get("_coordination_required_messages")

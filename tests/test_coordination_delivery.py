@@ -167,7 +167,7 @@ def test_real_loop_ack_waits_for_delivered_followup_request(monkeypatch, tmp_pat
     grant = Grant()
     grant.binding = Binding(id='b', owner='alice', project_id='p', session_id='s', connector_id='hub',
                             actor='faustus-test', operations=('detail',))
-    grant.allows = lambda *args: True
+    grant.authorize = lambda *args: {}
     _patch_common(monkeypatch)
     monkeypatch.setattr(runtime, 'resolve_grant', lambda *args, **kwargs: grant)
     output = json.dumps({'body': 'Complete synthetic detail', 'offset': 0, 'next_offset': None})

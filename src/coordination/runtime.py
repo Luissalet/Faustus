@@ -9,7 +9,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from .authority import authorize
+from .authority import authorize, observed_action
 from .bindings import CoordinationError, READ_OPERATIONS
 from .client import Client
 from .store import Store
@@ -93,18 +93,21 @@ class Grant:
 
     def allows(self, name, content):
         try:
-            self.live()
-            from .tools import parse
-            action, args = parse(name, content)
-            observed = None
-            if action in {"claim", "checkpoint", "submit", "review", "done"} or (action == "lock" and "task_id" in args) or (
-                    action == "post" and args.get("thread_id") not in self.binding.thread_ids):
-                observed = (self.store.reviewable_task if action == "review" else self.store.observed_task)(self.binding, args.get("task_id"))
-            authorize(self.binding, action, args, task=observed, held_locks=[] if action == "heartbeat" else None,
-                      read_only=self.read_only)
+            self.authorize(name, content)
             return True
         except Exception:
             return False
+
+    def authorize(self, name, content):
+        self.live()
+        from .tools import parse
+        action, args = parse(name, content)
+        from .authority import FIELDS
+        if set(args) - FIELDS[action]:
+            raise CoordinationError("unknown or authority-changing coordination arguments")
+        args, observed = observed_action(self.store, self.binding, action, args)
+        return authorize(self.binding, action, args, task=observed, held_locks=[] if action == "heartbeat" else None,
+                         read_only=self.read_only)
 
     def delivered(self, result):
         if not isinstance(result, dict) or result.get("exit_code") not in (None, 0):

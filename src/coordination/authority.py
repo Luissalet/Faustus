@@ -67,6 +67,21 @@ def resources(binding, values):
         raise CoordinationError("resource is outside the coordination scope")
 
 
+def observed_action(store, binding, operation, args):
+    """Resolve a task only from a delivered native observation, never text."""
+    args = dict(args)
+    task = None
+    if operation == "post" and args.get("thread_id") not in binding.thread_ids and "task_id" not in args:
+        task = store.observed_task_for_thread(binding, args.get("thread_id"))
+        args["task_id"] = task["id"]
+    elif operation in {"claim", "checkpoint", "submit", "review", "done"} or (
+            operation == "lock" and "task_id" in args) or (
+            operation == "post" and args.get("thread_id") not in binding.thread_ids):
+        task_id = positive_id(args.get("task_id"), "task_id")
+        task = (store.reviewable_task if operation == "review" else store.observed_task)(binding, task_id)
+    return args, task
+
+
 def authorize(binding: Binding, operation: str, args, *, task=None, held_locks=None, read_only=False):
     if not binding.active or operation not in binding.operations or operation not in FIELDS:
         raise CoordinationError("operation is outside the active coordination scope")

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 
-from .authority import authorize, positive_id
+from .authority import authorize, observed_action, positive_id
 from .bindings import CoordinationError, READ_OPERATIONS, UnknownOutcome
 
 
@@ -24,8 +24,17 @@ def compact_task(task):
 
 
 def compact_board(board, binding):
-    tasks = [compact_task(t) for t in board.get("tasks", ())
-             if str(t.get("repo") or "").casefold() in binding.repos or t.get("owner") == binding.actor]
+    project, context = [], []
+    for original in board.get("tasks", ()):
+        in_project = str(original.get("repo") or "").casefold() in binding.repos
+        task = compact_task(original)
+        task["scope"] = "project" if in_project else "global_context"
+        if not in_project:
+            # Global Hub reading is authorized, but its context is not an
+            # expansion of the bound project's mutation authority.
+            task["read_only"] = True
+        (project if in_project else context).append(task)
+    tasks = project + context
     return {"counts": board.get("counts", {}), "tasks": tasks[:100],
             "tasks_omitted": max(0, len(tasks) - 100),
             "agents": [{k: a.get(k) for k in ("id", "state", "doing", "stale")} for a in board.get("agents", ())][:40],
@@ -98,10 +107,7 @@ class Client:
         from .authority import FIELDS
         if not isinstance(args, dict) or operation not in FIELDS or set(args) - FIELDS[operation]:
             raise CoordinationError("unknown or authority-changing coordination arguments")
-        task = None
-        if operation in {"claim", "checkpoint", "submit", "review", "done"} or (operation == "lock" and "task_id" in args) or (operation == "post" and args.get("thread_id") not in self.binding.thread_ids):
-            task_id = positive_id(args.get("task_id"), "task_id")
-            task = (self.store.reviewable_task if operation == "review" else self.store.observed_task)(self.binding, task_id)
+        args, task = observed_action(self.store, self.binding, operation, args)
         held_locks = None
         if operation == "heartbeat":
             held_locks = (await self.remote("locks", {})).get("locks")

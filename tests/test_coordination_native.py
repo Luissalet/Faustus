@@ -6,7 +6,7 @@ import pytest
 
 from src.coordination import runtime
 from src.coordination.bindings import Binding, CoordinationError, OPERATIONS, StaleBinding, UnknownOutcome
-from src.coordination.client import Client
+from src.coordination.client import Client, compact_board
 from src.coordination.store import Store
 from src.coordination.tools import NAMES
 
@@ -49,6 +49,60 @@ def native(tmp_path):
 def task():
     return {"id": 7, "repo": "Writer", "paths": ["src/file.ts"], "owner": "faustus-native",
             "status": "in_progress", "submission_revision": 2, "latest_checkpoint": None}
+
+
+def test_board_current_cross_repo_coordination_context_is_read_only_and_project_first(native):
+    _store, binding, _manager, _client = native
+    board = {"tasks": [
+        {"id": 149, "repo": "Faustus", "status": "review", "submission_revision": 3, "owner": "claude"},
+        {"id": 133, "repo": "Writer", "status": "done", "submission_revision": 2, "owner": "claude"},
+        {"id": 136, "repo": "Writer", "status": "claimed", "owner": binding.actor},
+    ]}
+    result = compact_board(board, binding)
+    assert [row['id'] for row in result['tasks']] == [133, 136, 149]
+    cross_repo = result['tasks'][-1]
+    assert cross_repo['read_only'] is True
+    assert cross_repo['scope'] == 'global_context'
+    assert cross_repo['status'] == 'review' and cross_repo['submission_revision'] == 3
+    assert result['tasks'][0]['status'] == 'done'
+
+
+def test_board_context_stays_bounded_with_project_priority_and_explicit_omission(native):
+    _store, binding, _manager, _client = native
+    project = [{"id": n, "repo": "Writer"} for n in range(1, 81)]
+    context = [{"id": n, "repo": "Faustus"} for n in range(81, 141)]
+    result = compact_board({"tasks": context + project}, binding)
+    assert len(result['tasks']) == 100
+    assert [row['id'] for row in result['tasks'][:80]] == list(range(1, 81))
+    assert all(row['read_only'] for row in result['tasks'][80:])
+    assert result['tasks_omitted'] == 40
+
+
+@pytest.mark.asyncio
+async def test_post_to_delivered_task_thread_resolves_task_without_model_task_id(native):
+    store, binding, manager, client = native
+    observed = {**task(), 'thread_id': 90}
+    receipt = store.observe_task(binding, observed)
+    with pytest.raises(CoordinationError):
+        await client.execute('post', {'thread_id': 90, 'body': 'A synthetic task reply'})
+    assert manager.calls == []
+    store.confirm_task_delivery(binding, receipt)
+    await client.execute('post', {'thread_id': 90, 'body': 'A synthetic task reply'})
+    assert manager.calls[-1][1] == {'thread_id': 90, 'body': 'A synthetic task reply', 'agent': binding.actor}
+
+
+@pytest.mark.asyncio
+async def test_read_only_context_board_cannot_authorize_cross_repo_mutation(native):
+    store, binding, manager, client = native
+    foreign = {**task(), 'repo': 'Faustus', 'thread_id': 91}
+    manager.responses['board']['tasks'].append(foreign)
+    result = await client.execute('board', {})
+    assert next(t for t in result['tasks'] if t['id'] == 7 and t['repo'] == 'Faustus')['read_only']
+    receipt = store.observe_task(binding, foreign)
+    store.confirm_task_delivery(binding, receipt)
+    with pytest.raises(CoordinationError):
+        await client.execute('post', {'thread_id': 91, 'body': 'Cross-repo publication is not granted'})
+    assert len(manager.calls) == 1  # Only the authorized global board read.
 
 
 @pytest.mark.asyncio

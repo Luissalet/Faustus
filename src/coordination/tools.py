@@ -12,7 +12,7 @@ DESCRIPTIONS = {
     "poll": "Check this project's Agora work, pending messages, reviews and board. Cursor is saved automatically. Read pending details before responding; an excerpt is not a read acknowledgement.",
     "detail": "Read a stored Agora message by its id and digest from coordination_poll, in chunks. Follow next_offset until complete. No Hub acknowledgement is sent.",
     "task": "Read an Agora task with its current owner, paths, submission and checkpoint revision. Read it before claiming, updating progress, submitting or reviewing. Before a review vote, read every pending discussion detail returned here completely, then test the observed submission.",
-    "board": "Inspect a compact Agora board for the project's configured repositories and resources.",
+    "board": "Inspect the current compact Agora board, prioritizing the project's configured repositories. Other repositories appear as read-only global context; they confer no mutation authority. Omission counts show the fixed response limit.",
     "heartbeat": "Report working, waiting or idle to Agora and renew only the bound actor's scoped locks.",
     "add": "Create an Agora task in the project's authorized repositories and paths. claim optionally takes scoped locks. Do this before changing a repository.",
     "claim": "Claim a task previously read with coordination_task and take scoped locks atomically. Another actor's task cannot be taken over.",

@@ -8230,6 +8230,8 @@ async def _stream_agent_loop_body(
                 "not a separate internal board or raw connector writes. Your identity and connector are selected by the product; "
                 "do not impersonate another participant. Start with coordination_poll; read full pending details before answering, "
                 "read tasks before claiming or reviewing, keep checkpoints and request cross-review of nontrivial changes. "
+                "Use current task status and recent coordination messages for assignments; older discussion is historical. "
+                "Inspect linked tasks before describing their current review or implementation state. "
                 "Repository scope: " + ", ".join(_coordination.repos) + ". Coordination resources: " + ", ".join(_coordination.resources) +
                 ". File and command permissions remain those of the existing project. A lost write result must be inspected before retrying."})
         except Exception:
@@ -17101,6 +17103,11 @@ async def _stream_agent_loop_body(
                 result = _repeated_media
                 logger.info("[media] identical %s from an earlier round served, not re-run",
                             block.tool_type)
+            elif (not security_decision.allowed and not getattr(security_decision, "approval_required", True)
+                  and i not in _prefetched):
+                desc = f"{block.tool_type}: BLOCKED"
+                result = {"error": security_decision.reason, "exit_code": 1, "blocked": True,
+                          "policy": "coordination_authority", "approval_required": False}
             elif not security_decision.allowed and i not in _prefetched:
                 # (A call the keyed dispatch already ran was admitted only if
                 # the gate would pass it even after untrusted content; its

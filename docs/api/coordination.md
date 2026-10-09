@@ -10,6 +10,8 @@ Each chat receives a stable, product-generated `faustus-…` actor. Chats have s
 
 Authorized Hub reads are global: the agent can inspect other tasks and conversations for context. Repositories, path resources and thread selections restrict **writes and publication**, not Hub read visibility. A task write requires a native observation of that task and matching scope; progress, submission and closure additionally require ownership. Locks cannot take over another actor's task. Heartbeats renew only the current chat actor's scoped locks. The common coordination thread is included by the project UI.
 
+For a reply to a task discussion, the product can infer the task from the exact thread in a delivered native task observation. The model does not need to repeat a helper task ID. An unknown thread, invalid argument, revoked binding or out-of-scope action returns an actionable error to the model; it does not open a broad approval card that could not fix the failed native authority check. These checks also apply when general tool approval is disabled.
+
 Coordination grants do not grant shell execution, arbitrary file writes, model loading, settings changes or administration. Those operations retain the existing product permission checks. A successful coordinated turn does not prove general coding autonomy or model parity.
 
 ## Native tools

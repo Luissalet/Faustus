@@ -1872,6 +1872,7 @@ POST_EXTERNAL_BLOCKED_EFFECTS = frozenset(
 class ToolGateDecision:
     allowed: bool
     reason: str | None = None
+    approval_required: bool = True
 
 
 _EXTERNAL_MESSAGE_SOURCES = frozenset(
@@ -2422,6 +2423,16 @@ class ToolRunSecurityContext:
 
     def decision_for(self, tool_name: Any, content: Any = None) -> ToolGateDecision:
         self.revalidate_workspace_grant()
+        # Configuration/argument failures cannot be repaired by a broad tool
+        # approval. Return a normal tool error so the agent can correct them.
+        if tool_name in _COORDINATION_TOOLS:
+            if self.coordination_grant is None:
+                return ToolGateDecision(False, "Project coordination is unavailable for this chat. Check the saved project configuration.", False)
+            try:
+                self.coordination_grant.authorize(tool_name, content)
+                return ToolGateDecision(True)
+            except Exception as exc:
+                return ToolGateDecision(False, "Project coordination refused this call: " + str(exc)[:1200], False)
         mode = tool_approval_mode()
         # This controls the approval gate only. Tool availability, account,
         # workspace and execution restrictions are enforced separately.
@@ -2476,9 +2487,6 @@ class ToolRunSecurityContext:
             return ToolGateDecision(True)
         if self._rereads_own_artifact(tool_name, content):
             return ToolGateDecision(True)
-        if tool_name in _COORDINATION_TOOLS and self.coordination_grant is not None:
-            if self.coordination_grant.allows(tool_name, content):
-                return ToolGateDecision(True)
         # page_find / page_window only search or page the browser snapshot this
         # session already stored -- the page the model has just opened -- so
         # there is nothing private or new for injected text to reach. Seen live:
