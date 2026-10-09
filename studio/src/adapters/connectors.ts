@@ -101,7 +101,7 @@ export interface Connector {
   /** Arrives as null for an MCP server listed here without a connector
    *  record (a plugin or a server added by hand): identify rows with
    *  `connectorKey`, never by `id` alone. */
-  id: string;
+  id: string | null;
   preset_id: string | null;
   owner: string | null;
   /** Already redacted server-side (F1 principle 2): any key containing
@@ -111,7 +111,8 @@ export interface Connector {
   ui_url: string | null;
   launch_profile_id: string | null;
   preset: ConnectorPreset | null;
-  server: ConnectorServerInfo;
+  /** A saved preset can exist before its MCP server has been configured. */
+  server: ConnectorServerInfo | null;
   status: ConnectorStatus;
   /** Set by `check`/`?check=1` when the app moved port and the connector
    *  followed it: the old URL it used to answer at. `app_url` is already
@@ -198,12 +199,22 @@ export const listConnectorTools = (id: string) => getJson<ConnectorTool[]>(`/api
 /** What identifies a row on the Connectors screen. A server listed without a
  *  connector record has no id; matching `null` against an absent `?id=` opened
  *  its tools dialog on every visit and the dialog could not be closed. */
-export const connectorKey = (c: Connector): string => c.id || `server:${c.server.id}`;
+export const connectorKey = (c: Connector): string => c.id || (c.server?.id ? `server:${c.server.id}` : `preset:${c.preset_id ?? c.preset?.id ?? 'unconfigured'}`);
+
+export function hasConnectorServer(c: Connector): c is Connector & { server: ConnectorServerInfo } {
+  return Boolean(c.server?.id);
+}
+
+export function connectorName(c: Connector): string {
+  return c.server?.name || c.preset?.name || c.preset_id || c.id || t('Not set up');
+}
 
 /** The tools of a row: through its connector when it has one, otherwise
  *  straight from its MCP server. */
-export const listToolsFor = (c: Connector) =>
-  c.id ? listConnectorTools(c.id) : getJson<ConnectorTool[]>(`/api/mcp/servers/${encodeURIComponent(c.server.id)}/tools`);
+export async function listToolsFor(c: Connector): Promise<ConnectorTool[]> {
+  if (!hasConnectorServer(c)) throw new ApiError(t('Not set up'), 409);
+  return c.id ? listConnectorTools(c.id) : getJson<ConnectorTool[]>(`/api/mcp/servers/${encodeURIComponent(c.server.id)}/tools`);
+}
 
 export interface RefreshToolsResult {
   ok: boolean;
@@ -221,6 +232,7 @@ export const refreshConnectorTools = (id: string, reconnect = false) =>
   post<RefreshToolsResult>(`/api/app-connectors/${encodeURIComponent(id)}/refresh-tools`, { reconnect }, 'connectors/refresh-tools');
 
 export async function refreshToolsFor(c: Connector, reconnect = false): Promise<RefreshToolsResult> {
+  if (!hasConnectorServer(c)) throw new ApiError(t('Not set up'), 409);
   if (c.id) return refreshConnectorTools(c.id, reconnect);
   const sid = encodeURIComponent(c.server.id);
   if (reconnect) {

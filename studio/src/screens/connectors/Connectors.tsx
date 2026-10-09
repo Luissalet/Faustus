@@ -9,6 +9,7 @@ import {
   checkConnector,
   connectConnector,
   connectorKey,
+  connectorName,
   deleteConnector,
   disconnectConnector,
   launchConnector,
@@ -93,6 +94,7 @@ function ConnectorRow({
   // instead of window.confirm: a native dialog blocks the whole tab.
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const c = connector;
+  const recordId = c.id;
   // The toggle is about the ADAPTER (the MCP session), not the whole
   // connector: with the app off the adapter can still be connected (a stdio
   // bridge answers tools/list on its own), and the honest label then is
@@ -152,17 +154,17 @@ function ConnectorRow({
           variant={connected ? 'secondary' : 'primary'}
           label={connected ? t('Disconnect') : t('Connect')}
           loading={busy === 'toggle'}
-          disabled={!!busy || !!reasonForDisabledAction(c, 'connect')}
+          disabled={!!busy || !recordId || !!reasonForDisabledAction(c, 'connect')}
           title={reasonForDisabledAction(c, 'connect') ?? undefined}
-          onClick={() => void run('toggle', () => (connected ? disconnectConnector(c.id) : connectConnector(c.id)))}
+          onClick={() => { if (recordId) void run('toggle', () => (connected ? disconnectConnector(recordId) : connectConnector(recordId))); }}
           testId="connector-toggle"
         />
         <IconButton
           icon={RefreshCw}
           label={t('Check now')}
           size="sm"
-          disabled={!!busy}
-          onClick={() => void run('check', () => checkConnector(c.id))}
+          disabled={!!busy || !recordId}
+          onClick={() => { if (recordId) void run('check', () => checkConnector(recordId)); }}
           testId="connector-check"
         />
         <QuickMenu
@@ -173,10 +175,11 @@ function ConnectorRow({
             {
               label: t('Start the app'),
               icon: Play,
-              disabled: !canLaunch || !!busy,
+              disabled: !canLaunch || !recordId || !!busy,
               onSelect: () =>
                 void run('launch', async () => {
-                  const r = await launchConnector(c.id);
+                  if (!recordId) return;
+                  const r = await launchConnector(recordId);
                   onNotice(r.already_running ? t('Already running.') : r.ready === false ? t('Started, but not answering yet.') : t('Started.'));
                 }),
             },
@@ -184,10 +187,11 @@ function ConnectorRow({
             {
               label: t('Open the app'),
               icon: ExternalLink,
-              disabled: !canOpen || !!busy,
+              disabled: !canOpen || !recordId || !!busy,
               onSelect: () =>
                 void run('open', async () => {
-                  const r = await openConnector(c.id);
+                  if (!recordId) return;
+                  const r = await openConnector(recordId);
                   if (r.kind === 'url') window.open(r.url, '_blank', 'noopener');
                   else onNotice(r.already_running ? t('Already running.') : t('Launched.'));
                 }),
@@ -198,19 +202,20 @@ function ConnectorRow({
             {
               label: t('Remove'),
               variant: 'danger',
-              disabled: !!busy,
+              disabled: !!busy || !recordId,
               onSelect: () => setConfirmingRemove(true),
             },
           ]}
         />
         {confirmingRemove && (
           <span className="fs-modes__confirm" data-testid="connector-remove-confirm">
-            {t('Remove "{name}"?', { name: c.server?.name || c.preset?.name || c.id })}
-            <Button size="sm" variant="danger" label={t('Remove')} loading={busy === 'delete'} onClick={() => void run('delete', () => deleteConnector(c.id))} />
+            {t('Remove "{name}"?', { name: connectorName(c) })}
+            <Button size="sm" variant="danger" label={t('Remove')} loading={busy === 'delete'} onClick={() => { if (recordId) void run('delete', () => deleteConnector(recordId)); }} />
             <Button size="sm" variant="ghost" label={t('Cancel')} disabled={!!busy} onClick={() => setConfirmingRemove(false)} />
           </span>
         )}
       </div>
+      {!recordId && <Link to="/settings?section=integrations" className="fs-set__help">{t('Manage MCP server')}</Link>}
     </li>
   );
 }
@@ -326,7 +331,7 @@ export function ConnectorsScreen() {
         </summary>
         <NearbyApps
           onAdded={(c) => {
-            say(t('Connected: {name}', { name: c.server.name || c.id }));
+            say(t('Connected: {name}', { name: connectorName(c) }));
             reload(true);
           }}
           onNotice={say}
@@ -347,7 +352,7 @@ export function ConnectorsScreen() {
             onClose={() => setForm(null)}
             onSaved={(c) => {
               setForm(null);
-              say(t('Saved: {name}', { name: c.server.name || c.id }));
+              say(t('Saved: {name}', { name: connectorName(c) }));
               reload(true);
               // `?id=` opens the tools drawer (deep link); a save is not a
               // request to see the tools, so the URL stays as it is.

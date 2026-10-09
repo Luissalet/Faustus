@@ -3,7 +3,7 @@ import { Link } from 'react-router';
 import { RefreshCw, Save } from 'lucide-react';
 import { Button } from '../../components';
 import { ApiError } from '../../adapters/api';
-import { listConnectors, type Connector } from '../../adapters/connectors';
+import { connectorKey, connectorName, hasConnectorServer, listConnectors, stateLabel, type Connector } from '../../adapters/connectors';
 import { choiceKey, choiceSelected, coordinationDraft, coordinationState, getCoordinationChoices,
   getProjectCoordination, saveProjectCoordination, type CoordinationChoice, type CoordinationView } from '../../adapters/coordination';
 import type { Project } from '../../adapters/projects';
@@ -95,12 +95,12 @@ export function CoordinationPanel({ project, onNotice }: { project: Project; onN
     } finally { setBusy(false); }
   }, [view, connector, busy, enabled, choices, selected, project.id, onNotice]);
 
-  const permitted = connections.filter(connection => !project.connector_ids || project.connector_ids.includes(connection.server.id));
-  const savedConnection = connections.find(connection => connection.server.id === view?.template?.connector_id);
-  const currentConnection = permitted.find(connection => connection.server.id === connector);
+  const permitted = connections.filter(connection => !hasConnectorServer(connection) || !project.connector_ids || project.connector_ids.includes(connection.server.id));
+  const savedConnection = connections.find(connection => hasConnectorServer(connection) && connection.server.id === view?.template?.connector_id);
+  const currentConnection = permitted.find(connection => hasConnectorServer(connection) && connection.server.id === connector);
   const state = view ? coordinationState(view) : null;
   const canSave = !loading && !scopeLoading && !busy && Boolean(connector)
-    && (!enabled || (!scopeFailure && Boolean(currentConnection?.server.is_enabled) && selected.size > 0));
+    && (!enabled || (!scopeFailure && Boolean(currentConnection?.server?.is_enabled) && selected.size > 0));
   return <section className="fs-coordination" data-testid="project-coordination">
     <div className="fs-coordination__head"><h4>{t('Work coordination in Agora')}</h4>
       {view?.template && !editing && <Button variant="ghost" size="sm" label={t('Change')} onClick={() => setEditing(true)} />}
@@ -109,7 +109,7 @@ export function CoordinationPanel({ project, onNotice }: { project: Project; onN
       {state && <p className="fs-coordination__state" data-state={state} role="status">{t(STATE_TEXT[state])}</p>}
       <p>{t('Faustus uses this project configuration in its conversations. Write the assignment in the usual chat.')}</p>
       {view?.template && !editing && <>
-        <p className="fs-coordination__secondary">{t('Connection')}: {savedConnection?.server.name ?? t('Saved connection unavailable')}</p>
+        <p className="fs-coordination__secondary">{t('Connection')}: {savedConnection ? connectorName(savedConnection) : t('Saved connection unavailable')}</p>
         {choices.filter(choice => choiceSelected(view.template, choice)).length > 0 && <ul className="fs-coordination__folders">
           {choices.filter(choice => choiceSelected(view.template, choice)).map(choice => <li key={choiceKey(choice)}>{choice.label}<small>{choice.path}</small></li>)}
         </ul>}
@@ -118,10 +118,12 @@ export function CoordinationPanel({ project, onNotice }: { project: Project; onN
       {editing && view && <form className="fs-coordination__form" onSubmit={event => { event.preventDefault(); void save(); }}>
         <label>{t('Saved connection')}<select className="fs-field" value={connector} onChange={event => { dirty.current = true; setSelected(new Set()); setConnector(event.target.value); }} disabled={busy} data-testid="coordination-connector">
           <option value="">{t('Choose a saved connection')}</option>
-          {connector && !permitted.some(connection => connection.server.id === connector) && <option value={connector}>{t('Saved connection unavailable')}</option>}
-          {permitted.map(connection => <option key={connection.server.id} value={connection.server.id} disabled={!connection.server.is_enabled}>{connection.server.name}</option>)}
+          {connector && !permitted.some(connection => connection.server?.id === connector) && <option value={connector}>{t('Saved connection unavailable')}</option>}
+          {permitted.map(connection => <option key={connectorKey(connection)} value={connection.server?.id ?? connectorKey(connection)} disabled={!connection.server?.is_enabled}>
+            {connectorName(connection)}{!hasConnectorServer(connection) ? ` · ${t('Not set up')}` : !connection.server.is_enabled ? ` · ${stateLabel('disabled')}` : ''}
+          </option>)}
         </select></label>
-        {!permitted.length && <p className="fs-coordination__secondary"><Link to="/connectors">{t('Open connections')}</Link></p>}
+        <p className="fs-coordination__secondary"><Link to="/connectors">{t('Open connections')}</Link></p>
         <fieldset disabled={busy || scopeLoading} className="fs-coordination__scope"><legend>{t('Work folders in this project')}</legend>
           {scopeLoading ? <p role="status">{t('Reading project folders…')}</p> : choices.map(choice => <label className="fs-coordination__choice" key={choiceKey(choice)}>
             <input type="checkbox" checked={selected.has(choiceKey(choice))} onChange={event => setSelected(previous => {

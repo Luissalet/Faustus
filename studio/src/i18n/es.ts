@@ -5,6 +5,8 @@
  * table, not this file.
  */
 export const es: Record<string, string> = {
+  "Not set up": "Sin configurar",
+  "Manage MCP server": "Configurar servidor MCP",
   " (check it)": " (revísalo)",
   " (in series)": " (en serie)",
   " (one per task)": " (uno por tarea)",

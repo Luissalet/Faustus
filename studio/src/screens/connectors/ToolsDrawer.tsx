@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router';
 import { Button, Dialog, Skeleton } from '../../components';
 import { Toggle } from '../settings/fields';
 import { setMcpDisabledTools } from '../../adapters/integrations';
-import { listToolsFor, refreshToolsFor, type Connector, type ConnectorTool } from '../../adapters/connectors';
+import { connectorName, listToolsFor, refreshToolsFor, type Connector, type ConnectorTool } from '../../adapters/connectors';
 import { t } from '../../i18n';
 
 /**
@@ -31,7 +32,7 @@ export function ConnectorToolsDrawer({ connector, onClose }: { connector: Connec
   useEffect(() => {
     void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connector.id, connector.server.id]);
+  }, [connector.id, connector.server?.id]);
 
   const refresh = async (reconnect: boolean) => {
     setBusy(true);
@@ -52,6 +53,7 @@ export function ConnectorToolsDrawer({ connector, onClose }: { connector: Connec
 
   const disabledNow = (tools ?? []).filter((x) => x.is_disabled).map((x) => x.name);
   const setDisabled = async (disabled: string[]) => {
+    if (!connector.server?.id) return;
     try {
       await setMcpDisabledTools(connector.server.id, disabled);
       setTools((ts) => (ts ?? []).map((x) => ({ ...x, is_disabled: disabled.includes(x.name) })));
@@ -61,11 +63,12 @@ export function ConnectorToolsDrawer({ connector, onClose }: { connector: Connec
   };
 
   return (
-    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }} title={t('Tools — {name}', { name: connector.server.name })} testId="connector-tools-dialog">
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }} title={t('Tools — {name}', { name: connectorName(connector) })} testId="connector-tools-dialog">
       <div className="fs-set__row-actions">
-        <Button size="sm" variant="secondary" label={t('Refresh tools')} loading={busy} onClick={() => void refresh(false)} testId="connector-tools-refresh" />
-        <Button size="sm" variant="ghost" label={t('Restart and refresh')} loading={busy} onClick={() => void refresh(true)} testId="connector-tools-restart" />
+        <Button size="sm" variant="secondary" label={t('Refresh tools')} disabled={!connector.server?.id} loading={busy} onClick={() => void refresh(false)} testId="connector-tools-refresh" />
+        <Button size="sm" variant="ghost" label={t('Restart and refresh')} disabled={!connector.server?.id} loading={busy} onClick={() => void refresh(true)} testId="connector-tools-restart" />
       </div>
+      {!connector.server?.id && <p className="fs-set__help"><Link to="/connectors" onClick={onClose}>{t('Open connections')}</Link></p>}
       {note && <p className="fs-set__help" data-testid="connector-tools-note">{note}</p>}
       {tools === null ? (
         <Skeleton label={t('Loading tools')} count={3} height="32px" />

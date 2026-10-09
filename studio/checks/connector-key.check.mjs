@@ -21,7 +21,16 @@ const plain = { id: null, server: { id: 'c6d67d7c', name: 'CookHoard local' } };
 const managed = { id: 'jobhunter', server: { id: 'abcd1234', name: 'Jobhunter' } };
 assert.equal(c.connectorKey(plain), 'server:c6d67d7c');
 assert.equal(c.connectorKey(managed), 'jobhunter');
-// no ?id= → nothing matches
+const unconfigured = {id:'saved-without-server',preset_id:'writer',preset:{id:'writer',name:'Writer'},server:null};
+const presetOnly = {id:null,preset_id:'writer',preset:{id:'writer',name:'Writer'},server:null};
+assert.equal(c.connectorKey(unconfigured),'saved-without-server');
+assert.equal(c.connectorKey(presetOnly),'preset:writer');
+assert.equal(c.connectorKey({...presetOnly,server:undefined}),'preset:writer');
+assert.equal(c.connectorName(unconfigured),'Writer');
+assert.equal(c.hasConnectorServer(unconfigured),false);
+assert.equal(c.hasConnectorServer({...plain,server:{id:''}}),false);
+assert.equal(c.hasConnectorServer(plain),true);
+// no ?id= â†’ nothing matches
 const drawerId = null;
 assert.equal([plain, managed].find((x) => drawerId && c.connectorKey(x) === drawerId), undefined);
 
@@ -42,4 +51,8 @@ assert.ok(seen.at(-1)[1].endsWith('/api/mcp/servers/c6d67d7c/refresh-tools'), se
 const rr = await c.refreshToolsFor(plain, true);
 assert.equal(rr.reconnected, true);
 assert.ok(seen.some(([m, u]) => m === 'POST' && u.endsWith('/api/mcp/servers/c6d67d7c/reconnect')));
+const before = seen.length;
+await assert.rejects(c.listToolsFor(unconfigured),error=>error.status===409);
+await assert.rejects(c.refreshToolsFor(unconfigured),error=>error.status===409);
+assert.equal(seen.length,before,'an unconfigured row never addresses a null MCP server');
 console.log('ok connector-key');

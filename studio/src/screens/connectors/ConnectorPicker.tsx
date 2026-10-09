@@ -1,7 +1,8 @@
 import { Info, Plug } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router';
 import { t } from '../../i18n';
-import { listConnectors, type Connector } from '../../adapters/connectors';
+import { connectorKey, connectorName, listConnectors, type Connector } from '../../adapters/connectors';
 
 /**
  * CONTRATO_CONECTORES F3: "Conectores de esta conversación/proyecto/tarea".
@@ -119,25 +120,27 @@ export function ConnectorPicker({ value, onChange, effective, source, inheritLab
             {inheritLabel ?? t('Inherit')}
           </button>
           {options.map((c) => {
-            const on = inheriting ? (effective ?? []).includes(c.server.id) : selected.has(c.server.id);
+            const serverId = c.server?.id;
+            const on = Boolean(serverId && (inheriting ? (effective ?? []).includes(serverId) : selected.has(serverId)));
             return (
               <button
-                key={c.server.id}
+                key={connectorKey(c)}
                 type="button"
                 className="fs-chip"
                 data-on={on || undefined}
-                disabled={disabled}
-                title={c.preset?.purpose ?? c.server.name}
-                onClick={() => toggle(c.server.id)}
-                data-testid={`connector-picker-item-${c.server.id}`}
+                disabled={disabled || !serverId}
+                title={c.preset?.purpose ?? connectorName(c)}
+                onClick={() => { if (serverId) toggle(serverId); }}
+                data-testid={`connector-picker-item-${serverId ?? connectorKey(c)}`}
               >
-                {c.server.name || c.preset?.name || c.server.id}
+                {connectorName(c)}{!serverId ? ` · ${t('Not set up')}` : ''}
               </button>
             );
           })}
           {options.length === 0 && <span className="fs-set__help">{t('No connectors configured yet.')}</span>}
         </div>
       )}
+      {options?.some(c => !c.server?.id) && <Link to="/connectors" className="fs-set__help">{t('Open connections')}</Link>}
     </div>
   );
 }

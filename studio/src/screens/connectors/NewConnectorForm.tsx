@@ -36,7 +36,7 @@ export function NewConnectorForm({
   onClose: () => void;
   onSaved: (c: Connector) => void;
 }) {
-  const [name, setName] = useState(existing?.server.name ?? preset.name);
+  const [name, setName] = useState(existing?.server?.name ?? preset.name);
   const [values, setValues] = useState<Record<string, string>>(() => {
     const v: Record<string, string> = {};
     for (const p of preset.placeholders) v[p] = existing?.values[p] ?? initialValues?.[p] ?? preset.defaults?.[p] ?? '';
@@ -66,7 +66,7 @@ export function NewConnectorForm({
     setBusy(true);
     try {
       const launch_profile_id = profileId || null;
-      const c = existing
+      const c = existing?.id
         ? await updateConnector(existing.id, { values, name: name.trim(), launch_profile_id })
         : await createConnector({ preset_id: preset.id, values, name: name.trim(), launch_profile_id });
       m.good(t('Saved. Status: {state}', { state: stateLabel(c.status.state) }));
