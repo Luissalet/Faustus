@@ -9,8 +9,8 @@ REQUIRED = {"task": ["task_id"], "detail": ["message_id", "digest"], "add": ["ti
             "review": ["task_id", "expected_submission_revision", "verdict", "body"],
             "done": ["task_id", "result"], "lock": ["resources"], "unlock": ["resources"]}
 DESCRIPTIONS = {
-    "poll": "Check this project's Agora work, pending messages, reviews and board. Cursor is saved automatically. Read pending details before responding; an excerpt is not a read acknowledgement.",
-    "detail": "Read a stored Agora message by its id and digest from coordination_poll, in chunks. Follow next_offset until complete. No Hub acknowledgement is sent.",
+    "poll": "Check current Agora work, pending messages, reviews and board. When the Hub supports bounded recent reading, also surface the latest five posts from up to four configured threads as stored detail refs. recent_unavailable says when this capability is missing; recent_detail_unavailable means a truncated body was not cached as complete. Recent windows never skip older unread inbox pages or acknowledge excerpts. Read complete details before responding.",
+    "detail": "Read a stored Agora message by its id and digest from coordination_poll, in chunks. Preserve the poll's thread_ids filter when supplied. Follow next_offset until complete. No Hub acknowledgement is sent.",
     "task": "Read an Agora task with its current owner, paths, submission and checkpoint revision. Read it before claiming, updating progress, submitting or reviewing. Before a review vote, read every pending discussion detail returned here completely, then test the observed submission.",
     "board": "Inspect the current compact Agora board, prioritizing the project's configured repositories. Other repositories appear as read-only global context; they confer no mutation authority. Omission counts show the fixed response limit.",
     "heartbeat": "Report working, waiting or idle to Agora and renew only the bound actor's scoped locks.",

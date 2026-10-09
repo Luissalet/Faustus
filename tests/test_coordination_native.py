@@ -1,5 +1,6 @@
 import asyncio
 import json
+import hashlib
 from dataclasses import replace
 
 import pytest
@@ -17,16 +18,23 @@ class Manager:
         self.responses = {}
         self.after_call = None
         self.disabled = set()
+        self.recent_schema = None
 
     def get_all_tools(self):
         suffixes = {"inbox", "board", "task", "locks", "heartbeat", "task_claim", "checkpoint", "task_review", "post"}
-        return [{"qualified_name": f"mcp__hub-a__hub_agora_{suffix}", "is_disabled": suffix in self.disabled}
-                for suffix in suffixes]
+        result = [{"qualified_name": f"mcp__hub-a__hub_agora_{suffix}", "is_disabled": suffix in self.disabled}
+                  for suffix in suffixes]
+        if self.recent_schema is not None:
+            result.append({"qualified_name": "mcp__hub-a__hub_agora_thread_recent",
+                           "input_schema": self.recent_schema, "is_disabled": "thread_recent" in self.disabled})
+        return result
 
     async def call_tool(self, name, args):
         self.calls.append((name, args))
         suffix = name.split("hub_agora_")[1]
         result = self.responses.get(suffix, {"ok": True})
+        if callable(result):
+            result = result(args)
         await asyncio.sleep(0)
         if self.after_call:
             self.after_call()
@@ -43,6 +51,7 @@ def native(tmp_path):
     client = Client(store, binding, manager, revalidate=lambda _: None)
     manager.responses["board"] = {"ok": True, "tasks": [{"id": 7, "repo": "Writer", "owner": "claude"}],
                                   "locks": [], "agents": [], "counts": {"review": 1}}
+    manager.responses['task'] = {'ok': True, 'task': task(), 'messages': []}
     return store, binding, manager, client
 
 
@@ -82,6 +91,7 @@ def test_board_context_stays_bounded_with_project_priority_and_explicit_omission
 async def test_post_to_delivered_task_thread_resolves_task_without_model_task_id(native):
     store, binding, manager, client = native
     observed = {**task(), 'thread_id': 90}
+    manager.responses['task']['task'] = observed
     receipt = store.observe_task(binding, observed)
     with pytest.raises(CoordinationError):
         await client.execute('post', {'thread_id': 90, 'body': 'A synthetic task reply'})
@@ -89,6 +99,197 @@ async def test_post_to_delivered_task_thread_resolves_task_without_model_task_id
     store.confirm_task_delivery(binding, receipt)
     await client.execute('post', {'thread_id': 90, 'body': 'A synthetic task reply'})
     assert manager.calls[-1][1] == {'thread_id': 90, 'body': 'A synthetic task reply', 'agent': binding.actor}
+
+
+def recent_contract(manager, messages):
+    manager.recent_schema = {'type': 'object', 'additionalProperties': False, 'required': ['thread_id'],
+                            'properties': {'thread_id': {'type': 'integer', 'minimum': 1},
+                                           'limit': {'type': 'integer', 'minimum': 1, 'maximum': 200},
+                                           'before_id': {'type': 'integer', 'minimum': 1}}}
+    manager.responses['thread_recent'] = {'ok': True, 'thread': {'id': 32},
+        'messages': [{**m, 'body_chars': len(m['body']), 'body_digest': hashlib.sha256(m['body'].encode()).hexdigest(),
+                      'body_truncated': False} for m in messages],
+        'pagination': {'has_more': True, 'next_before_id': messages[0]['id'] if messages else None},
+        'hub_acknowledged': False}
+
+
+@pytest.mark.asyncio
+async def test_recent_configured_thread_exposes_latest_without_skipping_unfetched_history(native):
+    store, binding, manager, client = native
+    manager.responses['inbox'] = {'ok': True, 'messages': [
+        {'id': i, 'thread_id': 32, 'author': 'claude', 'body': 'Old state'} for i in range(1, 101)]}
+    recent_contract(manager, [{'id': 1500, 'thread_id': 32, 'author': 'claude', 'body': 'Current reparto: 133 is done'}])
+    result = await client.execute('poll', {})
+    assert result['cursor'] == 100 and result['has_more']
+    assert result['recent'][0]['id'] == 1500
+    assert result['recent'][0]['body_excerpt'] == 'Current reparto: 133 is done'
+    assert result['recent'][0]['detail_available']
+    assert manager.calls[-1][1] == {'thread_id': 32, 'limit': 5}
+    assert store.cursor(binding) == 100
+    assert store.detail(binding, 1500, expected_digest=result['recent'][0]['digest'])['body'] == 'Current reparto: 133 is done'
+    assert all('agent' not in args for name, args in manager.calls if name.endswith('_thread_recent'))
+    assert result['hub_acknowledged'] is False
+
+
+@pytest.mark.asyncio
+async def test_recent_unavailable_is_explicit_and_never_calls_legacy_full_thread(native):
+    _store, _binding, manager, client = native
+    manager.responses['inbox'] = {'ok': True, 'messages': []}
+    result = await client.execute('poll', {})
+    assert result['recent'] == []
+    assert result['recent_unavailable']
+    assert [name.rsplit('hub_agora_', 1)[-1] for name, _ in manager.calls] == ['inbox', 'board']
+
+
+@pytest.mark.asyncio
+async def test_truncated_recent_body_keeps_original_digest_and_is_never_cached_as_complete(native):
+    store, binding, manager, client = native
+    manager.responses['inbox'] = {'ok': True, 'messages': []}
+    recent_contract(manager, [{'id': 1500, 'thread_id': 32, 'body': 'Original complete body'}])
+    message = manager.responses['thread_recent']['messages'][0]
+    digest = message['body_digest']
+    message.update(body='Original', body_truncated=True)
+    result = await client.execute('poll', {})
+    assert result['recent'][0]['digest'] == digest
+    assert result['recent'][0]['detail_available'] is False
+    assert result['recent_detail_unavailable'][0]['message_id'] == 1500
+    assert store.cursor(binding) == 0
+    with pytest.raises(CoordinationError):
+        store.detail(binding, 1500, expected_digest=digest)
+
+
+@pytest.mark.asyncio
+async def test_recent_replay_preserves_delivered_receipts_and_filtered_cursor(native):
+    store, binding, manager, client = native
+    manager.responses['inbox'] = {'ok': True, 'messages': [{'id': 100, 'thread_id': 32, 'body': 'Unrelated history'}]}
+    recent_contract(manager, [{'id': 1500, 'thread_id': 32, 'body': 'Latest complete body'}])
+    first = await client.execute('poll', {'thread_ids': [32]})
+    ref = first['recent'][0]
+    assert ref['thread_ids'] == [32]
+    result = await client.execute('detail', {'message_id': 1500, 'digest': ref['digest'], 'thread_ids': ref['thread_ids']})
+    store.confirm_delivery(binding, result['receipt'], threads=[32])
+    manager.responses['inbox'] = {'ok': True, 'messages': []}
+    await client.execute('poll', {'thread_ids': [32]})
+    assert store.pending(binding, [32]) == []
+    assert store.cursor(binding, [32]) == 100 and store.cursor(binding) == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('schema', [{}, {'properties': []}, {'properties': {'limit': 'invalid'}},
+                                   {'properties': {'limit': {'maximum': 100}}}])
+async def test_recent_incompatible_schema_cannot_trigger_new_or_legacy_reads(native, schema):
+    _store, _binding, manager, client = native
+    manager.recent_schema = schema
+    manager.responses['inbox'] = {'ok': True, 'messages': []}
+    result = await client.execute('poll', {})
+    assert result['recent_unavailable'] and not result['recent']
+    assert len(manager.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_recent_disabled_reader_and_read_failure_are_explicit(native):
+    _store, _binding, manager, client = native
+    manager.responses['inbox'] = {'ok': True, 'messages': []}
+    recent_contract(manager, [])
+    client.disabled_tools.add('hub_agora_thread_recent')
+    disabled = await client.execute('poll', {})
+    assert disabled['recent_unavailable'] and len(manager.calls) == 2
+    client.disabled_tools.clear()
+    manager.responses['thread_recent'] = {'exit_code': 1, 'error': 'Read unavailable'}
+    failed = await client.execute('poll', {})
+    assert failed['recent_unavailable']
+    assert failed['cursor'] == 0 and failed['hub_acknowledged'] is False
+
+
+@pytest.mark.asyncio
+async def test_revocation_during_recent_read_never_commits_inbox_or_fresh_details(native):
+    store, binding, manager, client = native
+    manager.responses['inbox'] = {'ok': True, 'messages': [{'id': 100, 'thread_id': 32, 'body': 'Old page'}]}
+    recent_contract(manager, [{'id': 1500, 'thread_id': 32, 'body': 'Fresh page'}])
+    def revoke_on_recent():
+        if manager.calls[-1][0].endswith('_thread_recent'):
+            store.save(replace(binding, active=False), expected_revision=1)
+    manager.after_call = revoke_on_recent
+    with pytest.raises(StaleBinding):
+        await client.execute('poll', {})
+    with store.connect() as db:
+        assert db.execute('SELECT count(*) FROM details').fetchone()[0] == 0
+        assert db.execute('SELECT count(*) FROM cursors').fetchone()[0] == 0
+
+
+@pytest.mark.asyncio
+async def test_runtime_connector_revocation_during_recent_cannot_be_swallowed_by_fallback(native):
+    store, binding, manager, client = native
+    manager.responses['inbox'] = {'ok': True, 'messages': [{'id': 100, 'thread_id': 32, 'body': 'Old page'}]}
+    recent_contract(manager, [{'id': 1500, 'thread_id': 32, 'body': 'Fresh page'}])
+    revoked = False
+    def invalidate_connector():
+        nonlocal revoked
+        if manager.calls[-1][0].endswith('_thread_recent'):
+            revoked = True
+    def validate(_binding):
+        if revoked:
+            raise CoordinationError('bound connector is disabled by runtime policy')
+    manager.after_call = invalidate_connector
+    client.revalidate = validate
+    with pytest.raises(CoordinationError, match='disabled by runtime policy'):
+        await client.execute('poll', {})
+    assert store.cursor(binding) == 0 and store.pending(binding) == []
+    assert store.live(binding).active  # DB binding itself was never revoked.
+
+
+@pytest.mark.asyncio
+async def test_recent_thread_calls_and_message_refs_have_a_fixed_budget(native):
+    store, binding, manager, client = native
+    binding = store.save(replace(binding, thread_ids=(32, 33, 34, 35, 36)), expected_revision=1)
+    client.binding = binding
+    manager.responses['inbox'] = {'ok': True, 'messages': []}
+    recent_contract(manager, [])
+    manager.responses['thread_recent'] = lambda args: {'ok': True, 'thread': {'id': args['thread_id']}, 'messages': [],
+                                                       'pagination': {'has_more': False, 'next_before_id': None}}
+    client.read_only = True
+    result = await client.execute('poll', {'limit': 100})
+    calls = [args for name, args in manager.calls if name.endswith('_thread_recent')]
+    assert len(calls) == 4 and all(args['limit'] == 5 and 'agent' not in args for args in calls)
+    assert result['recent_threads_omitted'] == 1
+
+
+@pytest.mark.asyncio
+async def test_recent_digest_or_thread_mismatch_is_not_cached(native):
+    store, binding, manager, client = native
+    manager.responses['inbox'] = {'ok': True, 'messages': []}
+    recent_contract(manager, [{'id': 1500, 'thread_id': 32, 'body': 'Latest'}])
+    manager.responses['thread_recent']['messages'][0]['body_digest'] = '0' * 64
+    result = await client.execute('poll', {})
+    assert result['recent_unavailable'] and not result['recent']
+    assert store.pending(binding) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('field,value', [('repo', 'Other'), ('paths', ['other/file']), ('owner', 'other'), ('thread_id', 111)])
+async def test_changed_live_task_authority_blocks_write_before_dispatch(native, field, value):
+    store, binding, manager, client = native
+    observed = {**task(), 'thread_id': 90}
+    receipt = store.observe_task(binding, observed)
+    store.confirm_task_delivery(binding, receipt)
+    manager.responses['task']['task'] = {**observed, field: value}
+    with pytest.raises(CoordinationError, match='reload'):
+        await client.execute('checkpoint', {'task_id': 7, 'expected_revision': 0, 'payload': {'summary': 'Synthetic checkpoint'}})
+    assert [name.rsplit('hub_agora_', 1)[-1] for name, _ in manager.calls] == ['task']
+
+
+@pytest.mark.asyncio
+async def test_new_submission_revision_does_not_refresh_old_review_vote(native):
+    store, binding, manager, client = native
+    observed = {**task(), 'owner': 'claude', 'thread_id': 90}
+    receipt = store.observe_task(binding, observed, required_messages=[])
+    store.confirm_task_delivery(binding, receipt)
+    manager.responses['task']['task'] = {**observed, 'submission_revision': 3}
+    manager.responses['task_review'] = {'ok': False, 'error': 'stale submission', 'status': 409}
+    with pytest.raises(CoordinationError, match='stale submission'):
+        await client.execute('review', {'task_id': 7, 'expected_submission_revision': 2, 'verdict': 'approve', 'body': 'Old vote'})
+    assert manager.calls[-1][1]['expected_submission_revision'] == 2
+    assert store.observed_task(binding, 7)['submission_revision'] == 2
 
 
 @pytest.mark.asyncio

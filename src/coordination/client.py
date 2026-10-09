@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import json
+import hashlib
 
 from .authority import authorize, observed_action, positive_id
-from .bindings import CoordinationError, READ_OPERATIONS, UnknownOutcome
+from .bindings import CoordinationError, READ_OPERATIONS, StaleBinding, UnknownOutcome
 
 
 REMOTE = {"board": "board", "heartbeat": "heartbeat", "add": "task_add", "claim": "task_claim",
@@ -64,7 +65,7 @@ class Client:
         catalog = self.manager.get_all_tools()
         if not any(t.get("qualified_name") == name and not t.get("is_disabled") for t in catalog):
             raise CoordinationError("the bound connector does not offer this coordination operation")
-        writing = suffix not in {"inbox", "board", "task", "locks"}
+        writing = suffix not in {"inbox", "board", "task", "locks", "thread_recent"}
         try:
             result = await self.manager.call_tool(name, dict(args))
         except Exception as exc:
@@ -112,6 +113,15 @@ class Client:
         if operation == "heartbeat":
             held_locks = (await self.remote("locks", {})).get("locks")
         clean = authorize(self.binding, operation, args, task=task, held_locks=held_locks, read_only=self.read_only)
+        if task is not None and operation not in READ_OPERATIONS:
+            fresh = (await self.remote("task", {"task_id": task["id"]})).get("task")
+            fields = ("id", "repo", "paths", "owner", "thread_id")
+            if not isinstance(fresh, dict) or any(
+                    type(fresh.get(key)) is not type(task.get(key)) or fresh.get(key) != task.get(key)
+                    for key in fields):
+                raise CoordinationError("task authority changed; reload with coordination_task before acting")
+            # This is a preflight scope check, not a delivered new observation.
+            # Keep the original checkpoint/review CAS exactly as the user saw it.
         if operation == "poll":
             return await self.poll(clean)
         if operation == "detail":
@@ -184,11 +194,90 @@ class Client:
                 raise CoordinationError("invalid pending coordination mention")
             if not threads or original.get("thread_id") in threads:
                 pending_mentions.append({**original, "relevant": True})
+        recent = await self.recent(threads, limit)
+        self.live()  # Connector/policy revocation is broader than the Store binding revision.
         self.store.receive(self.binding, expected_cursor=since, next_cursor=next_cursor, messages=page,
                            pending_messages=pending_mentions, threads=threads)
+        for start in range(0, len(recent["cache"]), 200):
+            self.store.receive(self.binding, expected_cursor=next_cursor, next_cursor=next_cursor, messages=[],
+                               pending_messages=recent["cache"][start:start + 200], threads=threads)
         return {"actor": self.binding.actor, "binding_revision": self.binding.revision,
                 "cursor": next_cursor, "page_received": len(all_messages), "has_more": len(all_messages) >= 100,
                 "pending": self.store.pending(self.binding, threads, limit),
                 "reviews": [compact_task(t) for t in inbox.get("reviews", ()) if t.get("id") in scope_tasks][:40],
                 "changes": [compact_task(t) for t in inbox.get("changes", ()) if t.get("owner") == self.binding.actor][:40],
-                "board": compact_board(board, self.binding), "hub_acknowledged": False}
+                "board": compact_board(board, self.binding), "hub_acknowledged": False,
+                "recent": recent["refs"], "recent_unavailable": recent["unavailable"],
+                "recent_detail_unavailable": recent["detail_unavailable"],
+                "recent_threads_omitted": recent["threads_omitted"], "recent_pages": recent["pages"]}
+
+    async def recent(self, threads, limit):
+        """Read a small recent window only when the bound Hub advertises it.
+
+        Never fall back to the full-thread reader. Recent cache entries and
+        unread history have the same detail receipts but separate coverage:
+        only the fetched inbox page can move its durable cursor.
+        """
+        selected = [tid for tid in self.binding.thread_ids if not threads or tid in threads]
+        out = {"refs": [], "cache": [], "unavailable": [], "detail_unavailable": [], "pages": [],
+               "threads_omitted": max(0, len(selected) - 4)}
+        if not selected:
+            return out
+        name = f"mcp__{self.binding.connector_id}__hub_agora_thread_recent"
+        tool = next((t for t in self.manager.get_all_tools() if t.get("qualified_name") == name), None)
+        schema = (tool or {}).get("input_schema") or {}
+        schema = schema if isinstance(schema, dict) else {}
+        props = schema.get("properties", {})
+        props = props if isinstance(props, dict) else {}
+        integer_fields = all(isinstance(props.get(key), dict) and props[key].get("type") == "integer"
+                             and props[key].get("minimum") == 1 for key in ("thread_id", "limit", "before_id"))
+        available = (bool(tool) and not tool.get("is_disabled") and schema.get("additionalProperties") is False
+                     and schema.get("required") == ["thread_id"] and set(props) == {"thread_id", "limit", "before_id"}
+                     and integer_fields and props["limit"].get("maximum") == 200)
+        if not available:
+            out["unavailable"] = [{"thread_id": tid, "reason": "bounded recent reader is not available in the bound connector"}
+                                  for tid in selected[:4]]
+            return out
+        for tid in selected[:4]:
+            try:
+                result = await self.remote("thread_recent", {"thread_id": tid, "limit": min(limit, 5)})
+                messages = result.get("messages")
+                if (not isinstance(messages, list) or len(messages) > min(limit, 5)
+                        or not isinstance(result.get("thread"), dict) or result["thread"].get("id") != tid):
+                    raise CoordinationError("invalid bounded recent thread page")
+                refs, cache, unavailable = [], [], []
+                for message in messages:
+                    if (not isinstance(message, dict) or message.get("thread_id") != tid
+                            or not isinstance(message.get("body"), str) or len(message["body"]) > 20_000
+                            or type(message.get("body_chars")) is not int or message["body_chars"] < len(message["body"])
+                            or type(message.get("body_truncated")) is not bool):
+                        raise CoordinationError("invalid bounded recent message")
+                    mid = positive_id(message.get("id"), "message id")
+                    digest = message.get("body_digest")
+                    if not isinstance(digest, str) or len(digest) != 64 or any(c not in '0123456789abcdef' for c in digest):
+                        raise CoordinationError("invalid recent message digest")
+                    complete = not message["body_truncated"] and message["body_chars"] == len(message["body"])
+                    if complete and hashlib.sha256(message["body"].encode("utf-8")).hexdigest() != digest:
+                        raise CoordinationError("recent message body does not match its digest")
+                    refs.append({**{k: message.get(k) for k in ("id", "thread_id", "author", "kind", "created")},
+                                 "body_excerpt": message["body"][:160], "body_chars": message["body_chars"],
+                                 "digest": digest, "detail_ref": f"message:{mid}", "detail_available": complete})
+                    if threads:
+                        refs[-1]["thread_ids"] = list(threads)
+                    if complete:
+                        cache.append({**message, "relevant": True})
+                    else:
+                        unavailable.append({"thread_id": tid, "message_id": mid, "digest": digest,
+                                            "reason": "recent body is truncated; complete detail remains unavailable"})
+                pagination = result.get("pagination")
+                if not isinstance(pagination, dict) or type(pagination.get("has_more")) is not bool:
+                    raise CoordinationError("invalid recent pagination metadata")
+                out["pages"].append({"thread_id": tid, **{k: pagination.get(k) for k in ("has_more", "next_before_id")}})
+                out["refs"].extend(refs)
+                out["cache"].extend(cache)
+                out["detail_unavailable"].extend(unavailable)
+            except StaleBinding:
+                raise
+            except CoordinationError as exc:
+                out["unavailable"].append({"thread_id": tid, "reason": str(exc)[:240]})
+        return out
