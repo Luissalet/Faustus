@@ -1099,7 +1099,7 @@ export function AnsweredCard({ decision }: { decision: string }) {
       {t('This permission request expired before it was answered — nothing was executed. Ask again to get a fresh card.')}
     </p>;
   }
-  if (!['approve', 'approve_task', 'approve_workspace', 'deny'].includes(decision)) {
+  if (!['approve', 'approve_action', 'approve_task', 'approve_workspace', 'deny'].includes(decision)) {
     return <p className="fs-studio__answered" data-testid="studio-approval-answered">
       {t('This permission request is closed. No approval was granted.')}
     </p>;
@@ -1107,6 +1107,8 @@ export function AnsweredCard({ decision }: { decision: string }) {
   const said =
     decision === 'deny'
       ? t('You denied it.')
+      : decision === 'approve_action'
+        ? t('You allowed only this action once.')
       : decision === 'approve_task'
         ? t('You allowed it for the whole task.')
         : decision === 'approve_workspace'
@@ -2109,7 +2111,7 @@ function AssistantTurn({
         {!turn.ask && turn.approval && <AnsweredCard decision={turn.approval.decision} />}
         {!turn.streaming && (turn.summary || turn.checks.length > 0) && (
           <Suspense fallback={null}>
-            <Harness mode="final" summary={turn.summary} checks={turn.checks} answer={turn.text} onNotice={onNotice} permissionAnswered={Boolean(turn.approval)} />
+            <Harness mode="final" summary={turn.summary} checks={turn.checks} answer={turn.text} onNotice={onNotice} permissionAnswered={Boolean(turn.approval) && !turn.ask} />
           </Suspense>
         )}
         {turn.note && (

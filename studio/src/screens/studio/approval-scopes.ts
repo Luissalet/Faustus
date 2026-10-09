@@ -14,7 +14,7 @@
 import { t } from '../../i18n';
 import type { AskOption } from '../../adapters/chat';
 
-export type Decision = 'approve' | 'approve_task' | 'approve_workspace' | 'deny';
+export type Decision = 'approve' | 'approve_action' | 'approve_task' | 'approve_workspace' | 'deny';
 
 export interface ApprovalChoice {
   decision: Decision;
@@ -24,6 +24,11 @@ export interface ApprovalChoice {
 }
 
 const FALLBACK: { decision: Decision; label: string; description: string }[] = [
+  {
+    decision: 'approve_action',
+    label: 'Only this action',
+    description: 'Runs only the sealed action once. Does not authorize later actions.',
+  },
   {
     decision: 'approve_task',
     label: 'Allow for this task',
@@ -56,10 +61,10 @@ export function approvalChoices(options: AskOption[] | undefined): ApprovalChoic
     return {
       decision: choice.decision,
       label: t(option?.label || choice.label),
-      description: option?.description || t(choice.description),
+      description: t(option?.description || choice.description),
       variant:
         choice.decision === 'deny' ? ('danger' as const)
-        : choice.decision === 'approve_task' ? ('primary' as const)
+        : choice.decision === 'approve_action' ? ('primary' as const)
         : undefined,
     };
   });

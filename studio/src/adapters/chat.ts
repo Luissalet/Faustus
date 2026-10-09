@@ -1374,7 +1374,7 @@ export interface SendOptions {
    */
   thinkingEnabled?: boolean | null;
   /** Answering a tool approval: the message goes empty and these travel. */
-  approval?: { id: string; decision: 'approve' | 'approve_task' | 'approve_workspace' | 'deny' };
+  approval?: { id: string; decision: 'approve' | 'approve_action' | 'approve_task' | 'approve_workspace' | 'deny' };
   /** `/agents`: the delegation travels as its own field; the server swaps
    *  it in for the model and keeps `message` as the readable label. */
   delegateTasks?: Delegation;

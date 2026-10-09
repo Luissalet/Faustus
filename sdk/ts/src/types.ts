@@ -143,7 +143,7 @@ export interface SessionUpdateResult {
 /* ── Turns ── */
 
 export type AutonomyPreset = 'supervised' | 'bounded_autonomous' | 'read_only';
-export type ToolApprovalDecision = 'approve' | 'approve_task' | 'deny';
+export type ToolApprovalDecision = 'approve' | 'approve_action' | 'approve_task' | 'approve_workspace' | 'deny';
 export type StopScope = 'generation' | 'task' | 'work';
 
 export interface TurnInput {

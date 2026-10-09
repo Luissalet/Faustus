@@ -24,12 +24,13 @@ const { askOptionsFrom } = await import(pathToFileURL(chatOut).href);
 
 // The server's own payload (src/tool_approvals.py public_payload).
 const served = askOptionsFrom([
+  { label: 'Only this action', value: 'approve_action', description: 'sealed action only' },
   { label: 'Allow for this task', value: 'approve_task', description: 'this request only' },
   { label: 'Allow for this chat session', value: 'approve', description: 'rest of this chat' },
   { label: 'Always for this workspace folder', value: 'approve_workspace', description: 'and later chats' },
   { label: 'Deny', value: 'deny', description: 'do not run it' },
 ]);
-assert.deepEqual(served.map((o) => o.value), ['approve_task', 'approve', 'approve_workspace', 'deny']);
+assert.deepEqual(served.map((o) => o.value), ['approve_action', 'approve_task', 'approve', 'approve_workspace', 'deny']);
 // Older history rows (bare strings, or objects without a value) still decode.
 assert.deepEqual(askOptionsFrom(['Sí', { label: 'No' }]).map((o) => o.value), [undefined, undefined]);
 
@@ -39,21 +40,22 @@ await build({ entryPoints: [join(root, 'studio/src/screens/studio/approval-scope
 const { approvalChoices } = await import(pathToFileURL(cardOut).href);
 
 const choices = approvalChoices(served);
-assert.deepEqual(choices.map((c) => c.decision), ['approve_task', 'approve', 'approve_workspace', 'deny'],
+assert.deepEqual(choices.map((c) => c.decision), ['approve_action', 'approve_task', 'approve', 'approve_workspace', 'deny'],
   'narrowest scope first, deny last');
 assert.equal(choices[0].variant, 'primary', 'the default button is the narrowest allow');
-assert.equal(choices[3].variant, 'danger');
+assert.equal(choices[4].variant, 'danger');
 // The wording comes from the server, so the label can never drift from the
 // scope the decision actually has.
-assert.equal(choices[1].label, 'Allow for this chat session');
-assert.equal(choices[2].description, 'and later chats');
+assert.equal(choices[2].label, 'Allow for this chat session');
+assert.equal(choices[3].description, 'and later chats');
 
 // A history row with no options at all still offers all four scopes, and
 // none of them is labelled in a way that claims a wider scope than it has.
 const fallback = approvalChoices([]);
-assert.deepEqual(fallback.map((c) => c.decision), ['approve_task', 'approve', 'approve_workspace', 'deny']);
-assert.match(fallback[0].label, /task/i);
-assert.match(fallback[1].label, /chat/i);
+assert.deepEqual(fallback.map((c) => c.decision), ['approve_action', 'approve_task', 'approve', 'approve_workspace', 'deny']);
+assert.match(fallback[0].label, /action/i);
+assert.match(fallback[1].label, /task/i);
+assert.match(fallback[2].label, /chat/i);
 assert.ok(!/whole task/i.test(fallback.map((c) => c.label).join(' ')),
   'no button may read as "the whole task" for a one-turn scope');
 

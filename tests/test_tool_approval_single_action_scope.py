@@ -6,6 +6,8 @@ it silently inherits a run-long gate bypass.
 """
 
 from pathlib import Path
+from dataclasses import replace
+import pytest
 
 from src.tool_approval_scopes import ToolApprovalScope
 from src.tool_approvals import ToolApprovalStore
@@ -87,3 +89,44 @@ def test_skill_test_approval_route_opts_out_of_continuation():
     approve_call = skills.index("exact_approval = tool_approval_store.consume(")
     end = skills.index(")", skills.index("allow_continuation", approve_call))
     assert "allow_continuation=False" in skills[approve_call:end]
+
+
+def test_explicit_single_action_in_resumable_chat_is_never_a_task_grant():
+    store = ToolApprovalStore()
+    pending = _pending(store, session_id="session-1")
+    grant = store.consume(pending.approval_id, decision="approve_action", owner="alice", session_id="session-1")
+    assert grant.scope is ToolApprovalScope.SINGLE_ACTION
+    assert grant.allow_remaining_actions is False
+    assert not grant.grants_chat_session and not grant.grants_workspace
+    assert grant.claim(owner="alice", session_id="session-1", tool_name="bash", content="printf exact", workspace=None)
+    assert not grant.claim(owner="alice", session_id="session-1", tool_name="bash", content="printf exact", workspace=None)
+    context = ToolRunSecurityContext(external_untrusted_context_seen=True, approval_gate_bypassed=grant.allow_remaining_actions)
+    assert not context.decision_for("bash", "printf another").allowed
+
+
+def test_single_action_constructor_cannot_inherit_default_continuation():
+    from src.tool_approvals import ExactToolApproval
+    grant = ExactToolApproval(_pending(ToolApprovalStore(), session_id="session-1"),
+                              scope=ToolApprovalScope.SINGLE_ACTION, allow_remaining_actions=True)
+    assert not grant.allow_remaining_actions
+
+
+@pytest.mark.parametrize("owner,session", [("bob", "session-1"), ("alice", "other")])
+def test_explicit_single_action_does_not_consume_another_owner_or_chat_card(owner, session):
+    store = ToolApprovalStore()
+    pending = _pending(store, session_id="session-1")
+    reason, grant = store.consume_with_reason(pending.approval_id, decision="approve_action", owner=owner, session_id=session)
+    assert reason == "owner_mismatch" and grant is None
+    assert store.peek(pending.approval_id) is pending
+
+
+def test_single_action_rejects_modified_seal_and_superseded_card():
+    store = ToolApprovalStore()
+    old = _pending(store, session_id="session-1")
+    current = _pending(store, session_id="session-1")
+    assert store.consume(old.approval_id, decision="approve_action", owner="alice", session_id="session-1") is None
+    grant = store.consume(current.approval_id, decision="approve_action", owner="alice", session_id="session-1")
+    tampered = replace(grant.pending, content="printf modified")
+    from src.tool_approvals import ExactToolApproval
+    bad = ExactToolApproval(tampered, scope=ToolApprovalScope.SINGLE_ACTION, allow_remaining_actions=False)
+    assert not bad.claim(owner="alice", session_id="session-1", tool_name="bash", content="printf modified", workspace=None)

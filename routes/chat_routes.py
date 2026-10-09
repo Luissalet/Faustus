@@ -346,7 +346,7 @@ def _mark_tool_approval_resolved(sess, approval_id: Any, decision: Any) -> bool:
 
     approval_key = str(approval_id or "")
     normalized_decision = str(decision or "").strip().lower()
-    if not approval_key or normalized_decision not in {"approve", "approve_task", "approve_workspace", "deny", "superseded"}:
+    if not approval_key or normalized_decision not in {"approve", "approve_action", "approve_task", "approve_workspace", "deny", "superseded"}:
         return False
 
     message_id = None
@@ -2070,6 +2070,9 @@ def setup_chat_routes(
             "autonomy_preset": {"type": "string", "enum": ["supervised", "bounded_autonomous", "read_only"]},
             "plan_mode": {"type": "boolean"}, "no_memory": {"type": "boolean"},
             "no_skills": {"type": "boolean"},
+            "tool_approval_id": {"type": "string", "description": "Opaque ID of the pending sealed action for this chat."},
+            "tool_approval_decision": {"type": "string", "enum": ["approve_action", "approve_task", "approve", "approve_workspace", "deny"],
+                "description": "approve_action authorizes only the sealed action once; other scopes retain their existing meaning."},
             "initial_response_timeout_s": {"type": "number", "minimum": 5, "maximum": 900,
                 "description": "Initial response budget for this turn only; includes admission, preparation and queue."},
         }}}
@@ -2447,7 +2450,7 @@ def setup_chat_routes(
                     external_untrusted_context_seen or pending_taint
                 )
                 decision = str(tool_approval_decision or "").strip().lower()
-                if decision not in {"approve", "approve_task", "approve_workspace", "deny"}:
+                if decision not in {"approve", "approve_action", "approve_task", "approve_workspace", "deny"}:
                     raise HTTPException(400, "Invalid tool approval decision.")
                 if plan_mode:
                     raise HTTPException(
@@ -2465,7 +2468,7 @@ def setup_chat_routes(
                 )
                 tool_approval_continuation = True
                 if (
-                    decision in {"approve", "approve_task", "approve_workspace"}
+                    decision in {"approve", "approve_action", "approve_task", "approve_workspace"}
                     and exact_tool_approval is None
                 ):
                     raise HTTPException(

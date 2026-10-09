@@ -9,6 +9,7 @@ from enum import Enum
 # not need a second protocol migration. ``approve`` no longer means one action;
 # it now selects chat-session scope.
 TASK_APPROVAL_DECISION = "approve_task"
+SINGLE_ACTION_APPROVAL_DECISION = "approve_action"
 CHAT_SESSION_APPROVAL_DECISION = "approve"
 # 14-09-2026: remembered per workspace folder across chats
 # (src/tool_approval_grants.py). Same grant as the chat scope, kept on disk.
@@ -32,6 +33,8 @@ class ToolApprovalScope(str, Enum):
 
 def scope_for_decision(decision: object) -> ToolApprovalScope | None:
     normalized = str(decision or "").strip().lower()
+    if normalized == SINGLE_ACTION_APPROVAL_DECISION:
+        return ToolApprovalScope.SINGLE_ACTION
     if normalized == TASK_APPROVAL_DECISION:
         return ToolApprovalScope.TASK
     if normalized == CHAT_SESSION_APPROVAL_DECISION:

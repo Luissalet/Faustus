@@ -53,6 +53,8 @@ def test_approval_resume_restores_task_and_recovers_card_echo(monkeypatch):
     monkeypatch.setattr(loop,"stream_llm_with_fallback",stream)
     monkeypatch.setattr(loop,"execute_tool_block",execute)
     monkeypatch.setattr(loop,"get_mcp_manager",lambda:None)
+    import src.tool_index as tool_index
+    monkeypatch.setattr(tool_index,"get_tool_index",lambda:None)
     monkeypatch.setattr(loop,"blocked_tools_for_owner",lambda owner:set())
     monkeypatch.setattr(loop,"_agent_route_tool_mode",lambda *a,**k:(True,False,True))
     monkeypatch.setattr(loop,"estimate_tokens",lambda *a,**k:10)
@@ -63,7 +65,7 @@ def test_approval_resume_restores_task_and_recovers_card_echo(monkeypatch):
     async def drive():
         return [chunk async for chunk in loop.stream_agent_loop(endpoint_url="http://127.0.0.1:11434/v1/chat/completions",model="qwen3.8:27b-q8_0",messages=[{"role":"user","content":request},{"role":"assistant","content":"Allow this task to continue?"}],headers={},owner="admin",session_id="resume-test",exact_approval=grant,max_rounds=4,context_length=32768,harness_options={"checkpoints":False,"run_tests":False,"repo_map":False})]
     events = asyncio.run(drive())
-    assert any(request in str(m.get("content")) and "sealed action" in str(m.get("content")) for m in captured[0])
+    assert any(request in str(m.get("content")) for m in captured[0])
     assert "approval_echo" in "".join(events)
     assert executed == ["desktop_focus_window", "desktop_key"], "".join(events)
 

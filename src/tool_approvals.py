@@ -1,8 +1,8 @@
-"""Opaque exact-action approvals with explicit task and chat scopes.
+"""Opaque exact-action approvals with explicit action, task and chat scopes.
 
 The server still seals and claims the first displayed action exactly once. The
-selected scope then bypasses only the automatic post-external-context approval
-gate for the rest of the resumed task or chat session. Browser-visible fields
+single-action scope leaves the gate armed behind that action; broader scopes
+bypass only the automatic post-external-context gate for their duration. Browser-visible fields
 are display copies, never authority.
 """
 
@@ -21,6 +21,7 @@ from typing import Any
 from src.tool_approval_scopes import (
     CHAT_SESSION_APPROVAL_DECISION,
     DENY_APPROVAL_DECISION,
+    SINGLE_ACTION_APPROVAL_DECISION,
     TASK_APPROVAL_DECISION,
     WORKSPACE_APPROVAL_DECISION,
     ToolApprovalScope,
@@ -263,6 +264,11 @@ class PendingToolApproval:
             ),
             "options": [
                 {
+                    "label": "Only this action",
+                    "value": SINGLE_ACTION_APPROVAL_DECISION,
+                    "description": "Runs only the sealed action once. Does not authorize later actions.",
+                },
+                {
                     "label": "Allow for this task",
                     "value": TASK_APPROVAL_DECISION,
                     "description": (
@@ -344,14 +350,16 @@ class ExactToolApproval:
 
     pending: PendingToolApproval
     scope: ToolApprovalScope = ToolApprovalScope.TASK
-    # The seam consumed by agent_loop. Both chat-card allow choices cover the
-    # complete resumed task, because one-action scope there immediately
-    # re-entered the same gate on the next round. Callers with no resumable
-    # chat still get SINGLE_ACTION, which leaves the gate armed behind the
-    # sealed action.
+    # Single-action scope never authorizes later calls, even in a resumable
+    # chat. Legacy task/chat/folder decisions keep their continuation semantics.
+    # Non-chat callers can still opt out at consumption time.
     allow_remaining_actions: bool = True
     _claimed: bool = field(default=False, init=False, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        if self.scope is ToolApprovalScope.SINGLE_ACTION:
+            self.allow_remaining_actions = False
 
     @property
     def grants_chat_session(self) -> bool:
@@ -849,7 +857,7 @@ class ToolApprovalStore:
         )
         if scope is None:
             return "invalid_decision", None
-        if not allow_continuation:
+        if not allow_continuation or scope is ToolApprovalScope.SINGLE_ACTION:
             return "consumed", ExactToolApproval(
                 pending,
                 scope=ToolApprovalScope.SINGLE_ACTION,

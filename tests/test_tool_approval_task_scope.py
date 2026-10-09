@@ -49,12 +49,14 @@ def test_card_offers_task_chat_session_and_deny_without_leaking_private_state():
     # 14-09-2026: `approve_workspace` — remembered per folder across chats
     # (src/tool_approval_grants.py) — sits between the chat scope and deny.
     assert [option["value"] for option in payload["options"]] == [
+        "approve_action",
         "approve_task",
         "approve",
         "approve_workspace",
         "deny",
     ]
     assert [option["label"] for option in payload["options"]] == [
+        "Only this action",
         "Allow for this task",
         "Allow for this chat session",
         "Always for this workspace folder",
@@ -224,7 +226,7 @@ def test_private_continuation_state_is_canonical_bounded_and_digest_bound():
     ) is False
 
 
-@pytest.mark.parametrize("decision", ["approve", "approve_task", "deny", "superseded"])
+@pytest.mark.parametrize("decision", ["approve", "approve_action", "approve_task", "deny", "superseded"])
 def test_consumed_card_resolution_updates_memory_and_persisted_metadata(monkeypatch, decision):
     from routes import chat_routes
 
@@ -318,7 +320,7 @@ def test_route_context_agent_frontend_and_cache_bust_wire_the_contract():
     capabilities = (root / "src/tool_capabilities.py").read_text(encoding="utf-8")
     models = (root / "core/models.py").read_text(encoding="utf-8")
 
-    assert 'decision not in {"approve", "approve_task", "approve_workspace", "deny"}' in route
+    assert 'decision not in {"approve", "approve_action", "approve_task", "approve_workspace", "deny"}' in route
     # 14-09-2026: the folder-scoped answer is persisted at consumption time.
     assert "tool_approval_grants.grant(" in route
     assert "set(pending_tool_approval.selected_tools)" in route
@@ -343,8 +345,8 @@ def test_route_context_agent_frontend_and_cache_bust_wire_the_contract():
     # the scopes the server sends (`approval-scopes.ts`), narrowest first, so
     # a label can never again claim a wider scope than its decision has.
     scopes = (root / "studio/src/screens/studio/approval-scopes.ts").read_text(encoding="utf-8")
-    assert "'approve' | 'approve_task' | 'approve_workspace' | 'deny'" in scopes
-    for decision in ("approve_task", "approve", "approve_workspace", "deny"):
+    assert "'approve' | 'approve_action' | 'approve_task' | 'approve_workspace' | 'deny'" in scopes
+    for decision in ("approve_action", "approve_task", "approve", "approve_workspace", "deny"):
         assert f"decision: '{decision}'" in scopes
     assert "approvalChoices(ask.options)" in transcript
     assert "onApproval(choice.decision)" in transcript
