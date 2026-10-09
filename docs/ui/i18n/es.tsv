@@ -9307,3 +9307,4 @@ Workspace path	Ruta del workspace
 Errors	Errores
 Not set up	Sin configurar
 Manage MCP server	Configurar servidor MCP
+In Full access, approval rules run without asking. Deny rules still apply.	Con Acceso completo, las reglas de aprobación no preguntan. Las reglas de denegación siguen aplicándose.

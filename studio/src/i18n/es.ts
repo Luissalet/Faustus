@@ -5499,6 +5499,7 @@ export const es: Record<string, string> = {
   "Restored v{a} as v{b}.": "Restaurada la v{a} como v{b}.",
   "Restores a version from /versions.": "Restaura una versión de /versions.",
   "Restrict a tool by its arguments — a domain, a path prefix, a pattern — not just its name. The first matching rule denies the call or asks for your approval.": "Restringe una herramienta por sus argumentos — un dominio, un prefijo de ruta, un patrón — no solo por su nombre. La primera regla que coincide deniega la llamada o pide tu aprobación.",
+  "In Full access, approval rules run without asking. Deny rules still apply.": "Con Acceso completo, las reglas de aprobación no preguntan. Las reglas de denegación siguen aplicándose.",
   "Result": "Resultado",
   "Result copied": "Resultado copiado",
   "Result unconfirmed": "Resultado sin confirmar",

@@ -726,6 +726,7 @@ function ArgRulesPanel({ say }: { say: (t: string) => void }) {
         <div>
           <h2 id="fs-set-tool-arg-rules" className="fs-set__title">{t('Argument rules')}</h2>
           <p className="fs-prose">{t('Restrict a tool by its arguments — a domain, a path prefix, a pattern — not just its name. The first matching rule denies the call or asks for your approval.')}</p>
+          <p className="fs-prose">{t('In Full access, approval rules run without asking. Deny rules still apply.')}</p>
         </div>
         {editingId === null && <Button variant="secondary" size="sm" icon={Plus} label={t('Add rule')} onClick={startAdd} />}
       </header>
