@@ -10542,3 +10542,36 @@ Tras la revisión de faustus y codex-investiga (r3):
 Pruebas:
 - `tests/test_grep_fallback_budget.py` (9): texto encontrado sin binarios, fichero grande anunciado, corte por tiempo con aviso, `glob` sin coincidencias acotado, tope de ficheros, aguja dentro de un fichero grande que no da «No matches», presupuesto dentro de un fichero de 1,5 millones de líneas, patrón catastrófico en una línea diminuta cortado con aviso, búsqueda normal (sin distinguir mayúsculas y con patrón inválido) y error claro sin `regex`.
 - En vivo, la misma búsqueda del turno (`renderer-prelude` en `D:\LocalAI`) responde en 20,0 s con el aviso de parcial (39 178 ficheros leídos), frente a más de 10 minutos antes.
+
+## 284. Faustus, agente de pleno derecho en el Ágora (09-10-2026)
+
+Luis lo pidió así: «tiene que ser un agente en todo derecho, tan capaz y fiable como vosotros; para algo he comprado las Sparks». Faustus, el 7000 con glm-5.3-flash en las tres Sparks, participa en el Ágora con el id `faustus`, igual que `claude`, `codex-*` y `cursor`.
+
+**Lanzador** (`D:\LocalAI\faustus-agora\`, fuera del repo):
+- `AGENTS.md`: identidad, mapa de repos, cómo revisar, commits y límites, como `grep`/`glob`/`ls` siempre con `path=`.
+- `routine.md`, con el buzón y el tablero compactos.
+- `faustus_agora.py` (`run`/`watch`/`status`).
+- La tarea programada de Windows `FaustusAgoraWatch`, que arranca al iniciar sesión, sin límite y se reinicia sola.
+
+**Cómo funcionan los turnos:**
+- Hay un solo turno a la vez y dura 45 minutos como mucho (`faustus_run --approve --max-legs 40 --timeout 2700 --initial-response-timeout 600`).
+- Si el modelo no llega a empezar, se reintenta 5 veces.
+- Cada 12 turnos se abre un chat nuevo.
+- Un turno se despierta con una mención o con un mensaje en una tarea suya; además hay un turno periódico cada 90 min.
+- Tras fallos, la espera crece: 2, 4, 8… min, hasta 1 h.
+
+**Lo que hubo que arreglar para que funcionara** (todo revisado por otro agente):
+- §282 (#154): un MCP stdio cuyo canal se cerró se reconecta y reintenta una vez, solo si el traceback demuestra que la petición no salió.
+- #145: presupuesto inicial por turno (la espera de 30 s de las Sparks fallaba 5 de 5).
+- §283 (#156): grep sin ripgrep acotado en tiempo, con aviso de resultado parcial y con el motor `regex` con timeout.
+- Operativos: el buzón de faustus arrastraba unos 1000 mensajes del hilo 32 desde el 08-10, y el vigilante encadenaba turnos con esa charla; ahora solo despierta con menciones. Un turno colgado se para con `POST /api/chat/stop/<sesión>` (`X-Odysseus-Run-Id`, `{"scope": "work"}`).
+
+**Resultados del primer día:**
+- #133 (Writer's): extrajo la entrega a un entorno aislado, pasó la prueba pura y encontró un fallo real: un año absoluto junto a una era se releía en silencio. Se arregló en r2 y lo aprobó.
+- #156: pidió cambios dos veces, con reproducciones medidas (presupuesto dentro de un fichero, fichero grande saltado que daba «No matches» y caída a `re` sin límite); las tres cosas se arreglaron.
+- Además aprobó #152 y #160, comentó #154 y #157, y corrigió por escrito una conclusión suya equivocada cuando codex-investiga se lo señaló.
+
+**Límites conocidos:**
+- Los turnos son lentos (unos 15-20 min por revisión, la mayor parte esperando al modelo).
+- Sin ripgrep en el PC, las búsquedas amplias se cortan a los 20 s.
+- La coordinación nativa por proyecto (#151) aún no sustituye al lanzador.

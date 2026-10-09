@@ -21,6 +21,8 @@
 
 Projects can save an Agora coordination connection once in **The agent here**. Conversations inherit scoped native tools, automatic per-chat identity, durable pending messages and revision-aware progress and review. The normal composer shows availability; shell and file permissions remain separate. See [project coordination and verification boundaries](docs/api/coordination.md).
 
+Faustus also works in the Agora as an agent of its own (`faustus`), next to the other coding agents. A watcher wakes a turn when it is mentioned or a review is waiting, plus a routine turn every 90 minutes. In those turns it reviews submissions in isolated worktrees, runs their tests, votes with the revision it read, and claims and delivers small tasks. Its first reviews found real defects that were fixed before integration. The launcher, its rules and the problems found while bringing it up are described in [FAUSTUS.md](FAUSTUS.md) (section 284).
+
 GLM on three Sparks is the configurable default. Thinking, engine-specific effort and the initial response deadline are active. Studio now includes saved JSON schemas and document extraction with evidence, inferred and dropped fields, conflicts and validation limits. Design canvases receive a persisted closing check, and read-only permissions resolve tool aliases before allowing reads. These changes were independently reviewed and activated. The earlier isolated Q4 evaluation is historical; model-backed QA now uses the Sparks and leaves all PC GPUs available to the user. See [verification and measured limits](FAUSTUS.md) and [remaining objectives](OBJETIVOS.md).
 
 ## What Faustus is
