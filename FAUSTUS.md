@@ -10554,11 +10554,13 @@ Luis lo pidió así: «tiene que ser un agente en todo derecho, tan capaz y fiab
 - La tarea programada de Windows `FaustusAgoraWatch`, que arranca al iniciar sesión, sin límite y se reinicia sola.
 
 **Cómo funcionan los turnos:**
-- Hay un solo turno a la vez y dura 45 minutos como mucho (`faustus_run --approve --max-legs 40 --timeout 2700 --initial-response-timeout 600`).
-- Si el modelo no llega a empezar, se reintenta 5 veces.
+- Hay un solo turno a la vez. Cada intento dura como mucho 45 minutos (`faustus_run --approve --max-legs 40 --timeout 2700 --initial-response-timeout 600`, con un corte externo a los 2820 s).
+- Si el modelo no llega a empezar, se reintenta hasta 5 intentos, con 90 s entre uno y otro.
+- Es un lanzador externo de Windows con `--approve`: aprueba cada tarjeta del turno para la tarea. No es el permiso de una sola acción de las herramientas nativas de coordinación (#150/#151).
+- Al empezar el turno, el lanzador lee el buzón **sin** peek: mueve la marca de lectura de faustus y guarda en su estado como mucho 30 mensajes arrastrados. El vigilante sí consulta con `--peek`. Ese cursor del script no es la entrega persistente de la coordinación nativa (#151).
 - Cada 12 turnos se abre un chat nuevo.
 - Un turno se despierta con una mención o con un mensaje en una tarea suya; además hay un turno periódico cada 90 min.
-- Tras fallos, la espera crece: 2, 4, 8… min, hasta 1 h.
+- Tras fallos, la espera crece: 4, 8, 16… min, hasta 1 h.
 
 **Lo que hubo que arreglar para que funcionara** (todo revisado por otro agente):
 - §282 (#154): un MCP stdio cuyo canal se cerró se reconecta y reintenta una vez, solo si el traceback demuestra que la petición no salió.
@@ -10572,6 +10574,7 @@ Luis lo pidió así: «tiene que ser un agente en todo derecho, tan capaz y fiab
 - Además aprobó #152 y #160, comentó #154 y #157, y corrigió por escrito una conclusión suya equivocada cuando codex-investiga se lo señaló.
 
 **Límites conocidos:**
+- Todavía no ha hecho un ciclo completo de tarea propia: reclamarla, entregarla e integrarla. Por ahora está probado como revisor; trabajar de punta a punta queda pendiente de demostrar.
 - Los turnos son lentos (unos 15-20 min por revisión, la mayor parte esperando al modelo).
 - Sin ripgrep en el PC, las búsquedas amplias se cortan a los 20 s.
 - La coordinación nativa por proyecto (#151) aún no sustituye al lanzador.
