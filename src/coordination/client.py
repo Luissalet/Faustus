@@ -149,21 +149,35 @@ class Client:
         held_locks = None
         if operation == "heartbeat":
             lock_snapshot = await self.remote("locks", {})
-            if (lock_snapshot.get("capabilities") or {}).get("heartbeat_selective_renewal") is not True:
-                raise CoordinationError("the live Hub lacks selective heartbeat renewal; update the Hub before using this connector")
             held_locks = lock_snapshot.get("locks")
         clean = authorize(self.binding, operation, args, task=task, held_locks=held_locks, read_only=self.read_only)
         outside_count = 0
+        selective_heartbeat = False
+        heartbeat_selection = []
         if operation == "heartbeat":
+            outside_count = sum(lock["owner"] == self.binding.actor and not self.binding.permits_resource(lock["resource"])
+                                for lock in held_locks)
+            heartbeat_selection = clean["renew_resources"]
             name = f"mcp__{self.binding.connector_id}__hub_agora_heartbeat"
             offered = next((tool for tool in self.manager.get_all_tools() if tool.get("qualified_name") == name), {})
             schema = offered.get("input_schema") or offered.get("inputSchema") or {}
             props = schema.get("properties") if isinstance(schema, dict) else None
             selector = props.get("renew_resources", {}) if isinstance(props, dict) else {}
-            if selector.get("type") != "array" or selector.get("items", {}).get("type") != "string":
-                raise CoordinationError("the bound Hub heartbeat lacks the selective-renewal contract; refresh or update the connector")
-            outside_count = sum(lock["owner"] == self.binding.actor and not self.binding.permits_resource(lock["resource"])
-                                for lock in held_locks)
+            capability = lock_snapshot.get("capabilities")
+            selective_heartbeat = (isinstance(capability, dict) and capability.get("heartbeat_selective_renewal") is True
+                and isinstance(selector, dict) and selector.get("type") == "array"
+                and isinstance(selector.get("items"), dict) and selector["items"].get("type") == "string")
+            if not selective_heartbeat:
+                self.live()
+                if outside_count:
+                    return {"ok": True, "status": "partial", "result_status": "partial", "effect_certainty": "none",
+                        "heartbeat_recorded": False, "renewal_mode": "not_dispatched",
+                        "advisories": [{"code": "heartbeat_protocol_partial", "count": outside_count,
+                            "message": "Heartbeat was not recorded and no lock renewal was dispatched. Owned locks exist outside this binding; update the Hub or refresh its connector for selective renewal. No owner approval is required."}]}
+                # Legacy behaviour is compatible with the observed snapshot.
+                # It is not an atomic selective-renewal guarantee: an outside
+                # lock acquired after the read can still be renewed by an old Hub.
+                clean.pop("renew_resources")
         if task is not None and operation not in READ_OPERATIONS:
             fresh = (await self.remote("task", {"task_id": task["id"]})).get("task")
             fields = ("id", "repo", "paths", "owner", "thread_id")
@@ -225,10 +239,17 @@ class Client:
         result = await self.remote(REMOTE[operation], {**clean, "agent": self.binding.actor})
         if operation == "heartbeat":
             renewal = result.get("lock_renewal")
-            if (not isinstance(renewal, dict) or renewal.get("mode") != "selected"
+            expected_mode = "selected" if selective_heartbeat else "all"
+            if ((selective_heartbeat or renewal is not None) and (
+                    not isinstance(renewal, dict) or renewal.get("mode") != expected_mode
                     or not isinstance(renewal.get("renewed_resources"), list)
-                    or not all(isinstance(res, str) and res in clean["renew_resources"] for res in renewal["renewed_resources"])):
+                    or not all(isinstance(res, str) and res in heartbeat_selection for res in renewal["renewed_resources"]))):
                 raise UnknownOutcome("heartbeat renewal receipt did not match the selected resources; inspect locks before retrying")
+            result["heartbeat_recorded"] = True
+            result["renewal_mode"] = "selected" if selective_heartbeat else "legacy_all"
+            if not selective_heartbeat:
+                result["advisories"] = [{"code": "legacy_renewal_snapshot", "count": 0,
+                    "message": "Heartbeat recorded using legacy renewal. All owned locks were covered in the observed snapshot; a legacy Hub cannot guarantee selective renewal if locks change concurrently."}]
         if operation == "heartbeat" and outside_count:
             result["advisories"] = [{"code": "locks_outside_binding", "count": outside_count,
                 "message": "Heartbeat recorded. Owned locks outside this binding were not renewed; their controller can renew them separately."}]

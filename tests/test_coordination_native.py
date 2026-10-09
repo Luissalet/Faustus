@@ -115,9 +115,48 @@ async def test_model_cannot_choose_heartbeat_renewal_or_actor(native):
 async def test_new_local_catalog_cannot_renew_via_an_old_live_hub(native):
     _, binding, manager, client = native
     manager.responses['locks']={'ok':True,'locks':[{'owner':binding.actor,'resource':'model:reserved-qa'}]}
-    with pytest.raises(CoordinationError,match='live Hub'):
-        await client.execute('heartbeat',{})
+    result=await client.execute('heartbeat',{})
+    assert result['status']=='partial' and result['heartbeat_recorded'] is False
+    assert result['result_status']=='partial'
     assert len(manager.calls)==1 and manager.calls[0][0].endswith('_locks')
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('locks',[[],[{'owner':'faustus-native','resource':'path:writer/src/file.ts'}]])
+async def test_old_live_hub_legacy_heartbeat_with_no_outside_locks_and_no_receipt(native,locks):
+    _,binding,manager,client=native
+    manager.responses['locks']={'ok':True,'locks':locks}
+    manager.responses['heartbeat']={'ok':True,'agent':binding.actor}
+    result=await client.execute('heartbeat',{'doing':'legacy metadata'})
+    assert result['heartbeat_recorded'] is True and result['renewal_mode']=='legacy_all'
+    assert manager.calls[-1][1]=={'doing':'legacy metadata','agent':binding.actor}
+    assert result['advisories'][0]['code']=='legacy_renewal_snapshot'
+
+
+@pytest.mark.asyncio
+async def test_new_hub_with_old_catalog_and_all_inside_uses_legacy_mode_all_receipt(native):
+    _,binding,manager,client=native
+    original=manager.get_all_tools
+    def old_catalog():
+        tools=original()
+        next(t for t in tools if t['qualified_name'].endswith('_heartbeat')).pop('input_schema')
+        return tools
+    manager.get_all_tools=old_catalog
+    manager.responses['locks']={'ok':True,'capabilities':{'heartbeat_selective_renewal':True},
+        'locks':[{'owner':binding.actor,'resource':'path:writer/src/file.ts'}]}
+    manager.responses['heartbeat']={'ok':True,'lock_renewal':{'mode':'all','renewed_resources':['path:writer/src/file.ts']}}
+    result=await client.execute('heartbeat',{})
+    assert result['heartbeat_recorded'] and result['renewal_mode']=='legacy_all'
+    assert 'renew_resources' not in manager.calls[-1][1]
+
+
+@pytest.mark.asyncio
+async def test_legacy_receipt_showing_a_new_outside_lock_is_unknown_not_selective_success(native):
+    _,binding,manager,client=native
+    manager.responses['locks']={'ok':True,'locks':[]}
+    manager.responses['heartbeat']={'ok':True,'lock_renewal':{'mode':'all','renewed_resources':['model:new-after-snapshot']}}
+    with pytest.raises(UnknownOutcome):
+        await client.execute('heartbeat',{})
 
 
 @pytest.mark.asyncio
