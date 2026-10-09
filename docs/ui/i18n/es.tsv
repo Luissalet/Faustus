@@ -620,7 +620,7 @@ Auto — Ollama picks the freest card, splits when needed	Auto — Ollama elige 
 Auto — freest card, split when nothing fits one	Auto — la tarjeta más libre, repartido cuando no cabe en una
 Auto-corrected to	Corregido automáticamente a
 Auto-refresh	Actualización automática
-Automatic	Automática
+Automatic	Automático
 Automatic (model and settings)	Automático (modelo y ajustes)
 Automatic approval	Automático
 Automatic extraction off.	Extracción automática desactivada.
@@ -9307,7 +9307,71 @@ Workspace path	Ruta del workspace
 Errors	Errores
 Not set up	Sin configurar
 Manage MCP server	Configurar servidor MCP
-
+Only this action	Sólo esta acción
+Runs only the sealed action once. Does not authorize later actions.	Ejecuta sólo la acción exacta una vez. No autoriza acciones posteriores.
+You allowed only this action once.	Has autorizado sólo esta acción, una vez.
+Work coordination in Agora	Coordinación del trabajo en Ágora
+Not configured	Sin configurar
+Coordination disabled	Coordinación desactivada
+Coordination unavailable	Coordinación no disponible
+Project configuration saved	Configuración del proyecto guardada
+Coordination available	Coordinación disponible
+Reading coordination settings…	Leyendo la configuración de coordinación…
+Faustus uses this project configuration in its conversations. Write the assignment in the usual chat.	Faustus usa esta configuración en las conversaciones del proyecto. Escribe el encargo en el chat habitual.
+Saved connection unavailable	La conexión guardada no está disponible
+Disable coordination	Desactivar la coordinación
+Saved connection	Conexión guardada
+Choose a saved connection	Elige una conexión guardada
+Open connections	Abrir conexiones
+Work folders in this project	Carpetas de trabajo de este proyecto
+Reading project folders…	Leyendo las carpetas del proyecto…
+Project folders could not be checked. Reconnect the saved connection and retry.	No se han podido comprobar las carpetas del proyecto. Reconecta la conexión guardada y vuelve a intentarlo.
+No project work folders are available through this connection.	Esta conexión no ofrece carpetas de trabajo del proyecto.
+Enable coordination for this project	Activar la coordinación para este proyecto
+Could not read coordination settings. Try again.	No se ha podido leer la configuración de coordinación. Vuelve a intentarlo.
+Could not load saved connections. Try again.	No se han podido leer las conexiones guardadas. Vuelve a intentarlo.
+Project coordination saved.	Coordinación del proyecto guardada.
+Project coordination disabled.	Coordinación del proyecto desactivada.
+The coordination settings changed. Reload them before saving again.	La configuración de coordinación ha cambiado. Recárgala antes de volver a guardar.
+Could not save coordination settings. Check the connection and try again.	No se ha podido guardar la configuración de coordinación. Comprueba la conexión y vuelve a intentarlo.
+Agora coordination is not configured	La coordinación en Ágora no está configurada
+Agora coordination is disabled	La coordinación en Ágora está desactivada
+Agora coordination is unavailable	La coordinación en Ágora no está disponible
+Project coordination is saved	La coordinación del proyecto está guardada
+Agora coordination is available	La coordinación en Ágora está disponible
+Coordination status could not be checked	No se ha podido comprobar el estado de coordinación
+Checking project coordination…	Comprobando la coordinación del proyecto…
+Project configuration	Configuración del proyecto
+{n} coordination message pending	{n} mensaje de coordinación pendiente
+{n} coordination messages pending	{n} mensajes de coordinación pendientes
+Global approvals	Aprobaciones globales
+Uses the current rules; some tools may still ask for approval.	Aplica las reglas actuales; algunas herramientas pueden pedir aprobación.
+Runs tools without asking for approval.	Ejecuta herramientas sin pedir aprobación.
+Global approvals: {label}	Aprobaciones globales: {label}
+Approve automatically	Aprobar automáticamente
+Full access	Acceso completo
+Applies to every Faustus conversation. Changes are saved globally.	Se aplica a todas las conversaciones de Faustus. Los cambios se guardan globalmente.
+Confirm actions when the current tool checks require approval.	Pregunta cuando las comprobaciones de la herramienta requieren aprobación.
+Approve routine desktop actions automatically; other checks can still ask.	Aprueba automáticamente las acciones habituales de escritorio; las demás comprobaciones pueden seguir preguntando.
+Run enabled tools without approval prompts. Tool availability, workspace and execution restrictions remain.	Ejecuta las herramientas habilitadas sin pedir aprobación. Se mantienen las restricciones de disponibilidad, carpeta y ejecución.
+Could not refresh global approvals.	No se han podido actualizar las aprobaciones globales.
+Could not save global approvals.	No se han podido guardar las aprobaciones globales.
+Conversation defaults	Configuración de las conversaciones
+Used by every chat in this project. A chat can override them for its next turns.	Se aplica a todos los chats del proyecto. Cada chat puede ajustarla para sus próximos turnos.
+Execution budget	Margen de ejecución
+Use app defaults	Usar la configuración de la aplicación
+Initial response wait (seconds)	Espera inicial (segundos)
+Includes preparation and queue. Leaves the model and its context window unchanged.	Incluye la preparación y la cola. Conserva el modelo y su ventana de contexto.
+Initial wait	Espera inicial
+Initial response wait	Espera de la primera respuesta
+Applies to the next turn, including preparation and queue.	Se aplica al próximo turno, incluida la preparación y la cola.
+Apply to this chat	Aplicar a este chat
+Use inherited setting	Usar la configuración heredada
+Uses supervised execution budgets. Tool permissions stay unchanged.	Usa el margen de ejecución supervisada. Los permisos de herramientas se mantienen.
+Uses bounded autonomous execution budgets. Tool permissions stay unchanged.	Usa el margen de ejecución autónoma acotada. Los permisos de herramientas se mantienen.
+Only read tools are offered. Tool permissions stay unchanged.	Sólo se ofrecen herramientas de lectura. Los permisos de herramientas se mantienen.
+Loading project execution preferences… Your draft is kept.	Cargando las preferencias de ejecución del proyecto… Tu borrador se conserva.
+Could not load project execution preferences. Your draft is kept; retry before sending.	No se han podido cargar las preferencias de ejecución del proyecto. Tu borrador se conserva; reintenta antes de enviar.
 Evidence notice	Aviso de evidencias
 the calculation does not match the checked result	el cálculo no coincide con el resultado comprobado
 the saved-link count does not match the observed result	el total de enlaces guardados no coincide con lo observado
