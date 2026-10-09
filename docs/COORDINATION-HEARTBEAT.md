@@ -1,0 +1,15 @@
+# Scoped native heartbeat
+
+`coordination_heartbeat` reports activity even when its fixed actor also owns locks outside this project's binding. The native client reads current locks from the bound connector, derives an exact renewal list using the binding's existing resource rules, and sends that list to the Hub. Model arguments can set doing/state/note; they cannot choose renewal resources, actor, connector, force or grants.
+
+Outside owned locks generate a count-only `locks_outside_binding` advisory. Their names are not disclosed by that notice and their TTLs are not extended. Foreign locks are untouched. An empty selection records metadata without renewal. Another controller may renew its own reservations separately; no model or resource name is hardcoded as an exception.
+
+The client first classifies current owned locks. When the live Hub advertises `locks.capabilities.heartbeat_selective_renewal: true` and its heartbeat MCP schema offers the array selector, it uses exact renewal and requires a matching selected/subset receipt. This protects a mixed deployment where local MCP catalogue code is new but the running Hub still has legacy all-lock behaviour.
+
+Without that contract, a snapshot with no owned lock outside the binding permits the existing legacy heartbeat (no selector). A legacy Hub may return no renewal receipt; a present receipt must be mode all and contain only the observed covered resources. The response explicitly identifies `renewal_mode: legacy_all`. This is compatibility, **not an atomic selective-renewal guarantee**: an outside lock acquired between the snapshot and dispatch may be renewed by the legacy backend, and a receipt showing such a change is an unknown outcome. Only the selective backend eliminates that race; deploy the Hub first and refresh its connector to obtain that guarantee.
+
+If owned locks outside the binding exist and selective renewal is unavailable, the client dispatches no heartbeat. It returns an informative partial result (`heartbeat_recorded: false`, `renewal_mode: not_dispatched`, `status/result_status: partial`) without a hard approval error or a fabricated heartbeat acknowledgement. Existing state/TTLs remain unchanged; update the Hub or refresh the stale catalogue for recovery. No owner approval is requested. Missing/malformed receipts after selective dispatch or mismatched present legacy receipts remain unknown outcomes requiring inspection before retry.
+
+Read-only policy, disabled tools, actor identity, binding/connector revalidation and revocation handling retain their existing protections. This changes ordinary out-of-scope lock bookkeeping, not permissions or approval policy. Heartbeat remains a metadata write and is unavailable in a read-only turn.
+
+API `/api/coordination/{session_id}/actions`, the normal chat tool and REST MCP expose the same result and advisory. Project/template identity and resources come from the normal native configuration. Validation records actual lock expiries in an isolated Hub and uses a GPU-free HTTP provider and Studio; it does not benchmark an autonomous model.
