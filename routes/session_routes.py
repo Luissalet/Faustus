@@ -603,9 +603,18 @@ def setup_session_routes(
         skip_validation: str = Form(None),
         api_key: str = Form(""),
         endpoint_id: str = Form(""),
+        project_id: str = Form(""),
     ):
         skip_val = str(skip_validation).lower() == "true"
         user = effective_user(request)
+        selected_project = None
+        if project_id:
+            from services.projects import get_store as project_store
+            selected_project = project_store().get(project_id, user)
+            if not selected_project:
+                raise HTTPException(404, "Project not found")
+            if not selected_project.get("enabled", True):
+                raise HTTPException(400, "Project is disabled")
         endpoint_api_key = ""
         endpoint_base_url = ""
         _reject_raw_endpoint_url_for_non_admin(request, user, endpoint_id, endpoint_url)
@@ -698,6 +707,8 @@ def setup_session_routes(
             model=model_to_use,
             rag=str(rag).lower() == "true" if rag else False,
             owner=user,
+            project_id=selected_project["id"] if selected_project else None,
+            folder=selected_project.get("folder") if selected_project else None,
         )
         # Set auth headers for custom API-key endpoints
         resolved_key = request_api_key

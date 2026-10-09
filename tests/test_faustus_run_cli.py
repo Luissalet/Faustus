@@ -24,6 +24,13 @@ class _H(BaseHTTPRequestHandler):
     sessions = []
     gets = {}
     refuse = None
+    puts = []
+
+    def do_PUT(self):
+        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)))
+        _H.puts.append((self.path, body))
+        data = json.dumps({"binding": {**body, "project_id": "p1"}}).encode()
+        self.send_response(200); self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
 
     def do_GET(self):  # noqa: N802
         payload = _H.gets.get(self.path.split("?")[0])
@@ -62,6 +69,7 @@ class _H(BaseHTTPRequestHandler):
 
 def _serve(legs, gets=None, refuse=None):
     _H.forms, _H.legs, _H.sessions, _H.gets, _H.refuse = [], list(legs), [], dict(gets or {}), refuse
+    _H.puts = []
     srv = HTTPServer(("127.0.0.1", 0), _H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv, f"http://127.0.0.1:{srv.server_port}"
@@ -145,3 +153,77 @@ def test_a_refused_turn_says_why(capsys):
     summary = json.loads(capsys.readouterr().out.splitlines()[-1])
     assert code == fr.EXIT_ERROR
     assert "No model selected for this chat." in summary["error"]
+
+
+def test_explicit_project_is_created_atomically_and_preferences_are_not_overridden(capsys):
+    p={'id':'p1','workspace':'D:/project','enabled':True}
+    srv,url=_serve([LEG_DONE],gets={'/api/projects/p1':p,'/api/projects/resolve/session/s1':{'project':p}})
+    try:code=fr.main(['-p','do it','--url',url,'--project-id','p1','--json'])
+    finally:srv.shutdown()
+    assert code==0 and _H.sessions[0]['project_id']=='p1'
+    assert not {'autonomy_preset','reasoning_effort','thinking_enabled','initial_response_timeout_s'} & _H.forms[0].keys()
+    assert json.loads(capsys.readouterr().out.splitlines()[0])['project_id']=='p1'
+
+
+def test_exact_unique_workspace_inherits_project(tmp_path,capsys):
+    p={'id':'p1','workspace':str(tmp_path),'enabled':True}
+    srv,url=_serve([LEG_DONE],gets={'/api/projects':[p],'/api/projects/resolve/session/s1':{'project':p}})
+    try:code=fr.main(['-p','do it','--url',url,'--workspace',str(tmp_path)])
+    finally:srv.shutdown()
+    assert code==0 and _H.sessions[0]['project_id']=='p1'
+
+
+def test_ambiguous_workspace_warns_and_continues_without_inventing_a_project(tmp_path,capsys):
+    projects=[{'id':pid,'workspace':str(tmp_path),'enabled':True} for pid in ('p1','p2')]
+    srv,url=_serve([LEG_DONE],gets={'/api/projects':projects})
+    try:code=fr.main(['-p','do it','--url',url,'--workspace',str(tmp_path),'--json'])
+    finally:srv.shutdown()
+    assert code==0 and 'project_id' not in _H.sessions[0]
+    captured=capsys.readouterr();assert 'Several projects' in captured.err
+    assert json.loads(captured.out.splitlines()[0])['project_warnings']
+
+
+def test_disabled_explicit_project_does_not_create_or_infer(capsys):
+    srv,url=_serve([],gets={'/api/projects/p1':{'id':'p1','enabled':False}})
+    try:code=fr.main(['-p','do it','--url',url,'--project-id','p1'])
+    finally:srv.shutdown()
+    assert code==fr.EXIT_ERROR and not _H.sessions and not _H.forms
+
+
+def test_resumed_chat_is_never_moved_to_the_selected_project(capsys):
+    srv,url=_serve([],gets={'/api/projects/resolve/session/old':{'project':{'id':'p2'}}})
+    try:code=fr.main(['-p','continue','--url',url,'--session','old','--project-id','p1'])
+    finally:srv.shutdown()
+    assert code==fr.EXIT_ERROR and not _H.sessions and not _H.forms and not _H.puts
+
+
+def test_resuming_same_project_preserves_identity_and_explicit_effort(capsys):
+    p={'id':'p1'};binding={'actor':'faustus-reviewer'}
+    srv,url=_serve([LEG_DONE],gets={'/api/projects/resolve/session/old':{'project':p},'/api/coordination/old':{'binding':binding}})
+    try:code=fr.main(['-p','continue','--url',url,'--session','old','--project-id','p1','--agent-id','faustus-reviewer','--effort','low'])
+    finally:srv.shutdown()
+    assert code==0 and not _H.sessions and not _H.puts
+    assert _H.forms[0]['reasoning_effort']=='low' and 'actor' not in _H.forms[0]
+
+
+def test_new_explicit_actor_uses_native_owner_api_and_exact_saved_scope(capsys):
+    p={'id':'p1'};template={'connector_id':'c1','operations':['poll','heartbeat'],'resources':[],'repos':['Fixture'],'thread_ids':[1],'active':True}
+    srv,url=_serve([LEG_DONE],gets={'/api/projects/p1':p,'/api/projects/resolve/session/s1':{'project':p},'/api/coordination/s1':{'binding':None,'template':template}})
+    try:code=fr.main(['-p','do it','--url',url,'--project-id','p1','--agent-id','faustus-reviewer'])
+    finally:srv.shutdown()
+    assert code==0 and _H.puts==[('/api/coordination/s1',{**template,'actor':'faustus-reviewer'})]
+    assert not {'actor','agent_id','coordination_binding'} & _H.forms[0].keys()
+
+
+def test_explicit_human_actor_is_rejected_before_creating_a_chat(capsys):
+    srv,url=_serve([],gets={'/api/projects/p1':{'id':'p1'}})
+    try:code=fr.main(['-p','do it','--url',url,'--project-id','p1','--agent-id','luis'])
+    finally:srv.shutdown()
+    assert code==fr.EXIT_ERROR and not _H.sessions and not _H.puts and not _H.forms
+
+
+def test_resumed_automatic_actor_is_not_rebound(capsys):
+    srv,url=_serve([],gets={'/api/projects/resolve/session/old':{'project':{'id':'p1'}},'/api/coordination/old':{'binding':None,'template':{'active':True}}})
+    try:code=fr.main(['-p','continue','--url',url,'--session','old','--agent-id','faustus'])
+    finally:srv.shutdown()
+    assert code==fr.EXIT_ERROR and not _H.puts and not _H.forms
