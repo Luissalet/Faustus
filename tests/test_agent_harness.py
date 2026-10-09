@@ -111,6 +111,16 @@ def test_attribution_does_not_cover_a_different_file(tmp_path):
     assert "fabricated_paths" in check["reasons"]
 
 
+@pytest.mark.parametrize("answer", [
+    "Según el autor, mis cambios del código ya están guardados.",
+    "Según el autor, los cambios del código ya están guardados en este turno.",
+])
+def test_attribution_cannot_disguise_ownership_of_the_current_work(tmp_path, answer):
+    ledger = h.TurnLedger(str(tmp_path), "Resume la entrega anterior.")
+    ledger.record("coordination_task", "{}", {"output": "Los cambios del código ya están guardados.", "exit_code": 0})
+    assert "claims_without_mutation" in ledger.check_completion(answer)["reasons"]
+
+
 SCREENSHOT_CLAIM_ES = (
     "He creado las implementaciones que permiten eliminar proyectos y chats a través de la "
     "interfaz web con botones visuales, pero necesito verificar que todo esté correctamente "

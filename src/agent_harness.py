@@ -790,7 +790,9 @@ _OWN_CHANGE_RE = re.compile(
     r"actualic[eé]|implement[eé]|elimin[eé]|borr[eé]|cambi[eé]|edit[eé]|escrib[ií]|correg[ií]|"
     r"arregl[eé]|apliqu[eé]|mov[ií]|renombr[eé]|refactoric[eé]|integr[eé]|complet[eé]|"
     r"termin[eé]|finalic[eé]|solucion[eé]|repar[eé]|configur[eé]|instal[eé]|guard[eé])"
-    + r"\b|\b(?:I|we)(?:'ve|\s+have)?\s+(?:now\s+|just\s+)?" + _EN_PP, re.I)
+    + r"\b|\b(?:I|we)(?:'ve|\s+have)?\s+(?:now\s+|just\s+)?" + _EN_PP
+    + r"|\b(?:mis|nuestros|nuestras|my|our)\s+(?:cambios|correcciones|changes|fixes|edits)\b"
+    + r"|\b(?:en\s+est[ae]\s+(?:turno|sesi[oó]n)|in\s+this\s+(?:turn|session))\b", re.I)
 _REPORT_STATE_RE = re.compile(r"\b(?:" + _ES_PP + "|" + _EN_PP + r")\b", re.I)
 _REPORT_STOP_WORDS = frozenset({
     "segun", "according", "author", "autor", "reviewer", "revisor", "entrega", "submission",

@@ -12,8 +12,9 @@ when a successful read contains the same state, every named path and at least
 two identifying subject words. Structured JSON records are decoded as data. Receipts are bounded
 to 200 fragments of at most 1,000 characters and are not carried into later turns.
 
-First-person changes remain claims of this turn, even within a summary and in
-read-only mode. A request to make changes does not gain the summary exception.
+First-person changes, possessive claims such as “my changes” and explicit
+“in this turn” completion remain claims of this turn, even within a summary and
+in read-only mode. A request to make changes does not gain the summary exception.
 Unsupported states, unrelated source content and negated historical states
 remain subject to the ordinary completion gate. This lexical check distinguishes
 attribution; it does not independently certify the truth of an external report.
