@@ -1,8 +1,8 @@
 """L20 (integrates L13, item 2): the Composer autonomy-preset picker must
 actually reach the server. `studio/checks/studio-autonomy-wiring.check.mjs`
 checks the `sendTurn({...})` call site in `studio/src/screens/Studio.tsx`
-forwards `knobs.autonomyPreset`; this runs it. Needs node only (source-text
-check, no bundling).
+uses the shared pick/project/global resolver and blocks unresolved projects;
+this runs it. Runtime precedence and request bodies have a separate adapter check.
 """
 import shutil
 import subprocess

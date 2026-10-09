@@ -62,7 +62,27 @@ export interface SessionExecutionDefaults {
 }
 
 export function getSessionExecutionDefaults(sid: string, signal?: AbortSignal): Promise<SessionExecutionDefaults> {
-  return getJson<SessionExecutionDefaults>(`/api/projects/execution-defaults/session/${encodeURIComponent(sid)}`, signal);
+  return getJson<SessionExecutionDefaults>(`/api/projects/execution-defaults/session/${encodeURIComponent(sid)}`, signal).then(value => {
+    if (!value || !(value.project_id === null || typeof value.project_id === 'string') ||
+        !value.defaults || typeof value.defaults !== 'object' || Array.isArray(value.defaults) ||
+        !Number.isInteger(value.revision) || value.revision < 0 ||
+        (value.defaults.autonomy_preset !== undefined &&
+         !['supervised', 'bounded_autonomous', 'read_only'].includes(value.defaults.autonomy_preset))) {
+      throw new Error('Invalid project execution preferences');
+    }
+    return value;
+  });
+}
+
+/** One precedence rule for both the composer label and its request. A valid
+ * project default is omitted on the wire so the server inherits it; a global
+ * fallback must be sent explicitly, including read_only. */
+export function resolveExecutionAutonomy(picks: ExecutionDefaults, defaults: ExecutionDefaults,
+                                         fallback?: ExecutionDefaults['autonomy_preset']) {
+  return {
+    effective: picks.autonomy_preset ?? defaults.autonomy_preset ?? fallback ?? 'supervised',
+    override: picks.autonomy_preset ?? (defaults.autonomy_preset === undefined ? fallback ?? 'supervised' : undefined),
+  };
 }
 
 export interface MemoryFile {

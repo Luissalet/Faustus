@@ -142,6 +142,7 @@ export interface ComposerProps {
   busy: boolean;
   pending: boolean;
   preparing?: boolean;
+  sendBlocked?: boolean;
   knobs: Knobs;
   setKnobs: (update: (k: Knobs) => Knobs) => void;
   workspace: string;
@@ -305,6 +306,7 @@ export function Composer({
   busy,
   pending,
   preparing = false,
+  sendBlocked = false,
   knobs,
   setKnobs,
   workspace,
@@ -472,7 +474,7 @@ export function Composer({
   /** A sent turn has consumed its attached context — cleared here so the
    *  next message starts from nothing, exactly like attachments do. */
   const trySend = () => {
-    if (uploads.hasPending()) return;
+    if (uploads.hasPending() || preparing || (sendBlocked && !busy)) return;
     flushDraft();
     // `draftRef`, not `draft`: the ref is written synchronously on every
     // keystroke while the state behind `draft` is a render behind. Typing
@@ -1158,7 +1160,7 @@ export function Composer({
               onQueueSend={onQueueSend}
             />
           ) : (
-            <button type="submit" className="fs-studio__go" disabled={!canSend || preparing} aria-label={t(preparing ? 'Creating…' : 'Send')} data-testid="studio-send">
+            <button type="submit" className="fs-studio__go" disabled={!canSend || preparing || sendBlocked} aria-label={t(preparing ? 'Creating…' : 'Send')} data-testid="studio-send">
               <ArrowUp size={16} aria-hidden="true" />
             </button>
           )}

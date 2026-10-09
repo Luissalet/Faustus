@@ -9362,4 +9362,6 @@ export const es: Record<string, string> = {
   "Uses supervised execution budgets. Tool permissions stay unchanged.": "Usa el margen de ejecución supervisada. Los permisos de herramientas se mantienen.",
   "Uses bounded autonomous execution budgets. Tool permissions stay unchanged.": "Usa el margen de ejecución autónoma acotada. Los permisos de herramientas se mantienen.",
   "Only read tools are offered. Tool permissions stay unchanged.": "Sólo se ofrecen herramientas de lectura. Los permisos de herramientas se mantienen.",
+  "Loading project execution preferences… Your draft is kept.": "Cargando las preferencias de ejecución del proyecto… Tu borrador se conserva.",
+  "Could not load project execution preferences. Your draft is kept; retry before sending.": "No se han podido cargar las preferencias de ejecución del proyecto. Tu borrador se conserva; reintenta antes de enviar.",
 };

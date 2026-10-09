@@ -1,10 +1,7 @@
-// L20 (integrates L13, item 2): Composer.tsx lets a person pick an autonomy
-// preset into `knobs.autonomyPreset`, and chat.ts (autonomy-preset.check.mjs)
-// forwards it on the wire exactly when `sendTurn` receives it — but nothing
-// checked that `Studio.tsx`'s `sendTurn({...})` call actually READS
-// `knobs.autonomyPreset` and passes it along. Without that one field the
-// picker was decoration: every turn silently ran under the server default
-// ('supervised'), preset choice included.
+// L20 / project defaults: display and request must use the same resolver.
+// A valid project default is inherited by the server. When it is absent,
+// the global knob (especially read_only) must still reach the request.
+// Dynamic precedence and wire cases live in project-execution-defaults.check.mjs.
 //
 // A full render of Studio.tsx (screen-level component, many hooks/providers)
 // is not worth the harness it would need for one field; this checks the
@@ -38,9 +35,12 @@ const callBody = src.slice(bodyStart, i + 1);
 
 assert.match(
   callBody,
-  /autonomyPreset\s*:\s*knobs\.autonomyPreset/,
-  'sendTurn({...}) must pass `autonomyPreset: knobs.autonomyPreset` — the ' +
-  'Composer preset picker is otherwise wired to nothing',
+  /autonomyPreset\s*:\s*autonomy\.override/,
+  'sendTurn must forward the shared autonomy resolution, not silently fall back to supervised',
 );
-
-console.log('Studio.tsx: sendTurn({...}) forwards knobs.autonomyPreset');
+assert.match(src, /effectiveAutonomy\s*=\s*resolveExecutionAutonomy\(executionPicks, executionDefaults, knobs\.autonomyPreset\)\.effective/);
+assert.match(src, /const autonomy\s*=\s*resolveExecutionAutonomy\(executionPicks, resolvedExecution\.defaults, knobs\.autonomyPreset\)/);
+assert.match(src, /const execution = await executionForSend\(sid\);\s*setDraft/,
+  'Resolve project preferences before removing the draft on a first send');
+assert.match(src, /sendBlocked=\{executionBlocked\}/, 'Pending or failed project resolution must block the composer');
+console.log('Studio.tsx: forwards knobs.autonomyPreset through shared precedence and guards unresolved projects');

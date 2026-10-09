@@ -27,7 +27,7 @@ import {
 } from '../adapters/chat';
 import { ApiError } from '../adapters/api';
 import { acknowledgeQueuedSend, claimQueuedSends } from '../adapters/runReport';
-import { getSessionExecutionDefaults, listProjects, type Project, type ExecutionDefaults, type SessionExecutionDefaults } from '../adapters/projects';
+import { getSessionExecutionDefaults, resolveExecutionAutonomy, listProjects, type Project, type ExecutionDefaults, type SessionExecutionDefaults } from '../adapters/projects';
 import { createDoc } from '../adapters/documents';
 import type { EvidenceRef } from '../adapters/evidence';
 import {
@@ -442,6 +442,8 @@ export function StudioScreen() {
   }));
   const [executionPicks, setExecutionPicks] = useState<ExecutionDefaults>(() => readJson(`${EXECUTION_KEY}${sessionId ?? 'new'}`, {}));
   const [executionProject, setExecutionProject] = useState<(SessionExecutionDefaults & { sid: string }) | null>(null);
+  const [executionError, setExecutionError] = useState<{ sid: string; message: string } | null>(null);
+  const [executionReload, setExecutionReload] = useState(0);
   const previousExecutionSession = useRef(sessionId);
   useEffect(() => {
     const born = !previousExecutionSession.current && Boolean(sessionId);
@@ -451,15 +453,34 @@ export function StudioScreen() {
       writeJson(`${EXECUTION_KEY}${sessionId}`, executionPicks);
     } else setExecutionPicks(stored);
     setExecutionProject(null);
+    setExecutionError(null);
     if (!sessionId) return;
     const controller = new AbortController();
     getSessionExecutionDefaults(sessionId, controller.signal).then((value) => {
       if (!controller.signal.aborted) setExecutionProject({ ...value, sid: sessionId });
-    }).catch(() => undefined);
+    }).catch(error => {
+      if (!controller.signal.aborted) setExecutionError({ sid: sessionId, message: String(error) });
+    });
     return () => controller.abort();
-  }, [sessionId]);
+  }, [sessionId, executionReload]);
   const executionDefaults = executionProject?.sid === sessionId ? executionProject.defaults : {};
-  const effectiveAutonomy = executionPicks.autonomy_preset ?? executionDefaults.autonomy_preset ?? knobs.autonomyPreset ?? 'supervised';
+  const effectiveAutonomy = resolveExecutionAutonomy(executionPicks, executionDefaults, knobs.autonomyPreset).effective;
+  const executionBlocked = Boolean(sessionId && executionProject?.sid !== sessionId);
+  const executionFailed = executionError?.sid === sessionId;
+  const executionForSend = useCallback(async (sid: string): Promise<SessionExecutionDefaults> => {
+    if (executionProject?.sid === sid) return executionProject;
+    try {
+      const value = await getSessionExecutionDefaults(sid);
+      if (visibleSession.current === sid || freshRef.current === sid) {
+        setExecutionProject({ ...value, sid });
+        setExecutionError(null);
+      }
+      return value;
+    } catch (error) {
+      if (visibleSession.current === sid || freshRef.current === sid) setExecutionError({ sid, message: String(error) });
+      throw error;
+    }
+  }, [executionProject]);
   const pickExecution = useCallback((key: 'autonomy_preset' | 'initial_response_timeout_s', value: string | number | null) => {
     setExecutionPicks(previous => {
       const next = { ...previous };
@@ -1456,8 +1477,19 @@ export function StudioScreen() {
          *  a session's very first turn — see `SendOptions.behaviorMode`'s
          *  own doc comment for why every later turn omits it. */
         behaviorMode?: string;
+        execution?: { sid: string; value: SessionExecutionDefaults };
       } = {},
     ) => {
+      let resolvedExecution: SessionExecutionDefaults;
+      try {
+        resolvedExecution = options.execution?.sid === sid ? options.execution.value : await executionForSend(sid);
+      } catch {
+        // executionForSend exposes the failure next to Retry. Do not duplicate
+        // that persistent message in a second notice.
+        if (!options.approval && message) setDraft(current => current.trim() ? current : message);
+        return;
+      }
+      const autonomy = resolveExecutionAutonomy(executionPicks, resolvedExecution.defaults, knobs.autonomyPreset);
       if (route?.missing) {
         // The remembered model is gone from its endpoint: say so and open the
         // picker rather than answering with a model the user never chose.
@@ -1515,7 +1547,7 @@ export function StudioScreen() {
           revision: options.revision,
           delegateTasks: options.delegation,
           incognito: knobs.incognito,
-          autonomyPreset: executionPicks.autonomy_preset ?? (executionProject && !executionProject.project_id ? knobs.autonomyPreset : undefined),
+          autonomyPreset: autonomy.override,
           docContext: knobs.docContext,
           presetId: preset?.id,
           behaviorMode: options.behaviorMode,
@@ -1564,7 +1596,7 @@ export function StudioScreen() {
         refreshStaleWires(sid);
       }
     },
-    [knobs, executionPicks, executionProject, workspace, route, gen, thinkMode, thinkEffort, thinkingOnPick, effortPick, reasoningCaps.thinking_toggle, patchLast, refreshSessions, syncIds, preset, panel.doc,teamEnabled,panelDispatch,refreshStaleWires],
+    [knobs, executionPicks, executionForSend, workspace, route, gen, thinkMode, thinkEffort, thinkingOnPick, effortPick, reasoningCaps.thinking_toggle, patchLast, refreshSessions, syncIds, preset, panel.doc,teamEnabled,panelDispatch,refreshStaleWires, say],
   );
 
   /**
@@ -2851,6 +2883,7 @@ export function StudioScreen() {
         const isNewSession = !sessionId;
         const sid = await ensureSession(message || sent.map((a) => a.name).join(', '));
         if (!sid) return; // Keep the draft and attachments available for retry.
+        const execution = await executionForSend(sid);
         setDraft(current => current.trim() === message ? '' : current);
         // A fresh chat becomes a session on its first send; the message left
         // through `new`, so `new` must not offer it again to the next chat.
@@ -2871,13 +2904,16 @@ export function StudioScreen() {
           setChatModeState(pendingChatMode);
           await setChatMode(sid, pendingChatMode).then((view) => setChatModeState(view.mode)).catch(() => undefined);
         }
-        void run(sid, withImageReferences(message, sent), { attachments: sent, behaviorMode: isNewSession ? pendingModeId ?? undefined : undefined });
+        void run(sid, withImageReferences(message, sent), { attachments: sent, behaviorMode: isNewSession ? pendingModeId ?? undefined : undefined, execution: { sid, value: execution } });
+      } catch {
+        // The resolution failure is shown next to the composer; the draft and
+        // attachments were not consumed.
       } finally {
         sendingMessage.current = false;
         setPreparingMessage(false);
       }
     },
-    [attachments, busy, runCommand, ensureSession, run, sessionId, pendingModeId, pendingChatMode, steerLive],
+    [attachments, busy, runCommand, ensureSession, executionForSend, run, sessionId, pendingModeId, pendingChatMode, steerLive],
   );
 
   /* Notas → "Resolver con el agente": sends as soon as a route is known and
@@ -2978,7 +3014,7 @@ export function StudioScreen() {
   const busyNow = useRef(false);
   busyNow.current = busy;
   useEffect(() => {
-    if (!sessionId || busy || claimingSends.current || knobs.incognito) return;
+    if (!sessionId || busy || executionBlocked || claimingSends.current || knobs.incognito) return;
     claimingSends.current = true;
     void (async () => {
       try {
@@ -2999,7 +3035,7 @@ export function StudioScreen() {
         claimingSends.current = false;
       }
     })();
-  }, [busy, sessionId, run, knobs.incognito]);
+  }, [busy, executionBlocked, sessionId, run, knobs.incognito]);
 
   /* ── Earlier answers (‹ 1/3 ›): what a regenerate or an edit replaced ── */
   const [answerVersions, setAnswerVersions] = useState<Record<string, AnswerVersion[]>>({});
@@ -3529,12 +3565,17 @@ export function StudioScreen() {
             onSend={text => void send(text)} onStop={stop} onClose={() => setVoiceSession(null)} />
         </Suspense>}
         <CoordinationStatus sessionId={sessionId} projectId={project?.id} busy={busy} />
+        {executionBlocked && <div className="fs-studio__notice" role="status" data-testid="execution-preferences-status">
+          {executionFailed ? t('Could not load project execution preferences. Your draft is kept; retry before sending.') : t('Loading project execution preferences… Your draft is kept.')}
+          {executionFailed && <Button size="sm" variant="ghost" label={t('Retry')} onClick={() => setExecutionReload(value => value + 1)} />}
+        </div>}
         <Composer
           draft={draft}
           setDraft={setDraft}
           busy={busy}
           pending={pending}
           preparing={preparingMessage}
+          sendBlocked={executionBlocked}
           knobs={{ ...knobs, autonomyPreset: effectiveAutonomy }}
           onSetAutonomyPreset={value => pickExecution('autonomy_preset', value)}
           initialResponseTimeoutS={executionPicks.initial_response_timeout_s ?? executionDefaults.initial_response_timeout_s}

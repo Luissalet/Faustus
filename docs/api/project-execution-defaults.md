@@ -37,6 +37,16 @@ inheritance. The first normal composer send can omit all four fields and still
 use the saved project settings. Choosing an existing override before a new
 chat gets an id carries it into that new id.
 
+The composer and sender share the same autonomy precedence: per-chat choice,
+then a valid project preference, then the browser's existing global choice.
+When the project has no autonomy preference, Studio explicitly sends that
+global fallback, including `read_only`; it never displays read-only while
+silently requesting supervised execution. A valid inherited project preference
+still stays absent from the request body and is resolved by the server.
+Studio blocks click and keyboard sends while project resolution is pending or
+failed, keeps the draft, and offers Retry on failure. The first new-session
+send and other dispatch paths also resolve preferences before starting a turn.
+
 The displayed context window comes from endpoint metadata, independent of the
 reasoning budget and input token budget. A reported 1M window is not a load
 instruction or proof of a million-token inference. GPU-free scripted HTTP
