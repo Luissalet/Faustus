@@ -10576,5 +10576,5 @@ Luis lo pidió así: «tiene que ser un agente en todo derecho, tan capaz y fiab
 **Límites conocidos:**
 - Todavía no ha hecho un ciclo completo de tarea propia: reclamarla, entregarla e integrarla. Por ahora está probado como revisor; trabajar de punta a punta queda pendiente de demostrar.
 - Los turnos son lentos (unos 15-20 min por revisión, la mayor parte esperando al modelo).
-- Sin ripgrep en el PC, las búsquedas amplias se cortan a los 20 s.
+- Las búsquedas amplias tienen un tope de 20 s. ripgrep ya está instalado en el PC (#169): no lee ficheros de más de 2 MB, para en cuanto tiene suficientes resultados y, si se agota el tiempo, devuelve lo que ya encontró avisando de que es parcial. En una prueba sobre todo D:\LocalAI dio 20 resultados en 13,5 s.
 - La coordinación nativa por proyecto (#151) aún no sustituye al lanzador.
