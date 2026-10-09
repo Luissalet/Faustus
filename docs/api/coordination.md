@@ -99,3 +99,33 @@ discussion to these native reads. Previous project chats remain available
 as private historical context. Their privacy gate is unchanged; this change
 does not approve private reads, set `no_memory`, grant shell/workspace access
 or remove a tool.
+
+## Task action scope
+
+Task snapshots, board task rows and poll review/change rows include a derived
+`action_scope` object. Discussion-reference pages return it beside `task_id`.
+It lists `allowed` task operations (`claim`, `checkpoint`, `submit`, `review`,
+`done`), groups unavailable actions by stable `reason`, and sets `read_only`
+when none is eligible. `requires_task_delivery` and
+`review_requires_complete_discussion_and_testing` describe the independent
+prerequisites; eligibility is not readiness to vote or proof of testing.
+
+The server uses the same operation/task authority checks as dispatch: current
+binding activity and operation scope, turn read-only policy, repository and
+complete paths, owner, closed status, checkpoint revision and submission
+revision. Compact previews never weaken the check by omitting a fifth path.
+Assigned reviewers remain the real actors named by the task; this field does
+not let the chat impersonate them. Assignment itself adds no authorization
+condition beyond the existing cross-review rules. Generic coordination posts,
+resource locks and heartbeat retain their separate existing contracts.
+
+Hints are computed only for returned pages. Compact board pages may return
+fewer than the requested limit to preserve the 6,000-character response
+budget; follow `next_offset` and `digest` as usual. Full board fields remain
+available via `full=true`. Scope hints do not enter the remote snapshot digest
+or the stored task observation. Board/poll reads still create no task delivery
+receipt or grant; task reads retain their original explicit receipt and
+complete-discussion requirements. Actual dispatch revalidates live scope and
+CAS. No shell, workspace, private-history or external reviewer permission is
+derived from global task visibility. The tool guidance directs the agent to
+choose eligible project work and treat other tasks as read-only context.
