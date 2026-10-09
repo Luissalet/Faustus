@@ -351,6 +351,49 @@ def _same_dir(path: str, workspace: str) -> bool:
     return norm(path) == norm(workspace)
 
 
+def _runs_node_tests(command: str, workspace: str) -> bool:
+    """A requested Node test invocation, with no extra code-loading options.
+
+    Tests still execute project code on the host. This is an allowance for a
+    specific kind of invocation, not a sandbox for that code.
+    """
+    import glob
+    import os
+    import shlex
+    from src.tool_capabilities import is_abs_path, path_inside_trusted
+
+    if not workspace or not os.path.isdir(workspace) or '\\' in command:
+        return False  # use shell-independent forward-slash paths
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        return False
+    if not words or words[0] not in {'node', 'node.exe'} or '--test' not in words[1:]:
+        return False
+    for word in words[1:]:
+        if word in {'--test', '--experimental-strip-types'}:
+            continue
+        if word.startswith('--test-reporter='):
+            if word.split('=', 1)[1] not in {'spec', 'tap', 'dot'}:
+                return False
+            continue
+        if word.startswith('-'):
+            return False
+        path = _host_path(word)
+        target = path if is_abs_path(path) else os.path.join(workspace, path)
+        if not path_inside_trusted(workspace, target):
+            return False
+        if glob.has_magic(target):
+            # Shell expansion must not turn a confined spelling into an
+            # explicitly selected symlink target outside this project.
+            if '**' in target:
+                return False  # recursive expansion is not a bounded inspection
+            matches = glob.glob(target)
+            if not matches or not all(path_inside_trusted(workspace, p) for p in matches):
+                return False
+    return True
+
+
 def _runs_the_tests(user_text: str, content: Any, workspace: str = "") -> bool:
     from src import plugins as plugins_mod
 
@@ -369,7 +412,13 @@ def _runs_the_tests(user_text: str, content: Any, workspace: str = "") -> bool:
         return False
     stages = [s.strip() for s in command.split("|")]
     if not _TEST_RUNNER.match(stages[0]):
-        return False
+        # Node's flags can otherwise load arbitrary modules or write reports.
+        # Keep its allowance narrow and tied to an actual order from the user.
+        if not _ordered(plugins_mod.fold(user_text),
+                        (r'ejecuta(?:r)?', r'corre(?:r)?', r'pasa(?:r)?', r'testea(?:r)?', r'run', r'test')):
+            return False
+        if not _runs_node_tests(stages[0], workspace):
+            return False
     # Options that load code from elsewhere or move where the run happens are
     # not "run the tests": a plugin by name, another config, another root.
     if re.search(r"(?:^|\s)(?:-p|-c|--pyargs|--rootdir\S*|--basetemp\S*|--confcutdir\S*)(?:\s|$|=)",
