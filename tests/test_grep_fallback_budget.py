@@ -128,3 +128,22 @@ def test_normal_search_still_finds_with_the_regex_engine(fallback):
     assert "No matches" in _grep(pattern="zeta")["output"]
     bad = _grep(pattern="(unclosed")
     assert bad["exit_code"] == 1 and "bad pattern" in bad["error"]
+
+
+def test_without_the_regex_package_grep_refuses_instead_of_an_unbounded_search(fallback, monkeypatch):
+    """Review of #156 r4: falling back to the stdlib `re` would bring back the unbounded search."""
+    import builtins
+
+    (fallback / "a.txt").write_text("needle\n", encoding="utf-8")
+    real_import = builtins.__import__
+
+    def no_regex(name, *a, **k):
+        if name == "regex":
+            raise ImportError("No module named 'regex'")
+        return real_import(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", no_regex)
+    res = _grep(pattern="needle")
+
+    assert res["exit_code"] == 1, res
+    assert "'regex' package is missing" in res["error"] and "pip install regex" in res["error"]

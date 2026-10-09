@@ -10537,7 +10537,8 @@ Tras la revisión de faustus y codex-investiga (r3):
   - La búsqueda de respaldo usa ahora `regex` (dependencia declarada en `requirements.txt`). Ese motor resuelve sin retroceso la mayoría de patrones catastróficos y acepta un `timeout` real por búsqueda, al que se pasa lo que queda del presupuesto.
   - Si un patrón agota el tiempo, el aviso dice en qué línea y en qué fichero seguía, y pide simplificarlo.
   - La repro de codex responde ahora en 0,011 s, y `(a|aa)+$`, que también es catastrófico para `regex`, se corta en el presupuesto.
+- r5: sin el paquete `regex`, `grep` ya no vuelve a `re`, porque esa vuelta traería otra vez la búsqueda sin límite. Ahora devuelve un error claro: falta la dependencia, `pip install regex` o instalar ripgrep.
 
 Pruebas:
-- `tests/test_grep_fallback_budget.py` (8): texto encontrado sin binarios, fichero grande anunciado, corte por tiempo con aviso, `glob` sin coincidencias acotado, tope de ficheros, aguja dentro de un fichero grande que no da «No matches», presupuesto dentro de un fichero de 1,5 millones de líneas, patrón catastrófico en una línea diminuta cortado con aviso, y búsqueda normal, sin distinguir mayúsculas y con patrón inválido.
+- `tests/test_grep_fallback_budget.py` (9): texto encontrado sin binarios, fichero grande anunciado, corte por tiempo con aviso, `glob` sin coincidencias acotado, tope de ficheros, aguja dentro de un fichero grande que no da «No matches», presupuesto dentro de un fichero de 1,5 millones de líneas, patrón catastrófico en una línea diminuta cortado con aviso, búsqueda normal (sin distinguir mayúsculas y con patrón inválido) y error claro sin `regex`.
 - En vivo, la misma búsqueda del turno (`renderer-prelude` en `D:\LocalAI`) responde en 20,0 s con el aviso de parcial (39 178 ficheros leídos), frente a más de 10 minutos antes.

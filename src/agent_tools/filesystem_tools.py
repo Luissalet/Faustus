@@ -1347,7 +1347,6 @@ class GrepTool:
             return {"error": f"grep: {e}", "exit_code": 1}
 
         def _grep():
-            import re as _re
             import shutil
             rg = shutil.which("rg")
             if rg:
@@ -1378,21 +1377,19 @@ class GrepTool:
             # The third-party `regex` engine takes a real timeout per search (and avoids most
             # catastrophic backtracking): the stdlib `re` cannot be interrupted once a search
             # runs, so `(a+)+$` on a 34-byte line used to outlive any budget.
+            # Without it there is no bounded search: refuse instead of falling back to `re`.
             try:
                 import regex as _rx_engine
-            except ImportError:  # pragma: no cover - a declared dependency
-                _rx_engine = None
+            except ImportError:
+                return None, ("grep: the 'regex' package is missing (a declared dependency of Faustus, needed "
+                              "for a time-bounded search without ripgrep). Install it with "
+                              "`pip install regex`, or install ripgrep, then retry.")
             try:
-                if _rx_engine is not None:
-                    rx = _rx_engine.compile(pattern, _rx_engine.IGNORECASE if ignore_case else 0)
-                else:
-                    rx = _re.compile(pattern, _re.IGNORECASE if ignore_case else 0)
-            except (_re.error, getattr(_rx_engine, "error", _re.error)) as _e:
+                rx = _rx_engine.compile(pattern, _rx_engine.IGNORECASE if ignore_case else 0)
+            except _rx_engine.error as _e:
                 return None, f"grep: bad pattern: {_e}"
 
             def _search(line: str):
-                if _rx_engine is None:
-                    return rx.search(line)
                 return rx.search(line, timeout=max(0.01, deadline - time.monotonic()))
 
             hits = []
