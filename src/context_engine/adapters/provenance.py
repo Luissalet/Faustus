@@ -82,7 +82,18 @@ _TRUST_BY_KIND: Dict[str, Tuple[str, str]] = {
 }
 
 _LOCK = threading.RLock()
-_CACHE: "Dict[Tuple[str, str], Tuple[float, Dict[str, Any]]]" = {}
+_CACHE: "Dict[Tuple[str, str, str, bool], Tuple[float, Dict[str, Any]]]" = {}
+
+
+def _visible_node(node: Mapping[str, Any], req: RetrievalRequest) -> bool:
+    meta = node.get("meta") if isinstance(node.get("meta"), Mapping) else {}
+    if not req.policy.allow_personal_memory and node.get("kind") in {"memory", "chat"}:
+        return False
+    for field, scope in (("owner", req.owner), ("project_id", req.project_id)):
+        origin = str(node.get(field) or meta.get(field) or "")
+        if scope and origin and origin != scope:
+            return False
+    return True
 
 
 def clear_cache() -> None:
@@ -132,7 +143,7 @@ class ProvenanceSource(ThreadedSource):
 
         owner = str(req.owner or "")
         workspace = str(req.workspace or "")
-        key = (owner, workspace)
+        key = (owner, workspace, req.project_id, req.policy.allow_personal_memory)
         now = time.monotonic()
         with _LOCK:
             cached = _CACHE.get(key)
@@ -141,9 +152,19 @@ class ProvenanceSource(ThreadedSource):
         # Built outside the lock: this can take a second on a large store, and
         # holding the lock through it would serialise every other owner's turn.
         built = provenance.build(owner, workspace=workspace or None,
-                                 limit_nodes=provenance.DEFAULT_LIMIT_NODES)
+                                 limit_nodes=provenance.DEFAULT_LIMIT_NODES,
+                                 include_personal_memory=req.policy.allow_personal_memory)
         if not isinstance(built, Mapping):
             built = {"nodes": [], "edges": [], "sources": {}, "truncated": False}
+        else:
+            # Also defend against a mixed/stale producer. Explanations must
+            # not quote private or foreign edges even for a visible checkpoint.
+            built = dict(built)
+            built["nodes"] = [node for node in (built.get("nodes") or [])
+                              if isinstance(node, Mapping) and _visible_node(node, req)]
+            visible = {node.get("id") for node in built["nodes"]}
+            built["edges"] = [edge for edge in (built.get("edges") or [])
+                              if isinstance(edge, Mapping) and edge.get("from") in visible and edge.get("to") in visible]
         with _LOCK:
             _CACHE[key] = (time.monotonic(), dict(built))
             if len(_CACHE) > CACHE_MAX_ENTRIES:
@@ -203,7 +224,7 @@ class ProvenanceSource(ThreadedSource):
         node_id = str(node.get("id") or "")
         kind = str(node.get("kind") or "")
         section = _SECTION_BY_KIND.get(kind)
-        if not node_id or not section:
+        if not node_id or not section or not _visible_node(node, req):
             return None
         trust, authority = _TRUST_BY_KIND.get(kind, ("agent_validated", "inference"))
 
@@ -223,7 +244,7 @@ class ProvenanceSource(ThreadedSource):
         body = "\n".join(line for line in lines if line)
 
         return make_candidate(
-            source_type="experience" if section == "past_experiences" else "decision",
+            source_type="memory" if kind in {"memory", "chat"} else "experience" if section == "past_experiences" else "decision",
             source_ref=f"{REF_PREFIX}{node_id}",
             section=section,
             title=f"{kind}: {node.get('label') or node_id}",
@@ -234,13 +255,20 @@ class ProvenanceSource(ThreadedSource):
             scores={"graph": round(centrality, 6), "match": round(score, 6)},
             trust_class=trust,
             authority=authority,
-            owner=req.owner,
-            project_id=req.project_id,
+            owner=str(node.get("owner") or (node.get("meta") or {}).get("owner") or req.owner),
+            project_id=str(node.get("project_id") or (node.get("meta") or {}).get("project_id") or req.project_id),
             meta={"node_kind": kind, "node_id": node_id,
                   "graph_truncated": bool(graph.get("truncated")),
                   **{k: v for k, v in (node.get("meta") or {}).items()
                      if isinstance(v, (str, int, float, bool))}},
         )
+
+    async def fetch(self, source_ref: str,
+                    req: RetrievalRequest) -> Optional[ContextCandidate]:
+        # Explicit refs and stale recall offers do not override privacy.
+        if not req.policy.allow_personal_memory and str(source_ref).startswith(("prov:memory:", "prov:chat:")):
+            return None
+        return await super().fetch(source_ref, req)
 
     def _fetch(self, source_ref: str,
                req: RetrievalRequest) -> Optional[ContextCandidate]:

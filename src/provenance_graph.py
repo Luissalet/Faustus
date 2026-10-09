@@ -897,6 +897,7 @@ def build(
     workspace: Optional[str] = None,
     limit_nodes: int = DEFAULT_LIMIT_NODES,
     now: Optional[datetime] = None,
+    include_personal_memory: bool = True,
 ) -> Dict[str, Any]:
     """The graph: ``{"nodes", "edges", "sources", "truncated"}``.
 
@@ -949,12 +950,19 @@ def build(
         log_jobs = set()
         builder.source("objective_log", available=False, note=f"failed: {exc}")
 
-    try:
-        items, mem_jobs, citation_refs = _collect_memory(builder, owner, workspace, now)
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("provenance: memory pass failed (%s)", exc)
+    # A request that disables private recall must never consult the memory
+    # store just to discard its nodes afterwards. Default True preserves the
+    # full audit graph for existing callers.
+    if not include_personal_memory:
         items, mem_jobs, citation_refs = [], set(), set()
-        builder.source("memory", available=False, note=f"failed: {exc}")
+        builder.source("memory", available=False, note="excluded by request policy")
+    else:
+        try:
+            items, mem_jobs, citation_refs = _collect_memory(builder, owner, workspace, now)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("provenance: memory pass failed (%s)", exc)
+            items, mem_jobs, citation_refs = [], set(), set()
+            builder.source("memory", available=False, note=f"failed: {exc}")
 
     try:
         _remember_citation_refs(builder, items)
@@ -979,7 +987,12 @@ def build(
         logger.debug("provenance: duplicate pass failed (%s)", exc)
         builder.source("duplicates", available=False, note=f"failed: {exc}")
 
-    return builder.finish()
+    result = builder.finish()
+    if not include_personal_memory:
+        result["nodes"] = [node for node in result["nodes"] if node["kind"] not in {"memory", "chat"}]
+        allowed = {node["id"] for node in result["nodes"]}
+        result["edges"] = [edge for edge in result["edges"] if edge["from"] in allowed and edge["to"] in allowed]
+    return result
 
 
 # ---------------------------------------------------------------------------

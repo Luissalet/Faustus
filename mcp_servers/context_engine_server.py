@@ -144,6 +144,8 @@ def _request(owner: str, arguments: dict):
         "task": {"intent": str(arguments.get("intent") or ""),
                  "phase": str(arguments.get("phase") or "act"),
                  "query": str(arguments.get("query") or "")},
+        "policy": {"allow_personal_memory": arguments.get("allow_personal_memory", True),
+                   "allow_semantic_lane": arguments.get("allow_semantic_lane", True)},
         "consumer": "agent",
     })
 
@@ -160,6 +162,17 @@ _SCOPE_PROPS = {
     "workspace": {"type": "string",
                   "description": "Absolute path of the repository, when the "
                                  "question involves code or files."},
+}
+
+_RECALL_POLICY_PROPS = {
+    "allow_personal_memory": {
+        "type": "boolean",
+        "description": "False reproduces no_memory/incognito private-recall isolation; verified project experiences remain available. Default true.",
+    },
+    "allow_semantic_lane": {
+        "type": "boolean",
+        "description": "False disables semantic retrieval; lexical/exact/graph lanes remain available. Default true.",
+    },
 }
 
 
@@ -199,6 +212,7 @@ async def list_tools() -> list[Tool]:
                                                   "history fills recent_messages "
                                                   "(only when it belongs to this "
                                                   "server's owner)."},
+                    **_RECALL_POLICY_PROPS,
                     **_SCOPE_PROPS,
                 },
                 "required": ["query"],
@@ -246,6 +260,7 @@ async def list_tools() -> list[Tool]:
                                                   "'file:src/app.py', 'mem:123', "
                                                   "'block:abc'."},
                     "intent": {"type": "string"},
+                    **_RECALL_POLICY_PROPS,
                     **_SCOPE_PROPS,
                 },
                 "required": ["query", "source_ref"],

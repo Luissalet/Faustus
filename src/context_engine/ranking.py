@@ -319,7 +319,9 @@ def validate(candidate: ContextCandidate, request: ContextRequest, *,
             if prefix and ref.startswith(prefix):
                 return ValidationResult(False, "user_excluded",
                                         f"under excluded path {prefix!r}")
-    if not policy.allow_personal_memory and candidate.source_type in PERSONAL_SOURCE_TYPES:
+    if not policy.allow_personal_memory and (
+            candidate.source_type in PERSONAL_SOURCE_TYPES
+            or ref.startswith(("prov:memory:", "prov:chat:"))):
         return ValidationResult(False, "policy", "personal memory is off for this request")
     if not policy.allow_project_sources and candidate.source_type in PROJECT_SOURCE_TYPES:
         return ValidationResult(False, "policy", "project sources are off for this request")

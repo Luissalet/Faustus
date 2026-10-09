@@ -885,7 +885,8 @@ async def test_sessions_skip_multimodal_blocks_rather_than_flattening_them():
 # ── provenance ─────────────────────────────────────────────────────────────
 
 def provenance_module(monkeypatch, builds):
-    def build(owner=None, *, project=None, workspace=None, limit_nodes=2000, now=None):
+    def build(owner=None, *, project=None, workspace=None, limit_nodes=2000, now=None,
+              include_personal_memory=True):
         builds.append((owner, workspace))
         return {
             "nodes": [
