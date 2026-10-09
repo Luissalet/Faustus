@@ -35,6 +35,52 @@ GREP_FALLBACK_MAX_FILE_BYTES = 2 * 1024 * 1024
 GREP_FALLBACK_MAX_FILES = 50_000
 
 
+# ripgrep stderr is drained in its own thread and only this many bytes are kept:
+# a chatty rg (hundreds of KB of warnings) must never fill the OS pipe buffer and
+# deadlock the search until the timeout.
+GREP_STDERR_KEEP_BYTES = 8 * 1024
+
+
+def _utf8_bounded(text: str, max_bytes: int, *, keep_end: bool = False) -> str:
+    """Trim `text` to at most `max_bytes` of its UTF-8 encoding, never mid-codepoint.
+
+    The stderr budget is declared in bytes, so it must be enforced in bytes:
+    astral-plane characters (U+1F525 is 4 bytes in UTF-8) would otherwise retain
+    several times the cap while counting as few characters.
+    """
+    if max_bytes <= 0:
+        return ""
+    raw = text.encode("utf-8", "replace")
+    if len(raw) <= max_bytes:
+        return text
+    raw = raw[-max_bytes:] if keep_end else raw[:max_bytes]
+    # Drop an incomplete trailing (or leading) multi-byte sequence.
+    return raw.decode("utf-8", "ignore")
+
+
+def _bounded_stderr_chunks(chunks, keep_bytes: int):
+    """Reduce stderr text chunks to (head, tail), each at most keep_bytes // 2 UTF-8 bytes.
+
+    Head and tail are both kept because rg prints a generic header first and the
+    cause ("error: ...") last, which a single huge warning line can push out of a
+    head-only buffer. The caller keeps draining the pipe past the budget; this
+    only decides what is retained.
+    """
+    half = keep_bytes // 2
+    head: List[str] = []
+    tail: List[str] = []
+    kept = 0
+    for chunk in chunks:
+        if kept < half:
+            part = _utf8_bounded(chunk, half - kept)
+            head.append(part)
+            kept += len(part.encode("utf-8", "replace"))
+        tail.append(chunk)
+        if sum(len(c.encode("utf-8", "replace")) for c in tail) > half:
+            tail[:] = [_utf8_bounded("".join(tail), half, keep_end=True)]
+    return head, tail
+
+
 def _glob_to_regex(pat: str) -> "re.Pattern":
     """Translate a forward-slash glob (**, *, ?) into a compiled regex.
     `**/` matches zero or more complete directories.
@@ -1371,7 +1417,7 @@ class GrepTool:
                 try:
                     import subprocess
                     import threading
-                    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                          text=True, encoding="utf-8", errors="replace")
                     got: List[str] = []
                     enough = threading.Event()
@@ -1389,23 +1435,97 @@ class GrepTool:
                         finally:
                             enough.set()
 
+                    err_chunks: List[str] = []   # head: first GREP_STDERR_KEEP_BYTES // 2 bytes
+                    err_tail: List[str] = []     # rolling tail: last GREP_STDERR_KEEP_BYTES // 2 bytes
+                    err_done = threading.Event()
+
+                    def _read_err():
+                        # Drained concurrently and bounded: read bounded blocks and
+                        # keep consuming to EOF even after the diagnostic budget is
+                        # full. A line-based reader that breaks early stops draining,
+                        # the child blocks on the full pipe and a real exit-2 error
+                        # is lost to the timeout. What is retained is decided by
+                        # _bounded_stderr_chunks (bytes, not characters).
+                        try:
+                            head, tail = _bounded_stderr_chunks(
+                                iter(lambda: p.stderr.read(4096), ""), GREP_STDERR_KEEP_BYTES)
+                            err_chunks.extend(head)
+                            err_tail.extend(tail)
+                        except Exception:
+                            pass
+                        finally:
+                            err_done.set()
+
                     reader = threading.Thread(target=_read, daemon=True)
+                    err_reader = threading.Thread(target=_read_err, daemon=True)
                     reader.start()
+                    err_reader.start()
                     finished = enough.wait(GREP_FALLBACK_BUDGET_S)
                     timed_out = not finished
+                    killed_by_us = False
                     if p.poll() is None:
-                        p.kill()      # enough matches, or out of time: keep what was found
+                        # rg may be dying right now (stdout EOF does not mean the
+                        # process state is reaped yet): give it a moment before
+                        # killing, or a real exit-2 error would be mistaken for
+                        # our own kill and lost.
+                        try:
+                            p.wait(timeout=0.05)
+                        except Exception:
+                            p.kill()  # enough matches, or out of time: keep what was found
+                            killed_by_us = True
                     reader.join(timeout=2)
+                    err_done.wait(timeout=2)
+                    err_text = "".join(err_chunks)
+                    if err_tail:
+                        if err_chunks:
+                            err_text += "\n[stderr truncated]\n"
+                        err_text += "".join(err_tail)
                     lines = got[:max_hits]
+                    size_notice = (
+                        f"[Files over {GREP_FALLBACK_MAX_FILE_BYTES // (1024 * 1024)} MB were not "
+                        f"searched (ripgrep --max-filesize): results may be partial. Read one with "
+                        f"read_file, or use bash rg on a specific one.]")
                     if timed_out:
                         lines.append(
                             f"[grep stopped early after the time budget of {GREP_FALLBACK_BUDGET_S:.0f}s: results "
                             f"are partial. Narrow the search with path= or glob=.]")
-                    elif not lines:
-                        # Never a bare "No matches" that hides the size limit.
-                        lines = [f"[No matches for {pattern!r} under {root}. Files over "
-                                 f"{GREP_FALLBACK_MAX_FILE_BYTES // (1024 * 1024)} MB are not searched; use "
-                                 f"bash rg on a specific one if it matters.]"]
+                    else:
+                        # A kill of our own (enough matches) reports -9 on POSIX: that is
+                        # not a ripgrep failure and must not invent "results may be
+                        # incomplete".
+                        failed = p.poll() not in (0, 1, None) and not killed_by_us
+                        if failed:
+                            # rg exit 2 is an error (bad regex, unreadable path...): never
+                            # dress it up as "No matches", and never drop it just because
+                            # some hits came back first. Bounded: rg prints the cause on
+                            # its own "error:" line after a generic header, so prefer that
+                            # line; otherwise join the first few lines. Capped either way.
+                            err_lines = [ln.strip() for ln in err_text.strip().splitlines() if ln.strip()]
+                            detail = next((ln for ln in err_lines if ln.startswith("error:")), "")
+                            if not detail:
+                                detail = " | ".join(err_lines[:3])
+                            detail = detail[:300] or f"ripgrep exited with code {p.returncode}"
+                            if lines:
+                                lines.append(
+                                    f"[grep: {detail} (ripgrep exited with code {p.returncode}): "
+                                    f"results may be incomplete.]")
+                                lines.append(size_notice)
+                            else:
+                                return None, f"grep: {detail}"
+                        elif not lines:
+                            # Never a bare "No matches" that hides the size limit: the
+                            # notice is part of this line, so it is not appended twice.
+                            lines = [f"[No matches for {pattern!r} under {root}. Files over "
+                                     f"{GREP_FALLBACK_MAX_FILE_BYTES // (1024 * 1024)} MB are not searched; use "
+                                     f"bash rg on a specific one if it matters.]"]
+                        else:
+                            # The size limit is declared conservatively on every search
+                            # with hits: ripgrep skips files over --max-filesize silently,
+                            # and telling exactly which ones would need a second walk that
+                            # re-implements glob and .gitignore semantics and can blow the
+                            # time budget. The blanket notice costs nothing and never
+                            # hides a partial answer behind hits on small files.
+                            lines.append(size_notice)
                     return lines, None
                 except Exception as _e:
                     return None, f"grep: {_e}"
