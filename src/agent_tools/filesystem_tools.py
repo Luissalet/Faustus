@@ -1364,14 +1364,49 @@ class GrepTool:
                     cmd += ["--iglob", f"!*{_pat}*"]
                 for _d in _CODENAV_SKIP_DIRS:
                     cmd += ["--glob", f"!**/{_d}/**"]
+                # Same size limit as the fallback: model weights and dumps in a workspace
+                # that is not a Git repo (no .gitignore) used to eat the whole budget.
+                cmd += ["--max-filesize", str(GREP_FALLBACK_MAX_FILE_BYTES)]
                 cmd += ["--regexp", pattern, root]
                 try:
                     import subprocess
-                    p = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
-                    lines = [ln for ln in (p.stdout or "").splitlines() if ln][:max_hits]
+                    import threading
+                    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                         text=True, encoding="utf-8", errors="replace")
+                    got: List[str] = []
+                    enough = threading.Event()
+
+                    def _read():
+                        # Stream the matches: stop ripgrep as soon as there are max_hits of
+                        # them instead of letting it walk the rest of the tree.
+                        try:
+                            for ln in p.stdout:
+                                ln = ln.rstrip("\r\n")
+                                if ln:
+                                    got.append(ln)
+                                    if len(got) >= max_hits:
+                                        break
+                        finally:
+                            enough.set()
+
+                    reader = threading.Thread(target=_read, daemon=True)
+                    reader.start()
+                    finished = enough.wait(GREP_FALLBACK_BUDGET_S)
+                    timed_out = not finished
+                    if p.poll() is None:
+                        p.kill()      # enough matches, or out of time: keep what was found
+                    reader.join(timeout=2)
+                    lines = got[:max_hits]
+                    if timed_out:
+                        lines.append(
+                            f"[grep stopped early after the time budget of {GREP_FALLBACK_BUDGET_S:.0f}s: results "
+                            f"are partial. Narrow the search with path= or glob=.]")
+                    elif not lines:
+                        # Never a bare "No matches" that hides the size limit.
+                        lines = [f"[No matches for {pattern!r} under {root}. Files over "
+                                 f"{GREP_FALLBACK_MAX_FILE_BYTES // (1024 * 1024)} MB are not searched; use "
+                                 f"bash rg on a specific one if it matters.]"]
                     return lines, None
-                except subprocess.TimeoutExpired:
-                    return None, "grep: timed out"
                 except Exception as _e:
                     return None, f"grep: {_e}"
             # The third-party `regex` engine takes a real timeout per search (and avoids most
