@@ -865,6 +865,8 @@ app.include_router(setup_approvals_routes())
 # require_human -- same split as the approval cards just above.
 from routes.approval_autonomy_routes import setup_approval_autonomy_routes
 app.include_router(setup_approval_autonomy_routes())
+from routes.spend_cap_routes import setup_spend_cap_routes
+app.include_router(setup_spend_cap_routes())
 
 # Asyncio task snapshot for diagnosing a turn that hangs inside the process
 # (a lock or slot wait with the model server idle). Admin only, read-only.

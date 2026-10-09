@@ -4034,6 +4034,9 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
     if str(url or '').startswith('faustus-cli://'):
         from src.cli_model import complete
         return complete(url, model, messages, headers, timeout)
+    # Daily paid-spend cap (src/spend_cap.py): refuse before anything is sent.
+    from src import spend_cap as _spend_cap
+    _spend_cap.gate(url)
     h = _provider_headers(_detect_provider(url))
     # Tolerate headers that arrive as a JSON string (some sessions stored them
     # double-encoded) — otherwise h.update() throws "dictionary update sequence
@@ -4154,6 +4157,10 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
     if not r.is_success:
         raise HTTPException(502, f"Upstream {target_url} -> {r.status_code}: {r.text}")
     data = r.json()
+    try:
+        _spend_cap.record(url, _observed_nonstream_usage(data, provider, model))
+    except Exception:  # noqa: BLE001 - bookkeeping never breaks the call
+        pass
     try:
         if provider == "anthropic":
             response = _parse_anthropic_response(data)
@@ -4550,6 +4557,11 @@ async def llm_call_async(
     handled it, and a bug in tracing can never affect the call itself
     (record happens after the real work is done, in its own try/except).
     """
+    # Daily paid-spend cap (src/spend_cap.py): refuse a paid call before the
+    # turn account reserves anything for it. Local endpoints pass untouched.
+    from src import spend_cap as _spend_cap
+    _spend_cap.gate(url)
+    _cap_booked: List[bool] = []
     from src import llm_trace
     _trace_phase_snapshot = llm_trace._capture_call_phase()
     _trace_run_snapshot = llm_trace.current_run_id() or None
@@ -4582,6 +4594,9 @@ async def llm_call_async(
 
     def _capture_usage(usage, *, endpoint_local=False):
         _observed_usage.update(usage)
+        if not endpoint_local:
+            _cap_booked.append(True)
+            _spend_cap.record(url, usage)
         if _spend is not None:
             _spend.observe(usage, endpoint_local=endpoint_local)
         if _usage_observer is not None:
@@ -4637,6 +4652,9 @@ async def llm_call_async(
         _spend_outcome = "error"
         raise
     finally:
+        if not _cap_booked and _spend_outcome == "ok":
+            # a paid call whose provider reported nothing: tokens and cost unknown
+            _spend_cap.record(url, {})
         if _spend is not None:
             try:
                 _spend.settle(_spend_outcome)
@@ -5997,7 +6015,65 @@ async def _stream_retry_or_fail(*, should_retry: bool, wait: float,
     yield error_chunk
 
 
-async def stream_llm(url: str, model: str, messages: List[Dict], temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
+async def stream_llm(url: str, model: str, messages: List[Dict], *args, **kwargs):
+    """Daily paid-spend cap around the traced stream (src/spend_cap.py).
+
+    A paid call is refused up front with a typed ``event: error`` chunk once the
+    day's cap is reached; a call that starts is never cut, and the usage events
+    that pass through are booked against the day when the stream ends.
+    """
+    from src import spend_cap as _spend_cap
+    try:
+        _spend_cap.gate(url)
+    except _spend_cap.SpendCapReached as exc:
+        payload = exc.as_dict()
+        payload.update(text=exc.message, attempts=0, fallback_eligible=True)
+        yield f'event: error\ndata: {json.dumps(payload)}\n\n'
+        return
+    _usage_seen = []
+    _errored = []
+    _inner = _stream_llm_traced_entry(url, model, messages, *args, **kwargs)
+    try:
+        async for chunk in _inner:
+            if str(chunk).startswith('event: error'):
+                _errored.append(True)
+            if '"usage"' in chunk:
+                try:
+                    for _line in str(chunk).splitlines():
+                        if _line.startswith("data:"):
+                            _evt = json.loads(_line[5:].strip() or "null")
+                            if isinstance(_evt, dict) and _evt.get("type") == "usage" and isinstance(_evt.get("data"), dict):
+                                _usage_seen.append(_evt["data"])
+                except Exception:  # noqa: BLE001
+                    pass
+            yield chunk
+    finally:
+        # close the traced stream now, not at garbage collection, so its own
+        # bookkeeping (trace entry) is written when the caller closes early
+        try:
+            await _inner.aclose()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            if _usage_seen:
+                _cost = [u["cost_usd"] for u in _usage_seen
+                         if isinstance(u.get("cost_usd"), (int, float)) and not isinstance(u.get("cost_usd"), bool)]
+                _merged = {
+                    "input_tokens": sum(int(u.get("input_tokens") or 0) for u in _usage_seen
+                                        if isinstance(u.get("input_tokens"), (int, float))),
+                    "output_tokens": sum(int(u.get("output_tokens") or 0) for u in _usage_seen
+                                         if isinstance(u.get("output_tokens"), (int, float))),
+                }
+                if _cost:
+                    _merged["cost_usd"] = float(sum(_cost))
+                _spend_cap.record(url, _merged)
+            elif not _errored:
+                _spend_cap.record(url, {})
+        except Exception:  # noqa: BLE001 - bookkeeping never breaks the stream
+            pass
+
+
+async def _stream_llm_traced_entry(url: str, model: str, messages: List[Dict], temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
                      max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS, headers: Optional[Dict] = None,
                      timeout: int = LLMConfig.STREAM_TIMEOUT, prompt_type: Optional[str] = None,
                      tools: Optional[List[Dict]] = None, session_id: Optional[str] = None,

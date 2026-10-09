@@ -70,6 +70,7 @@ import { UsersSection } from './settings/Users';
 import { ToolsSection } from './settings/Tools';
 import { SystemExtras } from './settings/SystemExtras';
 import { ApprovalAutonomySection } from './settings/ApprovalAutonomy';
+import { SpendCapSection } from './settings/SpendCap';
 import { EffectiveConfigSection } from './settings/EffectiveConfig';
 import { IntegrationsSection } from './settings/Integrations';
 import { LocalModelsSection } from './settings/LocalModels';
@@ -1760,6 +1761,7 @@ export function SettingsScreen() {
           {section === 'agent' && (
             <>
               <AgentSection settings={settings} onSave={onSave} say={say} />
+              {admin && <SpendCapSection />}
               {admin && <ApprovalAutonomySection say={say} />}
             </>
           )}

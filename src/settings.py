@@ -1338,6 +1338,13 @@ DEFAULT_SETTINGS = {
     # and charges the turn's ledger; "enforce" also refuses a call once the
     # turn is over budget; "off" books nothing.
     "agent_turn_spend": "record",
+    # Daily hard cap on spend with PAID remote providers (src/spend_cap.py).
+    # On by default: once today's paid spend reaches either limit, new paid
+    # calls are refused with a typed error until local midnight. Local models
+    # are never counted. 0 turns that one limit off.
+    "paid_spend_cap_enabled": True,
+    "paid_spend_cap_daily_usd": 5.0,
+    "paid_spend_cap_daily_tokens": 2_000_000,
     # R3 (Reach wave): src/fanout/ -- how many fan-out candidates (each its
     # own worker in its own isolated alternative) run their worker at the
     # same time. Two big LOCAL models rarely fit one card's VRAM at once, so

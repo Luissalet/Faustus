@@ -63,7 +63,8 @@ EXTRA_KEYS: tuple[str, ...] = ("llm_projection_mode", "llm_fence_history_without
                                "model_server_auto_heal", "model_server_restart_commands",
                                "model_server_heal_timeout_s",
                                "telegram_bridge_enabled", "telegram_bot_token", "telegram_allowed_chat_ids",
-                               "telegram_agent_mode", "telegram_model", "telegram_owner", "telegram_api_base")
+                               "telegram_agent_mode", "telegram_model", "telegram_owner", "telegram_api_base",
+                               "paid_spend_cap_enabled", "paid_spend_cap_daily_usd", "paid_spend_cap_daily_tokens")
 
 FIELD_TYPES: tuple[str, ...] = ("bool", "int", "float", "text", "select", "list", "secret")
 _NUMERIC_TYPES = ("int", "float")
@@ -307,6 +308,18 @@ GROUPS: list[dict[str, Any]] = [
                    "from tokens. Replaces the remote-spend ceiling above when set. 0 = use that ceiling "
                    "(about 0.04 USD per turn with the supervised preset). Local models are never limited.",
                    0, 1000, 0.5),
+            _bool("paid_spend_cap_enabled", "Daily paid spend cap",
+                  "Refuse new calls to paid remote providers once today's spend reaches the limits below, "
+                  "until local midnight. Calls already running finish. Local models are never counted or "
+                  "limited. On by default."),
+            _float("paid_spend_cap_daily_usd", "Daily paid spend limit (USD)",
+                   "Dollars spent today across every turn, task and sub-agent on paid endpoints, from the "
+                   "provider's reported cost. 0 = no dollar limit.",
+                   0, 1_000_000, 0.5),
+            _int("paid_spend_cap_daily_tokens", "Daily paid token limit",
+                 "Tokens used today on paid endpoints. Also stops providers that never report a price. "
+                 "0 = no token limit.",
+                 0, 10_000_000_000, step=10_000),
             _int("agent_autonomy_max_memory_mb", "Autonomy budget: memory (MB)",
                  "TASK-06 informative ceiling for one autonomy-preset turn; this process has no "
                  "per-turn memory measurement today, so it is carried but never trips. Scaled by the "

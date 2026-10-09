@@ -431,3 +431,23 @@ export const KEYBIND_LABELS: Record<string, string> = {
   open_tasks: 'Open the Automations',
   open_theme: 'Open the theme',
 };
+
+export interface SpendCapStatus {
+  enabled: boolean;
+  limit_usd: number;
+  limit_tokens: number;
+  day: string;
+  spent_usd: number;
+  tokens_today: number;
+  paid_calls: number;
+  unknown_cost_calls: number;
+  reached: boolean;
+  reached_by: 'usd' | 'tokens' | null;
+  resets_at: string;
+  by_provider: { provider: string; usd: number; tokens: number; calls: number; unknown_cost_calls: number }[];
+}
+
+/** Today's paid-provider spend against the daily cap (`/api/spend-cap`). */
+export async function getSpendCap(signal?: AbortSignal): Promise<SpendCapStatus> {
+  return getJson<SpendCapStatus>('/api/spend-cap', signal);
+}

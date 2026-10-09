@@ -19,6 +19,9 @@ running a turn:
   list) costs in the prompt: tokens per tool, source and exposure, the
   heaviest tools, name collisions and near-duplicate descriptions.
 
+* ``spend_cap_status`` - the daily paid-spend cap: limits, what was spent today
+  (USD and tokens), calls without a reported cost, per provider, reset time.
+
 * ``harness_proposals`` - list or read the refinement proposals the assistant
   made after a task (diff, rationale, evidence, status). Approving, rejecting
   and undoing stay human actions in Studio or the REST routes.
@@ -200,6 +203,18 @@ async def list_tools() -> list[Tool]:
                 },
                 "required": ["paths"],
             },
+        ),
+        Tool(
+            name="spend_cap_status",
+            description=(
+                "The daily hard cap on spend with paid remote providers: whether it is on, the "
+                "dollar and token limits, what was spent today (USD and tokens), how many paid "
+                "calls reported no cost (counted by tokens only), whether the cap has been "
+                "reached, when it resets (local midnight) and the split per provider. Local "
+                "models are never counted. Limite diario de gasto en proveedores de pago. "
+                "Read-only; change it in Settings or PATCH /api/spend-cap."
+            ),
+            inputSchema={"type": "object", "properties": {}},
         ),
     ]
 
@@ -409,8 +424,15 @@ def _doc_lint(args: dict) -> dict:
         return {"error": str(exc)}
 
 
+def _spend_cap_status(args: dict) -> dict:
+    from src import spend_cap
+
+    return spend_cap.status()
+
+
 _TOOLS = {
     "doc_lint": _doc_lint,
+    "spend_cap_status": _spend_cap_status,
     "history_projection": _history_projection,
     "resource_claims": _resource_claims,
     "paired_bench_reports": _paired_bench_reports,

@@ -10636,3 +10636,22 @@ servidor de modelos conserva la conexión seleccionada y el modelo por defecto.
 y un aviso, sin iniciar otro modelo. Un catálogo válido sin el modelo elegido
 sigue restaurando el valor anterior; desactivar Sparks explícitamente mantiene
 su comportamiento. Conservar la elección no prueba que el servidor esté sano.
+
+## 287. Límite diario de gasto en proveedores de pago (09-10-2026)
+
+Un bucle sin vigilancia, un abanico de subagentes o una investigación larga pueden gastar dinero real en un proveedor de pago. Los techos por turno (`agent_turn_max_cost_usd`, el presupuesto de autonomía) solo acotan un turno; ahora hay un tope duro **por día**, activado por defecto.
+
+**Cómo funciona** (`src/spend_cap.py`, `docs/api/spend-cap.md`):
+- Un solo acumulador persistente (`DATA_DIR/spend_cap.json`) por fecha local; al cambiar de día empieza de cero.
+- Un único punto de paso en `src/llm_core.py`: `llm_call`, `llm_call_async` y `stream_llm` llaman a `spend_cap.gate(url)` antes de enviar y a `spend_cap.record(url, usage)` con el uso que informa el proveedor. Cubre el bucle principal, subagentes, asesor, decisiones tipadas, compactación, investigación y flujos.
+- Solo cuenta un endpoint de pago: los locales (loopback, red privada, tailscale, endpoint `local` como llama-server, Ollama o las Sparks) y `faustus-cli://` nunca se cuentan ni se rechazan.
+- Dólares: el `cost_usd` real del proveedor. Una llamada de pago sin coste cuenta solo tokens y se anota como `unknown_cost_calls`; nunca se inventa un precio. El límite de tokens sigue frenando a los proveedores sin precio.
+- Al alcanzar el límite, la siguiente llamada de pago se rechaza antes de enviarse con `SpendCapReached` (429, `error_class` `spend_cap.reached`; en streaming, un evento `error` con los mismos campos y la hora de reinicio) y se envía una sola notificación al día. Las llamadas en curso terminan y se contabilizan.
+
+**Ajustes:** `paid_spend_cap_enabled` (true), `paid_spend_cap_daily_usd` (5.0; 0 = sin límite) y `paid_spend_cap_daily_tokens` (2 000 000; 0 = sin límite), en Ajustes > Agente, con una tarjeta del uso de hoy por proveedor.
+
+**API y MCP:** `GET /api/spend-cap` (admin) y `PATCH`/`POST /api/spend-cap` (solo humano: un agente no puede subir ni apagar su propio tope). Herramienta de lectura `spend_cap_status` en el MCP integrado `harness`.
+
+**Verificación.** `tests/test_spend_cap.py` (acumulador, cambio de día, coste desconocido, locales excluidos, rechazo en el tope, una notificación al día, llamada en curso sin cortar, API, MCP y la comprobación de Studio `studio/checks/spend-cap.check.mjs`), más los tests de ajustes, harness y presupuesto, y `tsc --noEmit`.
+
+**Límites.** No cubre las llamadas de pago que no pasan por `src/llm_core.py` (APIs de generación de imagen o vídeo y algunas sondas directas de rutas). No se ha probado con un proveedor de pago real.

@@ -428,6 +428,20 @@ card and saved concept distinguish met, partially met, unmet and unverified
 requirements, with evidence. A scripted-model check proves the complete flow;
 it does not establish an autonomous quality score for the selected model.
 
+### A hard daily cap on paid providers
+
+Spend with paid remote providers is capped per local day, on by default
+(`paid_spend_cap_daily_usd` 5.0, `paid_spend_cap_daily_tokens` 2,000,000; 0 turns
+a limit off). One check in the model client covers the main loop, sub-agents, the
+advisor and utility calls: once the day's total is reached the next paid call is
+refused with a typed `spend_cap.reached` error and a single notification is sent;
+calls already running finish, and local models are never counted or limited.
+A paid call that reports no price counts tokens only and is shown as such, never
+as free dollars. Status in Settings > Agent, `GET /api/spend-cap`, and the
+`spend_cap_status` tool of the built-in `harness` MCP server; see
+[docs/api/spend-cap.md](docs/api/spend-cap.md). It does not cover paid calls that
+bypass the model client, such as image or video generation APIs.
+
 At the other end of the scale, a turn that is plainly small talk is answered
 without the model’s reasoning and without the toolset attached. Measured on a
 local 27B with a cold prompt cache: 7.5 s carrying the tools against 2.2 s
