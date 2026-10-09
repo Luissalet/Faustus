@@ -273,6 +273,9 @@ def _repo_error(tool: str, exc: Exception) -> Dict[str, Any]:
 def _git_error(tool: str, exc: Exception) -> Dict[str, Any]:
     """Map a `src.git_panel` exception onto the same `error_class` vocabulary
     `docs/api/git.md` already documents for the panel's own routes."""
+    if isinstance(exc, git_panel.GitInvalidRevision):
+        return {"error": f"{tool}: {exc}", "exit_code": 1,
+                "error_class": "git.invalid_revision"}
     if isinstance(exc, git_panel.GitNotFoundError):
         return {"error": f"{tool}: git is not installed on this host", "exit_code": 1,
                 "error_class": "dependency.missing"}
@@ -475,10 +478,13 @@ class GitLogTool:
             limit = max(1, min(int(args.get("limit") or 20), 500))
         except (TypeError, ValueError):
             limit = 20
-        result = git_panel.log_commits(
-            repo_root, limit=limit, cursor=str(args.get("cursor") or "") or None,
-            ref=str(args.get("ref") or ""),
-        )
+        try:
+            result = git_panel.log_commits(
+                repo_root, limit=limit, cursor=str(args.get("cursor") or "") or None,
+                ref=str(args.get("ref") or ""),
+            )
+        except git_panel.GitInvalidRevision as exc:
+            return _git_error("git_log", exc)
         lines = [f"{c['short']} {c['date']} {c['author']}: {c['message']}" for c in result["commits"]]
         return {
             "output": "\n".join(lines) or "(no commits)", "exit_code": 0, "repo_root": repo_root,
@@ -494,7 +500,12 @@ class GitDiffTool:
         repo_root, _repo_err = _resolve_repo_root("git_diff", args, ctx)
         if _repo_err:
             return _repo_err
-        commit = str(args.get("commit") or "").strip()
+        commit = str(args.get("commit") or "")
+        if commit:
+            try:
+                commit = git_panel.validate_read_revision(commit)
+            except git_panel.GitInvalidRevision as exc:
+                return _git_error("git_diff", exc)
         raw_path = str(args.get("path_in_repo") or args.get("file") or "").strip()
         staged = bool(args.get("staged"))
 

@@ -931,6 +931,25 @@ def repo_summaries(metas: Sequence[Dict[str, Any]], *, light: bool = False,
 # ---------------------------------------------------------------------------
 # Log (`git log --format=... -z`, fields split on \x1f, records on NUL)
 # ---------------------------------------------------------------------------
+class GitInvalidRevision(ValueError):
+    """A read argument would be interpreted as an option instead of a revision."""
+
+
+def validate_read_revision(value: str) -> str:
+    """Keep Git revision expressions, but never accept command-line options.
+
+    A real argv prevents shell injection; it does not stop Git interpreting
+    a revision such as ``--output=...`` as an option before the path separator.
+    This check is shared by the panel API and the agent's typed readers.
+    """
+    if not isinstance(value, str) or any(c in value for c in ('\x00', '\r', '\n')):
+        raise GitInvalidRevision('Invalid Git revision: expected text without control characters')
+    revision = value.strip()
+    if not revision or revision.startswith('-'):
+        raise GitInvalidRevision('Invalid Git revision: expected a revision, not an option')
+    return revision
+
+
 _LOG_FIELDS = "%H\x1f%h\x1f%P\x1f%an\x1f%ae\x1f%at\x1f%s\x1f%b\x1f%D"
 
 
@@ -984,6 +1003,8 @@ def log_commits(repo_path: str, *, limit: int = 50, cursor: Optional[str] = None
     commit than the page needs (plus one, to drop the cursor commit itself
     when a cursor is given) so `next_cursor` can be set correctly without a
     second round trip."""
+    ref = validate_read_revision(ref) if ref else ''
+    cursor = validate_read_revision(cursor) if cursor else None
     limit = max(1, min(int(limit or 50), 500))
     if cursor:
         want = limit + 2  # +1 dropped (the cursor commit itself), +1 peek
@@ -1071,6 +1092,7 @@ _NUMSTAT_RE = re.compile(r"^(\d+|-)\t(\d+|-)\t(.*)$", re.DOTALL)
 
 
 def _numstat_map(repo_path: str, sha: str) -> Dict[str, Tuple[Optional[int], Optional[int]]]:
+    sha = validate_read_revision(sha)
     proc = run_git(repo_path, "diff-tree", "--no-commit-id", "-r", "-M", "-C", "-z", "--numstat", sha, "--")
     if proc.returncode != 0:
         return {}
@@ -1102,6 +1124,7 @@ def _numstat_map(repo_path: str, sha: str) -> Dict[str, Tuple[Optional[int], Opt
 
 
 def _name_status_list(repo_path: str, sha: str) -> List[Dict[str, str]]:
+    sha = validate_read_revision(sha)
     proc = run_git(repo_path, "diff-tree", "--no-commit-id", "-r", "-M", "-C", "-z", "--name-status", sha, "--")
     if proc.returncode != 0:
         return []
@@ -1139,6 +1162,7 @@ def commit_files(repo_path: str, sha: str) -> List[Dict[str, Any]]:
 
 
 def commit_detail(repo_path: str, sha: str) -> Optional[Dict[str, Any]]:
+    sha = validate_read_revision(sha)
     proc = run_git(repo_path, "show", "-s", f"--format={_COMMIT_FIELDS}", sha, "--")
     if proc.returncode != 0:
         return None
@@ -1172,6 +1196,7 @@ def _format_diff(path: str, text: str) -> Dict[str, Any]:
 
 
 def commit_file_diff(repo_path: str, sha: str, path: str) -> Dict[str, Any]:
+    sha = validate_read_revision(sha)
     proc = run_git(repo_path, "diff-tree", "-p", "--root", "--no-color", "--no-ext-diff",
                     "-M", "-C", sha, "--", path)
     text = proc.stdout if proc.returncode == 0 else ""

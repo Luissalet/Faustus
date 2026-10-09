@@ -375,7 +375,10 @@ def setup_git_routes() -> APIRouter:
         meta = _repo_or_404(repo_id, _owner(request))
         if not git_panel.git_available():
             return _git_missing()
-        return git_panel.log_commits(meta["path"], limit=limit, cursor=cursor or None, ref=ref)
+        try:
+            return git_panel.log_commits(meta["path"], limit=limit, cursor=cursor or None, ref=ref)
+        except git_panel.GitInvalidRevision as exc:
+            return JSONResponse(status_code=400, content={"error_class": "git.invalid_revision", "error": str(exc)})
 
     @router.get("/repos/{repo_id}/branches")
     def get_branches(repo_id: str, request: Request, _u: str = Depends(require_user)) -> Any:
@@ -389,7 +392,10 @@ def setup_git_routes() -> APIRouter:
         meta = _repo_or_404(repo_id, _owner(request))
         if not git_panel.git_available():
             return _git_missing()
-        detail = git_panel.commit_detail(meta["path"], sha)
+        try:
+            detail = git_panel.commit_detail(meta["path"], sha)
+        except git_panel.GitInvalidRevision as exc:
+            return JSONResponse(status_code=400, content={"error_class": "git.invalid_revision", "error": str(exc)})
         if detail is None:
             raise HTTPException(404, "Commit not found")
         return detail
@@ -401,7 +407,10 @@ def setup_git_routes() -> APIRouter:
         rel = _safe_path_or_404(meta, path)
         if not git_panel.git_available():
             return _git_missing()
-        return git_panel.commit_file_diff(meta["path"], sha, rel)
+        try:
+            return git_panel.commit_file_diff(meta["path"], sha, rel)
+        except git_panel.GitInvalidRevision as exc:
+            return JSONResponse(status_code=400, content={"error_class": "git.invalid_revision", "error": str(exc)})
 
     @router.get("/repos/{repo_id}/diff")
     def get_working_diff(repo_id: str, request: Request, path: str = "", staged: int = 0,
