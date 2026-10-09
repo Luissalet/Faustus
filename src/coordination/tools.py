@@ -13,7 +13,7 @@ DESCRIPTIONS = {
     "detail": "Read a stored Agora message by its id and digest from coordination_poll, in chunks. Preserve the poll's thread_ids filter when supplied. Follow next_offset until complete. No Hub acknowledgement is sent.",
     "task": "Read the current full task snapshot before acting. Discussion references are paged: follow next_details_offset with task_digest and task_id to read all references from the same delivered snapshot. Before voting, read every complete discussion detail and test that submission. Task reads do not acknowledge excerpts.",
     "board": "Read current Agora tasks, agents and scoped locks in pages (default eight entries per list). Follow next_offset with the returned digest; a changed snapshot rejects paging. full=true retrieves unabridged fields. Other repositories remain read-only global context and never confer mutation authority.",
-    "heartbeat": "Report working, waiting or idle to Agora and renew only the bound actor's scoped locks.",
+    "heartbeat": "Report working, waiting or idle to Agora. Renew only scoped locks; other owned locks are an advisory, not a heartbeat block.",
     "add": "Create an Agora task in the project's authorized repositories and paths. claim optionally takes scoped locks. Do this before changing a repository.",
     "claim": "Claim a task previously read with coordination_task and take scoped locks atomically. Another actor's task cannot be taken over.",
     "checkpoint": "Persist progress, evidence and next steps for your task. Supply the checkpoint revision you read, zero initially. Declared evidence is not independently verified.",

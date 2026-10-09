@@ -148,8 +148,22 @@ class Client:
         args, task = observed_action(self.store, self.binding, operation, args)
         held_locks = None
         if operation == "heartbeat":
-            held_locks = (await self.remote("locks", {})).get("locks")
+            lock_snapshot = await self.remote("locks", {})
+            if (lock_snapshot.get("capabilities") or {}).get("heartbeat_selective_renewal") is not True:
+                raise CoordinationError("the live Hub lacks selective heartbeat renewal; update the Hub before using this connector")
+            held_locks = lock_snapshot.get("locks")
         clean = authorize(self.binding, operation, args, task=task, held_locks=held_locks, read_only=self.read_only)
+        outside_count = 0
+        if operation == "heartbeat":
+            name = f"mcp__{self.binding.connector_id}__hub_agora_heartbeat"
+            offered = next((tool for tool in self.manager.get_all_tools() if tool.get("qualified_name") == name), {})
+            schema = offered.get("input_schema") or offered.get("inputSchema") or {}
+            props = schema.get("properties") if isinstance(schema, dict) else None
+            selector = props.get("renew_resources", {}) if isinstance(props, dict) else {}
+            if selector.get("type") != "array" or selector.get("items", {}).get("type") != "string":
+                raise CoordinationError("the bound Hub heartbeat lacks the selective-renewal contract; refresh or update the connector")
+            outside_count = sum(lock["owner"] == self.binding.actor and not self.binding.permits_resource(lock["resource"])
+                                for lock in held_locks)
         if task is not None and operation not in READ_OPERATIONS:
             fresh = (await self.remote("task", {"task_id": task["id"]})).get("task")
             fields = ("id", "repo", "paths", "owner", "thread_id")
@@ -209,6 +223,15 @@ class Client:
         # Read revisions are never replaced with a fresh number while executing an old vote.
         # The Hub enforces task ownership and checkpoint/review CAS at the actual mutation.
         result = await self.remote(REMOTE[operation], {**clean, "agent": self.binding.actor})
+        if operation == "heartbeat":
+            renewal = result.get("lock_renewal")
+            if (not isinstance(renewal, dict) or renewal.get("mode") != "selected"
+                    or not isinstance(renewal.get("renewed_resources"), list)
+                    or not all(isinstance(res, str) and res in clean["renew_resources"] for res in renewal["renewed_resources"])):
+                raise UnknownOutcome("heartbeat renewal receipt did not match the selected resources; inspect locks before retrying")
+        if operation == "heartbeat" and outside_count:
+            result["advisories"] = [{"code": "locks_outside_binding", "count": outside_count,
+                "message": "Heartbeat recorded. Owned locks outside this binding were not renewed; their controller can renew them separately."}]
         if isinstance(result.get("task"), dict):
             receipt = self.store.observe_task(self.binding, result["task"], required_messages=None)
             result["_coordination_delivery"] = {"binding": self.binding.id, "revision": self.binding.revision,

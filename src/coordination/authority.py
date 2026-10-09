@@ -215,9 +215,16 @@ def authorize(binding: Binding, operation: str, args, *, task=None, held_locks=N
     if operation == "heartbeat":
         if held_locks is None or not isinstance(held_locks, (tuple, list)):
             raise CoordinationError("read current actor locks before renewing")
+        selected = []
         for lock in held_locks:
-            if lock.get("owner") == binding.actor and not binding.permits_resource(lock.get("resource")):
-                raise CoordinationError("actor has a lock outside this binding; renewal needs owner review")
+            if not isinstance(lock, dict) or not isinstance(lock.get("owner"), str) or not isinstance(lock.get("resource"), str):
+                raise CoordinationError("invalid current lock observation")
+            if lock["owner"] == binding.actor and binding.permits_resource(lock["resource"]):
+                selected.append(lock["resource"])
+        # Derived by the native client, never accepted from model arguments.
+        # An exact list prevents locks acquired after this read from widening
+        # renewal. Outside-scope locks do not block heartbeat metadata.
+        args["renew_resources"] = sorted(set(selected))
         if args.get("state", "working") not in {"working", "idle", "waiting", "away"}:
             raise CoordinationError("invalid heartbeat state")
     return args

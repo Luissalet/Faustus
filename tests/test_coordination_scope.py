@@ -184,10 +184,10 @@ def test_claim_respects_ownership_repo_paths_and_explicit_locks(bound):
 
 def test_heartbeat_cannot_extend_locks_outside_this_binding(bound):
     b = bound[1]
-    authorize(b, "heartbeat", {}, held_locks=[{"owner": b.actor, "resource": "model:principal"}])
-    for locks in (None, [{"owner": b.actor, "resource": "app:hub"}]):
-        with pytest.raises(CoordinationError):
-            authorize(b, "heartbeat", {}, held_locks=locks)
+    assert authorize(b, "heartbeat", {}, held_locks=[{"owner": b.actor, "resource": "model:principal"}])["renew_resources"] == ["model:principal"]
+    assert authorize(b, "heartbeat", {}, held_locks=[{"owner": b.actor, "resource": "app:hub"}])["renew_resources"] == []
+    with pytest.raises(CoordinationError):
+        authorize(b, "heartbeat", {}, held_locks=None)
 
 
 def test_checkpoint_revision_is_observed_and_review_vote_never_refreshes_it(bound):

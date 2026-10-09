@@ -24,6 +24,8 @@ class Manager:
         suffixes = {"inbox", "board", "task", "locks", "heartbeat", "task_claim", "checkpoint", "task_review", "post"}
         result = [{"qualified_name": f"mcp__hub-a__hub_agora_{suffix}", "is_disabled": suffix in self.disabled}
                   for suffix in suffixes]
+        next(tool for tool in result if tool["qualified_name"].endswith("_heartbeat"))["input_schema"] = {
+            "type": "object", "properties": {"renew_resources": {"type": "array", "items": {"type": "string"}}}}
         if self.recent_schema is not None:
             result.append({"qualified_name": "mcp__hub-a__hub_agora_thread_recent",
                            "input_schema": self.recent_schema, "is_disabled": "thread_recent" in self.disabled})
@@ -52,6 +54,7 @@ def native(tmp_path):
     manager.responses["board"] = {"ok": True, "tasks": [{"id": 7, "repo": "Writer", "owner": "claude"}],
                                   "locks": [], "agents": [], "counts": {"review": 1}}
     manager.responses['task'] = {'ok': True, 'task': task(), 'messages': []}
+    manager.responses['heartbeat'] = lambda args: {'ok':True,'lock_renewal':{'mode':'selected','renewed_resources':args['renew_resources']}}
     return store, binding, manager, client
 
 
@@ -74,6 +77,66 @@ def test_board_current_cross_repo_coordination_context_is_read_only_and_project_
     assert cross_repo['scope'] == 'global_context'
     assert cross_repo['status'] == 'review' and cross_repo['submission_revision'] == 3
     assert result['tasks'][0]['status'] == 'done'
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_records_metadata_and_derives_only_scoped_owned_renewals(native):
+    _, binding, manager, client = native
+    manager.responses['locks'] = {'ok': True, 'capabilities':{'heartbeat_selective_renewal':True}, 'locks': [
+        {'owner':binding.actor,'resource':'path:writer/src/file.ts'},
+        {'owner':binding.actor,'resource':'model:reserved-qa'},
+        {'owner':binding.actor,'resource':'path:other/private-token.env'},
+        {'owner':'other','resource':'path:writer/src/foreign.ts'}]}
+    result = await client.execute('heartbeat', {'doing':'scoped project work'})
+    assert manager.calls[-1][1] == {'doing':'scoped project work','agent':binding.actor,
+                                   'renew_resources':['path:writer/src/file.ts']}
+    assert result['ok'] and result['advisories'][0]['count'] == 2
+    assert 'private-token' not in json.dumps(result)
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_no_scoped_locks_reports_state_with_empty_renewal(native):
+    _, binding, manager, client = native
+    manager.responses['locks'] = {'ok':True,'capabilities':{'heartbeat_selective_renewal':True},'locks':[{'owner':binding.actor,'resource':'model:reserved-qa'}]}
+    assert (await client.execute('heartbeat', {'state':'waiting'}))['ok']
+    assert manager.calls[-1][1]['renew_resources'] == []
+
+
+@pytest.mark.asyncio
+async def test_model_cannot_choose_heartbeat_renewal_or_actor(native):
+    _, _, manager, client = native
+    for args in ({'renew_resources':['model:reserved-qa']},{'agent':'luis'}):
+        with pytest.raises(CoordinationError):
+            await client.execute('heartbeat',args)
+    assert manager.calls == []
+
+
+@pytest.mark.asyncio
+async def test_new_local_catalog_cannot_renew_via_an_old_live_hub(native):
+    _, binding, manager, client = native
+    manager.responses['locks']={'ok':True,'locks':[{'owner':binding.actor,'resource':'model:reserved-qa'}]}
+    with pytest.raises(CoordinationError,match='live Hub'):
+        await client.execute('heartbeat',{})
+    assert len(manager.calls)==1 and manager.calls[0][0].endswith('_locks')
+
+
+@pytest.mark.asyncio
+async def test_scope_revoked_after_lock_read_cannot_send_heartbeat(native):
+    store,binding,manager,client=native
+    manager.responses['locks']={'ok':True,'capabilities':{'heartbeat_selective_renewal':True},'locks':[]}
+    manager.after_call=lambda:store.save(replace(binding,active=False),expected_revision=1)
+    with pytest.raises(StaleBinding):
+        await client.execute('heartbeat',{})
+    assert len(manager.calls)==1
+
+
+@pytest.mark.asyncio
+async def test_unmatched_renewal_receipt_is_unknown_not_a_fake_success(native):
+    _,binding,manager,client=native
+    manager.responses['locks']={'ok':True,'capabilities':{'heartbeat_selective_renewal':True},'locks':[]}
+    manager.responses['heartbeat']={'ok':True,'lock_renewal':{'mode':'all','renewed_resources':['model:reserved-qa']}}
+    with pytest.raises(UnknownOutcome):
+        await client.execute('heartbeat',{})
 
 
 def test_board_context_stays_bounded_with_project_priority_and_explicit_omission(native):
