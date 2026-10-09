@@ -1513,7 +1513,17 @@ async def _drain(session_id: str, run: _Run, agen: AsyncGenerator[str, None],
         events = _queued_source()
         if initial_wait is not None:
             from src.first_token_deadline import bounded
-            events = bounded(events, initial_wait)
+            _publish(run, "data: " + json.dumps({"type": "initial_response_budget",
+                     "seconds": _sparks_initial_wait(run.endpoint_url) if run.endpoint_url else initial_wait,
+                     "remaining_seconds": initial_wait,
+                     "scope": "admission_context_queue_first_response"}) + "\n\n")
+            def timeout_phase():
+                if run.phase == "queued":
+                    return "queue"
+                if run.phase in {"waiting_model", "loading_model"}:
+                    return "model"
+                return "preparation"
+            events = bounded(events, initial_wait, phase=timeout_phase)
         _ended_paused = False
         async for ev in events:
             _publish(run, ev)

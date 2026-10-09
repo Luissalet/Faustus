@@ -185,6 +185,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--model", default=os.environ.get("FAUSTUS_MODEL"))
     ap.add_argument("--endpoint-url", default=os.environ.get("FAUSTUS_ENDPOINT_URL"))
     ap.add_argument("--effort", default=None, help="reasoning: auto|off|low|medium|high|max")
+    ap.add_argument("--initial-response-timeout", type=float, default=None,
+                    help="initial response budget for this turn, 5–900 seconds; includes admission and queue")
     ap.add_argument("--plan", action="store_true", help="plan mode: read and propose, no changes")
     ap.add_argument("--web", action="store_true", help="allow web search for the turn")
     ap.add_argument("--approve", action="store_true", help="approve every tool card of the run for the task")
@@ -231,6 +233,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             form["workspace"] = os.path.abspath(args.workspace)
         if args.effort:
             form["reasoning_effort"] = args.effort
+        if args.initial_response_timeout is not None:
+            form["initial_response_timeout_s"] = args.initial_response_timeout
         if args.plan:
             form["plan_mode"] = "true"
         if args.web:

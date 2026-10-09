@@ -133,7 +133,8 @@ async def _session_admission_lock(session_id: str, wait_s: Optional[float] = Non
             else:
                 await asyncio.wait_for(lock.acquire(), timeout=wait_s)
         except TimeoutError as exc:
-            raise HTTPException(504, "El chat sigue ocupado y ha superado el limite de espera inicial.") from exc
+            raise HTTPException(504, "El chat sigue ocupado y ha superado el limite de admision del turno.",
+                                headers={"X-Faustus-Timeout-Phase": "admission"}) from exc
         try:
             yield
         finally:
@@ -1888,7 +1889,8 @@ def setup_chat_routes(
                 try:
                     ctx = await asyncio.wait_for(_context_pending, timeout=_context_wait)
                 except TimeoutError as exc:
-                    raise HTTPException(504, "La preparacion del chat ha superado el limite de espera. Puedes reducir el contexto o elegir otro modelo.") from exc
+                    raise HTTPException(504, "La preparacion del chat ha superado el limite de espera inicial.",
+                                        headers={"X-Faustus-Timeout-Phase": "preparation"}) from exc
             else:
                 ctx = await _context_pending
 
@@ -2056,8 +2058,14 @@ def setup_chat_routes(
     # ------------------------------------------------------------------ #
     # POST /api/chat_stream
     # ------------------------------------------------------------------ #
+    from src.first_token_budget import request_budget
+
     @router.post("/api/chat_stream")
-    async def chat_stream(request: Request) -> StreamingResponse:
+    @request_budget
+    async def chat_stream(request: Request, initial_response_timeout_s: Optional[float] = Form(
+        None, ge=5, le=900,
+        description="Budget for this turn only, including admission, context, queue and first model response. Does not change endpoint preferences.",
+    )) -> StreamingResponse:
         _initial_request_started = time.monotonic()
         # ARCH-01: reject BEFORE any work when a client identifies itself as
         # older than this server supports, with a message it can act on,
@@ -2804,7 +2812,8 @@ def setup_chat_routes(
                     if client_message_id and not tool_approval_id:
                         chat_outbox.mark_finished(owner=owner, session_id=session,
                                                   client_message_id=client_message_id, status="failed")
-                    raise HTTPException(504, "La preparacion del chat ha superado el limite de espera. Puedes reducir el contexto o elegir otro modelo.") from exc
+                    raise HTTPException(504, "La preparacion del chat ha superado el limite de espera inicial.",
+                                        headers={"X-Faustus-Timeout-Phase": "preparation"}) from exc
             else:
                 ctx = await _context_pending
 

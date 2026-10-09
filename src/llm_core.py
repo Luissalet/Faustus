@@ -6083,7 +6083,9 @@ def _sparks_initial_wait(url: str) -> Optional[float]:
     settings = load_settings()
     endpoint = _endpoint_id_for_url(url)
     managed = set((settings.get("sparks_endpoints") or {}).values())
-    return first_token_timeout(settings) if endpoint and endpoint in managed else None
+    from src.first_token_budget import effective
+    default = first_token_timeout(settings) if endpoint and endpoint in managed else None
+    return effective(default)
 
 
 async def _stream_llm_traced_source(url: str, model: str, *args, **kwargs):

@@ -20,7 +20,7 @@ def meaningful(chunk: str) -> bool:
     return False
 
 
-async def bounded(source, seconds: float):
+async def bounded(source, seconds: float, *, phase="model"):
     deadline = time.monotonic() + seconds
     started = False
     queue = asyncio.Queue(maxsize=1)
@@ -52,7 +52,15 @@ async def bounded(source, seconds: float):
                     kind, chunk = await asyncio.wait_for(queue.get(), timeout=remaining)
             except TimeoutError:
                 worker.cancel()
-                error = {"error": "El modelo no ha empezado a responder dentro del limite de espera. Puedes reducir el contexto, esperar a que se prepare o elegir otro modelo.",
+                current_phase = phase() if callable(phase) else phase
+                current_phase = current_phase if current_phase in {"queue", "admission", "preparation", "model"} else "preparation"
+                messages = {
+                    "queue": "El turno ha superado el limite de espera en la cola. El modelo todavia no ha recibido esta peticion.",
+                    "admission": "El chat sigue ocupado y ha superado el limite de admision del turno.",
+                    "preparation": "La preparacion del turno ha superado el limite de espera inicial.",
+                    "model": "El modelo no ha empezado a responder dentro del limite de espera inicial.",
+                }
+                error = {"error": messages[current_phase], "timeout_phase": current_phase,
                          "status": 504, "error_class": "first_token_timeout", "retryable": False,
                          "fallback_eligible": False, "attempts": 1, "wait_limit_s": seconds}
                 yield "event: error\ndata: " + json.dumps(error, ensure_ascii=False) + "\n\n"
