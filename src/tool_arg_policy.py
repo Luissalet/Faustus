@@ -333,7 +333,8 @@ def override_security_decision(security_decision: Any, arg_policy_decision: Opti
     few lines below it already keys off): if `arg_policy_decision` fired with
     `action == "ask"` and `security_decision` is currently allowed, return a
     new not-allowed decision carrying the rule's own message as the reason
-    the approval card shows. Otherwise `security_decision` is returned
+    the approval card shows, unless the saved global Full access mode already
+    supplies that approval. Otherwise `security_decision` is returned
     unchanged — a rule that fires "deny" is a separate, earlier branch that
     never reaches this at all, and an already-not-allowed decision (some
     other gate already refused the call) is never overwritten, so its own
@@ -343,11 +344,28 @@ def override_security_decision(security_decision: Any, arg_policy_decision: Opti
         arg_policy_decision is not None
         and arg_policy_decision.action == "ask"
         and getattr(security_decision, "allowed", False)
+        and requires_confirmation(arg_policy_decision)
     ):
         from src.tool_capabilities import ToolGateDecision
 
         return ToolGateDecision(allowed=False, reason=arg_policy_decision.message())
     return security_decision
+
+
+def requires_confirmation(decision: Optional[Decision]) -> bool:
+    """Whether this rule still requires intervention under the saved mode.
+
+    Evaluation and rehearsal retain the original rule. Only an ask rule is
+    satisfied by the human's global Full access choice; deny is unchanged.
+    Model arguments and context cannot select the global approval mode.
+    """
+    if decision is None:
+        return False
+    if decision.action != "ask":
+        return True
+    from src.tool_capabilities import tool_approval_mode
+
+    return tool_approval_mode() != "full"
 
 
 def extract_tool_args(tool_name: str, content: Any) -> dict:
