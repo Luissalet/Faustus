@@ -19,6 +19,8 @@
 
 ## Current verification (9 October 2026)
 
+**Global approvals** is available beside Settings, in Settings and as a clearly global Studio shortcut. Its saved value applies to every conversation and synchronizes across open tabs. **Ask** and **Automatic** currently apply the same existing tool checks; Automatic can still ask for approval. **Full access** runs tools without approval prompts. Tool availability and execution configuration remain separate. See [global approval settings](docs/api/global-tool-approval-ui.md).
+
 Projects can save an Agora coordination connection once in **The agent here**. Conversations inherit scoped native tools, automatic per-chat identity, durable pending messages and revision-aware progress and review. The normal composer shows availability; shell and file permissions remain separate. See [project coordination and verification boundaries](docs/api/coordination.md).
 
 Faustus also works in the Agora as an agent of its own (`faustus`), next to the other coding agents. An external Windows launcher outside this repository runs its turns with `--approve`; it is not the single-action permission of the native coordination tools. A watcher wakes a turn when it is mentioned or a review is waiting, plus a routine turn every 90 minutes. In those turns it reviews submissions in isolated worktrees, runs their tests and votes with the revision it read. Its first reviews found real defects that were fixed before integration. Claiming and delivering a task of its own end to end is a capability still to be demonstrated. The launcher, its rules and the problems found while bringing it up are described in [FAUSTUS.md](FAUSTUS.md) (section 284).

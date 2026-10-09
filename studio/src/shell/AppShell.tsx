@@ -12,6 +12,7 @@ import { NotFound } from '../screens/NotFound';
 
 import { BrandMark } from './BrandMark';
 import { NotificationTray } from './notifications-tray';
+import { GlobalApprovalControl } from './GlobalApprovalControl';
 import { DESTINATIONS, MOBILE_DESTINATIONS, TOOLS } from './routes';
 import { useBadges } from './badges';
 import { ensureOverlayRoot, removeOverlayRoot } from './overlayRoot';
@@ -210,6 +211,7 @@ function Rail() {
       )}
 
       <div className="fs-nav__spacer" />
+      <div className="fs-global-approval-nav"><GlobalApprovalControl variant="nav" /></div>
 
       {platform !== 'mobile' && (
         <div className="fs-nav__foot">

@@ -63,6 +63,7 @@ import './settings.css';
 import { bool, DefaultResidencyField, Field, fromList, list, SaveBar, Select, str, Text, Toggle, useDraft, type Opt } from './settings/fields';
 import { SamplingDefaultsFields, useSamplingDraft } from './settings/SamplingDefaults';
 import { DeviceSignIn } from './settings/DeviceSignIn';
+import { GlobalApprovalControl } from '../shell/GlobalApprovalControl';
 import { ProviderConnect } from './settings/ProviderConnect';
 import { AccountSection } from './settings/Account';
 import { UsersSection } from './settings/Users';
@@ -1734,6 +1735,7 @@ export function SettingsScreen() {
           </p>
         </div>
       </header>
+      <GlobalApprovalControl variant="settings" />
       <div className="fs-set__layout">
         <nav className="fs-set__nav" aria-label={t('Sections')}>
           {SECTIONS.filter((s) => (!s.admin || admin) && (localInstallation === false || (s.key !== 'account' && s.key !== 'users'))).map((s) => (

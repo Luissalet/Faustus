@@ -31,10 +31,24 @@ export const DEFAULT_KEYBINDS: Record<string, string> = {
 };
 
 let cached: Promise<Record<string, unknown>> | null = null;
+let settingsGeneration = 0;
+let confirmedSettings: Settings | null = null;
+const settingsListeners = new Set<(value: Settings, saved: boolean) => void>();
+export function subscribeSettings(listener: (value: Settings, saved: boolean) => void): () => void {
+  settingsListeners.add(listener);
+  return () => { settingsListeners.delete(listener); };
+}
+function publishSettings(value: Settings, saved = false): Settings {
+  confirmedSettings = value;
+  cached = Promise.resolve(value);
+  settingsListeners.forEach(listener => listener(value, saved));
+  return value;
+}
 
 export function getSettings(signal?: AbortSignal): Promise<Record<string, unknown>> {
   if (!cached) {
-    cached = getJson<Record<string, unknown>>('/api/auth/settings', signal).catch((e) => {
+    const generation = settingsGeneration;
+    cached = getJson<Record<string, unknown>>('/api/auth/settings', signal).then(value => generation === settingsGeneration ? publishSettings(value) : confirmedSettings ?? value).catch((e) => {
       cached = null;
       throw e;
     });
@@ -43,6 +57,7 @@ export function getSettings(signal?: AbortSignal): Promise<Record<string, unknow
 }
 
 export function invalidateSettings(): void {
+  settingsGeneration++;
   cached = null;
 }
 
@@ -119,20 +134,22 @@ async function okr(response: Response, what: string): Promise<Response> {
 
 /** Fresh copy, bypassing the cache used by the shortcuts. */
 export async function loadSettings(signal?: AbortSignal): Promise<Settings> {
+  const generation = settingsGeneration;
   const s = await getJson<Settings>('/api/auth/settings', signal);
-  cached = Promise.resolve(s);
-  return s;
+  if (generation !== settingsGeneration) return confirmedSettings ?? s;
+  return publishSettings(s);
 }
 
 /** Posts only `patch`; the server merges and returns the whole set. */
 export async function saveSettings(patch: Settings): Promise<Settings> {
+  settingsGeneration++;
   const r = await okr(
     await fetch('/api/auth/settings', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) }),
     'auth/settings',
   );
   const s = (await r.json()) as Settings;
-  cached = Promise.resolve(s);
-  return s;
+  settingsGeneration++;
+  return publishSettings(s, true);
 }
 
 export interface SchemaField {

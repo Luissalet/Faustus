@@ -1,0 +1,23 @@
+.fs-global-approvals__trigger { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 6px 10px; border: 1px solid var(--fs-border); border-radius: 10px; background: var(--fs-surface-1); color: var(--fs-text-1); cursor: pointer; font: inherit; max-inline-size: 100%; }
+.fs-global-approvals__trigger > span { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; text-align: start; }
+.fs-global-approvals__global { color: var(--fs-text-2); }
+.fs-global-approvals__trigger:disabled { opacity: .55; cursor: wait; }
+.fs-global-approvals__trigger:focus-visible { outline: 2px solid var(--fs-brand); outline-offset: 2px; }
+.fs-global-approvals__trigger--nav { inline-size: 100%; font-size: 12px; }
+.fs-global-approvals__trigger--shortcut { font-size: 12px; min-height: 28px; padding: 3px 8px; }
+.fs-global-approvals__menu { width: min(360px, calc(100vw - 24px)); }
+.fs-global-approvals__scope { margin: 0 0 10px; line-height: 1.5; }
+.fs-global-approvals__choices { display: grid; gap: 6px; }
+.fs-global-approvals__choices button { text-align: start; display: grid; gap: 3px; padding: 10px; color: var(--fs-text-1); background: transparent; border: 1px solid var(--fs-border); border-radius: 8px; cursor: pointer; font: inherit; }
+.fs-global-approvals__choices button span { font-size: 12px; line-height: 1.45; color: var(--fs-text-2); }
+.fs-global-approvals__choices button[aria-checked=true] { border-color: var(--fs-brand); background: color-mix(in srgb, var(--fs-brand) 10%, transparent); }
+.fs-global-approvals__choices button:focus-visible { outline: 2px solid var(--fs-brand); outline-offset: 2px; }
+.fs-global-approvals--settings { margin-block: 12px 24px; }
+.fs-global-approvals--settings h2 { font-size: 16px; margin-block: 0 8px; }
+.fs-global-approval-nav { margin-block: 8px; }
+@media (max-width: 767px) {
+  .fs-global-approval-nav { flex: 1; margin: 0; min-width: 0; }
+  .fs-global-approvals__trigger--nav { border: 0; background: transparent; flex-direction: column; gap: 2px; min-height: 44px; padding: 4px; font-size: 10px; }
+  .fs-global-approvals__trigger--nav > span { justify-content: center; text-align: center; }
+  .fs-global-approvals__trigger--nav > span > span:last-child { display: none; }
+}

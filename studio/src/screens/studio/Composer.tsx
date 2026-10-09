@@ -1,4 +1,5 @@
-import { getSettings, saveSettings } from '../../adapters/settings';
+import { getSettings } from '../../adapters/settings';
+import { GlobalApprovalControl } from '../../shell/GlobalApprovalControl';
 import { t, tn, useLang } from '../../i18n';
 import { usePlatform } from '../../shell/platform';
 import { Link } from 'react-router';
@@ -24,7 +25,6 @@ import {
   Pin,
   Plug,
   Plus,
-  Shield,
   Loader2,
   RefreshCw,
   SlidersHorizontal,
@@ -1118,7 +1118,7 @@ export function Composer({
         {chatModeChip}
         {onSetInitialResponseTimeout && <InitialResponseSelector current={initialResponseTimeoutS} pick={initialResponseTimeoutPick} onPick={onSetInitialResponseTimeout} />}
         <SessionConnectorsSelector sessionId={sessionId} />
-        <ApprovalSelector disabled={busy} onNotice={onNotice} />
+        <GlobalApprovalControl />
         <StrategyProfileSelector profile={strategyProfile} onPick={pickStrategyProfile} />
         <RecipeSelector recipeId={activeRecipeId} recipes={recipes} onPick={pickRecipe} />
         </div>
@@ -1642,31 +1642,6 @@ function StopMenu({
       )}
     </Popover>
   );
-}
-
-function ApprovalSelector({ disabled, onNotice }: { disabled: boolean; onNotice: ComposerProps['onNotice'] }) {
-  const [mode, setMode] = useState('ask');
-  const [ready, setReady] = useState(false);
-  const [saving, setSaving] = useState(false);
-  useEffect(() => { let live = true; void getSettings().then(s => { if (live) { setMode(String(s.tool_approval_mode ?? 'ask')); setReady(true); } }).catch(() => {}); return () => { live = false; }; }, []);
-  const choices = [
-    { value: 'ask', label: t('Ask for approval'), detail: t('Confirm desktop input and actions that require approval.') },
-    { value: 'auto', label: t('Automatic approval'), detail: t('Allow routine desktop actions; ask when other approval checks require it.') },
-    { value: 'full', label: t('No confirmations'), detail: t('Run enabled tools without approval prompts. Tool and account restrictions still apply.') },
-  ];
-  const choose = async (value: string) => {
-    setSaving(true);
-    try { await saveSettings({ tool_approval_mode: value }); setMode(value); }
-    catch (e) { onNotice((e as Error).message, 'danger'); }
-    finally { setSaving(false); }
-  };
-  const label = choices.find(c => c.value === mode)?.label ?? t('Ask for approval');
-  return <Popover placement="composer" className="fs-studio__permission-menu" trigger={<button type="button" className="fs-studio__chip fs-studio__chip--compact" data-permission={mode} disabled={!ready || disabled || saving} title={label} aria-label={t('Approval: {label}', { label })}><Shield size={14} aria-hidden="true" /><span className="fs-studio__chip-label">{label}</span></button>}>
-    <p>{t('Approval mode for all Faustus chats. Only an administrator can change it.')}</p>
-    <div role="radiogroup" aria-label={t('Tool approvals')}>
-      {choices.map(choice => <button key={choice.value} type="button" role="radio" aria-checked={mode === choice.value} disabled={saving || disabled} onClick={() => void choose(choice.value)}><strong>{choice.label}</strong><span>{choice.detail}</span></button>)}
-    </div>
-  </Popover>;
 }
 
 /**
