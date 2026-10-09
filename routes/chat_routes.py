@@ -2066,6 +2066,10 @@ def setup_chat_routes(
             "mode": {"type": "string", "enum": ["chat", "agent"]},
             "workspace": {"type": "string"}, "model": {"type": "string"},
             "selected_endpoint_id": {"type": "string"},
+            "reasoning_effort": {"type": "string", "enum": ["auto", "off", "low", "medium", "high", "max"]},
+            "autonomy_preset": {"type": "string", "enum": ["supervised", "bounded_autonomous", "read_only"]},
+            "plan_mode": {"type": "boolean"}, "no_memory": {"type": "boolean"},
+            "no_skills": {"type": "boolean"},
             "initial_response_timeout_s": {"type": "number", "minimum": 5, "maximum": 900,
                 "description": "Initial response budget for this turn only; includes admission, preparation and queue."},
         }}}
@@ -2649,7 +2653,7 @@ def setup_chat_routes(
                 logger.warning("Failed to parse attachments JSON, ignoring attachments", exc_info=e)
 
         image_generation_session = _is_image_generation_session(sess, owner=effective_user(request))
-        no_memory = str(form_data.get("no_memory", "")).lower() == "true"
+        no_memory = str(form_data.get("no_memory", (body or {}).get("no_memory", ""))).lower() == "true"
         # CONTRATO_MODOS: one-turn behaviour-mode override, same form/JSON
         # dual-read posture every other per-turn field on this route uses.
         behavior_mode = str(
