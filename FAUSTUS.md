@@ -1,5 +1,7 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+**Aprobaciones globales (09-10-2026):** el control persistente junto a Ajustes, en Ajustes y en el compositor cambia una única preferencia para todas las conversaciones y se sincroniza entre pestañas. «Preguntar» y «Automático» aplican actualmente las mismas comprobaciones; «Automático» puede seguir pidiendo aprobación. «Acceso completo» ejecuta las herramientas sin tarjetas de aprobación. La disponibilidad de herramientas y la configuración de ejecución son ajustes distintos. Ver [contrato y límites comprobados](docs/api/global-tool-approval-ui.md); esta mejora no demuestra por sí sola paridad como agente.
+
 **Faustus** es el fork personal de Luis de [Odysseus](https://github.com/odysseus-dev/odysseus) (interfaz local tipo Cowork sobre Ollama). Este documento es el registro vivo de **todo lo que Faustus añade o cambia respecto al Odysseus original**: se actualiza con cada bloque de trabajo, sirve de changelog del fork y de material para el currículum (qué se construyó, por qué, cómo se verificó).
 
 - Base del fork: commit upstream `c9dd68d8` (27-08-2026, "refactor(docs): separate Pages site source").
