@@ -1627,6 +1627,17 @@ export function StudioScreen() {
     async (sid: string) => {
       const pending = pendingOutboxFor(sid);
       if (!pending || !pending.text.trim()) return;
+      // A resend that the server did not see yet starts a real turn: it must
+      // run under the same autonomy as any other send (a global read_only
+      // included), never the server's fallback. If the project's preferences
+      // cannot be resolved now, the message stays in the outbox for later.
+      let resolvedExecution: SessionExecutionDefaults;
+      try {
+        resolvedExecution = await executionForSend(sid);
+      } catch {
+        return;
+      }
+      const autonomy = resolveExecutionAutonomy(executionPicks, resolvedExecution.defaults, knobs.autonomyPreset);
       const controller = new AbortController();
       controllerRef.current = controller;
       setBusy(true);
@@ -1642,6 +1653,8 @@ export function StudioScreen() {
           mode: 'chat',
           clientMessageId: pending.id,
           attachments: pending.attachments,
+          autonomyPreset: autonomy.override,
+          initialResponseTimeoutS: executionPicks.initial_response_timeout_s,
           onRunId: (id) => {
             if (controller.signal.aborted || controllerRef.current !== controller) return;
             runIdRef.current = id;
@@ -1680,7 +1693,7 @@ export function StudioScreen() {
         }
       }
     },
-    [patchLast, refreshSessions, refreshActivity, turnsFromHistory, panelDispatch],
+    [patchLast, refreshSessions, refreshActivity, turnsFromHistory, panelDispatch, executionForSend, executionPicks, knobs.autonomyPreset],
   );
 
   const rejoin = useCallback(

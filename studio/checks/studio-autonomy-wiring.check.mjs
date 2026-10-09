@@ -43,4 +43,21 @@ assert.match(src, /const autonomy\s*=\s*resolveExecutionAutonomy\(executionPicks
 assert.match(src, /const execution = await executionForSend\(sid\);\s*setDraft/,
   'Resolve project preferences before removing the draft on a first send');
 assert.match(src, /sendBlocked=\{executionBlocked\}/, 'Pending or failed project resolution must block the composer');
+// Every request that can start a turn carries the resolved autonomy, the
+// outbox resend of an uncertain message included (#170).
+const calls = [...src.matchAll(/for await \(const event of sendTurn\(\{/g)];
+assert.ok(calls.length >= 2, 'expected the composer send and the outbox resend');
+for (const call of calls) {
+  let d = 0, j = src.indexOf('{', call.index + 'for await (const event of sendTurn('.length);
+  const start = j;
+  for (; j < src.length; j++) {
+    if (src[j] === '{') d++;
+    else if (src[j] === '}') { d--; if (d === 0) break; }
+  }
+  assert.match(src.slice(start, j + 1), /autonomyPreset\s*:\s*autonomy\.override/,
+    'every sendTurn call must forward the shared autonomy resolution');
+}
+const reconcile = src.slice(src.indexOf('const reconcileOutbox = useCallback('), src.indexOf('const rejoin = useCallback('));
+assert.match(reconcile, /await executionForSend\(sid\)[\s\S]*resolveExecutionAutonomy\(executionPicks, resolvedExecution\.defaults, knobs\.autonomyPreset\)/,
+  'the outbox resend resolves project preferences before sending');
 console.log('Studio.tsx: forwards knobs.autonomyPreset through shared precedence and guards unresolved projects');
