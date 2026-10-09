@@ -1,0 +1,27 @@
+{
+  "disabled_rules": [],
+  "whitespace": false,
+  "date_year_range": [1990, 2100],
+  "path_ignore": ["data/*", "logs/*", "venv/*", "node_modules/*", "dist/*", "build/*"],
+  "documents": {
+    "README.md": {
+      "required_sections": [
+        "What Faustus is",
+        "Quick start",
+        "Architecture",
+        "Security and data",
+        "Credits and licence"
+      ]
+    },
+    "FAUSTUS.md": {
+      "required_sections": [
+        "Proyectos",
+        "Arnés de fiabilidad del agente"
+      ]
+    }
+  },
+  "forbidden": {
+    "patterns": ["Co-Authored-By\\s*:", "Claude-Session\\s*:"],
+    "names": []
+  }
+}

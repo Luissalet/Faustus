@@ -1197,6 +1197,12 @@ EXAMPLES: Dict[str, List[str]] = {
         "exporta este modelo a STL con Blender sin abrir la interfaz",
         "comprueba si Blender está instalado y funciona en modo headless",
     ],
+    "doc_lint": [
+        "lint FAUSTUS.md and the README",
+        "revisa que la numeracion de secciones del markdown no tenga huecos",
+        "find broken links and impossible dates in this doc",
+        "check the doc has its required sections and no skipped heading levels",
+    ],
     "doc_claims_check": [
         "check if the README still matches the code",
         "revisa si FAUSTUS.md tiene referencias rotas al código",

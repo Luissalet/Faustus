@@ -3273,6 +3273,29 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "doc_lint",
+            "description": "Lint Markdown documents with checkable rules, report-only (never rewrites): heading hierarchy (skipped levels, single H1, duplicates), numbered-section sequence (gaps, duplicates, out of order), broken relative links and backticked repo paths that do not exist, impossible or malformed dates (DD-MM-YYYY, YYYY-MM-DD), required sections per document, and forbidden content (commit trailers, banned names from the config). Each finding has a rule id, severity, line, message and fix hint. Use before closing a docs task or when asked 'revisa este markdown' / 'lint the docs'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "paths": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Markdown files to lint (inside the workspace)"
+                    },
+                    "rules": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional rule ids or groups: headings, numbering, links, dates, sections, forbidden, whitespace (default: all except whitespace)"
+                    }
+                },
+                "required": ["paths"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "fanout_run",
             "description": "Race the SAME prompt across N candidate models/endpoints, each isolated in its own alternative (a git worktree or a directory snapshot, like alt_start) so they never collide. Returns immediately with a run_id -- poll with fanout_status/fanout_results, do not wait here. Candidates default to the chat's own model plus whatever worker/dispatch model this install has configured when `candidates` is omitted. Use when the user wants to compare what different models (e.g. a cheap local model vs. a remote one) each do with the same task before picking one.",
             "parameters": {

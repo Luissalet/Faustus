@@ -177,6 +177,30 @@ async def list_tools() -> list[Tool]:
                 },
             },
         ),
+        Tool(
+            name="doc_lint",
+            description=(
+                "Lint Markdown documents with checkable rules, report-only (it never rewrites): "
+                "heading hierarchy (skipped levels, several H1, duplicates), numbered-section "
+                "sequence (gaps, duplicates, out of order), broken relative links and backticked "
+                "repo paths, impossible or malformed dates (DD-MM-YYYY, YYYY-MM-DD), required "
+                "sections per document, and forbidden content (commit trailers, banned names from "
+                "the config). Each finding has rule, severity, line, message and fix hint. Paths "
+                "must be Markdown files inside the Faustus install folder or the server's working "
+                "folder. Revisa documentos Markdown. Read-only."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "paths": {"type": "array", "items": {"type": "string"},
+                              "description": "Markdown files to lint."},
+                    "rules": {"type": "array", "items": {"type": "string"},
+                              "description": "Rule ids or groups: headings, numbering, links, dates, "
+                                             "sections, forbidden, whitespace (default: all but whitespace)."},
+                },
+                "required": ["paths"],
+            },
+        ),
     ]
 
 
@@ -346,7 +370,47 @@ def _harness_proposals(args: dict) -> dict:
     return {"proposals": light, "counts": store.counts()}
 
 
+def _doc_lint_roots() -> list:
+    install = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return [os.path.realpath(install), os.path.realpath(os.getcwd())]
+
+
+def _doc_lint_resolve(raw: str) -> str:
+    """Confine a path to the install folder or the server's cwd (no import of
+    the agent tools here: see the note on `_BUILTIN_CATALOGUE`)."""
+    roots = _doc_lint_roots()
+    expanded = os.path.expanduser(str(raw))
+    real = os.path.realpath(expanded if os.path.isabs(expanded) else os.path.join(roots[0], expanded))
+    for root in roots:
+        try:
+            if os.path.commonpath([real, root]) == root:
+                return real
+        except ValueError:
+            continue
+    raise ValueError(f"path '{raw}' is outside the allowed folders")
+
+
+def _doc_lint(args: dict) -> dict:
+    from src import doc_lint as dl
+
+    paths = args.get("paths") or args.get("path")
+    if isinstance(paths, str):
+        paths = [p.strip() for p in paths.split(",") if p.strip()]
+    if not isinstance(paths, list) or not paths:
+        return {"error": "paths must be a non-empty list of Markdown files"}
+    if len(paths) > 20:
+        return {"error": "at most 20 paths per call"}
+    rules = args.get("rules") or None
+    if isinstance(rules, str):
+        rules = [r.strip() for r in rules.split(",") if r.strip()]
+    try:
+        return dl.lint_paths([str(p) for p in paths], rules, resolver=_doc_lint_resolve)
+    except ValueError as exc:
+        return {"error": str(exc)}
+
+
 _TOOLS = {
+    "doc_lint": _doc_lint,
     "history_projection": _history_projection,
     "resource_claims": _resource_claims,
     "paired_bench_reports": _paired_bench_reports,

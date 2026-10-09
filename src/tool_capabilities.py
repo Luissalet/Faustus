@@ -789,6 +789,15 @@ _register(
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
 _register(
+    # doc_lint (src/doc_lint.py) only reads Markdown files confined to the
+    # workspace and checks relative link / path existence under the repo root;
+    # it never writes. Its findings quote document text, so the result is
+    # workspace-untrusted like doc_claims_check.
+    {"doc_lint"},
+    ToolEffect.READ_WORKSPACE,
+    result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
+)
+_register(
     # doc_claims_check (src/doc_claims.py) only reads Markdown docs and
     # source files already in the workspace (plus a read-only `git log`/
     # `git blame`) to ground claims and detect drift -- same class as
