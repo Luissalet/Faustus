@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import hashlib
 
-from .authority import authorize, observed_action, positive_id, paths
+from .authority import authorize, observed_action, positive_id, paths, task_action_scope
 from .bindings import CoordinationError, READ_OPERATIONS, StaleBinding, UnknownOutcome
 
 
@@ -33,7 +33,7 @@ def compact_task(task):
     return result
 
 
-def compact_board(board, binding, *, offset=0, limit=8, full=False):
+def compact_board(board, binding, *, offset=0, limit=8, full=False, read_only=False):
     project, context = [], []
     for original in board.get("tasks", ()):
         in_project = str(original.get("repo") or "").casefold() in binding.repos
@@ -43,9 +43,12 @@ def compact_board(board, binding, *, offset=0, limit=8, full=False):
             # Global Hub reading is authorized, but its context is not an
             # expansion of the bound project's mutation authority.
             task["read_only"] = True
-        (project if in_project else context).append(task)
+        (project if in_project else context).append((original, task))
     tasks = project + context
-    shown = tasks[offset:offset + limit]
+    # Evaluate authority on the complete source paths, never on truncated rows,
+    # and only for this bounded page rather than for the entire global board.
+    shown = [{**row, "action_scope": task_action_scope(binding, original, read_only=read_only)}
+             for original, row in tasks[offset:offset + limit]]
     agents = [{k: a.get(k) for k in ("id", "state", "doing", "stale")} for a in board.get("agents", ())]
     locks = [{k: lock.get(k) for k in ("resource", "owner", "task_id", "expires")}
              for lock in board.get("locks", ()) if binding.permits_resource(lock.get("resource"))]
@@ -58,12 +61,23 @@ def compact_board(board, binding, *, offset=0, limit=8, full=False):
             agent["doing"] = doing[:160]
             if len(doing) > 160:
                 agent["doing_chars"] = len(doing)
-    return {"counts": board.get("counts", {}), "tasks": shown,
+    result = {"counts": board.get("counts", {}), "tasks": shown,
             "tasks_total": len(tasks), "tasks_omitted": len(tasks) - len(shown),
             "offset": offset, "next_offset": offset + limit if offset + limit < max(len(tasks), len(agents), len(locks)) else None,
             "digest": digest,
             "agents": agents[offset:offset + limit], "agents_omitted": len(agents) - len(agents[offset:offset + limit]),
             "locks": locks[offset:offset + limit], "locks_omitted": len(locks) - len(locks[offset:offset + limit])}
+    # A smaller page preserves every row and every existing snapshot digest.
+    # All lists advance together, so reducing metadata cannot skip a task.
+    if not full:
+        while len(json.dumps(result, ensure_ascii=False)) > 6000 and limit > 1:
+            limit -= 1
+            for key, values in (("tasks", shown), ("agents", agents[offset:offset + limit]), ("locks", locks[offset:offset + limit])):
+                result[key] = values[:limit]
+                total = len(tasks) if key == "tasks" else len(agents) if key == "agents" else len(locks)
+                result[key + "_omitted"] = total - len(result[key])
+            result["next_offset"] = offset + limit if offset + limit < max(len(tasks), len(agents), len(locks)) else None
+    return result
 
 
 class Client:
@@ -161,7 +175,8 @@ class Client:
                 digest = self.task_digest(observed, required)
                 if clean.get("task_digest") != digest:
                     raise CoordinationError("task snapshot changed; reread it before paging discussion references")
-                return {**self.task_references(observed["id"], required, clean["details_offset"]), "task_digest": digest}
+                return {**self.task_references(observed["id"], required, clean["details_offset"]), "task_digest": digest,
+                        "action_scope": task_action_scope(self.binding, observed, read_only=self.read_only)}
             result = await self.remote("task", {"task_id": clean["task_id"]})
             observed = result.get("task")
             messages = result.get("messages", [])
@@ -177,14 +192,15 @@ class Client:
                 required.extend({"id": m["id"], "digest": hashlib.sha256(m["body"].encode("utf-8")).hexdigest()} for m in page)
             receipt = self.store.observe_task(self.binding, observed, required_messages=required)
             observed = {k: v for k, v in observed.items() if not k.startswith("_coordination_")}
-            return {"task": observed, "message_count": len(messages), **self.task_references(observed["id"], required),
+            return {"task": {**observed, "action_scope": task_action_scope(self.binding, observed, read_only=self.read_only)},
+                    "message_count": len(messages), **self.task_references(observed["id"], required),
                     "task_digest": self.task_digest(observed, required),
                     **self.pending_page(limit=8),
                     "_coordination_delivery": {"binding": self.binding.id, "revision": self.binding.revision,
                                                "task_receipt": receipt}}
         if operation == "board":
             result = compact_board(await self.remote("board", {}), self.binding,
-                                   offset=clean.get("offset", 0), limit=clean.get("limit", 8), full=clean.get("full", False))
+                                   offset=clean.get("offset", 0), limit=clean.get("limit", 8), full=clean.get("full", False), read_only=self.read_only)
             if clean.get("digest") and clean["digest"] != result["digest"]:
                 raise CoordinationError("board changed; restart pagination rather than mixing snapshots")
             return result
@@ -272,8 +288,11 @@ class Client:
         for start in range(0, len(recent["cache"]), 200):
             self.store.receive(self.binding, expected_cursor=next_cursor, next_cursor=next_cursor, messages=[],
                                pending_messages=recent["cache"][start:start + 200], threads=threads)
-        reviews = [compact_task(t) for t in inbox.get("reviews", ()) if t.get("id") in scope_tasks]
-        changes = [compact_task(t) for t in inbox.get("changes", ()) if t.get("owner") == self.binding.actor]
+        reviews = [t for t in inbox.get("reviews", ()) if t.get("id") in scope_tasks]
+        changes = [t for t in inbox.get("changes", ()) if t.get("owner") == self.binding.actor]
+        def task_rows(values):
+            return [{**compact_task(task), "action_scope": task_action_scope(self.binding, task, read_only=self.read_only)}
+                    for task in values[:8]]
         recent_refs = recent["refs"]
         shown_recent = []
         for ref in recent_refs:
@@ -283,8 +302,8 @@ class Client:
         result = {"actor": self.binding.actor, "binding_revision": self.binding.revision,
                 "cursor": next_cursor, "page_received": len(all_messages), "has_more": len(all_messages) >= 100,
                 **self.pending_page(threads, limit),
-                "reviews": reviews[:8], "reviews_omitted": max(0, len(reviews) - 8),
-                "changes": changes[:8], "changes_omitted": max(0, len(changes) - 8),
+                "reviews": task_rows(reviews), "reviews_omitted": max(0, len(reviews) - 8),
+                "changes": task_rows(changes), "changes_omitted": max(0, len(changes) - 8),
                 "board": {"counts": board.get("counts", {}), "tasks_total": len(board.get("tasks", ())),
                           "detail_tool": "coordination_board"}, "hub_acknowledged": False,
                 "recent": shown_recent, "recent_omitted": len(recent_refs) - len(shown_recent),

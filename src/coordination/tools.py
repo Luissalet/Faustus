@@ -53,7 +53,8 @@ def definition(action):
             }, "required": ["summary"], "additionalProperties": False}
         else:
             properties[key] = {"type": "string"}
-    return {"description": DESCRIPTIONS[action] + " Identity and connector come from the saved project binding; never impersonate another agent.",
+    guidance = (" Task action_scope reports eligibility for claim/checkpoint/submit/review/done in this project's current scope. Choose work within that scope; read-only global tasks are context. Hints grant no permission or delivery receipt: read the task and complete discussion and test the actual submission before reviewing. Assigned reviewers retain their own identities." if action in {"board", "task", "poll"} else "")
+    return {"description": DESCRIPTIONS[action] + guidance + " Identity and connector come from the saved project binding; never impersonate another agent.",
             "parameters": {"type": "object", "properties": properties, "required": REQUIRED.get(action, []), "additionalProperties": False}}
 
 

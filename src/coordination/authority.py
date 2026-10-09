@@ -82,11 +82,71 @@ def observed_action(store, binding, operation, args):
     return args, task
 
 
-def authorize(binding: Binding, operation: str, args, *, task=None, held_locks=None, read_only=False):
+def authorize_operation(binding, operation, *, read_only=False):
     if not binding.active or operation not in binding.operations or operation not in FIELDS:
         raise CoordinationError("operation is outside the active coordination scope")
     if read_only and operation not in READ_OPERATIONS:
         raise CoordinationError("this turn allows coordination reads only")
+
+
+TASK_ACTIONS = ("claim", "checkpoint", "submit", "review", "done")
+
+
+def authorize_task_context(binding, operation, args, task):
+    """The same task authority checks for dispatch and informational scope hints."""
+    if operation == "claim":
+        scoped_task(binding, task, args["task_id"], claim=True)
+        if "locks" not in args:
+            args["locks"] = [f"path:{task['repo']}/{p}" for p in task.get("paths", ())]
+        resources(binding, args["locks"])
+    if operation in {"checkpoint", "submit", "done"}:
+        scoped_task(binding, task, args["task_id"], own=True)
+    if operation == "checkpoint":
+        observed = (task.get("latest_checkpoint") or {}).get("revision", 0)
+        supplied = args.get("expected_revision")
+        if type(supplied) is not int or supplied != observed:
+            raise CoordinationError("checkpoint revision was not observed; reload and review it")
+    if operation == "review":
+        scoped_task(binding, task, args["task_id"])
+        if task.get("owner") == binding.actor:
+            raise CoordinationError("an actor cannot cross-review its own submission")
+        revision = args.get("expected_submission_revision")
+        if type(revision) is not int or revision < 1 or revision != task.get("submission_revision"):
+            raise CoordinationError("submission changed; review the new revision before voting")
+
+
+def task_action_scope(binding, task, *, read_only=False):
+    """Describe task-specific eligibility, never a delivered receipt or a grant.
+
+    Only task metadata read from the fixed connector is used. A board hint
+    cannot replace a delivered task/discussion or the live checks at dispatch.
+    Payloads, votes and checkpoints are neither fabricated nor dispatched.
+    """
+    allowed, unavailable = [], {}
+    for operation in TASK_ACTIONS:
+        args = {"task_id": task.get("id") if isinstance(task, Mapping) else None}
+        if operation == "checkpoint":
+            cp = task.get("latest_checkpoint") if isinstance(task, Mapping) else None
+            args["expected_revision"] = cp.get("revision", 0) if isinstance(cp, Mapping) else 0
+        if operation == "review":
+            args["expected_submission_revision"] = task.get("submission_revision") if isinstance(task, Mapping) else None
+        try:
+            authorize_operation(binding, operation, read_only=read_only)
+            authorize_task_context(binding, operation, args, task)
+        except CoordinationError as exc:
+            unavailable.setdefault(str(exc), []).append(operation)
+        except (AttributeError, KeyError, TypeError, ValueError):
+            unavailable.setdefault("task metadata is incomplete or malformed; reread it before choosing an action", []).append(operation)
+        else:
+            allowed.append(operation)
+    return {"allowed": allowed, "read_only": not allowed,
+            "unavailable": [{"actions": actions, "reason": reason} for reason, actions in unavailable.items()],
+            "requires_task_delivery": bool(allowed),
+            "review_requires_complete_discussion_and_testing": "review" in allowed}
+
+
+def authorize(binding: Binding, operation: str, args, *, task=None, held_locks=None, read_only=False):
+    authorize_operation(binding, operation, read_only=read_only)
     if not isinstance(args, Mapping) or set(args) - FIELDS[operation]:
         raise CoordinationError("unknown or authority-changing coordination arguments")
     args = dict(args)
@@ -128,27 +188,12 @@ def authorize(binding: Binding, operation: str, args, *, task=None, held_locks=N
                 raise CoordinationError("title is required")
         if args.get("claim") and not args.get("locks"):
             args["locks"] = [f"path:{args['repo']}/{p}" for p in args["paths"]]
-    if operation == "claim":
-        scoped_task(binding, task, args["task_id"], claim=True)
-        if "locks" not in args:
-            args["locks"] = [f"path:{task['repo']}/{p}" for p in task.get("paths", ())]
-        resources(binding, args["locks"])
-    if operation in {"checkpoint", "submit", "done"}:
-        scoped_task(binding, task, args["task_id"], own=True)
+    if operation in TASK_ACTIONS:
+        authorize_task_context(binding, operation, args, task)
     if operation == "checkpoint":
-        observed = (task.get("latest_checkpoint") or {}).get("revision", 0)
-        supplied = args.get("expected_revision")
-        if type(supplied) is not int or supplied != observed:
-            raise CoordinationError("checkpoint revision was not observed; reload and review it")
         if not isinstance(args.get("payload"), dict):
             raise CoordinationError("checkpoint payload is required")
     if operation == "review":
-        scoped_task(binding, task, args["task_id"])
-        if task.get("owner") == binding.actor:
-            raise CoordinationError("an actor cannot cross-review its own submission")
-        revision = args.get("expected_submission_revision")
-        if type(revision) is not int or revision < 1 or revision != task.get("submission_revision"):
-            raise CoordinationError("submission changed; review the new revision before voting")
         if args.get("verdict") not in {"approve", "changes"}:
             raise CoordinationError("review verdict must be approve or changes")
     if operation == "post":
