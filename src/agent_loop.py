@@ -2541,8 +2541,11 @@ def _answer_only_math_request(text: str, earlier_user_texts: Sequence[str] = ())
         match.group() if re.search(r"[\\/]|\b\S+\.[A-Za-z]", match.group()) else ""
     ), text)
     targets = re.sub(r"\b(?:p[aá]ginas?|pages?)\b", "", targets, flags=re.IGNORECASE)
-    if _WORKSPACE_CODE_TARGET_RE.search(targets):
+    if _WORKSPACE_CODE_TARGET_RE.search(targets) or _WORKSPACE_CODE_ACTION_RE.search(targets):
         return False
+    from src.answer_checks import verified_calculation
+    if verified_calculation(text) is not None:
+        return True
     if _ANSWER_ONLY_MATH_RE.match(text):
         return True
     if (_MATH_CORRECTION_RE.match(text) and _MATH_REFERENCE_RE.search(text)
@@ -11209,7 +11212,6 @@ async def _stream_agent_loop_body(
         }) + "\n\n"
 
     _harness_final_note = ""
-    _harness_final_replacement = ""
     _harness_execution_recoveries = 0
     _no_action_nudges = 0
     _language_mismatch_nudges = 0
@@ -14745,10 +14747,11 @@ async def _stream_agent_loop_body(
                 ):
                     _ledger.stop_reason = "complete_unverified"
                     _ledger.notes.append("unverified_claims_forced:" + ",".join(_fa_check["reasons"]))
-                    _harness_final_replacement = _ledger.failure_response(_fa_check)
+                    _harness_final_note = _ledger.advisory_note(_fa_check)
+                    _ledger.record_claim_advisory(_fa_check, round_num)
                     yield (
                         "data: " + json.dumps({
-                            "type": "harness_check", "status": "unverified",
+                            "type": "harness_check", "status": "advisory", "advisory": True,
                             "reasons": _fa_check["reasons"], "claims": _fa_check.get("claims", []),
                             "bad_paths": _fa_check.get("bad_paths", []), "round": round_num,
                             "untouched_paths": _fa_check.get("untouched_paths", []),
@@ -15437,33 +15440,9 @@ async def _stream_agent_loop_body(
                 except Exception:
                     _claimed_unavailable_action = _claims_unobserved_project_objective_change(_hc_text)
                 if _claimed_unavailable_action:
-                    _project_objective_unavailable_nudges += 1
-                    _ledger.notes.append(f"project_objective_unavailable_nudge@{round_num}")
-                    if round_response.strip():
-                        messages.append({"role": "assistant", "content": round_response})
-                    messages.append({
-                        "role": "user",
-                        "_harness_note": True,
-                        "content": (
-                            _lang_note("[Harness check — automatic message from the runtime, not from the user] "
-                            "You claimed the project objectives were changed, but this turn has no usable "
-                            "project_objectives tool and no mutation evidence. Retract the claim. State that "
-                            "nothing was changed, explain that the chat must be attached to a project (or the "
-                            "policy must permit it), and give the smallest next step.")
-                        ),
-                    })
-                    yield (
-                        "data: " + json.dumps({
-                            "type": "harness_check", "status": "required_action_unavailable",
-                            "tool": "project_objectives", "round": round_num,
-                            "attempt": 1, "max_attempts": 1,
-                            **_xr.event("objective_unavailable", used=_project_objective_unavailable_nudges,
-                                        limit=1, round_num=round_num),
-                        }) + "\n\n"
-                    )
-                    full_response += "\n\n"
-                    yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
-                    continue
+                    _ledger.notes.append("project_objective_unavailable_advisory")
+                    yield "data: " + json.dumps({"type": "harness_check", "status": "advisory", "advisory": True,
+                        "reason": "project_objective_unavailable", "tool": "project_objectives", "round": round_num}) + "\n\n"
             if (
                 _requires_project_objective_apply
                 and not _project_objective_apply_succeeded()
@@ -15531,54 +15510,22 @@ async def _stream_agent_loop_body(
                     logger.debug("[harness] grounding ledger failed: %s", _gl_err)
                 if _wd_bad or _aloud or _slot_bad or _calc_bad or _grounding_note:
                     _answer_rewrite_used = True
-                    logger.warning("[harness] round %s answer rewrite: weekdays=%s aloud=%s slots=%s calculation=%s",
-                                   round_num, _wd_bad, _aloud, _slot_bad, _calc_bad)
-                    _ledger.notes.append(f"answer_rewrite@{round_num}")
-                    if round_response.strip():
-                        messages.append({"role": "assistant", "content": round_response})
-                        if full_response.endswith(round_response):
-                            full_response = full_response[:-len(round_response)]
-                            yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
-                    messages.append({"role": "user", "_harness_note": True,
-                                     "content": _lang_note(_answer_checks.rewrite_note(_wd_bad, _aloud, _slot_bad, _calc_bad,
-                                                                                         grounding=_grounding_note))})
-                    yield (
-                        "data: " + json.dumps({
-                            "type": "harness_check", "status": "rejected",
-                            "reasons": (["wrong_weekday"] if _wd_bad else []) + (["thinking_aloud"] if _aloud else [])
-                                       + (["busy_slot"] if _slot_bad else [])
-                                       + (["wrong_calculation"] if _calc_bad else [])
-                                       + (["ungrounded_figure"] if _grounding_note else []),
-                            "slots": _slot_bad,
-                            "round": round_num, "attempt": 1, "max_attempts": 1,
-                            "weekdays": _wd_bad, "phrases": _aloud[:4],
-                            **_xr.event("answer_rewrite", used=1, limit=1, round_num=round_num),
-                        }) + "\n\n"
-                    )
-                    yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
-                    continue
-            # Figure ledger, second chance used (or no rewrite left): strike
-            # through what is still unsupported instead of letting it pass.
-            if (_hc_text and tool_events and not plan_mode and not _grounding_marked
-                    and (_answer_rewrite_used or round_num >= max_rounds)):
-                try:
-                    from src import answer_checks as _answer_checks_gl
-                    _gr2 = _answer_checks_gl.grounding_review(
-                        _hc_text, _last_user or "",
-                        [str((e or {}).get("output") or "") for e in tool_events], retry_used=True)
-                    if _gr2.get("action") == "mark" and _gr2.get("answer"):
-                        _grounding_marked = True
-                        _marked = str(_gr2["answer"])
-                        if round_response.strip() and full_response.endswith(round_response):
-                            full_response = full_response[:-len(round_response)] + _marked
-                            round_response = _marked
-                            _hc_text = _marked
-                            yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
-                        _ledger.notes.append("grounding_marked:" + json.dumps(_gr2.get("trace") or {}, ensure_ascii=False)[:600])
-                        yield ("data: " + json.dumps({"type": "harness_check", "status": "figures_marked",
-                                                      "round": round_num}) + "\n\n")
-                except Exception as _gl2_err:
-                    logger.debug("[harness] grounding mark failed: %s", _gl2_err)
+                    _ledger.notes.append(f"answer_evidence_advisory@{round_num}")
+                    _ledger.record_answer_advisory(
+                        (["wrong_weekday"] if _wd_bad else []) + (["thinking_aloud"] if _aloud else [])
+                        + (["busy_slot"] if _slot_bad else []) + (["wrong_calculation"] if _calc_bad else [])
+                        + (["ungrounded_figure"] if _grounding_note else []), round_num)
+                    yield "data: " + json.dumps({
+                        "type": "harness_check", "status": "advisory", "advisory": True,
+                        "reasons": (["wrong_weekday"] if _wd_bad else []) + (["thinking_aloud"] if _aloud else [])
+                                   + (["busy_slot"] if _slot_bad else [])
+                                   + (["wrong_calculation"] if _calc_bad else [])
+                                   + (["ungrounded_figure"] if _grounding_note else []),
+                        "slots": _slot_bad, "weekdays": _wd_bad, "phrases": _aloud[:4],
+                        "calculation": _calc_bad, "grounding": _grounding_note, "round": round_num,
+                    }) + "\n\n"
+            # Numerical/grounding diagnostics preserve the model's answer;
+            # they neither request another model call nor strike out prose.
             # H1 before the claims check: when the turn touched UI files and
             # no browser evidence exists, run the harness's own smoke crawl
             # NOW, so `ui_unverified` only fires when the smoke could not
@@ -15632,142 +15579,10 @@ async def _stream_agent_loop_body(
                         _check.setdefault("claims", [])
                         _check["ok"] = False
                 if not _check["ok"]:
-                    if _xr.permits("claim_rejection", _ledger.rejections, _HARNESS_MAX_REJECTIONS):
-                        _ledger.rejections += 1
-                        # A rejected answer is the harness's own bounded
-                        # correction loop (capped above, and it ends itself
-                        # with its verdict): not a monologue.
-                        _stuck.monologue_streak = 0
-                        _monologue_pending = ""
-                        if "intent_without_action" in _check["reasons"] or "asked_instead_of_continuing" in _check["reasons"]:
-                            _ledger.intent_nudges += 1
-                            # Share the cap with the legacy intent supervisor
-                            # below so a stalled model gets 2 nudges total,
-                            # not 2 + 2.
-                            _intent_nudge_count += 1
-                        logger.warning(
-                            "[harness] round %s REJECTED (%s) attempt %s/%s claims=%s bad_paths=%s "
-                            "untouched=%s intent=%r",
-                            round_num, ",".join(_check["reasons"]), _ledger.rejections,
-                            _HARNESS_MAX_REJECTIONS, _check.get("claims"), _check.get("bad_paths"),
-                            _check.get("untouched_paths"), _check.get("intent"),
-                        )
-                        # Do not feed fabricated completion prose back as an
-                        # assistant fact. It anchors smaller local models on
-                        # their own invention and makes the next retry repeat
-                        # it. Preserve partial answers only when some mutation
-                        # is real and the model merely overstated the scope.
-                        _draft_kept = bool(round_response.strip() and _ledger.effects)
-                        if _draft_kept:
-                            messages.append({"role": "assistant", "content": round_response})
-                        elif round_response.strip() and full_response.endswith(round_response):
-                            # The model will not see this draft again and writes
-                            # the answer anew, so the user should not see it
-                            # either: live, a rejected "He creado X" stayed on
-                            # screen above the corrected answer.
-                            full_response = full_response[:-len(round_response)]
-                            yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
-                        messages.append({"role": "user", "_harness_note": True, "content": _lang_note(_ledger.rejection_message(_check))})
-                        yield (
-                            "data: " + json.dumps({
-                                "type": "harness_check", "status": "rejected",
-                                "reasons": _check["reasons"], "claims": _check.get("claims", []),
-                                "bad_paths": _check.get("bad_paths", []), "intent": _check.get("intent"),
-                                "untouched_paths": _check.get("untouched_paths", []),
-                                "round": round_num, "attempt": _ledger.rejections,
-                                "max_attempts": _HARNESS_MAX_REJECTIONS,
-                                "mutations": _ledger.mutated_paths(),
-                                "permission": _check.get("permission"),
-                                **_xr.event("claim_rejection", used=_ledger.rejections,
-                                            limit=_HARNESS_MAX_REJECTIONS, round_num=round_num),
-                            }) + "\n\n"
-                        )
-                        full_response += "\n\n"
-                        yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
-                        continue
-                    # Give a workspace model one fresh execution cycle before
-                    # conceding failure. This is not another warning round:
-                    # reset the rejection counter, discard the fabricated
-                    # assistant prose, and require the next response to start
-                    # with a real editing/terminal tool call. The normal round
-                    # budget still protects the host from an actually broken
-                    # provider, while useful local work gets more runway.
-                    # A false "I checked the source" is fixed by rewording, not
-                    # by an execution cycle, and the answer is kept with a note.
-                    _sources_only = _check["reasons"] == ["unconsulted_sources"]
-                    if (
-                        _xr.permits("execution_recovery", _harness_execution_recoveries, 1)
-                        and workspace
-                        and not _sources_only
-                        and not (_ledger.effects and _harness.TurnLedger.check_is_stall_only(_check))
-                        and bool(
-                            (set(_tool_names_sent) | set(_relevant_tools or []))
-                            & (WORKSPACE_TOOL_FLOOR_EDIT | {"write_file", "bash", "powershell", "python"})
-                        )
-                        and round_num < max_rounds
-                    ):
-                        _harness_execution_recoveries += 1
-                        _ledger.rejections = 0
-                        messages.append({
-                            "role": "user",
-                            "_harness_note": True,
-                            "content": (
-                                _lang_note("[Harness execution recovery — automatic runtime message, not a new user request] "
-                                "Stop writing status prose. Your next response must START with a tool call that "
-                                "advances the original task in the active workspace: inspect a real file if still "
-                                "necessary, then use apply_patch/edit_file/write_file or a terminal command to make "
-                                "the change and run its verification. Do not claim completion until those tool "
-                                "results exist. Continue the original task now.")
-                            ),
-                        })
-                        yield (
-                            "data: " + json.dumps({
-                                "type": "harness_check", "status": "auto_continue",
-                                "reason": "execution_recovery", "round": round_num,
-                                **_xr.event("execution_recovery", used=_harness_execution_recoveries,
-                                            limit=1, round_num=round_num),
-                            }) + "\n\n"
-                        )
-                        full_response += "\n\n"
-                        yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
-                        continue
-
-                    # Retries exhausted. A stall after real writes is not a
-                    # fabricated completion: keep the summary the user can
-                    # actually read. Replacing it with "the task remains
-                    # unfinished" was the live failure on a 17-file turn.
-                    if (_ledger.effects or _sources_only) and _harness.TurnLedger.check_is_stall_only(_check):
-                        logger.warning(
-                            "[harness] round %s stall exhausted after %s rejections (%s) — keeping backed answer",
-                            round_num, _ledger.rejections, ",".join(_check["reasons"]),
-                        )
-                        _ledger.stop_reason = "complete"
-                        _ledger.notes.append("stall_exhausted:" + ",".join(_check["reasons"]))
-                        _harness_final_note = _ledger.user_note(_check, final=True)
-                        yield (
-                            "data: " + json.dumps({
-                                "type": "harness_check", "status": "stall_exhausted",
-                                "reasons": _check["reasons"], "claims": _check.get("claims", []),
-                                "intent": _check.get("intent"), "permission": _check.get("permission"),
-                                "round": round_num, "mutations": _ledger.mutated_paths(),
-                            }) + "\n\n"
-                        )
-                    else:
-                        logger.warning("[harness] round %s still unsupported after %s rejections: %s",
-                                       round_num, _ledger.rejections, _check["reasons"])
-                        _ledger.stop_reason = "complete_unverified"
-                        _ledger.notes.append("unverified_claims:" + ",".join(_check["reasons"]))
-                        _harness_final_replacement = _ledger.failure_response(_check)
-                        yield (
-                            "data: " + json.dumps({
-                                "type": "harness_check", "status": "unverified",
-                                "reasons": _check["reasons"], "claims": _check.get("claims", []),
-                                "bad_paths": _check.get("bad_paths", []), "intent": _check.get("intent"),
-                                "untouched_paths": _check.get("untouched_paths", []),
-                                "round": round_num, "mutations": _ledger.mutated_paths(),
-                            }) + "\n\n"
-                        )
-                elif _ledger.rejections or _ledger.effects:
+                    logger.warning("[harness] claim evidence advisory: %s", _check["reasons"])
+                    _harness_final_note = _ledger.advisory_note(_check)
+                    yield "data: " + json.dumps(_ledger.record_claim_advisory(_check, round_num)) + "\n\n"
+                if _ledger.effects:
                     # ── (2b) Substituted target. The user named a file that does
                     # not exist; the model edited other files and the answer does
                     # not say so. One bounded round to make the answer honest
@@ -15780,24 +15595,10 @@ async def _stream_agent_loop_body(
                             logger.debug("[harness] target substitution check failed: %s", _ts_err)
                             _ts_check = None
                     if _ts_check:
-                        _ledger.target_nudges += 1
                         _ledger.notes.append("target_substituted:" + ",".join(_ts_check["missing"]))
-                        logger.warning("[harness] round %s changed %s while the user named missing %s — asking for an explicit answer",
-                                       round_num, _ts_check["changed"], _ts_check["missing"])
-                        if round_response.strip():
-                            messages.append({"role": "assistant", "content": round_response})
-                        messages.append({"role": "user", "_harness_note": True, "content": _lang_note(_ledger.target_substitution_message(_ts_check))})
-                        yield (
-                            "data: " + json.dumps({
-                                "type": "harness_check", "status": "target_substituted", "round": round_num,
-                                "missing": _ts_check["missing"], "changed": _ts_check["changed"],
-                                "attempt": 1, "max_attempts": 1, "mutations": _ledger.mutated_paths(),
-                                **_xr.event("target_substitution", used=_ledger.target_nudges, limit=1, round_num=round_num),
-                            }) + "\n\n"
-                        )
-                        full_response += "\n\n"
-                        yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
-                        continue
+                        yield "data: " + json.dumps({"type": "harness_check", "status": "advisory", "advisory": True,
+                            "reason": "target_substituted", "round": round_num,
+                            "missing": _ts_check["missing"], "changed": _ts_check["changed"]}) + "\n\n"
                     # ── (3) Post-mutation syntax check. The model says it is done
                     # and changed files: make sure they at least parse before the
                     # turn ends. One bounded round-trip to fix what broke.
@@ -16096,31 +15897,14 @@ async def _stream_agent_loop_body(
                                     "round": round_num, "label": _cvc.get("label"), "canvas_check": _cvc,
                                 }) + "\n\n"
                             )
-                    # Advisor, third trigger: the model is about to give its
-                    # final answer after writing files. One bounded extra
-                    # round when the advisor has something to correct.
-                    if _ledger.mutations and not _force_answer and _advisor_state.allows(_advisor.TRIGGER_FINAL):
-                        try:
-                            _adv_note, _adv_evt = await _advisor_ask(
-                                _advisor.TRIGGER_FINAL,
-                                extra="The answer the agent is about to give:\n" + (round_response or "")[:2500],
-                            )
-                        except Exception:  # noqa: BLE001 - the advisor never costs a turn
-                            logger.debug("[advisor] final trigger failed", exc_info=True)
-                            _adv_note, _adv_evt = None, None
-                        if _adv_evt:
-                            yield "data: " + json.dumps(_adv_evt) + "\n\n"
-                        if _adv_note:
-                            if round_response.strip():
-                                messages.append({"role": "assistant", "content": round_response})
-                            messages.append({"role": "user", "_harness_note": True, "content": _lang_note(_adv_note)})
-                            _xr.event("advisor_final", used=1, limit=1, round_num=round_num)
-                            full_response += "\n\n"
-                            yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
-                            continue
+                    # Final evidence advice is local and informational. Mid-task
+                    # advisor help is unchanged; no extra model call or forced
+                    # rewrite is required just to accept a final report.
+                    if _ledger.mutations and _advisor_state.allows(_advisor.TRIGGER_FINAL):
+                        _ledger.notes.append("advisor_final_advisory:no_extra_model_call")
                     yield (
                         "data: " + json.dumps({
-                            "type": "harness_check", "status": "verified", "round": round_num,
+                            "type": "harness_check", "status": _ledger.verify_outcome(_check).get("outcome", "uncertain"), "round": round_num,
                             "mutations": _ledger.mutated_paths(),
                             "static_checks": _ledger.static_checks,
                             "static_analysis": _ledger.static_analysis,
@@ -16142,48 +15926,17 @@ async def _stream_agent_loop_body(
                     )
 
         if not tool_blocks:
-            # ── Completion verifier (mechanism 3a) ────────────────────
-            # The model is finishing. If this was an effectful agentic turn,
-            # have a fresh-context verifier independently check the work
-            # before we accept "done". On FAIL, surface the issues and let
-            # the model fix them (capped, and it must do new effectful work
-            # to re-trigger). Skipped on force-answer rounds (no tools to
-            # fix with), pure Q&A, and when the toggle is off.
-            _claimed_done = bool(_strip_think_blocks(cleaned_round).strip())
-            if (_effectful_used and not _force_answer
-                    and _claimed_done
-                    and _verifier_rounds < _VERIFIER_MAX_ROUNDS
-                    # Default OFF: on weak local models the verifier can't judge
-                    # from the action-snapshot (no doc body), so it false-rejects
-                    # ("content not shown") and forces a costly extra round every
-                    # effectful turn. Opt-in via setting for strong models.
-                    and get_setting("agent_verifier_subagent", False)):
-                # Brief "working" indicator while the verifier runs.
-                yield f'data: {json.dumps({"type": "agent_step", "round": round_num})}\n\n'
-                _vfail = await _run_verifier_subagent(
-                    _verifier_instruction,
-                    _build_actions_snapshot(tool_events),
-                    endpoint_url=endpoint_url, model=model, headers=headers,
-                )
-                if _vfail:
-                    _verifier_rounds += 1
-                    logger.info(f"[agent] verifier flagged {len(_vfail)} issue(s) on round {round_num}: {_vfail}")
-                    _note = "\n\n_Double-checked the work and found something to fix._\n\n"
-                    yield f'data: {json.dumps({"delta": _note})}\n\n'
-                    full_response += _note
-                    messages.append({
-                        "role": "system",
-                        "content": (
-                            _lang_note("An independent verifier reviewed your work against the "
-                            "original request and found issues that must be fixed before "
-                            "this is actually done:\n- " + "\n- ".join(_vfail) +
-                            "\n\nFix these now using tools, then finish.")
-                        ),
-                    })
-                    # Require fresh effectful work before verifying again, so we
-                    # never re-verify an unchanged state in a loop.
-                    _effectful_used = False
-                    continue
+            # Ordinary completion claims use the existing ledger. A configured
+            # fresh-model verifier must not spend another call merely because
+            # a final answer needs more proof. Its absence is explicit, not a
+            # synthetic independent verification pass.
+            if (_effectful_used or _ledger.effects) and get_setting("agent_verifier_subagent", False):
+                _ledger.notes.append("completion_verifier_advisory:no_extra_model_call")
+                yield "data: " + json.dumps({
+                    "type": "harness_check", "status": "advisory", "advisory": True,
+                    "reason": "completion_verifier", "round": round_num,
+                    "verification": _ledger.verify_outcome(), "model_call": False,
+                }) + "\n\n"
             # ── Intent-without-action supervisor ─────────────────────
             # Catch "Let me tail the output" / "I'll check the logs" /
             # "Let me investigate" patterns where the model announces an
@@ -16313,7 +16066,9 @@ async def _stream_agent_loop_body(
                 logger.debug("[agent] completion engine unavailable", exc_info=True)
                 _ce_decision = None
             if isinstance(_ce_decision, dict) and _ce_decision.get("ok"):
-                _ce_next = list(_ce_decision.get("continue_with") or [])
+                _ce_next, _ce_advisories = _harness.completion_work_items(_ce_decision)
+                if _ce_advisories:
+                    _ledger.notes.append("completion_evidence_advisory:" + str(len(_ce_advisories)))
                 _ce_continuation_granted = bool(
                     _ce_next and _xr.permits("completion_continue", _ce_completion_rounds, _CE_MAX_ROUNDS))
                 _ce_round_limit_hit = bool(_ce_next and not _ce_continuation_granted)
@@ -16331,6 +16086,7 @@ async def _stream_agent_loop_body(
                         "decision_id": _ce_decision.get("decision_id"),
                         "summary": _ce_decision.get("summary"),
                         "would_continue": len(_ce_next),
+                        "evidence_advisories": _ce_advisories,
                         "continuation_proposed": bool(_ce_next),
                         "continuation_granted": _ce_continuation_granted,
                         "continuation_block_reason": ("completion_round_limit" if _ce_round_limit_hit
@@ -18964,43 +18720,74 @@ async def _stream_agent_loop_body(
             and _looks_like_success_claim(full_response)
         ):
             full_response = "I couldn't make that change because no matching tool action completed."
-    # Harness: replace rejected narration in both the live bubble and the
-    # route's saved accumulator. `response_replace` is intentionally distinct
-    # from a delta: appending a warning still leaves a false completion claim
-    # on screen and in history.
-    if _harness_final_replacement:
-        full_response = _harness_final_replacement.strip()
-        yield f"data: {json.dumps({'type': 'response_replace', 'text': full_response})}\n\n"
-    elif _harness_final_note:
+    # Evidence warnings append context without replacing the model's report.
+    if _harness_final_note:
         _note_delta = ("\n\n" if full_response.strip() else "") + _harness_final_note
         full_response = (full_response.rstrip() + _note_delta).strip()
         yield f"data: {json.dumps({'delta': _note_delta})}\n\n"
-    # A very small class of answers has a complete, deterministic solution.
-    # If even the one rewrite above ignored it (observed with a local 3B),
-    # show that verified result instead of saving the wrong calculation.
-    if not _harness_final_replacement:
-        try:
-            from src import answer_checks as _final_calculation_checks
-            _remaining_calculation = _final_calculation_checks.calculation_mismatch(
-                _last_user or "", full_response)
-        except Exception:
-            _remaining_calculation = None
-        if _remaining_calculation:
-            full_response = _remaining_calculation["explanation"]
-            _ledger.notes.append("verified_calculation_final")
-            yield f"data: {json.dumps({'type': 'response_replace', 'text': full_response})}\n\n"
-        try:
-            from src import answer_checks as _links_final_checks
-            if _links_final_checks.saved_links_count_requested(_last_user or ""):
-                _links_total = _links_final_checks.saved_links_total(tool_events)
-                _links_answer = (f"Tienes {_links_total} enlaces guardados en Links Hoard."
-                                 if _links_total is not None else
-                                 "No pude consultar el total de enlaces guardados en Links Hoard.")
-                if full_response != _links_answer:
-                    full_response = _links_answer
-                    yield f"data: {json.dumps({'type': 'response_replace', 'text': full_response})}\n\n"
-        except Exception:
-            logger.debug("[harness] saved-links count check failed", exc_info=True)
+    # Preserve the report and show deterministic evidence beside it.
+    try:
+        from src import answer_checks as _final_calculation_checks
+        _remaining_calculation = _final_calculation_checks.calculation_mismatch(
+            _last_user or "", full_response)
+    except Exception:
+        _remaining_calculation = None
+    if _remaining_calculation:
+        _ledger.notes.append("calculation_evidence_advisory")
+        _ledger.record_answer_advisory(["wrong_calculation"], round_num)
+        yield "data: " + json.dumps({"type": "harness_check", "status": "advisory", "advisory": True,
+            "reason": "wrong_calculation", "calculation": _remaining_calculation}) + "\n\n"
+    _links_evidence_note = ""
+    try:
+        from src import answer_checks as _links_final_checks
+        if _links_final_checks.saved_links_count_requested(_last_user or ""):
+            _links_total = _links_final_checks.saved_links_total(tool_events)
+            _links_answer = (f"Tienes {_links_total} enlaces guardados en Links Hoard."
+                             if _links_total is not None else
+                             "No pude consultar el total de enlaces guardados en Links Hoard.")
+            _links_count_evidence = _links_final_checks.saved_links_count_evidence(full_response, _links_total)
+            if not _links_count_evidence["ok"]:
+                _ledger.notes.append("saved_links_evidence_advisory")
+                _ledger.record_answer_advisory([str(_links_count_evidence["reason"])], round_num)
+                _links_evidence_note = _links_answer
+                yield "data: " + json.dumps({"type": "harness_check", "status": "advisory", "advisory": True,
+                    "reason": _links_count_evidence["reason"], "evidence": _links_count_evidence,
+                    "observed_answer": _links_answer}) + "\n\n"
+    except Exception:
+        logger.debug("[harness] saved-links count check failed", exc_info=True)
+    _answer_evidence_reasons = list(dict.fromkeys(reason for diagnostic in _ledger.answer_diagnostics
+        for reason in diagnostic.get("reasons", [])))
+    if _answer_evidence_reasons:
+        _es_evidence = _ledger.language == "es"
+        _evidence_words = ({
+            "wrong_weekday": "Un día de la semana no coincide con su fecha.",
+            "thinking_aloud": "La respuesta contiene razonamiento de trabajo sin resolver.",
+            "busy_slot": "Un horario propuesto coincide con una ocupación observada.",
+            "wrong_calculation": "El cálculo de la respuesta no coincide con la comprobación.",
+            "ungrounded_figure": "Alguna cifra no está respaldada por las fuentes observadas.",
+            "saved_links_count": "El total de enlaces de la respuesta no coincide con lo observado.",
+            "saved_links_count_missing": "No se confirmó el total de enlaces en la respuesta.",
+            "saved_links_source_missing": "No hay una consulta válida que respalde el total de enlaces.",
+        } if _es_evidence else {
+            "wrong_weekday": "A weekday does not match its date.",
+            "thinking_aloud": "The report contains unresolved working reasoning.",
+            "busy_slot": "A proposed time overlaps an observed busy slot.",
+            "wrong_calculation": "The reported calculation does not match the checked result.",
+            "ungrounded_figure": "A figure is not backed by observed sources.",
+            "saved_links_count": "The reported saved-link count does not match the observed result.",
+            "saved_links_count_missing": "The answer did not confirm the saved-link total.",
+            "saved_links_source_missing": "No successful query supports the saved-link total.",
+        })
+        _notice_parts = [_evidence_words.get(reason) for reason in _answer_evidence_reasons if _evidence_words.get(reason)]
+        if _remaining_calculation and _remaining_calculation.get("explanation"):
+            _notice_parts.append(str(_remaining_calculation["explanation"]))
+        if _links_evidence_note:
+            _notice_parts.append(_links_evidence_note)
+        if _notice_parts:
+            _notice = ("Comprobación de evidencias: " if _es_evidence else "Evidence notice: ") + " ".join(_notice_parts)
+            _notice_delta = ("\n\n" if full_response.strip() else "") + _notice
+            full_response = (full_response.rstrip() + _notice_delta).strip()
+            yield "data: " + json.dumps({"delta": _notice_delta}) + "\n\n"
     # A link to an image a tool produced this turn must use the URL that tool
     # returned; small models keep the ID but invent a host (seen live with a
     # 3B model after a Prospero edit), which renders as a broken image.
@@ -19183,7 +18970,7 @@ async def _stream_agent_loop_body(
         try:
             from src import changesets as _changesets
 
-            _claimed = _harness.find_claimed_paths(full_response or "")
+            _claimed = _harness.find_claimed_paths(full_response or "", expected_text=_last_user or "")
             if workspace and (_hsum.get("mutations") or _claimed):
                 _changeset = _changesets.from_turn(
                     _hsum, workspace=workspace,
@@ -19211,14 +18998,14 @@ async def _stream_agent_loop_body(
                 if _gate_reason:
                     _ledger.stop_reason = "complete_unverified"
                     _hsum["stop_reason"] = "complete_unverified"
-                    _gate_note = "hard_gate:" + _gate_reason
+                    _gate_note = "evidence_grade:" + _gate_reason
                     if _gate_note not in _ledger.notes:
                         _ledger.notes.append(_gate_note)
                     _hsum["notes"] = _ledger.notes
-                    logger.warning("[harness] hard completion gate: %s — turn closed complete_unverified", _gate_reason)
+                    logger.warning("[harness] completion evidence advisory: %s — grade complete_unverified", _gate_reason)
                     yield (
                         "data: " + json.dumps({
-                            "type": "harness_check", "status": "completion_gated",
+                            "type": "harness_check", "status": "advisory", "advisory": True,
                             "reason": _gate_reason, "round": round_num,
                             "verdict": _proof.get("verdict"),
                             "tests": _hsum.get("tests"), "ui_smoke": _hsum.get("ui_smoke"),
@@ -19244,14 +19031,14 @@ async def _stream_agent_loop_body(
                 if _gate_reason:
                     _ledger.stop_reason = "complete_unverified"
                     _hsum["stop_reason"] = "complete_unverified"
-                    _gate_note = "hard_gate:" + _gate_reason
+                    _gate_note = "evidence_grade:" + _gate_reason
                     if _gate_note not in _ledger.notes:
                         _ledger.notes.append(_gate_note)
                     _hsum["notes"] = _ledger.notes
-                    logger.warning("[harness] hard completion gate: %s — turn closed complete_unverified", _gate_reason)
+                    logger.warning("[harness] completion evidence advisory: %s — grade complete_unverified", _gate_reason)
                     yield (
                         "data: " + json.dumps({
-                            "type": "harness_check", "status": "completion_gated",
+                            "type": "harness_check", "status": "advisory", "advisory": True,
                             "reason": _gate_reason, "round": round_num,
                             "tests": _hsum.get("tests"), "ui_smoke": _hsum.get("ui_smoke"),
                         }) + "\n\n"
@@ -19264,7 +19051,7 @@ async def _stream_agent_loop_body(
             # finished turn (src/outcome_verification.py): every tool result with
             # its exit code, the test run, process states, Code Mode receipts and
             # the judged changeset, in one answer.
-            if _ledger.events:
+            if _ledger.events or _ledger.answer_diagnostics or (_ledger.claim_check and not _ledger.claim_check.get("ok")):
                 _hsum["verification"] = _ledger.verify_outcome(changeset=_hsum.get("changeset"))
         except Exception as _vo_err:
             logger.debug("[harness] outcome verification skipped: %s", _vo_err)
@@ -19437,6 +19224,7 @@ async def _stream_agent_loop_body(
                 "static_checks", "static_analysis", "static_fix_rounds",
                 "workspace", "checkpoint", "tests", "tests_fix_rounds",
                 "review", "review_fix_rounds", "canvas_check", "asked_user", "changeset", "round_count",
+                "verification", "claim_check", "claim_diagnostics", "answer_diagnostics",
             )
         }
         metrics["harness"]["review_mode"] = bool(_hopts.get("review_mode")) and bool(_hsum.get("mutations"))

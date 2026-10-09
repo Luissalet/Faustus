@@ -107,6 +107,13 @@ def build_entry(
     mutations = list(harness.get("mutations") or [])
     notes = [str(n) for n in (harness.get("notes") or [])]
     static = list(harness.get("static_checks") or [])
+    verification = harness.get("verification")
+    evidence_outcome = verification.get("outcome") if isinstance(verification, dict) else None
+    if evidence_outcome not in {"verified", "unverified", "uncertain"}:
+        evidence_outcome = None
+    evidence_warning = any(n.startswith(("unverified", "claim_advisory:", "answer_evidence_advisory",
+        "calculation_evidence_advisory", "saved_links_evidence_advisory")) for n in notes)
+    verified = stop == "complete" and not evidence_warning and evidence_outcome in (None, "verified")
     entry: Dict[str, Any] = {
         "ts": int(time.time()),
         "session_id": session_id,
@@ -121,8 +128,8 @@ def build_entry(
         "failed_calls": int(harness.get("failed_calls") or 0),
         "files_changed": len(mutations),
         "stop_reason": stop,
-        "verified": stop == "complete" and not any(n.startswith("unverified") for n in notes),
-        "unverified": stop == "complete_unverified",
+        "verified": verified,
+        "unverified": stop == "complete_unverified" or (stop == "complete" and not verified),
         "rejections": int(harness.get("rejections") or 0),
         # A real question (ask_user). A stop for the "Allow this task to
         # continue?" gate is not the model asking: that hop is skipped below.
@@ -136,6 +143,8 @@ def build_entry(
         "tok_s": round(float(tokens_per_second), 1) if tokens_per_second else None,
         "output_tokens": int(output_tokens) if output_tokens else None,
     }
+    if evidence_outcome is not None:
+        entry["evidence_outcome"] = evidence_outcome
     # Tokens per trajectory: what a turn cost in prompt + completion tokens,
     # per tool call and per round (the usage summary's own sums). Absent, not
     # zero, when the turn has no usage figures.

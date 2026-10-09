@@ -568,7 +568,9 @@ _PATH_EXTS = (
     r"ya?ml|toml|ini|cfg|conf|env|txt|rst|go|rs|java|kt|kts|swift|cs|cpp|cc|c|h|hpp|"
     r"rb|php|sh|bash|zsh|ps1|psm1|bat|cmd|sql|graphql|gql|proto|xml|svg|lock|"
     r"dockerfile|makefile|gradle|properties|csv|ipynb|dart|lua|r|m|mm|ex|exs|erl|"
-    r"hs|scala|clj|cljs|elm|vim|tf|tfvars|hcl|nix|zig|v|sol|wasm"
+    r"hs|scala|clj|cljs|elm|vim|tf|tfvars|hcl|nix|zig|v|sol|wasm|"
+    r"pdf|docx?|pptx?|xlsx?|odt|ods|odp|png|jpe?g|gif|webp|bmp|tiff?|"
+    r"mp3|wav|mp4|mov|webm|zip|bin"
 )
 PATH_TOKEN_RE = re.compile(
     r"(?<![\w@:/\\.-])"                                   # not glued to a URL/word
@@ -1273,14 +1275,90 @@ def _item_region(item: str) -> str:
     return body
 
 
-def find_claimed_paths(text: str, limit: int = 8) -> List[str]:
+_TEST_CONTEXT_RE = re.compile(r"\b(?:tests?|pytest|pruebas?|fixtures?|ejemplos?|examples?)\b(?!\.\w)", re.IGNORECASE)
+_TEMP_DATA_RE = re.compile(r"\b(?:tmp_path|tmpdir|tempfile|TemporaryDirectory|temporal(?:es)?|temporary)\b", re.IGNORECASE)
+_OUTPUT_REQUEST_RE = re.compile(r"\b(?:create|write|save|export|deliver|produce|crea|escribe|guarda|exporta|entrega|genera)\b", re.IGNORECASE)
+_TEST_DATA_RE = re.compile(
+    r"\b(?:tmp_path|tmpdir|tempfile|TemporaryDirectory|fixtures?|temporal(?:es)?|temporary|"
+    r"crea(?:n)?|genera(?:n)?|creates?|generates?|hits?|coincidencias?|matching|glob|ejemplos?|examples?)\b",
+    re.IGNORECASE,
+)
+_TEST_SOURCE_RE = re.compile(r"(?:^|[/\\])(?:tests?[/\\]|test_[^/\\]+\.[a-z]+$)|(?:_test|\.spec|\.test)\.[a-z]+$", re.IGNORECASE)
+
+
+def contextual_path_text(text: str, expected_text: str = "", *, instruction: bool = False) -> Tuple[str, List[str]]:
+    """Separate data in a described test/example from workspace deliverables.
+
+    This classifies narration, not proof of a test run. Explicit user targets,
+    test source files and a direct artifact claim before the test description
+    remain checked. No filename or file format is exempted globally.
+    """
+    expected_body = user_authored_text(expected_text)
+    if expected_body:
+        expected_body = contextual_path_text(expected_body, instruction=True)[0]
+    expected = {_norm(p) for p in extract_path_tokens(expected_body)}
+    expected |= {p.rsplit("/", 1)[-1] for p in expected}
+    context_paths: List[str] = []
+    parts = re.split(r"(\n\s*\n)", text or "")
+    for i, paragraph in enumerate(parts):
+        cue = _TEST_CONTEXT_RE.search(paragraph)
+        if not cue or not _TEST_DATA_RE.search(paragraph):
+            continue
+        if instruction and not _TEMP_DATA_RE.search(paragraph):
+            continue # Ambiguous user-named files remain expected targets.
+        prefix = paragraph[:cue.start()]
+        protected = set(extract_path_tokens(prefix)) if (
+            _accepted_write_claim(prefix) or (instruction and _OUTPUT_REQUEST_RE.search(prefix))) else set()
+        for segment in _SENTENCE_SPLIT_RE.split(paragraph):
+            write = _accepted_write_claim(segment)
+            if instruction:
+                write = write or _OUTPUT_REQUEST_RE.search(segment)
+            test = _TEST_CONTEXT_RE.search(segment)
+            if write and (not test or write.start() < test.start()):
+                protected.update(extract_path_tokens(segment[:test.start()] if test else segment))
+        for tok in extract_path_tokens(paragraph):
+            norm = _norm(tok)
+            if (norm in expected or norm.rsplit("/", 1)[-1] in expected
+                    or tok in protected or _TEST_SOURCE_RE.search(norm)):
+                continue
+            if tok not in context_paths:
+                context_paths.append(tok)
+            # Replace the mention in this paragraph only. The same name in an
+            # unrelated real-artifact claim still carries its normal evidence.
+            paragraph = paragraph.replace(tok, "[test/example data]")
+        parts[i] = paragraph
+    return "".join(parts), context_paths
+
+
+def completion_work_items(decision: Dict[str, Any]) -> Tuple[List[str], List[str]]:
+    """Keep requested work/real failures; proof-only proposals are diagnostics.
+
+    Uses native candidate metadata, never titles or model-authored permission
+    claims. Missing candidate metadata keeps the existing planner behaviour.
+    """
+    advisories: Set[str] = set()
+    for item in decision.get("runnable") or []:
+        if not isinstance(item, dict):
+            continue
+        source = item.get("source")
+        refs = item.get("evidence_refs") or []
+        proof_only = source in {"changeset", "proof"} or (
+            source == "tests" and refs and all(
+                str(ref).startswith(("tests:ran=false:", "tests:no_related_test:")) for ref in refs))
+        if proof_only and isinstance(item.get("title"), str):
+            advisories.add(item["title"])
+    proposed = [str(title) for title in decision.get("continue_with") or []]
+    return [title for title in proposed if title not in advisories], [title for title in proposed if title in advisories]
+
+
+def find_claimed_paths(text: str, limit: int = 8, *, expected_text: str = "") -> List[str]:
     """Paths the answer asserts it CREATED OR MODIFIED, in order of appearance.
 
     Reuses extract_path_tokens()/PATH_TOKEN_RE for the path side; the verb side
     is the narrow write-verb vocabulary above. A mere mention ("leí cart.py",
     "el test está en tests/test_cart.py") is not a claim — see the block comment.
     """
-    body = _FENCE_RE.sub("\n", text or "")
+    body = _FENCE_RE.sub("\n", contextual_path_text(text, expected_text)[0])
     out: List[str] = []
     seen: Set[str] = set()
 
@@ -1615,6 +1693,9 @@ class TurnLedger:
         self.written_text: str = ""
         # Successful read receipts only; bounded and local to this turn.
         self.read_reports: List[str] = []
+        self.claim_check: Optional[Dict[str, Any]] = None
+        self.claim_diagnostics: List[Dict[str, Any]] = []
+        self.answer_diagnostics: List[Dict[str, Any]] = []
         #: An earlier turn of the conversation read an outside source.
         self.prior_sources: bool = False
         #: ...and opened a page (not only searched).
@@ -2000,7 +2081,7 @@ class TurnLedger:
     def unverified_paths(self, text: str, limit: int = 6) -> List[str]:
         """Paths the text mentions that neither exist nor were observed."""
         out: List[str] = []
-        for tok in extract_path_tokens(text):
+        for tok in extract_path_tokens(contextual_path_text(text, self.user_text)[0]):
             n = _norm(tok)
             if n in self.observed_paths or any(o.endswith("/" + n) or n.endswith("/" + o) for o in self.observed_paths):
                 continue
@@ -2040,7 +2121,7 @@ class TurnLedger:
         touched = {_norm(p).rsplit("/", 1)[-1] for p in self.mutated_paths() + self.prior_leg_paths}
         touched |= self.shell_write_hints
         out: List[str] = []
-        for tok in find_claimed_paths(text):
+        for tok in find_claimed_paths(text, expected_text=self.user_text):
             if _norm(tok).rsplit("/", 1)[-1] in touched:
                 continue
             out.append(tok)
@@ -2333,12 +2414,40 @@ class TurnLedger:
             "source_claims_kind": self.source_claims_kind if source_claims else "",
             "intent": intent,
             "permission": permission,
+            "context_paths": contextual_path_text(body, self.user_text)[1],
         }
         try:
             check["verification"] = self.verify_outcome(check)
         except Exception:  # noqa: BLE001 - the classification never breaks a check
             pass
+        self.claim_check = check
         return check
+
+    def record_claim_advisory(self, check: Dict[str, Any], round_num: int) -> Dict[str, Any]:
+        """Keep evidence and an honest verdict without steering or hiding prose."""
+        diagnostic = {key: check.get(key) for key in (
+            "reasons", "bad_paths", "untouched_paths", "bad_citations", "context_paths", "verification")}
+        diagnostic.update(round=round_num, advisory=True)
+        self.claim_diagnostics.append(diagnostic)
+        self.claim_diagnostics = self.claim_diagnostics[-20:]
+        note = "claim_advisory:" + ",".join(check.get("reasons") or [])
+        if note not in self.notes:
+            self.notes.append(note)
+        return {"type": "harness_check", "status": "advisory", "mutations": self.mutated_paths(), **diagnostic}
+
+    def advisory_note(self, check: Dict[str, Any]) -> str:
+        paths = list(dict.fromkeys((check.get("bad_paths") or []) + (check.get("untouched_paths") or [])))
+        detail = ", ".join(f"`{p}`" for p in paths[:6])
+        if self.language == "es":
+            return "Comprobación de evidencias: algunas afirmaciones no están verificadas por las acciones observadas." + (
+                " Archivos sin verificar: " + detail + "." if detail else "")
+        return "Evidence notice: some claims are not verified by observed actions." + (
+            " Unverified files: " + detail + "." if detail else "")
+
+    def record_answer_advisory(self, reasons: List[str], round_num: int) -> None:
+        self.answer_diagnostics.append({"reasons": list(reasons), "round": round_num, "advisory": True})
+        self.answer_diagnostics = self.answer_diagnostics[-20:]
+        self.notes.append("answer_evidence_advisory:" + ",".join(reasons))
 
     def verify_outcome(self, check: Optional[Dict[str, Any]] = None,
                        changeset: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -2349,9 +2458,15 @@ class TurnLedger:
         completion check and the judged changeset."""
         from src.outcome_verification import verify_outcome
         events = [e for e in self.events if isinstance(e, dict)]
+        completion = check if check is not None else self.claim_check
+        if self.answer_diagnostics:
+            completion = dict(completion or {})
+            completion["ok"] = False
+            completion["reasons"] = list(dict.fromkeys((completion.get("reasons") or []) + [
+                reason for diagnostic in self.answer_diagnostics for reason in diagnostic.get("reasons", [])]))
         return verify_outcome(
             tool_results=events, tests=self.tests, ui_smoke=self.ui_smoke,
-            completion=check, changeset=changeset,
+            completion=completion, changeset=changeset,
         )
 
     @staticmethod
@@ -2696,6 +2811,9 @@ class TurnLedger:
             "canvas_check": self.canvas_check,
             "asked_user": self.asked_user,
             "ui_verify": self.ui_verify_status(),
+            "claim_diagnostics": self.claim_diagnostics,
+            "claim_check": self.claim_check,
+            "answer_diagnostics": self.answer_diagnostics,
         }
 
 
@@ -2829,7 +2947,7 @@ def answer_hygiene_policy() -> str:
 def local_model_policy() -> str:
     """Compact imperative tool-use policy for local/weak models."""
     return (
-        "\n\n## Reliability rules (enforced by the runtime — violations are rejected)\n"
+        "\n\n## Reliability guidance (the runtime records evidence and warnings)\n"
         "1. NEVER invent file names or paths. A path you have not seen in a tool result does not "
         "exist for you. Discover first: glob (e.g. \"**/*card*\"), grep for a symbol, or ls; then read_file. "
         "If the first search misses, try another pattern or path before concluding the code is absent. "
@@ -2845,7 +2963,7 @@ def local_model_policy() -> str:
         "treated as your final answer.\n"
         "3. Never say a file was created/changed/fixed unless edit_file, write_file or apply_patch "
         "returned success in THIS turn. The runtime compares your words with the tool log and "
-        "rejects unsupported claims; a shell command counts only if it actually modified files.\n"
+        "warns about unsupported claims without withholding your answer; a shell command counts only if it actually modified files.\n"
         "4. After a tool error: read the error, discover the real path or fix the arguments, retry. "
         "Never pretend it worked and never switch to describing what you 'would' do.\n"
         "5. For any task with 2+ steps, FIRST call todowrite with the objectives (one in_progress), "

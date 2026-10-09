@@ -133,12 +133,10 @@ def test_editing_one_file_and_reporting_two_is_not_verified(tmp_path, monkeypatc
     statuses = [c["status"] for c in checks]
     # The turn used to end here as "verified": one real mutation was enough.
     assert "verified" not in statuses, statuses
-    assert statuses.count("rejected") == 4, statuses
-    assert any(c.get("status") == "auto_continue" and c.get("reason") == "execution_recovery"
-               for c in checks), checks
+    assert "rejected" not in statuses and "auto_continue" not in statuses, statuses
     assert "unverified" in statuses, statuses
 
-    flagged = [c for c in checks if c["status"] in ("rejected", "unverified")]
+    flagged = [c for c in checks if c["status"] == "advisory" and c.get("reasons")]
     assert all("claimed_paths_untouched" in c["reasons"] for c in flagged), flagged
     # Precise about WHICH file: the accusation names the untouched one only.
     for c in flagged:
@@ -149,15 +147,13 @@ def test_editing_one_file_and_reporting_two_is_not_verified(tmp_path, monkeypatc
     summary = next(e for e in events if e.get("type") == "harness_summary")["data"]
     assert summary["stop_reason"] == "complete_unverified"
     assert summary["mutations"] == ["cart.py"]          # the card still says "1 file · cart.py"
-    assert any(n.startswith("unverified_claims:") and "claimed_paths_untouched" in n
+    assert any(n.startswith("claim_advisory:") and "claimed_paths_untouched" in n
                for n in summary["notes"]), summary["notes"]
 
-    # Rejected narration is replaced, not preserved with a warning appended.
-    replacement = next(e for e in events if e.get("type") == "response_replace")
-    assert "`cart.py`" in replacement["text"]
-    assert "sigue pendiente" in replacement["text"]
-    assert "tests/test_cart.py" not in replacement["text"]
-    assert calls["n"] == 7      # edit + 2 rejection cycles + one forced execution recovery
+    # Ordinary evidence is advisory; keep the answer and the honest grade.
+    assert not any(e.get("type") == "response_replace" for e in events)
+    assert HALF_DONE_ANSWER in "".join(e.get("delta", "") for e in events if not e.get("thinking"))
+    assert calls["n"] == 2
 
 
 def test_the_model_that_writes_both_files_is_verified(tmp_path, monkeypatch):
