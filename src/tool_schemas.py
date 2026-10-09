@@ -2083,7 +2083,7 @@ FUNCTION_TOOL_SCHEMAS = [
                     "description": {"type": "string", "description": "GitHub repository description (optional)."},
                     "identity_id": {"type": "string", "description": "Optional SSH identity used to choose the origin URL."},
                     "push": {"type": "boolean", "description": "Push the current branch and set upstream after creating origin (default true)."},
-                    "user_confirmed": {"type": "boolean", "description": "Set true only after explicit approval when repo policy disables push."}
+                    "user_confirmed": {"type": "boolean", "description": "Set true only after explicit approval when repo policy disables push. Not required in global Full access."}
                 },
                 "required": []
             }
@@ -2161,7 +2161,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "git_branch",
-            "description": "Create a branch in the repo at `path` (checked out by default). Refused with a clear reason when the repo's git agent policy has use_branch=false, unless the user explicitly approved this exact call (see docs/api/git.md).",
+            "description": "Create a branch in the repo at `path` (checked out by default). Refused with a clear reason when the repo's git agent policy has use_branch=false, unless the user explicitly approved this exact call or selected global Full access (see docs/api/git.md).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2170,7 +2170,7 @@ FUNCTION_TOOL_SCHEMAS = [
                     "name": {"type": "string", "description": "New branch name"},
                     "start_point": {"type": "string", "description": "Commit/branch to start from (optional; defaults to HEAD)"},
                     "checkout": {"type": "boolean", "description": "Check out the new branch immediately (default true)"},
-                    "user_confirmed": {"type": "boolean", "description": "Set true ONLY after the user explicitly approved this exact action in this conversation (e.g. via ask_user) — required when the repo's policy would otherwise refuse it"}
+                    "user_confirmed": {"type": "boolean", "description": "Set true ONLY after the user explicitly approved this exact action in this conversation (e.g. via ask_user) — not required in global Full access; otherwise required when the repo's policy would refuse it"}
                 },
                 "required": ["name"]
             }
@@ -2180,14 +2180,14 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "git_checkout",
-            "description": "Switch the repo at `path` to an existing `branch`. Refused with a clear reason when the repo's git agent policy has use_branch=false, unless the user explicitly approved this exact call.",
+            "description": "Switch the repo at `path` to an existing `branch`. Refused with a clear reason when the repo's git agent policy has use_branch=false, unless the user explicitly approved this exact call or selected global Full access.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "Path inside the repo (optional). Resolution order when omitted: `repo` (by name) > the repo containing the active workspace > the project's only repo (if it has just one) > ambiguous (error git.which_repo, listing the repo names) when the project has several and none of those picked one."},
                     "repo": {"type": "string", "description": "Repo name instead of `path` -- matched by exact name, or a unique case-insensitive prefix, among the repos linked to this session's project. Usually unnecessary: leave both `path` and `repo` empty to use the active workspace's repo, or the project's only repo."},
                     "branch": {"type": "string", "description": "Branch to check out"},
-                    "user_confirmed": {"type": "boolean", "description": "Set true ONLY after the user explicitly approved this exact action — required when the repo's policy would otherwise refuse it"}
+                    "user_confirmed": {"type": "boolean", "description": "Set true ONLY after the user explicitly approved this exact action — not required in global Full access; otherwise required when the repo's policy would refuse it"}
                 },
                 "required": ["branch"]
             }
@@ -2197,7 +2197,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "git_merge",
-            "description": "Merge `branch` into the current branch of the repo at `path`. `ff` controls fast-forwarding: 'auto' (default — fast-forward when possible, else a merge commit), 'only' (refuse unless fast-forwardable), 'no' (always create a merge commit, even when a fast-forward would do). On conflict the merge is aborted automatically and reported (error_class git.merge_conflict, with the conflicting paths) — conflicts are never left for the model to resolve; point the user at the Source control panel instead. Refused with a clear reason when the repo's git agent policy has use_branch=false, unless the user explicitly approved this exact call.",
+            "description": "Merge `branch` into the current branch of the repo at `path`. `ff` controls fast-forwarding: 'auto' (default — fast-forward when possible, else a merge commit), 'only' (refuse unless fast-forwardable), 'no' (always create a merge commit, even when a fast-forward would do). On conflict the merge is aborted automatically and reported (error_class git.merge_conflict, with the conflicting paths) — conflicts are never left for the model to resolve; point the user at the Source control panel instead. Refused with a clear reason when the repo's git agent policy has use_branch=false, unless the user explicitly approved this exact call or selected global Full access.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2206,7 +2206,7 @@ FUNCTION_TOOL_SCHEMAS = [
                     "branch": {"type": "string", "description": "Branch (or ref) to merge into the current branch"},
                     "ff": {"type": "string", "enum": ["auto", "only", "no"], "description": "Fast-forward mode (default 'auto')"},
                     "message": {"type": "string", "description": "Merge commit message (optional; used only when a merge commit is created)"},
-                    "user_confirmed": {"type": "boolean", "description": "Set true ONLY after the user explicitly approved this exact action — required when the repo's policy would otherwise refuse it"}
+                    "user_confirmed": {"type": "boolean", "description": "Set true ONLY after the user explicitly approved this exact action — not required in global Full access; otherwise required when the repo's policy would refuse it"}
                 },
                 "required": ["branch"]
             }
@@ -2216,7 +2216,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "git_delete_branch",
-            "description": "Delete local branch `name` in the repo at `path`. Refuses to delete the currently checked out branch. Without `force`, refuses (error_class git.branch_unmerged) when the branch is not fully merged. Refused with a clear reason when the repo's git agent policy has use_branch=false, unless the user explicitly approved this exact call.",
+            "description": "Delete local branch `name` in the repo at `path`. Refuses to delete the currently checked out branch. Without `force`, refuses (error_class git.branch_unmerged) when the branch is not fully merged. Refused with a clear reason when the repo's git agent policy has use_branch=false, unless the user explicitly approved this exact call or selected global Full access.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2224,7 +2224,7 @@ FUNCTION_TOOL_SCHEMAS = [
                     "repo": {"type": "string", "description": "Repo name instead of `path` -- matched by exact name, or a unique case-insensitive prefix, among the repos linked to this session's project. Usually unnecessary: leave both `path` and `repo` empty to use the active workspace's repo, or the project's only repo."},
                     "name": {"type": "string", "description": "Branch to delete"},
                     "force": {"type": "boolean", "description": "Delete even if not fully merged (default false)"},
-                    "user_confirmed": {"type": "boolean", "description": "Set true ONLY after the user explicitly approved this exact action — required when the repo's policy would otherwise refuse it"}
+                    "user_confirmed": {"type": "boolean", "description": "Set true ONLY after the user explicitly approved this exact action — not required in global Full access; otherwise required when the repo's policy would refuse it"}
                 },
                 "required": ["name"]
             }
@@ -2234,7 +2234,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "git_commit",
-            "description": "Stage EXACTLY the files listed in `paths` (never everything) and commit them in the repo at `path`, using the repo's own configured author identity. Refused with a clear reason when the repo's git agent policy has commit=false, unless the user explicitly approved this exact call, or when the repo has no user.name/user.email configured.",
+            "description": "Stage EXACTLY the files listed in `paths` (never everything) and commit them in the repo at `path`, using the repo's own configured author identity. Refused with a clear reason when the repo's git agent policy has commit=false, unless the user explicitly approved this exact call or selected global Full access, or when the repo has no user.name/user.email configured.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2243,7 +2243,7 @@ FUNCTION_TOOL_SCHEMAS = [
                     "message": {"type": "string", "description": "Commit message"},
                     "paths": {"type": "array", "items": {"type": "string"}, "description": "Files to stage and commit, relative to the repo root or the active workspace. Required — never staged implicitly."},
                     "amend": {"type": "boolean", "description": "Amend the previous commit instead of creating a new one (default false)"},
-                    "user_confirmed": {"type": "boolean", "description": "Set true ONLY after the user explicitly approved this exact action — required when the repo's policy would otherwise refuse it"}
+                    "user_confirmed": {"type": "boolean", "description": "Set true ONLY after the user explicitly approved this exact action — not required in global Full access; otherwise required when the repo's policy would refuse it"}
                 },
                 "required": ["message", "paths"]
             }
@@ -2253,7 +2253,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "git_push",
-            "description": "Push the repo at `path` to a remote. Never force (there is no force option). Refused with a clear reason when the repo's git agent policy has push=false, unless the user explicitly approved this exact call.",
+            "description": "Push the repo at `path` to a remote. Never force (there is no force option). Refused with a clear reason when the repo's git agent policy has push=false, unless the user explicitly approved this exact call or selected global Full access.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2262,7 +2262,7 @@ FUNCTION_TOOL_SCHEMAS = [
                     "remote": {"type": "string", "description": "Remote name (optional; defaults to origin)"},
                     "branch": {"type": "string", "description": "Branch to push (optional; defaults to the current branch)"},
                     "set_upstream": {"type": "boolean", "description": "Set the pushed branch's upstream (-u) (default false)"},
-                    "user_confirmed": {"type": "boolean", "description": "Set true ONLY after the user explicitly approved this exact action — required when the repo's policy would otherwise refuse it"}
+                    "user_confirmed": {"type": "boolean", "description": "Set true ONLY after the user explicitly approved this exact action — not required in global Full access; otherwise required when the repo's policy would refuse it"}
                 },
                 "required": []
             }
@@ -2334,7 +2334,7 @@ FUNCTION_TOOL_SCHEMAS = [
                     "issue_ref": {"type": "string", "description": "Issue this PR closes -- same formats as github_issue's `ref` (optional)"},
                     "path": {"type": "string", "description": "Path inside the repo (optional). Same resolution order as the other git_* tools."},
                     "repo": {"type": "string", "description": "Repo name instead of `path` (optional)"},
-                    "user_confirmed": {"type": "boolean", "description": "Set true only after the user explicitly approved overriding a push=false git policy for this exact call"}
+                    "user_confirmed": {"type": "boolean", "description": "Set true only after the user explicitly approved overriding a push=false git policy for this exact call. Not required in global Full access."}
                 },
                 "required": ["title"]
             }

@@ -1,5 +1,7 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+**Git y Acceso completo (09-10-2026):** las herramientas Git respetan el modo global persistido, sin una segunda confirmación interna cuando la política del repositorio exige aprobación. Se mantiene esa política guardada, la disponibilidad de herramientas, la identidad del repositorio y la validación de rutas/referencias. «Preguntar» y «Automático» conservan su comportamiento anterior. Ver [contrato y verificación](docs/api/git-global-full-access.md). Esto no concede autorización para publicar ni demuestra paridad del agente.
+
 **Faustus** es el fork personal de Luis de [Odysseus](https://github.com/odysseus-dev/odysseus) (interfaz local tipo Cowork sobre Ollama). Este documento es el registro vivo de **todo lo que Faustus añade o cambia respecto al Odysseus original**: se actualiza con cada bloque de trabajo, sirve de changelog del fork y de material para el currículum (qué se construyó, por qué, cómo se verificó).
 
 - Base del fork: commit upstream `c9dd68d8` (27-08-2026, "refactor(docs): separate Pages site source").
