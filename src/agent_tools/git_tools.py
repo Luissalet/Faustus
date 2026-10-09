@@ -43,7 +43,8 @@ for the target repo (global setting, overridable per repo — the same
 `effective_policy()` the panel's own `GET /api/git/repos/{id}/policy` and the
 `before_turn`/`after_turn` turn hooks already use) before touching anything.
 When the relevant field is `False`, the call is refused UNLESS the human
-explicitly approved it — see `_policy_denied()` below for exactly what
+explicitly approved it, including the persisted global Full access mode —
+see `_policy_denied()` below for exactly what
 "approved" means and how a tool detects it.  `git_pull`/`git_fetch` read from
 the remote and only ever fast-forward local refs, so they carry no policy
 gate — same risk class as the panel's own always-on fetch/pull buttons.
@@ -346,14 +347,20 @@ def _human_approved(ctx: dict, args: Dict[str, Any]) -> bool:
     A model running unattended (a scheduled task, no human turn to relay an
     answer from) has neither: `ctx["human_approved"]` is false because no
     card was ever sealed, and nothing tells it to set `user_confirmed`. That
-    is deliberate -- "en modo autónomo sin aprobación, no" (CONTRATO_GIT_4).
+    Global Full access is handled independently by `_policy_denied`, using
+    the persisted preference rather than either of these per-call signals.
     """
     return bool((ctx or {}).get("human_approved")) or bool(args.get("user_confirmed"))
 
 
 def _policy_denied(tool: str, field: str, ctx: dict, args: Dict[str, Any], *, allowed: bool) -> Optional[Dict[str, Any]]:
     """`None` when the action may proceed, else the refusal result."""
-    if allowed or _human_approved(ctx, args):
+    # Read the same normalized, persisted preference as the outer tool gate.
+    # A model-supplied argument/context cannot select this global permission.
+    # Check once before the operation; never rewrite the repo's Git policy.
+    from src.tool_capabilities import tool_approval_mode
+
+    if allowed or _human_approved(ctx, args) or tool_approval_mode() == "full":
         return None
     return {
         "error": (
