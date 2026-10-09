@@ -81,10 +81,17 @@ def test_board_context_stays_bounded_with_project_priority_and_explicit_omission
     project = [{"id": n, "repo": "Writer"} for n in range(1, 81)]
     context = [{"id": n, "repo": "Faustus"} for n in range(81, 141)]
     result = compact_board({"tasks": context + project}, binding)
-    assert len(result['tasks']) == 100
-    assert [row['id'] for row in result['tasks'][:80]] == list(range(1, 81))
-    assert all(row['read_only'] for row in result['tasks'][80:])
-    assert result['tasks_omitted'] == 40
+    assert len(result['tasks']) == 8
+    assert result['tasks_omitted'] == 132
+    rows = []
+    offset = 0
+    while offset is not None:
+        page = compact_board({'tasks': context + project}, binding, offset=offset)
+        assert page['digest'] == result['digest']
+        rows.extend(page['tasks'])
+        offset = page['next_offset']
+    assert [row['id'] for row in rows[:80]] == list(range(1, 81))
+    assert all(row['read_only'] for row in rows[80:])
 
 
 @pytest.mark.asyncio

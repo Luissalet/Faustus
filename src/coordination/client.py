@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import hashlib
 
-from .authority import authorize, observed_action, positive_id
+from .authority import authorize, observed_action, positive_id, paths
 from .bindings import CoordinationError, READ_OPERATIONS, StaleBinding, UnknownOutcome
 
 
@@ -17,6 +17,15 @@ TASK_FIELDS = ("id", "title", "repo", "paths", "kind", "status", "owner", "revie
 
 def compact_task(task):
     result = {key: task.get(key) for key in TASK_FIELDS}
+    title = str(result.get("title") or "")
+    result["title"] = title[:120]
+    if len(title) > 120:
+        result["title_chars"] = len(title)
+    for key, maximum in (("paths", 4), ("commits", 2)):
+        values = result.get(key)
+        if isinstance(values, list) and len(values) > maximum:
+            result[key] = values[:maximum]
+            result[key + "_omitted"] = len(values) - maximum
     if isinstance(result.get("latest_checkpoint"), dict):
         cp = result["latest_checkpoint"]
         result["latest_checkpoint"] = {k: cp.get(k) for k in ("revision", "owner", "created")}
@@ -24,11 +33,11 @@ def compact_task(task):
     return result
 
 
-def compact_board(board, binding):
+def compact_board(board, binding, *, offset=0, limit=8, full=False):
     project, context = [], []
     for original in board.get("tasks", ()):
         in_project = str(original.get("repo") or "").casefold() in binding.repos
-        task = compact_task(original)
+        task = ({key: original.get(key) for key in TASK_FIELDS} if full else compact_task(original))
         task["scope"] = "project" if in_project else "global_context"
         if not in_project:
             # Global Hub reading is authorized, but its context is not an
@@ -36,11 +45,25 @@ def compact_board(board, binding):
             task["read_only"] = True
         (project if in_project else context).append(task)
     tasks = project + context
-    return {"counts": board.get("counts", {}), "tasks": tasks[:100],
-            "tasks_omitted": max(0, len(tasks) - 100),
-            "agents": [{k: a.get(k) for k in ("id", "state", "doing", "stale")} for a in board.get("agents", ())][:40],
-            "locks": [{k: lock.get(k) for k in ("resource", "owner", "task_id", "expires")}
-                      for lock in board.get("locks", ()) if binding.permits_resource(lock.get("resource"))][:100]}
+    shown = tasks[offset:offset + limit]
+    agents = [{k: a.get(k) for k in ("id", "state", "doing", "stale")} for a in board.get("agents", ())]
+    locks = [{k: lock.get(k) for k in ("resource", "owner", "task_id", "expires")}
+             for lock in board.get("locks", ()) if binding.permits_resource(lock.get("resource"))]
+    raw_tasks = [{key: original.get(key) for key in TASK_FIELDS} for original in board.get("tasks", ())]
+    digest = hashlib.sha256(json.dumps({"tasks": raw_tasks, "agents": agents, "locks": locks},
+                                     sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()
+    if not full:
+        for agent in agents:
+            doing = str(agent.get("doing") or "")
+            agent["doing"] = doing[:160]
+            if len(doing) > 160:
+                agent["doing_chars"] = len(doing)
+    return {"counts": board.get("counts", {}), "tasks": shown,
+            "tasks_total": len(tasks), "tasks_omitted": len(tasks) - len(shown),
+            "offset": offset, "next_offset": offset + limit if offset + limit < max(len(tasks), len(agents), len(locks)) else None,
+            "digest": digest,
+            "agents": agents[offset:offset + limit], "agents_omitted": len(agents) - len(agents[offset:offset + limit]),
+            "locks": locks[offset:offset + limit], "locks_omitted": len(locks) - len(locks[offset:offset + limit])}
 
 
 class Client:
@@ -130,6 +153,15 @@ class Client:
             return {**detail, "_coordination_delivery": {"binding": self.binding.id, "revision": self.binding.revision,
                     "receipt": detail["receipt"], "threads": clean.get("thread_ids", [])}}
         if operation == "task":
+            if "details_offset" in clean:
+                observed = self.store.observed_task(self.binding, clean["task_id"])
+                required = observed.get("_coordination_required_messages")
+                if not isinstance(required, list):
+                    raise CoordinationError("read this task with coordination_task before paging its discussion references")
+                digest = self.task_digest(observed, required)
+                if clean.get("task_digest") != digest:
+                    raise CoordinationError("task snapshot changed; reread it before paging discussion references")
+                return {**self.task_references(observed["id"], required, clean["details_offset"]), "task_digest": digest}
             result = await self.remote("task", {"task_id": clean["task_id"]})
             observed = result.get("task")
             messages = result.get("messages", [])
@@ -145,12 +177,17 @@ class Client:
                 required.extend({"id": m["id"], "digest": hashlib.sha256(m["body"].encode("utf-8")).hexdigest()} for m in page)
             receipt = self.store.observe_task(self.binding, observed, required_messages=required)
             observed = {k: v for k, v in observed.items() if not k.startswith("_coordination_")}
-            return {"task": observed, "message_count": len(messages), "review_details": required,
-                    "pending": self.store.pending(self.binding, limit=100),
+            return {"task": observed, "message_count": len(messages), **self.task_references(observed["id"], required),
+                    "task_digest": self.task_digest(observed, required),
+                    **self.pending_page(limit=8),
                     "_coordination_delivery": {"binding": self.binding.id, "revision": self.binding.revision,
                                                "task_receipt": receipt}}
         if operation == "board":
-            return compact_board(await self.remote("board", {}), self.binding)
+            result = compact_board(await self.remote("board", {}), self.binding,
+                                   offset=clean.get("offset", 0), limit=clean.get("limit", 8), full=clean.get("full", False))
+            if clean.get("digest") and clean["digest"] != result["digest"]:
+                raise CoordinationError("board changed; restart pagination rather than mixing snapshots")
+            return result
         if operation not in REMOTE:
             raise CoordinationError("unsupported coordination operation")
         # Read revisions are never replaced with a fresh number while executing an old vote.
@@ -161,6 +198,40 @@ class Client:
             result["_coordination_delivery"] = {"binding": self.binding.id, "revision": self.binding.revision,
                                                 "task_receipt": receipt}
         return result
+
+    def pending_page(self, threads=(), limit=8):
+        total = self.store.pending_count(self.binding, threads)
+        pending = self.store.pending(self.binding, threads, min(limit, 8))
+        return {"pending": pending, "pending_count": total, "pending_omitted": total - len(pending)}
+
+    @staticmethod
+    def task_digest(task, required):
+        clean = {k: v for k, v in task.items() if not k.startswith("_coordination_")}
+        return hashlib.sha256(json.dumps({"task": clean, "required": required}, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()
+
+    @staticmethod
+    def task_references(task_id, required, offset=0):
+        shown = required[offset:offset + 8]
+        return {"task_id": task_id, "review_details": shown, "review_details_count": len(required),
+                "review_details_omitted": len(required) - len(shown), "details_offset": offset,
+                "next_details_offset": offset + len(shown) if offset + len(shown) < len(required) else None}
+
+    def linked_threads(self, board):
+        """Fresh, fixed-connector metadata permits reads, never task mutation receipts."""
+        linked = {}
+        for task in board.get("tasks", ()):
+            try:
+                positive_id(task.get("id"), "task id")
+                thread = positive_id(task.get("thread_id"), "thread id")
+                task_paths = task.get("paths")
+                paths(self.binding, task.get("repo"), [] if task_paths is None else task_paths)
+                if thread in linked:
+                    linked[thread] = None  # Ambiguous relationships do not confer access.
+                else:
+                    linked[thread] = {key: task.get(key) for key in ("id", "repo", "paths", "thread_id")}
+            except (CoordinationError, AttributeError):
+                continue
+        return {tid: task for tid, task in linked.items() if task is not None}
 
     async def poll(self, args):
         threads = args.get("thread_ids", [])
@@ -194,33 +265,57 @@ class Client:
                 raise CoordinationError("invalid pending coordination mention")
             if not threads or original.get("thread_id") in threads:
                 pending_mentions.append({**original, "relevant": True})
-        recent = await self.recent(threads, limit)
+        recent = await self.recent(threads, limit, board=board)
         self.live()  # Connector/policy revocation is broader than the Store binding revision.
         self.store.receive(self.binding, expected_cursor=since, next_cursor=next_cursor, messages=page,
                            pending_messages=pending_mentions, threads=threads)
         for start in range(0, len(recent["cache"]), 200):
             self.store.receive(self.binding, expected_cursor=next_cursor, next_cursor=next_cursor, messages=[],
                                pending_messages=recent["cache"][start:start + 200], threads=threads)
-        return {"actor": self.binding.actor, "binding_revision": self.binding.revision,
+        reviews = [compact_task(t) for t in inbox.get("reviews", ()) if t.get("id") in scope_tasks]
+        changes = [compact_task(t) for t in inbox.get("changes", ()) if t.get("owner") == self.binding.actor]
+        recent_refs = recent["refs"]
+        shown_recent = []
+        for ref in recent_refs:
+            if len(json.dumps(shown_recent + [ref], ensure_ascii=False)) > 2400:
+                break
+            shown_recent.append(ref)
+        result = {"actor": self.binding.actor, "binding_revision": self.binding.revision,
                 "cursor": next_cursor, "page_received": len(all_messages), "has_more": len(all_messages) >= 100,
-                "pending": self.store.pending(self.binding, threads, limit),
-                "reviews": [compact_task(t) for t in inbox.get("reviews", ()) if t.get("id") in scope_tasks][:40],
-                "changes": [compact_task(t) for t in inbox.get("changes", ()) if t.get("owner") == self.binding.actor][:40],
-                "board": compact_board(board, self.binding), "hub_acknowledged": False,
-                "recent": recent["refs"], "recent_unavailable": recent["unavailable"],
+                **self.pending_page(threads, limit),
+                "reviews": reviews[:8], "reviews_omitted": max(0, len(reviews) - 8),
+                "changes": changes[:8], "changes_omitted": max(0, len(changes) - 8),
+                "board": {"counts": board.get("counts", {}), "tasks_total": len(board.get("tasks", ())),
+                          "detail_tool": "coordination_board"}, "hub_acknowledged": False,
+                "recent": shown_recent, "recent_omitted": len(recent_refs) - len(shown_recent),
+                "recent_focus_threads": [page["thread_id"] for page in recent["pages"]],
+                "recent_unavailable": recent["unavailable"],
                 "recent_detail_unavailable": recent["detail_unavailable"],
                 "recent_threads_omitted": recent["threads_omitted"], "recent_pages": recent["pages"]}
+        # Preserve current discussion first; all omitted references stay in the
+        # Store and the counts make partial coverage explicit. Focus a thread
+        # filter, or drain complete pending details, to retrieve the rest.
+        for field in ("pending", "reviews", "changes", "recent", "recent_unavailable", "recent_detail_unavailable"):
+            while len(json.dumps(result, ensure_ascii=False)) > 6000 and result[field]:
+                result[field].pop()
+                key = field + "_omitted"
+                result[key] = result.get(key, 0) + 1
+        return result
 
-    async def recent(self, threads, limit):
+    async def recent(self, threads, limit, *, board=None):
         """Read a small recent window only when the bound Hub advertises it.
 
         Never fall back to the full-thread reader. Recent cache entries and
         unread history have the same detail receipts but separate coverage:
         only the fetched inbox page can move its durable cursor.
         """
-        selected = [tid for tid in self.binding.thread_ids if not threads or tid in threads]
+        linked = self.linked_threads(board or {})
+        selected = ([tid for tid in threads if tid in self.binding.thread_ids or tid in linked]
+                    if threads else list(self.binding.thread_ids))
         out = {"refs": [], "cache": [], "unavailable": [], "detail_unavailable": [], "pages": [],
                "threads_omitted": max(0, len(selected) - 4)}
+        out["unavailable"] = [{"thread_id": tid, "reason": "thread is not configured or linked to a current scoped task; read its task first"}
+                              for tid in threads if tid not in selected]
         if not selected:
             return out
         name = f"mcp__{self.binding.connector_id}__hub_agora_thread_recent"
@@ -235,19 +330,23 @@ class Client:
                      and schema.get("required") == ["thread_id"] and set(props) == {"thread_id", "limit", "before_id"}
                      and integer_fields and props["limit"].get("maximum") == 200)
         if not available:
-            out["unavailable"] = [{"thread_id": tid, "reason": "bounded recent reader is not available in the bound connector"}
-                                  for tid in selected[:4]]
+            out["unavailable"].extend({"thread_id": tid, "reason": "bounded recent reader is not available in the bound connector"}
+                                     for tid in selected[:4])
             return out
         for tid in selected[:4]:
             try:
                 result = await self.remote("thread_recent", {"thread_id": tid, "limit": min(limit, 5)})
+                if tid not in self.binding.thread_ids:
+                    current = self.linked_threads(await self.remote("board", {}))
+                    if current.get(tid) != linked.get(tid):
+                        raise CoordinationError("task/thread scope changed during recent reading; reload the current task")
                 messages = result.get("messages")
                 if (not isinstance(messages, list) or len(messages) > min(limit, 5)
-                        or not isinstance(result.get("thread"), dict) or result["thread"].get("id") != tid):
+                        or not isinstance(result.get("thread"), dict) or type(result["thread"].get("id")) is not int or result["thread"].get("id") != tid):
                     raise CoordinationError("invalid bounded recent thread page")
                 refs, cache, unavailable = [], [], []
                 for message in messages:
-                    if (not isinstance(message, dict) or message.get("thread_id") != tid
+                    if (not isinstance(message, dict) or type(message.get("thread_id")) is not int or message.get("thread_id") != tid
                             or not isinstance(message.get("body"), str) or len(message["body"]) > 20_000
                             or type(message.get("body_chars")) is not int or message["body_chars"] < len(message["body"])
                             or type(message.get("body_truncated")) is not bool):

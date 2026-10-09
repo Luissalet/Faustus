@@ -9,10 +9,10 @@ REQUIRED = {"task": ["task_id"], "detail": ["message_id", "digest"], "add": ["ti
             "review": ["task_id", "expected_submission_revision", "verdict", "body"],
             "done": ["task_id", "result"], "lock": ["resources"], "unlock": ["resources"]}
 DESCRIPTIONS = {
-    "poll": "Check current Agora work, pending messages, reviews and board. When the Hub supports bounded recent reading, also surface the latest five posts from up to four configured threads as stored detail refs. recent_unavailable says when this capability is missing; recent_detail_unavailable means a truncated body was not cached as complete. Recent windows never skip older unread inbox pages or acknowledge excerpts. Read complete details before responding.",
+    "poll": "Check current Agora work and pending details. Explicit thread_ids may select configured threads or threads linked to current tasks inside the repository/path scope. Read latest discussion there rather than searching private chat history for current Agora state. Omission counts expose compact limits; focus a thread filter to read its recent window. Read complete stored details before responding. No excerpts are acknowledged; inbox cursors stay independent from recent reading.",
     "detail": "Read a stored Agora message by its id and digest from coordination_poll, in chunks. Preserve the poll's thread_ids filter when supplied. Follow next_offset until complete. No Hub acknowledgement is sent.",
-    "task": "Read an Agora task with its current owner, paths, submission and checkpoint revision. Read it before claiming, updating progress, submitting or reviewing. Before a review vote, read every pending discussion detail returned here completely, then test the observed submission.",
-    "board": "Inspect the current compact Agora board, prioritizing the project's configured repositories. Other repositories appear as read-only global context; they confer no mutation authority. Omission counts show the fixed response limit.",
+    "task": "Read the current full task snapshot before acting. Discussion references are paged: follow next_details_offset with task_digest and task_id to read all references from the same delivered snapshot. Before voting, read every complete discussion detail and test that submission. Task reads do not acknowledge excerpts.",
+    "board": "Read current Agora tasks, agents and scoped locks in pages (default eight entries per list). Follow next_offset with the returned digest; a changed snapshot rejects paging. full=true retrieves unabridged fields. Other repositories remain read-only global context and never confer mutation authority.",
     "heartbeat": "Report working, waiting or idle to Agora and renew only the bound actor's scoped locks.",
     "add": "Create an Agora task in the project's authorized repositories and paths. claim optionally takes scoped locks. Do this before changing a repository.",
     "claim": "Claim a task previously read with coordination_task and take scoped locks atomically. Another actor's task cannot be taken over.",
@@ -29,11 +29,11 @@ DESCRIPTIONS = {
 def definition(action):
     properties = {}
     for key in sorted(FIELDS[action]):
-        if key in {"task_id", "thread_id", "message_id", "limit", "ttl_s", "priority", "expected_revision", "expected_submission_revision", "offset", "length"}:
-            properties[key] = {"type": "integer", "minimum": 0 if key in {"priority", "expected_revision", "offset"} else 1}
+        if key in {"task_id", "thread_id", "message_id", "limit", "ttl_s", "priority", "expected_revision", "expected_submission_revision", "offset", "length", "details_offset"}:
+            properties[key] = {"type": "integer", "minimum": 0 if key in {"priority", "expected_revision", "offset", "details_offset"} else 1}
         elif key in {"thread_ids", "resources", "paths", "locks", "mentions", "commits"}:
             properties[key] = {"type": "array", "maxItems": 100, "items": {"type": "integer", "minimum": 1} if key == "thread_ids" else {"type": "string"}}
-        elif key == "claim":
+        elif key in {"claim", "full"}:
             properties[key] = {"type": "boolean"}
         elif key == "payload":
             properties[key] = {"type": "object", "properties": {

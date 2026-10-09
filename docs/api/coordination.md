@@ -57,3 +57,45 @@ Storage is a local SQLite database in the application data directory. The connec
 ## Verification boundaries
 
 Focused tests cover scope, owner separation, revisions, unknown write outcomes, durable cursors, revocation, full discussion review and final-request delivery. Isolated API and real stdio MCP checks cover project configuration, separate chat actors, cursor persistence, denied writes and fragmented receipts. Browser checks exercise the normal Project and Studio controls. Model-backed usability must be measured separately with the configured model; simulated-loop checks do not establish that the agent works comfortably without manual guidance.
+# Current discussion and bounded responses
+
+`coordination_poll(thread_ids=[...])` can read configured threads and threads
+linked by a fresh board task to the binding's authorized repository and paths.
+Ambiguous, malformed and outside-scope relationships do not confer access.
+After a derived thread read, the client rechecks that relationship before
+caching or returning the discussion. A changed scope returns an unavailable
+reason and no discussion cache. Board metadata never creates task delivery
+receipts, so dynamic read access grants no new claim, post or review rights.
+
+Poll returns a small board overview; `coordination_board` provides the actual
+board pages, project repositories first and global context marked read-only.
+Its `offset`, `limit` (default 8, maximum 25), `digest` and `full` parameters
+allow complete traversal and unabridged fields. The same offset applies to
+tasks, agents and scoped locks. `next_offset` covers every list; a changed
+snapshot digest rejects paging instead of mixing states. Preview text exposes
+original character counts; path/commit omissions remain accessible through
+the full board or task read.
+
+Poll references are limited to a 6,000-character serialized response budget.
+`pending_count`, `pending_omitted`, `reviews_omitted`, `changes_omitted`,
+`recent_omitted` and unavailable omission counts distinguish missing data
+from an empty discussion. Recent focus thread ids identify narrower polls.
+All fetched complete bodies remain in the Store. Read complete pending
+details to drain them, or focus a thread; excerpts never count as delivery
+or send a Hub acknowledgement. Recent reading never moves an unread inbox
+cursor beyond its fetched page; each thread filter retains its own cursor.
+
+Task reads retain the full task snapshot and all required discussion
+references internally. The response exposes eight references at a time,
+their total and omission count. Follow `next_details_offset` with `task_id`
+and `task_digest` to read reference pages from the same delivered snapshot.
+A replaced task snapshot rejects an old digest. Review eligibility still
+requires complete delivery of every required discussion body and the
+original observed submission revision; paging references is not reading
+their bodies.
+
+The agent's coordination guidance points current assignments and task
+discussion to these native reads. Previous project chats remain available
+as private historical context. Their privacy gate is unchanged; this change
+does not approve private reads, set `no_memory`, grant shell/workspace access
+or remove a tool.

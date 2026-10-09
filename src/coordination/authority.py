@@ -13,7 +13,7 @@ from .bindings import Binding, CoordinationError, READ_OPERATIONS
 
 FIELDS = {
     "poll": {"thread_ids", "limit"}, "detail": {"message_id", "digest", "offset", "length", "thread_ids"},
-    "task": {"task_id"}, "board": set(),
+    "task": {"task_id", "details_offset", "task_digest"}, "board": {"offset", "limit", "digest", "full"},
     "heartbeat": {"doing", "state", "note"},
     "add": {"title", "body", "repo", "paths", "kind", "priority", "mentions", "claim", "locks", "ttl_s"},
     "claim": {"task_id", "locks", "ttl_s"},
@@ -105,6 +105,16 @@ def authorize(binding: Binding, operation: str, args, *, task=None, held_locks=N
             raise CoordinationError("invalid poll thread ids")
     if operation in {"task", "claim", "checkpoint", "submit", "review", "done"} and "task_id" not in args:
         raise CoordinationError("task_id is required")
+    for key in ("offset", "details_offset"):
+        if key in args and (type(args[key]) is not int or not 0 <= args[key] <= 100_000):
+            raise CoordinationError("invalid coordination page offset")
+    if operation == "board" and "limit" in args and (type(args["limit"]) is not int or not 1 <= args["limit"] <= 25):
+        raise CoordinationError("board limit must be between 1 and 25")
+    if "full" in args and type(args["full"]) is not bool:
+        raise CoordinationError("full must be boolean")
+    for key in ("digest", "task_digest"):
+        if key in args and (not isinstance(args[key], str) or not re.fullmatch('[a-f0-9]{64}', args[key])):
+            raise CoordinationError("invalid coordination snapshot digest")
     if operation == "add":
         paths(binding, args.get("repo"), args.get("paths") or [])
         if type(args.get("claim", False)) is not bool:

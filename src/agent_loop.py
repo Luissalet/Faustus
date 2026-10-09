@@ -8232,6 +8232,10 @@ async def _stream_agent_loop_body(
                 "read tasks before claiming or reviewing, keep checkpoints and request cross-review of nontrivial changes. "
                 "Use current task status and recent coordination messages for assignments; older discussion is historical. "
                 "Inspect linked tasks before describing their current review or implementation state. "
+                "For a task's current discussion, read coordination_task then coordination_poll with its thread_id, "
+                "and coordination_detail for each needed message. Follow omission counts and pagination rather than treating an empty or partial page as no discussion. "
+                "Previous project chats are optional private history, not the authoritative source for current Agora assignments. "
+                "Use the authorized current Agora sources for this work; consult private history only when the user's question requires that historical context. "
                 "Repository scope: " + ", ".join(_coordination.repos) + ". Coordination resources: " + ", ".join(_coordination.resources) +
                 ". File and command permissions remain those of the existing project. A lost write result must be inspected before retrying."})
         except Exception:

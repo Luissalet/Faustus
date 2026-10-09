@@ -255,6 +255,13 @@ class Store:
                  "body_chars": r["chars"], "digest": r["digest"], "detail_ref": f"message:{r['message']}"}
                 for r in rows]
 
+    def pending_count(self, snapshot, threads=()):
+        key = filter_key(threads)
+        with self.connect() as db:
+            self._live(db, snapshot)
+            return db.execute("SELECT count(*) FROM details WHERE owner=? AND binding=? AND filter=? AND delivered=0 AND json_extract(metadata,'$.relevant') IS NOT 0",
+                              (snapshot.owner, snapshot.id, key)).fetchone()[0]
+
     def detail(self, snapshot, message_id, *, threads=(), offset=0, length=2000, expected_digest):
         if type(message_id) is not int or message_id < 1 or type(offset) is not int or offset < 0:
             raise CoordinationError("invalid detail position")
