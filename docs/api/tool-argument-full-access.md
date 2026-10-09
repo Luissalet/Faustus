@@ -1,0 +1,9 @@
+# Argument rules and global Full access
+
+An argument rule with `action: "ask"` uses the same normalized, persisted global `tool_approval_mode()` preference as ordinary tool approvals. In `full`, the user's saved choice supplies the approval, so the chat loop and direct executor do not request a second confirmation. `ask`, `auto`, invalid values and unavailable settings keep the previous behavior.
+
+Rule matching, validation, ordering, the saved list and rehearsal remain unchanged. `evaluate()` still returns the original violated rule in Full access; it is not removed or silently converted to another action. The direct executor adds `argument_policy_advisory` to the tool result, containing the rule ID, action, global mode and `requires_approval: false`, and logs the satisfied ask rule. That advisory is visible in the formatted result sent to the model and its recorded trace. The existing chat stream currently does not copy this extra field into its `tool_output` metadata.
+
+Only an ask rule is satisfied by Full access. Explicit deny rules, read-only policy, disabled tools, connector availability, argument validation, workspace boundaries and authorization keep their existing behavior. No setting, grant or per-session mode is changed; arguments and context supplied by the model cannot select Full access.
+
+Verification runs the actual API, REST MCP chat bridge and Studio compositor against an isolated application with a GPU-free HTTP model simulator. Each Full case reads external content and writes a real file through `write_file` with a HIGH declaration and a matching ask rule, without approval cards or confirmation flags. Ask/Automatic stop before the write; a deny rule in Full also leaves the target absent. These checks establish approval plumbing, not a real model's autonomy or reasoning ability.

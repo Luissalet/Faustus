@@ -2039,14 +2039,27 @@ async def _execute_tool_block_impl(
     # going through that gate (e.g. src/code_mode/bridge.py, which has no
     # interactive approval channel) still must not execute past a rule that
     # fired here: a "deny" always blocks, and an "ask" blocks too unless this
-    # exact call was already human-approved.
+    # exact call was already human-approved or global Full access satisfies
+    # the ask rule. Evaluation itself remains intact for inspection.
+    _arg_policy_advisory = None
     if not human_approved:
         try:
-            from src.tool_arg_policy import evaluate as _evaluate_arg_policy, extract_tool_args as _extract_arg_policy_args
+            from src.tool_arg_policy import (evaluate as _evaluate_arg_policy,
+                extract_tool_args as _extract_arg_policy_args,
+                requires_confirmation as _arg_policy_requires_confirmation)
             _arg_policy_decision = _evaluate_arg_policy(tool, _extract_arg_policy_args(tool, content))
+            _arg_policy_blocks = _arg_policy_requires_confirmation(_arg_policy_decision)
         except Exception:  # noqa: BLE001 - evaluation failure is not a policy hit
             _arg_policy_decision = None
-        if _arg_policy_decision is not None:
+            _arg_policy_blocks = False
+        if _arg_policy_decision is not None and not _arg_policy_blocks:
+            _arg_policy_advisory = {
+                "rule_id": _arg_policy_decision.rule_id, "action": "ask",
+                "approval_mode": "full", "requires_approval": False,
+            }
+            logger.info("Argument policy ask satisfied by global Full access rule=%s tool=%s",
+                        _arg_policy_decision.rule_id, tool)
+        if _arg_policy_blocks:
             desc = f"{tool}: BLOCKED"
             result = {
                 "error": _arg_policy_decision.message(),
@@ -2698,6 +2711,8 @@ async def _execute_tool_block_impl(
         # A handler that answers with plain text (or a JSON string) must not
         # crash the turn: wrap it as an ordinary successful tool result.
         result = {"output": "" if result is None else str(result), "exit_code": 0}
+    if _arg_policy_advisory is not None:
+        result["argument_policy_advisory"] = _arg_policy_advisory
     logger.info(f"Tool executed: {desc} -> exit_code={result.get('exit_code', 'n/a')}")
     return desc, result
 
