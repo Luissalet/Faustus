@@ -83,14 +83,14 @@ def test_red_test_turn_closes_complete_unverified_end_to_end(tmp_path, monkeypat
         ("Sigo pensando que src/calc.py está bien así.", "stop"),
     ])
     events = _run(project)
-    verified = next(e for e in events if e.get("type") == "harness_check" and e["status"] == "verified")
+    verified = next(e for e in events if e.get("type") == "harness_check" and "gate" in e)
     assert verified["tests"]["ok"] is False
     assert verified["gate"] == "tests_failed"
-    gated = [e for e in events if e.get("type") == "harness_check" and e["status"] == "completion_gated"]
+    gated = [e for e in events if e.get("type") == "harness_check" and e["status"] == "advisory" and e.get("reason") == "tests_failed"]
     assert len(gated) == 1 and gated[0]["reason"] == "tests_failed"
     summary = next(e for e in events if e.get("type") == "harness_summary")["data"]
     assert summary["stop_reason"] == "complete_unverified"
-    assert "hard_gate:tests_failed" in summary["notes"]
+    assert "evidence_grade:tests_failed" in summary["notes"]
     assert json.dumps(summary)  # serialisable
 
 

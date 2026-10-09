@@ -255,3 +255,55 @@ def test_a_fabricated_path_is_reported_once_not_twice(tmp_path):
     assert "fabricated_paths" in check["reasons"]
     assert "tests/test_envio.py" in check["bad_paths"]
     assert check["untouched_paths"] == []
+
+
+@pytest.mark.parametrize("names", [("input.csv", "payload.json"), ("sample.bin", "preview.pdf")])
+def test_test_case_data_are_not_workspace_deliverables(tmp_path, names):
+    ledger = _ledger_with_cart_edit(tmp_path, user="Improve the test and report its result.")
+    ledger.record("edit_file", json.dumps({"path": "tests/test_cart.py"}), {"output": "Edited", "exit_code": 0}, 2)
+    ledger.record("bash", json.dumps({"command": "python -m pytest tests/test_cart.py"}), {"output": "1 passed", "exit_code": 0}, 3)
+    text = f"I updated tests/test_cart.py. The new test creates {names[0]} and {names[1]} in pytest tmp_path."
+    check = ledger.check_completion(text)
+    assert check["bad_paths"] == [] and check["untouched_paths"] == [], check
+    assert set(check["context_paths"]) == set(names)
+    assert h.find_claimed_paths(text) == ["tests/test_cart.py"]
+
+
+def test_test_report_describing_hits_does_not_claim_fixture_creation(tmp_path):
+    ledger = _ledger_with_cart_edit(tmp_path, user="Fix search and test it.")
+    text = "I updated cart.py.\n\nNew real test: nested glob, hit in source.txt and matching bulk.txt of 3 MB; passed."
+    check = ledger.check_completion(text)
+    assert not check["bad_paths"] and not check["untouched_paths"], check
+
+
+def test_a_real_missing_deliverable_remains_unverified_even_when_tests_use_it(tmp_path):
+    ledger = _ledger_with_cart_edit(tmp_path, user="Create invoice.pdf and test the exporter.")
+    check = ledger.check_completion("I created invoice.pdf. The test generates invoice.pdf in tmp_path.")
+    assert "invoice.pdf" in check["bad_paths"] + check["untouched_paths"], check
+    assert "invoice.pdf" not in check["context_paths"]
+    assert not check["ok"]
+
+
+def test_a_test_mention_does_not_excuse_an_earlier_real_artifact_claim(tmp_path):
+    ledger = _ledger_with_cart_edit(tmp_path)
+    check = ledger.check_completion("I created export.csv; the test generates fixture.csv in tmp_path.")
+    assert "export.csv" in check["bad_paths"] and "fixture.csv" not in check["bad_paths"], check
+
+
+def test_test_source_itself_is_still_checked(tmp_path):
+    ledger = _ledger_with_cart_edit(tmp_path)
+    check = ledger.check_completion("I wrote tests/test_missing.py. The test generates fixture.csv in tmp_path.")
+    assert "tests/test_missing.py" in check["bad_paths"] and "fixture.csv" not in check["bad_paths"], check
+
+
+def test_an_artifact_claim_after_a_fixture_description_is_still_checked(tmp_path):
+    ledger = _ledger_with_cart_edit(tmp_path)
+    check = ledger.check_completion("The test creates fixture.csv in tmp_path. I created export.csv.")
+    assert "export.csv" in check["bad_paths"] and "fixture.csv" not in check["bad_paths"], check
+
+
+def test_user_named_temporary_test_data_are_not_expected_deliverables(tmp_path):
+    ledger = _ledger_with_cart_edit(tmp_path, user="Run the test that creates input.csv in pytest tmp_path and explain it.")
+    check = ledger.check_completion("I updated cart.py. The test generates input.csv in tmp_path.")
+    assert "input.csv" not in check["bad_paths"] + check["untouched_paths"], check
+    assert "input.csv" in check["context_paths"]

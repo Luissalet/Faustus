@@ -490,9 +490,9 @@ def test_missing_project_cannot_be_reported_as_a_successful_objective_change(tmp
     )
     events = _events(_collect(gen))
     unavailable = [e for e in events if e.get("type") == "harness_check"
-                   and e.get("status") == "required_action_unavailable"]
+                   and e.get("status") == "advisory" and e.get("reason") == "project_objective_unavailable"]
     assert len(unavailable) == 1
-    assert calls["n"] == 2
+    assert calls["n"] == 1
 
 
 @pytest.mark.parametrize("user", [
@@ -513,10 +513,10 @@ def test_explicit_faustus_board_request_stays_unavailable_in_mcp_only_scope(tmp_
     )
     events = _events(_collect(gen))
     unavailable = [e for e in events if e.get("type") == "harness_check"
-                   and e.get("status") == "required_action_unavailable"
+                   and e.get("status") == "advisory" and e.get("reason") == "project_objective_unavailable"
                    and e.get("tool") == "project_objectives"]
     assert len(unavailable) == 1
-    assert calls["n"] == 2
+    assert calls["n"] == 1
 
 
 @pytest.mark.parametrize(("tool_name", "arguments", "user"), [
@@ -730,10 +730,10 @@ def test_permission_to_continue_is_rejected_and_the_model_is_told_to_keep_workin
         workspace=str(tmp_path),
         harness_options={"trusted_workspace": str(tmp_path)},
     )))
-    rejected = [e for e in events if e.get("type") == "harness_check" and e.get("status") == "rejected"]
+    rejected = [e for e in events if e.get("type") == "harness_check" and e.get("status") == "advisory"]
     assert rejected, [e.get("type") for e in events]
     assert "asked_instead_of_continuing" in (rejected[0].get("reasons") or [])
-    assert calls["n"] >= 3
+    assert calls["n"] == 2
 
 
 def test_backed_work_is_kept_when_a_permission_stall_is_exhausted(tmp_path, monkeypatch):
@@ -773,11 +773,7 @@ def test_backed_work_is_kept_when_a_permission_stall_is_exhausted(tmp_path, monk
         harness_options={"trusted_workspace": str(tmp_path), "run_tests": False},
     )))
     checks = [e for e in events if e.get("type") == "harness_check"]
-    assert any(c.get("status") == "rejected" for c in checks)
-    assert any(c.get("status") == "stall_exhausted" for c in checks), [
-        (c.get("status"), c.get("reasons"), c.get("reason")) for c in checks
-    ]
-    assert not any(c.get("status") == "unverified" for c in checks)
+    assert any(c.get("status") == "advisory" for c in checks)
     assert not any(c.get("reason") == "execution_recovery" for c in checks)
     replace = [e for e in events if e.get("type") == "response_replace"]
     assert not any("task remains unfinished" in (e.get("text") or "") for e in replace)
@@ -785,7 +781,7 @@ def test_backed_work_is_kept_when_a_permission_stall_is_exhausted(tmp_path, monk
     summary = next(e for e in events if e.get("type") == "harness_summary")["data"]
     assert summary["stop_reason"] == "complete"
     assert "x.py" in summary["mutations"]
-    assert any(str(n).startswith("stall_exhausted:") for n in (summary.get("notes") or []))
+    assert any(str(n).startswith("claim_advisory:") for n in (summary.get("notes") or []))
 
 
 
@@ -804,9 +800,10 @@ def test_a_rejected_draft_the_model_rewrites_is_taken_off_the_screen(tmp_path, m
         ("No he cambiado ningún fichero: server.py define x = 1.", "stop"),
     ])
     events = _run(monkeypatch, str(tmp_path), user="Revisa server.py")
-    assert any(e.get("type") == "harness_check" and e.get("status") == "rejected" for e in events)
+    assert any(e.get("type") == "harness_check" and e.get("status") == "advisory" for e in events)
     replaces = [e for e in events if e.get("type") == "response_replace"]
-    assert replaces and "utils.py" not in replaces[0]["text"], replaces
+    assert not replaces, replaces
+    assert "He creado utils.py" in "".join(e.get("delta", "") for e in events if not e.get("thinking"))
 
 
 def test_a_rejected_draft_backed_by_real_work_stays(tmp_path, monkeypatch):
@@ -819,7 +816,7 @@ def test_a_rejected_draft_backed_by_real_work_stays(tmp_path, monkeypatch):
         ("Sólo x.py cambió.", "stop"),
     ])
     events = _run(monkeypatch, str(tmp_path), user="Cambia a por 2 en x.py")
-    rejected = [e for e in events if e.get("type") == "harness_check" and e.get("status") == "rejected"]
+    rejected = [e for e in events if e.get("type") == "harness_check" and e.get("status") == "advisory"]
     assert rejected
     replaces = [e for e in events if e.get("type") == "response_replace"
                 and "He cambiado x.py" not in (e.get("text") or "")]
@@ -842,12 +839,12 @@ def test_an_answer_with_a_wrong_weekday_or_visible_working_is_rewritten_once(tmp
         max_rounds=6, relevant_tools={"read_file"},
     )
     events = _events(_collect(gen))
-    rejected = [e for e in events if e.get("type") == "harness_check" and e.get("status") == "rejected"]
+    rejected = [e for e in events if e.get("type") == "harness_check" and e.get("status") == "advisory"]
     assert rejected and set(rejected[0]["reasons"]) == {"wrong_weekday", "thinking_aloud"}, rejected
     assert rejected[0]["weekdays"][0]["real"] == "viernes"
     replaces = [e for e in events if e.get("type") == "response_replace"]
-    assert replaces and "domingo" not in replaces[0]["text"]
-    assert calls["n"] == 2
+    assert not replaces
+    assert calls["n"] == 1
     assert len(rejected) == 1
 
 
