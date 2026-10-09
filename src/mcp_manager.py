@@ -619,6 +619,35 @@ def _uncertain_mcp_call_result(qualified_name: str, exc: Exception) -> Dict:
     }
 
 
+def _request_never_sent(exc: BaseException) -> bool:
+    """True when the failure proves the request never left this process.
+
+    The SDK writes a request with ``await write_stream.send(...)`` before it
+    waits for the reply. anyio raises ``ClosedResourceError`` when that stream
+    was already closed on our side (the session's transport ended: the
+    subprocess exited, its pipes were torn down) and ``BrokenResourceError``
+    when the reader is gone; both happen before a single byte is written. A
+    connection lost *while waiting* surfaces differently (an ``McpError`` with
+    CONNECTION_CLOSED, a timeout), and stays "outcome unknown".
+    """
+    try:
+        import anyio
+    except Exception:  # pragma: no cover - anyio ships with the mcp SDK
+        return False
+    seen = set()
+    cur: Optional[BaseException] = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        if isinstance(cur, (anyio.ClosedResourceError, anyio.BrokenResourceError)):
+            return True
+        group = getattr(cur, "exceptions", None)
+        if isinstance(group, (list, tuple)) and len(group) == 1:
+            cur = group[0]
+            continue
+        return False
+    return False
+
+
 # ── TOOL-05: elicitation, sampling and resources under limits ──────────────
 #
 # The MCP spec lets a SERVER call back into the client for three things: ask
@@ -1883,6 +1912,11 @@ class McpManager:
         except asyncio.CancelledError:
             raise
         except Exception as e:
+            if dispatched and _request_never_sent(e):
+                # The write stream was already closed: the request never left
+                # this process, so nothing can have happened on the server and
+                # a reconnect + single retry is safe even for a write.
+                dispatched = False
             # Auto-reconnect for builtin servers whose subprocess may have died
             if self.is_builtin(server_id):
                 # A stale failed call must not tear down a replacement session
@@ -1925,6 +1959,32 @@ class McpManager:
                     if dispatched and not replay_safe:
                         return _uncertain_mcp_call_result(qualified_name, e)
                     return {"error": f"MCP server crashed and reconnect failed: {server_id}", "exit_code": 1}
+            elif (not dispatched and scope_current(after_reconnect=True)
+                    and await self._reconnect_configured(server_id, session)):
+                # A configured stdio server (a hub, an app bridge) whose
+                # transport closed under a long-lived session: before this the
+                # call came back "outcome unknown" and the server stayed dead
+                # until someone reconnected it by hand.
+                logger.warning(
+                    f"MCP stream for {server_id} was closed; reconnected, retrying {qualified_name} once"
+                )
+                if not scope_current(after_reconnect=True):
+                    self._record_call_outcome(server_id, False, time.time() - call_started)
+                    return changed_before_dispatch()
+                session = self._sessions.get(server_id)
+                if not session:
+                    self._record_call_outcome(server_id, False, time.time() - call_started)
+                    return {"error": f"Reconnected but no session for {server_id}", "exit_code": 1}
+                try:
+                    result = await self._do_call(session, tool_name, deepcopy(captured_arguments))
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e2:
+                    logger.error(f"MCP tool call failed after reconnect: {qualified_name}: {e2}")
+                    self._record_call_outcome(server_id, False, time.time() - call_started)
+                    if not read_only and not _request_never_sent(e2):
+                        return _uncertain_mcp_call_result(qualified_name, e2)
+                    return {"error": str(e2), "exit_code": 1}
             else:
                 logger.error(f"MCP tool call failed: {qualified_name}: {e}")
                 self._record_call_outcome(server_id, False, time.time() - call_started)
@@ -2127,6 +2187,48 @@ class McpManager:
         if images:
             result_dict["images"] = images
         return result_dict
+
+    async def _reconnect_configured(self, server_id: str, failed_session: Any) -> bool:
+        """Reconnect a configured (database) stdio server after its stream closed.
+
+        Only called when the failed request provably never left the process
+        (`_request_never_sent`). Serialised with `_reconnect_locks`; when
+        another call already replaced `failed_session` the new session is
+        reused instead of being torn down. Remote transports are left alone:
+        their reconnect can involve authorization and is the user's call.
+        """
+        lock = self._reconnect_locks.setdefault(server_id, asyncio.Lock())
+        async with lock:
+            current = self._sessions.get(server_id)
+            if current is not None and current is not failed_session:
+                return True
+            db = SessionLocal()
+            try:
+                srv = db.query(McpServer).filter(McpServer.id == server_id).first()
+            finally:
+                db.close()
+            if srv is None or getattr(srv, "is_enabled", True) is False or srv.transport != "stdio":
+                return False
+            name = srv.name
+            self._connections[server_id] = {"status": "probing", "name": name}
+            await self.disconnect_server(server_id)
+            try:
+                await self._connect_with_timeout(srv)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # noqa: BLE001 - reported through the status below
+                logger.error(f"Failed to reconnect MCP server {name}: {type(e).__name__}: {e}")
+            conn = self._connections.get(server_id)
+            ok = (self._sessions.get(server_id) is not None
+                  and isinstance(conn, dict) and conn.get("status") == "connected")
+            if ok:
+                logger.info(f"Reconnected MCP server after a closed stream: {name}")
+            elif not isinstance(conn, dict) or conn.get("status") in (None, "probing", "connected"):
+                self._connections[server_id] = {
+                    "status": "error", "name": name,
+                    "error": f"{name} stopped answering and could not be restarted",
+                }
+            return ok
 
     async def _reconnect_builtin(self, server_id: str) -> bool:
         """Tear down and reconnect a crashed builtin MCP server.

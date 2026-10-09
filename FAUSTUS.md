@@ -10505,3 +10505,20 @@ Luis pasó capturas de un panel de gestión de Sparks y ocho repositorios para c
 - **Prospero cierra limpio (#143):** `JobQueue.stop()` interrumpe de verdad los trabajos largos (`JobInterrupted`, que se relanzan al arrancar) y `Backend.close()` para el hilo del event loop del link; la app tiene lifespan y `app.state.shutdown()`. Era la causa del `Fatal Python error ... at interpreter shutdown` intermitente del CI en Windows. Parada y arranque desde el Hub comprobados.
 - **HoardLink en Windows:** tests intermitentes arreglados (puerto libre con procesos ajenos, puente con el redirector de venv y conhost, login de chats con margen); el CI ya no cancela los demás trabajos al fallar uno.
 - **Manual de Google (#125):** actualizado con todo lo anterior y comprobado por exportación.
+
+## 282. Un MCP stdio cuyo canal se cerró vuelve solo (09-10-2026)
+
+Visto en el primer turno de Faustus como agente del Agora: entre dos llamadas, el canal stdio del MCP del Hub se cerró. La siguiente llamada `hub_agora_*` falló con `ClosedResourceError` al escribir la petición y volvió como `outcome_unknown` (una escritura que el modelo no debe repetir). Además, el servidor quedó muerto hasta que alguien lo reconectara a mano. Solo los MCP integrados se reconectaban.
+
+El SDK escribe la petición (`write_stream.send`) antes de esperar la respuesta. Por eso `ClosedResourceError` y `BrokenResourceError` en ese punto demuestran que la petición nunca salió (`_request_never_sent`, que también reconoce un grupo de excepciones con una sola de ellas). En ese caso la llamada cuenta como «no despachada». Un servidor configurado (base de datos) con transporte stdio se reconecta con su configuración completa (`_reconnect_configured`, serializado con `_reconnect_locks`; si otra llamada ya lo había sustituido, se reutiliza esa sesión) y la llamada se reintenta una vez, aunque sea una escritura. Si la reconexión falla, el resultado es un error normal y el estado del servidor pasa a `error` con un mensaje claro. Una conexión perdida **mientras se esperaba** la respuesta sigue siendo `outcome_unknown`, sin reconexión. Los transportes remotos (HTTP/SSE) no se reinician solos, porque su reconexión puede requerir autorización. Los integrados conservan su propia ruta, ahora también con la regla de «no enviada».
+
+Pruebas (`tests/test_mcp_closed_stream_reconnect.py`, 7):
+- la clasificación;
+- escritura reintentada tras un canal cerrado;
+- pérdida esperando la respuesta, que sigue incierta;
+- reconexión fallida con estado honesto;
+- HTTP sin reinicio;
+- sesión ya sustituida y reutilizada;
+- un **proceso stdio real** que se mata entre dos llamadas: con el código anterior la segunda daba `outcome_unknown`; ahora responde un proceso nuevo.
+
+Pasan las 504 pruebas de MCP (`tests/*mcp*.py`).
