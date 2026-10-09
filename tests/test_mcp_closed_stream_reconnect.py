@@ -3,10 +3,12 @@
 Seen live: the Hub's stdio session closed between two agent turns; the next
 `hub_agora_*` call raised anyio.ClosedResourceError from `write_stream.send`
 and came back "outcome unknown" (a write the model must not repeat), and the
-server stayed dead until someone reconnected it by hand. The SDK sends the
-request before it waits for the reply, so a closed/broken write stream proves
-nothing was sent: reconnecting and retrying once is safe even for a write.
-A connection lost while WAITING keeps the honest "outcome unknown".
+server stayed dead until someone reconnected it by hand. The SDK writes the
+request before it waits for the reply; when the error comes out of that write
+(proved by the traceback, not by the exception type) nothing was sent, and
+reconnecting and retrying once is safe even for a write. The same error type
+from anywhere else, or a connection lost while WAITING, keeps the honest
+"outcome unknown" and runs nothing twice.
 """
 
 import asyncio
@@ -23,6 +25,25 @@ import src.mcp_manager as mm
 from src.mcp_manager import McpManager, _request_never_sent
 
 SID = "srv-hub-test"
+CLOSED = object()  # fail through a REAL SDK session whose write stream is closed
+
+
+def _closed_sdk_session():
+    """A real `mcp.ClientSession` whose write stream is already closed."""
+    from mcp import ClientSession
+
+    send, _recv = anyio.create_memory_object_stream(1)
+    _rsend, rrecv = anyio.create_memory_object_stream(1)
+    send.close()
+    return ClientSession(rrecv, send)
+
+
+async def _sdk_write_error():
+    try:
+        await _closed_sdk_session().call_tool("x", {})
+    except BaseException as e:  # noqa: BLE001
+        return e
+    raise AssertionError("a closed write stream did not raise")
 
 
 class _FakeSession:
@@ -33,6 +54,8 @@ class _FakeSession:
 
     async def call_tool(self, name, arguments):
         self.calls.append((name, arguments))
+        if self.fail is CLOSED:
+            return await _closed_sdk_session().call_tool(name, arguments)
         if self.fail is not None:
             raise self.fail
         return SimpleNamespace(
@@ -87,18 +110,40 @@ def _manager(monkeypatch, first, *, row=None, replacement=None):
     return mgr, reconnects
 
 
-def test_never_sent_classification():
-    assert _request_never_sent(anyio.ClosedResourceError())
-    assert _request_never_sent(anyio.BrokenResourceError())
-    if hasattr(__builtins__, "ExceptionGroup") or sys.version_info >= (3, 11):
-        assert _request_never_sent(ExceptionGroup("g", [anyio.ClosedResourceError()]))  # noqa: F821
-        assert not _request_never_sent(ExceptionGroup("g", [anyio.ClosedResourceError(), ValueError()]))  # noqa: F821
+async def test_never_sent_needs_the_sdk_request_write_in_the_traceback():
+    real = await _sdk_write_error()
+    assert isinstance(real, anyio.ClosedResourceError)
+    assert _request_never_sent(real)
+    # The same types raised anywhere else prove nothing about the request.
+    assert not _request_never_sent(anyio.ClosedResourceError())
+    assert not _request_never_sent(anyio.BrokenResourceError())
+    if sys.version_info >= (3, 11):
+        assert _request_never_sent(ExceptionGroup("g", [real]))  # noqa: F821
+        assert not _request_never_sent(ExceptionGroup("g", [real, ValueError()]))  # noqa: F821
     assert not _request_never_sent(RuntimeError("Connection closed"))
     assert not _request_never_sent(asyncio.TimeoutError())
 
 
+async def test_same_error_type_after_dispatch_stays_unknown_and_runs_once(monkeypatch):
+    """The write reached the server and applied; the reply was then lost with the same type."""
+    effects = []
+
+    class _AppliedThenLost(_FakeSession):
+        async def call_tool(self, name, arguments):
+            effects.append((name, arguments))  # the server applied the write...
+            raise anyio.ClosedResourceError()  # ...and the reply was lost
+
+    mgr, reconnects = _manager(monkeypatch, _AppliedThenLost("old"), replacement=_FakeSession("new"))
+
+    res = await mgr.call_tool(f"mcp__{SID}__post_message", {"body": "hola"})
+
+    assert res.get("outcome_unknown") is True, res
+    assert effects == [("post_message", {"body": "hola"})]
+    assert reconnects == []
+
+
 async def test_closed_stream_reconnects_and_retries_a_write_once(monkeypatch):
-    dead = _FakeSession("old", fail=anyio.ClosedResourceError())
+    dead = _FakeSession("old", fail=CLOSED)
     fresh = _FakeSession("new")
     mgr, reconnects = _manager(monkeypatch, dead, replacement=fresh)
 
@@ -123,7 +168,7 @@ async def test_lost_while_waiting_stays_outcome_unknown_without_reconnect(monkey
 
 
 async def test_failed_reconnect_is_a_plain_error_and_status_is_honest(monkeypatch):
-    dead = _FakeSession("old", fail=anyio.ClosedResourceError())
+    dead = _FakeSession("old", fail=CLOSED)
     mgr, reconnects = _manager(monkeypatch, dead, replacement=None)
 
     res = await mgr.call_tool(f"mcp__{SID}__post_message", {})
@@ -134,7 +179,7 @@ async def test_failed_reconnect_is_a_plain_error_and_status_is_honest(monkeypatc
 
 
 async def test_remote_transports_are_not_restarted(monkeypatch):
-    dead = _FakeSession("old", fail=anyio.ClosedResourceError())
+    dead = _FakeSession("old", fail=CLOSED)
     mgr, reconnects = _manager(monkeypatch, dead, row=_row(transport="http"),
                                replacement=_FakeSession("new"))
 
@@ -145,14 +190,14 @@ async def test_remote_transports_are_not_restarted(monkeypatch):
 
 
 async def test_a_session_already_replaced_is_reused_not_torn_down(monkeypatch):
-    dead = _FakeSession("old", fail=anyio.ClosedResourceError())
+    dead = _FakeSession("old", fail=CLOSED)
     mgr, reconnects = _manager(monkeypatch, dead, replacement=_FakeSession("unused"))
     other = _FakeSession("other")
 
     async def _swap_then_fail(name, arguments):
         dead.calls.append((name, arguments))
         mgr._sessions[SID] = other  # a concurrent call already reconnected
-        raise anyio.ClosedResourceError()
+        return await _closed_sdk_session().call_tool(name, arguments)
 
     dead.call_tool = _swap_then_fail
 

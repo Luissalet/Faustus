@@ -619,16 +619,41 @@ def _uncertain_mcp_call_result(qualified_name: str, exc: Exception) -> Dict:
     }
 
 
+_SDK_SESSION_FILE = "mcp/shared/session.py"
+
+
+def _raised_by_request_write(exc: BaseException) -> bool:
+    """True only if the traceback shows `exc` came out of the SDK's request write.
+
+    `BaseSession.send_request` does two things that can raise the same anyio
+    errors: ``await self._write_stream.send(...)`` (the request leaves) and
+    ``await response_stream_reader.receive()`` (the reply arrives). Only the
+    first proves nothing was sent, so the frame of `send_request` must be
+    stopped on the line that writes to `_write_stream`. Anything else (another
+    SDK version, a wrapper, an unknown phase) is not proof.
+    """
+    import linecache
+
+    tb = exc.__traceback__
+    while tb is not None:
+        code = tb.tb_frame.f_code
+        if code.co_name == "send_request" and code.co_filename.replace("\\", "/").endswith(_SDK_SESSION_FILE):
+            line = linecache.getline(code.co_filename, tb.tb_lineno)
+            return "_write_stream.send(" in line
+        tb = tb.tb_next
+    return False
+
+
 def _request_never_sent(exc: BaseException) -> bool:
     """True when the failure proves the request never left this process.
 
-    The SDK writes a request with ``await write_stream.send(...)`` before it
-    waits for the reply. anyio raises ``ClosedResourceError`` when that stream
-    was already closed on our side (the session's transport ended: the
-    subprocess exited, its pipes were torn down) and ``BrokenResourceError``
-    when the reader is gone; both happen before a single byte is written. A
-    connection lost *while waiting* surfaces differently (an ``McpError`` with
-    CONNECTION_CLOSED, a timeout), and stays "outcome unknown".
+    anyio raises ``ClosedResourceError`` when the session's write stream was
+    already closed on our side (the transport ended: the subprocess exited, its
+    pipes were torn down) and ``BrokenResourceError`` when the reader is gone.
+    The type alone does not say WHEN it happened, so it only counts when the
+    traceback shows it was raised by the request write itself
+    (`_raised_by_request_write`). A connection lost while waiting for the reply
+    stays "outcome unknown".
     """
     try:
         import anyio
@@ -639,7 +664,7 @@ def _request_never_sent(exc: BaseException) -> bool:
     while cur is not None and id(cur) not in seen:
         seen.add(id(cur))
         if isinstance(cur, (anyio.ClosedResourceError, anyio.BrokenResourceError)):
-            return True
+            return _raised_by_request_write(cur)
         group = getattr(cur, "exceptions", None)
         if isinstance(group, (list, tuple)) and len(group) == 1:
             cur = group[0]
