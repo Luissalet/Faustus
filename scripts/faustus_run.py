@@ -10,6 +10,13 @@ checks, memory, skills, the model router, sub-agents.
 
     echo "summarise README.md" | python scripts/faustus_run.py -p - --workspace .
 
+New chats can select an owned native project with --project-id. Without it,
+an exact unique --workspace match inherits the project automatically. Resumed
+chats retain their existing project and coordination identity. --agent-id is
+an optional owner configuration for a new chat, using the project's saved
+coordination scope. The CLI does not send actor/grant fields in the chat form;
+the native runtime supplies the saved coordination context.
+
 Output:
   * default: the answer text on stdout, a one-line summary on stderr.
   * --json: NDJSON on stdout. First record `{"type": "run_start", ...}`, then
@@ -34,6 +41,7 @@ import argparse
 import http.cookiejar
 import json
 import os
+import re
 import socket
 import sys
 import time
@@ -99,6 +107,12 @@ class Client:
                                timeout=timeout) as r:
             return _json_or_raw(r.read())
 
+    def put_json(self, path: str, body: Dict[str, Any], timeout: float = 30) -> Any:
+        req = urllib.request.Request(self.base + path, data=json.dumps(body).encode(), method="PUT",
+                                     headers={"Content-Type": "application/json"})
+        with self._opener.open(req, timeout=timeout) as r:
+            return _json_or_raw(r.read())
+
     def stream(self, form: Dict[str, Any], timeout: float) -> Iterable[Dict[str, Any]]:
         body = urllib.parse.urlencode({k: v for k, v in form.items() if v is not None}).encode()
         req = urllib.request.Request(self.base + "/api/chat_stream", data=body, method="POST")
@@ -133,6 +147,69 @@ def read_prompt(value: str) -> str:
         with open(value[1:], encoding="utf-8-sig") as f:
             return f.read().strip()
     return value
+
+
+def select_project(client: Client, args) -> Optional[Dict[str, Any]]:
+    """Select only an owned native project; never move an existing chat."""
+    if args.session:
+        try:
+            project = (client.get_json("/api/projects/resolve/session/" + urllib.parse.quote(args.session, safe="")) or {}).get("project")
+        except urllib.error.HTTPError as exc:
+            if not args.project_id and not args.agent_id and exc.code in (403, 404):
+                return None  # Legacy callers still resume without moving the chat.
+            raise
+        if args.project_id and (not project or project.get("id") != args.project_id):
+            raise RuntimeError("The resumed chat is not attached to that project; its project will not be changed.")
+        return project
+    if args.project_id:
+        project = client.get_json("/api/projects/" + urllib.parse.quote(args.project_id, safe=""))
+        if not isinstance(project, dict) or not project.get("id") or not project.get("enabled", True):
+            raise RuntimeError("The selected project is unavailable or disabled.")
+        return project
+    if not args.workspace:
+        return None
+    try:
+        projects = client.get_json("/api/projects")
+    except urllib.error.HTTPError as exc:
+        if exc.code not in (403, 404):
+            raise
+        args.project_warnings.append("Project lookup is unavailable; continuing with the supplied workspace without project inheritance.")
+        return None
+    canonical = lambda path: os.path.normcase(os.path.realpath(os.path.abspath(path)))
+    matches = [p for p in projects if isinstance(p, dict) and p.get("enabled", True)
+               and p.get("workspace") and canonical(p["workspace"]) == canonical(args.workspace)]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        args.project_warnings.append("Several projects use this exact workspace; continuing without selecting one. Use --project-id to choose.")
+    return None
+
+
+def select_agent_identity(client: Client, args, session: str, project: Optional[Dict[str, Any]]) -> None:
+    """An explicit owner configuration, using only the project's saved scope."""
+    if not args.agent_id:
+        return
+    if not re.fullmatch(r"faustus(?:[-_][a-z0-9][a-z0-9_-]{0,38})?", args.agent_id):
+        raise RuntimeError("--agent-id must identify Faustus; human or other agent identities are not supported.")
+    if not project:
+        raise RuntimeError("--agent-id requires a configured project.")
+    path = "/api/coordination/" + urllib.parse.quote(session, safe="")
+    current = client.get_json(path) or {}
+    binding = current.get("binding")
+    if binding:
+        if binding.get("actor") != args.agent_id:
+            raise RuntimeError("The chat already has another coordination identity; it will not be replaced.")
+        return
+    if args.session:
+        raise RuntimeError("The resumed chat keeps its automatic identity; an explicit --agent-id can only configure a new chat.")
+    template = current.get("template")
+    if not template or not template.get("active"):
+        raise RuntimeError("The project has no active coordination configuration.")
+    body = {key: template[key] for key in ("connector_id", "operations", "resources", "repos", "thread_ids", "active")}
+    body["actor"] = args.agent_id
+    saved = (client.put_json(path, body) or {}).get("binding") or {}
+    if saved.get("actor") != args.agent_id or saved.get("project_id") != project["id"]:
+        raise RuntimeError("The server did not confirm the requested project coordination identity.")
 
 
 class Turn:
@@ -182,6 +259,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--url", default=os.environ.get("FAUSTUS_URL", "http://127.0.0.1:7000"))
     ap.add_argument("--workspace", default=None, help="folder the agent works in")
     ap.add_argument("--session", default=None, help="continue this chat instead of opening a new one")
+    ap.add_argument("--project-id", default=None, help="use this owned project for a new chat; otherwise an exact unique workspace match inherits it")
+    ap.add_argument("--agent-id", default=None, help="explicit Faustus coordination identity for a new project chat; defaults to the native per-chat identity")
     ap.add_argument("--model", default=os.environ.get("FAUSTUS_MODEL"))
     ap.add_argument("--endpoint-url", default=os.environ.get("FAUSTUS_ENDPOINT_URL"))
     ap.add_argument("--effort", default=None, help="reasoning: auto|off|low|medium|high|max")
@@ -197,6 +276,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--events", choices=("all", "tools", "none"), default="all",
                     help="with --json: which events to print")
     args = ap.parse_args(argv)
+    args.project_warnings = []
+    args.resolved_project = None
 
     out = sys.stdout
     # Windows pipes inherit the console code page (often cp1252). NDJSON can
@@ -208,6 +289,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         client = Client(args.url, os.environ.get("FAUSTUS_USER"), os.environ.get("FAUSTUS_PASS"),
                         os.environ.get("FAUSTUS_API_TOKEN"))
         session = args.session
+        project = select_project(client, args)
+        args.resolved_project = project
+        if args.agent_id and (not project or not re.fullmatch(r"faustus(?:[-_][a-z0-9][a-z0-9_-]{0,38})?", args.agent_id)):
+            raise RuntimeError("--agent-id requires a configured project and a Faustus identity.")
         if not session and not args.model:
             route = client.default_route()
             args.model = route.get("model") or None
@@ -216,10 +301,18 @@ def main(argv: Optional[List[str]] = None) -> int:
             made = client.post_form("/api/session", {
                 "name": "faustus run", "endpoint_url": args.endpoint_url, "model": args.model,
                 "skip_validation": "true",
+                "project_id": project["id"] if project else None,
             })
             session = (made or {}).get("id") or (made or {}).get("session_id")
             if not session:
                 raise RuntimeError(f"could not open a session: {made}")
+            if project:
+                resolved = (client.get_json("/api/projects/resolve/session/" + urllib.parse.quote(session, safe="")) or {}).get("project")
+                if not resolved or resolved.get("id") != project["id"]:
+                    raise RuntimeError("The server did not attach the new chat to the selected project.")
+        select_agent_identity(client, args, session, project)
+        for warning in args.project_warnings:
+            print(warning, file=sys.stderr)
         message = read_prompt(args.prompt)
     except (urllib.error.URLError, OSError, RuntimeError) as exc:
         _emit_summary(out, args, None, Turn(), started, "error", _error_text(exc))
@@ -244,6 +337,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.json:
         _write(out, {"type": "run_start", "session": session, "url": args.url, "model": args.model,
                      "workspace": args.workspace, "plan": args.plan, "approve": args.approve,
+                     "project_id": (args.resolved_project or {}).get("id"), "agent_id": args.agent_id,
+                     "project_warnings": args.project_warnings,
                      "started": round(started, 3)})
     form = base_form()
     if args.resume_approval:
@@ -332,6 +427,8 @@ def _emit_summary(out, args, session, turn: Turn, started: float, stop: str, err
         "model": turn.metrics.get("model") or args.model, "usage": usage,
         "prompt_cache": pc if isinstance(pc, dict) else None,
         "approval": turn.approval if stop == "approval_required" else None, "error": error,
+        "project_id": (args.resolved_project or {}).get("id"), "agent_id": args.agent_id,
+        "project_warnings": args.project_warnings,
     }
     if args.json:
         _write(out, summary)
