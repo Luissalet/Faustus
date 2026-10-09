@@ -10610,7 +10610,6 @@ Tarea #183 del Ágora. `src/doc_lint.py` revisa un `.md` con reglas comprobables
 
 **Pasada real sobre `FAUSTUS.md` y `README.md`:** ver el informe de la tarea #183; no se corrigió ningún documento.
 
-**Aviso de numeración:** este es el §285 sobre `master` del 09-10; otras ramas añaden §285 en adelante, así que al integrar puede tocar renumerarlo.
 
 **Límites:**
 - Es heurístico, no un parser: solo cabeceras ATX; `path-missing` ignora rutas cuyo primer segmento no sea una entrada de primer nivel del repo; las anclas `#seccion` no se comprueban.
