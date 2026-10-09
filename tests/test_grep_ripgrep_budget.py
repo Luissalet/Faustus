@@ -6,6 +6,7 @@ same search answers in about 4 s.
 """
 
 import asyncio
+import io
 import json
 import shutil
 import subprocess
@@ -22,11 +23,12 @@ def _grep(**args):
 
 class FakeRg:
     """Streams the given lines, then (if hang) blocks like a ripgrep still walking a huge tree."""
-    lines, hang, seen = [], False, {}
+    lines, hang, seen, err_text, code = [], False, {}, "", 0
 
     def __init__(self, cmd, **kw):
         FakeRg.seen.update(cmd=cmd, kw=kw, killed=False)
         self.stdout = self._out()
+        self.stderr = io.StringIO(FakeRg.err_text)
         self._done = False
 
     def _out(self):
@@ -38,7 +40,11 @@ class FakeRg:
         self._done = True
 
     def poll(self):
-        return 0 if self._done else None
+        return self.code if self._done else None
+
+    @property
+    def returncode(self):
+        return self.code
 
     def kill(self):
         FakeRg.seen["killed"] = True
@@ -76,6 +82,25 @@ def test_ripgrep_is_stopped_once_there_are_enough_matches(fake_rg):
     assert "capped at 3 matches" in res["output"] and fake_rg.seen["killed"]
 
 
+def test_an_invalid_regex_is_an_error_not_no_matches(fake_rg):
+    """rg exit 2 (bad pattern) used to surface as exit 0 / "No matches" with stderr discarded."""
+    fake_rg.lines, fake_rg.hang, fake_rg.code = [], False, 2
+    fake_rg.err_text = "regex parse error: unclosed group"
+    res = _grep(pattern="(")
+    assert res["exit_code"] == 1, res
+    assert "unclosed group" in res["error"] and "No matches" not in res.get("output", "")
+
+
+def test_hits_do_not_hide_skipped_oversized_files(fake_rg, monkeypatch, tmp_path):
+    """With matches in small files, a silently skipped big file must still be declared."""
+    fake_rg.lines, fake_rg.hang = ["a.py:1:needle"], False
+    monkeypatch.setattr(fs, "_oversized_files", lambda root, glob: (["D:/x/weights.bin"], True))
+    res = _grep(pattern="needle")
+    assert res["exit_code"] == 0, res
+    assert "a.py:1:needle" in res["output"]
+    assert "1 file(s) over" in res["output"] and "weights.bin" in res["output"] and "partial" in res["output"]
+
+
 @pytest.mark.skipif(shutil.which("rg") is None, reason="ripgrep is not installed")
 def test_real_ripgrep_finds_text_and_reports_the_size_limit(monkeypatch, tmp_path):
     monkeypatch.setattr(te, "_resolve_search_root", lambda raw: str(tmp_path))
@@ -86,3 +111,12 @@ def test_real_ripgrep_finds_text_and_reports_the_size_limit(monkeypatch, tmp_pat
     only_big = _grep(pattern="^needle$")
     assert only_big["exit_code"] == 0
     assert "No matches" in only_big["output"] and "are not searched" in only_big["output"], only_big
+
+
+@pytest.mark.skipif(shutil.which("rg") is None, reason="ripgrep is not installed")
+def test_real_ripgrep_invalid_regex_is_an_error(monkeypatch, tmp_path):
+    monkeypatch.setattr(te, "_resolve_search_root", lambda raw: str(tmp_path))
+    (tmp_path / "a.py").write_text("needle\n", encoding="utf-8")
+    res = _grep(pattern="(unclosed")
+    assert res["exit_code"] == 1, res
+    assert "error" in res and "No matches" not in res.get("output", ""), res

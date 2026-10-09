@@ -35,6 +35,41 @@ GREP_FALLBACK_MAX_FILE_BYTES = 2 * 1024 * 1024
 GREP_FALLBACK_MAX_FILES = 50_000
 
 
+def _oversized_files(root: str, glob_pat: str) -> Tuple[List[str], bool]:
+    """Text files over the size limit under root that grep did not search.
+
+    ripgrep skips them silently (--max-filesize), so the caller can declare the
+    omission instead of letting hits hide it. Stat-only walk, bounded by
+    GREP_FALLBACK_MAX_FILES entries; returns (paths, walk_was_complete).
+    """
+    from src.tool_execution import _is_sensitive_path
+
+    found: List[str] = []
+    seen = 0
+    if os.path.isfile(root):
+        try:
+            return ([root] if os.path.getsize(root) > GREP_FALLBACK_MAX_FILE_BYTES else [], True)
+        except OSError:
+            return [], True
+    for dp, dns, fns in os.walk(root):
+        dns[:] = [d for d in dns if d not in _CODENAV_SKIP_DIRS]
+        for fn in fns:
+            seen += 1
+            if seen > GREP_FALLBACK_MAX_FILES:
+                return found, False
+            if glob_pat and not fnmatch.fnmatch(fn, glob_pat):
+                continue
+            fp = os.path.join(dp, fn)
+            if _is_sensitive_path(os.path.realpath(fp)):
+                continue
+            try:
+                if os.path.getsize(fp) > GREP_FALLBACK_MAX_FILE_BYTES:
+                    found.append(fp)
+            except OSError:
+                continue
+    return found, True
+
+
 def _glob_to_regex(pat: str) -> "re.Pattern":
     """Translate a forward-slash glob (**, *, ?) into a compiled regex.
     `**/` matches zero or more complete directories.
@@ -1371,7 +1406,7 @@ class GrepTool:
                 try:
                     import subprocess
                     import threading
-                    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                          text=True, encoding="utf-8", errors="replace")
                     got: List[str] = []
                     enough = threading.Event()
@@ -1396,16 +1431,45 @@ class GrepTool:
                     if p.poll() is None:
                         p.kill()      # enough matches, or out of time: keep what was found
                     reader.join(timeout=2)
+                    try:
+                        err_text = p.stderr.read() or ""
+                    except Exception:
+                        err_text = ""
                     lines = got[:max_hits]
                     if timed_out:
                         lines.append(
                             f"[grep stopped early after the time budget of {GREP_FALLBACK_BUDGET_S:.0f}s: results "
                             f"are partial. Narrow the search with path= or glob=.]")
+                    elif p.poll() not in (0, 1, None) and not lines:
+                        # rg exit 2 is an error (bad regex, unreadable path...): never
+                        # dress it up as "No matches". Bounded: first stderr line only.
+                        err_first = err_text.strip().splitlines()
+                        detail = err_first[0][:200] if err_first else f"ripgrep exited with code {p.returncode}"
+                        return None, f"grep: {detail}"
                     elif not lines:
                         # Never a bare "No matches" that hides the size limit.
                         lines = [f"[No matches for {pattern!r} under {root}. Files over "
                                  f"{GREP_FALLBACK_MAX_FILE_BYTES // (1024 * 1024)} MB are not searched; use "
                                  f"bash rg on a specific one if it matters.]"]
+                    if lines and not timed_out:
+                        # ripgrep skips oversized files silently: with hits on the small
+                        # files the caller would never learn the big ones were skipped.
+                        try:
+                            skipped, complete = _oversized_files(root, glob_pat)
+                        except Exception:
+                            skipped, complete = [], True
+                        if skipped:
+                            shown = ", ".join(os.path.basename(p_) for p_ in skipped[:3])
+                            more = f" and {len(skipped) - 3} more" if len(skipped) > 3 else ""
+                            lines.append(
+                                f"[{len(skipped)} file(s) over "
+                                f"{GREP_FALLBACK_MAX_FILE_BYTES // (1024 * 1024)} MB were not searched "
+                                f"({shown}{more}): results may be partial. Read them with read_file, "
+                                f"or use bash rg on a specific one.]")
+                        elif not complete:
+                            lines.append(
+                                f"[grep stopped listing after {GREP_FALLBACK_MAX_FILES} entries: some files "
+                                f"may not have been searched. Narrow the search with path= or glob=.]")
                     return lines, None
                 except Exception as _e:
                     return None, f"grep: {_e}"
