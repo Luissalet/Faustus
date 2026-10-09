@@ -8215,6 +8215,25 @@ async def _stream_agent_loop_body(
         # checks effects at dispatch for aliases and tools registered later.
         from dataclasses import replace as _replace_tool_policy
         tool_policy = _replace_tool_policy(tool_policy or ToolPolicy(), read_only=True)
+    # Resolve standing coordination from the native owner/project/chat store.
+    # Model text and tool results cannot create or widen this grant.
+    if session_id and not guide_only:
+        try:
+            from src.coordination.runtime import resolve_grant as _resolve_coordination
+            run_security.coordination_grant = await asyncio.to_thread(
+                _resolve_coordination, owner, session_id,
+                project_id=(harness_options or {}).get("project_id") or None,
+                manager=get_mcp_manager(), read_only=bool(tool_policy and tool_policy.read_only))
+            _coordination = run_security.coordination_grant.binding
+            messages.append({"role": "system", "_harness_note": True, "content":
+                "Work coordination is configured for this project. Use the coordination_* tools for its Agora, "
+                "not a separate internal board or raw connector writes. Your identity and connector are selected by the product; "
+                "do not impersonate another participant. Start with coordination_poll; read full pending details before answering, "
+                "read tasks before claiming or reviewing, keep checkpoints and request cross-review of nontrivial changes. "
+                "Repository scope: " + ", ".join(_coordination.repos) + ". Coordination resources: " + ", ".join(_coordination.resources) +
+                ". File and command permissions remain those of the existing project. A lost write result must be inspected before retrying."})
+        except Exception:
+            run_security.coordination_grant = None
     try:
         from src.model_context import is_local_endpoint as _is_local_budget_endpoint
         _local_completion_unbounded = bool(_is_local_budget_endpoint(endpoint_url))
@@ -8369,6 +8388,8 @@ async def _stream_agent_loop_body(
     _t0 = time.time()
     _needs_admin = _detect_admin_intent(messages)
     _last_user = _extract_last_user_message(messages)
+    from src.coordination.continuation import objective as _approval_objective
+    _continuation_objective = _approval_objective(_last_user, exact_approval)
     _tool_documentation_context = ""
     _guide_documentation_example = False
     if guide_only:
@@ -10083,6 +10104,21 @@ async def _stream_agent_loop_body(
             _hot_seed = set(_hot_seed) & _relevant_tools
         logger.info("[chat-mode] lean: tools kept=%s", sorted(_relevant_tools))
     from src.tool_serve import LOOKUP_TOOL as _LOOKUP_TOOL, partition_offer as _partition_offer
+    if run_security.coordination_grant is not None and not guide_only:
+        from src.coordination.tools import NAMES as _coordination_names
+        from src.coordination.bindings import READ_OPERATIONS as _coordination_reads
+        _coordination_offer = {
+            name for name, action in _coordination_names.items()
+            if action in run_security.coordination_grant.binding.operations
+            and name not in disabled_tools
+            and (not (tool_policy and tool_policy.read_only) or action in _coordination_reads)
+            and not (tool_policy and tool_policy.blocks(name))
+        }
+        if _relevant_tools is not None:
+            _relevant_tools = set(_relevant_tools) | _coordination_offer
+        if _hot_seed is not None:
+            _hot_seed = set(_hot_seed) | _coordination_offer
+        forced_tools = set(forced_tools or ()) | _coordination_offer
     # H17: a DEFERRED tool retrieval picked without the request giving any
     # evidence for it is listed in the catalog instead of carrying a schema
     # (`agent_tool_exposure`). A CODE_ONLY tool is never offered to a model step.
@@ -10882,8 +10918,8 @@ async def _stream_agent_loop_body(
     # H09: per-round fingerprints of the EXACT prompt handed to the route, the
     # compiled manifest reconciled against it, and the diff from the previous
     # round (src/context_engine/prompt_audit.py). Observation only.
-    from src.context_engine.prompt_audit import PromptAuditRecorder as _PromptAuditRecorder
-    _prompt_audit = _PromptAuditRecorder(turn_id=_context_turn_id, session_id=session_id or "")
+    from src.coordination.delivery import CoordinationAudit as _PromptAuditRecorder
+    _prompt_audit = _PromptAuditRecorder(turn_id=_context_turn_id, session_id=session_id or "", grant=run_security.coordination_grant)
     # CMP-09/CMP-12 (W3-A): the SAME dict the round-1 `strategy` SSE event
     # sends as its `data`, kept here so it can also ride onto the turn's
     # persisted metadata (see the "Context receipts" block near the final
@@ -11941,6 +11977,8 @@ async def _stream_agent_loop_body(
             endpoint_url=endpoint_url,
         )
         _approved_result_injected = True
+        _prompt_audit.stage([{"tool_name": approved.tool_name, "result": approved_result,
+                              "text": formatted_approved_result, "call_id": _approved_call_id}])
         try:
             _resume_plan = _resume_plan_line(session_id)
         except Exception:  # noqa: BLE001 - the plan line is a hint, never the resume
@@ -13677,6 +13715,9 @@ async def _stream_agent_loop_body(
                     data = json.loads(chunk[6:])
                     # IMPORTANT: check type-based events BEFORE "delta" key,
                     # because tool_call_delta also has an "arg_delta" field.
+                    if (data.get("type") in {"tool_call_delta", "tool_calls", "finish", "usage"}
+                            or "delta" in data or "reasoning_delta" in data):
+                        _prompt_audit.accepted(round_num, data.get("candidate_index", candidate_index))
                     if data.get("type") == "tool_call_delta":
                         # Tool-call argument deltas are model proposals, not an
                         # authorization decision.  Document UI events are built
@@ -17133,7 +17174,7 @@ async def _stream_agent_loop_body(
                             run_security.external_untrusted_context_seen
                         ),
                         selected_tools=approval_selected_tools,
-                        continuation_query=_retrieval_query or _last_user,
+                        continuation_query=_continuation_objective,
                         capabilities=capabilities_for_action(
                             block.tool_type,
                             block.content,
@@ -18472,6 +18513,7 @@ async def _stream_agent_loop_body(
                              endpoint_url=(_pinned_fallback_candidate[0]
                                            if _pinned_fallback_candidate else endpoint_url),
                              tool_images_enabled=(False if _images_refused else None))
+        _prompt_audit.stage(tool_result_records)
 
         _msgs_before_round_checks = len(messages)
         # Research streak (FAUSTUS.md pending item, 23-09 noche): a gentle,

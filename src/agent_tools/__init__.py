@@ -106,6 +106,8 @@ from .goal_tools import GoalDefineTool, GoalStatusTool, GoalEvaluateTool, GoalEv
 from .plan_tools import PlanStatusTool, PlanTaskTool, PlanDoneTool, PlanSkipTool, PlanNextTool
 from .prior_art_tools import PriorArtTool
 from .ci_tools import CiFailuresTool
+from .coordination_tool import CoordinationTool
+from src.coordination.tools import NAMES as _COORDINATION_TOOLS
 
 TOOL_HANDLERS = {
     "bash": BashTool().execute,
@@ -565,6 +567,9 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "research_podcast"} | BUILTIN_EMAIL_TOOLS | DESKTOP_TOOLS | SEMANTIC_TOOLS
 
 ToolBlock = namedtuple("ToolBlock", ["tool_type", "content"])
+
+TOOL_TAGS |= set(_COORDINATION_TOOLS)
+TOOL_HANDLERS.update({name: CoordinationTool(name).execute for name in _COORDINATION_TOOLS})
 
 # ---------------------------------------------------------------------------
 # Re-exports from sub-modules

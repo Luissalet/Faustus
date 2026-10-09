@@ -3969,6 +3969,8 @@ FUNCTION_TOOL_SCHEMAS = [
 # PDF navigation schemas are generated from the same contract its handlers parse.
 from src.pdf_tool_contracts import function_schemas as _pdf_function_schemas
 FUNCTION_TOOL_SCHEMAS.extend(_pdf_function_schemas())
+from src.coordination.tools import NAMES as _coordination_tools
+FUNCTION_TOOL_SCHEMAS.extend(_emit_schema(name) for name in sorted(_coordination_tools))
 
 # HTTP and agent calls share the same validated extraction/batch contracts.
 from src.reach.extract import ExtractRequest as _ReachExtractRequest

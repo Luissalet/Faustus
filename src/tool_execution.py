@@ -2708,6 +2708,7 @@ async def _execute_tool_block_impl(
 
 # Keys handled by the dedicated branches below — never echo them as raw JSON.
 _FORMATTER_HANDLED_KEYS = {
+    "_coordination_delivery",
     "stdout", "stderr", "exit_code", "content", "size",
     "response", "results", "session_id", "name", "model", "session_name",
     "success", "path", "action", "title", "doc_id", "version", "applied",

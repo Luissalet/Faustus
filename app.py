@@ -1179,6 +1179,9 @@ app.include_router(setup_model_probe_routes())
 from routes.project_routes import setup_project_routes
 app.include_router(setup_project_routes())
 
+from routes.coordination_routes import setup_coordination_routes
+app.include_router(setup_coordination_routes())
+
 # Version-control panel (OBJ-4): git repos under the owner's linked project
 # folders -- status, log, branches, commit detail/diff, checkout/fetch/pull/
 # push/sync/stage/unstage/discard/commit (src/git_panel.py).

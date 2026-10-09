@@ -98,6 +98,7 @@ import { Egg } from './studio/Egg';
 import { Rich, RichReply } from './rich';
 import { knownGroupParents, stripGroupPrefix } from '../adapters/group';
 import { Composer, type Knobs } from './studio/Composer';
+import { CoordinationStatus } from './studio/CoordinationStatus';
   import { apply, beginApproval, blankTurn, cleanUserText, closeApproval, restoreFromMetadata, appendSteer, type Turn } from './studio/model';
 import { useChatPanel } from './studio/useChatPanel';
 import ChatTeam from './studio/ChatTeam';
@@ -3495,6 +3496,7 @@ export function StudioScreen() {
             turn={turns?.slice().reverse().find(turn => turn.role === 'assistant')}
             onSend={text => void send(text)} onStop={stop} onClose={() => setVoiceSession(null)} />
         </Suspense>}
+        <CoordinationStatus sessionId={sessionId} projectId={project?.id} busy={busy} />
         <Composer
           draft={draft}
           setDraft={setDraft}

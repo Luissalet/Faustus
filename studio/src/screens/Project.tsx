@@ -56,6 +56,7 @@ import { ProjectObjectives } from './project/Objectives';
 import { ProjectRequirements } from './project/Requirements';
 import { ProjectRules } from './project/Rules';
 import { ProjectSettings } from './project/Settings';
+import { CoordinationPanel } from './project/CoordinationPanel';
 import { ProjectSkillImports } from './project/SkillImports';
 import './projects.css';
 import './home.css';
@@ -998,6 +999,7 @@ export function ProjectScreen() {
                   </li>
                 )}
               </ul>
+              <CoordinationPanel project={project} onNotice={say} />
             </section>
 
             <section className="fs-panel fs-pj__card">

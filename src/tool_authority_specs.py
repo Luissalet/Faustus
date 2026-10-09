@@ -222,6 +222,18 @@ def _register_pdf() -> None:
             limits=ToolLimits(), exposure=Exposure.DIRECT, origin="contract"))
 
 
+def _register_coordination() -> None:
+    from src.coordination.tools import NAMES, definition
+    for name, action in NAMES.items():
+        spec = definition(action)
+        AUTHORITY.register(make_tool(
+            name=name, canonical_id=f"coordination.{action}", family="coordination",
+            description=spec["description"], parameters=spec["parameters"],
+            parser=ParserContract(_json_args, required_any=tuple((key,) for key in spec["parameters"]["required"])),
+            resources=ToolResources(network=True), limits=ToolLimits(),
+            exposure=Exposure.DIRECT, origin="contract"))
+
+
 _registered = False
 
 
@@ -232,6 +244,7 @@ def register_all() -> None:
         return
     _register_core()
     _register_pdf()
+    _register_coordination()
     _registered = True
 
 

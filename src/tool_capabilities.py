@@ -653,6 +653,13 @@ _register({"plugin_app"}, ToolEffect.EXECUTE_CODE, ToolEffect.UI_SIDE_EFFECT)
 _register({"coworker_list"}, ToolEffect.READ_PRIVATE)
 _register({"coworker_save"}, ToolEffect.WRITE_PRIVATE)
 _register({"coworker_run"}, ToolEffect.EXECUTE_CODE)
+from src.coordination.tools import NAMES as _COORDINATION_TOOLS
+from src.coordination.bindings import READ_OPERATIONS as _COORDINATION_READS
+_register({name for name, action in _COORDINATION_TOOLS.items() if action in _COORDINATION_READS},
+          ToolEffect.READ_PRIVATE, ToolEffect.BROKERED_NETWORK_READ,
+          result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED)
+_register(set(_COORDINATION_TOOLS) - {name for name, action in _COORDINATION_TOOLS.items() if action in _COORDINATION_READS},
+          ToolEffect.WRITE_PRIVATE, result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED)
 # Isolated, comparable alternatives (CMP-13, W2-G, src/agent_tools/
 # alternatives_tools.py). `alt_compare` only reads a diff against the base
 # (same class as git_diff) -- READ_WORKSPACE, workspace-sourced content.
@@ -2112,6 +2119,9 @@ class ToolRunSecurityContext:
     # per-owner). Empty for an unauthenticated/local run, exactly like every
     # other owner-scoped field elsewhere in this codebase.
     owner: str = ""
+    # A native project/chat grant, constructed from saved owner configuration.
+    # It authorizes coordination only; no shell, file or generic MCP bypass.
+    coordination_grant: Any = field(default=None, repr=False, compare=False)
     # Dedup for the autonomy auto-approve override below: `decision_for` is
     # called more than once for the same tool call in a turn (the loop, then
     # `src/tool_execution.py` right before running it) — this keeps a second,
@@ -2466,6 +2476,9 @@ class ToolRunSecurityContext:
             return ToolGateDecision(True)
         if self._rereads_own_artifact(tool_name, content):
             return ToolGateDecision(True)
+        if tool_name in _COORDINATION_TOOLS and self.coordination_grant is not None:
+            if self.coordination_grant.allows(tool_name, content):
+                return ToolGateDecision(True)
         # page_find / page_window only search or page the browser snapshot this
         # session already stored -- the page the model has just opened -- so
         # there is nothing private or new for injected text to reach. Seen live:

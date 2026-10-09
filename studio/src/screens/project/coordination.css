@@ -1,0 +1,22 @@
+.fs-coordination { display: grid; gap: 12px; margin-block-start: 20px; padding-block-start: 16px; border-block-start: 1px solid var(--fs-border); min-width: 0; }
+.fs-coordination p, .fs-coordination h4 { margin: 0; }
+.fs-coordination h4 { font-size: 16px; font-weight: 600; }
+.fs-coordination__head, .fs-coordination__actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fs-coordination__head { justify-content: space-between; }
+.fs-coordination__secondary, .fs-coordination small { color: var(--fs-text-2); font-size: 14px; line-height: 1.5; }
+.fs-coordination__state { font-weight: 600; }
+.fs-coordination__state[data-state="unavailable"], .fs-coordination__error { color: var(--fs-danger); }
+.fs-coordination__form { display: grid; gap: 16px; min-width: 0; }
+.fs-coordination__form > label { display: grid; gap: 6px; }
+.fs-coordination__form select { width: 100%; min-width: 0; }
+.fs-coordination__scope { margin: 0; padding: 0; border: 0; display: grid; gap: 10px; min-width: 0; }
+.fs-coordination__scope legend { margin-block-end: 8px; font-weight: 600; }
+.fs-coordination__choice { display: flex !important; align-items: flex-start; gap: 10px !important; cursor: pointer; }
+.fs-coordination__choice input { margin-block-start: 4px; flex-shrink: 0; accent-color: var(--fs-brand); }
+.fs-coordination__choice span { display: grid; min-width: 0; }
+.fs-coordination small { display: block; overflow-wrap: anywhere; }
+.fs-coordination__folders { margin: 0; padding-inline-start: 20px; display: grid; gap: 8px; }
+.fs-coordination-status { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 16px; padding: 8px 12px; color: var(--fs-text-2); font-size: 14px; line-height: 1.5; }
+.fs-coordination-status a { color: var(--fs-focus); text-underline-offset: 3px; }
+.fs-coordination-status[data-state="unavailable"] { color: var(--fs-danger); }
+@media (max-width: 640px) { .fs-coordination__form select { font-size: 16px; } .fs-coordination-status { gap: 6px 12px; } }
