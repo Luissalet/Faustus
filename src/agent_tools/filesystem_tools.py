@@ -41,6 +41,46 @@ GREP_FALLBACK_MAX_FILES = 50_000
 GREP_STDERR_KEEP_BYTES = 8 * 1024
 
 
+def _utf8_bounded(text: str, max_bytes: int, *, keep_end: bool = False) -> str:
+    """Trim `text` to at most `max_bytes` of its UTF-8 encoding, never mid-codepoint.
+
+    The stderr budget is declared in bytes, so it must be enforced in bytes:
+    astral-plane characters (U+1F525 is 4 bytes in UTF-8) would otherwise retain
+    several times the cap while counting as few characters.
+    """
+    if max_bytes <= 0:
+        return ""
+    raw = text.encode("utf-8", "replace")
+    if len(raw) <= max_bytes:
+        return text
+    raw = raw[-max_bytes:] if keep_end else raw[:max_bytes]
+    # Drop an incomplete trailing (or leading) multi-byte sequence.
+    return raw.decode("utf-8", "ignore")
+
+
+def _bounded_stderr_chunks(chunks, keep_bytes: int):
+    """Reduce stderr text chunks to (head, tail), each at most keep_bytes // 2 UTF-8 bytes.
+
+    Head and tail are both kept because rg prints a generic header first and the
+    cause ("error: ...") last, which a single huge warning line can push out of a
+    head-only buffer. The caller keeps draining the pipe past the budget; this
+    only decides what is retained.
+    """
+    half = keep_bytes // 2
+    head: List[str] = []
+    tail: List[str] = []
+    kept = 0
+    for chunk in chunks:
+        if kept < half:
+            part = _utf8_bounded(chunk, half - kept)
+            head.append(part)
+            kept += len(part.encode("utf-8", "replace"))
+        tail.append(chunk)
+        if sum(len(c.encode("utf-8", "replace")) for c in tail) > half:
+            tail[:] = [_utf8_bounded("".join(tail), half, keep_end=True)]
+    return head, tail
+
+
 def _glob_to_regex(pat: str) -> "re.Pattern":
     """Translate a forward-slash glob (**, *, ?) into a compiled regex.
     `**/` matches zero or more complete directories.
@@ -1395,8 +1435,8 @@ class GrepTool:
                         finally:
                             enough.set()
 
-                    err_chunks: List[str] = []   # head: first GREP_STDERR_KEEP_BYTES // 2
-                    err_tail: List[str] = []     # rolling tail: last GREP_STDERR_KEEP_BYTES // 2
+                    err_chunks: List[str] = []   # head: first GREP_STDERR_KEEP_BYTES // 2 bytes
+                    err_tail: List[str] = []     # rolling tail: last GREP_STDERR_KEEP_BYTES // 2 bytes
                     err_done = threading.Event()
 
                     def _read_err():
@@ -1404,25 +1444,13 @@ class GrepTool:
                         # keep consuming to EOF even after the diagnostic budget is
                         # full. A line-based reader that breaks early stops draining,
                         # the child blocks on the full pipe and a real exit-2 error
-                        # is lost to the timeout. Head and tail are kept because rg
-                        # prints the generic header first and the cause ("error: ...")
-                        # last, which a single huge warning line can push out of a
-                        # head-only buffer.
+                        # is lost to the timeout. What is retained is decided by
+                        # _bounded_stderr_chunks (bytes, not characters).
                         try:
-                            kept = 0
-                            while True:
-                                chunk = p.stderr.read(4096)
-                                if not chunk:
-                                    break
-                                if kept < GREP_STDERR_KEEP_BYTES // 2:
-                                    room = GREP_STDERR_KEEP_BYTES // 2 - kept
-                                    err_chunks.append(chunk[:room])
-                                    kept += room
-                                err_tail.append(chunk)
-                                if sum(len(c) for c in err_tail) > GREP_STDERR_KEEP_BYTES // 2:
-                                    err_tail[:] = ["".join(err_tail)[-(GREP_STDERR_KEEP_BYTES // 2):]]
-                                # Past the budget: keep draining (do not break), the
-                                # child must never block on a full pipe.
+                            head, tail = _bounded_stderr_chunks(
+                                iter(lambda: p.stderr.read(4096), ""), GREP_STDERR_KEEP_BYTES)
+                            err_chunks.extend(head)
+                            err_tail.extend(tail)
                         except Exception:
                             pass
                         finally:

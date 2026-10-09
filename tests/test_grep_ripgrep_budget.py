@@ -184,6 +184,31 @@ def test_a_single_huge_stderr_line_is_bounded_and_keeps_the_cause(monkeypatch, t
     assert len(res["error"]) < 500, res
 
 
+def test_the_stderr_budget_counts_utf8_bytes_not_characters():
+    """Review r3: 20k U+1F525 chars are 60k UTF-8 bytes; the retained text must
+    respect the declared byte cap, not the character count."""
+    blob = "\U0001F525" * 20000
+    head, tail = fs._bounded_stderr_chunks([blob], fs.GREP_STDERR_KEEP_BYTES)
+    assert len("".join(head).encode("utf-8")) <= fs.GREP_STDERR_KEEP_BYTES // 2, head
+    assert len("".join(tail).encode("utf-8")) <= fs.GREP_STDERR_KEEP_BYTES // 2, tail
+    assert "\U0001F525" in "".join(head) and "\U0001F525" in "".join(tail)
+
+
+def test_a_unicode_stderr_is_bounded_in_bytes_and_keeps_the_cause(monkeypatch, tmp_path):
+    """Real pipes: 20k U+1F525 (60k UTF-8 bytes) drained to EOF, cause kept,
+    and nothing beyond the byte cap retained."""
+    _popen_running_a_script(monkeypatch, tmp_path,
+                            "import sys\n"
+                            "sys.stderr.write('\\U0001F525' * 20000 + '\\n')\n"
+                            "sys.stderr.write('error: the real cause\\n')\n"
+                            "sys.stderr.flush()\n"
+                            "sys.exit(2)\n")
+    res = _grep(pattern="needle")
+    assert res["exit_code"] == 1, res
+    assert "the real cause" in res["error"], res
+    assert len(res["error"]) < 500, res
+
+
 @pytest.mark.skipif(shutil.which("rg") is None, reason="ripgrep is not installed")
 def test_real_ripgrep_finds_text_and_reports_the_size_limit(monkeypatch, tmp_path):
     monkeypatch.setattr(te, "_resolve_search_root", lambda raw: str(tmp_path))
