@@ -57,8 +57,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import queue
 import threading
 import time
+from concurrent.futures import Future
+from contextvars import Context, copy_context
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import (
@@ -426,6 +429,110 @@ def _ms(started: float) -> int:
     return max(0, int((time.monotonic() - started) * 1000))
 
 
+AVAILABILITY_WORKERS = 4
+MAX_AVAILABILITY_PROBES = 32
+_PROBE_LOCK = threading.RLock()
+_PROBE_QUEUE = queue.Queue(maxsize=MAX_AVAILABILITY_PROBES)
+_PROBE_THREADS: List[threading.Thread] = []
+_PROBES: Dict[Tuple[Any, ...], Any] = {}
+_PROBE_COUNTS = {"submitted": 0, "reused": 0, "completed": 0,
+                 "failed": 0, "wait_timed_out": 0, "wait_canceled": 0,
+                 "late_completions": 0, "rejected": 0}
+
+
+@dataclass
+class _AvailabilityProbe:
+    source: ContextSource
+    future: Future
+    started_at: float
+    context: Context
+    key: Tuple[Any, ...]
+    running: bool = False
+    detached: bool = False
+
+
+def availability_diagnostics() -> Dict[str, Any]:
+    """Process-wide counts only; no owner, stored content or source identifiers."""
+    with _PROBE_LOCK:
+        return {**_PROBE_COUNTS, "pending": len(_PROBES),
+                "running": sum(probe.running for probe in _PROBES.values()),
+                "capacity": MAX_AVAILABILITY_PROBES, "workers": AVAILABILITY_WORKERS}
+
+
+def _probe_worker() -> None:
+    while True:
+        probe = _PROBE_QUEUE.get()
+        with _PROBE_LOCK:
+            probe.running = True
+        failed = False
+        try:
+            probe.future.set_result(bool(probe.context.run(probe.source.available)))
+        except BaseException as exc:  # a failed plugin must not kill a worker
+            failed = True
+            error = exc if isinstance(exc, Exception) else RuntimeError(type(exc).__name__)
+            probe.future.set_exception(error)
+        finally:
+            with _PROBE_LOCK:
+                if _PROBES.get(probe.key) is probe:
+                    _PROBES.pop(probe.key, None)
+                _PROBE_COUNTS["completed"] += 1
+                _PROBE_COUNTS["failed"] += int(failed)
+                _PROBE_COUNTS["late_completions"] += int(probe.detached)
+            logger.debug("context availability %s completed after %dms (detached=%s)",
+                         _source_id(probe.source), _ms(probe.started_at), probe.detached)
+            _PROBE_QUEUE.task_done()
+
+
+def _probe_for(source: ContextSource) -> Optional[_AvailabilityProbe]:
+    context = copy_context()
+    # An adapter can depend on a scoped provider (notably live chat history).
+    # Reuse only within the same captured context, without hashing or exposing
+    # its content. The probe retains the context so these identities stay live.
+    key = (id(source), tuple(sorted((id(variable), id(value))
+                                   for variable, value in context.items())))
+    with _PROBE_LOCK:
+        pending = _PROBES.get(key)
+        if pending is not None:
+            _PROBE_COUNTS["reused"] += 1
+            return pending
+        if len(_PROBES) >= MAX_AVAILABILITY_PROBES:
+            _PROBE_COUNTS["rejected"] += 1
+            return None
+        if not _PROBE_THREADS:
+            for index in range(AVAILABILITY_WORKERS):
+                thread = threading.Thread(target=_probe_worker, daemon=True,
+                                          name=f"context-availability-{index}")
+                _PROBE_THREADS.append(thread)
+                thread.start()
+        probe = _AvailabilityProbe(source, Future(), time.monotonic(), context, key)
+        _PROBES[key] = probe
+        try:
+            _PROBE_QUEUE.put_nowait(probe)
+        except queue.Full:
+            _PROBES.pop(key, None)
+            _PROBE_COUNTS["rejected"] += 1
+            return None
+        _PROBE_COUNTS["submitted"] += 1
+        return probe
+
+
+async def _available(source: ContextSource, timeout_s: float) -> bool:
+    probe = _probe_for(source)
+    if probe is None:
+        raise RuntimeError("availability capacity exhausted; outstanding probes are retained")
+    waiting = asyncio.wrap_future(probe.future)
+    # If a waiter leaves, a later exception still needs to be consumed. The
+    # shared probe remains alive: asyncio cancellation cannot kill its thread.
+    waiting.add_done_callback(lambda done: None if done.cancelled() else done.exception())
+    try:
+        return await asyncio.wait_for(asyncio.shield(waiting), timeout=timeout_s)
+    except (asyncio.TimeoutError, asyncio.CancelledError) as exc:
+        with _PROBE_LOCK:
+            _PROBE_COUNTS["wait_canceled" if isinstance(exc, asyncio.CancelledError) else "wait_timed_out"] += 1
+            probe.detached = True
+        raise
+
+
 def _normalise(raw: Any, req: RetrievalRequest) -> Tuple[List[ContextCandidate], int]:
     """Keep the real candidates, count the rest.
 
@@ -457,8 +564,30 @@ async def _run_one(source: ContextSource, req: RetrievalRequest,
     source_id = _source_id(source)
     started = time.monotonic()
 
+    produces = tuple(getattr(source, "sections", ()) or ())
+    if req.sections and produces and not (set(produces) & set(req.sections)):
+        return SourceResult(source_id=source_id, error="sections not requested",
+                            elapsed_ms=_ms(started))
+    # Built-in gates inspect request policy, lanes and scope without querying
+    # a store. An unused source must not import optional backends just to say
+    # it would never have searched them.
+    gate = getattr(source, "_gate", None)
     try:
-        usable = bool(source.available())
+        if callable(gate) and gate(req):
+            return SourceResult(source_id=source_id, elapsed_ms=_ms(started))
+    except Exception as exc:
+        return SourceResult(source_id=source_id, degraded=True,
+                            error=_clip(f"gate() raised {type(exc).__name__}: {exc}", 500),
+                            elapsed_ms=_ms(started))
+
+    try:
+        usable = await _available(source, timeout_s)
+    except asyncio.TimeoutError:
+        return SourceResult(source_id=source_id, degraded=True,
+                            error=f"timeout during availability after {timeout_s:.2f}s",
+                            elapsed_ms=_ms(started))
+    except asyncio.CancelledError:
+        raise
     except Exception as exc:                                   # noqa: BLE001
         logger.warning("context source %s: available() raised: %s", source_id, exc)
         return SourceResult(source_id=source_id, degraded=True,
@@ -468,13 +597,9 @@ async def _run_one(source: ContextSource, req: RetrievalRequest,
         return SourceResult(source_id=source_id, error="unavailable",
                             elapsed_ms=_ms(started))
 
-    produces = tuple(getattr(source, "sections", ()) or ())
-    if req.sections and produces and not (set(produces) & set(req.sections)):
-        return SourceResult(source_id=source_id, error="sections not requested",
-                            elapsed_ms=_ms(started))
-
     try:
-        raw = await asyncio.wait_for(source.search(req), timeout=timeout_s)
+        remaining = max(0.0, timeout_s - (time.monotonic() - started))
+        raw = await asyncio.wait_for(source.search(req), timeout=remaining)
     except asyncio.TimeoutError:
         # The task is cancelled, but a `to_thread` worker already in Chroma
         # will finish on its own time; see the module docstring.
@@ -535,15 +660,29 @@ async def fetch_ref(source_ref: str, req: RetrievalRequest, *,
     ref = str(source_ref or "").strip()
     if not ref:
         return None
+    try:
+        limit_s = float(timeout_s)
+    except (TypeError, ValueError):
+        limit_s = DEFAULT_TIMEOUT_S
+    if limit_s <= 0:
+        limit_s = DEFAULT_TIMEOUT_S
+    deadline = time.monotonic() + limit_s
     pool = list(sources) if sources is not None else default_sources()
     prefix = ref.split(":", 1)[0] + ":"
     for source in pool:
         if prefix not in tuple(getattr(source, "handles", ()) or ()):
             continue
         try:
-            if not bool(source.available()):
+            gate = getattr(source, "_ref_gate", None) or getattr(source, "_gate", None)
+            if callable(gate) and gate(req):
                 continue
-            return await asyncio.wait_for(source.fetch(ref, req), timeout=timeout_s)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            if not await _available(source, remaining):
+                continue
+            remaining = max(0.0, deadline - time.monotonic())
+            return await asyncio.wait_for(source.fetch(ref, req), timeout=remaining)
         except asyncio.CancelledError:
             raise
         except Exception as exc:                               # noqa: BLE001
@@ -642,4 +781,5 @@ __all__ = [
     "gather", "fetch_ref",
     "register_source", "get_source", "registered_sources",
     "default_sources", "reset_sources",
+    "availability_diagnostics",
 ]

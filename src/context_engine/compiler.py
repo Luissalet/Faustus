@@ -79,6 +79,7 @@ from .budgets import (
 )
 from .cache import PREFIX_REQUEST, WorkingSet, scope_of, working_set
 from .candidates import (
+    availability_diagnostics,
     ContextSource,
     RetrievalRequest,
     default_sources,
@@ -1234,6 +1235,7 @@ def diagnostics(*, owner: str = "", project_id: str = "") -> Dict[str, Any]:
         "degraded_pct": 0.0, "avg_tokens": 0, "avg_budget_pct": 0.0,
         "by_intent": {}, "by_consumer": {}, "omissions": {}, "receipts": 0,
         "store_bytes": 0, "last_packet_at": "",
+        "availability": availability_diagnostics(),
     }
     where, params = _scope_sql(str(owner or ""), str(project_id or ""))
     try:

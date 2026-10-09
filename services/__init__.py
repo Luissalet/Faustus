@@ -8,11 +8,31 @@ Each service:
 - Can run in-process or as a standalone HTTP service
 """
 
-from .search import SearchService, SearchResult, SearchResponse
-from .docs import DocsService, DocChunk, IndexResult
-from .research import ResearchService, ResearchResult, ResearchSource
-from .memory import MemoryService, Memory, MemorySearchResult
-from .shell import ShellService, ShellResult
+from importlib import import_module
+
+# Importing one leaf service must not initialize document/vector backends.
+# Requested exports still import the same real module, with its normal side
+# effects, and are cached as the exact class objects that module publishes.
+_EXPORT_MODULES = {
+    **dict.fromkeys(("SearchService", "SearchResult", "SearchResponse"), "search"),
+    **dict.fromkeys(("DocsService", "DocChunk", "IndexResult"), "docs"),
+    **dict.fromkeys(("ResearchService", "ResearchResult", "ResearchSource"), "research"),
+    **dict.fromkeys(("MemoryService", "Memory", "MemorySearchResult"), "memory"),
+    **dict.fromkeys(("ShellService", "ShellResult"), "shell"),
+}
+
+
+def __getattr__(name):
+    module = _EXPORT_MODULES.get(name)
+    if module is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(f".{module}", __name__), name)
+    globals()[name] = value
+    return value
+
+
+def __dir__():
+    return sorted(set(globals()) | set(__all__))
 
 __all__ = [
     # Search
