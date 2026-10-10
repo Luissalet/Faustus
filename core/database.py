@@ -4352,12 +4352,67 @@ def set_session_chat_profile(session_id: str, profile) -> bool:
     """
     import json as _json
     try:
-        value = None if profile is None else _json.dumps(profile, sort_keys=True, ensure_ascii=True)
         with get_db_session() as db:
-            updated = db.query(Session).filter(Session.id == session_id).update({"chat_profile": value})
-        return bool(updated)
+            row = db.query(Session).filter(Session.id == session_id).first()
+            if row is None:
+                return False
+            try:
+                current = _json.loads(row.chat_profile) if row.chat_profile else {}
+            except (TypeError, ValueError):
+                current = {}
+            if not isinstance(current, dict):
+                current = {}
+            effort = current.get("reasoning_effort")
+            next_profile = dict(profile) if isinstance(profile, dict) else {}
+            if effort is not None:
+                next_profile["reasoning_effort"] = effort
+            row.chat_profile = _json.dumps(next_profile, sort_keys=True, ensure_ascii=True) if next_profile else None
+        return True
     except Exception:
         logger.warning("Failed to persist chat_profile for session %s", session_id)
+        return False
+
+def get_session_reasoning_effort(session_id: str, owner: str | None = None):
+    """Return this session's stored reasoning preference without exposing profile data."""
+    import json as _json
+    try:
+        with get_db_session() as db:
+            q = db.query(Session.chat_profile).filter(Session.id == session_id)
+            if owner:
+                q = q.filter(Session.owner == owner)
+            raw = q.scalar()
+        profile = _json.loads(raw) if raw else None
+        value = profile.get("reasoning_effort") if isinstance(profile, dict) else None
+        return value if isinstance(value, str) else None
+    except Exception:
+        logger.warning("Failed to read reasoning effort for session %s", session_id)
+        return None
+
+def set_session_reasoning_effort(session_id: str, effort, owner: str | None = None) -> bool:
+    """Patch only the reasoning field in the existing per-session profile."""
+    import json as _json
+    try:
+        with get_db_session() as db:
+            q = db.query(Session).filter(Session.id == session_id)
+            if owner:
+                q = q.filter(Session.owner == owner)
+            row = q.first()
+            if row is None:
+                return False
+            try:
+                profile = _json.loads(row.chat_profile) if row.chat_profile else {}
+            except (TypeError, ValueError):
+                profile = {}
+            if not isinstance(profile, dict):
+                profile = {}
+            if effort is None:
+                profile.pop("reasoning_effort", None)
+            else:
+                profile["reasoning_effort"] = str(effort)
+            row.chat_profile = _json.dumps(profile, sort_keys=True, ensure_ascii=True) if profile else None
+        return True
+    except Exception:
+        logger.warning("Failed to write reasoning effort for session %s", session_id)
         return False
 
 def get_session_by_id(session_id: str):

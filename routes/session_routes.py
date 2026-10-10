@@ -535,7 +535,8 @@ def setup_session_routes(
             last_msg_map = {}
             mode_map = {}
             msg_count_map = {}
-            q = db.query(DbSession.id, DbSession.folder, DbSession.total_input_tokens, DbSession.total_output_tokens, DbSession.is_important, DbSession.created_at, DbSession.updated_at, DbSession.last_message_at, DbSession.mode, DbSession.message_count).filter(DbSession.archived == False)
+            effort_map = {}
+            q = db.query(DbSession.id, DbSession.folder, DbSession.total_input_tokens, DbSession.total_output_tokens, DbSession.is_important, DbSession.created_at, DbSession.updated_at, DbSession.last_message_at, DbSession.mode, DbSession.message_count, DbSession.chat_profile).filter(DbSession.archived == False)
             q = owner_filter(q, DbSession, user)
             rows = q.all()
             for row in rows:
@@ -553,6 +554,11 @@ def setup_session_routes(
                 )
                 mode_map[row.id] = row.mode
                 msg_count_map[row.id] = row.message_count or 0
+                try:
+                    profile = json.loads(row.chat_profile) if row.chat_profile else {}
+                    effort_map[row.id] = profile.get("reasoning_effort") if isinstance(profile, dict) else None
+                except (TypeError, ValueError):
+                    effort_map[row.id] = None
             # Sessions with active documents that have content
             from sqlalchemy import func
             doc_session_ids = set(
@@ -585,6 +591,7 @@ def setup_session_routes(
                      "has_documents": s.id in doc_session_ids,
                      "has_images": s.id in img_session_ids,
                      "mode": mode_map.get(s.id),
+                     "reasoning_effort": effort_map.get(s.id),
                      "message_count": msg_count_map.get(s.id, 0)}
                     for s in user_sessions.values()
                     if not s.archived
@@ -741,6 +748,7 @@ def setup_session_routes(
         name: str = Form(None), folder: str = Form(None),
         model: str = Form(None), endpoint_url: str = Form(None),
         endpoint_id: str = Form(None),
+        reasoning_effort: str = Form(None),
     ):
         _verify_session_owner(request, sid)
         try:
@@ -748,6 +756,18 @@ def setup_session_routes(
         except KeyError:
             raise HTTPException(404, f"Session {sid} not found")
         result = {"id": sid}
+        if reasoning_effort is not None:
+            from src.reasoning_levels import validate_session_effort
+            try:
+                effort, _ = validate_session_effort(
+                    reasoning_effort, str(getattr(session, "endpoint_url", "") or ""),
+                    str(getattr(session, "model", "") or ""))
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
+            from core.database import set_session_reasoning_effort
+            if not set_session_reasoning_effort(sid, effort, effective_user(request)):
+                raise HTTPException(404, "Session not found")
+            result["reasoning_effort"] = effort
         if name is not None:
             session_manager.update_session_name(sid, name)
             result["name"] = name
@@ -867,6 +887,25 @@ def setup_session_routes(
                 result["capabilities"] = {}
                 result["lost"] = []
         return result
+
+    @router.get("/session/{sid}/reasoning-effort")
+    def get_session_reasoning_effort(request: Request, sid: str):
+        _verify_session_owner(request, sid)
+        try:
+            session = session_manager.get_session(sid)
+        except KeyError:
+            raise HTTPException(404, f"Session {sid} not found")
+        from core.database import get_session_reasoning_effort as _get_effort
+        effort = _get_effort(sid, effective_user(request))
+        levels = None
+        try:
+            from src.reasoning_levels import levels_for
+            levels = levels_for(str(getattr(session, "endpoint_url", "") or ""), str(getattr(session, "model", "") or ""))
+        except Exception:
+            levels = None
+        return {"session_id": sid, "reasoning_effort": effort,
+                "available_levels": list((levels or {}).get("levels") or []),
+                "levels_source": (levels or {}).get("source")}
 
     class SessionConnectorsRequest(BaseModel):
         # CONTRATO_CONECTORES F2.2: `None` clears the override (back to

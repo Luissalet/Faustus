@@ -1,0 +1,251 @@
+from __future__ import annotations
+
+import json
+
+from fastapi import FastAPI, Request
+from fastapi.responses import StreamingResponse
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from starlette.testclient import TestClient
+
+from core.database import Base, Session as DbSession
+
+
+def test_session_effort_storage_is_owner_scoped_and_preserves_profile(tmp_path, monkeypatch):
+    import core.database as db_mod
+
+    engine = create_engine("sqlite:///" + (tmp_path / "sessions.db").as_posix())
+    factory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+    monkeypatch.setattr(db_mod, "engine", engine)
+    monkeypatch.setattr(db_mod, "SessionLocal", factory)
+    with factory() as db:
+        db.add(DbSession(id="sid-a", name="A", endpoint_url="http://endpoint", model="test", owner="alice",
+                         chat_profile=json.dumps({"v": 1, "mode": "lean", "pinned": {"k": "v"}})))
+        db.add(DbSession(id="sid-b", name="B", endpoint_url="http://endpoint", model="test", owner="bob"))
+        db.commit()
+
+    assert db_mod.set_session_reasoning_effort("sid-a", "high", "alice")
+    assert db_mod.get_session_reasoning_effort("sid-a", "alice") == "high"
+    assert db_mod.get_session_reasoning_effort("sid-a", "bob") is None
+    assert not db_mod.set_session_reasoning_effort("sid-a", "low", "bob")
+    with factory() as db:
+        stored = json.loads(db.query(DbSession.chat_profile).filter_by(id="sid-a").scalar())
+    assert stored == {"v": 1, "mode": "lean", "pinned": {"k": "v"}, "reasoning_effort": "high"}
+    assert db_mod.set_session_chat_profile("sid-a", {"v": 1, "mode": "normal", "pinned": {}})
+    assert db_mod.get_session_reasoning_effort("sid-a", "alice") == "high"
+    assert db_mod.set_session_reasoning_effort("sid-a", None, "alice")
+    assert db_mod.get_session_reasoning_effort("sid-a", "alice") is None
+    engine.dispose()
+
+
+def test_request_precedence_is_explicit_then_session_then_project(tmp_path, monkeypatch):
+    import core.database as db_mod
+    from src.first_token_budget import request_budget
+
+    engine = create_engine("sqlite:///" + (tmp_path / "turns.db").as_posix())
+    factory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+    monkeypatch.setattr(db_mod, "engine", engine)
+    monkeypatch.setattr(db_mod, "SessionLocal", factory)
+    with factory() as db:
+        db.add(DbSession(id="session", name="A", endpoint_url="http://endpoint", model="test", owner="alice",
+                         chat_profile=json.dumps({"reasoning_effort": "medium"})))
+        db.commit()
+    monkeypatch.setattr("src.project_execution_defaults.for_session", lambda *a, **k: {
+        "project_id": "project", "defaults": {"reasoning_effort": "low"}, "revision": 2})
+    monkeypatch.setattr("src.auth_helpers.effective_user", lambda request: "alice")
+    app = FastAPI()
+
+    @app.post("/turn")
+    @request_budget
+    async def turn(request: Request):
+        async def stream():
+            yield json.dumps({**request.state.execution_defaults,
+                              "reasoning_effort_explicit": request.state.reasoning_effort_explicit})
+        return StreamingResponse(stream())
+
+    with TestClient(app) as client:
+        inherited = client.post("/turn", json={"session": "session", "message": "x"})
+        explicit = client.post("/turn", json={"session": "session", "message": "x", "reasoning_effort": "xhigh"})
+        auto = client.post("/turn", json={"session": "session", "message": "x", "reasoning_effort": "auto"})
+    assert inherited.json()["reasoning_effort"] == "medium"
+    assert explicit.json()["reasoning_effort"] == "xhigh"
+    assert auto.json()["reasoning_effort"] == "low"
+    assert auto.json()["reasoning_effort_explicit"] is True
+    engine.dispose()
+
+
+def test_chat_route_preserves_explicit_auto_provenance_to_provider(tmp_path, monkeypatch):
+    """Exercise JSON requests through the real chat route and request_budget.
+
+    The terminal fake replaces only the provider-facing body. This keeps the
+    production route, middleware, saved session preference, and harness
+    precedence in the test while avoiding a model or tool execution.
+    """
+    import inspect
+    import core.database as db_mod
+    import routes.chat_routes as chat_routes
+    import src.agent_loop as agent_loop
+    import src.auth_helpers
+    import services.projects
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from starlette.testclient import TestClient
+    from core.database import Base, Session as DbSession
+    from fastapi import FastAPI
+    from test_foreground_model_routing import _chat_stream_endpoint
+
+    engine = create_engine("sqlite:///" + (tmp_path / "route.db").as_posix(),
+                           connect_args={"check_same_thread": False})
+    factory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+    monkeypatch.setattr(db_mod, "engine", engine)
+    monkeypatch.setattr(db_mod, "SessionLocal", factory)
+    with factory() as db:
+        db.add(DbSession(id="session-1", name="Test", endpoint_url="https://selected.example/v1",
+                         model="selected-model", owner="alice",
+                         chat_profile=json.dumps({"reasoning_effort": "high"})))
+        db.commit()
+    monkeypatch.setattr(src.auth_helpers, "effective_user", lambda request: "alice")
+    monkeypatch.setattr("src.project_execution_defaults.for_session", lambda *a, **k: {
+        "project_id": "project", "defaults": {"reasoning_effort": "low"}, "revision": 1})
+    monkeypatch.setattr(services.projects, "project_for_session", lambda *a, **k: {
+        "execution_defaults": {"reasoning_effort": "low"}})
+
+    signature = inspect.signature(agent_loop._stream_agent_loop_body)
+    sent = []
+
+    async def fake_provider(*args, **kwargs):
+        call = signature.bind(*args, **kwargs)
+        sent.append(dict(call.arguments.get("gen_overrides") or {}))
+        yield 'data: {"delta":"ok"}\n\n'
+        yield "data: [DONE]\n\n"
+
+    fake_provider.__signature__ = signature
+    monkeypatch.setattr(agent_loop, "_stream_agent_loop_body", fake_provider)
+    endpoint = _chat_stream_endpoint(monkeypatch, "agent", {})
+    # The route helper installs its own fake session store/agent loop; replace
+    # those after construction so this test traverses the native wrapper.
+    monkeypatch.setattr(chat_routes, "SessionLocal", factory)
+    monkeypatch.setattr(chat_routes, "stream_agent_loop", agent_loop.stream_agent_loop)
+    app = FastAPI()
+    app.add_api_route("/api/chat_stream", endpoint, methods=["POST"])
+
+    def post(client, effort_marker):
+        payload = {"session": "session-1", "message": "hello", "mode": "agent"}
+        if effort_marker is not ...:
+            payload["reasoning_effort"] = effort_marker
+        response = client.post("/api/chat_stream", json=payload)
+        assert response.status_code == 200, response.text
+
+    with TestClient(app) as client:
+        post(client, "auto")
+        assert sent[-1].get("reasoning_effort") == "low"  # project default, not saved high
+        post(client, ...)
+        assert sent[-1].get("reasoning_effort") == "high"  # saved session over project low
+        post(client, "max")
+        assert sent[-1].get("reasoning_effort") == "max"  # explicit turn over session
+        # This also exercises a project default already cached by request_budget
+        # before the native harness resolves the saved session preference.
+        post(client, ...)
+        assert sent[-1].get("reasoning_effort") == "high"
+    engine.dispose()
+
+
+def test_native_harness_resolves_session_and_keeps_explicit_overrides(monkeypatch):
+    import inspect
+    import src.agent_loop as agent_loop
+
+    seen = []
+    signature = inspect.signature(agent_loop._stream_agent_loop_body)
+
+    async def scripted_body(*args, **kwargs):
+        call = signature.bind(*args, **kwargs)
+        seen.append(call.arguments.get("gen_overrides"))
+        yield "ok"
+
+    scripted_body.__signature__ = signature
+    monkeypatch.setattr(agent_loop, "_stream_agent_loop_body", scripted_body)
+    monkeypatch.setattr("services.projects.project_for_session", lambda *a: {
+        "execution_defaults": {"reasoning_effort": "low"}})
+    monkeypatch.setattr("core.database.get_session_reasoning_effort", lambda *a: "high")
+
+    async def run(overrides=None, defaults=None):
+        return [chunk async for chunk in agent_loop.stream_agent_loop(
+            endpoint_url="http://synthetic", model="scripted", messages=[], session_id="session",
+            owner="alice", gen_overrides=overrides,
+            harness_options={"execution_defaults": defaults or {}})]
+
+    import asyncio
+    assert asyncio.run(run(defaults={"reasoning_effort": "low"})) == ["ok"]
+    assert seen[-1]["reasoning_effort"] == "high"
+    assert asyncio.run(run({"reasoning_effort": "low"}, defaults={"reasoning_effort": "high"})) == ["ok"]
+    assert seen[-1]["reasoning_effort"] == "low"
+    assert asyncio.run(run({"reasoning_effort": "max"}, defaults={"reasoning_effort": "high"})) == ["ok"]
+    assert seen[-1]["reasoning_effort"] == "max"
+
+
+def test_session_mcp_schema_exposes_read_and_set_action():
+    from src.tool_schemas import FUNCTION_TOOL_SCHEMAS
+
+    schema = next(item["function"] for item in FUNCTION_TOOL_SCHEMAS if item.get("function", {}).get("name") == "manage_session")
+    assert "reasoning_effort" in schema["parameters"]["properties"]["action"]["enum"]
+    assert "auto to clear" in schema["parameters"]["properties"]["value"]["description"]
+
+
+def test_owner_api_and_mcp_read_patch_the_same_session(tmp_path, monkeypatch):
+    import asyncio
+    import core.database as db_mod
+    import core.session_manager as sm_mod
+    import routes.session_routes as routes_mod
+    import src.agent_tools.session_tools as tools_mod
+    import src.database as compatibility_db
+    from core.session_manager import SessionManager
+
+    engine = create_engine("sqlite:///" + (tmp_path / "api-mcp.db").as_posix())
+    factory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+    monkeypatch.setattr(db_mod, "engine", engine)
+    monkeypatch.setattr(db_mod, "SessionLocal", factory)
+    monkeypatch.setattr(sm_mod, "SessionLocal", factory)
+    monkeypatch.setattr(routes_mod, "SessionLocal", factory)
+    monkeypatch.setattr(compatibility_db, "SessionLocal", factory, raising=False)
+    monkeypatch.setattr(compatibility_db, "Session", DbSession, raising=False)
+    monkeypatch.setattr(routes_mod, "effective_user", lambda request: request.headers.get("x-owner", "alice"))
+    monkeypatch.setattr(routes_mod, "_auth_disabled", lambda: False)
+    monkeypatch.setattr("src.reasoning_levels.levels_for", lambda *a: {"levels": ["low", "high"], "source": "fixture"})
+    manager = SessionManager()
+    manager.create_session(session_id="owned", name="Owned", endpoint_url="http://fixture", model="model", owner="alice")
+    manager.create_session(session_id="foreign", name="Foreign", endpoint_url="http://fixture", model="model", owner="bob")
+    monkeypatch.setattr(tools_mod, "get_session_manager", lambda: manager)
+    app = FastAPI()
+    app.include_router(routes_mod.setup_session_routes(manager, {}))
+
+    with TestClient(app) as client:
+        assert client.get("/api/session/owned/reasoning-effort", headers={"x-owner": "alice"}).json() == {
+            "session_id": "owned", "reasoning_effort": None,
+            "available_levels": ["low", "high"], "levels_source": "fixture"}
+        patched = client.patch("/api/session/owned", data={"reasoning_effort": "high"}, headers={"x-owner": "alice"})
+        assert patched.status_code == 200 and patched.json()["reasoning_effort"] == "high"
+        unsupported = client.patch("/api/session/owned", data={"reasoning_effort": "xhigh"}, headers={"x-owner": "alice"})
+        assert unsupported.status_code == 422
+        assert client.get("/api/session/owned/reasoning-effort", headers={"x-owner": "alice"}).json()["reasoning_effort"] == "high"
+        assert client.get("/api/session/foreign/reasoning-effort", headers={"x-owner": "alice"}).status_code == 404
+        monkeypatch.setattr("src.reasoning_levels.levels_for", lambda *a: {"levels": []})
+        unknown = client.patch("/api/session/owned", data={"reasoning_effort": "xhigh"}, headers={"x-owner": "alice"})
+        assert unknown.status_code == 200 and unknown.json()["reasoning_effort"] == "xhigh"
+        unknown_read = client.get("/api/session/owned/reasoning-effort", headers={"x-owner": "alice"}).json()
+        assert unknown_read["reasoning_effort"] == "xhigh" and unknown_read["available_levels"] == []
+    mcp = asyncio.run(tools_mod.manage_session(json.dumps({
+        "action": "reasoning_effort", "session_id": "owned"}), session_id="active", owner="alice"))
+    assert mcp["reasoning_effort"] == "xhigh" and mcp["available_levels"] == []
+    mcp = asyncio.run(tools_mod.manage_session(json.dumps({
+        "action": "reasoning_effort", "session_id": "owned", "value": "auto"}), session_id="active", owner="alice"))
+    assert mcp["reasoning_effort"] is None
+    monkeypatch.setattr("src.reasoning_levels.levels_for", lambda *a: {"levels": ["low", "high"], "source": "fixture"})
+    rejected = asyncio.run(tools_mod.manage_session(json.dumps({
+        "action": "reasoning_effort", "session_id": "owned", "value": "xhigh"}), session_id="active", owner="alice"))
+    assert "does not report" in rejected.get("error", ""), rejected
+    assert db_mod.get_session_reasoning_effort("owned", "alice") is None
+    engine.dispose()

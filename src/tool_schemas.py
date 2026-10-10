@@ -657,14 +657,14 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "manage_session",
-            "description": "Manage a chat: rename, archive, unarchive, delete, mark important, truncate history, or fork it. (The UI calls these 'chats'; 'session' is the internal term.) For destructive actions like delete, call list_sessions first and pass the exact id returned there; never invent ids.",
+            "description": "Manage a chat: rename, archive, unarchive, delete, mark important, truncate history, fork it, or read/set its reasoning effort. (The UI calls these 'chats'; 'session' is the internal term.) For destructive actions like delete, call list_sessions first and pass the exact id returned there; never invent ids.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "action": {"type": "string", "enum": ["rename", "archive", "unarchive", "delete", "important", "unimportant", "truncate", "fork"],
+                    "action": {"type": "string", "enum": ["rename", "archive", "unarchive", "delete", "important", "unimportant", "truncate", "fork", "reasoning_effort"],
                                "description": "The action to perform"},
                     "session_id": {"type": "string", "description": "Exact target chat id from list_sessions, or 'current' for the active chat where supported"},
-                    "value": {"type": "string", "description": "Action parameter: new name (rename), keep_count (truncate/fork)"}
+                    "value": {"type": "string", "description": "Action parameter: new name (rename), keep_count (truncate/fork), or effort level / auto to clear (reasoning_effort); omit to read the session preference"}
                 },
                 "required": ["action", "session_id"]
             }

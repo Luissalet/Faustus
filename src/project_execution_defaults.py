@@ -44,9 +44,12 @@ def patch(saved: Mapping[str, Any], changes: Any) -> dict[str, Any]:
     return result
 
 
-def merge(defaults: Mapping[str, Any], explicit: Mapping[str, Any]) -> dict[str, Any]:
-    """Missing or null inherits; explicit false and explicit Auto still win."""
+def merge(defaults: Mapping[str, Any], explicit: Mapping[str, Any],
+          session: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Layer project/global defaults, session preferences, then this turn."""
     result = dict(defaults)
+    if session:
+        result.update(session)
     # Existing explicit generation/mode controls remain stronger than project defaults.
     if explicit.get("think_mode") in {"fast", "think", "deep"}:
         result.pop("reasoning_effort", None)
