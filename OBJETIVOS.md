@@ -1345,6 +1345,13 @@ Abierto:
 
 Hecho: Full global persistente, coordinación nativa por proyecto, contribución175 aceptada, cierre185 y activación195, razonamiento por sesión211, hidratación/errores/carrera de lectura216 y clasificación de petición de conteo217. GLM en Sparks revisó216/217 en copias propias; sus límites de prueba visual se conservaron y Root añadió el contraste de navegador/API. La consola completa funciona sobre el mismo Hub/SQLite/API/MCP; la shell Rust/Tauri compila y está instalada, con apertura nativa aún no verificada.
 
-Pendiente resoluble en Ágora:218 conservar/modelar la preferencia del líder al rotar y219 demostrar ejecución útil de un hijo GLM por el flujo de producto, con su binding propio y el principal conservado. No declarar ese hijo capaz por crear un chat o un recibo failed. Los catálogos y cuotas que no expone un proveedor siguen desconocidos; Cloud Claude continúa por su siguiente turno y el CLI no tiene catálogo autenticado verificado.
+Hecho en218/219: la preferencia del líder se re-vincula al rotar, la observación usa su sesión real y el chat hijo recibe su identidad propia antes del CLI. Un hijo GLM Low ejecutó tres herramientas correctamente y terminó con resultado real. Pendiente: mejorar el cumplimiento de idioma y la exactitud de referencias, y ampliar la evaluación comparativa; no confundir ejecución con calidad plenamente verificada. Los catálogos y cuotas que no expone un proveedor siguen desconocidos; Cloud Claude continúa por su siguiente turno y el CLI no tiene catálogo autenticado verificado.
 
 El vigilante rota después de12turnos y conserva actor, proyecto e historial previo. El contexto configurado1M, la contribución175 y estas revisiones no acreditan paridad general de capacidad/fiabilidad ni una entrada de1Mtokens probada. Mantener evaluación comparativa exigente, sin GPU del PC para QA ni controles artificiales de autorización.
+
+## OBJ-58 · Auto con señales del turno anterior: lo que falta (10-10-2026)
+
+Hecho en §294 (radar #458): corrección, herramienta fallida y respuesta vacía suben el modo de Auto. Queda:
+- Registrar por turno la decisión de Auto y su resultado (si el siguiente mensaje fue una corrección, si la batería diaria acertó) para calibrar los umbrales con #350, en vez de fijarlos a mano.
+- Leer el modo que se usó de verdad en el turno anterior (el evento `think_mode` guardado con el mensaje) en lugar de recalcularlo con la regla, para que un «A fondo» elegido a mano cuente.
+- Señal «pensó y no sirvió»: si el turno anterior gastó todo el presupuesto de razonamiento sin texto final (#352), no volver a pedir `deep` en ese chat.

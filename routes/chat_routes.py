@@ -924,10 +924,23 @@ def _parse_gen_overrides(raw) -> Dict[str, Any]:
     return out
 
 
+def _think_prior_signals(messages, message) -> Optional[Dict[str, Any]]:
+    """What the previous turn looked like (`src/think_mode.prior_signals`),
+    so Auto can raise this turn's reasoning after a correction or a failed
+    tool. None when it cannot be read: Auto then decides on the message."""
+    try:
+        from src.think_mode import prior_signals
+        return prior_signals(messages, message if isinstance(message, str) else "")
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[think-mode] prior signals skipped: %s", exc)
+        return None
+
+
 def _resolve_think_mode(requested, gen_overrides: Optional[Dict[str, Any]], message, *,
                         model: str, endpoint_url: str, chat_mode: Optional[str],
                         workspace: Optional[str], attachments: int = 0,
-                        history_len: int = 0) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
+                        history_len: int = 0,
+                        prior: Optional[Dict[str, Any]] = None) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
     """Lot T: apply this turn's reasoning mode (form field `think_mode`,
     else the `think_mode_default` setting) to the parsed gen overrides.
 
@@ -963,6 +976,7 @@ def _resolve_think_mode(requested, gen_overrides: Optional[Dict[str, Any]], mess
             supports_thinking=_supports_thinking(model or ""),
             attachments=attachments, agent=agent, coding=coding, history_len=history_len,
             effort=effort_ok, default_mode=str(_gs("think_mode_default", "auto") or "auto"),
+            prior=prior,
         )
         return dict(result.get("overrides") or {}), result.get("event")
     except Exception as exc:  # noqa: BLE001 -- never fail a turn over this
@@ -2904,6 +2918,7 @@ def setup_chat_routes(
                     endpoint_url=str(getattr(sess, "endpoint_url", "") or ""),
                     chat_mode=chat_mode, workspace=workspace,
                     attachments=len(att_ids or []), history_len=_think_history_len,
+                    prior=_think_prior_signals(ctx.messages, message),
                 )
                 # The model's own reasoning level, picked in the composer
                 # (src/reasoning_levels.py). An explicit level wins over the

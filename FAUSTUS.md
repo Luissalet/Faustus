@@ -10738,6 +10738,32 @@ Cuando una descarga o un servidor del Cookbook fallaba, lo único que quedaba er
 
 **Pruebas:** `tests/test_cookbook_job_logs.py` (redacción, tail y tope, rutas, MCP), prueba real con Git Bash (stdout y stderr separados, token no filtrado), `tsc --noEmit` limpio.
 
+## 294. Auto piensa más después de una corrección o de una herramienta fallida (10-10-2026)
+
+El modo Auto de razonamiento decidía sólo con el mensaje del turno. Un «no, eso está mal» de cuatro palabras salía como turno corto con esfuerzo bajo, justo después de una respuesta que había fallado. Es la idea del radar #458 (arXiv 2610.12061, «When Should Agents Think?»): estimar en cada turno si merece la pena razonar con lo que pasó en los anteriores.
+
+**Qué hace** (`src/think_mode.py`):
+- `prior_signals(messages, current)` lee el historial de la conversación, sin metadatos guardados: el modo que la regla da al mensaje anterior del usuario (`fast`, `light`, `think` o `deep`), cuántos resultados de herramienta fallaron después de él (`Error…`, `"ok": false`, código de salida distinto de 0, `not found`, `timed out`…) y si el asistente se quedó sin respuesta.
+- `decide(…, prior=)` y `resolve_turn(…, prior=)` sólo pueden **subir** el modo:
+  - corrección («no, …», «está mal», «te has equivocado», «no es lo que te he pedido», «vuelve a intentarlo», «that's wrong», «try again»…) tras una respuesta rápida o ligera → `think` (razón `correction`);
+  - corrección tras un turno que ya pensó entero → `deep` (razón `correction_after_think`): más del mismo presupuesto no suele arreglarlo;
+  - una herramienta falló en el turno anterior y este turno saldría rápido o ligero → `think` (`prior_tool_failure`);
+  - el turno anterior acabó sin respuesta y este saldría `fast` → mirada ligera (`prior_empty_answer`).
+- Un «no» a secas es una negativa, no una corrección. Pedir rapidez con palabras («rápido: …») sigue mandando, y el historial nunca baja un modo que el mensaje ya se ganó.
+- La ruta del chat (`routes/chat_routes.py`, `_think_prior_signals`) se lo pasa con `ctx.messages`. Si algo falla, Auto decide como antes, sólo con el mensaje.
+
+**Dónde verlo:** el evento `think_mode` del stream (y el chip del compositor) lleva la razón nueva en `reasons` y `why`, y el log del servidor la escribe en la línea `[think-mode]`.
+
+**Prueba en vivo** (7000 reiniciado con `792edbc0`, modelo `glm-5.3-flash-nvfp4` de las Sparks, `scripts/faustus_run.py --json`):
+- turno 1, «¿cuántos días faltan para el 2 de noviembre?» → `think` (`dates`, 4096);
+- turno 2 en la misma sesión, «no, eso está mal» → `deep` (`correction_after_think`, 16384), cuando antes del cambio ese mensaje salía como turno corto con esfuerzo bajo. El modelo recalculó y respondió en 12 s;
+- control en una sesión nueva, «hola» y luego «no, eso está mal» → `think` (`correction`), sin pasar a `deep`.
+- en Studio con Playwright (Chromium, `/studio`), los mismos dos mensajes escritos en el compositor: el stream de `/api/chat_stream` trae `think` (`dates`) y después `deep` (`correction_after_think`), y la respuesta sale con «Thought 10s» y una pregunta con opciones sobre qué está mal (captura en `D:\LocalAI\_claude_tmp\radar_think_1010.png`). Las tres sesiones de prueba se borraron.
+
+**Pruebas:** `tests/test_think_mode_cross_turn.py` (señales del historial, nunca lanza, sin historial decide igual que antes, corrección tras rápido y tras pensar, «no» a secas, herramienta fallida, respuesta vacía, nunca baja, la petición de rapidez manda, `resolve_turn` y la ruta) y las suites de `think_mode` de antes: 155 en verde y 1 saltada.
+
+**Límites.** El modo del turno anterior se recalcula con la regla, no se lee el que se usó de verdad: si Luis eligió «A fondo» a mano, la regla no lo sabe. Falta registrar si la decisión acertó para calibrarla con #350 (OBJ-58).
+
 
 ## Ágora completo y razonamiento por sesión — 10-10-2026
 
@@ -10745,4 +10771,4 @@ La consola completa funciona en http://127.0.0.1:8810/agora/ y reutiliza el Hub 
 
 La preferencia de razonamiento por sesión (#211) se aplica después de un override explícito y antes del proyecto/global. Studio (#216) la lee, guarda y limpia; una lectura retrasada no pisa una elección reciente y los errores de persistencia se muestran. Root verificó ese flujo con el API y navegador reales y un proveedor HTTP simulado: Low1024 tras GETHigh atrasado, más fallo de escritura visible; no prueba calidad de GLM. El clasificador de conteo de enlaces (#217) relaciona el objeto contado con la petición y evita activar un total de biblioteca por citas o contexto de revisiones;56pruebas focales de Root y47máscontrastes por Faustus, incluido el prompt de33.923caracteres del diagnóstico. Conserva los checks de evidencia de conteos genuinos.
 
-GLM en Sparks revisó216/217 en clones propios, con tipos/tests y límites UI explícitos. El vigilante rota al alcanzar12turnos, conservando actor/proyecto y la historia anterior; no se promete un SID perpetuo. Preferencias del líder tras rotación y ejecución completa de hijos GLM siguen verificándose en218/219. La primera factoría falló por decodificación Windows y la siguiente ejecución detectó una vinculación nativa ausente; no se presentan como helpers útiles. No hay evidencia de paridad universal ni de una prueba con entrada1M.
+GLM en Sparks revisó216/217 en clones propios, con tipos/tests y límites UI explícitos. El vigilante rota al alcanzar12turnos, conservando actor/proyecto y la historia anterior; no se promete un SID perpetuo. Las preferencias del líder al rotar y la identidad del chat hijo quedaron corregidas en218. La prueba219 creó un hijo GLM Low por API/MCP y ejecutó tres herramientas sin fallo, con sesión propia y sin cambiar la preferencia guardada del principal. Las capacidades y el criterio de hardware estaban bien; el modelo respondió en inglés y citó números de línea inexactos, por lo que el resultado sigue parcialmente verificado. No se afirma que todo el archivo de configuración global conservara su hash durante la actividad concurrente. No hay evidencia de paridad universal ni de una prueba con entrada1M.
