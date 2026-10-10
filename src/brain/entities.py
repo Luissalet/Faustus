@@ -464,6 +464,20 @@ def _match_entity(conn: sqlite3.Connection, owner: str, fold_name: str,
     return None
 
 
+def find_entity(owner: Any, name: Any) -> Optional[Dict[str, Any]]:
+    """The visible entity whose name or an alias folds equal to `name`, in
+    this owner's brain, following merges. None when nothing matches exactly
+    (callers may then fall back to a substring search)."""
+    owner, key = str(owner or ""), fold(" ".join(str(name or "").split()))
+    if not key:
+        return None
+    with db() as conn:
+        row = _match_entity(conn, owner, key, set())
+    if row is None or row["owner"] != owner or row["hidden"]:
+        return None
+    return _row_to_entity(row)
+
+
 def upsert_entity(owner: Any, name: Any, *, type: str = "other",  # noqa: A002
                   aliases: Sequence[str] = (), project: str = "") -> Dict[str, Any]:
     """Alias/fold-aware create-or-find. A `name` (or alias) that folds equal
@@ -587,13 +601,21 @@ def list_entities(owner: Any, *, q: str = "", type: str = "", limit: int = 200, 
         where.append("hidden = 0")
     if type:
         where.append("type = ?"); params.append(str(type))
-    sql = f"SELECT * FROM entities WHERE {' AND '.join(where)} ORDER BY updated_at DESC LIMIT ?"
-    params.append(max(1, min(2000, int(limit or 200))))
+    cap = max(1, min(2000, int(limit or 200)))
+    q_fold = fold(q) if q else ""
+    sql = f"SELECT * FROM entities WHERE {' AND '.join(where)} ORDER BY updated_at DESC"
+    if not q_fold:
+        # The name filter runs in Python (aliases are JSON), so the limit can
+        # only go into SQL when there is no filter: limiting first dropped any
+        # match that was not among the most recently updated rows.
+        sql += " LIMIT ?"
+        params.append(cap)
     with db() as conn:
         rows = conn.execute(sql, params).fetchall()
-    q_fold = fold(q) if q else ""
     out: List[Dict[str, Any]] = []
     for row in rows:
+        if len(out) >= cap:
+            break
         entity = _row_to_entity(row)
         if q_fold:
             haystacks = {entity["fold_name"]} | {fold(a) for a in entity["aliases"]}

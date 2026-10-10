@@ -94,7 +94,7 @@ def _limit(value, default: int, ceiling: int) -> int:
 
 
 def _resolve_entity_id(owner: str, args: dict) -> str:
-    """`entity_id` if given; otherwise the best `list_entities(q=name)` hit.
+    """`entity_id` if given; else the exact name/alias, else the best `list_entities(q=name)` hit.
 
     Raises `LookupError` when a `name` matches nothing, so the caller sees a
     named failure instead of a profile for id `""`."""
@@ -104,6 +104,9 @@ def _resolve_entity_id(owner: str, args: dict) -> str:
     name = str(args.get("name") or "").strip()
     if not name:
         raise LookupError("give either entity_id or name")
+    exact = _engine["entities"].find_entity(owner, name)   # exact name/alias first
+    if exact:
+        return exact["id"]
     hits = _engine["entities"].list_entities(owner, q=name, limit=1)
     if not hits:
         raise LookupError(f"no entity matches {name!r}")

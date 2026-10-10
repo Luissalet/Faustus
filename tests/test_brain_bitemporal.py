@@ -185,3 +185,49 @@ def test_facts_is_classified_as_private_read():
     for act in ("write", "append", "daily"):                # writes stay gated
         assert not gate.allows("brain", {"action": act})
         assert ToolEffect.WRITE_PRIVATE in capabilities_for_action("brain", {"action": act}).effects
+
+
+# ── review r2 (#192): lookup by name must not depend on which row is newest ──
+
+def test_name_lookup_finds_an_entity_that_is_not_the_most_recent(clock):
+    ada, lab, new_lab, old, new = seed(clock)
+    for i in range(5):                       # newer rows that do not match
+        entities.upsert_entity(OWNER, f"Lab {chr(65 + i)}", type="org")
+    with brain_db.db() as conn:              # make Ada the oldest row for certain
+        conn.execute("UPDATE entities SET updated_at = '2000-01-01T00:00:00Z' WHERE id = ?", (ada["id"],))
+    run = lambda c: asyncio.run(BrainTool().execute(c, {"owner": OWNER}))
+    by_name = run({"action": "facts", "name": "Ada"})
+    by_id = run({"action": "facts", "entity_id": ada["id"]})
+    assert by_name["exit_code"] == 0, by_name
+    assert by_name["facts"] == by_id["facts"]
+    # the same helper serves entity and timeline
+    assert run({"action": "entity", "name": "Ada"})["exit_code"] == 0
+    assert run({"action": "timeline", "name": "Ada"})["exit_code"] == 0
+
+
+def test_exact_name_beats_a_newer_substring_match(clock):
+    ada, *_ = seed(clock)
+    other = entities.upsert_entity(OWNER, "Ada Lovelace Institute", type="org")
+    assert entities.find_entity(OWNER, "ada")["id"] == ada["id"]
+    run = lambda c: asyncio.run(BrainTool().execute(c, {"owner": OWNER}))
+    cur = run({"action": "facts", "name": "Ada"})
+    assert cur["exit_code"] == 0 and {r["src"] for r in cur["facts"]} == {ada["id"]}
+    assert other["id"] != ada["id"]
+
+
+def test_list_entities_filters_before_limiting(clock):
+    ada, *_ = seed(clock)
+    for i in range(5):
+        entities.upsert_entity(OWNER, f"Lab {chr(65 + i)}", type="org")
+    assert [e["id"] for e in entities.list_entities(OWNER, q="ada", limit=1)] == [ada["id"]]
+    labs = entities.list_entities(OWNER, q="lab", limit=3)
+    assert len(labs) == 3 and all("lab" in e["fold_name"] for e in labs)
+
+
+def test_name_lookup_stays_inside_the_owner(clock):
+    seed(clock)
+    entities.upsert_entity("mallory", "Grace", type="person")
+    assert entities.find_entity(OWNER, "Grace") is None
+    assert entities.find_entity("mallory", "Ada") is None
+    run = lambda c: asyncio.run(BrainTool().execute(c, {"owner": OWNER}))
+    assert run({"action": "facts", "name": "Grace"})["exit_code"] == 1

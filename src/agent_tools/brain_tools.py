@@ -54,6 +54,11 @@ def _resolve_entity_id(entities_mod, owner: str, args: Dict[str, Any]) -> str:
     name = str(args.get("name") or "").strip()
     if not name:
         raise LookupError("give either entity_id or name")
+    # Exact name or alias first, so "Ada" is Ada and not "Ada's lab"; then the
+    # most recently updated substring match.
+    exact = entities_mod.find_entity(owner, name)
+    if exact:
+        return exact["id"]
     hits = entities_mod.list_entities(owner, q=name, limit=1)
     if not hits:
         raise LookupError(f"no entity matches {name!r}")

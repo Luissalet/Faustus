@@ -199,3 +199,23 @@ def test_facts_as_of_tool_both_time_axes(monkeypatch):
     world = json.loads(_call("brain_facts_as_of", {"entity_id": ada["id"], "as_of": "2024-06-01"})[0].text)
     assert [r["dst"] for r in world["facts"]] == [lab["id"]]
     assert "ISO" in _call("brain_facts_as_of", {"as_of": "nope"})[0].text
+
+
+def test_name_lookup_prefers_the_exact_entity_and_is_not_limited_to_the_newest_row(monkeypatch):
+    """#192 review r2: name lookups returned "no entity matches" whenever the
+    entity was not the most recently updated row, and "Ada" could resolve to
+    a newer "Ada Lab"."""
+    from src.brain import entities
+
+    monkeypatch.setenv("ODYSSEUS_MCP_BRAIN_OWNER", OWNER)
+    grace = entities.upsert_entity(OWNER, "Grace", type="person")
+    entities.upsert_entity(OWNER, "Grace Hopper Lab", type="org")
+    for i in range(4):
+        entities.upsert_entity(OWNER, f"Team {i}", type="org")
+    with brain_db.db() as conn:
+        conn.execute("UPDATE entities SET updated_at = '2000-01-01T00:00:00Z' WHERE id = ?", (grace["id"],))
+    bs._ensure_init()
+    assert bs._resolve_entity_id(OWNER, {"name": "grace"}) == grace["id"]
+    assert bs._resolve_entity_id(OWNER, {"name": "Hopper"}) != grace["id"]
+    with pytest.raises(LookupError):
+        bs._resolve_entity_id("someone-else", {"name": "Grace"})
