@@ -10934,3 +10934,21 @@ Verificación: contrato entre la respuesta real de shell y el parser de Studio, 
 **Verificación.**
 - Crash recovery, shutdown, lifespan en modo seguro y adopción: 69 pruebas pasan.
 - En el 7000, entre «Application starting up» y «Application startup complete» pasan ahora 0,5 s (antes, 75 s) y el servidor responde a los 55 s de pedir el reinicio, contando el tiempo del lanzador.
+## 308. Cada trabajador aislado con sus propias cachés de herramientas — #267 (10-10-2026)
+
+**Qué cambia (Ágora #267, radar #405).** Separar los worktrees no basta si dos trabajadores resuelven paquetes a través de la misma caché: el trabajador A puede dejar una wheel o un tarball envenenado en la caché de pip o de npm, y el B instalarlo después. Ahora, cuando Faustus ejecuta algo dentro de una copia aislada de un proyecto, el entorno del subproceso apunta todas estas variables a una carpeta propia de ese trabajador:
+- `PIP_CACHE_DIR`, `npm_config_cache` y `UV_CACHE_DIR`;
+- la caché de Yarn, el store de pnpm, Poetry y las dos de Go;
+- `NUGET_PACKAGES`;
+- `TMP`, `TEMP` y `TMPDIR`.
+
+Esos casos son los candidatos de fan-out (todas sus llamadas `bash` y nativas) y los tests de una alternativa. La carpeta va junto al worktree (`<padre>/_caches/<nombre>`), nunca dentro: no aparece en el diff y desaparece con el experimento. En Windows se quitan antes las variantes heredadas con otra capitalización.
+
+Además, mientras un trabajador está aislado, una llamada cuyo texto nombra la carpeta de un hermano o las cachés compartidas del equipo se anota en `<caché>/cross_reads.jsonl` y en el informe del candidato de fan-out (`cross_reads`: cuántas y qué rutas). Nunca bloquea: confinar es trabajo de la capa de permisos; esto es el rastro. El snapshot base congelado se puede leer.
+
+**Origen.** El trabajo estaba sin commitear desde el 03-10 en `_claude_tmp/radar_wt_1003`. Se rescató, se rebasó sobre master y se verificó.
+
+**Verificación.**
+- `tests/test_worker_caches.py` junto con fan-out, alternativas y ejecución de herramientas: 97 pasan.
+- En vivo, con un experimento real de dos alternativas sobre un repo git: el mismo comando ve en cada una su propio `PIP_CACHE_DIR`, `npm_config_cache` y `tempfile.gettempdir()` (`…/_caches/alt-<id>/pip`, `npm` y `tmp`).
+- Dentro de `isolated(A)`, un `cat` del `app.py` de B queda anotado como `sibling` en el registro de A.
