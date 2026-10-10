@@ -31,7 +31,7 @@ import {
   type Usage,
 } from '../../adapters/usage';
 import { reconnectServices, SERVICE_LABEL, useServiceHealth, type ServiceState } from '../../adapters/services';
-import { useDegradation } from '../../adapters/degradation';
+import { SERVICES_RECONNECTED, useDegradation } from '../../adapters/degradation';
 import { getLang, locale, t, tn } from '../../i18n';
 import './vitals.css';
 
@@ -294,6 +294,9 @@ function HealthSection({ d }: { d: Usage }) {
   );
 }
 
+/** The two ChromaDB-backed stores a Reconnect reports on. */
+const STORE_LABEL: Record<string, string> = { rag: 'document RAG', memory: 'vector memory' };
+
 const SERVICE_MARK: Record<ServiceState | 'unconfigured', string> = { unconfigured: '·', ok: '●', degraded: '▲', down: '■', disabled: '·', unknown: '·' };
 
 /**
@@ -353,8 +356,17 @@ function ServicesSection() {
               setSaid(null);
               void reconnectServices()
                 .then((r) => {
-                  const back = r?.recovery?.reconnected ?? [];
-                  setSaid(back.length ? t('Back: {names}.', { names: back.join(', ') }) : t('Nothing came back; the detail above is the current answer.'));
+                  const store = (n: string) => t(STORE_LABEL[n] ?? n);
+                  const back = (r?.recovery?.reconnected ?? []).map(store);
+                  const failed = (r?.recovery?.failed ?? []).map(store);
+                  setSaid(
+                    back.length
+                      ? t('Back: {names}.', { names: back.join(', ') })
+                      : failed.length
+                        ? t('Still failing: {names}.', { names: failed.join(', ') })
+                        : t('Nothing came back; the detail above is the current answer.'),
+                  );
+                  window.dispatchEvent(new CustomEvent(SERVICES_RECONNECTED, { detail: r }));
                 })
                 .catch((err: Error) => setSaid(err.message))
                 .finally(() => setFixing(false));
@@ -363,6 +375,8 @@ function ServicesSection() {
           {said && <span className="fs-vt__muted">{said}</span>}
         </p>
       )}
+      {/* A Reconnect that fixed everything hides its own button; keep its answer. */}
+      {bad.length === 0 && said && <p className="fs-vt__act fs-vt__muted">{said}</p>}
     </Section>
   );
 }

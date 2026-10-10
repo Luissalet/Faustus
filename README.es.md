@@ -422,6 +422,9 @@ compara la precisión de la regla, la decisión y la combinación, con calibraci
 tiempos de caché. [API de decisiones tipadas](docs/api/typed_decision.md),
 [evaluación](docs/evals/typed-decisions.md).
 
+### Qué funciona degradado y cómo reconectar
+
+Un único registro dice con qué está funcionando Faustus ahora mismo sin algo (almacén vectorial, búsqueda web, notificaciones, correo, endpoints de modelos, Sparks, servidores MCP): estado `ok/degraded/down/unconfigured`, la clase de error real, desde cuándo, la latencia, cómo arreglarlo en español e inglés y qué funciones se resienten. Las comprobaciones tienen tiempo límite y caché, y no bloquean nada: `GET /api/diagnostics/degradation` (`?refresh=1`), la herramienta `degradation_status` del servidor MCP `harness` y Studio › Vitals › «Funcionando degradado» ([docs/api/degradation.md](docs/api/degradation.md)). Vitals › Servicios › Reconectar restablece en el sitio los almacenes de ChromaDB (sin reiniciar Faustus), dice cuáles han vuelto o siguen fallando y refresca el informe; un ChromaDB que se para a mitad de sesión aparece como caído, no como sano.
 ## Voz
 
 Jarvis ofrece una sesión de voz con reconocimiento español/inglés, respuestas habladas, controles de interrupción y esfera visual reactiva. Configura los servicios de transcripción y síntesis disponibles en la app; el navegador necesita permiso para usar el micrófono. Las voces instaladas y los motores locales de voz determinan los idiomas y la reproducción disponibles.

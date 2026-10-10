@@ -49,6 +49,12 @@ def client(monkeypatch, stores):
     import src.service_health as sh
     monkeypatch.setattr(sh, "collect_service_health", fake_collect)
 
+    # The real degradation refresh probes the network; record the call instead.
+    import src.degradation as degradation
+    refreshed = []
+    monkeypatch.setattr(degradation, "refresh", lambda ctx=None: refreshed.append(ctx) or {})
+    monkeypatch.setattr(diag, "_test_refreshed", refreshed, raising=False)
+
     app = FastAPI()
     rag, mem = stores
     app.include_router(diag.setup_diagnostics_routes(rag, True, None, mem))
@@ -67,8 +73,30 @@ def test_reconnect_recovers_the_stores_then_reprobes(client, stores):
     body = client.post("/api/diagnostics/services/reconnect").json()
     assert (rag.reconnects, mem.reconnects) == (1, 1)
     assert body["recovery"] == {"chroma_client": "reset",
-                                "rag": "healthy", "memory": "healthy"}
+                                "rag": "healthy", "memory": "healthy",
+                                "reconnected": ["rag", "memory"], "failed": []}
     assert body["services"][0]["hint"]["text"]
+
+
+def test_reconnect_refreshes_the_degradation_report(client, stores):
+    """Otherwise 'Running degraded' keeps showing the store down after it is back."""
+    client.post("/api/diagnostics/services/reconnect")
+    refreshed = diag._test_refreshed
+    assert len(refreshed) == 1
+    assert refreshed[0]["rag_manager"] is stores[0]
+    assert refreshed[0]["memory_vector"] is stores[1]
+
+
+def test_reconnect_survives_a_failing_degradation_refresh(client, monkeypatch):
+    import src.degradation as degradation
+
+    def boom(ctx=None):
+        raise RuntimeError("probe exploded")
+
+    monkeypatch.setattr(degradation, "refresh", boom)
+    resp = client.post("/api/diagnostics/services/reconnect")
+    assert resp.status_code == 200
+    assert resp.json()["recovery"]["reconnected"] == ["rag", "memory"]
 
 
 def test_both_endpoints_are_admin_only(monkeypatch, stores):

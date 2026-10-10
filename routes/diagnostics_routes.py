@@ -55,12 +55,22 @@ def setup_diagnostics_routes(
         require_admin(request)
         from src.service_health import collect_service_health
         from src.service_hints import attach_hints
-        from src.service_recovery import reconnect_vector_stores
+        from src.service_recovery import reconnect_vector_stores, summarize
         recovery = await asyncio.to_thread(
             reconnect_vector_stores, rag_manager, memory_vector)
         report = attach_hints(
             await collect_service_health(rag_manager, memory_vector))
-        report["recovery"] = recovery
+        report["recovery"] = summarize(recovery)
+        # The degradation report is cached; without this it keeps saying the
+        # vector store is down for up to a minute after it came back.
+        try:
+            import sys
+            from src import degradation
+            ctx = {"rag_manager": rag_manager, "memory_vector": memory_vector,
+                   "mcp_manager": getattr(sys.modules.get("app"), "mcp_manager", None)}
+            await asyncio.to_thread(degradation.refresh, ctx)
+        except Exception as e:  # informational; never fail the reconnect
+            logger.warning("reconnect: degradation refresh failed: %s", type(e).__name__)
         return report
 
     @router.get("/api/diagnostics/logs")

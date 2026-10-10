@@ -34,7 +34,7 @@ def get_chroma_client():
     Raises RuntimeError with a clear install hint if the `chromadb` package
     is not installed — it's an optional dependency (RAG + memory vectors).
     """
-    global _client
+    global _client, _client_addr
     if _client is not None:
         return _client
 
@@ -70,11 +70,31 @@ def get_chroma_client():
     # client; leave _client unset so the next call retries.
     client.heartbeat()
     _client = client
+    _client_addr = (host, port)
     logger.info(f"ChromaDB connected: {host}:{port}")
     return _client
 
 
 def reset_client():
     """Reset the singleton (e.g. after config change)."""
-    global _client
+    global _client, _client_addr
     _client = None
+    _client_addr = None
+
+
+# Where the cached client points; set together with `_client`.
+_client_addr = None
+
+
+def server_reachable(timeout: float = 1.0):
+    """Is the ChromaDB server behind the cached client still answering?
+
+    None when no client was ever connected (nothing to ask: the stores' own
+    flags are the answer). The stores flip their `healthy` flag only when an
+    operation fails, so without this a ChromaDB that stops after startup
+    (Docker Desktop closed) keeps reading as healthy.
+    """
+    addr = _client_addr
+    if _client is None or addr is None:
+        return None
+    return _port_open(addr[0], addr[1], timeout=timeout)

@@ -96,3 +96,24 @@ class TestReconnectVectorStores:
         out = recovery.reconnect_vector_stores(FakeStore(), FakeStore())
         assert out["chroma_client"] == "error"
         assert out["rag"] == "healthy"
+
+
+class TestSummarize:
+    """The panel reads `reconnected`/`failed`; without them it always said
+    'Nothing came back' even after the stores had recovered."""
+
+    def test_lists_what_came_back_and_keeps_the_raw_keys(self):
+        raw = {"chroma_client": "reset", "rag": "healthy", "memory": "healthy"}
+        out = recovery.summarize(raw)
+        assert out["reconnected"] == ["rag", "memory"]
+        assert out["failed"] == []
+        assert {k: out[k] for k in raw} == raw
+
+    def test_unhealthy_and_error_are_failures_absent_is_neither(self):
+        out = recovery.summarize({"chroma_client": "error", "rag": "unhealthy",
+                                  "memory": "absent"})
+        assert out["reconnected"] == []
+        assert out["failed"] == ["rag"]
+        out = recovery.summarize({"rag": "error", "memory": "healthy"})
+        assert out["failed"] == ["rag"]
+        assert out["reconnected"] == ["memory"]

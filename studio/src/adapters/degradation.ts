@@ -72,6 +72,9 @@ export async function degradationReport(signal?: AbortSignal, refresh = false): 
   return parseDegradation((await r.json()) as Record<string, unknown>);
 }
 
+/** Window event fired after the services Reconnect ran, so readers refresh. */
+export const SERVICES_RECONNECTED = 'faustus:services-reconnected';
+
 /** Polls while `on`; a 403 stops it for good. The server caches, so this is cheap. */
 export function useDegradation(on: boolean): { report: DegradationReport | null; allowed: boolean; error: string | null } {
   const [report, setReport] = useState<DegradationReport | null>(null);
@@ -97,10 +100,21 @@ export function useDegradation(on: boolean): { report: DegradationReport | null;
       }
       if (!ctrl.signal.aborted) timer = window.setTimeout(() => void read(), 30_000);
     };
+    // Reconnect (Vitals › Services) changes the answer now: re-read fresh
+    // instead of showing the cached "down" until the next 30 s poll.
+    const onReconnected = () => {
+      void degradationReport(ctrl.signal, true)
+        .then((next) => {
+          if (next && !ctrl.signal.aborted) setReport(next);
+        })
+        .catch(() => undefined);
+    };
+    window.addEventListener(SERVICES_RECONNECTED, onReconnected);
     void read();
     return () => {
       ctrl.abort();
       window.clearTimeout(timer);
+      window.removeEventListener(SERVICES_RECONNECTED, onReconnected);
     };
   }, [on, allowed]);
 

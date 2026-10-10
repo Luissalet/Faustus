@@ -72,3 +72,18 @@ def reconnect_vector_stores(rag_manager: Any = None,
     result["rag"] = _reconnect_one(rag_manager)
     result["memory"] = _reconnect_one(memory_vector)
     return result
+
+
+def summarize(recovery: Dict[str, Optional[str]]) -> Dict[str, Any]:
+    """Add the panel's lists to a reconnect result, keeping every original key.
+
+    ``reconnected`` names the stores that are healthy after the attempt and
+    ``failed`` the ones that came back unhealthy or errored. A store that was
+    never created (``absent``) is in neither: there was nothing to reconnect.
+    """
+    stores = [(k, recovery.get(k)) for k in ("rag", "memory")]
+    return {
+        **recovery,
+        "reconnected": [k for k, v in stores if v == "healthy"],
+        "failed": [k for k, v in stores if v in ("unhealthy", "error")],
+    }

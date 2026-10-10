@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { SERVICES_RECONNECTED } from './degradation';
 
 /**
  * The services Faustus leans on, and whether they are actually there.
@@ -118,10 +119,17 @@ export function useServiceHealth(on: boolean): { health: ServiceHealth | null; a
       }
       if (!ctrl.signal.aborted) timer = window.setTimeout(() => void read(), 30_000);
     };
+    // Reconnect answers with a fresh probe; show it now, not at the next poll.
+    const onReconnected = (e: Event) => {
+      const fresh = (e as CustomEvent<ServiceHealth | null>).detail;
+      if (fresh && !ctrl.signal.aborted) setHealth(fresh);
+    };
+    window.addEventListener(SERVICES_RECONNECTED, onReconnected);
     void read();
     return () => {
       ctrl.abort();
       window.clearTimeout(timer);
+      window.removeEventListener(SERVICES_RECONNECTED, onReconnected);
     };
   }, [on, allowed]);
 

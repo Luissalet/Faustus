@@ -59,6 +59,18 @@ cannot see the vector store or the app's MCP servers.
 The Vitals panel > "Running degraded" lists only degraded and down items with cause, since when, what is
 affected and the fix hint in the interface language. Hidden for non-admins and when everything is fine.
 
+## Reconnect
+
+`POST /api/diagnostics/services/reconnect` (admin) drops the cached ChromaDB client, re-initialises the RAG
+and vector-memory stores in place, re-probes the services and refreshes this report (and the snapshot the
+`degradation_status` MCP tool reads). Its `recovery` field keeps the per-store result
+(`chroma_client`: `reset|error`; `rag`, `memory`: `healthy|unhealthy|error|absent`) and adds
+`reconnected` and `failed`, the store names to show. `absent` means the store was never created (ChromaDB
+was down at start-up) and still needs a restart.
+
+The `chromadb` check reads the stores' `healthy` flags and, when they say healthy, also asks whether the
+server behind the connected client still answers (1 s TCP probe). A ChromaDB stopped mid-session is
+reported `down` ("ChromaDB stopped answering…") instead of healthy.
 ## Adding a check
 
 ```python

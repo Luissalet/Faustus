@@ -3751,6 +3751,9 @@ Nothing archived	Nada archivado
 Nothing blocked waiting for you. Pick up where you left off or start something.	Nada bloqueado esperándote. Continúa donde lo dejaste o empieza algo.
 Nothing cached here yet	Aún no hay nada en caché aquí
 Nothing came back; the detail above is the current answer.	No ha vuelto nada; el detalle de arriba es la respuesta de ahora.
+Still failing: {names}.	Siguen fallando: {names}.
+document RAG	RAG de documentos
+vector memory	memoria vectorial
 Nothing came out worth saving.	No ha salido nada que valga la pena guardar.
 Nothing changed here; the count came from the server.	Aquí no cambió nada; la cuenta viene del servidor.
 Nothing connected yet. Add one above.	Todavía no hay nada conectado. Añade uno arriba.

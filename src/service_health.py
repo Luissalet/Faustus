@@ -183,6 +183,16 @@ def _bounded_map(items: List[Any], worker: Callable[[int, Any], Dict[str, Any]],
 
 # ── ChromaDB (vector RAG + vector memory) ──
 
+def _chroma_server_reachable():
+    """True/False from a short TCP probe of the connected server; None if
+    there is no connected client (or the optional package is missing)."""
+    try:
+        from src.chroma_client import server_reachable
+        return server_reachable()
+    except Exception:  # noqa: BLE001 - informational probe only
+        return None
+
+
 def chromadb_health(rag_manager: Any, memory_vector: Any) -> Dict[str, Any]:
     """Report on the two ChromaDB-backed stores via their `.healthy` flags.
 
@@ -203,6 +213,12 @@ def chromadb_health(rag_manager: Any, memory_vector: Any) -> Dict[str, Any]:
 
     healthy = [ok for ok in (rag_ok if rag_present else None,
                              mem_ok if mem_present else None) if ok is not None]
+    if any(healthy) and _chroma_server_reachable() is False:
+        # The flags only flip when an operation fails; the server is gone now.
+        return _svc("chromadb", DOWN,
+                    "ChromaDB stopped answering; the vector stores were "
+                    "connected but the server is gone.",
+                    **meta, server_reachable=False)
     if healthy and all(healthy):
         return _svc("chromadb", OK, "Vector stores healthy.", **meta)
     if any(healthy):

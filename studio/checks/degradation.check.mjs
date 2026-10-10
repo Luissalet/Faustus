@@ -51,6 +51,19 @@ for (const k of ['Running degraded', 'Since {when}', 'Affects: {list}', '{n} dep
   assert(tsv.includes(k + '\t') && es.includes(JSON.stringify(k)), `Spanish row for "${k}"`);
 }
 
+// Agora #225: after Reconnect the panel must not keep showing the old answer.
+eq(d.SERVICES_RECONNECTED, 'faustus:services-reconnected', 'the reconnect event name is exported');
+const degr = read('studio/src/adapters/degradation.ts');
+assert(degr.includes('addEventListener(SERVICES_RECONNECTED') && degr.includes('degradationReport(ctrl.signal, true)'), 'degradation re-reads fresh (refresh=1) on the reconnect event');
+assert(degr.includes('removeEventListener(SERVICES_RECONNECTED'), 'degradation drops the listener on unmount');
+const svc = read('studio/src/adapters/services.ts');
+assert(svc.includes('addEventListener(SERVICES_RECONNECTED') && svc.includes('setHealth(fresh)'), 'services show the probe the reconnect returned');
+assert(vitals.includes('new CustomEvent(SERVICES_RECONNECTED, { detail: r })'), 'Vitals announces the reconnect with its fresh report');
+assert(vitals.includes('r?.recovery?.reconnected') && vitals.includes('r?.recovery?.failed'), 'Vitals reads what came back and what still fails');
+for (const k of ['Back: {names}.', 'Still failing: {names}.', 'document RAG', 'vector memory']) {
+  assert(tsv.includes(k + '\t') && es.includes(JSON.stringify(k)), `Spanish row for "${k}"`);
+}
+
 if (failed) {
   console.error(`${failed} check(s) failed`);
   process.exit(1);
