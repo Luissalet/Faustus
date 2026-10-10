@@ -71,7 +71,7 @@ class GateAllowRule:
 ALLOW_RULES: Tuple[GateAllowRule, ...] = (
     GateAllowRule("context_recall", offered_ids_only=True,
                   why="recalls an item this turn's packet listed as omitted"),
-    GateAllowRule("brain", actions=("search", "read", "entity", "timeline", "neighbors"),
+    GateAllowRule("brain", actions=("search", "read", "entity", "timeline", "neighbors", "facts"),
                   why="read-only lookups in the owner's note vault and entity graph"),
 )
 

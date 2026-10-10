@@ -198,5 +198,5 @@ def test_brain_read_actions_are_exempt_but_writes_are_not():
     from src import context_tool_gate as gate
     rule = gate.rule_for("brain")
     assert rule is not None
-    assert set(rule.actions) == {"search", "read", "entity", "timeline", "neighbors"}
+    assert set(rule.actions) == {"search", "read", "entity", "timeline", "neighbors", "facts"}
     assert "write" not in rule.actions and "append" not in rule.actions

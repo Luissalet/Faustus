@@ -137,3 +137,51 @@ def test_agent_tool_facts(clock):
     assert [r["id"] for r in cur["facts"]] == [new["id"]]
     assert run({"action": "facts", "known_at": "garbage"})["exit_code"] == 1
     assert run({"action": "facts", "name": "Nobody"})["exit_code"] == 1
+
+
+def test_as_of_boundary_is_half_open(clock):
+    ada, lab, new_lab, old, new = seed(clock)
+    before = bitemporal.facts(OWNER, entity_id=ada["id"], as_of="2024-12-31")["facts"]
+    on = bitemporal.facts(OWNER, entity_id=ada["id"], as_of="2025-01-01")["facts"]
+    after = bitemporal.facts(OWNER, entity_id=ada["id"], as_of="2025-01-02")["facts"]
+    assert [r["dst"] for r in before] == [lab["id"]]
+    assert [r["dst"] for r in on] == [new_lab["id"]]      # old closed exactly at T is over
+    assert [r["dst"] for r in after] == [new_lab["id"]]
+
+
+def test_restored_relation_does_not_keep_old_retirement(clock):
+    ada = entities.upsert_entity(OWNER, "Ada", type="person")
+    lab = entities.upsert_entity(OWNER, "Lab", type="org")
+    rel = entities.add_relation(OWNER, ada["id"], "invented_rel", dst_id=lab["id"], method="llm")
+    clock[0] = "2026-02-01T00:00:00.000000Z"
+    assert entities.revalidate(OWNER)["retracted_count"] == 1
+    during = bitemporal.facts(OWNER, entity_id=ada["id"], include_closed=True)
+    assert [r["id"] for r in during["facts"]] == []        # withdrawn claim is not a fact
+    clock[0] = "2026-03-01T00:00:00.000000Z"
+    assert entities.undo_revalidate(OWNER)["restored_count"] == 1
+    for kw in ({}, {"known_at": "2026-03-02"}, {"as_of": "2099-01-01"}):
+        row = [r for r in bitemporal.facts(OWNER, entity_id=ada["id"], **kw)["facts"] if r["id"] == rel["id"]]
+        assert row and row[0]["status"] == "active" and row[0]["superseded_at"] == "", kw
+    before = bitemporal.facts(OWNER, entity_id=ada["id"], known_at="2026-01-15")["facts"]
+    assert before and before[0]["superseded_at"] == ""
+    mid = bitemporal.facts(OWNER, entity_id=ada["id"], known_at="2026-02-15", include_closed=True)["facts"]
+    assert mid == []
+
+
+def test_native_schema_accepts_facts_arguments():
+    from src.tool_schemas import validate_tool_arguments
+    args = {"action": "facts", "name": "QA Ada", "as_of": "2025-01-01",
+            "known_at": "2026-01-01", "rel": "works_at", "include_closed": True}
+    assert validate_tool_arguments("brain", args) == []
+    assert any(e.kind == "enum" for e in validate_tool_arguments("brain", {"action": "nope"}))
+
+
+def test_facts_is_classified_as_private_read():
+    from src import context_tool_gate as gate
+    from src.tool_capabilities import ToolEffect, capabilities_for_action
+    caps = capabilities_for_action("brain", {"action": "facts"})
+    assert ToolEffect.READ_PRIVATE in caps.effects and ToolEffect.WRITE_PRIVATE not in caps.effects
+    assert gate.allows("brain", {"action": "facts"})
+    for act in ("write", "append", "daily"):                # writes stay gated
+        assert not gate.allows("brain", {"action": act})
+        assert ToolEffect.WRITE_PRIVATE in capabilities_for_action("brain", {"action": act}).effects

@@ -1551,7 +1551,7 @@ def capabilities_for_tool(tool_name: Any) -> ToolCapabilities:
 
 _PRIVATE_ACTION_READS: Mapping[str, frozenset[str]] = MappingProxyType(
     {
-        "brain": frozenset({"search", "read", "entity", "timeline", "neighbors"}),
+        "brain": frozenset({"search", "read", "entity", "timeline", "neighbors", "facts"}),
         "manage_calendar": frozenset({"list_calendars", "list_events"}),
         "manage_contact": frozenset({"list"}),
         "manage_documents": frozenset({"list", "read", "view", "open", "get"}),

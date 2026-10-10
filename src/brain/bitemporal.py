@@ -15,6 +15,8 @@ public read: :func:`facts`, rows with explicit ``recorded_at`` and
 version log; empty while it is still current, and empty when a ``known_at``
 view predates the retirement - Faustus did not know yet).
 
+World time is a half-open interval ``[valid_from, valid_until)``: a fact closed
+exactly at ``as_of`` is already over (the old and new value never both hold).
 Views: current (default, same as ``entities.list_relations``), ``as_of``
 (world time T) and ``known_at`` (what Faustus believed on date D); both may
 be combined. Pure reads, owner-scoped.
@@ -36,7 +38,11 @@ def _stamp(value: Any) -> str:
 
 
 def _superseded_at(owner: str, ids: List[str], horizon: Optional[str]) -> Dict[str, str]:
-    """relation id -> recorded_at of the first version that was retired."""
+    """relation id -> recorded_at when its current retired stretch began.
+
+    A restore (status back to active) clears it, so a relation that was
+    retracted and then restored reports empty, and one retired again reports
+    the later instant; history before the horizon is kept in the log."""
     if not ids:
         return {}
     import json
@@ -50,8 +56,6 @@ def _superseded_at(owner: str, ids: List[str], horizon: Optional[str]) -> Dict[s
                    f"WHERE owner=? AND relation_id IN ({marks}) ORDER BY version")
             for row in conn.execute(sql, (owner, *chunk)).fetchall():
                 rid = row["relation_id"]
-                if rid in out:
-                    continue
                 if horizon is not None and row["recorded_at"] > horizon:
                     continue
                 try:
@@ -59,7 +63,11 @@ def _superseded_at(owner: str, ids: List[str], horizon: Optional[str]) -> Dict[s
                 except Exception:  # noqa: BLE001
                     continue
                 if status in _RETIRED:
-                    out[rid] = row["recorded_at"]
+                    # keep the start of the CURRENT retired stretch only
+                    out.setdefault(rid, row["recorded_at"])
+                else:
+                    # restored (revalidate -> undo): not retired any more
+                    out.pop(rid, None)
     return out
 
 
@@ -82,6 +90,13 @@ def facts(owner: Any, *, entity_id: Any = None, rel: Any = None, as_of: Any = No
         include_closed = as_of is not None
     items = entities.list_relations(owner, entity_id=entity_id or None, as_of=as_of,
                                     known_at=known_at, include_closed=include_closed)
+    if as_of is not None:
+        # World-time interval is half-open [valid_from, valid_until): a fact
+        # closed exactly at T (works_at A -> B on T) is B at T, not A and B.
+        from src.brain.db import parse_iso
+        instant = parse_iso(as_of) or entities._coerce_dt(as_of)
+        items = [r for r in items
+                 if not (parse_iso(r.get("valid_until")) and parse_iso(r.get("valid_until")) <= instant)]
     if rel:
         items = [r for r in items if r.get("rel") == str(rel).strip().lower()]
     limit = max(1, min(int(limit or 200), 500))
