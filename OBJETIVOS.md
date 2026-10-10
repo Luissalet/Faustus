@@ -1346,3 +1346,10 @@ Abierto:
 Hecho: acceso completo global, coordinación por proyecto, herencia normal del CLI, avisos de cierre sin una aprobación adicional y heartbeat compatible con reservas externas. La tarea #175 es una contribución real de GLM en tres Sparks, revisada de forma independiente, integrada, activa y cerrada por el propio agente; mismo chat, identidad y checkpoint conservados. Véase FAUSTUS.md §286.
 
 El vigilante #185 está instalado con alcance familiar comprobado y conserva su chat. #189 está revisada y activa; #194 conserva la causa de fallos de reservas sin cambiar la política. Queda completar el ciclo nativo de #185, revisar y activar #195 (prioridades mal importadas y pregunta humana mecánica) y #199 (rutas multirrepo). El objetivo sigue activo. El contexto configurado de 1M y una contribución aceptada no acreditan paridad general de capacidad o fiabilidad.
+
+## OBJ-58 · Auto con señales del turno anterior: lo que falta (10-10-2026)
+
+Hecho en §294 (radar #458): corrección, herramienta fallida y respuesta vacía suben el modo de Auto. Queda:
+- Registrar por turno la decisión de Auto y su resultado (si el siguiente mensaje fue una corrección, si la batería diaria acertó) para calibrar los umbrales con #350, en vez de fijarlos a mano.
+- Leer el modo que se usó de verdad en el turno anterior (el evento `think_mode` guardado con el mensaje) en lugar de recalcularlo con la regla, para que un «A fondo» elegido a mano cuente.
+- Señal «pensó y no sirvió»: si el turno anterior gastó todo el presupuesto de razonamiento sin texto final (#352), no volver a pedir `deep` en ese chat.
