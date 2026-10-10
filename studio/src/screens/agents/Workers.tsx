@@ -121,6 +121,14 @@ function JobRow({ job, expanded, onToggle, onCancel, onBoard }: { job: DispatchJ
             </>
           )}
           {res?.totals.errors ? ` · ${tn(res.totals.errors, '{n} error', '{n} errors')}` : ''}
+          {job.adopted_runs.length > 0 && (
+            <>
+              {' · '}
+              <span className="fs-wk__adopted" data-testid="wk-adopted" title={t("Faustus restarted while this job's external agents were working; it found them again and followed them to their end")}>
+                {t('resumed after a restart')}
+              </span>
+            </>
+          )}
         </span>
         <span className="fs-wk__actions">
           {job.session_id && <Button size="sm" variant="ghost" icon={MessageSquare} label={t('Board')} onClick={onBoard} title={t('Open the Workers chat: the control board, steer / stop, the transcripts')} />}

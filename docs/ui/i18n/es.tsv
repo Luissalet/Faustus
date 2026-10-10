@@ -9532,3 +9532,5 @@ weights are paging into system memory over PCIe	parte del modelo se está leyend
 {n}% free	{n}% libre
 {n}% of system RAM in use	{n}% de la RAM del sistema en uso
 {n}% used	{n}% en uso
+resumed after a restart	retomado tras un reinicio
+Faustus restarted while this job's external agents were working; it found them again and followed them to their end	Faustus se reinició mientras los agentes externos de este trabajo seguían trabajando; los volvió a encontrar y los siguió hasta el final

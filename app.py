@@ -2270,6 +2270,16 @@ async def _startup_event():
     # dispatched jobs `interrupted` with the reason and leaves a resume PLAN —
     # it never resumes anything, and without a boot time it does nothing. Off
     # the critical path in a thread, and never a reason for startup to fail.
+    # First, the dispatched jobs whose external agents outlived the restart
+    # (OBJ-53, #232): re-attached and followed, so the scan below does not
+    # write off work that is still running.
+    try:
+        from src import dispatch as _dispatch_adopt
+        _adopted = _dispatch_adopt.adopt_live_jobs()
+        if _adopted:
+            logger.info("Dispatch: adopted %d job(s) whose external agents are still running", len(_adopted))
+    except Exception as e:
+        logger.warning(f"Dispatch adoption skipped: {e}")
     try:
         from src import crash_recovery as _crash_recovery
         _crash = await asyncio.to_thread(_crash_recovery.boot_scan)

@@ -58,6 +58,40 @@ def used_keys() -> set[str]:
     return keys
 
 
+_ENTRY = re.compile(r'^\s*("(?:[^"\\]|\\.)*")\s*:\s*("(?:[^"\\]|\\.)*")\s*,?\s*$', re.M)
+
+
+def recover(rows: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """Rows the generated file has and the table lacks, copied INTO the table.
+
+    10-10-2026: strings added straight to es.ts (by hand, or by a branch that
+    regenerated before another's rows reached the table) were deleted by the
+    next regeneration, 32 at a time. Generating must never lose a
+    translation: whatever only es.ts has is appended to es.tsv first.
+    `--prune` keeps the old behaviour for deliberate removals.
+    """
+    if not os.path.exists(OUT):
+        return []
+    have = {k for k, _ in rows}
+    found: list[tuple[str, str]] = []
+    for k, v in _ENTRY.findall(io.open(OUT, encoding="utf-8").read()):
+        try:
+            k, v = json.loads(k), json.loads(v)
+        except ValueError:
+            continue
+        if k not in have:
+            have.add(k)
+            found.append((k, v))
+    if found:
+        raw = io.open(TSV, encoding="utf-8").read()
+        if raw and not raw.endswith("\n"):
+            raw += "\n"
+        raw += "".join("%s\t%s\n" % (k.replace("\n", "\\n"), v.replace("\n", "\\n")) for k, v in found)
+        with io.open(TSV, "w", encoding="utf-8", newline="\n") as f:
+            f.write(raw)
+    return found
+
+
 def main() -> int:
     # The report is about interface strings, so it is full of characters the
     # Windows console's default code page cannot encode. Printing the first
@@ -71,6 +105,11 @@ def main() -> int:
         except (AttributeError, ValueError):  # pragma: no cover - older/odd streams
             pass
     rows = load()
+    if "--check" not in sys.argv and "--prune" not in sys.argv:
+        found = recover(rows)
+        if found:
+            print("recovered into es.tsv (they were only in es.ts): %d" % len(found))
+            rows = load()
     body = ",\n".join("  %s: %s" % (json.dumps(k, ensure_ascii=False), json.dumps(v, ensure_ascii=False)) for k, v in rows)
     text = (
         "/* eslint-disable */\n/**\n * Spanish. Keys are the English source strings; generated from the\n"

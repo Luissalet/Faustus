@@ -1154,7 +1154,7 @@ Hecho en §260 y §261. **Por hacer:**
 - Buzón entre agentes: mensajes con remitente, urgente y despertar, tope de 3 saltos y de despertares por hora, entregados donde hoy se drenan los steers y reflejados en el bus como `faustus.agent.msg`. Un mensaje de otro agente nunca es una aprobación.
 - Comprobación de carpeta también para lo que lanza la herramienta `python` con `subprocess` (hoy sólo cubre las órdenes de shell).
 - ~~Medidor del presupuesto del periodo en el panel de uso de Studio~~ — hecho (Agora #231): sección «Period budget» en el popover de Vitals (`studio/src/adapters/periodBudget.ts` → `GET /api/budget/period`), con estados sin dato / sin objetivo / pausa / breaker honestos. Cassandra sigue mostrando la tarjeta «Agentes en marcha».
-- Adoptar tras un reinicio los trabajos de dispatch que seguían vivos, en vez de marcarlos interrumpidos.
+- ~~Adoptar tras un reinicio los trabajos de dispatch que seguían vivos, en vez de marcarlos interrumpidos.~~ Hecho en §304 (Ágora #232): los agentes externos se adoptan y se siguen hasta el final; los trabajadores internos de Faustus son tareas del propio proceso y mueren con él, así que siguen quedando interrumpidos con su plan de reanudación.
 - ~~Árbol de sesiones (bifurcaciones y clones de un chat) en Studio, sobre el `/fork` que ya existe.~~ Hecho en §302 (Ágora #233).
 - ~~`!!orden` en el compositor: ejecuta en la shell sin pasar por el modelo.~~ Hecho en §303 (Ágora #230).
 - `/github` para etiquetas, notas de cambios y comprobaciones de release con `gh`.

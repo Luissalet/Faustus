@@ -756,7 +756,7 @@ def run_task(runner_key: Any, task: str, *, workspace: Optional[str] = None,
             return result
         result = _spawn(runner, key, task, argv=argv, shown=shown, cwd=cwd, full_env=full_env,
                       timeout_s=timeout_s, on_output=on_output, should_cancel=should_cancel,
-                      gate=gate, started=started)
+                      gate=gate, started=started, run_id=run_id)
         if billing is not None:
             result['billing'] = billing
         return result
@@ -772,7 +772,8 @@ def _spawn(runner: Any, key: str, task: str, *, argv: List[str], shown: str,
            cwd: Optional[str], full_env: Dict[str, str], timeout_s: Optional[float],
            on_output: Optional[Callable[[str], None]],
            should_cancel: Optional[Callable[[], bool]],
-           gate: Optional["_GateSession"], started: float) -> Dict[str, Any]:
+           gate: Optional["_GateSession"], started: float,
+           run_id: Optional[str] = None) -> Dict[str, Any]:
     """Start the agent, supervise it, and report. Split out of
     :func:`run_task` only so the gate's setup and teardown can bracket it."""
     from src import agent_runners as reg
@@ -797,8 +798,22 @@ def _spawn(runner: Any, key: str, task: str, *, argv: List[str], shown: str,
     limit = max(1.0, limit)
     buf = _Buffer()
 
+    # A run with an id writes its output to a log file instead of a pipe
+    # (OBJ-53, #232): a pipe dies with this process, a file does not, so an
+    # agent still working when Faustus restarts can be found and followed
+    # again (src/external_runs.py) instead of being written off.
+    from src import external_runs
+    log_fh = None
+    if external_runs.valid_run_id(run_id):
+        try:
+            os.makedirs(external_runs.runs_dir(), exist_ok=True)
+            log_fh = open(external_runs.log_path(str(run_id)), "wb")
+        except OSError as e:
+            logger.debug("external_worker: no log file for %s (%s); using a pipe", run_id, e)
+            log_fh = None
     popen_kwargs: Dict[str, Any] = {
-        "cwd": cwd, "env": full_env, "stdout": subprocess.PIPE, "stderr": subprocess.STDOUT,
+        "cwd": cwd, "env": full_env, "stdout": log_fh if log_fh is not None else subprocess.PIPE,
+        "stderr": subprocess.STDOUT,
         "stdin": subprocess.PIPE if runner.stdin_task else subprocess.DEVNULL,
         "text": True, "encoding": "utf-8", "errors": "replace", "bufsize": 1,
     }
@@ -812,8 +827,14 @@ def _spawn(runner: Any, key: str, task: str, *, argv: List[str], shown: str,
         # checked for and not whatever a different PATH would have found.
         proc = subprocess.Popen([exe] + list(argv[1:]), **popen_kwargs)   # noqa: S603 - argv from the table
     except Exception as e:  # noqa: BLE001
+        if log_fh is not None:
+            log_fh.close()
         return _fail(key, f"{runner.label} could not be started: {type(e).__name__}: {e}"[:300],
                      argv_shown=shown)
+    if log_fh is not None:
+        log_fh.close()  # the child holds its own handle
+        external_runs.start(str(run_id), pid=proc.pid, runner=key, label=runner.label,
+                            gated=gate is not None, cwd=cwd)
 
     def _write_input() -> None:
         # Writing a long context can fill the pipe while the CLI is still
@@ -837,14 +858,52 @@ def _spawn(runner: Any, key: str, task: str, *, argv: List[str], shown: str,
     transport_failed = threading.Event()
     max_line_chars = 1024 * 1024
 
-    def _read() -> None:
-        stream = proc.stdout
-        if stream is None:
+    def _lines():
+        """The child's output line by line: from the pipe, or by following
+        its log file until the process has exited and the file is drained."""
+        if log_fh is None:
+            stream = proc.stdout
+            if stream is None:
+                return
+            try:
+                yield from iter(lambda: stream.readline(max_line_chars + 1), "")
+            finally:
+                try:
+                    stream.close()
+                except Exception:  # noqa: BLE001
+                    pass
             return
+        import codecs
+        decoder = codecs.getincrementaldecoder("utf-8")("replace")
+        pending = ""
+        with open(external_runs.log_path(str(run_id)), "rb") as fh:
+            while True:
+                data = fh.read(65536)
+                if data:
+                    pending += decoder.decode(data)
+                    while "\n" in pending:
+                        line, pending = pending.split("\n", 1)
+                        yield line + "\n"
+                    if len(pending) > max_line_chars:
+                        yield pending  # longer than the bound: the caller stops the run
+                        pending = ""
+                    continue
+                if proc.poll() is not None:
+                    rest = fh.read()
+                    if rest:
+                        pending += decoder.decode(rest)
+                        continue
+                    pending += decoder.decode(b"", final=True)
+                    if pending:
+                        yield pending
+                    return
+                time.sleep(0.1)
+
+    def _read() -> None:
         try:
             # A CLI can print an unbounded JSON event (or never a newline).
             # Bound the read itself, not only the tail retained afterwards.
-            for line in iter(lambda: stream.readline(max_line_chars + 1), ""):
+            for line in _lines():
                 if len(line) > max_line_chars:
                     transport_failed.set()
                     break
@@ -863,11 +922,6 @@ def _spawn(runner: Any, key: str, task: str, *, argv: List[str], shown: str,
         except Exception as e:  # noqa: BLE001
             logger.debug("external_worker: reading %s failed: %s", key, e)
             transport_failed.set()
-        finally:
-            try:
-                stream.close()
-            except Exception:  # noqa: BLE001
-                pass
 
     reader = threading.Thread(target=_read, name=f"external-worker-{key}", daemon=True)
     reader.start()
@@ -941,6 +995,8 @@ def _spawn(runner: Any, key: str, task: str, *, argv: List[str], shown: str,
         error = f"{runner.label} exited with code {exit_code}"
         if read.get("state"):
             error += f" — its output says {read['state']}"
+    if log_fh is not None:
+        external_runs.finish(str(run_id), status=status, exit_code=exit_code)
     out = {
         "ok": status == 'done',
         "exit_code": exit_code,

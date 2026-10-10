@@ -145,6 +145,8 @@ export interface DispatchJob {
   workspace: string;
   model: string;
   verify: string;
+  /** External runs this job re-attached to after a restart of Faustus. */
+  adopted_runs: string[];
 }
 
 export interface DispatchRequest {
@@ -253,6 +255,7 @@ export function jobFrom(raw: Record<string, unknown>): DispatchJob {
     workspace: str(raw.workspace),
     model: str(raw.model),
     verify: str(raw.verify),
+    adopted_runs: list(raw.adopted_runs),
   };
 }
 

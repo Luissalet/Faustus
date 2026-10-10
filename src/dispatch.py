@@ -351,6 +351,9 @@ class DispatchJob:
         # empty list is the normal case and adds NOTHING to the payload: a job
         # with no runner is byte-identical to one from before this existed.
         self.runners_used: List[str] = []
+        #: External runs this job re-attached to after a restart of Faustus
+        #: (OBJ-53, #232): their run ids. Empty for every ordinary job.
+        self.adopted_runs: List[str] = []
         # What Faustus's own guard did in front of each of them
         # (src/agent_gate.py): runner key → the run's ledger. Empty for every
         # runner whose row says `gate: "none"`, and an empty one is what keeps
@@ -424,6 +427,8 @@ class DispatchJob:
             # not only in the proof.
             d["runners"] = list(self.runners_used)
             d["unguarded"] = True
+        if self.adopted_runs:
+            d["adopted_runs"] = list(self.adopted_runs)
         return d
 
     def ceiling_s(self) -> int:
@@ -2387,12 +2392,183 @@ def _load(job_id: str) -> Optional[DispatchJob]:
     # What ran outside the command guard has to survive a restart: a job read
     # back from its mirror still says which external agents it used.
     job.runners_used = [str(k) for k in (d.get("runners") or []) if str(k)]
+    job.adopted_runs = [str(r) for r in (d.get("adopted_runs") or []) if str(r)]
+    if d.get("status") in _LIVE:
+        # An external agent this job started may still be working: a restart
+        # of Faustus does not stop it. Follow it to its end instead of writing
+        # the job off while it keeps changing the workspace (OBJ-53, #232).
+        # An agent that ended while Faustus was down is settled from its log.
+        try:
+            from src import external_runs
+            live = external_runs.unsettled_for_job(job.id)
+        except Exception as e:  # noqa: BLE001 - adoption is best effort
+            logger.debug("dispatch %s: live run lookup failed: %s", job.id, e)
+            live = []
+        if live:
+            _adopt(job, live)
+            _jobs[job.id] = job
+            return job
     # a job that was running when the server stopped never finished
     job.status = "interrupted" if d.get("status") in _LIVE else (d.get("status") or "done")
     if job.status == "interrupted" and not job.verdict:
         job.verdict = "interrupted by a restart of Faustus — re-dispatch the remaining work"
     _jobs[job.id] = job
     return job
+
+
+ADOPT_POLL_S = 1.0
+#: The server's loop, captured by `adopt_live_jobs` at startup.
+_adopt_loop: Optional[asyncio.AbstractEventLoop] = None
+
+
+def adopt_live_jobs() -> List[str]:
+    """At startup: load every job that has an external run still alive, which
+    adopts it (see `_load`). Returns the adopted job ids. Never raises."""
+    global _adopt_loop
+    adopted: List[str] = []
+    try:
+        _adopt_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    try:
+        from src import external_runs
+        names = os.listdir(external_runs.runs_dir())
+    except Exception:  # noqa: BLE001 - no runs folder yet
+        return adopted
+    seen = set()
+    for name in sorted(names):
+        if not name.endswith(".json") or "-" not in name:
+            continue
+        job_id = name[:-5].rsplit("-", 1)[0]
+        if job_id in seen or not re.fullmatch(r"[0-9a-f]{12}", job_id):
+            continue
+        seen.add(job_id)
+        try:
+            if job_id in _jobs:
+                continue
+            if not external_runs.unsettled_for_job(job_id):
+                continue
+            job = _load(job_id)
+            if job is not None and job.adopted_runs and job.status in _LIVE:
+                adopted.append(job_id)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("dispatch: adoption of %s failed: %s", job_id, e)
+    return adopted
+
+
+def _adopt(job: DispatchJob, runs: List[Dict[str, Any]]) -> None:
+    """Re-attach a job to the external runs that outlived a restart."""
+    job.status = "running"
+    job.verdict = None
+    job.finished = None
+    job.adopted_runs = [str(r.get("run_id")) for r in runs]
+    from src import external_runs
+    running = sum(1 for r in runs if external_runs.alive(r))
+    # The agents are still writing in the workspace: hold it, so a new job
+    # for the same folder waits instead of starting over their work.
+    key = _ws_key(job.workspace)
+    if key and _ws_busy(key) is None:
+        _running_ws[key] = job.id
+    if running:
+        job._event(event="job", message=(f"adopted after a restart of Faustus: {running} external worker(s) "
+                                          "still running; following them to their end"))
+    else:
+        job._event(event="job", message=("adopted after a restart of Faustus: its external worker(s) ended "
+                                          "while Faustus was down; reading their logs"))
+    job._persist()
+    coro = _follow_adopted(job, runs, while_down=not running)
+    try:
+        job.task = asyncio.get_running_loop().create_task(coro)
+        return
+    except RuntimeError:
+        pass
+    # A synchronous caller (a listing read from a worker thread): hand the
+    # follower to the server's loop, so its wake-ups stay on that loop.
+    loop = _adopt_loop
+    if loop is not None and loop.is_running() and not loop.is_closed():
+        asyncio.run_coroutine_threadsafe(coro, loop)
+        return
+    # No server loop at all (a script, a test): a thread of its own.
+    import threading
+    threading.Thread(target=lambda: asyncio.run(coro), name=f"dispatch-adopt-{job.id}", daemon=True).start()
+
+
+def _adopted_name(job: DispatchJob, run_id: str) -> str:
+    try:
+        index = int(run_id.rsplit("-", 1)[1])
+        task = (job.args.get("tasks") or [])[index]
+        return str(task.get("name") or f"worker-{index + 1}")
+    except Exception:  # noqa: BLE001
+        return run_id
+
+
+async def _follow_adopted(job: DispatchJob, runs: List[Dict[str, Any]], *, while_down: bool = False) -> None:
+    """Tail each adopted run's log onto the board until every one has ended,
+    then settle the job on what can honestly be said: the agents' own words,
+    and that the verification and later steps of the job did not run."""
+    from src import external_runs
+    offsets = {str(r["run_id"]): 0 for r in runs}
+    stopped = False
+    try:
+        while True:
+            alive_any = False
+            for record in runs:
+                rid = str(record["run_id"])
+                text, offsets[rid] = external_runs.read_from(str(record.get("log") or ""), offsets[rid])
+                for line in text.splitlines():
+                    if line.strip():
+                        job.note_worker_event({"event": "tool", "name": _adopted_name(job, rid),
+                                               "tail": line[-2000:]})
+                if external_runs.alive(record):
+                    alive_any = True
+                    if job.status in ("cancelling", "cancelled"):
+                        stopped = external_runs.terminate(record) or stopped
+            if not alive_any:
+                break
+            await asyncio.sleep(ADOPT_POLL_S)
+        reports = []
+        tasks = list(job.args.get("tasks") or [])
+        for record in runs:
+            rid = str(record["run_id"])
+            index = int(rid.rsplit("-", 1)[1]) if rid.rsplit("-", 1)[-1].isdigit() else 0
+            text = external_runs.tail(str(record.get("log") or ""), 8000)
+            status, why = external_runs.outcome_from_log(text)
+            if job.status in ("cancelling", "cancelled"):
+                status, why = "cancelled", ""
+            external_runs.finish(rid, status=status, adopted=True)
+            task = tasks[index] if 0 <= index < len(tasks) and isinstance(tasks[index], dict) else {"name": rid}
+            reports.append(_external_report(task, index, {
+                "status": status, "error": why, "output_tail": text, "runner": record.get("runner"),
+                "label": record.get("label"), "unguarded": not record.get("gated"),
+                "outcome": "cancelled" if status == "cancelled" else None}))
+        # The checkpoint taken before the restart is still in the mirror: what
+        # changed on disk since then is observed, not taken on the agents' word.
+        if job.checkpoint and job.workspace:
+            try:
+                job.changes = await asyncio.to_thread(_changes_since, job.workspace, job.checkpoint)
+            except Exception as e:  # noqa: BLE001 - evidence is best effort here
+                logger.debug("dispatch %s: changes after adoption unavailable: %s", job.id, e)
+        job.result = {"subagents": reports, "exit_code": 0 if all(r["status"] == "done" for r in reports) else 1,
+                      "output": f"{len(reports)} external worker(s) followed after a restart of Faustus",
+                      "dropped_tasks": 0}
+        if job.status in ("cancelling", "cancelled"):
+            job.status = "cancelled"
+            job.verdict = "cancelled after a restart of Faustus" + (" (its external agents were stopped)" if stopped else "")
+        else:
+            job.status = "partial"
+            job.verdict = ("adopted after a restart of Faustus: the external agents "
+                           + ("had ended while Faustus was down" if while_down else "finished")
+                           + ", but this job's verification and any later steps did not run — check the changes "
+                           "or re-dispatch what is left")
+    except Exception as e:  # noqa: BLE001 - a follower must still settle the job
+        job.status = "interrupted"
+        job.verdict = f"lost track of the adopted external agents after a restart ({type(e).__name__})"
+    finally:
+        job.finished = time.time()
+        _release_workspace(_ws_key(job.workspace), job.id)
+        job._persist()
+        job._notify()
+        job._wake()
 
 
 def recent_counts(window_s: float = 3600.0, *, now: Optional[float] = None) -> Dict[str, int]:
@@ -2677,6 +2853,13 @@ def cancel(job: DispatchJob) -> bool:
     unwound (their commands killed, the transcripts saved) and `_run`'s
     finally has recorded what changed on disk; a waiter returns then, never
     while the workspace is still being written."""
+    if job.adopted_runs and job.status in _LIVE:
+        # Adopted after a restart: the follower stops the external agents
+        # (after checking each is still the same process) and settles.
+        job.status = "cancelling"
+        job._event(event="job", message="cancelling")
+        job._persist()
+        return True
     if job.task is not None and not job.task.done():
         if not job._entered:
             # cancelled before its first step: _run never runs its finally
