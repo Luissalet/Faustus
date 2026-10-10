@@ -7,6 +7,7 @@ evidence. The fixture, judging and "a hole is reported" logic run anywhere.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import subprocess
 
@@ -18,6 +19,53 @@ from src.execution_backends import DockerWorkspaceBackend
 
 def run(coro):
     return asyncio.run(coro)
+
+
+def test_descendant_observation_ignores_other_workspaces(monkeypatch, tmp_path):
+    root = str(tmp_path / "own root")
+    foreign = str(tmp_path / "foreign")
+    replies = iter([
+        subprocess.CompletedProcess([], 0, "faustus-codemode-own\nfaustus-codemode-other\n", ""),
+        subprocess.CompletedProcess([], 0, "\n".join(
+            json.dumps('/faustus-codemode-' + name) + ' ' + json.dumps([
+                {'Type':'bind', 'Source':path, 'Destination':'/workspace'}])
+            for name, path in [('own',root),('other',foreign)]), "")])
+    monkeypatch.setattr(probe.subprocess, "run", lambda *a, **kw: next(replies))
+    assert probe._containers_for_workspace(root) == ['faustus-codemode-own']
+
+
+@pytest.mark.parametrize('failed_step', ['list', 'inspect'])
+def test_descendant_observation_docker_failure_is_not_clean(monkeypatch, failed_step):
+    replies = iter([
+        subprocess.CompletedProcess([], 1 if failed_step == 'list' else 0, 'faustus-codemode-own\n', ''),
+        subprocess.CompletedProcess([], 1, '', 'daemon unavailable')])
+    monkeypatch.setattr(probe.subprocess, "run", lambda *a, **kw: next(replies))
+    with pytest.raises(RuntimeError, match='Docker could not'):
+        probe._containers_for_workspace('/own')
+
+
+def test_observation_failure_still_cancels_its_guest(monkeypatch):
+    from src.code_mode import runner
+    cancelled = []
+
+    async def guest(*args, **kwargs):
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.append(True)
+
+    def unavailable(*args):
+        raise RuntimeError('Docker observation failed')
+
+    monkeypatch.setattr(runner, 'run_code_mode', guest)
+    monkeypatch.setattr(probe, '_containers_for_workspace', unavailable)
+    fx = probe.Fixture()
+    try:
+        with pytest.raises(RuntimeError, match='observation failed'):
+            run(probe._probe_descendants(fx, 'image'))
+        assert cancelled == [True]
+    finally:
+        fx.close()
 
 
 # ── no Docker needed ───────────────────────────────────────────────────────
@@ -250,8 +298,12 @@ def test_probe_leaves_no_containers_or_files_behind(image):
     import tempfile
     tmp = tempfile.gettempdir()
     before = {n for n in os.listdir(tmp) if n.startswith("faustus_sbx_probe_")}
+    containers_before = set(subprocess.run(
+        ["docker", "ps", "-a", "--format", "{{.Names}}"],
+        capture_output=True, text=True, timeout=30, check=True).stdout.split())
     run(probe.run_sandbox_probe(["shell", "code_mode", "descendants"], image=image))
     left = subprocess.run(["docker", "ps", "-a", "--format", "{{.Names}}"],
                           capture_output=True, text=True, timeout=30).stdout.split()
-    assert not [n for n in left if n.startswith(("faustus-codemode-", "faustus-sbx-probe"))]
+    assert not [n for n in set(left) - containers_before
+                if n.startswith(("faustus-codemode-", "faustus-sbx-probe"))]
     assert {n for n in os.listdir(tmp) if n.startswith("faustus_sbx_probe_")} == before

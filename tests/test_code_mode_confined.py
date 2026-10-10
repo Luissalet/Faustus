@@ -16,6 +16,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
@@ -24,6 +25,12 @@ from src import container_mounts
 from src.code_mode import confined
 from src.code_mode import runner as runner_mod
 from src.code_mode.runner import run_code_mode
+
+
+@pytest.fixture(autouse=True)
+def own_container_namespace(monkeypatch):
+    """Cleanup assertions must observe this test, not concurrent sessions."""
+    monkeypatch.setattr(confined, "_CONTAINER_PREFIX", f"faustus-codemode-test-{uuid.uuid4().hex[:12]}-")
 
 
 # ── no Docker needed ───────────────────────────────────────────────────────

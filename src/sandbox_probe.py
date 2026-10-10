@@ -474,6 +474,41 @@ def _probe_files(fx: Fixture) -> Dict[str, Any]:
             "enforcement": "host_path_policy", "container": False}
 
 
+def _containers_for_workspace(workspace: str) -> List[str]:
+    """Observe only guests mounted on this probe's unique fixture.
+
+    Other sessions and old stopped containers are neither evidence of this
+    probe's cleanup nor ours to remove. A failed Docker query is unknown.
+    """
+    from src.code_mode import confined
+    from src.native_env import native_host_environment
+
+    env = native_host_environment()
+    listed = subprocess.run(
+        ["docker", "ps", "-a", "--filter", f"name={confined._CONTAINER_PREFIX}",
+         "--format", "{{.Names}}"], capture_output=True, text=True, timeout=30, env=env)
+    if listed.returncode:
+        raise RuntimeError("Docker could not list probe containers")
+    names = listed.stdout.split()
+    if not names:
+        return []
+    inspected = subprocess.run(
+        ["docker", "inspect", "--format", "{{json .Name}} {{json .Mounts}}", *names],
+        capture_output=True, text=True, timeout=30, env=env)
+    if inspected.returncode:
+        raise RuntimeError("Docker could not inspect probe container mounts")
+    expected = os.path.normcase(os.path.normpath(workspace))
+    owned = []
+    for line in inspected.stdout.splitlines():
+        name_json, mounts_json = line.split(" ", 1)
+        mounts = json.loads(mounts_json)
+        if any(m.get("Type") == "bind" and m.get("Destination") == "/workspace"
+               and os.path.normcase(os.path.normpath(m.get("Source", ""))) == expected
+               for m in mounts):
+            owned.append(json.loads(name_json).lstrip("/"))
+    return owned
+
+
 async def _probe_descendants(fx: Fixture, image: str) -> Dict[str, Any]:
     from src.code_mode import confined
     from src.code_mode.runner import run_code_mode
@@ -484,30 +519,30 @@ async def _probe_descendants(fx: Fixture, image: str) -> Dict[str, Any]:
     task = asyncio.ensure_future(run_code_mode(code, runtime="confined", workspace=fx.root, image=image))
 
     async def running() -> List[str]:
-        done = await asyncio.to_thread(
-            subprocess.run, ["docker", "ps", "-a", "--filter", f"name={confined._CONTAINER_PREFIX}",
-                             "--format", "{{.Names}}"], capture_output=True, text=True, timeout=30)
-        return [n for n in done.stdout.split() if n]
+        return await asyncio.to_thread(_containers_for_workspace, fx.root)
 
     started = False
-    for _ in range(40):
-        if task.done():
-            break
-        if await running():
-            started = True
-            break
-        await asyncio.sleep(0.25)
+    try:
+        for _ in range(40):
+            if task.done():
+                break
+            if await running():
+                started = True
+                break
+            await asyncio.sleep(0.25)
+        if started:
+            await asyncio.sleep(1.0)
+    finally:
+        if not task.done():
+            task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
     if not started:
-        result = task.result() if task.done() else None
-        task.cancel()
+        result = task.result() if not task.cancelled() and task.exception() is None else None
         reason = str((result or {}).get("error") or "the guest container never started")
         return {"status": "unavailable", "reason": reason, "checks": []}
-    await asyncio.sleep(1.0)
-    task.cancel()
-    try:
-        await task
-    except (asyncio.CancelledError, Exception):
-        pass
     left = await running()
     row = {"check": "descendant_dies_with_container_on_cancel", "expected": "denied",
            "observed": "allowed" if left else "denied", "ok": not left,

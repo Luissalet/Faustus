@@ -10829,3 +10829,9 @@ Detalle en `docs/api/todo-assign-agent.md`. **VerificaciÃ³n:** `tests/test_tod
 - El modo determinista prueba el harness, no al modelo: supone un modelo que siempre obedece.
 - El modo en vivo entrega el contenido como ficheros, no por los buscadores/correo/calendario reales, y una corrida es una muestra.
 - Los agujeros (1) y (2) siguen abiertos; cerrarlos cambia la clasificacion de herramientas y es una decision de producto.
+
+## Diagnóstico de descendientes en Docker compartido — 10-10-2026 (#224)
+
+Al reanudar Docker, tres contenedores de pruebas detenidos del día 8 provocaban falsos fallos de limpieza: `sandbox_probe` observaba todos los huéspedes de Code Mode, aunque pertenecieran a otras sesiones. La comprobación ahora identifica los contenedores por el montaje de su carpeta temporal única. Conserva los ajenos, informa como no disponible si Docker no puede listarlos o inspeccionarlos y cancela su huésped también cuando falla la observación. No cambia los permisos ni la política de ejecución. El mismo informe se ofrece por `POST /api/sandbox/probe` y por el MCP de ejecución `sandbox_probe`.
+
+La suite de Code Mode confinado, proveedor, diagnóstico, modo requerido y metadatos pasó 76 pruebas con contenedores reales, sin saltadas; cuatro comprobaciones focales adicionales cubren el alcance, los errores de Docker y la cancelación ante un fallo de observación. Quedó un aviso de transporte Proactor de Python en Windows. API y MCP verificaron los accesos y los descendientes conservando los tres contenedores antiguos. La búsqueda real SearXNG devolvió cinco resultados con respuestas de Bing, Yandex y OpenAlex; Mojeek no respondió y otros motores notificaron CAPTCHA o límite de peticiones. Esa prueba de búsqueda no certifica todos los motores ni calidad universal. Evidencia aislada: `research-inbox/qa-docker-resume-20261010`. Sin cargar modelos en GPU ni modificar los datos reales.
