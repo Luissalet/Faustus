@@ -1,0 +1,40 @@
+/* #247 — workspace file tree lit up with what the turn read / wrote. */
+.fs-ftree { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow: auto; }
+.fs-ftree__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.fs-ftree__head h3 { margin: 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.fs-ftree__hint { margin: 0; font-size: 11px; color: var(--fs-text-3); }
+.fs-ftree__legend { display: flex; gap: 6px; }
+.fs-ftree__chip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px;
+  font-size: 11px; font-variant-numeric: tabular-nums; border: 1px solid var(--fs-border); color: var(--fs-text-3);
+}
+.fs-ftree__chip[data-mark='written'] { color: var(--fs-success); border-color: color-mix(in srgb, var(--fs-success) 55%, var(--fs-border)); }
+.fs-ftree__chip[data-mark='read'] { color: var(--fs-info); border-color: color-mix(in srgb, var(--fs-info) 55%, var(--fs-border)); }
+.fs-ftree__list { list-style: none; margin: 0; padding: 0; }
+.fs-ftree__item { margin: 0; }
+.fs-ftree__row {
+  display: flex; align-items: center; gap: 6px; width: 100%; height: auto; min-height: 26px; padding-top: 3px; padding-bottom: 3px; padding-right: 8px;
+  border: 0; border-left: 2px solid transparent; border-radius: 5px; background: transparent; color: var(--fs-text-2, inherit);
+  font-size: 12px; text-align: left; cursor: pointer;
+}
+.fs-ftree__row:hover { background: color-mix(in srgb, var(--fs-surface-2) 80%, transparent); }
+.fs-ftree__row[data-active] { background: color-mix(in srgb, var(--fs-surface-2) 100%, transparent); }
+.fs-ftree__icon { flex: none; color: var(--fs-text-3); }
+.fs-ftree__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fs-ftree__row[data-mark='written'] { border-left-color: var(--fs-success); background: color-mix(in srgb, var(--fs-success) 12%, transparent); color: var(--fs-text-1, inherit); font-weight: 600; }
+.fs-ftree__row[data-mark='read'] { border-left-color: var(--fs-info); background: color-mix(in srgb, var(--fs-info) 10%, transparent); color: var(--fs-text-1, inherit); }
+.fs-ftree__mark { display: inline-flex; flex: none; }
+.fs-ftree__mark[data-mark='written'] { color: var(--fs-success); }
+.fs-ftree__mark[data-mark='read'] { color: var(--fs-info); }
+.fs-ftree__under { flex: none; width: 6px; height: 6px; border-radius: 50%; }
+.fs-ftree__under[data-mark='written'] { background: var(--fs-success); }
+.fs-ftree__under[data-mark='read'] { background: var(--fs-info); }
+.fs-ftree__note { padding: 4px 8px; font-size: 11px; color: var(--fs-text-3); list-style: none; }
+.fs-workbench-files { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.fs-workbench-files[hidden] { display: none; }
+.fs-workbench-files > .fs-ftree { flex: 1; }
+.fs-panel__tabcount {
+  margin-left: 4px; padding: 0 5px; border-radius: 999px; font-size: 10px; line-height: 15px; font-variant-numeric: tabular-nums;
+  color: var(--fs-info); border: 1px solid color-mix(in srgb, var(--fs-info) 55%, var(--fs-border));
+}
+.fs-panel__tabcount[data-written] { color: var(--fs-success); border-color: color-mix(in srgb, var(--fs-success) 55%, var(--fs-border)); }

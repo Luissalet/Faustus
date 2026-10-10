@@ -9585,3 +9585,14 @@ GitHub for the working folder's repository, with gh: labels, release notes and r
 Lists the repository's labels; "sync file" creates or updates them from a YAML/JSON file in the repo (needs the repository policy and your approval).	Lista las etiquetas del repositorio; «sync archivo» las crea o actualiza desde un YAML/JSON del repo (necesita la política del repositorio y tu aprobación).
 Drafts release notes from the merged pull requests and commits since the last tag.	Redacta las notas de versión a partir de los pull requests fusionados y los commits desde la última etiqueta.
 Checks a release is ready: clean tree, tag, CI status, blocker issues, version strings.	Comprueba que una versión está lista: árbol limpio, etiqueta, estado del CI, incidencias bloqueantes y versiones.
+Written in this turn	Escrito en este turno
+Read in this turn	Leído en este turno
+Holds files written in this turn	Contiene ficheros escritos en este turno
+Holds files read in this turn	Contiene ficheros leídos en este turno
+Files touched in this turn	Ficheros tocados en este turno
+{n} written	{n} escritos
+{n} read	{n} leídos
+Could not list this folder	No se pudo listar esta carpeta
+Empty folder	Carpeta vacía
+Showing the first entries only	Solo se muestran las primeras entradas
+Files the agent reads or writes in the current turn light up here until the next message.	Los ficheros que el agente lee o escribe en el turno actual se iluminan aquí hasta el siguiente mensaje.

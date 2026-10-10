@@ -1,10 +1,12 @@
-import { Archive, Check, Copy, FileText, GitBranch, Globe, History, Kanban, ListChecks, Monitor, MessageSquarePlus, Redo2, Save, SkipForward, Undo2, X, Users, Paperclip, Files } from 'lucide-react';
+import { Archive, Check, Copy, FileText, GitBranch, Globe, History, Kanban, ListChecks, Monitor, MessageSquarePlus, Redo2, Save, SkipForward, Undo2, X, Users, Paperclip, Files, FolderTree } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Link } from 'react-router';
 import { Button, IconButton, Popover, Skeleton } from '../../components';
 import { archiveDoc, docPdfUrl, getDoc, listDocVersions, renameDoc, restoreDocVersion, saveDoc, type DocVersion } from '../../adapters/documents';
 import { readWorkspaceFile, saveWorkspaceFile, type WorkspaceFileText } from '../../adapters/workspace';
 import { ApiError } from '../../adapters/api';
+import FileTree from './FileTree';
+import { markCounts, turnFileMarks } from './file-activity';
 import { threeWayLines, threeWaySummary } from '../../adapters/fileConflict';
 import { Rich } from '../rich';
 import { autoOpenEnabled, setAutoOpen, fileKey,docKey,type PanelDraft,type DocState, type PanelAction, type PanelState, type PanelTab } from './panel';
@@ -51,6 +53,7 @@ export interface SidePanelProps {
 
 const TABS: { id: PanelTab; label: string; icon: typeof Globe }[] = [
   {id:'outputs',label:'Results',icon:Files},
+  {id:'files',label:'Files',icon:FolderTree},
   {id:'sources',label:'Sources',icon:Paperclip},
   {id:'progress',label:'Progress',icon:ListChecks},
   {id:'agents',label:'Agents',icon:Users},
@@ -742,10 +745,17 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
   const tabs=TABS.filter(tab=>
     (tab.id!=='doc'||state.doc) &&
     (tab.id!=='file'||state.file) &&
+    (tab.id!=='files'||Boolean(workspace)) &&
     (tab.id!=='git'||Boolean(workspace||project)) &&
     (tab.id!=='board'||Boolean(project)),
   );
   const workers=[...new Map(turns.flatMap(turn=>turn.workers).map(worker=>[worker.id,worker])).values()];
+  // #247: what the current turn has read / written, for the Files tab.
+  const fileMarks=useMemo(()=>turnFileMarks(turns,workspace),[turns,workspace]);
+  const fileCounts=markCounts(fileMarks);
+  // The tree stays mounted once opened, so its folders stay open while a file is read in the other tab.
+  const [filesSeen,setFilesSeen]=useState(false);
+  useEffect(()=>{if(state.tab==='files')setFilesSeen(true);},[state.tab]);
   return (
     <aside className="fs-panel" data-testid="studio-panel" aria-label={t('Side panel')}>
       <div
@@ -806,6 +816,7 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
             >
               <tab.icon size={13} aria-hidden="true" />
               <span>{t(tab.label)}</span>
+              {tab.id==='files'&&fileCounts.read+fileCounts.written>0&&<small className="fs-panel__tabcount" data-testid="files-tab-count" data-written={fileCounts.written>0||undefined}>{fileCounts.read+fileCounts.written}</small>}
             </button>
           ))}
         </div>
@@ -820,6 +831,7 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
       </div>}
       <div className="fs-workbench-content" role="tabpanel" id="workbench-content" aria-labelledby={'workbench-tab-'+state.tab}>
       {(state.tab==='outputs'||state.tab==='sources')&&<WorkbenchResources kind={state.tab} state={state} turns={turns} workspace={workspace} project={project} dispatch={dispatch}/>}
+      {filesSeen&&workspace&&<div className="fs-workbench-files" hidden={state.tab!=='files'}><FileTree workspace={workspace} marks={fileMarks} refresh={fileCounts.written+(busy?'b':'i')} active={state.file?state.file.path:null} onOpen={path=>dispatch({type:'file',workspace,path})}/></div>}
       {state.tab==='progress'&&<ProgressTab state={state} turns={turns}/>}
       {state.tab === 'agents' && (
         <div className="fs-panel__body">

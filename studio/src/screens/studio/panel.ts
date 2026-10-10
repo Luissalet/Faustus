@@ -11,7 +11,7 @@ import { t } from '../../i18n';
  * State and reducer only; SidePanel.tsx paints it.
  */
 
-export type PanelTab = 'outputs' | 'sources' | 'progress' | 'agents' | 'browser' | 'doc' | 'file' | 'git' | 'board';
+export type PanelTab = 'outputs' | 'files' | 'sources' | 'progress' | 'agents' | 'browser' | 'doc' | 'file' | 'git' | 'board';
 export interface PanelDraft {text:string; base:string; revision?:string}
 
 export interface DocState {

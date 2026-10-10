@@ -70,19 +70,22 @@ export interface BrowseResult {
   path: string;
   parent: string | null;
   dirs: { name: string; path: string }[];
+  /** Only filled when the listing was asked with `includeFiles` (the Files tab). */
+  files: { name: string; path: string; size: number }[];
   truncated: boolean;
   selectable: boolean;
 }
 
-export async function browseWorkspace(path: string, signal?: AbortSignal): Promise<BrowseResult> {
+export async function browseWorkspace(path: string, signal?: AbortSignal, includeFiles = false): Promise<BrowseResult> {
   const raw = await getJson<Partial<BrowseResult>>(
-    `/api/workspace/browse?path=${encodeURIComponent(path)}`,
+    `/api/workspace/browse?path=${encodeURIComponent(path)}${includeFiles ? '&include_files=true' : ''}`,
     signal,
   );
   return {
     path: raw.path ?? path,
     parent: raw.parent ?? null,
     dirs: asArray<{ name: string; path: string }>(raw.dirs),
+    files: asArray<{ name: string; path: string; size: number }>(raw.files),
     truncated: Boolean(raw.truncated),
     selectable: raw.selectable !== false,
   };
