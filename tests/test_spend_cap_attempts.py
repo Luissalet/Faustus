@@ -52,12 +52,28 @@ def api(cap, monkeypatch):
             data = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             state.calls.append(state.scenario)
             sc = state.scenario
+            if sc == "failed_nousage":
+                self.send_response(503)
+                self.end_headers()
+                self.wfile.write(b"busy")
+                return
             if sc == "failed_usage":
                 self.send_response(503)
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": {"message": "billed failure"},
                                              "usage": {"prompt_tokens": 5, "completion_tokens": 5,
                                                        "cost": 0.2}}).encode())
+                return
+            if sc == "truncated_after_usage" and len(state.calls) == 1:
+                # a 200 stream that delivers a cost receipt and no text, then the
+                # transport dies before the terminal chunk
+                raw = ("data: " + json.dumps({"choices": [], "usage": {
+                    "prompt_tokens": 1, "completion_tokens": 0, "cost": 1.0}}) + "\n\n").encode()
+                self.wfile.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n"
+                                 b"Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
+                                 + hex(len(raw))[2:].encode() + b"\r\n" + raw + b"\r\n")
+                self.wfile.flush()
+                self.close_connection = True
                 return
             if sc == "retry" and len(state.calls) == 1:
                 # another completed paid request reaches the cap while this one is rejected
@@ -134,6 +150,32 @@ def test_stream_retry_is_gated_before_the_second_send(api):
     assert len(api.calls) == 1
     errors = [c for c in chunks if c.startswith("event: error")]
     assert errors and json.loads(errors[-1].split("data: ", 1)[1])["error_class"] == "spend_cap.reached"
+
+
+def test_stream_receipt_is_booked_before_the_retry_is_gated(api):
+    api.scenario = "truncated_after_usage"
+    chunks = _stream(api.url, max_retries=2)
+    assert len(api.calls) == 1  # the second POST was never sent
+    status = spend_cap.status()
+    assert status["paid_calls"] == 1 and status["spent_usd"] == pytest.approx(1.0)
+    errors = [c for c in chunks if c.startswith("event: error")]
+    assert errors and json.loads(errors[-1].split("data: ", 1)[1])["error_class"] == "spend_cap.reached"
+
+
+def test_stream_http_error_with_a_usage_receipt_is_booked(api):
+    api.scenario = "failed_usage"
+    chunks = _stream(api.url, max_retries=1)
+    assert any(c.startswith("event: error") for c in chunks)
+    status = spend_cap.status()
+    assert status["paid_calls"] >= 1
+    assert status["spent_usd"] == pytest.approx(0.2 * status["paid_calls"])
+    assert status["tokens_today"] == 10 * status["paid_calls"]
+
+
+def test_stream_http_error_without_a_receipt_books_nothing(api):
+    api.scenario = "failed_nousage"
+    _stream(api.url, max_retries=1)
+    assert spend_cap.status()["paid_calls"] == 0
 
 
 def test_cache_hits_are_neither_refused_nor_counted(api):

@@ -5856,6 +5856,22 @@ def _stream_error_chunk(status: int, message: str, *, error_class: str,
     return f'event: error\ndata: {json.dumps(payload)}\n\n'
 
 
+def _cap_ledger_failed_receipt(raw: str) -> None:
+    """A streamed HTTP error body can carry a valid usage receipt: hand it to
+    the running attempt ledger (booked at the attempt boundary, before any
+    retry is gated). No receipt means nothing is booked."""
+    try:
+        from src import spend_cap
+        ledger = spend_cap.current_ledger()
+        if ledger is None:
+            return
+        usage = _observed_nonstream_usage(json.loads(raw), _detect_provider(ledger.url), ledger.model)
+        if spend_cap.has_receipt(usage):
+            ledger.frame(usage)
+    except Exception:  # noqa: BLE001 - bookkeeping never breaks the stream
+        logger.debug("[spend_cap] streamed error receipt skipped", exc_info=True)
+
+
 def _stream_status_error_chunk(status: int, friendly: str, raw: str, *,
                                 error_class: str, attempts: int, retryable: bool) -> str:
     """`event: error` chunk for a non-2xx stream response (CALL-06).
@@ -5866,6 +5882,7 @@ def _stream_status_error_chunk(status: int, friendly: str, raw: str, *,
     is never `outcome_unknown` — the request WAS answered, just with an
     error — so there is no `partial` field here.
     """
+    _cap_ledger_failed_receipt(raw)
     payload = {
         "status": status, "text": friendly, "raw": raw[:500],
         "error_class": error_class, "attempts": attempts, "retryable": retryable,

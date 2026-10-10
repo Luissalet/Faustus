@@ -450,8 +450,15 @@ class AttemptLedger:
         self.url, self.model = url, model
         self._current: Optional[Dict[str, Any]] = None
 
+    def settle_previous(self) -> None:
+        """Book the receipt of the attempt that just ended (if it has one)."""
+        try:
+            self._flush(final=False, errored=True)
+        except Exception:  # noqa: BLE001
+            logger.debug("[spend_cap] settling failed", exc_info=True)
+
     def begin_attempt(self) -> None:
-        self._flush(final=False, errored=True)
+        self.settle_previous()
         self._current = {}
 
     def frame(self, usage: Any) -> None:
@@ -491,11 +498,21 @@ def use_ledger(ledger: Optional[AttemptLedger]) -> None:
 
 
 def attempt_gate(url: str, model: str = "") -> None:
-    """:func:`gate` for one stream attempt, then mark the attempt boundary."""
-    gate(url, model)
+    """:func:`gate` for one stream attempt, then mark the attempt boundary.
+
+    The previous attempt is settled FIRST: whatever receipt it delivered is
+    booked before the gate decides, so a retry after an accepted (and already
+    reported) cost sees it. A refused attempt was never sent and books nothing."""
     ledger = _ledger.get()
     if ledger is not None:
+        ledger.settle_previous()
+    gate(url, model)
+    if ledger is not None:
         ledger.begin_attempt()
+
+
+def current_ledger() -> Optional[AttemptLedger]:
+    return _ledger.get()
 
 
 def status(*, now: Optional[datetime] = None) -> Dict[str, Any]:
