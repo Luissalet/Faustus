@@ -413,6 +413,9 @@ class PersonalMemorySource(ThreadedSource):
                 snapshot_unknown = True
         else:
             entries = list(store.load(owner) or [])
+        # Expired leases are marked, superseded facts dropped (src/memory_leases.py).
+        from src import memory_leases
+        entries = memory_leases.prompt_view(entries)
         if not entries:
             return ()
         limit = req.top()
@@ -474,7 +477,8 @@ class PersonalMemorySource(ThreadedSource):
             return None
         wanted = ref[5:]
         owner = str(req.owner or "")
-        for entry in self._store().load(owner) or []:
+        from src import memory_leases
+        for entry in memory_leases.prompt_view(self._store().load(owner) or []):
             if str(entry.get("id") or "") == wanted:
                 return self._candidate(entry, req, owner, ("exact",))
         return None

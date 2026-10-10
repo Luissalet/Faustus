@@ -19,6 +19,22 @@ export const CATEGORY_LABEL: Record<string, string> = {
   task: 'Task',
 };
 
+/**
+ * The lease of a fact about a moment (where they live, who they work for...):
+ * `src/memory_leases.py`. A fact without a kind has none.
+ */
+export type LeaseState = 'none' | 'active' | 'expiring' | 'expired' | 'closed';
+
+export interface MemoryLease {
+  kind: string;
+  state: LeaseState;
+  /** Negative once it has expired. */
+  daysLeft: number | null;
+  /** Unix seconds. */
+  leaseUntil: number | null;
+  confirmedAt: number | null;
+}
+
 export interface Memory {
   id: string;
   text: string;
@@ -28,10 +44,27 @@ export interface Memory {
   uses: number;
   pinned: boolean;
   sessionId: string | null;
+  lease: MemoryLease | null;
+}
+
+const LEASE_STATES: readonly string[] = ['none', 'active', 'expiring', 'expired', 'closed'];
+
+function leaseFrom(raw: unknown): MemoryLease | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const state = typeof r.state === 'string' && LEASE_STATES.includes(r.state) ? (r.state as LeaseState) : 'none';
+  return {
+    kind: typeof r.kind === 'string' ? r.kind : '',
+    state,
+    daysLeft: typeof r.days_left === 'number' ? r.days_left : null,
+    leaseUntil: typeof r.lease_until === 'number' ? r.lease_until : null,
+    confirmedAt: typeof r.confirmed_at === 'number' ? r.confirmed_at : null,
+  };
 }
 
 function memoryFrom(raw: Record<string, unknown>): Memory {
   return {
+    lease: leaseFrom(raw.lease),
     id: String(raw.id),
     text: typeof raw.text === 'string' ? raw.text : '',
     category: typeof raw.category === 'string' && raw.category ? raw.category : 'fact',
@@ -91,6 +124,86 @@ export async function updateMemory(id: string, text: string, category?: string):
 
 export async function deleteMemory(id: string): Promise<void> {
   await ok(await fetch(`/api/memory/${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'same-origin' }), 'memory/delete');
+}
+
+/* ── facts with a lease (src/memory_leases.py) ──────────────────────────────
+ * An expired fact still reaches the model, marked as possibly outdated, until
+ * the owner renews it (it is still true) or forgets it. */
+
+export const LEASE_KIND_LABEL: Record<string, string> = {
+  location: 'Location',
+  status: 'Status',
+  job: 'Job',
+  project: 'Project',
+  preference: 'Preference',
+};
+
+export interface LeaseRow {
+  id: string;
+  text: string;
+  category: string;
+  kind: string;
+  state: LeaseState;
+  daysLeft: number | null;
+  leaseUntil: number | null;
+  confirmedAt: number | null;
+  leaseDays: number | null;
+  closedAt: number | null;
+}
+
+export interface LeaseReview {
+  expired: LeaseRow[];
+  expiring: LeaseRow[];
+  closed: LeaseRow[];
+  leaseDays: Record<string, number | null>;
+}
+
+function leaseRowFrom(raw: Record<string, unknown>): LeaseRow {
+  const lease = leaseFrom(raw) ?? { kind: '', state: 'none' as LeaseState, daysLeft: null, leaseUntil: null, confirmedAt: null };
+  return {
+    id: String(raw.id ?? ''),
+    text: typeof raw.text === 'string' ? raw.text : '',
+    category: typeof raw.category === 'string' ? raw.category : 'fact',
+    kind: lease.kind,
+    state: lease.state,
+    daysLeft: lease.daysLeft,
+    leaseUntil: lease.leaseUntil,
+    confirmedAt: lease.confirmedAt,
+    leaseDays: typeof raw.lease_days === 'number' ? raw.lease_days : null,
+    closedAt: typeof raw.closed_at === 'number' ? raw.closed_at : null,
+  };
+}
+
+export async function getLeaseReview(signal?: AbortSignal): Promise<LeaseReview> {
+  const data = await getJson<{
+    expired?: Record<string, unknown>[];
+    expiring?: Record<string, unknown>[];
+    closed?: Record<string, unknown>[];
+    settings?: { lease_days?: Record<string, number | null> };
+  }>('/api/memory/leases', signal);
+  return {
+    expired: (data.expired ?? []).map(leaseRowFrom),
+    expiring: (data.expiring ?? []).map(leaseRowFrom),
+    closed: (data.closed ?? []).map(leaseRowFrom),
+    leaseDays: data.settings?.lease_days ?? {},
+  };
+}
+
+/** It is still true: restart the lease (the length of its kind unless `days`). */
+export async function renewLease(id: string, days?: number): Promise<void> {
+  await ok(
+    await fetch(`/api/memory/leases/${encodeURIComponent(id)}/renew`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      body: form({ days: days === undefined ? undefined : String(days) }),
+    }),
+    'memory/leases/renew',
+  );
+}
+
+/** It is no longer true: delete it. */
+export async function forgetLease(id: string): Promise<void> {
+  await ok(await fetch(`/api/memory/leases/${encodeURIComponent(id)}/forget`, { method: 'POST', credentials: 'same-origin' }), 'memory/leases/forget');
 }
 
 export async function pinMemory(id: string, pinned: boolean): Promise<void> {

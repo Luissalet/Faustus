@@ -281,15 +281,30 @@ class MemoryManager:
                 entry["source"] = "user"
             if "category" not in entry:
                 entry["category"] = "fact"
-        
+
+        # New evidence of the same kind ends the old lease (src/memory_leases.py).
+        # A failure here costs the closing, never the write.
+        try:
+            from src import memory_leases
+            memory_leases.close_superseded(entries)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("memory leases: close_superseded skipped (%s)", e)
+
         # Use atomic write
         tmp_file = self.memory_file + ".tmp"
         with open(tmp_file, "w", encoding="utf-8") as f:
             json.dump(entries, f, ensure_ascii=False, indent=2)
         os.replace(tmp_file, self.memory_file)
     
-    def add_entry(self, text: str, source: str = "user", category: str = "fact", owner: str = None) -> Dict:
-        """Add a new memory entry."""
+    def add_entry(self, text: str, source: str = "user", category: str = "fact", owner: str = None,
+                  *, kind: str = None, lease_days: int = None) -> Dict:
+        """Add a new memory entry.
+
+        A fact about a moment (where they live, who they work for, what they
+        are doing) gets a ``kind`` and a lease (src/memory_leases.py); the
+        rest stays exactly as it was. ``kind``/``lease_days`` override the
+        rules (``lease_days=0``: no lease).
+        """
         if not text.strip():
             raise ValueError("Memory text cannot be empty")
 
@@ -303,6 +318,8 @@ class MemoryManager:
         }
         if owner:
             entry["owner"] = owner
+        from src import memory_leases
+        memory_leases.assign(entry, kind=kind, lease_days=lease_days)
         return entry
 
     def increment_uses(self, ids: List[str]) -> None:

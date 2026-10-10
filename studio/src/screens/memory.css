@@ -670,3 +670,67 @@
     animation: none;
   }
 }
+
+/* ── Facts with a lease (src/memory_leases.py) ── */
+
+.fs-mem__lease {
+  padding: 1px 8px;
+  border-radius: var(--fs-radius-pill);
+  background: color-mix(in srgb, var(--fs-warning) 18%, transparent);
+  color: var(--fs-warning);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.fs-mem__lease[data-state='closed'] {
+  background: var(--fs-highlight);
+  color: var(--fs-text-3);
+}
+
+.fs-lease {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--fs-space-3);
+  padding: var(--fs-space-3) var(--fs-space-4);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-panel);
+  background: var(--fs-surface-1);
+}
+
+.fs-lease[data-state='expired'] {
+  border-color: color-mix(in srgb, var(--fs-warning) 50%, var(--fs-border));
+}
+
+.fs-lease__main {
+  display: grid;
+  flex: 1 1 260px;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.fs-lease__text {
+  color: var(--fs-text-1);
+}
+
+.fs-lease__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-2);
+  font-size: 11px;
+  color: var(--fs-text-3);
+}
+
+.fs-lease[data-state='expired'] .fs-lease__when {
+  color: var(--fs-warning);
+  font-weight: 600;
+}
+
+.fs-lease__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+}

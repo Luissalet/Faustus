@@ -177,7 +177,8 @@ class NativeMemoryProvider(MemoryProvider):
         owner: Optional[str] = None,
         top_k: int = 5,
     ) -> List[MemorySearchHit]:
-        memories = self.memory_manager.load(owner=owner)
+        from src import memory_leases
+        memories = memory_leases.prompt_view(self.memory_manager.load(owner=owner))
         by_id = {m.get("id"): m for m in memories}
 
         if self._vector_available():

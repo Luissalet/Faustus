@@ -43,6 +43,8 @@ class MemoryAddRequest(BaseModel):
     category: str = Field(default="fact", description="Memory category")
     source: str = Field(default="user", description="Memory source")
     session_id: Optional[str] = Field(default=None, description="Associated session ID")
+    kind: Optional[str] = Field(default=None, description="What the fact is about (location, status, job, project, preference); sets its lease. Read from the text when omitted.")
+    lease_days: Optional[int] = Field(default=None, ge=0, description="Days the fact stays current before it is marked as possibly outdated; 0 = no lease. The default for its kind when omitted.")
 
     @field_validator('category')
     @classmethod

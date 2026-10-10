@@ -1038,6 +1038,17 @@ DEFAULT_SETTINGS = {
     # instead of leaving an open contradiction — both stay, at different times.
     "memory_temporal_parse": True,
     "memory_temporal_supersede": True,
+    # Facts with a lease (src/memory_leases.py): a personal memory about a
+    # moment (where they live, who they work for, what they are doing) is
+    # only current for a while. Past its lease it is still told to the model,
+    # marked "as of <date>, may be outdated", and waits on the Memory screen
+    # to be renewed or forgotten; a newer fact of the same kind closes it.
+    # `memory_lease_days` overrides the days by kind (0 = no lease), e.g.
+    # {"location": 14, "job": 0}. Defaults: location 30, status 30, project
+    # 90, job 365, preference none. Off = nothing gets a lease or is marked.
+    "memory_leases_enabled": True,
+    "memory_lease_days": {},
+    "memory_lease_review_window_days": 7,
     # The second brain (src/brain/): a markdown vault Faustus owns, typed
     # entities with time, and entity pages kept by the utility model.
     # Off = no sync, no extraction; the files and brain.db stay on disk.

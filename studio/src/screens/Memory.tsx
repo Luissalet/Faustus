@@ -9,6 +9,7 @@ import {
   Pin,
   PinOff,
   Plus,
+  RefreshCw,
   Search,
   ShieldAlert,
   Sparkles,
@@ -36,11 +37,14 @@ import {
   editRuleText,
   exportMemories,
   extractFromSession,
+  forgetLease,
   forgetRule,
   getGrounding,
+  getLeaseReview,
   getPref,
   importFromFile,
   invalidateDecision,
+  LEASE_KIND_LABEL,
   listConflicts,
   listDecisions,
   listFailureCandidates,
@@ -53,6 +57,7 @@ import {
   type PackPreview,
   recordDecision,
   registerFailure,
+  renewLease,
   resolveConflict,
   RULE_LEVELS,
   ruleFeedback,
@@ -64,6 +69,8 @@ import {
   type FailureCandidate,
   type ImportSuggestion,
   type LearnedRule,
+  type LeaseReview,
+  type LeaseRow,
   type Memory,
   type MemoryConflict,
   type MemoryGroundingFinding,
@@ -71,7 +78,7 @@ import {
 } from '../adapters/memory';
 import './projects.css';
 import './memory.css';
-import { t, tn } from '../i18n';
+import { locale, t, tn } from '../i18n';
 
 /**
  * Memoria (the previous interface's Brain modal, `/memory`).
@@ -177,6 +184,11 @@ function MemoryRow({ memory, selecting, selected, onToggle, onPin, onDelete, onS
           </span>
           <span>{memory.source === 'user' ? t('yours') : memory.source === 'auto' ? t('extracted') : memory.source}</span>
           {memory.timestamp > 0 && <span>{relativeTime(new Date(memory.timestamp * 1000).toISOString())}</span>}
+          {memory.lease && (memory.lease.state === 'expired' || memory.lease.state === 'expiring' || memory.lease.state === 'closed') && (
+            <span className="fs-mem__lease" data-state={memory.lease.state} data-testid="memory-lease-badge">
+              {memory.lease.state === 'expired' ? t('expired') : memory.lease.state === 'closed' ? t('replaced') : t('expires soon')}
+            </span>
+          )}
           {memory.uses > 0 && <span>{tn(memory.uses, '{n} use', '{n} uses')}</span>}
           {memory.sessionId &&
             (/^[0-9a-f-]{32,36}$/i.test(memory.sessionId) ? (
@@ -198,6 +210,126 @@ function MemoryRow({ memory, selecting, selected, onToggle, onPin, onDelete, onS
         </div>
       )}
     </article>
+  );
+}
+
+/* ── Facts with a lease (src/memory_leases.py): a fact about a moment (where
+ * they live, who they work for, what they are doing) is only current for a
+ * while. Past it, the model is still told the fact, marked as possibly
+ * outdated, until it is renewed (still true) or forgotten here. ── */
+
+function leaseWhen(row: LeaseRow): string {
+  if (row.state === 'closed') return t('replaced by a newer fact');
+  if (row.daysLeft === null) return '';
+  const n = Math.round(Math.abs(row.daysLeft));
+  if (row.state === 'expired') return n === 0 ? t('expired today') : tn(n, 'expired {n} day ago', 'expired {n} days ago');
+  return n === 0 ? t('expires today') : tn(n, 'expires in {n} day', 'expires in {n} days');
+}
+
+function LeaseRowView({ row, busy, onRenew, onForget }: { row: LeaseRow; busy: boolean; onRenew: () => void; onForget: () => void }) {
+  const since = row.confirmedAt ? new Date(row.confirmedAt * 1000).toLocaleDateString(locale(), { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+  return (
+    <article className="fs-lease" data-state={row.state} data-testid="lease-row">
+      <div className="fs-lease__main">
+        <span className="fs-lease__text">{row.text}</span>
+        <div className="fs-lease__meta">
+          {row.kind && <span className="fs-mem__cat">{LEASE_KIND_LABEL[row.kind] ? t(LEASE_KIND_LABEL[row.kind]) : row.kind}</span>}
+          <span className="fs-lease__when" data-testid="lease-when">{leaseWhen(row)}</span>
+          {since && <span>{t('confirmed {date}', { date: since })}</span>}
+        </div>
+      </div>
+      <div className="fs-lease__actions">
+        {row.state !== 'closed' && (
+          <Button variant="secondary" size="sm" icon={RefreshCw} label={t('Renew')} title={t('It is still true: restart its lease')} disabled={busy} onClick={onRenew} />
+        )}
+        <Button variant="ghost" size="sm" icon={Trash2} label={t('Forget')} title={t('It is no longer true: delete it')} disabled={busy} onClick={onForget} />
+      </div>
+    </article>
+  );
+}
+
+function MemoryLeases({ say, onChanged }: { say: (text: string) => void; onChanged: () => void }) {
+  const [review, setReview] = useState<LeaseReview | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [showClosed, setShowClosed] = useState(false);
+
+  const load = useCallback((signal?: AbortSignal) => {
+    return getLeaseReview(signal)
+      .then((r) => {
+        setReview(r);
+        setFailed(null);
+      })
+      .catch((err: unknown) => {
+        if ((err as { name?: string })?.name === 'AbortError') return;
+        setReview({ expired: [], expiring: [], closed: [], leaseDays: {} });
+        setFailed(t('Could not read the memory leases.'));
+      });
+  }, []);
+
+  useEffect(() => {
+    const c = new AbortController();
+    void load(c.signal);
+    return () => c.abort();
+  }, [load]);
+
+  const act = async (row: LeaseRow, what: 'renew' | 'forget') => {
+    setBusy(row.id);
+    try {
+      if (what === 'renew') await renewLease(row.id);
+      else await forgetLease(row.id);
+      say(what === 'renew' ? t('Renewed.') : t('Forgotten.'));
+      await load();
+      onChanged();
+    } catch {
+      say(what === 'renew' ? t('Could not renew.') : t('Could not forget.'));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (!review) return null;
+  const due = [...review.expired, ...review.expiring];
+  if (!failed && due.length === 0 && review.closed.length === 0) return null;
+
+  return (
+    <section className="fs-rules" aria-labelledby="fs-leases-title" data-testid="memory-leases">
+      <header className="fs-rules__head">
+        <div>
+          <h2 id="fs-leases-title" className="fs-rules__title">
+            {t('Expired or due for review')} <span className="fs-rules__count">{due.length}</span>
+          </h2>
+          <p className="fs-prose">
+            {t('Facts about a moment (where you live, who you work for, what you are doing) stop being certain after a while. The expired ones still reach the model, marked as possibly outdated, until you renew or forget them.')}
+          </p>
+        </div>
+      </header>
+
+      {failed && <p className="fs-rules__error">{failed}</p>}
+      {due.length === 0 && !failed && <p className="fs-rules__empty">{t('Nothing to review: every fact is within its lease.')}</p>}
+      {due.length > 0 && (
+        <div className="fs-rules__list">
+          {due.map((row) => (
+            <LeaseRowView key={row.id} row={row} busy={busy === row.id} onRenew={() => void act(row, 'renew')} onForget={() => void act(row, 'forget')} />
+          ))}
+        </div>
+      )}
+
+      {review.closed.length > 0 && (
+        <>
+          <button type="button" className="fs-memory__link" aria-expanded={showClosed} onClick={() => setShowClosed((v) => !v)}>
+            {t('Replaced by newer facts')} ({review.closed.length})
+          </button>
+          {showClosed && (
+            <div className="fs-rules__list">
+              {review.closed.map((row) => (
+                <LeaseRowView key={row.id} row={row} busy={busy === row.id} onRenew={() => undefined} onForget={() => void act(row, 'forget')} />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </section>
   );
 }
 
@@ -1494,6 +1626,8 @@ export function MemoryScreen() {
           ))}
         </div>
       )}
+
+      <MemoryLeases say={say} onChanged={() => void load()} />
 
       <LearnedRules say={say} />
 

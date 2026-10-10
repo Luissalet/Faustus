@@ -390,7 +390,10 @@ class ChatProcessor:
         self._last_used_memories = []  # track what was injected
         self._last_used_memory_ids = []
         if use_memory:
-            mem_entries = self.memory_manager.load(owner=owner)
+            # A fact whose lease ran out goes in marked "as of <date>, may be
+            # outdated"; one new evidence replaced stays out (src/memory_leases.py).
+            from src import memory_leases
+            mem_entries = memory_leases.prompt_view(self.memory_manager.load(owner=owner))
 
             pinned = [m for m in mem_entries if m.get("pinned")]
             extended = [m for m in mem_entries if not m.get("pinned")]

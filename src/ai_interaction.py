@@ -456,7 +456,8 @@ async def do_manage_memory(content: str, session_id: Optional[str] = None, owner
 
     if action == "list":
         category_filter = lines[1].strip().lower() if len(lines) > 1 and lines[1].strip() else None
-        memories = _memory_manager.load(owner=owner)
+        from src import memory_leases
+        memories = memory_leases.prompt_view(_memory_manager.load(owner=owner))
         if category_filter:
             memories = [m for m in memories if m.get("category", "").lower() == category_filter]
         if not memories:
@@ -497,8 +498,20 @@ async def do_manage_memory(content: str, session_id: Optional[str] = None, owner
         for existing in memories:
             if (isinstance(existing, dict) and _memory_text_key(existing.get("text", "")) == _key
                     and (existing.get("owner") or None) == (owner or None)):
+                # Saying it again is new evidence: a fact with a lease is
+                # confirmed, so its lease restarts (src/memory_leases.py).
+                renewed = False
+                if existing.get("lease_until") or existing.get("closed_at"):
+                    try:
+                        from src import memory_leases
+                        memory_leases.renew(existing)
+                        _memory_manager.save(memories)
+                        renewed = True
+                    except ValueError:
+                        pass
                 return {"action": "add", "memory_id": existing.get("id"), "duplicate": True,
-                        "results": f"Already saved: [{existing.get('category', category)}] {existing.get('text', text)}"}
+                        "renewed": renewed,
+                        "results": f"Already saved{' (lease renewed)' if renewed else ''}: [{existing.get('category', category)}] {existing.get('text', text)}"}
         memories.append(entry)
         _memory_manager.save(memories)
 
@@ -534,6 +547,8 @@ async def do_manage_memory(content: str, session_id: Optional[str] = None, owner
                     return {"error": f"Memory '{memory_id}' not found"}
                 m["text"] = new_text
                 m["timestamp"] = int(time.time())
+                from src import memory_leases
+                memory_leases.reassign(m)
                 found = True
                 full_id = m["id"]
                 break
@@ -587,7 +602,8 @@ async def do_manage_memory(content: str, session_id: Optional[str] = None, owner
         if len(lines) < 2:
             return {"error": "Search needs line 2: query"}
         query = lines[1].strip()
-        memories = _memory_manager.load(owner=owner)
+        from src import memory_leases
+        memories = memory_leases.prompt_view(_memory_manager.load(owner=owner))
         query_lower = query.lower()
         exact_results = [m for m in memories if query_lower in (m.get("text", "").lower())]
 

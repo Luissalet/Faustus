@@ -31,6 +31,7 @@ from src.auth_helpers import get_current_user, require_user
 from src.endpoint_resolver import resolve_endpoint
 from src.task_endpoint import resolve_task_endpoint
 from src.upload_limits import read_upload_limited, MEMORY_IMPORT_MAX_BYTES
+from src import memory_leases
 
 logger = logging.getLogger(__name__)
 
@@ -119,8 +120,22 @@ def setup_memory_routes(memory_manager: MemoryManager, session_manager: SessionM
         if not text:
             raise HTTPException(400, "empty memory")
         user_mem = memory_manager.load(owner=user)
-        if memory_manager.find_duplicates(text, user_mem):
-            return {"ok": True, "count": len(user_mem), "message": "Memory already exists"}
+        duplicates = memory_manager.find_duplicates(text, user_mem)
+        if duplicates:
+            # Saying it again is new evidence: a fact with a lease is confirmed.
+            renewed = False
+            if any(d.get("lease_until") or d.get("closed_at") for d in duplicates):
+                all_mem = _load_for_update(memory_manager)
+                for m in all_mem:
+                    if m.get("id") in {d.get("id") for d in duplicates} and (m.get("lease_until") or m.get("closed_at")):
+                        try:
+                            memory_leases.renew(m)
+                            renewed = True
+                        except ValueError:
+                            pass
+                if renewed:
+                    memory_manager.save(all_mem)
+            return {"ok": True, "count": len(user_mem), "message": "Memory already exists", "renewed": renewed}
 
         if memory_data.session_id:
             try:
@@ -129,7 +144,13 @@ def setup_memory_routes(memory_manager: MemoryManager, session_manager: SessionM
                 raise HTTPException(404, "Session not found")
             _assert_session_owner(session_obj, user)
 
-        new_entry = memory_manager.add_entry(text, memory_data.source, memory_data.category, owner=user)
+        try:
+            new_entry = memory_manager.add_entry(
+                text, memory_data.source, memory_data.category, owner=user,
+                kind=memory_data.kind, lease_days=memory_data.lease_days,
+            )
+        except ValueError as e:
+            raise HTTPException(400, str(e))
         if memory_data.session_id:
             new_entry["session_id"] = memory_data.session_id
         all_mem = _load_for_update(memory_manager)
@@ -143,13 +164,45 @@ def setup_memory_routes(memory_manager: MemoryManager, session_manager: SessionM
             fire_event("memory_added", user)
         except Exception:
             logger.debug("memory_added event dispatch failed", exc_info=True)
-        return {"ok": True, "count": len([m for m in all_mem if m.get("owner") == user])}
+        return {"ok": True, "count": len([m for m in all_mem if m.get("owner") == user]),
+                "id": new_entry["id"], "lease": memory_leases.public(new_entry) if new_entry.get("kind") else None}
 
     @router.get("")
     def api_get_memory(request: Request):
-        """Return all memory entries with their metadata."""
+        """Return all memory entries with their metadata (and, for a fact with a
+        kind, its lease: state, days left)."""
         user = _owner(request)
-        return {"memory": memory_manager.load(owner=user)}
+        return {"memory": [memory_leases.annotate(m) for m in memory_manager.load(owner=user)]}
+
+    @router.get("/leases")
+    def api_review_leases(request: Request, window_days: Optional[int] = None):
+        """Facts to look at: lease expired, about to expire, or replaced by a
+        newer fact of the same kind. An expired fact is still shown to the
+        model, marked as possibly outdated, until it is renewed or forgotten."""
+        user = _owner(request)
+        return memory_leases.review(memory_manager.load(owner=user), window=window_days)
+
+    @router.post("/leases/{memory_id}/renew")
+    def api_renew_lease(request: Request, memory_id: str, days: Optional[int] = Form(None)):
+        """Confirm a fact is still true: restart its lease (days = the one for
+        its kind unless given)."""
+        user = _owner(request)
+        all_mem = _load_for_update(memory_manager)
+        for memory in all_mem:
+            if memory["id"] == memory_id:
+                _verify_memory_owner(memory, user)
+                try:
+                    memory_leases.renew(memory, days)
+                except ValueError as e:
+                    raise HTTPException(400, str(e))
+                memory_manager.save(all_mem)
+                return {"ok": True, "lease": memory_leases.public(memory)}
+        raise HTTPException(404, f"Memory item {memory_id} not found")
+
+    @router.post("/leases/{memory_id}/forget")
+    def api_forget_lease(request: Request, memory_id: str):
+        """Drop a fact that is no longer true (same as deleting it)."""
+        return delete_memory(request, memory_id)
 
     @router.post("/search")
     def search_memories(request: Request, query: str = Form(...), session_id: str = Form(None), category: str = Form(None)):
@@ -538,6 +591,7 @@ def setup_memory_routes(memory_manager: MemoryManager, session_manager: SessionM
                 if category:
                     all_mem[i]["category"] = category
                 all_mem[i]["timestamp"] = int(time.time())
+                memory_leases.reassign(all_mem[i])
 
                 memory_manager.save(all_mem)
                 # Sync vector index (remove old, add updated)

@@ -9601,3 +9601,28 @@ Files the agent reads or writes in the current turn light up here until the next
 {n} hidden	{n} oculto
 {n} hidden#	{n} ocultos
 Touched files the tree cannot show (hidden files or beyond the listing)	Ficheros tocados que el árbol no puede mostrar (ocultos o fuera del listado)
+Expired or due for review	Caducados / por revisar
+Facts about a moment (where you live, who you work for, what you are doing) stop being certain after a while. The expired ones still reach the model, marked as possibly outdated, until you renew or forget them.	Los datos sobre un momento (dónde vives, para quién trabajas, qué estás haciendo) dejan de ser seguros con el tiempo. Los caducados siguen llegando al modelo marcados como posiblemente desactualizados, hasta que los renueves u olvides.
+Nothing to review: every fact is within its lease.	Nada que revisar: todos los datos están dentro de su vigencia.
+Renew	Renovar
+Forget	Olvidar
+It is still true: restart its lease	Sigue siendo cierto: reinicia su vigencia
+It is no longer true: delete it	Ya no es cierto: bórralo
+Replaced by newer facts	Sustituidos por datos más recientes
+replaced by a newer fact	sustituido por un dato más reciente
+expired today	caducó hoy
+expired {n} day ago	caducó hace {n} día
+expired {n} days ago	caducó hace {n} días
+expires today	caduca hoy
+expires in {n} day	caduca en {n} día
+expires in {n} days	caduca en {n} días
+confirmed {date}	confirmado el {date}
+expired	caducado
+replaced	sustituido
+expires soon	caduca pronto
+Renewed.	Renovado.
+Forgotten.	Olvidado.
+Could not renew.	No se pudo renovar.
+Could not forget.	No se pudo olvidar.
+Could not read the memory leases.	No se pudo leer qué datos han caducado.
+Job	Trabajo

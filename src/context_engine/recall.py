@@ -350,7 +350,10 @@ def _source_still_available(ref: str, owner: str) -> bool:
             from src.constants import DATA_DIR
             from src.memory import MemoryManager
 
-            entries = MemoryManager(DATA_DIR).load(owner) or []
+            from src import memory_leases
+
+            # A fact new evidence replaced is no longer recallable.
+            entries = memory_leases.prompt_view(MemoryManager(DATA_DIR).load(owner) or [])
         except Exception as exc:  # noqa: BLE001
             logger.debug("context recall could not recheck %s: %s", ref, exc)
             return True
