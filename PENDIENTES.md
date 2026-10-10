@@ -6,7 +6,6 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 
 ## A. Decisiones o acciones de Luis
 
-- **Iniciar sesión de Claude Code en el PC** (10-10, HoardLink #238): la barra de cuota de Claude en el Ágora lee la misma cuenta que usa Claude Code, y su sesión caducó el 25-09 (la renovación devuelve 429). Ejecuta `claude /login` en el PC; el Hub la recoge solo en menos de dos minutos.
 - **Acceso total y la batería de inyección** (10-10, #258): con tus ajustes actuales (`tool_approval_mode=full`) la batería en postura «configured» deja pasar 34 de 47 inyecciones (las defensas en sí, en postura base, aguantan 47/47). Lo que sigue protegiendo en acceso total es la lista de rutas de credenciales y el bloqueo de secretos hacia fuera (#207). ¿Sigues en acceso total, pasas a «auto» o «ask», o lo dejamos así sabiéndolo?
 
 - **Borrar el modelo de prueba de Vulcan** (10-10, #200): la verificación en vivo de «CAD desde texto» dejó el modelo 20037 `plate-hole-verify` (placa 20x10x5 con agujero) en la biblioteca. Vulcan no tiene ruta para borrar modelos. ¿Lo borro a mano (fila en la base de datos y ficheros en `data\cad`) o se queda?
