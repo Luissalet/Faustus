@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import hashlib
 
-from .authority import authorize, observed_action, positive_id, paths, task_action_scope
+from .authority import authorize, observed_action, positive_id, paths, repositories, task_action_scope
 from .bindings import CoordinationError, READ_OPERATIONS, StaleBinding, UnknownOutcome
 
 
@@ -36,7 +36,12 @@ def compact_task(task):
 def compact_board(board, binding, *, offset=0, limit=8, full=False, read_only=False):
     project, context = [], []
     for original in board.get("tasks", ()):
-        in_project = str(original.get("repo") or "").casefold() in binding.repos
+        try:
+            repositories(binding, original.get("repo"))
+        except CoordinationError:
+            in_project = False
+        else:
+            in_project = True
         task = ({key: original.get(key) for key in TASK_FIELDS} if full else compact_task(original))
         task["scope"] = "project" if in_project else "global_context"
         if not in_project:
