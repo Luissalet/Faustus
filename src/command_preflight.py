@@ -1,4 +1,4 @@
-"""Shell wrong-directory preflight.
+"""Shell / python-tool wrong-directory preflight.
 
 A local model that was given a project root often runs ``python server.py``,
 ``npm run dev``, ``pytest tests/x.py`` or ``docker compose up`` from the root
@@ -17,9 +17,16 @@ to the working directory it looks for it inside the workspace:
 * none, or any doubt            -> the command runs unchanged (fail open).
 
 Only the command shapes listed in ``_identify`` are ever looked at.
+
+The ``python`` tool runs source via ``python -c`` (not a shell line).
+``check_python_code`` inspects that source for ``subprocess`` / ``os.system`` /
+``runpy.run_path`` launches of the same shapes, and on a single-folder miss
+rewrites the source to ``os.chdir`` into that folder before the user's code
+(so the tool's own subprocess and any nested subprocess share the cwd).
 """
 from __future__ import annotations
 
+import ast
 import json
 import os
 import re
@@ -597,6 +604,147 @@ def apply(command: str, cwd: str, shell: str = "bash") -> PreflightResult:
     if not enabled():
         return PreflightResult(command=command)
     return check(command, cwd, shell)
+
+
+# ---------------------------------------------------------------- python tool
+
+_SUBPROCESS_ATTRS = frozenset({
+    "run", "call", "Popen", "check_call", "check_output",
+})
+
+
+def _ast_str(node: ast.AST) -> Optional[str]:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def _call_qualname(func: ast.AST) -> Tuple[Optional[str], Optional[str]]:
+    """Return ``(module_or_None, attr_or_name)`` for a Call.func node."""
+    if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+        return func.value.id, func.attr
+    if isinstance(func, ast.Name):
+        return None, func.id
+    return None, None
+
+
+def _is_sys_executable(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "executable"
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "sys"
+    )
+
+
+def _list_str_parts(node: ast.AST) -> Optional[List[str]]:
+    """Constant argv list; ``sys.executable`` in position 0 counts as ``python``."""
+    if not isinstance(node, (ast.List, ast.Tuple)):
+        return None
+    parts: List[str] = []
+    for i, elt in enumerate(node.elts):
+        s = _ast_str(elt)
+        if s is not None:
+            parts.append(s)
+            continue
+        if i == 0 and _is_sys_executable(elt):
+            parts.append("python")
+            continue
+        return None
+    return parts
+
+
+def inferred_shell_commands(code: str) -> List[str]:
+    """Shell-shaped commands implied by python-tool source (constants only).
+
+    Fail open on syntax errors or dynamic arguments: returns an empty list and
+    the caller leaves the tool call unchanged.
+    """
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return []
+    out: List[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not node.args:
+            continue
+        mod, attr = _call_qualname(node.func)
+        if attr is None:
+            continue
+        if (mod == "runpy" and attr == "run_path") or (
+                mod is None and attr == "run_path"):
+            path = _ast_str(node.args[0])
+            if path and path.lower().endswith((".py", ".pyw")):
+                out.append("python " + path)
+            continue
+        if mod == "os" and attr in ("system", "popen"):
+            cmd = _ast_str(node.args[0])
+            if cmd:
+                out.append(cmd)
+            continue
+        if mod == "subprocess" and attr in _SUBPROCESS_ATTRS:
+            arg0 = node.args[0]
+            as_str = _ast_str(arg0)
+            if as_str is not None:
+                out.append(as_str)
+                continue
+            parts = _list_str_parts(arg0)
+            if parts:
+                out.append(" ".join(parts))
+    return out
+
+
+def _chdir_prefix(rel: str) -> str:
+    """Python prelude that chdirs into ``rel`` (workspace-relative, forward slashes ok)."""
+    # Literal path so spaces/unicode survive; chdir before user code runs.
+    return (
+        "import os as _faustus_preflight_os\n"
+        f"_faustus_preflight_os.chdir({rel!r})\n"
+    )
+
+
+def check_python_code(code: str, cwd: str) -> PreflightResult:
+    """Wrong-directory preflight for the ``python`` tool's ``-c`` source.
+
+    Reuses the shell ``check`` target logic on commands inferred from
+    ``subprocess`` / ``os.system`` / ``runpy.run_path``. On a single-folder
+    miss the source is rewritten with an ``os.chdir`` prelude (the tool keeps
+    launching ``python -c``; nested subprocesses inherit the new cwd). Never
+    raises.
+    """
+    try:
+        return _check_python_code(code, cwd)
+    except Exception:
+        return PreflightResult(command=code)
+
+
+def _check_python_code(code: str, cwd: str) -> PreflightResult:
+    res = PreflightResult(command=code)
+    if not code or not cwd or not os.path.isdir(cwd):
+        return res
+    for cmd in inferred_shell_commands(code):
+        hit = _check(cmd, cwd, "bash")
+        if hit.action == "none":
+            continue
+        if hit.action == "refuse":
+            return hit
+        if hit.action == "rewrite" and hit.candidates:
+            rel = hit.candidates[0]
+            return PreflightResult(
+                action="rewrite",
+                command=_chdir_prefix(rel) + code,
+                note=hit.note,
+                candidates=list(hit.candidates),
+                target=hit.target,
+            )
+    return res
+
+
+def apply_python(code: str, cwd: str) -> PreflightResult:
+    """``check_python_code`` behind the ``shell_preflight_enabled`` setting."""
+    if not enabled():
+        return PreflightResult(command=code)
+    return check_python_code(code, cwd)
 
 
 def refusal(res: PreflightResult) -> dict:

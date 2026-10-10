@@ -1631,9 +1631,10 @@ GROUPS: list[dict[str, Any]] = [
                     "Checks that a delegated job names its files, has an exact verify command and one outcome. "
                     "warn attaches the findings and runs; enforce refuses with needs_detail.",
                     ["off", "warn", "enforce"]),
-            _bool("shell_preflight_enabled", "Shell: run from the folder that holds the target",
-                  "A command like 'python server.py' or 'npm run dev' whose target lives in exactly one subfolder "
-                  "runs from there (the result says so); with several candidates they are listed instead."),
+            _bool("shell_preflight_enabled", "Shell/python: run from the folder that holds the target",
+                  "A shell command like 'python server.py' or 'npm run dev', or the same launch inside the python "
+                  "tool via subprocess/os.system/runpy, whose target lives in exactly one subfolder runs from "
+                  "there (the result says so); with several candidates they are listed instead."),
             _bool("agent_advisory_guards", "Hints in tool results",
                   "Short hints appended to a tool result, never to the prompt prefix: a re-scan after a search, "
                   "three same-shape edits in a row, shell find|wc pipelines."),

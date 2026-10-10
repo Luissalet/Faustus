@@ -777,6 +777,23 @@ def _shell_preflight(content: str, shell: str):
     return content, "", None
 
 
+def _python_preflight(content: str):
+    """Same wrong-directory preflight for the ``python`` tool's ``-c`` source
+    (subprocess / os.system / runpy.run_path launches). Returns
+    ``(code, note, refusal)``."""
+    try:
+        from src import command_preflight
+        from src.tool_execution import agent_cwd
+        res = command_preflight.apply_python(str(content or ""), agent_cwd())
+    except Exception:  # noqa: BLE001 - the preflight must never block a command
+        return content, "", None
+    if res.action == "refuse":
+        return content, "", command_preflight.refusal(res)
+    if res.action == "rewrite":
+        return res.command, res.note, None
+    return content, "", None
+
+
 def _with_preflight_note(result, note: str):
     if note:
         from src import command_preflight
@@ -929,6 +946,17 @@ class BashTool:
 class PythonTool:
     async def execute(self, content: str, ctx: dict) -> dict:
         from src.tool_execution import agent_cwd, _truncate
+        if isinstance(content, dict):
+            content = str(
+                content.get("code")
+                or content.get("content")
+                or content.get("script")
+                or content.get("source")
+                or ""
+            )
+        content, _pf_note, _pf_refusal = _python_preflight(content)
+        if _pf_refusal is not None:
+            return _pf_refusal
         progress_cb = ctx.get("progress_cb")
         _subproc_env = ctx.get("subproc_env")
         sandboxed = await sandbox_exec.run("python", content, ctx)
@@ -938,7 +966,7 @@ class PythonTool:
                     "execution_target",
                     _execution_target(sandboxed=True, cwd=agent_cwd(), shell=sys.executable or "python"),
                 )
-            return sandboxed
+            return _with_preflight_note(sandboxed, _pf_note)
         _skip = sandbox_exec.consume_skip_reason()
         started_at = time.time()
         # The interpreter is the PROJECT's, not ours: a `.venv`/`venv` in the
@@ -970,16 +998,25 @@ class PythonTool:
             idle_timeout=idle_s,
         )
         if timed_out == "idle":
-            return _mark_sandbox_skip({**_idle_result("python", idle_s, stdout, stderr), "execution_target": _target}, _skip)
+            return _with_preflight_note(
+                _mark_sandbox_skip({**_idle_result("python", idle_s, stdout, stderr), "execution_target": _target}, _skip),
+                _pf_note,
+            )
         if timed_out:
-            return _mark_sandbox_skip({"error": f"python: timed out after {DEFAULT_PYTHON_TIMEOUT}s — process killed", "exit_code": 124, "timed_out": True, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS), "stderr": _truncate(stderr, MAX_OUTPUT_CHARS), "execution_target": _target}, _skip)
+            return _with_preflight_note(
+                _mark_sandbox_skip({"error": f"python: timed out after {DEFAULT_PYTHON_TIMEOUT}s — process killed", "exit_code": 124, "timed_out": True, "stdout": _truncate(stdout, MAX_OUTPUT_CHARS), "stderr": _truncate(stderr, MAX_OUTPUT_CHARS), "execution_target": _target}, _skip),
+                _pf_note,
+            )
         output = stdout.rstrip()
         err = stderr.rstrip()
         if err:
             output = (output + "\nSTDERR: " + err).strip() if output else "STDERR: " + err
         output = _truncate(output, MAX_OUTPUT_CHARS)
         _record_cycle("python", started_at)
-        return _mark_sandbox_skip({"output": output or "(no output)", "exit_code": rc or 0, "execution_target": _target}, _skip)
+        return _with_preflight_note(
+            _mark_sandbox_skip({"output": output or "(no output)", "exit_code": rc or 0, "execution_target": _target}, _skip),
+            _pf_note,
+        )
 
 
 def project_python(cwd: str, env: Optional[Mapping[str, str]] = None) -> str:

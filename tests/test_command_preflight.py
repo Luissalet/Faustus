@@ -264,3 +264,127 @@ def test_powershell_tool_uses_set_location(tree, monkeypatch):
     out = asyncio.run(st.PowerShellTool().execute("python server.py", {}))
     assert seen["cmd"] == "Set-Location -LiteralPath 'backend'; python server.py"
     assert "[preflight]" in out["output"]
+
+
+# ---- python tool (OBJ-53) -------------------------------------------------
+
+def test_infer_subprocess_list_and_shell_string(tree):
+    code = 'import subprocess\nsubprocess.run(["python", "server.py"])\n'
+    assert cp.inferred_shell_commands(code) == ["python server.py"]
+    code_exe = 'import subprocess, sys\nsubprocess.run([sys.executable, "server.py"])\n'
+    assert cp.inferred_shell_commands(code_exe) == ["python server.py"]
+    code2 = 'import subprocess\nsubprocess.call("python server.py", shell=True)\n'
+    assert cp.inferred_shell_commands(code2) == ["python server.py"]
+    code3 = 'import runpy\nrunpy.run_path("server.py")\n'
+    assert cp.inferred_shell_commands(code3) == ["python server.py"]
+    code4 = 'import os\nos.system("pytest tests/test_x.py")\n'
+    assert cp.inferred_shell_commands(code4) == ["pytest tests/test_x.py"]
+    assert cp.inferred_shell_commands("print(1)") == []
+    assert cp.inferred_shell_commands("def oops(") == []  # syntax error -> fail open
+
+
+def test_python_code_single_candidate_rewrites_with_chdir(tree):
+    code = 'import subprocess\nsubprocess.run(["python", "server.py"])\n'
+    r = cp.check_python_code(code, str(tree))
+    assert r.action == "rewrite"
+    assert r.candidates == ["backend"]
+    assert r.command.startswith("import os as _faustus_preflight_os\n")
+    assert "_faustus_preflight_os.chdir('backend')\n" in r.command
+    assert r.command.endswith(code)
+    assert "backend/" in r.note
+
+
+def test_python_code_ambiguous_refuses(tree):
+    _touch(tree, "api/server.py")
+    code = 'import subprocess\nsubprocess.run(["python", "server.py"])\n'
+    r = cp.check_python_code(code, str(tree))
+    assert r.action == "refuse"
+    assert set(r.candidates) == {"api", "backend"}
+    assert "Nothing was run" in r.error
+
+
+def test_python_code_no_launch_fails_open(tree):
+    r = cp.check_python_code("print('hello')", str(tree))
+    assert r.action == "none" and r.command == "print('hello')"
+
+
+def test_python_code_dynamic_argv_fails_open(tree):
+    code = 'import subprocess\nsubprocess.run(["python", name])\n'
+    r = cp.check_python_code(code, str(tree))
+    assert r.action == "none"
+
+
+def test_apply_python_respects_setting(tree, monkeypatch):
+    import src.settings as st
+    code = 'import subprocess\nsubprocess.run(["python", "server.py"])\n'
+    monkeypatch.setattr(st, "get_setting", lambda k, d=None: False if k == "shell_preflight_enabled" else d)
+    assert cp.apply_python(code, str(tree)).action == "none"
+    monkeypatch.setattr(st, "get_setting", lambda k, d=None: d)
+    assert cp.apply_python(code, str(tree)).action == "rewrite"
+
+
+def test_python_tool_runs_chdir_prelude_and_notes(tree, monkeypatch):
+    import asyncio
+    from src import tool_execution
+    from src.agent_tools import subprocess_tools as st
+
+    monkeypatch.setattr(tool_execution, "agent_cwd", lambda: str(tree))
+    seen = {}
+
+    async def fake_run(tool, command, ctx=None):
+        seen["code"] = command
+        return {"output": "ok", "exit_code": 0, "sandboxed": True}
+
+    monkeypatch.setattr(st.sandbox_exec, "run", fake_run)
+    code = 'import subprocess\nsubprocess.run(["python", "server.py"])\n'
+    out = asyncio.run(st.PythonTool().execute(code, {}))
+    assert "_faustus_preflight_os.chdir('backend')" in seen["code"]
+    assert seen["code"].endswith(code)
+    assert out["output"].startswith("[preflight] ran from backend/")
+    assert out["output"].endswith("ok")
+
+
+def test_python_tool_refuses_ambiguous_without_running(tree, monkeypatch):
+    import asyncio
+    from src import tool_execution
+    from src.agent_tools import subprocess_tools as st
+
+    _touch(tree, "api/server.py")
+    monkeypatch.setattr(tool_execution, "agent_cwd", lambda: str(tree))
+
+    async def boom(tool, command, ctx=None):
+        raise AssertionError("must not run")
+
+    monkeypatch.setattr(st.sandbox_exec, "run", boom)
+    code = 'import subprocess\nsubprocess.run(["python", "server.py"])\n'
+    out = asyncio.run(st.PythonTool().execute({"code": code}, {}))
+    assert out["exit_code"] == 2 and "api" in out["error"] and "backend" in out["error"]
+
+
+def test_python_tool_real_subprocess_on_windows(tree):
+    """Host path: rewritten chdir makes nested python see backend/server.py."""
+    import asyncio
+    from src import tool_execution
+    from src.agent_tools import subprocess_tools as st
+
+    # Avoid sandbox so we exercise create_subprocess_exec on this host.
+    async def no_sandbox(tool, command, ctx=None):
+        return None
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(tool_execution, "agent_cwd", lambda: str(tree))
+    monkeypatch.setattr(st.sandbox_exec, "run", no_sandbox)
+    monkeypatch.setattr(st.sandbox_exec, "consume_skip_reason", lambda: "")
+    try:
+        code = (
+            "import subprocess, sys\n"
+            "r = subprocess.run([sys.executable, 'server.py'], capture_output=True, text=True)\n"
+            "print(r.stdout.strip())\n"
+            "raise SystemExit(r.returncode)\n"
+        )
+        out = asyncio.run(st.PythonTool().execute(code, {}))
+        assert out["exit_code"] == 0
+        assert "[preflight] ran from backend/" in out["output"]
+        assert "ok" in out["output"]
+    finally:
+        monkeypatch.undo()
