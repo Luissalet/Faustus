@@ -38,14 +38,56 @@ def strings(value, field, maximum=100):
     return value
 
 
-def paths(binding, repo, values):
-    if not isinstance(repo, str) or repo.strip().casefold() not in binding.repos:
+def repositories(binding, repo):
+    """Resolve all repository names, preserving an explicitly scoped literal.
+
+    A comma alias alone grants no constituent repository. A historical literal
+    comma name is distinct only when the owner also scoped its literal resource.
+    """
+    if (not isinstance(repo, str) or not repo.strip() or len(repo) > 200
+            or any(c in repo for c in ":/\\") or any(ord(c) < 32 for c in repo)):
         raise CoordinationError("repository is outside the coordination scope")
+    name = repo.strip().casefold()
+    if "," not in name:
+        if name not in binding.repos:
+            raise CoordinationError("repository is outside the coordination scope")
+        return (name,)
+    literal = "path:" + name
+    if name in binding.repos and any(
+            r == literal or r.startswith(literal + "/") or r in {"repo:" + name, "merge:" + name}
+            for r in binding.resources):
+        return (name,)
+    parts = tuple(part.strip() for part in name.split(","))
+    if not all(parts) or not all(part in binding.repos for part in parts):
+        raise CoordinationError("repository is outside the coordination scope")
+    return tuple(dict.fromkeys(parts))
+
+
+def paths(binding, repo, values):
+    """Return canonical scoped locks; validate every root before dispatch."""
+    roots = repositories(binding, repo)
+    resolved = []
     for path in strings(values, "paths"):
-        if path.startswith(("/", "\\")) or ":" in path:
+        path = path.strip().replace("\\", "/")
+        if (path.startswith("/") or ":" in path or "//" in path
+                or any(piece in {"", ".", ".."} for piece in path.split("/"))):
             raise CoordinationError("task paths must be relative to their repository")
-        if not binding.permits_resource(f"path:{repo.strip()}/{path}"):
+        first, separator, rest = path.partition("/")
+        if first.casefold() in roots:
+            root = first.casefold()
+            relative = rest if separator else ""
+        elif len(roots) == 1:
+            root, relative = roots[0], path
+        else:
+            raise CoordinationError("multi-repository task paths must name their repository; unqualified paths are ambiguous")
+        # Preserve the single-repository wire spelling used by existing clients;
+        # resource comparisons remain canonical and case-insensitive.
+        display_root = repo.strip() if repo.strip().casefold() == root else root
+        wanted = "path:" + display_root + ("/" + relative if relative else "")
+        if not binding.permits_resource(wanted):
             raise CoordinationError("task path is outside the coordination scope")
+        resolved.append(wanted)
+    return list(dict.fromkeys(resolved))
 
 
 def scoped_task(binding, task, task_id, *, own=False, claim=False):
@@ -53,12 +95,12 @@ def scoped_task(binding, task, task_id, *, own=False, claim=False):
     if not isinstance(task, Mapping) or task.get("id") != task_id:
         raise CoordinationError("read this task from the bound connector before acting")
     paths(binding, task.get("repo"), task.get("paths") or [])
+    if task.get("status") in {"done", "dropped"}:
+        raise CoordinationError("task is already closed")
     if own and task.get("owner") != binding.actor:
         raise CoordinationError("task is not owned by this coordination actor")
     if claim and task.get("owner") not in (None, "", binding.actor):
         raise CoordinationError("task is already owned by another actor")
-    if task.get("status") in {"done", "dropped"}:
-        raise CoordinationError("task is already closed")
 
 
 def resources(binding, values):
@@ -97,7 +139,7 @@ def authorize_task_context(binding, operation, args, task):
     if operation == "claim":
         scoped_task(binding, task, args["task_id"], claim=True)
         if "locks" not in args:
-            args["locks"] = [f"path:{task['repo']}/{p}" for p in task.get("paths", ())]
+            args["locks"] = paths(binding, task['repo'], task.get("paths", ()))
         resources(binding, args["locks"])
     if operation in {"checkpoint", "submit", "done"}:
         scoped_task(binding, task, args["task_id"], own=True)
@@ -187,7 +229,7 @@ def authorize(binding: Binding, operation: str, args, *, task=None, held_locks=N
             if field == "title" and (not isinstance(args.get(field), str) or not args[field].strip()):
                 raise CoordinationError("title is required")
         if args.get("claim") and not args.get("locks"):
-            args["locks"] = [f"path:{args['repo']}/{p}" for p in args["paths"]]
+            args["locks"] = paths(binding, args['repo'], args["paths"])
     if operation in TASK_ACTIONS:
         authorize_task_context(binding, operation, args, task)
     if operation == "checkpoint":
