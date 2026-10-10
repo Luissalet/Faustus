@@ -86,10 +86,10 @@ def test_progress_auto_continue_extends_past_the_round_cap(monkeypatch):
     assert counter["n"] > 2, counter
 
 
-def test_no_progress_streak_ends_with_a_question_not_silence(monkeypatch):
+def test_no_progress_streak_reports_an_advisory_without_a_question(monkeypatch):
     """Once the progress gate has extended the turn at least once, a run of
-    identical (non-progressing) rounds must eventually end with an ask_user
-    event rather than a bare rounds_exhausted placeholder."""
+    identical (non-progressing) rounds must eventually report why the turn
+    stopped without manufacturing a question for the person."""
     _patch_common(monkeypatch, {
         "agent_auto_continue_on_progress": True,
         "agent_auto_continue_max_rounds": 30,
@@ -119,13 +119,14 @@ def test_no_progress_streak_ends_with_a_question_not_silence(monkeypatch):
     )
     events = _types(_collect(gen))
 
-    # Never allowed to end in bare silence: either it is still finishing
-    # normally, or if it stops short it must carry an explicit ask_user.
-    saw_ask = any(e.get("type") == "ask_user" for e in events)
-    saw_rounds_exhausted_bare = (
-        any(e.get("type") == "rounds_exhausted" for e in events) and not saw_ask
-    )
-    assert not saw_rounds_exhausted_bare, events
+    assert any(e.get("type") == "harness_check" and e.get("reason") == "progress_continue"
+               for e in events), events
+    assert not any(e.get("type") == "ask_user" for e in events), events
+    advisories = [e for e in events if e.get("type") == "harness_check"
+                  and e.get("status") == "advisory"
+                  and e.get("reason") in {"no_progress_streak", "auto_continue_ceiling"}]
+    assert advisories, events
+    assert all(e.get("requires_user_input") is False and e.get("detail") for e in advisories), events
 
 
 def test_empty_round_nudges_then_reports_an_advisory(monkeypatch, tmp_path):
