@@ -120,6 +120,9 @@ def summarize(records: List[Mapping[str, Any]], *, min_followed: int = MIN_FOLLO
     total = _bucket()
     rule = _bucket()
     by_mode: Dict[str, Dict[str, Any]] = {}
+    # Auto's own choices per mode: an explicit mode the person picked is not
+    # a decision Auto made, so it must not flag Auto's mode (review #228).
+    auto_by_mode: Dict[str, Dict[str, Any]] = {}
     by_source: Dict[str, Dict[str, Any]] = {}
     by_reason: Dict[str, Dict[str, Any]] = {}
     for rec in records:
@@ -128,9 +131,10 @@ def summarize(records: List[Mapping[str, Any]], *, min_followed: int = MIN_FOLLO
         _add(by_source.setdefault(rec.get("source") or "unknown", _bucket()), rec)
         if rec.get("source") == "rule":
             _add(rule, rec)
+            _add(auto_by_mode.setdefault(rec.get("mode") or "?", _bucket()), rec)
             for reason in rec.get("reasons") or ["(none)"]:
                 _add(by_reason.setdefault(reason, _bucket()), rec)
-    for group in (by_mode, by_source, by_reason):
+    for group in (by_mode, auto_by_mode, by_source, by_reason):
         for bucket in group.values():
             _finish(bucket)
     _finish(total)
@@ -139,7 +143,7 @@ def summarize(records: List[Mapping[str, Any]], *, min_followed: int = MIN_FOLLO
     baseline = rule["correction_rate"]
     flags: List[Dict[str, Any]] = []
     if baseline is not None:
-        for kind, group in (("reason", by_reason), ("mode", by_mode)):
+        for kind, group in (("reason", by_reason), ("mode", auto_by_mode)):
             for key, bucket in group.items():
                 rate = bucket["correction_rate"]
                 if bucket["followed"] < min_followed or rate is None:
@@ -148,12 +152,12 @@ def summarize(records: List[Mapping[str, Any]], *, min_followed: int = MIN_FOLLO
                     flags.append({
                         "kind": kind, "key": key, "followed": bucket["followed"],
                         "correction_rate": rate, "baseline": baseline,
-                        "hint": (f"Turns under {kind} '{key}' were corrected {rate:.0%} of the time against "
+                        "hint": (f"Auto turns under {kind} '{key}' were corrected {rate:.0%} of the time against "
                                  f"{baseline:.0%} for all Auto turns: that {kind} may need a higher mode."),
                     })
     flags.sort(key=lambda f: (-f["correction_rate"], -f["followed"]))
     return {
-        "turns": total, "auto": rule, "by_mode": by_mode, "by_source": by_source,
+        "turns": total, "auto": rule, "by_mode": by_mode, "auto_by_mode": auto_by_mode, "by_source": by_source,
         "by_reason": dict(sorted(by_reason.items(), key=lambda kv: -kv[1]["turns"])),
         "flags": flags, "min_followed": min_followed,
     }

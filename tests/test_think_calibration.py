@@ -157,3 +157,23 @@ def test_battery_sessions_carry_the_battery_verdict(db, tmp_path):
     assert out["by_mode"]["fast"]["pass_rate"] == 0.0 and out["by_mode"]["think"]["pass_rate"] == 1.0
     assert out["by_reason"]["lookup"]["passed"] == 1
     assert tc.battery_verdicts(30, str(tmp_path / "missing")) == {}
+
+
+def test_explicit_choices_never_flag_an_auto_mode():
+    """Review #228: 20 corrected turns where the person picked fast by hand
+    must not make Auto's fast look wrong."""
+    recs = ([{"mode": "fast", "source": "rule", "reasons": ["small_talk"], "empty": False, "corrected": False}] * 10
+            + [{"mode": "think", "source": "rule", "reasons": ["coding"], "empty": False, "corrected": False}] * 30
+            + [{"mode": "fast", "source": "explicit", "reasons": [], "empty": False, "corrected": True}] * 20)
+    out = tc.summarize(recs)
+    assert out["by_mode"]["fast"]["correction_rate"] == 0.667      # all activity still reported
+    assert out["auto_by_mode"]["fast"]["correction_rate"] == 0.0
+    assert out["flags"] == []
+
+
+def test_auto_mode_really_corrected_is_flagged():
+    recs = ([{"mode": "fast", "source": "rule", "reasons": ["short"], "empty": False, "corrected": True}] * 6
+            + [{"mode": "fast", "source": "rule", "reasons": ["short"], "empty": False, "corrected": False}] * 4
+            + [{"mode": "think", "source": "rule", "reasons": ["coding"], "empty": False, "corrected": False}] * 40)
+    keys = {(f["kind"], f["key"]) for f in tc.summarize(recs)["flags"]}
+    assert ("mode", "fast") in keys and ("reason", "short") in keys

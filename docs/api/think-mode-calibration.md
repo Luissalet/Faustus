@@ -24,6 +24,7 @@ owner in the database, and refuses when there are several.
   "turns":  {"turns": 4, "followed": 3, "corrected": 1, "empty": 0, "correction_rate": 0.333, "empty_rate": 0.0},
   "auto":   {"...": "same counts, Auto (source=rule) turns only"},
   "by_mode":   {"fast": {}, "light": {}, "think": {}, "deep": {}},
+  "auto_by_mode": {"fast": {}, "think": {}},
   "by_source": {"rule": {}, "explicit": {}, "override": {}},
   "by_reason": {"small_talk": {}, "correction": {}, "short": {}},
   "flags": [{"kind": "reason", "key": "small_talk", "followed": 12, "correction_rate": 0.5,
@@ -39,7 +40,7 @@ owner in the database, and refuses when there are several.
 - `empty`: the reply had no text.
 - A `think` with low effort is counted as `light`.
 - `flags`: reasons or modes with at least `min_followed` followed turns whose correction rate
-  is at least twice the Auto average (or 15 points above it): candidates for a higher mode.
+  is at least twice the Auto average and at least 15 points above it; modes are flagged from Auto's own decisions (`auto_by_mode`), never from modes picked by hand: candidates for a higher mode.
 - `battery`: turns from daily-battery sessions (`scripts/daily_eval.py` writes each task's
   session to `logs/daily_eval/*.json`), with the battery's pass rate per mode and reason.
 
