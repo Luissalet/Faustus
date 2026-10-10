@@ -672,6 +672,11 @@ export type ChatEvent =
        *  defensively either way: absent until that one-line addition lands,
        *  populated the moment it does, no further change needed here. */
       executionTarget?: { kind: string; cwd?: string; shell?: string };
+      /** #255: the network a `run_code` call really had -- its `allowed_hosts`
+       *  list, which enforcement applied and whether that is a hard boundary
+       *  (`src/code_mode/net_allowlist.py::wire_summary`). Absent for every
+       *  other tool and for a run without a list. */
+      network?: NetworkSummary;
       /** OBS-01: this call's id (`src/agent_loop.py`'s `_call_id`), already
        *  on the wire's `tool_output` event — lets a tool card offer a
        *  "Ver traza" deep link to `/activity?trace=<call_id>` without a
@@ -1558,6 +1563,32 @@ function evidenceRefsFrom(raw: unknown): EvidenceRef[] | undefined {
   return refs.length ? refs : undefined;
 }
 
+/** #255: what a `run_code` call's `allowed_hosts` meant for that run. */
+export interface NetworkSummary {
+  /** `null` is not sent; an empty list means no network at all. */
+  hosts: string[];
+  enforcement: string;
+  hardBoundary: boolean;
+  allowed: number;
+  denied: number;
+  deniedTargets: string[];
+}
+
+function networkFrom(raw: unknown): NetworkSummary | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  const enforcement = str(r.enforcement);
+  if (!enforcement || !Array.isArray(r.allowed_hosts)) return undefined;
+  return {
+    hosts: (r.allowed_hosts as unknown[]).map((h) => str(h)).filter(Boolean),
+    enforcement,
+    hardBoundary: r.hard_boundary === true,
+    allowed: num(r.requests_allowed) ?? 0,
+    denied: num(r.requests_denied) ?? 0,
+    deniedTargets: asArray<unknown>(r.denied_targets).map((h) => str(h)).filter(Boolean),
+  };
+}
+
 /** EXEC-01 passthrough: the wire's `execution_target` on a `tool_output`
  *  event (`src/native_env.py`'s `{kind, cwd, shell}` shape) — see the
  *  `tool_output` ChatEvent variant's doc comment for why this reads
@@ -1727,6 +1758,7 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
         repairs: repairsFrom(raw.repairs),
         evidenceRefs: evidenceRefsFrom(raw.evidence_refs),
         executionTarget: executionTargetFrom(raw.execution_target),
+        network: networkFrom(raw.network),
         callId: str(raw.call_id) || undefined,
         durationMs: num(raw.duration_ms) ?? undefined,
         turnElapsedMs: num(raw.turn_elapsed_ms) ?? undefined,

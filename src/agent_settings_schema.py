@@ -1345,7 +1345,14 @@ GROUPS: list[dict[str, Any]] = [
                     "changes have to go through tools.call, where policy and approval apply.",
                     ["read_only", "read_write", "none"]),
             _bool("agent_code_mode_network", "Network (confined)",
-                  "Allow network access from inside the container. Off by default."),
+                  "Allow network access from inside the container. Off by default. A run_code call "
+                  "can also name its own allowed_hosts list: that run then reaches only those hosts "
+                  "(an empty list means no network), whatever this switch says."),
+            _bool("agent_code_mode_host_lists", "Let a run name its own hosts (confined)",
+                  "A run_code call may carry allowed_hosts. Off (default): a list can only narrow a "
+                  "network the switch above already grants, and one that would open a closed network "
+                  "is refused. On: the call may open the network to exactly the hosts it names, "
+                  "enforced by an internal container network and a filtering proxy."),
             _int("agent_code_mode_memory_mb", "Memory limit (MB, confined)",
                  "Memory available to the container, without swap.", 64, 65536, step=64),
             _int("agent_code_mode_max_processes", "Process limit (confined)",

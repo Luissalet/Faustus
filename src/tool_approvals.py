@@ -250,6 +250,20 @@ class PendingToolApproval:
 
     def public_payload(self, *, reason: str | None = None) -> dict[str, Any]:
         question = _approval_card_question(reason, self.content)
+        description = reason or (
+            "Untrusted context influenced this run, so continuing with "
+            "otherwise-gated actions needs your explicit approval."
+        )
+        if self.tool_name == "run_code":
+            # #255: a run_code call that names the hosts it may reach says so on
+            # the card the human reads, with how strongly that is enforced.
+            try:
+                from src.code_mode import confined, net_allowlist
+                note = net_allowlist.approval_note(self.content, confined.resolve_runtime())
+                if note:
+                    description = f"{description} {note}"
+            except Exception:  # noqa: BLE001 - never block an approval card on this
+                pass
         payload = {
             "kind": "tool_approval",
             "approval_id": self.approval_id,
@@ -258,10 +272,7 @@ class PendingToolApproval:
             # this exact chat and prevents inheritance by a forked session.
             "session_id": self.session_id,
             "question": question,
-            "description": reason or (
-                "Untrusted context influenced this run, so continuing with "
-                "otherwise-gated actions needs your explicit approval."
-            ),
+            "description": description,
             "options": [
                 {
                     "label": "Only this action",

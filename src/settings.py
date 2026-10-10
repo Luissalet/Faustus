@@ -623,6 +623,11 @@ DEFAULT_SETTINGS = {
     "agent_code_mode_workspace_access": "read_only",
     # Confined runtime: allow network from inside the container. Off by default.
     "agent_code_mode_network": False,
+    # Confined runtime: let a run_code call open the network to the hosts it
+    # names in `allowed_hosts` (#255) even though agent_code_mode_network is
+    # off. Off by default: then a list can only NARROW a network the settings
+    # already grant, and a model-chosen list cannot widen what the operator closed.
+    "agent_code_mode_host_lists": False,
     # Confined runtime limits: memory (MB, no swap) and process count.
     "agent_code_mode_memory_mb": 512,
     "agent_code_mode_max_processes": 128,

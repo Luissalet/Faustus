@@ -161,6 +161,74 @@ def _install_cpu_guard():
         return None
 
 
+_NET_EVENTS = ("socket.connect", "socket.sendto")
+_NAME_EVENTS = ("socket.getaddrinfo", "socket.gethostbyname", "socket.gethostbyaddr", "socket.getnameinfo")
+_SPAWN_EVENTS = ("subprocess.Popen", "os.system", "os.exec", "os.posix_spawn", "os.spawn", "os.fork",
+                 "os.forkpty", "os.startfile", "_winapi.CreateProcess", "ctypes.dlopen")
+_LOOPBACK = ("127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1")
+
+
+def _install_net_guard(spec):
+    """Best effort, NOT a security boundary (#255): once the parent asked for an
+    ``allowed_hosts`` list on the host runtime, refuse the ways this interpreter
+    would reach the network around the filtering proxy. An audit hook cannot be
+    removed, so Python code cannot undo it; native code or a process the hook
+    never sees still can. The container runtime does not use this: there the
+    guest has no route anywhere but the proxy."""
+    import weakref
+
+    proxy_port = spec.get("proxy_port") if isinstance(spec, dict) else None
+    bound = weakref.WeakSet()
+
+    def host_of(value):
+        if isinstance(value, bytes):
+            value = value.decode("utf-8", "replace")
+        return "" if value is None else str(value)
+
+    def own_listener(port):
+        for sock in list(bound):
+            try:
+                if sock.getsockname()[1] == port:
+                    return True
+            except Exception:  # noqa: BLE001 - closed or unbound socket
+                continue
+        return False
+
+    def hook(event, args):
+        if event == "socket.bind":
+            try:
+                bound.add(args[0])
+            except Exception:  # noqa: BLE001
+                pass
+            return
+        if event in _NET_EVENTS:
+            address = args[1] if len(args) > 1 else None
+            if not isinstance(address, tuple) or not address:
+                return  # AF_UNIX and friends are not network egress
+            host = host_of(address[0])
+            port = address[1] if len(address) > 1 else None
+            if host in _LOOPBACK and port is not None and (port == proxy_port or own_listener(port)):
+                return
+            raise PermissionError(
+                f"Code Mode allowed_hosts: a direct connection to {host}:{port} is refused. "
+                "Use an HTTP(S) client that honours HTTP_PROXY / HTTPS_PROXY (urllib, requests, httpx do).")
+        if event in _NAME_EVENTS:
+            target = args[0] if args else None
+            if event == "socket.getnameinfo" and isinstance(target, tuple) and target:
+                target = target[0]
+            host = host_of(target)
+            if host and host not in _LOOPBACK:
+                raise PermissionError(
+                    f"Code Mode allowed_hosts: looking up {host!r} is refused; the proxy resolves host names.")
+            return
+        if event in _SPAWN_EVENTS:
+            raise PermissionError(
+                f"Code Mode allowed_hosts: {event} is refused while a host list is active "
+                "(a child process or native library could bypass the network guard).")
+
+    sys.addaudithook(hook)
+
+
 def main() -> int:
     # ``--inline``: the confined runtime (src/code_mode/confined.py) mounts no
     # Faustus file into the container, so the user's code arrives in the config
@@ -190,6 +258,9 @@ def main() -> int:
     max_output_bytes = config.get("max_output_bytes")
 
     cpu_quota_exc = _install_cpu_guard()
+
+    if isinstance(config, dict) and isinstance(config.get("net_guard"), dict):
+        _install_net_guard(config["net_guard"])
 
     captured = _CapturedOutput(max_output_bytes)
     sys.stdout = captured

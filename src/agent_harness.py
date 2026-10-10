@@ -1811,7 +1811,7 @@ class TurnLedger:
             # reads back: Code Mode's runtime/receipts and a process handle's state.
             if tool == "run_code":
                 ev["code_mode"] = {k: result[k] for k in ("exit_code", "error", "refused", "runtime_guarantees",
-                                                          "runtime_policy", "tool_outcomes", "receipt")
+                                                          "runtime_policy", "tool_outcomes", "receipt", "network")
                                    if k in result}
             elif tool.startswith("process_") and result.get("handle") and result.get("state"):
                 ev["process"] = {k: result.get(k) for k in ("handle", "state", "exit_code", "termination_reason")}

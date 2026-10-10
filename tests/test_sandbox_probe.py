@@ -235,7 +235,7 @@ def test_the_execution_mcp_server_lists_the_tools():
     server = importlib.import_module("mcp_servers.execution_server")
     tools = run(server.list_tools())
     assert {t.name for t in tools} == {"process_start", "process_read", "process_write_stdin",
-                                       "process_stop", "process_list", "sandbox_probe"}
+                                       "process_stop", "process_list", "sandbox_probe", "run_code"}
     out = run(server.call_tool("sandbox_probe", {"operations": ["files"]}))
     assert "verified" in out[0].text
 

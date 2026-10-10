@@ -11,6 +11,8 @@ MCP server exposing the execution tools of Faustus to a local assistant:
   client's handles only by guessing ids when the owner differs.
 * ``sandbox_probe``: real allowed/forbidden access checks per operation
   (``src/sandbox_probe.py``).
+* ``run_code``: Code Mode (``src/code_mode/``), with the optional per-run
+  ``allowed_hosts`` network list.
 
 * **stdout is the JSON-RPC stream.** ``src/stdio_guard.py`` is raised before
   anything else is imported, like the other built-in servers.
@@ -72,6 +74,15 @@ _TOOLS = {
                      {**_HANDLE, "reason": {"type": "string"}}, ["handle"]),
     "process_list": ("List this server's process handles with state and termination reason.",
                      {"include_finished": {"type": "boolean"}}, []),
+    "run_code": ("Run a short Python program (Code Mode) in the container runtime by default. Optional "
+                 "allowed_hosts limits this run's network to the listed hosts ([] = none, omitted = the "
+                 "runtime's usual network); the result's `network` field says which enforcement applied "
+                 "and whether it is a hard boundary. Refused while the agent_code_mode setting is off.",
+                 {"code": {"type": "string", "description": "Python source; `tools` is already in scope."},
+                  "allowed_hosts": {"type": "array", "items": {"type": "string"}, "maxItems": 32,
+                                    "description": "Hosts the run may reach: names, a leading *. for "
+                                                   "subdomains, or explicit IPs; optional :port."}},
+                 ["code"]),
     "sandbox_probe": ("Verify what shell, python, Code Mode, file tools and child processes really "
                       "confine, with allowed and forbidden accesses on throw-away fixtures.",
                       {"operations": {"type": "array",

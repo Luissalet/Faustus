@@ -6,7 +6,7 @@ import { lazyChunk } from '../../shell/lazyChunk';
 import { createPortal } from 'react-dom';
 import { Button, describeError, ExecutionTimeline, friendlyError, IconButton, TurnCostBreakdown } from '../../components';
 import { TurnActivity } from './TurnActivity';
-import { fetchCompactionEvent, pinCompactionFragment, fetchLlmTraces, forkLlmTrace, faviconStripEntries, type AdvisorAdvice, type AskUser, type CompactionEvent, type ContextLedger, type ContextReceipt, type DelegationTask, type LlmTraceRow, type WebSource } from '../../adapters/chat';
+import { fetchCompactionEvent, pinCompactionFragment, fetchLlmTraces, forkLlmTrace, faviconStripEntries, type AdvisorAdvice, type AskUser, type CompactionEvent, type ContextLedger, type ContextReceipt, type DelegationTask, type LlmTraceRow, type NetworkSummary, type WebSource } from '../../adapters/chat';
 import { createRecipeFromRun } from '../../adapters/strategy';
 import type { AnswerVersion } from '../../adapters/sessions';
 import type { EvidenceRef } from '../../adapters/evidence';
@@ -314,6 +314,21 @@ export function citeToolResults(text: string, steps: Step[]): string {
     return `[^${id}]`;
   });
   return notes.length ? `${out}\n\n${notes.join('\n')}` : out;
+}
+
+/** #255: the one line a `run_code` card shows about its network, and the
+ *  hover text that says how strongly that was enforced. */
+function networkLabel(net: NetworkSummary): string {
+  const scope = net.hosts.length
+    ? t('network: only {hosts}', { hosts: net.hosts.join(', ') })
+    : t('network: none');
+  return `${scope} · ${net.hardBoundary ? t('hard boundary') : t('best effort, not a boundary')}`;
+}
+
+function networkTitle(net: NetworkSummary): string {
+  const counts = t('requests: {allowed} allowed, {denied} refused', { allowed: net.allowed, denied: net.denied });
+  const refused = net.deniedTargets.length ? ` · ${t('refused')}: ${net.deniedTargets.join(', ')}` : '';
+  return `${net.enforcement} · ${counts}${refused}`;
 }
 
 /** EXEC-01: a short label for `Step.executionTarget.kind` — the words a
@@ -757,6 +772,12 @@ function ToolRail({
                 {step.executionTarget && (
                   <span className="fs-trace__meta" data-testid="tool-execution-target" title={[step.executionTarget.cwd, step.executionTarget.shell].filter(Boolean).join(' · ')}>
                     {t('runs on {target}', { target: executionTargetLabel(step.executionTarget.kind) })}
+                  </span>
+                )}
+                {step.network && (
+                  <span className="fs-trace__meta" data-testid="tool-network" data-enforcement={step.network.enforcement}
+                    title={networkTitle(step.network)}>
+                    {networkLabel(step.network)}
                   </span>
                 )}
                 {step.diff && (

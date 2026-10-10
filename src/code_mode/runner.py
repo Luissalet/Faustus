@@ -22,7 +22,7 @@ import uuid
 from typing import Any, Optional
 
 from core.platform_compat import IS_WINDOWS
-from src.code_mode import bridge, confined
+from src.code_mode import bridge, confined, net_allowlist
 from src.code_mode.outcomes import CallOutcomes
 
 logger = logging.getLogger(__name__)
@@ -81,9 +81,10 @@ def _limits() -> dict:
     }
 
 
-def _minimal_env() -> dict:
+def _minimal_env(extra: Optional[dict] = None) -> dict:
     """No network credentials, no MCP/model keys, nothing of this process's
-    own environment -- only what a bare interpreter needs to start."""
+    own environment -- only what a bare interpreter needs to start. ``extra``
+    is only ever the proxy variables of a run with an ``allowed_hosts`` list."""
     env = {}
     for key in ("PATH", "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC", "TEMP", "TMP"):
         if key in os.environ:
@@ -92,6 +93,8 @@ def _minimal_env() -> dict:
     # above only matter for tempfile lookups the guest itself never does (its
     # cwd is the temp workdir runner.py creates), left in for Windows tools
     # that assume they exist.
+    if extra:
+        env.update(extra)
     return env
 
 
@@ -226,6 +229,7 @@ async def run_code_mode(
     network: Optional[bool] = None,
     workspace_access: Optional[str] = None,
     image: Optional[str] = None,
+    allowed_hosts: Optional[list] = None,
 ) -> dict:
     """Run ``code`` in the requested runtime.
 
@@ -234,15 +238,31 @@ async def run_code_mode(
     (explicit opt-in; a host process with the Faustus user's authority).
     ``network`` / ``workspace_access`` are the confined-runtime grants and
     default to their settings (no network, workspace read-only).
+
+    ``allowed_hosts`` (#255) narrows (host runtime) or sets (confined runtime)
+    the network of THIS run: ``None`` keeps today's behaviour, ``[]`` is no
+    network, a list of hosts reaches only those. The result then carries a
+    ``network`` report naming the enforcement that really applied.
     """
     mode = confined.resolve_runtime(runtime, default=DEFAULT_RUNTIME)
+    rules, problems = net_allowlist.parse_allowed_hosts(allowed_hosts)
+    if problems:
+        return {
+            "error": "Code Mode refused: " + "; ".join(problems) + ". The code was NOT run.",
+            "exit_code": 1,
+            "refused": True,
+            "runtime_guarantees": {"mode": "not_executed", "filesystem_isolated": False,
+                                   "network_isolated": False, "tool_policy_scope": "tools.call_only"},
+            "network": {"allowed_hosts": None, "enforcement": "not_executed", "hard_boundary": False},
+        }
     kwargs = dict(session_id=session_id, owner=owner, disabled_tools=disabled_tools,
                   workspace=workspace, workspace_roots=workspace_roots,
                   tool_policy=tool_policy, security_context=security_context)
     if mode == "host":
-        return _with_outcome(_with_policy(await _run_host(code, **kwargs), "host", "host_process"))
+        return _with_outcome(_with_policy(await _run_host(code, allowed_rules=rules, **kwargs),
+                                          "host", "host_process"))
     return _with_outcome(await _run_confined(code, network=network, workspace_access=workspace_access,
-                                             image=image, **kwargs))
+                                             image=image, allowed_rules=rules, **kwargs))
 
 
 def _with_outcome(result: dict) -> dict:
@@ -260,8 +280,23 @@ def _with_outcome(result: dict) -> dict:
     return result
 
 
+def _annotate_network(result: dict, report: dict, *, isolated: bool) -> dict:
+    """Attach the ``network`` report of an ``allowed_hosts`` run and keep
+    ``runtime_guarantees`` honest about it."""
+    if not isinstance(result, dict):
+        return result
+    result["network"] = report
+    guarantees = result.get("runtime_guarantees")
+    if isinstance(guarantees, dict):
+        guarantees["network_isolated"] = isolated
+        guarantees["network_scope"] = "none" if isolated else "allowlist"
+        guarantees["network_enforcement"] = report.get("enforcement")
+        guarantees["network_hard_boundary"] = bool(report.get("hard_boundary"))
+    return result
+
+
 async def _run_confined(code: str, *, network: Optional[bool], workspace_access: Optional[str],
-                        image: Optional[str] = None, **kwargs) -> dict:
+                        image: Optional[str] = None, allowed_rules=None, **kwargs) -> dict:
     from src.container_mounts import MountError
     limits = _limits()
     image = image or confined._sandbox_image()
@@ -271,13 +306,39 @@ async def _run_confined(code: str, *, network: Optional[bool], workspace_access:
     if not ready.get("ok"):
         return confined.refusal(str(ready.get("reason") or "backend_unavailable"),
                                 str(ready.get("detail") or ""))
+    egress = None
+    if allowed_rules is not None:
+        if allowed_rules and not confined.host_lists_open_network(network):
+            return {
+                "error": ("Code Mode refused: allowed_hosts would open the network for this run, but the "
+                          "operator has not allowed run_code to name its own hosts (turn on "
+                          f"`{confined.HOST_LISTS_SETTING}`, or `{confined.NETWORK_SETTING}` to grant the "
+                          "network and let a list narrow it). The code was NOT run."),
+                "exit_code": 1, "refused": True,
+                "runtime_guarantees": {"mode": "not_executed", "filesystem_isolated": False,
+                                       "network_isolated": True, "tool_policy_scope": "tools.call_only"},
+                "network": {"allowed_hosts": [r.text for r in allowed_rules], "enforcement": "not_executed",
+                            "hard_boundary": False},
+            }
+        if allowed_rules:
+            egress = await confined.start_egress(image, allowed_rules)
+            if isinstance(egress, dict):  # a refusal: the filtering proxy could not be started
+                return egress
+        else:
+            network = False  # an empty list is "no network", whatever the setting grants
     try:
         plan = confined.build_plan(
             workspace=kwargs.get("workspace"), workspace_roots=kwargs.get("workspace_roots"),
             workspace_access=workspace_access, network=network,
-            timeout_seconds=max(1, limits["timeout_seconds"]), image=image)
+            timeout_seconds=max(1, limits["timeout_seconds"]), image=image, egress=egress)
     except MountError as exc:
+        if egress is not None:
+            await egress.stop()
         return confined.refusal("the workspace root cannot be mounted", str(exc))
+    except BaseException:
+        if egress is not None:
+            await egress.stop()
+        raise
     try:
         result = await _run_code_mode_impl(code, _confined=plan, **kwargs)
         receipt = result.get("receipt")
@@ -286,17 +347,40 @@ async def _run_confined(code: str, *, network: Optional[bool], workspace_access:
             receipt["terminated_by"] = "memory"
             result["error"] = "Code Mode terminated: memory"
         result["runtime_guarantees"] = dict(plan.guarantees)
+        if allowed_rules is not None:
+            if egress is not None:
+                report = net_allowlist.build_report(
+                    net_allowlist.KIND_CONTAINER_PROXY, allowed_rules, hard=True,
+                    stats=await egress.collect_stats())
+                _annotate_network(result, report, isolated=False)
+            else:
+                _annotate_network(result, net_allowlist.build_report(
+                    net_allowlist.KIND_CONTAINER_NONE, allowed_rules, hard=True), isolated=True)
         return _with_policy(result, "confined", "container")
     finally:
         await plan.cleanup()
+        if egress is not None:
+            await egress.stop()
 
 
-async def _run_host(code: str, **kwargs) -> dict:
+async def _run_host(code: str, *, allowed_rules=None, **kwargs) -> dict:
     from src import sandbox_exec
     if sandbox_exec.confinement_required():
         return confined.refusal(
             "required confinement (`agent_sandbox_mode` = `required`) does not allow the host runtime",
             requested="host")
+    if allowed_rules is None:
+        return await _run_host_process(code, **kwargs)
+    egress = await net_allowlist.start_host_egress(allowed_rules)
+    try:
+        result = await _run_host_process(code, _egress=egress, **kwargs)
+    finally:
+        report = egress.report()
+        await egress.stop()
+    return _annotate_network(result, report, isolated=False)
+
+
+async def _run_host_process(code: str, **kwargs) -> dict:
     if not IS_WINDOWS:
         return await _run_code_mode_impl(code, **kwargs)
     from src.code_mode.windows_job_bootstrap import create_owned_job, WindowsJobError
@@ -326,6 +410,7 @@ async def _run_code_mode_impl(
     security_context: Any = None,
     _process_scope=None,
     _confined=None,
+    _egress=None,
 ) -> dict:
     limits = _limits()
     timeout_s = max(1, limits["timeout_seconds"])
@@ -347,7 +432,7 @@ async def _run_code_mode_impl(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=workdir,
-            env=_minimal_env(),
+            env=_minimal_env(_egress.env if _egress is not None else None),
             limit=frame_limit,
         )
         if not IS_WINDOWS:
@@ -424,6 +509,8 @@ async def _run_code_mode_impl(
     config_line = {"max_calls": max_calls, "max_output_bytes": max_output_bytes}
     if _confined is not None:
         config_line["code"] = code
+    if _egress is not None:
+        config_line["net_guard"] = _egress.guard
     proc.stdin.write((json.dumps(config_line) + "\n").encode("utf-8"))
     try:
         await proc.stdin.drain()

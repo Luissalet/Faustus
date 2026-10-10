@@ -9,6 +9,11 @@ ordinary tool call goes through (``src/code_mode/bridge.py``), so a
 destructive or disabled tool gets the same rejection either way.
 Direct Python operations bypass that bridge and retain host file/network access.
 
+Optional ``allowed_hosts`` (#255) limits one run's network to a validated list
+of hosts (``src/code_mode/net_allowlist.py``): omitted = today's behaviour,
+``[]`` = no network. The result's ``network`` field names the enforcement that
+really applied and whether it is a hard boundary.
+
 Gated by the ``agent_code_mode`` setting (default off) -- schema and tool
 are always registered, but the tool refuses to run while the setting is
 off, same shape as other opt-in agent tools.
@@ -45,6 +50,8 @@ class RunCodeTool:
         if not code.strip():
             return {"error": "run_code requires non-empty `code`.", "exit_code": 1}
 
+        allowed_hosts = args.get("allowed_hosts")
+
         ctx = ctx or {}
         from src.code_mode.runner import run_code_mode
         from src.tool_execution import get_active_workspace, get_active_workspace_roots
@@ -58,4 +65,5 @@ class RunCodeTool:
             workspace_roots=list(get_active_workspace_roots()),
             tool_policy=ctx.get("tool_policy"),
             security_context=ctx.get("security_context"),
+            allowed_hosts=allowed_hosts,
         )

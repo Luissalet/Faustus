@@ -11734,6 +11734,11 @@ async def _stream_agent_loop_body(
         ):
             if key in approved_result:
                 approved_event[key] = approved_result[key]
+        if isinstance(approved_result.get("network"), dict):  # #255: run_code's allowed_hosts report
+            from src.code_mode import net_allowlist as _net_allowlist
+            _net = _net_allowlist.wire_summary(approved_result["network"])
+            if _net:
+                approved_event["network"] = _net
         if approved_result.get("images"):
             approved_image = approved_result["images"][0]
             approved_event["screenshot"] = (
@@ -11818,6 +11823,11 @@ async def _stream_agent_loop_body(
         if approved_result.get("doc_id"):
             approved_tool_event["doc_id"] = approved_result["doc_id"]
             approved_tool_event["doc_title"] = approved_result.get("title", "")
+        if isinstance(approved_result.get("network"), dict):
+            from src.code_mode import net_allowlist as _net_allowlist
+            _net = _net_allowlist.wire_summary(approved_result["network"])
+            if _net:
+                approved_tool_event["network"] = _net
         if isinstance(approved_result.get("subagents"), list):
             approved_tool_event["subagents"] = _compact_subagent_reports(approved_result["subagents"])
         _flush_open_thought()
@@ -17481,6 +17491,13 @@ async def _stream_agent_loop_body(
             # `executionTarget`, it just never arrived on the wire.
             if result.get("execution_target"):
                 tool_output_data["execution_target"] = result["execution_target"]
+            # #255: the network a run_code call really had (its allowed_hosts and
+            # which enforcement applied), so the transcript can say so.
+            if isinstance(result.get("network"), dict):
+                from src.code_mode import net_allowlist as _net_allowlist
+                _net = _net_allowlist.wire_summary(result["network"])
+                if _net:
+                    tool_output_data["network"] = _net
             if is_doc_tool and "action" in result:
                 tool_output_data.update({
                     "doc_id": result.get("doc_id"),
@@ -17746,6 +17763,11 @@ async def _stream_agent_loop_body(
             # carried, so a history reload shows where a bash/python call ran.
             if result.get("execution_target"):
                 tool_event["execution_target"] = result["execution_target"]
+            if isinstance(result.get("network"), dict):
+                from src.code_mode import net_allowlist as _net_allowlist
+                _net = _net_allowlist.wire_summary(result["network"])
+                if _net:
+                    tool_event["network"] = _net
             for ik in ("image_url", "image_id", "image_prompt", "image_model", "image_size", "image_quality",
                        "request_id", "prospero_job_id", "prospero_project_id", "prospero_asset_id"):
                 if ik in result:

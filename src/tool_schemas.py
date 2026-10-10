@@ -922,12 +922,18 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "run_code",
-            "description": "Write Python to compose several tool calls in ONE round. By default the program runs in a container that sees only the workspace folder (mounted at /workspace, read-only unless the workspace grant is read-write), has no network unless granted, and receives none of Faustus's environment; if the container backend is unavailable the run is refused and nothing executes. Only when the operator explicitly selects the host runtime does it run as a host process with direct host file and network access that bypasses tool-level checks. Every result reports the effective runtime in `runtime_guarantees`. `tools.call(name, args)` uses the normal policy, approvals and disabled-tools list (host paths in tool arguments, not container paths); `tools.list()` lists available names/schemas and approval requirements. Approval waiting depends on the configured approval-pause setting; otherwise approval-gated calls are denied. Bounded by wall time, bridged call count and output size, with a diagnostic receipt on termination. Disabled by default.",
+            "description": "Write Python to compose several tool calls in ONE round. By default the program runs in a container that sees only the workspace folder (mounted at /workspace, read-only unless the workspace grant is read-write), has no network unless granted, and receives none of Faustus's environment; if the container backend is unavailable the run is refused and nothing executes. Only when the operator explicitly selects the host runtime does it run as a host process with direct host file and network access that bypasses tool-level checks. Every result reports the effective runtime in `runtime_guarantees`. `tools.call(name, args)` uses the normal policy, approvals and disabled-tools list (host paths in tool arguments, not container paths); `tools.list()` lists available names/schemas and approval requirements. Approval waiting depends on the configured approval-pause setting; otherwise approval-gated calls are denied. Bounded by wall time, bridged call count and output size, with a diagnostic receipt on termination. Optional `allowed_hosts` limits THIS run's network to the listed hosts (omit = the runtime's usual network, [] = none); the result's `network` field says which enforcement applied: in the container runtime a hard boundary (internal network + filtering proxy), on the host runtime a proxy plus an in-process guard that native code can bypass. Disabled by default.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "code": {"type": "string", "description": "Python source to run. Use the `tools` object already in scope; do not import it."},
-                    "language": {"type": "string", "enum": ["python"], "description": "Always \"python\" today."}
+                    "language": {"type": "string", "enum": ["python"], "description": "Always \"python\" today."},
+                    "allowed_hosts": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "maxItems": 32,
+                        "description": "Hosts this run may reach, e.g. [\"api.github.com\", \"pypi.org\", \"*.example.com\", \"203.0.113.7:8080\"]. Plain host names, a leading \"*.\" for subdomains (not the apex), or an IP written on purpose; optional :port. No URLs, paths, localhost or other wildcards. Everything else is refused. [] = no network. Omit to keep the runtime's usual network. Use an HTTP(S) client that honours HTTP_PROXY/HTTPS_PROXY (urllib, requests, httpx)."
+                    }
                 },
                 "required": ["code"]
             }

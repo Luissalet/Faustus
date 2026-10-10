@@ -24,7 +24,7 @@ import {
   type ToolResultStatus,
   type RoundActivity,
 } from '../../adapters/chat';
-import { roundActivityFrom } from '../../adapters/chat';
+import { roundActivityFrom, type NetworkSummary } from '../../adapters/chat';
 import type { EvidenceRef } from '../../adapters/evidence';
 import type { Attachment } from '../../adapters/composer';
 import type { VramBlocked } from '../../adapters/vramAdmission';
@@ -79,6 +79,9 @@ export interface Step {
    *  comment in adapters/chat.ts for why it stays undefined until
    *  agent_loop.py forwards it. */
   executionTarget?: { kind: string; cwd?: string; shell?: string };
+  /** #255: the network a `run_code` call had (its `allowed_hosts` and the
+   *  enforcement that applied), forwarded from `ChatEvent['tool_output'].network`. */
+  network?: NetworkSummary;
   /** OBS-01: this call's id, forwarded from `ChatEvent['tool_output'].callId`
    *  (live) or the persisted `tool_events[i].call_id` (history) — lets the
    *  tool card offer a "Ver traza" link to `/activity?trace=<callId>`. */
@@ -964,6 +967,7 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
         docId: event.docId,
         evidenceRefs: event.evidenceRefs ?? (index === -1 ? undefined : turn.steps[index].evidenceRefs),
         executionTarget: event.executionTarget ?? (index === -1 ? undefined : turn.steps[index].executionTarget),
+        network: event.network ?? (index === -1 ? undefined : turn.steps[index].network),
         callId: event.callId ?? (index === -1 ? undefined : turn.steps[index].callId),
       };
       const steps = turn.steps.slice();

@@ -9558,3 +9558,10 @@ Paused; the {when} slot did not run	En pausa; la ejecución de las {when} no se 
 No final answer: the reasoning budget ran out.	Sin respuesta final: se agotó el presupuesto de razonamiento.
 No final answer: the turn was stopped while it was still reasoning.	Sin respuesta final: se paró el turno mientras aún razonaba.
 No final answer: the turn ended while it was still reasoning.	Sin respuesta final: el turno terminó mientras aún razonaba.
+network: only {hosts}	red: solo {hosts}
+network: none	red: ninguna
+hard boundary	frontera real
+best effort, not a boundary	mejor esfuerzo, no es una frontera
+requests: {allowed} allowed, {denied} refused	peticiones: {allowed} permitidas, {denied} rechazadas
+refused	rechazado
+{allowed} requests allowed, {denied} refused	{allowed} peticiones permitidas, {denied} rechazadas
