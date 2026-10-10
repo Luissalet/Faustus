@@ -10637,7 +10637,7 @@ y un aviso, sin iniciar otro modelo. Un catálogo válido sin el modelo elegido
 sigue restaurando el valor anterior; desactivar Sparks explícitamente mantiene
 su comportamiento. Conservar la elección no prueba que el servidor esté sano.
 
-## 287. Límite diario de gasto en proveedores de pago (09-10-2026)
+## 288. Límite diario de gasto en proveedores de pago (09-10-2026)
 
 Un bucle sin vigilancia, un abanico de subagentes o una investigación larga pueden gastar dinero real en un proveedor de pago. Los techos por turno (`agent_turn_max_cost_usd`, el presupuesto de autonomía) solo acotan un turno; ahora hay un tope duro **por día**, activado por defecto.
 
