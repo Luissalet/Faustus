@@ -77,7 +77,7 @@ import uuid
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from core.atomic_io import atomic_write_json
-from src import git_panel
+from src import git_panel, worker_caches
 from src.native_env import native_host_environment
 
 logger = logging.getLogger(__name__)
@@ -509,7 +509,9 @@ def run_tests(owner: str, exp_id: str, alt_id: str, command: str, *,
         proc = subprocess.run(
             to_run, cwd=alt["path"], capture_output=True, text=True, encoding="utf-8", errors="replace",
             timeout=max(1.0, min(float(timeout or DEFAULT_TEST_TIMEOUT), 600.0)),
-            env=native_host_environment(),
+            # #405: the alternative's own pip/npm/uv/... caches and temp
+            # folder, so one candidate cannot leave a package for another.
+            env=worker_caches.isolated_env(alt["path"], native_host_environment()),
         )
         output = ((proc.stdout or "") + (proc.stderr or ""))[:MAX_TEST_OUTPUT_BYTES]
         result = {

@@ -946,6 +946,13 @@ async def _direct_fallback(
         "LINES": "40",
         "HOME": _AGENT_WORKDIR,
     }
+    # #405: inside an isolated worker (a fan-out candidate), package caches
+    # and temp folders are the worker's own, and a call that names another
+    # worker's folder or the shared caches is noted. Both are no-ops for a
+    # normal turn.
+    from src import worker_caches as _worker_caches
+    _subproc_env = _worker_caches.apply_active(_subproc_env)
+    _worker_caches.note_cross_reads(content, tool)
 
     try:
         _turn_opts = get_active_turn_options()

@@ -31,7 +31,7 @@ import uuid
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from core.atomic_io import atomic_write_json
-from src import alternatives, budget_account
+from src import alternatives, budget_account, worker_caches
 from src.agent_tools.subagent_tools import DEFAULT_RESERVE_TOKENS_PER_ROUND, SubagentRun, _run_subagent
 from src.fanout.plan import FanoutCandidate, FanoutPlan
 
@@ -303,13 +303,18 @@ async def _run_one_candidate(run_id: str, owner: str, exp_id: str, cand: Dict[st
     async def _emit(_payload: Dict[str, Any]) -> None:
         return None
 
+    # #405: this candidate's tool calls get their own package caches and
+    # temp folder, and naming a sibling candidate's folder is noted. The
+    # frozen base snapshot is shared on purpose, so reading it is fine.
+    base_snapshot = os.path.join(os.path.dirname(os.path.abspath(alt_path)), alternatives._BASE_SNAPSHOT_DIR)  # noqa: SLF001
     try:
-        await _run_subagent(
-            run, endpoint_url=endpoint_url, model=model, headers=headers, owner=owner,
-            workspace=alt_path, workspace_roots=[alt_path], max_rounds=plan.max_rounds,
-            shared_context="", parent_session_id=None, emit=_emit,
-            timeout_s=None, save_transcript=False,
-        )
+        with worker_caches.isolated(alt_path, allow=[base_snapshot]):
+            await _run_subagent(
+                run, endpoint_url=endpoint_url, model=model, headers=headers, owner=owner,
+                workspace=alt_path, workspace_roots=[alt_path], max_rounds=plan.max_rounds,
+                shared_context="", parent_session_id=None, emit=_emit,
+                timeout_s=None, save_transcript=False,
+            )
     except Exception as exc:  # noqa: BLE001 - one candidate's crash must not sink the others
         run.error = f"{type(exc).__name__}: {exc}"[:300]
         logger.warning("fanout: candidate %s crashed: %s", label, exc, exc_info=True)
@@ -323,6 +328,8 @@ async def _run_one_candidate(run_id: str, owner: str, exp_id: str, cand: Dict[st
         )
     }
     cand["latency_s"] = report.get("duration_s")
+    cross = worker_caches.read_cross_reads(alt_path)
+    cand["cross_reads"] = {"count": len(cross), "paths": sorted({str(c.get("path")) for c in cross})[:20]}
 
     # Diff stats against the shared base (src.alternatives already computes
     # this for the whole experiment; recomputed per-candidate here so a
