@@ -1156,6 +1156,28 @@ TOOLS: List[Tool] = [
         inputSchema={"type": "object", "properties": {}},
     ),
     Tool(
+        name="todo_assign_agent",
+        description=(
+            "Hand one of the owner's todos (a note of type todo/checklist in Notas) to a Faustus agent. "
+            "It opens a new agent conversation with the todo as the task, starts it in the background and "
+            "links both ways; the todo shows 'en curso por agente' and, when the run ends, carries its "
+            "summary and a status: done (completed run), needs_review (stopped on an approval or gave no "
+            "answer) or failed. Never auto-completes a todo without a finished run. Autonomy is never "
+            "widened: the run gets the stricter of the project's preset (supervised when none) and the "
+            "`autonomy_preset` asked for. Calling again while the run is live returns that run. With "
+            "`wait` it also blocks (up to 10 minutes) until the run ends. Needs a token with "
+            "todos:write and agents:dispatch (profile 'todo_agent')."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "todo_id": {"type": "string", "description": "The note id of the todo."},
+            "project_id": {"type": "string", "description": "Optional native project to run in (its workspace and autonomy apply)."},
+            "autonomy_preset": {"type": "string", "enum": ["read_only", "supervised", "bounded_autonomous"],
+                                "description": "Optional; can only tighten the baseline, never loosen it."},
+            "model": {"type": "string", "description": "Optional model name on the default endpoint."},
+            "wait": {"type": "boolean", "default": False},
+        }, "required": ["todo_id"]},
+    ),
+    Tool(
         name="workers_list",
         description="Recent dispatched jobs (id, status, title).",
         inputSchema={"type": "object", "properties": {"limit": {"type": "integer", "default": 20}}},
@@ -1960,6 +1982,30 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
         if name == "workers_guide":
             data = await asyncio.to_thread(_request, "GET", "/api/dispatch/guide")
             return _text(str(data.get("guide") or ""))
+        if name == "todo_assign_agent":
+            todo = urllib.parse.quote(str(args.get("todo_id") or ""), safe="")
+            if not todo:
+                return _text("Error: todo_id is required")
+            payload = {"mode": "agent"}
+            for key in ("project_id", "autonomy_preset", "model"):
+                if args.get(key):
+                    payload[key] = str(args[key])
+            data = await asyncio.to_thread(_request, "POST", f"/api/todos/{todo}/assign-agent", payload)
+            run = data.get("run") or {}
+            if args.get("wait"):
+                deadline = time.time() + _MAX_WAIT
+                while run.get("status") == "running" and time.time() < deadline:
+                    await asyncio.sleep(3)
+                    run = (await asyncio.to_thread(_request, "GET", f"/api/todos/{todo}/agent")).get("run") or run
+            lines = [f"todo {args.get('todo_id')} · {run.get('status')}"
+                     + (" · already running" if run.get("already_running") else ""),
+                     f"session {run.get('session_id')} · autonomy {run.get('autonomy_preset')}"
+                     + (" (tightened from the request)" if run.get("autonomy_clamped") else "")]
+            if run.get("summary"):
+                lines.append(str(run["summary"])[:1500])
+            if run.get("error"):
+                lines.append(f"error: {run['error']}")
+            return _text("\n".join(lines))
         if name == "workers_list":
             data = await asyncio.to_thread(_request, "GET", f"/api/dispatch?limit={int(args.get('limit') or 20)}")
             rows = data.get("jobs") or []

@@ -36,6 +36,8 @@ import {
   isToday,
   labelsOf,
   listNotes,
+  assignAgent,
+  agentRunLabel,
   NOTE_COLORS,
   parseDue,
   progress,
@@ -409,6 +411,7 @@ interface CardProps {
   onArchive: () => void;
   onDelete: () => void;
   onAgent: () => void;
+  onAssignAgent: () => void;
   onCopy: () => void;
   onMove: (dir: -1 | 1) => void;
   onOpenAgentChat: () => void;
@@ -421,7 +424,7 @@ interface CardProps {
   };
 }
 
-function NoteCard({ note, index, count, archivedView, selecting, picked, onPick, onEdit, onToggleItem, onPin, onArchive, onDelete, onAgent, onCopy, onMove, onOpenAgentChat, dragProps }: CardProps) {
+function NoteCard({ note, index, count, archivedView, selecting, picked, onPick, onEdit, onToggleItem, onPin, onArchive, onDelete, onAgent, onAssignAgent, onCopy, onMove, onOpenAgentChat, dragProps }: CardProps) {
   const list = isChecklist(note);
   const { done, total } = progress(note);
   const overdue = isOverdue(note.dueDate) && !archivedView;
@@ -462,6 +465,7 @@ function NoteCard({ note, index, count, archivedView, selecting, picked, onPick,
             { label: note.pinned ? t('Unpin') : t('Pin'), icon: note.pinned ? PinOff : Pin, onSelect: onPin },
             { label: t('Copy the text'), icon: Copy, onSelect: onCopy },
             { label: t('Resolve with the agent'), icon: Bot, onSelect: onAgent },
+            { label: t('Assign to an agent'), icon: Bot, onSelect: onAssignAgent, disabled: note.agentRun?.status === 'running' },
             ...(note.agentSessionId ? [{ label: t('See the agent\'s chat'), icon: Bot, onSelect: onOpenAgentChat }] : []),
             { label: t('Move up'), icon: ChevronUp, onSelect: () => onMove(-1), disabled: index === 0 },
             { label: t('Move down'), icon: ChevronDown, onSelect: () => onMove(1), disabled: index >= count - 1 },
@@ -497,7 +501,7 @@ function NoteCard({ note, index, count, archivedView, selecting, picked, onPick,
         </div>
       )}
 
-      {(note.dueDate || labels.length > 0 || note.agentSessionId) && (
+      {(note.dueDate || labels.length > 0 || note.agentSessionId || note.agentRun) && (
         <footer className="fs-note__foot">
           {note.dueDate && (
             <span className="fs-note__tag fs-note__tag--due" data-overdue={overdue || undefined} data-today={isToday(note.dueDate) || undefined}>
@@ -511,7 +515,19 @@ function NoteCard({ note, index, count, archivedView, selecting, picked, onPick,
               #{l}
             </span>
           ))}
-          {note.agentSessionId && (
+          {note.agentRun && (
+            <button
+              type="button"
+              className="fs-note__tag fs-note__tag--agent fs-note__tag--run"
+              data-run={note.agentRun.status}
+              data-testid="note-agent-run"
+              title={note.agentRun.summary || note.agentRun.error || undefined}
+              onClick={onOpenAgentChat}
+            >
+              <Bot size={11} aria-hidden="true" /> {agentRunLabel(note.agentRun)}
+            </button>
+          )}
+          {note.agentSessionId && !note.agentRun && (
             <button type="button" className="fs-note__tag fs-note__tag--agent" onClick={onOpenAgentChat}>
               <Bot size={11} aria-hidden="true" /> agente
             </button>
@@ -744,6 +760,26 @@ export function NotesScreen() {
     navigate(`/studio?${q.toString()}`);
   };
 
+  const onAssignAgent = async (note: Note) => {
+    try {
+      const run = await assignAgent(note.id);
+      replace({ ...note, agentRun: run, agentSessionId: run?.sessionId ?? note.agentSessionId });
+      say(t('Handed to an agent. It runs in the background.'));
+    } catch {
+      say(t('Could not assign the todo to an agent.'));
+    }
+  };
+
+  /* While an assigned run is live, re-read the list so the chip turns into its result. */
+  const anyRunning = (notes ?? []).some((n) => n.agentRun?.status === 'running');
+  useEffect(() => {
+    if (!anyRunning) return;
+    const timer = window.setInterval(() => {
+      void listNotes(archivedView).then(setNotes).catch(() => undefined);
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [anyRunning, archivedView]);
+
   const commitOrder = (list: Note[]) => {
     setNotes(list);
     void reorderNotes(list.map((n) => n.id)).catch(() => say(t('Could not save the order.')));
@@ -967,6 +1003,7 @@ export function NotesScreen() {
               onArchive={() => void onArchive(note)}
               onDelete={() => setConfirmDelete(note)}
               onAgent={() => onAgent(note)}
+              onAssignAgent={() => void onAssignAgent(note)}
               onCopy={() => void onCopy(note)}
               onMove={(dir) => onMove(note, dir)}
               onOpenAgentChat={() => note.agentSessionId && navigate(`/studio?s=${encodeURIComponent(note.agentSessionId)}`)}

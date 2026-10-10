@@ -52,6 +52,9 @@ class TurnRequest:
     model: str = ""                # "" = the session's own model
     source: str = "telegram"
     timeout_s: float = TURN_TIMEOUT_S
+    #: "" = the loop's default posture. Callers pass an already-clamped preset.
+    autonomy_preset: str = ""
+    workspace: str = ""
 
 
 @dataclass
@@ -212,6 +215,7 @@ async def _agent_turn(sess, messages, req: TurnRequest, acc: Dict[str, Any]) -> 
         url, model, messages, headers=headers,
         context_length=getattr(sess, "context_length", 0) or 0,
         session_id=sess.id, max_rounds=max(1, max_rounds), owner=req.owner or None,
+        autonomy_preset=req.autonomy_preset or None, workspace=req.workspace or None,
     )
     try:
         async for chunk in stream:

@@ -1586,6 +1586,10 @@ logger.info("Webhook & API token routes initialized")
 from routes.note.note_routes import setup_note_routes
 app.include_router(setup_note_routes(task_scheduler, upload_handler=upload_handler))
 
+# Assign a todo to an agent (background run linked to the note)
+from routes.todo_agent_routes import setup_todo_agent_routes
+app.include_router(setup_todo_agent_routes())
+
 # Email
 from routes.email_routes import setup_email_routes
 email_router = setup_email_routes()

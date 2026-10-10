@@ -10798,3 +10798,17 @@ GLM en Sparks revisó216/217 en clones propios, con tipos/tests y límites UI ex
 **Pruebas.** `tests/test_brain_bitemporal.py` (cierre por contradiccion con historia conservada, vista por defecto sin cambios, `as_of`, `known_at`, ambos combinados, migracion/backfill, fechas invalidas, aislamiento por dueno, API, herramienta, borde semiabierto de `as_of`, restauracion tras `revalidate`, esquema nativo y clasificacion de `facts`) y `tests/test_brain_mcp.py` (nueve herramientas + `brain_facts_as_of` sobre ambos ejes).
 
 **Limites.** El registro de predicados funcionales es una lista fija en codigo (`FUNCTIONAL_RELATIONS`), no configurable por usuario; `superseded_at` solo se conoce desde que existe el registro de versiones (filas migradas: desde la migracion); las memorias de `memory_engine` siguen con su propio `valid_from/valid_until`, no pasan por esta vista.
+
+## 297. Asignar una tarea a un agente (10-10-2026)
+
+Una tarea de Notas (nota `todo`/`checklist`) puede entregarse a un agente: `POST /api/todos/{id}/assign-agent` con `{mode: "agent", project_id?, autonomy_preset?, model?}` abre una conversaciÃ³n nueva con el tÃ­tulo, el cuerpo, los elementos pendientes, la fecha y los enlaces de la tarea como encargo, la ejecuta en segundo plano y enlaza ambas cosas (`agent_session_id` y el registro `agent_run` de la nota, visible en `GET /api/notes`). `GET /api/todos/{id}/agent` devuelve el estado.
+
+- **AutonomÃ­a nunca ampliada:** la base es el preajuste del proyecto (`supervised` sin proyecto); lo pedido solo puede igualarla o endurecerla.
+- **Nunca `done` sin ejecuciÃ³n completada:** `done` exige respuesta, sin error, sin aprobaciones pendientes ni tiempo agotado; si no, `needs_review` o `failed`. La ejecuciÃ³n no marca los elementos de la lista.
+- **Idempotente:** reasignar mientras corre devuelve la misma ejecuciÃ³n. Una ejecuciÃ³n huÃ©rfana tras un reinicio se repara a `failed`.
+- El encargo entra como texto no fiable, de modo que lo que cambia algo sigue parÃ¡ndose en una aprobaciÃ³n exacta.
+- **Studio:** acciÃ³n "Asignar a un agente" por nota y etiqueta de estado ("En curso por agente", etc.) que abre la conversaciÃ³n. **MCP:** herramienta `todo_assign_agent` en `faustus-workers` y perfil de token `todo_agent`.
+
+Detalle en `docs/api/todo-assign-agent.md`. **VerificaciÃ³n:** `tests/test_todo_assign_agent.py`, `studio/checks/todo-agent.check.mjs` y `tsc --noEmit`.
+
+**LÃ­mites.** No se ha probado con un modelo real, solo con sesiÃ³n y turno sustituidos. La ejecuciÃ³n vive en el proceso: un reinicio la interrumpe (queda `failed`, no se reanuda). El agente no tiene hoy una herramienta propia para asignar tareas a otro agente.

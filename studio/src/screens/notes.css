@@ -285,6 +285,18 @@
   color: var(--fs-info);
 }
 
+.fs-note__tag--run[data-run='done'] {
+  color: var(--fs-success, var(--fs-info));
+}
+
+.fs-note__tag--run[data-run='needs_review'] {
+  color: var(--fs-warning, var(--fs-info));
+}
+
+.fs-note__tag--run[data-run='failed'] {
+  color: var(--fs-danger);
+}
+
 /* ── Editor ── */
 
 .fs-note-editor {

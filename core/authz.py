@@ -151,6 +151,12 @@ API_TOKEN_RULES: Tuple[Rule, ...] = (
            effect="external", note="control Cookbook processes; route also checks admin")
       for path in ("serve", "stop/{session_id}", "preset/{name}", "adopt")),
 
+    # Hand an owned todo to an agent: it starts a real run, so it needs the
+    # dispatch scope as well as todo write access.
+    Rule(frozenset({"POST"}), "/api/todos/{todo_id}/assign-agent", ("agents:dispatch",),
+         effect="external", requires=("todos:write",), note="start an agent run on an owned todo"),
+    _read("/api/todos/{todo_id}/agent", "todos:read", "todos:write", note="status of the agent run on an owned todo"),
+
     # Dispatching local workers from outside the app (Fable, Claude Desktop, a
     # script). `routes/dispatch_routes.py` additionally requires the token's
     # owner to be an admin, because this starts processes on the machine.

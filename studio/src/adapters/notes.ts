@@ -35,8 +35,44 @@ export interface Note {
   source: string;
   sessionId: string | null;
   agentSessionId: string | null;
+  /** The agent run assigned to this todo (server: src/todo_agent.py). */
+  agentRun: AgentRun | null;
   createdAt: string | null;
   updatedAt: string | null;
+}
+
+export type AgentRunStatus = 'running' | 'done' | 'needs_review' | 'failed';
+
+export interface AgentRun {
+  status: AgentRunStatus;
+  sessionId: string | null;
+  summary: string;
+  error: string;
+  autonomyPreset: string | null;
+  autonomyClamped: boolean;
+}
+
+export function parseAgentRun(raw: unknown): AgentRun | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const status = r.status;
+  if (status !== 'running' && status !== 'done' && status !== 'needs_review' && status !== 'failed') return null;
+  return {
+    status,
+    sessionId: typeof r.session_id === 'string' ? r.session_id : null,
+    summary: typeof r.summary === 'string' ? r.summary : '',
+    error: typeof r.error === 'string' ? r.error : '',
+    autonomyPreset: typeof r.autonomy_preset === 'string' ? r.autonomy_preset : null,
+    autonomyClamped: Boolean(r.autonomy_clamped),
+  };
+}
+
+/** The chip text for a run; a finished run is never called "done" unless the server said so. */
+export function agentRunLabel(run: AgentRun): string {
+  if (run.status === 'running') return t('In progress by an agent');
+  if (run.status === 'done') return t('Agent finished');
+  if (run.status === 'needs_review') return t('Agent: needs review');
+  return t('Agent failed');
 }
 
 export const NOTE_COLORS = ['', 'red', 'orange', 'yellow', 'green', 'blue', 'purple'] as const;
@@ -67,6 +103,7 @@ function fromServer(raw: Record<string, unknown>): Note {
     source: typeof raw.source === 'string' ? raw.source : 'user',
     sessionId: typeof raw.session_id === 'string' ? raw.session_id : null,
     agentSessionId: typeof raw.agent_session_id === 'string' ? raw.agent_session_id : null,
+    agentRun: parseAgentRun(raw.agent_run),
     createdAt: typeof raw.created_at === 'string' ? raw.created_at : null,
     updatedAt: typeof raw.updated_at === 'string' ? raw.updated_at : null,
   };
@@ -121,6 +158,19 @@ async function send<T>(path: string, method: string, body?: unknown): Promise<T>
 export async function listNotes(archived = false, signal?: AbortSignal): Promise<Note[]> {
   const data = await getJson<{ notes?: Record<string, unknown>[] }>(`/api/notes?archived=${archived ? 'true' : 'false'}`, signal);
   return (data.notes ?? []).map(fromServer);
+}
+
+/** Hand a todo to an agent: POST /api/todos/{id}/assign-agent. Re-assigning a live run returns it. */
+export async function assignAgent(
+  id: string,
+  opts: { projectId?: string; autonomyPreset?: string; model?: string } = {},
+): Promise<AgentRun | null> {
+  const body: Record<string, unknown> = { mode: 'agent' };
+  if (opts.projectId) body.project_id = opts.projectId;
+  if (opts.autonomyPreset) body.autonomy_preset = opts.autonomyPreset;
+  if (opts.model) body.model = opts.model;
+  const out = await send<{ run?: unknown }>(`/api/todos/${encodeURIComponent(id)}/assign-agent`, 'POST', body);
+  return parseAgentRun(out.run);
 }
 
 export async function createNote(draft: NoteDraft): Promise<Note> {

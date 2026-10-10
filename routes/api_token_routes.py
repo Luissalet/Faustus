@@ -51,6 +51,8 @@ TOKEN_PROFILES = {
     "codex_documents": ["documents:read", "documents:write"],
     "codex_email_drafts": ["email:read", "email:draft", "documents:read", "documents:write"],
     "fable_workers": ["agents:dispatch"],
+    # Hand a todo to an agent from outside (mcp todo_assign_agent).
+    "todo_agent": ["todos:read", "todos:write", "agents:dispatch"],
 }
 
 

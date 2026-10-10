@@ -60,6 +60,17 @@ class NoteUpdate(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _agent_run_of(note: Note):
+    raw = getattr(note, "agent_run", None)
+    if not raw:
+        return None
+    try:
+        value = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
 def _note_to_dict(note: Note) -> Dict[str, Any]:
     items = None
     if note.items:
@@ -94,6 +105,7 @@ def _note_to_dict(note: Note) -> Dict[str, Any]:
         "ai_classification": ai_cls,
         "ai_content_hash": getattr(note, "ai_content_hash", None),
         "agent_session_id": getattr(note, "agent_session_id", None),
+        "agent_run": _agent_run_of(note),
         "created_at": note.created_at.isoformat() if note.created_at else None,
         "updated_at": note.updated_at.isoformat() if note.updated_at else None,
     }

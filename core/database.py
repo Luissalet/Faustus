@@ -2270,6 +2270,8 @@ def _migrate_add_notes_sort_order():
             conn.execute("ALTER TABLE notes ADD COLUMN ai_content_hash TEXT")
         if columns and "agent_session_id" not in columns:
             conn.execute("ALTER TABLE notes ADD COLUMN agent_session_id TEXT")
+        if columns and "agent_run" not in columns:
+            conn.execute("ALTER TABLE notes ADD COLUMN agent_run TEXT")
         conn.commit()
     except Exception as e:
         logging.getLogger(__name__).warning(f"notes migration failed: {e}")
@@ -2926,6 +2928,9 @@ class Note(TimestampMixin, Base):
     # Chat session spawned by the note's "Agent" button (solve-this-todo).
     # The note shows a clickable tag that opens this session for review.
     agent_session_id  = Column(String, nullable=True)
+    # JSON record of the agent run assigned to this todo (src/todo_agent.py):
+    # status running|done|needs_review|failed, session, summary, autonomy.
+    agent_run         = Column(Text, nullable=True)
 
 
 class CalendarCal(TimestampMixin, Base):
