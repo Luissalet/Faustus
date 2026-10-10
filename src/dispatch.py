@@ -2515,12 +2515,15 @@ async def _follow_adopted(job: DispatchJob, runs: List[Dict[str, Any]], *, while
             alive_any = False
             for record in runs:
                 rid = str(record["run_id"])
+                # Liveness BEFORE reading: a run that ends between the read
+                # and the check would otherwise lose its last lines.
+                alive_now = external_runs.alive(record)
                 text, offsets[rid] = external_runs.read_from(str(record.get("log") or ""), offsets[rid])
                 for line in text.splitlines():
                     if line.strip():
                         job.note_worker_event({"event": "tool", "name": _adopted_name(job, rid),
                                                "tail": line[-2000:]})
-                if external_runs.alive(record):
+                if alive_now:
                     alive_any = True
                     if job.status in ("cancelling", "cancelled"):
                         stopped = external_runs.terminate(record) or stopped
