@@ -29,7 +29,7 @@ import os
 import re
 import time
 import uuid
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, FrozenSet, List, Optional
 
 from src import delegation_receipts
 from src import effort_profile
@@ -782,6 +782,11 @@ def _refusal_cause(run: "SubagentRun", names: set, policy: str, origin: str) -> 
     if names & SUBAGENT_DISABLED_TOOLS:
         return "not available to sub-agents"
     permissions = run.permissions
+    if run.tool_categories and permissions is not None:
+        from src.subagent_permissions import tool_name_matches
+        outside = {n for n in names if not any(tool_name_matches(p, n) for p in category_allowance(run.tool_categories))}
+        if outside:
+            return "outside this worker's tool category (" + ", ".join(run.tool_categories) + ")"
     if permissions is not None and any(permissions.tool_denied(n) for n in names):
         return (f"denied by agent definition {run.agent!r}" if run.agent
                 else "denied by this worker's agent definition")
@@ -1015,6 +1020,12 @@ def parse_delegation_args(content: str, *, workspace: Optional[str] = None) -> D
             _effort = effort_profile.normalize(t.get("effort"))
             if _effort:
                 row["effort"] = _effort
+            # The tool category the coordinator gives this worker (#248).
+            # Unknown names refuse the whole delegation: dropping them would
+            # hand the worker every tool, the opposite of what was asked.
+            _cats = normalize_tool_categories(t.get("category") or t.get("categories"))
+            if _cats:
+                row["category"] = _cats
             for _key in ("required_capabilities", "required_tools", "specialties"):
                 _value = t.get(_key)
                 if isinstance(_value, str):
@@ -1224,6 +1235,10 @@ class SubagentRun:
         #: means "inherit current behaviour" — unset, unrecognised, or
         #: explicitly "medium".
         self.effort = effort_profile.normalize(task.get("effort"))
+        #: Tool categories the coordinator limited this worker to (#248);
+        #: empty means the usual worker tool set.
+        self.tool_categories: List[str] = [str(c) for c in (task.get("category") or [])
+                                           if isinstance(task.get("category"), list)]
         self.system_prompt = str(task.get("system_prompt") or "")
         self.endpoint_id = str(task.get("endpoint_id") or "")
         self.team_bound = bool(task.get('team_bound'))
@@ -1422,6 +1437,7 @@ class SubagentRun:
             # reports the dict it has always reported.
             **({"agent": self.agent} if self.agent else {}),
             **({"effort": self.effort} if self.effort else {}),
+            **({"tool_category": list(self.tool_categories)} if self.tool_categories else {}),
             **({"agent_def": self.agent_def} if self.agent_def else {}),
             **({"permissions": self.permissions.to_dict()} if self.permissions is not None else {}),
             # The configuration this worker started from, as it was pinned. A
@@ -1603,6 +1619,11 @@ async def _run_subagent(
         if blocked:
             preamble += ("\n\nTools you do NOT have in this run: " + ", ".join(blocked)
                          + ". They are refused at the point of use, so do not plan around calling them.")
+    if run.tool_categories:
+        preamble += ("\n\nThe coordinator limited this run to the tool categor"
+                     + ("y " if len(run.tool_categories) == 1 else "ies ") + ", ".join(run.tool_categories)
+                     + " (plus lookup_tools and todowrite). Anything outside it is refused; if the task "
+                     "needs another kind of tool, say so in your report instead of working around it.")
     # How hard this worker should think (`effort`, src/effort_profile.py):
     # the hint is the part every backend can act on, thinking-capable or not
     # — the request-option half (`think`/`reasoning_effort`/`reasoning_budget`)
@@ -2092,6 +2113,107 @@ def _attach_permissions(runs: List["SubagentRun"], ctx: dict, workspace: Optiona
     return ""
 
 
+#: Helpers every category keeps: finding a tool and keeping a task list.
+CATEGORY_ALWAYS_TOOLS = frozenset({"lookup_tools", "todowrite"})
+
+
+def normalize_tool_categories(value: Any) -> List[str]:
+    """The category names a delegation task asked for, validated (#248).
+
+    Accepts a string (comma-separated) or a list. Names are the ones
+    ``lookup_tools`` lists (``src.tool_serve.tool_categories``), matched
+    without case, plus ``mcp`` (every MCP tool) and ``mcp:<server>`` (that
+    server's tools, connected now or later). Raises ``ValueError`` naming the
+    valid categories when one is unknown.
+    """
+    if value is None or value == "" or value == []:
+        return []
+    parts = value.split(",") if isinstance(value, str) else list(value) if isinstance(value, (list, tuple)) else [value]
+    wanted = [str(p).strip().lower() for p in parts if str(p).strip()]
+    if not wanted:
+        return []
+    from src.tool_serve import tool_categories
+    known = {k.lower(): k for k in tool_categories()}
+    out: List[str] = []
+    bad: List[str] = []
+    for name in wanted:
+        if name == "mcp" or (name.startswith("mcp:") and len(name) > 4):
+            key = name
+        else:
+            key = known.get(name, "")
+        if not key:
+            bad.append(name)
+        elif key not in out:
+            out.append(key)
+    if bad:
+        valid = sorted(k for k in known.values() if not k.startswith("mcp:")) + ["mcp", "mcp:<server>"]
+        raise ValueError("delegate_agents: unknown tool category " + ", ".join(repr(b) for b in bad)
+                         + ". Valid: " + ", ".join(valid))
+    return out[:6]
+
+
+def category_allowance(categories: List[str]) -> FrozenSet[str]:
+    """Tool names (and MCP patterns) a worker limited to ``categories`` may use."""
+    from src.tool_serve import tool_categories
+    groups = tool_categories()
+    allowed = set(CATEGORY_ALWAYS_TOOLS)
+    for cat in categories or ():
+        if cat == "mcp":
+            allowed.add("mcp__*")
+        elif cat.startswith("mcp:"):
+            allowed.add(f"mcp__{cat[4:]}__*")
+        else:
+            allowed.update(groups.get(cat, ()))
+    return frozenset(allowed)
+
+
+def _attach_categories(runs: List["SubagentRun"], ctx: dict, workspace: Optional[str],
+                       roots: Optional[List[str]]) -> str:
+    """Bind each categorised worker to its tools, as permissions (#248).
+
+    The limit goes into ``run.permissions.allowed_tools`` rather than into a
+    loose denylist because the permissions are what every gate reads: the
+    worker denylist offered to the model, the execution guard and the
+    workspace tool floor (which would otherwise hand a "web" worker its file
+    tools back). A worker that already has a definition keeps it: the
+    category can only narrow what the definition allowed.
+    """
+    if not any(run.tool_categories for run in runs):
+        return ""
+    import dataclasses
+    from src import agent_defs
+    from src.subagent_permissions import DepthExceeded, derive, tool_name_matches
+    parent = None
+    for run in runs:
+        if not run.tool_categories:
+            continue
+        allowance = category_allowance(run.tool_categories)
+        perms = run.permissions
+        if perms is None:
+            if parent is None:
+                parent = _parent_standing(ctx, workspace, roots)
+            try:
+                perms = derive(parent, None, parent_depth=int(getattr(parent, "depth", 0)),
+                               workspace_roots=roots or (), workspace=str(workspace or ""),
+                               vocabulary=agent_defs.known_tools())
+            except DepthExceeded as exc:
+                return f"delegate_agents: {exc}"
+        inherited = tuple(perms.inherited_allowlists)
+        if perms.allowed_tools is not None:
+            # Concrete names both sides allow; the definition's own list is
+            # also kept as an ancestor allowlist so an MCP pattern of the
+            # category cannot reach a tool the definition never granted.
+            allowed = frozenset(t for t in allowance
+                                if "*" in t or any(tool_name_matches(p, t) for p in perms.allowed_tools))
+            inherited = (perms.allowed_tools,) + inherited
+        else:
+            allowed = allowance
+        caveat = "tools limited to category " + ", ".join(run.tool_categories)
+        run.permissions = dataclasses.replace(perms, allowed_tools=allowed, inherited_allowlists=inherited,
+                                              caveats=tuple(perms.caveats) + (caveat,))
+    return ""
+
+
 def _attach_resolution(runs: List["SubagentRun"], workspace: Optional[str],
                        owner: Optional[str], session_id: Optional[str]) -> None:
     """Pin each definition-driven worker's effective configuration before it runs.
@@ -2282,6 +2404,10 @@ class DelegateAgentsTool:
         depth_error = _attach_permissions(runs, ctx, workspace, roots)
         if depth_error:
             return {"error": depth_error, "exit_code": 1}
+        # A coordinator-given tool category narrows the worker further (#248).
+        category_error = _attach_categories(runs, ctx, workspace, roots)
+        if category_error:
+            return {"error": category_error, "exit_code": 1}
         # Handoff lanes (src/handoff_lanes.py): an explicit, inspectable
         # topology of which agent may delegate to which, with which tools.
         # `off` (the default) makes this call return "" without reading

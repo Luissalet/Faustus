@@ -3669,6 +3669,8 @@ def _compact_subagent_reports(reports) -> list:
             # Four-value outcome (src/tool_outcome.py) when the worker recorded
             # one: a worker the user stopped is `cancelled`, not a failure.
             **({"outcome": r["outcome"]} if r.get("outcome") else {}),
+            # The tool category the coordinator limited the worker to (#248).
+            **({"tool_category": list(r["tool_category"])[:6]} if r.get("tool_category") else {}),
             "tool_calls": r.get("tool_calls"), "failed_calls": r.get("failed_calls"),
             "mutations": list(r.get("mutations") or [])[:40], "duration_s": r.get("duration_s"),
             "final_text": str(r.get("final_text") or "")[:400],
