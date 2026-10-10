@@ -26,12 +26,22 @@ def test_descendant_observation_ignores_other_workspaces(monkeypatch, tmp_path):
     foreign = str(tmp_path / "foreign")
     replies = iter([
         subprocess.CompletedProcess([], 0, "faustus-codemode-own\nfaustus-codemode-other\n", ""),
-        subprocess.CompletedProcess([], 0, "\n".join(
+        *(subprocess.CompletedProcess([], 0,
             json.dumps('/faustus-codemode-' + name) + ' ' + json.dumps([
-                {'Type':'bind', 'Source':path, 'Destination':'/workspace'}])
-            for name, path in [('own',root),('other',foreign)]), "")])
+                {'Type':'bind', 'Source':path, 'Destination':'/workspace'}]), "")
+            for name, path in [('own',root),('other',foreign)])])
     monkeypatch.setattr(probe.subprocess, "run", lambda *a, **kw: next(replies))
     assert probe._containers_for_workspace(root) == ['faustus-codemode-own']
+
+
+def test_descendant_observation_tolerates_a_disappearing_foreign_guest(monkeypatch):
+    replies = iter([
+        subprocess.CompletedProcess([], 0, 'faustus-codemode-gone\nfaustus-codemode-own\n', ''),
+        subprocess.CompletedProcess([], 1, '', 'Error: No such object: faustus-codemode-gone\n'),
+        subprocess.CompletedProcess([], 0, '"/faustus-codemode-own" ' + json.dumps([
+            {'Type': 'bind', 'Source': '/own', 'Destination': '/workspace'}]), '')])
+    monkeypatch.setattr(probe.subprocess, 'run', lambda *a, **kw: next(replies))
+    assert probe._containers_for_workspace('/own') == ['faustus-codemode-own']
 
 
 @pytest.mark.parametrize('failed_step', ['list', 'inspect'])

@@ -492,14 +492,20 @@ def _containers_for_workspace(workspace: str) -> List[str]:
     names = listed.stdout.split()
     if not names:
         return []
-    inspected = subprocess.run(
-        ["docker", "inspect", "--format", "{{json .Name}} {{json .Mounts}}", *names],
-        capture_output=True, text=True, timeout=30, env=env)
-    if inspected.returncode:
-        raise RuntimeError("Docker could not inspect probe container mounts")
     expected = os.path.normcase(os.path.normpath(workspace))
     owned = []
-    for line in inspected.stdout.splitlines():
+    for name in names:
+        inspected = subprocess.run(
+            ["docker", "inspect", "--format", "{{json .Name}} {{json .Mounts}}", name],
+            capture_output=True, text=True, timeout=30, env=env)
+        if inspected.returncode:
+            # Another session may finish its guest after the list snapshot.
+            # Only this exact disappearance is known to be harmless; daemon,
+            # permissions and other observation errors remain unavailable.
+            if inspected.stderr.strip() == f"Error: No such object: {name}":
+                continue
+            raise RuntimeError("Docker could not inspect probe container mounts")
+        line = inspected.stdout.strip()
         name_json, mounts_json = line.split(" ", 1)
         mounts = json.loads(mounts_json)
         if any(m.get("Type") == "bind" and m.get("Destination") == "/workspace"
