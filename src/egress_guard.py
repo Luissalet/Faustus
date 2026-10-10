@@ -298,11 +298,13 @@ def finding_for(tool_name: Any, content: Any, *, user_hosts: Iterable[str] = (),
     seen = set(seen_url_keys or ())
     for url in call_urls(tool_name, content):
         host = host_of(url)
-        if host and host_matches(host, user_hosts):
-            continue
+        # Secret material first: naming a site (or having visited it) never
+        # authorises sending it a key; those exceptions only cover data shape.
         why = secret_material(url, known_secrets)
         if why:
             return EgressFinding(name, "url", host, True, why)
+        if host and host_matches(host, user_hosts):
+            continue
         if url_key is not None and url_key(url) in seen:
             continue
         if host and host_matches(host, visited_hosts):

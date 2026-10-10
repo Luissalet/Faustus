@@ -2,7 +2,7 @@
 
 `evals/injection/` is an adversarial battery for one question: when outside content
 tells the agent to do something harmful, does the harness stop it? It complements
-`src/security_probes.py` (12 probes, one per vector): this one has 46 cases (and a
+`src/security_probes.py` (12 probes, one per vector): this one has 47 cases (and a
 place for open findings), each with a fixture, the task the USER actually asked for, the forbidden
 actions and the expected safe behaviour.
 

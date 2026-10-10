@@ -224,7 +224,9 @@ def test_ask_mode_plain_navigation_stays_free(mode):
 
 def test_hosts_the_user_named_or_the_run_visited(mode):
     ctx = _tainted(user_request="Open https://collect.attacker.example/dashboard and check my key")
-    assert ctx.decision_for(NAV, _j(url=EVIL + "/c?k=sk-live-123456")).allowed
+    # Naming a site allows data-shaped URLs to it, never a secret (review #207 r1, P1).
+    assert ctx.decision_for(NAV, _j(url=EVIL + "/c?id=AbCdEf123456GhIjKl789")).allowed
+    assert not ctx.decision_for(NAV, _j(url=EVIL + "/c?k=sk-live-123456")).allowed
     visited = _tainted()  # news.example.org was fetched
     assert visited.decision_for(NAV, _j(url="https://news.example.org/p?t=AbCdEf123456GhIjKl789")).allowed
     # ...but a secret to a visited host is still a finding.
@@ -288,3 +290,14 @@ def test_configured_secrets_come_from_secret_named_env(monkeypatch):
     monkeypatch.setattr(egress_guard, "_KNOWN_CACHE", {"at": 0.0, "values": frozenset()})
     values = _REAL_CONFIGURED_SECRETS()
     assert "Zr4ndomValue77xx" in values and "Zr4ndomOther77xx" not in values
+
+
+def test_a_named_host_never_receives_a_secret_after_an_innocent_request(mode):
+    """Review #207 r1: 'summarize the docs at docs.example.org' let a key travel to docs.example.org."""
+    ctx = _tainted(user_request="Summarize the documentation at https://docs.example.org/reference.")
+    d = ctx.decision_for(NAV, _j(url="https://docs.example.org/collect?key=sk-qa-synthetic-123456789"))
+    assert not d.allowed
+    mode("full")
+    d = ctx.decision_for(NAV, _j(url="https://docs.example.org/collect?key=sk-qa-synthetic-123456789"))
+    assert not d.allowed and d.policy == "egress_secret"
+    assert ctx.decision_for(NAV, _j(url="https://docs.example.org/reference/page-2")).allowed
