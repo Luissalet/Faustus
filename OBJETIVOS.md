@@ -1138,10 +1138,10 @@ Del análisis de dos repos del 01-10 (`claude/radar-switch-blender-01-10.md`: sa
 
 ## OBJ-51 · Identificadores tal cual y ensayo de reglas: lo que falta (01-10-2026)
 
-Hecho en §250 (radar #386 y #390). **Por hacer:**
+Hecho en §250 (radar #386 y #390).
 
-- Llevar el carril de términos raros a las búsquedas que no pasan por `two_tier_search`: la memoria (`src/memory_engine.py`, con su propio BM25) y los corpus de expertos (`services/experts.py`).
-- Ensayo de reglas: incluir también las llamadas de los runners externos (recibos de `agent_gate`) y decir cuántas de las que se habrían parado ya las había parado otra puerta.
+- **Hecho** (`09cbc223`, #236): el carril de términos raros llega a la memoria (`src/memory_engine.py`, `W_EXACT`) y a los corpus de expertos (`services/experts.py`, RRF + `front_load_full`). Cubierto por `tests/test_rare_terms_memory_experts.py`.
+- **Hecho** (#237): el ensayo de reglas (`src/tool_arg_rehearsal.py`, `POST /api/tool-arg-rules/rehearse`) incluye recibos `agent-gate:*` del ledger compartido y reporta `external_checked` y `already_stopped_by_other_gate`.
 
 ## OBJ-52 · Cassandra avisa de lo que espera en Faustus — HECHO (01-10-2026)
 

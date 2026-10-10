@@ -40,12 +40,51 @@ def test_rehearse_counts_by_action_and_rule():
     assert out["would_deny"] == 1
     assert out["would_ask"] == 1
     assert out["untouched"] == 2
+    assert out["external_checked"] == 0 and out["already_stopped_by_other_gate"] == 0
     by = {row["id"]: row for row in out["by_rule"]}
     assert by["fetch-domains"]["deny"] == 1
     assert by["no-rm"]["ask"] == 1
     assert by["never"] == {"id": "never", "tool": "write_file", "deny": 0, "ask": 0}
     assert [s["rule_id"] for s in out["samples"]] == ["fetch-domains", "no-rm"]
     assert out["samples"][1]["args_head"] == "rm -rf build"
+
+
+def test_gate_receipts_map_runner_tools_and_count_prior_stops():
+    receipts = [
+        {"session": "chat:abc", "tool": "bash", "command_head": "rm -rf x", "action": "blocked", "ts": "1"},
+        {"session": "agent-gate:run1", "tool": "claude:Bash", "command_head": "rm -rf build",
+         "action": "blocked", "ts": "2026-10-10T12:00:02"},
+        {"session": "agent-gate:run1", "tool": "claude:Bash", "command_head": "ls -la",
+         "action": "allowed", "ts": "2026-10-10T12:00:01"},
+        {"session": "agent-gate:run2", "tool": "external:WebFetch",
+         "command_head": json.dumps({"url": "https://news.example.com/b"}),
+         "action": "asked", "ts": "2026-10-10T12:00:03"},
+        {"session": "agent-gate:run2", "tool": "external:WebFetch",
+         "command_head": json.dumps({"url": "https://example.org/ok"}),
+         "action": "allowed", "ts": "2026-10-10T12:00:00"},
+    ]
+    calls = reh.calls_from_gate_receipts(receipts, limit=50)
+    assert [c["tool"] for c in calls] == ["web_fetch", "bash", "bash", "web_fetch"]
+    assert [c["prior_action"] for c in calls] == ["asked", "blocked", "allowed", "allowed"]
+    assert all(c["source"] == "agent_gate" for c in calls)
+    out = reh.rehearse(RULES, calls)
+    assert out["external_checked"] == 4
+    assert out["would_deny"] == 1          # news.example.com
+    assert out["would_ask"] == 1           # rm -rf build
+    assert out["already_stopped_by_other_gate"] == 2
+    assert {s["prior_action"] for s in out["samples"]} == {"asked", "blocked"}
+    assert all(s["already_stopped_by_other_gate"] for s in out["samples"])
+
+
+def test_rehearse_recent_accepts_merged_chat_and_gate_calls():
+    merged = [
+        {"tool": "bash", "args": "ls", "ts": "2026-10-10T12:00:06", "session_id": "agent-gate:r",
+         "source": "agent_gate", "prior_action": "allowed"},
+        {"tool": "bash", "args": "echo hi", "ts": "2026-10-10T12:00:05", "session_id": "s1",
+         "source": "chat"},
+    ]
+    out = reh.rehearse_recent(RULES, limit=10, calls=merged)
+    assert out["checked"] == 2 and out["external_checked"] == 1 and out["untouched"] == 2
 
 
 def test_rehearse_with_no_rules_touches_nothing():
@@ -56,7 +95,8 @@ def test_rehearse_with_no_rules_touches_nothing():
 
 def test_calls_from_metadata_reads_tool_events():
     meta = {"tool_events": [{"tool": "bash", "command": "ls"}, {"tool": "", "command": "x"}, 3]}
-    assert reh.calls_from_metadata(json.dumps(meta)) == [{"tool": "bash", "args": "ls"}]
+    assert reh.calls_from_metadata(json.dumps(meta)) == [
+        {"tool": "bash", "args": "ls", "source": "chat"}]
     assert reh.calls_from_metadata("not json") == []
     assert reh.calls_from_metadata({"tool_events": "nope"}) == []
 
@@ -79,7 +119,8 @@ def api_client(tmp_path, monkeypatch):
     monkeypatch.setattr(settings_mod, "SETTINGS_FILE", str(tmp_path / "settings.json"))
     settings_mod._invalidate_caches()
     monkeypatch.setenv("AUTH_ENABLED", "false")
-    monkeypatch.setattr(reh, "recent_tool_calls", lambda limit=500, db=None: list(CALLS[:4]))
+    monkeypatch.setattr(reh, "recent_tool_calls",
+                        lambda limit=500, db=None, include_gate=True: list(CALLS[:4]))
 
     from routes.tool_arg_policy_routes import setup_tool_arg_policy_routes
 
