@@ -2509,6 +2509,7 @@ async def _follow_adopted(job: DispatchJob, runs: List[Dict[str, Any]], *, while
     from src import external_runs
     offsets = {str(r["run_id"]): 0 for r in runs}
     stopped = False
+    timed_out: set = set()
     try:
         while True:
             alive_any = False
@@ -2523,6 +2524,11 @@ async def _follow_adopted(job: DispatchJob, runs: List[Dict[str, Any]], *, while
                     alive_any = True
                     if job.status in ("cancelling", "cancelled"):
                         stopped = external_runs.terminate(record) or stopped
+                    elif external_runs.overdue(record):
+                        # The limit the original supervisor enforced survives
+                        # the restart: stop the SAME verified process on time.
+                        if external_runs.terminate(record):
+                            timed_out.add(rid)
             if not alive_any:
                 break
             await asyncio.sleep(ADOPT_POLL_S)
@@ -2533,6 +2539,12 @@ async def _follow_adopted(job: DispatchJob, runs: List[Dict[str, Any]], *, while
             index = int(rid.rsplit("-", 1)[1]) if rid.rsplit("-", 1)[-1].isdigit() else 0
             text = external_runs.tail(str(record.get("log") or ""), 8000)
             status, why = external_runs.outcome_from_log(text)
+            if rid in timed_out:
+                limit = record.get("limit_s")
+                status = "timeout"
+                why = (f"{record.get('label') or record.get('runner') or 'the agent'} was stopped after "
+                       f"{int(float(limit))}s (its time limit carried over the restart; the process tree was killed)"
+                       if limit else "stopped at its deadline after a restart (the process tree was killed)")
             if job.status in ("cancelling", "cancelled"):
                 status, why = "cancelled", ""
             external_runs.finish(rid, status=status, adopted=True)
@@ -2540,6 +2552,7 @@ async def _follow_adopted(job: DispatchJob, runs: List[Dict[str, Any]], *, while
             reports.append(_external_report(task, index, {
                 "status": status, "error": why, "output_tail": text, "runner": record.get("runner"),
                 "label": record.get("label"), "unguarded": not record.get("gated"),
+                "timed_out": rid in timed_out,
                 "outcome": "cancelled" if status == "cancelled" else None}))
         # The checkpoint taken before the restart is still in the mirror: what
         # changed on disk since then is observed, not taken on the agents' word.

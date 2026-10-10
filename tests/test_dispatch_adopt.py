@@ -50,7 +50,8 @@ def runs(tmp_path, monkeypatch):
     dispatch.reset_for_tests()
 
 
-def _spawn_agent(ns, run_id: str, seconds: float = 1.5, body: str = SLOW_AGENT) -> subprocess.Popen:
+def _spawn_agent(ns, run_id: str, seconds: float = 1.5, body: str = SLOW_AGENT,
+                 limit_s=None, deadline=None) -> subprocess.Popen:
     """An agent started 'by the previous Faustus': output to its log file and
     its record written, exactly as src/external_worker.py does."""
     os.makedirs(external_runs.runs_dir(), exist_ok=True)
@@ -60,7 +61,8 @@ def _spawn_agent(ns, run_id: str, seconds: float = 1.5, body: str = SLOW_AGENT) 
         proc = subprocess.Popen([sys.executable, "-u", str(script), str(seconds)], stdout=fh,
                                 stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
     ns.procs.append(proc)
-    external_runs.start(run_id, pid=proc.pid, runner="fake", label="Fake agent", gated=False, cwd=str(ns.tmp))
+    external_runs.start(run_id, pid=proc.pid, runner="fake", label="Fake agent", gated=False, cwd=str(ns.tmp),
+                        limit_s=limit_s, deadline=deadline)
     return proc
 
 
@@ -160,6 +162,9 @@ def test_a_dispatched_external_run_leaves_its_log_and_record(runs, monkeypatch):
     rid = f"{job.id}-0"
     rec = external_runs.load(rid)
     assert rec and rec["status"] == "done" and rec["exit_code"] == 0 and rec["finished"]
+    # the effective limit (the smaller of the job's and the operator's, here 30 s)
+    # is persisted as a wall-clock deadline an adopter can enforce
+    assert rec["limit_s"] == 30 and abs(rec["deadline"] - rec["started"] - 30) < 2
     assert "agent working on: look" in open(external_runs.log_path(rid), encoding="utf-8").read()
     assert external_runs.live_for_job(job.id) == []
 
@@ -199,6 +204,56 @@ def test_a_restart_adopts_a_job_whose_agent_is_still_running(runs):
     dispatch.reset_for_tests()
     assert dispatch.adopt_live_jobs() == []
     assert dispatch.get(jid).status == "partial"
+
+
+def _adopt_and_wait(jid, timeout=20):
+    async def run():
+        job = dispatch.get(jid)
+        assert job.adopted_runs
+        assert await dispatch.wait(job, timeout)
+        return job
+    return asyncio.run(run())
+
+
+def test_an_adopted_run_already_past_its_deadline_is_stopped_at_once(runs):
+    jid = "dead11ee0001"
+    proc = _spawn_agent(runs, f"{jid}-0", seconds=30, limit_s=10, deadline=time.time() - 1)
+    _mirror(runs, jid)
+    t0 = time.time()
+    job = _adopt_and_wait(jid)
+    assert time.time() - t0 < 10, "no fresh window after the restart"
+    assert proc.wait(10) is not None
+    rep = job.result["subagents"][0]
+    assert rep["status"] == "timeout" and rep["timed_out"] is True and "stopped after 10s" in rep["error"]
+    assert job.status == "partial"
+    assert external_runs.load(f"{jid}-0")["status"] == "timeout"
+
+
+def test_an_adopted_run_is_stopped_when_its_remaining_time_runs_out(runs):
+    jid = "dead11ee0002"
+    proc = _spawn_agent(runs, f"{jid}-0", seconds=30, limit_s=60, deadline=time.time() + 1.5)
+    _mirror(runs, jid)
+    t0 = time.time()
+    job = _adopt_and_wait(jid)
+    took = time.time() - t0
+    assert 1.0 <= took < 10, took
+    assert proc.wait(10) is not None
+    assert job.result["subagents"][0]["status"] == "timeout"
+
+
+def test_an_adopted_run_with_time_left_finishes_normally(runs):
+    jid = "dead11ee0003"
+    _spawn_agent(runs, f"{jid}-0", seconds=0.5, limit_s=60, deadline=time.time() + 50)
+    _mirror(runs, jid)
+    job = _adopt_and_wait(jid)
+    rep = job.result["subagents"][0]
+    assert rep["status"] == "done" and rep["timed_out"] is False
+
+
+def test_a_record_without_a_deadline_is_never_overdue():
+    assert not external_runs.overdue({"pid": 1})
+    assert not external_runs.overdue({"deadline": None})
+    assert external_runs.overdue({"deadline": 5}, now=6) and not external_runs.overdue({"deadline": 5}, now=4)
 
 
 def test_an_agent_that_failed_while_adopted_is_reported_as_an_error(runs):

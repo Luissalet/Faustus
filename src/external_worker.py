@@ -833,8 +833,11 @@ def _spawn(runner: Any, key: str, task: str, *, argv: List[str], shown: str,
                      argv_shown=shown)
     if log_fh is not None:
         log_fh.close()  # the child holds its own handle
+        # The wall-clock deadline is persisted with the run: the monotonic one
+        # below dies with this process, and a Faustus that adopts the run
+        # after a restart must still stop it on time (#232 review).
         external_runs.start(str(run_id), pid=proc.pid, runner=key, label=runner.label,
-                            gated=gate is not None, cwd=cwd)
+                            gated=gate is not None, cwd=cwd, limit_s=limit, deadline=time.time() + limit)
 
     def _write_input() -> None:
         # Writing a long context can fill the pipe while the CLI is still

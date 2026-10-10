@@ -75,12 +75,19 @@ def _creation_time(pid: int) -> Optional[float]:
 
 
 def start(run_id: str, *, pid: int, runner: str, label: str = "", gated: bool = False,
-          cwd: Optional[str] = None) -> None:
-    """Record a run the moment its process exists. Never raises."""
+          cwd: Optional[str] = None, limit_s: Optional[float] = None,
+          deadline: Optional[float] = None) -> None:
+    """Record a run the moment its process exists. Never raises.
+
+    ``limit_s``/``deadline`` (epoch seconds) are the run's effective time
+    limit, so whoever adopts it after a restart stops it when the original
+    supervisor would have, with the time that is left, not a fresh window."""
     try:
         _write(run_id, {"run_id": run_id, "pid": int(pid), "created": _creation_time(int(pid)),
                         "runner": str(runner or ""), "label": str(label or ""), "gated": bool(gated),
                         "cwd": str(cwd or ""), "log": log_path(run_id), "started": time.time(),
+                        "limit_s": float(limit_s) if limit_s else None,
+                        "deadline": float(deadline) if deadline else None,
                         "finished": None, "exit_code": None, "status": "running"})
         _prune()
     except Exception as exc:  # noqa: BLE001 - bookkeeping never stops a run
@@ -192,6 +199,16 @@ def outcome_from_log(text: str) -> Tuple[str, str]:
                 return "error", str(event.get("subtype") or event.get("error") or "the agent reported an error")
             return "done", ""
     return "unknown", "it ended while Faustus was restarting; its exit code could not be observed"
+
+
+def overdue(record: Optional[Dict[str, Any]], now: Optional[float] = None) -> bool:
+    """True when the run's persisted deadline has passed. A record with no
+    deadline (none was known when it started) is never overdue."""
+    try:
+        deadline = float((record or {}).get("deadline") or 0)
+    except (TypeError, ValueError):
+        return False
+    return deadline > 0 and (time.time() if now is None else now) >= deadline
 
 
 def terminate(record: Dict[str, Any]) -> bool:
