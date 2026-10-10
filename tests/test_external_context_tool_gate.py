@@ -1354,8 +1354,10 @@ def test_the_interface_answers_an_approval_by_id_and_fixed_decisions():
     # 20-09-2026: the union moved next to the card's wording table
     # (`approval-scopes.ts`); the card re-exports it and answers with the
     # decision of the button pressed, never with typed text.
+    # Since 6c7d9932 there is a fifth: `approve_action`, the exact one-action
+    # permission. Still an id plus a fixed word.
     scopes = (root / "studio/src/screens/studio/approval-scopes.ts").read_text(encoding="utf-8")
-    assert "'approve' | 'approve_task' | 'approve_workspace' | 'deny'" in scopes
+    assert "'approve' | 'approve_action' | 'approve_task' | 'approve_workspace' | 'deny'" in scopes
     assert "type Decision } from './approval-scopes'" in transcript
     assert "onApproval(choice.decision)" in transcript
     assert "tool_approval_id" in chat_adapter
