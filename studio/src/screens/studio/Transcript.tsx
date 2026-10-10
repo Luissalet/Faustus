@@ -2289,7 +2289,7 @@ function AssistantTurn({
             </span>
           </div>
         )}
-        {!turn.streaming && turn.metrics?.execution && <ExecutionTimeline execution={turn.metrics.execution} promptCache={turn.metrics.prompt_cache} />}
+        {!turn.streaming && turn.metrics?.execution && <ExecutionTimeline execution={turn.metrics.execution} promptCache={turn.metrics.prompt_cache} prefixCache={turn.metrics.prefix_cache} />}
         {!turn.streaming && sessionId && turn.metrics?.runId && <TurnCostBreakdown sessionId={sessionId} runId={turn.metrics.runId} />}
       </div>
     </article>

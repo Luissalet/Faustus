@@ -9635,3 +9635,13 @@ No older fact matches a kind.	Ningún dato antiguo encaja con un tipo.
 no expiry	sin caducidad
 Expiry dates added.	Caducidades añadidas.
 Could not add the expiry dates.	No se pudieron añadir las caducidades.
+Pinned document	Documento fijado
+restored from a saved slot	restaurado desde un slot guardado
+read now, saved for the next turns	leído ahora y guardado para los próximos turnos
+already in the slot	ya estaba en el slot
+read again, not saved	leído otra vez, sin guardar
+not used: {reason}	no se usa: {reason}
+about {time} of prefill saved	unos {time} de prefill ahorrados
+the server was started without a slot save path	el servidor se arrancó sin ruta para guardar slots
+larger than the limit set for saved slots	supera el límite fijado para los slots guardados
+too short to be worth saving	demasiado corto para guardarlo

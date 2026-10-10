@@ -45,7 +45,7 @@ EXTRA_KEYS: tuple[str, ...] = ("llm_projection_mode", "llm_fence_history_without
                                "unattended_failure_breaker", "unattended_breaker_cooldown_min",
                                "skills_sleep_pass_enabled", "skills_sleep_pass_hour",
                                "provider_cooldown_default_min", "dispatch_spec_lint",
-                               "sandbox_missing_policy", "compaction_summary_mode", "llamacpp_pin_session_slot", "tool_gate_own_context_trusted", "code_graph_community_summaries",
+                               "sandbox_missing_policy", "compaction_summary_mode", "llamacpp_pin_session_slot", "llamacpp_slot_cache", "llamacpp_slot_cache_max_tokens", "llamacpp_slot_cache_dir", "llamacpp_slot_cache_max_mb", "llamacpp_slot_cache_max_age_days", "tool_gate_own_context_trusted", "code_graph_community_summaries",
                                "code_graph_drift_check", "approval_autonomy",
                                "mode_effort_research", "mode_effort_research_reading",
                                "mode_effort_council", "mode_effort_teacher",
@@ -520,6 +520,25 @@ GROUPS: list[dict[str, Any]] = [
                   "On a llama-server with three or more slots, a chat's rounds always use the same "
                   "slot, so when an early part of a long prompt changes the server re-reads only "
                   "what follows the change instead of the whole prompt on another slot."),
+            _bool("llamacpp_slot_cache", "Save the slot of a pinned document and restore it",
+                  "For a short document pinned to a chat, llama-server's state with the document "
+                  "already read is saved to a file after the first turn and restored on later "
+                  "turns when the slot lost it, so the document is not read again. Needs the server "
+                  "started with --slot-save-path pointing at the folder below (an engine started "
+                  "from Faustus gets it added). Off by default."),
+            _int("llamacpp_slot_cache_max_tokens", "Largest pinned prefix to save (tokens)",
+                 "System prompt plus pinned documents above this size are not saved: the file "
+                 "would be too big to restore quickly.",
+                 256, 64000),
+            _text("llamacpp_slot_cache_dir", "Folder of the saved slots",
+                  "Must be the folder llama-server was started with (--slot-save-path). Empty uses "
+                  "the slot_cache folder in Faustus's data folder."),
+            _int("llamacpp_slot_cache_max_mb", "Most disk the saved slots may use (MB)",
+                 "When the files add up to more than this, the ones used longest ago are deleted.",
+                 64, 1048576),
+            _int("llamacpp_slot_cache_max_age_days", "Delete saved slots unused for (days)",
+                 "A saved slot not restored for this many days is deleted.",
+                 1, 365),
             _int("agent_sticky_toolset_max", "Most tools a chat's set may grow to",
                  "A turn that needs tools the chat's set lacks widens it up to this many; past that "
                  "the turn starts a new set (and the server re-reads the prompt once).",

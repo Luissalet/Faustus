@@ -2495,6 +2495,30 @@ def _apply_llamacpp_slot(payload: Dict, url: str, session_id: Optional[str] = No
         payload.setdefault("id_slot", slot)
 
 
+async def _slot_cache_prepare(url: str, model: str, payload: Dict, messages: List[Dict],
+                              tools: Optional[List[Dict]], session_id: Optional[str], headers: Optional[Dict]):
+    """Restore a pinned document's saved llama-server state into the chat's slot
+    before the request (src/slot_cache.py). None when the request has no slot or
+    the feature is off; it never raises."""
+    if not session_id or payload.get("id_slot") is None:
+        return None
+    try:
+        from src import slot_cache
+        return await slot_cache.prepare(url, model, payload, messages, tools, session_id, headers)
+    except Exception:  # noqa: BLE001 - a perf feature, never a failed turn
+        logger.debug("slot cache: prepare skipped", exc_info=True)
+        return None
+
+
+async def _slot_cache_finish(plan, timings: Optional[Dict]):
+    try:
+        from src import slot_cache
+        return await slot_cache.finish(plan, timings)
+    except Exception:  # noqa: BLE001
+        logger.debug("slot cache: finish skipped", exc_info=True)
+        return None
+
+
 def _dump_stream_payload(url: str, payload: Dict) -> None:
     """Write an outgoing streamed request to `FAUSTUS_DUMP_LLM_PAYLOADS`
     (a folder) when that variable is set: for comparing what two rounds
@@ -7498,6 +7522,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         yield _cap_refusal
         return
     _dump_stream_payload(target_url, payload)
+    _slot_plan = await _slot_cache_prepare(url, model, payload, messages, tools, session_id, h)
     try:
         client = _get_http_client()
         h = await apply_kimi_code_headers_async(client, h, target_url)
@@ -7544,6 +7569,8 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                 if line.startswith("data:"):
                     data = line[5:].strip()
                     if data == "[DONE]":
+                        if _slot_plan is not None and not _slot_plan.done:
+                            await _slot_cache_finish(_slot_plan, None)
                         for event in _format_routed_content(_harmony_router.flush()):
                             yield event
                         tc_event = _emit_tool_calls()
@@ -7637,6 +7664,13 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                                         # `load_ms` stays null: llama.cpp does not
                                         # report load time per request.
                                         _usage_data["engine_timings"] = _llamacpp_engine_timings(_tm)
+                                    if _slot_plan is not None:
+                                        # Pinned document: save the slot now that the
+                                        # prefix is read, and say what happened.
+                                        _prefix_report = await _slot_cache_finish(
+                                            _slot_plan, _usage_data.get("engine_timings"))
+                                        if _prefix_report:
+                                            _usage_data["prefix_cache"] = _prefix_report
                                     if _actual_model:
                                         _usage_data["model"] = _actual_model
                                         if not _same_model_identity(_actual_model, model):
@@ -7811,6 +7845,8 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                         continue
 
             # End of stream (no explicit [DONE] received)
+            if _slot_plan is not None and not _slot_plan.done:
+                await _slot_cache_finish(_slot_plan, None)
             for event in _format_routed_content(_harmony_router.flush()):
                 yield event
             tc_event = _emit_tool_calls()

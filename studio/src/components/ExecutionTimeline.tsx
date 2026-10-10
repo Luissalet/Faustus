@@ -1,4 +1,4 @@
-import { timelineBars, type ExecutionMetrics, type MetricValue, type PhaseKey, type PromptCacheUse, type Timeline, type TimelineBar } from '../adapters/chat';
+import { timelineBars, type ExecutionMetrics, type MetricValue, type PhaseKey, type PrefixCacheUse, type PromptCacheUse, type Timeline, type TimelineBar } from '../adapters/chat';
 import { t } from '../i18n';
 
 /**
@@ -24,6 +24,8 @@ export interface ExecutionTimelineProps {
   execution: ExecutionMetrics;
   /** The turn's prompt-cache reuse, when the engine reports it. */
   promptCache?: PromptCacheUse;
+  /** The pinned document's saved llama-server slot, when the chat has one. */
+  prefixCache?: PrefixCacheUse;
   variant?: 'full' | 'compact';
   testId?: string;
 }
@@ -90,7 +92,47 @@ function cacheLine(pc: PromptCacheUse): string {
   return pc.lost_rounds ? `${base} · ${t('lost in {n}', { n: pc.lost_rounds })}` : base;
 }
 
-function TimelineRows({ timeline, promptCache }: { timeline: Timeline; promptCache?: PromptCacheUse }) {
+function prefixReason(reason?: string): string {
+  switch (reason) {
+    case 'unsupported':
+      return t('the server was started without a slot save path');
+    case 'too_large':
+      return t('larger than the limit set for saved slots');
+    case 'too_small':
+      return t('too short to be worth saving');
+    default:
+      return reason || t('off');
+  }
+}
+
+/** One quiet line: where the pinned document's tokens came from this turn. */
+function prefixLine(pc: PrefixCacheUse): string {
+  const parts: string[] = [];
+  switch (pc.status) {
+    case 'restored':
+      parts.push(t('restored from a saved slot'));
+      if (pc.restoreMs !== undefined) parts.push(t('{n} ms', { n: Math.round(pc.restoreMs) }));
+      break;
+    case 'saved':
+      parts.push(t('read now, saved for the next turns'));
+      break;
+    case 'warm':
+      parts.push(t('already in the slot'));
+      break;
+    case 'miss':
+      parts.push(t('read again, not saved'));
+      if (pc.reason) parts.push(pc.reason);
+      break;
+    default:
+      parts.push(t('not used: {reason}', { reason: prefixReason(pc.reason) }));
+  }
+  if (pc.prefillSavedMs !== undefined && pc.prefillSavedMs >= 1) {
+    parts.push(t('about {time} of prefill saved', { time: formatMs(pc.prefillSavedMs) }));
+  }
+  return parts.join(' · ');
+}
+
+function TimelineRows({ timeline, promptCache, prefixCache }: { timeline: Timeline; promptCache?: PromptCacheUse; prefixCache?: PrefixCacheUse }) {
   return (
     <>
       <ul className="fs-timeline__rows" data-testid="turn-timeline-rows">
@@ -139,18 +181,24 @@ function TimelineRows({ timeline, promptCache }: { timeline: Timeline; promptCac
             <dd>{cacheLine(promptCache)}</dd>
           </div>
         )}
+        {prefixCache && (
+          <div data-testid="turn-timeline-prefix-cache" data-status={prefixCache.status}>
+            <dt>{t('Pinned document')}</dt>
+            <dd>{prefixLine(prefixCache)}</dd>
+          </div>
+        )}
       </dl>
     </>
   );
 }
 
-export function ExecutionTimeline({ execution, promptCache, variant = 'full', testId = 'turn-timeline' }: ExecutionTimelineProps) {
+export function ExecutionTimeline({ execution, promptCache, prefixCache, variant = 'full', testId = 'turn-timeline' }: ExecutionTimelineProps) {
   const timeline = timelineBars(execution);
 
   if (variant === 'compact') {
     return (
       <div className="fs-timeline fs-timeline--compact" data-overlap={timeline.overlap || undefined} data-testid={testId}>
-        <TimelineRows timeline={timeline} promptCache={promptCache} />
+        <TimelineRows timeline={timeline} promptCache={promptCache} prefixCache={prefixCache} />
       </div>
     );
   }
@@ -160,7 +208,7 @@ export function ExecutionTimeline({ execution, promptCache, variant = 'full', te
       <summary>
         <span className="fs-timeline__title">{t('Why did it take this long?')}</span>
       </summary>
-      <TimelineRows timeline={timeline} promptCache={promptCache} />
+      <TimelineRows timeline={timeline} promptCache={promptCache} prefixCache={prefixCache} />
     </details>
   );
 }

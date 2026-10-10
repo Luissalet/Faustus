@@ -58,6 +58,7 @@ _SPEC_TYPE_FLAGS = ("--spec-type",)
 _SPEC_DRAFT_N_MAX_FLAGS = ("--spec-draft-n-max",)
 _PARALLEL_FLAGS = ("-np", "--parallel")
 _MMPROJ_FLAGS = ("--mmproj", "-mm")
+_SLOT_SAVE_FLAGS = ("--slot-save-path",)
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_CTX = 4096
@@ -174,6 +175,9 @@ def _parse_fields(profile: Dict[str, Any]) -> Dict[str, Any]:
         "parallel": parallel,
         "vision": bool(mmproj_path),
         "mmproj_path": mmproj_path,
+        # Where the server saves slot states (src/slot_cache.py); the flag
+        # itself stays among the extra args, so nothing is dropped on edit.
+        "slot_save_path": _flag_value(argv, _SLOT_SAVE_FLAGS) or "",
     }
 
 
@@ -486,6 +490,29 @@ def admission_check(model_path: str, *, mtp: bool = False) -> Dict[str, Any]:
 
 # ── start / stop / status ────────────────────────────────────────────────────
 
+def _ensure_slot_save_path(engine: Dict[str, Any]) -> Optional[str]:
+    """With the slot cache switched on (`llamacpp_slot_cache`), start the
+    server with `--slot-save-path <the cache folder>` so a pinned document's
+    state can be saved and restored (src/slot_cache.py). A profile that already
+    carries the flag keeps its own folder; with the setting off nothing is
+    added. Never blocks a start."""
+    try:
+        from src import slot_cache
+        if not slot_cache.enabled():
+            return None
+        argv = list(engine.get("argv") or [])
+        if _flag_value(argv, _SLOT_SAVE_FLAGS):
+            return None
+        directory = slot_cache.cache_dir()
+        os.makedirs(directory, exist_ok=True)
+        launch_profiles.update_profile(engine["id"], argv=argv + ["--slot-save-path", directory])
+        logger.info("[engine] %s starts with --slot-save-path %s", engine.get("name") or engine["id"], directory)
+        return directory
+    except Exception as exc:  # noqa: BLE001 - the engine still starts, without the cache
+        logger.warning("[engine] could not add --slot-save-path: %s", exc)
+        return None
+
+
 async def start_engine(engine_id: str, *, request_client_host: Optional[str] = None) -> Dict[str, Any]:
     engine = get_engine(engine_id)
     if engine is None:
@@ -507,6 +534,7 @@ async def start_engine(engine_id: str, *, request_client_host: Optional[str] = N
     if admission.get("fits") is False:
         return {"started": False, "error": admission.get("reason"), "admission": admission}
 
+    _ensure_slot_save_path(engine)
     result = await launch_profiles.launch(engine_id, request_client_host=request_client_host)
     out = dict(result)
     out["started"] = bool(result.get("launched"))

@@ -10759,6 +10759,9 @@ async def _stream_agent_loop_body(
     # the previous request (an earlier message was rewritten).
     _prompt_cache = {"rounds": 0, "processed": 0, "cached": 0, "lost_rounds": 0}
     _prompt_cache_prev_total: Optional[int] = None
+    # A pinned document's saved llama-server slot (src/slot_cache.py): the
+    # turn's rounds folded into one record, shown in the turn details.
+    _prefix_cache: Optional[Dict[str, Any]] = None
     first_token_received = False
     tool_events = []   # Persist tool executions for history reload
     round_texts = []   # Cleaned text per round for history reload
@@ -13748,6 +13751,9 @@ async def _stream_agent_loop_body(
                             _round_reasoning_tokens = int(u["reasoning_tokens"])
                         if isinstance(u.get("engine_timings"), dict):
                             _round_engine_timings = dict(u["engine_timings"])
+                        if isinstance(u.get("prefix_cache"), dict):
+                            from src.slot_cache import merge_reports as _merge_prefix_cache
+                            _prefix_cache = _merge_prefix_cache(_prefix_cache, u["prefix_cache"])
                         # Backend-reported TRUE generation speed (llama.cpp
                         # timings.predicted_per_second) — pure decode, excludes
                         # prefill/network. Preferred over tokens/wall-clock, which
@@ -19269,6 +19275,8 @@ async def _stream_agent_loop_body(
         logger.debug("[learned-memory] outcome attribution failed: %s", _mem_err)
     if _prompt_cache["rounds"]:
         metrics["prompt_cache"] = dict(_prompt_cache)
+    if _prefix_cache:
+        metrics["prefix_cache"] = dict(_prefix_cache)
     yield f"data: {json.dumps({'type': 'metrics', 'data': metrics})}\n\n"
 
     # Teacher-escalation: inline takeover visible in the chat stream.

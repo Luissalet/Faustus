@@ -25,7 +25,7 @@ replayed call by call, where a turn's time and tokens went, orphaned workers),
 workers_wait (block until done, then the compact result), workers_wait_for
 (block until ONE condition holds — a phase, a worker state, an event, a file
 change — and return the moment it does), workers_status,
-workers_events, workers_cancel, workers_list, workers_lint (what a task spec is missing, checked before it is sent), budget_period (spend against the period targets, GPU seconds, the failure breaker, provider cooldowns), models_fit (which local models
+workers_events, workers_cancel, workers_list, slot_cache (the saved llama-server slots of pinned documents), workers_lint (what a task spec is missing, checked before it is sent), budget_period (spend against the period targets, GPU seconds, the failure breaker, provider cooldowns), models_fit (which local models
 exist, how big each one is and whether it fits the card — read before naming a
 `model`), objectives_list/objectives_apply,
 guard_explain, memory_pack (what this machine has already learned), and
@@ -526,6 +526,26 @@ def render_session_usage(data: Dict[str, Any]) -> str:
     ctx = (data or {}).get("context") or {}
     if ctx.get("context_length"):
         out.append(f"context (last turn): {ctx.get('request_context_tokens')} / {ctx.get('context_length')}")
+    return "\n".join(out)
+
+
+def render_slot_cache(data: Dict[str, Any]) -> str:
+    """Saved llama-server slots of pinned documents (GET /api/engines/slot-cache)."""
+    d = data or {}
+    mb = (d.get("total_bytes") or 0) / (1024 * 1024)
+    head = (f"slot cache {'on' if d.get('enabled') else 'OFF'} — {len(d.get('entries') or [])} saved "
+            f"({mb:.1f} MB of {d.get('max_mb')} MB), prefix up to {d.get('max_tokens')} tokens, "
+            f"folder {d.get('dir')}")
+    out = [head]
+    stats = d.get("stats") or {}
+    out.append("turns: " + ", ".join(f"{stats.get(k, 0)} {k}" for k in ("restored", "saved", "warm", "miss", "off"))
+               + f"; about {round((stats.get('prefill_saved_ms') or 0) / 1000, 1)} s of prefill saved")
+    if d.get("unsupported_servers"):
+        out.append("servers started without --slot-save-path: " + ", ".join(d["unsupported_servers"]))
+    for row in (d.get("entries") or [])[:20]:
+        size = (row.get("bytes") or 0) / (1024 * 1024)
+        out.append(f"  {row.get('key')}  {size:.1f} MB  {row.get('tokens') or '?'} tokens  "
+                   f"{row.get('sessions')} chat(s)  {row.get('model') or ''}")
     return "\n".join(out)
 
 
@@ -1230,6 +1250,20 @@ TOOLS: List[Tool] = [
         }, "required": ["session_id"]},
     ),
     Tool(
+        name="slot_cache",
+        description=(
+            "The saved llama-server slots of documents pinned to chats (cache-augmented generation): "
+            "what is saved and how big, the caps, servers that were started without --slot-save-path, "
+            "and how many turns restored the document instead of reading it again. action=clear "
+            "deletes the saved files (all of them, or only those of one `session_id`); the chat's next "
+            "turn reads its document again and saves it afresh."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["status", "clear"], "default": "status"},
+            "session_id": {"type": "string", "description": "With action=clear: only this chat's saved slots."},
+        }},
+    ),
+    Tool(
         name="memory_jobs",
         description=(
             "State of Faustus's memory upkeep jobs (the tidy-up of saved memories and the learned-memory "
@@ -1753,6 +1787,15 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
                 return _text("Error: give the session_id")
             data = await asyncio.to_thread(_request, "GET", f"/api/session/{sid}/usage")
             return _text(render_session_usage(data))
+        if name == "slot_cache":
+            if str(args.get("action") or "status") == "clear":
+                sid = str(args.get("session_id") or "").strip()
+                suffix = f"?session_id={urllib.parse.quote(sid, safe='')}" if sid else ""
+                done = await asyncio.to_thread(_request, "DELETE", f"/api/engines/slot-cache{suffix}")
+                return _text(f"deleted {done.get('removed', 0)} saved slot(s), "
+                             f"{(done.get('freed_bytes') or 0) / (1024 * 1024):.1f} MB freed")
+            data = await asyncio.to_thread(_request, "GET", "/api/engines/slot-cache")
+            return _text(render_slot_cache(data))
         if name == "memory_jobs":
             data = await asyncio.to_thread(_request, "GET", "/api/memory-engine/jobs")
             return _text(render_memory_jobs(data))

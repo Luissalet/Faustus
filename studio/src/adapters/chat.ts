@@ -175,6 +175,23 @@ export interface PromptCacheUse {
   lost_rounds: number;
 }
 
+/** A document pinned to the chat and the llama-server slot saved for it
+ *  (`src/slot_cache.py`): `restored` = its saved state was loaded back so the
+ *  document was not read again, `saved` = read now and saved for later turns,
+ *  `warm` = the slot still held it, `miss` = read again and not saved,
+ *  `off` = not used (`reason` says why). */
+export interface PrefixCacheUse {
+  status: 'restored' | 'saved' | 'warm' | 'miss' | 'off';
+  reason?: string;
+  slot?: number;
+  prefixTokens?: number;
+  cacheN?: number;
+  restoreMs?: number;
+  saveMs?: number;
+  /** Estimated prefill time the restore saved, from the server's own speed. */
+  prefillSavedMs?: number;
+}
+
 export interface ExecutionMetrics {
   schemaVersion: number;
   phases: ExecutionPhases;
@@ -208,6 +225,8 @@ export interface TurnMetrics {
    *  tokens processed, tokens reused, and rounds whose cache stopped short
    *  of the previous request. */
   prompt_cache?: PromptCacheUse;
+  /** The pinned document's saved llama-server slot, when the chat has one. */
+  prefix_cache?: PrefixCacheUse;
   /** Per-invocation records from live round events and persisted usage
    *  buckets. Missing engine phases remain missing; client stream duration
    *  is labelled separately from backend timings. */
@@ -961,10 +980,30 @@ export function metricsFrom(meta: Record<string, unknown>): TurnMetrics {
     contextPercent: num(meta.context_percent),
     execution: executionMetricsFrom(meta.execution),
     prompt_cache: promptCacheFrom(meta.prompt_cache),
+    prefix_cache: prefixCacheFrom(meta.prefix_cache),
     round_activity: roundActivityList(meta.usage_buckets),
     recovery_usage: asArray<Record<string, unknown>>(meta.recovery_usage),
     compaction_usage: asArray<Record<string, unknown>>(meta.compaction_usage),
     runId: str(meta.run_id) || str(meta.trace_id) || undefined,
+  };
+}
+
+const PREFIX_STATUSES: readonly PrefixCacheUse['status'][] = ['restored', 'saved', 'warm', 'miss', 'off'];
+
+function prefixCacheFrom(raw: unknown): PrefixCacheUse | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  const status = PREFIX_STATUSES.find((s) => s === r.status);
+  if (!status) return undefined;
+  return {
+    status,
+    reason: str(r.reason) || undefined,
+    slot: num(r.slot),
+    prefixTokens: num(r.prefix_tokens),
+    cacheN: num(r.cache_n),
+    restoreMs: num(r.restore_ms),
+    saveMs: num(r.save_ms),
+    prefillSavedMs: num(r.prefill_saved_ms),
   };
 }
 

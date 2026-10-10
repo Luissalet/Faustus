@@ -229,6 +229,18 @@ DEFAULT_SETTINGS = {
     # so an early change in a long prompt costs the tokens after it, not the
     # whole prompt on another slot (src/llama_slots.py).
     "llamacpp_pin_session_slot": True,
+    # Save the llama-server slot of a document pinned to a chat and restore it
+    # on later turns, so the document is not read again after another chat took
+    # the slot or the server restarted (src/slot_cache.py). Off: it needs the
+    # server started with --slot-save-path pointing at the same folder.
+    "llamacpp_slot_cache": False,
+    # Largest system + pinned document prefix (estimated tokens) worth a file.
+    "llamacpp_slot_cache_max_tokens": 8000,
+    # The folder llama-server writes to (--slot-save-path). Empty: <data>/slot_cache.
+    "llamacpp_slot_cache_dir": "",
+    # Saved states are trimmed by total size and by age, oldest use first.
+    "llamacpp_slot_cache_max_mb": 4096,
+    "llamacpp_slot_cache_max_age_days": 14,
     # The owner's own prompt context (skills, saved memory, local MCP tool
     # descriptions, the compiled context packet) does not arm the approval
     # gate; web text, e-mail, documents, remote MCP and tool results do.

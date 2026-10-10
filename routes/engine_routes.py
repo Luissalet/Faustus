@@ -105,6 +105,23 @@ def setup_engine_routes() -> APIRouter:
             raise HTTPException(400, "url must be a model server on this machine (127.0.0.1 or localhost)")
         return await model_server_heal.heal(body.url, body.model or "", reason="asked for a check")
 
+    @router.get("/slot-cache")
+    def slot_cache_status_route(request: Request) -> Dict[str, Any]:
+        """Saved llama-server slots of pinned documents (src/slot_cache.py):
+        the files, the caps, servers that cannot save, and how many turns
+        restored or missed. Admin-level like the other health reads."""
+        require_admin(request)
+        from src import slot_cache
+        return slot_cache.status()
+
+    @router.delete("/slot-cache")
+    def slot_cache_clear_route(request: Request, session_id: Optional[str] = None) -> Dict[str, Any]:
+        """Delete every saved slot, or (with `session_id`) the ones only that
+        chat uses. The chat's next turn reads its document again and saves it."""
+        require_admin(request)
+        from src import slot_cache
+        return slot_cache.clear(session_id or None)
+
     @router.get("/discover")
     async def discover(request: Request, port: int, host: str = engines.DEFAULT_HOST) -> Dict[str, Any]:
         require_human(request)
