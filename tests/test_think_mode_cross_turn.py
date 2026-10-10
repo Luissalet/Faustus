@@ -116,6 +116,8 @@ def test_route_helper_wires_history(monkeypatch):
     "File not found: notes/plan.md",
     "bash: rg: command not found",
     "  Error: no such file or directory",
+    "File not found: C:\\Users\\qa\\native search with spaces\\plan.md",
+    "'rg' is not recognized: command not found in C:\\Program Files\\tools",
 ])
 def test_error_shaped_not_found_counts_as_a_failed_tool(result):
     msgs = _hist(("user", "abre el plan"), ("tool", result), ("assistant", "No pude."), ("user", "vale"))
@@ -125,6 +127,9 @@ def test_error_shaped_not_found_counts_as_a_failed_tool(result):
 @pytest.mark.parametrize("result", [
     "Results for 'http status codes':\n1. 404 Not Found - the server cannot find the resource",
     "src/app.py:12: raise KeyError('user not found')\nsrc/db.py:40: # no such file is fine here",
+    "C:\\Users\\qa\\native search with spaces\\a.py:12:    raise ValueError('user not found')",
+    "D:/QA dir/b.py-12-    raise ValueError('user not found')",
+    "notes/my plan.md:3: the file was not found last week",
 ])
 def test_not_found_inside_content_is_not_a_failed_tool(result):
     msgs = _hist(("user", "busca"), ("tool", result), ("assistant", "Aqui esta."), ("user", "vale"))

@@ -338,8 +338,11 @@ _TOOL_FAILURE = _rx(
 _TOOL_FAILURE_HEAD = _rx(r"\bno such file\b", r"\bnot found\b")
 
 
-# A search hit ("path:12: ...") quoting "not found" is still content.
-_SEARCH_HIT = re.compile(r"^\S+:\d+[:-]")
+# A search hit ("path:12: ...") quoting "not found" is still content. The path may hold spaces and
+# a Windows drive ("C:\\My work\\a.py:12:"); an error line ("bash: rg: command not found",
+# "File not found: notes.md") has no line number right after its first colon, so it never matches.
+# A context line of a search ("a.py-12-...") counts too.
+_SEARCH_HIT = re.compile(r"^(?:[A-Za-z]:[\\/])?[^:\n]+?(?::\d+[:-]|\.\w+-\d+-)")
 
 
 def _tool_failed(text: str) -> bool:
