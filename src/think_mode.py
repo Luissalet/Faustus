@@ -410,7 +410,7 @@ def _cross_turn(decision: Dict[str, Any], text: str, prior: Optional[Mapping[str
         if prev in ("think", "deep") and mode != "deep":
             # It already reasoned in full and still got it wrong: more of
             # the same budget is unlikely to help, a deeper pass may.
-            return _result("deep", ["correction_after_think"] + [r for r in decision.get("reasons") or []],
+            return _result("deep", ["correction_after_think"] + [r for r in decision.get("reasons") or [] if r != "light"],
                            "the previous answer reasoned and was corrected", "medium")
         if low:
             return _result("think", ["correction"] + [r for r in decision.get("reasons") or [] if r != "light"],

@@ -59,6 +59,7 @@ def test_correction_after_quick_answer_thinks(text):
 def test_correction_after_full_think_goes_deep():
     d = decide("no, sigue mal", history_len=2, prior={"has_prior": True, "prev_mode": "think"})
     assert d["mode"] == "deep" and d["reasons"][0] == "correction_after_think"
+    assert "light" not in d["reasons"]  # a deep pass is not a light one
 
 
 def test_bare_no_is_a_decline_not_a_correction():
