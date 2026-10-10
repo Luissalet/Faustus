@@ -10580,7 +10580,7 @@ Luis lo pidió así: «tiene que ser un agente en todo derecho, tan capaz y fiab
 - Además aprobó #152 y #160, comentó #154 y #157, y corrigió por escrito una conclusión suya equivocada cuando codex-investiga se lo señaló.
 
 **Límites conocidos:**
-- Todavía no ha hecho un ciclo completo de tarea propia: reclamarla, entregarla e integrarla. Por ahora está probado como revisor; trabajar de punta a punta queda pendiente de demostrar.
+- Ese límite del primer día quedó resuelto en la tarea #175: Faustus reclamó, programó en una copia aislada, guardó checkpoints, corrigió la revisión y entregó código aceptado; Codex integró lo aprobado y Faustus cerró la tarea por coordinación nativa. El proceso y sus límites se detallan en §286.
 - Los turnos son lentos (unos 15-20 min por revisión, la mayor parte esperando al modelo).
 - Las búsquedas amplias tienen un tope de 20 s. ripgrep ya está instalado en el PC (#169): no lee ficheros de más de 2 MB, para en cuanto tiene suficientes resultados y, si se agota el tiempo, devuelve lo que ya encontró avisando de que es parcial. En una prueba sobre todo D:\LocalAI dio 20 resultados en 13,5 s.
 - La coordinación nativa por proyecto (#151) aún no sustituye al lanzador.
@@ -10614,3 +10614,17 @@ Tarea #183 del Ágora. `src/doc_lint.py` revisa un `.md` con reglas comprobables
 **Límites:**
 - Es heurístico, no un parser: solo cabeceras ATX; `path-missing` ignora rutas cuyo primer segmento no sea una entrada de primer nivel del repo; las anclas `#seccion` no se comprueban.
 - `FAUSTUS.md` tiene una segunda serie de secciones 1-9 hacia la línea 6764, que el linter marca como duplicados: es un hallazgo real, no se ha tocado.
+
+## 286. Primera contribución nativa aceptada y cierre sin otra aprobación (10-10-2026)
+
+GLM residente en las tres Sparks completó la tarea #175 en la conversación `06224579-758d-4ef2-b89c-4bd400120d07`, con la identidad de agente `faustus-1595ee7bebf17301d7c7` y su proyecto. Trabajó en una copia Git aislada, reclamó las dos rutas de código y pruebas, guardó checkpoints y atendió las revisiones. Las entregas anteriores necesitaron cambios: no se cuentan como aceptadas.
+
+La revisión 4 entregó `a5c34d025e5d7c052a8ad1b8b70c5dec09986a0a`. La herramienta `grep` avisa de ficheros superiores a 2 MB aunque encuentre coincidencias, conserva la causa de una expresión inválida como error, drena stderr sin atascar el proceso y limita lo retenido a 8192 bytes UTF-8 entre cabeza y cola. El aviso de tamaño no se duplica cuando no hay coincidencias. Siguen los presupuestos de búsqueda y la alternativa sin ripgrep.
+
+Codex leyó la revisión 4 antes de probar: 23 pruebas de búsqueda, contrastes con ripgrep real y procesos/PIPE del sistema operativo, API, MCP y cinco sesiones persistidas en Studio. ASCII retuvo 8192 bytes y el contraste Unicode 8188; el error `(` conservó `unclosed group`. La fuente e índices de las copias de revisión permanecieron intactos. El autor también ejecutó una selección más amplia con 56 pases, 3 skips y 14 errores de colección por dependencias ausentes: esa ejecución no acredita una suite completa.
+
+Lo aprobado quedó integrado y activo en `0bc0839c9017c79f6602c43414feb010a0a9d654`, preservando los cambios de otros agentes. Faustus retomó la misma conversación y cerró la tarea con `coordination_done`, conservando el checkpoint 4 y su recibo de integración. Ese último turno completó 9 rondas y 11 herramientas sin tarjetas de aprobación; el turno de corrección anterior completó 24 rondas y 26 herramientas, también sin tarjetas ni indicaciones durante la ejecución.
+
+El cierre ordinario de respuestas (#179) conserva el texto y añade avisos cuando la evidencia no basta, sin otra llamada al modelo sólo para aprobar la respuesta. Los fixtures de pruebas no se confunden automáticamente con archivos entregados al usuario. El heartbeat nativo (#186) renueva sólo los bloqueos propios comprendidos en el alcance configurado; las reservas externas del controlador se informan sin impedir el latido. Ambas correcciones están revisadas y activas.
+
+**Pendiente de verificación:** la migración del vigilante externo a chats con proyecto e identidad nativos (#185), su alcance sobre los repositorios de la familia y la corrección de selección ante una sincronización incierta de Sparks (#189). La contribución aceptada y la recuperación del mismo chat están demostradas; una respuesta o un test verde no certifica fiabilidad general ni paridad con otros agentes. La ventana de 1M y TP0/1/2 están comprobados como configuración y procesos residentes, no como un nuevo benchmark de entrada de 1M.

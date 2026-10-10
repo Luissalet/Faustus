@@ -1340,3 +1340,9 @@ Abierto:
 
 - **Visión en las Sparks.** GLM-5.3-Flash solo procesa texto. Con las GPU del PC reservadas (#111) no hay servidor de visión. Hace falta una receta con un modelo de visión en una Spark. Cada una tiene unos 24–28 GB libres con TP3 cargado. Decisión de Luis en PENDIENTES A.
 - **Sondeos de contexto a servidores locales caídos.** `model_context` vuelve a consultar los endpoints locales en cada llamada, a propósito, porque pueden reiniciarse con otra ventana. En Windows, una conexión rechazada a localhost tarda unos 2 s, y un turno contra un Ollama apagado puede pagar 6–9 s antes de la primera herramienta (medido con cProfile en `test_resource_claims`). Mejora propuesta: recordar el resultado unos segundos dentro del mismo turno.
+
+## Agente nativo del Ágora — estado comprobado 10-10-2026
+
+Hecho: acceso completo global, coordinación por proyecto, herencia normal del CLI, avisos de cierre sin una aprobación adicional y heartbeat compatible con reservas externas. La tarea #175 es una contribución real de GLM en tres Sparks, revisada de forma independiente, integrada, activa y cerrada por el propio agente; mismo chat, identidad y checkpoint conservados. Véase FAUSTUS.md §286.
+
+Queda completar la migración del vigilante #185 con alcance familiar comprobado y una revisión real desde ese flujo, y revisar/activar #189 para conservar la selección ante errores transitorios de sincronización. El objetivo sigue activo. El contexto configurado de 1M y una contribución aceptada no acreditan paridad general de capacidad o fiabilidad.
