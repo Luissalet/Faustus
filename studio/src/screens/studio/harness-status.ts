@@ -6,7 +6,7 @@ const STOP_WORDS: Record<string, string> = {
   stopped: 'stopped',
   error: 'error',
   asked_user: 'asked you',
-  awaiting_user: 'Waiting for your permission',
+  awaiting_user: 'Waiting for your answer',
 };
 
 /** Stored counts stay intact; a gate pause is not presented as a tool crash. */

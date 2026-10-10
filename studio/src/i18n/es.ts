@@ -4899,6 +4899,7 @@ export const es: Record<string, string> = {
   "Plain answers: no tools, no memory, no documents. The fairest test of the model itself.": "Respuestas a secas: sin herramientas, memoria ni documentos. La prueba más justa del modelo en sí.",
   "Plan": "Plan",
   "Plan paused: asking you": "Plan en pausa: te pregunta",
+  "Plan pending": "Plan pendiente",
   "Plan steps": "Pasos del plan",
   "Plan, execute, review, verify. This room may change things.": "Planificar, ejecutar, revisar, verificar. Esta sala sí puede cambiar cosas.",
   "Planning the research…": "Planificando la investigación…",

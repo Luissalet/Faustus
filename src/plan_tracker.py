@@ -152,6 +152,8 @@ def find_plan_attachment(text: str, min_chars: Optional[int] = None) -> Optional
         cap = 3000
     try:
         authored, _rest = _split_authored(text or "")
+        if _negated_execution_only(authored):
+            return None
         executes = strict_execute_request(authored)
         for kind, title, body in _iter_attachments(text or ""):
             if kind != "File":
@@ -162,6 +164,8 @@ def find_plan_attachment(text: str, min_chars: Optional[int] = None) -> Optional
                 continue
             spec = parse_plan(title, full)
             if len(spec.tasks) < 3:
+                continue
+            if _alternative_policy([task.title for task in spec.tasks]):
                 continue
             if not big and _split_sections_ex(_normalize(full))[0] in ("", "bullet"):
                 continue
@@ -540,10 +544,12 @@ def active(scope: str) -> Optional[Dict[str, Any]]:
     best: Optional[Dict[str, Any]] = None
     for n in names:
         t = load(scope, n[:-5])
-        if not t:
+        if not t or is_alternative_policy(t):
             continue
         if best is None or float(t.get("last_seen_at") or 0) > float(best.get("last_seen_at") or 0):
             best = t
+    # Historical routing imports remain readable by hash; the newest genuine
+    # plan remains resumable instead of being hidden by a newer false import.
     return best
 
 
@@ -845,6 +851,25 @@ _EXEC_VERB_RE = re.compile(
     re.I,
 )
 
+_NEGATED_EXEC_RE = re.compile(
+    r"\b(?:sin|no)\s+(?:lo\s+)?(?:ejecut\w*|implement\w*|continu\w*|retom\w*|aplic\w*|realiz\w*)\b"
+    r"|\b(?:do\s+not|don['’]?t|without|never)\s+(?:execut\w*|run\w*|implement\w*|continu\w*|resum\w*|start\w*|build\w*)\b",
+    re.I)
+
+
+def _unnegated_execution_text(text: str) -> str:
+    return _NEGATED_EXEC_RE.sub("", text or "")
+
+
+def _negated_execution_only(text: str) -> bool:
+    return bool(_NEGATED_EXEC_RE.search(text or "")) and not _EXEC_VERB_RE.search(_unnegated_execution_text(text))
+
+
+def _execution_directive(text: str) -> str:
+    norm = _normalize(text or "")
+    _kind, sections = _split_sections_ex(norm)
+    return _pasted_intro(norm) if len(sections) >= 3 else norm
+
 
 def looks_like_execute_request(user_text: str) -> bool:
     """True for a short imperative-execution message ("Sigue implementando
@@ -854,7 +879,7 @@ def looks_like_execute_request(user_text: str) -> bool:
     text = (user_text or "").strip()
     if not text or "?" in text or len(text) > 400:
         return False
-    return bool(_EXEC_VERB_RE.search(text))
+    return bool(_EXEC_VERB_RE.search(_unnegated_execution_text(_execution_directive(text))))
 
 
 # ---------------------------------------------------------------------------
@@ -908,9 +933,13 @@ def find_plan_in_text(text: str, min_chars: Optional[int] = None) -> Optional[Tu
         if len(sections) < 3:
             return None
         titles = [str(s[1]) for s in sections]
+        if _alternative_policy(titles):
+            return None
         if sum(1 for t in titles if t.rstrip().endswith("?")) * 2 >= len(titles):
             return None
         intro = _pasted_intro(norm)
+        if _negated_execution_only(intro):
+            return None
         tail = intro[-300:]
         asks = "?" in tail
         executes = strict_execute_request(tail)
@@ -931,6 +960,26 @@ def find_plan_in_text(text: str, min_chars: Optional[int] = None) -> Optional[Tu
         return "pasted plan: " + first[:100], body
     except Exception:
         return None
+
+
+def _alternative_policy(titles: List[str]) -> bool:
+    """A priority ladder chooses a branch; it is not a flat all-done checklist.
+
+    Only fallback branches at the start of task titles count. Conditions inside
+    actual work items (including explicit WP/task IDs) retain their plan shape.
+    """
+    fallback = re.compile(
+        r"^\s*(?:si\s+(?:tampoco\b|no\s+(?:hay|queda\w*)\s+(?:nada|trabajo|tareas?|revisiones?)\b)"
+        r"|(?:else|otherwise)\b|if\s+(?:none\b|nothing\b|there\s+(?:is|are)\s+no\s+"
+        r"(?:work|tasks?|reviews?|items?)\b))", re.I)
+    chained = re.compile(r"^\s*(?:si\s+tampoco\b|otherwise\b|else\b)", re.I)
+    return (len(titles) >= 3 and any(chained.search(title) for title in titles)
+            and sum(bool(fallback.search(title)) for title in titles) >= 2)
+
+
+def is_alternative_policy(tracker: Dict[str, Any]) -> bool:
+    """Recognize an old inferred routing list without deleting its history."""
+    return _alternative_policy([str(task.get("title") or "") for task in tracker.get("tasks", [])])
 
 
 def replace_pasted(text: str, tracker: Dict[str, Any], max_task_chars: int = 6000) -> str:
@@ -1024,4 +1073,4 @@ def strict_execute_request(user_text: str) -> bool:
     text = (user_text or "").strip()
     if not text or "?" in text or len(text) > 400:
         return False
-    return bool(_STRICT_EXEC_RE.search(text))
+    return bool(_STRICT_EXEC_RE.search(_unnegated_execution_text(_execution_directive(text))))

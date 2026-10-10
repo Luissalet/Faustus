@@ -43,7 +43,7 @@ const CHECK_WORDS: Record<string, string> = {
   rewrite_policy: 'Whole-file rewrite refused',
   plan_tracker: 'Implementation plan',
   plan_continue: 'Continues the plan on its own',
-  plan_continue_stop: 'Plan paused: asking you',
+  plan_continue_stop: 'Plan pending',
 };
 
 const GATE_WORDS: Record<string, string> = {
@@ -97,7 +97,7 @@ export function CheckList({ checks }: { checks: HarnessCheck[] }) {
               {c.label ? ` · ${c.label}` : ''}
               {c.model ? ` · ${c.model}` : ''}
               {c.reasons && c.reasons.length > 0 ? `: ${c.reasons.map((r) => (REASON_WORDS[r] ? t(REASON_WORDS[r]) : r)).join(', ')}` : ''}
-              {detail && !c.reasons?.length ? ` · ${detail}` : ''}
+              {detail ? ` · ${detail}` : ''}
             </span>
             {c.round !== undefined && <span className="fs-trace__meta">{t('round {n}', {n: c.round})}</span>}
           </li>

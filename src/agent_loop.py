@@ -4830,118 +4830,49 @@ async def _recovery_step_completion(url, model, headers, messages, temperature, 
     return text, reasoning, degenerate, error
 
 
-def _end_turn_with_question(*, reason: str, round_num: int, session_id: Optional[str],
-                             owner: Optional[str], ledger, elapsed_s: float = 0.0,
-                             plan: Optional[Dict[str, Any]] = None) -> Iterable:
-    """Build and register a concrete question from the turn's own ledger
-    state, and yield the SSE chunk(s) that end the turn asking it — never a
-    bare placeholder. Owner requirement, 18-09-2026: a large/repetitive task
-    that has to stop (no more auto-continue budget, or too many rounds with
-    no progress) must ask ONE concrete question, built from what is already
-    known (the next open objective, or how many units are already done),
-    instead of ending with nothing under the card.
+def _end_turn_with_advisory(*, reason: str, round_num: int, session_id: Optional[str],
+                            owner: Optional[str], ledger, elapsed_s: float = 0.0,
+                            plan: Optional[Dict[str, Any]] = None) -> Iterable:
+    """Report a runtime stopping condition without inventing a user decision.
 
-    Goes through the same `question_store` a real `ask_user` tool call uses
-    (CALL-07/TASK-04) and the same `{"type": "ask_user", "data": ...}` SSE
-    shape the client already renders — reusing the spec-v2 mechanism rather
-    than inventing a second "end the turn" shape.
-
-    Yields ``("event", sse_chunk)`` tuples, mirroring `_recovery_ladder`'s
-    protocol so a caller can loop the same way. Never raises: a failure to
-    register the question in `question_store` still yields the card (the
-    streamed SSE event is the source of truth for the live chat either way).
+    Existing continuation/time/recovery bounds are unchanged. The answer and
+    unfinished work remain visible; an automatic stop is not evidence that
+    information or permission from the person is missing. Genuine ask_user
+    calls and security approval cards retain their own stores and lifecycle.
     """
-    import uuid as _uuid
-
-    _open = [t.get("content") for t in (getattr(ledger, "progress", None) or [])
-             if t.get("status") != "completed"]
-    _done = len(ledger.mutated_paths()) if hasattr(ledger, "mutated_paths") else 0
-    _es = str(getattr(ledger, "language", "") or "es").lower().startswith("es")
-    _rounds = max(0, round_num - 1)
-    if reason.startswith("plan_") and plan:
-        # The tracked plan could not be carried on automatically: name the task
-        # that is blocking and what the person can decide (plan auto-continue).
-        _pk = f'{plan.get("key") or ""} — {plan.get("task_title") or ""}'.strip(" —")
-        _pn = f'{plan.get("done", 0)}/{plan.get("total", 0)}'
-        if reason == "plan_loop_recovery":
-            _why_es, _why_en = "el detector de bucles ha frenado la investigación", "the loop breaker stopped the investigation"
-        elif reason == "plan_continue_cap":
-            _why_es = f'he llegado al máximo de {plan.get("cap", 0)} continuaciones automáticas de este turno'
-            _why_en = f'I reached this turn\'s limit of {plan.get("cap", 0)} automatic continuations'
-        else:
-            _why_es = "en las últimas continuaciones no he conseguido cerrarla"
-            _why_en = "my last continuations did not manage to close it"
-        question = (
-            f'El plan «{plan.get("title") or ""}» va {_pn}. Me he quedado en {_pk}: {_why_es}. '
-            "¿Qué prefieres: que la salte, que lo intente de otra forma, o me das el dato que falta?"
-        ) if _es else (
-            f'Plan "{plan.get("title") or ""}" is at {_pn}. I am stuck on {_pk}: {_why_en}. '
-            "Shall I skip it, try another approach, or can you give me what is missing?"
-        )
-    elif reason == "turn_wall_clock_ceiling":
-        # The turn ran out of time, it did not get stuck: saying "I could not
-        # make progress" after three hours of work read as a failure (exam 32).
-        _mins = int(round((elapsed_s or 0) / 60)) if elapsed_s else 0
-        if _es:
-            head = (f"Se acabó el tiempo de este turno ({_mins} min, {_rounds} rondas)." if _mins
-                    else f"Se acabó el tiempo de este turno ({_rounds} rondas).")
-            tail = (f" Lo siguiente pendiente es: {_open[0]}. ¿Sigo por ahí?" if _open
-                    else " ¿Sigo donde lo he dejado?")
-        else:
-            head = (f"This turn ran out of time ({_mins} min, {_rounds} rounds)." if _mins
-                    else f"This turn ran out of time ({_rounds} rounds).")
-            tail = (f" Next open step: {_open[0]}. Shall I carry on with it?" if _open
-                    else " Shall I carry on from where I stopped?")
-        question = head + tail
-    elif _open:
-        question = (
-            f"Llevo {_done} elemento(s) completado(s) en {_rounds} ronda(s) sin poder "
-            f"seguir automáticamente. La siguiente unidad pendiente es: {_open[0]}. "
-            "¿Continúo con esta unidad, o prefieres otra prioridad?"
-        ) if _es else (
-            f"{_done} item(s) done in {_rounds} round(s) and I cannot go on on my own. "
-            f"Next open unit: {_open[0]}. Shall I continue with it, or is something else first?"
-        )
-    elif _done:
-        question = (
-            f"Llevo {_done} elemento(s) completado(s) en {_rounds} ronda(s) sin poder "
-            "seguir automáticamente. ¿Cuál es la siguiente unidad concreta a completar?"
-        ) if _es else (
-            f"{_done} item(s) done in {_rounds} round(s) and I cannot go on on my own. "
-            "What is the next concrete unit to complete?"
-        )
+    spanish = str(getattr(ledger, "language", "") or "es").lower().startswith("es")
+    open_steps = [str(t.get("content") or "") for t in (getattr(ledger, "progress", None) or [])
+                  if t.get("status") != "completed"]
+    rounds = max(0, round_num - 1)
+    if reason == "turn_wall_clock_ceiling":
+        minutes = int(round((elapsed_s or 0) / 60))
+        detail = (f"Se acabó el tiempo de este turno ({minutes} min, {rounds} rondas)."
+                  if spanish else f"This turn ran out of time ({minutes} min, {rounds} rounds).")
+    elif reason.startswith("plan_") and plan:
+        count = f'{plan.get("done", 0)}/{plan.get("total", 0)}'
+        task = str(plan.get("task_title") or plan.get("key") or "")
+        detail = (f"El seguimiento automático no acredita un cierre adicional del plan ({count}). Pendiente: {task}."
+                  if spanish else f"Automatic tracking does not verify another plan completion ({count}). Pending: {task}.")
     else:
-        question = (
-            f"No pude avanzar en {_rounds} ronda(s) de esta tarea. "
-            "¿Puedes darme una unidad concreta y pequeña por la que empezar?"
-        ) if _es else (
-            f"I could not make progress in {_rounds} round(s) of this task. "
-            "Can you give me one small, concrete unit to start with?"
-        )
-    question_id = f"qst_{_uuid.uuid4().hex[:20]}"
-    auq = {
-        "question": question,
-        "options": [],
-        "multi": False,
-        "allow_free_text": True,
-        "question_id": question_id,
-    }
-    try:
-        from src import question_store
-        qrow = question_store.open_question(
-            question, session_id=session_id, owner=owner or "",
-            options=[], multi=False, allow_free_text=True,
-            question_id=question_id,
-        )
-        auq["revision"] = qrow["revision"]
-    except Exception as _qerr:  # noqa: BLE001 — never cost a turn
-        logger.debug("[agent] _end_turn_with_question: question_store.open skipped: %s", _qerr)
+        detail = (f"El turno terminó sin acreditar avance adicional tras {rounds} rondas."
+                  if spanish else f"The turn ended without verifying additional progress after {rounds} rounds.")
+    if open_steps and not plan:
+        detail += ((" Siguiente unidad pendiente: " if spanish else " Next pending unit: ") + open_steps[0] + ".")
+    detail += (" Se conservan la respuesta y el estado del trabajo; no hace falta una aprobación para retomarlo."
+               if spanish else " The answer and work state are preserved; resuming does not require another approval.")
+    diagnostic = {"kind": "runtime_stop", "reason": reason, "detail": detail,
+                  "round": round_num, "advisory": True, "requires_user_input": False}
+    if plan:
+        diagnostic["plan"] = dict(plan)
+    if hasattr(ledger, "record_answer_advisory"):
+        ledger.record_answer_advisory(["runtime_stop:" + reason], round_num)
+        if getattr(ledger, "answer_diagnostics", None):
+            ledger.answer_diagnostics[-1].update(diagnostic)
     if hasattr(ledger, "notes"):
-        ledger.notes.append(f"ended_with_question@{round_num}:{reason}")
+        ledger.notes.append(f"ended_with_advisory@{round_num}:{reason}")
     if hasattr(ledger, "stop_reason"):
         ledger.stop_reason = reason
-    yield ("event", "data: " + json.dumps({"type": "ask_user", "data": auq}) + "\n\n")
-
+    yield ("event", "data: " + json.dumps({"type": "harness_check", "status": "advisory", **diagnostic}) + "\n\n")
 
 async def _recovery_ladder(*, reason: str, endpoint_url: str, model: str, headers,
                             messages: List[Dict], temperature: float, max_tokens: int,
@@ -12062,8 +11993,8 @@ async def _stream_agent_loop_body(
     # stopping the person's large batch job mid-way. `_no_progress_streak`
     # counts consecutive round-budget checks with no new ledger event; three
     # in a row (K=3) means the turn is genuinely stuck, not merely long, and
-    # THEN it stops — with a concrete question (`_end_turn_with_question`),
-    # never a bare placeholder.
+    # THEN it reports a durable advisory, preserving the answer and work
+    # state without inventing a decision or permission from the person.
     try:
         _agent_auto_continue_on_progress = bool(get_setting("agent_auto_continue_on_progress", True))
     except Exception:
@@ -12115,11 +12046,12 @@ async def _stream_agent_loop_body(
     try:
         _pid = str(_hopts.get("project_id") or "")
         _is_continue = _looks_like_continue_turn(_last_user)
-        _has_inline_attachment = any(
-            isinstance(m.get("content"), str) and "=== File:" in (m.get("content") or "")
-            for m in (messages or [])
-            if m.get("role") == "user"
-        )
+        _current_plan_message = next(
+            (m for m in reversed(messages or []) if m.get("role") == "user"
+             and not m.get("_agent_injected") and not m.get("_harness_note")
+             and isinstance(m.get("content"), str)), None)
+        _has_inline_attachment = bool(
+            _current_plan_message and "=== File:" in _current_plan_message["content"])
         # P1: a big structured plan attached to the message is parsed ONCE
         # (by hash) into src/plan_tracker.py's per-scope state; the prompt
         # gets the typed request + a brief + the CURRENT task's full text,
@@ -12132,13 +12064,10 @@ async def _stream_agent_loop_body(
             if bool(get_setting("agent_plan_tracker", True)):
                 _plan_scope = _pt.scope_for(_pid or None, workspace)
                 if _has_inline_attachment:
-                    # The last user message may be a runtime nudge appended
-                    # after the real one (todowrite refresh): take the last
-                    # user message that actually carries the attachment.
-                    _last_user_msg = next(
-                        (m for m in reversed(messages or [])
-                         if m.get("role") == "user" and not m.get("_agent_injected")
-                         and isinstance(m.get("content"), str) and "=== File:" in m.get("content", "")), None)
+                    # Only the current request imports an attachment. A resume
+                    # uses the durable active tracker, not an unrelated old
+                    # attachment elsewhere in the conversation history.
+                    _last_user_msg = _current_plan_message
                     _content = _last_user_msg.get("content") if _last_user_msg else None
                     if isinstance(_content, str):
                         _found = _pt.find_plan_attachment(_content)
@@ -12155,10 +12084,7 @@ async def _stream_agent_loop_body(
                 if _plan_tracker is None:
                     # A plan typed or pasted in the message itself (no
                     # attachment): same tracker, the intro stays in the prompt.
-                    _paste_msg = next(
-                        (m for m in reversed(messages or [])
-                         if m.get("role") == "user" and not m.get("_agent_injected")
-                         and not m.get("_harness_note") and isinstance(m.get("content"), str)), None)
+                    _paste_msg = _current_plan_message
                     _paste_found = _pt.find_plan_in_text(_paste_msg["content"]) if _paste_msg else None
                     if _paste_found:
                         _plan_tracker = _pt.upsert_from_attachment(_plan_scope, _paste_found[0], _paste_found[1])
@@ -12181,7 +12107,6 @@ async def _stream_agent_loop_body(
                     _ledger.plan_all_done_with_evidence = bool(_all_prog.get("total")) and (
                         _all_prog.get("done") == _all_prog.get("total"))
                 if _plan_tracker and _pt.current_task(_plan_tracker):
-                    _ledger.plan_active = True
                     # Armed: the plan was handed over this turn, or the person is
                     # resuming it ("continúa", "sigue con el plan"), or the model
                     # starts using the plan tools. A stale plan from an old chat
@@ -12189,11 +12114,12 @@ async def _stream_agent_loop_body(
                     _plan_ac_armed = bool(
                         _plan_imported_now or _is_continue
                         or _pt.looks_like_execute_request(_last_user or ""))
+                    _ledger.plan_active = _plan_ac_armed
                     _plan_ac_closed_last = _pt.closed_count(_plan_tracker)
                     _plan_closed_start = _plan_ac_closed_last
                     # Offer the plan tools alongside whatever the retriever
                     # picked: the brief tells the model to use them.
-                    if _relevant_tools is not None and not guide_only:
+                    if _relevant_tools is not None and not guide_only and _plan_ac_armed:
                         _relevant_tools = set(_relevant_tools) | (
                             {"plan_status", "plan_task", "plan_done", "plan_skip", "plan_next"} - set(disabled_tools))
                     _cur = _pt.current_task(_plan_tracker) or {}
@@ -12364,7 +12290,7 @@ async def _stream_agent_loop_body(
             break
         # BUG-STOP-01/item 4: wall-clock ceiling, checked right after the
         # cancellation check above (a Stop always takes priority over the
-        # ceiling's own end-of-turn question) and before this round spends
+        # ceiling's own end-of-turn notice) and before this round spends
         # any time at all.
         if _turn_max_seconds > 0 and (time.monotonic() - _turn_started_monotonic) >= _turn_max_seconds:
             _turn_ceiling_hit = True
@@ -12374,13 +12300,13 @@ async def _stream_agent_loop_body(
                 _turn_max_seconds, round_num, _elapsed_s,
             )
             _ledger.notes.append(f"turn_wall_clock_ceiling@{round_num}:{_elapsed_s}s")
-            for _rk, _rpayload in _end_turn_with_question(
+            for _rk, _rpayload in _end_turn_with_advisory(
                 reason="turn_wall_clock_ceiling",
                 round_num=round_num, session_id=session_id, owner=owner,
                 ledger=_ledger, elapsed_s=_elapsed_s,
             ):
                 yield _rpayload
-            _awaiting_user = True
+            _awaiting_user = False
             break
         # Handoff before the ceiling: a long turn that hits the wall clock
         # ends with a question, and the next turn started over from scratch
@@ -12624,15 +12550,15 @@ async def _stream_agent_loop_body(
                     # gate above — it must not now end in silence (or a bare
                     # "Continue" click) just because the gate finally closed
                     # (K=3 no-progress rounds, or the hard ceiling). Ask a
-                    # concrete question built from the ledger instead.
-                    for _rk, _rpayload in _end_turn_with_question(
+                    # concrete advisory built from the ledger instead.
+                    for _rk, _rpayload in _end_turn_with_advisory(
                         reason=("no_progress_streak" if _no_progress_streak >= 3
                                 else "auto_continue_ceiling"),
                         round_num=round_num, session_id=session_id, owner=owner,
                         ledger=_ledger,
                     ):
                         yield _rpayload
-                    _awaiting_user = True
+                    _awaiting_user = False
                 _exhausted_rounds = True
                 break
         # Steering: text queued while the previous round ran (or while a tool
@@ -14086,13 +14012,13 @@ async def _stream_agent_loop_body(
             round_endpoint_ids.append(_round_actual_endpoint_id)
             round_endpoint_labels.append(_round_actual_endpoint_label)
             yield f"data: {json.dumps({'type': 'response_replace', 'text': full_response})}\n\n"
-            for _rk, _rpayload in _end_turn_with_question(
+            for _rk, _rpayload in _end_turn_with_advisory(
                 reason="turn_wall_clock_ceiling",
                 round_num=round_num, session_id=session_id, owner=owner,
                 ledger=_ledger, elapsed_s=_elapsed_s,
             ):
                 yield _rpayload
-            _awaiting_user = True
+            _awaiting_user = False
             break
 
         if (_compaction_budget_exhaustion is not None or _recovery_cancelled
@@ -14837,7 +14763,9 @@ async def _stream_agent_loop_body(
                 _ledger.plan_all_done_with_evidence = bool(_pac_prog.get("total")) and (
                     _pac_prog.get("done") == _pac_prog.get("total"))
                 _pac_armed = _plan_ac_armed or any(
-                    str((_e or {}).get("tool") or "").startswith("plan_") for _e in _ledger.events)
+                    str((_e or {}).get("tool") or "") in {"plan_done", "plan_skip", "plan_next"}
+                    and (_e or {}).get("ok") is True
+                    for _e in _ledger.events)
                 _pac = _pt_ac.autocontinue_decision(
                     _pac_tr, enabled=True, armed=_pac_armed, used=_plan_ac_used,
                     cap=_plan_ac_max, fruitless=_plan_ac_fruitless,
@@ -14904,7 +14832,7 @@ async def _stream_agent_loop_body(
                         "attempt": _plan_ac_used, "max_attempts": _plan_ac_max,
                     }) + "\n\n"
                 )
-                for _rk, _rpayload in _end_turn_with_question(
+                for _rk, _rpayload in _end_turn_with_advisory(
                     reason={"loop_recovery": "plan_loop_recovery", "cap": "plan_continue_cap"}.get(
                         str(_pac_why), "plan_no_progress"),
                     round_num=round_num, session_id=session_id, owner=owner, ledger=_ledger,
@@ -14913,7 +14841,7 @@ async def _stream_agent_loop_body(
                           "task_title": _pac_cur.get("title"), "cap": _plan_ac_max},
                 ):
                     yield _rpayload
-                _awaiting_user = True
+                _awaiting_user = False
                 break
             if (_pac and _pac.get("reason") == "done" and not _plan_ac_done_emitted
                     and _plan_ac_used):
@@ -15260,16 +15188,15 @@ async def _stream_agent_loop_body(
                 continue
             if _text_action == _loop_decisions.ASK_EMPTY_EXHAUSTED:
                 # Every nudge came back empty too: never end in silence — ask
-                # the user a concrete question built from the last known
-                # state, through the same question_store mechanism a real
-                # ask_user tool call uses.
-                for _rk, _rpayload in _end_turn_with_question(
+                # an advisory built from the last known state. A runtime
+                # stopping condition never fabricates an ask_user decision.
+                for _rk, _rpayload in _end_turn_with_advisory(
                     reason="empty_rounds_exhausted",
                     round_num=round_num, session_id=session_id, owner=owner,
                     ledger=_ledger,
                 ):
                     yield _rpayload
-                _awaiting_user = True
+                _awaiting_user = False
                 break
             # ── (2a) Wrong reply language — before no_action, so a Spanish
             # "Voy a…" on an English turn is corrected specifically instead of
