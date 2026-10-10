@@ -1155,7 +1155,7 @@ Hecho en §260 y §261. **Por hacer:**
 - Comprobación de carpeta también para lo que lanza la herramienta `python` con `subprocess` (hoy sólo cubre las órdenes de shell).
 - ~~Medidor del presupuesto del periodo en el panel de uso de Studio~~ — hecho (Agora #231): sección «Period budget» en el popover de Vitals (`studio/src/adapters/periodBudget.ts` → `GET /api/budget/period`), con estados sin dato / sin objetivo / pausa / breaker honestos. Cassandra sigue mostrando la tarjeta «Agentes en marcha».
 - Adoptar tras un reinicio los trabajos de dispatch que seguían vivos, en vez de marcarlos interrumpidos.
-- Árbol de sesiones (bifurcaciones y clones de un chat) en Studio, sobre el `/fork` que ya existe.
+- ~~Árbol de sesiones (bifurcaciones y clones de un chat) en Studio, sobre el `/fork` que ya existe.~~ Hecho en §302 (Ágora #233).
 - `!!orden` en el compositor: ejecuta en la shell sin pasar por el modelo.
 - `/github` para etiquetas, notas de cambios y comprobaciones de release con `gh`.
 

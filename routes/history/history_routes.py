@@ -740,6 +740,7 @@ def setup_history_routes(session_manager, upload_handler=None, *, include_compac
                 model=source.model,
                 rag=False,
                 owner=getattr(source, 'owner', None),
+                forked_from=session_id,
             )
 
             # Copy messages up to keep_count
@@ -763,6 +764,7 @@ def setup_history_routes(session_manager, upload_handler=None, *, include_compac
                 "id": new_id,
                 "name": fork_name,
                 "kept": len(msgs_to_copy),
+                "forked_from": session_id,
             }
         except HTTPException:
             raise

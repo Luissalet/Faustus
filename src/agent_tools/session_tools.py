@@ -477,6 +477,7 @@ async def manage_session(content: str, session_id: Optional[str] = None, owner: 
                 model=source.model,
                 rag=False,
                 owner=owner,
+                forked_from=target_sid,
             )
             # Copy messages
             history = source.get_context_messages()

@@ -5,6 +5,7 @@ import { Link } from 'react-router';
 import { ActivityDot, Button, IconButton, QuickMenu, Skeleton } from '../../components';
 import { sessionActivity, useChatActivity, type SessionActivity } from '../../shell/activity';
 import type { ChatActivity, ChatSession } from '../../adapters/chat';
+import { mergeForkParents } from '../../adapters/chat';
 import { relativeTime } from '../../adapters/home';
 import { isGroupSessionName, stripGroupPrefix } from '../../adapters/group';
 import {
@@ -269,7 +270,7 @@ export function SessionsPane({ sessions, currentId, filter, setFilter, searchRef
   }
 
   const renderRows = (list: ChatSession[], offset = 0) =>
-    indentSessions(list, parents).map(({ item: s, depth }, i) => (
+    indentSessions(list, mergeForkParents(list, parents)).map(({ item: s, depth }, i) => (
       <Row key={s.id} s={s} i={i + offset} depth={depth} currentId={currentId} selecting={selecting} selected={selected.has(s.id)} live={sessionActivity(activity, s.id)} queuePos={activity.queued[s.id]} liveDetail={activity.details[s.id]} onToggle={() => toggle(s.id)} onOpen={(id) => onOpen(id)} onMenu={() => setTarget(s)} />
     ));
 

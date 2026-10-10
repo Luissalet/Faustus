@@ -216,7 +216,11 @@ class Session(TimestampMixin, Base):
     # ProjectStore, and a dangling id degrades to "no project" rather than
     # blocking a write.
     project_id = Column(String, nullable=True, index=True)
-    
+    # Chat this one was forked from (POST /api/session/{id}/fork). Null when
+    # the session was created fresh. Lets Studio indent clones under their
+    # source without inventing a side-thread wire.
+    forked_from = Column(String, ForeignKey("sessions.id", ondelete="SET NULL"), nullable=True, index=True)
+
     # Headers stored as JSON
     headers = Column(JSON, default=dict)
     
@@ -1883,6 +1887,30 @@ def _migrate_add_session_chat_profile():
         logging.getLogger(__name__).warning(f"sessions.chat_profile migration failed: {e}")
 
 
+
+def _migrate_add_session_forked_from():
+    """Add `forked_from` to sessions (Agora #233: Studio fork tree).
+
+    Idempotent like the other session ALTERs: fresh installs already have the
+    column from the model; older DBs get it once. NULL means created fresh,
+    not a fork.
+    """
+    try:
+        with engine.connect() as conn:
+            cols = [r[1] for r in conn.execute(text("PRAGMA table_info(sessions)"))]
+            if not cols:
+                return
+            if "forked_from" not in cols:
+                conn.execute(text("ALTER TABLE sessions ADD COLUMN forked_from TEXT"))
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS ix_sessions_forked_from ON sessions(forked_from)"
+                ))
+                conn.commit()
+                logging.getLogger(__name__).info("Migrated: added 'forked_from' to sessions")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"sessions.forked_from migration failed: {e}")
+
+
 def _migrate_add_owner_column():
     """Add owner column to sessions table if it doesn't exist."""
     import sqlite3
@@ -3514,6 +3542,7 @@ def _formal_migration_steps() -> "list[tuple[str, object]]":
         ("add_session_behavior_mode", _migrate_add_session_behavior_mode),
         ("add_session_connector_ids", _migrate_add_session_connector_ids),
         ("add_session_chat_profile", _migrate_add_session_chat_profile),
+        ("add_session_forked_from", _migrate_add_session_forked_from),
         ("add_calendar_external_ref", _migrate_add_calendar_external_ref),
         ("add_lease_generation_columns", _migrate_add_lease_generation_columns),
         ("add_revision_triggers", _migrate_add_revision_triggers),

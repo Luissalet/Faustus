@@ -40,8 +40,9 @@ class _FakeSessionManager:
         return self.sessions[session_id]
 
     def create_session(self, session_id=None, name=None, endpoint_url=None,
-                       model=None, rag=False, owner=None):
+                       model=None, rag=False, owner=None, forked_from=None):
         self.created = _FakeSession(name=name, owner=owner)
+        self.forked_from = forked_from
         return self.created
 
     def save_sessions(self):
@@ -81,6 +82,8 @@ def test_fork_does_not_corrupt_source_message_metadata(monkeypatch):
 
     # The forked session got its own metadata dicts...
     new_session = sm.created
+    # ...and records where it came from, for the session tree (#233).
+    assert sm.forked_from == "src-id"
     assert new_session.history[0].metadata is not source.history[0].metadata
     assert new_session.history[1].metadata is not source.history[1].metadata
 

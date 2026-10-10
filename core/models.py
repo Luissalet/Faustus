@@ -120,6 +120,8 @@ class Session:
     folder: Optional[str] = None
     mode: Optional[str] = None
     project_id: Optional[str] = None
+    # Set when this chat was created by POST /api/session/{id}/fork.
+    forked_from: Optional[str] = None
 
     def __post_init__(self):
         if self.headers is None:

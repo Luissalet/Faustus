@@ -10878,3 +10878,12 @@ Sin objetivo, lo dice en vez de dibujar un medidor a cero; si la cuenta no puede
 **Código.** `studio/src/adapters/periodBudget.ts` (parseo puro y `usePeriodBudget`) y `PeriodBudgetSection` en `Vitals.tsx`. Al integrar se añadieron las 20 cadenas que faltaban en `docs/ui/i18n/es.tsv`, la etiqueta de cada fila pasa por `t()` y se recuperaron al catálogo las 32 filas que solo tenía `es.ts`.
 
 **Verificación.** `tests/test_studio_period_budget_vitals.py` (2, con `tests/period_budget_vitals.check.mjs`). El parseo se contrastó con la respuesta real del 7000, y el popover se comprobó en vivo en español.
+
+## 302. Árbol de bifurcaciones y clones en la lista de chats — #233 (10-10-2026)
+
+**Qué cambia (Ágora #233, OBJ-53; trabajo de Cursor, revisado e integrado por Claude).** Un chat creado con `POST /api/session/{id}/fork` (el «bifurcar desde aquí» de Studio) o con `manage_session` `fork` guarda de qué chat sale, en la columna nueva `sessions.forked_from`. Tiene migración idempotente y, si se borra el origen, queda en NULL. `GET /api/sessions` y la respuesta de `/fork` lo devuelven. Studio lo combina con el mapa de padres de los excursos (`mergeForkParents`; si un chat es ambas cosas, gana el excurso), y la lista de conversaciones sangra cada bifurcación bajo su origen, y la bifurcación de una bifurcación un nivel más.
+
+**Verificación.**
+- `tests/test_session_fork_tree.py` (7).
+- Al integrar se corrigió `tests/test_fork_session_metadata.py`: su gestor de sesiones falso no aceptaba `forked_from` y el `/fork` fallaba. Ahora también comprueba que el origen se registra.
+- En vivo, en un Faustus de QA: dos chats y dos bifurcaciones encadenadas de «Plan de viaje a Lisboa». La API devuelve `forked_from` en cada una, y Studio las dibuja con profundidades 1 y 2 bajo su origen, separadas del otro chat, sin errores de página.

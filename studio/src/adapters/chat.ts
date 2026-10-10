@@ -81,6 +81,8 @@ export interface ChatSession {
   hasDocuments: boolean;
   hasImages: boolean;
   totalTokens: number;
+  /** Session this one was forked from, when known. */
+  forkedFrom?: string | null;
 }
 
 export interface ContextLedger {
@@ -1063,9 +1065,27 @@ interface RawSession {
   created_at?: string | null;
   folder?: string | null;
   is_important?: boolean;
+  forked_from?: string | null;
   has_documents?: boolean;
   has_images?: boolean;
   total_tokens?: number;
+}
+
+
+/** Merge fork lineage into a parents map for sidebar indentation.
+ *  Side-thread parents win when both exist (structural excursos stay primary). */
+export function mergeForkParents(
+  sessions: { id: string; forkedFrom?: string | null }[],
+  parents: Record<string, string>,
+): Record<string, string> {
+  const out: Record<string, string> = { ...parents };
+  const ids = new Set(sessions.map((s) => s.id));
+  for (const s of sessions) {
+    const parent = s.forkedFrom;
+    if (!parent || parent === s.id || !ids.has(parent)) continue;
+    if (!out[s.id]) out[s.id] = parent;
+  }
+  return out;
 }
 
 export async function listSessions(signal?: AbortSignal): Promise<ChatSession[]> {
@@ -1085,6 +1105,7 @@ export async function listSessions(signal?: AbortSignal): Promise<ChatSession[]>
       hasDocuments: Boolean(s.has_documents),
       hasImages: Boolean(s.has_images),
       totalTokens: typeof s.total_tokens === 'number' ? s.total_tokens : 0,
+      forkedFrom: typeof s.forked_from === 'string' && s.forked_from ? s.forked_from : null,
     }))
     .sort((a, b) => (b.lastMessageAt ?? '').localeCompare(a.lastMessageAt ?? ''));
 }

@@ -153,6 +153,7 @@ class SessionManager:
             folder=getattr(db_session, "folder", None),
             mode=getattr(db_session, "mode", None),
             project_id=getattr(db_session, "project_id", None),
+            forked_from=getattr(db_session, "forked_from", None),
         )
         session.message_count = getattr(db_session, "message_count", 0) or 0
         return session
@@ -214,6 +215,7 @@ class SessionManager:
             folder=getattr(db_session, 'folder', None),
             mode=getattr(db_session, 'mode', None),
             project_id=getattr(db_session, 'project_id', None),
+            forked_from=getattr(db_session, 'forked_from', None),
         )
 
         # The rows just loaded are the whole transcript, so they — not the
@@ -560,6 +562,7 @@ class SessionManager:
             session.folder = getattr(db_session, "folder", None)
             session.mode = getattr(db_session, "mode", None)
             session.project_id = getattr(db_session, "project_id", None)
+            session.forked_from = getattr(db_session, "forked_from", None)
             session.message_count = (
                 db.query(DbChatMessage)
                 .filter(DbChatMessage.session_id == session_id)
@@ -624,11 +627,12 @@ class SessionManager:
         folder: Optional[str] = None,
         mode: Optional[str] = None,
         project_id: Optional[str] = None,
+        forked_from: Optional[str] = None,
     ) -> Session:
         """Create a new session and save to database.
 
-        ``folder``, ``mode`` and ``project_id`` are persisted on the row here
-        rather than left for the caller to set afterwards. Callers used to do
+        ``folder``, ``mode``, ``project_id`` and ``forked_from`` are persisted
+        on the row here rather than left for the caller to set afterwards. Callers used to do
         the latter — ``subagent_tools`` assigns ``child.folder`` /
         ``child.mode`` on the returned object inside a try/except — and because
         the dataclass silently accepted unknown attributes, those assignments
@@ -649,6 +653,7 @@ class SessionManager:
                 folder=folder or None,
                 mode=mode or None,
                 project_id=project_id or None,
+                forked_from=forked_from or None,
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc)
             )
@@ -666,6 +671,7 @@ class SessionManager:
                 folder=folder or None,
                 mode=mode or None,
                 project_id=project_id or None,
+                forked_from=forked_from or None,
             )
 
             self.sessions[session_id] = session
