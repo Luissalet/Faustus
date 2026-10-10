@@ -2280,14 +2280,21 @@ async def _startup_event():
             logger.info("Dispatch: adopted %d job(s) whose external agents are still running", len(_adopted))
     except Exception as e:
         logger.warning(f"Dispatch adoption skipped: {e}")
-    try:
-        from src import crash_recovery as _crash_recovery
-        _crash = await asyncio.to_thread(_crash_recovery.boot_scan)
-        app.state.crash_recovery = _crash
-        if _crash.get("plan"):
-            logger.warning("Crash recovery: %s", _crash.get("reason"))
-    except Exception as e:
-        logger.warning(f"Crash-recovery scan skipped: {e}")
+    # 10-10-2026: the scan was awaited here, and on a slow disk it held the
+    # whole startup past the launcher's timeout (the faulthandler dump showed
+    # boot_scan reading run logs at 90 s), so the server was killed before it
+    # ever answered. It reports and marks; nothing below depends on it.
+    async def _crash_scan_in_background() -> None:
+        try:
+            from src import crash_recovery as _crash_recovery
+            _crash = await asyncio.to_thread(_crash_recovery.boot_scan)
+            app.state.crash_recovery = _crash
+            if _crash.get("plan"):
+                logger.warning("Crash recovery: %s", _crash.get("reason"))
+        except Exception as e:
+            logger.warning(f"Crash-recovery scan skipped: {e}")
+
+    app.state.crash_recovery_task = asyncio.create_task(_crash_scan_in_background())
     # INF-04 T12: a benchmark run still `running`/`preparing`/`evaluating`/
     # `waiting_resources` on disk can only mean the previous process died
     # mid-run -- its cases execute inside this process, so there is no
