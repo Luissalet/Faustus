@@ -32,6 +32,12 @@ import {
 } from '../../adapters/usage';
 import { reconnectServices, SERVICE_LABEL, useServiceHealth, type ServiceState } from '../../adapters/services';
 import { SERVICES_RECONNECTED, useDegradation } from '../../adapters/degradation';
+import {
+  formatAmount,
+  rowLevel,
+  usePeriodBudget,
+  type PeriodRow,
+} from '../../adapters/periodBudget';
 import { getLang, locale, t, tn } from '../../i18n';
 import './vitals.css';
 
@@ -251,6 +257,7 @@ function Panel({ d, intervalMs, busy }: { d: Usage | null; intervalMs: number; b
           <HealthSection d={d} />
           <ServicesSection />
           <DegradationSection />
+          <PeriodBudgetSection />
           <GpuSection d={d} />
           <OrphansSection d={d} />
           <OllamaSection d={d} />
@@ -413,6 +420,116 @@ function DegradationSection() {
           </div>
         );
       })}
+    </Section>
+  );
+}
+
+/** The row's label in the interface language (rowLabel is the plain English one). */
+function periodRowLabel(row: PeriodRow): string {
+  const metric =
+    row.metric === 'usd' ? 'USD' : row.metric === 'tokens' ? t('tokens') : row.metric === 'gpu_seconds' ? t('GPU seconds') : row.metric;
+  return `${row.provider || '?'} · ${metric}`;
+}
+
+function periodRowValue(row: PeriodRow): string {
+  const used = formatAmount(row.metric, row.used, locale());
+  if (row.target == null || row.target <= 0) {
+    return row.metric === 'gpu_seconds' ? `${used} · ${t('no daily GPU target')}` : used;
+  }
+  const target = formatAmount(row.metric, row.target, locale());
+  const pace =
+    row.pace.allowed != null ? t('pace {amount}', { amount: formatAmount(row.metric, row.pace.allowed, locale()) }) : '';
+  const flag = row.paused ? ` · ${t('paused')}` : '';
+  return pace ? `${used} / ${target} · ${pace}${flag}` : `${used} / ${target}${flag}`;
+}
+
+/** Spend and GPU seconds against the period targets (`GET /api/budget/period`). */
+function PeriodBudgetSection() {
+  const { budget, allowed, error, loading } = usePeriodBudget(true);
+  if (!allowed) return null;
+
+  const aside = budget?.window
+    ? t('{window} window', { window: t(budget.window) })
+    : loading
+      ? t('loading…')
+      : undefined;
+
+  return (
+    <Section title={t('Period budget')} aside={aside}>
+      {loading && !budget && !error && <p className="fs-vt__muted">{t('Reading the period budget…')}</p>}
+      {error && !budget && (
+        <p className="fs-vt__muted">{t('Could not read the period budget: {why}', { why: error })}</p>
+      )}
+      {budget && !budget.enabled && (
+        <p className="fs-vt__muted">
+          {t('No period target set: nothing is paced (set budget_period_targets or budget_gpu_daily_seconds).')}
+        </p>
+      )}
+      {budget?.enabled && budget.providers.length === 0 && !budget.gpu && (
+        <p className="fs-vt__muted">{t('Period budget is on, but no provider rows came back.')}</p>
+      )}
+      {budget?.providers.map((row) => (
+        <Row
+          key={`${row.provider}-${row.metric}-${row.window}`}
+          label={periodRowLabel(row)}
+          wide={!(row.target != null && row.target > 0)}
+          title={row.reason || undefined}
+          meter={
+            row.target != null && row.target > 0
+              ? { value: row.used, total: row.target, level: rowLevel(row) }
+              : undefined
+          }
+          value={periodRowValue(row)}
+        />
+      ))}
+      {budget?.gpu && (
+        <Row
+          label={periodRowLabel(budget.gpu)}
+          wide={!(budget.gpu.target != null && budget.gpu.target > 0)}
+          title={budget.gpu.reason || undefined}
+          meter={
+            budget.gpu.target != null && budget.gpu.target > 0
+              ? { value: budget.gpu.used, total: budget.gpu.target, level: rowLevel(budget.gpu) }
+              : undefined
+          }
+          value={periodRowValue(budget.gpu)}
+        />
+      )}
+      {budget?.breaker.enabled && (
+        <Row
+          wide
+          label={t('Unattended breaker')}
+          value={
+            budget.breaker.open
+              ? t('open · {n} failures', { n: budget.breaker.consecutiveFailures })
+              : t('closed · {n}/{max} failures', {
+                  n: budget.breaker.consecutiveFailures,
+                  max: budget.breaker.threshold,
+                })
+          }
+          title={budget.breaker.lastFailureKind || undefined}
+        />
+      )}
+      {budget?.interactiveActive && (
+        <p className="fs-vt__muted fs-vt__budget-note">{t('Interactive turn live: unattended work waits.')}</p>
+      )}
+      {budget?.windowResetsAt != null && budget.windowResetsAt > 0 && (
+        <p className="fs-vt__muted fs-vt__budget-note">
+          {t('Resets {when}', { when: new Date(budget.windowResetsAt * 1000).toLocaleString(locale()) })}
+        </p>
+      )}
+      {budget &&
+        budget.cooldowns
+          .filter((c) => c.endpoint)
+          .slice(0, 4)
+          .map((c) => (
+            <p key={c.endpoint} className="fs-vt__muted fs-vt__budget-note" title={c.status}>
+              {t('Cooldown {endpoint}', { endpoint: c.endpoint })}
+              {c.until != null && c.until > 0
+                ? ` · ${t('until {when}', { when: new Date(c.until * 1000).toLocaleTimeString(locale()) })}`
+                : ''}
+            </p>
+          ))}
     </Section>
   );
 }

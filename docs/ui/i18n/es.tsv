@@ -9400,3 +9400,55 @@ Since {when}	Desde {when}
 Affects: {list}	Afecta a: {list}
 {n} dependency	{n} dependencia
 {n} dependencies	{n} dependencias
+Daily paid spend cap	Límite diario de gasto en proveedores de pago
+Today's spend on paid providers against the daily cap. Change the limits in the list above.	Gasto de hoy en proveedores de pago frente al límite diario. Cambia los límites en la lista de arriba.
+Daily paid spend cap is off.	El límite diario de gasto está desactivado.
+Cap reached: new paid calls are refused until {time}. Local models keep working.	Límite alcanzado: las llamadas de pago nuevas se rechazan hasta {time}. Los modelos locales siguen funcionando.
+Spent today	Gastado hoy
+Tokens today	Tokens hoy
+Resets	Se reinicia
+no limit	sin límite
+{n} paid calls reported no cost: they count tokens only, never dollars.	{n} llamadas de pago no informaron coste: cuentan solo tokens, nunca dólares.
+No paid-provider calls today.	Hoy no ha habido llamadas a proveedores de pago.
+Unknown cost	Coste desconocido
+Daily paid spend limit (USD)	Límite diario de gasto de pago (USD)
+Daily paid token limit	Límite diario de tokens de pago
+speech→text	habla→texto
+text→1st token	texto→1er token
+1st token→audio	1er token→audio
+Speech ends → text ready	Termina de hablar → texto listo
+Text ready → request sent	Texto listo → petición enviada
+Request sent → first token	Petición enviada → primer token
+First token → first speech chunk	Primer token → primer trozo de voz
+Speech chunk → playing	Trozo de voz → sonando
+Total, speech ends → first audio	Total, termina de hablar → primer audio
+Server speech-to-text	Voz a texto en el servidor
+Server text-to-speech	Texto a voz en el servidor
+Plan pending	Plan pendiente
+Assign to an agent	Asignar a un agente
+In progress by an agent	En curso por agente
+Agent finished	Agente terminó
+Agent: needs review	Agente: revisar
+Agent failed	El agente falló
+Handed to an agent. It runs in the background.	Entregado a un agente. Se ejecuta en segundo plano.
+Could not assign the todo to an agent.	No se pudo asignar la tarea a un agente.
+Cooldown {endpoint}	En espera: {endpoint}
+Could not read the period budget: {why}	No se pudo leer el presupuesto del periodo: {why}
+Could not save the session reasoning preference.	No se pudo guardar la preferencia de razonamiento de la sesión.
+Faustus	Faustus
+GPU seconds	segundos de GPU
+Interactive turn live: unattended work waits.	Hay un turno interactivo en marcha: el trabajo desatendido espera.
+No period target set: nothing is paced (set budget_period_targets or budget_gpu_daily_seconds).	Sin objetivo de periodo: no se regula nada (define budget_period_targets o budget_gpu_daily_seconds).
+Period budget	Presupuesto del periodo
+Period budget is on, but no provider rows came back.	El presupuesto del periodo está activo, pero no ha llegado ninguna fila de proveedor.
+Reading the period budget…	Leyendo el presupuesto del periodo…
+Resets {when}	Se reinicia {when}
+Unattended breaker	Corte del trabajo desatendido
+closed · {n}/{max} failures	cerrado · {n}/{max} fallos
+no daily GPU target	sin objetivo diario de GPU
+open · {n} failures	abierto · {n} fallos
+pace {amount}	ritmo {amount}
+paused	en pausa
+until {when}	hasta {when}
+{window} window	ventana: {window}
+day	día

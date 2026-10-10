@@ -1153,7 +1153,7 @@ Hecho en §260 y §261. **Por hacer:**
 
 - Buzón entre agentes: mensajes con remitente, urgente y despertar, tope de 3 saltos y de despertares por hora, entregados donde hoy se drenan los steers y reflejados en el bus como `faustus.agent.msg`. Un mensaje de otro agente nunca es una aprobación.
 - Comprobación de carpeta también para lo que lanza la herramienta `python` con `subprocess` (hoy sólo cubre las órdenes de shell).
-- Medidor del presupuesto del periodo en el panel de uso de Studio; hoy se ve en `GET /api/budget/period` y en la tarjeta «Agentes en marcha» de Cassandra.
+- ~~Medidor del presupuesto del periodo en el panel de uso de Studio~~ — hecho (Agora #231): sección «Period budget» en el popover de Vitals (`studio/src/adapters/periodBudget.ts` → `GET /api/budget/period`), con estados sin dato / sin objetivo / pausa / breaker honestos. Cassandra sigue mostrando la tarjeta «Agentes en marcha».
 - Adoptar tras un reinicio los trabajos de dispatch que seguían vivos, en vez de marcarlos interrumpidos.
 - Árbol de sesiones (bifurcaciones y clones de un chat) en Studio, sobre el `/fork` que ya existe.
 - `!!orden` en el compositor: ejecuta en la shell sin pasar por el modelo.

@@ -10863,3 +10863,18 @@ Revision 2: la inspeccion individual tolera exclusivamente el mensaje de Docker 
 **Cómo se hace cumplir.** `_attach_categories` (en `src/agent_tools/subagent_tools.py`, justo después de `_attach_permissions`) convierte la categoría en `ChildPermissions.allowed_tools` en lugar de una lista de denegación suelta. Así la leen todas las puertas a la vez: la lista de herramientas que se ofrece al modelo (`worker_disabled_tools`, que además deja de quitar `web_search`/`web_fetch` por la suposición «lean» si la categoría es `web`), el guardia de ejecución y el suelo de herramientas del espacio de trabajo, que sin esto devolvería `read_file`, `ls`, `edit_file` y `apply_patch` a un trabajador `web`. Si la tarea ya tenía una definición de agente, la categoría solo puede estrecharla: se queda con lo que permiten las dos y la lista de la definición se conserva como lista heredada, para que un patrón `mcp__servidor__*` no alcance lo que la definición no concedió. El preámbulo del trabajador le dice a qué categoría está limitado; el informe lleva `tool_category`, y una negativa se explica como «outside this worker's tool category (web)».
 
 **Verificación.** `tests/test_delegate_category.py` (10): esquema, normalización y rechazo de nombres desconocidos, lo permitido por categoría y por `mcp:<servidor>`, la intersección con una definición, el motivo de la negativa, el suelo real del espacio de trabajo (un trabajador `web` no recibe herramientas de ficheros y uno normal sí) y `delegate_agents` de extremo a extremo con el bucle sustituido. Sin categoría, cada trabajador sigue igual que antes.
+
+## 301. El presupuesto del periodo en el panel de uso de Studio — #231 (10-10-2026)
+
+**Qué cambia (Ágora #231, OBJ-53; trabajo de Cursor, revisado e integrado por Claude).** El popover de Vitals de Studio tiene la sección «Presupuesto del periodo», que lee `GET /api/budget/period`, la misma fuente que la tarjeta «Agentes en marcha» de Cassandra y el MCP `budget_period`. Muestra:
+- una fila por proveedor con su medidor contra el objetivo, coloreado según la línea de ritmo y su banda;
+- los segundos de GPU local del día;
+- el corte del trabajo desatendido (abierto o cerrado, con los fallos seguidos);
+- si hay un turno interactivo reteniendo el trabajo desatendido;
+- cuándo se reinicia la ventana y las esperas por 429.
+
+Sin objetivo, lo dice en vez de dibujar un medidor a cero; si la cuenta no puede leer la ruta (401/403/404), la sección no aparece y deja de sondear (cada 30 s, solo con el panel abierto).
+
+**Código.** `studio/src/adapters/periodBudget.ts` (parseo puro y `usePeriodBudget`) y `PeriodBudgetSection` en `Vitals.tsx`. Al integrar se añadieron las 20 cadenas que faltaban en `docs/ui/i18n/es.tsv`, la etiqueta de cada fila pasa por `t()` y se recuperaron al catálogo las 32 filas que solo tenía `es.ts`.
+
+**Verificación.** `tests/test_studio_period_budget_vitals.py` (2, con `tests/period_budget_vitals.check.mjs`). El parseo se contrastó con la respuesta real del 7000, y el popover se comprobó en vivo en español.
