@@ -1,6 +1,13 @@
 """Background scheduler for ScheduledTask execution."""
 
 import asyncio
+import contextvars
+
+#: True inside an execution a person started ("Run now"). Such a run is not
+#: a scheduled occurrence: it neither consumes a period nor may it take away
+#: the guard entry of a scheduled run that is executing at the same time
+#: (#263 review). Tasks copy the context they are created in.
+_MANUAL_RUN: contextvars.ContextVar = contextvars.ContextVar("scheduler_manual_run", default=False)
 import json
 import logging
 import os
@@ -1710,6 +1717,8 @@ class TaskScheduler:
     def _close_period(self, task_id: str, status, result, error, run_id) -> None:
         """A guarded occurrence finished: if it counts as having run, its
         period is used up. Blocked-at-login runs leave the period open."""
+        if _MANUAL_RUN.get():
+            return  # a manual run never touches the scheduled occurrence's entry
         entry = self._guard_anchor_map().pop(task_id, None)
         if not entry:
             return
@@ -3981,16 +3990,22 @@ class TaskScheduler:
         """Manually trigger a task execution."""
         # #263: a person asking for the run is not a late or duplicate firing;
         # the window and the period key are for the schedule, not for them.
-        self._guard_anchor_map().pop(task_id, None)
-        if force:
-            asyncio.create_task(self._execute_task(task_id, bypass_model_slot=True, release_executing=False))
+        # The run is marked manual (it never consumes a period) instead of
+        # clearing the guard entry, which belongs to a scheduled run that may
+        # be executing right now and still has to close its period.
+        token = _MANUAL_RUN.set(True)
+        try:
+            if force:
+                asyncio.create_task(self._execute_task(task_id, bypass_model_slot=True, release_executing=False))
+                return True
+            async with self._executing_lock:
+                if task_id in self._executing:
+                    return False
+                self._executing.add(task_id)
+            asyncio.create_task(self._execute_task(task_id))
             return True
-        async with self._executing_lock:
-            if task_id in self._executing:
-                return False
-            self._executing.add(task_id)
-        asyncio.create_task(self._execute_task(task_id))
-        return True
+        finally:
+            _MANUAL_RUN.reset(token)
 
     async def stop_task(self, task_id: str) -> bool:
         """Request cancellation of a running/queued task and mark its run aborted."""

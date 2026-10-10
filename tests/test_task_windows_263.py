@@ -495,6 +495,45 @@ async def test_manual_run_now_ignores_the_guards(db, clock, quiet):
     assert seen == [t]                                        # no gate on a person's request
 
 
+async def test_a_refused_manual_run_keeps_the_scheduled_runs_period(db, clock, quiet):
+    """#263 review: "Run now" on a task that is already executing is refused
+    (409) and must not take away the scheduled run's period entry, or the
+    period would stay open and the same day could run twice."""
+    t = tid()
+    add_task(db, t, due=datetime(2026, 10, 10, 9, 0, 0))
+    ts.set_task_schedule_guard(t, period_key="day")
+    sch = make_scheduler()
+    due = datetime(2026, 10, 10, 9, 0, 0)
+    assert sch._guard_gate(t, due, clock.now) is True          # scheduled run admitted
+    sch._executing.add(t)                                       # ... and executing
+    assert await sch.run_task_now(t) is False                   # the person's request is refused
+    sch._close_period(t, "success", "done", None, "run-1")      # the scheduled run ends
+    assert ts.period_taken(t, "2026-10-10")
+    assert sch._guard_gate(t, datetime(2026, 10, 10, 9, 5, 0), clock.now) is False
+
+
+async def test_a_forced_manual_run_never_consumes_or_steals_the_period(db, clock, quiet):
+    t = tid()
+    add_task(db, t, due=datetime(2026, 10, 10, 9, 0, 0))
+    ts.set_task_schedule_guard(t, period_key="day")
+    sch = make_scheduler()
+    due = datetime(2026, 10, 10, 9, 0, 0)
+    assert sch._guard_gate(t, due, clock.now) is True
+    closed = []
+
+    async def fake_execute(task_id, **kwargs):
+        sch._close_period(task_id, "success", "manual", None, "run-manual")   # inside the manual run
+        closed.append(task_id)
+
+    sch._execute_task = fake_execute
+    assert await sch.run_task_now(t, force=True) is True
+    await asyncio.sleep(0.02)
+    assert closed == [t]
+    assert not ts.period_taken(t, "2026-10-10"), "a manual run is not the scheduled occurrence"
+    sch._close_period(t, "success", "scheduled", None, "run-1")  # the scheduled run still closes it
+    assert ts.period_taken(t, "2026-10-10")
+
+
 # ── API ───────────────────────────────────────────────────────────────────
 
 @pytest.fixture()
