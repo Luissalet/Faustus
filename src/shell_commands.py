@@ -35,7 +35,10 @@ def _manager():
 
 def _owned_session(manager, sid: str, owner: str):
     from src.owner_identity import auth_disabled
-    session = manager.get_session(sid)
+    try:
+        session = manager.get_session(sid)
+    except KeyError:  # the real manager raises for an unknown id
+        session = None
     local_operator = not owner and auth_disabled()
     if session is None or (not local_operator and str(session.owner or "") != str(owner or "")):
         raise ShellCommandError(404, "Session not found.")

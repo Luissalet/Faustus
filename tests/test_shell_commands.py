@@ -73,6 +73,19 @@ def test_without_model_uses_normal_executor_and_persists_untrusted_output(env):
     assert reply.startswith('`$ pwd` · exit 0') and 'fixture output' in reply
 
 
+def test_an_unknown_session_is_404_with_the_real_managers_keyerror(env, monkeypatch):
+    def raising(sid):
+        raise KeyError(sid)
+
+    monkeypatch.setattr(env.manager, 'get_session', raising)
+    with pytest.raises(shell.ShellCommandError) as caught:
+        shell.pending_for_session('nope', 'alice')
+    assert caught.value.status == 404
+    with pytest.raises(shell.ShellCommandError) as caught:
+        run(shell.run_command('pwd', owner='alice', session_id='nope'))
+    assert caught.value.status == 404
+
+
 def test_a_long_output_shows_its_tail_in_the_reply(env, monkeypatch):
     long = 'x' * 10000 + 'END'
 
