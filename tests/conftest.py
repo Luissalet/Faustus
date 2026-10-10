@@ -16,6 +16,12 @@ def no_live_hoard_services(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_live_browser_lanes(monkeypatch):
+    """Browser reads take a lane at the family Hub (#265): tests never reach the running one (a test opts in with its own stub)."""
+    monkeypatch.setenv("FAUSTUS_BROWSER_LANES", "0")
+
+
+@pytest.fixture(autouse=True)
 def no_live_turn_receipts(monkeypatch):
     """Saving a reply posts a receipt to the family Hub (#268): tests never reach the running one."""
     from src import turn_receipt

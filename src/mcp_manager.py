@@ -19,6 +19,7 @@ from contextlib import contextmanager
 from typing import Any, Callable, Deque, Dict, List, Optional, Set, TextIO, Tuple
 from src.database import McpServer, SessionLocal
 from src import safe_mode
+from src import browser_lanes
 
 from src.native_env import (
     PROFILE_MCP,
@@ -1912,6 +1913,13 @@ class McpManager:
 
         if not scope_current():
             return changed_before_dispatch()
+
+        # Hub browser lane (#265): a browser that opens a site another app is reading answers who holds it
+        # instead of automating the same site twice. No-op when the Hub is not configured or away.
+        if _is_browser_connection(server_id):
+            lane_busy = await browser_lanes.guard_call(server_id, tool_name, captured_arguments)
+            if lane_busy is not None:
+                return lane_busy
 
         # A built-in whose owner task already finished has no live process
         # behind the session: skip the doomed call and go straight to reconnect.

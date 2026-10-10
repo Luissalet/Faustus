@@ -19,6 +19,7 @@ import httpx
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from src import browser_lanes
 from src.browser_extraction import detect_restricted_access
 from src.constants import DATA_DIR
 from src.contracts.base import now_iso
@@ -85,7 +86,9 @@ def _profile_use(owner, profile, timeout_s, cancel=None):
 
 def read_response(url, *, owner=None, profile="research", timeout_s=25, _cancel=None):
     with _profile_use(owner, profile, timeout_s, _cancel) as remaining:
-        return _read_response(url, owner=owner, profile=profile, timeout_s=remaining)
+        # Hub browser lane (#265): one app at a time per site; busy -> ValueError("ocupado por X ..."), Hub away -> no-op.
+        with browser_lanes.read_lane(url, purpose="reach_browser read"):
+            return _read_response(url, owner=owner, profile=profile, timeout_s=remaining)
 
 
 def _read_response(url, *, owner=None, profile="research", timeout_s=25):
@@ -106,7 +109,8 @@ def _read_response(url, *, owner=None, profile="research", timeout_s=25):
 
 def capture(request: BrowserRequest, *, owner=None, _cancel=None):
     with _profile_use(owner, request.profile, request.timeout_s, _cancel) as remaining:
-        return _capture(request, owner=owner, remaining=remaining, cancel=_cancel)
+        with browser_lanes.read_lane(request.url, purpose="reach_browser capture"):
+            return _capture(request, owner=owner, remaining=remaining, cancel=_cancel)
 
 
 def _capture(request: BrowserRequest, *, owner=None, remaining=25, cancel=None):
