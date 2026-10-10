@@ -268,13 +268,16 @@ def test_the_job_runs_the_battery_in_a_child_process(svc, monkeypatch):
     real = service.subprocess.run
 
     def spy(cmd, **kw):
-        seen["cmd"], seen["cwd"] = cmd, kw.get("cwd")
+        seen["cmd"], seen["cwd"], seen["stdin"] = cmd, kw.get("cwd"), kw.get("stdin")
         return real(cmd, **kw)
     monkeypatch.setattr(service.subprocess, "run", spy)
     job = svc.start_job({"case_ids": ["web_override_wipe"]}, wait=True)
     assert job["status"] == "done" and job["totals"]["cases"] == 1
     assert seen["cmd"][1:3] == ["-m", "evals.injection.runner"] and "--case" in seen["cmd"]
     assert os.path.isdir(os.path.join(seen["cwd"], "evals", "injection"))
+    # Under the stdio MCP server stdin is the protocol pipe: the child must not inherit it
+    # (it did, and the MCP tool hung).
+    assert seen["stdin"] is service.subprocess.DEVNULL
 
 
 def test_the_battery_never_swaps_this_process_state_while_running(svc, tmp_path, monkeypatch):

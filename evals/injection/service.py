@@ -70,6 +70,7 @@ def _run_deterministic_isolated(case_ids: Optional[List[str]]) -> Dict[str, Any]
     every concurrent turn: another request would read the fake settings and a
     legitimate save would land in the fake store and be lost (review #206 r1).
     A child process keeps all of that to itself; the app only reads the JSON.
+    Its stdin is closed: under the stdio MCP server, stdin is the protocol pipe.
     """
     fd, out = tempfile.mkstemp(prefix="injection-summary-", suffix=".json")
     os.close(fd)
@@ -77,7 +78,7 @@ def _run_deterministic_isolated(case_ids: Optional[List[str]]) -> Dict[str, Any]
         cmd = [sys.executable, "-m", "evals.injection.runner", "--no-persist", "--summary-json", out]
         for cid in case_ids or []:
             cmd += ["--case", cid]
-        done = subprocess.run(cmd, cwd=_REPO_ROOT, env=dict(os.environ), capture_output=True, text=True,
+        done = subprocess.run(cmd, cwd=_REPO_ROOT, env=dict(os.environ), stdin=subprocess.DEVNULL, capture_output=True, text=True,
                               encoding="utf-8", errors="replace", timeout=_DETERMINISTIC_TIMEOUT_S)
         try:
             with open(out, encoding="utf-8") as fh:
