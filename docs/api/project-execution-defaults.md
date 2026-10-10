@@ -19,14 +19,24 @@ An unrelated, disabled or absent project contributes no defaults. The native
 REST-MCP bridge exposes this read and the same project PATCH schema.
 
 The `POST /api/chat_stream` path resolves preferences once for that request.
-Explicit turn fields win over project preferences, which win over existing
-application defaults. Existing explicit reasoning modes and generation
+Explicit turn fields win over session preferences, which win over project
+preferences and existing application defaults. Existing explicit reasoning modes and generation
 overrides remain stronger than inherited reasoning/thinking. Explicit `false`
 and `auto` are retained. The initial wait covers admission, preparation, queue
 and the first meaningful response, then resets when the request finishes;
 detached tasks retain their own context. Headers expose the applied wait and
 project preference revision. Requests without a configured project keep their
-existing defaults. Non-streaming `/api/chat` is unchanged.
+existing defaults. The same reasoning preference inheritance also applies to
+non-streaming `/api/chat`.
+
+Each session can save its own reasoning effort in the existing `chat_profile`
+record. `GET /api/session/{sid}/reasoning-effort` is owner-checked and returns
+the selected effort plus only the levels reported by the configured model;
+unknown capabilities return an empty list. The existing
+`PATCH /api/session/{sid}` accepts `reasoning_effort`; `auto` clears the
+session override. `GET /api/sessions` includes the saved value per session.
+The native `manage_session` MCP capability reads or updates the same session
+preference with action `reasoning_effort` and the exact session id.
 
 Studio displays preferences for the next turn. The project form combines
 reasoning level and Thinking into one choice: selecting a level enables

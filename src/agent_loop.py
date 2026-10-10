@@ -19302,6 +19302,27 @@ async def stream_agent_loop(*args, **kwargs) -> AsyncGenerator[str, None]:
     owner = bound.arguments.get("owner")
     session_id = bound.arguments.get("session_id")
     _hopts = bound.arguments.get("harness_options") or {}
+    # Native harness callers can start a normal session turn without going
+    # through the HTTP middleware. Preserve the same project -> session
+    # inheritance there, while explicit turn overrides remain strongest.
+    try:
+        _gen_overrides = dict(bound.arguments.get("gen_overrides") or {})
+        _has_explicit_effort = "reasoning_effort" in _gen_overrides or "think" in _gen_overrides
+        _execution_defaults = _hopts.get("execution_defaults") if isinstance(_hopts, dict) else None
+        _requested_effort = (_execution_defaults or {}).get("reasoning_effort") if isinstance(_execution_defaults, dict) else None
+        if not _has_explicit_effort and _requested_effort in (None, "") and session_id:
+            from services.projects import project_for_session
+            from src.project_execution_defaults import validate
+            from core.database import get_session_reasoning_effort
+            _project = project_for_session(str(session_id), owner)
+            _defaults = validate((_project or {}).get("execution_defaults") or {})
+            _requested_effort = get_session_reasoning_effort(str(session_id), owner) or _defaults.get("reasoning_effort")
+        if not _has_explicit_effort and _requested_effort and _requested_effort != "auto":
+            from src.reasoning_levels import overrides_for
+            _gen_overrides.update(overrides_for(_requested_effort))
+            bound.arguments["gen_overrides"] = _gen_overrides
+    except Exception:  # noqa: BLE001 - preference reads must not strand a turn
+        logger.debug("stream_agent_loop: session reasoning preference skipped", exc_info=True)
     # Lean mode pinned per chat (src/chat_mode.py): the route resolved this
     # chat's profile; the turn reads it through a ContextVar. A run with no
     # profile (a scheduled task, a sub-agent inside a chat) explicitly gets
@@ -19344,7 +19365,7 @@ async def stream_agent_loop(*args, **kwargs) -> AsyncGenerator[str, None]:
     _clock_token = _tool_clock.begin_turn()
     _finalizers: List[Callable[[], None]] = []
     _finalizers_token = _TURN_FINALIZERS.set(_finalizers)
-    gen = _stream_agent_loop_body(*args, **kwargs)
+    gen = _stream_agent_loop_body(*bound.args, **bound.kwargs)
     try:
         async for chunk in gen:
             yield chunk

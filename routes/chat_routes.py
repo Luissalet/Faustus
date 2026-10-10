@@ -1961,8 +1961,22 @@ def setup_chat_routes(
                                                     model=sess.model, endpoint_url=sess.endpoint_url,
                                                     chat_mode="chat", workspace=None)
             from src.reasoning_levels import overrides_for, thinking_switch
-            if chat_request.reasoning_effort and chat_request.reasoning_effort != "auto":
-                _plain_overrides.update(overrides_for(chat_request.reasoning_effort))
+            _plain_effort = chat_request.reasoning_effort
+            _plain_request_overrides = chat_request.gen_overrides if isinstance(chat_request.gen_overrides, dict) else {}
+            _plain_has_explicit_reasoning = (
+                "reasoning_effort" in _plain_request_overrides or "think" in _plain_request_overrides
+                or bool(chat_request.think_mode)
+            )
+            if _plain_effort is None and not _plain_has_explicit_reasoning:
+                try:
+                    from src.project_execution_defaults import for_session
+                    from core.database import get_session_reasoning_effort
+                    _preferences = for_session(request, str(session), verify=False)
+                    _plain_effort = get_session_reasoning_effort(str(session), owner) or (_preferences.get("defaults") or {}).get("reasoning_effort")
+                except Exception:
+                    _plain_effort = None
+            if _plain_effort and _plain_effort != "auto":
+                _plain_overrides.update(overrides_for(_plain_effort))
             _plain_overrides = thinking_switch(_plain_overrides, chat_request.thinking_enabled)
             reply, actual_candidate, actual_model = await llm_call_async_with_route_fallback(
                 foreground_candidates,
@@ -4216,6 +4230,7 @@ def setup_chat_routes(
                         _loop_harness_options["incognito"] = bool(incognito)
                         _loop_harness_options["no_memory"] = bool(no_memory)
                         _loop_harness_options["no_skills"] = bool(no_skills)
+                        _loop_harness_options["execution_defaults"] = dict(execution_defaults or {})
                         if _chat_profile:
                             _loop_harness_options["chat_profile"] = _chat_profile
                         # ADP-22: hand the resolved route classification down

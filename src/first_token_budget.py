@@ -95,7 +95,11 @@ def request_budget(endpoint):
         from src.project_execution_defaults import for_session, merge
         try:
             preferences = for_session(request, str(body.get("session") or ""), verify=False)
-            resolved = merge(preferences["defaults"], body)
+            from core.database import get_session_reasoning_effort
+            from src.auth_helpers import effective_user
+            sid = str(body.get("session") or "")
+            session_effort = get_session_reasoning_effort(sid, effective_user(request)) if sid else None
+            resolved = merge(preferences["defaults"], body, {"reasoning_effort": session_effort} if session_effort else None)
             seconds = parse(resolved.get(FIELD))
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc

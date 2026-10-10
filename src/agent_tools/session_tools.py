@@ -340,7 +340,39 @@ async def manage_session(content: str, session_id: Optional[str] = None, owner: 
 
     db = SessionLocal()
     try:
-        if action == "rename":
+        if action == "reasoning_effort":
+            db_sess = _session_query(db).first()
+            if not db_sess:
+                return {"error": f"Session '{target_sid}' not found. Use list_sessions and pass the exact id it returned."}
+            profile = {}
+            try:
+                profile = json.loads(db_sess.chat_profile) if db_sess.chat_profile else {}
+            except (TypeError, ValueError):
+                profile = {}
+            if not isinstance(profile, dict):
+                profile = {}
+            if value is not None:
+                effort = value.lower()
+                if effort not in ("auto", "off", "none", "minimal", "low", "medium", "high", "xhigh", "max"):
+                    return {"error": "Invalid reasoning effort"}
+                if effort == "auto":
+                    profile.pop("reasoning_effort", None)
+                else:
+                    profile["reasoning_effort"] = effort
+                db_sess.chat_profile = json.dumps(profile, sort_keys=True, ensure_ascii=True) if profile else None
+                db.commit()
+            levels = None
+            try:
+                from src.reasoning_levels import levels_for
+                levels = levels_for(str(db_sess.endpoint_url or ""), str(db_sess.model or ""))
+            except Exception:
+                levels = None
+            return {"action": "reasoning_effort", "session_id": target_sid,
+                    "reasoning_effort": profile.get("reasoning_effort"),
+                    "available_levels": list((levels or {}).get("levels") or []),
+                    "levels_source": (levels or {}).get("source"),
+                    "results": "Session reasoning preference read" if value is None else "Session reasoning preference saved"}
+        elif action == "rename":
             if not value:
                 return {"error": "rename needs a new name (the `value` arg, or line 3 in the legacy format)"}
             new_name = value
