@@ -75,6 +75,18 @@ globalThis.fetch = async (url, options) => {
   assert.deepEqual(JSON.parse(options.body), { text: 'um book Friday no Saturday', mode: 'clean' });
   return new Response(JSON.stringify({ status: 'edited', text: 'Book Saturday.' }));
 };
+// Review 182 r1 P2: browser recognition without the dictation clean-up still reports the end of speech
+// (once, before the transcript resolves), so the voice timeline has its first mark on this path too.
+let ended = 0, order = [];
+const plain = await capture({ ...config, provider: 'browser', execution: 'browser' }, { signal: new AbortController().signal, natural: false, onTranscribing: () => { ended++; order.push('end'); } });
+rec.onresult({ results: [[{ transcript: 'Hola de nuevo' }]] }); rec.onspeechend?.(); plain.stop();
+assert.equal(await plain.done, 'Hola de nuevo'); order.push('done');
+assert.equal(ended, 1); assert.deepEqual(order, ['end', 'done']);
+// Nothing heard (no text) is not a measurable turn: no end-of-speech mark.
+let silent = 0;
+const quiet = await capture({ ...config, provider: 'browser', execution: 'browser' }, { signal: new AbortController().signal, onTranscribing: () => { silent++; } });
+quiet.stop(); assert.equal(await quiet.done, ''); assert.equal(silent, 0);
+
 const natural = await capture({ ...config, execution: 'browser' }, { signal: new AbortController().signal, natural: true });
 rec.onresult({ results: [[{ transcript: 'um book Friday no Saturday' }]] }); natural.stop();
 assert.equal(await natural.done, 'Book Saturday.'); assert.equal(natural.rawText, 'um book Friday no Saturday');

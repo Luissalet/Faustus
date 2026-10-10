@@ -163,3 +163,30 @@ def test_mcp_tool_reads_the_same_rows():
     assert out["aggregate"]["gaps"]["speech_to_text"]["p50_ms"] == 400
     allturns = json.loads(asyncio.run(srv.call_tool("voice_turn_timeline", {"limit": "bad"}))[0].text)
     assert len(allturns["turns"]) == 2
+
+
+def test_same_ids_from_two_users_never_share_or_change_a_row(client):
+    """Review 182 r1 P1: Bob posting Alice's ids must not read, merge into or alter her turn."""
+    ids = {"session_id": "shared", "turn_id": "t1"}
+    alice = {"X-Test-User": "alice"}
+    bob = {"X-Test-User": "bob"}
+    base = _live_marks()
+    client.post("/api/voice/timeline", json={**ids, "speech_end": base["speech_end"], "transcript_ready": base["transcript_ready"]}, headers=alice)
+    answer = client.post("/api/voice/timeline", json={**ids, "transcript_ready": base["speech_end"] + 1800}, headers=bob).json()["turn"]
+    assert answer["owner"] == "bob"
+    assert "speech_end" not in answer["marks"]            # Alice's mark is not returned to Bob
+    mine = client.get("/api/voice/timeline", headers=alice).json()["turns"]
+    assert len(mine) == 1 and mine[0]["owner"] == "alice"
+    assert mine[0]["gaps"]["speech_to_text"] == 400        # unchanged by Bob's post
+    theirs = client.get("/api/voice/timeline", headers=bob).json()["turns"]
+    assert len(theirs) == 1 and theirs[0]["owner"] == "bob"
+    # The same user still completes their own turn.
+    again = client.post("/api/voice/timeline", json={**ids, "first_token": base["speech_end"] + 1650}, headers=alice).json()["turn"]
+    assert again["owner"] == "alice" and again["gaps"]["speech_to_text"] == 400 and "first_token" in again["marks"]
+
+
+def test_store_keys_a_turn_by_owner():
+    vt.record_turn("s", "t", {"speech_end": T0}, owner="ana", now_ms=NOW)
+    vt.record_turn("s", "t", {"transcript_ready": T0 + 900}, owner="bob", now_ms=NOW)
+    assert vt.list_turns(owner="ana")[0]["marks"] == {"speech_end": T0}
+    assert vt.list_turns(owner="bob")[0]["marks"] == {"transcript_ready": T0 + 900}

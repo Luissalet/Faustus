@@ -91,7 +91,7 @@ def _raw_connect() -> sqlite3.Connection:
         " id INTEGER PRIMARY KEY AUTOINCREMENT,"
         " session_id TEXT NOT NULL, turn_id TEXT NOT NULL, owner TEXT NOT NULL DEFAULT '',"
         " recorded_at REAL NOT NULL, data TEXT NOT NULL,"
-        " UNIQUE(session_id, turn_id))"
+        " UNIQUE(owner, session_id, turn_id))"
     )
     conn.execute("CREATE INDEX IF NOT EXISTS voice_turns_session ON voice_turns(session_id, id)")
     return conn
@@ -147,7 +147,11 @@ def _record(row: sqlite3.Row) -> Dict[str, Any]:
 
 def record_turn(session_id: str, turn_id: str, raw: Dict[str, Any], owner: str = "",
                 now_ms: Optional[float] = None) -> Dict[str, Any]:
-    """Insert or merge one turn. A second call for the same turn adds the marks that were missing."""
+    """Insert or merge one turn. A second call for the same turn adds the marks that were missing.
+
+    A turn is keyed by (owner, session, turn): two people posting the same ids get two
+    separate rows, so one can never read or change the other's marks.
+    """
     session_id, turn_id = str(session_id or "")[:200], str(turn_id or "")[:200]
     if not session_id or not turn_id:
         raise ValueError("session_id and turn_id are required")
@@ -155,7 +159,9 @@ def record_turn(session_id: str, turn_id: str, raw: Dict[str, Any], owner: str =
     marks = {k: v for k, v in cleaned.items() if k in MARKS}
     server = {k: v for k, v in cleaned.items() if k in SERVER_FIELDS}
     with _lock, _connect() as conn:
-        row = conn.execute("SELECT * FROM voice_turns WHERE session_id=? AND turn_id=?", (session_id, turn_id)).fetchone()
+        owner = owner or ""
+        row = conn.execute("SELECT * FROM voice_turns WHERE owner=? AND session_id=? AND turn_id=?",
+                           (owner, session_id, turn_id)).fetchone()
         if row is not None:
             old = json.loads(row["data"])
             marks = {**old.get("marks", {}), **marks}
@@ -164,9 +170,10 @@ def record_turn(session_id: str, turn_id: str, raw: Dict[str, Any], owner: str =
                          (json.dumps({"marks": marks, "server": server}), row["id"]))
         else:
             conn.execute("INSERT INTO voice_turns(session_id, turn_id, owner, recorded_at, data) VALUES (?,?,?,?,?)",
-                         (session_id, turn_id, owner or "", time.time(), json.dumps({"marks": marks, "server": server})))
+                         (session_id, turn_id, owner, time.time(), json.dumps({"marks": marks, "server": server})))
             conn.execute("DELETE FROM voice_turns WHERE id <= (SELECT MAX(id) FROM voice_turns) - ?", (MAX_ROWS,))
-        saved = conn.execute("SELECT * FROM voice_turns WHERE session_id=? AND turn_id=?", (session_id, turn_id)).fetchone()
+        saved = conn.execute("SELECT * FROM voice_turns WHERE owner=? AND session_id=? AND turn_id=?",
+                             (owner, session_id, turn_id)).fetchone()
         return _record(saved)
 
 

@@ -29,6 +29,7 @@ type Recognition = {
   onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null;
   onerror: ((event: { error: string }) => void) | null;
   onend: (() => void) | null;
+  onspeechend?: (() => void) | null;
   start(): void; stop(): void; abort(): void;
 };
 function recognitionConstructor() {
@@ -172,7 +173,15 @@ async function captureRaw(config: SpeechCapabilities, options: CaptureOptions): 
       options.onPartial?.(text);
     };
     rec.onerror = e => { cleanup(); reject(new Error(e.error)); };
-    rec.onend = () => { cleanup(); signal.aborted ? reject(aborted()) : resolve(text); };
+    // The person stopped talking: mark it for the voice timeline whether or not the
+    // optional dictation clean-up runs afterwards (`capture` ignores repeat calls).
+    rec.onspeechend = () => { if (!signal.aborted) options.onTranscribing?.(); };
+    rec.onend = () => {
+      cleanup();
+      if (signal.aborted) { reject(aborted()); return; }
+      if (text) options.onTranscribing?.();
+      resolve(text);
+    };
     signal.addEventListener('abort', cancel, { once: true });
     done.catch(() => undefined);
     try { rec.start(); } catch (e) { cleanup(); throw e; }

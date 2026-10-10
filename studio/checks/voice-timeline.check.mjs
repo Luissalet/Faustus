@@ -101,6 +101,13 @@ try {
   assert.ok(line, 'the compact line is on the panel');
   assert.match(line.textContent, /speech→text \d\.\d s · text→1st token \d\.\d s · 1st token→audio \d\.\d s/);
   assert.match(line.getAttribute('title'), /Server text-to-speech: 0\.1 s/);
+  // Keyboard/focus users get the same breakdown as a described, focusable element (not a mouse-only title).
+  assert.equal(line.getAttribute('tabindex'), '0');
+  const detail = a.host.querySelector('[data-testid="voice-timeline-detail"]');
+  assert.equal(line.getAttribute('aria-describedby'), detail.id);
+  assert.equal(detail.getAttribute('role'), 'tooltip');
+  assert.match(detail.textContent, /Server text-to-speech: 0\.1 s/);
+  assert.match(detail.textContent, /Total, speech ends → first audio: \d\.\d s/);
 
   // A transcript the person reviewed and sent by hand is their wait, not the system's: no timeline.
   posts = [];

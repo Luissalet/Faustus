@@ -386,7 +386,12 @@ export default function VoicePanel(props: Props) {
       <div className="fs-voice__status" role="status"><strong>{interrupted ? t('Go ahead') : t(labels[phase])}</strong>{elapsed > 0 && <span>{elapsed}s</span>}</div>
       {wakeWord && !revising.current && !interrupted && (phase === 'listening' || phase === 'starting') && <p className="fs-voice__hint">{t('Waiting for “Faustus”')}</p>}
       {revising.current && <p className="fs-voice__hint">{revisionInstruction || t('Say what to change in your draft. It will stay here for review.')}</p>}
-      {timeline && <p className="fs-voice__hint fs-voice__latency fs-voice__timeline" data-testid="voice-timeline" title={timeline.detail} tabIndex={0}>{timeline.line}</p>}
+      {timeline && (
+        <div className="fs-voice__timeline-wrap">
+          <p className="fs-voice__hint fs-voice__latency fs-voice__timeline" data-testid="voice-timeline" aria-describedby="voice-timeline-detail" title={timeline.detail} tabIndex={0}>{timeline.line}</p>
+          <pre id="voice-timeline-detail" role="tooltip" className="fs-voice__timeline-detail" data-testid="voice-timeline-detail">{timeline.detail}</pre>
+        </div>
+      )}
       {latency && !timeline && <p className="fs-voice__hint fs-voice__latency">{latency}</p>}
       {phase === 'thinking' && <p className="fs-voice__hint">{tool ? `${t('Using tool')}: ${tool.label || tool.tool}` : t('The model may need time to load. You can keep using the app.')}</p>}
       {phase === 'approval' && <p>{t('Review the approval in the chat. Spoken answers cannot approve sensitive actions.')}</p>}
