@@ -9382,3 +9382,8 @@ a proposed time overlaps an observed busy slot	un horario propuesto coincide con
 a figure is not backed by observed sources	una cifra no está respaldada por las fuentes observadas
 the answer did not confirm the saved-link total	la respuesta no confirmó el total de enlaces guardados
 no successful query supports the saved-link total	ninguna consulta válida respalda el total de enlaces guardados
+Running degraded	Funcionando degradado
+Since {when}	Desde {when}
+Affects: {list}	Afecta a: {list}
+{n} dependency	{n} dependencia
+{n} dependencies	{n} dependencias

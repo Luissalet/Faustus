@@ -31,7 +31,8 @@ import {
   type Usage,
 } from '../../adapters/usage';
 import { reconnectServices, SERVICE_LABEL, useServiceHealth, type ServiceState } from '../../adapters/services';
-import { locale, t, tn } from '../../i18n';
+import { useDegradation } from '../../adapters/degradation';
+import { getLang, locale, t, tn } from '../../i18n';
 import './vitals.css';
 
 /**
@@ -249,6 +250,7 @@ function Panel({ d, intervalMs, busy }: { d: Usage | null; intervalMs: number; b
           <ModelsSection d={d} />
           <HealthSection d={d} />
           <ServicesSection />
+          <DegradationSection />
           <GpuSection d={d} />
           <OrphansSection d={d} />
           <OllamaSection d={d} />
@@ -292,7 +294,7 @@ function HealthSection({ d }: { d: Usage }) {
   );
 }
 
-const SERVICE_MARK: Record<ServiceState, string> = { ok: '●', degraded: '▲', down: '■', disabled: '·', unknown: '·' };
+const SERVICE_MARK: Record<ServiceState | 'unconfigured', string> = { unconfigured: '·', ok: '●', degraded: '▲', down: '■', disabled: '·', unknown: '·' };
 
 /**
  * The services around the model: is the vector store actually there, is web
@@ -361,6 +363,42 @@ function ServicesSection() {
           {said && <span className="fs-vt__muted">{said}</span>}
         </p>
       )}
+    </Section>
+  );
+}
+
+/**
+ * What is running degraded or down, and why: the cause, since when, what to do
+ * and which features suffer. Only non-ok dependencies show; nothing here
+ * blocks anything. Services above is the live probe, this is the history.
+ */
+function DegradationSection() {
+  const { report, allowed } = useDegradation(true);
+  if (!allowed || !report || report.problems.length === 0) return null;
+  const lang = getLang();
+  return (
+    <Section title={t('Running degraded')} aside={tn(report.problems.length, '{n} dependency', '{n} dependencies')}>
+      {report.problems.map((p) => {
+        const hint = (lang === 'es' ? p.hint.es : p.hint.en) || p.hint.en || p.hint.es;
+        return (
+          <div key={p.id} className="fs-vt__indent" data-state={p.state}>
+            <Row
+              wide
+              label={t(p.label)}
+              title={p.cause}
+              value={`${SERVICE_MARK[p.state]} ${p.cause || t(p.state === 'down' ? 'down' : 'degraded')}`}
+            />
+            {p.since && <p className="fs-vt__muted">{t('Since {when}', { when: new Date(p.since).toLocaleString(locale()) })}</p>}
+            {p.affects.length > 0 && <p className="fs-vt__muted">{t('Affects: {list}', { list: p.affects.join(', ') })}</p>}
+            {hint && (
+              <p className="fs-vt__muted">
+                {hint}
+                {p.hint.command && <code className="fs-vt__cmd">{p.hint.command}</code>}
+              </p>
+            )}
+          </div>
+        );
+      })}
     </Section>
   );
 }

@@ -24,7 +24,7 @@ def _payload(name, arguments):
 def test_server_identity_and_tool_surface():
     assert srv.server.name == "harness"
     tools = asyncio.run(srv.list_tools())
-    assert [t.name for t in tools] == ["history_projection", "resource_claims", "paired_bench_reports",
+    assert [t.name for t in tools] == ["degradation_status", "history_projection", "resource_claims", "paired_bench_reports",
                                        "tool_footprint", "harness_proposals", "doc_lint",
                                        "spend_cap_status", "voice_turn_timeline"]
     for t in tools:

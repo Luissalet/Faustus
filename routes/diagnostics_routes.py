@@ -31,6 +31,19 @@ def setup_diagnostics_routes(
         from src.service_hints import attach_hints
         return attach_hints(await collect_service_health(rag_manager, memory_vector))
 
+    @router.get("/api/diagnostics/degradation")
+    async def get_degradation(request: Request, refresh: int = 0) -> Dict[str, Any]:
+        """Unified degradation report (Agora #202): one entry per dependency with
+        state, cause, since, latency, fix hint and the features it affects.
+        Cached with a short TTL and refreshed in the background; ``?refresh=1``
+        re-checks now. Informational only: nothing is blocked."""
+        require_admin(request)
+        import sys
+        from src import degradation
+        ctx = {"rag_manager": rag_manager, "memory_vector": memory_vector,
+               "mcp_manager": getattr(sys.modules.get("app"), "mcp_manager", None)}
+        return await asyncio.to_thread(degradation.get_report, ctx, force=bool(refresh))
+
     @router.post("/api/diagnostics/services/reconnect")
     async def reconnect_services(request: Request) -> Dict[str, Any]:
         """Re-establish the ChromaDB-backed stores, then re-probe (FAUSTUS).

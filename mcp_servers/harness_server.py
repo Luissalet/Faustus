@@ -73,6 +73,25 @@ def _json_result(payload: dict) -> list[TextContent]:
 async def list_tools() -> list[Tool]:
     return [
         Tool(
+            name="degradation_status",
+            description=(
+                "Which dependencies Faustus is running without right now: vector store, web search "
+                "(SearXNG), notifications (ntfy), email, model endpoints, Sparks and MCP servers. Each "
+                "item has state (ok, degraded, down, unconfigured), the cause (error class and short "
+                "message, no secrets), since when, latency, a fix hint in Spanish and English and the "
+                "features that degrade. Uses the running app's last report when it is recent, otherwise "
+                "probes what it can from this process. Informational and read-only. Estado de degradacion "
+                "de las dependencias."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "refresh": {"type": "boolean", "description": "Ignore the app's snapshot and probe now."},
+                    "only_problems": {"type": "boolean", "description": "Return only degraded or down items."},
+                },
+            },
+        ),
+        Tool(
             name="history_projection",
             description=(
                 "Show what the harness would change in a chat history before sending it to a "
@@ -466,7 +485,17 @@ def _spend_cap_status(args: dict) -> dict:
     return spend_cap.status()
 
 
+def _degradation_status(args: dict) -> dict:
+    from src import degradation
+
+    report = degradation.snapshot_or_check(force=bool(args.get("refresh")))
+    if args.get("only_problems"):
+        report = {**report, "items": report.get("problems", [])}
+    return report
+
+
 _TOOLS = {
+    "degradation_status": _degradation_status,
     "doc_lint": _doc_lint,
     "spend_cap_status": _spend_cap_status,
     "history_projection": _history_projection,

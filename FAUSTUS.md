@@ -10703,3 +10703,18 @@ Hasta ahora el panel de voz solo decía «escuchado en X s · primer audio en Y 
 **Verificacion.** `tests/test_csp_no_external_hosts.py` (la CSP por defecto no tiene hosts externos y el front servido no referencia CDN). Instancia aislada con el studio compilado y Chromium sin cabeza: cero violaciones de CSP y cero peticiones externas en las pantallas principales y en el login.
 
 **Limites.** `img-src` conserva `https:` (imagenes remotas en mensajes). `style-src 'unsafe-inline'` sigue por los estilos en linea. `routes/emoji_routes.py` aun descarga SVG de OpenMoji desde el servidor (no desde el navegador) y los cachea. No hay renderer de Mermaid/KaTeX en el cliente, asi que no hubo nada que comprobar ahi.
+## 292. Diagnóstico unificado de degradación (10-10-2026)
+
+Antes cada subsistema decía su estado por su cuenta (`/api/diagnostics/services`, el estado de Sparks, el de cada servidor MCP) y nadie contestaba a «¿con qué estoy funcionando degradado ahora mismo y desde cuándo?». Ahora hay **un registro de comprobaciones** (`src/degradation.py`, `docs/api/degradation.md`) que reutiliza las sondas existentes y les da la misma forma.
+
+**Qué devuelve cada dependencia:** `id`, `label`, `state` (`ok` / `degraded` / `down` / `unconfigured`), `cause` (clase de error real + mensaje corto, sin secretos: se limpian credenciales de URL, tokens y claves), `since` (primera vez que se vio en ese estado; se guarda en `DATA_DIR/degradation.json` y sobrevive a los reinicios), `last_checked`, `latency_ms`, `fix_hint` (`es`, `en` y comando si lo hay) y `affects` (qué funciones se degradan).
+
+**Dependencias cubiertas:** almacén vectorial (ChromaDB), búsqueda web (SearXNG), notificaciones (ntfy), correo (IMAP), endpoints de modelos, Sparks (Prometheus) y servidores MCP. Se registran con `degradation.register(Check(...))`, así que otro subsistema puede añadir la suya.
+
+**Cómo se comporta:** cada comprobación corre en su propio hilo con plazo (3 s; 4,5 s búsqueda web y ntfy; 6 s las que sondean varias cuentas o endpoints); si se pasa, queda `degraded` con `TimeoutError`, y si lanza una excepción queda `down` con su clase. La respuesta sale de una caché de 20 s y, cuando caduca, se sirve igualmente y se refresca en segundo plano (un solo refresco a la vez); solo la primerísima llamada espera. Es **solo informativo**: no bloquea ninguna petición ni función.
+
+**Dónde verlo:** `GET /api/diagnostics/degradation` (admin; `?refresh=1` fuerza la comprobación), la herramienta MCP de solo lectura `degradation_status` del servidor `harness` integrado (usa el último informe de la app si tiene menos de 2 min; si no, sondea desde su proceso lo que no necesita la app) y en Studio > Vitals el bloque «Funcionando degradado», que solo lista lo que no está bien, con causa, desde cuándo, qué afecta y qué hacer.
+
+**Verificación:** `tests/test_degradation.py` (estados ok/degraded/down/timeout/unconfigured con falsos, `since` y reinicio, caché y refresco en segundo plano, limpieza de secretos, ruta admin y MCP), `tests/test_harness_mcp.py` (lista de herramientas), `studio/checks/degradation.check.mjs` y `tsc --noEmit`.
+
+**Límites.** TTS/STT y Hoards externos aún no tienen comprobación propia (el registro admite añadirlas). El proceso MCP separado no ve el almacén vectorial ni los servidores MCP de la app: solo los ve a través del último informe de la app. Una sonda lenta se marca `degraded` (no `down`) porque no se sabe si está caída.
