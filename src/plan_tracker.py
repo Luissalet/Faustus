@@ -152,6 +152,8 @@ def find_plan_attachment(text: str, min_chars: Optional[int] = None) -> Optional
         cap = 3000
     try:
         authored, _rest = _split_authored(text or "")
+        if _negated_execution_only(authored):
+            return None
         executes = strict_execute_request(authored)
         for kind, title, body in _iter_attachments(text or ""):
             if kind != "File":
@@ -849,6 +851,25 @@ _EXEC_VERB_RE = re.compile(
     re.I,
 )
 
+_NEGATED_EXEC_RE = re.compile(
+    r"\b(?:sin|no)\s+(?:lo\s+)?(?:ejecut\w*|implement\w*|continu\w*|retom\w*|aplic\w*|realiz\w*)\b"
+    r"|\b(?:do\s+not|don['’]?t|without|never)\s+(?:execut\w*|run\w*|implement\w*|continu\w*|resum\w*|start\w*|build\w*)\b",
+    re.I)
+
+
+def _unnegated_execution_text(text: str) -> str:
+    return _NEGATED_EXEC_RE.sub("", text or "")
+
+
+def _negated_execution_only(text: str) -> bool:
+    return bool(_NEGATED_EXEC_RE.search(text or "")) and not _EXEC_VERB_RE.search(_unnegated_execution_text(text))
+
+
+def _execution_directive(text: str) -> str:
+    norm = _normalize(text or "")
+    _kind, sections = _split_sections_ex(norm)
+    return _pasted_intro(norm) if len(sections) >= 3 else norm
+
 
 def looks_like_execute_request(user_text: str) -> bool:
     """True for a short imperative-execution message ("Sigue implementando
@@ -858,7 +879,7 @@ def looks_like_execute_request(user_text: str) -> bool:
     text = (user_text or "").strip()
     if not text or "?" in text or len(text) > 400:
         return False
-    return bool(_EXEC_VERB_RE.search(text))
+    return bool(_EXEC_VERB_RE.search(_unnegated_execution_text(_execution_directive(text))))
 
 
 # ---------------------------------------------------------------------------
@@ -917,6 +938,8 @@ def find_plan_in_text(text: str, min_chars: Optional[int] = None) -> Optional[Tu
         if sum(1 for t in titles if t.rstrip().endswith("?")) * 2 >= len(titles):
             return None
         intro = _pasted_intro(norm)
+        if _negated_execution_only(intro):
+            return None
         tail = intro[-300:]
         asks = "?" in tail
         executes = strict_execute_request(tail)
@@ -1050,4 +1073,4 @@ def strict_execute_request(user_text: str) -> bool:
     text = (user_text or "").strip()
     if not text or "?" in text or len(text) > 400:
         return False
-    return bool(_STRICT_EXEC_RE.search(text))
+    return bool(_STRICT_EXEC_RE.search(_unnegated_execution_text(_execution_directive(text))))

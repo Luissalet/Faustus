@@ -105,6 +105,30 @@ def test_conditions_within_actual_work_items_remain_a_real_plan():
     assert found and len(pt.parse_plan(*found).tasks) == 3
 
 
+@pytest.mark.parametrize("message", [
+    "Consulta el estado del plan anterior sin ejecutar sus tareas.",
+    "Lee el plan, no lo ejecutes.",
+    "Read the plan status; do not execute it.",
+    "Show the plan without running its steps.",
+    "Read the plan; don't run it.",
+])
+def test_negated_execution_verbs_do_not_authorize_a_plan(message):
+    assert not pt.looks_like_execute_request(message)
+    assert not pt.strict_execute_request(message)
+
+
+def test_a_read_only_list_of_instructions_is_not_imported_as_execution():
+    request = "Read this plan; do not execute it:\n1. Run the tests\n2. Build the package\n3. Start the server\n"
+    assert not pt.find_plan_in_text(request)
+    assert not pt.looks_like_execute_request(request)
+    assert not pt.find_plan_attachment("Read the plan; do not execute it:\n=== File: plan.md ===\n" + THREE)
+
+
+def test_positive_execution_with_a_restricted_step_remains_authorized():
+    assert pt.looks_like_execute_request("Ejecuta el plan, pero no ejecutes acciones destructivas.")
+    assert pt.strict_execute_request("Execute the plan, but do not run destructive commands.")
+
+
 def test_independent_conditional_queue_work_is_not_a_priority_ladder():
     plan = ("Ejecuta este plan, comprobando por separado cada cola:\n"
             "1. Comprobar las tres colas y guardar el diagnóstico.\n"
@@ -521,7 +545,7 @@ def test_reading_plan_status_does_not_authorize_execution_of_an_old_plan(ws, mon
     calls = _scripted_stream(monkeypatch, [
         ('```plan_status\n{}\n```', "tool_calls"), ("Hay tres tareas pendientes.", "stop"),
     ])
-    events = _run_loop(ws, "Consulta el estado del plan sin ejecutarlo.")
+    events = _run_loop(ws, "Consulta el estado del plan anterior sin ejecutar sus tareas.")
     assert calls["n"] == 2
     assert not _checks(events, "plan_continue") and not _checks(events, "plan_continue_stop")
     assert not [e for e in events if e.get("type") == "ask_user"]
