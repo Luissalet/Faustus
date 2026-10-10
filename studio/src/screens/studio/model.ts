@@ -28,6 +28,7 @@ import { roundActivityFrom, type NetworkSummary } from '../../adapters/chat';
 import type { EvidenceRef } from '../../adapters/evidence';
 import type { Attachment } from '../../adapters/composer';
 import type { VramBlocked } from '../../adapters/vramAdmission';
+import type { AgentMessageInfo } from '../../adapters/agentMailbox';
 import type { ModeCheckResult } from '../../adapters/behaviorModes';
 import { t } from '../../i18n';
 import { generatedImageUrl } from '../../lib/generated-image-url';
@@ -240,6 +241,8 @@ export interface Turn {
   thinkMode?: { mode: 'fast' | 'think' | 'deep'; requested: string; source: string; budget: number | null };
   images: string[];
   attachments: Attachment[];
+  /** #235: this user-role row is another agent's message (mailbox), not the person's words. */
+  agentMessage?: AgentMessageInfo;
   ask?: AskUser;
   /** A permission gate of this turn that was already answered: the record
    *  of the decision, so a reload does not read as a question nobody can
@@ -1159,11 +1162,13 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
 
 /** Insert a mid-turn user message. `interrupt` seals the live assistant
  *  bubble and opens a new one for the redirected generation. */
-export function appendSteer(turns: Turn[] | null, text: string, interrupt = false): Turn[] {
+export function appendSteer(turns: Turn[] | null, text: string, interrupt = false, agentMessage?: AgentMessageInfo): Turn[] {
   const needle = text.trim();
   if (!needle) return turns ?? [];
   const list = [...(turns ?? [])];
-  const already = list.some((t) => t.role === 'user' && t.text === needle);
+  const already = agentMessage?.id
+    ? list.some((t) => t.agentMessage?.id === agentMessage.id)
+    : list.some((t) => t.role === 'user' && t.text === needle);
   if (interrupt) {
     for (let i = list.length - 1; i >= 0; i--) {
       if (list[i].role === 'assistant' && list[i].streaming) {
@@ -1172,7 +1177,11 @@ export function appendSteer(turns: Turn[] | null, text: string, interrupt = fals
       }
     }
   }
-  if (!already) list.push(blankTurn('user', needle));
+  if (!already) {
+    const row = blankTurn('user', needle);
+    if (agentMessage) row.agentMessage = agentMessage;
+    list.push(row);
+  }
   if (interrupt) {
     const last = list[list.length - 1];
     if (!(last?.role === 'assistant' && last.streaming)) list.push(blankTurn('assistant'));

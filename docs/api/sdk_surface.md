@@ -71,6 +71,10 @@ reaches any route below at all — the 403 names the missing scope.
 | GET | `/api/effects`, `/api/effects/{effect_id}` | `sessions`, `agents:dispatch` | read | The token owner's actions that left the machine (mail, messages, webhooks, calendar/HTTP writes, connector writes): state, effect certainty, attempt id; `?unresolved=true` lists the unknown or partial ones. |
 | GET | `/api/runs/{session_id}/ledger` | `sessions`, `agents:dispatch` | read | An owned session's execution ledger; `?run_id=` replays one run call by call (approvals, attempts, what resumed). |
 | GET | `/api/runs/{session_id}/turn-cost` | `sessions`, `agents:dispatch` | read | Where one turn's time and tokens went, grouped by cause; values nobody reported are `null`. |
+| POST | `/api/agent-mailbox/send` | `sessions`, `agents:dispatch` | external | Leave a message (sender, `urgent`) for an owned chat; an urgent one starts a turn on an idle chat. Refusals (3-hop limit, unknown chat, mailbox off) come back with their reason. Never an approval. |
+| GET | `/api/agent-mailbox/{session_id}/inbox` | `sessions`, `agents:dispatch` | read | What other agents sent an owned chat, plus waiting/unread counts. |
+| GET | `/api/agent-mailbox/{session_id}/outbox` | `sessions`, `agents:dispatch` | read | What an owned chat sent through the mailbox, with each message's state. |
+| POST | `/api/agent-mailbox/{session_id}/read` | `sessions`, `agents:dispatch` | reversible | Mark an owned chat's mailbox messages as read. |
 | GET | `/api/agent/orphans` | `sessions`, `agents:dispatch` | read | The token owner's workers whose parent run is gone. |
 | GET | `/api/session/{session_id}/alternatives` | `sessions` | read | Earlier answers to the questions still in an owned session (what regenerate/edit replaced), keyed by the question's history index. |
 | GET | `/api/history/{session_id}` | `sessions` | read | An owned session's message history — the same route the desktop app itself loads a chat from. |

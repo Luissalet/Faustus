@@ -5,6 +5,8 @@ import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer,
 import { lazyChunk } from '../shell/lazyChunk';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Button, Dialog, IconButton, Popover, Skeleton } from '../components';
+import { AgentInbox } from './studio/AgentInbox';
+import { agentMessageFromMetadata } from '../adapters/agentMailbox';
 import {
   createSession,
   listModels,
@@ -1216,7 +1218,10 @@ export function StudioScreen() {
         });
       const mapped = kept.map(({ m, historyIndex }) => {
         const atts = m.role === 'user' ? attachmentsFromMetadata(m.metadata) : [];
-        const turn = blankTurn(m.role, m.role === 'user' ? cleanUserText(m.content, atts.length > 0) : m.content);
+        // #235: a saved user-role row that is really another agent's message (mailbox).
+        const agentMsg = m.role === 'user' ? agentMessageFromMetadata(m.metadata) : null;
+        const turn = blankTurn(m.role, agentMsg ? agentMsg.body : m.role === 'user' ? cleanUserText(m.content, atts.length > 0) : m.content);
+        if (agentMsg) turn.agentMessage = agentMsg;
         turn.historyIndex = historyIndex;
         turn.streaming = false;
         turn.attachments = atts;
@@ -1628,7 +1633,7 @@ export function StudioScreen() {
         })) {
           if (controller.signal.aborted || controllerRef.current !== controller) break;
           if (event.type === 'steer') {
-            setTurns((list) => appendSteer(list, event.text, event.interrupt));
+            setTurns((list) => appendSteer(list, event.text, event.interrupt, event.agentMessage));
           } else {
             patchLast((t) => apply(t, event));
           }
@@ -1729,7 +1734,7 @@ export function StudioScreen() {
         })) {
           if (controller.signal.aborted || controllerRef.current !== controller) break;
           if (event.type === 'steer') {
-            setTurns((list) => appendSteer(list, event.text, event.interrupt));
+            setTurns((list) => appendSteer(list, event.text, event.interrupt, event.agentMessage));
           } else {
             patchLast((t) => apply(t, event));
           }
@@ -1787,7 +1792,7 @@ export function StudioScreen() {
             setNotice({ text: t('This conversation was still working — picking it up live.'), tone: 'info' });
           }
           if (event.type === 'steer') {
-            setTurns((list) => appendSteer(list, event.text, event.interrupt));
+            setTurns((list) => appendSteer(list, event.text, event.interrupt, event.agentMessage));
           } else {
             patchLast((t) => apply(t, event));
           }
@@ -2917,6 +2922,13 @@ export function StudioScreen() {
     return ok;
   }, [sessionId]);
 
+  // #235: a message from another agent arrived while nothing was running here (an urgent one
+  // wakes the chat and the turn happens on the server): read the history again to show it.
+  const reloadAfterAgentMail = useCallback(() => {
+    if (!sessionId) return;
+    turnsFromHistory(sessionId).then((fresh) => setTurns(fresh.turns)).catch(() => undefined);
+  }, [sessionId]);
+
   const literalShellInFlight = useRef(false);
   const showShellResult = useCallback(async (result: ShellResult): Promise<void> => {
     if (!busy) {
@@ -3470,6 +3482,8 @@ export function StudioScreen() {
           <Vitals busy={busy} />
           <SparkVitals />
           <SphereChip />
+          {/* #235: messages other agents left for this chat (the transcript shows the delivered ones). */}
+          <AgentInbox sessionId={sessionId} busy={busy} onNew={reloadAfterAgentMail} />
           {/* CMP-01-layout (W2-A2): three arrangements of the same
               conversation+panel — pure presentation, see `layout` above. */}
           <div className="fs-studio__layout-switch" role="radiogroup" aria-label={t('Layout')} data-testid="studio-layout-switch">

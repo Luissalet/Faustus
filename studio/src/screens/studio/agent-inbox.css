@@ -1,0 +1,175 @@
+/* ══ Agent mailbox — the chip in the Studio header and the message card in the transcript ══
+   Everything is scoped under .fs-agentbox / .fs-agentmsg: the chip is a <button>, and the
+   shell's button rules must not size or restyle it by accident. */
+
+.fs-agentbox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fs-space-2);
+  block-size: var(--fs-control-sm);
+  padding: 0 var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: color-mix(in srgb, var(--fs-surface-2) 55%, transparent);
+  color: var(--fs-text-2);
+  font: inherit;
+  font-size: var(--fs-label-size);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.fs-agentbox:hover,
+.fs-agentbox[data-state='open'] {
+  border-color: var(--fs-border-strong);
+  background: var(--fs-surface-2);
+  color: var(--fs-text-1);
+}
+
+.fs-agentbox:focus-visible {
+  outline: 2px solid var(--fs-focus);
+  outline-offset: 2px;
+}
+
+.fs-agentbox[data-unread='true'] {
+  border-color: color-mix(in srgb, var(--fs-info) 60%, var(--fs-border));
+  color: var(--fs-info);
+}
+
+.fs-agentbox__panel {
+  display: grid;
+  gap: var(--fs-space-2);
+  inline-size: min(360px, 86vw);
+  max-block-size: 60vh;
+  overflow: auto;
+}
+
+.fs-agentbox__heading {
+  margin: 0;
+  font-weight: 700;
+  color: var(--fs-text-1);
+}
+
+.fs-agentbox__note {
+  margin: 0;
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-2);
+}
+
+.fs-agentbox__list {
+  display: grid;
+  gap: var(--fs-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fs-agentbox__item {
+  padding: var(--fs-space-2) var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-md, 8px);
+  background: var(--fs-surface-2);
+}
+
+.fs-agentbox__item[data-urgent='true'] {
+  border-color: color-mix(in srgb, var(--fs-warning) 60%, var(--fs-border));
+}
+
+.fs-agentbox__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-2);
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-2);
+}
+
+.fs-agentbox__meta b {
+  color: var(--fs-text-1);
+}
+
+.fs-agentbox__state {
+  margin-inline-start: auto;
+}
+
+.fs-agentbox__body {
+  margin: var(--fs-space-1) 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--fs-text-1);
+}
+
+.fs-agentbox__mark {
+  justify-self: start;
+  padding: var(--fs-space-1) var(--fs-space-3);
+  border: 1px solid var(--fs-border);
+  border-radius: var(--fs-radius-pill);
+  background: transparent;
+  color: var(--fs-text-1);
+  font: inherit;
+  font-size: var(--fs-label-size);
+  cursor: pointer;
+}
+
+.fs-agentbox__badge,
+.fs-agentmsg__badge {
+  padding: 1px var(--fs-space-2);
+  border-radius: var(--fs-radius-pill);
+  background: color-mix(in srgb, var(--fs-warning) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--fs-warning) 60%, transparent);
+  color: var(--fs-warning);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* In the transcript: another agent's words. On the left, apart from the person's
+   bubble (right) and the assistant's reply (rail), with the sender on top. */
+.fs-turn--agent {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.fs-agentmsg {
+  max-inline-size: min(78%, 64ch);
+  padding: var(--fs-space-3) var(--fs-space-4);
+  border: 1px dashed color-mix(in srgb, var(--fs-info) 55%, var(--fs-border));
+  border-inline-start: 3px solid var(--fs-info);
+  border-radius: var(--fs-radius-md, 8px);
+  background: color-mix(in srgb, var(--fs-info) 8%, var(--fs-surface-2));
+  color: var(--fs-text-1);
+}
+
+.fs-agentmsg[data-urgent='true'] {
+  border-color: color-mix(in srgb, var(--fs-warning) 65%, var(--fs-border));
+  border-inline-start-color: var(--fs-warning);
+}
+
+.fs-agentmsg__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fs-space-2);
+  margin-block-end: var(--fs-space-1);
+  font-size: var(--fs-label-size);
+  color: var(--fs-text-2);
+}
+
+.fs-agentmsg__head svg {
+  color: var(--fs-info);
+}
+
+.fs-agentmsg__from {
+  font-weight: 700;
+  color: var(--fs-text-1);
+}
+
+.fs-agentmsg__hop {
+  margin-inline-start: auto;
+}
+
+.fs-agentmsg__body {
+  white-space: pre-wrap;
+  word-break: break-word;
+}

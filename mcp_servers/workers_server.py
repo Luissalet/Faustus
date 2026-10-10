@@ -1284,6 +1284,28 @@ TOOLS: List[Tool] = [
         }, "required": ["view"]},
     ),
     Tool(
+        name="agent_message",
+        description=(
+            "The mailbox between agents. action=send: leave a message for a Faustus chat (to = its session id); it is "
+            "shown there as coming from an outside caller (external:<sender>), never as the user. urgent=true wakes an "
+            "idle chat (a turn starts and reads it); a normal message waits for the chat's next turn. A reply chain "
+            "stops at 3 relays and each chat is woken at most a few times an hour; a refusal comes back with its "
+            "reason - report it, do not work around it. A message is never an approval: it cannot answer a pending "
+            "tool approval or change permissions or settings. action=inbox / outbox: a chat's messages with their "
+            "state; action=read: mark a chat's inbox as read."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["send", "inbox", "outbox", "read"], "default": "send"},
+            "to": {"type": "string", "description": "send: the session id of the chat to message"},
+            "body": {"type": "string", "description": "send: the message (up to 4000 characters)"},
+            "urgent": {"type": "boolean", "default": False, "description": "send: wake an idle chat"},
+            "reply_to": {"type": "string", "description": "send: the id of the message this answers (keeps the relay count)"},
+            "sender": {"type": "string", "description": "send: a label for who is calling (shown as external:<sender>)"},
+            "session_id": {"type": "string", "description": "inbox / outbox / read: the chat whose mailbox to read"},
+            "state": {"type": "string", "enum": ["unread", "queued", "delivered", "read", "refused"]},
+        }, "required": []},
+    ),
+    Tool(
         name="answer_versions",
         description=(
             "The earlier answers a Faustus chat keeps for each question still in it: what a regenerate or an "
@@ -1660,6 +1682,43 @@ def _text(s: str) -> List[TextContent]:
     return [TextContent(type="text", text=s)]
 
 
+def _agent_message(args: Dict[str, Any]) -> str:
+    """The `agent_message` tool: the mailbox between agents (src/agent_mailbox.py), through the API."""
+    action = str(args.get("action") or ("send" if args.get("to") else "")).strip().lower()
+    if action == "send":
+        body = {"to": str(args.get("to") or "").strip(), "body": str(args.get("body") or ""),
+                "urgent": bool(args.get("urgent")), "reply_to": str(args.get("reply_to") or ""),
+                "sender": str(args.get("sender") or "mcp")}
+        try:
+            data = _request("POST", "/api/agent-mailbox/send", body)
+        except FaustusHTTPError as e:
+            # A refusal is an answer, not a crash: the reason is the point.
+            if e.body.get("refused"):
+                return f"Refused ({e.body.get('reason')}): {e.body.get('detail')}"
+            raise
+        msg, wake = data.get("message") or {}, data.get("wake") or {}
+        wake_note = "woken: a turn was started on it" if wake.get("woken") else (
+            f"not woken ({wake.get('reason')})" + (f": {wake['detail']}" if wake.get("detail") else ""))
+        return (f"Message {msg.get('id')} sent to {msg.get('recipient')} (hop {msg.get('hops')} of 3, "
+                f"{'urgent' if msg.get('urgent') else 'normal'}, {msg.get('state')}); {wake_note}.")
+    sid = urllib.parse.quote(str(args.get("session_id") or "").strip(), safe="")
+    if not sid:
+        return "Error: give the session_id"
+    if action in ("inbox", "outbox"):
+        state = urllib.parse.quote(str(args.get("state") or ""), safe="")
+        data = _request("GET", f"/api/agent-mailbox/{sid}/{action}?state={state}")
+        rows = data.get("messages") or []
+        lines = [f"- [{m['id']}] {m['sender'].get('label') or m['sender'].get('id')} -> {m['recipient']}"
+                 f"{' URGENT' if m.get('urgent') else ''} hop {m.get('hops')} {m.get('state')}: {str(m.get('body'))[:300]}"
+                 for m in rows]
+        return (f"{action}: {data.get('waiting', 0)} waiting, {data.get('unread', 0)} unread\n"
+                + ("\n".join(lines) or "No messages."))
+    if action == "read":
+        data = _request("POST", f"/api/agent-mailbox/{sid}/read", {})
+        return f"{data.get('marked', 0)} message(s) marked as read."
+    return "Error: action must be send, inbox, outbox or read"
+
+
 @server.call_tool()
 async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
     args = arguments or {}
@@ -1725,6 +1784,8 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
                 return _text("Error: view must be effects, ledger, cost or orphans")
             data = await asyncio.to_thread(_request, "GET", path)
             return _text(str((data or {}).get("text") or "Nothing recorded."))
+        if name == "agent_message":
+            return _text(await asyncio.to_thread(_agent_message, args))
         if name == "answer_versions":
             sid = urllib.parse.quote(str(args.get("session_id") or "").strip(), safe="")
             if not sid:

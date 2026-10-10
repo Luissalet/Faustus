@@ -119,7 +119,7 @@ DEFAULT_PROMOTE_MIN_AGREEMENT = 0.95
 _NEVER_AUTO_TOOLS = frozenset({
     "send_email", "reply_to_email", "bulk_email",
     "whatsapp_send", "whatsapp_react",
-    "send_to_session",
+    "send_to_session", "agent_message",
 })
 _NEVER_AUTO_NAME_RE = re.compile(
     r"(?:^|_)(pay|payment|checkout|transfer|invoice_pay|refund)(?:_|$)", re.I

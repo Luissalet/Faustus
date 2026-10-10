@@ -6,6 +6,7 @@ import { lazyChunk } from '../../shell/lazyChunk';
 import { createPortal } from 'react-dom';
 import { Button, describeError, ExecutionTimeline, friendlyError, IconButton, TurnCostBreakdown } from '../../components';
 import { TurnActivity } from './TurnActivity';
+import { AgentMessageTurn } from './AgentMessageTurn';
 import { fetchCompactionEvent, pinCompactionFragment, fetchLlmTraces, forkLlmTrace, faviconStripEntries, type AdvisorAdvice, type AskUser, type CompactionEvent, type ContextLedger, type ContextReceipt, type DelegationTask, type LlmTraceRow, type NetworkSummary, type WebSource } from '../../adapters/chat';
 import { createRecipeFromRun } from '../../adapters/strategy';
 import type { AnswerVersion } from '../../adapters/sessions';
@@ -1582,6 +1583,8 @@ function UserTurn({
   onOpenBoardIssue?: TranscriptProps['onOpenBoardIssue'];
 }) {
   const [editing, setEditing] = useState(false);
+  // #235: another agent's message, not the person's words: its own card, no edit/regenerate/delete.
+  if (turn.agentMessage) return <AgentMessageTurn message={turn.agentMessage} id={turn.id} dbId={turn.dbId} enter={enter} />;
   return (
     <article className="fs-turn fs-turn--user" data-enter={enter || undefined} data-nav-id={turn.id} data-db-id={turn.dbId} data-testid="turn-user">
       <div className="fs-turn__user-wrap">

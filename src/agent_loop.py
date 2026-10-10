@@ -7590,11 +7590,18 @@ def _apply_steer_to_plan_update(
 
 def _take_pending_steers(
     pending_user_messages: Optional[Callable[[], List[Dict[str, Any]]]],
+    *,
+    mid_generation: bool = False,
 ) -> List[Dict[str, Any]]:
     if pending_user_messages is None:
         return []
     try:
-        return list(pending_user_messages() or [])
+        # #235: the poll made while a generation streams only takes what must
+        # interrupt it. A drain that knows the difference (the agent mailbox:
+        # a normal message from another agent waits for the next safe point)
+        # offers `take_urgent`; a plain callable keeps its single behaviour.
+        take = getattr(pending_user_messages, "take_urgent", None) if mid_generation else None
+        return list((take or pending_user_messages)() or [])
     except Exception as err:
         logger.debug("[steer] queue read failed: %s", err)
         return []
@@ -7609,6 +7616,8 @@ def _steer_entry_text(steer: Any) -> str:
 def _steer_entry_source(steer: Any) -> str:
     if isinstance(steer, dict) and steer.get("source") == "supervisor":
         return "supervisor"
+    if isinstance(steer, dict) and steer.get("source") == "agent":
+        return "agent"
     return "user"
 
 
@@ -7646,6 +7655,13 @@ def _apply_steers_to_messages(
         _steer_msg: Dict[str, Any] = {"role": "user", "content": text}
         if source != "user":
             _steer_msg["_harness_note"] = True
+        agent_message = steer.get("agent_message") if source == "agent" and isinstance(steer, dict) else None
+        if source == "agent":
+            # #235: another agent's words, not the user's. Outside text: it arms
+            # the tool gate (a state-changing tool then waits for a person) and
+            # is never an approval. The framed text already says so to the model.
+            _steer_msg["metadata"] = {"source": "agent_message", "trusted": False,
+                                      "provenance_origin": "external", "tool_gate_untrusted": True}
         messages.append(_steer_msg)
         events.append({
             "type": "steer",
@@ -7654,12 +7670,17 @@ def _apply_steers_to_messages(
             "source": source,
             "interrupt": bool(interrupt),
         })
+        if isinstance(agent_message, dict):
+            events[-1]["agent_message"] = dict(agent_message)
+            events[-1]["text"] = str(agent_message.get("body") or text)[:4000]
         receipt_id = steer.get("_steering_receipt_id") if isinstance(steer, dict) else None
         if isinstance(receipt_id, str) and re.fullmatch(r"[0-9a-f]{32}", receipt_id):
             # Only event metadata carries this server-side identity. The user
             # message appended above remains text-only.
             events[-1]["steering_receipt_id"] = receipt_id
-        texts.append(text)
+        if source != "agent":
+            # An agent's message never rewrites the plan; only the user's steers do.
+            texts.append(text)
     plan = latest_plan_update
     affected: List[str] = []
     if texts and latest_plan_update:
@@ -12588,6 +12609,14 @@ async def _stream_agent_loop_body(
                 _required_reply_lang = _reply_language_hint.get("_reply_language")
             for _ev in _steer_events:
                 yield "data: " + json.dumps(_ev) + "\n\n"
+            if round_num == 1 and any(isinstance(_s, dict) and _s.get("source") == "agent" for _s in _steers):
+                # A mailbox message drained at the very first round (it waited for this
+                # turn) must be in the request the model gets and in what the tool gate
+                # observes: round 1 reuses the request built before the loop, which
+                # predates it. Without this the message would reach neither.
+                _initial_route_request_messages = _trim_route_request_messages(
+                    endpoint_url, model, messages)
+                run_security.observe_messages(_initial_route_request_messages)
             if _steer_affected_ids:
                 logger.info("[steer] marked %d plan step(s) needs_review: %s",
                             len(_steer_affected_ids), _steer_affected_ids)
@@ -13981,7 +14010,7 @@ async def _stream_agent_loop_body(
                 # Forward error events to frontend as visible text
                 yield chunk
             # Intercept [DONE] — don't forward until all rounds finish
-            _now_steers = _take_pending_steers(pending_user_messages)
+            _now_steers = _take_pending_steers(pending_user_messages, mid_generation=True)
             if _now_steers:
                 _steer_interrupted = _now_steers
                 logger.info("[steer] interrupting round %s mid-generation (%d message(s))",

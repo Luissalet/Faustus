@@ -840,6 +840,13 @@ GROUPS: list[dict[str, Any]] = [
             _bool("agent_exec_ledger", "Execution ledger",
                   "Append-only record of each run's calls, attempts, results and approvals, kept "
                   "independently of the chat replay so a restart can explain and resume the run."),
+            _bool("agent_mailbox", "Agent mailbox",
+                  "Let agents, sub-agents and outside callers leave messages for each other's chats. "
+                  "A message from another agent is shown as such and is never an approval. Off refuses every send."),
+            _int("agent_mailbox_wakes_per_hour", "Mailbox wakes per hour",
+                 "How many times an urgent message may start a turn on an idle chat, per chat and hour. "
+                 "Over the cap the message waits for the next turn and the sender is told. 0 = never wake.",
+                 0, 60),
         ],
     ),
     _group(

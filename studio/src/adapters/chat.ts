@@ -10,6 +10,7 @@ import {
   responseReason,
 } from './api';
 import { vramBlockedFrom, type VramBlocked } from './vramAdmission';
+import { agentMessageFrom, type AgentMessageInfo } from './agentMailbox';
 import type { EvidenceRef } from './evidence';
 
 /**
@@ -691,7 +692,7 @@ export type ChatEvent =
        *  model, reply draft, highlight): `shell/uiEvents.ts`. */
       uiEvent?: UiEvent;
     }
-  | { type: 'steer'; text: string; source: string; interrupt: boolean }
+  | { type: 'steer'; text: string; source: string; interrupt: boolean; agentMessage?: AgentMessageInfo }
   | { type: 'subagent'; payload: SubagentPayload }
   | { type: 'frame'; frame: BrowserFrame }
   | { type: 'doc_open'; title: string; language: string }
@@ -1805,6 +1806,7 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
         text: str(raw.text),
         source: str(raw.source, 'user'),
         interrupt: Boolean(raw.interrupt),
+        agentMessage: agentMessageFrom(raw.agent_message) ?? undefined,
       };
     // The server says the pending question has been answered — by this tab,
     // by another one, or by a continuation it is replaying. Either way the

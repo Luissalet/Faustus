@@ -215,6 +215,17 @@ API_TOKEN_RULES: Tuple[Rule, ...] = (
           note="an owned session's execution ledger, or one run replayed"),
     _read("/api/runs/{session_id}/turn-cost", "sessions", "agents:dispatch",
           note="where one of an owned session's turns spent its time and tokens, by cause"),
+    # Mailbox between agents (#235): an outside coordinator leaves a message for an owned
+    # chat (sender shown as external, never as a chat; an urgent one wakes an idle chat),
+    # reads an inbox/outbox and marks messages read. Nothing here answers an approval.
+    Rule(frozenset({"POST"}), "/api/agent-mailbox/send", ("sessions", "agents:dispatch"), effect="external",
+         note="leave a message for an owned chat; an urgent one starts a turn on an idle chat"),
+    _read("/api/agent-mailbox/{session_id}/inbox", "sessions", "agents:dispatch",
+          note="what other agents sent an owned chat"),
+    _read("/api/agent-mailbox/{session_id}/outbox", "sessions", "agents:dispatch",
+          note="what an owned chat sent through the mailbox, with each message's state"),
+    Rule(frozenset({"POST"}), "/api/agent-mailbox/{session_id}/read", ("sessions", "agents:dispatch"),
+         effect="reversible", note="mark an owned chat's mailbox messages as read"),
     _read("/api/agent/orphans", "sessions", "agents:dispatch",
           note="the token owner's own workers whose parent run is gone"),
     _read("/api/session/{session_id}/alternatives", "sessions",

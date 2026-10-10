@@ -1628,6 +1628,7 @@ from routes.typed_choice_routes import setup_typed_choice_routes
 from routes.typed_decision_routes import setup_typed_decision_routes
 from routes.agent_loop_stats_routes import setup_agent_loop_stats_routes
 from routes.run_report_routes import setup_run_report_routes
+from routes.agent_mailbox_routes import setup_agent_mailbox_routes
 from routes.prior_art_routes import setup_prior_art_routes
 from routes.blender_scene_routes import setup_blender_scene_routes
 from routes.extraction_routes import setup_extraction_routes
@@ -1641,6 +1642,8 @@ app.include_router(setup_typed_choice_routes())
 app.include_router(setup_typed_decision_routes())
 app.include_router(setup_agent_loop_stats_routes())
 app.include_router(setup_run_report_routes())
+# Mailbox between agents: send, inbox, outbox, mark read (src/agent_mailbox.py, #235).
+app.include_router(setup_agent_mailbox_routes())
 app.include_router(setup_prior_art_routes())
 app.include_router(setup_blender_scene_routes())
 # Structured extraction into the user's JSON Schema (src/schema_extraction.py).

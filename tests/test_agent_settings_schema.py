@@ -157,7 +157,8 @@ def test_groups_follow_the_requested_layout():
             } == set(by_group["subagents"])
     assert {"agent_runs_persist", "agent_runs_keep_hours", "agent_queue_local_concurrency",
             "agent_queue_api_concurrency", "agent_scorecard",
-            "agent_effect_outbox", "agent_exec_ledger"} == set(by_group["runs"])
+            "agent_effect_outbox", "agent_exec_ledger", "agent_mailbox",
+            "agent_mailbox_wakes_per_hour"} == set(by_group["runs"])
     assert all(k.startswith("browser_") for k in by_group["browser"]) and len(by_group["browser"]) == 10
     assert by_group["desktop"] == ["desktop_control_mode"]
     assert by_group["vision"] == ["vision_enabled", "vision_model", "vision_timeout_seconds", "vision_max_side",

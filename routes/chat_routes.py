@@ -28,6 +28,7 @@ from src.llm_core import (
     stream_llm_with_fallback,
 )
 from src.agent_loop import stream_agent_loop, _looks_like_workspace_coding_request
+from src import agent_mailbox
 from src import agent_runs
 from src import api_version
 from src.model_context import estimate_tokens
@@ -3120,6 +3121,7 @@ def setup_chat_routes(
                     "list_sessions",
                     "manage_session",
                     "send_to_session",
+                    "agent_message",
                     "chat_with_model",
                 })
 
@@ -3186,7 +3188,7 @@ def setup_chat_routes(
                 _compare_strip = {
                     "create_document", "edit_document", "update_document",
                     "chat_with_model", "create_session", "list_sessions",
-                    "send_to_session",
+                    "send_to_session", "agent_message",
                     "pipeline", "manage_session", "manage_memory", "list_models",
                     "generate_image", "ui_control",
                 }
@@ -4417,7 +4419,12 @@ def setup_chat_routes(
                             # UX-04: main-session pause/steer, drained from the
                             # SAME run this turn registers under `session` in
                             # agent_runs (see chat_pause / chat_steer below).
-                            pending_user_messages=lambda: agent_runs.take_steers(session),
+                            # #235: the same safe point also hands over the chat's
+                            # mailbox (messages from other agents, framed as such).
+                            pending_user_messages=(
+                                (lambda: agent_runs.take_steers(session)) if incognito
+                                else agent_mailbox.make_drain(
+                                    session, str(_user or ""), lambda: agent_runs.take_steers(session))),
                             pending_pause=lambda: agent_runs.take_pause_request(session),
                             # BUG-STOP-01: authoritative cancellation for
                             # scope=task/work — polled far more aggressively

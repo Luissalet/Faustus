@@ -9565,3 +9565,11 @@ best effort, not a boundary	mejor esfuerzo, no es una frontera
 requests: {allowed} allowed, {denied} refused	peticiones: {allowed} permitidas, {denied} rechazadas
 refused	rechazado
 {allowed} requests allowed, {denied} refused	{allowed} peticiones permitidas, {denied} rechazadas
+Message from {name}	Mensaje de {name}
+Relay {n} of {max}	Salto {n} de {max}
+Agent messages	Mensajes de agentes
+Not an approval: other agents cannot answer approvals or change settings.	No es una aprobación: otros agentes no pueden responder a aprobaciones ni cambiar ajustes.
+Messages from other agents: {unread} unread, {waiting} waiting	Mensajes de otros agentes: {unread} sin leer, {waiting} en espera
+Mark all as read	Marcar todo como leído
+Waiting for the next turn	Esperando al próximo turno
+Marked as read	Marcado como leído

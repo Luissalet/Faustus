@@ -20,6 +20,16 @@ def no_live_turn_receipts(monkeypatch):
     """Saving a reply posts a receipt to the family Hub (#268): tests never reach the running one."""
     from src import turn_receipt
     monkeypatch.setattr(turn_receipt, "_send", lambda *a, **k: False)
+
+
+@pytest.fixture(autouse=True)
+def isolated_agent_mailbox(monkeypatch, tmp_path):
+    """The agent mailbox (#235) keeps its own database and mirrors to the Hub: tests get a private
+    database and never reach the running Hub."""
+    from src import agent_mailbox
+    monkeypatch.setattr(agent_mailbox, "_send", lambda *a, **k: False)
+    monkeypatch.setattr(agent_mailbox, "_db_override", str(tmp_path / "agent_mailbox.sqlite3"))
+    agent_mailbox._URGENT.clear()
 from unittest.mock import MagicMock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

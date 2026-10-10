@@ -781,6 +781,15 @@ _register(
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
 _register(
+    # agent_message (src/agent_tools/agent_message_tool.py, src/agent_mailbox.py) leaves a
+    # message in another chat's inbox (it can wake that chat) and reads what other agents
+    # sent: the read side is another agent's text, so the result is untrusted. It touches no
+    # approval and no setting.
+    {"agent_message"},
+    ToolEffect.WRITE_PRIVATE,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+_register(
     # turn_review (src/turn_review.py) reads the owner's own saved chat
     # turns (tool names, exit codes, short output excerpts, timings); the
     # excerpts can quote text a tool fetched, so its result is untrusted.

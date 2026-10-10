@@ -55,6 +55,9 @@ class TurnRequest:
     #: "" = the loop's default posture. Callers pass an already-clamped preset.
     autonomy_preset: str = ""
     workspace: str = ""
+    #: False when the turn's input is already in the history (a mailbox wake:
+    #: the agent's message was saved there, framed, by src/agent_mailbox.py).
+    save_user_message: bool = True
 
 
 @dataclass
@@ -292,12 +295,13 @@ async def run_turn(req: TurnRequest) -> TurnResult:
                            "tool_calls": 0, "error": "", "model": sess.model, "metrics": {}}
     stop_reason = ""
     try:
-        sm.add_message(sess.id, ChatMessage("user", req.text, metadata={
-            "source": req.source,
-            # Text from outside the app: it arms the tool gate like any other
-            # outside text, so a state-changing tool waits for a person.
-            "trusted": False, "provenance_origin": "external", "tool_gate_untrusted": True,
-        }))
+        if req.save_user_message:
+            sm.add_message(sess.id, ChatMessage("user", req.text, metadata={
+                "source": req.source,
+                # Text from outside the app: it arms the tool gate like any other
+                # outside text, so a state-changing tool waits for a person.
+                "trusted": False, "provenance_origin": "external", "tool_gate_untrusted": True,
+            }))
         messages = sess.get_context_messages()
         runner = _chat_turn if req.mode == "chat" else _agent_turn
         try:

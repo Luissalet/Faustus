@@ -1279,6 +1279,11 @@ DEFAULT_SETTINGS = {
     # Execution ledger (H08): causal, append-only record of calls, attempts,
     # results and approvals per run, independent of the visual replay.
     "agent_exec_ledger": True,
+    # Agent mailbox (#235): messages between agents/chats. Off refuses every send
+    # (the sender is told); the cap is the wakes an urgent message may cause per
+    # recipient chat per hour (0 = an urgent message never starts a turn).
+    "agent_mailbox": True,
+    "agent_mailbox_wakes_per_hour": 6,
     "agent_queue_local_concurrency": 1,
     "agent_queue_api_concurrency": 0,
     # delegate_agents: add a reviewer worker after the others by default.

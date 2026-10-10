@@ -1168,6 +1168,14 @@ EXAMPLES: Dict[str, List[str]] = {
         "are there workers still running from a turn that ended",
         "show me what happened to the message I sent while it was working",
     ],
+    "agent_message": [
+        "tell the other agent's chat that the build is ready",
+        "avisa al otro agente de que he terminado la migración",
+        "send an urgent message to the reviewer session",
+        "¿me ha escrito algún otro agente? mira mi bandeja de entrada",
+        "reply to the agent that asked me about the schema",
+        "check whether my message to the other chat was delivered",
+    ],
     "turn_review": [
         "why did your last answer take so long",
         "¿por qué falló el último turno?",

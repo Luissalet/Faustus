@@ -1151,7 +1151,7 @@ Hecho en §251 y §253: ámbito `attention:read`, herramienta `faustus_attention
 
 Hecho en §260 y §261. **Por hacer:**
 
-- Buzón entre agentes: mensajes con remitente, urgente y despertar, tope de 3 saltos y de despertares por hora, entregados donde hoy se drenan los steers y reflejados en el bus como `faustus.agent.msg`. Un mensaje de otro agente nunca es una aprobación.
+- ~~Buzón entre agentes: mensajes con remitente, urgente y despertar, tope de 3 saltos y de despertares por hora, entregados donde hoy se drenan los steers y reflejados en el bus como `faustus.agent.msg`. Un mensaje de otro agente nunca es una aprobación.~~ Hecho en §311 (Ágora #235). Límites anotados allí: solo en modo agente; un mensaje que llega durante un turno de despertar espera al siguiente.
 - Comprobación de carpeta también para lo que lanza la herramienta `python` con `subprocess` (hoy sólo cubre las órdenes de shell).
 - ~~Medidor del presupuesto del periodo en el panel de uso de Studio~~ — hecho (Agora #231): sección «Period budget» en el popover de Vitals (`studio/src/adapters/periodBudget.ts` → `GET /api/budget/period`), con estados sin dato / sin objetivo / pausa / breaker honestos. Cassandra sigue mostrando la tarjeta «Agentes en marcha».
 - ~~Adoptar tras un reinicio los trabajos de dispatch que seguían vivos, en vez de marcarlos interrumpidos.~~ Hecho en §307 (Ágora #232): los agentes externos se adoptan y se siguen hasta el final; los trabajadores internos de Faustus son tareas del propio proceso y mueren con él, así que siguen quedando interrumpidos con su plan de reanudación.
