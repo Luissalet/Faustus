@@ -1,5 +1,29 @@
 import { ApiError, asArray, getJson } from './api';
-import { t } from '../i18n';
+import { locale, t } from '../i18n';
+
+const PERIOD_WORD: Record<string, string> = { day: 'day', iso_week: 'week', month: 'month' };
+
+/** The scheduler's skip reasons are fixed English templates (src/task_scheduler.py,
+ *  src/task_windows.py); shown in the interface language, anything else literal. */
+export function runReasonText(reason: string | null | undefined): string {
+  const text = String(reason ?? '');
+  let m: RegExpMatchArray | null;
+  if ((m = text.match(/^Due (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) UTC; reached (\d+) min late, the window is (\d+) min$/))) {
+    const when = new Date(`${m[1].replace(' ', 'T')}Z`);
+    const shown = Number.isNaN(when.getTime()) ? `${m[1]} UTC` : when.toLocaleString(locale(), { dateStyle: 'medium', timeStyle: 'short' });
+    return t('Due {when}; reached {late} min late, the window is {window} min', { when: shown, late: m[2], window: m[3] });
+  }
+  if ((m = text.match(/^Period (\S+) \((day|iso_week|month)\) already ran$/))) {
+    return t('Period {period} ({kind}) already ran', { period: m[1], kind: t(PERIOD_WORD[m[2]] ?? m[2]) });
+  }
+  if (text === 'Task is paused; nothing ran') return t('Task is paused; nothing ran');
+  if ((m = text.match(/^Paused; the (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) UTC slot did not run$/))) {
+    const when = new Date(`${m[1].replace(' ', 'T')}Z`);
+    const shown = Number.isNaN(when.getTime()) ? `${m[1]} UTC` : when.toLocaleString(locale(), { dateStyle: 'medium', timeStyle: 'short' });
+    return t('Paused; the {when} slot did not run', { when: shown });
+  }
+  return text;
+}
 
 /**
  * Automations (the previous interface's Tasks): `/api/tasks` and its

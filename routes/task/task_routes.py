@@ -24,7 +24,7 @@ from src.task_scheduler import (
     get_task_schedule_guard, set_task_schedule_guard,
 )
 from src.task_windows import (
-    CLOSED_STATUSES, PERIOD_KEYS, closed_status_for, normalize_period_key, normalize_window_minutes,
+    closed_status_for, normalize_period_key, normalize_window_minutes,
 )
 from routes.prefs_routes import _load_for_user, _save_for_user
 

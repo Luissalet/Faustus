@@ -9550,3 +9550,8 @@ Skipped — paused	Omitida — en pausa
 Skipped — period already ran	Omitida — el periodo ya se ejecutó
 The window is a whole number of minutes, from 1 to 43200	La ventana es un número entero de minutos, de 1 a 43200
 last result: {status}	último resultado: {status}
+Due {when}; reached {late} min late, the window is {window} min	Vencía el {when}; se alcanzó con {late} min de retraso y la ventana es de {window} min
+Period {period} ({kind}) already ran	El periodo {period} ({kind}) ya se ejecutó
+Task is paused; nothing ran	La tarea está en pausa; no se ejecutó nada
+month	mes
+Paused; the {when} slot did not run	En pausa; la ejecución de las {when} no se hizo

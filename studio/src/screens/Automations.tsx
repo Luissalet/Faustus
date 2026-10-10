@@ -23,6 +23,7 @@ import {
   resumeAutomation,
   revertAutomation,
   runAutomation,
+  runReasonText,
   stopAutomation,
   webhookUrl,
   type Automation,
@@ -98,7 +99,8 @@ function Row({ task, on, selecting, selected, pinned, onOpen, onToggle }: { task
 
 function RunItem({ run }: { run: TaskRun }) {
   const [open, setOpen] = useState(false);
-  const text = run.result || run.error || '';
+  const raw = run.result || run.error || '';
+  const text = run.closed_status && run.closed_status.startsWith('skipped-') ? runReasonText(raw) : raw;
   const long = text.length > 300;
   // A run that has ended carries a closed status (ok, skipped-window, ...);
   // one still open falls back to the stored word.
@@ -547,7 +549,7 @@ export function AutomationsScreen() {
                     <dt>{t('Last result')}</dt>
                     <dd data-testid="automation-last-result">
                       {closedLabel(current.last_run_closed_status)}
-                      {current.last_run_reason && current.last_run_closed_status !== 'ok' ? ` · ${current.last_run_reason}` : ''}
+                      {current.last_run_reason && current.last_run_closed_status !== 'ok' ? ` · ${runReasonText(current.last_run_reason)}` : ''}
                     </dd>
                   </div>
                 )}
