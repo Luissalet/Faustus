@@ -10718,3 +10718,22 @@ Antes cada subsistema decía su estado por su cuenta (`/api/diagnostics/services
 **Verificación:** `tests/test_degradation.py` (estados ok/degraded/down/timeout/unconfigured con falsos, `since` y reinicio, caché y refresco en segundo plano, limpieza de secretos, ruta admin y MCP), `tests/test_harness_mcp.py` (lista de herramientas), `studio/checks/degradation.check.mjs` y `tsc --noEmit`.
 
 **Límites.** TTS/STT y Hoards externos aún no tienen comprobación propia (el registro admite añadirlas). El proceso MCP separado no ve el almacén vectorial ni los servidores MCP de la app: solo los ve a través del último informe de la app. Una sonda lenta se marca `degraded` (no `down`) porque no se sabe si está caída.
+## 293. Logs de trabajos del Cookbook que se pueden copiar: comando real, código de salida y stderr (10-10-2026)
+
+Cuando una descarga o un servidor del Cookbook fallaba, lo único que quedaba era un trozo de 12 KB de salida: ni el comando exacto, ni el código de salida, ni qué venía por stderr. Ahora cada sesión del Cookbook (descarga, serve, instalación de dependencias) deja un registro duradero.
+
+**Qué se guarda por trabajo** (`src/cookbook_job_logs.py`, en `DATA_DIR/cookbook_job_logs/<id>.json`):
+- El comando tal como se ejecutó: el comando de usuario (`hf download ...`, `llama-server ...`), el argv del lanzador, el directorio de trabajo y las claves de entorno que recibe el proceso. Los valores de claves con aspecto secreto (`TOKEN`, `KEY`, `PASSWORD`...) se guardan como `***`, y los flags `--token X` y similares se tachan igual.
+- Hora de inicio y de fin, estado y código de salida (el poller de estado lo actualiza en cada pasada).
+- La salida: tres ficheros (`combined`, `stdout`, `stderr`). En un lanzamiento local desacoplado de Windows el lanzador escribe los tres. En sesiones tmux/SSH solo se ve la captura del panel, así que solo hay `combined` y los otros dos se declaran no disponibles en vez de inventarlos.
+- Tope de tamaño de 20 MB por fichero (se recorta la cabecera cuando el trabajo termina); las lecturas devuelven como mucho las últimas 2000 líneas y pasan otra vez por la redacción de secretos.
+
+**Qué se ve** (Cookbook > Running, desplegable «Comando y log» en cada sesión): el comando, el código de salida y las horas, el log con las líneas de stderr resaltadas, selector de flujo y tres botones: «Copiar comando», «Copiar log» (con cabecera: comando, código de salida, horas) y «Descargar log completo».
+
+**API (admin):** `GET /api/cookbook/jobs`, `GET /api/cookbook/jobs/{id}/log?stream=combined|stdout|stderr&tail=N[&format=text]`, `GET /api/cookbook/jobs/{id}/download?stream=`. Ver `docs/api/cookbook-logs.md`.
+
+**MCP:** herramienta de lectura `cookbook_job_log` en el servidor integrado `harness` (sin `job_id` lista los trabajos recientes).
+
+**Límites:** el log combinado de un lanzamiento local no garantiza el orden exacto entre stdout y stderr (van por dos `tee`); si el propio script interno ya mezcla stderr en stdout (el instalador de `hf` lo hace), `stderr` saldrá vacío; las sesiones anteriores a este cambio no tienen registro (404 y aviso en la interfaz); sesiones remotas solo guardan la salida combinada de la última captura.
+
+**Pruebas:** `tests/test_cookbook_job_logs.py` (redacción, tail y tope, rutas, MCP), prueba real con Git Bash (stdout y stderr separados, token no filtrado), `tsc --noEmit` limpio.

@@ -29,6 +29,9 @@ running a turn:
 * ``voice_turn_timeline`` - the latency timeline of voice turns (speech end,
   transcript, first token, first audio) with p50/p90 per gap.
 
+* ``cookbook_job_log`` - the command, exit code and output (stdout/stderr) of a
+  Cookbook download or serve job.
+
 Nothing here writes anything or starts a run. The in-process receipt log and
 claim broker of the running app are not reachable from this separate process;
 these tools compute from what they are given, and read the reports on disk.
@@ -255,6 +258,29 @@ async def list_tools() -> list[Tool]:
                     "session_id": {"type": "string", "description": "Only this chat session."},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 200,
                               "description": "How many recent turns (default 20)."},
+                },
+            },
+        ),
+        Tool(
+            name="cookbook_job_log",
+            description=(
+                "Read the log of a Cookbook job (a model download, serve or install): the exact "
+                "command and launcher argv, working directory, environment keys (secret values "
+                "redacted), start/end times, status and exit code, and the last lines of its "
+                "output. stream is combined (default), stdout or stderr; in combined, lines that "
+                "came from stderr are flagged. Without job_id it lists the recent jobs. "
+                "Lee el comando, el codigo de salida y la salida de un trabajo del Cookbook. "
+                "Read-only."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "job_id": {"type": "string", "description": "Session id, e.g. serve-1a2b3c4d. Omit to list recent jobs."},
+                    "stream": {"type": "string", "enum": ["combined", "stdout", "stderr"]},
+                    "tail": {"type": "integer", "minimum": 1, "maximum": 2000,
+                             "description": "How many trailing lines (default 200)."},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 200,
+                              "description": "How many jobs when listing (default 50)."},
                 },
             },
         ),
@@ -494,6 +520,22 @@ def _degradation_status(args: dict) -> dict:
     return report
 
 
+def _cookbook_job_log(args: dict) -> dict:
+    from src import cookbook_job_logs as jl
+
+    job_id = str(args.get("job_id") or "").strip()
+    if not job_id:
+        return {"jobs": jl.list_jobs(args.get("limit") or 50)}
+    try:
+        data = jl.read_log(job_id, str(args.get("stream") or "combined"), args.get("tail") or jl.DEFAULT_TAIL)
+    except jl.JobLogError as exc:
+        return {"error": str(exc)}
+    except KeyError:
+        return {"error": f"no log recorded for job {job_id!r}"}
+    data["header"] = jl.render_header(jl.get_meta(job_id) or {})
+    return data
+
+
 _TOOLS = {
     "degradation_status": _degradation_status,
     "doc_lint": _doc_lint,
@@ -504,6 +546,7 @@ _TOOLS = {
     "tool_footprint": _tool_footprint,
     "harness_proposals": _harness_proposals,
     "voice_turn_timeline": _voice_turn_timeline,
+    "cookbook_job_log": _cookbook_job_log,
 }
 
 

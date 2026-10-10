@@ -1001,3 +1001,21 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+.fs-ck__joblog > summary {
+  cursor: pointer;
+  color: var(--fs-text-2);
+}
+
+.fs-ck__joblog-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fs-space-2);
+  align-items: center;
+  margin-block: var(--fs-space-2);
+}
+
+.fs-ck__stderr {
+  color: var(--fs-danger);
+  background: color-mix(in srgb, var(--fs-danger) 12%, transparent);
+}

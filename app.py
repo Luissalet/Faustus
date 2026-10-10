@@ -1213,6 +1213,10 @@ app.include_router(setup_model_architecture_routes())
 from routes.inference_routes import setup_inference_routes
 app.include_router(setup_inference_routes())
 
+# Copyable Cookbook job logs: command, exit code, stdout/stderr (src/cookbook_job_logs.py).
+from routes.cookbook_logs_routes import setup_cookbook_logs_routes
+app.include_router(setup_cookbook_logs_routes())
+
 # "Optimize for my machine" benchmark (INF-04 §09/§10): plan/start/cancel a
 # deterministic, budgeted benchmark run against installed models only (no
 # downloads/installs/engine restarts), and compare two runs against the

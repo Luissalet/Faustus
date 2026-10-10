@@ -19,7 +19,7 @@ from fastapi.responses import JSONResponse
 
 from src.auth_helpers import require_user
 from src.constants import COOKBOOK_STATE_FILE
-from src import inference_capabilities, launch_receipts
+from src import cookbook_job_logs, inference_capabilities, launch_receipts
 from src.contracts.inference import EngineIdentity, ModelDescriptor
 from pydantic import BaseModel
 
@@ -1369,11 +1369,19 @@ def setup_cookbook_routes() -> APIRouter:
             lp = shlex.quote(log_path.as_posix())
             ip = shlex.quote(inner.as_posix())
             script_path = TMUX_LOG_DIR / f"{session_id}.sh"
+            # Keep the combined log the poller tails, and also a per-stream
+            # copy so a failed job can show stderr on its own.
+            out_path = TMUX_LOG_DIR / f"{session_id}.out.log"
+            err_path = TMUX_LOG_DIR / f"{session_id}.err.log"
+            op = shlex.quote(out_path.as_posix())
+            ep = shlex.quote(err_path.as_posix())
             script_path.write_text(
-                f"bash {ip} > {lp} 2>&1\n",
+                f"bash {ip} > >(tee -a {op} >> {lp}) 2> >(tee -a {ep} >> {lp})\n",
                 encoding="utf-8",
             )
             argv = [bash, str(script_path)]
+            _job_files = {"combined": str(log_path), "stdout": str(out_path), "stderr": str(err_path)}
+            _job_script = "\n".join(bash_lines)
         else:
             # No bash on this Windows host: the bash wrapper can't run. Fall back
             # to a cmd.exe wrapper that just records a clear error to the log so
@@ -1386,6 +1394,8 @@ def setup_cookbook_routes() -> APIRouter:
                 encoding="utf-8",
             )
             argv = [os.environ.get("ComSpec", "cmd.exe"), "/c", str(script_path)]
+            _job_files = {"combined": str(log_path)}
+            _job_script = ""
         env = os.environ.copy()
         env["PYTHONUTF8"] = "1"
         env["PYTHONIOENCODING"] = "utf-8"
@@ -1401,6 +1411,16 @@ def setup_cookbook_routes() -> APIRouter:
         # Publish a valid Win32 ancestor first. The Git Bash runner may then
         # replace it with its own Win32 pid, but never before this fallback exists.
         pid_path.write_text(str(proc.pid), encoding="utf-8")
+        cookbook_job_logs.record_launch(
+            session_id,
+            argv=argv,
+            cwd=os.getcwd(),
+            env={"PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8", **(env_extra or {})},
+            remote="local",
+            launcher="detached local runner (Git Bash)" if bash else "detached cmd.exe fallback",
+            script=_job_script,
+            files=_job_files,
+        )
         if pid_ready_path is not None:
             try:
                 pid_ready_path.touch()
@@ -1792,6 +1812,15 @@ def setup_cookbook_routes() -> APIRouter:
                     )
                     return {"ok": False, "error": stderr, "session_id": session_id}
             launched = True
+            cookbook_job_logs.record_launch(
+                session_id,
+                kind="download",
+                model=req.repo_id,
+                command=ollama_cmd if is_ollama_download else hf_cmd,
+                remote=remote or "local",
+                launcher=setup_cmd or "",
+                env={"HF_TOKEN": "x"} if req.hf_token else None,
+            )
         finally:
             # Push copies go whichever way this ended; a grant a local runner
             # never got the chance to consume goes with them.
@@ -3385,6 +3414,15 @@ def setup_cookbook_routes() -> APIRouter:
                     stderr = (await proc.stderr.read()).decode(errors="replace")
                     return {"ok": False, "error": stderr, "session_id": session_id}
             launched = True
+            cookbook_job_logs.record_launch(
+                session_id,
+                kind="serve",
+                model=req.repo_id,
+                command=req.cmd,
+                remote=remote or "local",
+                launcher=setup_cmd or "",
+                env={"HF_TOKEN": "x"} if req.hf_token else None,
+            )
         finally:
             _discard_staged(
                 staged_for_remote if launched else staged_for_remote + [local_grant]
@@ -5232,6 +5270,14 @@ def setup_cookbook_routes() -> APIRouter:
             if download_zero_files:
                 diagnosis = {"message": "No matching files were downloaded. The model repo or filename/quant pattern may be wrong (for example a ':Q4_K_M' tag that does not exist in the repo). Check the repo and the include/quant pattern."}
             output_tail = error_aware_output_tail(full_snapshot, status)
+            cookbook_job_logs.observe(
+                session_id,
+                status=status,
+                exit_code=exit_code,
+                snapshot=None if local_win_task else full_snapshot,
+                defaults={"kind": task_type, "model": model, "remote": remote or "local",
+                          "command": _payload.get("_cmd") or ""},
+            )
 
             results.append({
                 "session_id": session_id,

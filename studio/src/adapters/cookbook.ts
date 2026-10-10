@@ -1218,3 +1218,58 @@ export function advertisedEndpoint(output: string, currentHost: string): { host:
     return null;
   }
 }
+
+/* ── job logs (#205): command, exit code, stdout/stderr of a session ── */
+
+export type JobLogStream = 'combined' | 'stdout' | 'stderr';
+
+export interface JobLog {
+  job: {
+    session_id: string;
+    kind?: string;
+    model?: string;
+    remote?: string;
+    status?: string;
+    exit_code?: number;
+    started_at?: string;
+    ended_at?: string;
+    duration_s?: number;
+    command?: string;
+    argv?: string[];
+    cwd?: string;
+    env?: Record<string, string>;
+  };
+  stream: JobLogStream;
+  available_streams: JobLogStream[];
+  stream_available: boolean;
+  lines: { text: string; stderr: boolean }[];
+  truncated: boolean;
+  header: string;
+}
+
+/** `GET /api/cookbook/jobs/{id}/log` — `null` when the session has no recorded log (404). */
+export async function getJobLog(sessionId: string, stream: JobLogStream = 'combined', tail = 500, signal?: AbortSignal): Promise<JobLog | null> {
+  const res = await fetch(`/api/cookbook/jobs/${encodeURIComponent(sessionId)}/log?stream=${stream}&tail=${tail}`, {
+    credentials: 'same-origin',
+    headers: { Accept: 'application/json' },
+    signal,
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new ApiError(`job log responded ${res.status}`, res.status);
+  return (await res.json()) as JobLog;
+}
+
+export const jobLogDownloadUrl = (sessionId: string, stream: JobLogStream = 'combined'): string =>
+  `/api/cookbook/jobs/${encodeURIComponent(sessionId)}/download?stream=${stream}`;
+
+/** The command exactly as the server recorded it (secrets already redacted there). */
+export function jobCommandText(log: JobLog): string {
+  const j = log.job;
+  return (j.command || (j.argv ?? []).join(' ') || '').trim();
+}
+
+/** What "Copy log" puts on the clipboard: the server's header (command, exit code, times) then the lines. */
+export function formatJobLog(log: JobLog): string {
+  const body = log.lines.map((l) => (l.stderr && log.stream === 'combined' ? `[stderr] ${l.text}` : l.text)).join('\n');
+  return `${log.header}\nstream: ${log.stream}\n${'-'.repeat(40)}\n${log.truncated ? '(older output omitted)\n' : ''}${body}\n`;
+}

@@ -1020,6 +1020,7 @@ Comma-separated — what this device actually has right now.	Separados por comas
 Command	Comando
 Command (advanced)	Comando (avanzado)
 Command already applied (deduped).	El comando ya se había aplicado (deduplicado).
+Command and log	Comando y log
 Command applied.	Comando aplicado.
 Command completed.	Comando terminado.
 Command copied	Comando copiado
@@ -1177,8 +1178,10 @@ Copy	Copiar
 Copy JSON	Copiar JSON
 Copy as Markdown	Copiar como Markdown
 Copy code	Copiar código
+Copy command	Copiar comando
 Copy commit hash	Copiar hash del commit
 Copy id	Copiar id
+Copy log	Copiar log
 Copy public key	Copiar clave pública
 Copy reply	Copiar respuesta
 Copy result	Copiar resultado
@@ -1801,6 +1804,7 @@ Download all	Descargar todos
 Download and serve models on this machine (Ollama, llama.cpp).	Descargar y servir modelos en esta máquina (Ollama, llama.cpp).
 Download as a file	Descargar como archivo
 Download filled PDF	Descargar el PDF relleno
+Download full log	Descargar log completo
 Download here	Descargar aquí
 Download this definition as JSON, including your saved node layout.	Descarga esta definición como JSON, incluida la disposición de nodos que guardaste.
 Download zip	Descargar zip
@@ -3549,6 +3553,7 @@ No links.	Sin enlaces.
 No local browser voice for this language. Configure a speech output provider.	No hay una voz local del navegador para este idioma. Configura un proveedor de síntesis.
 No local model chosen	Ningún modelo local elegido
 No log output yet.	Aún no hay salida en el registro.
+No log was recorded for this session (it predates job logs).	No se registró log de esta sesión (es anterior a los logs de trabajos).
 No longer a favourite.	Ya no es favorita.
 No mail accounts	Sin cuentas de correo
 No matches	Sin coincidencias
@@ -5520,14 +5525,18 @@ Story 1080 × 1920	Historia 1080 × 1920
 Strategy profile	Perfil de estrategia
 Strategy profile: {label}	Perfil de estrategia: {label}
 Strategy: {method} · {profile}{reason}	Estrategia: {method} · {profile}{reason}
+Stream	Flujo
 Suggested by the model	Sugerido por el modelo
 Suggested conflicts	Conflictos sugeridos
+This stream was not captured for this job (remote sessions only keep the combined output).	Este flujo no se capturó para este trabajo (las sesiones remotas solo guardan la salida combinada).
 Untrusted context influenced this run, so continuing with otherwise-gated actions needs your explicit approval.	Algo de fuera (una página, un archivo, un resultado de herramienta) ha influido en esta tarea, así que seguir con acciones protegidas necesita tu permiso expreso.
 Use {path}? It was chosen {n} min after the dialog opened.	¿Usar {path}? Se eligió {n} min después de abrir el diálogo.
 Where you answered "Always for this workspace folder": chats in these folders, and in every folder under them, continue after reading outside content without asking. The destructive-command guard and every other restriction still apply.	Donde respondiste «Siempre en esta carpeta del espacio de trabajo»: los chats de estas carpetas, y de todas las que cuelgan de ellas, siguen sin preguntar después de leer contenido de fuera. El guardián de comandos destructivos y las demás restricciones siguen igual.
 allowed {when}	permitida el {when}
 direct edit	edición directa
+exit {n}	salida {n}
 first for {tool}	primero para {tool}
+no exit code yet	aún sin código de salida
 not promoted	sin promocionar
 plan, then do	planificar y hacer
 research	investigación
@@ -8164,6 +8173,7 @@ yours	tuyo
 ~{n} h	~{n} h
 ~{n} min	~{n} min
 ~{n}s	~{n}s
+… older output omitted — download the full log.	… salida anterior omitida: descarga el log completo.
 …and {n} more.	…y {n} más.
 …or upload a file	…o sube un archivo
 ≥ {lower} GB (incomplete: {reason})	≥ {lower} GB (incompleto: {reason})

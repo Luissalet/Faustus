@@ -10,6 +10,7 @@ import { t, tn } from '../../i18n';
 import { launchPip, launchServe, processQueue, startDownload, targetFor } from './actions';
 import { CopyButton, Uptime } from './parts';
 import { ReceiptPanel } from './ReceiptPanel';
+import { JobLogPanel } from './JobLogPanel';
 import { engineStatuses, listEngines } from '../../adapters/engines';
 
 /**
@@ -373,6 +374,7 @@ function TaskCard({ task, open, onToggle, onStop, onKill, onRemove, onRestart, o
           <pre className="fs-ck__output" data-testid="cookbook-task-output">
             {tail === null ? t('Reading the session…') : stripAnsi(tail) || t('(no output yet)')}
           </pre>
+          <JobLogPanel task={task} say={say} />
         </div>
       )}
     </li>

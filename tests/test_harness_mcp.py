@@ -26,7 +26,8 @@ def test_server_identity_and_tool_surface():
     tools = asyncio.run(srv.list_tools())
     assert [t.name for t in tools] == ["degradation_status", "history_projection", "resource_claims", "paired_bench_reports",
                                        "tool_footprint", "harness_proposals", "doc_lint",
-                                       "spend_cap_status", "voice_turn_timeline"]
+                                       "spend_cap_status", "voice_turn_timeline",
+                                       "cookbook_job_log"]
     for t in tools:
         assert len(t.description) > 60
         for required in t.inputSchema.get("required", []):

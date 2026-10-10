@@ -451,6 +451,13 @@ bypass the model client, such as image or video generation APIs.
 
 - **Degradation diagnostics.** One registry says what Faustus is running without right now (vector store, web search, notifications, email, model endpoints, Sparks, MCP servers): state `ok/degraded/down/unconfigured`, the real error class, since when, latency, a fix hint in Spanish and English and the features that degrade. Checks are time-boxed and cached, nothing is blocked. `GET /api/diagnostics/degradation` (`?refresh=1`), the `degradation_status` tool of the built-in `harness` MCP server, and Studio > Vitals > "Running degraded"; see [docs/api/degradation.md](docs/api/degradation.md).
 
+Every Cookbook job (model download, serve, dependency install) keeps a copyable
+record: the command as executed (secrets redacted), working directory, exit code,
+start/end times and its stdout/stderr, with a "Command and log" panel in
+Cookbook > Running (copy command, copy log with header, download full log),
+`GET /api/cookbook/jobs/{id}/log` and the `cookbook_job_log` tool of the built-in
+`harness` MCP server; see [docs/api/cookbook-logs.md](docs/api/cookbook-logs.md).
+
 At the other end of the scale, a turn that is plainly small talk is answered
 without the model’s reasoning and without the toolset attached. Measured on a
 local 27B with a cold prompt cache: 7.5 s carrying the tools against 2.2 s
