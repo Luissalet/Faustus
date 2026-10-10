@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useLang } from '../i18n';
+import { servicesForDisplay } from '../lib/vitals-i18n';
 import { SERVICES_RECONNECTED } from './degradation';
 
 /**
@@ -96,6 +98,7 @@ export async function reconnectServices(): Promise<ServiceHealth | null> {
  * A 403 stops the polling for good rather than retrying every half minute.
  */
 export function useServiceHealth(on: boolean): { health: ServiceHealth | null; allowed: boolean; error: string | null } {
+  const lang = useLang();
   const [health, setHealth] = useState<ServiceHealth | null>(null);
   const [allowed, setAllowed] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -133,5 +136,6 @@ export function useServiceHealth(on: boolean): { health: ServiceHealth | null; a
     };
   }, [on, allowed]);
 
-  return { health, allowed, error };
+  const display = useMemo(() => health ? servicesForDisplay(health) : null, [health, lang]);
+  return { health: display, allowed, error };
 }

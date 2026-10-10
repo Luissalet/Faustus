@@ -1,5 +1,6 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
-import { locale, t } from '../i18n';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { locale, t, useLang } from '../i18n';
+import { healthForDisplay } from '../lib/vitals-i18n';
 import { getJson } from './api';
 
 /**
@@ -429,10 +430,13 @@ function getSnapshot() {
 
 export function useUsage(active = false): { last: Usage | null; history: number[]; visible: boolean; busy: boolean; intervalMs: number } {
   const s = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const lang = useLang();
+  const display = useMemo(() => s.last?.health && Array.isArray(s.last.health.components)
+    ? { ...s.last, health: healthForDisplay(s.last.health) } : s.last, [s.last, lang]);
   useEffect(() => {
     setUsageBusy(active);
   }, [active]);
-  return { ...s, intervalMs: s.busy ? BUSY_MS : IDLE_MS };
+  return { ...s, last: display, intervalMs: s.busy ? BUSY_MS : IDLE_MS };
 }
 
 /** Ticks once a second so "12s left" and "updated 10:41:03" stay honest while the panel is open. */

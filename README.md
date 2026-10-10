@@ -455,6 +455,8 @@ bypass the model client, such as image or video generation APIs.
 
 - **Degradation diagnostics.** One registry says what Faustus is running without right now (vector store, web search, notifications, email, model endpoints, Sparks, MCP servers): state `ok/degraded/down/unconfigured`, the real error class, since when, latency, a fix hint in Spanish and English and the features that degrade. Checks are time-boxed and cached, nothing is blocked. `GET /api/diagnostics/degradation` (`?refresh=1`), the `degradation_status` tool of the built-in `harness` MCP server, and Studio > Vitals > "Running degraded"; see [docs/api/degradation.md](docs/api/degradation.md). Vitals > Services > Reconnect re-establishes the ChromaDB-backed stores in place, says which came back or still fail, and refreshes the report; a ChromaDB that stops mid-session shows as down instead of healthy.
 
+Studio displays health labels and recognised service/degradation values in the interface language, with its number format. API/MCP readings retain their original fields; unknown diagnostic text remains literal. [Health panel language](docs/ui/vitals-i18n.md).
+
 Every Cookbook job (model download, serve, dependency install) keeps a copyable
 record: the command as executed (secrets redacted), working directory, exit code,
 start/end times and its stdout/stderr, with a "Command and log" panel in

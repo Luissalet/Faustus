@@ -9456,3 +9456,79 @@ This shell command needs approval.	Esta orden de shell necesita aprobación.
 Type a shell command after !!.	Escribe una orden de shell después de !!.
 Shell command finished.	La orden de shell ha terminado.
 `!!command` runs a shell command in the working folder, saves its output here, and makes no model call.	`!!orden` ejecuta una orden de shell en la carpeta de trabajo, guarda aquí su salida y no llama al modelo.
+ChromaDB stopped answering; the vector stores were connected but the server is gone.	ChromaDB dejó de responder; los almacenes vectoriales estaban conectados, pero el servidor ya no responde.
+Disk headroom	Espacio en disco
+GPU visible to nvidia-smi	GPU detectada por nvidia-smi
+MCP manager not available	El gestor de MCP no está disponible
+No SearXNG instance configured.	No hay una instancia de SearXNG configurada.
+No email accounts configured.	No hay cuentas de correo configuradas.
+No mail account is reachable.	No responde ninguna cuenta de correo.
+No model endpoint is reachable.	No responde ningún servidor de modelos.
+No model endpoints configured.	No hay servidores de modelos configurados.
+No ntfy integration configured.	No hay una integración de ntfy configurada.
+No orphaned runners	Sin procesos de modelo huérfanos
+Ollama reachable	Ollama accesible
+One vector store is unavailable.	Un almacén vectorial no está disponible.
+Prometheus does not answer	Prometheus no responde
+RAM headroom	RAM disponible
+Reachable (HTTP {code}).	Accesible (HTTP {code}).
+Recent dispatched jobs	Trabajos recientes
+Search provider is '{provider}', not SearXNG.	El buscador es «{provider}», no SearXNG.
+Sparks cluster models	modelos del clúster Sparks
+Sparks is disabled	Sparks está desactivado
+TLS handshake failed	falló la conexión TLS
+Unreachable ({why}).	No accesible ({why}).
+VRAM headroom	VRAM disponible
+Vector RAG and vector memory are not initialized.	El RAG y la memoria vectorial no están inicializados.
+Vector stores are unavailable.	Los almacenes vectoriales no están disponibles.
+Vector stores healthy.	Los almacenes vectoriales funcionan.
+agent runs	ejecuciones de agentes
+answering at {url}	responde en {url}
+authentication or protocol error	error de autenticación o de protocolo
+chat with those models	chat con esos modelos
+connection refused	conexión rechazada
+deep research	investigación profunda
+default backend sync	sincronización del servidor predeterminado
+endpoint returned no models	el servidor no devolvió modelos
+host could not be resolved	no se pudo resolver el servidor
+mail reading	lectura de correo
+mail sending	envío de correo
+mail triage	clasificación de correo
+model catalogue	catálogo de modelos
+network error	error de red
+no MCP servers configured	no hay servidores MCP configurados
+no data source yet — nothing has reported this, which is not the same as nothing being wrong	todavía no hay datos: que no se haya informado de un problema no significa que todo funcione
+no host configured	no hay servidor configurado
+no orphaned runners	ninguno
+no runner is holding VRAM without a server	ningún proceso de modelo ocupa VRAM sin un servidor
+nvidia-smi answered for {n} cards	nvidia-smi detectó {n} tarjetas
+nvidia-smi failed	falló nvidia-smi
+probe failed	falló la comprobación
+probe timed out	se agotó el tiempo de comprobación
+push notifications	notificaciones push
+reachable	accesible
+reminders	recordatorios
+semantic search	búsqueda semántica
+server returned an error response	el servidor devolvió un error
+spilling into system RAM	parte del modelo en la RAM del sistema
+tools from the failing MCP servers	herramientas de los servidores MCP que fallan
+unreachable: {why}	no responde: {why}
+web search	búsqueda web
+weights are paging into system memory over PCIe	parte del modelo se está leyendo desde la RAM del sistema a través de PCIe
+{a} of {b} servers failing ({names})	Fallan {a} de {b} servidores ({names})
+{a}/{b} mail accounts reachable.	Responden {a} de {b} cuentas de correo.
+{a}/{b} model endpoints reachable.	Responden {a} de {b} servidores de modelos.
+{free} GB free of {total} GB where Faustus writes	{free} GB libres de {total} GB en el disco donde escribe Faustus
+{gb} GB free ({pct}%)	{gb} GB libres ({pct}%)
+{gb} GB free across {n} cards	{gb} GB libres entre {n} tarjetas
+{n} card	{n} tarjeta
+{n} cards	{n} tarjetas
+{n} job	{n} trabajo
+{n} jobs	{n} trabajos
+{n} model loaded	{n} modelo cargado
+{n} models loaded	{n} modelos cargados
+{n} orphaned runner	{n} proceso de modelo huérfano
+{n} orphaned runners	{n} procesos de modelo huérfanos
+{n}% free	{n}% libre
+{n}% of system RAM in use	{n}% de la RAM del sistema en uso
+{n}% used	{n}% en uso

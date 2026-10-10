@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useLang } from '../i18n';
+import { degradationForDisplay } from '../lib/vitals-i18n';
 
 /**
  * What Faustus is running without right now (`GET /api/diagnostics/degradation`).
@@ -77,6 +79,7 @@ export const SERVICES_RECONNECTED = 'faustus:services-reconnected';
 
 /** Polls while `on`; a 403 stops it for good. The server caches, so this is cheap. */
 export function useDegradation(on: boolean): { report: DegradationReport | null; allowed: boolean; error: string | null } {
+  const lang = useLang();
   const [report, setReport] = useState<DegradationReport | null>(null);
   const [allowed, setAllowed] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -118,5 +121,6 @@ export function useDegradation(on: boolean): { report: DegradationReport | null;
     };
   }, [on, allowed]);
 
-  return { report, allowed, error };
+  const display = useMemo(() => report ? degradationForDisplay(report) : null, [report, lang]);
+  return { report: display, allowed, error };
 }
