@@ -17,6 +17,7 @@ import { Rich } from './rich';
 import { BrandMark } from '../shell/BrandMark';
 import { useSpotlight } from '../shell/useSpotlight';
 import './home.css';
+import { FleetCard } from './FleetCard';
 import { t, tn } from '../i18n';
 
 /**
@@ -365,7 +366,7 @@ export function HomeScreen() {
         <p className="fs-home__sub">
           {data.approvals.length > 0
             ? tn(data.approvals.length, '{n} thing is waiting for your decision.', '{n} things are waiting for your decision.')
-            : t('Nothing blocked waiting for you. Pick up where you left off or start something.')}
+            : t('Continue your work or start something.')}
         </p>
       </header>
 
@@ -452,6 +453,8 @@ export function HomeScreen() {
           </div>
         </Block>
       )}
+
+      <FleetCard />
 
       <Block title={t('Start something')} index={5}>
         <div className="fs-quickstarts">

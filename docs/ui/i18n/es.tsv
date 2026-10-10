@@ -9650,3 +9650,26 @@ read now, still being saved	leído ahora, aún guardándose
 the earlier save did not finish	el guardado anterior no terminó
 the server saves to another folder than the one set for saved slots	el servidor guarda en otra carpeta que la fijada para los slots guardados
 the saved state would be bigger than the size limit	el estado guardado superaría el límite de tamaño
+Fleet	Flota
+Working	Funciona
+Stopped silently	Parado en silencio
+Stopped with error	Parado con error
+Sign-in needed	Necesita iniciar sesión
+Approval needed	Necesita una aprobación
+Configuration needed	Necesita configuración
+Needs your attention	Necesita tu atención
+Refresh fleet	Actualizar Flota
+Checking fleet…	Comprobando Flota…
+Fleet could not be checked. Check the Hub and try again.	No se pudo consultar Flota. Comprueba el Hub y vuelve a intentarlo.
+No fleet expectations are declared yet.	Aún no hay elementos configurados en Flota.
+Last confirmed success: {when}	Último éxito confirmado: {when}
+No confirmed success recorded.	No hay ningún éxito confirmado.
+Some fleet sources could not be checked.	No se pudieron comprobar algunas fuentes de Flota.
+Only configured apps and schedules are checked. Other tasks appear when they report their results.	Se comprueban las apps y horarios configurados. Las demás tareas aparecen cuando comunican sus resultados.
+Health checked: {when}	Estado comprobado: {when}
+The app is not answering.	La app no responde.
+Continue your work or start something.	Continúa tu trabajo o empieza algo nuevo.
+Successful run started: {when}	Inicio de la ejecución que terminó bien: {when}
+Last result succeeded	El último resultado fue correcto
+An administrator can view the fleet for this device.	Un administrador puede consultar la flota de este equipo.
+Last confirmed failure: {when}	Último fallo confirmado: {when}

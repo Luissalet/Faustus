@@ -217,6 +217,18 @@ def get_spheres() -> Dict[str, Any]:
     return {"ok": True, "active": active, "spheres": spheres, "hub_url": where["url"]}
 
 
+def get_fleet() -> Dict[str, Any]:
+    """Read the Hub's published fleet metadata without opening another app's data."""
+    # A cold refresh can include the bounded Windows metadata query (8 s)
+    # after family health/provider probes; it must fit the proxy's deadline.
+    status, data, where = _call("GET", "/api/fleet", timeout=15.0)
+    if status != 200 or not isinstance(data, dict) or not data.get("ok"):
+        return {"ok": False, "error": "fleet unavailable", "hub_url": where["url"]}
+    if not isinstance(data.get("items"), list) or not isinstance(data.get("brief"), dict):
+        return {"ok": False, "error": "fleet unavailable", "hub_url": where["url"]}
+    return {k: data.get(k) for k in ("ok", "generated_ts", "items", "brief", "counts", "coverage")}
+
+
 def set_active(sphere_id: str) -> Dict[str, Any]:
     """Switch the hub's active sphere. Same shape as `get_spheres` on success."""
     sid = str(sphere_id or "").strip()

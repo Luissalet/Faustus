@@ -9,6 +9,7 @@ nothing else in Faustus depends on the hub being there.
 from __future__ import annotations
 
 import asyncio
+import secrets
 from typing import Any, Dict
 
 from fastapi import APIRouter, Request
@@ -29,6 +30,26 @@ def setup_hoard_hub_routes() -> APIRouter:
     @router.get("/api/hoard/spheres")
     async def get_spheres() -> Dict[str, Any]:
         return await asyncio.to_thread(hoard_hub.get_spheres)
+
+    @router.get("/api/hoard/fleet")
+    async def get_fleet(request: Request) -> Dict[str, Any]:
+        # Fleet labels span the machine, including other users' scheduled tasks.
+        require_admin(request)
+        return await asyncio.to_thread(hoard_hub.get_fleet)
+
+    @router.get("/api/family/fleet")
+    def publish_fleet(request: Request):
+        # The already configured Hub credential authenticates the family observer;
+        # ordinary authenticated administrators can read the same published metadata.
+        where = hoard_hub.hub_location()
+        token = hoard_hub._read_text(where.get("token_file") or "")
+        authorization = request.headers.get("Authorization", "")
+        if not token or not secrets.compare_digest(authorization.encode(), ("Bearer " + token).encode()):
+            require_admin(request)
+        from core.database import SessionLocal
+        from src.fleet_status import build
+        with SessionLocal() as db:
+            return build(db)
 
     @router.post("/api/hoard/spheres/active")
     async def set_active_sphere(body: ActiveSphere, request: Request):
