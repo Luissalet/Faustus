@@ -176,6 +176,12 @@ class WebFetchTool:
         except Exception as e:
             return {"error": f"web_fetch: {url}: {e}", "exit_code": 1}
         err = result.get("error")
+        if not inspect_http and result.get("read_status") == "blocked":
+            return {"error": f"web_fetch: {url}: {err}", "exit_code": 1,
+                    "read_status": "blocked", "blocked_reason": result.get("blocked_reason"),
+                    "http_status": result.get("http_status"), "final_url": result.get("final_url"),
+                    "resolution_hint": result.get("resolution_hint"),
+                    "untrusted_content": True, "evidence_refs": []}
         if inspect_http:
             if err:
                 return {"error": f"web_fetch: {url}: {err}", "exit_code": 1,

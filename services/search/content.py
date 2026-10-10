@@ -72,6 +72,11 @@ def _get_public_url(url, headers, timeout, max_redirects=5, max_bytes=None):
         response.truncated = bool(result.get("truncated"))
         response.declared_bytes = result.get("total_bytes")
         return response
+    # Preserve received access/rate-limit errors without retrying another tier.
+    if result.get("status") in (403, 429):
+        return httpx.Response(result["status"], content=result.get("body") or b"",
+                              headers=result.get("headers", {}),
+                              request=httpx.Request("GET", result.get("final_url") or url))
     # Policy/HTTP errors remain authoritative; only unavailable transport falls back.
     if result.get("status") not in (None, 401, 404, 503) and result.get("error") != "hub unreachable":
         raise httpx.RequestError(result.get("error") or "family fetch failed")
@@ -246,7 +251,7 @@ _LINK_FARM_MIN_LINKS = 15
 
 # Bumped whenever extraction output changes, so cached pages from an older
 # extractor are not served after an upgrade.
-_EXTRACTOR_VERSION = 2
+_EXTRACTOR_VERSION = 3
 _JS_REQUIRED_MAX_CHARS = 3000
 
 
@@ -326,6 +331,32 @@ def _response_observation(response, url: str) -> dict:
     }
 
 
+def _blocked_read(response, url: str, soup=None):
+    """Describe observed access barriers; never run a browser or retry them."""
+    status = response.status_code
+    reason = {401: "login_required", 403: "http_forbidden", 429: "rate_limited"}.get(status)
+    if not reason and soup is not None:
+        title = soup.title.get_text(" ", strip=True).casefold() if soup.title else ""
+        # Specific challenge markup avoids treating articles about CAPTCHA as barriers.
+        if soup.select_one("#challenge-form, #cf-challenge-running, form[action*='/cdn-cgi/challenge']"):
+            reason = "challenge"
+        elif (soup.select_one("input[type='password']") and not soup.find("article")
+              and re.search(r"\b(sign in|log in|login|iniciar sesi[oó]n|acceder)\b", title)
+              and len(soup.get_text(" ", strip=True)) <= 2000):
+            reason = "login_required"
+    if not reason:
+        return None
+    hint = ("Wait before retrying; respect the site's retry interval."
+            if reason == "rate_limited" else
+            "Open the page in your normal browser to resolve access, or use an official API/feed. "
+            "This fetch did not start a browser.")
+    prefix = "Rate limit hit. " if status == 429 else (f"HTTP {status}. " if status in (401, 403) else "")
+    result = _empty_result(url, f"{prefix}Automatic reading blocked ({reason}). {hint}")
+    result.update(_response_observation(response, url))
+    result.update(read_status="blocked", blocked_reason=reason, resolution_hint=hint)
+    return result
+
+
 def fetch_webpage_content(url: str, timeout: int = 5, retry_attempt: int = 0,
                           max_bytes: int = None, format: str = "markdown",
                           keep_html: bool = False, inspect: bool = False) -> dict:
@@ -398,8 +429,9 @@ def fetch_webpage_content(url: str, timeout: int = 5, retry_attempt: int = 0,
             _cache_result(cache_file, cache_key, result, url)
             return result
 
-        if response.status_code == 429:
-            raise RateLimitError(f"Rate limit hit for {url} (attempt {retry_attempt})")
+        blocked = _blocked_read(response, url)
+        if blocked:
+            return blocked
 
         response.raise_for_status()
     except BodyTooLargeError as e:
@@ -534,6 +566,9 @@ def fetch_webpage_content(url: str, timeout: int = 5, retry_attempt: int = 0,
         return result
 
     title_tag = soup.find("title")
+    blocked = _blocked_read(response, url, soup)
+    if blocked:
+        return blocked
     title_text = title_tag.get_text(strip=True) if title_tag else ""
     meta_info = _extract_meta(soup)
     og_image = _extract_og_image(soup)
