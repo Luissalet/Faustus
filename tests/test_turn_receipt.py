@@ -233,6 +233,25 @@ def test_save_assistant_response_emits_one_receipt_per_saved_turn(sync_spawn):
     assert len(sync_spawn) == 2, "one receipt per saved reply"
 
 
+def test_the_receipt_id_is_the_saved_reply_even_if_history_moves_on(sync_spawn, monkeypatch):
+    """#268 review: another message landing between the save and the
+    receipt must not lend it its id."""
+    from core.models import ChatMessage
+    from routes.chat_helpers import save_assistant_response
+    from src import notifications
+
+    sess = _Session()
+    sm = SimpleNamespace(save_sessions=lambda: None)
+
+    def intervene(*args, **kwargs):
+        sess.history.append(ChatMessage("user", "next", metadata={"_db_id": 9999}))
+
+    monkeypatch.setattr(notifications, "emit", intervene)
+    save_assistant_response(sess, sm, "sess-1", REPLY, _metrics())
+    assert sess.history[-1].metadata["_db_id"] == 9999          # the history did move on
+    assert sync_spawn[0][0]["id"] == "sess-1:4242"
+
+
 def test_a_failed_turn_is_an_error_receipt(sync_spawn):
     from routes.chat_helpers import save_assistant_response
 

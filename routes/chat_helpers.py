@@ -1359,7 +1359,8 @@ def save_assistant_response(
     if incognito:
         _append_incognito_message(session_id, "assistant", _content, md)
         return None
-    sess.add_message(ChatMessage("assistant", _content, metadata=md))
+    _saved_reply = ChatMessage("assistant", _content, metadata=md)
+    sess.add_message(_saved_reply)
 
     from core.database import update_session_last_accessed
     update_session_last_accessed(session_id)
@@ -1390,9 +1391,10 @@ def save_assistant_response(
     # emitted once per saved reply and never for incognito (returned earlier).
     try:
         from src import turn_receipt as _turn_receipt
-        _receipt_msg_md = (
-            getattr(sess.history[-1], "metadata", None) if getattr(sess, "history", None) else None
-        )
+        # The identity comes from the message object just persisted, never
+        # from the end of the shared history: another message can be added
+        # between the save and this point (#268 review).
+        _receipt_msg_md = getattr(_saved_reply, "metadata", None)
         _turn_receipt.emit_turn_receipt(
             session_id,
             (_receipt_msg_md or {}).get("_db_id") if isinstance(_receipt_msg_md, dict) else None,
