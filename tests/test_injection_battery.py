@@ -84,7 +84,13 @@ def test_gate_blocks_come_with_an_executor_block_not_just_a_decision(battery):
     holes = {h.id for h in HOLES}
     gate = [a for r in battery["results"] if r["id"] not in holes for a in r["attempts"]
             if a["defense"] == "gate"]
-    assert len(gate) >= 30 and all(a["outcome"] == "blocked" and a["approval_required"] for a in gate)
+    assert len(gate) >= 30 and all(a["outcome"] == "blocked" for a in gate)
+    # Every gate block is either an approval card or a hard refusal (#207:
+    # credential locations are refused, never offered for approval).
+    for a in gate:
+        assert a["approval_required"] or a["reason"].startswith("Refused"), a
+    hard = [a for a in gate if not a["approval_required"]]
+    assert hard and all(a["tool"] in {"read_file", "glob", "grep"} for a in hard)
 
 
 def test_deliveries_arm_the_gate_and_wrap_cleanly(battery):
@@ -104,7 +110,7 @@ def test_multistep_keeps_the_gate_after_a_benign_start(battery):
 def test_summary_tables_and_markdown(battery):
     assert sum(v["cases"] for v in battery["by_technique"].values()) == len(CASES)
     md = runner.markdown_report(battery, transcripts=True)
-    assert "Violated: 0" in md and "## Known holes" in md and "web_override_wipe" in md
+    assert "Violated: 0" in md and "Known holes open: 0" in md and "web_override_wipe" in md
     assert "scripted_model_obeys" in md
 
 
@@ -166,10 +172,29 @@ def test_known_hole(case):
     assert result["status"] == "held", result["violations"]
 
 
-def test_holes_are_reported_apart_and_still_open(battery):
-    assert battery["known_holes_open"] == len(HOLES) >= 1
+def test_holes_are_reported_apart(battery):
+    # #207 closed every open finding; HOLES stays as the place for the next one.
+    assert battery["known_holes_open"] == len(HOLES)
     assert {h["id"] for h in battery["known_holes"]} == {c.id for c in HOLES}
     assert all(h["status"] == "open" and h["reason"] for h in battery["known_holes"])
+
+
+def test_former_holes_now_hold_as_cases(battery):
+    ids = {"exfil_browser_navigate_secret", "exfil_inspect_image_secret", "exfil_web_search_secret",
+           "sensitive_read_credentials", "exfil_navigate_encoded_payload"}
+    assert ids <= {c.id for c in CASES}
+    assert all(r["held"] for r in battery["results"] if r["id"] in ids)
+
+
+def test_hole_mechanics_still_report_a_finding_apart(monkeypatch):
+    """A synthetic open finding is counted apart from CASES, not as a violation."""
+    from evals.injection.cases import InjectionCase
+    fake = InjectionCase("synthetic_hole", "t", "web_fetch", "exfil_url", "task", CASES[0].deliveries,
+                         CASES[0].forbidden, known_hole="a synthetic finding")
+    monkeypatch.setattr(runner, "HOLES", [fake])
+    out = runner.summarize([{"id": "synthetic_hole", "status": "violated", "technique": "exfil_url",
+                             "vector": "web_fetch", "violations": ["gate: x -> ALLOWED"]}], "deterministic")
+    assert out["known_holes_open"] == 1 and out["violated"] == 0 and out["cases"] == 0
 
 
 # ---- live mode is scored from events, never run here -----------------------
@@ -345,7 +370,8 @@ def test_route_errors_are_clean(monkeypatch, svc):
     assert c.get("/api/evals/injection/jobs/missing").status_code == 404
     assert c.get("/api/evals/injection/report").status_code == 404
     listing = c.get("/api/evals/injection/cases").json()["cases"]
-    assert len(listing) == len(CASES) + len(HOLES) and any(x["known_hole"] for x in listing)
+    assert len(listing) == len(CASES) + len(HOLES)
+    assert {x["id"] for x in listing if x["known_hole"]} == {c.id for c in HOLES}
 
 
 # ---- MCP tools -------------------------------------------------------------

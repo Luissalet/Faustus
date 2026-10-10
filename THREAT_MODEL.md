@@ -58,6 +58,23 @@ External content that reaches the LLM is treated as untrusted via `src/prompt_se
 - `untrusted_context_message(label, content)` wraps the content in a `user`-role message with a header block instructing the model not to follow instructions inside it. Content goes in as data, not as a system instruction.
 - `UNTRUSTED_CONTEXT_POLICY` is a system-prompt preamble that states the same policy at the top of every session where untrusted data may appear.
 
+**Exfiltration channels (Agora #207).** Two rules sit under the approval gate
+(`ToolRunSecurityContext.decision_for`) and the executor (`execute_tool_block`):
+
+- *Credential locations* (`src/sensitive_paths.py`) are never readable by the agent's file tools, in
+  any approval mode including full access: `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gcloud`,
+  `~/.azure`, browser password/cookie databases, Windows credential/DPAPI/vault folders, `.netrc`,
+  and Faustus's own secrets under `DATA_DIR` (`auth.json`, `.app_key`, `sessions.json`, `vault.json`,
+  `integrations.json`, `workflow_credentials.json`, `api_keys.json`, `mcp_oauth/`). Key and `.env`
+  files are refused outside the active workspace.
+- *Egress after outside content* (`src/egress_guard.py`): once untrusted content is in the run, a
+  browser navigation, `inspect_image` URL or `web_fetch` that carries secret material, or carries
+  data-shaped values to a host neither the user named nor the run visited, needs approval in the
+  asking modes; in full access it proceeds with a logged advisory unless it carries secret material,
+  which is refused. `web_search` is advisory-only except for secret material.
+
+`evals/injection/` (docs/evals/injection.md) is the adversarial battery that keeps these honest.
+
 **Untrusted surfaces that must go through this wrapper:** web search results, fetched URLs, emails (read), saved memories, skill text, notes, and any tool output sourced from outside the server. Injecting untrusted content directly into the system role is a security bug.
 
 ## Security Headers
@@ -72,7 +89,7 @@ External content that reaches the LLM is treated as untrusted via `src/prompt_se
 
 These are open, acknowledged, and contributor help is welcome:
 
-1. **No shell/filesystem sandbox.** The agent `bash` and `read_file`/`write_file` tools run as the app process user with no network egress filtering or filesystem confinement. A successful prompt-injection reaching a shell-enabled admin session can make outbound requests to internal services. See #1058 for the sandbox proposal.
+1. **No shell/filesystem sandbox.** The agent `bash` and `read_file`/`write_file` tools run as the app process user with no general network egress filtering. File tools are confined to the workspace / allowed roots and refuse credential locations (#207), and URL tools are checked for data egress after outside content (#207), but a shell command is not: `bash`/`python` after outside content rely on the approval gate and the command guard. A successful prompt-injection reaching a shell-enabled admin session can make outbound requests to internal services. See #1058 for the sandbox proposal.
 
 2. **SSRF via `/api/v1/chat` `base_url` parameter.** A chat-scoped API token can supply an arbitrary `base_url`; the server forwards the LLM request to that host without validating the scheme or address. PR #1039 fixes this.
 

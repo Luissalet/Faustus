@@ -1882,6 +1882,9 @@ class ToolGateDecision:
     allowed: bool
     reason: str | None = None
     approval_required: bool = True
+    # Set on a hard refusal (approval_required=False) so the result names the
+    # rule that refused it: "sensitive_path", "egress_secret" (Agora #207).
+    policy: str | None = None
 
 
 _EXTERNAL_MESSAGE_SOURCES = frozenset(
@@ -2138,6 +2141,14 @@ class ToolRunSecurityContext:
     # third, ... call for the SAME content from writing a second shadow-log
     # row for what is really one decision.
     _autonomy_seen: set = field(default_factory=set, repr=False, compare=False)
+    # Egress after outside content (src/egress_guard.py, Agora #207): hosts a
+    # URL tool of this run already reached, secret values this run has read
+    # from a sensitive file, and the advisories logged for egress that full
+    # access let through.
+    visited_hosts: set = field(default_factory=set, repr=False, compare=False)
+    known_secrets: set = field(default_factory=set, repr=False, compare=False)
+    egress_advisories: list = field(default_factory=list, repr=False, compare=False)
+    _egress_logged: set = field(default_factory=set, repr=False, compare=False)
 
     @staticmethod
     def _delegation_payload(content: Any) -> Optional[Mapping[str, Any]]:
@@ -2412,6 +2423,44 @@ class ToolRunSecurityContext:
             logger.debug("approval_autonomy check failed", exc_info=True)
             return None
 
+    def _outside_content_in_run(self) -> bool:
+        """Outside content armed the gate, and not merely Faustus's own
+        prompt context (saved memory, skills): only then is a GET a possible
+        exfiltration channel worth a rule."""
+        return bool(self.external_untrusted_context_seen
+                    and (not self.external_sources or not self._only_own_context()))
+
+    def _egress_finding(self, tool_name: Any, content: Any):
+        if not self._outside_content_in_run():
+            return None
+        try:
+            from src import egress_guard
+            if egress_guard.base_tool(tool_name) not in (egress_guard.URL_EGRESS_TOOLS
+                                                         | egress_guard.SEARCH_EGRESS_TOOLS):
+                return None
+            return egress_guard.finding_for(
+                tool_name, content,
+                user_hosts=egress_guard.hosts_named_in(self.user_request),
+                visited_hosts=self.visited_hosts,
+                seen_url_keys=self.seen_urls,
+                known_secrets=self.known_secrets,
+                url_key=_url_key,
+            )
+        except Exception:  # noqa: BLE001 - a broken detector must not open or close anything new
+            logger.debug("egress guard failed", exc_info=True)
+            return None
+
+    def _egress_advisory(self, finding: Any, mode: str) -> None:
+        key = (finding.tool, finding.host, finding.why)
+        if key in self._egress_logged:
+            return
+        self._egress_logged.add(key)
+        entry = {"tool": finding.tool, "host": finding.host, "why": finding.why, "mode": mode,
+                 "secret": bool(finding.secret), "sources": list(self.external_sources)[:4]}
+        self.egress_advisories.append(entry)
+        logger.warning("[egress] advisory: %s to %s after outside content (%s; mode=%s)",
+                       finding.tool, finding.host or "?", finding.why, mode)
+
     def revalidate_workspace_grant(self) -> bool:
         """Drop a bypass that rests only on a workspace grant that no longer
         exists. Returns True when the bypass was withdrawn. A store that cannot
@@ -2442,10 +2491,30 @@ class ToolRunSecurityContext:
                 return ToolGateDecision(True)
             except Exception as exc:
                 return ToolGateDecision(False, "Project coordination refused this call: " + str(exc)[:1200], False)
+        # Credential locations (src/sensitive_paths.py): refused in every
+        # mode, full access included, with or without outside content. No
+        # card: approving "read my private key" is not a choice to offer.
+        try:
+            from src.sensitive_paths import read_denial
+            denial = read_denial(tool_name, content, [self.workspace, self.trusted_workspace])
+        except Exception:  # noqa: BLE001 - the executor re-checks before dispatch
+            denial = None
+        if denial:
+            return ToolGateDecision(False, denial, False, policy="sensitive_path")
         mode = tool_approval_mode()
+        # Egress after outside content (src/egress_guard.py): a GET that
+        # carries secret material is refused where nothing would ask (full
+        # access, a task-scope "allow"); the asking modes put it on a card
+        # below. Untainted turns never get here.
+        egress = self._egress_finding(tool_name, content)
+        if egress is not None and egress.secret and (mode == "full" or self.approval_gate_bypassed):
+            logger.warning("[egress] refused %s to %s: %s", egress.tool, egress.host or "?", egress.why)
+            return ToolGateDecision(False, egress.refusal_reason(), False, policy="egress_secret")
         # This controls the approval gate only. Tool availability, account,
         # workspace and execution restrictions are enforced separately.
         if mode == "full":
+            if egress is not None:
+                self._egress_advisory(egress, mode)
             return ToolGateDecision(True)
         # Per-call approvals for desktop input (desktop_control_mode =
         # ask_each) come before everything but "full": a clean (no external
@@ -2476,9 +2545,19 @@ class ToolRunSecurityContext:
         if guard_denial is not None:
             return ToolGateDecision(False, guard_denial)
         if self.approval_gate_bypassed:
+            if egress is not None:
+                self._egress_advisory(egress, "task_allowed")
             return ToolGateDecision(True)
         if not self.external_untrusted_context_seen:
             return ToolGateDecision(True)
+        if egress is not None:
+            if egress.kind == "search" and not egress.secret:
+                # The query goes to the configured search engine, not to a
+                # host of the attacker's choosing: note it, do not ask.
+                self._egress_advisory(egress, mode)
+            else:
+                sources = ", ".join(str(s) for s in self.external_sources if s)
+                return ToolGateDecision(False, egress.approval_reason(sources))
         # A python snippet that provably cannot act outside its own process
         # (src/pure_compute.py) has no effect for injected content to steer.
         if tool_name == "python":
@@ -2560,6 +2639,19 @@ class ToolRunSecurityContext:
         content: Any = None,
     ) -> None:
         self._note_urls(result)
+        try:
+            from src import egress_guard
+            if tool_result_is_successful(result):
+                for url in egress_guard.call_urls(tool_name, content):
+                    host = egress_guard.host_of(url)
+                    if host:
+                        self.visited_hosts.add(host)
+            if isinstance(result, Mapping) and result.get("sensitive"):
+                from src.sensitive_paths import secret_values_from_text
+                text = result.get("output") if isinstance(result.get("output"), str) else json.dumps(result, default=str)
+                self.known_secrets.update(secret_values_from_text(text))
+        except Exception:  # noqa: BLE001 - bookkeeping only
+            logger.debug("egress bookkeeping failed", exc_info=True)
         if not tool_result_should_arm_gate(tool_name, result, content):
             return
         self.external_untrusted_context_seen = True

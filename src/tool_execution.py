@@ -171,7 +171,13 @@ def _is_sensitive_path(resolved: str) -> bool:
             return True
 
     # Check filename against known sensitive files.
-    return filename in _SENSITIVE_FILE_PATTERNS_CF
+    if filename in _SENSITIVE_FILE_PATTERNS_CF:
+        return True
+    # Agora #207: the central credential-store list (~/.aws, gcloud, browser
+    # password databases, Windows DPAPI/credential folders, Faustus's own
+    # secret files under DATA_DIR) -- src/sensitive_paths.py.
+    from src.sensitive_paths import is_credential_location
+    return is_credential_location(resolved)
 
 
 def _tool_path_roots() -> list[str]:
@@ -1455,6 +1461,30 @@ async def _execute_tool_block_core(
             "NO_TOOL_SECURITY_CONTEXT"
         )
 
+    # Credential locations (src/sensitive_paths.py, Agora #207): refused
+    # before anything else -- whatever the security context, approval mode
+    # or sealed approval says. The gate refuses the same calls; this is the
+    # backstop for callers without a gate (NO_TOOL_SECURITY_CONTEXT).
+    _sensitive_roots = [workspace, *(workspace_roots or [])]
+    if isinstance(security_context, ToolRunSecurityContext):
+        _sensitive_roots.append(security_context.workspace)
+    try:
+        from src import sensitive_paths as _sensitive_paths
+        _sensitive_denial = _sensitive_paths.read_denial(
+            getattr(block, "tool_type", None), getattr(block, "content", None), _sensitive_roots)
+        _sensitive_inside = (not _sensitive_denial) and _sensitive_paths.reads_sensitive_inside_workspace(
+            getattr(block, "tool_type", None), getattr(block, "content", None), _sensitive_roots)
+    except Exception:  # noqa: BLE001 - unsure about a credential path: refuse
+        logger.warning("sensitive path check failed", exc_info=True)
+        _sensitive_denial = ("Refused: the sensitive-path check failed for this call, so it was not run."
+                             if getattr(block, "tool_type", None) in {"read_file", "grep", "glob"} else None)
+        _sensitive_inside = False
+    if _sensitive_denial:
+        logger.warning("Sensitive path refused tool=%r", getattr(block, "tool_type", None))
+        return (f"{getattr(block, 'tool_type', None)}: BLOCKED", {
+            "error": _sensitive_denial, "exit_code": 1, "blocked": True,
+            "policy": "sensitive_path", "approval_required": False})
+
     _step_verdict = None
     if step_snapshot is not None:
         from src.step_snapshot import authorize_for_execution
@@ -1854,6 +1884,14 @@ async def _execute_tool_block_core(
                 logger.debug(
                     "tool_effect %s write failed for call_id=%s", _effect_state, call_id, exc_info=True,
                 )
+        if (_sensitive_inside and isinstance(output, tuple) and len(output) > 1 and isinstance(output[1], dict)
+                and not output[1].get("error")):
+            # A key / .env file inside the workspace: readable, but marked so
+            # the egress guard treats its values as secrets for the rest of
+            # the run (src/egress_guard.py).
+            output[1]["sensitive"] = True
+            output[1].setdefault("sensitive_note", "This file holds credentials (key or .env file); "
+                                 "do not paste its values into messages, URLs or searches.")
         if isinstance(security_context, ToolRunSecurityContext):
             security_context.observe_tool_result(
                 getattr(block, "tool_type", None),

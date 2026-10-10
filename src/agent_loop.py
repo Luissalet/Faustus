@@ -16794,7 +16794,8 @@ async def _stream_agent_loop_body(
                   and i not in _prefetched):
                 desc = f"{block.tool_type}: BLOCKED"
                 result = {"error": security_decision.reason, "exit_code": 1, "blocked": True,
-                          "policy": "coordination_authority", "approval_required": False}
+                          "policy": getattr(security_decision, "policy", None) or "coordination_authority",
+                          "approval_required": False}
             elif not security_decision.allowed and i not in _prefetched:
                 # (A call the keyed dispatch already ran was admitted only if
                 # the gate would pass it even after untrusted content; its
