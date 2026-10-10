@@ -1,4 +1,4 @@
-import { ApiError, asArray, getJson } from './api';
+import { ApiError, asArray, getJson, responseReason } from './api';
 import { t } from '../i18n';
 
 /**
@@ -520,6 +520,44 @@ export async function getReasoningLevels(
   } catch {
     return { levels: [] };
   }
+}
+
+export interface SessionReasoningPreference {
+  session_id: string;
+  reasoning_effort: string | null;
+  available_levels: string[];
+  levels_source: string | null;
+}
+
+export async function getSessionReasoningPreference(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<SessionReasoningPreference> {
+  const path = `/api/session/${encodeURIComponent(sessionId)}/reasoning-effort`;
+  const raw = await getJson<Partial<SessionReasoningPreference>>(path, signal);
+  if (!raw || raw.session_id !== sessionId ||
+      !(raw.reasoning_effort === null || typeof raw.reasoning_effort === 'string') ||
+      !Array.isArray(raw.available_levels) ||
+      !raw.available_levels.every((level) => typeof level === 'string')) {
+    throw new Error('Invalid session reasoning preference');
+  }
+  return {
+    session_id: sessionId,
+    reasoning_effort: raw.reasoning_effort,
+    available_levels: raw.available_levels,
+    levels_source: typeof raw.levels_source === 'string' ? raw.levels_source : null,
+  };
+}
+
+export async function setSessionReasoningPreference(
+  sessionId: string,
+  effort: string | null,
+): Promise<void> {
+  const path = `/api/session/${encodeURIComponent(sessionId)}`;
+  const body = new FormData();
+  body.append('reasoning_effort', effort ?? 'auto');
+  const response = await fetch(path, { method: 'PATCH', body, credentials: 'same-origin' });
+  if (!response.ok) throw new ApiError(await responseReason(response, path), response.status);
 }
 
 export function reasoningLevelLabel(level: string): string {

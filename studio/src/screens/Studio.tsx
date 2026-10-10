@@ -43,7 +43,9 @@ import {
   parseThinkMode,
   readThinkMode,
   getReasoningLevels,
+  getSessionReasoningPreference,
   readThinkEffort,
+  setSessionReasoningPreference,
   writeThinkEffort,
   readThinkingOn,
   writeThinkingOn,
@@ -1029,8 +1031,11 @@ export function StudioScreen() {
    * chat) carries over to the new id instead of being reset to nothing,
    * which used to drop it from every turn after the first. */
   const prevGenSessionRef = useRef<string | null>(sessionId);
+  const prevEffortSessionRef = useRef<string | null>(sessionId);
   const genRef = useRef<GenOverrides>(gen);
   genRef.current = gen;
+  const effortPickRef = useRef<string | null>(effortPick);
+  effortPickRef.current = effortPick;
   const thinkPickRef = useRef<ThinkMode | null>(thinkPick);
   thinkPickRef.current = thinkPick;
   useEffect(() => {
@@ -1055,6 +1060,40 @@ export function StudioScreen() {
     setEffortPick(readThinkEffort(sessionId));
     setThinkingOnPick(readThinkingOn(sessionId));
   }, [sessionId]);
+  // The server is authoritative for a saved session effort. Local storage is
+  // only a cache for the composer and for a pick carried into a brand-new
+  // session; without this read, reopening a chat silently displayed the
+  // project/global level even though the next request inherited the session.
+  useEffect(() => {
+    const born = !prevEffortSessionRef.current && Boolean(sessionId);
+    prevEffortSessionRef.current = sessionId;
+    if (!sessionId) {
+      setEffortPick(null);
+      return;
+    }
+    const controller = new AbortController();
+    if (born) {
+      const carried = readThinkEffort(sessionId) ?? effortPickRef.current;
+      if (carried) {
+        setEffortPick(carried);
+        writeThinkEffort(sessionId, carried);
+        void setSessionReasoningPreference(sessionId, carried).catch((error) => {
+          console.warn('Could not persist the new session reasoning preference', error);
+        });
+        return () => controller.abort();
+      }
+    }
+    void getSessionReasoningPreference(sessionId, controller.signal).then((preference) => {
+      if (controller.signal.aborted) return;
+      setEffortPick(preference.reasoning_effort);
+      writeThinkEffort(sessionId, preference.reasoning_effort);
+    }).catch((error) => {
+      if (!controller.signal.aborted) {
+        console.warn('Could not load the session reasoning preference', error);
+      }
+    });
+    return () => controller.abort();
+  }, [sessionId]);
   useEffect(() => {
     if (sessionId) writeJson(`${GEN_KEY}_${sessionId}`, gen);
   }, [gen, sessionId]);
@@ -1066,6 +1105,11 @@ export function StudioScreen() {
     // A mode picked after a level: the mode decides again.
     setEffortPick(null);
     writeThinkEffort(sessionId, null);
+    if (sessionId) {
+      void setSessionReasoningPreference(sessionId, null).catch((error) => {
+        console.warn('Could not clear the session reasoning preference', error);
+      });
+    }
     if (!reasoningCaps.thinking_toggle) return;
     // Keep the Thinking switch coherent with the mode without inventing a third state in the UI:
     // Auto clears the override; Fast forces off; Think/Deep force on.
@@ -1084,6 +1128,11 @@ export function StudioScreen() {
     // Effort never silently re-enables Thinking; it only stores the level.
     setEffortPick(effort);
     writeThinkEffort(sessionId, effort);
+    if (sessionId) {
+      void setSessionReasoningPreference(sessionId, effort).catch((error) => {
+        console.warn('Could not save the session reasoning preference', error);
+      });
+    }
   }, [sessionId]);
   const pickThinkingOn = useCallback((on: boolean) => {
     setThinkingOnPick(on);
