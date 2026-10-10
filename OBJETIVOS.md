@@ -1352,6 +1352,6 @@ El vigilante rota después de12turnos y conserva actor, proyecto e historial pre
 ## OBJ-58 · Auto con señales del turno anterior: lo que falta (10-10-2026)
 
 Hecho en §294 (radar #458): corrección, herramienta fallida y respuesta vacía suben el modo de Auto. Queda:
-- Registrar por turno la decisión de Auto y su resultado (si el siguiente mensaje fue una corrección, si la batería diaria acertó) para calibrar los umbrales con #350, en vez de fijarlos a mano.
+- **Hecho (#228, FAUSTUS §312):** registrar por turno la decisión de Auto y su resultado (si el siguiente mensaje fue una corrección, si la batería diaria acertó): `GET /api/diagnostics/think-mode` y la herramienta MCP `think_mode_calibration` dan tasas por modo y motivo y señalan los motivos que más se corrigen. Ajustar los umbrales con esas cifras cuando haya semanas de uso registrado.
 - **Hecho (#227, FAUSTUS §311):** leer el modo que se usó de verdad en el turno anterior (ahora se guarda en `metadata.think_mode` de cada respuesta) en lugar de recalcularlo con la regla, para que un «A fondo» elegido a mano cuente.
 - **Hecho (#227, FAUSTUS §311):** señal «pensó y no sirvió»: si un turno `deep` del chat gastó el presupuesto sin texto final, Auto no vuelve a pedir `deep` en ese chat.

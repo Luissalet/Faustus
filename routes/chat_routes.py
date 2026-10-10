@@ -2966,6 +2966,8 @@ def setup_chat_routes(
                     sess._turn_think_mode = ({
                         "mode": _think_mode_event.get("mode"), "requested": _think_mode_event.get("requested"),
                         "source": _think_mode_event.get("source"), "budget": _think_mode_event.get("budget"),
+                        # Why Auto chose it, for the calibration report (#228).
+                        "reasons": list(_think_mode_event.get("reasons") or [])[:12] or None,
                         "effort": (_gen_overrides or {}).get("reasoning_effort") or _think_mode_event.get("effort"),
                     } if _think_mode_event else None)
                 except Exception:  # noqa: BLE001

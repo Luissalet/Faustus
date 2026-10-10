@@ -44,6 +44,17 @@ def setup_diagnostics_routes(
                "mcp_manager": getattr(sys.modules.get("app"), "mcp_manager", None)}
         return await asyncio.to_thread(degradation.get_report, ctx, force=bool(refresh))
 
+    @router.get("/api/diagnostics/think-mode")
+    async def get_think_mode_calibration(request: Request, days: int = 30) -> Dict[str, Any]:
+        """How Auto's reasoning-mode choices held up (OBJ-58, #228): per mode,
+        source and rule reason, how many turns were followed by a correction
+        or ended empty, and the buckets corrected well above the Auto average.
+        Only the caller's own sessions. Read-only."""
+        from src.auth_helpers import effective_user
+        from src import think_calibration
+        owner = effective_user(request)
+        return await asyncio.to_thread(think_calibration.report, owner, days)
+
     @router.post("/api/diagnostics/services/reconnect")
     async def reconnect_services(request: Request) -> Dict[str, Any]:
         """Re-establish the ChromaDB-backed stores, then re-probe (FAUSTUS).

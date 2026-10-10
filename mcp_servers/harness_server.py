@@ -36,6 +36,12 @@ running a turn:
 * ``voice_turn_timeline`` - the latency timeline of voice turns (speech end,
   transcript, first token, first audio) with p50/p90 per gap.
 
+* ``think_mode_calibration`` - how Auto's reasoning-mode choices held up: per
+  mode, source and rule reason, how often the next message was a correction
+  or the turn ended empty, and the reasons corrected well above the average.
+  Owner-scoped: ODYSSEUS_MCP_HARNESS_OWNER (or the context/brain owner), or
+  the only owner the database has.
+
 * ``cookbook_job_log`` - the command, exit code and output (stdout/stderr) of a
   Cookbook download or serve job.
 
@@ -318,6 +324,24 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="think_mode_calibration",
+            description=(
+                "How well the Auto reasoning mode chose fast, light, think or deep in recent chats. "
+                "Pairs every answered turn with the person's next message and counts, per mode, per "
+                "source (rule, explicit, override) and per rule reason, how many were followed by a "
+                "correction ('no, eso esta mal', 'try again') or ended without an answer. 'flags' lists "
+                "the reasons or modes corrected well above the Auto average, to tune thresholds by hand. "
+                "Read-only. Calibracion del modo de razonamiento Auto."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "days": {"type": "integer", "minimum": 1, "maximum": 365,
+                             "description": "Look back this many days (default 30)."},
+                },
+            },
+        ),
+        Tool(
             name="cookbook_job_log",
             description=(
                 "Read the log of a Cookbook job (a model download, serve or install): the exact "
@@ -576,6 +600,22 @@ def _degradation_status(args: dict) -> dict:
     return report
 
 
+_OWNER_ENV_KEYS = ("ODYSSEUS_MCP_HARNESS_OWNER", "ODYSSEUS_MCP_CONTEXT_OWNER", "ODYSSEUS_MCP_BRAIN_OWNER")
+
+
+def _think_mode_calibration(args: dict) -> dict:
+    from src import think_calibration
+
+    owner = next((os.environ[k].strip() for k in _OWNER_ENV_KEYS if os.environ.get(k, "").strip()), "")
+    if not owner:
+        owners = think_calibration.session_owners()
+        if len(owners) > 1:
+            return {"error": "this database has several users; set ODYSSEUS_MCP_HARNESS_OWNER for the "
+                             "harness server to say whose chats to read"}
+        owner = owners[0] if owners else ""
+    return think_calibration.report(owner or None, args.get("days") or think_calibration.DEFAULT_DAYS)
+
+
 def _cookbook_job_log(args: dict) -> dict:
     from src import cookbook_job_logs as jl
 
@@ -636,6 +676,7 @@ _TOOLS = {
     "harness_proposals": _harness_proposals,
     "voice_turn_timeline": _voice_turn_timeline,
     "cookbook_job_log": _cookbook_job_log,
+    "think_mode_calibration": _think_mode_calibration,
 }
 
 

@@ -336,6 +336,11 @@ _TOOL_FAILURE = _rx(
 )
 
 
+def is_correction(text: str) -> bool:
+    """True when the message says the previous answer was wrong or asks to redo it."""
+    return bool(_CORRECTION.search(text or ""))
+
+
 def _text_of(message: Any) -> str:
     content = message.get("content") if isinstance(message, Mapping) else None
     if isinstance(content, str):

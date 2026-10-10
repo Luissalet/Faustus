@@ -27,7 +27,7 @@ def test_server_identity_and_tool_surface():
     assert [t.name for t in tools] == ["degradation_status", "history_projection", "resource_claims", "paired_bench_reports",
                                        "tool_footprint", "harness_proposals", "doc_lint",
                                        "spend_cap_status", "injection_eval_run", "injection_eval_report",
-                                       "voice_turn_timeline", "cookbook_job_log"]
+                                       "voice_turn_timeline", "think_mode_calibration", "cookbook_job_log"]
     for t in tools:
         assert len(t.description) > 60
         for required in t.inputSchema.get("required", []):
