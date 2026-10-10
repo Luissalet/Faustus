@@ -162,6 +162,8 @@ API_TOKEN_RULES: Tuple[Rule, ...] = (
     # owner to be an admin, because this starts processes on the machine.
     Rule(ANY_METHOD, "/api/dispatch", ("agents:dispatch",), prefix=True,
          effect="external", note="starts real work on this machine"),
+    Rule(ANY_METHOD, "/api/shell/command", ("agents:dispatch",), prefix=True,
+         effect="external", note="an admin owner's literal shell command through the ordinary bash executor"),
     # Saved workflows the owner has enabled, offered as tools to an outside
     # coordinator (`mcp_servers/workflows_server.py`): list them, start a run
     # with the declared inputs, read a run back. Saving, enabling and editing

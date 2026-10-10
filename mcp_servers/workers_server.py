@@ -1024,6 +1024,12 @@ def render_period_budget(data: Dict[str, Any]) -> str:
 
 
 TOOLS: List[Tool] = [
+    Tool(name="shell_command", description="Run a literal shell command with no model call, using normal bash policy, sandbox and project directory. Saves output in the owned chat. Dangerous calls return an exact approval id; approval stays a human action in Studio.",
+         inputSchema={"type": "object", "properties": {
+             "command": {"type": "string"}, "session_id": {"type": "string"},
+             "workspace": {"type": "string"}, "project_id": {"type": "string"},
+             "autonomy_preset": {"type": "string", "enum": ["supervised", "read_only", "bounded_autonomous"]}},
+             "required": ["command"]}),
     Tool(
         name="dispatch_workers",
         description=(
@@ -1901,6 +1907,10 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             data = await asyncio.to_thread(
                 _request, "POST", f"/api/workflows/runs/{run_id}/resume/{node_id}", {})
             return _text(render_workflow_run(data))
+        if name == "shell_command":
+            payload = {key: args[key] for key in ("command", "session_id", "workspace", "project_id", "autonomy_preset") if key in args}
+            data = await asyncio.to_thread(_request, "POST", "/api/shell/command", payload)
+            return _text(json.dumps(data, ensure_ascii=False))
         if name == "guard_explain":
             command = str(args.get("command") or "")
             if not command.strip():

@@ -449,7 +449,8 @@ export function helpMarkdown(query?: string): string {
     }
     return lines.join('\n');
   }
-  const lines: string[] = [`### ${tn(COMMANDS.length, '{n} command', '{n} commands')}`];
+  const lines: string[] = [`### ${tn(COMMANDS.length, '{n} command', '{n} commands')}`,
+    '', t('`!!command` runs a shell command in the working folder, saves its output here, and makes no model call.')];
   for (const category of CATEGORIES) {
     const group = COMMANDS.filter((c) => c.category === category);
     if (!group.length) continue;

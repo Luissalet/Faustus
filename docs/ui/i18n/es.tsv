@@ -9452,3 +9452,7 @@ paused	en pausa
 until {when}	hasta {when}
 {window} window	ventana: {window}
 day	día
+This shell command needs approval.	Esta orden de shell necesita aprobación.
+Type a shell command after !!.	Escribe una orden de shell después de !!.
+Shell command finished.	La orden de shell ha terminado.
+`!!command` runs a shell command in the working folder, saves its output here, and makes no model call.	`!!orden` ejecuta una orden de shell en la carpeta de trabajo, guarda aquí su salida y no llama al modelo.

@@ -482,7 +482,7 @@ export function Composer({
     // value -- empty, on the first message of a conversation, so the turn
     // silently never started and the composer just cleared itself.
     const current = draftRef.current;
-    if (busy && onSteer) {
+    if (busy && onSteer && !current.trim().startsWith('!!')) {
       const text = current.trim();
       if (!text) return;
       onSteer(text);

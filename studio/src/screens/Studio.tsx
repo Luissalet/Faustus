@@ -95,6 +95,7 @@ import { ModelPicker } from './ModelPicker';
 import { PresetPicker } from './PresetPicker';
 import { delegationLabel, genFromArgs, helpMarkdown, parseCommand, parseDelegation, resolveCommand } from './studio/commands';
 import * as cmd from '../adapters/commands';
+import { pendingShellCommand, shellApproval, shellCommand, type ShellResult } from '../adapters/shell-command';
 import { egg as makeEgg, type Egg as EggData, type EggKind } from '../lib/fun';
 import { Egg } from './studio/Egg';
 import { Rich, RichReply } from './rich';
@@ -383,6 +384,7 @@ interface Notice {
   egg?: EggData;
   /** UX-09: the confirmation's own "deshacer" — /note, /reminder, /event. */
   action?: { label: string; onClick: () => void };
+  secondaryAction?: { label: string; onClick: () => void };
 }
 
 /**
@@ -2915,11 +2917,67 @@ export function StudioScreen() {
     return ok;
   }, [sessionId]);
 
+  const literalShellInFlight = useRef(false);
+  const showShellResult = useCallback(async (result: ShellResult): Promise<void> => {
+    if (!busy) {
+      if (sessionId === result.session_id) {
+        const fresh = await turnsFromHistory(result.session_id);
+        setTurns(fresh.turns);
+        setTitle(fresh.name);
+      } else navigate(`/studio?s=${encodeURIComponent(result.session_id)}`);
+    }
+    refreshSessions();
+    if (result.approval_id) {
+      const key = result.approval_id;
+      const answer = (decision: 'approve_action' | 'deny') => {
+        void shellApproval(key, decision).then(showShellResult)
+          .catch((error: Error) => say(error.message, 'danger'));
+      };
+      setNotice({ text: t(result.result.error ?? 'This shell command needs approval.'), tone: 'warning',
+        action: { label: t('Allow once'), onClick: () => answer('approve_action') },
+        secondaryAction: { label: t('Deny'), onClick: () => answer('deny') },
+      });
+    } else if (busy) {
+      say(result.result.output ?? result.result.stdout ?? result.result.error ?? t('Shell command finished.'),
+          result.result.blocked ? 'warning' : 'info');
+    } else setNotice(null);
+  }, [busy, sessionId, turnsFromHistory, navigate, refreshSessions, say]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    let live = true;
+    void pendingShellCommand(sessionId).then(({ approval }) => {
+      if (live && approval) void showShellResult({ session_id: sessionId,
+        approval_id: approval.approval_id, result: { error: approval.reason, blocked: true } });
+    }).catch(() => undefined);
+    return () => { live = false; };
+  }, [sessionId, showShellResult]);
+
   /* ── Send ── */
   const send = useCallback(
     async (text: string) => {
       const message = text.trim();
       if ((!message && attachments.length === 0) || sendingMessage.current) return;
+      if (message.startsWith('!!')) {
+        if (literalShellInFlight.current) return;
+        const command = message.slice(2).trim();
+        if (!command) { say(t('Type a shell command after !!.'), 'warning'); return; }
+        literalShellInFlight.current = true;
+        say(t('Running `{cmd}`…', { cmd: command }));
+        try {
+          const result = await shellCommand({ command, session_id: sessionId ?? '',
+            workspace, project_id: project?.id, autonomy_preset: effectiveAutonomy });
+          setDraft(currentDraft => {
+            if (currentDraft.trim() === message) return '';
+            if (!sessionId) writeDraftFor(result.session_id, currentDraft);
+            return currentDraft;
+          });
+          if (!sessionId && attachments.length) writeAttachmentsFor(result.session_id, attachments, knobs.incognito);
+          await showShellResult(result);
+        } catch (error) { say((error as Error).message, 'danger'); }
+        finally { literalShellInFlight.current = false; }
+        return;
+      }
       if (busy) {
         if (!message) return;
         // A parked turn (waiting on an approval card or a question) still
@@ -2990,7 +3048,8 @@ export function StudioScreen() {
         setPreparingMessage(false);
       }
     },
-    [attachments, busy, runCommand, ensureSession, executionForSend, run, sessionId, pendingModeId, pendingChatMode, steerLive],
+    [attachments, busy, runCommand, ensureSession, executionForSend, run, sessionId, pendingModeId, pendingChatMode, steerLive,
+      workspace, project, effectiveAutonomy, showShellResult, say, knobs.incognito],
   );
 
   /* Notas → "Resolver con el agente": sends as soon as a route is known and
@@ -3631,6 +3690,9 @@ export function StudioScreen() {
             )}
             {notice.action && (
               <Button variant="ghost" size="sm" label={notice.action.label} onClick={notice.action.onClick} testId="studio-notice-undo" />
+            )}
+            {notice.secondaryAction && (
+              <Button variant="ghost" size="sm" label={notice.secondaryAction.label} onClick={notice.secondaryAction.onClick} testId="studio-notice-deny" />
             )}
             <IconButton icon={X} label={t('Dismiss notice')} size="sm" onClick={() => setNotice(null)} />
           </div>
