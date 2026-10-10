@@ -30,6 +30,7 @@ read it at its steer drain point) -> `read` (the person marked it read), or `ref
   long generation); urgent to a chat parked on a tool approval is queued and does NOT
   wake it.
 - Delivery only happens in agent mode and never in incognito or compare-mode chats.
+- A comparison pane (a chat named `[CMP] ...`, which is how the compare endpoint marks its helper chats) is never woken as an agent and never drains the mailbox. A message to it is accepted and stays queued; the result says `wake: {woken: false, reason: "comparison_session", detail}`. It is checked at send time and again right before a wake turn would start.
 
 ## Limits (refusals are reported to the sender, never dropped)
 
@@ -38,6 +39,7 @@ read it at its steer drain point) -> `read` (the person marked it read), or `ref
 | `hop_limit` | 409 | the message would be relay 4 (`A -> B -> A -> B -> A`): max 3 hops. A reply inherits the hop count of the message that triggered it (10 min window). |
 | `inbox_full` | 429 | 50 messages already waiting for that chat |
 | `unknown_recipient` | 404 | no such chat for this owner |
+| `bad_urgent` | 422 | `urgent` is not a boolean and not one of `true/false/1/0/yes/no` (a string like `"false"` is read as false, never as true) |
 | `disabled` | 403 | setting `agent_mailbox` is off |
 | `empty` / `no_recipient` / `bad_sender` / `self` | 400 | malformed, or addressed to the sender itself |
 

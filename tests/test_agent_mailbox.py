@@ -426,3 +426,265 @@ def test_round_one_mailbox_delivery_refreshes_the_request_the_gate_observes():
     block = src[i:i + 900]
     assert "_initial_route_request_messages = _trim_route_request_messages(" in block
     assert "run_security.observe_messages(_initial_route_request_messages)" in block
+
+
+# -- a comparison pane is never woken as an agent (review of #235, P1) -------------------------
+
+@pytest.mark.parametrize("name", ["[CMP] Model A", "[CMP] gpt-x", "  [cmp] lowercase", "[CMP]"])
+def test_a_comparison_session_is_recognised_by_the_prefix_the_compare_code_uses(name):
+    assert mb.is_comparison_name(name) is True
+
+
+@pytest.mark.parametrize("name", ["Agent A", "My [CMP] notes", "", None, "CMP"])
+def test_other_chats_are_not_comparisons(name):
+    assert mb.is_comparison_name(name) is False
+
+
+def test_an_urgent_message_does_not_wake_a_comparison_session_and_the_sender_is_told(world):
+    world.sessions["C"] = {"owner": "alice", "name": "[CMP] Model A"}
+    result = mb.deliver("alice", Sender.session("A"), "C", "wake up", urgent=True)
+    assert result["ok"] is True  # accepted: the message is kept
+    assert result["wake"]["woken"] is False and result["wake"]["reason"] == "comparison_session"
+    assert "comparison session" in result["wake"]["detail"]
+    assert world.woken == []  # no turn was started
+    assert result["message"]["state"] == "queued" and result["message"]["wake"] == "comparison_session"
+    # And no wake slot was spent on it.
+    again = mb.deliver("alice", Sender.session("A"), "B", "real chat", urgent=True)
+    assert again["wake"]["used"] == 1
+
+
+def test_a_normal_message_to_a_comparison_session_is_only_queued(world):
+    world.sessions["C"] = {"owner": "alice", "name": "[CMP] Model A"}
+    result = send("A", "C", "fyi")
+    assert result["ok"] and result["wake"]["reason"] == "not_urgent"
+    assert mb.counts_for("C")["waiting"] == 1
+
+
+def test_a_comparison_session_never_drains_the_mailbox(world):
+    world.sessions["C"] = {"owner": "alice", "name": "[CMP] Model A"}
+    mb.deliver("alice", Sender.session("A"), "C", "wake up", urgent=True)
+    assert take("C", persist=False) == []
+    assert mb.make_drain("C", "alice").take_urgent() == []
+    assert mb.counts_for("C")["waiting"] == 1 and world.history == []
+
+
+def _record_turns(monkeypatch):
+    import src.chat_bridges.turn as turn_mod
+    started = []
+
+    async def fake_run_turn(req):
+        started.append(req)
+
+    monkeypatch.setattr(turn_mod, "run_turn", fake_run_turn)
+    return started
+
+
+def test_the_wake_consumer_starts_an_agent_turn_on_a_normal_chat(world, monkeypatch):
+    started = _record_turns(monkeypatch)
+    mb.deliver("alice", Sender.session("A"), "B", "come", urgent=True)
+    asyncio.run(mb._run_wake("alice", "B"))
+    assert len(started) == 1 and started[0].mode == "agent" and started[0].source == "agent_message"
+
+
+def test_the_wake_consumer_rechecks_and_leaves_a_chat_that_became_a_comparison(world, monkeypatch):
+    started = _record_turns(monkeypatch)
+    result = mb.deliver("alice", Sender.session("A"), "B", "come", urgent=True)
+    assert result["wake"]["woken"] is True and world.woken == [("alice", "B")]  # fine at send time
+    world.sessions["B"]["name"] = "[CMP] Model B"  # ... and then it turns into a comparison pane
+    asyncio.run(mb._run_wake("alice", "B"))
+    assert started == []  # mode=agent was never forced on it
+    assert mb.counts_for("B")["waiting"] == 1  # the message stays queued
+    assert world.history == []
+
+
+def test_the_wake_consumer_rechecks_between_chained_wakes(world, monkeypatch):
+    import src.chat_bridges.turn as turn_mod
+    started = []
+
+    async def fake_run_turn(req):
+        started.append(req)
+        world.sessions["B"]["name"] = "[CMP] Model B"  # becomes a comparison during the first turn
+        mb.send("alice", Sender.session("A"), "B", "again", urgent=True)
+
+    monkeypatch.setattr(turn_mod, "run_turn", fake_run_turn)
+    mb.deliver("alice", Sender.session("A"), "B", "come", urgent=True)
+    asyncio.run(mb._run_wake("alice", "B"))
+    assert len(started) == 1  # the second round did not start
+    assert mb.counts_for("B")["waiting"] == 1
+
+
+# -- the urgent flag is read strictly (review of #235, P2) --------------------------------------
+
+@pytest.mark.parametrize("value,expected", [
+    (None, False), (True, True), (False, False), (1, True), (0, False),
+    ("true", True), ("TRUE", True), (" yes ", True), ("1", True),
+    ("false", False), ("False", False), ("no", False), ("0", False),
+])
+def test_parse_urgent_accepts_only_explicit_values(value, expected):
+    assert mb.parse_urgent(value) is expected
+
+
+@pytest.mark.parametrize("value", ["maybe", "", "2", 2, -1, 1.0, 0.5, [], {}, ["true"], "tru"])
+def test_parse_urgent_rejects_everything_else(value):
+    with pytest.raises(ValueError):
+        mb.parse_urgent(value)
+
+
+def test_the_string_false_is_not_urgent_and_spends_no_wake(world):
+    result = send("A", "B", "x", urgent="false")
+    assert result["ok"] and result["message"]["urgent"] is False
+    assert result["wake"] == {"woken": False, "reason": "not_urgent"}
+    assert mb.deliver("alice", Sender.session("A"), "B", "y", urgent="no")["wake"]["reason"] == "not_urgent"
+    assert world.woken == []
+
+
+def test_a_malformed_urgent_is_refused_with_its_reason_and_queues_nothing(world):
+    result = send("A", "B", "x", urgent="maybe")
+    assert result["ok"] is False and result["refused"] is True and result["reason"] == "bad_urgent"
+    assert "true or false" in result["detail"]
+    assert mb.counts_for("B")["waiting"] == 0 and world.woken == []
+
+
+def test_the_tool_reads_urgent_strictly(world):
+    ok = run_tool({"to": "B", "body": "hi", "urgent": "false"})
+    assert ok["exit_code"] == 0 and ok["mailbox"]["message"]["urgent"] is False
+    assert ok["mailbox"]["wake"]["reason"] == "not_urgent"
+    bad = run_tool({"to": "B", "body": "hi", "urgent": "perhaps"})
+    assert bad["exit_code"] == 1 and "refused (bad_urgent)" in bad["error"]
+    assert mb.counts_for("B")["waiting"] == 1  # only the first one
+
+
+# -- a comparison pane is never woken as an agent (review of #235, P1) -------------------------
+
+@pytest.mark.parametrize("name", ["[CMP] Model A", "[CMP] gpt-x", "  [cmp] lowercase", "[CMP]"])
+def test_a_comparison_session_is_recognised_by_the_prefix_the_compare_code_uses(name):
+    assert mb.is_comparison_name(name) is True
+
+
+@pytest.mark.parametrize("name", ["Agent A", "My [CMP] notes", "", None, "CMP"])
+def test_other_chats_are_not_comparisons(name):
+    assert mb.is_comparison_name(name) is False
+
+
+def test_an_urgent_message_does_not_wake_a_comparison_session_and_the_sender_is_told(world):
+    world.sessions["C"] = {"owner": "alice", "name": "[CMP] Model A"}
+    result = mb.deliver("alice", Sender.session("A"), "C", "wake up", urgent=True)
+    assert result["ok"] is True  # accepted: the message is kept
+    assert result["wake"]["woken"] is False and result["wake"]["reason"] == "comparison_session"
+    assert "comparison session" in result["wake"]["detail"]
+    assert world.woken == []  # no turn was started
+    assert result["message"]["state"] == "queued" and result["message"]["wake"] == "comparison_session"
+    # And no wake slot was spent on it.
+    again = mb.deliver("alice", Sender.session("A"), "B", "real chat", urgent=True)
+    assert again["wake"]["used"] == 1
+
+
+def test_a_normal_message_to_a_comparison_session_is_only_queued(world):
+    world.sessions["C"] = {"owner": "alice", "name": "[CMP] Model A"}
+    result = send("A", "C", "fyi")
+    assert result["ok"] and result["wake"]["reason"] == "not_urgent"
+    assert mb.counts_for("C")["waiting"] == 1
+
+
+def test_a_comparison_session_never_drains_the_mailbox(world):
+    world.sessions["C"] = {"owner": "alice", "name": "[CMP] Model A"}
+    mb.deliver("alice", Sender.session("A"), "C", "wake up", urgent=True)
+    assert take("C", persist=False) == []
+    assert mb.make_drain("C", "alice").take_urgent() == []
+    assert mb.counts_for("C")["waiting"] == 1 and world.history == []
+
+
+def _record_turns(monkeypatch):
+    import src.chat_bridges.turn as turn_mod
+    started = []
+
+    async def fake_run_turn(req):
+        started.append(req)
+
+    monkeypatch.setattr(turn_mod, "run_turn", fake_run_turn)
+    return started
+
+
+def test_the_wake_consumer_starts_an_agent_turn_on_a_normal_chat(world, monkeypatch):
+    started = _record_turns(monkeypatch)
+    mb.deliver("alice", Sender.session("A"), "B", "come", urgent=True)
+    asyncio.run(mb._run_wake("alice", "B"))
+    assert len(started) == 1 and started[0].mode == "agent" and started[0].source == "agent_message"
+
+
+def test_the_wake_consumer_rechecks_and_leaves_a_chat_that_became_a_comparison(world, monkeypatch):
+    started = _record_turns(monkeypatch)
+    result = mb.deliver("alice", Sender.session("A"), "B", "come", urgent=True)
+    assert result["wake"]["woken"] is True and world.woken == [("alice", "B")]  # fine at send time
+    world.sessions["B"]["name"] = "[CMP] Model B"  # ... and then it turns into a comparison pane
+    asyncio.run(mb._run_wake("alice", "B"))
+    assert started == []  # mode=agent was never forced on it
+    assert mb.counts_for("B")["waiting"] == 1  # the message stays queued
+    assert world.history == []
+
+
+def test_the_wake_consumer_rechecks_between_chained_wakes(world, monkeypatch):
+    import src.chat_bridges.turn as turn_mod
+    started = []
+
+    async def fake_run_turn(req):
+        started.append(req)
+        world.sessions["B"]["name"] = "[CMP] Model B"  # becomes a comparison during the first turn
+        mb.send("alice", Sender.session("A"), "B", "again", urgent=True)
+
+    monkeypatch.setattr(turn_mod, "run_turn", fake_run_turn)
+    mb.deliver("alice", Sender.session("A"), "B", "come", urgent=True)
+    asyncio.run(mb._run_wake("alice", "B"))
+    assert len(started) == 1  # the second round did not start
+    assert mb.counts_for("B")["waiting"] == 1
+
+
+# -- the urgent flag is read strictly (review of #235, P2) --------------------------------------
+
+@pytest.mark.parametrize("value,expected", [
+    (None, False), (True, True), (False, False), (1, True), (0, False),
+    ("true", True), ("TRUE", True), (" yes ", True), ("1", True),
+    ("false", False), ("False", False), ("no", False), ("0", False),
+])
+def test_parse_urgent_accepts_only_explicit_values(value, expected):
+    assert mb.parse_urgent(value) is expected
+
+
+@pytest.mark.parametrize("value", ["maybe", "", "2", 2, -1, 1.0, 0.5, [], {}, ["true"], "tru"])
+def test_parse_urgent_rejects_everything_else(value):
+    with pytest.raises(ValueError):
+        mb.parse_urgent(value)
+
+
+def test_the_string_false_is_not_urgent_and_spends_no_wake(world):
+    result = send("A", "B", "x", urgent="false")
+    assert result["ok"] and result["message"]["urgent"] is False
+    assert result["wake"] == {"woken": False, "reason": "not_urgent"}
+    assert mb.deliver("alice", Sender.session("A"), "B", "y", urgent="no")["wake"]["reason"] == "not_urgent"
+    assert world.woken == []
+
+
+def test_a_malformed_urgent_is_refused_with_its_reason_and_queues_nothing(world):
+    result = send("A", "B", "x", urgent="maybe")
+    assert result["ok"] is False and result["refused"] is True and result["reason"] == "bad_urgent"
+    assert "true or false" in result["detail"]
+    assert mb.counts_for("B")["waiting"] == 0 and world.woken == []
+
+
+def test_the_tool_reads_urgent_strictly(world):
+    ok = run_tool({"to": "B", "body": "hi", "urgent": "false"})
+    assert ok["exit_code"] == 0 and ok["mailbox"]["message"]["urgent"] is False
+    assert ok["mailbox"]["wake"]["reason"] == "not_urgent"
+    bad = run_tool({"to": "B", "body": "hi", "urgent": "perhaps"})
+    assert bad["exit_code"] == 1 and "refused (bad_urgent)" in bad["error"]
+    assert mb.counts_for("B")["waiting"] == 1  # only the first one
+
+
+def test_the_consumer_check_stands_on_its_own_even_if_the_drain_handed_something_over(world, monkeypatch):
+    """Belt and braces: with a crafted queue entry (the drain returns a message), the wake
+    consumer itself still refuses to force mode=agent on a comparison session."""
+    started = _record_turns(monkeypatch)
+    world.sessions["B"]["name"] = "[CMP] Model B"
+    monkeypatch.setattr(mb, "take_for_turn", lambda *a, **k: [{"text": "x", "source": "agent"}])
+    asyncio.run(mb._run_wake("alice", "B"))
+    assert started == []

@@ -68,7 +68,7 @@ class AgentMessageTool:
             if action == "send":
                 result = agent_mailbox.deliver(
                     owner, agent_mailbox.Sender.session(sid), str(args.get("to") or ""), str(args.get("body") or ""),
-                    urgent=bool(args.get("urgent")), reply_to=str(args.get("reply_to") or ""))
+                    urgent=args.get("urgent"), reply_to=str(args.get("reply_to") or ""))
                 if not result.get("ok"):
                     return {"error": f"agent_message refused ({result.get('reason')}): {result.get('detail')}",
                             "exit_code": 1, "mailbox": result}

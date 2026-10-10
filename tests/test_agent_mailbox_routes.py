@@ -136,3 +136,103 @@ def test_the_mcp_tool_sends_through_the_api_and_reports_a_refusal(monkeypatch):
     assert refused.startswith("Refused (unknown_recipient)")
     inbox = asyncio.run(ws.call_tool("agent_message", {"action": "inbox", "session_id": "B"}))[0].text
     assert "1 waiting" in inbox and "external:mcp" in inbox
+
+
+# -- review of #235: comparison sessions and the strict urgent flag ------------------------------
+
+def test_a_comparison_session_is_not_woken_through_the_api(api, monkeypatch):
+    names = {"A": "Agent A", "B": "[CMP] Model A"}
+    monkeypatch.setattr(mb, "_session_info", lambda sid: {"owner": "alice", "name": names[sid]} if sid in names else None)
+    r = api.post("/api/agent-mailbox/send", json={"to": "B", "body": "wake up", "urgent": True})
+    assert r.status_code == 200  # accepted and kept, not refused
+    data = r.json()
+    assert data["wake"]["woken"] is False and data["wake"]["reason"] == "comparison_session"
+    assert "comparison session" in data["wake"]["detail"]
+    assert api.woken == []
+    assert api.get("/api/agent-mailbox/B/inbox").json()["waiting"] == 1
+
+
+def test_urgent_is_read_strictly_by_the_api(api):
+    off = api.post("/api/agent-mailbox/send", json={"to": "B", "body": "1", "urgent": "false"})
+    assert off.status_code == 200 and off.json()["message"]["urgent"] is False
+    assert off.json()["wake"]["reason"] == "not_urgent" and api.woken == []  # no wake slot spent
+    zero = api.post("/api/agent-mailbox/send", json={"to": "B", "body": "2", "urgent": 0})
+    assert zero.json()["wake"]["reason"] == "not_urgent"
+    for bad in ("maybe", "", 2, 1.5, ["true"], {"a": 1}):
+        r = api.post("/api/agent-mailbox/send", json={"to": "B", "body": "x", "urgent": bad})
+        assert r.status_code == 422, bad
+        assert r.json()["refused"] is True and r.json()["reason"] == "bad_urgent"
+    assert api.woken == []
+    assert api.get("/api/agent-mailbox/B/inbox").json()["waiting"] == 2  # only the two valid ones
+    yes = api.post("/api/agent-mailbox/send", json={"to": "B", "body": "3", "urgent": "yes"})
+    assert yes.status_code == 200 and yes.json()["wake"]["woken"] is True and api.woken == ["B"]
+
+
+def test_the_mcp_tool_reads_urgent_strictly(monkeypatch):
+    from tests.test_dispatch import _load_workers_server
+
+    ws = _load_workers_server(monkeypatch)
+    calls = []
+
+    def fake_request(method, path, body=None, timeout=None, **kw):
+        calls.append(body)
+        return {"ok": True, "wake": {"woken": False, "reason": "not_urgent"},
+                "message": {"id": "m1", "recipient": "B", "hops": 1, "urgent": False, "state": "queued"}}
+    monkeypatch.setattr(ws, "_request", fake_request)
+    asyncio.run(ws.call_tool("agent_message", {"to": "B", "body": "hi", "urgent": "false"}))
+    assert calls[-1]["urgent"] is False
+    asyncio.run(ws.call_tool("agent_message", {"to": "B", "body": "hi", "urgent": "yes"}))
+    assert calls[-1]["urgent"] is True
+    n = len(calls)
+    refused = asyncio.run(ws.call_tool("agent_message", {"to": "B", "body": "hi", "urgent": "maybe"}))[0].text
+    assert refused.startswith("Refused (bad_urgent)") and len(calls) == n  # nothing was sent
+
+
+# -- review of #235: comparison sessions and the strict urgent flag ------------------------------
+
+def test_a_comparison_session_is_not_woken_through_the_api(api, monkeypatch):
+    names = {"A": "Agent A", "B": "[CMP] Model A"}
+    monkeypatch.setattr(mb, "_session_info", lambda sid: {"owner": "alice", "name": names[sid]} if sid in names else None)
+    r = api.post("/api/agent-mailbox/send", json={"to": "B", "body": "wake up", "urgent": True})
+    assert r.status_code == 200  # accepted and kept, not refused
+    data = r.json()
+    assert data["wake"]["woken"] is False and data["wake"]["reason"] == "comparison_session"
+    assert "comparison session" in data["wake"]["detail"]
+    assert api.woken == []
+    assert api.get("/api/agent-mailbox/B/inbox").json()["waiting"] == 1
+
+
+def test_urgent_is_read_strictly_by_the_api(api):
+    off = api.post("/api/agent-mailbox/send", json={"to": "B", "body": "1", "urgent": "false"})
+    assert off.status_code == 200 and off.json()["message"]["urgent"] is False
+    assert off.json()["wake"]["reason"] == "not_urgent" and api.woken == []  # no wake slot spent
+    zero = api.post("/api/agent-mailbox/send", json={"to": "B", "body": "2", "urgent": 0})
+    assert zero.json()["wake"]["reason"] == "not_urgent"
+    for bad in ("maybe", "", 2, 1.5, ["true"], {"a": 1}):
+        r = api.post("/api/agent-mailbox/send", json={"to": "B", "body": "x", "urgent": bad})
+        assert r.status_code == 422, bad
+        assert r.json()["refused"] is True and r.json()["reason"] == "bad_urgent"
+    assert api.woken == []
+    assert api.get("/api/agent-mailbox/B/inbox").json()["waiting"] == 2  # only the two valid ones
+    yes = api.post("/api/agent-mailbox/send", json={"to": "B", "body": "3", "urgent": "yes"})
+    assert yes.status_code == 200 and yes.json()["wake"]["woken"] is True and api.woken == ["B"]
+
+
+def test_the_mcp_tool_reads_urgent_strictly(monkeypatch):
+    from tests.test_dispatch import _load_workers_server
+
+    ws = _load_workers_server(monkeypatch)
+    calls = []
+
+    def fake_request(method, path, body=None, timeout=None, **kw):
+        calls.append(body)
+        return {"ok": True, "wake": {"woken": False, "reason": "not_urgent"},
+                "message": {"id": "m1", "recipient": "B", "hops": 1, "urgent": False, "state": "queued"}}
+    monkeypatch.setattr(ws, "_request", fake_request)
+    asyncio.run(ws.call_tool("agent_message", {"to": "B", "body": "hi", "urgent": "false"}))
+    assert calls[-1]["urgent"] is False
+    asyncio.run(ws.call_tool("agent_message", {"to": "B", "body": "hi", "urgent": "yes"}))
+    assert calls[-1]["urgent"] is True
+    n = len(calls)
+    refused = asyncio.run(ws.call_tool("agent_message", {"to": "B", "body": "hi", "urgent": "maybe"}))[0].text
+    assert refused.startswith("Refused (bad_urgent)") and len(calls) == n  # nothing was sent

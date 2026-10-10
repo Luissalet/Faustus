@@ -23,7 +23,7 @@ from src import agent_mailbox
 from src.auth_helpers import effective_user, require_user
 
 _STATUS = {"empty": 400, "no_recipient": 400, "bad_sender": 400, "unknown_recipient": 404, "self": 400,
-           "disabled": 403, "hop_limit": 409, "inbox_full": 429}
+           "bad_urgent": 422, "disabled": 403, "hop_limit": 409, "inbox_full": 429}
 
 
 def setup_agent_mailbox_routes() -> APIRouter:
@@ -46,7 +46,7 @@ def setup_agent_mailbox_routes() -> APIRouter:
             sender = agent_mailbox.Sender.external(str(body.get("sender") or ""))
         result = agent_mailbox.deliver(
             owner, sender, str(body.get("to") or ""), str(body.get("body") or ""),
-            urgent=bool(body.get("urgent")), reply_to=str(body.get("reply_to") or ""))
+            urgent=body.get("urgent"), reply_to=str(body.get("reply_to") or ""))
         if not result.get("ok"):
             return JSONResponse(status_code=_STATUS.get(str(result.get("reason")), 409), content=result)
         return result

@@ -198,6 +198,43 @@ def _owner_ok(session_owner: Any, owner: str) -> bool:
     return not owner or (session_owner or "") in ("", owner)
 
 
+#: The blind-compare endpoint (routes/compare/compare_routes.py) creates its helper chats
+#: named "[CMP] ..."; chat_routes and session_routes recognise them by that prefix, and it is
+#: the only marker those chats carry. A comparison pane is never to be turned into an agent.
+_COMPARE_PREFIX = "[CMP]"
+
+
+def is_comparison_name(name: Any) -> bool:
+    return str(name or "").lstrip().upper().startswith(_COMPARE_PREFIX)
+
+
+def _info_is_comparison(info: Optional[Dict[str, Any]]) -> bool:
+    return bool(info) and is_comparison_name(info.get("name"))
+
+
+def _is_comparison(session_id: str) -> bool:
+    return _info_is_comparison(_session_info(session_id))
+
+
+def parse_urgent(value: Any) -> bool:
+    """The ``urgent`` flag, strictly. Absent means false; a real boolean (or 0/1) is itself;
+    a string is read only when it is an explicit true/false/1/0/yes/no. Anything else raises
+    ``ValueError``: ``bool("false")`` is true, and an urgent message spends a wake."""
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        word = value.strip().lower()
+        if word in ("true", "1", "yes"):
+            return True
+        if word in ("false", "0", "no"):
+            return False
+    raise ValueError(f"urgent must be true or false (got {value!r})")
+
+
 def _session_info(session_id: str) -> Optional[Dict[str, Any]]:
     """{owner, name} of a chat, or None when it does not exist."""
     try:
@@ -208,7 +245,8 @@ def _session_info(session_id: str) -> Optional[Dict[str, Any]]:
         return None
     if sess is None:
         return None
-    return {"owner": getattr(sess, "owner", None) or "", "name": str(getattr(sess, "name", "") or "")}
+    name = str(getattr(sess, "name", "") or "")
+    return {"owner": getattr(sess, "owner", None) or "", "name": name}
 
 
 def _session_status(session_id: str, owner: str) -> str:
@@ -426,6 +464,10 @@ def send(owner: str, sender: Sender, recipient: str, body: str, *, urgent: bool 
     if not enabled():
         return {"ok": False, "refused": True, "reason": "disabled",
                 "detail": "The agent mailbox is switched off (setting agent_mailbox)."}
+    try:
+        urgent = parse_urgent(urgent)
+    except ValueError as exc:
+        return {"ok": False, "refused": True, "reason": "bad_urgent", "detail": str(exc)}
     info = _session_info(recipient)
     if info is None or not _owner_ok(info["owner"], owner):
         return {"ok": False, "refused": True, "reason": "unknown_recipient",
@@ -456,8 +498,12 @@ def send(owner: str, sender: Sender, recipient: str, body: str, *, urgent: bool 
 
         wake: Dict[str, Any] = {"woken": False, "reason": "not_urgent"}
         if urgent:
-            status = _session_status(recipient, owner)
-            if status == "idle":
+            status = "comparison_session" if _info_is_comparison(info) else _session_status(recipient, owner)
+            if status == "comparison_session":
+                wake = {"woken": False, "reason": "comparison_session",
+                        "detail": "The recipient is a comparison session: it is never woken as an agent. "
+                                  "The message stays queued."}
+            elif status == "idle":
                 limit = wakes_per_hour()
                 used = int(conn.execute("SELECT COUNT(*) FROM wakes WHERE recipient = ? AND ts > ?",
                                         (recipient, now - WAKE_WINDOW_S)).fetchone()[0])
@@ -511,6 +557,8 @@ def take_for_turn(session_id: str, owner: str = "", *, urgent_only: bool = False
     next turns' context)."""
     if urgent_only and session_id not in _URGENT:
         return []
+    if _is_comparison(session_id):
+        return []  # a comparison pane never reads the mailbox: the messages stay queued
     try:
         with _lock, _db() as conn:
             sql = "SELECT * FROM messages WHERE recipient = ? AND state = 'queued'"
@@ -607,6 +655,11 @@ async def _run_wake(owner: str, session_id: str) -> None:
     """Start a turn on the idle chat; it reads the waiting messages from the history."""
     from src.chat_bridges.turn import TurnRequest, run_turn
     for _ in range(MAX_CHAINED_WAKES):
+        # Checked again here, not only at send time: the chat may have become a comparison
+        # pane since. The turn below is forced to mode=agent, so it must never start on one.
+        if _is_comparison(session_id):
+            logger.info("agent mailbox: %s is a comparison session; not woken", session_id)
+            return
         if not take_for_turn(session_id, owner):
             return
         try:

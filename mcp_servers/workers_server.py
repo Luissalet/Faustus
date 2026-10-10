@@ -1686,8 +1686,18 @@ def _agent_message(args: Dict[str, Any]) -> str:
     """The `agent_message` tool: the mailbox between agents (src/agent_mailbox.py), through the API."""
     action = str(args.get("action") or ("send" if args.get("to") else "")).strip().lower()
     if action == "send":
+        # Strict, like src/agent_mailbox.parse_urgent: bool("false") would be true and spend a wake.
+        raw_urgent = args.get("urgent")
+        if raw_urgent is None or isinstance(raw_urgent, bool):
+            urgent = bool(raw_urgent)
+        elif isinstance(raw_urgent, int) and raw_urgent in (0, 1):
+            urgent = bool(raw_urgent)
+        elif isinstance(raw_urgent, str) and raw_urgent.strip().lower() in ("true", "1", "yes", "false", "0", "no"):
+            urgent = raw_urgent.strip().lower() in ("true", "1", "yes")
+        else:
+            return f"Refused (bad_urgent): urgent must be true or false (got {raw_urgent!r})."
         body = {"to": str(args.get("to") or "").strip(), "body": str(args.get("body") or ""),
-                "urgent": bool(args.get("urgent")), "reply_to": str(args.get("reply_to") or ""),
+                "urgent": urgent, "reply_to": str(args.get("reply_to") or ""),
                 "sender": str(args.get("sender") or "mcp")}
         try:
             data = _request("POST", "/api/agent-mailbox/send", body)
