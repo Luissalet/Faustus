@@ -2353,6 +2353,74 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    # ── /github: labels, release notes, release check (src/github_ops.py) ──
+    {
+        "type": "function",
+        "function": {
+            "name": "github_labels",
+            "description": "List the repository's GitHub labels with `gh` (name, colour, description). With `file` (a YAML/JSON label file inside the repo) it returns the DRY-RUN plan of a label sync instead: what would be created, updated, left alone, and which labels exist only on GitHub. Writes nothing. Without gh signed in it says so (error_class gh.unauthenticated / gh.missing / gh.no_remote).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file": {"type": "string", "description": "Label file in the repo (YAML or JSON) to compare against; omit to just list the labels"},
+                    "path": {"type": "string", "description": "Path inside the repo (optional); same resolution as the git_* tools"},
+                    "repo": {"type": "string", "description": "Repo name instead of `path` (optional)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "github_labels_sync",
+            "description": "Create or update the repository's GitHub labels from a YAML/JSON file in the repo (`gh label create` / `gh label edit`; never deletes a label). A REMOTE WRITE: refused unless the repo's git agent policy allows push AND the user explicitly approved this exact call. Call github_labels with `file` first, show the plan, ask with ask_user, and retry with user_confirmed=true once they say yes.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file": {"type": "string", "description": "Label file in the repo (YAML or JSON)"},
+                    "user_confirmed": {"type": "boolean", "description": "Set true only after the user approved the plan for this exact call"},
+                    "path": {"type": "string", "description": "Path inside the repo (optional)"},
+                    "repo": {"type": "string", "description": "Repo name instead of `path` (optional)"}
+                },
+                "required": ["file"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "github_notes",
+            "description": "Draft release notes (markdown) from the merged pull requests and commits between two refs, grouped by label or conventional-commit type. Defaults to the last tag .. HEAD. Uses gh for PR titles/labels/authors when it is signed in and falls back to local git otherwise, saying which. Read-only.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "from": {"type": "string", "description": "Start tag or ref (exclusive); default: the last tag reachable from `to`"},
+                    "to": {"type": "string", "description": "End ref (inclusive); default HEAD"},
+                    "path": {"type": "string", "description": "Path inside the repo (optional)"},
+                    "repo": {"type": "string", "description": "Repo name instead of `path` (optional)"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "github_release_check",
+            "description": "Check a release is ready and return a checklist with ok/warn/fail/skip per item: working tree clean, branch pushed, tag free or already on HEAD, CI status of HEAD (gh run list), open issues/PRs labelled blocker, version strings consistent. GitHub items are skipped with the reason when gh is unavailable. Read-only: it never creates a tag or a release.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tag": {"type": "string", "description": "The tag you intend to create (e.g. v1.2.0); omit to check the repo as it stands"},
+                    "blocker_labels": {"type": "array", "items": {"type": "string"}, "description": "Labels that block a release (default: blocker, release-blocker)"},
+                    "path": {"type": "string", "description": "Path inside the repo (optional)"},
+                    "repo": {"type": "string", "description": "Repo name instead of `path` (optional)"}
+                },
+                "required": []
+            }
+        }
+    },
     # ── Project board tools (Lote 92, OBJ-6): the project's task list
     # (FAU-12 style ids) -- see src/agent_tools/board_tools.py. The project is
     # always resolved from the current chat; none of these take a project id.

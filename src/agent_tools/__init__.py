@@ -51,6 +51,9 @@ from .git_tools import (
     GitPushTool, GitPullTool, GitFetchTool,
     GithubIssueTool, GitOpenPrTool,
 )
+from .github_ops_tools import (
+    GithubLabelsTool, GithubLabelsSyncTool, GithubNotesTool, GithubReleaseCheckTool,
+)
 from .board_tools import (
     BoardListTool, BoardReadyTool, BoardGetTool,
     BoardCreateTool, MeetingActionsToBoardTool, BoardUpdateTool, BoardCommentTool,
@@ -193,6 +196,11 @@ TOOL_HANDLERS = {
     # GitHub issue -> pull request (src/github_pr.py).
     "github_issue": GithubIssueTool().execute,
     "git_open_pr": GitOpenPrTool().execute,
+    # /github: labels, release notes, release check (src/github_ops.py).
+    "github_labels": GithubLabelsTool().execute,
+    "github_labels_sync": GithubLabelsSyncTool().execute,
+    "github_notes": GithubNotesTool().execute,
+    "github_release_check": GithubReleaseCheckTool().execute,
     # Project board tools (Lote 92, OBJ-6): "the project's task list" --
     # thin executors over src.project_board. See src/agent_tools/board_tools.py.
     "board_list": BoardListTool().execute,
@@ -492,6 +500,7 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "git_merge", "git_delete_branch",
              "git_push", "git_pull", "git_fetch",
              "github_issue", "git_open_pr",
+             "github_labels", "github_labels_sync", "github_notes", "github_release_check",
              # Project board tools (Lote 92, OBJ-6) -- src/agent_tools/board_tools.py.
              "board_list", "board_ready", "board_get",
              "board_create", "meeting_actions_to_board", "board_update", "board_comment",

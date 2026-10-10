@@ -912,6 +912,11 @@ app.include_router(setup_unified_search_routes())
 from routes.staged_review_routes import setup_staged_review_routes
 app.include_router(setup_staged_review_routes())
 
+# `/github` in the composer: labels, release notes and release checks with gh
+# (src/github_ops.py); the label sync is a remote write behind policy + approval.
+from routes.github_routes import setup_github_routes
+app.include_router(setup_github_routes())
+
 # find_symbol/callers/tests_for HTTP surface (Lote 38, IDX-02/IDX-03).
 from routes.code_index_routes import setup_code_index_routes
 app.include_router(setup_code_index_routes())

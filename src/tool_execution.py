@@ -67,6 +67,7 @@ _GIT_TOOL_NAMES = frozenset({
     "git_merge", "git_delete_branch",  # Lote 89
     "git_push", "git_pull", "git_fetch",
     "github_issue", "git_open_pr",
+    "github_labels", "github_labels_sync", "github_notes", "github_release_check",
 })
 
 # Persistent working directory for agent subprocesses.

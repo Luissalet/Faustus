@@ -417,6 +417,45 @@ export async function worktreeReviewMarkdown(workspace: string, base: string, mo
     .join('\n\n');
 }
 
+/* ── /github: labels, release notes, release check (src/github_ops.py) ──
+ * Everything is read-only except the label sync, which comes back as a plan
+ * plus a one-use `approval_id` (only when the repository policy allows remote
+ * writes); `githubApply` is the human's yes. */
+export interface GithubResult {
+  ok?: boolean;
+  kind?: string;
+  markdown?: string;
+  error?: string;
+  error_class?: string;
+  approval_id?: string | null;
+  requires_approval?: boolean;
+  policy_allowed?: boolean;
+  applied?: boolean;
+}
+
+async function githubPost(path: string, body: unknown): Promise<GithubResult> {
+  const response = await fetch(path, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  let data: GithubResult = {};
+  try {
+    data = (await response.json()) as GithubResult;
+  } catch {
+    /* no JSON: the status says it */
+  }
+  if (!response.ok && !data.markdown && !data.error) throw new Error(`HTTP ${response.status}`);
+  return data;
+}
+
+export const githubCommand = (workspace: string, args: string) =>
+  githubPost('/api/github/command', { workspace, args, lang: locale().startsWith('es') ? 'es' : 'en' });
+
+export const githubApply = (approvalId: string) =>
+  githubPost('/api/github/labels/sync/apply', { approval_id: approvalId, lang: locale().startsWith('es') ? 'es' : 'en' });
+
 /* ── /turnreview: what the last turns did (src/turn_review.py) ── */
 
 export async function turnReviewMarkdown(sessionId: string, turns: number): Promise<string> {

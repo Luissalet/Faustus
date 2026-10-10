@@ -129,6 +129,18 @@ export const COMMANDS: SlashCommand[] = [
   { name: 'progress', category: 'Agent', usage: '/progress', help: 'Opens the panel with the steps the agent is working through.' },
   { name: 'doc', category: 'Agent', usage: '/doc [title]', help: 'Opens the document panel (with a title, creates a new one).' },
   { name: 'sh', aliases: ['exec', 'run'], category: 'Agent', usage: '/sh command', help: 'Runs a shell command in the working folder and shows the output.' },
+  {
+    name: 'github',
+    aliases: ['gh'],
+    category: 'Agent',
+    usage: '/github labels | notes | release-check',
+    help: 'GitHub for the working folder\'s repository, with gh: labels, release notes and release checks.',
+    subs: [
+      { name: 'labels', aliases: ['label', 'etiquetas'], usage: '/github labels [sync file]', help: 'Lists the repository\'s labels; "sync file" creates or updates them from a YAML/JSON file in the repo (needs the repository policy and your approval).' },
+      { name: 'notes', aliases: ['changelog', 'release-notes'], usage: '/github notes [from-tag..to]', help: 'Drafts release notes from the merged pull requests and commits since the last tag.' },
+      { name: 'release-check', aliases: ['release', 'check'], usage: '/github release-check [tag]', help: 'Checks a release is ready: clean tree, tag, CI status, blocker issues, version strings.' },
+    ],
+  },
 
   /* ── Model ── */
   { name: 'models', category: 'Model', usage: '/models', help: 'Pick a model.' },

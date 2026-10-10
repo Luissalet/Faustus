@@ -222,6 +222,10 @@ NON_ADMIN_BLOCKED_TOOLS = BUILTIN_EMAIL_TOOLS | {
     "git_fetch",
     "github_issue",
     "git_open_pr",
+    "github_labels",
+    "github_labels_sync",
+    "github_notes",
+    "github_release_check",
     # Project board tools (Lote 92): the project's own task list -- same
     # privilege class as manage_documents/manage_notes above.
     "board_list",
@@ -319,6 +323,10 @@ PLAN_MODE_READONLY_TOOLS = {
     # GitHub issue read (src/github_pr.py): inspection only, same class as
     # web_fetch/reach_read.
     "github_issue",
+    # /github read tools (src/github_ops.py): labels, notes, release check.
+    "github_labels",
+    "github_notes",
+    "github_release_check",
     # Project board read tools (Lote 92): inspection only.
     "board_list",
     "board_ready",

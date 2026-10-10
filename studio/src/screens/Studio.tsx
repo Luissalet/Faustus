@@ -731,6 +731,9 @@ export function StudioScreen() {
     [report, say],
   );
 
+  /** `/github labels sync`: the plan waiting for the human's yes (src/github_ops.py). */
+  const [ghApproval, setGhApproval] = useState<{ id: string; markdown: string } | null>(null);
+
   /* CONTRATO_MODOS Lote B: the catalog (every mode this owner can pick,
      "Default" first — src/behavior_modes.py::list_modes's own order) is
      read once; nothing here ever writes it back. */
@@ -2353,6 +2356,25 @@ export function StudioScreen() {
           }
           return true;
         }
+        case 'github':
+        case 'github.labels':
+        case 'github.notes':
+        case 'github.release-check': {
+          if (!workspace) {
+            say(t('Pick a working folder first: /github looks at its repository.'), 'warning');
+            return true;
+          }
+          const line = resolved.sub ? `${resolved.sub.name} ${args}`.trim() : args;
+          if (line) report(t('Running /github {what}…', { what: line }));
+          void cmd
+            .githubCommand(workspace, line)
+            .then((res) => {
+              report(res.markdown || res.error || t('(no output)'), res.ok === false ? 'warning' : 'info');
+              if (res.approval_id) setGhApproval({ id: res.approval_id, markdown: res.markdown ?? '' });
+            })
+            .catch((error) => say(`${t('Could not run /github')}: ${(error as Error).message}`, 'danger'));
+          return true;
+        }
         case 'sh': {
           if (!args) {
             say(t('Usage: /sh command'), 'warning');
@@ -3826,6 +3848,39 @@ export function StudioScreen() {
         <Suspense fallback={<div aria-hidden="true" data-testid="workspace-dialog-loading" />}>
           <WorkspaceDialog open initial={workspace} onClose={() => setWsOpen(false)} onPick={setWorkspace} />
         </Suspense>
+      )}
+
+      {ghApproval && (
+        <Dialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setGhApproval(null);
+          }}
+          title={t('Apply these labels on GitHub?')}
+          description={t('This writes to the GitHub repository. Nothing is sent until you approve.')}
+          testId="confirm-github-labels"
+          footer={
+            <>
+              <Button variant="ghost" size="sm" label={t('Cancel')} onClick={() => setGhApproval(null)} />
+              <Button
+                variant="primary"
+                size="sm"
+                label={t('Approve and apply')}
+                onClick={() => {
+                  const pending = ghApproval;
+                  setGhApproval(null);
+                  report(t('Applying the labels…'));
+                  void cmd
+                    .githubApply(pending.id)
+                    .then((res) => report(res.markdown || res.error || t('(no output)'), res.ok === false ? 'warning' : 'info'))
+                    .catch((error) => say(`${t('Could not apply the labels')}: ${(error as Error).message}`, 'danger'));
+                }}
+              />
+            </>
+          }
+        >
+          <Rich text={ghApproval.markdown} />
+        </Dialog>
       )}
 
       {confirmDelete && (

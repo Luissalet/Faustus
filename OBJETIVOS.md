@@ -1157,7 +1157,7 @@ Hecho en §260 y §261. **Por hacer:**
 - ~~Adoptar tras un reinicio los trabajos de dispatch que seguían vivos, en vez de marcarlos interrumpidos.~~ Hecho en §307 (Ágora #232): los agentes externos se adoptan y se siguen hasta el final; los trabajadores internos de Faustus son tareas del propio proceso y mueren con él, así que siguen quedando interrumpidos con su plan de reanudación.
 - ~~Árbol de sesiones (bifurcaciones y clones de un chat) en Studio, sobre el `/fork` que ya existe.~~ Hecho en §302 (Ágora #233).
 - ~~`!!orden` en el compositor: ejecuta en la shell sin pasar por el modelo.~~ Hecho en §303 (Ágora #230).
-- `/github` para etiquetas, notas de cambios y comprobaciones de release con `gh`.
+- ~~`/github` para etiquetas, notas de cambios y comprobaciones de release con `gh`.~~ Hecho en §314 (Ágora #234): `/github labels`, `labels sync` (política de escritura remota más tarjeta de aprobación), `notes` y `release-check`; también como herramientas del agente y servidor MCP `github`.
 
 ## OBJ-54 · Medir los modelos locales y ajustarlos: Galton's Hoard y Pygmalion's Hoard — HECHO (02-10-2026)
 

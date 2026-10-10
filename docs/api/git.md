@@ -921,3 +921,30 @@ el diff exacto. Mientras tanto ambas tools funcionan igual (se despachan por
 tarjeta de aprobación ya sellada por otra causa cubra automáticamente esta
 llamada -- el camino "pregunta al usuario y reintenta con
 `user_confirmed: true`" ya funciona hoy.
+
+## `/github`: etiquetas, notas de versión y comprobación de versión
+
+Comando del compositor de Studio (`/github`, alias `/gh`) sobre el CLI `gh` y el git local. Nunca hace push y nunca crea una release ni una etiqueta. Código: `src/github_ops.py`.
+
+| Subcomando | Qué hace | Escribe en el remoto |
+| --- | --- | --- |
+| `labels` | Lista las etiquetas del repositorio. | No |
+| `labels sync <fichero>` | Crea o actualiza etiquetas desde un YAML/JSON del repositorio. Nunca borra. | Sí: política + aprobación |
+| `notes [<desde>..<hasta>]` | Notas de versión desde las PR fusionadas y los commits (por defecto, desde la última etiqueta). | No |
+| `release-check [<etiqueta>]` | Lista de comprobación: árbol limpio, etiqueta, CI del HEAD, bloqueos, versiones. | No |
+
+Errores como valor: `ok`, `error_class`, `error`, `error_key`, `error_args`. Clases: `gh.missing`, `gh.unauthenticated`, `gh.no_remote`, `gh.timeout`, `gh.rate_limited`, `gh.not_found`, `gh.failed`. Si `origin` es una ruta local no se llama a `gh` (`reason=local_remote`). `notes` y `release-check` siguen funcionando con datos locales; sus partes de GitHub salen como `skip` con el motivo.
+
+### Rutas (solo administrador)
+
+- `POST /api/github/command` con `{workspace, args, lang}`: ejecuta una línea como `notes v0.1.0..HEAD`. Devuelve `{ok, markdown, ...}` y, en `labels sync` con cambios y política que lo permite, `approval_id` y el plan.
+- `POST /api/github/labels/sync/apply` con `{approval_id, lang}`: aplica un plan aprobado. El id es de un solo uso, está atado al usuario, la raíz, el fichero y el resumen del plan, y caduca a los 600 s. Rechazos: `approval.invalid`, `approval.stale`, `git.policy_denied`.
+- `GET /api/github/status?workspace=`: disponibilidad y versión de `gh`, cuentas con sesión iniciada (sin tokens) y, si se da `workspace`, el repositorio detectado (`slug`, `github`, `reason`).
+
+### Herramientas del agente
+
+`github_labels` (lista, o plan de solo lectura con `file`), `github_notes` y `github_release_check` son de lectura. `github_labels_sync` es más estricta que `git_push`: necesita la política de escritura remota (o el modo de acceso total) Y una aprobación humana (tarjeta sellada o `user_confirmed`); sin ella, la negativa lleva el plan.
+
+### Servidor MCP integrado `github`
+
+`mcp_servers/github_server.py`, solo lectura: `github_labels`, `github_notes`, `github_release_check`. El parámetro `root` queda confinado al espacio de trabajo. No existe aplicar una sincronización por MCP.

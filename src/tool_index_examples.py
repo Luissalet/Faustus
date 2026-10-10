@@ -837,6 +837,26 @@ EXAMPLES: Dict[str, List[str]] = {
         "resume la issue que me han asignado antes de arreglarla",
         "fetch that GitHub issue and give me a brief",
     ],
+    "github_labels": [
+        "lista las etiquetas del repositorio de GitHub",
+        "what labels does this repo have",
+        "compara las etiquetas con .github/labels.yml",
+    ],
+    "github_labels_sync": [
+        "sincroniza las etiquetas de GitHub con el archivo labels.yml",
+        "create the labels from .github/labels.json on GitHub",
+        "sync the repo labels",
+    ],
+    "github_notes": [
+        "redacta las notas de la versi\u00f3n desde la \u00faltima etiqueta",
+        "draft release notes since the last tag",
+        "changelog of the merged pull requests",
+    ],
+    "github_release_check": [
+        "comprueba si la versi\u00f3n 1.2.0 est\u00e1 lista para publicar",
+        "is this ready to release",
+        "release check before tagging v2.0.0",
+    ],
     "git_open_pr": [
         "abre un pull request con esta rama",
         "open a PR for the branch I just pushed",

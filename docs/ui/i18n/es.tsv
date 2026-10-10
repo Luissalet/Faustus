@@ -9573,3 +9573,15 @@ Messages from other agents: {unread} unread, {waiting} waiting	Mensajes de otros
 Mark all as read	Marcar todo como leído
 Waiting for the next turn	Esperando al próximo turno
 Marked as read	Marcado como leído
+Apply these labels on GitHub?	¿Aplicar estas etiquetas en GitHub?
+Applying the labels…	Aplicando las etiquetas…
+Approve and apply	Aprobar y aplicar
+Could not apply the labels	No se pudieron aplicar las etiquetas
+Could not run /github	No se pudo ejecutar /github
+Pick a working folder first: /github looks at its repository.	Elige antes una carpeta de trabajo: /github mira el repositorio de esa carpeta.
+Running /github {what}…	Ejecutando /github {what}…
+This writes to the GitHub repository. Nothing is sent until you approve.	Esto escribe en el repositorio de GitHub. No se envía nada hasta que lo apruebes.
+GitHub for the working folder's repository, with gh: labels, release notes and release checks.	GitHub para el repositorio de la carpeta de trabajo, con gh: etiquetas, notas de versión y comprobaciones de versión.
+Lists the repository's labels; "sync file" creates or updates them from a YAML/JSON file in the repo (needs the repository policy and your approval).	Lista las etiquetas del repositorio; «sync archivo» las crea o actualiza desde un YAML/JSON del repo (necesita la política del repositorio y tu aprobación).
+Drafts release notes from the merged pull requests and commits since the last tag.	Redacta las notas de versión a partir de los pull requests fusionados y los commits desde la última etiqueta.
+Checks a release is ready: clean tree, tag, CI status, blocker issues, version strings.	Comprueba que una versión está lista: árbol limpio, etiqueta, estado del CI, incidencias bloqueantes y versiones.

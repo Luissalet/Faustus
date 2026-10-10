@@ -9823,6 +9823,7 @@ async def _stream_agent_loop_body(
         try:
             from src.tool_execution import _GIT_TOOL_NAMES
             _git_read = {"git_radar", "git_status", "git_log", "git_diff", "github_issue", "code_history"}
+            _git_read |= {"github_labels", "github_notes", "github_release_check"}
             # Continuations such as "Do it" carry their Git intent in the
             # retrieval query (recent user context), not in the two-word last
             # message. Also keep a Git action family coherent: if retrieval
@@ -9831,7 +9832,8 @@ async def _stream_agent_loop_body(
             _git_context = _retrieval_query if _intent.get("continuation") else (_last_user or "")
             _git_intent = bool(re.search(
                 r"\b(git|commit|commits|commitea|push|pull|pull request|fetch|rama|ramas|branch|branches|merge|"
-                r"mergea|mergear|fusiona|subir|sube|sincroniza|stage|checkout|repositorio|repo)\b",
+                r"mergea|mergear|fusiona|subir|sube|sincroniza|stage|checkout|repositorio|repo|"
+                r"github|release|changelog|labels|etiquetas)\b",
                 _git_context, re.IGNORECASE))
             _git_selected_action = bool(
                 set(_relevant_tools) & (set(_GIT_TOOL_NAMES) - _git_read)

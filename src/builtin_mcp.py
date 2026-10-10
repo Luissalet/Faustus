@@ -119,6 +119,11 @@ _BUILTIN_SERVERS = {
     # poller's snapshot, the settings and the chat mapping; never the token,
     # never writes, never talks to Telegram. Not owner-scoped.
     "chat_bridges": ("mcp_servers/chat_bridges_server.py", "Built-in: Chat bridges"),
+    # GitHub (src/github_ops.py): labels (list / dry-run sync plan), release
+    # notes and the release-ready checklist, on gh + local git. Read-only: the
+    # label sync is a remote write behind policy + approval, which lives in the
+    # agent tool and the Studio command, not here. Not owner-scoped.
+    "github": ("mcp_servers/github_server.py", "Built-in: GitHub"),
 }
 
 # Built-in servers whose every tool is a 1:1 twin of a native agent tool
@@ -127,7 +132,7 @@ _BUILTIN_SERVERS = {
 # their tools: indexing both put two copies of each answer in the top-k and
 # pushed other relevant tools out of the turn (seen live: `code_graph_*` next
 # to `mcp__code_graph__code_graph_*` for one question).
-NATIVE_TWIN_SERVERS = frozenset({"code_graph", "prior_art", "research_prune", "execution", "blender_scene"})
+NATIVE_TWIN_SERVERS = frozenset({"code_graph", "prior_art", "research_prune", "execution", "blender_scene", "github"})
 
 # NPX-based built-in servers (run via npx, not Python).
 #

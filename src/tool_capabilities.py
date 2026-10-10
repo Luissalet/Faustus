@@ -554,6 +554,20 @@ _register(
     ToolEffect.NETWORK_EGRESS, ToolEffect.EXTERNAL_SIDE_EFFECT,
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
+# /github (src/github_ops.py). The read tools return label names, PR titles and
+# CI names that anyone with access to the repository can plant -- same class
+# as github_issue. `github_labels_sync` is the one remote write (`gh label
+# create|edit`), gated by the push policy AND an explicit human approval.
+_register(
+    {"github_labels", "github_notes", "github_release_check"},
+    ToolEffect.BROKERED_NETWORK_READ,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+_register(
+    {"github_labels_sync"},
+    ToolEffect.NETWORK_EGRESS, ToolEffect.EXTERNAL_SIDE_EFFECT,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
 # Project board tools (Lote 92, OBJ-6, src/agent_tools/board_tools.py) — the
 # project's own task list, stored in its own SQLite under DATA_DIR (never the
 # workspace filesystem, never a network call). Same class as
