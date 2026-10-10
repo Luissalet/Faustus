@@ -6,6 +6,9 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 
 ## A. Decisiones o acciones de Luis
 
+- **Iniciar sesión de Claude Code en el PC** (10-10, HoardLink #238): la barra de cuota de Claude en el Ágora lee la misma cuenta que usa Claude Code, y su sesión caducó el 25-09 (la renovación devuelve 429). Ejecuta `claude /login` en el PC; el Hub la recoge solo en menos de dos minutos.
+- **Acceso total y la batería de inyección** (10-10, #258): con tus ajustes actuales (`tool_approval_mode=full`) la batería en postura «configured» deja pasar 34 de 47 inyecciones (las defensas en sí, en postura base, aguantan 47/47). Lo que sigue protegiendo en acceso total es la lista de rutas de credenciales y el bloqueo de secretos hacia fuera (#207). ¿Sigues en acceso total, pasas a «auto» o «ask», o lo dejamos así sabiéndolo?
+
 - **Borrar el modelo de prueba de Vulcan** (10-10, #200): la verificación en vivo de «CAD desde texto» dejó el modelo 20037 `plate-hole-verify` (placa 20x10x5 con agujero) en la biblioteca. Vulcan no tiene ruta para borrar modelos. ¿Lo borro a mano (fila en la base de datos y ficheros en `data\cad`) o se queda?
 - **Coase's Hoard está en GitHub como privado** (09-10): `Luissalet/CoasesHoard`. Lo dejé privado porque el ejemplo de `docs/` es un expediente sobre una empresa real con veredicto «No pagar todavía» y textos de otra empresa real. ¿Lo hago público tal cual, quito el ejemplo y reescribo su historia, o se queda privado?
 - **¿Subir `max_num_seqs` de la receta GLM?** (09-10, #114): hoy es 8. La tarjeta de velocidad da 115 tok/s agregados con 8 peticiones y lo mismo con 16 o 64 (las demás esperan: TTFT p50 de 64 s con 64). Subirlo da más rendimiento total a varios clientes a la vez a cambio de KV por petición, y exige recargar GLM. ¿Lo probamos (por ejemplo 16) o se queda en 8?
