@@ -477,6 +477,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--timeout", type=float, default=180.0)
     p.add_argument("--out-dir", default=None)
     p.add_argument("--no-persist", action="store_true")
+    p.add_argument("--summary-json", default=None,
+                   help="write the full summary as JSON to this file (used by the in-app job service)")
     args = p.parse_args(argv)
     if args.live:
         if not (args.endpoint_url and args.model):
@@ -485,6 +487,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                            case_ids=args.cases, timeout=args.timeout)
     else:
         summary = run_deterministic(args.cases)
+    if args.summary_json:
+        with open(args.summary_json, "w", encoding="utf-8") as fh:
+            json.dump(summary, fh, ensure_ascii=False)
     print(markdown_report(summary))
     if not args.no_persist:
         print(json.dumps(persist(summary, args.out_dir)))

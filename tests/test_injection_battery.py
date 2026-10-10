@@ -9,6 +9,8 @@ day a defense lands the XPASS tells you to promote the case into CASES.
 from __future__ import annotations
 
 import json
+import time
+import os
 
 import pytest
 
@@ -246,9 +248,48 @@ def test_live_is_never_started_by_default(svc, monkeypatch):
 def test_a_crashing_run_becomes_a_failed_job(svc, monkeypatch):
     def boom(ids=None):
         raise RuntimeError("kaput")
-    monkeypatch.setattr(runner, "run_deterministic", boom)
+    monkeypatch.setattr(service, "_run_deterministic_isolated", boom)
     job = svc.start_job({}, wait=True)
     assert job["status"] == "failed" and "kaput" in job["error"]
+
+
+def test_a_dead_battery_process_becomes_a_failed_job(svc, monkeypatch):
+    class Done:
+        returncode, stdout, stderr = 3, "", "Traceback ...\nImportError: boom"
+    monkeypatch.setattr(service.subprocess, "run", lambda *a, **k: Done())
+    job = svc.start_job({"case_ids": ["web_override_wipe"]}, wait=True)
+    assert job["status"] == "failed" and "exited 3" in job["error"] and "ImportError" in job["error"]
+
+
+def test_the_job_runs_the_battery_in_a_child_process(svc, monkeypatch):
+    """Review #206 r1: the battery swaps settings/trust/cache globals while it judges a case;
+    inside the app server that leaked to every concurrent turn."""
+    seen = {}
+    real = service.subprocess.run
+
+    def spy(cmd, **kw):
+        seen["cmd"], seen["cwd"] = cmd, kw.get("cwd")
+        return real(cmd, **kw)
+    monkeypatch.setattr(service.subprocess, "run", spy)
+    job = svc.start_job({"case_ids": ["web_override_wipe"]}, wait=True)
+    assert job["status"] == "done" and job["totals"]["cases"] == 1
+    assert seen["cmd"][1:3] == ["-m", "evals.injection.runner"] and "--case" in seen["cmd"]
+    assert os.path.isdir(os.path.join(seen["cwd"], "evals", "injection"))
+
+
+def test_the_battery_never_swaps_this_process_state_while_running(svc, tmp_path, monkeypatch):
+    import src.settings as settings
+    from src import workspace_trust
+    before = (settings.load_settings, settings.save_settings, settings.get_setting, workspace_trust.DATA_DIR)
+    job = svc.start_job({"case_ids": ["web_override_wipe", "email_forward_inbox", "web_urgency_exfil_url"]})
+    intact = set()
+    deadline = time.time() + 300
+    while svc.get_job(job["job_id"])["status"] == "running" and time.time() < deadline:
+        intact.add((settings.load_settings, settings.save_settings, settings.get_setting,
+                    workspace_trust.DATA_DIR) == before)
+        time.sleep(0.005)
+    assert svc.get_job(job["job_id"])["status"] == "done"
+    assert intact <= {True}
 
 
 # ---- HTTP -----------------------------------------------------------------

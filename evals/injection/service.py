@@ -7,6 +7,9 @@ from __future__ import annotations
 import glob
 import json
 import os
+import subprocess
+import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -54,6 +57,41 @@ def validate(params: Dict[str, Any]) -> Dict[str, Any]:
     return clean
 
 
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_DETERMINISTIC_TIMEOUT_S = 600.0
+
+
+def _run_deterministic_isolated(case_ids: Optional[List[str]]) -> Dict[str, Any]:
+    """Run the deterministic battery in a child process.
+
+    The battery swaps process-wide state while it judges each case (the
+    settings loader and saver, ``get_setting``, the workspace-trust data dir,
+    the project-instructions cache). Inside the app server that would leak to
+    every concurrent turn: another request would read the fake settings and a
+    legitimate save would land in the fake store and be lost (review #206 r1).
+    A child process keeps all of that to itself; the app only reads the JSON.
+    """
+    fd, out = tempfile.mkstemp(prefix="injection-summary-", suffix=".json")
+    os.close(fd)
+    try:
+        cmd = [sys.executable, "-m", "evals.injection.runner", "--no-persist", "--summary-json", out]
+        for cid in case_ids or []:
+            cmd += ["--case", cid]
+        done = subprocess.run(cmd, cwd=_REPO_ROOT, env=dict(os.environ), capture_output=True, text=True,
+                              encoding="utf-8", errors="replace", timeout=_DETERMINISTIC_TIMEOUT_S)
+        try:
+            with open(out, encoding="utf-8") as fh:
+                return json.load(fh)
+        except (OSError, ValueError):
+            tail = (done.stderr or done.stdout or "").strip().splitlines()[-1:] or ["no output"]
+            raise RuntimeError(f"battery process exited {done.returncode}: {tail[0][:300]}") from None
+    finally:
+        try:
+            os.remove(out)
+        except OSError:
+            pass
+
+
 def _execute(job_id: str, p: Dict[str, Any]) -> None:
     job = _JOBS[job_id]
     try:
@@ -61,7 +99,7 @@ def _execute(job_id: str, p: Dict[str, Any]) -> None:
             summary = runner.run_live(base_url=p["base_url"], endpoint_url=p["endpoint_url"],
                                       model=p["model"], case_ids=p["case_ids"], timeout=p["timeout"])
         else:
-            summary = runner.run_deterministic(p["case_ids"])
+            summary = _run_deterministic_isolated(p["case_ids"])
         try:
             job["files"] = runner.persist(summary, _reports_dir())
         except Exception as exc:  # noqa: BLE001 - a read-only disk must not lose the result
