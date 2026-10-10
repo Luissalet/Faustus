@@ -38,7 +38,7 @@ from typing import Any, Dict, List, Mapping, Optional
 
 __all__ = [
     "MODES", "EXPLICIT_MODES", "normalize", "decide", "to_overrides",
-    "resolve_turn", "DEFAULT_BUDGET_THINK", "DEFAULT_BUDGET_DEEP", "DEFAULT_BUDGET_LIGHT",
+    "resolve_turn", "prior_signals", "DEFAULT_BUDGET_THINK", "DEFAULT_BUDGET_DEEP", "DEFAULT_BUDGET_LIGHT",
 ]
 
 MODES = ("auto", "fast", "think", "deep")
@@ -308,12 +308,135 @@ def _decide(text: str, attachments: int, agent: bool, coding: bool, history_len:
     return _result("think", ["long"], "a long turn", "low")
 
 
-def decide(text: str, *, attachments: int = 0, agent: bool = False, coding: bool = False,
-           history_len: int = 0) -> Dict[str, Any]:
-    """Pick ``fast``/``think``/``deep`` for one user turn. Deterministic,
-    never raises. Returns ``{mode, source: "rule", reasons, why, confidence}``."""
+# ── Cross-turn signals ─────────────────────────────────────────────────────
+# The message alone does not say everything: "no, eso está mal" is three
+# words of small talk on its own, yet it means the previous answer failed.
+# What happened in the turns before tells whether reasoning is worth paying
+# for now (the idea of estimating it per turn from the conversation so far,
+# arXiv 2610.12061). These signals only ever RAISE the mode: a turn the rule
+# already sends to "think" or "deep" is never lowered by its history.
+
+# The person says the previous answer was wrong, or asks to redo it.
+_CORRECTION = _rx(
+    r"^\s*no\s*[,:;.!]+\s*\S",
+    r"\b(?:eso|esto) no (?:es|era|est[aá])\b", r"\best[aá] mal\b", r"\bsigue (?:mal|fallando|sin funcionar)\b",
+    r"\bte (?:has )?equivoca\w*\b", r"\bte equivocas\b", r"\b(?:es )?incorrect[oa]\b", r"\bno es (?:correcto|as[ií]|cierto)\b",
+    r"\bno es lo que (?:te )?(?:he )?ped\w*\b", r"\bno me refer[ií]a\b", r"\bquer[ií]a decir\b",
+    r"\bno (?:has|hab[eé]is) entendido\b", r"\bvuelve a (?:intentarlo|probar|hacerlo)\b", r"\bint[eé]ntalo de nuevo\b",
+    r"\bmal(?: otra vez| de nuevo)\b", r"\botra vez mal\b", r"\bno cuadra\b", r"\bno coincide\b",
+    r"\bthat'?s (?:wrong|not right|incorrect|not what i)\b", r"\b(?:you'?re|you are) wrong\b", r"\bwrong again\b",
+    r"\bnot what i (?:asked|meant|wanted)\b", r"\bi meant\b", r"\btry again\b", r"\bstill (?:wrong|broken|failing)\b",
+    r"\bdoesn'?t (?:add up|match)\b",
+)
+# A tool result that failed: what the agent tried last turn did not work.
+_TOOL_FAILURE = _rx(
+    r"^\s*(?:error|failed|exception|traceback)\b", r"\"(?:ok|success)\"\s*:\s*false", r"\"error\"\s*:\s*\"",
+    r"\bexit code [1-9]\d*\b", r"\breturn(?:ed)? code [1-9]\d*\b", r"\btimed out\b", r"\bpermission denied\b",
+    r"\bno such file\b", r"\bnot found\b",
+)
+
+
+def _text_of(message: Any) -> str:
+    content = message.get("content") if isinstance(message, Mapping) else None
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for part in content:
+            if isinstance(part, Mapping) and isinstance(part.get("text"), str):
+                parts.append(part["text"])
+            elif isinstance(part, str):
+                parts.append(part)
+        return "\n".join(parts)
+    return ""
+
+
+def prior_signals(messages: Any, current: str = "") -> Dict[str, Any]:
+    """What the previous turn looked like, from the conversation history.
+
+    Pure and deterministic: no stored metadata is needed. ``prev_mode`` is
+    what the Auto rule picks for the previous user message (``light`` for
+    ``think`` at low effort), ``tool_failures`` counts failed tool results
+    after it, and ``empty_answer`` is true when the assistant replied with
+    nothing (a reasoning budget spent without an answer). ``current``, when
+    it is the last user message of ``messages``, is skipped. Never raises.
+    """
+    out: Dict[str, Any] = {"prev_mode": "", "tool_failures": 0, "empty_answer": False, "has_prior": False}
     try:
-        return _decide(text, attachments, agent, coding, history_len)
+        msgs = [m for m in list(messages or []) if isinstance(m, Mapping)]
+        cur = str(current or "").strip()
+        if msgs and msgs[-1].get("role") == "user" and _text_of(msgs[-1]).strip() == cur:
+            msgs = msgs[:-1]
+        prev_user = None
+        for idx in range(len(msgs) - 1, -1, -1):
+            if msgs[idx].get("role") == "user":
+                prev_user = idx
+                break
+        if prev_user is None:
+            return out
+        out["has_prior"] = True
+        prev = _decide(_text_of(msgs[prev_user]), 0, False, False, prev_user)
+        out["prev_mode"] = "light" if prev.get("effort") == "low" else str(prev.get("mode") or "")
+        answered = False
+        for m in msgs[prev_user + 1:]:
+            role = m.get("role")
+            text = _text_of(m)
+            if role == "tool" and _TOOL_FAILURE.search(text[:2000]):
+                out["tool_failures"] += 1
+            if role == "assistant" and text.strip():
+                answered = True
+        out["empty_answer"] = not answered and any(m.get("role") == "assistant" for m in msgs[prev_user + 1:])
+    except Exception:  # noqa: BLE001 -- history is a hint, never a failure
+        return {"prev_mode": "", "tool_failures": 0, "empty_answer": False, "has_prior": False}
+    return out
+
+
+def _is_light(decision: Mapping[str, Any]) -> bool:
+    return decision.get("mode") == "think" and decision.get("effort") == "low"
+
+
+def _cross_turn(decision: Dict[str, Any], text: str, prior: Optional[Mapping[str, Any]],
+                history_len: int) -> Dict[str, Any]:
+    """Raise ``decision`` with what happened in the previous turn."""
+    if not isinstance(prior, Mapping) or not (prior.get("has_prior") or history_len > 0):
+        return decision
+    if "asked_speed" in (decision.get("reasons") or []) or "asked_brevity" in (decision.get("reasons") or []):
+        return decision  # the person asked for speed in so many words: that wins
+    mode = decision.get("mode")
+    low = mode == "fast" or _is_light(decision)
+    stripped = str(text or "").strip()
+    if _CORRECTION.search(stripped):
+        prev = str(prior.get("prev_mode") or "")
+        if prev in ("think", "deep") and mode != "deep":
+            # It already reasoned in full and still got it wrong: more of
+            # the same budget is unlikely to help, a deeper pass may.
+            return _result("deep", ["correction_after_think"] + [r for r in decision.get("reasons") or []],
+                           "the previous answer reasoned and was corrected", "medium")
+        if low:
+            return _result("think", ["correction"] + [r for r in decision.get("reasons") or [] if r != "light"],
+                           "the previous answer was corrected", "medium")
+        return decision
+    try:
+        failures = int(prior.get("tool_failures") or 0)
+    except (TypeError, ValueError):
+        failures = 0
+    if failures and low:
+        return _result("think", ["prior_tool_failure"] + [r for r in decision.get("reasons") or [] if r != "light"],
+                       "a tool failed in the previous turn", "medium")
+    if prior.get("empty_answer") and mode == "fast":
+        return _light(["prior_empty_answer"], "the previous turn ended without an answer", "low")
+    return decision
+
+
+def decide(text: str, *, attachments: int = 0, agent: bool = False, coding: bool = False,
+           history_len: int = 0, prior: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+    """Pick ``fast``/``think``/``deep`` for one user turn. Deterministic,
+    never raises. Returns ``{mode, source: "rule", reasons, why, confidence}``.
+
+    ``prior`` (see :func:`prior_signals`) carries what happened in the
+    previous turn; it can only raise the mode, never lower it."""
+    try:
+        return _cross_turn(_decide(text, attachments, agent, coding, history_len), text, prior, history_len)
     except Exception:  # noqa: BLE001 -- never fail a turn over this
         return _result("think" if coding else "fast", ["fallback"], "rule unavailable", "low")
 
@@ -366,7 +489,7 @@ def resolve_turn(requested: Any, gen_overrides: Optional[Dict[str, Any]], text: 
                  model: str = "", supports_thinking: bool = True, attachments: int = 0,
                  agent: bool = False, coding: bool = False, history_len: int = 0,
                  settings: Optional[Mapping[str, Any]] = None, effort: bool = True,
-                 default_mode: str = "auto") -> Dict[str, Any]:
+                 default_mode: str = "auto", prior: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
     """The whole per-turn decision the chat route makes, in one pure call.
 
     Precedence: an explicit mode (fast/think/deep) > an explicit ``think`` in
@@ -394,7 +517,8 @@ def resolve_turn(requested: Any, gen_overrides: Optional[Dict[str, Any]], text: 
             "mode": "think" if on else "fast", "requested": "auto", "source": "override",
             "reasons": ["think_override"], "budget": base.get("reasoning_budget") if on else None,
         }}
-    decision = decide(text, attachments=attachments, agent=agent, coding=coding, history_len=history_len)
+    decision = decide(text, attachments=attachments, agent=agent, coding=coding, history_len=history_len,
+                      prior=prior)
     mode = decision.get("mode") or "fast"
     ov = to_overrides(mode, model, settings, effort=effort)
     if mode == "think" and decision.get("effort") == "low" and effort:
