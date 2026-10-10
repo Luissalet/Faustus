@@ -498,6 +498,7 @@ def calculation_mismatch(question: str, answer: str) -> Optional[Dict[str, str]]
 
 _LINK_COUNT_INTENT = re.compile(
     r"\b(?:how\s+many|cuantos?)\b.{0,60}\b(?:enlaces?|links?)\b"
+    r"|\b(?:cuenta(?:me)?|contabiliza)\b.{0,60}\b(?:enlaces?|links?)\b"
     r"|\b(?:numero(?:\s+total)?|total(?:\s+number)?|number|cantidad(?:\s+total)?|quantity|count)\s+"
     r"(?:(?:de|of)\s+)?(?:(?:mis?|my)\s+)?(?:saved\s+|guardados?\s+)?"
     r"(?:enlaces?|links?)\b"
@@ -537,6 +538,13 @@ _LINK_COUNT_OTHER_OBJECT = re.compile(
     r"\b(?:tablero|board|tareas?|tasks?|tickets?|issues?|incidencias?)\b",
     re.IGNORECASE,
 )
+_LINK_COUNT_OBJECT_RELATION = re.compile(
+    r"\b(?:in|on|within|from|en|dentro\s+de|del?|de\s+la|de\s+los|de\s+las)\s+"
+    r"(?:(?:the|el|la|los|las|my|mi|mis)\s+)?(?:task\s+)?"
+    r"(?:tablero|board|tareas?|tasks?|tickets?|issues?|incidencias?)\b"
+    r"|\b(?:for\s+(?:the\s+)?(?:task\s+)?board|para\s+(?:el\s+)?tablero)\b",
+    re.IGNORECASE,
+)
 
 
 def _intent_text(value: str) -> str:
@@ -561,7 +569,13 @@ def saved_links_count_requested(question: str) -> bool:
             continue
         if not _LINK_COUNT_ASK.search(context):
             continue
-        if _LINK_COUNT_OTHER_OBJECT.search(context):
+        # Only treat another object as the counted item when it appears inside
+        # the count phrase itself. Later mentions (for example, links to review
+        # tasks) do not change what the user asked to count.
+        object_span = match.group(0)
+        related_tail = re.split(r"[,;:!?]", sentence[match.end():], maxsplit=1)[0][:60]
+        if (_LINK_COUNT_OTHER_OBJECT.search(object_span)
+                or _LINK_COUNT_OBJECT_RELATION.search(related_tail)):
             continue
         return True
     return False
