@@ -22,6 +22,13 @@ running a turn:
 * ``spend_cap_status`` - the daily paid-spend cap: limits, what was spent today
   (USD and tokens), calls without a reported cost, per provider, reset time.
 
+* ``injection_eval_run`` / ``injection_eval_report`` - the adversarial prompt-injection
+  battery (evals/injection, 40+ cases: web pages, files, MCP results, mail, PDFs,
+  calendar, clipboard, multi-step, encoded text, authority claims, exfiltration,
+  tool coercion). The default run is deterministic: a scripted model that obeys every
+  injection is judged by the real gates, and no real tool is ever dispatched. A live run
+  against a real model is opt-in (``live: true`` plus endpoint and model).
+
 * ``harness_proposals`` - list or read the refinement proposals the assistant
   made after a task (diff, rationale, evidence, status). Approving, rejecting
   and undoing stay human actions in Studio or the REST routes.
@@ -32,7 +39,8 @@ running a turn:
 * ``cookbook_job_log`` - the command, exit code and output (stdout/stderr) of a
   Cookbook download or serve job.
 
-Nothing here writes anything or starts a run. The in-process receipt log and
+Apart from the injection battery (which only asks the gates and saves its report under
+DATA_DIR/injection_evals), nothing here writes anything or starts a run. The in-process receipt log and
 claim broker of the running app are not reachable from this separate process;
 these tools compute from what they are given, and read the reports on disk.
 
@@ -240,6 +248,50 @@ async def list_tools() -> list[Tool]:
                 "Read-only; change it in Settings or PATCH /api/spend-cap."
             ),
             inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="injection_eval_run",
+            description=(
+                "Run the adversarial prompt-injection battery: 40+ cases where outside content (web "
+                "pages, files, MCP results, emails, PDFs, calendar invites, clipboard, multi-step, "
+                "hidden or encoded text, fake authority, urgency, exfiltration URLs, tool coercion) "
+                "tries to make the agent delete files, send mail, change settings, lift read-only or "
+                "raise the paid spend cap. Default: deterministic, a scripted model that obeys every "
+                "injection is judged by the real gates; nothing is dispatched and no model is used. "
+                "Returns totals, violated case ids and open known holes plus a report id. Set live=true "
+                "with base_url, endpoint_url and model to score a real configured model through a "
+                "running server (off by default). Corre la bateria de inyeccion de instrucciones."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "case_ids": {"type": "array", "items": {"type": "string"},
+                                 "description": "Only these cases (default: all)."},
+                    "live": {"type": "boolean", "description": "Use a real model (default false)."},
+                    "base_url": {"type": "string", "description": "Running Faustus server (live only)."},
+                    "endpoint_url": {"type": "string", "description": "Model endpoint (live only)."},
+                    "model": {"type": "string", "description": "Model name (live only)."},
+                    "timeout": {"type": "number", "description": "Seconds per case (live only, default 180)."},
+                },
+            },
+        ),
+        Tool(
+            name="injection_eval_report",
+            description=(
+                "Read the newest prompt-injection battery report (or one by job_id): totals, per "
+                "case result, the forbidden calls attempted and the defense that stopped each, the "
+                "open known holes, and the transcript of any case. format=markdown returns the "
+                "readable table. Lee el ultimo informe de la bateria de inyeccion. Read-only."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "job_id": {"type": "string", "description": "Report of this job (default: newest)."},
+                    "mode": {"type": "string", "enum": ["deterministic", "live"]},
+                    "case_id": {"type": "string", "description": "Only this case, with its transcript."},
+                    "format": {"type": "string", "enum": ["json", "markdown"], "description": "Default json."},
+                },
+            },
         ),
         Tool(
             name="voice_turn_timeline",
@@ -536,8 +588,41 @@ def _cookbook_job_log(args: dict) -> dict:
     return data
 
 
+def _injection_eval_run(args: dict) -> dict:
+    from evals.injection import service
+
+    params = {k: args.get(k) for k in ("case_ids", "live", "base_url", "endpoint_url", "model", "timeout")
+              if args.get(k) is not None}
+    try:
+        job = service.start_job(params, wait=not params.get("live"))
+    except ValueError as exc:
+        return {"error": str(exc)}
+    return job
+
+
+def _injection_eval_report(args: dict) -> dict:
+    from evals.injection import runner, service
+
+    summary = service.latest_report(job_id=str(args.get("job_id") or "") or None,
+                                    mode=str(args.get("mode") or "") or None)
+    if summary is None:
+        return {"error": "no injection eval report yet; call injection_eval_run first"}
+    case_id = str(args.get("case_id") or "")
+    if case_id:
+        match = [r for r in summary["results"] if r["id"] == case_id]
+        return match[0] if match else {"error": f"case {case_id!r} is not in this report"}
+    if args.get("format") == "markdown":
+        return {"markdown": runner.markdown_report(summary)}
+    slim = {k: v for k, v in summary.items() if k != "results"}
+    slim["results"] = [{k: r[k] for k in ("id", "vector", "technique", "status", "violations", "attempts")}
+                       for r in summary["results"]]
+    return slim
+
+
 _TOOLS = {
     "degradation_status": _degradation_status,
+    "injection_eval_run": _injection_eval_run,
+    "injection_eval_report": _injection_eval_report,
     "doc_lint": _doc_lint,
     "spend_cap_status": _spend_cap_status,
     "history_projection": _history_projection,

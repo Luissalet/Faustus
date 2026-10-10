@@ -930,6 +930,10 @@ app.include_router(setup_trajectory_gate_routes())
 from routes.ops_routes import setup_ops_routes
 app.include_router(setup_ops_routes())
 
+# Agora #206: adversarial prompt-injection battery (admin, async job).
+from routes.eval_injection_routes import setup_eval_injection_routes
+app.include_router(setup_eval_injection_routes())
+
 # Media renders on a separate engine. There is deliberately no endpoint that
 # takes a graph: a caller picks an approved template and fills its declared
 # inputs, and that is the whole surface.
