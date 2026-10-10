@@ -65,6 +65,8 @@ from routes.chat_helpers import (
     resolve_session_auth,
     build_chat_context,
     save_assistant_response,
+    save_empty_answer_record,
+    last_finish_reason,
     stamp_behavior_mode_metadata,
     run_post_response_tasks,
     accumulate_token_usage,
@@ -3435,6 +3437,10 @@ def setup_chat_routes(
                 # how long the model thought, or a reloaded chat says "1s".
                 _thinking_span = [0.0, 0.0]
                 last_metrics = None
+                # The provider's finish_reason for the plain-chat stream (the
+                # `finish` event): tells a reasoning budget spent without an
+                # answer from any other empty ending (OBJ-58, #227).
+                _chat_finish_reason = ""
 
                 # Foreground Chat and Agent requests share one explicit owner-aware
                 # policy. Strict mode is the default; legacy values are unrelated.
@@ -3772,6 +3778,8 @@ def setup_chat_routes(
                                             data["endpoint_id"] = _actual_route.get("endpoint_id")
                                             data["endpoint_label"] = _actual_route.get("endpoint_label")
                                             yield f'data: {json.dumps(data)}\n\n'
+                                        elif data.get("type") == "finish":
+                                            _chat_finish_reason = str(data.get("finish_reason") or "").strip().lower() or _chat_finish_reason
                                         elif data.get("type") == "usage":
                                             if _commit_chat_compaction(_actual_candidate_index):
                                                 _compacted_length = _chat_request_state["context_lengths"].get(
@@ -4089,6 +4097,22 @@ def setup_chat_routes(
                                                 and not tool_approval_continuation
                                             ),
                                         )
+                                    if not full_response:
+                                        # Reasoning (or a spent token budget) and no
+                                        # final text: keep a durable, empty record of
+                                        # the turn so the next Auto turn can read it.
+                                        _empty_rec = save_empty_answer_record(
+                                            sess, session_manager, session, last_metrics,
+                                            thinking=thinking_response,
+                                            thinking_time=(round(max(1.0, _thinking_span[1] - _thinking_span[0]), 1)
+                                                           if _thinking_span[0] else None),
+                                            finish_reason=_chat_finish_reason, incognito=incognito,
+                                        )
+                                        if _empty_rec:
+                                            _chat_done_saved = True
+                                            yield f'data: {json.dumps({"type": "empty_answer", "data": {"reason": _empty_rec["reason"], "finish_reason": _empty_rec.get("finish_reason") or ""}})}\n\n'
+                                            if _empty_rec.get("id"):
+                                                yield f'data: {json.dumps({"type": "message_saved", "id": _empty_rec["id"]})}\n\n'
                                     _ce_chat_receipt("empty")
                                     _stream_set(session, status="done")
                                     yield chunk
@@ -4128,6 +4152,7 @@ def setup_chat_routes(
                                     full_response = ""
                                     thinking_response = ""
                                     last_metrics = {}
+                                    _chat_finish_reason = ""
                                     continue
                             break
                     except (asyncio.CancelledError, GeneratorExit):
@@ -4157,6 +4182,15 @@ def setup_chat_routes(
                                     status="cancelled", owner=getattr(sess, "owner", None))
                             except Exception:
                                 logger.debug("turn receipt (cancelled) failed", exc_info=True)
+                        if (not full_response and thinking_response.strip() and not incognito
+                                and not (_chat_terminal_saved or _chat_done_saved)):
+                            # Stopped while it was still reasoning: the empty record
+                            # says so (no invented answer), Auto reads it next turn.
+                            save_empty_answer_record(
+                                sess, session_manager, session, last_metrics,
+                                thinking=thinking_response, finish_reason=_chat_finish_reason,
+                                stopped=True, incognito=incognito,
+                            )
                         _ce_chat_receipt("interrupted")
                         raise
                     finally:
@@ -4711,6 +4745,20 @@ def setup_chat_routes(
                                             and not tool_approval_continuation
                                         ),
                                     )
+                                if not (full_response or _has_tool_events) and not _terminal_saved:
+                                    # The agent reasoned (or ran out of tokens) and
+                                    # never wrote a final answer: keep a durable,
+                                    # empty record of the turn for the next Auto turn.
+                                    _empty_rec = save_empty_answer_record(
+                                        sess, session_manager, session, last_metrics,
+                                        thinking=thinking_response or str((last_metrics or {}).get("thinking") or ""),
+                                        finish_reason=last_finish_reason(last_metrics), incognito=incognito,
+                                    )
+                                    if _empty_rec:
+                                        _terminal_saved = True
+                                        yield f'data: {json.dumps({"type": "empty_answer", "data": {"reason": _empty_rec["reason"], "finish_reason": _empty_rec.get("finish_reason") or ""}})}\n\n'
+                                        if _empty_rec.get("id"):
+                                            yield f'data: {json.dumps({"type": "message_saved", "id": _empty_rec["id"]})}\n\n'
                                 _stream_set(session, status="done")
                                 yield chunk
                     except (asyncio.CancelledError, GeneratorExit):
@@ -4762,6 +4810,15 @@ def setup_chat_routes(
                                     logger.debug("turn receipt (cancelled) failed", exc_info=True)
                         except Exception:
                             logger.exception("Failed to save partial response on disconnect (session %s)", session)
+                        if (not full_response and thinking_response.strip() and not incognito
+                                and not _terminal_saved):
+                            # Stopped while it was still reasoning: an empty record
+                            # (no invented answer) that Auto reads on the next turn.
+                            save_empty_answer_record(
+                                sess, session_manager, session, last_metrics,
+                                thinking=thinking_response, finish_reason=last_finish_reason(last_metrics),
+                                stopped=True, incognito=incognito,
+                            )
                         raise
                     finally:
                         _active_streams.pop(session, None)
@@ -5174,6 +5231,7 @@ def setup_chat_routes(
             {"role": m.role, "content": m.content}
             for m in history[:trigger_idx + 1]
             if (m.metadata or {}).get("source") != "slash"
+            and not (m.metadata or {}).get("empty_answer")
         ]
         messages.append({"role": "system", "content": evidence_note})
 

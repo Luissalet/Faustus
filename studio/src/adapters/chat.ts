@@ -723,6 +723,11 @@ export type ChatEvent =
   /** Lot T: the reasoning mode this turn runs with (`src/think_mode.py`),
    *  sent once at the top of the stream for a thinking-capable model. */
   | { type: 'think_mode'; mode: 'fast' | 'think' | 'deep'; requested: string; source: string; reasons: string[]; budget: number | null }
+  /** The turn reasoned and never wrote a final answer: the server kept an
+   *  empty record of it (`routes/chat_helpers.save_empty_answer_record`) so the
+   *  next Auto turn can read it. `length`: the token budget ran out; `stopped`:
+   *  the person stopped it while it was still reasoning. */
+  | { type: 'empty_answer'; reason: 'length' | 'stopped' | 'other' }
   | {
       type: 'research';
       phase: string;
@@ -1833,6 +1838,11 @@ export function decode(raw: Record<string, unknown>, sseEvent: string | null): C
         budget: num(data.budget) ?? null,
       };
     }
+    case 'empty_answer':
+      return {
+        type: 'empty_answer',
+        reason: data.reason === 'length' || data.reason === 'stopped' ? data.reason : 'other',
+      };
     case 'metrics': {
       const metrics = metricsFrom(data);
       // The run id travels on the outer envelope (every event carries it).

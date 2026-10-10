@@ -1532,6 +1532,106 @@ def save_assistant_response(
     return None
 
 
+def last_finish_reason(metrics: dict | None) -> str:
+    """The provider's finish_reason for a turn, from the metrics an agent turn
+    carries (`harness.finish_reasons`, one per round; the last round counts) or
+    a plain `finish_reason`. '' when it was never reported."""
+    try:
+        md = metrics if isinstance(metrics, dict) else {}
+        reasons = (md.get("harness") or {}).get("finish_reasons") if isinstance(md.get("harness"), dict) else None
+        if isinstance(reasons, (list, tuple)):
+            for item in reversed(reasons):
+                if item:
+                    return str(item).strip().lower()
+        return str(md.get("finish_reason") or "").strip().lower()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def save_empty_answer_record(
+    sess,
+    session_manager,
+    session_id: str,
+    last_metrics: dict | None,
+    *,
+    thinking: str = "",
+    thinking_time: float | None = None,
+    finish_reason: str | None = None,
+    stopped: bool = False,
+    incognito: bool = False,
+) -> Optional[dict[str, Any]]:
+    """Keep a durable record of a turn that reasoned but never answered.
+
+    A turn whose provider streamed only reasoning (typically `finish_reason`
+    "length": the budget went on thinking), or that the person stopped while it
+    was still reasoning, has no final text, so `save_assistant_response` is
+    never reached and nothing would remain of it. The next turn's Auto could not
+    tell that a deep pass had just been spent for nothing (OBJ-58, #227).
+
+    This saves an assistant message with EMPTY content - no text is invented as
+    if the model had said it - whose metadata says what happened:
+    `empty_answer: true`, `empty_answer_reason` (`length` | `stopped` |
+    `other`), `finish_reason`, the reasoning (`thinking`) and the
+    `think_mode` the turn ran with. The prompt never carries it
+    (`Session.get_context_messages` leaves it out); the history keeps it, Studio
+    shows the reasoning with a short note, and `src.think_mode.prior_signals`
+    reads it.
+
+    Nothing is saved for an incognito session (nothing new may persist there),
+    nor for a turn that neither reasoned nor ran out of tokens (a plain empty
+    reply keeps its old behaviour). Best effort: a failure is logged and
+    swallowed. Returns `{"id", "reason"}` when a row was saved, else None.
+    """
+    turn_mode = getattr(sess, "_turn_think_mode", None)
+    try:
+        sess._turn_think_mode = None  # the record belongs to one turn only
+    except Exception:  # noqa: BLE001
+        pass
+    fr = str(finish_reason or "").strip().lower()
+    reasoned = bool(str(thinking or "").strip())
+    if incognito or not (reasoned or fr == "length"):
+        return None
+    try:
+        md = dict(last_metrics) if last_metrics else {}
+        requested_model = str(md.get("requested_model") or md.get("selected_model") or getattr(sess, "model", "") or "").strip()
+        actual_model = str(md.get("model") or md.get("actual_model") or requested_model).strip()
+        if requested_model:
+            md["requested_model"] = requested_model
+        if actual_model:
+            md["model"] = actual_model
+        if "run_id" not in md:
+            try:
+                _run = agent_runs.get_run_id(session_id)
+                if _run:
+                    md["run_id"] = _run
+            except Exception:  # noqa: BLE001
+                pass
+        reason = "length" if fr == "length" else ("stopped" if stopped else "other")
+        md["empty_answer"] = True
+        md["empty_answer_reason"] = reason
+        if fr:
+            md["finish_reason"] = fr
+        elif stopped:
+            md["finish_reason"] = "stopped"
+        if stopped:
+            md["stopped"] = True
+        if isinstance(turn_mode, dict) and turn_mode.get("mode") and "think_mode" not in md:
+            md["think_mode"] = {k: v for k, v in turn_mode.items() if v is not None}
+        if reasoned and not md.get("thinking"):
+            md["thinking"] = str(thinking).strip()
+        if thinking_time and not md.get("thinking_time"):
+            md["thinking_time"] = thinking_time
+        _row = ChatMessage("assistant", "", metadata=md)
+        sess.add_message(_row)
+        from core.database import update_session_last_accessed
+        update_session_last_accessed(session_id)
+        session_manager.save_sessions()
+        return {"id": (getattr(_row, "metadata", None) or {}).get("_db_id"), "reason": reason, "finish_reason": fr}
+    except Exception:  # noqa: BLE001
+        logger.debug("empty-answer record failed for session %s", session_id, exc_info=True)
+        return None
+
+
 def _is_session_stream_active(session_id: str) -> bool:
     """Best-effort check for "is a chat completion currently streaming for
     this session?" — used to keep background extraction from overlapping a

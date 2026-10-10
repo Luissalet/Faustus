@@ -164,10 +164,15 @@ class Session:
         the model. Display/history-load paths use the raw ``history`` and are
         unaffected.
         """
+        # A turn that reasoned and never answered keeps an empty marker row
+        # (`routes.chat_helpers.save_empty_answer_record`) for the history and
+        # for Auto; an empty assistant message is no part of the conversation
+        # the model reads (some providers reject it outright).
         messages = [
             msg.to_dict()
             for msg in self.history
             if (msg.metadata or {}).get("source") != "slash"
+            and not (msg.metadata or {}).get("empty_answer")
         ]
         if not _history_grants_chat_session_approval(self.history, self.id):
             return messages

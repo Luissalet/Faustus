@@ -9555,3 +9555,6 @@ Period {period} ({kind}) already ran	El periodo {period} ({kind}) ya se ejecutó
 Task is paused; nothing ran	La tarea está en pausa; no se ejecutó nada
 month	mes
 Paused; the {when} slot did not run	En pausa; la ejecución de las {when} no se hizo
+No final answer: the reasoning budget ran out.	Sin respuesta final: se agotó el presupuesto de razonamiento.
+No final answer: the turn was stopped while it was still reasoning.	Sin respuesta final: se paró el turno mientras aún razonaba.
+No final answer: the turn ended while it was still reasoning.	Sin respuesta final: el turno terminó mientras aún razonaba.

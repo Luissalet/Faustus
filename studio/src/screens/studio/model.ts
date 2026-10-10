@@ -1029,6 +1029,8 @@ export function apply(turn: Turn, event: ChatEvent): Turn {
       return { ...turn, contextReceipts: event.receipts };
     case 'think_mode':
       return { ...turn, thinkMode: { mode: event.mode, requested: event.requested, source: event.source, budget: event.budget } };
+    case 'empty_answer':
+      return { ...turn, note: emptyAnswerNote(event.reason) };
     case 'strategy':
       return {
         ...turn,
@@ -1286,6 +1288,15 @@ function modeFieldsFrom(meta: Record<string, unknown>): { behaviorMode?: string;
   return { behaviorMode, modeCheck: { checked, violations } };
 }
 
+/** The line under a turn that reasoned and never wrote a final answer (the
+ *  server keeps it as an empty reply: `metadata.empty_answer`). Nothing is
+ *  shown as if the model had said it; this only says why the reply is empty. */
+export function emptyAnswerNote(reason: string): string {
+  if (reason === 'length') return t('No final answer: the reasoning budget ran out.');
+  if (reason === 'stopped') return t('No final answer: the turn was stopped while it was still reasoning.');
+  return t('No final answer: the turn ended while it was still reasoning.');
+}
+
 function thoughtsFromMeta(meta: Record<string, unknown>): { thinking: string; thoughts: Thought[] } {
   const raw = Array.isArray(meta.thinking_segments) ? meta.thinking_segments : [];
   const segments = raw.flatMap((item) => {
@@ -1341,8 +1352,10 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
   const speaker = typeof meta.group_model === 'string' && meta.group_model ? meta.group_model : undefined;
   const modeFields = modeFieldsFrom(meta);
   const restoredThoughts = thoughtsFromMeta(meta);
+  const emptyNote = meta.empty_answer === true ? emptyAnswerNote(s(meta.empty_answer_reason)) : '';
   if (
     !events.length &&
+    !emptyNote &&
     !meta.harness &&
     !meta.web_sources &&
     !meta.research_sources &&
@@ -1433,6 +1446,7 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
     ...turn,
     text,
     speaker,
+    note: emptyNote || turn.note,
     thinking: restoredThoughts.thinking || turn.thinking,
     thoughts: restoredThoughts.thoughts.length ? restoredThoughts.thoughts : turn.thoughts,
     steps: steps.length ? steps : turn.steps,

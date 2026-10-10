@@ -11,6 +11,7 @@ agent loop parses for local models), e.g.
 
 Control endpoints (used by the tests):
     POST /_script   {"responses": [...], "reset": true}   set the script
+                    (an item is a string, or {"text", "reasoning", "finish_reason", "delay"})
     GET  /_calls     {"count": N, "last_messages": [...]}  what it received
 """
 from __future__ import annotations
@@ -86,13 +87,20 @@ class Handler(BaseHTTPRequestHandler):
             responses = list(STATE.responses)
             delay = STATE.delay
         text = responses[min(idx, len(responses) - 1)] if responses else "Done."
+        reasoning = ""
+        finish = "stop"
         if isinstance(text, dict):
             delay = float(text.get("delay", delay))
+            # A scripted turn can stream reasoning_content (a thinking model's
+            # chain of thought) and end on any finish_reason, e.g. only
+            # reasoning and "length": the budget spent before an answer.
+            reasoning = str(text.get("reasoning", "") or "")
+            finish = str(text.get("finish_reason", "stop") or "stop")
             text = str(text.get("text", ""))
         model = body.get("model") or "fake-coder"
         if not body.get("stream"):
             return self._json(200, {"id": "cmpl-1", "object": "chat.completion", "model": model,
-                                    "choices": [{"index": 0, "message": {"role": "assistant", "content": text}, "finish_reason": "stop"}],
+                                    "choices": [{"index": 0, "message": {"role": "assistant", "content": text, **({"reasoning_content": reasoning} if reasoning else {})}, "finish_reason": finish}],
                                     "usage": {"prompt_tokens": 10, "completion_tokens": max(1, len(text) // 4), "total_tokens": 10 + max(1, len(text) // 4)}})
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -102,15 +110,30 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(_sse({"id": "cmpl-1", "object": "chat.completion.chunk", "model": model,
                                "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}]}))
         chunk = 48
+        for i in range(0, len(reasoning), chunk):
+            self.wfile.write(_sse({"id": "cmpl-1", "object": "chat.completion.chunk", "model": model,
+                                   "choices": [{"index": 0, "delta": {"reasoning_content": reasoning[i:i + chunk]}, "finish_reason": None}]}))
+            self.wfile.flush()
+            if delay:
+                time.sleep(delay)
         for i in range(0, len(text), chunk):
             self.wfile.write(_sse({"id": "cmpl-1", "object": "chat.completion.chunk", "model": model,
                                    "choices": [{"index": 0, "delta": {"content": text[i:i + chunk]}, "finish_reason": None}]}))
             self.wfile.flush()
             if delay:
                 time.sleep(delay)
-        self.wfile.write(_sse({"id": "cmpl-1", "object": "chat.completion.chunk", "model": model,
-                               "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-                               "usage": {"prompt_tokens": 10, "completion_tokens": max(1, len(text) // 4)}}))
+        usage = {"prompt_tokens": 10, "completion_tokens": max(1, (len(text) + len(reasoning)) // 4)}
+        if finish == "stop":
+            self.wfile.write(_sse({"id": "cmpl-1", "object": "chat.completion.chunk", "model": model,
+                                   "choices": [{"index": 0, "delta": {}, "finish_reason": finish}],
+                                   "usage": usage}))
+        else:
+            # The chat-completions shape for an unusual ending: the finish_reason on its
+            # own chunk, then the usage on a trailing chunk with no choices.
+            self.wfile.write(_sse({"id": "cmpl-1", "object": "chat.completion.chunk", "model": model,
+                                   "choices": [{"index": 0, "delta": {}, "finish_reason": finish}]}))
+            self.wfile.write(_sse({"id": "cmpl-1", "object": "chat.completion.chunk", "model": model,
+                                   "choices": [], "usage": usage}))
         self.wfile.write(b"data: [DONE]\n\n")
         self.wfile.flush()
 

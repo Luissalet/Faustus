@@ -387,11 +387,17 @@ def _recorded_mode(message: Mapping[str, Any]) -> str:
 
 
 def _no_answer(message: Mapping[str, Any]) -> bool:
-    """True when an assistant message carries reasoning but no answer."""
+    """True when an assistant message carries reasoning but no answer.
+
+    A turn that reasoned and never answered is saved as an empty message marked
+    ``metadata.empty_answer`` (``routes.chat_helpers.save_empty_answer_record``):
+    that mark is the record Auto reads."""
     text = _THINK_BLOCK.sub("", _text_of(message)).strip()
     if text:
         return False
     meta = message.get("metadata")
+    if isinstance(meta, Mapping) and meta.get("empty_answer"):
+        return True
     return bool((isinstance(meta, Mapping) and meta.get("thinking")) or "<think" in _text_of(message).lower())
 
 
