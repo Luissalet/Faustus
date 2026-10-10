@@ -19,7 +19,13 @@ from src.task_action_policy import (
     is_admin_only_task_action,
     owner_has_admin_task_privileges,
 )
-from src.task_scheduler import compute_next_run, HOUSEKEEPING_DEFAULTS, _resolve_task_timezone, set_task_policy
+from src.task_scheduler import (
+    compute_next_run, HOUSEKEEPING_DEFAULTS, _resolve_task_timezone, set_task_policy,
+    get_task_schedule_guard, set_task_schedule_guard,
+)
+from src.task_windows import (
+    CLOSED_STATUSES, PERIOD_KEYS, closed_status_for, normalize_period_key, normalize_window_minutes,
+)
 from routes.prefs_routes import _load_for_user, _save_for_user
 
 logger = logging.getLogger(__name__)
@@ -190,6 +196,13 @@ class TaskCreate(TaskTimezone):
     # the task falls through to its session's/project's own tier, then to
     # unrestricted, exactly like a task that predates this field.
     connector_ids: Optional[list[str]] = None
+    # #263: optional guards for a schedule-triggered task. `window_minutes` —
+    # how long after its scheduled moment a run is still wanted (a catch-up
+    # later than that is recorded `skipped-window`). `period_key` — "day" |
+    # "iso_week" | "month": at most one run per period (a second or late
+    # firing is recorded `skipped-period`). Absent: the task behaves as ever.
+    window_minutes: Optional[int] = None
+    period_key: Optional[str] = None
 
 
 class TaskUpdate(TaskTimezone):
@@ -221,6 +234,26 @@ class TaskUpdate(TaskTimezone):
     # py`), for the same reason (an explicit `None` here is indistinguishable
     # from "the caller didn't mention it").
     connector_ids: Optional[list[str]] = None
+    # #263 — see TaskCreate. An explicit `null` (or 0 for the window) clears
+    # the guard; leaving the field out keeps it.
+    window_minutes: Optional[int] = None
+    period_key: Optional[str] = None
+
+
+def _latest_runs(db, task_ids) -> dict:
+    """task_id -> its most recent TaskRun, in one query."""
+    ids = [i for i in task_ids if i]
+    if not ids:
+        return {}
+    from sqlalchemy import func
+    newest = (
+        db.query(TaskRun.task_id.label("tid"), func.max(TaskRun.started_at).label("mx"))
+        .filter(TaskRun.task_id.in_(ids)).group_by(TaskRun.task_id).subquery()
+    )
+    rows = db.query(TaskRun).join(
+        newest, (TaskRun.task_id == newest.c.tid) & (TaskRun.started_at == newest.c.mx)
+    ).all()
+    return {r.task_id: r for r in rows}
 
 
 def _display_task_name(t: ScheduledTask) -> str:
@@ -230,7 +263,7 @@ def _display_task_name(t: ScheduledTask) -> str:
     return t.name
 
 
-def _task_to_dict(t: ScheduledTask, include_last_run_result: bool = False) -> dict:
+def _task_to_dict(t: ScheduledTask, include_last_run_result: bool = False, last_run: Optional[TaskRun] = None) -> dict:
     defs = HOUSEKEEPING_DEFAULTS.get(t.action) if t.action else None
     d = {
         "id": t.id,
@@ -281,6 +314,20 @@ def _task_to_dict(t: ScheduledTask, include_last_run_result: bool = False) -> di
         last = t.runs[0]  # ordered desc by started_at
         d["last_run_status"] = last.status
         d["last_run_result"] = (last.result or last.error or "")[:500]
+    # #263: the optional guards, the pause as a plain boolean, and the closed
+    # status (with its reason) of the newest run, skips included.
+    try:
+        guard = get_task_schedule_guard(getattr(t, "id", "") or "")
+    except Exception:
+        guard = {"window_minutes": None, "period_key": None}
+    d["window_minutes"] = guard["window_minutes"]
+    d["period_key"] = guard["period_key"]
+    d["paused"] = (t.status == "paused")
+    if last_run is not None:
+        closed, reason = closed_status_for(last_run.status, last_run.result, last_run.error)
+        d["last_run_closed_status"] = closed
+        d["last_run_reason"] = reason
+        d["last_run_at"] = last_run.started_at.isoformat() + "Z" if last_run.started_at else None
     d["connectors"] = _task_connectors_payload(t)
     return d
 
@@ -333,7 +380,14 @@ def _task_connectors_payload(t: ScheduledTask) -> dict:
 
 
 def _run_to_dict(r: TaskRun) -> dict:
+    closed, reason = closed_status_for(r.status, r.result, r.error)
     return {
+        # #263: the closed status (ok, partial, failed, skipped-window,
+        # skipped-period, skipped-paused, blocked-login) and a one-line
+        # reason, derived from the stored row. `status` keeps its historical
+        # word (success, error, ...) for every client that already reads it.
+        "closed_status": closed,
+        "reason": reason,
         "id": r.id,
         "task_id": r.task_id,
         "started_at": r.started_at.isoformat() + "Z" if r.started_at else None,
@@ -458,7 +512,9 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             if status:
                 q = q.filter(ScheduledTask.status == status)
             tasks = q.order_by(ScheduledTask.created_at.desc()).all()
-            return {"tasks": [_task_to_dict(t, include_last_run_result=include_last_run) for t in tasks]}
+            latest = _latest_runs(db, [t.id for t in tasks])
+            return {"tasks": [_task_to_dict(t, include_last_run_result=include_last_run,
+                                            last_run=latest.get(t.id)) for t in tasks]}
         finally:
             db.close()
 
@@ -580,6 +636,13 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             raise HTTPException(400, f"misfire_policy must be one of {MISFIRE_POLICIES}")
         if req.budget_preset is not None and req.budget_preset not in _BUDGET_PRESETS:
             raise HTTPException(400, f"budget_preset must be one of {list(_BUDGET_PRESETS)}")
+        try:
+            window_minutes = normalize_window_minutes(req.window_minutes)
+            period_key = normalize_period_key(req.period_key)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        if (window_minutes or period_key) and req.trigger_type != "schedule":
+            raise HTTPException(400, "window_minutes and period_key apply to schedule-triggered tasks only")
 
         # Auto-generate name
         name = req.name
@@ -680,6 +743,10 @@ def setup_task_routes(task_scheduler) -> APIRouter:
                     permissions=req.permissions,
                     connector_ids=req.connector_ids,
                 )
+            if window_minutes or period_key:
+                set_task_schedule_guard(task_id, window_minutes=window_minutes, period_key=period_key)
+                result["window_minutes"] = window_minutes
+                result["period_key"] = period_key
             result["connectors"] = _task_connectors_payload(task)
             return result
         finally:
@@ -786,7 +853,7 @@ def setup_task_routes(task_scheduler) -> APIRouter:
                 raise HTTPException(404, "Task not found")
             if user and task.owner != user:
                 raise HTTPException(403, "Access denied")
-            return _task_to_dict(task)
+            return _task_to_dict(task, last_run=_latest_runs(db, [task.id]).get(task.id))
         finally:
             db.close()
 
@@ -804,6 +871,19 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             next_task_type = req.task_type if req.task_type is not None else task.task_type
             next_action = req.action if req.action is not None else task.action
             _require_admin_for_task_action(user, next_task_type, next_action)
+
+            # #263: validated before anything is changed. Only the fields the
+            # body actually names are touched (`null` clears them).
+            guard_changes: Dict[str, Any] = {}
+            try:
+                if "window_minutes" in req.model_fields_set:
+                    guard_changes["window_minutes"] = normalize_window_minutes(req.window_minutes)
+                if "period_key" in req.model_fields_set:
+                    guard_changes["period_key"] = normalize_period_key(req.period_key)
+            except ValueError as exc:
+                raise HTTPException(400, str(exc))
+            if any(guard_changes.values()) and (req.trigger_type or task.trigger_type or "schedule") != "schedule":
+                raise HTTPException(400, "window_minutes and period_key apply to schedule-triggered tasks only")
 
             if req.name is not None:
                 task.name = req.name
@@ -888,7 +968,9 @@ def setup_task_routes(task_scheduler) -> APIRouter:
                     set_task_policy(task.id, _clear_connector_ids=True)
                 else:
                     set_task_policy(task.id, connector_ids=req.connector_ids)
-            return _task_to_dict(task)
+            if guard_changes:
+                set_task_schedule_guard(task.id, **guard_changes)
+            return _task_to_dict(task, last_run=_latest_runs(db, [task.id]).get(task.id))
         finally:
             db.close()
 

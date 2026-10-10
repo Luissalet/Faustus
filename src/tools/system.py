@@ -372,7 +372,7 @@ def _resolve_relative_day_next_run(next_run, *, task_type: str, schedule: str,
 async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
     """Handle manage_tasks tool calls: CRUD on scheduled tasks."""
     import uuid as _uuid
-    from core.database import SessionLocal, ScheduledTask
+    from core.database import SessionLocal, ScheduledTask, TaskRun
     from src.task_scheduler import compute_next_run, _resolve_task_timezone
 
     try:
@@ -443,6 +443,20 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
             args["scheduled_date"] = parsed_date.astimezone(timezone.utc).replace(tzinfo=None)
         except (AttributeError, TypeError, ValueError, KeyError):
             return {"error": "Use an ISO date and time for scheduled_date", "exit_code": 1}
+    # #263: the optional run window and period key. Validated up front so a
+    # bad value never half-applies; `null` clears one on an edit.
+    from src.task_scheduler import get_task_schedule_guard, set_task_schedule_guard
+    from src.task_windows import closed_status_for, normalize_period_key, normalize_window_minutes
+    guard_changes: Dict[str, Any] = {}
+    try:
+        if "window_minutes" in args:
+            guard_changes["window_minutes"] = normalize_window_minutes(args.get("window_minutes"))
+        if "period_key" in args:
+            guard_changes["period_key"] = normalize_period_key(args.get("period_key"))
+    except ValueError as exc:
+        return {"error": str(exc), "exit_code": 1}
+    if any(guard_changes.values()) and action in ("create", "edit") and args.get("trigger_type", "schedule") != "schedule":
+        return {"error": "window_minutes and period_key apply to schedule-triggered tasks only", "exit_code": 1}
     db = SessionLocal()
     try:
         if action == "list":
@@ -462,9 +476,48 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
                     bits.append(str(t.scheduled_time))
                 if t.next_run:
                     bits.append(f"next {t.next_run.isoformat()}Z")
+                try:
+                    g = get_task_schedule_guard(t.id)
+                    if g["window_minutes"]:
+                        bits.append(f"window {g['window_minutes']} min")
+                    if g["period_key"]:
+                        bits.append(f"once per {g['period_key']}")
+                except Exception:
+                    pass
+                last = (db.query(TaskRun).filter(TaskRun.task_id == t.id)
+                        .order_by(TaskRun.started_at.desc()).first())
+                if last is not None:
+                    closed, why = closed_status_for(last.status, last.result, last.error)
+                    if closed:
+                        bits.append(f"last run {closed}" + (f" ({why})" if why and closed != "ok" else ""))
                 detail = ", ".join(bits)
                 lines.append(f"{idx}. {t.name} ({t.id}) — {detail}")
             return {"response": "\n".join(lines), "exit_code": 0}
+
+        elif action == "history":
+            task_id = args.get("task_id")
+            if not task_id:
+                return {"error": "task_id is required for history", "exit_code": 1}
+            task = db.query(ScheduledTask).filter(ScheduledTask.id == task_id).first()
+            if not task:
+                return {"error": f"Task {task_id} not found", "exit_code": 1}
+            if owner and task.owner != owner:
+                return {"error": "Access denied", "exit_code": 1}
+            try:
+                limit = max(1, min(int(args.get("limit") or 10), 50))
+            except (TypeError, ValueError):
+                limit = 10
+            runs = (db.query(TaskRun).filter(TaskRun.task_id == task_id)
+                    .order_by(TaskRun.started_at.desc()).limit(limit).all())
+            rows = []
+            lines = [f"Last {len(runs)} runs of '{task.name}':"] if runs else [f"'{task.name}' has no runs yet."]
+            for r in runs:
+                closed, why = closed_status_for(r.status, r.result, r.error)
+                when = (r.started_at.isoformat() + "Z") if r.started_at else ""
+                rows.append({"run_id": r.id, "started_at": when, "status": r.status,
+                             "closed_status": closed, "reason": why})
+                lines.append(f"- {when} {closed or r.status}" + (f": {why}" if why else ""))
+            return {"response": "\n".join(lines), "runs": rows, "exit_code": 0}
 
         elif action == "create":
             task_type = args.get("task_type", "llm")
@@ -526,6 +579,8 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
             )
             db.add(task)
             db.commit()
+            if guard_changes.get("window_minutes") or guard_changes.get("period_key"):
+                set_task_schedule_guard(task_id, **guard_changes)
             pinned = False
             if args.get("pin_to_home"):
                 try:
@@ -603,6 +658,10 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
                 if task.next_run is None:
                     db.rollback()
                     return {"error": "The updated schedule has no valid future occurrence", "exit_code": 1}
+
+            if guard_changes:
+                set_task_schedule_guard(task.id, **guard_changes)
+                changed.extend(guard_changes.keys())
 
             db.commit()
             return {"response": f"Updated task '{task.name}': {', '.join(changed)}", "exit_code": 0}

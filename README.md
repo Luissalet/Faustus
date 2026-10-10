@@ -95,7 +95,7 @@ Closing the desktop window stops the backend **only if that window started it**.
 
 The managed local launchers bind to localhost and default to `AUTH_ENABLED=false`: open the app and use its models and settings directly. Account and user-management pages are hidden in this mode, and no credential store is created. Profiles organize your work and setup; they do not require a login. Existing data is preserved. An installation explicitly configured with `AUTH_ENABLED=true` uses separate desktop and browser sign-in sessions.
 
-Scheduled work requires a running Faustus server and an awake computer. Use web mode to leave the backend running after closing browser tabs; closing an owning desktop window stops scheduling too. In Agent chat, request a recurrence in English or Spanish, specify a time and time zone, and manage the saved task under **Automations**. Recurring tasks support IANA time zones and daylight-saving changes; existing tasks without a zone retain their UTC behavior.
+Scheduled work requires a running Faustus server and an awake computer. Use web mode to leave the backend running after closing browser tabs; closing an owning desktop window stops scheduling too. In Agent chat, request a recurrence in English or Spanish, specify a time and time zone, and manage the saved task under **Automations**. Recurring tasks support IANA time zones and daylight-saving changes; existing tasks without a zone retain their UTC behavior. A schedule can also carry an optional run window after its due time, a once-per-day/week/month limit and a pause, and every run or skip is closed with a status and a short reason in its history (`docs/api/scheduled_tasks.md`).
 
 ### Install Faustus on your phone
 

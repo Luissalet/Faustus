@@ -3,6 +3,7 @@ import { ApiError, asArray, getJson, responseReason } from './api';
 import { chatActivity, createSession, listModels, listSessions, sendTurn, type AskOption, type ChatActivity, type ChatSession, type RunActivityDetail } from './chat';
 import { sessionActivity } from '../lib/activity';
 import { t } from '../i18n';
+import { closedLabel } from './automations';
 import type { AttentionRow, ConnectionHealth, Lifecycle, NextAction, WaitCause } from './attention';
 import { ExternalRuntimesApiError, getHerdrSessions, type HerdrCertainty, type HerdrPresence } from './externalRuntimes';
 
@@ -239,6 +240,10 @@ export function normaliseStatus(raw: unknown): { status: RunStatus; label?: stri
   if (['cancelled', 'canceled', 'stopped', 'aborted', 'abort'].includes(value)) return { status: 'cancelled' };
   // A run that decided there was nothing to do: over, and not an error.
   if (value === 'skipped') return { status: 'cancelled', label: t('skipped') };
+  // #263: the closed outcomes of a scheduled run that did not run.
+  if (value.startsWith('skipped-') || value === 'blocked-login' || value === 'partial') {
+    return { status: value === 'blocked-login' ? 'failed' : value === 'partial' ? 'waiting' : 'cancelled', label: closedLabel(value) };
+  }
   if (['waiting', 'waiting_approval', 'pending_approval', 'needs_approval'].includes(value)) return { status: 'waiting' };
   if (['queued', 'pending', 'scheduled', 'submitted', 'submit_pending', ''].includes(value)) return { status: 'queued' };
   return { status: 'queued', label: value };

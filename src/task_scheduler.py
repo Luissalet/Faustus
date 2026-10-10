@@ -316,6 +316,30 @@ def _policy_connect():
             worker_id TEXT NOT NULL
         )
     """)
+    # #263: the optional run window / period key of a task, and the log of
+    # periods that already ran. Their own tables, not columns of
+    # `task_policies`: `get_task_policy` keeps returning exactly the keys it
+    # always did, and a task that declares neither is not in them at all.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS task_schedule_guard (
+            task_id TEXT PRIMARY KEY,
+            window_minutes INTEGER,
+            period_key TEXT,
+            due_origin TEXT,
+            origin_applies_to TEXT,
+            updated_at TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS task_period_log (
+            task_id TEXT NOT NULL,
+            period_value TEXT NOT NULL,
+            closed_status TEXT,
+            run_id TEXT,
+            claimed_at TEXT NOT NULL,
+            PRIMARY KEY (task_id, period_value)
+        )
+    """)
     conn.commit()
     return conn
 
@@ -484,6 +508,153 @@ def _pop_catchup_pending(task_id: str) -> str | None:
     head, rest = pending[0], pending[1:]
     _set_catchup_pending(task_id, rest)
     return head
+
+
+# ── #263: run window, period key, closed statuses ──────────────────────────
+#
+# See `src/task_windows.py` for the semantics. This is the storage: one row per
+# task that declared a window and/or a period key, and one row per (task,
+# period) that already ran.
+from src.task_windows import (  # noqa: E402
+    BLOCKED_LOGIN as _CS_BLOCKED_LOGIN,
+    PERIOD_CONSUMING as _PERIOD_CONSUMING,
+    SKIPPED_PAUSED as _CS_SKIPPED_PAUSED,
+    SKIPPED_PERIOD as _CS_SKIPPED_PERIOD,
+    SKIPPED_WINDOW as _CS_SKIPPED_WINDOW,
+    closed_status_for,
+    guard_anchor as _guard_anchor,
+    normalize_period_key,
+    normalize_window_minutes,
+    period_value as _period_value,
+    window_violation as _window_violation,
+)
+
+_UNSET = object()
+
+#: The startup sweep pushes an overdue task to fire 60 s later; the window is
+#: judged against the moment it will really run, not the moment of the sweep.
+SWEEP_GRACE = timedelta(seconds=120)
+
+
+def _parse_dt(raw):
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except Exception:
+        return None
+
+
+def set_task_schedule_guard(task_id: str, *, window_minutes=_UNSET, period_key=_UNSET) -> dict:
+    """Declare (or clear) a task's run window and period key.
+
+    A field left at `_UNSET` keeps what the task had; `None` (or `0` for the
+    window) clears it. Raises ValueError on an invalid value, before anything
+    is written."""
+    current = get_task_schedule_guard(task_id)
+    window = current["window_minutes"] if window_minutes is _UNSET else normalize_window_minutes(window_minutes)
+    period = current["period_key"] if period_key is _UNSET else normalize_period_key(period_key)
+    conn = _policy_connect()
+    try:
+        conn.execute(
+            "INSERT INTO task_schedule_guard (task_id, window_minutes, period_key, updated_at) "
+            "VALUES (?,?,?,?) ON CONFLICT(task_id) DO UPDATE SET "
+            "window_minutes=excluded.window_minutes, period_key=excluded.period_key, "
+            "updated_at=excluded.updated_at",
+            (task_id, window, period, _utcnow().isoformat()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"window_minutes": window, "period_key": period}
+
+
+def get_task_schedule_guard(task_id: str) -> dict:
+    """`{window_minutes, period_key, due_origin, origin_applies_to}`; every
+    value `None` for a task that never declared a guard."""
+    conn = _policy_connect()
+    try:
+        row = conn.execute("SELECT * FROM task_schedule_guard WHERE task_id = ?", (task_id,)).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return {"window_minutes": None, "period_key": None, "due_origin": None, "origin_applies_to": None}
+    return {
+        "window_minutes": row["window_minutes"] or None,
+        "period_key": row["period_key"] or None,
+        "due_origin": _parse_dt(row["due_origin"]),
+        "origin_applies_to": _parse_dt(row["origin_applies_to"]),
+    }
+
+
+def guarded_task_ids() -> set:
+    """Ids of the tasks that declared a window and/or a period key."""
+    conn = _policy_connect()
+    try:
+        rows = conn.execute(
+            "SELECT task_id FROM task_schedule_guard "
+            "WHERE window_minutes IS NOT NULL OR period_key IS NOT NULL").fetchall()
+    finally:
+        conn.close()
+    return {r["task_id"] for r in rows}
+
+
+def postpone_due(task_id: str, old_due, new_due) -> None:
+    """The scheduler is about to move a guarded task's `next_run` from
+    `old_due` to `new_due` WITHOUT running it (the foreground is busy, a quiet
+    window, the startup sweep). Remember the instant it was first due, valid
+    only for `new_due`: any other change of `next_run` (a resume, an edit, the
+    normal advance after a run) silently invalidates it."""
+    if old_due is None or new_due is None:
+        return
+    conn = _policy_connect()
+    try:
+        row = conn.execute(
+            "SELECT window_minutes, period_key, due_origin, origin_applies_to "
+            "FROM task_schedule_guard WHERE task_id = ?", (task_id,)).fetchone()
+        if row is None or not (row["window_minutes"] or row["period_key"]):
+            return
+        carried = None
+        if _parse_dt(row["origin_applies_to"]) == old_due and row["due_origin"]:
+            carried = row["due_origin"]
+        conn.execute(
+            "UPDATE task_schedule_guard SET due_origin=?, origin_applies_to=?, updated_at=? WHERE task_id=?",
+            (carried or old_due.isoformat(), new_due.isoformat(), _utcnow().isoformat(), task_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def period_taken(task_id: str, period_val: str) -> bool:
+    conn = _policy_connect()
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM task_period_log WHERE task_id = ? AND period_value = ?",
+            (task_id, period_val)).fetchone()
+    finally:
+        conn.close()
+    return row is not None
+
+
+def consume_period(task_id: str, period_val: str, closed: str, run_id: str | None = None) -> bool:
+    """Mark a period as run. `True` the first time, `False` if it already was
+    (the PRIMARY KEY decides, so two workers cannot both win)."""
+    conn = _policy_connect()
+    try:
+        try:
+            conn.execute(
+                "INSERT INTO task_period_log (task_id, period_value, closed_status, run_id, claimed_at) "
+                "VALUES (?,?,?,?,?)",
+                (task_id, period_val, closed, run_id, _utcnow().isoformat()),
+            )
+            conn.commit()
+            return True
+        except _sqlite3.IntegrityError:
+            conn.rollback()
+            return False
+    finally:
+        conn.close()
 
 
 #: The three honest answers to "what if this occurrence runs twice?".
@@ -1445,6 +1616,141 @@ class TaskScheduler:
             cursor = nxt
         return out
 
+    # ── #263: run window, period key, closed skips ─────────────────────────
+
+    def _guard_anchor_map(self) -> dict:
+        """task_id -> (anchor, period value) of the occurrence being run, so
+        the period can be closed when the run ends. Created lazily: a test
+        that built this scheduler through `__new__` predates it."""
+        m = getattr(self, "_guard_anchors", None)
+        if m is None:
+            m = self._guard_anchors = {}
+        return m
+
+    def _note_postponed(self, task_id: str, old_due, new_due) -> None:
+        try:
+            postpone_due(task_id, old_due, new_due)
+        except Exception:
+            logger.debug("could not remember the original due time of %s", task_id, exc_info=True)
+
+    def _sweep_window_reason(self, task_id: str, old_due, now: datetime):
+        """Startup sweep: the reason a run now would be outside the window, or
+        None (inside it, or no window)."""
+        try:
+            guard = get_task_schedule_guard(task_id)
+            if not guard["window_minutes"]:
+                return None
+            origin = guard["due_origin"] if guard["origin_applies_to"] == old_due else None
+            return _window_violation(_guard_anchor(origin, old_due), now + SWEEP_GRACE,
+                                     guard["window_minutes"])
+        except Exception:
+            logger.debug("window check failed for %s", task_id, exc_info=True)
+            return None
+
+    def _record_closed_skip(self, db, task, status: str, reason: str, due_at, now: datetime,
+                            *, close_once: bool = True) -> None:
+        """Write the run row of an occurrence that did not run, and move the
+        schedule on. The fire-key claim keeps two workers from both writing it."""
+        from core.database import TaskRun
+        key = f"skip:{status}:{task.id}:{due_at.replace(microsecond=0).isoformat()}"
+        first = _claim_fire_key_literal(key, task.id, due_at.isoformat())
+        if first:
+            db.add(TaskRun(
+                id=str(uuid.uuid4()), task_id=task.id, started_at=now, finished_at=now,
+                status=status, result=reason,
+            ))
+        # The schedule moves on whether or not this worker wrote the row:
+        # leaving `next_run` in the past would re-dispatch the same slot on
+        # every tick.
+        if (task.trigger_type or "schedule") == "schedule":
+            task.next_run = self._next_moment_after(db, task, after=now)
+            if task.next_run is None and task.schedule == "once" and close_once:
+                task.status = "completed"
+        db.commit()
+        if first:
+            logger.info("Task %s (%s): %s -- %s", task.id, task.name, status, reason)
+
+    def _guard_gate(self, task_id: str, due_at, now: datetime) -> bool:
+        """True when a due task may run. False when it was closed as
+        `skipped-window` / `skipped-period` (the row is written and the
+        schedule has moved on). Never raises: a failure here lets the run
+        through, which is what happened before the guards existed."""
+        try:
+            self._guard_anchor_map().pop(task_id, None)
+            guard = get_task_schedule_guard(task_id)
+            if not guard["window_minutes"] and not guard["period_key"]:
+                return True
+            from core.database import SessionLocal, ScheduledTask
+            db = SessionLocal()
+            try:
+                task = db.query(ScheduledTask).filter(ScheduledTask.id == task_id).first()
+                if not task or task.status != "active" or (task.trigger_type or "schedule") != "schedule":
+                    return True
+                origin = guard["due_origin"] if guard["origin_applies_to"] == due_at else None
+                anchor = _guard_anchor(origin, due_at)
+                reason = _window_violation(anchor, now, guard["window_minutes"])
+                if reason:
+                    self._record_closed_skip(db, task, _CS_SKIPPED_WINDOW, reason, due_at, now)
+                    return False
+                if guard["period_key"]:
+                    pv = _period_value(anchor, _resolve_task_timezone(db, task), guard["period_key"])
+                    if period_taken(task_id, pv):
+                        self._record_closed_skip(
+                            db, task, _CS_SKIPPED_PERIOD,
+                            f"Period {pv} ({guard['period_key']}) already ran", due_at, now)
+                        return False
+                    self._guard_anchor_map()[task_id] = (anchor, pv)
+                return True
+            finally:
+                db.close()
+        except Exception:
+            logger.warning("run-window check failed for %s; letting it run", task_id, exc_info=True)
+            return True
+
+    def _close_period(self, task_id: str, status, result, error, run_id) -> None:
+        """A guarded occurrence finished: if it counts as having run, its
+        period is used up. Blocked-at-login runs leave the period open."""
+        entry = self._guard_anchor_map().pop(task_id, None)
+        if not entry:
+            return
+        try:
+            closed, _reason = closed_status_for(status, result, error)
+            if closed in _PERIOD_CONSUMING:
+                consume_period(task_id, entry[1], closed, run_id)
+        except Exception:
+            logger.debug("could not close the period of %s", task_id, exc_info=True)
+
+    def _record_paused_skips(self, now: datetime) -> None:
+        """A paused task that opted into the guards and whose slot has come
+        gets a `skipped-paused` row for that slot (once; the schedule then
+        moves to the next one). Tasks without a guard are not touched, so an
+        existing install writes nothing new."""
+        try:
+            ids = guarded_task_ids()
+            if not ids:
+                return
+            from core.database import SessionLocal, ScheduledTask
+            db = SessionLocal()
+            try:
+                rows = db.query(ScheduledTask).filter(
+                    ScheduledTask.id.in_(list(ids)),
+                    ScheduledTask.status == "paused",
+                    ScheduledTask.next_run.isnot(None),
+                    ScheduledTask.next_run <= now,
+                ).all()
+                for task in rows:
+                    if (task.trigger_type or "schedule") != "schedule":
+                        continue
+                    due = task.next_run
+                    self._record_closed_skip(
+                        db, task, _CS_SKIPPED_PAUSED,
+                        f"Paused; the {due.replace(microsecond=0).isoformat(sep=' ')} UTC slot did not run",
+                        due, now, close_once=False)
+            finally:
+                db.close()
+        except Exception:
+            logger.debug("paused-skip sweep failed", exc_info=True)
+
     def _set_run_progress(self, run_id: str, message: str):
         """Persist short live progress text for Activity while a run is active."""
         if not run_id:
@@ -1635,8 +1941,17 @@ class TaskScheduler:
                                 t.id, t.name, missed_at, k, len(to_fire), t.next_run,
                             )
                         else:  # fire_once / fire_immediately (default)
-                            t.next_run = now + timedelta(seconds=60)
-                            fired_soon += 1
+                            old_due = t.next_run
+                            late_reason = self._sweep_window_reason(t.id, old_due, now)
+                            if late_reason:
+                                # #263: the window already closed while nothing
+                                # was watching -- a late run is not wanted.
+                                self._record_closed_skip(db, t, _CS_SKIPPED_WINDOW, late_reason, old_due, now)
+                                skipped += 1
+                            else:
+                                t.next_run = now + timedelta(seconds=60)
+                                self._note_postponed(t.id, old_due, t.next_run)
+                                fired_soon += 1
                     db.commit()
                     logger.info(
                         "Startup misfire sweep: %d overdue task(s) pushed to fire soon, "
@@ -1863,6 +2178,7 @@ class TaskScheduler:
             # looking at what is due: without this a task whose holder was
             # killed stays unclaimable until its lease runs out on its own.
             self._recover_expired_leases()
+            self._record_paused_skips(now)
             async with self._executing_lock:
                 # Snapshot under the lock so we don't race with mid-iteration adds.
                 executing_snapshot = set(self._executing)
@@ -1882,6 +2198,7 @@ class TaskScheduler:
                     defer_to = (now + timedelta(minutes=15) if foreground_active
                                 else datetime.fromtimestamp(breaker_until, tz=timezone.utc).replace(tzinfo=None))
                     for task in due:
+                        self._note_postponed(task.id, task.next_run, defer_to)
                         task.next_run = defer_to
                     if due:
                         db.commit()
@@ -1896,6 +2213,12 @@ class TaskScheduler:
                     # guarded this interpreter, and the run that happens twice
                     # is the one a second worker picked up.
                     if not self._claim_due_task(task_id, due_at, now):
+                        continue
+                    # #263: the run window and the period key are judged once
+                    # the claim is ours, so a worker that did not win the
+                    # claim cannot record a skip for a task another is running.
+                    if not self._guard_gate(task_id, due_at, now):
+                        self._release_lease(task_id)
                         continue
                     self._executing.add(task_id)
                     to_dispatch.append(task_id)
@@ -1988,7 +2311,9 @@ class TaskScheduler:
                     and task.next_run is not None
                     and task.next_run <= _utcnow()
                 ):
-                    task.next_run = _utcnow() + delay
+                    _new_due = _utcnow() + delay
+                    self._note_postponed(task_id, task.next_run, _new_due)
+                    task.next_run = _new_due
                     db.commit()
             finally:
                 db.close()
@@ -2013,9 +2338,16 @@ class TaskScheduler:
                 # so the run row doesn't sit as "queued" forever.
                 stale = db.query(TaskRun).filter(TaskRun.id == run_id).first()
                 if stale and stale.status == "queued":
-                    stale.status = "skipped"
+                    if task is not None and task.status == "paused":
+                        # #263: a paused task asked to run (a manual run, a
+                        # firing that was already queued) is a closed outcome,
+                        # not an error.
+                        stale.status = _CS_SKIPPED_PAUSED
+                        stale.result = "Task is paused; nothing ran"
+                    else:
+                        stale.status = "skipped"
+                        stale.error = f"Task no longer active (status={task.status if task else 'deleted'})"
                     stale.finished_at = _utcnow()
-                    stale.error = f"Task no longer active (status={task.status if task else 'deleted'})"
                     db.commit()
                 return
 
@@ -2179,6 +2511,7 @@ class TaskScheduler:
                 run_obj = db.query(TaskRun).filter(TaskRun.id == run_id).first()
                 if run_obj:
                     db.delete(run_obj)
+                self._note_postponed(task_id, task.next_run, when)
                 task.next_run = when
                 db.commit()
                 return
@@ -2197,7 +2530,9 @@ class TaskScheduler:
                     run_obj.finished_at = _utcnow()
                 task.last_run = _utcnow()
                 if foreground_cancel.get("hit"):
-                    task.next_run = _utcnow() + timedelta(minutes=15)
+                    _new_due = _utcnow() + timedelta(minutes=15)
+                    self._note_postponed(task_id, task.next_run, _new_due)
+                    task.next_run = _new_due
                 elif (task.trigger_type or "schedule") == "schedule":
                     task.next_run = self._next_moment_after(db, task, after=_utcnow())
                 else:
@@ -2220,6 +2555,7 @@ class TaskScheduler:
                 else:
                     task.next_run = None
                 db.commit()
+                self._close_period(task_id, "skipped", str(noop), None, run_id)
                 return
             finally:
                 if foreground_monitor and not foreground_monitor.done():
@@ -2266,6 +2602,7 @@ class TaskScheduler:
 
             db.commit()
             logger.info(f"Task '{task.name}' completed (run {run_id})")
+            self._close_period(task_id, run.status, run.result, run.error, run_id)
 
             # Mobile lot M-A: this TaskRun just finalised (success or error —
             # the two statuses that reach this point; the earlier `return`s
@@ -2373,6 +2710,7 @@ class TaskScheduler:
                     run_obj.status = "error"
                     run_obj.error = err_text[:2000]
                     run_obj.finished_at = _utcnow()
+                    self._close_period(task_id, "error", err_text, None, run_id)
                 # Advance next_run even on failure so a broken task doesn't
                 # busy-loop the scheduler every tick with a stale past date.
                 task_obj = db.query(ScheduledTask).filter(ScheduledTask.id == task_id).first()
@@ -3641,6 +3979,9 @@ class TaskScheduler:
 
     async def run_task_now(self, task_id: str, *, force: bool = False):
         """Manually trigger a task execution."""
+        # #263: a person asking for the run is not a late or duplicate firing;
+        # the window and the period key are for the schedule, not for them.
+        self._guard_anchor_map().pop(task_id, None)
         if force:
             asyncio.create_task(self._execute_task(task_id, bypass_model_slot=True, release_executing=False))
             return True

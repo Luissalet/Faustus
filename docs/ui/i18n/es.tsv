@@ -8701,7 +8701,6 @@ Translating segments…	Traduciendo segmentos…
 Translation failed.	La traducción ha fallado.
 The translation response is invalid.	La respuesta de traducción no es válida.
 Plugin preset not available. Refresh connectors and try again.	El plugin aún no aparece en los conectores. Actualiza la lista y vuelve a intentarlo.
-
 Image studio	Estudio de imágenes
 Configured image model	Modelo de imagen configurado
 Uses your connected Prospero studio. Results appear in the chat and gallery.	Usa tu estudio Prospero conectado. Los resultados aparecen en el chat y la galería.
@@ -9534,3 +9533,20 @@ weights are paging into system memory over PCIe	parte del modelo se está leyend
 {n}% used	{n}% en uso
 resumed after a restart	retomado tras un reinicio
 Faustus restarted while this job's external agents were working; it found them again and followed them to their end	Faustus se reinició mientras los agentes externos de este trabajo seguían trabajando; los volvió a encontrar y los siguió hasta el final
+A second or late firing in the same period does nothing.	Un segundo disparo, o uno tardío, dentro del mismo periodo no hace nada.
+At most once a day	Como máximo una vez al día
+At most once a month	Como máximo una vez al mes
+At most once a week	Como máximo una vez por semana
+Period limit	Límite por periodo
+Blocked — login	Bloqueada — inicio de sesión
+How long after its time a late or catch-up run is still allowed. Blank: it always runs.	Cuánto tiempo después de su hora se admite aún una ejecución tardía o de recuperación. En blanco: siempre se ejecuta.
+Last result	Último resultado
+No limit	Sin límite
+Only within {n} min of its time	Solo dentro de {n} min desde su hora
+Run limits	Límites de ejecución
+Run window (minutes)	Ventana de ejecución (minutos)
+Skipped — outside its window	Omitida — fuera de su ventana
+Skipped — paused	Omitida — en pausa
+Skipped — period already ran	Omitida — el periodo ya se ejecutó
+The window is a whole number of minutes, from 1 to 43200	La ventana es un número entero de minutos, de 1 a 43200
+last result: {status}	último resultado: {status}

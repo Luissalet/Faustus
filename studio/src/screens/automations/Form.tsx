@@ -14,6 +14,8 @@ import {
   listOutputTargets,
   localToUtc,
   parseEmailTarget,
+  PERIOD_KEYS,
+  periodLabel,
   PERSONAS,
   promptConfig,
   saveUrgentEmailPrompt,
@@ -25,6 +27,7 @@ import {
   type EmailAccountLite,
   type EventInfo,
   type OutputTarget,
+  type PeriodKey,
   type Schedule,
   type TaskInput,
   type TaskType,
@@ -62,6 +65,10 @@ interface Draft {
   modelPair: string;
   chain: string;
   notify: boolean;
+  /** #263: minutes after its time a late run is still allowed ('' = no window). */
+  windowMinutes: string;
+  /** #263: at most one run per day / ISO week / month ('' = no limit). */
+  periodKey: PeriodKey | '';
   /** CONTRATO_CONECTORES F2.2: `null` inherits the project's connectors (or
    *  every enabled one when this task has no project). */
   connectorIds: string[] | null;
@@ -101,6 +108,8 @@ function draftFrom(existing: Partial<Automation> | null, taskType: TaskType, tri
     modelPair: existing?.model && existing?.endpoint_url ? `${existing.endpoint_url}::${existing.model}` : '',
     chain: existing?.then_task_id ?? '',
     notify: existing?.notifications_enabled !== false,
+    windowMinutes: existing?.window_minutes ? String(existing.window_minutes) : '',
+    periodKey: existing?.period_key ?? '',
     connectorIds: existing?.connector_ids ?? null,
   };
 }
@@ -197,6 +206,12 @@ export function AutomationForm({ existing, seed, taskType = 'llm', trigger = 'sc
       body.prompt = d.prompt.trim();
       body.character_id = d.persona;
     }
+    // The window and the period limit belong to schedules; any other trigger
+    // clears them (null), so switching a task away from a schedule leaves none behind.
+    const windowN = Math.round(Number(d.windowMinutes));
+    if (d.trigger === 'schedule' && d.windowMinutes.trim() && (!Number.isFinite(windowN) || windowN < 1 || windowN > 43200)) return setError(t('The window is a whole number of minutes, from 1 to 43200'));
+    body.window_minutes = d.trigger === 'schedule' && d.windowMinutes.trim() ? windowN : null;
+    body.period_key = d.trigger === 'schedule' && d.periodKey ? d.periodKey : null;
     if (d.trigger === 'schedule') {
       body.schedule = d.schedule;
       body.timezone = d.schedule==='once'?'UTC':d.timezone;
@@ -374,6 +389,23 @@ export function AutomationForm({ existing, seed, taskType = 'llm', trigger = 'sc
           </div>
         )}
         {d.trigger === 'schedule' && d.schedule!=='once' && <Field label={t('Time zone')} hint={t('IANA timezone, for example Europe/Madrid. Recurring jobs keep their local time through daylight-saving changes.')}><input className="fs-field" value={d.timezone} onChange={e=>set('timezone',e.target.value)} maxLength={100}/></Field>}
+        {d.trigger === 'schedule' && (
+          <div className="fs-au__row">
+            <Field label={t('Run window (minutes)')} hint={t('How long after its time a late or catch-up run is still allowed. Blank: it always runs.')}>
+              <input className="fs-field" type="number" min={1} max={43200} step={1} inputMode="numeric" value={d.windowMinutes} onChange={(e) => set('windowMinutes', e.target.value)} placeholder={t('No limit')} data-testid="auto-window" />
+            </Field>
+            <Field label={t('Period limit')} hint={t('A second or late firing in the same period does nothing.')}>
+              <select className="fs-field" value={d.periodKey} onChange={(e) => set('periodKey', e.target.value as PeriodKey | '')} data-testid="auto-period">
+                <option value="">{t('No limit')}</option>
+                {PERIOD_KEYS.map((k) => (
+                  <option key={k} value={k}>
+                    {periodLabel(k)}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+        )}
         {d.trigger === 'event' && (
           <div className="fs-au__row">
             <Field label={t('Event')}>

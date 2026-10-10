@@ -6,8 +6,11 @@ import {
   CACHE_LABELS,
   categoryOf,
   clearAutomationCache,
+  closedBadge,
+  closedLabel,
   deleteAutomation,
   describeAction,
+  describeGuards,
   describeOutput,
   describeTrigger,
   draftFromText,
@@ -79,7 +82,7 @@ function Row({ task, on, selecting, selected, pinned, onOpen, onToggle }: { task
             {describeTrigger(task)} → {describeAction(task)}
           </span>
           <span className="fs-au__meta">
-            {[task.last_run ? t('last {when}', { when: relativeTime(task.last_run) }) : t('has never run'), task.run_count ? tn(task.run_count, '{n} run', '{n} runs') : null].filter(Boolean).join(' · ')}
+            {[task.last_run ? t('last {when}', { when: relativeTime(task.last_run) }) : t('has never run'), task.run_count ? tn(task.run_count, '{n} run', '{n} runs') : null, task.last_run_closed_status && task.last_run_closed_status !== 'ok' ? t('last result: {status}', { status: closedLabel(task.last_run_closed_status) }) : null].filter(Boolean).join(' · ')}
           </span>
         </span>
         <span className="fs-au__side">
@@ -97,10 +100,13 @@ function RunItem({ run }: { run: TaskRun }) {
   const [open, setOpen] = useState(false);
   const text = run.result || run.error || '';
   const long = text.length > 300;
+  // A run that has ended carries a closed status (ok, skipped-window, ...);
+  // one still open falls back to the stored word.
+  const badge = closedBadge(run.closed_status);
   return (
-    <li className="fs-au__run" data-state={runState(run.status)}>
+    <li className="fs-au__run" data-state={badge ?? runState(run.status)} data-closed={run.closed_status ?? undefined}>
       <div className="fs-au__run-head">
-        <StatusBadge status={runState(run.status)} label={run.status} />
+        <StatusBadge status={badge ?? runState(run.status)} label={run.closed_status ? closedLabel(run.closed_status) : run.status} />
         {run.model && <span className="fs-au__run-model">{run.model.split('/').pop()}</span>}
         <span className="fs-au__run-when" title={run.started_at ?? ''}>
           {run.started_at ? new Date(run.started_at).toLocaleString(locale(), { dateStyle: 'medium', timeStyle: 'short' }) : ''}
@@ -536,6 +542,21 @@ export function AutomationsScreen() {
                   <dt>{t('Last run')}</dt>
                   <dd>{current.last_run ? `${relativeTime(current.last_run)} · ${tn(current.run_count ?? 0, '{n} run in total', '{n} runs in total')}` : t('Never')}</dd>
                 </div>
+                {current.last_run_closed_status && (
+                  <div>
+                    <dt>{t('Last result')}</dt>
+                    <dd data-testid="automation-last-result">
+                      {closedLabel(current.last_run_closed_status)}
+                      {current.last_run_reason && current.last_run_closed_status !== 'ok' ? ` · ${current.last_run_reason}` : ''}
+                    </dd>
+                  </div>
+                )}
+                {describeGuards(current).length > 0 && (
+                  <div>
+                    <dt>{t('Run limits')}</dt>
+                    <dd data-testid="automation-guards">{describeGuards(current).join(' · ')}</dd>
+                  </div>
+                )}
                 {current.trigger_type === 'event' && (
                   <div>
                     <dt>{t('Counter')}</dt>

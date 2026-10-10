@@ -11,6 +11,10 @@ import { t } from '../i18n';
 export type TaskType = 'llm' | 'action' | 'research';
 export type TriggerType = 'schedule' | 'event' | 'webhook';
 export type Schedule = 'once' | 'daily' | 'weekly' | 'monthly' | 'cron';
+/** At most one run per calendar period, in the task's own time zone. */
+export type PeriodKey = 'day' | 'iso_week' | 'month';
+/** How a run ends: the closed vocabulary the server reports for every run. */
+export type ClosedStatus = 'ok' | 'partial' | 'failed' | 'skipped-window' | 'skipped-period' | 'skipped-paused' | 'blocked-login';
 
 export interface Automation {
   id: string;
@@ -48,6 +52,15 @@ export interface Automation {
   is_modified?: boolean;
   created_at?: string | null;
   updated_at?: string | null;
+  /** Minutes after its time a late or catch-up run is still allowed; absent: always. */
+  window_minutes?: number | null;
+  /** At most one run per day / ISO week / month; absent: no limit. */
+  period_key?: PeriodKey | null;
+  paused?: boolean;
+  /** The newest run's closed status and its short reason (skips included). */
+  last_run_closed_status?: ClosedStatus | null;
+  last_run_reason?: string | null;
+  last_run_at?: string | null;
 }
 
 export interface TaskRun {
@@ -60,6 +73,9 @@ export interface TaskRun {
   error: string | null;
   tokens_used: number | null;
   model: string | null;
+  /** Null while the run is still open (queued, running). */
+  closed_status?: ClosedStatus | null;
+  reason?: string;
 }
 
 export interface OutputTarget {
@@ -100,6 +116,9 @@ export interface TaskInput {
   notifications_enabled?: boolean;
   character_id?: string;
   connector_ids?: string[] | null;
+  /** `null` clears the window / the period limit on an edit. */
+  window_minutes?: number | null;
+  period_key?: PeriodKey | null;
 }
 
 async function ok(response: Response, what: string): Promise<Response> {
@@ -269,6 +288,65 @@ export async function emailAccountsForTasks(): Promise<EmailAccountLite[]> {
   } catch {
     return [];
   }
+}
+
+/* ── Run window, period limit and how a run ended ── */
+
+export function closedLabel(status: string | null | undefined): string {
+  switch (status) {
+    case 'ok':
+      return t('Completed');
+    case 'partial':
+      return t('Partial');
+    case 'failed':
+      return t('Failed');
+    case 'skipped-window':
+      return t('Skipped — outside its window');
+    case 'skipped-period':
+      return t('Skipped — period already ran');
+    case 'skipped-paused':
+      return t('Skipped — paused');
+    case 'blocked-login':
+      return t('Blocked — login');
+    default:
+      return String(status ?? '');
+  }
+}
+
+/** The badge shape for a closed status; `null` for a run that is still open. */
+export function closedBadge(status: string | null | undefined): 'succeeded' | 'failed' | 'waiting' | 'cancelled' | null {
+  switch (status) {
+    case 'ok':
+      return 'succeeded';
+    case 'partial':
+      return 'waiting';
+    case 'failed':
+    case 'blocked-login':
+      return 'failed';
+    case 'skipped-window':
+    case 'skipped-period':
+    case 'skipped-paused':
+      return 'cancelled';
+    default:
+      return null;
+  }
+}
+
+export const PERIOD_KEYS: PeriodKey[] = ['day', 'iso_week', 'month'];
+
+export function periodLabel(key: string | null | undefined): string {
+  if (key === 'day') return t('At most once a day');
+  if (key === 'iso_week') return t('At most once a week');
+  if (key === 'month') return t('At most once a month');
+  return '';
+}
+
+/** The task's run limits in words, or an empty list when it has none. */
+export function describeGuards(task: Automation): string[] {
+  const out: string[] = [];
+  if (task.window_minutes) out.push(t('Only within {n} min of its time', { n: task.window_minutes }));
+  if (task.period_key) out.push(periodLabel(task.period_key));
+  return out;
 }
 
 /* ── The same vocabulary tasks.js kept ── */
