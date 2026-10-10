@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import re
+import unicodedata
 from decimal import Decimal
 from typing import Dict, List, Optional
 
@@ -495,11 +496,75 @@ def calculation_mismatch(question: str, answer: str) -> Optional[Dict[str, str]]
     return fact
 
 
+_LINK_COUNT_INTENT = re.compile(
+    r"\b(?:how\s+many|cuantos?)\b.{0,60}\b(?:enlaces?|links?)\b"
+    r"|\b(?:numero(?:\s+total)?|total(?:\s+number)?|number|cantidad(?:\s+total)?|quantity|count)\s+"
+    r"(?:(?:de|of)\s+)?(?:(?:mis?|my)\s+)?(?:saved\s+|guardados?\s+)?"
+    r"(?:enlaces?|links?)\b"
+    r"|\b(?:enlaces?|links?)\s+(?:total|count)\b",
+    re.IGNORECASE,
+)
+_LINK_LIBRARY_SCOPE = re.compile(
+    r"\blinks\s+hoard\b|\b(?:enlaces?|links?)\b.{0,35}\b(?:guardad\w*|saved|bookmarked)\b"
+    r"|\b(?:mis?\s+(?:enlaces?|links?)|my\s+(?:saved\s+)?links?)\b"
+    r"|\b(?:biblioteca|library)\b.{0,45}\b(?:enlaces?|links?)\b"
+    r"|\b(?:tengo|tenemos|he\s+guardado|i\s+have\s+saved|i\s+saved)\b.{0,45}\b(?:enlaces?|links?)\b",
+    re.IGNORECASE,
+)
+_LINK_COUNT_ASK = re.compile(
+    r"\b(?:cuantos?|how\s+many)\b"
+    r"|\b(?:dime|indica|consulta|averigua|muestra|cuenta|tell\s+me|show\s+me|check|look\s+up|"
+    r"find\s+out|count|what\s+is|what's|cual\s+es|que\s+es|"
+    r"i\s+want\s+to\s+know|necesito\s+saber|quiero\s+saber)\b",
+    re.IGNORECASE,
+)
+_LINK_COUNT_CONTEXT = re.compile(
+    r"\b(?:pregunta|solicitud|peticion|frase|cita|question|request|prompt)\b.{0,55}"
+    r"\b(?:citada|entrecomillada|quoted|cited|hypothetical|de\s+ejemplo|example)\b"
+    r"|\b(?:quoted|cited|hypothetical|example)\s+(?:question|request|prompt)\b"
+    r"|\b(?:revisa|review|documentacion|documentation|historial|history)\b.{0,70}"
+    r"\b(?:pregunta|solicitud|peticion|question|request|prompt)\b",
+    re.IGNORECASE,
+)
+_LINK_COUNT_NEGATION = re.compile(
+    r"\b(?:no|nunca|don't|do\s+not|never)\b.{0,70}"
+    r"\b(?:ejecutes?|respondas?|contestes?|consultes?|cuentes?|busques?|muestr(?:es|a)|"
+    r"digas?|answer|execute|run|query|count|show|tell|look\s+up)\b"
+    r"|\b(?:not\s+asking|no\s+estoy\s+preguntando|no\s+pregunto)\b",
+    re.IGNORECASE,
+)
+_LINK_COUNT_OTHER_OBJECT = re.compile(
+    r"\b(?:tablero|board|tareas?|tasks?|tickets?|issues?|incidencias?)\b",
+    re.IGNORECASE,
+)
+
+
+def _intent_text(value: str) -> str:
+    """Normalize accents for deterministic Spanish/English intent matching."""
+    decomposed = unicodedata.normalize("NFKD", value.casefold())
+    return "".join(char for char in decomposed if not unicodedata.combining(char))
+
+
 def saved_links_count_requested(question: str) -> bool:
-    """An explicit count of the user's Links Hoard library (not a web fact)."""
-    body = str(question or "").casefold()
-    return ("links hoard" in body and "enlace" in body
-            and re.search(r"\b(?:cu[aá]ntos?|n[uú]mero|total)\b", body) is not None)
+    """Recognize an active request for the user's saved-link library total."""
+    body = _intent_text(str(question or ""))
+    # Analyze each sentence independently so a task count elsewhere in a long
+    # review/context prompt cannot combine with a link mention.
+    for sentence in re.split(r"[.!?\n]+", body):
+        if not sentence.strip():
+            continue
+        match = _LINK_COUNT_INTENT.search(sentence)
+        if not match or not _LINK_LIBRARY_SCOPE.search(sentence):
+            continue
+        context = sentence[max(0, match.start() - 120):match.end() + 60]
+        if _LINK_COUNT_CONTEXT.search(context) or _LINK_COUNT_NEGATION.search(context):
+            continue
+        if not _LINK_COUNT_ASK.search(context):
+            continue
+        if _LINK_COUNT_OTHER_OBJECT.search(context):
+            continue
+        return True
+    return False
 
 
 def saved_links_count_evidence(answer: str, observed_total: Optional[int]) -> Dict[str, object]:
