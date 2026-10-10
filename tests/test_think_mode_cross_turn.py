@@ -110,3 +110,22 @@ def test_route_helper_wires_history(monkeypatch):
                                  history_len=2, prior=prior)
     assert ev["mode"] == "deep" and ov["think"] is True
     assert _think_prior_signals(object(), None)["has_prior"] is False
+
+
+@pytest.mark.parametrize("result", [
+    "File not found: notes/plan.md",
+    "bash: rg: command not found",
+    "  Error: no such file or directory",
+])
+def test_error_shaped_not_found_counts_as_a_failed_tool(result):
+    msgs = _hist(("user", "abre el plan"), ("tool", result), ("assistant", "No pude."), ("user", "vale"))
+    assert prior_signals(msgs, "vale")["tool_failures"] == 1
+
+
+@pytest.mark.parametrize("result", [
+    "Results for 'http status codes':\n1. 404 Not Found - the server cannot find the resource",
+    "src/app.py:12: raise KeyError('user not found')\nsrc/db.py:40: # no such file is fine here",
+])
+def test_not_found_inside_content_is_not_a_failed_tool(result):
+    msgs = _hist(("user", "busca"), ("tool", result), ("assistant", "Aqui esta."), ("user", "vale"))
+    assert prior_signals(msgs, "vale")["tool_failures"] == 0

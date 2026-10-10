@@ -332,8 +332,22 @@ _CORRECTION = _rx(
 _TOOL_FAILURE = _rx(
     r"^\s*(?:error|failed|exception|traceback)\b", r"\"(?:ok|success)\"\s*:\s*false", r"\"error\"\s*:\s*\"",
     r"\bexit code [1-9]\d*\b", r"\breturn(?:ed)? code [1-9]\d*\b", r"\btimed out\b", r"\bpermission denied\b",
-    r"\bno such file\b", r"\bnot found\b",
 )
+# "not found" and "no such file" inside a fetched page, a grep hit or a listing are content, not a
+# failure: they only count on the first line of the result, where tools put their error.
+_TOOL_FAILURE_HEAD = _rx(r"\bno such file\b", r"\bnot found\b")
+
+
+# A search hit ("path:12: ...") quoting "not found" is still content.
+_SEARCH_HIT = re.compile(r"^\S+:\d+[:-]")
+
+
+def _tool_failed(text: str) -> bool:
+    head = text[:2000]
+    if _TOOL_FAILURE.search(head):
+        return True
+    first_line = head.lstrip().split("\n", 1)[0][:200]
+    return bool(_TOOL_FAILURE_HEAD.search(first_line)) and not _SEARCH_HIT.match(first_line)
 
 
 def is_correction(text: str) -> bool:
@@ -437,7 +451,7 @@ def prior_signals(messages: Any, current: str = "", history: Any = None) -> Dict
         for m in msgs[prev_user + 1:]:
             role = m.get("role")
             text = _text_of(m)
-            if role == "tool" and _TOOL_FAILURE.search(text[:2000]):
+            if role == "tool" and _tool_failed(text):
                 out["tool_failures"] += 1
             if role == "assistant" and text.strip():
                 answered = True
