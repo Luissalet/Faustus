@@ -8,7 +8,7 @@ import logging
 import hashlib
 import httpx
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 
 from src.constants import TTS_CACHE_DIR
 
@@ -209,18 +209,24 @@ class TTSService:
     # ── Public interface ──
 
     def synthesize(self, text: str, use_cache: bool = True, *, expected_provider: str = "", language: str = "") -> Optional[bytes]:
+        return self.synthesize_with_hints(text, use_cache, expected_provider=expected_provider, language=language, want_hints=False)[0]
+
+    def synthesize_with_hints(self, text: str, use_cache: bool = True, *, expected_provider: str = "", language: str = "",
+                              want_hints: bool = True) -> Tuple[Optional[bytes], Optional[dict]]:
+        """(audio, hints): `hints` is what the engine itself reported about the speech (word timings, phonemes), for
+        `marks.build_marks`; None when the engine reports nothing (then the timings are estimated from the audio)."""
         settings = self._load_settings()
         if expected_provider and settings.get("tts_provider") != expected_provider:
             raise ValueError("Speech provider changed before synthesis")
         if settings.get("tts_enabled") is False:
-            return None
+            return None, None
         provider = settings["tts_provider"]
         model = settings["tts_model"]
         voice = settings["tts_voice"]
         speed = _safe_speed(settings.get("tts_speed", "1"))
 
         if provider in ("disabled", "browser"):
-            return None
+            return None, None
 
         if len(text) > 5000:
             text = text[:5000]
@@ -228,49 +234,55 @@ class TTSService:
         if provider == "system":
             from .system_voice import synthesize_system
             # System voice is cheap and language-dependent: never use shared cache.
-            return synthesize_system(text, voice, language, speed)
+            return synthesize_system(text, voice, language, speed), None
 
         if provider == "piper":
             # Voice choice is language-dependent (see piper_voice.select_voice);
             # like "system", never use the shared cache.
             from .piper_voice import synthesize as synthesize_piper
-            return synthesize_piper(text, voice, speed, language)
+            return synthesize_piper(text, voice, speed, language), None
 
         if provider == "command":
-            from .command_voice import synthesize_command
+            from .command_voice import synthesize_command, synthesize_command_detailed
             template = settings.get("tts_command_template", "")
             # Command output is operator-defined and may depend on state the
             # cache key can't see; never cache it either.
-            return synthesize_command(text, template, voice, speed, language)
+            if want_hints:
+                return synthesize_command_detailed(text, template, voice, speed, language)
+            return synthesize_command(text, template, voice, speed, language), None
 
         if use_cache:
             key = self._cache_key(text, provider, model, voice, speed)
             cached = self._get_cached(key)
             if cached:
                 logger.info(f"TTS cache hit ({len(text)} chars)")
-                return cached
+                return cached, None
 
         audio_data = None
+        hints = None
 
         if provider == "local":
             kokoro = self._get_kokoro()
             if kokoro and kokoro.available:
-                audio_data = kokoro.synthesize_raw(text, voice)
+                if want_hints:
+                    audio_data, hints = kokoro.synthesize_raw_detailed(text, voice)
+                else:
+                    audio_data = kokoro.synthesize_raw(text, voice)
             else:
                 logger.warning("Kokoro TTS not available")
-                return None
+                return None, None
         elif isinstance(provider, str) and provider.startswith("endpoint:"):
             endpoint_id = provider.split(":", 1)[1]
             audio_data = self._synthesize_api(text, endpoint_id, model, voice, speed)
         else:
             logger.error(f"Unknown TTS provider: {provider}")
-            return None
+            return None, None
 
         if audio_data and use_cache:
             key = self._cache_key(text, provider, model, voice, speed)
             self._put_cache(key, audio_data)
 
-        return audio_data
+        return audio_data, hints
 
     def synthesize_to_base64(self, text: str) -> Optional[str]:
         import base64
@@ -351,19 +363,30 @@ class _KokoroPipeline:
             logger.error(f"Kokoro init failed: {e}", exc_info=True)
 
     def synthesize_raw(self, text: str, voice: str = "af_heart") -> Optional[bytes]:
+        return self.synthesize_raw_detailed(text, voice)[0]
+
+    def synthesize_raw_detailed(self, text: str, voice: str = "af_heart") -> Tuple[Optional[bytes], Optional[dict]]:
+        """(wav bytes, {"segments": [{"text", "phonemes", "start_ms", "end_ms"}]}): the engine reports, for each chunk
+        it speaks, the text and the phonemes, and the chunks are concatenated, so each chunk's place in the audio is known."""
         if not self.available:
-            return None
+            return None, None
         try:
             import torch
             import numpy as np
 
             with torch.cuda.device(self.device):
                 chunks = []
-                for _, _, audio in self.pipeline(text, voice=voice):
+                segments = []
+                position = 0
+                for graphemes, phonemes, audio in self.pipeline(text, voice=voice):
                     chunks.append(audio)
+                    length = len(audio)
+                    segments.append({"text": str(graphemes or ""), "phonemes": str(phonemes or ""),
+                                     "start_ms": int(position * 1000 / 24000), "end_ms": int((position + length) * 1000 / 24000)})
+                    position += length
 
             if not chunks:
-                return None
+                return None, None
 
             full = np.concatenate(chunks)
             buf = io.BytesIO()
@@ -372,10 +395,10 @@ class _KokoroPipeline:
                 wf.setsampwidth(2)
                 wf.setframerate(24000)
                 wf.writeframes((full * 32767).astype(np.int16).tobytes())
-            return buf.getvalue()
+            return buf.getvalue(), {"segments": segments}
         except Exception as e:
             logger.error(f"Kokoro synthesis failed: {e}", exc_info=True)
-            return None
+            return None, None
 
 
 # Module-level singleton

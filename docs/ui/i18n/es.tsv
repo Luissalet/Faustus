@@ -5416,6 +5416,7 @@ Spends, not remainders, each beside the ceiling it was spent against. Five lines
 Spent so far: {rounds}/{maxRounds} rounds · {turns}/{maxTurns} turns · {tokens}/{maxTokens} tokens{exhausted}	Gastado hasta ahora: {rounds}/{maxRounds} rondas · {turns}/{maxTurns} turnos · {tokens}/{maxTokens} tokens{exhausted}
 Split mode	Modo de reparto
 Spoken language	Idioma hablado
+Spoken subtitle	Subtítulo de lo que se dice
 Square 1024	Cuadrado 1024
 Stable fingerprint of the resolved values below — changes when any value changes, not when they are only reordered.	Huella estable de los valores resueltos de abajo: cambia si cambia algún valor, no si solo se reordenan.
 Stage all	Preparar todo

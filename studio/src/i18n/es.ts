@@ -6361,6 +6361,7 @@ export const es: Record<string, string> = {
   "Sphere": "Esfera",
   "Split mode": "Modo de reparto",
   "Spoken language": "Idioma hablado",
+  "Spoken subtitle": "Subtítulo de lo que se dice",
   "Square 1024": "Cuadrado 1024",
   "Stable fingerprint of the resolved values below — changes when any value changes, not when they are only reordered.": "Huella estable de los valores resueltos de abajo: cambia si cambia algún valor, no si solo se reordenan.",
   "Stacked hedges": "Cautelas apiladas",

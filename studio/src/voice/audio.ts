@@ -1,4 +1,5 @@
 import { locale, t } from '../i18n';
+import { heardMs, parseMarks, type Playback } from './visemes';
 import { BARGE_IN_MS, BARGE_IN_THRESHOLD, SpeculativeTranscript, TurnDetector, spokenText, isStopPhrase, isHallucination, dictationEditTimeout } from './engine';
 
 export interface SpeechCapabilities {
@@ -298,15 +299,26 @@ async function captureRaw(config: SpeechCapabilities, options: CaptureOptions): 
 let outputLease: AbortController | null = null;
 /** `onSynth` fires once the speech provider returned the audio, before it plays (the "first speech chunk ready" mark). */
 export type OnSynth = (info: { serverMs: number | null }) => void;
-export async function playSpeech(text: string, config: SpeechCapabilities, signal: AbortSignal, onAudio?: (analyser: AnalyserNode | null, playing: boolean) => void, onSynth?: OnSynth): Promise<void> {
+/** `onPlayback` fires with what is being said and where the audio is (see ./visemes) while it plays, and with null when it stops. */
+export type OnPlayback = (playback: Playback | null) => void;
+export async function playSpeech(text: string, config: SpeechCapabilities, signal: AbortSignal, onAudio?: (analyser: AnalyserNode | null, playing: boolean) => void, onSynth?: OnSynth, onPlayback?: OnPlayback): Promise<void> {
   outputLease?.abort();
   const lease = new AbortController(); outputLease = lease;
   try {
-    await playSegment(text, config, AbortSignal.any([signal, lease.signal]), onAudio, onSynth);
+    await playSegment(text, config, AbortSignal.any([signal, lease.signal]), onAudio, onSynth, onPlayback);
   } finally { if (outputLease === lease) outputLease = null; }
 }
 
-async function playSegment(text: string, config: SpeechCapabilities, signal: AbortSignal, onAudio?: (analyser: AnalyserNode | null, playing: boolean) => void, onSynth?: OnSynth): Promise<void> {
+function base64Blob(data: unknown, mime: unknown): Blob | null {
+  if (typeof data !== 'string' || !data) return null;
+  try {
+    const binary = atob(data), bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: typeof mime === 'string' && mime ? mime : 'audio/wav' });
+  } catch { return null; }
+}
+
+async function playSegment(text: string, config: SpeechCapabilities, signal: AbortSignal, onAudio?: (analyser: AnalyserNode | null, playing: boolean) => void, onSynth?: OnSynth, onPlayback?: OnPlayback): Promise<void> {
   signal.throwIfAborted();
   const clean = spokenText(text).slice(0, 5000);
   if (!clean) return;
@@ -333,11 +345,20 @@ async function playSegment(text: string, config: SpeechCapabilities, signal: Abo
   }
   const response = await fetch('/api/tts/synthesize', {
     method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text: clean, format: 'audio', use_cache: false, expected_provider: config.provider, language: config.language || locale() }),
+    // `marks`: when each word starts and which mouth shape each sound has, in the same JSON body as the audio (docs/api/tts-marks.md).
+    body: JSON.stringify({ text: clean, format: 'base64', marks: true, use_cache: false, expected_provider: config.provider, language: config.language || locale() }),
     signal: AbortSignal.any([signal, AbortSignal.timeout(120000)]),
   });
   if (!response.ok) throw new Error(t('Speech output failed. The full response is still in the chat.'));
-  const blob = await response.blob(); signal.throwIfAborted();
+  let blob: Blob, marks = null as ReturnType<typeof parseMarks>;
+  if ((response.headers?.get?.('content-type') || '').includes('application/json')) {
+    const body = await response.json() as { audio?: unknown; mime?: unknown; marks?: unknown };
+    signal.throwIfAborted();
+    const decoded = base64Blob(body.audio, body.mime);
+    if (!decoded) throw new Error(t('Speech output failed. The full response is still in the chat.'));
+    blob = decoded; marks = parseMarks(body.marks, clean);
+  } else blob = await response.blob();
+  signal.throwIfAborted();
   const synthHeader = Number(response.headers?.get?.('X-Faustus-Synth-Ms'));
   onSynth?.({ serverMs: Number.isFinite(synthHeader) && response.headers?.get?.('X-Faustus-Synth-Ms') != null ? synthHeader : null });
   const url = URL.createObjectURL(blob), audio = new Audio(url);
@@ -352,12 +373,16 @@ async function playSegment(text: string, config: SpeechCapabilities, signal: Abo
       const timer = window.setTimeout(() => { audio.pause(); finish(new Error(t('Speech playback timed out.'))); }, 120000);
       signal.addEventListener('abort', cancel, { once: true });
       audio.onended = () => finish(); audio.onerror = () => finish(new Error(t('Could not play speech audio.')));
-      audio.onplaying = () => onAudio?.(analyser, true);
+      audio.onplaying = () => {
+        onAudio?.(analyser, true);
+        onPlayback?.({ text: clean, marks, currentMs: () => heardMs(audio.currentTime, ctx?.outputLatency) });
+      };
       void audio.play().catch(e => finish(e));
     });
   } finally {
     audio.pause(); audio.removeAttribute('src'); audio.load(); URL.revokeObjectURL(url);
     if (ctx?.state !== 'closed') void ctx?.close();
     onAudio?.(null, false);
+    onPlayback?.(null);
   }
 }

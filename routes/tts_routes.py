@@ -5,7 +5,7 @@ TTS API routes — multi-provider (local Kokoro, API endpoint, browser).
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Literal
 from starlette.concurrency import run_in_threadpool
 from services.speech_runtime import capabilities
@@ -22,6 +22,14 @@ class TTSRequest(BaseModel):
     use_cache: bool = True
     expected_provider: str = ""
     language: str = Field(default="", max_length=20, pattern=r"^[a-zA-Z-]*$")
+    # Also return word timings and visemes of the speech (docs/api/tts-marks.md). The response is then JSON, as with "base64".
+    marks: bool = False
+
+    @model_validator(mode="after")
+    def _marks_need_json(self):
+        if self.marks and self.format != "base64":
+            raise ValueError("marks requires format 'base64': the audio and its marks travel in one JSON body")
+        return self
 
 
 class PiperVoiceDownloadRequest(BaseModel):
@@ -57,10 +65,15 @@ def setup_tts_routes(tts_service):
                 kwargs = {"expected_provider": request.expected_provider} if request.expected_provider else {}
                 if request.language:
                     kwargs["language"] = request.language
+                if request.marks and hasattr(tts_service, "synthesize_with_hints"):
+                    return tts_service.synthesize_with_hints(request.text, use_cache=request.use_cache, **kwargs)
                 return tts_service.synthesize(request.text, use_cache=request.use_cache, **kwargs)
 
             started = time.perf_counter()
             audio_data = await anyio.to_thread.run_sync(synthesize, limiter=limiter)
+            hints = None
+            if request.marks and isinstance(audio_data, tuple):
+                audio_data, hints = audio_data
             synth_ms = str(int((time.perf_counter() - started) * 1000))
             if not audio_data:
                 raise HTTPException(
@@ -77,7 +90,21 @@ def setup_tts_routes(tts_service):
                         detail={"message": "Synthesis failed"}
                     )
                 from fastapi.responses import JSONResponse
-                return JSONResponse({"audio": audio_b64}, headers={"Cache-Control": "no-store"})
+                if not request.marks:
+                    return JSONResponse({"audio": audio_b64}, headers={"Cache-Control": "no-store"})
+                from services.tts.marks import build_marks
+                is_mp3 = audio_data[:3] == b'ID3' or (len(audio_data) >= 2 and audio_data[0] == 0xff and (audio_data[1] & 0xe0) == 0xe0)
+                marks_started = time.perf_counter()
+                try:
+                    # The text the audio was made from is the (capped) request text, so the offsets in the marks index into it.
+                    marks = await run_in_threadpool(build_marks, request.text[:5000], audio_data, request.language, hints)
+                except Exception as e:  # marks are an extra: the audio must still arrive
+                    logger.warning(f"Speech marks unavailable: {e}")
+                    marks = None
+                return JSONResponse(
+                    {"audio": audio_b64, "mime": "audio/mpeg" if is_mp3 else "audio/wav", "marks": marks,
+                     "marks_ms": int((time.perf_counter() - marks_started) * 1000), "synth_ms": int(synth_ms)},
+                    headers={"Cache-Control": "no-store", "X-Faustus-Synth-Ms": synth_ms})
             
             else:  # audio format
                 if not audio_data:

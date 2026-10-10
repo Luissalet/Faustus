@@ -6,6 +6,8 @@ import type { Turn } from '../screens/studio/model';
 import { capabilities, capture, openMic, playSpeech, watchForSpeech, type Capture, type OpenMic, type SpeechCapabilities } from './audio';
 import { SentenceBuffer, isEcho, isHallucination, isStopPhrase, speechLanguage, stripWakeWord, dictationEditTimeout, type VoicePhase } from './engine';
 import { VoiceOrb } from './VoiceOrb';
+import { VoiceSubtitle } from './VoiceSubtitle';
+import type { Playback } from './visemes';
 import { postTimeline, timelineDetail, timelineLine, type VoiceMarks } from './timeline';
 import './voice.css';
 
@@ -69,6 +71,8 @@ export default function VoicePanel(props: Props) {
   const heardLanguage = useRef(locale());
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
+  // What is being said right now and where the audio is, for the orb's mouth and the subtitle (null when nothing plays).
+  const [playback, setPlayback] = useState<Playback | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [shortened, setShortened] = useState(false);
   const recording = useRef<Capture | null>(null);
@@ -112,7 +116,7 @@ export default function VoicePanel(props: Props) {
 
   const silence = useCallback(() => {
     reply.current.muted = true; reply.current.queue = []; reply.current.controller.abort(); reply.current.draining = false;
-    setAnalyser(null);
+    setAnalyser(null); setPlayback(null);
   }, []);
   const pause = useCallback(() => {
     engaged.current = false; input.current?.abort(); input.current = null;
@@ -292,7 +296,7 @@ export default function VoicePanel(props: Props) {
             run.marks.tts_chunk = Date.now();
             if (info.serverMs != null) run.marks.tts_server_ms = info.serverMs;
           }
-        });
+        }, pb => { if (alive.current && (pb === null || !run.controller.signal.aborted)) setPlayback(pb); });
       }
     } catch (e) {
       if (!run.controller.signal.aborted && alive.current) { setError((e as Error).message); setReadAloud(false); setContinuous(false); run.queue = []; }
@@ -373,7 +377,7 @@ export default function VoicePanel(props: Props) {
   const providerLabel = (cap: SpeechCapabilities) => cap.execution === 'local' ? t('On this server') : cap.execution === 'browser' ? t('Browser') : cap.execution === 'endpoint' ? t('Configured endpoint · may be remote') : t('Disabled');
   const tool = props.turn?.steps.slice().reverse().find(s => s.state === 'running');
   return <section className="fs-voice" aria-label={t('Voice conversation')} data-phase={phase} data-testid="voice-panel">
-    <div className="fs-voice__visual"><VoiceOrb analyser={analyser} phase={phase} /><span className="fs-voice__micstate">{t(phase === 'listening' || (phase === 'speaking' && continuous) ? 'Microphone active' : 'Microphone off')}</span></div>
+    <div className="fs-voice__visual"><VoiceOrb analyser={analyser} phase={phase} playback={playback} /><span className="fs-voice__micstate">{t(phase === 'listening' || (phase === 'speaking' && continuous) ? 'Microphone active' : 'Microphone off')}</span></div>
     <div className="fs-voice__body">
       <div className="fs-voice__heading"><h2>{t('Talk to Faustus')}</h2><button type="button" className="fs-voice__icon" onClick={props.onClose} aria-label={t('Close voice mode')}><X size={18} /></button></div>
       <p className="fs-voice__context">{props.sessionName} · {t('Same chat, same tools')}</p>
@@ -384,6 +388,7 @@ export default function VoicePanel(props: Props) {
       {configs?.stt.provider === 'parakeet' && <p className="fs-voice__hint">{t('Parakeet detects the language automatically. Very short utterances can be mistaken for another language.')}</p>}
       {configs?.stt.execution === 'browser' && language === 'auto' && <p className="fs-voice__hint">{t('Browser recognition needs a fixed language. Choose English or Spanish; automatic detection uses local recognition.')}</p>}
       <div className="fs-voice__status" role="status"><strong>{interrupted ? t('Go ahead') : t(labels[phase])}</strong>{elapsed > 0 && <span>{elapsed}s</span>}</div>
+      <VoiceSubtitle playback={playback} />
       {wakeWord && !revising.current && !interrupted && (phase === 'listening' || phase === 'starting') && <p className="fs-voice__hint">{t('Waiting for “Faustus”')}</p>}
       {revising.current && <p className="fs-voice__hint">{revisionInstruction || t('Say what to change in your draft. It will stay here for review.')}</p>}
       {timeline && (
