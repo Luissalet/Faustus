@@ -1,12 +1,11 @@
 # Pendientes de cierre
 
-Actualizado: 09-10-2026. REGLA: nunca nombres de empresas/personas del buzón de Luis en commits, docs, tests ni comentarios — ejemplos siempre ficticios. Sólo trabajo vigente; quitar cada entrada al cerrarla.
+Actualizado: 10-10-2026. REGLA: nunca nombres de empresas/personas del buzón de Luis en commits, docs, tests ni comentarios — ejemplos siempre ficticios. Sólo trabajo vigente; quitar cada entrada al cerrarla.
 
 Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya cerradas u obsoletas, con la prueba de cada cierre en FAUSTUS.md, los tests o el historial de git). Dentro de cada sección, lo más reciente primero.
 
 ## A. Decisiones o acciones de Luis
 
-- **ChromaDB caído desde el 09-10 por la tarde** (10-10): Docker Desktop estaba parado, así que la memoria vectorial y el RAG de documentos de Faustus funcionan en modo degradado (lo muestra el nuevo diagnóstico `/api/diagnostics/degradation`, #202). A las 06:40 intenté arrancar Docker Desktop, pero abrió un diálogo de error que no puedo ver con la pantalla bloqueada y la VM de WSL no llegó a arrancar. Al desbloquear verás el diálogo: si se puede, acéptalo o reinicia Docker Desktop, y el contenedor `chromadb` (puerto 8100) debería volver solo.
 - **Borrar el modelo de prueba de Vulcan** (10-10, #200): la verificación en vivo de «CAD desde texto» dejó el modelo 20037 `plate-hole-verify` (placa 20x10x5 con agujero) en la biblioteca. Vulcan no tiene ruta para borrar modelos. ¿Lo borro a mano (fila en la base de datos y ficheros en `data\cad`) o se queda?
 - **Coase's Hoard está en GitHub como privado** (09-10): `Luissalet/CoasesHoard`. Lo dejé privado porque el ejemplo de `docs/` es un expediente sobre una empresa real con veredicto «No pagar todavía» y textos de otra empresa real. ¿Lo hago público tal cual, quito el ejemplo y reescribo su historia, o se queda privado?
 - **¿Subir `max_num_seqs` de la receta GLM?** (09-10, #114): hoy es 8. La tarjeta de velocidad da 115 tok/s agregados con 8 peticiones y lo mismo con 16 o 64 (las demás esperan: TTFT p50 de 64 s con 64). Subirlo da más rendimiento total a varios clientes a la vez a cambio de KV por petición, y exige recargar GLM. ¿Lo probamos (por ejemplo 16) o se queda en 8?
