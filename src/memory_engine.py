@@ -909,6 +909,9 @@ def add_item(
     }
     save_item(item)
     _index(item["id"], clean)
+    from src import memory_journal
+    memory_journal.record("rules", "create", item["id"], owner=item.get("owner") or "", after=dict(item),
+                          source=str(item.get("trust_class") or ""))
     if memory_conflict_detection_enabled():
         try:
             from src import memory_conflicts
@@ -1026,11 +1029,15 @@ def set_suppressed(item_id: Any, suppressed: bool,
 
 def delete_item(item_id: Any) -> bool:
     item_id = str(item_id or "")
+    before = get_item(item_id)
     with _db() as conn:
         cursor = conn.execute("DELETE FROM items WHERE id = ?", (item_id,))
         deleted = cursor.rowcount > 0
     if deleted:
         _unindex(item_id)
+        if before is not None:
+            from src import memory_journal
+            memory_journal.record("rules", "delete", item_id, owner=before.get("owner") or "", before=before)
     return deleted
 
 

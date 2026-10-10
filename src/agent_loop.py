@@ -19165,6 +19165,15 @@ async def _stream_agent_loop_body(
         # `last_metrics` -> `md` in `save_assistant_response`, so this rides
         # onto the saved message's metadata with no separate write.
         metrics["context_receipts"] = _context_receipts_summary[:40]
+    # Memory changes this turn made (journal, #242): what was learned, edited
+    # or forgotten, each with its own undo in Studio.
+    try:
+        from src import memory_journal as _memory_journal
+        _turn_memory_changes = _memory_journal.for_turn(_context_turn_id)
+        if _turn_memory_changes:
+            metrics["memory_changes"] = _turn_memory_changes
+    except Exception:  # noqa: BLE001 - a summary line never fails a turn
+        pass
     try:
         _compaction_receipts = (_route_state.get("compaction_state") or {}).pop("decision_receipts", None)
         if _compaction_receipts:

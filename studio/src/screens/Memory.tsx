@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
+import { Changes } from './memory/Changes';
 import { Provenance } from './memory/Provenance';
 import { Button, Dialog, EmptyState, IconButton, Skeleton, Toast } from '../components';
 import { listSessions, type ChatSession } from '../adapters/chat';
@@ -1280,7 +1281,7 @@ function DecisionTimeline({ say }: { say: (text: string) => void }) {
 
 export function MemoryScreen() {
   const [params, setParams] = useSearchParams();
-  const tab: 'memories' | 'provenance' = params.get('t') === 'provenance' ? 'provenance' : 'memories';
+  const tab: 'memories' | 'provenance' | 'changes' = params.get('t') === 'provenance' ? 'provenance' : params.get('t') === 'changes' ? 'changes' : 'memories';
   const [memories, setMemories] = useState<Memory[] | null>(null);
   /** What the last tidy actually did, so it can be read and not just felt. */
   const [tidyReport, setTidyReport] = useState<{ before: number; after: number; gone: string[]; changed: { from: string; to: string }[]; arrived: string[] } | null>(null);
@@ -1507,6 +1508,8 @@ export function MemoryScreen() {
           <p className="fs-prose" style={{ marginBlockStart: 'var(--fs-space-2)' }}>
             {tab === 'provenance'
               ? t('Why the agent believes what it believes: every edge here was read from a stored record, none asserted by a model.')
+              : tab === 'changes'
+              ? t('What was learned, edited or forgotten, by which conversation, with an undo for each change.')
               : `${memories ? `${tn(memories.length, '{n} memory', '{n} memories')}${pinnedCount ? ` · ${tn(pinnedCount, '{n} pinned', '{n} pinned#')}` : ''}. ` : ''}${t('What the assistant knows about you and uses when it fits; pinned ones always go.')}`}
           </p>
         </div>
@@ -1535,9 +1538,13 @@ export function MemoryScreen() {
         <button type="button" role="tab" className="fs-tab" aria-selected={tab === 'provenance'} onClick={() => setParams(new URLSearchParams({ t: 'provenance' }), { replace: true })} data-testid="memory-tab-provenance">
           {t('Provenance')}
         </button>
+        <button type="button" role="tab" className="fs-tab" aria-selected={tab === 'changes'} onClick={() => setParams(new URLSearchParams({ t: 'changes' }), { replace: true })} data-testid="memory-tab-changes">
+          {t('Changes')}
+        </button>
       </div>
 
       {tab === 'provenance' && <Provenance />}
+      {tab === 'changes' && <Changes />}
       {tab === 'memories' && (
       <>
 

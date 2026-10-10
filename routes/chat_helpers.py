@@ -1493,12 +1493,14 @@ def save_assistant_response(
                     for m in _post_turn_history
                     if isinstance(m.get("content"), str)
                 ]
-                await extract_from_turn(
-                    _post_turn_owner, session_id, history,
-                    project=project_key(_post_turn_workspace, _post_turn_project_id),
-                    project_name=_post_turn_project_name,
-                    workspace=_post_turn_workspace,
-                )
+                from src import memory_journal
+                with memory_journal.attribution(session_id=session_id, source="instinct_extractor"):
+                    await extract_from_turn(
+                        _post_turn_owner, session_id, history,
+                        project=project_key(_post_turn_workspace, _post_turn_project_id),
+                        project_name=_post_turn_project_name,
+                        workspace=_post_turn_workspace,
+                    )
             except Exception:
                 logger.debug("[instincts] extract_from_turn failed", exc_info=True)
 
@@ -1680,6 +1682,14 @@ async def _run_extraction_jobs_sequentially(session_id: str, jobs: list, max_wai
             logger.warning("[bg-extract] %s extraction job failed for session %s", name, session_id, exc_info=True)
 
 
+async def _journal_attributed(coro, **attribution):
+    """Run a background memory writer with its changes attributed to the
+    session that triggered it (journal of memory changes, #242)."""
+    from src import memory_journal
+    with memory_journal.attribution(**attribution):
+        return await coro
+
+
 def run_post_response_tasks(
     sess,
     session_manager,
@@ -1727,10 +1737,10 @@ def run_post_response_tasks(
         t_url, t_model, t_headers = resolve_task_endpoint(
             sess.endpoint_url, sess.model, sess.headers, owner=owner,
         )
-        _extraction_jobs.append(("memory", extract_and_store(
+        _extraction_jobs.append(("memory", _journal_attributed(extract_and_store(
             sess, memory_manager, memory_vector,
             t_url, t_model, t_headers,
-        )))
+        ), session_id=session_id, source="memory_extractor")))
 
     # Skill extraction from complex agent runs. Only when the user actually
     # chose agent mode — not a chat we auto-escalated for a notes/calendar

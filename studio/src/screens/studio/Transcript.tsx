@@ -1845,6 +1845,23 @@ function StrategyLine({ strategy }: { strategy: TurnStrategy }) {
  * note. Until `model.ts` adds the field this renders nothing, exactly as a
  * server that predates the event already does.
  */
+/** Memory changes this turn made (#242): one line with what was learned,
+ *  edited or forgotten, linking to Memory → Changes for the undo. */
+function MemoryChangesLine({ turn, sessionId }: { turn: Turn; sessionId: string | null }) {
+  const changes = turn.memoryChanges;
+  if (!changes || changes.length === 0) return null;
+  const query = new URLSearchParams({ t: 'changes', ...(sessionId ? { session: sessionId } : {}) });
+  return (
+    <p className="fs-ctx__note" data-testid="memory-changes-line">
+      {tn(changes.length, '{n} memory change', '{n} memory changes')}
+      {': '}
+      {changes.slice(0, 3).map((c) => c.label).filter(Boolean).join(' · ')}
+      {' — '}
+      <Link to={`/memory?${query}`}>{t('Undo')}</Link>
+    </p>
+  );
+}
+
 function ContextReceiptCard({ turn }: { turn: Turn }) {
   const receipts = turn.contextReceipts;
   if (!receipts || receipts.length === 0) return null;
@@ -2131,6 +2148,7 @@ function AssistantTurn({
         {turn.advice && turn.advice.length > 0 && <AdviceCard advice={turn.advice} />}
         {!turn.streaming && turn.strategy && <StrategyLine strategy={turn.strategy} />}
         {!turn.streaming && <ContextReceiptCard turn={turn} />}
+        {!turn.streaming && <MemoryChangesLine turn={turn} sessionId={sessionId} />}
         {turn.ask && <AskCard ask={turn.ask} busy={busy} onApproval={onApproval} onAnswer={onAnswer} />}
         {!turn.ask && turn.approval && <AnsweredCard decision={turn.approval.decision} />}
         {!turn.streaming && (turn.summary || turn.checks.length > 0) && (

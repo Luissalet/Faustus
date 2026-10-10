@@ -749,3 +749,25 @@
   gap: 4px;
   font-size: 0.9em;
 }
+
+/* Changes tab (#242): the journal of memory changes, one row per change. */
+.fs-memory-changes { display: flex; flex-direction: column; gap: var(--fs-space-3); }
+.fs-memory-changes__bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--fs-space-2); }
+.fs-memory-changes__stores { display: flex; flex-wrap: wrap; gap: var(--fs-space-1); }
+.fs-memory-changes__session { font-size: var(--fs-label-size); color: var(--fs-text-3); }
+.fs-memory-changes__bar > :last-child { margin-inline-start: auto; }
+.fs-memory-changes__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--fs-space-2); }
+.fs-memory-changes__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--fs-space-1) var(--fs-space-3); padding: var(--fs-space-2) var(--fs-space-3); border: 1px solid var(--fs-border); border-radius: var(--fs-radius-panel); background: var(--fs-surface-1); }
+.fs-memory-changes__row[data-undone] { opacity: .6; }
+.fs-memory-changes__meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--fs-space-2); font-size: var(--fs-label-size); color: var(--fs-text-3); }
+.fs-memory-changes__op { font-weight: 600; color: var(--fs-text-1); }
+.fs-memory-changes__op--delete { color: var(--fs-danger); }
+.fs-memory-changes__op--create { color: var(--fs-success); }
+.fs-memory-changes__store, .fs-memory-changes__source { padding: 0 var(--fs-space-1); border: 1px solid var(--fs-border); border-radius: var(--fs-radius-pill); }
+.fs-memory-changes__text { margin: 0; overflow-wrap: anywhere; }
+.fs-memory-changes__before { display: block; font-size: var(--fs-label-size); color: var(--fs-text-3); }
+.fs-memory-changes__actions { display: flex; flex-direction: column; align-items: flex-end; gap: var(--fs-space-1); }
+.fs-memory-changes__undone { font-size: var(--fs-label-size); color: var(--fs-text-3); }
+.fs-memory-changes__error { color: var(--fs-danger); font-size: var(--fs-label-size); margin: 0; }
+.fs-linkbutton { background: none; border: 0; padding: 0; color: var(--fs-brand); cursor: pointer; font: inherit; text-decoration: underline; }
+@media (max-width: 640px) { .fs-memory-changes__row { grid-template-columns: 1fr; } .fs-memory-changes__actions { align-items: flex-start; } }

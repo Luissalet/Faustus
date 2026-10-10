@@ -346,9 +346,17 @@ def graph(owner: str, *, center: Optional[str] = None, depth: int = 1,
 def write_note(owner: str, path: str, content: str) -> Dict[str, Any]:
     owner = str(owner or "")
     rel_path = vault.validate_path(path)
+    previous = vault._read(vault.abs_path(owner, rel_path))
     vault._atomic_write(vault.abs_path(owner, rel_path), str(content or ""))
     applied = vault.import_file(owner, rel_path)
     final_path = applied.get("path") or rel_path
+    if previous != str(content or ""):
+        from src import memory_journal
+        memory_journal.record(
+            "notes", "create" if previous is None else "edit", rel_path, owner=owner,
+            before=None if previous is None else {"path": rel_path, "content": previous,
+                                                  "title": vault._title_from_path(rel_path)},
+            after={"path": rel_path, "content": str(content or ""), "title": vault._title_from_path(rel_path)})
     return {"note": read_note(owner, final_path), "applied": applied}
 
 
@@ -506,6 +514,10 @@ def delete_note(owner: str, path: str) -> Dict[str, Any]:
         os.remove(full)
     vault._db_delete_notes_row(owner, rel_path)
     vault._db_delete_sync_state(owner, rel_path)
+    from src import memory_journal
+    memory_journal.record("notes", "delete", rel_path, owner=owner,
+                          before={"path": rel_path, "title": title, "content": text},
+                          after={"path": rel_path, "trash_id": trash_id, "effect": effect})
     return {"trash_id": trash_id, "effect": effect}
 
 

@@ -225,8 +225,17 @@ def _load_raw(owner: Optional[str]) -> Dict[str, Dict[str, Any]]:
 def _save_raw(owner: Optional[str], data: Mapping[str, Dict[str, Any]]) -> None:
     path = _store_path(owner)
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    previous = _load_raw(owner)
     from core.atomic_io import atomic_write_json
     atomic_write_json(path, dict(data), indent=2)
+    # Journal of memory changes (#242): created, edited (trigger/action/
+    # scope) and deleted instincts. Confidence and status bookkeeping is not
+    # a change to what Faustus believes, so it is not journaled.
+    from src import memory_journal
+    memory_journal.record_diff(
+        "instincts", {k: v for k, v in previous.items() if isinstance(v, dict)},
+        {k: v for k, v in dict(data).items() if isinstance(v, dict)},
+        fields=memory_journal.INSTINCT_FIELDS, owner=owner or "")
 
 
 def _load(owner: Optional[str], *, now: Optional[float] = None) -> Dict[str, Dict[str, Any]]:

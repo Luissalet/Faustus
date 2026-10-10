@@ -1356,6 +1356,10 @@ app.include_router(setup_scorecard_routes())
 from routes.memory_engine_routes import setup_memory_engine_routes
 app.include_router(setup_memory_engine_routes())
 
+# Journal of memory changes with undo (src/memory_journal.py, #242).
+from routes.memory_journal_routes import setup_memory_journal_routes
+app.include_router(setup_memory_journal_routes(memory_vector=memory_vector))
+
 # Grounding lint: compiled memory checked against the evidence it cites
 # (src/memory_grounding.py).
 from routes.memory_grounding_routes import setup_memory_grounding_routes

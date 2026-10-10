@@ -289,12 +289,38 @@ class MemoryManager:
             memory_leases.close_superseded(entries)
         except Exception as e:  # noqa: BLE001
             logger.debug("memory leases: close_superseded skipped (%s)", e)
+        
+        # What was there before, for the journal of memory changes (#242):
+        # every writer of this file goes through here, so this is the one
+        # place that sees them all.
+        previous = self._journal_snapshot()
 
         # Use atomic write
         tmp_file = self.memory_file + ".tmp"
         with open(tmp_file, "w", encoding="utf-8") as f:
             json.dump(entries, f, ensure_ascii=False, indent=2)
         os.replace(tmp_file, self.memory_file)
+
+        if previous is not None:
+            from src import memory_journal
+            memory_journal.record_diff(
+                "facts", previous,
+                {str(e.get("id")): e for e in entries if isinstance(e, dict) and e.get("id")},
+                fields=memory_journal.FACT_FIELDS, owner_of=lambda e: e.get("owner") or "",
+                location=os.path.abspath(self.memory_file))
+
+    def _journal_snapshot(self):
+        """``{id: entry}`` as stored now, or None when it cannot be read."""
+        try:
+            with open(self.memory_file, encoding="utf-8") as fh:
+                data = json.load(fh)
+        except FileNotFoundError:
+            return {}
+        except (OSError, ValueError):
+            return None
+        if not isinstance(data, list):
+            return None
+        return {str(e.get("id")): e for e in data if isinstance(e, dict) and e.get("id")}
     
     def add_entry(self, text: str, source: str = "user", category: str = "fact", owner: str = None,
                   *, kind: str = None, lease_days: int = None) -> Dict:

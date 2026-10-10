@@ -1,6 +1,7 @@
 """Personal-memory query receipts use the real owner-scoped JSON store and compiler."""
 import asyncio
 import json
+import shutil
 from dataclasses import replace
 from pathlib import Path
 
@@ -142,7 +143,7 @@ async def test_corrupt_json_remains_unknown_and_bytes_preserved(live):
 async def test_missing_store_validation_never_creates_file_or_parent(live):
     manager,request,_=live
     first=await deliver(request) # Genuine empty query.
-    path=Path(manager.memory_file);path.unlink();path.parent.rmdir()
+    path=Path(manager.memory_file);path.unlink();shutil.rmtree(path.parent)
     assert await wiring._personal_memory_reuse_is_current(request,first) is True
     assert not path.exists() and not path.parent.exists()
 
@@ -245,6 +246,6 @@ async def test_unknown_initial_fallback_with_no_hits_is_not_observed_absence(liv
 async def test_validation_missing_after_delivered_memory_never_recreates_store(live):
     manager,request,_=live;add(manager)
     first=await deliver(request)
-    path=Path(manager.memory_file);path.unlink();path.parent.rmdir()
+    path=Path(manager.memory_file);path.unlink();shutil.rmtree(path.parent)
     assert await wiring._personal_memory_reuse_is_current(request,first) is False
     assert not path.exists() and not path.parent.exists()

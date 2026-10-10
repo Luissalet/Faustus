@@ -6,6 +6,7 @@ Imports MemoryManager and MemoryVectorStore from the Faustus codebase.
 """
 
 import asyncio
+import json
 import os
 import sys
 import time
@@ -177,6 +178,27 @@ async def list_tools() -> list[Tool]:
                 "required": ["action"],
             },
         ),
+        Tool(
+            name="memory_changes",
+            description=(
+                "The journal of memory changes: what was learned, edited or forgotten in the facts store, "
+                "the learned memory, the instincts and the second-brain notes, newest first, with the chat "
+                "session that did it. action=list (optional session_id, store, limit) or action=undo with "
+                "change_id, which puts that one change back and refuses if the item changed again since. "
+                "Registro de cambios de memoria con deshacer."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["list", "undo"]},
+                    "session_id": {"type": "string", "description": "Only changes made in this chat."},
+                    "store": {"type": "string", "enum": ["facts", "rules", "instincts", "notes"]},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 500},
+                    "change_id": {"type": "string", "description": "Change to undo (from list)."},
+                },
+                "required": ["action"],
+            },
+        ),
     ]
 
 
@@ -277,8 +299,31 @@ def _call_memory_leases(arguments: dict) -> list[TextContent]:
     return _text_result(f"Error: Unknown action '{action}'. Use: review, renew, forget, backfill")
 
 
+def _memory_changes(arguments: dict) -> list[TextContent]:
+    from src import memory_journal
+    owner = _configured_owner() or ""
+    action = arguments.get("action", "")
+    if action == "list":
+        rows = memory_journal.list_changes(owner, session_id=str(arguments.get("session_id") or ""),
+                                           store=str(arguments.get("store") or ""),
+                                           limit=arguments.get("limit") or 50)
+        return _text_result(json.dumps({"changes": rows, "count": len(rows)}, ensure_ascii=False, indent=2))
+    if action == "undo":
+        try:
+            out = memory_journal.undo(str(arguments.get("change_id") or ""), owner)
+        except (memory_journal.UndoConflict, memory_journal.UndoError) as exc:
+            return _text_result(f"Error: {exc}")
+        return _text_result(json.dumps(out, ensure_ascii=False, indent=2))
+    return _text_result("Error: action must be list or undo")
+
+
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+    if name == "memory_changes":
+        try:
+            return _memory_changes(arguments if isinstance(arguments, dict) else {})
+        except Exception as exc:  # noqa: BLE001 - never kill the server
+            return _text_result(f"Error in memory_changes: {type(exc).__name__}: {exc}")
     if name not in ("manage_memory", "memory_leases"):
         return _text_result(f"Unknown tool: {name}")
 

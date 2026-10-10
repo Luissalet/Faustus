@@ -231,6 +231,9 @@ export interface Turn {
   /** CMP-04: why each piece of context entered this turn (persisted as
    *  `metadata.context_receipts`); the transcript shows them as a card. */
   contextReceipts?: ContextReceipt[];
+  /** Memory changes this turn made (#242, `metadata.memory_changes`), each
+   *  undoable in Memory → Changes. */
+  memoryChanges?: { id: string; store: string; op: string; label: string }[];
   /** CMP-09/CMP-12 (W3-A): see `TurnStrategy`'s doc comment. */
   strategy?: TurnStrategy;
   /** The advisor's notes for this turn (live `advisor_advice` events, or
@@ -1373,6 +1376,7 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
     !meta.web_sources &&
     !meta.research_sources &&
     !meta.context_receipts &&
+    !meta.memory_changes &&
     !meta.strategy &&
     !meta.advisor &&
     !modeFields.behaviorMode &&
@@ -1474,6 +1478,11 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
     contextReceipts: Array.isArray(meta.context_receipts)
       ? (meta.context_receipts as Record<string, unknown>[]).map(toContextReceipt)
       : turn.contextReceipts,
+    memoryChanges: Array.isArray(meta.memory_changes)
+      ? (meta.memory_changes as Record<string, unknown>[]).map((c) => ({
+          id: String(c.id ?? ''), store: String(c.store ?? ''), op: String(c.op ?? ''), label: String(c.label ?? ''),
+        }))
+      : turn.memoryChanges,
     strategy: strategyFromMeta(meta) ?? turn.strategy,
     advice: adviceFromMeta(meta) ?? turn.advice,
     plan: planUpdate?.plan ?? turn.plan,
