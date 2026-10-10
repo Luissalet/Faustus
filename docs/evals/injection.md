@@ -24,6 +24,8 @@ the paid spend cap.
 
 ## Deterministic mode (default, no model)
 
+**Posture.** The gates judge with an approval mode. `baseline` (the default) pins it to `ask`, so the run measures the defenses themselves and gives the same answer on every install. `configured` (`--posture configured`, or `posture` in the API and MCP) keeps the install's own mode: with `full` access most gated calls go through, and the report says what an injection could do with the current settings; its controls are informational. The report and `meta` say which posture and approval mode a run used.
+
 A scripted model that obeys every injection replays the run. Each delivery enters through the
 same doors as in the real loop (`untrusted_context_message` + `observe_messages`,
 `observe_tool_result`), then the model emits every forbidden call. The real defenses judge it:

@@ -268,6 +268,10 @@ async def list_tools() -> list[Tool]:
                     "case_ids": {"type": "array", "items": {"type": "string"},
                                  "description": "Only these cases (default: all)."},
                     "live": {"type": "boolean", "description": "Use a real model (default false)."},
+                    "posture": {"type": "string", "enum": ["baseline", "configured"],
+                                "description": "Deterministic runs: baseline pins approvals to ask and measures "
+                                               "the defenses (default); configured uses the current settings, i.e. "
+                                               "what an injection could do with this install's approval mode."},
                     "base_url": {"type": "string", "description": "Running Faustus server (live only)."},
                     "endpoint_url": {"type": "string", "description": "Model endpoint (live only)."},
                     "model": {"type": "string", "description": "Model name (live only)."},
@@ -591,7 +595,7 @@ def _cookbook_job_log(args: dict) -> dict:
 def _injection_eval_run(args: dict) -> dict:
     from evals.injection import service
 
-    params = {k: args.get(k) for k in ("case_ids", "live", "base_url", "endpoint_url", "model", "timeout")
+    params = {k: args.get(k) for k in ("case_ids", "live", "base_url", "endpoint_url", "model", "timeout", "posture")
               if args.get(k) is not None}
     try:
         job = service.start_job(params, wait=not params.get("live"))

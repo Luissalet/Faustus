@@ -284,9 +284,47 @@ def select_cases(case_ids: Optional[List[str]] = None) -> List[InjectionCase]:
     return chosen
 
 
-def run_deterministic(case_ids: Optional[List[str]] = None) -> Dict[str, Any]:
-    results = [run_case_deterministic(c) for c in select_cases(case_ids)]
-    return summarize(results, "deterministic", controls=_controls())
+POSTURES = ("baseline", "configured")
+BASELINE_APPROVAL_MODE = "ask"
+
+
+@contextlib.contextmanager
+def _posture(posture: str) -> Iterator[str]:
+    """The approval mode the gates judge with, and its name for the report.
+
+    ``baseline`` (the default) pins the approval mode to ``ask`` so the run
+    measures the defenses themselves, the same on every install. With the
+    owner's ``full`` mode every gated call would be allowed and the battery
+    would report that instead of the defenses. ``configured`` keeps whatever
+    the settings say: what an injection could do with the current setup.
+    """
+    from src import tool_capabilities as tc
+
+    if posture == "configured":
+        yield str(tc.tool_approval_mode())
+        return
+    real = tc.tool_approval_mode
+    tc.tool_approval_mode = lambda: BASELINE_APPROVAL_MODE  # type: ignore[assignment]
+    try:
+        yield BASELINE_APPROVAL_MODE
+    finally:
+        tc.tool_approval_mode = real  # type: ignore[assignment]
+
+
+def run_deterministic(case_ids: Optional[List[str]] = None, *, posture: str = "baseline") -> Dict[str, Any]:
+    if posture not in POSTURES:
+        raise ValueError(f"posture must be one of {POSTURES}")
+    with _posture(posture) as approval_mode:
+        results = [run_case_deterministic(c) for c in select_cases(case_ids)]
+        controls = _controls()
+    summary = summarize(results, "deterministic", controls=controls,
+                        meta={"posture": posture, "approval_mode": approval_mode})
+    if posture == "configured":
+        # The controls check the defenses under `ask`; under the owner's own
+        # mode a failed control is the finding, not a broken battery.
+        summary["controls_ok"] = True
+        summary["controls_informational"] = True
+    return summary
 
 
 def summarize(results: List[Dict[str, Any]], mode: str, *, controls=None, meta=None) -> Dict[str, Any]:
@@ -417,6 +455,13 @@ def markdown_report(summary: Dict[str, Any], *, transcripts: bool = False) -> st
         f"Cases: {summary['cases']}  |  Held: {summary['held']}  |  **Violated: {summary['violated']}**"
         f"  |  Errors: {summary['errors']}  |  Known holes open: {summary.get('known_holes_open', 0)}", "",
     ]
+    meta = summary.get("meta") or {}
+    if meta.get("posture") == "configured":
+        lines += [f"Posture: configured (approvals: {meta.get('approval_mode')}) -- what an injection could do with "
+                  "the current settings, not a measure of the defenses.", ""]
+    elif meta.get("posture"):
+        lines += [f"Posture: baseline (approvals: {meta.get('approval_mode')}) -- the defenses themselves, "
+                  "independent of this install's approval mode.", ""]
     if summary.get("controls"):
         lines.append("Controls: " + ", ".join(f"{c['id']}={'ok' if c['ok'] else 'FAILED'}"
                                              for c in summary["controls"]))
@@ -477,6 +522,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--timeout", type=float, default=180.0)
     p.add_argument("--out-dir", default=None)
     p.add_argument("--no-persist", action="store_true")
+    p.add_argument("--posture", choices=POSTURES, default="baseline",
+                   help="baseline: approvals pinned to ask (default); configured: the current settings")
     p.add_argument("--summary-json", default=None,
                    help="write the full summary as JSON to this file (used by the in-app job service)")
     args = p.parse_args(argv)
@@ -486,7 +533,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         summary = run_live(base_url=args.base_url, endpoint_url=args.endpoint_url, model=args.model,
                            case_ids=args.cases, timeout=args.timeout)
     else:
-        summary = run_deterministic(args.cases)
+        summary = run_deterministic(args.cases, posture=args.posture)
     if args.summary_json:
         with open(args.summary_json, "w", encoding="utf-8") as fh:
             json.dump(summary, fh, ensure_ascii=False)

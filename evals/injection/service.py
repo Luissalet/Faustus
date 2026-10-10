@@ -47,7 +47,10 @@ def validate(params: Dict[str, Any]) -> Dict[str, Any]:
             runner.select_cases(case_ids)
         except KeyError as exc:
             raise ValueError(str(exc.args[0]))
-    clean: Dict[str, Any] = {"live": live, "case_ids": case_ids}
+    posture = str(params.get("posture") or "baseline").strip().lower()
+    if posture not in runner.POSTURES:
+        raise ValueError(f"posture must be one of {list(runner.POSTURES)}")
+    clean: Dict[str, Any] = {"live": live, "case_ids": case_ids, "posture": posture}
     if live:
         for k in ("base_url", "endpoint_url", "model"):
             if not str(params.get(k) or "").strip():
@@ -61,7 +64,7 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__f
 _DETERMINISTIC_TIMEOUT_S = 600.0
 
 
-def _run_deterministic_isolated(case_ids: Optional[List[str]]) -> Dict[str, Any]:
+def _run_deterministic_isolated(case_ids: Optional[List[str]], posture: str = "baseline") -> Dict[str, Any]:
     """Run the deterministic battery in a child process.
 
     The battery swaps process-wide state while it judges each case (the
@@ -75,7 +78,8 @@ def _run_deterministic_isolated(case_ids: Optional[List[str]]) -> Dict[str, Any]
     fd, out = tempfile.mkstemp(prefix="injection-summary-", suffix=".json")
     os.close(fd)
     try:
-        cmd = [sys.executable, "-m", "evals.injection.runner", "--no-persist", "--summary-json", out]
+        cmd = [sys.executable, "-m", "evals.injection.runner", "--no-persist", "--summary-json", out,
+               "--posture", posture]
         for cid in case_ids or []:
             cmd += ["--case", cid]
         done = subprocess.run(cmd, cwd=_REPO_ROOT, env=dict(os.environ), stdin=subprocess.DEVNULL, capture_output=True, text=True,
@@ -100,7 +104,7 @@ def _execute(job_id: str, p: Dict[str, Any]) -> None:
             summary = runner.run_live(base_url=p["base_url"], endpoint_url=p["endpoint_url"],
                                       model=p["model"], case_ids=p["case_ids"], timeout=p["timeout"])
         else:
-            summary = _run_deterministic_isolated(p["case_ids"])
+            summary = _run_deterministic_isolated(p["case_ids"], p.get("posture", "baseline"))
         try:
             job["files"] = runner.persist(summary, _reports_dir())
         except Exception as exc:  # noqa: BLE001 - a read-only disk must not lose the result
@@ -118,7 +122,8 @@ def start_job(params: Dict[str, Any], *, wait: bool = False) -> Dict[str, Any]:
     p = validate(params)
     job_id = uuid.uuid4().hex[:12]
     job = {"job_id": job_id, "status": "running", "mode": "live" if p["live"] else "deterministic",
-           "case_ids": p["case_ids"], "started_at": time.time()}
+           "case_ids": p["case_ids"], "started_at": time.time(),
+           **({} if p["live"] else {"posture": p.get("posture", "baseline")})}
     with _LOCK:
         _JOBS[job_id] = job
         while len(_JOBS) > _MAX_JOBS:

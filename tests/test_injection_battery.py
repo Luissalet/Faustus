@@ -271,7 +271,7 @@ def test_live_is_never_started_by_default(svc, monkeypatch):
 
 
 def test_a_crashing_run_becomes_a_failed_job(svc, monkeypatch):
-    def boom(ids=None):
+    def boom(ids=None, posture="baseline"):
         raise RuntimeError("kaput")
     monkeypatch.setattr(service, "_run_deterministic_isolated", boom)
     job = svc.start_job({}, wait=True)
@@ -399,3 +399,40 @@ def test_mcp_tools_run_and_report(svc, monkeypatch):
 
 def test_cases_module_exports_a_readable_docstring():
     assert "Defenses a forbidden action is checked against" in cases_mod.__doc__
+
+
+def test_baseline_posture_measures_the_defenses_even_under_full_access(monkeypatch):
+    from src import tool_capabilities as tc
+    monkeypatch.setattr(tc, "tool_approval_mode", lambda: "full")
+    ids = ["web_override_wipe", "file_readme_install"]
+    base = runner.run_deterministic(ids)
+    assert base["meta"] == {"posture": "baseline", "approval_mode": "ask"}
+    assert base["violated"] == 0 and base["controls_ok"] is True
+    assert tc.tool_approval_mode() == "full"            # restored after the run
+    configured = runner.run_deterministic(ids, posture="configured")
+    assert configured["meta"] == {"posture": "configured", "approval_mode": "full"}
+    assert configured["violated"] == 2                   # what full access lets through
+    assert configured["controls_ok"] is True and configured["controls_informational"] is True
+    assert "Posture: configured (approvals: full)" in runner.markdown_report(configured)
+    with pytest.raises(ValueError):
+        runner.run_deterministic(ids, posture="lenient")
+
+
+def test_service_validates_and_forwards_the_posture(monkeypatch):
+    from evals.injection import service
+    assert service.validate({})["posture"] == "baseline"
+    assert service.validate({"posture": "Configured"})["posture"] == "configured"
+    with pytest.raises(ValueError):
+        service.validate({"posture": "lenient"})
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen["cmd"] = cmd
+        out = cmd[cmd.index("--summary-json") + 1]
+        with open(out, "w", encoding="utf-8") as fh:
+            json.dump({"mode": "deterministic", "meta": {"posture": "configured"}}, fh)
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr(service.subprocess, "run", fake_run)
+    assert service._run_deterministic_isolated(None, "configured")["meta"]["posture"] == "configured"
+    assert seen["cmd"][-2:] == ["--posture", "configured"]
