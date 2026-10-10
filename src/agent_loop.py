@@ -14764,6 +14764,7 @@ async def _stream_agent_loop_body(
                     _pac_prog.get("done") == _pac_prog.get("total"))
                 _pac_armed = _plan_ac_armed or any(
                     str((_e or {}).get("tool") or "") in {"plan_done", "plan_skip", "plan_next"}
+                    and (_e or {}).get("ok") is True
                     for _e in _ledger.events)
                 _pac = _pt_ac.autocontinue_decision(
                     _pac_tr, enabled=True, armed=_pac_armed, used=_plan_ac_used,

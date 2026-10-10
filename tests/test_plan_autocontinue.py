@@ -105,6 +105,22 @@ def test_conditions_within_actual_work_items_remain_a_real_plan():
     assert found and len(pt.parse_plan(*found).tasks) == 3
 
 
+def test_independent_conditional_queue_work_is_not_a_priority_ladder():
+    plan = ("Ejecuta este plan, comprobando por separado cada cola:\n"
+            "1. Comprobar las tres colas y guardar el diagnóstico.\n"
+            "2. Si no hay tareas en la cola A, crear una tarea de prueba en A y comprobarla.\n"
+            "3. Si no hay tareas en la cola B, crear una tarea de prueba en B y comprobarla.")
+    assert pt.find_plan_in_text(plan)
+    assert pt.find_plan_attachment("Ejecuta este plan:\n=== File: plan.md ===\n" + plan)
+
+
+def test_a_false_priority_import_does_not_hide_an_older_genuine_plan():
+    genuine = pt.upsert_from_attachment("resume", "real.md", "1. Crear a.txt\n2. Leer a.txt\n3. Probar a.txt")
+    policy = pt.upsert_from_attachment("resume", "policy", "1. Atiende revisiones.\n2. Si no hay nada, elige tarea.\n3. Si tampoco, queda libre.")
+    assert pt.active("resume")["hash"] == genuine["hash"]
+    assert pt.load("resume", policy["hash"]) and pt.progress(pt.load("resume", genuine["hash"]))["done"] == 0
+
+
 def test_a_long_list_below_the_paste_minimum_is_ignored_unless_it_is_an_execute_request():
     short = "Plan:\n1. uno\n2. dos\n3. tres\n"
     assert pt.find_plan_in_text(short) is None
@@ -508,6 +524,24 @@ def test_reading_plan_status_does_not_authorize_execution_of_an_old_plan(ws, mon
     events = _run_loop(ws, "Consulta el estado del plan sin ejecutarlo.")
     assert calls["n"] == 2
     assert not _checks(events, "plan_continue") and not _checks(events, "plan_continue_stop")
+    assert not [e for e in events if e.get("type") == "ask_user"]
+    assert pt.progress(pt.load(scope, tracker["hash"]))["done"] == 0
+
+
+def test_a_failed_plan_mutator_does_not_arm_a_consult_only_turn(ws, monkeypatch):
+    scope = pt.scope_for("proj-ac", ws)
+    tracker = pt.upsert_from_attachment(scope, "old.md", "1. Crear a.txt\n2. Crear b.txt\n3. Crear c.txt")
+    def fail_mutation(block):
+        if block.tool_type == "plan_done":
+            return {"error": "unknown task", "exit_code": 1}
+        return _plan_exec(scope)(block)
+    _patch_common(monkeypatch, settings=SETTINGS, tool_exec=fail_mutation)
+    calls = _scripted_stream(monkeypatch, [
+        ('```plan_done\n{"id":"unknown","evidence":"no task was changed by this failed call"}\n```', "tool_calls"),
+        ("La llamada no cambió ninguna tarea.", "stop"),
+    ])
+    events = _run_loop(ws, "Consulta el estado del plan sin ejecutarlo.")
+    assert calls["n"] == 2 and not _checks(events, "plan_continue")
     assert not [e for e in events if e.get("type") == "ask_user"]
     assert pt.progress(pt.load(scope, tracker["hash"]))["done"] == 0
 

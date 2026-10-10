@@ -542,13 +542,13 @@ def active(scope: str) -> Optional[Dict[str, Any]]:
     best: Optional[Dict[str, Any]] = None
     for n in names:
         t = load(scope, n[:-5])
-        if not t:
+        if not t or is_alternative_policy(t):
             continue
         if best is None or float(t.get("last_seen_at") or 0) > float(best.get("last_seen_at") or 0):
             best = t
-    # Keep historical false imports readable by hash, but never inject a
-    # mutually exclusive priority policy as unfinished mandatory work.
-    return None if best and is_alternative_policy(best) else best
+    # Historical routing imports remain readable by hash; the newest genuine
+    # plan remains resumable instead of being hidden by a newer false import.
+    return best
 
 
 def find_task(tracker: Dict[str, Any], ident: str) -> Optional[Dict[str, Any]]:
@@ -949,7 +949,9 @@ def _alternative_policy(titles: List[str]) -> bool:
         r"^\s*(?:si\s+(?:tampoco\b|no\s+(?:hay|queda\w*)\s+(?:nada|trabajo|tareas?|revisiones?)\b)"
         r"|(?:else|otherwise)\b|if\s+(?:none\b|nothing\b|there\s+(?:is|are)\s+no\s+"
         r"(?:work|tasks?|reviews?|items?)\b))", re.I)
-    return len(titles) >= 3 and sum(bool(fallback.search(title)) for title in titles) >= 2
+    chained = re.compile(r"^\s*(?:si\s+tampoco\b|otherwise\b|else\b)", re.I)
+    return (len(titles) >= 3 and any(chained.search(title) for title in titles)
+            and sum(bool(fallback.search(title)) for title in titles) >= 2)
 
 
 def is_alternative_policy(tracker: Dict[str, Any]) -> bool:
