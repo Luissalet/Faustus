@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from dataclasses import replace
 from typing import Any
@@ -89,7 +90,7 @@ def _save_result(manager, session, command: str, result: dict, approval_id: str 
     state = ("approval needed" if approval_id else "blocked" if result.get("blocked")
              else f"exit {result.get('exit_code', 1)}")
     shown = output if len(output) <= _REPLY_OUTPUT_CHARS else "…" + output[-_REPLY_OUTPUT_CHARS:]
-    fence = "````" if "```" in shown else "```"
+    fence = "`" * max(3, 1 + max((len(run) for run in re.findall(r"`+", shown)), default=0))
     text = f"`$ {command}` · {state}\n\n{fence}text\n{shown.rstrip()}\n{fence}"
     manager.add_message(session.id, ChatMessage("assistant", text, metadata=metadata))
     return {"session_id": session.id, "result": result, "approval_id": approval_id or None}

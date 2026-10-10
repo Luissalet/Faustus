@@ -2,6 +2,8 @@
 
 Type `!!command` in Studio to execute one literal shell command without a model call. The command and its output are saved in the conversation. A new conversation can be created without a configured model. `/help` lists the prefix; the existing `/sh` command is unchanged.
 
+The saved reply shows the command, exit status and the last 6000 characters of output. Its code delimiter is longer than every backtick sequence in that tail; Studio only closes a code block with the same delimiter character and sufficient length. Output that contains Markdown fences, headings or lists stays literal. The tool event retains the executor's complete output and its untrusted marker.
+
 The call uses the ordinary `bash` tool executor, its platform routing, working directory, command guard, sandbox and global tool policy. A project's read-only preference and the stricter per-call read-only choice remain effective. The server resolves and validates the directory. Output is marked as untrusted tool output for later model turns. This feature does not make an unrestricted host shell safe: the execution target and sandbox policy are the same ones the bash tool reports.
 
 ## HTTP

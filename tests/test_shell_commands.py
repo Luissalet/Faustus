@@ -1,5 +1,9 @@
 """Literal shell authority, durable transcript and sealed one-use approvals."""
 import asyncio
+import json
+import shutil
+import subprocess
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -97,6 +101,38 @@ def test_a_long_output_shows_its_tail_in_the_reply(env, monkeypatch):
     msg = env.sessions[result['session_id']].history[1]
     assert msg.content.rstrip().endswith('END\n```') and len(msg.content) < 6200
     assert msg.metadata['tool_events'][0]['output'] == long
+
+
+def _check_literal_reply(payload):
+    root = Path(__file__).resolve().parent.parent
+    if not shutil.which('node') or not (root / 'node_modules/esbuild/lib/main.js').exists():
+        pytest.skip('node/esbuild needed for the actual Studio reader')
+    result = subprocess.run(['node', str(root / 'tests/literal_shell_fence.check.mjs')],
+                            input=json.dumps(payload) if payload else '', cwd=root,
+                            capture_output=True, text=True, encoding='utf-8', timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize('output', [
+    '```\n# literal heading\n```\n',
+    '````\n# literal heading\n````\n',
+    '`````````\n- literal list\n```\n',
+    '~~~~\n| literal | table |\n~~~~\n',
+])
+def test_output_containing_code_fences_stays_literal_in_studio(env, monkeypatch, output):
+    async def execute(block, **kw):
+        return '', {'output': output, 'exit_code': 0}
+
+    monkeypatch.setattr(shell, 'execute_tool_block', execute)
+    result = run(shell.run_command('printf', owner='alice', workspace=env.workspace))
+    msg = env.sessions[result['session_id']].history[1]
+    assert msg.metadata['tool_events'][0]['output'] == output
+    assert msg.metadata['trusted'] is False and msg.metadata['tool_gate_untrusted'] is True
+    _check_literal_reply({'reply': msg.content, 'output': output})
+
+
+def test_studio_closing_fence_matches_the_opening_length_and_character():
+    _check_literal_reply(None)
 
 
 def test_other_owner_cannot_run_or_read_pending_command(env):

@@ -364,7 +364,7 @@ function parseBlocks(lines: string[], ctx: Ctx): Block[] {
 
     const fence = FENCE.exec(line);
     if (fence) {
-      const close = fence[1][0] === '`' ? /^\s{0,3}`{3,}\s*$/ : /^\s{0,3}~{3,}\s*$/;
+      const close = new RegExp('^\\s{0,3}' + fence[1][0] + '{' + fence[1].length + ',}\\s*$');
       const buf: string[] = [];
       i += 1;
       while (i < lines.length && !close.test(lines[i])) {
