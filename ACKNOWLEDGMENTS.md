@@ -85,14 +85,9 @@ browser that supports `woff2`. The bundles are the published npm artifacts,
 unmodified — `.gitattributes` turns the whitespace check off for `static/lib/`
 so they can stay byte-identical to upstream.
 
-## Front-end libraries loaded at runtime (CDN)
+## Front-end libraries
 
-Referenced from `cdn.jsdelivr.net` / `cdnjs.cloudflare.com` at runtime — not vendored:
-
-| Library | Purpose | License |
-|---|---|---|
-| [Pyodide](https://github.com/pyodide/pyodide) 0.27.5 | In-browser Python runtime | MPL-2.0 |
-| [PDFObject](https://github.com/pipwerks/PDFObject) 2.1.1 | Inline PDF embedding | MIT |
+No front-end library is loaded from a CDN at runtime: everything the browser runs is served from this origin (the Content-Security-Policy allows no external script, style or font host). Pyodide and PDFObject are no longer referenced.
 
 ## Fonts
 

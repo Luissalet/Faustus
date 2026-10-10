@@ -225,6 +225,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             )
         else:
             response.headers["X-Frame-Options"] = "DENY"
+            # No external script/style/font hosts: all front-end assets are served
+            # from this origin (guarded by tests/test_csp_no_external_hosts.py).
             # NOTE: `style-src 'unsafe-inline'` is intentionally retained.
             # `static/index.html` and `static/login.html` ship inline <style>
             # blocks, and several JS modules build runtime `style=""` attrs.
@@ -233,9 +235,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             # don't execute script, the residual risk is visual-only.
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; "
-                f"script-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
-                "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-                "font-src 'self' https://cdn.jsdelivr.net; "
+                f"script-src 'self' 'nonce-{nonce}'; "
+                "style-src 'self' 'unsafe-inline'; "
+                "font-src 'self'; "
+                "object-src 'none'; "
+                "base-uri 'self'; "
                 "img-src 'self' data: blob: https:; "
                 "media-src 'self' blob:; "
                 "connect-src 'self'; "

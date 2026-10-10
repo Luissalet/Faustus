@@ -10695,3 +10695,11 @@ Hasta ahora el panel de voz solo decía «escuchado en X s · primer audio en Y 
 - Si el panel se cierra antes del primer audio o del final de la respuesta, ese turno no se guarda.
 - Con la voz del navegador (`speechSynthesis`) no hay paso de síntesis: `tts_chunk` coincide con el arranque y no hay tiempo de servidor de voz.
 - Solo cuenta el primer trozo de voz del turno; las frases siguientes no se miden.
+
+## 291. CSP sin hosts externos (10-10-2026)
+
+**Lo hecho.** Se quita `https://cdn.jsdelivr.net` de `script-src`, `style-src` y `font-src` en `core/middleware.py`; se anaden `object-src 'none'` y `base-uri 'self'`. Se auditaron `static/`, `studio/src`, plantillas y el service worker: nada se cargaba ya desde un CDN (Pyodide y PDFObject eran restos documentales, corregidos en `ACKNOWLEDGMENTS.md`), asi que no hizo falta vendorizar nada.
+
+**Verificacion.** `tests/test_csp_no_external_hosts.py` (la CSP por defecto no tiene hosts externos y el front servido no referencia CDN). Instancia aislada con el studio compilado y Chromium sin cabeza: cero violaciones de CSP y cero peticiones externas en las pantallas principales y en el login.
+
+**Limites.** `img-src` conserva `https:` (imagenes remotas en mensajes). `style-src 'unsafe-inline'` sigue por los estilos en linea. `routes/emoji_routes.py` aun descarga SVG de OpenMoji desde el servidor (no desde el navegador) y los cachea. No hay renderer de Mermaid/KaTeX en el cliente, asi que no hubo nada que comprobar ahi.
