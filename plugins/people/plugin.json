@@ -3,7 +3,7 @@
   "id": "people",
   "name": "People's Hoard",
   "purpose": "Personal CRM: who people are, what to remember about them, when you last talked and what to follow up on, all stored locally.",
-  "capabilities": ["people", "aliases", "facts", "interactions", "reminders", "birthdays", "circles", "search", "conversation_brief", "commitments", "commitments_from_meetings", "commitments_from_text", "commitments_digest", "people_from_minutes", "last_contact_from_mail", "gift_ideas", "gift_watch", "family_agenda"],
+  "capabilities": ["people", "aliases", "facts", "interactions", "reminders", "birthdays", "circles", "search", "conversation_brief", "commitments", "commitments_from_meetings", "commitments_from_text", "commitments_from_messages", "commitments_digest", "people_from_minutes", "last_contact_from_mail", "gift_ideas", "gift_watch", "family_agenda"],
   "x-family": { "agenda": true },
   "placeholders": ["PEOPLE_DIR", "APP_URL", "TOKEN_FILE"],
   "defaults": {
