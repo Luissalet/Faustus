@@ -1,5 +1,6 @@
 import type { RunStatus } from '../../components';
 import {
+  decode,
   summaryFrom,
   toContextReceipt,
   adviceFrom,
@@ -1314,6 +1315,26 @@ function thoughtsFromMeta(meta: Record<string, unknown>): { thinking: string; th
   };
 }
 
+function checksFromHarness(existing: HarnessCheck[], harness: Record<string, unknown> | null): HarnessCheck[] {
+  if (!Array.isArray(harness?.answer_diagnostics)) return existing;
+  const checks = existing.slice();
+  for (const raw of harness.answer_diagnostics) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+    const diagnostic = raw as Record<string, unknown>;
+    if (diagnostic.advisory !== true) continue;
+    const event = decode({ ...diagnostic, type: 'harness_check', status: 'advisory' }, null);
+    if (event?.type !== 'check' || (!event.check.detail && !event.check.reasons?.length)) continue;
+    const check = event.check;
+    // History can be restored onto a turn whose live notice is already shown.
+    // A persisted advisory is evidence to display, never a new question.
+    const duplicate = checks.some((previous) => previous.status === check.status
+      && previous.round === check.round && previous.detail === check.detail
+      && (Boolean(check.detail) || JSON.stringify(previous.reasons) === JSON.stringify(check.reasons)));
+    if (!duplicate) checks.push(check);
+  }
+  return checks;
+}
+
 export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): Turn {
   const events = toolEventsFrom(meta);
   const planUpdate = planUpdateFromMeta(meta);
@@ -1421,6 +1442,7 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
     ask: ask ?? (approval ? undefined : turn.ask),
     approval: approval ?? turn.approval,
     summary: approval?.decision === 'superseded' && !ask ? undefined : harness ? summaryFrom(harness) : turn.summary,
+    checks: checksFromHarness(turn.checks, harness),
     sources,
     contextReceipts: Array.isArray(meta.context_receipts)
       ? (meta.context_receipts as Record<string, unknown>[]).map(toContextReceipt)
