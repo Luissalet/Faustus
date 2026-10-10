@@ -9,7 +9,7 @@ These evidence requirements describe what can be verified. In ordinary chat,
 unsupported claims produce persisted advisory diagnostics and a brief notice;
 they do not replace the answer, block its closure or trigger another model
 approval turn. Test fixtures are not treated as user deliverables solely because
-a test writes them. See [harness evidence](../HARNESS-EVIDENCE.md) for the active
+a test writes them. See [harness evidence](../design/HARNESS-EVIDENCE.md) for the active
 ordinary-answer and scorecard contract.
 
 A requested summary or explicitly attributed report may describe a historical

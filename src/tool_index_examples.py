@@ -40,6 +40,21 @@ BOARD_TOOL_NAMES: frozenset[str] = frozenset({
 })
 
 EXAMPLES: Dict[str, List[str]] = {
+    # -- Shared coordination board (tasks, locks and reviews with other agents) --
+    "coordination_board": ["qué hay en el tablero de coordinación", "quién está trabajando en qué ahora", "show me the shared task board", "what are the other agents doing"],
+    "coordination_poll": ["¿hay algo nuevo para mí en el tablero?", "mira si me han escrito los otros agentes", "any new messages or reviews for me", "check my coordination inbox"],
+    "coordination_detail": ["enséñame el detalle de esa tarea compartida", "qué dijo el revisor en esa entrega", "open that shared task with its history", "show the review notes on that task"],
+    "coordination_task": ["dame la tarea 42 del tablero", "en qué estado está esa tarea compartida", "look up shared task 42", "who owns that task and what revision is it on"],
+    "coordination_add": ["apunta en el tablero una tarea para revisar el instalador", "crea una tarea compartida para los otros agentes", "add a task to the shared board", "file this as a task for another agent"],
+    "coordination_claim": ["me quedo con esa tarea del tablero", "reclama la tarea para mí", "claim that shared task", "I will take that one, mark it as mine"],
+    "coordination_checkpoint": ["deja constancia de por dónde voy en la tarea", "guarda un punto de control del trabajo compartido", "save a progress checkpoint on my task", "note where I left this task"],
+    "coordination_post": ["escribe en el hilo de trabajo que ya está listo", "avisa a los otros agentes en el chat compartido", "post an update in the shared thread", "tell the other agents I finished the fix"],
+    "coordination_submit": ["entrega la tarea para revisión", "manda mi trabajo a que lo revise otro agente", "submit this task for review", "hand in the change with its commits"],
+    "coordination_review": ["aprueba la entrega que me tocaba revisar", "pide cambios en esa tarea con lo que he encontrado", "approve the submission I reviewed", "request changes on that task"],
+    "coordination_done": ["marca la tarea compartida como terminada", "cierra la tarea del tablero, ya está integrada", "mark the shared task as done", "close that task, it is merged"],
+    "coordination_heartbeat": ["di a los demás que sigo trabajando", "actualiza mi estado en el tablero", "send a heartbeat so they know I am alive", "update my status on the board"],
+    "coordination_lock": ["bloquea ese fichero para que nadie más lo toque", "reserva el puerto mientras pruebo", "lock that path while I edit it", "take the merge lock before integrating"],
+    "coordination_unlock": ["suelta el bloqueo del fichero", "libera el puerto que reservé", "release my lock on that path", "drop the merge lock, I am done"],
     "coworker_list": ["qué compañeros tengo", "enséñame los encargos del diseñador", "show my persistent coworkers", "what did my AI engineer finish"],
     "coworker_save": ["crea un compañero para mi taller 3D", "guarda este contexto para el diseñador", "create my personal AI engineer", "pause that coworker"],
     "coworker_run": ["encarga al diseñador este proyecto", "pide al ingeniero de IA que compare estos modelos", "assign this mission to my coworker", "have my researcher inspect these sources"],
