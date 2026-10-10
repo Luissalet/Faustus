@@ -41,7 +41,7 @@ def run_gate(state, *, legacy=False):
         _todo_refresh_nudged=False, disabled_tools=set(), messages=[], _lang_note=lambda text: text,
         full_response="", _progress_extension_used=True, _progress_unit_count=0,
         session_id="fixture", owner="fixture", _awaiting_user=False, _exhausted_rounds=False,
-        _end_turn_with_question=lambda **kw: [("question", json.dumps({"reason": kw["reason"]}))])
+        _end_turn_with_advisory=lambda **kw: [("advisory", json.dumps({"reason": kw["reason"]}))])
     env["logger"].info = lambda *args, **kwargs: None
     exec(gate_code(legacy), env)
     emitted = list(env["probe"]())

@@ -81,6 +81,30 @@ def test_a_long_deliberate_task_list_is_imported_without_an_execute_verb():
     assert found and len(pt.parse_plan(*found).tasks) == 7
 
 
+@pytest.mark.parametrize("policy", [
+    "1. Atiende las revisiones pendientes.\n2. Si no hay nada, elige una tarea abierta.\n3. Si tampoco, revisa otra entrega o queda en idle.",
+    "1. Handle pending reviews.\n2. If none, choose an open task.\n3. Otherwise, review another submission or stay idle.",
+])
+def test_priority_branches_are_not_three_mandatory_plan_items(policy):
+    message = "Tareas y prioridades del agente.\n" + ("Contexto de coordinación disponible. " * 24) + "\n" + policy
+    assert pt.find_plan_in_text(message) is None
+
+
+def test_a_historical_priority_import_is_preserved_but_not_injected_as_active():
+    body = "1. Atiende revisiones.\n2. Si no hay nada, elige una tarea.\n3. Si tampoco, queda libre."
+    historical = pt.upsert_from_attachment("policy-project", "old inferred policy", body)
+    before = pt.load("policy-project", historical["hash"])
+    assert pt.active("policy-project") is None
+    assert pt.load("policy-project", historical["hash"]) == before
+    assert pt.progress(before)["done"] == 0
+
+
+def test_conditions_within_actual_work_items_remain_a_real_plan():
+    plan = "Ejecuta este plan:\n1. Crear a.txt\n2. Si no hay errores, comprobar a.txt\n3. Si no hay errores, crear b.txt\n"
+    found = pt.find_plan_in_text(plan)
+    assert found and len(pt.parse_plan(*found).tasks) == 3
+
+
 def test_a_long_list_below_the_paste_minimum_is_ignored_unless_it_is_an_execute_request():
     short = "Plan:\n1. uno\n2. dos\n3. tres\n"
     assert pt.find_plan_in_text(short) is None
@@ -298,10 +322,10 @@ def _task(task):
     return (f'```plan_task\n{json.dumps({"id": task})}\n```', "tool_calls")
 
 
-def _run_loop(ws, user, project="proj-ac", max_rounds=40, **kwargs):
+def _run_loop(ws, user, project="proj-ac", max_rounds=40, history=(), **kwargs):
     opts = {"trusted_workspace": os.path.realpath(ws), "project_id": project}
     gen = al.stream_agent_loop(
-        "http://127.0.0.1:11434/v1", "qwen3-coder:30b", [{"role": "user", "content": user}],
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b", [*history, {"role": "user", "content": user}],
         max_rounds=max_rounds, relevant_tools={"read_file", "edit_file", "glob", "ask_user"},
         workspace=ws, session_id="sess-func", harness_options=opts, **kwargs)
     return _events(_collect(gen))
@@ -345,7 +369,7 @@ def test_the_model_stops_after_task_one_and_the_turn_carries_on_until_three_of_t
     assert not any("\u00bfContin\u00fao" in e.get("text", "") for e in replaced)
 
 
-def test_three_continuations_that_close_nothing_end_the_turn_with_a_question_naming_the_task(ws, monkeypatch):
+def test_three_fruitless_continuations_preserve_pending_work_without_a_user_gate(ws, monkeypatch):
     scope = pt.scope_for("proj-ac", ws)
     _patch_common(monkeypatch, settings=SETTINGS, tool_exec=_plan_exec(scope))
     calls = _scripted_stream(monkeypatch, [("Sigo dandole vueltas, de momento no he tocado nada.", "stop")])
@@ -353,10 +377,11 @@ def test_three_continuations_that_close_nothing_end_the_turn_with_a_question_nam
     assert len(_checks(events, "plan_continue")) == 3
     stop = _checks(events, "plan_continue_stop")
     assert len(stop) == 1 and stop[0]["detail"] == "no_progress"
-    ask = [e for e in events if e.get("type") == "ask_user"]
-    assert len(ask) == 1
-    q = ask[0]["data"]["question"]
-    assert "0/3" in q and "Crear a.txt" in q
+    assert not [e for e in events if e.get("type") == "ask_user"]
+    advisory = _checks(events, "advisory")
+    assert len(advisory) == 1
+    assert "0/3" in advisory[0]["detail"] and "Crear a.txt" in advisory[0]["detail"]
+    assert advisory[0]["requires_user_input"] is False
     assert calls["n"] == 4                       # 1 + 3 continuations, then it stops
     assert pt.progress(pt.active(scope))["done"] == 0
 
@@ -377,7 +402,7 @@ def test_a_task_closed_between_continuations_resets_the_no_progress_count(ws, mo
     assert not [e for e in events if e.get("type") == "ask_user"]
 
 
-def test_the_per_turn_cap_is_respected_and_asks(ws, monkeypatch):
+def test_the_per_turn_cap_reports_an_advisory_without_asking(ws, monkeypatch):
     scope = pt.scope_for("proj-ac", ws)
     _patch_common(monkeypatch, settings={**SETTINGS, "agent_plan_autocontinue_max": 2}, tool_exec=_plan_exec(scope))
     _scripted_stream(monkeypatch, [
@@ -387,8 +412,10 @@ def test_the_per_turn_cap_is_respected_and_asks(ws, monkeypatch):
     assert len(_checks(events, "plan_continue")) == 2
     stop = _checks(events, "plan_continue_stop")
     assert len(stop) == 1 and stop[0]["detail"] == "cap"
-    q = [e for e in events if e.get("type") == "ask_user"][0]["data"]["question"]
-    assert "2 continuaciones" in q and "3/7" in q
+    assert stop[0]["max_attempts"] == 2
+    assert not [e for e in events if e.get("type") == "ask_user"]
+    notice = _checks(events, "advisory")[0]
+    assert "3/7" in notice["detail"] and notice["plan"]["cap"] == 2
     assert pt.progress(pt.active(scope))["done"] == 3
 
 
@@ -464,6 +491,38 @@ def test_a_stale_plan_from_another_chat_does_not_drag_an_unrelated_turn_along(ws
     calls = _scripted_stream(monkeypatch, [("Un conejo entra en un bar...", "stop")])
     events = _run_loop(ws, "hola, gracias por lo de ayer")
     assert calls["n"] == 1
+    assert not _checks(events, "plan_continue")
+
+
+def test_reading_plan_status_does_not_authorize_execution_of_an_old_plan(ws, monkeypatch):
+    scope = pt.scope_for("proj-ac", ws)
+    tracker = pt.upsert_from_attachment(scope, "old.md", "1. Crear a.txt\n2. Crear b.txt\n3. Crear c.txt")
+    def read_status(block):
+        if block.tool_type == "plan_status":
+            return {"output": "3 tareas pendientes", "exit_code": 0}
+        return _plan_exec(scope)(block)
+    _patch_common(monkeypatch, settings=SETTINGS, tool_exec=read_status)
+    calls = _scripted_stream(monkeypatch, [
+        ('```plan_status\n{}\n```', "tool_calls"), ("Hay tres tareas pendientes.", "stop"),
+    ])
+    events = _run_loop(ws, "Consulta el estado del plan sin ejecutarlo.")
+    assert calls["n"] == 2
+    assert not _checks(events, "plan_continue") and not _checks(events, "plan_continue_stop")
+    assert not [e for e in events if e.get("type") == "ask_user"]
+    assert pt.progress(pt.load(scope, tracker["hash"]))["done"] == 0
+
+
+def test_a_new_request_does_not_reimport_a_historical_attachment(ws, monkeypatch):
+    _patch_common(monkeypatch, settings=SETTINGS, tool_exec=_plan_exec(pt.scope_for("proj-ac", ws)))
+    calls = _scripted_stream(monkeypatch, [("Resumen solicitado del estado de este proyecto.", "stop")])
+    old = "Ejecuta este plan:\n=== File: old-plan.md ===\n" + THREE.split("\n\n", 1)[1]
+    history = [{"role": "user", "content": old}, {"role": "assistant", "content": "Recibido."}]
+    events = _run_loop(ws, "Dame un resumen sin ejecutar ninguna tarea.", history=history)
+    # The independent no-action check may request a source read once; it must
+    # not import the old attachment or continue its plan as the current job.
+    assert calls["n"] <= 2
+    assert pt.active(pt.scope_for("proj-ac", ws)) is None
+    assert not [e for e in events if e.get("type") in {"plan_tracker", "ask_user"}]
     assert not _checks(events, "plan_continue")
 
 

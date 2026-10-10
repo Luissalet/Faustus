@@ -128,10 +128,10 @@ def test_no_progress_streak_ends_with_a_question_not_silence(monkeypatch):
     assert not saw_rounds_exhausted_bare, events
 
 
-def test_empty_round_nudges_then_asks_a_question(monkeypatch, tmp_path):
+def test_empty_round_nudges_then_reports_an_advisory(monkeypatch, tmp_path):
     """A model that returns neither text nor a tool call gets nudged up to
-    `agent_empty_round_max_nudges` times, then the turn ends with a concrete
-    question (ask_user) instead of silently stopping.
+    `agent_empty_round_max_nudges` times, then the turn reports an advisory
+    without inventing a decision that the person needs to make.
 
     The "silent give-up" guard only engages from round 2 onward and inside
     an active harness scope (`workspace` set is the simplest way to get
@@ -155,4 +155,6 @@ def test_empty_round_nudges_then_asks_a_question(monkeypatch, tmp_path):
     )
     events = _types(_collect(gen))
 
-    assert any(e.get("type") == "ask_user" for e in events), events
+    assert not any(e.get("type") == "ask_user" for e in events), events
+    assert any(e.get("type") == "harness_check" and e.get("status") == "advisory"
+               and e.get("reason") == "empty_rounds_exhausted" for e in events), events

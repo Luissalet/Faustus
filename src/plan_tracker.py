@@ -163,6 +163,8 @@ def find_plan_attachment(text: str, min_chars: Optional[int] = None) -> Optional
             spec = parse_plan(title, full)
             if len(spec.tasks) < 3:
                 continue
+            if _alternative_policy([task.title for task in spec.tasks]):
+                continue
             if not big and _split_sections_ex(_normalize(full))[0] in ("", "bullet"):
                 continue
             return title, full
@@ -544,7 +546,9 @@ def active(scope: str) -> Optional[Dict[str, Any]]:
             continue
         if best is None or float(t.get("last_seen_at") or 0) > float(best.get("last_seen_at") or 0):
             best = t
-    return best
+    # Keep historical false imports readable by hash, but never inject a
+    # mutually exclusive priority policy as unfinished mandatory work.
+    return None if best and is_alternative_policy(best) else best
 
 
 def find_task(tracker: Dict[str, Any], ident: str) -> Optional[Dict[str, Any]]:
@@ -908,6 +912,8 @@ def find_plan_in_text(text: str, min_chars: Optional[int] = None) -> Optional[Tu
         if len(sections) < 3:
             return None
         titles = [str(s[1]) for s in sections]
+        if _alternative_policy(titles):
+            return None
         if sum(1 for t in titles if t.rstrip().endswith("?")) * 2 >= len(titles):
             return None
         intro = _pasted_intro(norm)
@@ -931,6 +937,24 @@ def find_plan_in_text(text: str, min_chars: Optional[int] = None) -> Optional[Tu
         return "pasted plan: " + first[:100], body
     except Exception:
         return None
+
+
+def _alternative_policy(titles: List[str]) -> bool:
+    """A priority ladder chooses a branch; it is not a flat all-done checklist.
+
+    Only fallback branches at the start of task titles count. Conditions inside
+    actual work items (including explicit WP/task IDs) retain their plan shape.
+    """
+    fallback = re.compile(
+        r"^\s*(?:si\s+(?:tampoco\b|no\s+(?:hay|queda\w*)\s+(?:nada|trabajo|tareas?|revisiones?)\b)"
+        r"|(?:else|otherwise)\b|if\s+(?:none\b|nothing\b|there\s+(?:is|are)\s+no\s+"
+        r"(?:work|tasks?|reviews?|items?)\b))", re.I)
+    return len(titles) >= 3 and sum(bool(fallback.search(title)) for title in titles) >= 2
+
+
+def is_alternative_policy(tracker: Dict[str, Any]) -> bool:
+    """Recognize an old inferred routing list without deleting its history."""
+    return _alternative_policy([str(task.get("title") or "") for task in tracker.get("tasks", [])])
 
 
 def replace_pasted(text: str, tracker: Dict[str, Any], max_task_chars: int = 6000) -> str:
