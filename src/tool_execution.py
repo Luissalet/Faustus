@@ -952,7 +952,6 @@ async def _direct_fallback(
     # normal turn.
     from src import worker_caches as _worker_caches
     _subproc_env = _worker_caches.apply_active(_subproc_env)
-    _worker_caches.note_cross_reads(content, tool)
 
     try:
         _turn_opts = get_active_turn_options()
@@ -1343,6 +1342,12 @@ async def execute_tool_block(
     The body is ``_execute_tool_block_core``; this wrapper never changes what a
     call does or returns."""
     from src import effect_outbox as _eo, exec_ledger as _xl
+    # #267: inside an isolated worker (a fan-out candidate), EVERY tool call
+    # that names a sibling worker's folder or the shared package caches is
+    # noted, native ones (read_file, ...) included. A no-op otherwise.
+    from src import worker_caches as _worker_caches
+    _worker_caches.note_cross_reads(str(getattr(block, "content", "") or ""),
+                                    str(getattr(block, "tool_type", "") or ""))
     _kwargs = dict(
         session_id=session_id, disabled_tools=disabled_tools, owner=owner, progress_cb=progress_cb,
         workspace=workspace, workspace_roots=workspace_roots, tool_policy=tool_policy,

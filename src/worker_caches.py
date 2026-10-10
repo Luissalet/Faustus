@@ -168,6 +168,60 @@ def shared_cache_dirs(env: Optional[Mapping[str, str]] = None) -> Tuple[str, ...
     return tuple(dict.fromkeys(_norm(p) for p in found if p))
 
 
+_QUOTED_RE = re.compile(r'"([^"\r\n]{2,})"|\'([^\'\r\n]{2,})\'')
+_PATHLIKE_RE = re.compile(r"^(?:[A-Za-z]:[\\/]|~[\\/]|\.\.[\\/]|/)")
+
+
+def _json_strings(value: object, out: List[str], depth: int = 0) -> None:
+    if depth > 6:
+        return
+    if isinstance(value, str):
+        out.append(value)
+    elif isinstance(value, dict):
+        for v in value.values():
+            _json_strings(v, out, depth + 1)
+    elif isinstance(value, list):
+        for v in value:
+            _json_strings(v, out, depth + 1)
+
+
+def _candidates(text: str) -> List[str]:
+    """Every path-like string a call names: whole JSON string values (tool
+    arguments, escapes decoded), whole quoted strings (spaces kept: a folder
+    such as `Proyectos independientes` is one path, not two), and the bare
+    unquoted paths the regex finds."""
+    found: List[str] = []
+    stripped = text.strip()
+    if stripped[:1] in "{[":
+        try:
+            values: List[str] = []
+            _json_strings(json.loads(stripped), values)
+        except ValueError:
+            values = []
+        else:
+            # Tool arguments: each string value on its own, escapes decoded.
+            for v in values:
+                v = v.strip()
+                if _PATHLIKE_RE.match(v):
+                    found.append(v)
+                elif v and v != stripped:
+                    found.extend(_candidates(v))
+            return found
+    spans: List[Tuple[int, int]] = []
+    for m in _QUOTED_RE.finditer(text):
+        q = (m.group(1) or m.group(2) or "").strip()
+        if _PATHLIKE_RE.match(q):
+            found.append(q)
+            spans.append(m.span())
+    for m in _PATH_RE.finditer(text):
+        # A bare match inside a quoted path is a truncated piece of it
+        # (it stops at the first space); the whole quoted path is above.
+        if any(a <= m.start() < b for a, b in spans):
+            continue
+        found.append(m.group(0))
+    return found
+
+
 def foreign_paths(text: str, workspace: str, *, allow: Iterable[str] = (),
                   shared: Optional[Iterable[str]] = None) -> List[Dict[str, str]]:
     """Absolute paths in `text` that leave `workspace` for a sibling
@@ -186,8 +240,8 @@ def foreign_paths(text: str, workspace: str, *, allow: Iterable[str] = (),
     caches = tuple(_norm(c) for c in shared) if shared is not None else shared_cache_dirs()
     hits: List[Dict[str, str]] = []
     seen = set()
-    for match in _PATH_RE.finditer(str(text)):
-        raw = match.group(0).rstrip(".,:")
+    for raw in _candidates(str(text)):
+        raw = raw.rstrip(".,:")
         if raw.startswith(".."):
             # Commands run with the worker's folder as cwd, so `../b/x`
             # is a sibling's file.

@@ -111,3 +111,69 @@ def test_a_drive_root_workspace_has_no_siblings():
     root = os.path.abspath(os.sep)
     ws = os.path.join(root, "proj")
     assert worker_caches.foreign_paths(os.path.join(root, "other", "x"), ws, shared=[]) == []
+
+
+# -- paths with spaces (review of #267 r1) ------------------------------------
+
+def _spaced(tmp_path):
+    parent = tmp_path / "experiment space"
+    a, b = parent / "worker A", parent / "worker B"
+    for d in (a, b):
+        d.mkdir(parents=True)
+    (b / "app.py").write_text("x = 1\n", encoding="utf-8")
+    return a, b
+
+
+@pytest.mark.parametrize("quote", ['"', "'"])
+def test_a_quoted_path_with_spaces_is_kept_whole(tmp_path, quote):
+    a, b = _spaced(tmp_path)
+    target = str(b / "app.py")
+    hits = worker_caches.foreign_paths(f"Get-Content {quote}{target}{quote}", str(a), shared=())
+    assert [h["path"] for h in hits] == [os.path.normcase(os.path.normpath(target))]
+    assert hits[0]["kind"] == "sibling"
+
+
+def test_json_tool_arguments_with_spaces_and_escapes_are_read(tmp_path):
+    a, b = _spaced(tmp_path)
+    target = str(b / "app.py")
+    args = json.dumps({"path": target, "limit": 20})          # backslashes escaped in the JSON
+    hits = worker_caches.foreign_paths(args, str(a), shared=())
+    assert [h["path"] for h in hits] == [os.path.normcase(os.path.normpath(target))]
+
+
+def test_a_relative_quoted_path_with_spaces_is_resolved_against_the_worker(tmp_path):
+    a, b = _spaced(tmp_path)
+    hits = worker_caches.foreign_paths('cat "../worker B/app.py"', str(a), shared=())
+    assert [h["path"] for h in hits] == [os.path.normcase(os.path.normpath(str(b / "app.py")))]
+
+
+def test_no_truncated_piece_of_a_quoted_path_is_reported(tmp_path):
+    a, b = _spaced(tmp_path)
+    hits = worker_caches.foreign_paths(f'type "{b / "app.py"}" && echo done', str(a), shared=())
+    assert len(hits) == 1, hits
+
+
+def test_a_native_tool_call_is_noted_through_execute_tool_block(tmp_path, monkeypatch):
+    """read_file and friends never reach the shell fallback; the note is taken
+    where every tool call passes."""
+    from types import SimpleNamespace
+    from src import tool_execution as te
+
+    a, b = _spaced(tmp_path)
+
+    async def fake_core(block, **kw):
+        return "", {"ok": True}
+
+    monkeypatch.setattr(te, "_execute_tool_block_core", fake_core)
+    block = SimpleNamespace(tool_type="read_file", content=json.dumps({"path": str(b / "app.py")}))
+
+    async def run():
+        with worker_caches.isolated(str(a)):
+            await te.execute_tool_block(block)
+
+    asyncio.run(run())
+    log = worker_caches.read_cross_reads(str(a))
+    assert [r["tool"] for r in log] == ["read_file"] and log[0]["kind"] == "sibling"
+    # outside isolation nothing is written
+    asyncio.run(te.execute_tool_block(block))
+    assert len(worker_caches.read_cross_reads(str(a))) == 1
