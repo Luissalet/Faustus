@@ -334,7 +334,10 @@ def test_route_context_agent_frontend_and_cache_bust_wire_the_contract():
     assert "persist_user_message: bool = True" in helpers
     assert "_without_latest_matching_user_message(" not in helpers
     assert "selected_tools=approval_selected_tools" in agent
-    assert "continuation_query=_retrieval_query or _last_user" in agent
+    # Since b117aec4 the continuation carries the approval's objective,
+    # derived from the last user message, not the raw retrieval query.
+    assert "continuation_query=_continuation_objective" in agent
+    assert "_approval_objective(_last_user" in agent
     assert "approval_gate_bypassed=_gate_explicit_bypass or _gate_workspace_grant" in agent
     assert "_gate_explicit_bypass = bool(" in agent or "_gate_explicit_bypass=bool(" in agent
     # The three decisions the route accepts are the three the interface offers,
