@@ -757,13 +757,17 @@ def setup_session_routes(
             raise HTTPException(404, f"Session {sid} not found")
         result = {"id": sid}
         if reasoning_effort is not None:
-            effort = str(reasoning_effort).strip().lower()
-            if effort not in ("auto", "off", "none", "minimal", "low", "medium", "high", "xhigh", "max"):
-                raise HTTPException(422, "Invalid reasoning_effort")
+            from src.reasoning_levels import validate_session_effort
+            try:
+                effort, _ = validate_session_effort(
+                    reasoning_effort, str(getattr(session, "endpoint_url", "") or ""),
+                    str(getattr(session, "model", "") or ""))
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
             from core.database import set_session_reasoning_effort
-            if not set_session_reasoning_effort(sid, None if effort == "auto" else effort, effective_user(request)):
+            if not set_session_reasoning_effort(sid, effort, effective_user(request)):
                 raise HTTPException(404, "Session not found")
-            result["reasoning_effort"] = None if effort == "auto" else effort
+            result["reasoning_effort"] = effort
         if name is not None:
             session_manager.update_session_name(sid, name)
             result["name"] = name

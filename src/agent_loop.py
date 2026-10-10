@@ -19310,13 +19310,15 @@ async def stream_agent_loop(*args, **kwargs) -> AsyncGenerator[str, None]:
         _has_explicit_effort = "reasoning_effort" in _gen_overrides or "think" in _gen_overrides
         _execution_defaults = _hopts.get("execution_defaults") if isinstance(_hopts, dict) else None
         _requested_effort = (_execution_defaults or {}).get("reasoning_effort") if isinstance(_execution_defaults, dict) else None
-        if not _has_explicit_effort and _requested_effort in (None, "") and session_id:
+        _explicit_effort_request = bool(_hopts.get("reasoning_effort_explicit")) if isinstance(_hopts, dict) else False
+        if not _has_explicit_effort and not _explicit_effort_request and session_id:
             from services.projects import project_for_session
             from src.project_execution_defaults import validate
             from core.database import get_session_reasoning_effort
             _project = project_for_session(str(session_id), owner)
             _defaults = validate((_project or {}).get("execution_defaults") or {})
-            _requested_effort = get_session_reasoning_effort(str(session_id), owner) or _defaults.get("reasoning_effort")
+            _session_effort = get_session_reasoning_effort(str(session_id), owner)
+            _requested_effort = _session_effort or _requested_effort or _defaults.get("reasoning_effort")
         if not _has_explicit_effort and _requested_effort and _requested_effort != "auto":
             from src.reasoning_levels import overrides_for
             _gen_overrides.update(overrides_for(_requested_effort))

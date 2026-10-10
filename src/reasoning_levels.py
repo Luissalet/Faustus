@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 _ORDER = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
+_EFFORT_CHOICES = frozenset({"auto", "off", *_ORDER})
 
 
 def levels_for(endpoint_url: str, model: str = "") -> Optional[Dict[str, Any]]:
@@ -30,6 +31,28 @@ def levels_for(endpoint_url: str, model: str = "") -> Optional[Dict[str, Any]]:
     ranked = sorted(accepted, key=lambda v: _ORDER.index(v) if v in _ORDER else len(_ORDER))
     return {"levels": list(ranked), "default": accepted[0], "source": "template",
             "engine": "llama_cpp", "thinking_supported": True, "thinking_toggle": True}
+
+
+def validate_session_effort(value: Any, endpoint_url: str, model: str = "") -> tuple[Optional[str], Optional[Dict[str, Any]]]:
+    """Normalize an effort and reject it only when the provider declares a conflict.
+
+    Unknown capabilities remain unknown: the API does not invent a list or
+    reject a saved choice solely because the endpoint could not report one.
+    """
+    effort = str(value or "").strip().lower()
+    if effort not in _EFFORT_CHOICES:
+        raise ValueError("Invalid reasoning_effort")
+    if effort == "auto":
+        return None, levels_for(endpoint_url, model)
+    reported = levels_for(endpoint_url, model)
+    available = reported.get("levels") if isinstance(reported, dict) else None
+    if available:
+        accepted = {str(level).strip().lower() for level in available}
+        # Off is a UI/control alias for disabling reasoning, represented as
+        # `none` by providers that report that state in their level list.
+        if effort not in accepted and not (effort == "off" and "none" in accepted):
+            raise ValueError("The configured model does not report this reasoning effort as available")
+    return effort, reported
 
 
 def overrides_for(effort: str, *, budgets: Optional[Dict[str, int]] = None) -> Dict[str, Any]:

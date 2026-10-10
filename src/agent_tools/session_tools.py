@@ -351,22 +351,26 @@ async def manage_session(content: str, session_id: Optional[str] = None, owner: 
                 profile = {}
             if not isinstance(profile, dict):
                 profile = {}
+            levels = None
             if value is not None:
-                effort = value.lower()
-                if effort not in ("auto", "off", "none", "minimal", "low", "medium", "high", "xhigh", "max"):
-                    return {"error": "Invalid reasoning effort"}
-                if effort == "auto":
+                try:
+                    from src.reasoning_levels import validate_session_effort
+                    effort, levels = validate_session_effort(
+                        value, str(db_sess.endpoint_url or ""), str(db_sess.model or ""))
+                except ValueError as exc:
+                    return {"error": str(exc)}
+                if effort is None:
                     profile.pop("reasoning_effort", None)
                 else:
                     profile["reasoning_effort"] = effort
                 db_sess.chat_profile = json.dumps(profile, sort_keys=True, ensure_ascii=True) if profile else None
                 db.commit()
-            levels = None
-            try:
-                from src.reasoning_levels import levels_for
-                levels = levels_for(str(db_sess.endpoint_url or ""), str(db_sess.model or ""))
-            except Exception:
-                levels = None
+            if levels is None:
+                try:
+                    from src.reasoning_levels import levels_for
+                    levels = levels_for(str(db_sess.endpoint_url or ""), str(db_sess.model or ""))
+                except Exception:
+                    levels = None
             return {"action": "reasoning_effort", "session_id": target_sid,
                     "reasoning_effort": profile.get("reasoning_effort"),
                     "available_levels": list((levels or {}).get("levels") or []),

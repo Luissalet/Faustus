@@ -90,16 +90,21 @@ def test_native_harness_resolves_session_and_keeps_explicit_overrides(monkeypatc
         "execution_defaults": {"reasoning_effort": "low"}})
     monkeypatch.setattr("core.database.get_session_reasoning_effort", lambda *a: "high")
 
-    async def run(overrides=None):
+    async def run(overrides=None, defaults=None, explicit=False):
         return [chunk async for chunk in agent_loop.stream_agent_loop(
             endpoint_url="http://synthetic", model="scripted", messages=[], session_id="session",
-            owner="alice", gen_overrides=overrides)]
+            owner="alice", gen_overrides=overrides,
+            harness_options={"execution_defaults": defaults or {}, "reasoning_effort_explicit": explicit})]
 
     import asyncio
-    assert asyncio.run(run()) == ["ok"]
+    assert asyncio.run(run(defaults={"reasoning_effort": "low"})) == ["ok"]
     assert seen[-1]["reasoning_effort"] == "high"
-    assert asyncio.run(run({"reasoning_effort": "low"})) == ["ok"]
+    assert asyncio.run(run({"reasoning_effort": "low"}, defaults={"reasoning_effort": "high"})) == ["ok"]
     assert seen[-1]["reasoning_effort"] == "low"
+    assert asyncio.run(run({"reasoning_effort": "max"}, defaults={"reasoning_effort": "high"})) == ["ok"]
+    assert seen[-1]["reasoning_effort"] == "max"
+    assert asyncio.run(run(defaults={"reasoning_effort": "auto"}, explicit=True)) == ["ok"]
+    assert not seen[-1] or "reasoning_effort" not in seen[-1]
 
 
 def test_session_mcp_schema_exposes_read_and_set_action():
@@ -144,12 +149,24 @@ def test_owner_api_and_mcp_read_patch_the_same_session(tmp_path, monkeypatch):
             "available_levels": ["low", "high"], "levels_source": "fixture"}
         patched = client.patch("/api/session/owned", data={"reasoning_effort": "high"}, headers={"x-owner": "alice"})
         assert patched.status_code == 200 and patched.json()["reasoning_effort"] == "high"
+        unsupported = client.patch("/api/session/owned", data={"reasoning_effort": "xhigh"}, headers={"x-owner": "alice"})
+        assert unsupported.status_code == 422
+        assert client.get("/api/session/owned/reasoning-effort", headers={"x-owner": "alice"}).json()["reasoning_effort"] == "high"
         assert client.get("/api/session/foreign/reasoning-effort", headers={"x-owner": "alice"}).status_code == 404
+        monkeypatch.setattr("src.reasoning_levels.levels_for", lambda *a: {"levels": []})
+        unknown = client.patch("/api/session/owned", data={"reasoning_effort": "xhigh"}, headers={"x-owner": "alice"})
+        assert unknown.status_code == 200 and unknown.json()["reasoning_effort"] == "xhigh"
+        unknown_read = client.get("/api/session/owned/reasoning-effort", headers={"x-owner": "alice"}).json()
+        assert unknown_read["reasoning_effort"] == "xhigh" and unknown_read["available_levels"] == []
     mcp = asyncio.run(tools_mod.manage_session(json.dumps({
         "action": "reasoning_effort", "session_id": "owned"}), session_id="active", owner="alice"))
-    assert mcp["reasoning_effort"] == "high" and mcp["available_levels"] == ["low", "high"]
+    assert mcp["reasoning_effort"] == "xhigh" and mcp["available_levels"] == []
     mcp = asyncio.run(tools_mod.manage_session(json.dumps({
-        "action": "reasoning_effort", "session_id": "owned", "value": "low"}), session_id="active", owner="alice"))
-    assert mcp["reasoning_effort"] == "low"
-    assert db_mod.get_session_reasoning_effort("owned", "alice") == "low"
+        "action": "reasoning_effort", "session_id": "owned", "value": "auto"}), session_id="active", owner="alice"))
+    assert mcp["reasoning_effort"] is None
+    monkeypatch.setattr("src.reasoning_levels.levels_for", lambda *a: {"levels": ["low", "high"], "source": "fixture"})
+    rejected = asyncio.run(tools_mod.manage_session(json.dumps({
+        "action": "reasoning_effort", "session_id": "owned", "value": "xhigh"}), session_id="active", owner="alice"))
+    assert "does not report" in rejected.get("error", ""), rejected
+    assert db_mod.get_session_reasoning_effort("owned", "alice") is None
     engine.dispose()
