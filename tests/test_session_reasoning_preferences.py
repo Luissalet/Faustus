@@ -61,14 +61,95 @@ def test_request_precedence_is_explicit_then_session_then_project(tmp_path, monk
     @request_budget
     async def turn(request: Request):
         async def stream():
-            yield json.dumps(request.state.execution_defaults)
+            yield json.dumps({**request.state.execution_defaults,
+                              "reasoning_effort_explicit": request.state.reasoning_effort_explicit})
         return StreamingResponse(stream())
 
     with TestClient(app) as client:
         inherited = client.post("/turn", json={"session": "session", "message": "x"})
         explicit = client.post("/turn", json={"session": "session", "message": "x", "reasoning_effort": "xhigh"})
+        auto = client.post("/turn", json={"session": "session", "message": "x", "reasoning_effort": "auto"})
     assert inherited.json()["reasoning_effort"] == "medium"
     assert explicit.json()["reasoning_effort"] == "xhigh"
+    assert auto.json()["reasoning_effort"] == "low"
+    assert auto.json()["reasoning_effort_explicit"] is True
+    engine.dispose()
+
+
+def test_chat_route_preserves_explicit_auto_provenance_to_provider(tmp_path, monkeypatch):
+    """Exercise JSON requests through the real chat route and request_budget.
+
+    The terminal fake replaces only the provider-facing body. This keeps the
+    production route, middleware, saved session preference, and harness
+    precedence in the test while avoiding a model or tool execution.
+    """
+    import inspect
+    import core.database as db_mod
+    import routes.chat_routes as chat_routes
+    import src.agent_loop as agent_loop
+    import src.auth_helpers
+    import services.projects
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from starlette.testclient import TestClient
+    from core.database import Base, Session as DbSession
+    from fastapi import FastAPI
+    from test_foreground_model_routing import _chat_stream_endpoint
+
+    engine = create_engine("sqlite:///" + (tmp_path / "route.db").as_posix(),
+                           connect_args={"check_same_thread": False})
+    factory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+    monkeypatch.setattr(db_mod, "engine", engine)
+    monkeypatch.setattr(db_mod, "SessionLocal", factory)
+    with factory() as db:
+        db.add(DbSession(id="session-1", name="Test", endpoint_url="https://selected.example/v1",
+                         model="selected-model", owner="alice",
+                         chat_profile=json.dumps({"reasoning_effort": "high"})))
+        db.commit()
+    monkeypatch.setattr(src.auth_helpers, "effective_user", lambda request: "alice")
+    monkeypatch.setattr("src.project_execution_defaults.for_session", lambda *a, **k: {
+        "project_id": "project", "defaults": {"reasoning_effort": "low"}, "revision": 1})
+    monkeypatch.setattr(services.projects, "project_for_session", lambda *a, **k: {
+        "execution_defaults": {"reasoning_effort": "low"}})
+
+    signature = inspect.signature(agent_loop._stream_agent_loop_body)
+    sent = []
+
+    async def fake_provider(*args, **kwargs):
+        call = signature.bind(*args, **kwargs)
+        sent.append(dict(call.arguments.get("gen_overrides") or {}))
+        yield 'data: {"delta":"ok"}\n\n'
+        yield "data: [DONE]\n\n"
+
+    fake_provider.__signature__ = signature
+    monkeypatch.setattr(agent_loop, "_stream_agent_loop_body", fake_provider)
+    endpoint = _chat_stream_endpoint(monkeypatch, "agent", {})
+    # The route helper installs its own fake session store/agent loop; replace
+    # those after construction so this test traverses the native wrapper.
+    monkeypatch.setattr(chat_routes, "SessionLocal", factory)
+    monkeypatch.setattr(chat_routes, "stream_agent_loop", agent_loop.stream_agent_loop)
+    app = FastAPI()
+    app.add_api_route("/api/chat_stream", endpoint, methods=["POST"])
+
+    def post(client, effort_marker):
+        payload = {"session": "session-1", "message": "hello", "mode": "agent"}
+        if effort_marker is not ...:
+            payload["reasoning_effort"] = effort_marker
+        response = client.post("/api/chat_stream", json=payload)
+        assert response.status_code == 200, response.text
+
+    with TestClient(app) as client:
+        post(client, "auto")
+        assert sent[-1].get("reasoning_effort") == "low"  # project default, not saved high
+        post(client, ...)
+        assert sent[-1].get("reasoning_effort") == "high"  # saved session over project low
+        post(client, "max")
+        assert sent[-1].get("reasoning_effort") == "max"  # explicit turn over session
+        # This also exercises a project default already cached by request_budget
+        # before the native harness resolves the saved session preference.
+        post(client, ...)
+        assert sent[-1].get("reasoning_effort") == "high"
     engine.dispose()
 
 
@@ -90,11 +171,11 @@ def test_native_harness_resolves_session_and_keeps_explicit_overrides(monkeypatc
         "execution_defaults": {"reasoning_effort": "low"}})
     monkeypatch.setattr("core.database.get_session_reasoning_effort", lambda *a: "high")
 
-    async def run(overrides=None, defaults=None, explicit=False):
+    async def run(overrides=None, defaults=None):
         return [chunk async for chunk in agent_loop.stream_agent_loop(
             endpoint_url="http://synthetic", model="scripted", messages=[], session_id="session",
             owner="alice", gen_overrides=overrides,
-            harness_options={"execution_defaults": defaults or {}, "reasoning_effort_explicit": explicit})]
+            harness_options={"execution_defaults": defaults or {}})]
 
     import asyncio
     assert asyncio.run(run(defaults={"reasoning_effort": "low"})) == ["ok"]
@@ -103,8 +184,6 @@ def test_native_harness_resolves_session_and_keeps_explicit_overrides(monkeypatc
     assert seen[-1]["reasoning_effort"] == "low"
     assert asyncio.run(run({"reasoning_effort": "max"}, defaults={"reasoning_effort": "high"})) == ["ok"]
     assert seen[-1]["reasoning_effort"] == "max"
-    assert asyncio.run(run(defaults={"reasoning_effort": "auto"}, explicit=True)) == ["ok"]
-    assert not seen[-1] or "reasoning_effort" not in seen[-1]
 
 
 def test_session_mcp_schema_exposes_read_and_set_action():

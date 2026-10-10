@@ -98,8 +98,18 @@ def request_budget(endpoint):
             from core.database import get_session_reasoning_effort
             from src.auth_helpers import effective_user
             sid = str(body.get("session") or "")
+            requested_effort = body.get("reasoning_effort")
+            explicit_effort = requested_effort is not None and str(requested_effort).strip() != ""
+            request.state.reasoning_effort_explicit = explicit_effort
+            explicit = body
+            if explicit_effort and str(requested_effort).strip().lower() == "auto":
+                # `auto` means inherit project/global defaults, while explicitly
+                # suppressing the saved session preference for this turn.
+                explicit = dict(body)
+                explicit.pop("reasoning_effort", None)
             session_effort = get_session_reasoning_effort(sid, effective_user(request)) if sid else None
-            resolved = merge(preferences["defaults"], body, {"reasoning_effort": session_effort} if session_effort else None)
+            session_defaults = {"reasoning_effort": session_effort} if session_effort and not explicit_effort else None
+            resolved = merge(preferences["defaults"], explicit, session_defaults)
             seconds = parse(resolved.get(FIELD))
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc

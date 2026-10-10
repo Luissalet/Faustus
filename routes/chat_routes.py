@@ -4231,6 +4231,9 @@ def setup_chat_routes(
                         _loop_harness_options["no_memory"] = bool(no_memory)
                         _loop_harness_options["no_skills"] = bool(no_skills)
                         _loop_harness_options["execution_defaults"] = dict(execution_defaults or {})
+                        _loop_harness_options["reasoning_effort_explicit"] = bool(
+                            getattr(request.state, "reasoning_effort_explicit", False)
+                        )
                         if _chat_profile:
                             _loop_harness_options["chat_profile"] = _chat_profile
                         # ADP-22: hand the resolved route classification down
