@@ -351,7 +351,51 @@ def _text_of(message: Any) -> str:
     return ""
 
 
-def prior_signals(messages: Any, current: str = "") -> Dict[str, Any]:
+class _NoPriorTurn(Exception):
+    """No earlier user turn in the model's messages; the saved history may still know one."""
+
+
+_THINK_BLOCK = re.compile(r"<think>.*?(?:</think>|$)", re.S | re.I)
+
+
+def _as_mapping(message: Any) -> Optional[Mapping[str, Any]]:
+    if isinstance(message, Mapping):
+        return message
+    to_dict = getattr(message, "to_dict", None)
+    if callable(to_dict):
+        try:
+            out = to_dict()
+            return out if isinstance(out, Mapping) else None
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
+def _recorded_mode(message: Mapping[str, Any]) -> str:
+    """The mode the turn really ran with, from the ``think_mode`` stamped on the saved
+    assistant message (``light`` for think at low effort); '' when not recorded."""
+    meta = message.get("metadata")
+    record = meta.get("think_mode") if isinstance(meta, Mapping) else None
+    if not isinstance(record, Mapping):
+        return ""
+    mode = normalize(record.get("mode"))
+    if mode not in EXPLICIT_MODES:
+        return ""
+    if mode == "think" and str(record.get("effort") or "").lower() == "low":
+        return "light"
+    return mode
+
+
+def _no_answer(message: Mapping[str, Any]) -> bool:
+    """True when an assistant message carries reasoning but no answer."""
+    text = _THINK_BLOCK.sub("", _text_of(message)).strip()
+    if text:
+        return False
+    meta = message.get("metadata")
+    return bool((isinstance(meta, Mapping) and meta.get("thinking")) or "<think" in _text_of(message).lower())
+
+
+def prior_signals(messages: Any, current: str = "", history: Any = None) -> Dict[str, Any]:
     """What the previous turn looked like, from the conversation history.
 
     Pure and deterministic: no stored metadata is needed. ``prev_mode`` is
@@ -361,7 +405,8 @@ def prior_signals(messages: Any, current: str = "") -> Dict[str, Any]:
     nothing (a reasoning budget spent without an answer). ``current``, when
     it is the last user message of ``messages``, is skipped. Never raises.
     """
-    out: Dict[str, Any] = {"prev_mode": "", "tool_failures": 0, "empty_answer": False, "has_prior": False}
+    out: Dict[str, Any] = {"prev_mode": "", "tool_failures": 0, "empty_answer": False, "has_prior": False,
+                           "prev_mode_source": "", "deep_without_answer": False}
     try:
         msgs = [m for m in list(messages or []) if isinstance(m, Mapping)]
         cur = str(current or "").strip()
@@ -373,7 +418,7 @@ def prior_signals(messages: Any, current: str = "") -> Dict[str, Any]:
                 prev_user = idx
                 break
         if prev_user is None:
-            return out
+            raise _NoPriorTurn
         out["has_prior"] = True
         prev = _decide(_text_of(msgs[prev_user]), 0, False, False, prev_user)
         out["prev_mode"] = "light" if prev.get("effort") == "low" else str(prev.get("mode") or "")
@@ -386,13 +431,49 @@ def prior_signals(messages: Any, current: str = "") -> Dict[str, Any]:
             if role == "assistant" and text.strip():
                 answered = True
         out["empty_answer"] = not answered and any(m.get("role") == "assistant" for m in msgs[prev_user + 1:])
+    except _NoPriorTurn:
+        pass
     except Exception:  # noqa: BLE001 -- history is a hint, never a failure
-        return {"prev_mode": "", "tool_failures": 0, "empty_answer": False, "has_prior": False}
+        return {"prev_mode": "", "tool_failures": 0, "empty_answer": False, "has_prior": False,
+                "prev_mode_source": "", "deep_without_answer": False}
+    if out["prev_mode"]:
+        out["prev_mode_source"] = "rule"
+    # The saved history knows what each turn really ran with (a mode picked by
+    # hand, a model level) and whether a deep pass ended without an answer.
+    try:
+        saved = [m for m in (_as_mapping(x) for x in list(history or [])) if m is not None]
+        cur = str(current or "").strip()
+        if saved and saved[-1].get("role") == "user" and _text_of(saved[-1]).strip() == cur:
+            saved = saved[:-1]
+        last_user = max((i for i, m in enumerate(saved) if m.get("role") == "user"), default=None)
+        if last_user is not None:
+            for m in reversed(saved[last_user + 1:]):
+                if m.get("role") == "assistant":
+                    recorded = _recorded_mode(m)
+                    if recorded:
+                        out["prev_mode"], out["prev_mode_source"] = recorded, "recorded"
+                        out["has_prior"] = True
+                    if _no_answer(m):
+                        out["empty_answer"] = True
+                    break
+        out["deep_without_answer"] = any(
+            m.get("role") == "assistant" and _recorded_mode(m) == "deep" and _no_answer(m) for m in saved)
+    except Exception:  # noqa: BLE001
+        pass
     return out
 
 
 def _is_light(decision: Mapping[str, Any]) -> bool:
     return decision.get("mode") == "think" and decision.get("effort") == "low"
+
+
+def _no_repeat_deep(decision: Dict[str, Any], prior: Mapping[str, Any]) -> Dict[str, Any]:
+    """A deep pass in this chat already spent its whole budget without an
+    answer: asking for deep again buys the same outcome. Think instead."""
+    if decision.get("mode") == "deep" and prior.get("deep_without_answer"):
+        return _result("think", ["deep_spent_without_answer"] + list(decision.get("reasons") or []),
+                       "a deep pass in this chat ended without an answer", "medium")
+    return decision
 
 
 def _cross_turn(decision: Dict[str, Any], text: str, prior: Optional[Mapping[str, Any]],
@@ -402,12 +483,13 @@ def _cross_turn(decision: Dict[str, Any], text: str, prior: Optional[Mapping[str
         return decision
     if "asked_speed" in (decision.get("reasons") or []) or "asked_brevity" in (decision.get("reasons") or []):
         return decision  # the person asked for speed in so many words: that wins
+    decision = _no_repeat_deep(decision, prior)
     mode = decision.get("mode")
     low = mode == "fast" or _is_light(decision)
     stripped = str(text or "").strip()
     if _CORRECTION.search(stripped):
         prev = str(prior.get("prev_mode") or "")
-        if prev in ("think", "deep") and mode != "deep":
+        if prev in ("think", "deep") and mode != "deep" and not prior.get("deep_without_answer"):
             # It already reasoned in full and still got it wrong: more of
             # the same budget is unlikely to help, a deeper pass may.
             return _result("deep", ["correction_after_think"] + [r for r in decision.get("reasons") or [] if r != "light"],

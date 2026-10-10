@@ -1353,5 +1353,5 @@ El vigilante rota después de12turnos y conserva actor, proyecto e historial pre
 
 Hecho en §294 (radar #458): corrección, herramienta fallida y respuesta vacía suben el modo de Auto. Queda:
 - Registrar por turno la decisión de Auto y su resultado (si el siguiente mensaje fue una corrección, si la batería diaria acertó) para calibrar los umbrales con #350, en vez de fijarlos a mano.
-- Leer el modo que se usó de verdad en el turno anterior (el evento `think_mode` guardado con el mensaje) en lugar de recalcularlo con la regla, para que un «A fondo» elegido a mano cuente.
-- Señal «pensó y no sirvió»: si el turno anterior gastó todo el presupuesto de razonamiento sin texto final (#352), no volver a pedir `deep` en ese chat.
+- **Hecho (#227, FAUSTUS §311):** leer el modo que se usó de verdad en el turno anterior (ahora se guarda en `metadata.think_mode` de cada respuesta) en lugar de recalcularlo con la regla, para que un «A fondo» elegido a mano cuente.
+- **Hecho (#227, FAUSTUS §311):** señal «pensó y no sirvió»: si un turno `deep` del chat gastó el presupuesto sin texto final, Auto no vuelve a pedir `deep` en ese chat.

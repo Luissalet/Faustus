@@ -38,7 +38,7 @@ def test_prior_signals_counts_failed_tools_and_empty_answers():
 @pytest.mark.parametrize("bad", [None, "x", 3, [None, 1, "a"], [{"role": "user", "content": 5}]])
 def test_prior_signals_never_raises(bad):
     out = prior_signals(bad, "")
-    assert set(out) == {"prev_mode", "tool_failures", "empty_answer", "has_prior"}
+    assert set(out) == {"prev_mode", "tool_failures", "empty_answer", "has_prior", "prev_mode_source", "deep_without_answer"}
 
 
 def test_no_history_means_same_decision_as_before():

@@ -924,13 +924,13 @@ def _parse_gen_overrides(raw) -> Dict[str, Any]:
     return out
 
 
-def _think_prior_signals(messages, message) -> Optional[Dict[str, Any]]:
+def _think_prior_signals(messages, message, history=None) -> Optional[Dict[str, Any]]:
     """What the previous turn looked like (`src/think_mode.prior_signals`),
     so Auto can raise this turn's reasoning after a correction or a failed
     tool. None when it cannot be read: Auto then decides on the message."""
     try:
         from src.think_mode import prior_signals
-        return prior_signals(messages, message if isinstance(message, str) else "")
+        return prior_signals(messages, message if isinstance(message, str) else "", history)
     except Exception as exc:  # noqa: BLE001
         logger.debug("[think-mode] prior signals skipped: %s", exc)
         return None
@@ -2918,7 +2918,7 @@ def setup_chat_routes(
                     endpoint_url=str(getattr(sess, "endpoint_url", "") or ""),
                     chat_mode=chat_mode, workspace=workspace,
                     attachments=len(att_ids or []), history_len=_think_history_len,
-                    prior=_think_prior_signals(ctx.messages, message),
+                    prior=_think_prior_signals(ctx.messages, message, getattr(sess, "history", None)),
                 )
                 # The model's own reasoning level, picked in the composer
                 # (src/reasoning_levels.py). An explicit level wins over the
@@ -2957,6 +2957,17 @@ def setup_chat_routes(
                         "source": "explicit_toggle", "thinking_enabled": _gen_overrides.get("think"),
                         "effort": _gen_overrides.get("reasoning_effort"),
                     }
+                # What this turn really runs with, stamped on the saved reply
+                # (chat_helpers.save_assistant_response) so the next turn's
+                # Auto reads it instead of re-deriving it (OBJ-58, #227).
+                try:
+                    sess._turn_think_mode = ({
+                        "mode": _think_mode_event.get("mode"), "requested": _think_mode_event.get("requested"),
+                        "source": _think_mode_event.get("source"), "budget": _think_mode_event.get("budget"),
+                        "effort": (_gen_overrides or {}).get("reasoning_effort") or _think_mode_event.get("effort"),
+                    } if _think_mode_event else None)
+                except Exception:  # noqa: BLE001
+                    pass
                 if _think_mode_event:
                     logger.info("[think-mode] session=%s requested=%s -> %s (%s%s) budget=%s",
                                 session, _think_mode_event.get("requested"), _think_mode_event.get("mode"),

@@ -1319,6 +1319,15 @@ def save_assistant_response(
         md["tool_events"] = tool_events
     if wires:
         md["side_thread_wires"] = wires
+    # The reasoning mode this turn really ran with (chat_routes stamps it on the
+    # session before the turn); the next turn's Auto reads it (OBJ-58, #227).
+    _turn_mode = getattr(sess, "_turn_think_mode", None)
+    if isinstance(_turn_mode, dict) and _turn_mode.get("mode") and "think_mode" not in md:
+        md["think_mode"] = {k: v for k, v in _turn_mode.items() if v is not None}
+    try:
+        sess._turn_think_mode = None
+    except Exception:  # noqa: BLE001
+        pass
 
     # Extract thinking into metadata (don't pollute message content with <think> tags)
     _think_info = _extract_thinking_meta(full_response)
