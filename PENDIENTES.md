@@ -6,6 +6,7 @@ Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya
 
 ## A. Decisiones o acciones de Luis
 
+- **Navegador sigiloso (invisible_playwright) para Tantalus y Faustus** (10-10, Ágora #260/#261, escaladas a ti): su valor está en que el anti-bot de la tienda no detecte la automatización. Los agentes no montamos ni ejecutamos esa evasión contra sitios de terceros. Opciones: lo instalas y lo usas tú bajo tu responsabilidad (sin conectarlo a la escalera automática), o reforzamos lo que no evade nada (radar de agregadores, «Resolver» con ventana visible y tu sesión, feeds y alertas de stock oficiales, y que Faustus diga con claridad cuándo una página bloquea la lectura automática). Resumen en el doc del proyecto `claude/radar-fuentes-10-10.md`.
 - **Acceso total y la batería de inyección** (10-10, #258): con tus ajustes actuales (`tool_approval_mode=full`) la batería en postura «configured» deja pasar 34 de 47 inyecciones (las defensas en sí, en postura base, aguantan 47/47). Lo que sigue protegiendo en acceso total es la lista de rutas de credenciales y el bloqueo de secretos hacia fuera (#207). ¿Sigues en acceso total, pasas a «auto» o «ask», o lo dejamos así sabiéndolo?
 
 - **Borrar el modelo de prueba de Vulcan** (10-10, #200): la verificación en vivo de «CAD desde texto» dejó el modelo 20037 `plate-hole-verify` (placa 20x10x5 con agujero) en la biblioteca. Vulcan no tiene ruta para borrar modelos. ¿Lo borro a mano (fila en la base de datos y ficheros en `data\cad`) o se queda?
