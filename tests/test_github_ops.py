@@ -29,6 +29,7 @@ from src.git_github import GhNotAvailableError  # noqa: E402
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git not on PATH")
 
 OWNER = "luis"
+REAL_LS_REMOTE_TAG = github_ops._ls_remote_tag
 GITHUB_URL = "git@github.com:acme/widgets.git"
 
 
@@ -66,6 +67,10 @@ def isolated(tmp_path_factory, monkeypatch):
     settings_mod._invalidate_caches()
     monkeypatch.setattr(te, "owner_is_admin_or_single_user", lambda owner: True)
     github_ops._PENDING.clear()
+    # The fixture repos point `origin` at a GitHub URL: never touch the network.
+    # By default the remote "has no such tag"; the tests about the remote tag
+    # put the real `_ls_remote_tag` back and use a local bare repository.
+    monkeypatch.setattr(github_ops, "_ls_remote_tag", lambda root, tag, timeout=20.0: {"state": "absent"})
     yield
     github_ops._PENDING.clear()
 
@@ -894,3 +899,190 @@ def test_local_remote_and_bad_refs_in_spanish(tmp_path, repo, gh):
     assert notes["error_class"] == "git.unknown_ref" and "no es un commit ni una etiqueta" in notes["error"]
     forged = github_ops.apply_label_sync(OWNER, "nope", "es")
     assert forged["error_class"] == "approval.invalid" and "no existe, ha caducado" in forged["error"]
+
+
+# ---------------------------------------------------------------------------
+# #234 review 1: the tag may exist only on origin; partial checks; footer BREAKING CHANGE
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def real_remote(tmp_path, repo, monkeypatch):
+    """`repo` with a real local bare `origin` and the real remote-tag lookup."""
+    bare = tmp_path / "origin.git"
+    bare.mkdir()
+    _git(["init", "--bare"], bare)
+    _git(["remote", "set-url", "origin", str(bare)], repo)
+    _git(["push", "-q", "origin", "master"], repo)
+    monkeypatch.setattr(github_ops, "_ls_remote_tag", REAL_LS_REMOTE_TAG)
+    return bare
+
+
+def _tag_only_on_origin(repo, tag, annotated=False):
+    if annotated:
+        _git(["-c", "user.name=Dev One", "-c", "user.email=dev@example.com", "tag", "-a", tag, "-m", f"release {tag}"], repo)
+    else:
+        _git(["tag", tag], repo)
+    _git(["push", "-q", "origin", tag], repo)
+    _git(["tag", "-d", tag], repo)
+
+
+@pytest.mark.parametrize("annotated", [False, True])
+def test_release_check_fails_when_the_tag_exists_only_on_origin(repo, gh, real_remote, annotated):
+    _tag_only_on_origin(repo, "v2.0.0", annotated)
+    assert _git(["rev-parse", "-q", "--verify", "refs/tags/v2.0.0"], repo, check=False).returncode != 0  # not local
+    res = github_ops.release_check(str(repo), "v2.0.0")
+    item = _by_id(res)["tag"]
+    assert item["status"] == "fail" and "already exists on origin" in item["detail"] and "not locally" in item["detail"]
+    assert res["ready"] is False and "tag" in res["blocking"]
+    es = github_ops.run_command(OWNER, str(repo), "release-check v2.0.0", "es")
+    assert "la etiqueta ya existe en origin" in _by_id(es)["tag"]["detail"]
+    assert "No está lista" in es["markdown"]
+    # a tag nobody has is free, and it was checked against the remote
+    free = _by_id(github_ops.release_check(str(repo), "v2.0.1"))["tag"]
+    assert free["status"] == "ok" and "free" in free["detail"]
+
+
+def test_release_check_tag_local_and_remote_must_agree(repo, gh, real_remote):
+    head = _git(["rev-parse", "HEAD"], repo).stdout.strip()
+    old = _git(["rev-parse", "HEAD~1"], repo).stdout.strip()
+    _git(["tag", "v3.0.0", old], repo)
+    _git(["push", "-q", "origin", "v3.0.0"], repo)          # origin: v3.0.0 -> old
+    _git(["tag", "-f", "v3.0.0", head], repo)                      # local:  v3.0.0 -> HEAD
+    item = _by_id(github_ops.release_check(str(repo), "v3.0.0"))["tag"]
+    assert item["status"] == "fail" and "exists on origin at" in item["detail"] and "locally at" in item["detail"]
+    _git(["push", "-q", "-f", "origin", "v3.0.0"], repo)    # now both at HEAD
+    item = _by_id(github_ops.release_check(str(repo), "v3.0.0"))["tag"]
+    assert item["status"] == "ok" and item["detail"] == "already points at HEAD"
+
+
+def test_release_check_tag_is_skipped_not_free_when_the_remote_cannot_be_checked(tmp_path, repo, gh, monkeypatch):
+    monkeypatch.setattr(github_ops, "_ls_remote_tag", REAL_LS_REMOTE_TAG)
+    # 1. origin points at a path that is not a repository
+    _git(["remote", "set-url", "origin", str(tmp_path / "nowhere.git")], repo)
+    res = github_ops.release_check(str(repo), "v5.0.0")
+    item = _by_id(res)["tag"]
+    assert item["status"] == "skip" and "could not check the remote" in item["detail"] and "free" not in item["detail"]
+    assert "tag" in res["unverified"] and res["complete"] is False and "tag" not in res["blocking"]
+    es = github_ops.run_command(OWNER, str(repo), "release-check v5.0.0", "es")
+    assert "no se pudo comprobar el remoto" in _by_id(es)["tag"]["detail"]
+    # 2. no origin at all
+    _git(["remote", "remove", "origin"], repo)
+    item = _by_id(github_ops.release_check(str(repo), "v5.0.0"))["tag"]
+    assert item["status"] == "skip" and "no 'origin' remote" in item["detail"]
+    es_item = _by_id(github_ops.run_command(OWNER, str(repo), "release-check v5.0.0", "es"))["tag"]
+    assert "no hay remoto 'origin'" in es_item["detail"]
+
+
+def test_remote_tag_lookup_timeout_is_unknown_and_option_free(repo, monkeypatch):
+    real = git_panel.run_git
+    seen = []
+
+    def slow(root, *args, timeout=0):
+        if args and args[0] == "ls-remote":
+            seen.append((args, timeout))
+            return subprocess.CompletedProcess(args=args, returncode=124, stdout="", stderr="git ls-remote timed out after 20s")
+        return real(root, *args, timeout=timeout) if timeout else real(root, *args)
+
+    monkeypatch.setattr(git_panel, "run_git", slow)
+    got = REAL_LS_REMOTE_TAG(str(repo), "v1.2.3")
+    assert got == {"state": "unknown", "reason": "timed out"}
+    args, timeout = seen[0]
+    assert args[:3] == ("ls-remote", "--tags", "origin") and args[3:] == ("refs/tags/v1.2.3", "refs/tags/v1.2.3^{}")
+    assert 0 < timeout <= 30
+    # the tag name reaches git only through safe_ref
+    assert github_ops.release_check(str(repo), "--upload-pack=evil")["error_class"] == "args.bad_ref"
+
+
+def test_release_check_verdict_is_partial_when_checks_were_skipped(repo, gh):
+    gh.missing = True  # CI and blockers skipped; the branch has no upstream
+    res = github_ops.release_check(str(repo))
+    assert res["ready"] is True and res["complete"] is False
+    assert set(res["unverified"]) == {"ci", "blockers", "pushed"}
+    md = res["markdown"]
+    assert "**No failures detected · partial check (3 skipped)**" in md and "Ready to release" not in md
+    assert "(warning)" in md  # warnings stay visible
+    es = github_ops.run_command(OWNER, str(repo), "release-check", "es")["markdown"]
+    assert "**No se han detectado fallos · comprobación parcial (3 omitidos)**" in es and "Lista para publicar" not in es
+    # nothing blocks: the verdict is "ready" for the callers that only read the flag
+    assert res["blocking"] == []
+
+
+def test_release_check_verdict_singular_and_full(repo, gh):
+    _track_upstream(repo)
+    gh.runs = [{"name": "CI", "workflowName": "CI", "status": "completed", "conclusion": "success"}]
+    full = github_ops.release_check(str(repo))
+    assert full["complete"] is True and full["unverified"] == [] and "**Ready to release**" in full["markdown"]
+    _git(["checkout", "-q", "--detach"], repo)  # exactly one thing unverified: the branch
+    one = github_ops.release_check(str(repo))
+    assert one["unverified"] == ["pushed"] and one["ready"] is True
+    assert "**No failures detected · partial check (1 skipped)**" in one["markdown"]
+    assert "**No se han detectado fallos · comprobación parcial (1 omitido)**" in github_ops.run_command(OWNER, str(repo), "release-check", "es")["markdown"]
+    _git(["checkout", "-q", "master"], repo)
+    gh.runs = [{"name": "CI", "workflowName": "CI", "status": "completed", "conclusion": "failure"}]
+    bad = github_ops.release_check(str(repo))
+    assert bad["ready"] is False and "**Not ready**" in bad["markdown"] and "partial check" not in bad["markdown"]
+
+
+@pytest.fixture
+def breaking_repo(tmp_path):
+    """A REAL history with every way of declaring a breaking change."""
+    r = tmp_path / "brk"
+    r.mkdir()
+    _git(["init"], r)
+    _git(["symbolic-ref", "HEAD", "refs/heads/master"], r)
+    _commit(r, "README.md", "x", "Initial commit")
+    _git(["tag", "v0.1.0"], r)
+    _commit(r, "storage.py", "1", "feat: replace storage\n\nStore everything in one database.\n\nBREAKING CHANGE: old files need migration")
+    _commit(r, "cfg.py", "2", "fix: read the new config\n\nBREAKING-CHANGE: the config moved to\nconfig.toml and the old keys are gone\n\nSigned-off-by: Dev One <dev@example.com>")
+    _commit(r, "api.py", "3", "feat(api)!: drop the v1 endpoints")
+    _commit(r, "plain.py", "4", "feat: add a plain feature")
+    _commit(r, "note.md", "5", "docs: explain it\n\nThis is a breaking change: none really, just words.")
+    _commit(r, "squash.py", "6", "feat: new export (#5)\n\nBREAKING CHANGE: the export format is now JSON")
+    _git(["remote", "add", "origin", GITHUB_URL], r)
+    return r
+
+
+def test_notes_put_footer_and_bang_breaking_changes_in_their_own_group(breaking_repo, gh):
+    res = github_ops.release_notes(str(breaking_repo))
+    assert res["ok"] and res["from"] == "v0.1.0" and res["commits"] == 6
+    groups = {g: [e["title"] for e in es] for g, es in res["groups"].items()}
+    assert set(groups["breaking"]) == {"Replace storage", "Read the new config", "Drop the v1 endpoints", "New export"}
+    # instead of, not in addition to, their type group
+    assert groups["features"] == ["Add a plain feature"]
+    assert groups.get("fixes") is None
+    assert groups["docs"] == ["Explain it"]  # "breaking change: none" in prose is not a footer
+    by_title = {e["title"]: e for g in res["groups"].values() for e in g}
+    assert by_title["Replace storage"]["breaking_note"] == "old files need migration"
+    assert by_title["Read the new config"]["breaking_note"] == "the config moved to config.toml and the old keys are gone"
+    assert by_title["Drop the v1 endpoints"]["breaking_note"] == "" and by_title["Drop the v1 endpoints"]["breaking"] is True
+    assert by_title["Replace storage"]["type_group"] == "features" and by_title["Read the new config"]["type_group"] == "fixes"
+    md = res["markdown"]
+    assert md.index("### Breaking changes") < md.index("### Features")
+    assert "- Replace storage (" in md and "  - old files need migration" in md
+    assert "  - the config moved to config.toml and the old keys are gone" in md
+    assert "  - the export format is now JSON" in md
+    # the type groups no longer list the breaking ones
+    features = md.split("### Features")[1].split("###")[0]
+    assert "Replace storage" not in features and "Add a plain feature" in features
+    es = github_ops.release_notes(str(breaking_repo), lang="es")["markdown"]
+    assert "### Cambios incompatibles" in es and "  - old files need migration" in es
+
+
+def test_notes_footer_breaking_change_beats_a_pull_request_label_and_title(breaking_repo, gh):
+    gh.prs = [{"number": 5, "title": "New export", "labels": [{"name": "enhancement"}], "author": {"login": "luis"}, "url": "u"}]
+    res = github_ops.release_notes(str(breaking_repo))
+    entry = next(e for g in res["groups"].values() for e in g if e["pr"] == 5)
+    assert entry["group"] == "breaking" and entry["type_group"] == "features" and entry["from_gh"] is True
+    assert entry["breaking_note"] == "the export format is now JSON"
+    assert "(#5, @luis)" in res["markdown"]
+
+
+def test_breaking_note_parser_edge_cases():
+    f = github_ops.breaking_note
+    assert f("BREAKING CHANGE: a") == "a"
+    assert f("intro\n\nBREAKING-CHANGE: b\nc\n\nRefs: #1") == "b c"
+    assert f("BREAKING CHANGE: first\nReviewed-by: Z") == "first"
+    assert f("BREAKING CHANGE:") == ""          # declared, no text
+    assert f("breaking change: lower case is prose") is None
+    assert f("This has BREAKING CHANGE: inside a line") is None
+    assert f("") is None and f(None) is None
+    assert github_ops.has_bang("feat!: x") and github_ops.has_bang("fix(core)!: x") and not github_ops.has_bang("feat: x!")

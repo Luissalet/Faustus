@@ -227,6 +227,14 @@ _ES_FMT = {
     "mismatch: {x}": "no coinciden: {x}",
     "files say {v} but the tag is {t} ({l})": "los archivos dicen {v} pero la etiqueta es {t} ({l})",
     "no commits yet": "aún no hay commits",
+    "the tag already exists on origin (at {a}) but not locally": "la etiqueta ya existe en origin (en {a}) pero no en local",
+    "the tag exists on origin at {r} but locally at {l}": "la etiqueta existe en origin en {r} pero en local en {l}",
+    "could not check the remote (`{x}`); the tag does not exist locally": "no se pudo comprobar el remoto (`{x}`); la etiqueta no existe en local",
+    "already points at HEAD, but the remote could not be checked (`{x}`)": "ya apunta a HEAD, pero no se pudo comprobar el remoto (`{x}`)",
+    "no 'origin' remote": "no hay remoto 'origin'",
+    "timed out": "se agotó el tiempo",
+    "No failures detected · partial check (1 skipped)": "No se han detectado fallos · comprobación parcial (1 omitido)",
+    "No failures detected · partial check ({n} skipped)": "No se han detectado fallos · comprobación parcial ({n} omitidos)",
 }
 
 
@@ -789,6 +797,37 @@ _CONV_GROUPS = {"feat": "features", "feature": "features", "fix": "fixes", "bugf
                 "security": "security", "deps": "maintenance"}
 
 
+# A breaking change is declared in the commit FOOTER (git trailer form, the
+# conventional-commits spec: ``BREAKING CHANGE:`` or its synonym
+# ``BREAKING-CHANGE:``, upper case) or by a ``!`` before the colon of the
+# subject (``feat!:`` / ``feat(api)!:``).
+_BREAKING_RE = re.compile(r"^BREAKING[ -]CHANGE\s*:\s*(.*)$")
+_TRAILER_RE = re.compile(r"^[A-Za-z][A-Za-z0-9-]*\s*:\s")
+
+
+def breaking_note(body: str) -> Optional[str]:
+    """The explanation of a ``BREAKING CHANGE:`` / ``BREAKING-CHANGE:`` footer
+    in a commit body (continuation lines joined), ``""`` when the footer has no
+    text, ``None`` when the commit declares none."""
+    lines = (body or "").splitlines()
+    for i, line in enumerate(lines):
+        m = _BREAKING_RE.match(line.strip())
+        if not m:
+            continue
+        parts = [m.group(1).strip()]
+        for nxt in lines[i + 1:]:
+            if not nxt.strip() or _TRAILER_RE.match(nxt.strip()):
+                break
+            parts.append(nxt.strip())
+        return " ".join(p for p in parts if p)
+    return None
+
+
+def has_bang(title: str) -> bool:
+    m = _CONV_RE.match((title or "").strip())
+    return bool(m and m.group("bang"))
+
+
 def classify_entry(title: str, labels: Sequence[str]) -> Tuple[str, str]:
     """``(group, clean_title)``. Labels beat the conventional-commit prefix,
     which beats "other"; a ``!`` after the prefix means breaking."""
@@ -887,8 +926,16 @@ def build_notes(commits: List[Dict[str, Any]], prs: Dict[int, Dict[str, Any]]) -
             title = _PR_SQUASH_RE.sub("", title).strip()
             labels, author, url = [], c["author"], ""
         group, clean = classify_entry(title, labels)
+        note = breaking_note(c.get("body") or "")
+        # A breaking change goes ONLY under "Breaking changes" (not repeated
+        # under its type group), with the footer's explanation under it.
+        breaking = group == "breaking" or has_bang(title) or note is not None
+        type_group = group
+        if breaking:
+            group = "breaking"
         entries.append({"sha": c["short"], "title": clean, "pr": number, "labels": labels, "author": author,
-                        "url": url, "group": group, "from_gh": bool(pr)})
+                        "url": url, "group": group, "type_group": type_group, "breaking": breaking,
+                        "breaking_note": note or "", "from_gh": bool(pr)})
     return entries
 
 
@@ -913,6 +960,8 @@ def notes_markdown(entries: List[Dict[str, Any]], from_ref: Optional[str], to: s
             ref = f"#{e['pr']}" if e["pr"] else e["sha"]
             who = f", @{e['author']}" if e["from_gh"] and e["author"] else (f", {e['author']}" if e["author"] else "")
             lines.append(f"- {e['title']} ({ref}{who})")
+            if e.get("breaking_note"):
+                lines.append(f"  - {e['breaking_note']}")
         lines.append("")
     people = sorted({e["author"] for e in entries if e["author"]}, key=str.lower)
     if people:
@@ -1034,6 +1083,73 @@ def find_versions(repo_root: str) -> List[Dict[str, str]]:
     return found
 
 
+REMOTE_TAG_TIMEOUT = 20.0
+
+
+def _ls_remote_tag(repo_root: str, tag: str, timeout: float = REMOTE_TAG_TIMEOUT) -> Dict[str, Any]:
+    """Does ``origin`` have this tag? Read-only (``git ls-remote``), works for a
+    local bare remote and for GitHub alike, never prompts, bounded by a timeout.
+
+    ``{"state": "found", "sha": <commit the tag points at>}``, ``{"state":
+    "absent"}`` or ``{"state": "unknown", "reason": ...}`` (no origin,
+    offline, timeout, no access) -- the caller must never read "unknown" as
+    "free"."""
+    try:
+        url = git_panel.run_git(repo_root, "remote", "get-url", "origin")
+        if url.returncode != 0 or not (url.stdout or "").strip():
+            return {"state": "unknown", "reason": "no 'origin' remote"}
+        p = git_panel.run_git(repo_root, "ls-remote", "--tags", "origin", f"refs/tags/{tag}", f"refs/tags/{tag}^{{}}",
+                              timeout=timeout)
+    except git_panel.GitNotFoundError:
+        return {"state": "unknown", "reason": "git is not installed"}
+    if p.returncode == 124:
+        return {"state": "unknown", "reason": "timed out"}
+    if p.returncode != 0:
+        lines = [ln.strip() for ln in (p.stderr or "").splitlines() if ln.strip()]
+        why = re.sub(r"^(fatal|error):\s*", "", lines[0])[:140] if lines else "git ls-remote failed"
+        return {"state": "unknown", "reason": why}
+    sha = peeled = ""
+    for line in (p.stdout or "").splitlines():
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        if parts[1] == f"refs/tags/{tag}^{{}}":
+            peeled = parts[0]
+        elif parts[1] == f"refs/tags/{tag}":
+            sha = parts[0]
+    if not (sha or peeled):
+        return {"state": "absent"}
+    return {"state": "found", "sha": peeled or sha}
+
+
+def _reason(lang: str, remote: Dict[str, Any]) -> str:
+    """The "why unknown" text; it may come from git's stderr, so it is never
+    used as a format template."""
+    text = str(remote.get("reason") or "unknown")
+    return _ES_FMT.get(text, text) if (lang or "").lower().startswith("es") else text
+
+
+def _tag_item(repo_root: str, tag: str, head: str, latest: Optional[str], lang: str) -> Dict[str, str]:
+    label = f"Tag {tag}"
+    existing = _rev(repo_root, f"refs/tags/{tag}")
+    remote = _ls_remote_tag(repo_root, tag)
+    state, rsha = remote["state"], remote.get("sha") or ""
+    if state == "found" and not existing:
+        return _item("tag", label, "fail", tf(lang, "the tag already exists on origin (at {a}) but not locally", a=rsha[:7]))
+    if state == "found" and rsha and rsha != existing:
+        return _item("tag", label, "fail", tf(lang, "the tag exists on origin at {r} but locally at {l}", r=rsha[:7], l=existing[:7]))
+    if not existing:
+        if state == "unknown":
+            why = _reason(lang, remote)
+            return _item("tag", label, "skip", tf(lang, "could not check the remote (`{x}`); the tag does not exist locally", x=why))
+        return _item("tag", label, "ok", tf(lang, "free: the tag does not exist yet") + (tf(lang, " (last tag: {t})", t=latest) if latest else ""))
+    if existing != head:
+        return _item("tag", label, "fail", tf(lang, "exists and points at {a}, not at HEAD ({h})", a=existing[:7], h=head[:7]))
+    if state == "unknown":
+        return _item("tag", label, "warn", tf(lang, "already points at HEAD, but the remote could not be checked (`{x}`)", x=_reason(lang, remote)))
+    return _item("tag", label, "ok", tf(lang, "already points at HEAD"))
+
+
 def _ci_item(ctx: Dict[str, Any], sha: str, lang: str = "en") -> Dict[str, str]:
     label = "CI on HEAD"
     data, err = _gh_json(ctx, ["run", "list", "--commit", sha, "--limit", "30",
@@ -1112,13 +1228,7 @@ def release_check(repo_root: str, tag: Optional[str] = None, blocker_labels: Opt
 
     latest = last_tag(repo_root, "HEAD") if head else None
     if tag:
-        existing = _rev(repo_root, f"refs/tags/{tag}")
-        if not existing:
-            items.append(_item("tag", f"Tag {tag}", "ok", tf(lang, "free: the tag does not exist yet") + (tf(lang, " (last tag: {t})", t=latest) if latest else "")))
-        elif existing == head:
-            items.append(_item("tag", f"Tag {tag}", "ok", tf(lang, "already points at HEAD")))
-        else:
-            items.append(_item("tag", f"Tag {tag}", "fail", tf(lang, "exists and points at {a}, not at HEAD ({h})", a=existing[:7], h=head[:7])))
+        items.append(_tag_item(repo_root, tag, head, latest, lang))
     else:
         since = 0
         if latest:
@@ -1149,7 +1259,14 @@ def release_check(repo_root: str, tag: Optional[str] = None, blocker_labels: Opt
 
     fails = [i for i in items if i["status"] == "fail"]
     ready = not fails
+    # What could not be verified: CI, blockers or the remote tag skipped, or a
+    # branch with no upstream / a detached HEAD. "ready" stays "nothing
+    # failed" (nothing here blocks); "complete" says every relevant check ran.
+    unverified = [i["id"] for i in items
+                  if (i["id"] in ("ci", "blockers", "tag") and i["status"] == "skip")
+                  or (i["id"] == "pushed" and i["status"] == "warn")]
     result = {"ok": True, "kind": "release_check", "tag": tag, "head": head[:7] if head else "", "ready": ready,
+              "complete": not unverified, "unverified": unverified,
               "items": items, "blocking": [i["id"] for i in fails],
               "counts": {s: sum(1 for i in items if i["status"] == s) for s in ("ok", "warn", "fail", "skip")},
               "github": {"slug": ctx.get("slug"), "usable": bool(ctx.get("github"))}}
@@ -1161,7 +1278,14 @@ def release_check_markdown(result: Dict[str, Any], lang: str = "en") -> str:
     T = lambda s: tr(lang, s)  # noqa: E731
     es = lang.startswith("es")
     head = f"## {T('Release check')}" + (f" — {result['tag']}" if result.get("tag") else "") + (f" (`{result['head']}`)" if result.get("head") else "")
-    verdict = T("Ready to release") if result["ready"] else T("Not ready")
+    unverified = result.get("unverified") or []
+    if not result["ready"]:
+        verdict = T("Not ready")
+    elif unverified:
+        verdict = tf(lang, "No failures detected · partial check (1 skipped)" if len(unverified) == 1
+                     else "No failures detected · partial check ({n} skipped)", n=len(unverified))
+    else:
+        verdict = T("Ready to release")
     c = result["counts"]
     lines = [head, "", f"**{verdict}** · {c['ok']} ok · {c['warn']} " + ("avisos" if es else "warnings")
              + f" · {c['fail']} " + ("fallos" if es else "failures") + f" · {c['skip']} {T('skipped')}", ""]

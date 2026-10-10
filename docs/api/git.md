@@ -933,6 +933,10 @@ Comando del compositor de Studio (`/github`, alias `/gh`) sobre el CLI `gh` y el
 | `notes [<desde>..<hasta>]` | Notas de versión desde las PR fusionadas y los commits (por defecto, desde la última etiqueta). | No |
 | `release-check [<etiqueta>]` | Lista de comprobación: árbol limpio, etiqueta, CI del HEAD, bloqueos, versiones. | No |
 
+Etiqueta en `release-check <etiqueta>`: se mira lo local y además `git ls-remote --tags origin` (solo lectura, 20 s máximo, sin credenciales interactivas). En origin y no en local, o en otro commit, es `fail`; si el remoto no se puede consultar el elemento es `skip` con el motivo, nunca «libre». El resultado lleva `ready` (sin fallos), `complete` (todas las comprobaciones relevantes se ejecutaron) y `unverified` (ids de `ci`, `blockers`, `tag` omitidos o `pushed` con aviso). Con `complete: false` el veredicto es «No se han detectado fallos · comprobación parcial (N omitidos)» en lugar de «Lista para publicar».
+
+Notas: un cambio incompatible es el que declara `BREAKING CHANGE:` o `BREAKING-CHANGE:` en el pie del commit, o `!` antes de los dos puntos (`feat!:`, `feat(api)!:`), o lleva la etiqueta `breaking`. Va solo bajo «Cambios incompatibles» (entrada con `group: "breaking"`, `type_group` con su grupo de tipo y `breaking_note` con la explicación del pie), no repetido en su tipo.
+
 Errores como valor: `ok`, `error_class`, `error`, `error_key`, `error_args`. Clases: `gh.missing`, `gh.unauthenticated`, `gh.no_remote`, `gh.timeout`, `gh.rate_limited`, `gh.not_found`, `gh.failed`. Si `origin` es una ruta local no se llama a `gh` (`reason=local_remote`). `notes` y `release-check` siguen funcionando con datos locales; sus partes de GitHub salen como `skip` con el motivo.
 
 ### Rutas (solo administrador)
