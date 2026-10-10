@@ -236,6 +236,9 @@ def test_a_session_created_with_a_token_is_owned_by_the_token_owner(monkeypatch)
         skip_validation="true",
         api_key="",
         endpoint_id="",
+        # Called directly, an omitted Form() default is a truthy FieldInfo,
+        # which the route would read as a project to look up.
+        project_id="",
     )
 
     assert session_manager.create_session.call_args.kwargs["owner"] == "alice"
