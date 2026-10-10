@@ -341,8 +341,21 @@ _TOOL_FAILURE_HEAD = _rx(r"\bno such file\b", r"\bnot found\b")
 # A search hit ("path:12: ...") quoting "not found" is still content. The path may hold spaces and
 # a Windows drive ("C:\\My work\\a.py:12:"); an error line ("bash: rg: command not found",
 # "File not found: notes.md") has no line number right after its first colon, so it never matches.
-# A context line of a search ("a.py-12-...") counts too.
-_SEARCH_HIT = re.compile(r"^(?:[A-Za-z]:[\\/])?[^:\n]+?(?::\d+[:-]|\.\w+-\d+-)")
+# A context line of a search ("README-11-...", "a.py-11-...") counts too when the same path shows
+# up as a hit ("README:12:") in the result: a search prints its context next to the match, while an
+# error never repeats its first word as "<word>:<n>:". No file extension is needed.
+_SEARCH_HIT = re.compile(r"^(?:[A-Za-z]:[\\/])?[^:\n]+?:\d+[:-]")
+_SEARCH_CONTEXT = re.compile(r"^((?:[A-Za-z]:[\\/])?[^:\n]+?)-\d+-")
+
+
+def _search_line(first_line: str, head: str) -> bool:
+    if _SEARCH_HIT.match(first_line):
+        return True
+    context = _SEARCH_CONTEXT.match(first_line)
+    if not context:
+        return False
+    path = context.group(1)
+    return bool(re.search(r"(?m)^\s*" + re.escape(path) + r":\d+[:-]", head))
 
 
 def _tool_failed(text: str) -> bool:
@@ -350,7 +363,7 @@ def _tool_failed(text: str) -> bool:
     if _TOOL_FAILURE.search(head):
         return True
     first_line = head.lstrip().split("\n", 1)[0][:200]
-    return bool(_TOOL_FAILURE_HEAD.search(first_line)) and not _SEARCH_HIT.match(first_line)
+    return bool(_TOOL_FAILURE_HEAD.search(first_line)) and not _search_line(first_line, head)
 
 
 def is_correction(text: str) -> bool:

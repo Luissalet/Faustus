@@ -118,6 +118,8 @@ def test_route_helper_wires_history(monkeypatch):
     "  Error: no such file or directory",
     "File not found: C:\\Users\\qa\\native search with spaces\\plan.md",
     "'rg' is not recognized: command not found in C:\\Program Files\\tools",
+    "C:\\my-2024-notes\\plan.md: not found",
+    "build-12-step not found",
 ])
 def test_error_shaped_not_found_counts_as_a_failed_tool(result):
     msgs = _hist(("user", "abre el plan"), ("tool", result), ("assistant", "No pude."), ("user", "vale"))
@@ -128,7 +130,9 @@ def test_error_shaped_not_found_counts_as_a_failed_tool(result):
     "Results for 'http status codes':\n1. 404 Not Found - the server cannot find the resource",
     "src/app.py:12: raise KeyError('user not found')\nsrc/db.py:40: # no such file is fine here",
     "C:\\Users\\qa\\native search with spaces\\a.py:12:    raise ValueError('user not found')",
-    "D:/QA dir/b.py-12-    raise ValueError('user not found')",
+    "D:/QA dir/b.py-12-    raise ValueError('user not found')\nD:/QA dir/b.py:13:MATCH",
+    "D:/QA dir/README-11-raise ValueError('user not found')\nD:/QA dir/README:12:MATCH",
+    "scripts/Makefile-3-# target not found here\nscripts/Makefile:4:MATCH",
     "notes/my plan.md:3: the file was not found last week",
 ])
 def test_not_found_inside_content_is_not_a_failed_tool(result):
