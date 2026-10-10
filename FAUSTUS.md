@@ -10924,3 +10924,13 @@ Verificación: contrato entre la respuesta real de shell y el parser de Studio, 
 **i18n.** `scripts/i18n_es.py` ya no puede perder traducciones: antes de regenerar, copia a `docs/ui/i18n/es.tsv` las filas que solo estaban en `es.ts` (32 se perdían en cada regeneración); `--prune` es la forma deliberada de quitar una.
 
 **Verificación.** `tests/test_dispatch_adopt.py` (17): identidad por pid y hora de creación, ids inválidos, lectura del log por líneas completas, resultado solo de eventos del agente, un run real que deja log y registro, adopción con seguimiento hasta `partial`, agente que falla, cancelación que mata al agente adoptado, agente que acabó con Faustus parado, trabajo sin runs pendientes que sigue `interrupted`, pid reutilizado que no se toca, trabajo terminado que se deja en paz y ficheros observados contra el checkpoint. Más la batería de dispatch, runners, guardia externo y recuperación tras caída (572 en verde; el único fallo era un test de la interfaz de aprobaciones desfasado en master, corregido aparte). En vivo: un Faustus lanzó un trabajo real con un agente externo de 42 s y murió con `os._exit`; el servidor real arrancado después sobre los mismos datos lo adoptó al arrancar (log: «Dispatch: adopted 1 job(s)…»), la API lo mostró `running` con la fase de adopción y el progreso del trabajador, y terminó `partial` con el trabajador `done`, `cart.py` observado por checkpoint y el registro marcado `adopted`.
+
+## Arranque: el escaneo de recuperación tras una caída va en segundo plano — 10-10-2026
+
+**Qué pasó.** Al reiniciar el 7000 a las 20:26, el arranque se quedó más de 90 s esperando a `crash_recovery.boot_scan`, que estaba leyendo los logs de ejecución (`data/runs`, 182 ficheros, 64 MB) en un disco lento. El volcado de faulthandler de `data/logs/crash.log` lo muestra en `_read_run_log`. El lanzador dio el arranque por fallido y paró el servidor, y Faustus estuvo caído unos 4 minutos, hasta el siguiente intento. Los reinicios anteriores del día tardaban entre 45 y 95 s, y casi todo ese tiempo se iba en esta espera.
+
+**Qué cambia.** `app.py` ya no espera al escaneo: lo lanza como tarea en segundo plano y guarda el resultado en `app.state.crash_recovery` cuando termina. El comentario decía «fuera del camino crítico», pero el código hacía `await`. Nada del arranque depende de él. La adopción de trabajos de dispatch vivos (§307) sigue haciéndose antes, de forma síncrona.
+
+**Verificación.**
+- Crash recovery, shutdown, lifespan en modo seguro y adopción: 69 pruebas pasan.
+- En el 7000, entre «Application starting up» y «Application startup complete» pasan ahora 0,5 s (antes, 75 s) y el servidor responde a los 55 s de pedir el reinicio, contando el tiempo del lanzador.
