@@ -4139,6 +4139,13 @@ def setup_chat_routes(
                             )
                             sess.add_message(ChatMessage("assistant", _stopped_content, metadata=_stopped_md))
                             session_manager.save_sessions()
+                            try:
+                                from src import turn_receipt as _turn_receipt
+                                _turn_receipt.emit_turn_receipt(
+                                    session, _stopped_md.get("_db_id"), _stopped_md,
+                                    status="cancelled", owner=getattr(sess, "owner", None))
+                            except Exception:
+                                logger.debug("turn receipt (cancelled) failed", exc_info=True)
                         _ce_chat_receipt("interrupted")
                         raise
                     finally:
@@ -4735,6 +4742,13 @@ def setup_chat_routes(
                                 )
                                 sess.add_message(ChatMessage("assistant", _stopped_content2, metadata=_stopped_md2))
                                 session_manager.save_sessions()
+                                try:
+                                    from src import turn_receipt as _turn_receipt
+                                    _turn_receipt.emit_turn_receipt(
+                                        session, _stopped_md2.get("_db_id"), _stopped_md2,
+                                        status="cancelled", owner=getattr(sess, "owner", None))
+                                except Exception:
+                                    logger.debug("turn receipt (cancelled) failed", exc_info=True)
                         except Exception:
                             logger.exception("Failed to save partial response on disconnect (session %s)", session)
                         raise

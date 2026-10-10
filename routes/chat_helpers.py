@@ -1384,6 +1384,25 @@ def save_assistant_response(
     except Exception:
         logger.debug("notifications.emit(turn_finished) failed", exc_info=True)
 
+    # #268: the turn's receipt on the family Hub's bus (`faustus.turn.completed`,
+    # counters only - never the text). Fire-and-forget on a daemon thread; the
+    # persisted-turn path above is the only place it can come from, so it is
+    # emitted once per saved reply and never for incognito (returned earlier).
+    try:
+        from src import turn_receipt as _turn_receipt
+        _receipt_msg_md = (
+            getattr(sess.history[-1], "metadata", None) if getattr(sess, "history", None) else None
+        )
+        _turn_receipt.emit_turn_receipt(
+            session_id,
+            (_receipt_msg_md or {}).get("_db_id") if isinstance(_receipt_msg_md, dict) else None,
+            md,
+            incognito=incognito,
+            owner=getattr(sess, "owner", None),
+        )
+    except Exception:
+        logger.debug("turn receipt dispatch failed", exc_info=True)
+
     # Post-turn automation, all best-effort and never blocking the reply:
     # lifecycle hooks (`turn_end`, src/lifecycle_hooks.py — side effects and
     # the run log only, there is no prompt left to inject into) and the

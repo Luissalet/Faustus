@@ -13,6 +13,13 @@ def no_live_hoard_services(monkeypatch):
     monkeypatch.setattr(fam_web, "fetch", lambda *a, **k: {"ok": False, "error": "hub unreachable"})
     monkeypatch.setattr(_famsvc, "call_tool", lambda *a, **k: {
         "ok": False, "kind": "hub_down", "error": "hub unreachable"})
+
+
+@pytest.fixture(autouse=True)
+def no_live_turn_receipts(monkeypatch):
+    """Saving a reply posts a receipt to the family Hub (#268): tests never reach the running one."""
+    from src import turn_receipt
+    monkeypatch.setattr(turn_receipt, "_send", lambda *a, **k: False)
 from unittest.mock import MagicMock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
