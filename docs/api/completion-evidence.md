@@ -5,6 +5,13 @@ A successful write receipt backs a completion claim; a failed, blocked or
 approval-pending call does not. File claims still require evidence for their
 individual paths.
 
+These evidence requirements describe what can be verified. In ordinary chat,
+unsupported claims produce persisted advisory diagnostics and a brief notice;
+they do not replace the answer, block its closure or trigger another model
+approval turn. Test fixtures are not treated as user deliverables solely because
+a test writes them. See [harness evidence](../HARNESS-EVIDENCE.md) for the active
+ordinary-answer and scorecard contract.
+
 A requested summary or explicitly attributed report may describe a historical
 state such as “according to the author, the parser regression is now fixed”.
 The ledger excludes that sentence from the current-turn edit claim scan only
