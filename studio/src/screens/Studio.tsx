@@ -1032,6 +1032,9 @@ export function StudioScreen() {
    * which used to drop it from every turn after the first. */
   const prevGenSessionRef = useRef<string | null>(sessionId);
   const prevEffortSessionRef = useRef<string | null>(sessionId);
+  // A preference read may finish after the user has already changed the
+  // selection in this session. Do not let that stale snapshot win locally.
+  const effortChoiceRevisionRef = useRef(0);
   const genRef = useRef<GenOverrides>(gen);
   genRef.current = gen;
   const effortPickRef = useRef<string | null>(effortPick);
@@ -1079,12 +1082,14 @@ export function StudioScreen() {
         writeThinkEffort(sessionId, carried);
         void setSessionReasoningPreference(sessionId, carried).catch((error) => {
           console.warn('Could not persist the new session reasoning preference', error);
+          say(`${t('Could not save the session reasoning preference.')}: ${(error as Error).message}`, 'danger');
         });
         return () => controller.abort();
       }
     }
+    const choiceRevision = effortChoiceRevisionRef.current;
     void getSessionReasoningPreference(sessionId, controller.signal).then((preference) => {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted || effortChoiceRevisionRef.current !== choiceRevision) return;
       setEffortPick(preference.reasoning_effort);
       writeThinkEffort(sessionId, preference.reasoning_effort);
     }).catch((error) => {
@@ -1093,13 +1098,14 @@ export function StudioScreen() {
       }
     });
     return () => controller.abort();
-  }, [sessionId]);
+  }, [sessionId, say, t]);
   useEffect(() => {
     if (sessionId) writeJson(`${GEN_KEY}_${sessionId}`, gen);
   }, [gen, sessionId]);
   // Written where it is picked, not in an effect: an effect would run once
   // with the previous chat's pick against the next chat's id.
   const pickThinkMode = useCallback((mode: ThinkMode) => {
+    effortChoiceRevisionRef.current += 1;
     setThinkPick(mode);
     writeThinkMode(sessionId, mode);
     // A mode picked after a level: the mode decides again.
@@ -1108,6 +1114,7 @@ export function StudioScreen() {
     if (sessionId) {
       void setSessionReasoningPreference(sessionId, null).catch((error) => {
         console.warn('Could not clear the session reasoning preference', error);
+        say(`${t('Could not save the session reasoning preference.')}: ${(error as Error).message}`, 'danger');
       });
     }
     if (!reasoningCaps.thinking_toggle) return;
@@ -1123,17 +1130,19 @@ export function StudioScreen() {
       setThinkingOnPick(true);
       writeThinkingOn(sessionId, true);
     }
-  }, [sessionId, reasoningCaps.thinking_toggle]);
+  }, [sessionId, reasoningCaps.thinking_toggle, say, t]);
   const pickThinkEffort = useCallback((effort: string | null) => {
+    effortChoiceRevisionRef.current += 1;
     // Effort never silently re-enables Thinking; it only stores the level.
     setEffortPick(effort);
     writeThinkEffort(sessionId, effort);
     if (sessionId) {
       void setSessionReasoningPreference(sessionId, effort).catch((error) => {
         console.warn('Could not save the session reasoning preference', error);
+        say(`${t('Could not save the session reasoning preference.')}: ${(error as Error).message}`, 'danger');
       });
     }
-  }, [sessionId]);
+  }, [sessionId, say, t]);
   const pickThinkingOn = useCallback((on: boolean) => {
     setThinkingOnPick(on);
     writeThinkingOn(sessionId, on);
