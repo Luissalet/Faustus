@@ -68,6 +68,22 @@ def test_without_model_uses_normal_executor_and_persists_untrusted_output(env):
     security = ToolRunSecurityContext()
     security.observe_messages([session.history[1].to_dict()])
     assert security.external_untrusted_context_seen
+    # The reply itself shows the output (not only the collapsed tool card).
+    reply = session.history[1].content
+    assert reply.startswith('`$ pwd` · exit 0') and 'fixture output' in reply
+
+
+def test_a_long_output_shows_its_tail_in_the_reply(env, monkeypatch):
+    long = 'x' * 10000 + 'END'
+
+    async def execute(block, **kw):
+        return '', {'output': long, 'exit_code': 0}
+
+    monkeypatch.setattr(shell, 'execute_tool_block', execute)
+    result = run(shell.run_command('seq', owner='alice', workspace=env.workspace))
+    msg = env.sessions[result['session_id']].history[1]
+    assert msg.content.rstrip().endswith('END\n```') and len(msg.content) < 6200
+    assert msg.metadata['tool_events'][0]['output'] == long
 
 
 def test_other_owner_cannot_run_or_read_pending_command(env):

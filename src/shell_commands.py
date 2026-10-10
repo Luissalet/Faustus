@@ -14,6 +14,11 @@ from src.tool_approvals import tool_approval_store
 from src.tool_policy import build_effective_tool_policy
 
 
+#: How much of the output the saved reply shows (its tail); the tool event
+#: keeps what the executor returned.
+_REPLY_OUTPUT_CHARS = 6000
+
+
 class ShellCommandError(ValueError):
     def __init__(self, status: int, message: str):
         super().__init__(message)
@@ -75,9 +80,14 @@ def _save_result(manager, session, command: str, result: dict, approval_id: str 
                 "trusted": False, "tool_gate_untrusted": True}
     if approval_id:
         metadata["literal_shell_approval_id"] = approval_id
-    text = ("Shell command needs approval." if approval_id else
-            "Shell command was blocked." if result.get("blocked") else
-            f"Shell command finished (exit {result.get('exit_code', 1)}).")
+    # The output IS the answer to a literal command: it goes in the reply
+    # itself (a fenced block, tail-bounded), not only behind the collapsed
+    # tool card, and the head line is the same in every interface language.
+    state = ("approval needed" if approval_id else "blocked" if result.get("blocked")
+             else f"exit {result.get('exit_code', 1)}")
+    shown = output if len(output) <= _REPLY_OUTPUT_CHARS else "…" + output[-_REPLY_OUTPUT_CHARS:]
+    fence = "````" if "```" in shown else "```"
+    text = f"`$ {command}` · {state}\n\n{fence}text\n{shown.rstrip()}\n{fence}"
     manager.add_message(session.id, ChatMessage("assistant", text, metadata=metadata))
     return {"session_id": session.id, "result": result, "approval_id": approval_id or None}
 
