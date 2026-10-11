@@ -9673,3 +9673,5 @@ Successful run started: {when}	Inicio de la ejecución que terminó bien: {when}
 Last result succeeded	El último resultado fue correcto
 An administrator can view the fleet for this device.	Un administrador puede consultar la flota de este equipo.
 Last confirmed failure: {when}	Último fallo confirmado: {when}
+No schedule declared	Sin horario declarado
+Updating fleet…	Actualizando la flota…

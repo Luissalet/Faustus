@@ -9,7 +9,6 @@ nothing else in Faustus depends on the hub being there.
 from __future__ import annotations
 
 import asyncio
-import secrets
 from typing import Any, Dict
 
 from fastapi import APIRouter, Request
@@ -41,10 +40,9 @@ def setup_hoard_hub_routes() -> APIRouter:
     def publish_fleet(request: Request):
         # The already configured Hub credential authenticates the family observer;
         # ordinary authenticated administrators can read the same published metadata.
-        where = hoard_hub.hub_location()
-        token = hoard_hub._read_text(where.get("token_file") or "")
-        authorization = request.headers.get("Authorization", "")
-        if not token or not secrets.compare_digest(authorization.encode(), ("Bearer " + token).encode()):
+        # AuthMiddleware lets exactly this GET through when it carries the Hub's token; the handler checks it
+        # again, so a request that reaches here without it still needs an administrator session.
+        if not hoard_hub.hub_bearer_matches(request.headers.get("Authorization", "")):
             require_admin(request)
         from core.database import SessionLocal
         from src.fleet_status import build

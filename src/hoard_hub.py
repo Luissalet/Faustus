@@ -81,6 +81,21 @@ def _connector_values() -> Optional[Dict[str, Any]]:
     return None
 
 
+def hub_bearer_matches(authorization: str) -> bool:
+    """True when ``authorization`` is exactly ``Bearer <the Hub's own token>``.
+
+    The Hub reads published metadata with the credential it already shares with the family. It is not an
+    ``ody_`` API token, so the session middleware cannot recognise it; the one route that accepts it
+    (``GET /api/family/fleet``) asks this function, in the middleware and again in the handler.
+    """
+    import secrets
+
+    token = _read_text(hub_location().get("token_file") or "")
+    if not token or not isinstance(authorization, str) or not authorization.startswith("Bearer "):
+        return False
+    return secrets.compare_digest(authorization.encode(), ("Bearer " + token).encode())
+
+
 def hub_location() -> Dict[str, Any]:
     """``{"url", "token_file", "configured"}`` for the hub, never raising.
 
@@ -219,14 +234,14 @@ def get_spheres() -> Dict[str, Any]:
 
 def get_fleet() -> Dict[str, Any]:
     """Read the Hub's published fleet metadata without opening another app's data."""
-    # A cold refresh can include the bounded Windows metadata query (8 s)
-    # after family health/provider probes; it must fit the proxy's deadline.
+    # The Hub answers from its background cache (marking it ``refreshing`` while a pass runs); the deadline
+    # only covers a Hub that is slow to start.
     status, data, where = _call("GET", "/api/fleet", timeout=15.0)
     if status != 200 or not isinstance(data, dict) or not data.get("ok"):
         return {"ok": False, "error": "fleet unavailable", "hub_url": where["url"]}
     if not isinstance(data.get("items"), list) or not isinstance(data.get("brief"), dict):
         return {"ok": False, "error": "fleet unavailable", "hub_url": where["url"]}
-    return {k: data.get(k) for k in ("ok", "generated_ts", "items", "brief", "counts", "coverage")}
+    return {k: data.get(k) for k in ("ok", "generated_ts", "items", "brief", "counts", "coverage", "refreshing")}
 
 
 def set_active(sphere_id: str) -> Dict[str, Any]:

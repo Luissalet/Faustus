@@ -24,21 +24,24 @@ def build(db):
     errors = dict(db.query(TaskRun.task_id, func.max(TaskRun.finished_at)).filter(
         TaskRun.status == 'error', TaskRun.finished_at.isnot(None)).group_by(TaskRun.task_id).all())
     columns = [getattr(ScheduledTask, name) for name in ('id','name','created_at','status','trigger_type','schedule',
-        'scheduled_time','scheduled_day','scheduled_date','timezone','cron_expression','crew_member_id')]
+        'scheduled_time','scheduled_day','scheduled_date','timezone','cron_expression','crew_member_id','resumed_at')]
     tasks = db.query(*columns).order_by(ScheduledTask.id).limit(1001).all()
     guarded = guarded_task_ids()
     items = []
     for task in tasks[:1000]:
         ok, failed = epoch(success.get(task.id)), epoch(errors.get(task.id))
         created = epoch(task.created_at)
+        resumed = epoch(getattr(task, 'resumed_at', None))
         recurring = task.trigger_type != 'event' and task.schedule in ('daily', 'weekly', 'monthly', 'cron')
         item = {'id': 'faustus:task:' + task.id, 'owner': 'faustus', 'kind': 'scheduled_task' if recurring else 'rule',
             'label': label(task.name), 'created_ts': created, 'enabled': task.status == 'active',
-            'paused': task.status != 'active', 'last_success_ts': ok, 'last_error_ts': failed,
+            'paused': task.status != 'active', 'last_success_ts': ok, 'last_error_ts': failed, 'resumed_ts': resumed,
             'last_status': 'error' if failed and (not ok or failed >= ok) else 'ok' if ok else None,
             'error_code': 'scheduled_run_failed' if failed and (not ok or failed >= ok) else None}
         if recurring:
-            baseline = ok or created
+            # The clock starts at the latest of: the last success, the creation and the last resume from a pause.
+            values = [v for v in (ok, created, resumed) if v]
+            baseline = max(values) if values else None
             try:
                 after = datetime.fromtimestamp(baseline, timezone.utc).replace(tzinfo=None)
                 policy = get_task_policy(task.id)

@@ -522,8 +522,22 @@ if AUTH_ENABLED:
                     )
                 return JSONResponse(status_code=401, content={"error": "Setup required"})
 
-            # --- Bearer token auth (API tokens for external integrations) ---
+            # --- The Hub's own token, for exactly one read-only route ---
+            # The Hub reads GET /api/family/fleet with the credential it shares with the family. That is not an
+            # ``ody_`` API token and not a session cookie, so without this branch the request ends in a 401
+            # before the handler can look at it. Anything else that carries that bearer (another method, another
+            # path) gets no special treatment; a wrong bearer on this route is refused here.
             auth_header = request.headers.get("authorization", "")
+            if (request.method == "GET" and path == "/api/family/fleet" and auth_header.startswith("Bearer ")
+                    and not auth_header.startswith("Bearer ody_")):
+                from src import hoard_hub as _hub_credential
+                if await _asyncio.to_thread(_hub_credential.hub_bearer_matches, auth_header):
+                    request.state.current_user = "hoard-hub"
+                    request.state.api_token = False
+                    return await call_next(request)
+                return JSONResponse(status_code=401, content={"error": "Invalid Hub token"})
+
+            # --- Bearer token auth (API tokens for external integrations) ---
             if auth_header.startswith("Bearer ody_"):
                 raw_token = auth_header[7:]
                 # Sanity check: tokens are "ody_" + 43 chars of base64

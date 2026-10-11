@@ -12,4 +12,10 @@
 .fs-fleet-label { color: var(--fs-text-1); overflow-wrap: anywhere; }
 .fs-fleet-group li p, .fs-fleet-note { margin: var(--fs-space-1) 0 0; line-height: 1.6; }
 .fs-fleet-state { white-space: nowrap; }
+.fs-fleet-loose { margin-top: var(--fs-space-4); }
+.fs-fleet-loose summary { cursor: pointer; font-size: var(--fs-body-size); font-weight: 600; }
+.fs-fleet-loose summary span, .fs-fleet-loose li p { color: var(--fs-text-2); font-size: var(--fs-label-size); }
+.fs-fleet-loose ul { list-style: none; padding: 0; margin: var(--fs-space-2) 0 0; }
+.fs-fleet-loose li { padding: var(--fs-space-2) 0; border-bottom: 1px solid var(--fs-border); }
+.fs-fleet-loose li p { margin: var(--fs-space-1) 0 0; }
 @media (max-width: 640px) { .fs-fleet-group li > div { gap: var(--fs-space-1); } .fs-fleet-refresh { min-height: 44px; } }

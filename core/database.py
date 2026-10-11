@@ -1574,6 +1574,9 @@ class ScheduledTask(TimestampMixin, Base):
     # still_owner) right before producing an external effect or writing its
     # result, and aborts (`fenced`) instead of racing the new owner.
     lease_generation = Column(Integer, nullable=False, default=0)
+    # When the task last went from paused back to active (set by the status listener below). Monitoring starts
+    # its "two missed runs" clock here, so a task switched on after a long pause is not reported as silent.
+    resumed_at     = Column(DateTime, nullable=True)
 
     session = relationship("Session", backref=backref("scheduled_tasks", cascade="save-update, merge"))
     then_task = relationship("ScheduledTask", remote_side=[id], foreign_keys=[then_task_id])
@@ -1583,6 +1586,13 @@ class ScheduledTask(TimestampMixin, Base):
         Index('ix_scheduled_tasks_event', 'trigger_type', 'trigger_event', 'status'),
         Index('ix_scheduled_tasks_lease', 'status', 'lease_expires_at'),
     )
+
+
+@event.listens_for(ScheduledTask.status, "set", active_history=True)
+def _stamp_task_resume(target, value, oldvalue, initiator):
+    """Every path that switches a task back on (API, agent tool, import) goes through this attribute."""
+    if oldvalue == "paused" and value == "active":
+        target.resumed_at = utcnow_naive()
 
 
 class EditorDraft(TimestampMixin, Base):
@@ -3545,6 +3555,7 @@ def _formal_migration_steps() -> "list[tuple[str, object]]":
         ("add_session_forked_from", _migrate_add_session_forked_from),
         ("add_calendar_external_ref", _migrate_add_calendar_external_ref),
         ("add_lease_generation_columns", _migrate_add_lease_generation_columns),
+        ("add_task_resumed_at", _migrate_add_task_resumed_at),
         ("add_revision_triggers", _migrate_add_revision_triggers),
     ]
 
@@ -4070,6 +4081,28 @@ def _migrate_add_lease_generation_columns():
         conn.commit()
     except Exception as e:
         logging.getLogger(__name__).warning(f"lease_generation migration failed: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _migrate_add_task_resumed_at():
+    """Add scheduled_tasks.resumed_at (additive, idempotent): the last paused -> active moment."""
+    import sqlite3
+    db_path = DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.exists(db_path):
+        return
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        columns = [row[1] for row in conn.execute("PRAGMA table_info(scheduled_tasks)").fetchall()]
+        if columns and "resumed_at" not in columns:
+            conn.execute("ALTER TABLE scheduled_tasks ADD COLUMN resumed_at DATETIME")
+            conn.commit()
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"scheduled_tasks resumed_at migration failed: {e}")
     finally:
         try:
             conn.close()

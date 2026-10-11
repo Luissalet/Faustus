@@ -11,7 +11,7 @@ interface FleetItem {
 }
 interface FleetResult {
   ok: boolean; generated_ts: number; items: FleetItem[];
-  brief: Record<string, FleetItem[]>;
+  brief: Record<string, FleetItem[]>; refreshing?: boolean;
   coverage?: { errors?: Record<string, string>; truncated?: boolean; os_tasks?: string };
 }
 
@@ -54,7 +54,8 @@ export function FleetCard() {
       {busy && !data && !failed && <p className="fs-fleet-note">{t('Checking fleet…')}</p>}
       {failed && <p className="fs-fleet-note">{denied ? t('An administrator can view the fleet for this device.') : t('Fleet could not be checked. Check the Hub and try again.')}</p>}
       {data && <>
-        {data.items.length === 0 && <p className="fs-fleet-note">{t('No fleet expectations are declared yet.')}</p>}
+        {data.refreshing && <p className="fs-fleet-note">{t('Updating fleet…')}</p>}
+        {data.items.length === 0 && !data.refreshing && <p className="fs-fleet-note">{t('No fleet expectations are declared yet.')}</p>}
         {groups.map(([key, title]) => {
           const rows = data.brief[key] || [];
           if (!rows.length) return null;
@@ -71,6 +72,13 @@ export function FleetCard() {
             </li>)}</ul>
           </div>;
         })}
+        {(data.brief.no_cadence?.length || 0) > 0 && <details className="fs-fleet-loose">
+          <summary>{t('No schedule declared')} <span>{data.brief.no_cadence.length}</span></summary>
+          <ul>{data.brief.no_cadence.map((row) => <li key={row.id}>
+            <div><span className="fs-fleet-label">{row.label || row.id}</span></div>
+            <p>{row.last_success_ts ? t('Last confirmed success: {when}', { when: relativeTime(row.last_success_ts) }) : t('No confirmed success recorded.')}</p>
+          </li>)}</ul>
+        </details>}
         {groups.some(([key]) => (data.brief[key]?.length || 0) > 4) && <button type="button" className="fs-fleet-refresh" onClick={() => setExpanded((value) => !value)}>{expanded ? t('Show fewer') : t('Show all')}</button>}
         {!!Object.keys(data.coverage?.errors || {}).length || data.coverage?.truncated ? <p className="fs-fleet-note">{t('Some fleet sources could not be checked.')}</p> : null}
         <p className="fs-fleet-note">{t('Only configured apps and schedules are checked. Other tasks appear when they report their results.')}</p>

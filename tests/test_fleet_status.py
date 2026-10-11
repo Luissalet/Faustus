@@ -70,3 +70,56 @@ def test_native_database_ignores_running_attempt_and_keeps_guarded_cadence_unkno
     assert rows['faustus:task:guarded']['last_error_ts'] == epoch(finished)
     assert 'PRIVATE_' not in str(result)
     engine.dispose()
+
+
+def test_task_switched_back_on_after_a_long_pause_counts_its_slots_from_the_resume(monkeypatch):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from core.database import Base, ScheduledTask, TaskRun
+    import src.task_scheduler as scheduler
+    engine = create_engine('sqlite:///:memory:')
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(scheduler, 'get_task_policy', lambda _: {'dst_ambiguity_policy': 'run_once'})
+    monkeypatch.setattr(scheduler, 'guarded_task_ids', lambda: set())
+    old = datetime(2026, 9, 20, 10)
+    with Session(engine) as db:
+        db.add(ScheduledTask(id='slept', name='Slept', schedule='cron', cron_expression='0 */2 * * *', timezone='UTC',
+                             status='paused', created_at=datetime(2026, 9, 1)))
+        db.add(ScheduledTask(id='steady', name='Steady', schedule='cron', cron_expression='0 */2 * * *', timezone='UTC',
+                             status='active', created_at=datetime(2026, 9, 1)))
+        db.flush()
+        db.add(TaskRun(id='r1', task_id='slept', status='success', started_at=old, finished_at=old))
+        db.add(TaskRun(id='r2', task_id='steady', status='success', started_at=old, finished_at=old))
+        db.commit()
+        rows = {row['id']: row for row in build(db)['items']}
+        assert rows['faustus:task:slept']['paused'] is True and rows['faustus:task:slept']['resumed_ts'] is None
+        task = db.get(ScheduledTask, 'slept')
+        task.status = 'active'                      # the resume, by whichever route
+        db.get(ScheduledTask, 'steady').name = 'Steady, renamed'   # an edit is not a resume
+        db.commit()
+        rows = {row['id']: row for row in build(db)['items']}
+    slept, steady = rows['faustus:task:slept'], rows['faustus:task:steady']
+    assert slept['resumed_ts'] and slept['resumed_ts'] > epoch(old)
+    assert slept['expected_slots'][0] > slept['resumed_ts'], 'the first slot is after the resume, not after the old success'
+    assert steady['resumed_ts'] is None and steady['expected_slots'][1] < slept['resumed_ts']
+    engine.dispose()
+
+
+def test_resume_stamp_is_only_for_paused_to_active(monkeypatch):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from core.database import Base, ScheduledTask
+    engine = create_engine('sqlite:///:memory:')
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        task = ScheduledTask(id='t', name='T', schedule='daily', status='active')
+        db.add(task); db.commit()
+        assert task.resumed_at is None
+        task.status = 'paused'; db.commit()
+        assert task.resumed_at is None
+        task.status = 'active'; db.commit()
+        assert task.resumed_at is not None
+        first = task.resumed_at
+        task.status = 'active'; task.name = 'again'; db.commit()
+        assert task.resumed_at == first
+    engine.dispose()
