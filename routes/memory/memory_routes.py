@@ -108,12 +108,18 @@ def setup_memory_routes(memory_manager: MemoryManager, session_manager: SessionM
         require_privilege(request, "can_manage_memory")
         if memory_data is None:
             form = await request.form()
-            memory_data = MemoryAddRequest(
-                text=form.get("text"),
-                category=form.get("category", "fact"),
-                source=form.get("source", "user"),
-                session_id=form.get("session_id")
-            )
+            raw_days = form.get("lease_days")
+            try:
+                memory_data = MemoryAddRequest(
+                    text=form.get("text"),
+                    category=form.get("category", "fact"),
+                    source=form.get("source", "user"),
+                    session_id=form.get("session_id"),
+                    kind=(form.get("kind") or None),
+                    lease_days=(int(raw_days) if raw_days not in (None, "") else None),
+                )
+            except ValueError as e:
+                raise HTTPException(400, str(e))
 
         user = _owner(request)
         text = (memory_data.text or "").strip()
@@ -198,6 +204,30 @@ def setup_memory_routes(memory_manager: MemoryManager, session_manager: SessionM
                 memory_manager.save(all_mem)
                 return {"ok": True, "lease": memory_leases.public(memory)}
         raise HTTPException(404, f"Memory item {memory_id} not found")
+
+    @router.post("/leases/backfill")
+    def api_backfill_leases(request: Request, apply: bool = Form(False), basis: str = Form("recorded")):
+        """Give the facts that predate leases a kind and a lease, on demand.
+
+        A dry run unless ``apply`` is true: it lists what would be typed (kind,
+        lease, the state it would land in, what it would close) and writes
+        nothing. ``basis`` is ``recorded`` (the lease counts from when the fact
+        was saved, so an old place lands expired) or ``now``. Nothing like this
+        ever runs on load.
+        """
+        from src.auth_helpers import require_privilege
+        if apply:
+            require_privilege(request, "can_manage_memory")
+        user = _owner(request)
+        visible = {m.get("id") for m in memory_manager.load(owner=user)}
+        all_mem = _load_for_update(memory_manager)
+        try:
+            result = memory_leases.backfill(all_mem, apply=apply, basis=basis, only_ids=visible)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        if apply and result["typed"]:
+            memory_manager.save(all_mem)
+        return {"ok": True, **result}
 
     @router.post("/leases/{memory_id}/forget")
     def api_forget_lease(request: Request, memory_id: str):

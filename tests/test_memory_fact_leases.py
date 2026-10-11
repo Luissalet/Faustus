@@ -31,6 +31,7 @@ def _default_settings(monkeypatch):
     """Leases on, the shipped defaults, whatever the developer's settings say."""
     values = {"memory_leases_enabled": True, "memory_lease_days": {}, "memory_lease_review_window_days": 7}
     monkeypatch.setattr(memory_leases, "_setting", lambda key, default=None: values.get(key, default))
+    monkeypatch.setattr("src.user_time.user_timezone", lambda: timezone.utc)   # the "as of" day is local; pin it
     return values
 
 
@@ -579,3 +580,450 @@ def test_mcp_list_marks_an_expired_fact_and_add_reports_the_lease(monkeypatch, t
     added = _call("manage_memory", {"action": "add", "text": "User works at Acme Corp"})
     assert "[job, lease 365 days]" in added
     assert "Error" in _call("manage_memory", {"action": "add", "text": "x", "kind": "mood"})
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Review round: third parties and vague sentences never close the user's facts
+# ══════════════════════════════════════════════════════════════════════════
+
+THIRD_PARTY_PLACE = [
+    "User's sister lives in Berlin.",
+    "Luis's sister lives in Berlin",
+    "The user's brother lives in Paris",
+    "El hermano del usuario vive en Berlin",
+    "Su hermana vive en Berlin",
+    "La hermana de Luis vive en Berlin",
+    "User's mother lives in Lima",
+]
+THIRD_PARTY_JOB = [
+    "User's wife works at Google",
+    "Su hermana trabaja en Google",
+    "The user's boss works at Initech",
+    "El marido del usuario trabaja en Google",
+]
+VAGUE_PLACE = [
+    "User lives in the moment",
+    "User lives in constant fear of deadlines",
+    "User stays at hotels when travelling",
+    "User dreams of moving to Berlin",
+]
+VAGUE_JOB = [
+    "User works at night",
+    "User works at home on Fridays",
+    "El usuario trabaja en Faustus por las noches",
+    "User works at Globex on weekends",
+]
+
+
+@pytest.mark.parametrize("text", THIRD_PARTY_PLACE + THIRD_PARTY_JOB + VAGUE_PLACE + VAGUE_JOB)
+def test_these_sentences_get_no_single_valued_kind_and_no_slot(text):
+    kind = memory_leases.classify_kind(text)
+    assert kind not in memory_leases.SINGLE_VALUED
+    # Even if somebody forces the kind by hand, the slot refuses to compete.
+    assert memory_leases.slot_of("location", text) == ""
+    assert memory_leases.slot_of("job", text) == ""
+
+
+@pytest.mark.parametrize("text,kind,slot", [
+    ("User lives in Madrid", "location", "location"),
+    ("I live in Berlin", "location", "location"),
+    ("Lives in Madrid", "location", "location"),
+    ("Vivo en Madrid", "location", "location"),
+    ("El usuario vive en Madrid", "location", "location"),
+    ("User moved to Lisbon last year", "location", "location"),
+    ("User works at Acme Corp", "job", "job:employer"),
+    ("El usuario trabaja en Acme", "job", "job:employer"),
+    ("User works as a teacher", "job", "job:role"),
+    ("User's job title is Engineer", "job", "job:role"),
+])
+def test_real_statements_about_the_user_keep_their_kind_and_slot(text, kind, slot):
+    assert memory_leases.classify_kind(text) == kind
+    assert memory_leases.slot_of(kind, text) == slot
+
+
+@pytest.mark.parametrize("text", THIRD_PARTY_PLACE + VAGUE_PLACE + ["User is currently in Berlin"])
+def test_a_third_party_vague_or_temporary_place_never_closes_where_the_user_lives(tmp_path, text):
+    manager = _manager(tmp_path)
+    home = _add(manager, "User lives in Madrid", at=T0)
+    _add(manager, text, at=T0 + DAY)
+    stored = {e["id"]: e for e in manager.load_all()}
+    assert "closed_at" not in stored[home["id"]]
+    shown = [e["text"] for e in memory_leases.prompt_view(manager.load_all(), T0 + 2 * DAY)]
+    assert "User lives in Madrid" in shown
+
+
+@pytest.mark.parametrize("text", THIRD_PARTY_JOB + VAGUE_JOB)
+def test_a_third_party_or_side_activity_never_closes_the_users_job(tmp_path, text):
+    manager = _manager(tmp_path)
+    job = _add(manager, "User works at Acme Corp", at=T0)
+    _add(manager, text, at=T0 + DAY)
+    stored = {e["id"]: e for e in manager.load_all()}
+    assert "closed_at" not in stored[job["id"]]
+    assert "User works at Acme Corp" in [e["text"] for e in memory_leases.prompt_view(manager.load_all(), T0 + 2 * DAY)]
+
+
+@pytest.mark.parametrize("old,new", [
+    ("User lives in Madrid", "User lives in Berlin"),
+    ("I live in Madrid", "I live in Berlin"),
+    ("Vivo en Madrid", "Vivo en Berlin"),
+    ("El usuario vive en Madrid", "El usuario vive en Berlin"),
+    ("Lives in Madrid", "User lives in Berlin"),
+    ("User works at Acme Corp", "User works at Globex"),
+    ("El usuario trabaja en Acme", "El usuario trabaja en Globex"),
+    ("User works as a teacher", "User works as a nurse"),
+])
+def test_real_new_evidence_about_the_user_still_closes_the_old_fact(tmp_path, old, new):
+    manager = _manager(tmp_path)
+    first = _add(manager, old, at=T0)
+    second = _add(manager, new, at=T0 + DAY)
+    stored = {e["id"]: e for e in manager.load_all()}
+    assert stored[first["id"]]["superseded_by"] == second["id"]
+    assert "closed_at" not in stored[second["id"]]
+
+
+def test_a_third_party_fact_through_the_add_endpoint_leaves_madrid_in_the_prompt(monkeypatch, tmp_path):
+    from src.request_models import MemoryAddRequest
+    manager = _manager(tmp_path)
+    find = _routes(monkeypatch, manager)
+    add = find("/api/memory/add", "POST")
+    monkeypatch.setattr("src.auth_helpers.require_privilege", lambda *a, **k: None)
+    asyncio.run(add(request=None, memory_data=MemoryAddRequest(text="User lives in Madrid")))
+    for text in ("User's sister lives in Berlin.", "Su hermana vive en Berlin", "User's wife works at Google"):
+        asyncio.run(add(request=None, memory_data=MemoryAddRequest(text=text)))
+    rows = manager.load(owner="alice")
+    assert all("closed_at" not in e for e in rows)
+    assert "User lives in Madrid" in _injected(rows, "where does the user live in Madrid")
+
+
+# ── status is not a single slot ───────────────────────────────────────────
+
+
+@pytest.mark.parametrize("a,b", [
+    ("User currently uses VS Code", "User currently drinks tea"),
+    ("User is on vacation", "User is currently learning Rust"),
+    ("User is on holiday", "User is sick"),
+])
+def test_a_status_never_closes_another_status(tmp_path, a, b):
+    assert "status" not in memory_leases.SINGLE_VALUED
+    manager = _manager(tmp_path)
+    first = _add(manager, a, at=T0)
+    second = _add(manager, b, at=T0 + DAY)
+    assert first["kind"] == second["kind"] == "status"
+    assert all("closed_at" not in e for e in manager.load_all())
+    assert len(memory_leases.prompt_view(manager.load_all(), T0 + 2 * DAY)) == 2
+
+
+def test_a_status_still_expires_like_before(tmp_path):
+    manager = _manager(tmp_path)
+    _add(manager, "User is on holiday", at=T0)
+    view = memory_leases.prompt_view(manager.load_all(), T0 + 40 * DAY)
+    assert view[0]["text"].startswith("User is on holiday (as of ")
+
+
+@pytest.mark.parametrize("text", ["User is sick of Python", "User stays at hotels when travelling",
+                                  "User dreams of moving to Berlin", "User lives in the moment"])
+def test_the_vague_sentences_get_no_kind_at_all(text):
+    assert memory_leases.classify_kind(text) == ""
+
+
+# ── lease length cap, local dates, switch ─────────────────────────────────
+
+
+def test_a_lease_longer_than_ten_years_is_refused_everywhere(tmp_path, _default_settings):
+    from pydantic import ValidationError
+    from src.request_models import MemoryAddRequest
+    with pytest.raises(ValueError):
+        _manager(tmp_path).add_entry("User lives in Madrid", lease_days=3651)
+    assert _manager(tmp_path).add_entry("User lives in Madrid", lease_days=3650)["lease_days"] == 3650
+    with pytest.raises(ValidationError):
+        MemoryAddRequest(text="x", lease_days=3651)
+    entry = _add(_manager(tmp_path), "User works at Acme Corp")
+    with pytest.raises(ValueError):
+        memory_leases.renew(entry, 3651)
+    _default_settings["memory_lease_days"] = {"job": 99999}
+    assert memory_leases.lease_days_for("job") == 3650
+
+
+def test_the_as_of_date_is_the_users_local_day(monkeypatch):
+    from datetime import timedelta
+    noon_utc = int(datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc).timestamp())
+    entry = {"text": "User lives in Madrid", "confirmed_at": noon_utc}
+    monkeypatch.setattr("src.user_time.user_timezone", lambda: timezone(timedelta(hours=14)))
+    assert memory_leases.marked_text(entry) == "User lives in Madrid (as of 2026-06-02, may be outdated)"
+    monkeypatch.setattr("src.user_time.user_timezone", lambda: timezone.utc)
+    assert memory_leases.marked_text(entry) == "User lives in Madrid (as of 2026-06-01, may be outdated)"
+
+
+def test_switching_leases_off_puts_the_closed_facts_back_in_the_prompt(tmp_path, _default_settings):
+    manager = _manager(tmp_path)
+    _add(manager, "User lives in Madrid", at=T0)
+    _add(manager, "User lives in Berlin", at=T0 + DAY)
+    assert [e["text"] for e in memory_leases.prompt_view(manager.load_all(), T0 + 2 * DAY)] == ["User lives in Berlin"]
+    _default_settings["memory_leases_enabled"] = False
+    assert sorted(e["text"] for e in memory_leases.prompt_view(manager.load_all(), T0 + 2 * DAY)) == [
+        "User lives in Berlin", "User lives in Madrid"]
+
+
+# ── the form-mode add endpoint takes the lease fields ────────────────────
+
+
+def test_form_mode_add_accepts_kind_and_lease_days(monkeypatch, tmp_path):
+    from fastapi import HTTPException
+    manager = _manager(tmp_path)
+    find = _routes(monkeypatch, manager)
+    add = find("/api/memory/add", "POST")
+    monkeypatch.setattr("src.auth_helpers.require_privilege", lambda *a, **k: None)
+
+    class _Form:
+        def __init__(self, data):
+            self.data = data
+
+        async def form(self):
+            return self.data
+
+    done = asyncio.run(add(request=_Form({"text": "Bakes on Sundays", "kind": "status", "lease_days": "3"}), memory_data=None))
+    assert done["lease"]["kind"] == "status" and done["lease"]["lease_days"] == 3
+    with pytest.raises(HTTPException) as bad:
+        asyncio.run(add(request=_Form({"text": "x y z", "lease_days": "soon"}), memory_data=None))
+    assert bad.value.status_code == 400
+    with pytest.raises(HTTPException) as bad_kind:
+        asyncio.run(add(request=_Form({"text": "x y z", "kind": "mood"}), memory_data=None))
+    assert bad_kind.value.status_code == 400
+
+
+# ── facts from before leases: an opt-in backfill ─────────────────────────
+
+
+def _legacy_file(manager):
+    rows = [
+        {"id": "l1", "text": "User lives in Madrid", "category": "fact", "timestamp": T0 - 900 * DAY, "owner": "alice"},
+        {"id": "l2", "text": "User lives in Berlin", "category": "fact", "timestamp": T0 - 300 * DAY, "owner": "alice"},
+        {"id": "l3", "text": "User works at Acme Corp", "category": "fact", "timestamp": T0 - 100 * DAY, "owner": "alice"},
+        {"id": "l4", "text": "User uses FastAPI", "category": "fact", "timestamp": T0 - 100 * DAY, "owner": "alice"},
+        {"id": "l5", "text": "Ana lives in Paris", "category": "contact", "timestamp": T0 - 100 * DAY, "owner": "alice"},
+        {"id": "l6", "text": "User lives in Rome", "category": "fact", "timestamp": T0, "owner": "bob"},
+    ]
+    manager.save(rows)
+    return rows
+
+
+def test_loading_and_reviewing_never_rewrites_old_facts(tmp_path):
+    manager = _manager(tmp_path)
+    _legacy_file(manager)
+    path = tmp_path / "memory.json"
+    before = path.read_bytes()
+    manager.load_all()
+    manager.load(owner="alice")
+    memory_leases.review(manager.load(owner="alice"), now=T0)
+    assert path.read_bytes() == before
+
+
+def test_the_review_counts_the_untyped_facts(tmp_path):
+    manager = _manager(tmp_path)
+    _legacy_file(manager)
+    report = memory_leases.review(manager.load(owner="alice"), now=T0)
+    assert report["untyped"] == {"total": 4, "typable": 3}   # contact excluded; FastAPI has no kind
+
+
+def test_backfill_is_a_dry_run_by_default_and_says_what_it_would_close(tmp_path):
+    manager = _manager(tmp_path)
+    entries = _legacy_file(manager)
+    snapshot = [dict(e) for e in entries]
+    result = memory_leases.backfill(entries, now=T0, only_ids={"l1", "l2", "l3", "l4", "l5"})
+    assert entries == snapshot                                           # nothing written
+    assert result["applied"] is False and result["typed"] == 3 and result["left_untyped"] == 1
+    rows = {r["id"]: r for r in result["changes"]}
+    assert rows["l1"]["kind"] == "location" and rows["l1"]["state"] == "closed"
+    assert rows["l2"]["state"] == "expired" and rows["l2"]["closes"] == ["l1"]
+    assert rows["l3"]["kind"] == "job" and rows["l3"]["lease_days"] == 365 and rows["l3"]["state"] == "active"
+    assert "l4" not in rows and "l5" not in rows and "l6" not in rows
+
+
+def test_backfill_apply_writes_kind_and_lease_and_save_closes_the_replaced(tmp_path):
+    manager = _manager(tmp_path)
+    entries = _legacy_file(manager)
+    result = memory_leases.backfill(entries, apply=True, now=T0, only_ids={"l1", "l2", "l3", "l4", "l5"})
+    assert result["applied"] is True
+    manager.save(entries)
+    stored = {e["id"]: e for e in manager.load_all()}
+    assert stored["l2"]["kind"] == "location" and stored["l2"]["lease_until"] == (T0 - 300 * DAY) + 30 * DAY
+    assert stored["l1"]["closed_at"] and stored["l1"]["superseded_by"] == "l2"
+    assert "kind" not in stored["l4"] and "kind" not in stored["l5"] and "kind" not in stored["l6"]
+    # counted from when it was saved: long expired, so it waits in the review list
+    assert memory_leases.state(stored["l2"], T0)["state"] == "expired"
+    assert memory_leases.backfill(manager.load_all(), apply=True, now=T0)["typed"] == 1   # bob's, not scoped here
+
+
+def test_backfill_from_now_starts_every_lease_today(tmp_path):
+    manager = _manager(tmp_path)
+    entries = _legacy_file(manager)
+    memory_leases.backfill(entries, apply=True, basis="now", now=T0, only_ids={"l2"})
+    assert entries[1]["lease_until"] == T0 + 30 * DAY and memory_leases.state(entries[1], T0)["state"] == "active"
+    with pytest.raises(ValueError):
+        memory_leases.backfill(entries, basis="yesterday")
+
+
+def test_backfill_endpoint_dry_run_then_apply(monkeypatch, tmp_path):
+    from fastapi import HTTPException
+    manager = _manager(tmp_path)
+    _legacy_file(manager)
+    find = _routes(monkeypatch, manager)
+    backfill = find("/api/memory/leases/backfill", "POST")
+    monkeypatch.setattr("src.auth_helpers.require_privilege", lambda *a, **k: None)
+    path = tmp_path / "memory.json"
+    before = path.read_bytes()
+    dry = backfill(request=None, apply=False, basis="recorded")
+    assert dry["typed"] == 3 and dry["applied"] is False and path.read_bytes() == before
+    done = backfill(request=None, apply=True, basis="recorded")
+    assert done["applied"] is True
+    stored = {e["id"]: e for e in manager.load_all()}
+    assert stored["l3"]["kind"] == "job" and "kind" not in stored["l6"]       # bob's fact untouched
+    with pytest.raises(HTTPException):
+        backfill(request=None, apply=False, basis="yesterday")
+    review = find("/api/memory/leases", "GET")(request=None, window_days=None)
+    assert review["untyped"]["typable"] == 0
+
+
+def test_mcp_backfill_and_review_hint(monkeypatch, tmp_path):
+    manager = _manager(tmp_path)
+    _legacy_file(manager)
+    _server(monkeypatch, manager)
+    assert "older fact(s) have no kind" in _call("memory_leases", {"action": "review"})
+    dry = _call("memory_leases", {"action": "backfill"})
+    assert dry.startswith("Would type (dry run") and "User works at Acme Corp" in dry
+    assert all("kind" not in e for e in manager.load_all())
+    done = _call("memory_leases", {"action": "backfill", "apply": True})
+    assert done.startswith("Typed 3 fact(s)")
+    assert next(e for e in manager.load_all() if e["id"] == "l3")["kind"] == "job"
+    assert "Error" in _call("memory_leases", {"action": "backfill", "basis": "yesterday"})
+
+
+def test_mcp_review_rejects_a_bad_window_instead_of_crashing(monkeypatch, tmp_path):
+    manager = _manager(tmp_path)
+    _add(manager, "User lives in Madrid")
+    _server(monkeypatch, manager)
+    assert _call("memory_leases", {"action": "review", "window_days": "soon"}).startswith("Error")
+    assert _call("memory_leases", {"action": "review", "window_days": -3}).startswith("Error")
+    assert _call("memory_leases", {"action": "renew", "memory_id": "x", "days": "many"}).startswith("Error")
+
+
+# ── the real extractor (stubbed model) confirms an expired fact the user repeats ──
+
+
+class _ExtractSession:
+    session_id = "s-ext"
+    owner = "alice"
+
+    def get_context_messages(self):
+        return [
+            {"role": "user", "content": "just so you know, I still live in Madrid"},
+            {"role": "assistant", "content": "Noted."},
+        ]
+
+
+class _FakeVector:
+    healthy = True
+
+    def __init__(self, hit_id=None):
+        self.hit_id = hit_id
+        self.added = []
+
+    def search(self, text, k=8):
+        return [{"memory_id": self.hit_id, "score": 0.9}] if self.hit_id else []
+
+    def add(self, memory_id, text):
+        self.added.append(memory_id)
+
+
+def _extract(monkeypatch, manager, answer, vector=None):
+    import json as _json
+    import services.memory.memory_extractor as extractor
+
+    async def _fake_llm(*args, **kwargs):
+        return _json.dumps([{"text": t, "category": "fact"} for t in answer])
+
+    monkeypatch.setattr("src.llm_core.llm_call_async", _fake_llm)
+    asyncio.run(extractor.extract_and_store(_ExtractSession(), manager, vector, endpoint_url="http://127.0.0.1:1/v1", model="stub"))
+    return {e["text"]: e for e in manager.load_all()}
+
+
+def _now():
+    return int(datetime.now(timezone.utc).timestamp())
+
+
+@pytest.mark.parametrize("age_days", [40, 25])          # expired, then inside the review window
+def test_extractor_renews_a_leased_fact_the_user_says_again(monkeypatch, tmp_path, age_days):
+    manager = _manager(tmp_path)
+    old = _add(manager, "User lives in Madrid", at=_now() - age_days * DAY)
+    stored = _extract(monkeypatch, manager, ["User lives in Madrid"])
+    assert len(stored) == 1
+    renewed = stored["User lives in Madrid"]
+    assert renewed["id"] == old["id"] and renewed["lease_until"] > _now() + 28 * DAY
+    assert memory_leases.state(renewed)["state"] == "active"
+    assert memory_leases.prompt_view(manager.load_all())[0]["text"] == "User lives in Madrid"      # no longer marked
+
+
+def test_extractor_leaves_a_fresh_lease_alone(monkeypatch, tmp_path):
+    manager = _manager(tmp_path)
+    old = _add(manager, "User lives in Madrid", at=_now() - 2 * DAY)
+    stored = _extract(monkeypatch, manager, ["User lives in Madrid"])
+    assert stored["User lives in Madrid"]["lease_until"] == old["lease_until"]
+
+
+def test_extractor_renews_through_the_vector_duplicate_path_too(monkeypatch, tmp_path):
+    manager = _manager(tmp_path)
+    old = _add(manager, "User lives in Madrid", at=_now() - 40 * DAY)
+    stored = _extract(monkeypatch, manager, ["User lives in Madrid."], vector=_FakeVector(old["id"]))
+    assert len(stored) == 1 and stored["User lives in Madrid"]["lease_until"] > _now() + 28 * DAY
+
+
+def test_extractor_adds_a_different_place_instead_of_renewing_the_old_one(monkeypatch, tmp_path):
+    """"lives in Paris" is 0.6 alike to "lives in Madrid" by words, but it is another claim."""
+    manager = _manager(tmp_path)
+    old = _add(manager, "User lives in Madrid", at=_now() - 40 * DAY)
+    stored = _extract(monkeypatch, manager, ["User lives in Paris"])
+    assert set(stored) == {"User lives in Madrid", "User lives in Paris"}
+    assert stored["User lives in Madrid"]["superseded_by"] == stored["User lives in Paris"]["id"]
+    assert memory_leases.state(stored["User lives in Madrid"])["state"] == "closed"
+    assert stored["User lives in Madrid"]["id"] == old["id"]
+
+
+def test_extractor_reopens_a_replaced_fact_only_for_the_very_same_text(monkeypatch, tmp_path):
+    manager = _manager(tmp_path)
+    now = _now()
+    _add(manager, "User lives in Madrid", at=now - 20 * DAY)
+    _add(manager, "User lives in Berlin", at=now - 10 * DAY)
+    assert "closed_at" in next(e for e in manager.load_all() if e["text"] == "User lives in Madrid")
+    # a looser wording of the old place is NOT a reason to reopen it
+    stored = _extract(monkeypatch, manager, ["User lives in Madrid, Spain."])
+    assert "closed_at" in stored["User lives in Madrid"] and "User lives in Madrid, Spain." in stored
+    # the very same words are the user saying it now: it comes back and Berlin is the one replaced
+    (tmp_path / "second").mkdir()
+    manager2 = _manager(tmp_path / "second")
+    _add(manager2, "User lives in Madrid", at=now - 20 * DAY)
+    _add(manager2, "User lives in Berlin", at=now - 10 * DAY)
+    stored2 = _extract(monkeypatch, manager2, ["User lives in Madrid"])
+    assert "closed_at" not in stored2["User lives in Madrid"] and "closed_at" in stored2["User lives in Berlin"]
+    assert len(stored2) == 2
+
+
+def test_extractor_drops_a_repeat_of_a_fact_that_has_no_kind_exactly_as_before(monkeypatch, tmp_path):
+    manager = _manager(tmp_path)
+    manager.save([{"id": "old", "text": "User studied physics in Valencia", "category": "fact", "timestamp": 1, "owner": "alice"}])
+    stored = _extract(monkeypatch, manager, ["User studied physics in Valencia"])
+    assert list(stored) == ["User studied physics in Valencia"] and "kind" not in stored["User studied physics in Valencia"]
+
+
+def test_extractor_does_not_lose_a_move_to_a_look_alike_third_party_or_legacy_fact(monkeypatch, tmp_path):
+    """"User lives in Berlin" is a near-duplicate (words and embedding) of the sister's
+    place and of an untyped "lives in Paris"; neither may swallow the user's own move."""
+    manager = _manager(tmp_path)
+    manager.save([
+        {"id": "sis", "text": "User's sister lives in Berlin.", "category": "fact", "timestamp": 1, "owner": "alice"},
+        {"id": "old", "text": "User lives in Paris", "category": "fact", "timestamp": 2, "owner": "alice"},
+    ])
+    stored = _extract(monkeypatch, manager, ["User lives in Berlin"], vector=_FakeVector("sis"))
+    assert stored["User lives in Berlin"]["kind"] == "location"
+    assert set(stored) == {"User's sister lives in Berlin.", "User lives in Paris", "User lives in Berlin"}
+    shown = [e["text"] for e in memory_leases.prompt_view(manager.load_all())]
+    assert "User lives in Berlin" in shown and "User's sister lives in Berlin." in shown

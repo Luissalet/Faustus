@@ -9,7 +9,7 @@ a lease, by KIND:
 kind        lease       why
 ==========  ==========  ===============================================
 location    30 days     where they are now moves
-status      30 days     on holiday / unemployed / studying ... is a phase
+status      30 days     on holiday / unemployed / studying ... is a phase (expires only)
 project     90 days     what they are building changes with the quarter
 job         365 days    employers change, slowly
 preference  none        likes and dislikes are the person, not the week
@@ -33,12 +33,32 @@ queue (:func:`review`) is where expired facts wait for a human decision.
 
 New evidence ends the old lease
 -------------------------------
-Single-valued kinds (location, status, job) hold ONE value at a time. When a
-newer fact of the same kind and slot arrives, the older one is *closed*
+Single-valued kinds (location, job) hold ONE value at a time. When a newer
+fact of the same kind and slot arrives, the older one is *closed*
 (``closed_at`` + ``superseded_by``): kept as history, never injected -- the
 same "the newer closes the older's window" rule ``src/brain`` applies to
 timed facts, here for the flat store. Forgetting the newer fact reopens the
 older one (a closed fact whose superseder is gone is no longer closed).
+
+What may close what is deliberately narrow, because a wrong closure silently
+removes a true fact from the prompt:
+
+* only a fact whose SUBJECT is the user ("User ...", "I ...", "El usuario ...",
+  or no subject at all) can get a place or a job -- "User's sister lives in
+  Berlin", "Su hermana trabaja en Google" and "Luis's wife works at ..." are
+  someone else's and get no kind;
+* a place needs a proper noun after lives in / vive en ("lives in the moment"
+  is not one) and a job needs an employer (a proper noun after works at /
+  trabaja en) or a role (works as a ...); a side activity ("works at night",
+  "trabaja en Faustus por las noches") and a trip ("currently in Berlin") do
+  not replace the home or the employer;
+* ``status`` is NOT single-valued: "on holiday", "currently learning Rust" and
+  "currently drinks tea" are independent phases that only expire (their lease),
+  so a status never closes another one;
+* with ``memory_leases_enabled`` off, closed facts are injected again.
+
+Facts that predate leases stay untyped until the user asks for a
+:func:`backfill` (a dry run unless told to apply); nothing is rewritten on load.
 
 Pure stdlib, no model call: the classifier is a handful of regexes over the
 text and category, in English and Spanish.
@@ -66,7 +86,13 @@ DEFAULT_LEASE_DAYS: Dict[str, int] = {
 }
 
 #: Kinds that hold one value at a time: a newer fact closes the older one.
-SINGLE_VALUED = frozenset({"location", "status", "job"})
+#: ``status`` is NOT one of them: "on holiday", "currently learning Rust" and
+#: "currently drinks tea" are independent phases, so a status only expires
+#: (its lease) and never closes another status.
+SINGLE_VALUED = frozenset({"location", "job"})
+
+#: Longest lease accepted, in days (ten years).
+MAX_LEASE_DAYS = 3650
 
 #: How close to the end a lease is "about to expire" on the review list.
 EXPIRING_WINDOW_DAYS = 7
@@ -110,7 +136,7 @@ def lease_days_for(kind: str) -> Optional[int]:
             days = int(overrides[kind])
         except (TypeError, ValueError):
             return DEFAULT_LEASE_DAYS.get(kind)
-        return days if days > 0 else None
+        return min(days, MAX_LEASE_DAYS) if days > 0 else None
     return DEFAULT_LEASE_DAYS.get(kind)
 
 
@@ -136,24 +162,48 @@ def _fold(text: Any) -> str:
 
 _I = re.IGNORECASE
 
-_LOCATION_NOW = re.compile(r"\b(?:currently|now|actualmente|ahora)\s+(?:in|at|en)\b", _I)
-_LOCATION = re.compile(
-    r"\b(?:lives?|living|resides?|residing|based|located|stays?|staying|moved|moving|"
-    r"relocated|relocating)\s+(?:in|to|at|near)\b"
-    r"|\b(?:vive|viven|vivo|vivimos|reside|resido|residimos)\s+(?:actualmente\s+)?(?:en|por|cerca\s+de)\b"
-    r"|\bse\s+(?:ha\s+)?mud(?:o|ado)\s+a\b"
-    r"|\bme\s+mude\s+a\b"
-    r"|\b(?:esta|estoy|estamos)\s+(?:viviendo|instalad[oa]s?|de\s+viaje)\s+en\b",
+#: A capitalised word after the preposition ("lives in Madrid", "based in the
+#: Netherlands"). Lower case is deliberately not enough: "lives in the moment",
+#: "lives in constant fear" and "works at night" are not a place or an employer.
+_CAP = r"(?:(?i:the|el|la|los|las)\s+)?[A-Z]"
+
+#: Where the person LIVES. Only this can close an older place.
+_RESIDENCE = re.compile(
+    r"\b(?i:lives?|living|resides?|residing|based|located|moved|relocated)\s+(?i:in|to|at|near)\s+" + _CAP
+    + r"|\b(?i:vive|viven|vivo|vivimos|viviendo|reside|resido|residimos)\s+(?:(?i:actualmente)\s+)?"
+    + r"(?i:en|por|cerca\s+de)\s+" + _CAP
+    + r"|\b(?i:se\s+(?:ha\s+)?mud(?:o|ado)|me\s+mude)\s+(?i:a)\s+" + _CAP
+)
+#: Where the person is for a while (a trip, a stay): leased, but it does not
+#: replace where they live.
+_LOCATION_NOW = re.compile(r"\b(?i:currently|now|actualmente|ahora)\s+(?i:in|at|en)\s+" + _CAP)
+_STAYING = re.compile(
+    r"\b(?i:stays?|staying)\s+(?i:in)\s+" + _CAP
+    + r"|\b(?i:esta|estoy|estamos)\s+(?i:instalad[oa]s?|de\s+viaje)\s+(?i:en)\s+" + _CAP
+)
+
+#: A side activity is not THE job ("works at Faustus por las noches").
+_PART_TIME = re.compile(
+    r"\bat\s+night\b|\bby\s+night\b|\bnights?\b|\bevenings?\b|\bweekends?\b"
+    r"|\bon\s+(?:mon|tues|wednes|thurs|fri|satur|sun)days?\b|\bafter\s+(?:hours|work)\b"
+    r"|\bon\s+the\s+side\b|\bas\s+a\s+hobby\b|\bspare\s+time\b|\bfree\s+time\b"
+    r"|\bpor\s+las?\s+(?:noches?|mananas?|tardes?)\b|\bde\s+noche\b|\bpor\s+la\s+(?:noche|manana|tarde)\b"
+    r"|\blos\s+(?:fines\s+de\s+semana|lunes|martes|miercoles|jueves|viernes|sabados|domingos)\b"
+    r"|\bfines?\s+de\s+semana\b|\ba\s+ratos\b|\btiempo\s+libre\b",
     _I,
 )
-_JOB = re.compile(
-    r"\b(?:works?|working|employed)\s+(?:at|for|as)\b"
-    r"|\bjob\s+(?:is|title)\b"
-    r"|\b(?:trabaja|trabajan|trabajo|trabajamos|trabajando)\s+(?:como|para|de)\b"
-    r"|\b(?:trabaja|trabajan|trabajo|trabajamos|trabajando)\s+en\b"
-    r"(?!\s+(?:el|un|una|la|mi|su)\s+(?:proyecto|app|aplicacion|tesis|novela|libro|idea|ficha|proceso))"
-    r"|\bempleado\s+(?:en|de|como)\b",
-    _I,
+_NOT_ORG = r"(?!(?i:proyecto|app|aplicacion|tesis|novela|libro|idea|ficha|proceso|project|thesis|novel|book)\b)"
+#: An employer: a proper noun after works at/for, trabaja en/para.
+_EMPLOYER = re.compile(
+    r"\b(?i:works?|working|employed)\s+(?i:at|for)\s+(?:(?i:the)\s+)?" + _NOT_ORG + r"[A-Z]"
+    r"|\b(?i:trabaja|trabajan|trabajo|trabajamos|trabajando)\s+(?i:en|para)\s+(?:(?i:el|la|los|las)\s+)?" + _NOT_ORG + r"[A-Z]"
+    r"|\b(?i:empleado|empleada)\s+(?i:en|de)\s+" + _NOT_ORG + r"[A-Z]"
+)
+#: A role: works as a <role>, trabaja como <rol>, job title is <x>.
+_ROLE = re.compile(
+    r"\b(?i:works?|working)\s+(?i:as)\s+(?i:an?|the)\s+[A-Za-z]"
+    r"|\b(?i:trabaja\w*|trabajo)\s+(?i:como)\s+[A-Za-z]"
+    r"|\bjob\s+title\s+(?i:is)\s+[A-Za-z]"
 )
 _PROJECT = re.compile(
     r"\b(?:working|works)\s+on\b"
@@ -166,7 +216,8 @@ _PROJECT = re.compile(
 _STATUS = re.compile(
     r"\b(?:currently|right\s+now|at\s+the\s+moment|actualmente|ahora\s+mismo|en\s+este\s+momento)\b"
     r"|\b(?:is|am|are)\s+(?:currently\s+)?(?:on\s+(?:vacation|holiday|leave|sick\s+leave|parental\s+leave|a\s+trip)|"
-    r"unemployed|job[- ]hunting|looking\s+for\s+(?:a\s+)?(?:job|work)|traveling|travelling|studying|sick|ill)\b"
+    r"unemployed|job[- ]hunting|looking\s+for\s+(?:a\s+)?(?:job|work)|traveling|travelling|studying|"
+    r"(?:sick|ill)(?!\s+(?:of|and\s+tired|to\s+death)))\b"
     r"|\b(?:esta|estoy|estamos)\s+(?:de\s+(?:vacaciones|viaje|baja)|en\s+paro|desemplead[oa]s?|"
     r"buscando\s+(?:trabajo|empleo)|enferm[oa]s?|estudiando)\b"
     r"|\ben\s+paro\b",
@@ -178,35 +229,76 @@ _PREFERENCE = re.compile(
     _I,
 )
 
-#: Not about the user: \"Ana lives in Paris\" must not renew or close the user's own place.
+#: Not about the user: "Ana lives in Paris" must not renew or close the user's own place.
 _USER_SUBJECTS = frozenset({"user", "the user", "el usuario", "la usuaria", "usuario", "usuaria", "i", "yo"})
 _THIRD_SUBJECT = re.compile(
     r"^\s*([A-Z][\w'.-]*(?:\s+[A-Z][\w'.-]*){0,2})\s+"
     r"(?:lives?|vive[n]?|works?|trabaja[n]?|is|are|es|esta[n]?|moved|se\s+mudo|resides?|reside[n]?|studies|estudia)\b"
 )
+_REL = (
+    r"(?:brother|sister|sibling|mother|father|parent|parents|mom|dad|mum|wife|husband|spouse|partner|boyfriend|"
+    r"girlfriend|fiance|fiancee|friend|boss|manager|son|daughter|kid|kids|child|children|cousin|uncle|aunt|nephew|niece|"
+    r"grandmother|grandfather|grandma|grandpa|colleague|coworker|teammate|roommate|flatmate|neighbou?r|family|"
+    r"in-laws?|mother-in-law|father-in-law|ex|"
+    r"hermano|hermana|hermanos|madre|padre|padres|mama|papa|mujer|marido|esposa|esposo|pareja|novio|novia|amigo|amiga|"
+    r"jefe|jefa|hijo|hija|hijos|primo|prima|tio|tia|sobrino|sobrina|abuelo|abuela|suegro|suegra|cunado|cunada|"
+    r"companero|companera|vecino|vecina|familia|compañero|compañera)"
+)
 _RELATIVE = re.compile(
-    r"\b(?:my|mi|mis)\s+(?:brother|sister|mother|father|mom|dad|wife|husband|partner|boyfriend|girlfriend|"
-    r"friend|boss|son|daughter|cousin|uncle|aunt|colleague|coworker|neighbou?r|"
-    r"hermano|hermana|madre|padre|mujer|marido|esposa|esposo|pareja|novio|novia|amigo|amiga|jefe|jefa|"
-    r"hijo|hija|primo|prima|tio|tia|companero|companera|vecino|vecina)\b"
+    r"\b(?:my|mi|mis)\s+" + _REL + r"\b"
     r"|\b(?:his|her|their|hers)\b|^\s*(?:she|he|they|ella)\b",
     _I,
+)
+#: "User's sister", "The user's brother", "Luis's wife": someone's relative.
+_POSSESSED = re.compile(r"\b[\w-]+[\'\u2019]s?\s+" + _REL + r"\b", _I)
+#: "El hermano del usuario", "the sister of the user", "La hermana de Luis".
+_OF_USER = re.compile(
+    r"\b" + _REL + r"\s+(?:del\s+usuari[oa]|de\s+la\s+usuaria|of\s+the\s+user)\b", _I)
+_OF_NAME = re.compile(r"\b(?i:" + _REL + r")\s+de\s+[A-Z]")
+#: "Su hermana vive en Berlin": a possessive with no antecedent is someone else.
+_SU_REL = re.compile(r"^\W*(?:su|sus)\s+" + _REL + r"\b", _I)
+
+#: The subject is the user: "User ...", "The user ...", "I ...", "Yo ...", "El usuario ...".
+_USER_SUBJECT = re.compile(
+    r"^\W*(?i:the\s+user|user|el\s+usuario|la\s+usuaria|usuario|usuaria|yo|i|we|nosotros)"
+    r"(?:[\'\u2019](?:m|ve|d|ll))?(?![\w\'\u2019])"
+)
+#: "User's job title is ...", "User's city is ...": the user's own attributes.
+_USER_ATTR = re.compile(
+    r"^\W*(?i:the\s+)?(?i:user)[\'\u2019]s\s+(?i:job|role|title|occupation|profession|employer|city|home|residence|address|location|status)\b"
+)
+#: No subject at all ("Lives in Madrid"): a personal memory is about the user.
+_SUBJECTLESS = re.compile(
+    r"^\W*(?i:lives?|living|resides?|based|located|moved|works?|working|employed|is|am|are|currently|now|"
+    r"vive[n]?|vivo|reside|resido|trabaja[n]?|trabajo|trabajando|esta|estoy|actualmente|ahora|"
+    r"se\s+(?:ha\s+)?mud|me\s+mude|empleado)\b"
 )
 
 
 def _about_someone_else(folded: str) -> bool:
-    if _RELATIVE.search(folded):
+    if _RELATIVE.search(folded) or _POSSESSED.search(folded) or _OF_USER.search(folded):
+        return True
+    if _OF_NAME.search(folded) or _SU_REL.search(folded):
         return True
     match = _THIRD_SUBJECT.match(folded)
     return bool(match) and match.group(1).strip().lower() not in _USER_SUBJECTS
 
 
+def _subject_is_user(folded: str) -> bool:
+    """Single-valued kinds are only for facts whose SUBJECT is the user: a
+    possessive ("X's ...", "... del usuario"), a name or any other subject is a
+    third party and can never close the user's own place or job."""
+    return bool(_USER_SUBJECT.match(folded) or _USER_ATTR.match(folded) or _SUBJECTLESS.match(folded))
+
+
 def classify_kind(text: Any, category: Any = "") -> str:
-    """The kind of a fact (``KINDS``), or ``""`` when the rules cannot place it.
+    """The kind of a fact (``KINDS``), or ``\"\"`` when the rules cannot place it.
 
     A preference verb that comes BEFORE the place/job phrase wins (\"prefers
     living in Madrid\" is a preference, \"lives in Madrid and likes tea\" is a
     location). ``contact`` entries are about other people and never get a kind.
+    Location and job need the user as the subject and a proper-noun place or
+    employer (or a role); anything vaguer gets no kind rather than a wrong one.
     """
     cat = str(category or "").strip().lower()
     if cat == "contact":
@@ -216,12 +308,22 @@ def classify_kind(text: Any, category: Any = "") -> str:
     folded = _fold(text)
     if not folded.strip() or _about_someone_else(folded):
         return ""
+    user = _subject_is_user(folded)
+    side = bool(_PART_TIME.search(folded))
+    checks = []
+    if user and not side:
+        checks.append(("location", (_LOCATION_NOW, _RESIDENCE, _STAYING)))
+        checks.append(("job", (_EMPLOYER, _ROLE)))
+    checks.append(("project", (_PROJECT,)))
+    checks.append(("status", (_STATUS,)))
     found = None
-    for kind, pattern in (("location", _LOCATION_NOW), ("location", _LOCATION), ("job", _JOB),
-                          ("project", _PROJECT), ("status", _STATUS)):
-        match = pattern.search(folded)
-        if match:
-            found = (kind, match.start())
+    for kind, patterns in checks:
+        for pattern in patterns:
+            match = pattern.search(folded)
+            if match:
+                found = (kind, match.start())
+                break
+        if found:
             break
     pref = _PREFERENCE.search(folded)
     if pref and (found is None or pref.start() <= found[1]):
@@ -230,14 +332,24 @@ def classify_kind(text: Any, category: Any = "") -> str:
 
 
 def slot_of(kind: str, text: Any) -> str:
-    """What a single-valued kind competes on: employer and role are two slots,
-    so \"works at Acme\" and \"works as a teacher\" do not close each other."""
+    """What a single-valued kind competes on, or ``\"\"`` when this fact must
+    never close another: employer and role are two slots (\"works at Acme\" and
+    \"works as a teacher\" do not close each other), and only a real residence
+    closes a place -- a trip, a side job or a third party's fact never does."""
+    kind = str(kind)
+    if kind not in SINGLE_VALUED:
+        return kind
+    folded = _fold(text)
+    if _about_someone_else(folded) or not _subject_is_user(folded) or _PART_TIME.search(folded):
+        return ""
+    if kind == "location":
+        return "location" if _RESIDENCE.search(folded) else ""
     if kind == "job":
-        if re.search(r"\b(?:works?|working|trabaja\w*|trabajo)\s+(?:as|como|de)\b|\bjob\s+title\b", _fold(text), _I):
+        if _ROLE.search(folded):
             return "job:role"
-        return "job:employer"
-    return str(kind)
-
+        if _EMPLOYER.search(folded):
+            return "job:employer"
+    return ""
 
 # ---------------------------------------------------------------------------
 # Lease state
@@ -298,7 +410,13 @@ def state(entry: Mapping[str, Any], now: Any = None, window: Optional[int] = Non
 
 
 def _stamp(value: int) -> str:
-    return datetime.fromtimestamp(value, tz=timezone.utc).strftime("%Y-%m-%d")
+    """The calendar day in the user's time zone (UTC when none is known)."""
+    try:
+        from src.user_time import user_timezone
+        zone = user_timezone()
+    except Exception:  # noqa: BLE001
+        zone = timezone.utc
+    return datetime.fromtimestamp(value, tz=zone).strftime("%Y-%m-%d")
 
 
 def marked_text(entry: Mapping[str, Any]) -> str:
@@ -363,6 +481,8 @@ def assign(entry: Dict[str, Any], *, kind: Optional[str] = None, lease_days: Opt
             raise ValueError("lease_days must be a whole number of days") from None
         if lease_days < 0:
             raise ValueError("lease_days must be 0 or more")
+        if lease_days > MAX_LEASE_DAYS:
+            raise ValueError(f"lease_days must be at most {MAX_LEASE_DAYS}")
     if not enabled():
         return entry
     chosen = str(kind or "").strip().lower() or classify_kind(entry.get("text"), entry.get("category"))
@@ -402,6 +522,8 @@ def renew(entry: Dict[str, Any], days: Optional[int] = None, now: Any = None) ->
             raise ValueError("days must be a whole number") from None
         if days <= 0:
             raise ValueError("days must be greater than 0")
+        if days > MAX_LEASE_DAYS:
+            raise ValueError(f"days must be at most {MAX_LEASE_DAYS}")
     kind = str(entry.get("kind") or "") or classify_kind(entry.get("text"), entry.get("category"))
     resolved = days or _int(entry.get("lease_days")) or lease_days_for(kind)
     if not resolved:
@@ -419,7 +541,9 @@ def renew(entry: Dict[str, Any], days: Optional[int] = None, now: Any = None) ->
 def close_superseded(entries: List[Any], now: Any = None) -> List[str]:
     """Apply \"new evidence ends the old lease\" over the whole store (mutates).
 
-    Per owner and slot, only the newest open single-valued fact stays open.
+    Per owner and slot, only the newest open single-valued fact stays open. A
+    fact with no slot (a third party's, a trip, a side job, a vague place) is
+    never closed and never closes anything.
     A closed fact whose superseder no longer exists is reopened first, so
     forgetting the wrong newer fact brings the older one back.
     """
@@ -436,7 +560,10 @@ def close_superseded(entries: List[Any], now: Any = None) -> List[str]:
         kind = entry.get("kind")
         if kind not in SINGLE_VALUED:
             continue
-        key = (str(entry.get("owner") or ""), slot_of(str(kind), entry.get("text")))
+        slot = slot_of(str(kind), entry.get("text"))
+        if not slot:
+            continue
+        key = (str(entry.get("owner") or ""), slot)
         groups.setdefault(key, []).append((evidence_ts(entry), index, entry))
     closed: List[str] = []
     for rows in groups.values():
@@ -484,8 +611,17 @@ def annotate(entry: Mapping[str, Any], now: Any = None) -> Dict[str, Any]:
     return out
 
 
+def _untyped(entry: Any) -> bool:
+    """A fact from before leases (or one the rules could not place): no kind,
+    still open, and not a contact (about someone else)."""
+    return (isinstance(entry, dict) and not entry.get("kind") and not entry.get("closed_at")
+            and str(entry.get("category") or "").strip().lower() != "contact")
+
+
 def review(entries: Iterable[Any], now: Any = None, window: Optional[int] = None) -> Dict[str, Any]:
-    """Expired and about-to-expire facts, plus the ones new evidence replaced."""
+    """Expired and about-to-expire facts, plus the ones new evidence replaced,
+    and how many older facts have no kind yet (``untyped``: ``total`` and the
+    ``typable`` ones the rules could place -- see :func:`backfill`)."""
     expired: List[Dict[str, Any]] = []
     expiring: List[Dict[str, Any]] = []
     closed: List[Dict[str, Any]] = []
@@ -502,12 +638,76 @@ def review(entries: Iterable[Any], now: Any = None, window: Optional[int] = None
     expired.sort(key=lambda row: row["lease_until"] or 0)
     expiring.sort(key=lambda row: row["lease_until"] or 0)
     closed.sort(key=lambda row: -(row["closed_at"] or 0))
+    untyped = [e for e in entries or [] if _untyped(e)]
     return {
         "expired": expired,
         "expiring": expiring,
         "closed": closed,
         "counts": {"expired": len(expired), "expiring": len(expiring), "closed": len(closed)},
+        "untyped": {
+            "total": len(untyped),
+            "typable": sum(1 for e in untyped if classify_kind(e.get("text"), e.get("category"))) if enabled() else 0,
+        },
         "settings": settings_snapshot(),
+    }
+
+
+def backfill(entries: List[Any], *, apply: bool = False, basis: str = "recorded", now: Any = None,
+             only_ids: Optional[Iterable[Any]] = None) -> Dict[str, Any]:
+    """Give the facts that predate leases a kind and a lease, ON DEMAND.
+
+    Nothing runs on load or on its own: the default is a dry run that lists what
+    WOULD change (kind, lease, the state it would land in, and which other facts
+    the newly typed ones would close) and touches nothing. ``apply=True`` writes
+    the kind and lease into the entries it was given (the caller saves).
+    ``basis="recorded"`` counts the lease from when the fact was saved, so an old
+    "User lives in Madrid" lands expired and waits for review; ``"now"`` starts
+    every lease today. ``only_ids`` limits it to the caller's own facts.
+    """
+    if basis not in ("recorded", "now"):
+        raise ValueError('basis must be "recorded" or "now"')
+    ts = _now_ts(now)
+    scope = None if only_ids is None else {str(i) for i in only_ids}
+    items = [e for e in entries or [] if isinstance(e, dict)]
+    trial = [dict(e) for e in items]
+    untyped_before = sum(1 for e in items if _untyped(e) and (scope is None or str(e.get("id")) in scope))
+    changes: List[Dict[str, Any]] = []
+    if enabled():
+        for original, copy in zip(items, trial):
+            if not _untyped(copy) or (scope is not None and str(copy.get("id")) not in scope):
+                continue
+            kind = classify_kind(copy.get("text"), copy.get("category"))
+            if not kind:
+                continue
+            days = lease_days_for(kind)
+            copy["kind"] = kind
+            if days:
+                base = ts if basis == "now" else (_int(copy.get("timestamp")) or ts)
+                copy["lease_days"] = int(days)
+                copy["confirmed_at"] = base
+                copy["lease_until"] = base + int(days) * DAY_S
+            changes.append({"id": copy.get("id"), "text": copy.get("text", ""), "kind": kind, "lease_days": days,
+                            "_orig": original, "_copy": copy})
+    closed_ids = set(close_superseded(trial, now=ts)) if changes else set()
+    rows: List[Dict[str, Any]] = []
+    for change in changes:
+        original, copy = change.pop("_orig"), change.pop("_copy")
+        info = state(copy, ts)
+        change["state"] = "closed" if copy.get("closed_at") else info["state"]
+        change["days_left"] = info["days_left"]
+        change["closes"] = [str(e.get("id")) for e in trial
+                            if str(e.get("id")) in closed_ids and e.get("superseded_by") == copy.get("id")]
+        rows.append(change)
+        if apply:
+            for key in ("kind",) + _LEASE_FIELDS[1:]:
+                if key in copy:
+                    original[key] = copy[key]
+    return {
+        "applied": bool(apply),
+        "basis": basis,
+        "changes": rows,
+        "typed": len(rows),
+        "left_untyped": untyped_before - len(rows),
     }
 
 
@@ -515,5 +715,5 @@ __all__ = [
     "KINDS", "DEFAULT_LEASE_DAYS", "SINGLE_VALUED", "EXPIRING_WINDOW_DAYS",
     "enabled", "lease_days_for", "settings_snapshot", "classify_kind", "slot_of",
     "state", "marked_text", "prompt_view", "assign", "reassign", "renew",
-    "close_superseded", "public", "annotate", "review", "evidence_ts",
+    "close_superseded", "public", "annotate", "review", "backfill", "evidence_ts", "MAX_LEASE_DAYS",
 ]

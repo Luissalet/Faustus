@@ -9626,3 +9626,12 @@ Could not renew.	No se pudo renovar.
 Could not forget.	No se pudo olvidar.
 Could not read the memory leases.	No se pudo leer qué datos han caducado.
 Job	Trabajo
+It is still true: it comes back and replaces the newer fact	Sigue siendo cierto: vuelve y sustituye al dato más reciente
+{n} older fact could get an expiry date	{n} dato antiguo podría tener fecha de caducidad
+{n} older facts could get an expiry date	{n} datos antiguos podrían tener fecha de caducidad
+No older fact matches a kind.	Ningún dato antiguo encaja con un tipo.
+{n} day	{n} día
+{n} days	{n} días
+no expiry	sin caducidad
+Expiry dates added.	Caducidades añadidas.
+Could not add the expiry dates.	No se pudieron añadir las caducidades.

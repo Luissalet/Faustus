@@ -156,6 +156,24 @@ export interface LeaseReview {
   expiring: LeaseRow[];
   closed: LeaseRow[];
   leaseDays: Record<string, number | null>;
+  /** Older facts with no kind: how many, and how many the rules could place. */
+  untyped: { total: number; typable: number };
+}
+
+export interface LeaseBackfillRow {
+  id: string;
+  text: string;
+  kind: string;
+  leaseDays: number | null;
+  state: string;
+  closes: string[];
+}
+
+export interface LeaseBackfill {
+  applied: boolean;
+  typed: number;
+  leftUntyped: number;
+  changes: LeaseBackfillRow[];
 }
 
 function leaseRowFrom(raw: Record<string, unknown>): LeaseRow {
@@ -180,12 +198,37 @@ export async function getLeaseReview(signal?: AbortSignal): Promise<LeaseReview>
     expiring?: Record<string, unknown>[];
     closed?: Record<string, unknown>[];
     settings?: { lease_days?: Record<string, number | null> };
+    untyped?: { total?: number; typable?: number };
   }>('/api/memory/leases', signal);
   return {
     expired: (data.expired ?? []).map(leaseRowFrom),
     expiring: (data.expiring ?? []).map(leaseRowFrom),
     closed: (data.closed ?? []).map(leaseRowFrom),
     leaseDays: data.settings?.lease_days ?? {},
+    untyped: { total: Number(data.untyped?.total) || 0, typable: Number(data.untyped?.typable) || 0 },
+  };
+}
+
+/** Give the facts from before leases a kind and a lease. A dry run (`apply` false)
+ *  only lists what would change; nothing is written until `apply` is true. */
+export async function backfillLeases(apply: boolean): Promise<LeaseBackfill> {
+  const response = await ok(
+    await fetch('/api/memory/leases/backfill', { method: 'POST', credentials: 'same-origin', body: form({ apply: apply ? 'true' : 'false' }) }),
+    'memory/leases/backfill',
+  );
+  const data = (await response.json()) as { applied?: boolean; typed?: number; left_untyped?: number; changes?: Record<string, unknown>[] };
+  return {
+    applied: Boolean(data.applied),
+    typed: Number(data.typed) || 0,
+    leftUntyped: Number(data.left_untyped) || 0,
+    changes: (data.changes ?? []).map((c) => ({
+      id: String(c.id ?? ''),
+      text: typeof c.text === 'string' ? c.text : '',
+      kind: typeof c.kind === 'string' ? c.kind : '',
+      leaseDays: typeof c.lease_days === 'number' ? c.lease_days : null,
+      state: typeof c.state === 'string' ? c.state : '',
+      closes: Array.isArray(c.closes) ? c.closes.map(String) : [],
+    })),
   };
 }
 

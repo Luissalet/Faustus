@@ -37,6 +37,7 @@ import {
   editRuleText,
   exportMemories,
   extractFromSession,
+  backfillLeases,
   forgetLease,
   forgetRule,
   getGrounding,
@@ -69,6 +70,7 @@ import {
   type FailureCandidate,
   type ImportSuggestion,
   type LearnedRule,
+  type LeaseBackfill,
   type LeaseReview,
   type LeaseRow,
   type Memory,
@@ -239,9 +241,15 @@ function LeaseRowView({ row, busy, onRenew, onForget }: { row: LeaseRow; busy: b
         </div>
       </div>
       <div className="fs-lease__actions">
-        {row.state !== 'closed' && (
-          <Button variant="secondary" size="sm" icon={RefreshCw} label={t('Renew')} title={t('It is still true: restart its lease')} disabled={busy} onClick={onRenew} />
-        )}
+        <Button
+          variant="secondary"
+          size="sm"
+          icon={RefreshCw}
+          label={t('Renew')}
+          title={row.state === 'closed' ? t('It is still true: it comes back and replaces the newer fact') : t('It is still true: restart its lease')}
+          disabled={busy}
+          onClick={onRenew}
+        />
         <Button variant="ghost" size="sm" icon={Trash2} label={t('Forget')} title={t('It is no longer true: delete it')} disabled={busy} onClick={onForget} />
       </div>
     </article>
@@ -253,6 +261,7 @@ function MemoryLeases({ say, onChanged }: { say: (text: string) => void; onChang
   const [failed, setFailed] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [showClosed, setShowClosed] = useState(false);
+  const [preview, setPreview] = useState<LeaseBackfill | null>(null);
 
   const load = useCallback((signal?: AbortSignal) => {
     return getLeaseReview(signal)
@@ -262,7 +271,7 @@ function MemoryLeases({ say, onChanged }: { say: (text: string) => void; onChang
       })
       .catch((err: unknown) => {
         if ((err as { name?: string })?.name === 'AbortError') return;
-        setReview({ expired: [], expiring: [], closed: [], leaseDays: {} });
+        setReview({ expired: [], expiring: [], closed: [], leaseDays: {}, untyped: { total: 0, typable: 0 } });
         setFailed(t('Could not read the memory leases.'));
       });
   }, []);
@@ -288,9 +297,28 @@ function MemoryLeases({ say, onChanged }: { say: (text: string) => void; onChang
     }
   };
 
+  const runBackfill = async (apply: boolean) => {
+    setBusy('backfill');
+    try {
+      const result = await backfillLeases(apply);
+      if (apply) {
+        setPreview(null);
+        say(t('Expiry dates added.'));
+        await load();
+        onChanged();
+      } else {
+        setPreview(result);
+      }
+    } catch {
+      say(t('Could not add the expiry dates.'));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   if (!review) return null;
   const due = [...review.expired, ...review.expiring];
-  if (!failed && due.length === 0 && review.closed.length === 0) return null;
+  if (!failed && due.length === 0 && review.closed.length === 0 && review.untyped.typable === 0) return null;
 
   return (
     <section className="fs-rules" aria-labelledby="fs-leases-title" data-testid="memory-leases">
@@ -315,6 +343,37 @@ function MemoryLeases({ say, onChanged }: { say: (text: string) => void; onChang
         </div>
       )}
 
+      {review.untyped.typable > 0 && (
+        <div className="fs-lease__backfill" data-testid="lease-backfill">
+          <p className="fs-prose">
+            {tn(review.untyped.typable, '{n} older fact could get an expiry date', '{n} older facts could get an expiry date')}
+          </p>
+          {!preview && (
+            <Button variant="secondary" size="sm" label={t('Preview')} disabled={busy === 'backfill'} onClick={() => void runBackfill(false)} />
+          )}
+          {preview && (
+            <>
+              {preview.changes.length === 0 && <p className="fs-rules__empty">{t('No older fact matches a kind.')}</p>}
+              <ul className="fs-lease__preview" data-testid="lease-backfill-preview">
+                {preview.changes.map((c) => (
+                  <li key={c.id}>
+                    <span className="fs-lease__text">{c.text}</span>{' '}
+                    <span className="fs-mem__cat">{LEASE_KIND_LABEL[c.kind] ? t(LEASE_KIND_LABEL[c.kind]) : c.kind}</span>{' '}
+                    <span className="fs-lease__when">
+                      {c.state === 'closed' ? t('replaced by a newer fact') : c.leaseDays ? tn(c.leaseDays, '{n} day', '{n} days') : t('no expiry')}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <div className="fs-lease__actions">
+                <Button variant="primary" size="sm" label={t('Apply')} disabled={busy === 'backfill' || preview.changes.length === 0} onClick={() => void runBackfill(true)} />
+                <Button variant="ghost" size="sm" label={t('Cancel')} onClick={() => setPreview(null)} />
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {review.closed.length > 0 && (
         <>
           <button type="button" className="fs-memory__link" aria-expanded={showClosed} onClick={() => setShowClosed((v) => !v)}>
@@ -323,7 +382,7 @@ function MemoryLeases({ say, onChanged }: { say: (text: string) => void; onChang
           {showClosed && (
             <div className="fs-rules__list">
               {review.closed.map((row) => (
-                <LeaseRowView key={row.id} row={row} busy={busy === row.id} onRenew={() => undefined} onForget={() => void act(row, 'forget')} />
+                <LeaseRowView key={row.id} row={row} busy={busy === row.id} onRenew={() => void act(row, 'renew')} onForget={() => void act(row, 'forget')} />
               ))}
             </div>
           )}

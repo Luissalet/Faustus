@@ -734,3 +734,18 @@
   flex-wrap: wrap;
   gap: var(--fs-space-2);
 }
+.fs-lease__backfill {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2, 8px);
+  margin-top: var(--sp-3, 12px);
+}
+
+.fs-lease__preview {
+  margin: 0;
+  padding-left: 1.1em;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9em;
+}

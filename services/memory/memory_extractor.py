@@ -17,6 +17,7 @@ import os
 import re
 from typing import Optional
 
+from src import memory_leases
 from src.memory import MemoryStoreUnreadable
 from src.memory_attribution import unquoted_memory_text
 from services.memory.volatile_facts import volatile_reason
@@ -258,11 +259,13 @@ def _fallback_memory_candidates(messages) -> list[dict]:
     return candidates[:2]
 
 
-def _is_text_duplicate(new_text: str, existing: list, threshold: float = 0.6) -> bool:
-    """Check if new_text is too similar to any existing memory (Jaccard similarity)."""
+def _similar_entry(new_text: str, existing: list, threshold: float = 0.6) -> Optional[dict]:
+    """The stored memory ``new_text`` is too similar to (Jaccard similarity), or
+    ``None``. A fact still open is preferred over one a newer fact replaced."""
     new_tokens = set(new_text.lower().split())
     if not new_tokens:
-        return False
+        return None
+    best = None
     for entry in _memory_dicts(existing):
         old_tokens = set(entry.get("text", "").lower().split())
         if not old_tokens:
@@ -270,8 +273,78 @@ def _is_text_duplicate(new_text: str, existing: list, threshold: float = 0.6) ->
         intersection = new_tokens & old_tokens
         union = new_tokens | old_tokens
         if len(intersection) / len(union) >= threshold:
-            return True
-    return False
+            if not entry.get("closed_at"):
+                return entry
+            best = best or entry
+    return best
+
+
+def _is_text_duplicate(new_text: str, existing: list, threshold: float = 0.6) -> bool:
+    """Check if new_text is too similar to any existing memory (Jaccard similarity)."""
+    return _similar_entry(new_text, existing, threshold) is not None
+
+
+_SALIENT_STOP = frozenset({"the", "a", "an", "user", "el", "la", "usuario", "usuaria", "i", "yo"})
+
+
+def _salient(text: str) -> set:
+    """The names and numbers a fact turns on: "User lives in Madrid" and "User
+    lives in Paris" are 0.6 alike by words but are different claims."""
+    return {
+        tok.lower() for tok in re.findall(r"[\w'-]+", text or "")
+        if (tok[:1].isupper() or any(ch.isdigit() for ch in tok)) and tok.lower() not in _SALIENT_STOP
+    }
+
+
+def _norm_text(text: str) -> str:
+    return re.sub(r"\s+", " ", str(text or "").strip().lower()).rstrip(".!")
+
+
+def _handle_repeat(entry, fact_text: str, fuzzy: bool) -> str:
+    """What to do when the model extracts a fact that looks like a stored one.
+
+    ``"renewed"``: the stored fact has a lease that ran out (or is about to) and
+    the user just said it again, so it is confirmed -- its lease restarts.
+    ``"duplicate"``: nothing to do, drop it as before (every fact without a
+    kind lands here, exactly as it always did).
+    ``"new"``: it is NOT the same claim ("lives in Paris" next to "lives in
+    Madrid", or anything but the very same text as a fact a newer one replaced),
+    so it must be stored and may supersede the old one.
+    """
+    if not isinstance(entry, dict) or not memory_leases.enabled():
+        return "duplicate"
+    try:
+        same_text = _norm_text(entry.get("text")) == _norm_text(fact_text)
+        if fuzzy and not same_text:
+            # "User lives in Berlin" is a near-duplicate of "User's sister lives in
+            # Berlin." (or of "lives in Paris") by words and by embedding, but it is
+            # the user's own place: dropping it would lose the move. A place or job
+            # stated about the user is only a repeat of a stored fact that says the
+            # same thing about the same place or employer.
+            new_kind = memory_leases.classify_kind(fact_text)
+            if new_kind in memory_leases.SINGLE_VALUED and (
+                _salient(entry.get("text")) != _salient(fact_text)
+                or memory_leases.classify_kind(entry.get("text"), entry.get("category")) != new_kind
+            ):
+                return "new"
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[memory-extract] repeat check skipped: %s", exc)
+    if not (entry.get("kind") or entry.get("closed_at")):
+        return "duplicate"
+    try:
+        if entry.get("closed_at"):
+            if not same_text:
+                return "new"
+            memory_leases.renew(entry)
+            return "renewed"
+        if fuzzy and not same_text and _salient(entry.get("text")) != _salient(fact_text):
+            return "new"
+        if memory_leases.state(entry)["state"] in ("expired", "expiring"):
+            memory_leases.renew(entry)
+            return "renewed"
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[memory-extract] lease renewal skipped: %s", exc)
+    return "duplicate"
 
 
 def _parse_extraction_json(raw: str) -> list:
@@ -433,6 +506,7 @@ async def extract_and_store(
             logger.error("Skipping auto memory extraction, store unreadable: %s", e)
             return
         added = 0
+        renewed = 0
 
         for fact in facts:
             if isinstance(fact, str):
@@ -470,16 +544,31 @@ async def extract_and_store(
                     existing_id = None
                 if existing_id:
                     logger.debug(f"Memory dedup (vector): '{fact_text[:50]}' matches {existing_id}")
-                    continue
+                    outcome = _handle_repeat(
+                        next((e for e in _memory_dicts(existing) if str(e.get("id")) == str(existing_id)), None),
+                        fact_text, fuzzy=True,
+                    )
+                    renewed += outcome == "renewed"
+                    if outcome != "new":
+                        continue
 
             # Text dedup fallback: exact match + fuzzy similarity
             user_existing = [e for e in existing if e.get("owner") == _owner or e.get("owner") is None] if _owner else existing
-            if memory_manager.find_duplicates(fact_text, user_existing):
-                continue
+            exact = memory_manager.find_duplicates(fact_text, user_existing)
+            if exact:
+                outcome = _handle_repeat(
+                    next((e for e in exact if not e.get("closed_at")), exact[0]), fact_text, fuzzy=False)
+                renewed += outcome == "renewed"
+                if outcome != "new":
+                    continue
             # Fuzzy text similarity check (catches rephrased duplicates when vector index is unavailable)
-            if _is_text_duplicate(fact_text, user_existing):
-                logger.debug(f"Memory dedup (fuzzy): '{fact_text[:50]}' too similar to existing")
-                continue
+            similar = None if exact else _similar_entry(fact_text, user_existing)
+            if similar is not None:
+                outcome = _handle_repeat(similar, fact_text, fuzzy=True)
+                renewed += outcome == "renewed"
+                if outcome != "new":
+                    logger.debug(f"Memory dedup (fuzzy): '{fact_text[:50]}' too similar to existing")
+                    continue
 
             entry = memory_manager.add_entry(fact_text, source="auto", category=category, owner=_owner)
             # Auto-pin identity facts (name, job, location) — core context
@@ -522,6 +611,9 @@ async def extract_and_store(
                     memory_manager, memory_vector, endpoint_url, model, headers, owner=_owner
                 )
         else:
+            if renewed:
+                memory_manager.save(existing)
+                logger.info(f"Auto memory extraction renewed {renewed} expired fact(s)")
             logger.info("Auto memory extraction ran: 0 added")
 
     except Exception as e:

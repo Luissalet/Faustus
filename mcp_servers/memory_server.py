@@ -161,15 +161,18 @@ async def list_tools() -> list[Tool]:
                 "Facts with a lease: a fact about a moment (where they live, who they work for, what they are "
                 "doing) is only current for a while. review lists the facts whose lease expired or is about to "
                 "expire, and the ones a newer fact replaced; renew confirms a fact is still true (restarts its "
-                "lease); forget deletes it. An expired fact is still shown to the model, marked as possibly outdated."
+                "lease); forget deletes it; backfill gives the older facts that have no kind a kind and a lease (a "
+                "dry run unless apply is true). An expired fact is still shown to the model, marked as possibly outdated."
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "action": {"type": "string", "enum": ["review", "renew", "forget"], "description": "What to do"},
+                    "action": {"type": "string", "enum": ["review", "renew", "forget", "backfill"], "description": "What to do"},
                     "memory_id": {"type": "string", "description": "Memory ID or its first 8 characters (renew/forget)"},
                     "days": {"type": "integer", "description": "renew: new lease length in days (default: the one for its kind)"},
                     "window_days": {"type": "integer", "description": "review: how many days ahead count as about to expire"},
+                    "apply": {"type": "boolean", "description": "backfill: write the changes (default false = dry run, only shows them)"},
+                    "basis": {"type": "string", "enum": ["recorded", "now"], "description": "backfill: count each lease from when the fact was saved (default) or from today"},
                 },
                 "required": ["action"],
             },
@@ -196,15 +199,50 @@ def _call_memory_leases(arguments: dict) -> list[TextContent]:
         if scope_error:
             return _text_result(scope_error)
         window = arguments.get("window_days")
-        report = memory_leases.review(visible, window=int(window) if window is not None else None)
+        try:
+            window = int(window) if window is not None else None
+            if window is not None and window < 0:
+                raise ValueError("window_days must be 0 or more")
+        except (TypeError, ValueError) as exc:
+            return _text_result(f"Error: window_days must be a whole number of days ({exc})")
+        report = memory_leases.review(visible, window=window)
         counts = report["counts"]
+        untyped = report.get("untyped") or {}
+        hint = ""
+        if untyped.get("typable"):
+            hint = (f"\n\n{untyped['typable']} older fact(s) have no kind and so no lease "
+                    f"({untyped.get('total', 0)} untyped in all); memory_leases backfill shows what would change.")
         if not any(counts.values()):
-            return _text_result("No memory leases to review.")
+            return _text_result("No memory leases to review." + hint)
         lines = [f"Lease review: {counts['expired']} expired, {counts['expiring']} expiring, {counts['closed']} replaced."]
         for title, key in (("Expired", "expired"), ("Expiring", "expiring"), ("Replaced by newer facts", "closed")):
             if report[key]:
                 lines.append(f"\n{title}:")
                 lines.extend(_lease_line(row) for row in report[key])
+        return _text_result("\n".join(lines) + hint)
+
+    if action == "backfill":
+        owner, memories, visible, scope_error = _scope_entries(for_update=True)
+        if scope_error:
+            return _text_result(scope_error)
+        apply = bool(arguments.get("apply"))
+        try:
+            result = memory_leases.backfill(
+                memories, apply=apply, basis=str(arguments.get("basis") or "recorded"),
+                only_ids={m.get("id") for m in visible},
+            )
+        except ValueError as exc:
+            return _text_result(f"Error: {exc}")
+        if apply and result["typed"]:
+            _memory_manager.save(memories)
+        if not result["changes"]:
+            return _text_result("Nothing to backfill: no untyped fact matches a kind.")
+        verb = "Typed" if apply else "Would type (dry run, nothing written; call again with apply=true)"
+        lines = [f"{verb} {result['typed']} fact(s); {result['left_untyped']} stay untyped."]
+        for row in result["changes"]:
+            days = f"lease {row['lease_days']} days" if row.get("lease_days") else "no lease"
+            lines.append(f"- [{row['kind']}] `{str(row.get('id') or '?')[:8]}` {row['text']} ({days}, {row['state']})"
+                         + (f"; closes {', '.join(c[:8] for c in row['closes'])}" if row.get("closes") else ""))
         return _text_result("\n".join(lines))
 
     if action in ("renew", "forget"):
@@ -236,7 +274,7 @@ def _call_memory_leases(arguments: dict) -> list[TextContent]:
             f"Lease renewed: {target.get('text', '')} (id: {str(target['id'])[:8]}, valid {info['days_left']:.0f} more days)"
         )
 
-    return _text_result(f"Error: Unknown action '{action}'. Use: review, renew, forget")
+    return _text_result(f"Error: Unknown action '{action}'. Use: review, renew, forget, backfill")
 
 
 @server.call_tool()
