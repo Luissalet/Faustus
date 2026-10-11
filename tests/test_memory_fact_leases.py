@@ -549,7 +549,7 @@ def _call(name, arguments):
 
 def test_mcp_exposes_the_lease_tool():
     names = [t.name for t in asyncio.run(memory_server.list_tools())]
-    assert names == ["manage_memory", "memory_leases"]
+    assert names == ["manage_memory", "memory_leases", "memory_changes"]
 
 
 def test_mcp_review_renew_forget(monkeypatch, tmp_path):

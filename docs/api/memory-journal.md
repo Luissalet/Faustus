@@ -12,7 +12,10 @@ before and after, and the turn that did it:
 | `instincts` | trigger -> action instincts | `instincts._save_raw` (trigger, action, domain, scope, project) |
 | `notes` | second-brain notes | `notes.write_note`, `notes.delete_note` (trash) |
 
-Bookkeeping (use counters, confidence, access stamps) is not a change.
+Bookkeeping (use counters, confidence, access stamps) is not a change. That includes the automatic lease closes and
+reopens of the facts store (`closed_at` / `superseded_by`, `memory_leases`): a newer fact of the same kind closing an
+older one is not journaled, and undoing an add makes the fact it had superseded current again (the save that removes the
+superseder reopens it).
 
 Stored text is capped per field (`MAX_FIELD_CHARS` = 20 000): a longer field keeps its start plus a `_truncated` marker
 (`chars`, `sha256`), and a change whose copy was cut cannot be undone (`truncated: true`). A deleted note's text lives in

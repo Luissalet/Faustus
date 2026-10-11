@@ -327,6 +327,26 @@ def test_the_refusal_names_the_later_change_to_undo_first(data):
     assert caught.value.code == "changed_elsewhere"
 
 
+def test_lease_closing_is_bookkeeping_and_undoing_an_add_reopens_what_it_superseded(data):
+    """#241: a newer fact of the same kind closes the older one. The closing and
+    the reopening are not journaled; undoing the add makes the older fact current again."""
+    mgr = memmod.MemoryManager(str(data))
+    first = mgr.add_entry("User lives in Madrid", owner=OWNER)
+    first["timestamp"] -= 3600
+    mgr.save([first])
+    mgr.save(mgr.load_all_for_update() + [mgr.add_entry("User lives in Berlin", owner=OWNER)])
+    by_text = {e["text"]: e for e in mgr.load_all_for_update()}
+    assert by_text["User lives in Madrid"].get("closed_at")                    # superseded
+    assert [(c["op"], c["label"]) for c in mj.list_changes(OWNER, store="facts")] == [
+        ("create", "User lives in Berlin"), ("create", "User lives in Madrid")]   # no edit for the closing
+    berlin = mj.list_changes(OWNER, store="facts")[0]
+    mj.undo(berlin["id"], OWNER)
+    left = mgr.load_all_for_update()
+    assert [e["text"] for e in left] == ["User lives in Madrid"]
+    assert not left[0].get("closed_at") and not left[0].get("superseded_by")   # reopened
+    assert len(mj.list_changes(OWNER, store="facts")) == 2                      # the reopening is not a change either
+
+
 # -- P3: turn attribution --------------------------------------------------------------------
 
 def test_a_background_extractor_is_filed_under_the_turn_that_triggered_it(data):
