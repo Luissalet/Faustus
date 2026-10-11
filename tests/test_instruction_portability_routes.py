@@ -108,3 +108,30 @@ def test_mcp_standard_url_and_token_file_aliases_use_existing_credentials(tmp_pa
     monkeypatch.setattr(server.httpx,'AsyncClient',lambda:original(transport=httpx.MockTransport(respond)))
     result=asyncio.run(server.call_tool('instruction_catalog',{}))
     assert json.loads(result[0].text)['skills']==[]
+
+
+def test_actual_builtin_startup_schedules_the_portability_server(monkeypatch):
+    import asyncio
+    from src import builtin_mcp
+    calls, pending=[],[]
+    class Manager:
+        async def connect_server(self,**kwargs):
+            calls.append(kwargs)
+            return True
+    def schedule(coroutine):
+        if coroutine.cr_code.co_name=='_start_npx_servers':
+            coroutine.close()
+        else:
+            pending.append(coroutine)
+    monkeypatch.setattr(builtin_mcp,'MCP_DISABLED',False)
+    monkeypatch.setattr(builtin_mcp,'get_app_root',lambda:str(Path(__file__).resolve().parents[1]))
+    monkeypatch.setattr(builtin_mcp,'_spawn_bg',schedule)
+    monkeypatch.setattr(builtin_mcp,'_find_npx',lambda:'owned-unused-npx')
+    async def run():
+        await builtin_mcp.register_builtin_servers(Manager())
+        await asyncio.gather(*pending)
+    asyncio.run(run())
+    own=next(call for call in calls if call['server_id']=='instruction_portability')
+    assert own['transport']=='stdio'
+    assert Path(own['args'][0]).is_file() and own['args'][0].replace('\\','/').endswith('/mcp_servers/instruction_portability/server.py')
+    assert 'instruction_portability' not in builtin_mcp.NATIVE_TWIN_SERVERS
