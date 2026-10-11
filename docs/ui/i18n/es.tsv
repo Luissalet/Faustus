@@ -9645,3 +9645,5 @@ about {time} of prefill saved	unos {time} de prefill ahorrados
 the server was started without a slot save path	el servidor se arrancó sin ruta para guardar slots
 larger than the limit set for saved slots	supera el límite fijado para los slots guardados
 too short to be worth saving	demasiado corto para guardarlo
+read now, still being saved	leído ahora, aún guardándose
+the earlier save did not finish	el guardado anterior no terminó

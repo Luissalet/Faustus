@@ -116,6 +116,9 @@ function prefixLine(pc: PrefixCacheUse): string {
     case 'saved':
       parts.push(t('read now, saved for the next turns'));
       break;
+    case 'saving':
+      parts.push(t('read now, still being saved'));
+      break;
     case 'warm':
       parts.push(t('already in the slot'));
       break;
@@ -126,6 +129,7 @@ function prefixLine(pc: PrefixCacheUse): string {
     default:
       parts.push(t('not used: {reason}', { reason: prefixReason(pc.reason) }));
   }
+  if (pc.earlierSave) parts.push(t('the earlier save did not finish'));
   if (pc.prefillSavedMs !== undefined && pc.prefillSavedMs >= 1) {
     parts.push(t('about {time} of prefill saved', { time: formatMs(pc.prefillSavedMs) }));
   }

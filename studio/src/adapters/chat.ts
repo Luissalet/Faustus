@@ -181,8 +181,10 @@ export interface PromptCacheUse {
  *  `warm` = the slot still held it, `miss` = read again and not saved,
  *  `off` = not used (`reason` says why). */
 export interface PrefixCacheUse {
-  status: 'restored' | 'saved' | 'warm' | 'miss' | 'off';
+  status: 'restored' | 'saved' | 'saving' | 'warm' | 'miss' | 'off';
   reason?: string;
+  /** How the chat's previous save ended when it only landed after that turn. */
+  earlierSave?: 'failed' | 'discarded';
   slot?: number;
   prefixTokens?: number;
   cacheN?: number;
@@ -988,7 +990,7 @@ export function metricsFrom(meta: Record<string, unknown>): TurnMetrics {
   };
 }
 
-const PREFIX_STATUSES: readonly PrefixCacheUse['status'][] = ['restored', 'saved', 'warm', 'miss', 'off'];
+const PREFIX_STATUSES: readonly PrefixCacheUse['status'][] = ['restored', 'saved', 'saving', 'warm', 'miss', 'off'];
 
 function prefixCacheFrom(raw: unknown): PrefixCacheUse | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
@@ -998,6 +1000,7 @@ function prefixCacheFrom(raw: unknown): PrefixCacheUse | undefined {
   return {
     status,
     reason: str(r.reason) || undefined,
+    earlierSave: r.earlier_save === 'failed' || r.earlier_save === 'discarded' ? r.earlier_save : undefined,
     slot: num(r.slot),
     prefixTokens: num(r.prefix_tokens),
     cacheN: num(r.cache_n),

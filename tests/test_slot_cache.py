@@ -479,3 +479,243 @@ def test_a_server_restart_costs_one_slow_turn_and_keeps_the_saved_file(server):
     assert os.path.exists(os.path.join(server.slot_save_path, name))
     _text, usage3 = _turn(server, _messages("q3"))
     assert usage3["prefix_cache"]["status"] == "warm"
+
+
+# ── review round 1: clears, unfinished saves and the server's identity ─────
+
+TIMINGS = {"prompt_n": 2000, "cache_n": 0, "prompt_ms": 400.0}
+
+
+async def _plan_and_finish(fake, session="chat-a", slot=1, question="q", doc=DOC):
+    plan = await slot_cache.prepare(fake.url, "fake-model", {"id_slot": slot}, _messages(question, doc=doc),
+                                    None, session)
+    assert plan is not None
+    return plan, await slot_cache.finish(plan, dict(TIMINGS))
+
+
+def _files(fake):
+    return [n for n in os.listdir(fake.slot_save_path) if n.startswith("fsc-")] \
+        if os.path.isdir(fake.slot_save_path) else []
+
+
+def test_a_save_still_running_is_not_certified_as_saved(server, monkeypatch):
+    monkeypatch.setattr(slot_cache, "SAVE_BUDGET_S", 0.1)
+    server.action_delay["save"] = 0.6
+
+    async def go():
+        plan, report = await _plan_and_finish(server)
+        mid = (report["status"], slot_cache.status()["stats"]["saved"], list(slot_cache.status()["entries"]))
+        await slot_cache.drain()
+        return plan, report, mid
+
+    plan, report, mid = asyncio.run(go())
+    assert mid == ("saving", 0, [])  # nothing certified while the server is still writing
+    stats = slot_cache.status()["stats"]
+    assert stats["saved"] == 1 and stats["errors"] == 0  # counted when it landed
+    assert report["status"] == "saved"  # the turn's record, still held, follows it
+    assert len(slot_cache.status()["entries"]) == 1
+
+
+def test_a_save_that_fails_after_the_turn_stopped_waiting_is_counted_and_reported_next_turn(server, monkeypatch):
+    monkeypatch.setattr(slot_cache, "SAVE_BUDGET_S", 0.1)
+    server.action_delay["save"] = 0.4
+    server.fail_actions["save"] = 500
+
+    async def go():
+        plan, report = await _plan_and_finish(server)
+        assert report["status"] == "saving"
+        await slot_cache.drain()
+        server.fail_actions.clear()
+        server.action_delay.clear()
+        nxt_plan, nxt = await _plan_and_finish(server, question="q2")
+        return report, nxt
+
+    report, nxt = asyncio.run(go())
+    stats = slot_cache.status()["stats"]
+    assert stats["errors"] == 1 and stats["saved"] == 0
+    assert slot_cache.status()["entries"] == [] and _files(server) == []
+    assert report["status"] == "miss" and report["reason"] == "the save failed"
+    assert nxt["earlier_save"] == "failed"  # the chat's next turn says what happened
+
+
+def test_a_save_that_fails_inside_the_wait_budget_counts_as_an_error_too(server):
+    server.fail_actions["save"] = 500
+
+    async def go():
+        return await _plan_and_finish(server)
+
+    _plan, report = asyncio.run(go())
+    stats = slot_cache.status()["stats"]
+    assert report["status"] == "miss" and stats["errors"] == 1 and stats["saved"] == 0
+
+
+def test_a_save_started_before_clear_all_records_nothing_when_it_lands(server, monkeypatch):
+    monkeypatch.setattr(slot_cache, "SAVE_BUDGET_S", 0.1)
+    server.action_delay["save"] = 0.6
+
+    async def go():
+        plan, report = await _plan_and_finish(server)
+        assert report["status"] == "saving"
+        cleared = slot_cache.clear()
+        assert cleared["removed"] == 0 and cleared["pending_saves"] == 1
+        await slot_cache.drain()
+        return plan, report
+
+    _plan, report = asyncio.run(go())
+    assert slot_cache.status()["entries"] == []
+    assert _files(server) == []  # the file the server wrote late was removed again
+    stats = slot_cache.status()["stats"]
+    assert stats["saved"] == 0 and stats["errors"] == 0
+    assert report["status"] == "miss" and "cleared" in report["reason"]
+    # A clear is not a failure: the chat's next turn saves again.
+    server.action_delay.clear()
+    monkeypatch.setattr(slot_cache, "SAVE_BUDGET_S", 5.0)
+    _text, usage = _turn(server, _messages("q2"), session="chat-a")
+    assert usage["prefix_cache"]["status"] == "saved"
+    assert len(slot_cache.status()["entries"]) == 1
+
+
+def test_a_save_started_before_a_chat_clear_records_nothing_but_a_shared_state_is_respected(server, monkeypatch):
+    monkeypatch.setattr(slot_cache, "SAVE_BUDGET_S", 0.1)
+    server.action_delay["save"] = 3.0
+
+    async def go():
+        plan_a, report_a = await _plan_and_finish(server, session="chat-a", slot=1)
+        assert report_a["status"] == "saving"
+        while not server.calls("save"):  # the late save has reached the server (and is sleeping there)
+            await asyncio.sleep(0.02)
+        # Meanwhile another chat saves the very same prefix.
+        server.action_delay.clear()
+        monkeypatch.setattr(slot_cache, "SAVE_BUDGET_S", 5.0)
+        _plan_b, report_b = await _plan_and_finish(server, session="chat-b", slot=2)
+        assert report_b["status"] == "saved"
+        assert slot_cache.clear("chat-a")["pending_saves"] == 1
+        await slot_cache.drain()
+        return report_a
+
+    report_a = asyncio.run(go())
+    entries = slot_cache.status()["entries"]
+    assert len(entries) == 1 and entries[0]["sessions"] == 1  # only chat-b, not chat-a
+    assert len(_files(server)) == 1  # the state chat-b uses was not taken away
+    assert report_a["status"] == "miss"
+    # And a chat clear with nothing shared removes the late file.
+    slot_cache.clear()
+    slot_cache.reset()
+    monkeypatch.setattr(slot_cache, "SAVE_BUDGET_S", 0.1)
+    server.action_delay["save"] = 0.8
+
+    async def alone():
+        _p, rep = await _plan_and_finish(server, session="chat-c", slot=1)
+        assert rep["status"] == "saving"
+        slot_cache.clear("chat-c")
+        await slot_cache.drain()
+
+    asyncio.run(alone())
+    assert slot_cache.status()["entries"] == [] and _files(server) == []
+
+
+def test_a_clear_of_another_chat_does_not_cancel_this_chats_late_save(server, monkeypatch):
+    monkeypatch.setattr(slot_cache, "SAVE_BUDGET_S", 0.1)
+    server.action_delay["save"] = 0.4
+
+    async def go():
+        _plan, report = await _plan_and_finish(server, session="chat-a")
+        assert report["status"] == "saving"
+        assert slot_cache.clear("chat-z")["pending_saves"] == 0
+        await slot_cache.drain()
+
+    asyncio.run(go())
+    assert len(slot_cache.status()["entries"]) == 1 and slot_cache.status()["stats"]["saved"] == 1
+
+
+def test_the_clear_route_says_how_many_saves_it_dropped(server, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    import routes.engine_routes as er
+    monkeypatch.setattr(er, "require_admin", lambda request: None)
+    monkeypatch.setattr(slot_cache, "SAVE_BUDGET_S", 0.1)
+    server.action_delay["save"] = 0.5
+    app = FastAPI()
+    app.include_router(er.setup_engine_routes())
+
+    async def go(client):
+        _plan, report = await _plan_and_finish(server)
+        assert report["status"] == "saving"
+        done = await asyncio.to_thread(client.delete, "/api/engines/slot-cache")
+        await slot_cache.drain()
+        return done.json()
+
+    with TestClient(app) as client:
+        body = asyncio.run(go(client))
+    assert body["removed"] == 0 and body["pending_saves"] == 1
+    assert slot_cache.status()["entries"] == []
+
+
+def _id(**changes):
+    props = {"model_path": "D:/m/a.gguf", "chat_template": "t", "total_slots": 4, "build_info": "b1",
+             "default_generation_settings": {"n_ctx": 8192, "params": {}}}
+    for key, value in changes.items():
+        if key in ("n_ctx", "n_batch", "n_ubatch", "cache_type_k", "cache_type_v"):
+            props["default_generation_settings"][key] = value
+        else:
+            props[key] = value
+    return slot_cache.identity_from_props(props)
+
+
+def test_the_server_identity_covers_what_a_saved_state_depends_on():
+    base = _id()
+    assert base == _id()
+    for changed in (_id(model_path="D:/other/a.gguf"), _id(model_path="a.gguf"), _id(chat_template="t2"),
+                    _id(n_ctx=4096), _id(n_batch=512), _id(n_ubatch=128), _id(cache_type_k="q8_0"),
+                    _id(cache_type_v="q4_0"), _id(build_info="b2"), _id(total_slots=8)):
+        assert changed != base
+    # Without the context size in /props, the slot list gives it.
+    bare = {"model_path": "D:/m/a.gguf", "chat_template": "t", "total_slots": 2}
+    assert slot_cache.identity_from_props(bare, [{"id": 0, "n_ctx": 4096}]) != \
+        slot_cache.identity_from_props(bare, [{"id": 0, "n_ctx": 8192}])
+
+
+def test_a_model_file_replaced_in_place_is_another_identity(tmp_path):
+    model = tmp_path / "m.gguf"
+    model.write_bytes(b"x" * 100)
+    props = {"model_path": str(model), "chat_template": "t"}
+    first = slot_cache.identity_from_props(props)
+    model.write_bytes(b"y" * 250)
+    assert slot_cache.identity_from_props(props) != first
+    # A file this machine cannot see falls back to what /v1/models reports.
+    remote = {"model_path": "/srv/models/m.gguf", "chat_template": "t"}
+    assert slot_cache.identity_from_props(remote, None, {"size": 1, "n_params": 5}) != \
+        slot_cache.identity_from_props(remote, None, {"size": 2, "n_params": 5})
+
+
+def test_two_servers_that_differ_only_in_context_or_model_directory_have_other_identities(conf):
+    async def ident(fake):
+        return await slot_cache._server_fingerprint(fake.base, None)
+
+    async def go():
+        with FakeLlamaServer(n_ctx=8192) as a, FakeLlamaServer(n_ctx=16384) as b, \
+                FakeLlamaServer(n_ctx=8192) as c, \
+                FakeLlamaServer(n_ctx=8192, model_path="E:/elsewhere/fake-model.gguf") as d:
+            return [await ident(s) for s in (a, b, c, d)]
+
+    a, b, c, d = asyncio.run(go())
+    assert a != b  # same file name and template, another context size
+    assert a != d  # same file name, another directory
+    assert a == c  # the same configuration is the same identity
+
+
+def test_a_context_change_on_the_same_server_makes_another_state(server):
+    _turn(server, _messages("q1"))
+    first = server.calls("save")[0]["body"]["filename"]
+    server.n_ctx = 4096  # restarted with a smaller context on the same port
+    server.requests.clear()
+    _text, usage = _turn(server, _messages("q2"))
+    assert usage["prefix_cache"]["status"] == "saved"
+    assert server.calls("save")[0]["body"]["filename"] != first
+
+
+def test_props_is_read_every_turn_so_a_change_is_seen_at_once(server):
+    _turn(server, _messages("q1"))
+    _turn(server, _messages("q2"))
+    props_reads = [r for r in server.requests if r["path"] == "/props"]
+    assert len(props_reads) == 2

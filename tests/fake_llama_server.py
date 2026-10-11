@@ -43,13 +43,18 @@ def _message_text(message: Dict[str, Any]) -> str:
 class FakeLlamaServer:
     def __init__(self, port: int = 0, slot_save_path: Optional[str] = None, n_slots: int = 4,
                  ms_per_prompt_token: float = 1.0, log_path: Optional[str] = None,
-                 model_path: str = "D:/models/fake-model.gguf", chat_template: str = "fake-template-1"):
+                 model_path: str = "D:/models/fake-model.gguf", chat_template: str = "fake-template-1",
+                 n_ctx: int = 16384, build_info: str = "fake"):
         self.slot_save_path = slot_save_path
         self.n_slots = n_slots
         self.ms_per_prompt_token = ms_per_prompt_token
         self.log_path = log_path
         self.model_path = model_path
         self.chat_template = chat_template
+        self.n_ctx = n_ctx
+        self.build_info = build_info
+        #: Seconds a slot action sleeps before it answers (a slow disk), per action.
+        self.action_delay: Dict[str, float] = {}
         self.slots: List[List[str]] = [[] for _ in range(n_slots)]
         self.requests: List[Dict[str, Any]] = []
         self.fail_actions: Dict[str, int] = {}
@@ -86,10 +91,10 @@ class FakeLlamaServer:
                     return self._send(200, {"status": "ok"})
                 if path == "/props":
                     return self._send(200, {"model_path": outer.model_path, "chat_template": outer.chat_template,
-                                            "total_slots": outer.n_slots, "build_info": "fake",
-                                            "default_generation_settings": {"n_ctx": 16384}})
+                                            "total_slots": outer.n_slots, "build_info": outer.build_info,
+                                            "default_generation_settings": {"n_ctx": outer.n_ctx}})
                 if path == "/slots":
-                    return self._send(200, [{"id": i, "n_ctx": 16384, "is_processing": False}
+                    return self._send(200, [{"id": i, "n_ctx": outer.n_ctx, "is_processing": False}
                                             for i in range(outer.n_slots)])
                 if path in ("/v1/models", "/models"):
                     return self._send(200, {"object": "list", "data": [{"id": "fake-model", "object": "model"}]})
@@ -159,6 +164,8 @@ class FakeLlamaServer:
 
     # ── slot actions ───────────────────────────────────────────────────
     def _slot_action(self, handler, slot: int, action: str, body: Dict[str, Any]) -> None:
+        if self.action_delay.get(action):
+            time.sleep(self.action_delay[action])
         if self.fail_actions.get(action):
             return handler._send(self.fail_actions[action], {"error": {"code": self.fail_actions[action],
                                                                        "message": "forced failure"}})
@@ -257,9 +264,16 @@ def main() -> None:
     parser.add_argument("--slots", type=int, default=4)
     parser.add_argument("--ms-per-token", type=float, default=1.0)
     parser.add_argument("--log", default=None)
+    parser.add_argument("--n-ctx", type=int, default=16384)
+    parser.add_argument("--save-delay", type=float, default=0.0, help="seconds a slot save takes to answer")
+    parser.add_argument("--fail-save", type=int, default=0, help="answer slot saves with this HTTP status")
     args = parser.parse_args()
     server = FakeLlamaServer(port=args.port, slot_save_path=args.slot_save_path, n_slots=args.slots,
-                             ms_per_prompt_token=args.ms_per_token, log_path=args.log)
+                             ms_per_prompt_token=args.ms_per_token, log_path=args.log, n_ctx=args.n_ctx)
+    if args.save_delay:
+        server.action_delay["save"] = args.save_delay
+    if args.fail_save:
+        server.fail_actions["save"] = args.fail_save
     print(f"fake llama-server on {server.base}", flush=True)
     server.httpd.serve_forever()
 

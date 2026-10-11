@@ -28,6 +28,19 @@ the earlier turn's tail may be reused too. A model that cannot drop the tail
 (recurrent layers) re-reads the prompt, which `finish` sees in the timings and
 reports as a miss.
 
+A save the turn did not wait for is reported as `saving`, never as `saved`:
+its outcome (saved, failed, discarded) updates the stats when it lands, the
+turn's record when it is still held, and the next turn of the chat
+(`earlier_save`). `clear` bumps a generation (global, or per chat): a save that
+started before it never records its file (the file is removed again unless
+another chat still shares that state).
+
+The identity of a server (what a saved state is good for) is read from /props
+on every turn: model file (full path, plus size and mtime when the file is
+visible from here, or the size the server reports in /v1/models), chat
+template, context size, batch sizes and KV cache types when exposed, build and
+slot count. When it changes, what was assumed about the slots is forgotten.
+
 Nothing here can fail a turn: every error ends in the normal path and is
 logged once. A server that answers 501 (no `--slot-save-path`) is left alone
 for `UNSUPPORTED_TTL` seconds. Files are named from the key, kept in one
@@ -64,7 +77,9 @@ FILE_SUFFIX = ".bin"
 INDEX_NAME = "index.json"
 
 UNSUPPORTED_TTL = 600.0
-PROPS_TTL = 600.0
+#: /props is read on every turn (one small local GET): a model, template or
+#: context change must be seen at once. Only a failure is remembered for a while.
+PROPS_TTL = 0.0
 PROPS_FAIL_TTL = 60.0
 SAVE_FAIL_RETRY_S = 300.0
 #: How long the end of a turn waits for the save before letting it finish in
@@ -78,13 +93,19 @@ PROBE_TIMEOUT_S = 2.0
 #: prefix did not really keep it.
 REUSE_FLOOR = 0.5
 
-STATUSES = ("restored", "saved", "warm", "miss", "off")
+STATUSES = ("restored", "saved", "saving", "warm", "miss", "off")
 #: Which status describes a turn made of several rounds (an agent turn).
-STATUS_PRIORITY = {"restored": 5, "saved": 4, "miss": 3, "warm": 2, "off": 1}
+STATUS_PRIORITY = {"restored": 5, "saved": 4, "saving": 4, "miss": 3, "warm": 2, "off": 1}
 
 _LOCK = threading.RLock()
 _STATE: Dict[Tuple[str, int], Optional[Dict[str, Any]]] = {}
 _PENDING: Dict[Tuple[str, int], "asyncio.Future"] = {}
+_PENDING_SESSION: Dict[Tuple[str, int], str] = {}
+#: Bumped by `clear`: a save that started before it must not be recorded.
+_GEN_ALL = 0
+_GEN_SESSION: Dict[str, int] = {}
+#: How a save that landed after its turn's record was returned ended, per chat.
+_LATE: Dict[str, Dict[str, Any]] = {}
 _UNSUPPORTED: Dict[str, float] = {}
 _PROPS: Dict[str, Tuple[float, str]] = {}
 _SAVE_FAILED: Dict[str, float] = {}
@@ -151,6 +172,10 @@ def reset() -> None:
     with _LOCK:
         _STATE.clear()
         _PENDING.clear()
+        _PENDING_SESSION.clear()
+        _GEN_SESSION.clear()
+        _LATE.clear()
+        globals()["_GEN_ALL"] = 0
         _UNSUPPORTED.clear()
         _PROPS.clear()
         _SAVE_FAILED.clear()
@@ -198,7 +223,7 @@ def _serialise(prefix: List[Dict[str, Any]], tools: Any) -> str:
 
 
 def prefix_key(model: str, server_fp: str, prefix: List[Dict[str, Any]], tools: Any) -> str:
-    raw = json.dumps({"v": 1, "model": str(model or ""), "server": server_fp,
+    raw = json.dumps({"v": 2, "model": str(model or ""), "server": server_fp,
                       "prefix": _serialise(prefix, tools)}, ensure_ascii=False)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
@@ -221,14 +246,83 @@ async def _call(method: str, url: str, *, body: Optional[Dict[str, Any]] = None,
                                     headers=_auth_headers(headers))
 
 
+def _first(sources: List[Dict[str, Any]], *names: str) -> Any:
+    for source in sources:
+        for name in names:
+            value = source.get(name)
+            if value not in (None, ""):
+                return value
+    return None
+
+
+def _model_identity(path: str, models_meta: Any = None) -> str:
+    """The weights a server loaded: the full path and, when this machine can
+    see the file, its size and modification time; otherwise the path alone
+    plus what /v1/models says about the model (parameter count, file size)."""
+    path = str(path or "").strip()
+    if path:
+        try:
+            info = os.stat(path)
+            return f"{path}|{info.st_size}|{info.st_mtime_ns}"
+        except OSError:
+            pass
+    meta = ""
+    if isinstance(models_meta, dict):
+        meta = "|".join(f"{k}={models_meta[k]}" for k in ("size", "n_params", "n_vocab", "n_ctx_train")
+                        if models_meta.get(k) is not None)
+    return f"{path}|{meta}"
+
+
+def identity_from_props(props: Dict[str, Any], slots: Any = None, models_meta: Any = None) -> str:
+    """What a saved state is good for, from a llama-server's /props (plus the
+    slot list when /props does not carry the context size, and /v1/models
+    metadata when the model file is not visible from here): the model file,
+    the chat template, the context size, batch sizes and KV cache types when
+    exposed, the build and the number of slots."""
+    generation = props.get("default_generation_settings")
+    generation = generation if isinstance(generation, dict) else {}
+    params = generation.get("params")
+    params = params if isinstance(params, dict) else {}
+    sources = [props, generation, params]
+    n_ctx = _first(sources, "n_ctx")
+    if n_ctx is None and isinstance(slots, list) and slots and isinstance(slots[0], dict):
+        n_ctx = slots[0].get("n_ctx")
+    template = str(props.get("chat_template") or "")
+    parts = {
+        "model": _model_identity(str(props.get("model_path") or ""), models_meta),
+        "template": hashlib.sha1(template.encode("utf-8")).hexdigest()[:16],
+        "n_ctx": n_ctx,
+        "n_batch": _first(sources, "n_batch"),
+        "n_ubatch": _first(sources, "n_ubatch"),
+        "kv_k": _first(sources, "cache_type_k", "type_k"),
+        "kv_v": _first(sources, "cache_type_v", "type_v"),
+        "build": props.get("build_info"),
+        "slots": props.get("total_slots"),
+    }
+    return json.dumps(parts, sort_keys=True, ensure_ascii=False, default=str)
+
+
+async def _get_json(base: str, path: str, headers: Optional[Dict[str, Any]]) -> Any:
+    try:
+        resp = await _call("GET", base + path, headers=headers, timeout=PROBE_TIMEOUT_S)
+        if resp.status_code == 200:
+            return resp.json()
+    except Exception:  # noqa: BLE001 - optional detail
+        logger.debug("slot cache: %s unreadable on %s", path, base, exc_info=True)
+    return None
+
+
 async def _server_fingerprint(base: str, headers: Optional[Dict[str, Any]]) -> str:
-    """Model file and chat template the server reports in /props: a saved
-    state is only good for the same weights and the same rendering."""
+    """The identity of the server behind `base` (see `identity_from_props`),
+    read again every turn so a swapped model, a changed context size or a
+    restart with other flags is seen. When it differs from the last one seen,
+    what was assumed about its slots is forgotten."""
     now = time.monotonic()
     with _LOCK:
         cached = _PROPS.get(base)
     if cached and cached[0] > now:
         return cached[1]
+    previous = cached[1] if cached else None
     fingerprint = ""
     ttl = PROPS_FAIL_TTL
     try:
@@ -236,14 +330,27 @@ async def _server_fingerprint(base: str, headers: Optional[Dict[str, Any]]) -> s
         if resp.status_code == 200:
             props = resp.json()
             if isinstance(props, dict):
-                path = str(props.get("model_path") or "").replace("\\", "/").rsplit("/", 1)[-1]
-                template = str(props.get("chat_template") or "")
-                fingerprint = f"{path}|{hashlib.sha1(template.encode('utf-8')).hexdigest()[:16]}"
+                generation = props.get("default_generation_settings")
+                has_ctx = isinstance(generation, dict) and generation.get("n_ctx") is not None
+                slots = None if has_ctx else await _get_json(base, "/slots", headers)
+                models_meta = None
+                path = str(props.get("model_path") or "").strip()
+                if not path or not os.path.isfile(path):
+                    listing = await _get_json(base, "/v1/models", headers)
+                    rows = listing.get("data") if isinstance(listing, dict) else None
+                    if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+                        models_meta = rows[0].get("meta")
+                fingerprint = identity_from_props(props, slots, models_meta)
                 ttl = PROPS_TTL
     except Exception:  # noqa: BLE001 - the model name alone then identifies it
         logger.debug("slot cache: /props unreadable on %s", base, exc_info=True)
     with _LOCK:
         _PROPS[base] = (now + ttl, fingerprint)
+        if previous is not None and previous != fingerprint:
+            for slot_key in [k for k in _STATE if k[0] == base]:
+                _STATE[slot_key] = None
+    if previous not in (None, "") and previous != fingerprint:
+        logger.info("slot cache: %s changed model, context or template; its slots are read afresh", base)
     return fingerprint
 
 
@@ -436,10 +543,23 @@ def status() -> Dict[str, Any]:
 
 def clear(session_id: Optional[str] = None) -> Dict[str, int]:
     """Delete saved states: every one, or those only this chat uses (a state
-    shared with another chat just stops listing this one)."""
+    shared with another chat just stops listing this one). Saves still running
+    are cancelled in effect (`pending_saves` says how many): when they land
+    they record nothing and their file is removed."""
     directory = cache_dir()
     removed = freed = 0
     with _LOCK:
+        # Saves still running started before this: they must not record
+        # anything when they land (and their file is removed again).
+        if session_id:
+            _GEN_SESSION[str(session_id)] = _GEN_SESSION.get(str(session_id), 0) + 1
+            _LATE.pop(str(session_id), None)
+            pending = sum(1 for k, t in _PENDING.items()
+                          if not t.done() and _PENDING_SESSION.get(k) == str(session_id))
+        else:
+            globals()["_GEN_ALL"] = _GEN_ALL + 1
+            _LATE.clear()
+            pending = sum(1 for t in _PENDING.values() if not t.done())
         index = _load_index(directory) if os.path.isdir(directory) else {"entries": {}}
         entries = index["entries"]
         for key, entry in list(entries.items()):
@@ -469,7 +589,7 @@ def clear(session_id: Optional[str] = None) -> Dict[str, int]:
             for slot_key, state in list(_STATE.items()):
                 if state and state.get("session") == session_id:
                     _STATE[slot_key] = None
-    return {"removed": removed, "freed_bytes": freed}
+    return {"removed": removed, "freed_bytes": freed, "pending_saves": pending}
 
 
 # ── a turn ──────────────────────────────────────────────────────────────────
@@ -488,7 +608,23 @@ class Plan:
     will_save: bool = False
     restore_ms: Optional[float] = None
     done: bool = False
+    generation: Tuple[int, int] = (0, 0)
     report: Dict[str, Any] = field(default_factory=dict)
+
+
+def _generation(session_id: str) -> Tuple[int, int]:
+    with _LOCK:
+        return _GEN_ALL, _GEN_SESSION.get(session_id, 0)
+
+
+def _stale(plan: "Plan") -> bool:
+    """A `clear` happened since the turn began: what it saves is unwanted."""
+    return _generation(plan.session_id) != plan.generation
+
+
+def _save_failed_lately(key: str) -> bool:
+    with _LOCK:
+        return time.monotonic() - _SAVE_FAILED.get(key, -SAVE_FAIL_RETRY_S * 2) <= SAVE_FAIL_RETRY_S
 
 
 def _forget_slot(base: str, slot: int) -> None:
@@ -534,7 +670,8 @@ async def _prepare(url, model, payload, messages, tools, session_id, headers) ->
     if not docs:
         _forget_slot(base, slot)  # this request puts something else in the slot
         return None
-    plan = Plan(base=base, slot=slot, session_id=sid, model=str(model or ""), headers=headers)
+    plan = Plan(base=base, slot=slot, session_id=sid, model=str(model or ""), headers=headers,
+                generation=_generation(sid))
     from src.model_context import estimate_tokens
     plan.est_tokens = estimate_tokens(prefix)
     with _LOCK:
@@ -564,10 +701,7 @@ async def _prepare(url, model, payload, messages, tools, session_id, headers) ->
         plan.status = "restored" if await _restore(plan, entry) else "miss"
     else:
         plan.status = "miss"
-    with _LOCK:
-        failed_at = _SAVE_FAILED.get(plan.key, 0.0)
-    plan.will_save = (entry is None or plan.status == "miss") and \
-        time.monotonic() - failed_at > SAVE_FAIL_RETRY_S
+    plan.will_save = (entry is None or plan.status == "miss") and not _save_failed_lately(plan.key)
     return plan
 
 
@@ -606,6 +740,7 @@ async def _save(plan: Plan, timings: Dict[str, Any]) -> Optional[Dict[str, Any]]
     except Exception as exc:  # noqa: BLE001
         with _LOCK:
             _SAVE_FAILED[plan.key] = time.monotonic()
+            _STATS["errors"] += 1
         _log_once(f"save-net:{plan.base}", "Slot cache: save on %s failed (%s)", plan.base, exc)
         return None
     if resp.status_code != 200:
@@ -614,6 +749,8 @@ async def _save(plan: Plan, timings: Dict[str, Any]) -> Optional[Dict[str, Any]]
             if resp.status_code == 501:
                 _UNSUPPORTED[plan.base] = time.monotonic() + UNSUPPORTED_TTL
                 plan.reason = "unsupported"
+            else:
+                _STATS["errors"] += 1
         _log_once(f"save:{plan.base}:{resp.status_code}",
                   "Slot cache: %s answered HTTP %s to a save (is it started with --slot-save-path?)",
                   plan.base, resp.status_code)
@@ -634,10 +771,19 @@ async def _save(plan: Plan, timings: Dict[str, Any]) -> Optional[Dict[str, Any]]
         except OSError:
             size = None
     try:
-        _record_entry(plan.key, plan.base, plan.session_id, plan.model,
-                      {"bytes": size, "tokens": answer.get("n_saved"), "rate_tpms": rate})
-        cleanup()
+        with _LOCK:
+            if _stale(plan):
+                # Cleared while the server was writing: record nothing, and
+                # remove the file unless a state another chat uses still has it.
+                if plan.key not in _load_index(cache_dir())["entries"]:
+                    _unlink(cache_dir(), filename)
+                return {"discarded": True}
+            _record_entry(plan.key, plan.base, plan.session_id, plan.model,
+                          {"bytes": size, "tokens": answer.get("n_saved"), "rate_tpms": rate})
+            cleanup()
     except OSError as exc:
+        with _LOCK:
+            _STATS["errors"] += 1
         _log_once("index", "Slot cache: the index in %s cannot be written (%s)", cache_dir(), exc)
         return None
     save_ms = None
@@ -650,6 +796,45 @@ def _num(value: Any) -> Optional[float]:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     return float(value)
+
+
+def _save_settled(plan: Plan, task: "asyncio.Future") -> None:
+    """A save the turn stopped waiting for has ended: count it for what it was,
+    update the turn's record when it is still held, and leave the outcome for
+    the chat's next turn."""
+    result: Optional[Dict[str, Any]] = None
+    broke = False
+    try:
+        result = task.result()
+    except BaseException:  # noqa: BLE001 - cancelled or crashed
+        broke = True
+    if broke:
+        outcome = "failed"
+    elif result is None:
+        outcome = "unsupported" if plan.reason == "unsupported" else "failed"
+    elif result.get("discarded"):
+        outcome = "discarded"
+    else:
+        outcome = "saved"
+    with _LOCK:
+        if outcome == "saved":
+            _STATS["saved"] += 1
+        elif broke:
+            _STATS["errors"] += 1
+        _LATE[plan.session_id] = {"outcome": outcome, "key": plan.key[:12], "at": time.time()}
+        report = plan.report
+        if report.get("status") == "saving":
+            if outcome == "saved":
+                report["status"] = "saved"
+                if result and result.get("save_ms") is not None:
+                    report["save_ms"] = result["save_ms"]
+                if result and result.get("bytes"):
+                    report["bytes"] = result["bytes"]
+            else:
+                report["status"] = "off" if outcome == "unsupported" else "miss"
+                report["reason"] = {"failed": "the save failed", "discarded": "cleared while it was being saved",
+                                    "unsupported": "unsupported"}[outcome]
+    logger.debug("slot cache: late save of %s ended as %s", plan.key[:12], outcome)
 
 
 async def finish(plan: Optional[Plan], timings: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -670,6 +855,9 @@ async def finish(plan: Optional[Plan], timings: Optional[Dict[str, Any]]) -> Opt
         report = {"status": plan.status, "slot": plan.slot}
     plan.report = report
     with _LOCK:
+        late = _LATE.pop(plan.session_id, None)
+        if late and late.get("outcome") in ("failed", "discarded"):
+            report["earlier_save"] = late["outcome"]
         _STATS[report.get("status", "off")] = _STATS.get(report.get("status", "off"), 0) + 1
         if isinstance(report.get("prefill_saved_ms"), (int, float)):
             _STATS["prefill_saved_ms"] += float(report["prefill_saved_ms"])
@@ -694,11 +882,11 @@ async def _finish(plan: Plan, timings: Dict[str, Any]) -> Dict[str, Any]:
             # The file did not work: drop it and save a fresh one.
             _drop_entry(plan.key)
             entry = None
-            plan.will_save = True
+            plan.will_save = not _save_failed_lately(plan.key)
         else:
             # The slot was emptied behind our back (a server restart): the
             # file is still good, and the slot holds the prefix again now.
-            plan.will_save = entry is None
+            plan.will_save = entry is None and not _save_failed_lately(plan.key)
         _log_once(f"noreuse:{plan.base}", "Slot cache: %s read the pinned document again after a %s; "
                   "the saved state is not reusable there", plan.base, plan.status)
 
@@ -713,19 +901,25 @@ async def _finish(plan: Plan, timings: Dict[str, Any]) -> Dict[str, Any]:
         task = asyncio.ensure_future(_save(plan, timings))
         with _LOCK:
             _PENDING[(plan.base, plan.slot)] = task
+            _PENDING_SESSION[(plan.base, plan.slot)] = plan.session_id
         try:
             result = await asyncio.wait_for(asyncio.shield(task), SAVE_BUDGET_S)
         except asyncio.TimeoutError:
-            pending, result = True, {}
+            pending, result = True, None
+            task.add_done_callback(lambda done, p=plan: _save_settled(p, done))
         except Exception:  # noqa: BLE001
             result = None
-        if result is not None:
+        if pending:
+            # Not confirmed: never certified as saved. How it ends is
+            # counted when it lands (`_save_settled`).
+            status = "saving"
+        elif result is not None and result.get("discarded"):
+            status, reason = "miss", "cleared while it was being saved"
+        elif result is not None:
             status = "saved"
             save_ms = result.get("save_ms")
             if result.get("bytes"):
                 report["bytes"] = result["bytes"]
-            if pending:
-                report["pending"] = True
         elif plan.reason == "unsupported":
             status = "off"
 
@@ -768,3 +962,4 @@ async def drain() -> None:
             await asyncio.wait_for(asyncio.shield(task), SAVE_TIMEOUT_S)
         except Exception:  # noqa: BLE001
             pass
+    await asyncio.sleep(0)  # let the settle callbacks of those saves run
