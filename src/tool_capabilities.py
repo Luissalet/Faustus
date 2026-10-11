@@ -198,6 +198,8 @@ _register(
         "scan_email_unsubscribes",
         "search_chats",
         "search_project_chats",
+        "hoard_project_search",
+        "hoard_project_recall",
         "search_emails",
         "list_sessions",
         "tail_serve_output",

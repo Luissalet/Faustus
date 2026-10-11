@@ -70,6 +70,22 @@ by app identity. Folder grouping and the normal search remain available.
 
 ## MCP
 
+`GET /api/hoard-copilot/projects/search` accepts query, app/data-space, explicit
+ISO after/before dates and offset/limit pagination. It returns stable native IDs,
+matched terms and cited canonical messages. Activity dates come from messages,
+not an empty panel opening. Retrieval uses identity, titles and text; it does not
+pretend to be a semantic model confidence estimate.
+
+`GET /api/hoard-copilot/projects/{project_link_id}` recalls chats, recent messages,
+the existing project memory scope and optional workspace. Availability refers to
+the linked Faustus working project; always read the current native Hoard object
+before editing. Missing working projects are reported without recreation; no
+historic selection or synthetic Git workspace is restored.
+
+Native agent tools and stdio MCP expose `hoard_project_search` and
+`hoard_project_recall`. They use the same storage-owner identity as the API,
+including the established local no-login bucket.
+
 Run `python -m mcp_servers.hoard_copilot_server` with `FAUSTUS_URL` and, when
 needed, `FAUSTUS_TOKEN_FILE` or `FAUSTUS_TOKEN`. The server forwards to the
 running app and never owns a second harness. Tools cover project resolution,
@@ -79,7 +95,7 @@ conversation list/open/get/import and native turn start/status/stop.
 
 This is the shared service and panel foundation. Writer's client integration is
 tracked separately in Agora 340. Global Studio sidebar filters are available;
-natural project recovery and the complete family
-migration remain separate tasks 337 and 343. The facade currently reuses native turn routes instead of
+project recovery is available by identity, titles, text and explicit dates; the
+complete family migration remains task343. The facade currently reuses native turn routes instead of
 implementing a duplicate execution API. Transport and native tool registration
 continue to use the established family/connector capabilities.

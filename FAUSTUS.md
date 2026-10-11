@@ -11422,3 +11422,5 @@ Lo que Faustus gana por MCP de tres Hoards (integrado en sus `main`, apps reinic
   elementos clave), con el arreglo automático permitido.
 
 Copilot común336: Studio muestra icono y filtro/agrupación por Hoard de origen. El panel compartido prepara una conversación canónica sin generar al abrirse, conserva los borradores por SID en Faustus y reintenta guardados tras fallos de conexión. PATCH del borrador conserva adjuntos de Studio; PUT anterior y borrado explícito siguen disponibles. Writer340 integrado aparte; recuperación natural337 y migración completa343 todavía pendientes.
+
+Recuperación337: herramientas nativas/MCP hoard_project_search y hoard_project_recall encuentran trabajos enlazados por ID, títulos, texto canónico y fechas reales de mensajes. La referencia conserva proyecto, memoria y workspace existente; no crea Git para contenido ni revive selección histórica. El agente debe leer el objeto actual por su Hoard. Keyword/fecha es recuperación determinista, no confianza semántica ni notaGLM. La identidad local sin login coincide con la API.
