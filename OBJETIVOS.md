@@ -1355,3 +1355,10 @@ Hecho en §294 (radar #458): corrección, herramienta fallida y respuesta vacía
 - **Hecho (#228, FAUSTUS §312):** registrar por turno la decisión de Auto y su resultado (si el siguiente mensaje fue una corrección, si la batería diaria acertó): `GET /api/diagnostics/think-mode` y la herramienta MCP `think_mode_calibration` dan tasas por modo y motivo y señalan los motivos que más se corrigen. Ajustar los umbrales con esas cifras cuando haya semanas de uso registrado.
 - **Hecho (#227, FAUSTUS §311):** leer el modo que se usó de verdad en el turno anterior (ahora se guarda en `metadata.think_mode` de cada respuesta) en lugar de recalcularlo con la regla, para que un «A fondo» elegido a mano cuente.
 - **Hecho (#227, FAUSTUS §311):** señal «pensó y no sirvió»: si un turno `deep` del chat gastó el presupuesto sin texto final, Auto no vuelve a pedir `deep` en ese chat.
+
+## OBJ-59 · Auditoría de configuración MCP en la interfaz (11-10-2026)
+
+Hecho en §322 (#281, radar #503): `GET /api/mcp/audit` y `mcp_config_audit` en el MCP `harness`. Queda:
+- enseñar el informe en Ajustes → MCP (un aviso por servidor junto a la insignia del pre-escaneo y un resumen arriba), con el arreglo de cada hallazgo;
+- pasarlo también al añadir o editar un servidor, como aviso (nunca como bloqueo);
+- incluirlo en el diagnóstico unificado de degradación cuando haya hallazgos altos en servidores activos.
