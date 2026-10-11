@@ -114,7 +114,11 @@ def test_disabled_tools_respects_missing_vs_explicit_toggles():
     assert "disabled_tools.update(WEB_TOOL_NAMES)" in source, (
         "disabled_tools must add web_search/web_fetch when web is not explicitly enabled"
     )
-    assert "_forced_tools = set(WEB_TOOL_NAMES)" in source, (
+    # Web tools are forced visible only under the explicit web setting, and
+    # are added to (not replacing) tools forced earlier, e.g. lookup_tools for
+    # a Hoard conversation.
+    assert ("if _search_enabled:\n"
+            "                            _forced_tools = set(_forced_tools or set()) | set(WEB_TOOL_NAMES)") in source, (
         "web tools should only be forced visible from the explicit web setting"
     )
 

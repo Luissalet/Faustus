@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 from starlette.testclient import TestClient
 
-from src.first_token_budget import _OVERRIDE, effective, parse, request_budget
+from src.first_token_budget import _OVERRIDE, effective, parse, request_budget, scoped_stream
 from src.first_token_deadline import bounded
 
 
@@ -103,3 +103,68 @@ async def test_reasoning_delta_starts_response_and_does_not_cut_long_generation(
     result = [chunk async for chunk in bounded(source(), .01)]
     assert len(result) == 2
     assert "answer" in result[-1]
+
+
+@pytest.mark.asyncio
+async def test_a_source_that_raises_cancelled_reaches_the_consumer():
+    """An upstream stream stopped from inside raises CancelledError in the
+    source. The consumer must see that cancellation, not wait forever on an
+    empty queue (the chat_stream hang of task 359)."""
+    closed = []
+
+    async def source():
+        try:
+            yield "data: partial\n\n"
+            raise asyncio.CancelledError()
+        finally:
+            closed.append(True)
+
+    got = []
+
+    async def consume():
+        async for chunk in scoped_stream(source(), None):
+            got.append(chunk)
+
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(consume(), timeout=5)
+    assert got == ["data: partial\n\n"]
+    assert closed == [True]
+
+
+@pytest.mark.asyncio
+async def test_closing_the_consumer_still_cancels_the_producer_quietly():
+    started, closed = asyncio.Event(), []
+
+    async def source():
+        try:
+            yield "first"
+            started.set()
+            await asyncio.Event().wait()   # an upstream that never answers
+            yield "never"
+        finally:
+            closed.append(True)
+
+    stream = scoped_stream(source(), None)
+    assert await stream.__anext__() == "first"
+    await asyncio.wait_for(started.wait(), timeout=5)
+    await asyncio.wait_for(stream.aclose(), timeout=5)
+    assert closed == [True]
+
+
+@pytest.mark.asyncio
+async def test_errors_and_the_end_still_pass_through():
+    async def failing():
+        yield "a"
+        raise RuntimeError("upstream broke")
+
+    got = []
+    with pytest.raises(RuntimeError, match="upstream broke"):
+        async for chunk in scoped_stream(failing(), None):
+            got.append(chunk)
+    assert got == ["a"]
+
+    async def finite():
+        yield "x"
+        yield "y"
+
+    assert [c async for c in scoped_stream(finite(), None)] == ["x", "y"]
