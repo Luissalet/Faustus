@@ -283,15 +283,67 @@ def test_infer_subprocess_list_and_shell_string(tree):
     assert cp.inferred_shell_commands("def oops(") == []  # syntax error -> fail open
 
 
-def test_python_code_single_candidate_rewrites_with_chdir(tree):
+def test_python_code_single_candidate_inserts_cwd(tree):
     code = 'import subprocess\nsubprocess.run(["python", "server.py"])\n'
     r = cp.check_python_code(code, str(tree))
     assert r.action == "rewrite"
     assert r.candidates == ["backend"]
-    assert r.command.startswith("import os as _faustus_preflight_os\n")
-    assert "_faustus_preflight_os.chdir('backend')\n" in r.command
-    assert r.command.endswith(code)
+    assert "chdir" not in r.command
+    assert 'cwd=\'backend\'' in r.command or 'cwd="backend"' in r.command
+    assert r.command.startswith("import subprocess\n")
     assert "backend/" in r.note
+
+
+def test_python_code_skips_call_that_already_sets_cwd(tree):
+    """P1: explicit cwd= must not be double-rewritten to backend/backend."""
+    code = (
+        "import subprocess, sys\n"
+        "subprocess.run([sys.executable, 'server.py'], cwd='backend')\n"
+    )
+    r = cp.check_python_code(code, str(tree))
+    assert r.action == "none"
+    assert r.command == code
+
+
+def test_python_code_preserves_other_relative_paths(tree):
+    """P2: rewriting the launch must not break open('notes.txt') at workspace root."""
+    _touch(tree, "notes.txt", "root-notes\n")
+    code = (
+        "import subprocess, sys\n"
+        "subprocess.run([sys.executable, 'server.py'], capture_output=True, text=True)\n"
+        "print(open('notes.txt', encoding='utf-8').read().strip())\n"
+    )
+    r = cp.check_python_code(code, str(tree))
+    assert r.action == "rewrite"
+    assert "chdir" not in r.command
+    assert "open('notes.txt'" in r.command
+    # Execute rewritten source from workspace root (same as python -c cwd).
+    import subprocess as sp
+    import sys
+    proc = sp.run([sys.executable, "-c", r.command], cwd=str(tree), capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+    assert "root-notes" in proc.stdout
+
+
+def test_python_code_keeps_future_import_first(tree):
+    """P2: never inject a prelude before from __future__."""
+    code = (
+        "from __future__ import annotations\n"
+        "import subprocess, sys\n"
+        "subprocess.run([sys.executable, 'server.py'])\n"
+    )
+    r = cp.check_python_code(code, str(tree))
+    assert r.action == "rewrite"
+    assert r.command.startswith("from __future__ import annotations\n")
+    assert "chdir" not in r.command
+    compile(r.command, "<preflight>", "exec")  # must stay valid
+
+
+def test_python_code_runpy_rewrites_path_literal(tree):
+    code = 'import runpy\nrunpy.run_path("server.py")\n'
+    r = cp.check_python_code(code, str(tree))
+    assert r.action == "rewrite"
+    assert 'run_path("backend/server.py")' in r.command or "run_path('backend/server.py')" in r.command
 
 
 def test_python_code_ambiguous_refuses(tree):
@@ -323,7 +375,7 @@ def test_apply_python_respects_setting(tree, monkeypatch):
     assert cp.apply_python(code, str(tree)).action == "rewrite"
 
 
-def test_python_tool_runs_chdir_prelude_and_notes(tree, monkeypatch):
+def test_python_tool_inserts_cwd_and_notes(tree, monkeypatch):
     import asyncio
     from src import tool_execution
     from src.agent_tools import subprocess_tools as st
@@ -338,8 +390,8 @@ def test_python_tool_runs_chdir_prelude_and_notes(tree, monkeypatch):
     monkeypatch.setattr(st.sandbox_exec, "run", fake_run)
     code = 'import subprocess\nsubprocess.run(["python", "server.py"])\n'
     out = asyncio.run(st.PythonTool().execute(code, {}))
-    assert "_faustus_preflight_os.chdir('backend')" in seen["code"]
-    assert seen["code"].endswith(code)
+    assert "chdir" not in seen["code"]
+    assert "cwd=" in seen["code"] and "backend" in seen["code"]
     assert out["output"].startswith("[preflight] ran from backend/")
     assert out["output"].endswith("ok")
 
@@ -362,12 +414,11 @@ def test_python_tool_refuses_ambiguous_without_running(tree, monkeypatch):
 
 
 def test_python_tool_real_subprocess_on_windows(tree):
-    """Host path: rewritten chdir makes nested python see backend/server.py."""
+    """Host path: cwd= on the call makes nested python see backend/server.py."""
     import asyncio
     from src import tool_execution
     from src.agent_tools import subprocess_tools as st
 
-    # Avoid sandbox so we exercise create_subprocess_exec on this host.
     async def no_sandbox(tool, command, ctx=None):
         return None
 
@@ -388,3 +439,21 @@ def test_python_tool_real_subprocess_on_windows(tree):
         assert "ok" in out["output"]
     finally:
         monkeypatch.undo()
+
+
+def test_python_explicit_cwd_still_works_when_executed(tree):
+    """Regression of Claude's P1 repro: cwd='backend' must stay working."""
+    import subprocess as sp
+    import sys
+    code = (
+        "import subprocess, sys\n"
+        "r = subprocess.run([sys.executable, 'server.py'], cwd='backend', "
+        "capture_output=True, text=True)\n"
+        "print(r.stdout.strip())\n"
+        "raise SystemExit(r.returncode)\n"
+    )
+    r = cp.check_python_code(code, str(tree))
+    assert r.action == "none"
+    proc = sp.run([sys.executable, "-c", code], cwd=str(tree), capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+    assert "ok" in proc.stdout

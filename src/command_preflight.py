@@ -21,8 +21,10 @@ Only the command shapes listed in ``_identify`` are ever looked at.
 The ``python`` tool runs source via ``python -c`` (not a shell line).
 ``check_python_code`` inspects that source for ``subprocess`` / ``os.system`` /
 ``runpy.run_path`` launches of the same shapes, and on a single-folder miss
-rewrites the source to ``os.chdir`` into that folder before the user's code
-(so the tool's own subprocess and any nested subprocess share the cwd).
+rewrites **that call only** (insert ``cwd=`` on subprocess, adjust the
+``run_path`` literal, or prefix ``os.system``/``os.popen`` with ``cd``).
+A global ``os.chdir`` is never injected: it would break ``cwd=`` already set
+on a call, other relative paths in the script, and ``from __future__`` imports.
 """
 from __future__ import annotations
 
@@ -613,6 +615,17 @@ _SUBPROCESS_ATTRS = frozenset({
 })
 
 
+@dataclass
+class _PyLaunch:
+    """One constant launch site inside python-tool source."""
+    kind: str                 # "subprocess" | "runpy" | "os_shell"
+    cmd: str                  # shell-shaped command for ``_check``
+    node: ast.Call
+    has_cwd: bool = False     # subprocess already sets cwd= (leave alone)
+    path_arg: Optional[ast.AST] = None   # runpy / os first-arg node to edit
+    path_literal: str = ""               # original constant path / shell string
+
+
 def _ast_str(node: ast.AST) -> Optional[str]:
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
@@ -654,19 +667,21 @@ def _list_str_parts(node: ast.AST) -> Optional[List[str]]:
     return parts
 
 
-def inferred_shell_commands(code: str) -> List[str]:
-    """Shell-shaped commands implied by python-tool source (constants only).
+def _call_has_cwd(node: ast.Call) -> bool:
+    return any(kw.arg == "cwd" for kw in node.keywords)
 
-    Fail open on syntax errors or dynamic arguments: returns an empty list and
-    the caller leaves the tool call unchanged.
-    """
+
+def _find_launches(code: str) -> List[_PyLaunch]:
+    """Launch sites in source order (constants only). Empty on syntax errors."""
     try:
         tree = ast.parse(code)
     except SyntaxError:
         return []
-    out: List[str] = []
+    found: List[_PyLaunch] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call) or not node.args:
+            continue
+        if getattr(node, "lineno", None) is None or getattr(node, "end_lineno", None) is None:
             continue
         mod, attr = _call_qualname(node.func)
         if attr is None:
@@ -675,42 +690,111 @@ def inferred_shell_commands(code: str) -> List[str]:
                 mod is None and attr == "run_path"):
             path = _ast_str(node.args[0])
             if path and path.lower().endswith((".py", ".pyw")):
-                out.append("python " + path)
+                found.append(_PyLaunch(
+                    kind="runpy", cmd="python " + path, node=node,
+                    path_arg=node.args[0], path_literal=path,
+                ))
             continue
         if mod == "os" and attr in ("system", "popen"):
             cmd = _ast_str(node.args[0])
             if cmd:
-                out.append(cmd)
+                found.append(_PyLaunch(
+                    kind="os_shell", cmd=cmd, node=node,
+                    path_arg=node.args[0], path_literal=cmd,
+                ))
             continue
         if mod == "subprocess" and attr in _SUBPROCESS_ATTRS:
             arg0 = node.args[0]
             as_str = _ast_str(arg0)
-            if as_str is not None:
-                out.append(as_str)
-                continue
-            parts = _list_str_parts(arg0)
-            if parts:
-                out.append(" ".join(parts))
-    return out
+            parts = None if as_str is not None else _list_str_parts(arg0)
+            cmd = as_str if as_str is not None else (
+                " ".join(parts) if parts else None)
+            if cmd:
+                found.append(_PyLaunch(
+                    kind="subprocess", cmd=cmd, node=node,
+                    has_cwd=_call_has_cwd(node),
+                ))
+    found.sort(key=lambda L: (L.node.lineno, L.node.col_offset))
+    return found
 
 
-def _chdir_prefix(rel: str) -> str:
-    """Python prelude that chdirs into ``rel`` (workspace-relative, forward slashes ok)."""
-    # Literal path so spaces/unicode survive; chdir before user code runs.
-    return (
-        "import os as _faustus_preflight_os\n"
-        f"_faustus_preflight_os.chdir({rel!r})\n"
-    )
+def inferred_shell_commands(code: str) -> List[str]:
+    """Shell-shaped commands implied by python-tool source (constants only)."""
+    return [L.cmd for L in _find_launches(code)]
+
+
+def _abs_index(code: str, lineno: int, col: int) -> int:
+    """0-based index for a 1-based ``lineno`` / 0-based ``col`` into ``code``."""
+    if lineno < 1:
+        return 0
+    lines = code.splitlines(keepends=True)
+    if lineno > len(lines):
+        return len(code)
+    return sum(len(lines[i]) for i in range(lineno - 1)) + col
+
+
+def _replace_span(code: str, node: ast.AST, new_text: str) -> Optional[str]:
+    """Replace the source span of ``node`` with ``new_text``."""
+    if getattr(node, "lineno", None) is None or getattr(node, "end_lineno", None) is None:
+        return None
+    start = _abs_index(code, node.lineno, node.col_offset)
+    end = _abs_index(code, node.end_lineno, node.end_col_offset)
+    if start < 0 or end < start or end > len(code):
+        return None
+    return code[:start] + new_text + code[end:]
+
+
+def _insert_before_close(code: str, node: ast.Call, insertion: str) -> Optional[str]:
+    """Insert ``insertion`` just before the closing ``)`` of ``node``."""
+    if getattr(node, "end_lineno", None) is None:
+        return None
+    end = _abs_index(code, node.end_lineno, node.end_col_offset)
+    if end < 1 or end > len(code):
+        return None
+    close = end - 1
+    if code[close] != ")":
+        return None
+    return code[:close] + insertion + code[close:]
+
+
+def _shell_cd_prefix(rel: str) -> str:
+    """``cd`` prefix for an ``os.system`` / ``os.popen`` command string."""
+    if os.name == "nt":
+        return f"cd /d {rel} && "
+    if re.fullmatch(r"[A-Za-z0-9_./+@:-]+", rel):
+        return f"cd {rel} && "
+    return f'cd "{rel}" && '
+
+
+def _rewrite_launch(code: str, launch: _PyLaunch, rel: str) -> Optional[str]:
+    """Apply a call-local rewrite for ``rel`` (workspace-relative folder)."""
+    rel = _fwd(rel)
+    if launch.kind == "subprocess":
+        if launch.has_cwd:
+            return None
+        return _insert_before_close(code, launch.node, f", cwd={rel!r}")
+    if launch.kind == "runpy":
+        joined = _fwd(os.path.join(rel, launch.path_literal.replace("\\", "/")))
+        # Avoid backend/backend/server.py if the literal already had a dir.
+        if launch.path_literal.replace("\\", "/").startswith(rel + "/"):
+            joined = _fwd(launch.path_literal)
+        else:
+            base = os.path.basename(launch.path_literal.replace("\\", "/"))
+            joined = _fwd(os.path.join(rel, base))
+        return _replace_span(code, launch.path_arg, repr(joined))
+    if launch.kind == "os_shell":
+        prefixed = _shell_cd_prefix(rel) + launch.path_literal
+        return _replace_span(code, launch.path_arg, repr(prefixed))
+    return None
 
 
 def check_python_code(code: str, cwd: str) -> PreflightResult:
     """Wrong-directory preflight for the ``python`` tool's ``-c`` source.
 
-    Reuses the shell ``check`` target logic on commands inferred from
-    ``subprocess`` / ``os.system`` / ``runpy.run_path``. On a single-folder
-    miss the source is rewritten with an ``os.chdir`` prelude (the tool keeps
-    launching ``python -c``; nested subprocesses inherit the new cwd). Never
-    raises.
+    Reuses the shell ``check`` target logic on constant ``subprocess`` /
+    ``os.system`` / ``runpy.run_path`` launches. On a single-folder miss,
+    rewrites **that call only** (never a global ``os.chdir``). Calls that
+    already pass ``cwd=`` are left alone. Never raises.
     """
     try:
         return _check_python_code(code, cwd)
@@ -722,17 +806,22 @@ def _check_python_code(code: str, cwd: str) -> PreflightResult:
     res = PreflightResult(command=code)
     if not code or not cwd or not os.path.isdir(cwd):
         return res
-    for cmd in inferred_shell_commands(code):
-        hit = _check(cmd, cwd, "bash")
+    for launch in _find_launches(code):
+        if launch.kind == "subprocess" and launch.has_cwd:
+            continue
+        hit = _check(launch.cmd, cwd, "bash")
         if hit.action == "none":
             continue
         if hit.action == "refuse":
             return hit
         if hit.action == "rewrite" and hit.candidates:
             rel = hit.candidates[0]
+            rewritten = _rewrite_launch(code, launch, rel)
+            if rewritten is None:
+                return res
             return PreflightResult(
                 action="rewrite",
-                command=_chdir_prefix(rel) + code,
+                command=rewritten,
                 note=hit.note,
                 candidates=list(hit.candidates),
                 target=hit.target,
