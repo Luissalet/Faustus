@@ -277,5 +277,8 @@ def test_footprint_route_reports_sources_collisions_and_filters(monkeypatch):
     assert len(body["heaviest"]) == 5 and body["fingerprint"] and body["mcp_attached"] is True
     collision = next(c for c in body["name_collisions"] if c["short_name"] == "read_file")
     assert {"mcp__srv_a__read_file", "mcp__srv_b__read_file", "read_file"} <= set(collision["tools"])
+    labels = {b["source"]: b["label"] for b in body["by_source"]}
+    assert labels["builtin"] == "Built-in" and labels["srv_a"] and labels["srv_b"]
+    assert all("source_label" in c for c in body["heaviest"])
     only_a = client.get("/api/tools/footprint", params={"source": "srv_a"}).json()
     assert only_a["count"] == 1 and only_a["by_source"][0]["source"] == "srv_a"

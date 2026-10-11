@@ -13,8 +13,8 @@ import { t } from '../../i18n';
  * catalogue can be thinned with evidence (OBJ-56 / FAUSTUS §277).
  */
 
-function displaySource(source: string): string {
-  const label = footprintSourceLabel(source);
+function displaySource(source: string, name?: string): string {
+  const label = footprintSourceLabel(source, name);
   // Only translate the Built-in label; MCP server ids stay as-is (Claude #300 CHANGES).
   return source === 'builtin' ? t(label) : label;
 }
@@ -90,7 +90,7 @@ export function ToolFootprintPanel() {
       {report === null ? (
         <Skeleton label={t('Loading')} count={4} height="44px" />
       ) : report.count === 0 ? (
-        <EmptyState icon={Gauge} title={t('No tools in the catalogue.')} />
+        <EmptyState icon={Gauge} title={t('No tools in the catalogue.')} body="" />
       ) : (
         <>
           <div className="fs-set__card" data-testid="tool-footprint-summary">
@@ -116,7 +116,7 @@ export function ToolFootprintPanel() {
                 {report.by_source.map((bucket) => (
                   <li key={bucket.source} className="fs-tools__row">
                     <span className="fs-tools__text">
-                      <strong>{displaySource(bucket.source)}</strong>
+                      <strong>{displaySource(bucket.source, bucket.label)}</strong>
                       <span className="fs-set__help">
                         {bucket.tools} {toolsWord(bucket.tools)} · {bucket.tokens.toLocaleString()} {t('tokens')}
                         {bucket.share != null
@@ -195,7 +195,7 @@ export function ToolFootprintPanel() {
                         <code>{row.name}</code>
                       </strong>
                       <span className="fs-set__help">
-                        {displaySource(row.source)} · {row.description_tokens}{' '}
+                        {displaySource(row.source, row.source_label)} · {row.description_tokens}{' '}
                         {t('description tokens')}
                       </span>
                     </span>
