@@ -135,3 +135,42 @@ def test_native_no_login_tool_owner_uses_the_same_bucket_as_api(recovery, monkey
     found = service.search(None,'puerto')
     assert found['total'] == 1 and found['projects'][0]['id'] == linked['project_link_id']
     assert service.recall(None,linked['project_link_id'])['memory_scope']['project_id'] == linked['project_id']
+
+
+def test_date_window_keeps_older_work_and_excludes_outside_evidence(recovery):
+    service, add, _ = recovery
+    linked, _ = add(title='Neutral heading', text='Plan aeronáutico', when=datetime(2026,10,8,12), suffix='old')
+    add(title='Neutral heading', text='Unrelated newer work', when=datetime(2026,10,11,12), suffix='new')
+    result = service.search('alice', 'aeronautico', after='2026-10-08', before='2026-10-09')
+    assert result['total'] == 1
+    found = result['projects'][0]
+    assert found['id'] == linked['project_link_id']
+    assert found['evidence'][0]['timestamp'].startswith('2026-10-08')
+    assert found['activity_at'].startswith('2026-10-11')
+    assert found['matched_activity_at'].startswith('2026-10-08')
+    assert service.search('alice', 'aeronautico', after='2026-10-10', before='2026-10-12')['total'] == 0
+
+
+def test_title_match_requires_real_work_inside_requested_window(recovery):
+    service, add, _ = recovery
+    add(title='Plan aeronáutico', text='Work on the structure', when=datetime(2026,10,8,12))
+    assert service.search('alice', 'aeronautico', after='2026-10-08', before='2026-10-09')['total'] == 1
+    assert service.search('alice', 'aeronautico', after='2026-10-10', before='2026-10-12')['total'] == 0
+
+
+def test_canonical_workspace_is_recalled_without_creating_git(recovery, tmp_path):
+    service, add, _ = recovery
+    linked, _ = add()
+    workspace = tmp_path / 'existing-project'
+    workspace.mkdir()
+    (workspace / 'example.py').write_text('value = 1\n')
+    service.store.project_store().update(linked['project_id'], {'workspace': str(workspace)}, 'alice')
+    recalled = service.recall('alice', linked['project_link_id'])['workspace']
+    assert recalled == {'path': str(workspace), 'available': True, 'git': False}
+    assert not (workspace / '.git').exists()
+
+
+def test_mcp_search_exposes_integer_pagination():
+    from mcp_servers.hoard_copilot_server import OPERATIONS
+    properties = OPERATIONS['hoard_project_search'][3]
+    assert properties['offset']['type'] == properties['limit']['type'] == 'integer'

@@ -54,7 +54,7 @@ class HoardProjectRecovery:
                     conversations.append({'session_id': sid, 'name': session.name, 'activity_at': activity.isoformat() if activity else None})
                     evidence.extend({'session_id': sid, 'message_id': message.id, 'role': message.role, 'text': message.content,
                                      'timestamp': message.timestamp.isoformat() if message.timestamp else None} for message in messages)
-                workspace = project.get('workspace_path') or ''
+                workspace = project.get('workspace') or project.get('workspace_path') or ''
                 evidence.sort(key=lambda item: item['timestamp'] or '')
                 conversations.sort(key=lambda item: item['activity_at'] or '', reverse=True)
                 yield {**dict(link), 'available': True, 'title': project.get('name') or link['external_project_id'],
@@ -68,20 +68,24 @@ class HoardProjectRecovery:
         lower, upper = date(after), date(before)
         matches = []
         for row in self.rows(owner, app_id, data_space_id):
-            activity = date(row['activity_at'])
-            if lower and (not activity or activity < lower) or upper and (not activity or activity > upper):
-                continue
             heading = words(' '.join(str(row.get(key, '')) for key in ('title', 'description', 'app_id', 'external_project_id')))
             evidence = row.pop('evidence')
+            if lower or upper:
+                evidence = [item for item in evidence if date(item['timestamp']) is not None
+                            and (not lower or date(item['timestamp']) >= lower)
+                            and (not upper or date(item['timestamp']) <= upper)]
+                if not evidence:
+                    continue
             hits = [item for item in evidence if terms & words(item['text'])]
             matched = terms & (heading | set().union(*(words(item['text']) for item in hits)))
             if terms and not matched:
                 continue
             row['matched_terms'] = sorted(matched)
+            row['matched_activity_at'] = max((item['timestamp'] for item in (hits or evidence) if item['timestamp']), default=None)
             row['evidence'] = [{'session_id': hit['session_id'], 'message_id': hit['message_id'], 'timestamp': hit['timestamp'],
                                 'excerpt': excerpt(hit['text'], terms)} for hit in hits[:3]]
             matches.append((len(terms & heading) * 4 + len(matched), row))
-        matches.sort(key=lambda item: (item[0], item[1]['activity_at'] or ''), reverse=True)
+        matches.sort(key=lambda item: (item[0], item[1]['matched_activity_at'] or ''), reverse=True)
         start, count = max(0, int(offset)), max(1, int(limit))
         return {'projects': [row for _, row in matches[start:start + count]], 'total': len(matches),
                 'next_offset': start + count if start + count < len(matches) else None,

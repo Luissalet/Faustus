@@ -72,8 +72,10 @@ by app identity. Folder grouping and the normal search remain available.
 
 `GET /api/hoard-copilot/projects/search` accepts query, app/data-space, explicit
 ISO after/before dates and offset/limit pagination. It returns stable native IDs,
-matched terms and cited canonical messages. Activity dates come from messages,
-not an empty panel opening. Retrieval uses identity, titles and text; it does not
+matched terms and cited canonical messages. Date ranges filter the actual
+messages before matching; evidence outside the range cannot supply a text hit.
+`activity_at` retains the latest global activity, while `matched_activity_at`
+dates the retrieved work. An empty panel opening does not count. Retrieval uses identity, titles and text; it does not
 pretend to be a semantic model confidence estimate.
 
 `GET /api/hoard-copilot/projects/{project_link_id}` recalls chats, recent messages,
