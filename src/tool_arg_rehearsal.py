@@ -14,9 +14,9 @@ examples. Nothing runs and nothing is saved: it is read-only by construction.
 The corpus is two ledgers, newest first:
 
 * chat ``tool_events`` on assistant messages (Faustus's own tools);
-* ``agent_gate`` receipts in the shared command-guard chain (foreign runners:
-  session ``agent-gate:*``), so a rule about ``bash`` is also checked against
-  what Claude Code / Codex tried under the gate.
+* ``agent_gate`` receipts in the shared command-guard chain (external
+  runners: session ``agent-gate:*``), so a rule about ``bash`` is also
+  checked against what those runners tried under the gate.
 
 When a rule would have stopped a call that the gate had already blocked or
 sent to approval, that count is reported separately
@@ -26,9 +26,11 @@ not wrong.
 Limits, stated so the numbers are read right:
 
 * the arguments come from what the tool event recorded (``command``), or from
-  the gate receipt's ``command_head`` (the chain only keeps a head + hash),
-  parsed with the same :func:`src.tool_arg_policy.extract_tool_args` the live
-  gate uses, so a rule on ``command`` for ``bash`` sees what execution saw;
+  the gate receipt's ``command_head`` (the chain only keeps a head + hash).
+  Runner names are mapped to builtins and their argument keys are translated
+  (``file_path`` → ``path``, …) so rules see the same names as live Faustus
+  tools. Heads that look like JSON but do not parse (truncated receipts) are
+  counted as ``unparsed`` and never scored as deny/ask/untouched;
 * only the FIRST rule that fires counts for a call, exactly as at run time;
 * a call that some other gate already refused is still in the history and is
   counted like any other - the question is what the rules would do - and the
@@ -58,7 +60,7 @@ _MESSAGES_PER_CALL = 1
 GATE_SESSION_PREFIX = "agent-gate:"
 #: Gate actions that already stopped the call (another door fired first).
 GATE_STOPPED_ACTIONS = frozenset({"blocked", "asked"})
-#: Claude Code / Codex tool names → Faustus builtins the arg rules use.
+#: External-runner tool names → Faustus builtins the arg rules use.
 _GATE_TOOL_ALIASES = {
     "Bash": "bash",
     "bash": "bash",
@@ -68,6 +70,28 @@ _GATE_TOOL_ALIASES = {
     "WebFetch": "web_fetch",
     "WebSearch": "web_search",
     "Read": "read_file",
+    "Glob": "glob",
+    "Grep": "grep",
+}
+#: Runner argument names → names the builtin arg rules match on.
+_GATE_ARG_ALIASES: Dict[str, Dict[str, str]] = {
+    "write_file": {"file_path": "path", "path": "path"},
+    "edit_file": {"file_path": "path", "path": "path"},
+    "read_file": {"file_path": "path", "path": "path"},
+    "web_fetch": {"url": "url"},
+    "web_search": {"query": "query"},
+    "bash": {"command": "command"},
+    "glob": {"pattern": "pattern", "path": "path"},
+    "grep": {"pattern": "pattern", "path": "path"},
+}
+#: Primary arg a gate receipt for this builtin must carry after translation.
+_GATE_PRIMARY_ARG = {
+    "web_fetch": "url",
+    "web_search": "query",
+    "write_file": "path",
+    "edit_file": "path",
+    "read_file": "path",
+    "bash": "command",
 }
 
 
@@ -113,8 +137,61 @@ def _gate_tool_name(raw: str) -> str:
     return _GATE_TOOL_ALIASES.get(name, name)
 
 
+def _translate_runner_args(tool: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Map runner keys (``file_path``) onto builtin rule keys (``path``).
+
+    Only keeps keys the builtin rules understand, so a long ``content`` /
+    ``prompt`` field cannot displace the primary argument after truncation.
+    """
+    aliases = _GATE_ARG_ALIASES.get(tool)
+    if not aliases:
+        return dict(args)
+    out: Dict[str, Any] = {}
+    for key, value in args.items():
+        mapped = aliases.get(key)
+        if mapped and mapped not in out:
+            out[mapped] = value
+    return out
+
+
+def gate_args_for_rehearsal(tool: str, raw_args: Any) -> tuple[Optional[Dict[str, Any]], bool]:
+    """Parse a gate ``command_head`` into rule args.
+
+    Returns ``(args, unparsed)``. When ``unparsed`` is true the head looked
+    like structured JSON but could not be used (truncated / missing primary
+    key): the caller must not score it as deny, ask, or untouched.
+    """
+    raw = "" if raw_args is None else str(raw_args)
+    stripped = raw.strip()
+    looked_like_json = stripped.startswith("{")
+    parsed: Optional[Dict[str, Any]] = None
+    if looked_like_json:
+        try:
+            value = json.loads(stripped)
+        except (TypeError, ValueError):
+            return None, True
+        if not isinstance(value, dict):
+            return None, True
+        parsed = value
+    else:
+        try:
+            parsed = extract_tool_args(tool, raw)
+        except Exception:  # noqa: BLE001
+            parsed = {"content": raw}
+        if not isinstance(parsed, dict):
+            parsed = {"content": raw}
+    args = _translate_runner_args(tool, parsed)
+    primary = _GATE_PRIMARY_ARG.get(tool)
+    if looked_like_json and primary and primary not in args:
+        # Truncated head kept prompt/content but lost url/file_path.
+        return None, True
+    if looked_like_json and not args and parsed:
+        return None, True
+    return args, False
+
+
 def calls_from_gate_receipts(receipts: Any = None, *, limit: Any = DEFAULT_LIMIT) -> List[Dict[str, Any]]:
-    """Foreign-runner tool calls from the shared command-guard receipt chain.
+    """External-runner tool calls from the shared command-guard receipt chain.
 
     Reads :func:`src.command_guard.tail_receipts` when ``receipts`` is omitted.
     Newest first. Never raises.
@@ -210,10 +287,12 @@ def recent_tool_calls(limit: Any = DEFAULT_LIMIT, db: Any = None,
 def rehearse(rules: Any, calls: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
     """What ``rules`` would have done to ``calls``.
 
-    ``{"checked", "would_deny", "would_ask", "untouched", "by_rule",
-    "samples", "external_checked", "already_stopped_by_other_gate"}`` —
+    ``{"checked", "would_deny", "would_ask", "untouched", "unparsed",
+    "by_rule", "samples", "external_checked", "already_stopped_by_other_gate"}`` —
     ``by_rule`` keeps the rule order, every rule listed even at zero so a
-    rule that never fires is visible as such.
+    rule that never fires is visible as such. ``unparsed`` gate heads are
+    excluded from deny/ask/untouched so truncated receipts cannot inflate
+    those numbers.
     """
     rule_list = [r for r in (rules or []) if isinstance(r, dict)]
     by_rule: Dict[str, Dict[str, Any]] = {}
@@ -221,7 +300,7 @@ def rehearse(rules: Any, calls: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
         rid = str(rule.get("id") or "")
         by_rule.setdefault(rid, {"id": rid, "tool": str(rule.get("tool") or ""),
                                  "deny": 0, "ask": 0})
-    checked = deny = ask = 0
+    checked = deny = ask = unparsed = 0
     external_checked = 0
     already_stopped = 0
     samples: List[Dict[str, Any]] = []
@@ -236,10 +315,16 @@ def rehearse(rules: Any, calls: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
         if source == "agent_gate":
             external_checked += 1
         raw_args = call.get("args")
-        try:
-            args = extract_tool_args(tool, raw_args)
-        except Exception:  # noqa: BLE001
-            args = {"content": "" if raw_args is None else str(raw_args)}
+        if source == "agent_gate":
+            args, is_unparsed = gate_args_for_rehearsal(tool, raw_args)
+            if is_unparsed or args is None:
+                unparsed += 1
+                continue
+        else:
+            try:
+                args = extract_tool_args(tool, raw_args)
+            except Exception:  # noqa: BLE001
+                args = {"content": "" if raw_args is None else str(raw_args)}
         decision = evaluate_rules(tool, args, rule_list)
         if decision is None:
             continue
@@ -274,7 +359,8 @@ def rehearse(rules: Any, calls: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
         "checked": checked,
         "would_deny": deny,
         "would_ask": ask,
-        "untouched": checked - deny - ask,
+        "untouched": checked - deny - ask - unparsed,
+        "unparsed": unparsed,
         "by_rule": list(by_rule.values()),
         "samples": samples,
         "external_checked": external_checked,

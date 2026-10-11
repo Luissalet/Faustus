@@ -644,12 +644,53 @@ def record(run: Optional[GateRun], decision: GateDecision, *, tool_use_id: Any =
 
 # ── the hook payload, end to end ────────────────────────────────────────────
 
+#: Argument names the receipt must keep for rehearsal / arg rules. Order matters:
+#: the head is truncated to 160 chars, so the primary key is serialized first
+#: (without ``sort_keys``) and long text fields are dropped.
+_RECEIPT_PRIMARY: Dict[str, Tuple[str, ...]] = {
+    "WebFetch": ("url",),
+    "WebSearch": ("query",),
+    "Write": ("file_path",),
+    "Edit": ("file_path",),
+    "MultiEdit": ("file_path",),
+    "Read": ("file_path",),
+    "NotebookEdit": ("notebook_path", "file_path"),
+    "Glob": ("pattern", "path"),
+    "Grep": ("pattern", "path"),
+}
+#: Fields that blow the 160-char head and are not what arg rules match on.
+_RECEIPT_DROP = frozenset({
+    "prompt", "content", "old_string", "new_string", "oldStr", "newStr",
+    "replacement", "edits",
+})
+
+
 def _payload_text(tool_name: str, tool_input: Dict[str, Any]) -> Any:
-    """What the receipt records as the "command" for this call."""
+    """What the receipt records as the "command" for this call.
+
+    Bash keeps the command string. Other tools return a **JSON string** with
+    the primary argument first and long text fields omitted, so the shared
+    160-char ``command_head`` still carries ``url`` / ``file_path`` / ``query``
+    for rule rehearsal. Returning a string avoids ``record``'s ``sort_keys``
+    re-dump putting ``prompt`` before ``url``.
+    """
     if tool_name in BASH_TOOLS:
         raw = tool_input.get("command")
         return raw if isinstance(raw, str) else str(raw or "")
-    return tool_input
+    if not isinstance(tool_input, dict):
+        return str(tool_input or "")
+    primary = _RECEIPT_PRIMARY.get(tool_name, ())
+    ordered: Dict[str, Any] = {}
+    for key in primary:
+        if key in tool_input:
+            ordered[key] = tool_input[key]
+    for key, value in tool_input.items():
+        if key in ordered or key in _RECEIPT_DROP:
+            continue
+        if isinstance(value, str) and len(value) > 120:
+            continue
+        ordered[key] = value
+    return json.dumps(ordered, ensure_ascii=False, default=str)
 
 
 def handle_hook(token: Any, payload: Any, *, client_host: Any = "127.0.0.1",

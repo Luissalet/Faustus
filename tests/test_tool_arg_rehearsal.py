@@ -72,8 +72,63 @@ def test_gate_receipts_map_runner_tools_and_count_prior_stops():
     assert out["would_deny"] == 1          # news.example.com
     assert out["would_ask"] == 1           # rm -rf build
     assert out["already_stopped_by_other_gate"] == 2
+    assert out["unparsed"] == 0
     assert {s["prior_action"] for s in out["samples"]} == {"asked", "blocked"}
     assert all(s["already_stopped_by_other_gate"] for s in out["samples"])
+
+
+def test_real_webfetch_head_with_long_prompt_is_unparsed_not_false_deny():
+    """Truncated sort_keys head (prompt before url) must not score as deny."""
+    prompt = "x" * 130
+    # Real old shape: sort_keys puts prompt before url; 160-char head cuts url off.
+    full = json.dumps({"prompt": prompt, "url": "https://example.org/guide"}, sort_keys=True)
+    head = full[:160]
+    assert "example.org" not in head or not head.rstrip().endswith("}")
+    calls = [{
+        "tool": "web_fetch",
+        "args": head,
+        "source": "agent_gate",
+        "prior_action": "allowed",
+        "ts": "1",
+    }]
+    out = reh.rehearse(RULES, calls)
+    assert out["checked"] == 1
+    assert out["unparsed"] == 1
+    assert out["would_deny"] == 0
+    assert out["untouched"] == 0
+
+
+def test_real_write_file_path_translates_to_path_for_rules():
+    """Write receipts use file_path; rules match on path."""
+    rules = [
+        {"id": "env", "tool": "write_file", "arg": "path", "op": "regex",
+         "value": r"\.env$", "action": "ask", "note": ""},
+    ]
+    head = json.dumps({"file_path": "D:/proj/.env", "content": "KEY=1"})
+    # New payload shape drops content and keeps file_path first.
+    from src import agent_gate
+    reduced = agent_gate._payload_text("Write", {"file_path": "D:/proj/.env", "content": "KEY=1"})
+    assert isinstance(reduced, str) and "file_path" in reduced and "KEY=1" not in reduced
+    calls = [
+        {"tool": "write_file", "args": head, "source": "agent_gate", "prior_action": "allowed", "ts": "2"},
+        {"tool": "write_file", "args": reduced, "source": "agent_gate", "prior_action": "allowed", "ts": "1"},
+    ]
+    out = reh.rehearse(rules, calls)
+    assert out["unparsed"] == 0
+    assert out["would_ask"] == 2
+    assert out["untouched"] == 0
+
+
+def test_payload_text_puts_url_before_prompt_within_head():
+    from src import agent_gate
+    from src import command_guard
+    prompt = "y" * 200
+    text = agent_gate._payload_text(
+        "WebFetch", {"url": "https://news.example.com/ok", "prompt": prompt})
+    head = str(text)[: command_guard._COMMAND_HEAD_CHARS]
+    assert "news.example.com" in head
+    parsed = json.loads(head if head.endswith("}") else text)
+    assert parsed.get("url") == "https://news.example.com/ok"
 
 
 def test_rehearse_recent_accepts_merged_chat_and_gate_calls():
