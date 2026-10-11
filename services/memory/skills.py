@@ -374,17 +374,6 @@ class SkillsManager:
         # handles the fuzzier near-duplicates this cheap check won't catch.
         _all = self.load_all()
         _dedup_pool = _all if owner is None else [s for s in _all if s.get("owner") == owner]
-        # writing-for-agents lint (src/skill_governance.lint_skill): blocking
-        # findings refuse the learn; other findings ride along as warnings so
-        # the caller can surface them. Never blocks user-authored skills.
-        from src.skill_governance import lint_skill
-        _md = f"---\nname: {nm}\ndescription: {(description or title or '')}\n---\n\n" + "\n".join(
-            f"- {s}" for s in (procedure if procedure is not None else (steps or [])))
-        _lint = lint_skill(_md)
-        _blocking = [f for f in _lint if f["severity"] == "blocking"]
-        if _blocking and source != "user":
-            return {"_lint_refused": True, "_lint_findings": _lint, "name": nm}
-        _lint_warnings = [f for f in _lint if f["severity"] != "blocking"]
         if dedupe and source != "user":
             cand = _tokenize(" ".join([
                 nm, (description or title or ""),
@@ -436,6 +425,10 @@ class SkillsManager:
             verification=list(verification or []),
             body_extra=(solution if solution and not procedure else ""),
         )
+        # Inspect the complete saved shape, including Verification and references.
+        # Findings are advisory; every caller still receives a persisted skill.
+        from src.skill_governance import lint_skill
+        _lint_warnings = lint_skill(sk.to_markdown())
         self._write_skill(sk)
 
         out = sk.to_dict()
@@ -693,6 +686,8 @@ class SkillsManager:
         """
         out = []
         for s in self.load(owner=owner):
+            if (s.get("extra") or {}).get("manual_only") or s.get("manual_only"):
+                continue
             status = s.get("status")
             # Published + None (pre-status legacy) always included.
             # Drafts only if the teacher wrote them.

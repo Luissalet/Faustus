@@ -350,7 +350,7 @@ def lint_skill(markdown: str) -> List[Dict[str, str]]:
             break  # one representative finding is enough
 
     # 4. verifiable completion criterion.
-    if not re.search(r"(?i)\b(verify|check|expect|pass|exit code|verifica|comprueba|espera)\b", body):
+    if not re.search(r"(?i)\b(verify|check|expect|pass|exit code|verifica|verificar|comprueba|comprobar|compara|comparar|espera)\b", body):
         findings.append({
             "check": "done-criterion", "severity": "blocking",
             "message": "no verifiable completion criterion (command to run, expected output); "

@@ -1,5 +1,6 @@
-"""#325 r2: lint_skill (writing-for-agents) + manual_only + learn-time gate."""
+"""Advisory skill lint and manual-only selection through disk-backed skills."""
 import sys, unittest
+import pytest
 sys.path.insert(0, ".")
 
 from src.skill_governance import lint_skill
@@ -112,8 +113,8 @@ class ManualOnlySelectorTests(unittest.TestCase):
         self.assertEqual([s["name"] for s in out], ["fix-flask-mime"])
 
 
-class LearnTimeGateTests(unittest.TestCase):
-    def test_blocking_skill_refused_at_learn(self):
+class LearnTimeWarningsTests(unittest.TestCase):
+    def test_style_findings_do_not_prevent_learning(self):
         import tempfile, os
         from services.memory.skills import SkillsManager
         with tempfile.TemporaryDirectory() as tmp:
@@ -121,8 +122,19 @@ class LearnTimeGateTests(unittest.TestCase):
             out = sm.add_skill(
                 title="Context only", description="Background about deploys.",
                 source="learned", dedupe=False)
-            self.assertTrue(out.get("_lint_refused"), out)
-            self.assertTrue(any(f["check"] == "no-op" for f in out["_lint_findings"]))
+            self.assertFalse(out.get("_lint_refused"), out)
+            self.assertTrue(any(f["check"] == "no-op" for f in out["_lint_warnings"]))
+            saved = next(s for s in sm.load_all() if s["name"] == out["name"])
+            self.assertEqual(saved["source"], "learned")
+
+    def test_supplied_verification_is_linted_in_the_saved_shape(self):
+        import tempfile
+        from services.memory.skills import SkillsManager
+        with tempfile.TemporaryDirectory() as tmp:
+            sm = SkillsManager(data_dir=tmp)
+            result = sm.add_skill(name='verify-service', description='Use when the service is down',
+                procedure=['Restart the service'], verification=['Comprobar la salida esperada'], dedupe=False)
+            self.assertFalse(any(f['check']=='done-criterion' for f in result.get('_lint_warnings',[])))
 
     def test_user_source_never_refused(self):
         import tempfile
@@ -138,3 +150,59 @@ class LearnTimeGateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_manual_only_round_trips_from_disk_and_excludes_both_lanes(tmp_path, monkeypatch):
+    from services.memory.skills import SkillsManager
+    from services.memory.skill_format import Skill
+    from src.skills_runtime import selector
+    folder = tmp_path / 'skills' / 'general' / 'manual-recipe'
+    folder.mkdir(parents=True)
+    markdown = GOOD.replace('name: fix-flask-mime', 'name: manual-recipe\nmanual_only: true\nstatus: published')
+    path = folder / 'SKILL.md'
+    path.write_text(markdown, encoding='utf8')
+    sm = SkillsManager(str(tmp_path))
+    loaded = sm.load_all()
+    assert loaded[0]['extra']['manual_only'] is True
+    path.write_text(Skill.from_markdown(markdown).to_markdown(), encoding='utf8')
+    assert sm.load_all()[0]['extra']['manual_only'] is True
+    assert sm.index_for() == []
+    monkeypatch.setattr(selector, '_get_embedder', lambda: None)
+    for mode in ('hybrid', 'lexical'):
+        monkeypatch.setattr(selector, '_get_mode', lambda: mode)
+        assert selector.select(sm, None, 'Flask MIME', threshold=0) == []
+    assert sm.load_all()[0]['name'] == 'manual-recipe'
+    assert sm.get_relevant_skills('Flask MIME', skills=sm.load_all(), threshold=0)[0]['name'] == 'manual-recipe'
+    path.write_text(markdown.replace('manual_only: true', 'manual_only: false'), encoding='utf8')
+    for mode in ('hybrid', 'lexical'):
+        monkeypatch.setattr(selector, '_get_mode', lambda: mode)
+        assert selector.select(sm, None, 'Flask MIME', threshold=0)[0]['name'] == 'manual-recipe'
+
+
+@pytest.mark.parametrize('verb', ['Comprobar', 'Verificar', 'Comparar'])
+def test_spanish_verification_infinitives_are_recognized(verb):
+    markdown = GOOD.replace('- curl -I the .mjs asset and expect Content-Type: text/javascript.',
+                            '- '+verb+' la salida: debe contener Content-Type: text/javascript.')
+    assert not any(f['check']=='done-criterion' for f in lint_skill(markdown))
+
+
+@pytest.mark.asyncio
+async def test_extractor_reports_a_skill_that_is_really_persisted(tmp_path, monkeypatch):
+    import json
+    from services.memory.skills import SkillsManager
+    from services.memory import skill_extractor
+    async def fake_call(*args, **kwargs):
+        return json.dumps({'title':'Restart the service','problem':'Service is down',
+                           'steps':['Restart the service'], 'confidence':0.9})
+    monkeypatch.setattr('src.task_endpoint.task_llm_call_async', fake_call)
+    class Session:
+        session_id='private-fixture'
+        def get_context_messages(self):
+            return [{'role':'user','content':'Restart the fictional service'},
+                    {'role':'assistant','content':'The fictional service was restarted'}]
+    sm=SkillsManager(str(tmp_path))
+    result=await skill_extractor.maybe_extract_skill(Session(),sm,endpoint_url='http://127.0.0.1:1',
+        model='fixture',headers={},round_count=3,tool_count=3,owner='alice')
+    assert result and not result.get('_lint_refused')
+    assert any(s['name']==result['name'] for s in sm.load(owner='alice'))
+    assert any(f['check']=='done-criterion' for f in result['_lint_warnings'])
