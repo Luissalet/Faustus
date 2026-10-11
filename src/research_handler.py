@@ -679,6 +679,10 @@ class ResearchHandler:
             "effort": effort_level,
             "resumed_from": resumed_from,
             "resumed_kept": resumed_kept,
+            # Incremental refresh (#274): origin report + which sections to redo.
+            "incremental_from": None,
+            "incremental_plan": None,
+            "incremental_keep_report": None,
         }
         self._active_tasks[session_id] = entry
         self._write_marker(session_id, entry)
@@ -1204,11 +1208,31 @@ class ResearchHandler:
             self._attach_citation_verdicts(sources, researcher)
             entry["sources"] = sources
 
+            report_text = entry.get("result") or entry.get("raw_report") or ""
+            # Incremental refresh: splice only the redone sections into the
+            # kept prior report so fresh sections stay verbatim.
+            incremental_meta = None
+            if entry.get("incremental_from") and entry.get("incremental_keep_report"):
+                try:
+                    report_text, incremental_meta = self._merge_incremental_report(
+                        keep_report=entry["incremental_keep_report"],
+                        new_report=report_text,
+                        plan=entry.get("incremental_plan") or {},
+                    )
+                    entry["result"] = report_text
+                    if entry.get("raw_report"):
+                        entry["raw_report"] = report_text
+                except Exception:
+                    logger.warning(
+                        "incremental merge failed for %s; saving full new report",
+                        session_id, exc_info=True,
+                    )
+
             data = {
                 "query": entry["query"],
                 "status": entry["status"],
-                "result": entry["result"],
-                "raw_report": entry.get("raw_report", ""),
+                "result": report_text if report_text else entry["result"],
+                "raw_report": entry.get("raw_report", "") or report_text,
                 "sources": sources,
                 "raw_findings": raw_findings,
                 "report_language": getattr(researcher, "report_language", None) if researcher else None,
@@ -1231,6 +1255,29 @@ class ResearchHandler:
             if entry.get("resumed_from"):
                 data["resumed_from"] = entry["resumed_from"]
                 data["resumed_kept"] = entry.get("resumed_kept")
+            if entry.get("incremental_from"):
+                data["incremental_from"] = entry["incremental_from"]
+                data["incremental_refresh"] = incremental_meta or {
+                    "redo_count": (entry.get("incremental_plan") or {}).get("redo_count"),
+                    "keep_count": (entry.get("incremental_plan") or {}).get("keep_count"),
+                }
+            # Section ↔ source ledger for the next incremental refresh (#274).
+            try:
+                from src.research_incremental import build_section_ledger
+                from datetime import datetime, timezone
+                built_at = datetime.fromtimestamp(
+                    float(data["completed_at"]), timezone.utc,
+                ).replace(tzinfo=None)
+                data["section_ledger"] = build_section_ledger(
+                    data.get("raw_report") or data.get("result") or "",
+                    sources=sources,
+                    findings=raw_findings,
+                    citation_registry=data.get("citation_registry"),
+                    completed_at=data.get("completed_at"),
+                    built_at=built_at,
+                )
+            except Exception:
+                logger.debug("section_ledger build failed for %s", session_id, exc_info=True)
             from core.atomic_io import atomic_write_json
             atomic_write_json(str(path), data, private=True)
             logger.info(f"Research result saved to {path}")
@@ -1256,6 +1303,228 @@ class ResearchHandler:
             except Exception:
                 pass
         return None
+
+    def plan_incremental_refresh(
+        self,
+        session_id: str,
+        owner: str,
+        *,
+        max_age_days: int = 7,
+        url_status: Optional[Dict[str, Any]] = None,
+    ) -> dict:
+        """Return which sections of a saved report are stale and should be redone."""
+        data = self._get_session_json(session_id, owner=owner)
+        if data is None:
+            raise FileNotFoundError(session_id)
+        from src.research_incremental import plan_from_saved
+        plan = plan_from_saved(
+            data, max_age_days=max_age_days, url_status=url_status,
+        )
+        plan["session_id"] = session_id
+        plan["status"] = data.get("status")
+        return plan
+
+    def start_incremental_refresh(
+        self,
+        session_id: str,
+        owner: str,
+        *,
+        resolve_endpoint: "Callable[[Optional[str]], Any]",
+        max_age_days: int = 7,
+        url_status: Optional[Dict[str, Any]] = None,
+        new_session_id: Optional[str] = None,
+        force: bool = False,
+        max_rounds: Optional[int] = None,
+        effort: Optional[str] = None,
+    ) -> dict:
+        """Start a new research run that only redoes stale sections.
+
+        Seeds the engine with the prior report and with prior_urls limited to
+        sources still considered fresh, so those pages are not re-fetched.
+        On save, redone section bodies are spliced back into the kept report.
+        """
+        data = self._get_session_json(session_id, owner=owner)
+        if data is None:
+            raise FileNotFoundError(session_id)
+        if data.get("status") not in (None, "done", "completed"):
+            # Interrupted markers are for resume_interrupted; refresh needs a
+            # finished report with a body.
+            if not (data.get("result") or data.get("raw_report")):
+                raise FileNotFoundError(session_id)
+
+        from src.research_incremental import plan_from_saved, split_sections
+        plan = plan_from_saved(
+            data, max_age_days=max_age_days, url_status=url_status,
+        )
+        if plan.get("noop") and not force:
+            return {
+                "session_id": session_id,
+                "status": "noop",
+                "query": plan.get("query") or data.get("query") or "",
+                "incremental": True,
+                "plan": {
+                    "redo_count": 0,
+                    "keep_count": plan.get("keep_count") or 0,
+                    "section_count": plan.get("section_count") or 0,
+                    "noop": True,
+                    "max_age_days": plan.get("max_age_days"),
+                },
+            }
+
+        keep_report = data.get("raw_report") or data.get("result") or ""
+        if force and plan.get("noop"):
+            # Force a full refresh: mark every section as redo.
+            sections = split_sections(keep_report)
+            plan = {
+                **plan,
+                "noop": False,
+                "redo": [
+                    {"id": s["id"], "title": s["title"], "stale": True, "fresh": False}
+                    for s in sections
+                ],
+                "keep": [],
+                "redo_count": len(sections),
+                "keep_count": 0,
+                "complete_refresh": True,
+            }
+            from src.research_incremental import refresh_query
+            plan["refresh_query"] = refresh_query(plan.get("query") or data.get("query") or "", plan)
+
+        llm_endpoint, llm_model, llm_headers = resolve_endpoint(data.get("model") or None)
+
+        # Fresh sources stay in prior_urls (skipped); stale ones are omitted
+        # so the engine may re-fetch them for the redone sections.
+        keep_ids = {
+            str(s.get("id"))
+            for s in (plan.get("keep") or [])
+            if isinstance(s, dict) and s.get("id")
+        }
+        ledger_sections = (plan.get("ledger") or {}).get("sections") or []
+        fresh_urls: set = set()
+        stale_urls: set = set()
+        for sec in ledger_sections:
+            if not isinstance(sec, dict):
+                continue
+            bucket = fresh_urls if sec.get("id") in keep_ids else stale_urls
+            for src in sec.get("sources") or []:
+                if isinstance(src, dict) and src.get("url"):
+                    bucket.add(str(src["url"]).strip())
+        # A URL cited in both a fresh and a stale section must be re-checked.
+        prior_urls = {u for u in fresh_urls if u and u not in stale_urls}
+
+        findings = data.get("raw_findings") if isinstance(data.get("raw_findings"), list) else []
+        prior_findings = [f for f in findings if isinstance(f, dict)]
+        prior_citations = data.get("citation_registry")
+        if not isinstance(prior_citations, dict):
+            prior_citations = None
+
+        target = new_session_id or f"rp-{uuid.uuid4().hex[:12]}"
+        effective_rounds = _bounded_int(
+            max_rounds if max_rounds is not None else data.get("max_rounds"),
+            default=20, minimum=1, maximum=20,
+        )
+        # Smaller budget when only a few sections need work.
+        if plan.get("redo_count") and plan.get("section_count"):
+            ratio = max(1, int(plan["redo_count"])) / max(1, int(plan["section_count"]))
+            effective_rounds = max(1, min(20, int(round(effective_rounds * max(0.35, ratio)))))
+
+        self.start_research(
+            session_id=target,
+            query=plan.get("refresh_query") or data.get("query") or "",
+            llm_endpoint=llm_endpoint,
+            llm_model=llm_model,
+            llm_headers=llm_headers,
+            max_rounds=effective_rounds,
+            category=data.get("category") or None,
+            owner=owner,
+            prior_report=keep_report,
+            prior_findings=prior_findings,
+            prior_urls=prior_urls,
+            prior_citations=prior_citations,
+            effort=effort or data.get("effort") or None,
+        )
+        entry = self._active_tasks.get(target) or {}
+        entry["incremental_from"] = session_id
+        entry["incremental_plan"] = {
+            "redo_count": plan.get("redo_count"),
+            "keep_count": plan.get("keep_count"),
+            "section_count": plan.get("section_count"),
+            "max_age_days": plan.get("max_age_days"),
+            "redo": plan.get("redo") or [],
+            "keep": plan.get("keep") or [],
+            "complete_refresh": plan.get("complete_refresh"),
+        }
+        entry["incremental_keep_report"] = keep_report
+        self._active_tasks[target] = entry
+        return {
+            "session_id": target,
+            "status": "running",
+            "query": entry.get("query") or plan.get("refresh_query") or "",
+            "incremental": True,
+            "incremental_from": session_id,
+            "plan": entry["incremental_plan"],
+            "prior_urls_kept": len(prior_urls),
+            "stale_urls": len(stale_urls),
+        }
+
+    @staticmethod
+    def _merge_incremental_report(
+        *,
+        keep_report: str,
+        new_report: str,
+        plan: dict,
+    ) -> tuple:
+        """Replace only redone section bodies; return (merged, meta)."""
+        from src.research_incremental import merge_updated_sections, split_sections
+        redo_titles = {
+            str(s.get("title") or "").strip().lower()
+            for s in (plan.get("redo") or [])
+            if isinstance(s, dict) and s.get("title")
+        }
+        if not redo_titles:
+            return keep_report, {
+                "merged": False,
+                "updated_sections": [],
+                "reason": "no_redo_titles",
+            }
+        old_sections = split_sections(keep_report)
+        new_by_title = {
+            str(s.get("title") or "").strip().lower(): s
+            for s in split_sections(new_report)
+        }
+        updates: Dict[str, str] = {}
+        updated_titles: list = []
+        for sec in old_sections:
+            key = str(sec.get("title") or "").strip().lower()
+            if key not in redo_titles:
+                continue
+            replacement = new_by_title.get(key)
+            if not replacement:
+                continue
+            updates[sec["id"]] = replacement.get("body") or ""
+            updated_titles.append(sec.get("title"))
+        if not updates:
+            # Complete refresh or heading rewrite: keep the new report as-is.
+            if plan.get("complete_refresh"):
+                return new_report, {
+                    "merged": False,
+                    "updated_sections": list(redo_titles),
+                    "reason": "complete_refresh_unmatched",
+                }
+            return keep_report, {
+                "merged": False,
+                "updated_sections": [],
+                "reason": "no_title_matches",
+            }
+        merged = merge_updated_sections(
+            keep_report, updates, updated_ids=list(updates.keys()),
+        )
+        return merged, {
+            "merged": True,
+            "updated_sections": updated_titles,
+            "updated_count": len(updated_titles),
+            "kept_count": max(0, len(old_sections) - len(updated_titles)),
+        }
 
     def get_report_html(self, session_id: str) -> Optional[str]:
         """Generate the visual HTML report for a session (always fresh from JSON)."""

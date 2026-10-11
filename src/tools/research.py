@@ -15,9 +15,11 @@ from src.tools._common import _parse_tool_args
 
 
 async def do_manage_research(content: str, owner: Optional[str] = None) -> Dict:
-    """List, read/open, or delete saved deep-research results from the Library.
-    Args (JSON): {"action": "list|read|delete", "id": "<id>", "search": "..."}.
-    Research is stored as data/deep_research/<id>.json (query, summary, sources)."""
+    """List, read/open, delete, or incrementally refresh saved deep-research results.
+    Args (JSON): {"action": "list|read|delete|freshness|refresh", "id": "<id>",
+    "search": "...", "max_age_days": 7, "force": false}.
+    Research is stored as data/deep_research/<id>.json (query, summary, sources).
+    freshness/refresh use the section ledger (#274) so only stale sections redo."""
     import json as _json
     from pathlib import Path as _Path
     try:
@@ -82,6 +84,112 @@ async def do_manage_research(content: str, owner: Optional[str] = None) -> Dict:
                 return {"error": f"Failed to delete: {e}"}
             return {"output": f"Deleted research '{rid}'.", "exit_code": 0}
         return {"error": f"Research '{rid}' not found."}
+
+    if action in ("freshness", "plan", "incremental"):
+        if not rid:
+            return {"error": "Provide the research id (from action='list')."}
+        try:
+            max_age = int(args.get("max_age_days") or 7)
+        except (TypeError, ValueError):
+            max_age = 7
+        import httpx
+        from src.tool_implementations import _internal_headers, _INTERNAL_BASE
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.get(
+                    f"{_INTERNAL_BASE}/api/research/{rid}/incremental",
+                    params={"max_age_days": max_age},
+                    headers=_internal_headers(owner),
+                )
+            if resp.status_code >= 400:
+                return {
+                    "error": f"research/incremental returned HTTP {resp.status_code}: {resp.text[:200]}",
+                    "exit_code": 1,
+                }
+            plan = resp.json()
+            redo = plan.get("redo") or []
+            keep = plan.get("keep") or []
+            lines = [
+                f"Incremental plan for [{plan.get('query') or rid}](#research-{rid}): "
+                f"{plan.get('redo_count', len(redo))} section(s) to redo, "
+                f"{plan.get('keep_count', len(keep))} still fresh "
+                f"(max_age_days={plan.get('max_age_days', max_age)}).",
+            ]
+            for s in redo[:20]:
+                if isinstance(s, dict):
+                    reasons = ", ".join((s.get("reasons") or [])[:3])
+                    lines.append(
+                        f"- REDO: {s.get('title') or s.get('id')}"
+                        + (f" ({reasons})" if reasons else "")
+                    )
+            for s in keep[:10]:
+                if isinstance(s, dict):
+                    lines.append(f"- keep: {s.get('title') or s.get('id')}")
+            if plan.get("noop"):
+                lines.append("Nothing is stale — use action=refresh with force=true to redo everything.")
+            return {"output": "\n".join(lines), "plan": plan, "exit_code": 0}
+        except Exception as e:
+            return {"error": str(e), "exit_code": 1}
+
+    if action == "refresh":
+        if not rid:
+            return {"error": "Provide the research id to refresh (from action='list')."}
+        try:
+            max_age = int(args.get("max_age_days") or 7)
+        except (TypeError, ValueError):
+            max_age = 7
+        force = bool(args.get("force") or False)
+        import httpx
+        from src.tool_implementations import _internal_headers, _INTERNAL_BASE
+        payload: Dict[str, Any] = {"max_age_days": max_age, "force": force}
+        if args.get("max_rounds") is not None:
+            try:
+                payload["max_rounds"] = int(args["max_rounds"])
+            except (TypeError, ValueError):
+                pass
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    f"{_INTERNAL_BASE}/api/research/{rid}/refresh",
+                    json=payload,
+                    headers=_internal_headers(owner),
+                )
+            if resp.status_code >= 400:
+                return {
+                    "error": f"research/refresh returned HTTP {resp.status_code}: {resp.text[:200]}",
+                    "exit_code": 1,
+                }
+            data = resp.json()
+            if data.get("status") == "noop":
+                return {
+                    "output": (
+                        f"Research [{rid}](#research-{rid}) is still fresh — "
+                        "no sections redone. Pass force=true to refresh anyway."
+                    ),
+                    "session_id": rid,
+                    "status": "noop",
+                    "plan": data.get("plan"),
+                    "exit_code": 0,
+                }
+            sid = data.get("session_id", "?")
+            plan = data.get("plan") or {}
+            return {
+                "output": (
+                    f"Incremental refresh started: [{data.get('query') or rid}](#research-{sid}) "
+                    f"(from {rid}; redo {plan.get('redo_count', '?')} / "
+                    f"keep {plan.get('keep_count', '?')}). "
+                    "Open the Deep Research sidebar to watch progress."
+                ),
+                "session_id": sid,
+                "incremental_from": rid,
+                "anchor": f"[{data.get('query') or rid}](#research-{sid})",
+                "ui_event": "research_started",
+                "research_session_id": sid,
+                "plan": plan,
+                "exit_code": 0,
+            }
+        except Exception as e:
+            return {"error": str(e), "exit_code": 1}
 
     # default: list — clickable [query](#research-<id>) rows, most-recent first
     search = (args.get("search") or "").lower()

@@ -1088,6 +1088,7 @@ Del análisis de los reels del 30-09 (#366-385), todo lo que era de Faustus:
 
 - Flujos con nodos de modelo (`agent`, `classify`, `extract`, `guard`), bucle acotado, flujos como herramientas MCP y evaluación (§234).
 - Deep Research con poda y BM25, parada por saturación y medición WAD (§235).
+- Deep Research incremental por secciones caducadas (#274 / radar #496, §324)
 - Asesor, decisiones tipadas en tres bifurcaciones, riesgo declarado, vigía de atascos y reglas por ruta (§236).
 - Nota con cobertura en `bug_hunt` y la revisión de despliegue, y libro de cifras (§237).
 - Redacción y comparación de PDF, preset de Android, navegador con marcas y `page_find`, transcripciones de subagentes y Elo por tema (§238).

@@ -11298,3 +11298,11 @@ Verificado con el recibo de un encargo real GLM de #222, regresiones y contraste
 Acceso total ejecuta los comandos Git elegidos por la herramienta Bash o PowerShell y por `!!orden` en Studio, sin obligar a sustituirlos por otra herramienta. Usa el mismo modo global que los `git_*`. Las herramientas Git propias siguen disponibles; Preguntar y Automático mantienen el flujo escogido. No se ha cambiado el modo global de Luis ni la configuración de otros agentes.
 
 Probado en repositorios privados: commit real desde Bash, escritura de configuración local desde PowerShell, commit y fast-forward por la API normal, configuración local por MCP `shell_command`, y commit desde Studio `!!` sin modelo ni autorización adicional. Sólo se indexan los archivos elegidos de QA. Los mensajes y el resultado siguen en el historial normal.
+
+## 330. Deep Research incremental — #274, radar #496 (11-10-2026)
+
+Un informe terminado guarda un *ledger* por sección (fuentes citadas con `fetched_at` y hash). Al refrescar, solo se rehace lo caducado (más de N días, por defecto 7) o lo que el llamador marque como cambiado vía url_status; el resto se conserva y las secciones actualizadas llevan marca «Updated».
+
+La edad sale de citation_registry (las sources de pantalla a menudo no traen `fetched_at`) y, si falta, de completed_at del informe. Las secciones sin citas también caducan con esa fecha. Los apéndices «Fuentes» / «Cómo leer este informe» (y equivalentes EN) no cuentan como secciones. El plan no descarga páginas solo: el contraste de contenido remoto queda como límite documentado hasta un comprobador acotado.
+
+API: GET /api/research/{id}/incremental, POST /api/research/{id}/refresh. Herramienta manage_research (reshness/efresh) y MCP austus_research_incremental. Pruebas: 	ests/test_research_incremental.py.

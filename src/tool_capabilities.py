@@ -1593,7 +1593,10 @@ _PRIVATE_ACTION_READS: Mapping[str, frozenset[str]] = MappingProxyType(
         "manage_memory": frozenset({"list", "search"}),
         "mcp__memory__memory_changes": frozenset({"list"}),
         "manage_notes": frozenset({"list", "search", "find", "view"}),
-        "manage_research": frozenset({"list", "read", "open", "view", "get"}),
+        "manage_research": frozenset({
+            "list", "read", "open", "view", "get",
+            "freshness", "plan", "incremental",
+        }),
         "manage_session": frozenset({"list", "switch", "open", "select", "view"}),
         "manage_skills": frozenset({"list", "index", "view", "view_ref", "search"}),
         "manage_tasks": frozenset({"list"}),
@@ -1612,7 +1615,7 @@ _PRIVATE_ACTION_WRITES: Mapping[str, frozenset[str]] = MappingProxyType(
         "manage_memory": frozenset({"add", "edit", "delete"}),
         "mcp__memory__memory_changes": frozenset({"undo"}),
         "manage_notes": frozenset({"add", "update", "delete", "toggle_item"}),
-        "manage_research": frozenset({"delete"}),
+        "manage_research": frozenset({"delete", "refresh"}),
         "manage_session": frozenset(
             {
                 "rename",

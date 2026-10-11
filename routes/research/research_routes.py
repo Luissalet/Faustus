@@ -833,6 +833,71 @@ def setup_research_routes(research_handler, session_manager=None) -> APIRouter:
         except ResearchHandler.NoCheckpointError:
             raise HTTPException(409, "No checkpoint to resume from yet — retry from scratch instead")
 
+    class ResearchRefreshRequest(BaseModel):
+        # Days before a cited source is treated as stale (default 7).
+        max_age_days: int = Field(default=7, ge=1, le=365)
+        # Redo every section even when the ledger says they are still fresh.
+        force: bool = False
+        max_rounds: Optional[int] = Field(default=None, ge=1, le=20)
+        effort: Optional[str] = Field(default=None, max_length=12)
+        # Optional map url → {content_hash, changed, unreachable, fetched_at}
+        # so a caller that already re-checked pages can drive the plan.
+        url_status: Optional[dict] = None
+
+    @router.get("/api/research/{session_id}/incremental")
+    async def research_incremental_plan(
+        session_id: str,
+        request: Request,
+        max_age_days: int = Query(7, ge=1, le=365),
+    ):
+        """Which sections of a finished report are stale and would be redone.
+
+        Pure planning — no model call, no new session. Pair with
+        POST /api/research/{id}/refresh to start the incremental run.
+        """
+        user = _require_user(request)
+        _validate_session_id(session_id)
+        try:
+            return research_handler.plan_incremental_refresh(
+                session_id, user, max_age_days=max_age_days,
+            )
+        except FileNotFoundError:
+            raise HTTPException(404, "Research not found")
+
+    @router.post("/api/research/{session_id}/refresh")
+    async def research_incremental_refresh(
+        session_id: str,
+        request: Request,
+        body: ResearchRefreshRequest = None,
+    ):
+        """Start a new run that only redoes stale sections of a saved report.
+
+        Returns status=noop when every section is still fresh (unless
+        body.force). Otherwise starts a new session_id seeded with the prior
+        report and with prior_urls limited to still-fresh sources.
+        """
+        user = _require_user(request)
+        _validate_session_id(session_id)
+        body = body or ResearchRefreshRequest()
+        url_status = body.url_status if isinstance(body.url_status, dict) else None
+        try:
+            return research_handler.start_incremental_refresh(
+                session_id, user,
+                resolve_endpoint=lambda model: _resolve_default_endpoint(user, model=model),
+                max_age_days=body.max_age_days,
+                url_status=url_status,
+                force=bool(body.force),
+                max_rounds=body.max_rounds,
+                effort=body.effort,
+            )
+        except FileNotFoundError:
+            raise HTTPException(404, "Research not found")
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.exception("incremental refresh failed for %s", session_id)
+            raise HTTPException(500, f"Incremental refresh failed: {e}")
+
     @router.get("/api/research/stream/{session_id}")
     async def research_stream(session_id: str, request: Request):
         """SSE stream of research progress events."""

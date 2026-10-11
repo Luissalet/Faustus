@@ -1483,6 +1483,26 @@ TOOLS: List[Tool] = [
         }},
     ),
     Tool(
+        name="faustus_research_incremental",
+        description=(
+            "Plan or start an incremental Deep Research refresh: only sections whose "
+            "cited sources aged past max_age_days (or whose content hash changed) are "
+            "redone; the rest of the saved report stays as-is and updated sections are "
+            "marked. action=plan is read-only; action=refresh starts a new session "
+            "(status=noop when nothing is stale unless force=true). Same path as "
+            "GET/POST /api/research/{id}/incremental|refresh and manage_research "
+            "freshness/refresh."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "action": {"type": "string", "description": "plan (default) or refresh"},
+            "session_id": {"type": "string", "description": "Saved research id (rp-…)."},
+            "max_age_days": {"type": "integer", "minimum": 1, "maximum": 365,
+                             "description": "Source age before a section is stale (default 7)."},
+            "force": {"type": "boolean", "description": "Redo every section even if fresh."},
+            "max_rounds": {"type": "integer", "minimum": 1, "maximum": 20},
+        }, "required": ["session_id"]},
+    ),
+    Tool(
         name="faustus_doctor",
         description=(
             "What this Faustus can ACTUALLY do right now, asked rather than assumed: "
@@ -1937,6 +1957,40 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             data = await asyncio.to_thread(
                 _request, "GET", f"/api/contracts/skills/audit?workspace={workspace}")
             return _text(render_skills_audit(data))
+        if name == "faustus_research_incremental":
+            sid = str(args.get("session_id") or args.get("id") or "").strip()
+            if not sid:
+                return _text("Error: give session_id (a saved research id)")
+            action = str(args.get("action") or "plan").strip().lower()
+            try:
+                max_age = int(args.get("max_age_days") or 7)
+            except (TypeError, ValueError):
+                max_age = 7
+            max_age = max(1, min(365, max_age))
+            if action in ("plan", "freshness", "incremental", ""):
+                data = await asyncio.to_thread(
+                    _request, "GET",
+                    f"/api/research/{urllib.parse.quote(sid, safe='')}/incremental"
+                    f"?max_age_days={max_age}",
+                )
+                return _text(json.dumps(data, ensure_ascii=False)[:8000])
+            if action == "refresh":
+                body = {
+                    "max_age_days": max_age,
+                    "force": bool(args.get("force") or False),
+                }
+                if args.get("max_rounds") is not None:
+                    try:
+                        body["max_rounds"] = int(args["max_rounds"])
+                    except (TypeError, ValueError):
+                        pass
+                data = await asyncio.to_thread(
+                    _request, "POST",
+                    f"/api/research/{urllib.parse.quote(sid, safe='')}/refresh",
+                    body,
+                )
+                return _text(json.dumps(data, ensure_ascii=False)[:8000])
+            return _text("Error: action must be plan or refresh")
         if name == "faustus_doctor":
             area = urllib.parse.quote(str(args.get("area") or ""), safe=",")
             verbose = "true" if args.get("verbose") else "false"
