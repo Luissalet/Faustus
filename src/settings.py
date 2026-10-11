@@ -1996,6 +1996,14 @@ DEFAULT_SETTINGS = {
     # block at all. Off leaves only the workspace's own `.faustus/rules/`
     # (and the other RULE_DIR_NAMES) in the prompt.
     "project_rules_library_enabled": True,
+    # Which Karpathy code-discipline rule (config/rules/common/karpathy-*)
+    # is injected, if any. The two variants are alternatives: "original"
+    # (four principles, rule 1 reworded for unattended work) or "positive"
+    # (~120 words, no negations, tuned for small models). Default "original"
+    # per the Galton A/B/C measurement (task #322): without pressure B and C
+    # trim over-long lines equally and raise written tests from 7% to 42-45%,
+    # but under "keep it minimal" only B holds up. "off" disables the rule.
+    "project_rules_karpathy_variant": "original",
     # Shared model lease (src/model_lease.py, lot L): several instances of
     # this app on one PC, one local Ollama — whether instances publish/read
     # each other's residency (pins, default, activity, VRAM reservations) so

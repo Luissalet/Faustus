@@ -2,11 +2,14 @@ import { ChevronDown, Download, Lock, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button, EmptyState, Skeleton } from '../../components';
 import {
+  getKarpathyVariant,
   getLibraryRules,
   getProjectRules,
   installProjectRules,
+  setKarpathyVariant,
   setProjectRulePaths,
   uninstallProjectRules,
+  type KarpathyVariant,
   type LibraryRule,
   type ProjectRulesData,
 } from '../../adapters/projectRules';
@@ -28,6 +31,21 @@ function installedIdOf(rule: LibraryRule): string {
 export function ProjectRules({ workspace, say }: { workspace: string; say: (m: string) => void }) {
   const [data, setData] = useState<ProjectRulesData | null>(null);
   const [library, setLibrary] = useState<LibraryRule[] | null>(null);
+  const [variant, setVariant] = useState<KarpathyVariant>('original');
+  const [variantBusy, setVariantBusy] = useState(false);
+
+  const changeVariant = async (next: KarpathyVariant) => {
+    setVariantBusy(true);
+    try {
+      await setKarpathyVariant(next);
+      setVariant(next);
+      reload();
+    } catch (e) {
+      say((e as Error).message);
+    } finally {
+      setVariantBusy(false);
+    }
+  };
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState('');
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -40,6 +58,7 @@ export function ProjectRules({ workspace, say }: { workspace: string; say: (m: s
       setData(null);
       return;
     }
+    getKarpathyVariant().then(setVariant).catch(() => { /* keep the default */ });
     Promise.all([getProjectRules(workspace), library ? Promise.resolve(library) : getLibraryRules()])
       .then(([d, lib]) => {
         setData(d);
@@ -178,6 +197,19 @@ export function ProjectRules({ workspace, say }: { workspace: string; say: (m: s
             ))}
           </ul>
         )}
+      </div>
+
+      <div className="fs-set__card">
+        <h3 className="fs-set__card-title">{t('Code discipline (Karpathy)')}</h3>
+        <p className="fs-set__help">{t('Choose the code criteria used in projects with detected programming languages. This app-wide choice does not apply outside code projects.')}</p>
+        <div className="fs-intg__kinds" data-testid="karpathy-variant-selector">
+          {(['off', 'original', 'positive'] as KarpathyVariant[]).map((v) => (
+            <button key={v} type="button" className="fs-chip" data-on={variant === v || undefined} aria-pressed={variant === v}
+              disabled={variantBusy} onClick={() => void changeVariant(v)}>
+              {v === 'off' ? t('Off') : v === 'original' ? t('Original') : t('Positive (short)')}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="fs-set__card">
