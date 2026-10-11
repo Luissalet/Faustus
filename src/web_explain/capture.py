@@ -31,7 +31,7 @@ from .sourcemap import SourceMap, data_url_text, load_map_text, package_of
 
 MAX_MAP_BYTES = 40_000_000
 MAX_MAPS = 12
-MAX_ACTIONS = 6
+_LINE_BREAK = re.compile("(\r\n|[\n\r\u2028\u2029])")
 SECRET = re.compile(r"pass(?:word)?|token|secret|auth|session|cookie|api[_-]?key|credential|otp|pin\b", re.I)
 API_TYPES = {"XHR", "Fetch", "EventSource", "WebSocket", "Document", "Other", "Ping"}
 # Interstitials of bot checks. They are reported, never worked around.
@@ -211,11 +211,17 @@ class _Script:
         self.map_error: str | None = None
 
     def position(self, offset: int) -> tuple[int, int] | None:
-        """0-based (line, column) inside the script text for a character offset."""
+        """0-based (line, column) inside the script text for an offset in UTF-16 code units (what V8 coverage and
+        source map columns count), so characters outside the BMP before or on a line do not shift the result."""
         if self.source is None:
             return None
         if self._starts is None:
-            self._starts = [0] + [m.end() for m in re.finditer(r"\r\n|\n|\r", self.source)]
+            starts, pos = [0], 0
+            for k, part in enumerate(_LINE_BREAK.split(self.source)):
+                pos += len(part.encode("utf-16-le")) // 2
+                if k % 2:
+                    starts.append(pos)
+            self._starts = starts
         i = bisect.bisect_right(self._starts, offset) - 1
         return i, offset - self._starts[i]
 
@@ -240,7 +246,7 @@ def observe(url: str, actions: list[dict] | None = None, wait_ms: int = 1500, ti
             out_dir: str | Path | None = None, headless: bool = True) -> tuple[dict, dict]:
     """Load ``url``, run ``actions``, and return ``(report, internals)``; internals keep the parsed maps."""
     url = check_url(url)
-    actions = [a if isinstance(a, dict) else {"type": "click", "target": str(a)} for a in (actions or [])][:MAX_ACTIONS]
+    actions = [a if isinstance(a, dict) else {"type": "click", "target": str(a)} for a in (actions or [])]
     try:
         from playwright.sync_api import sync_playwright
     except ImportError as exc:  # pragma: no cover - depends on the install

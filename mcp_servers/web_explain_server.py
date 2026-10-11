@@ -30,7 +30,7 @@ server = Server("web_explain")
 
 _URL = {"type": "string", "description": "http(s) URL of the page."}
 _ACTIONS = {
-    "type": "array", "maxItems": 6,
+    "type": "array",
     "description": "Steps that trigger the feature, in order. Fresh profile with no login: avoid actions that change "
                    "data elsewhere (purchases, posts).",
     "items": {"type": "object", "required": ["type"], "properties": {

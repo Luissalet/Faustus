@@ -247,3 +247,38 @@ def test_bot_check_titles_are_recognised():
     for title in ("Just a moment...", "Attention Required! | Cloudflare", "Verify you are human"):
         assert BOT_CHECK.search(title)
     assert not BOT_CHECK.search("Greeter")
+
+
+def test_index_map_snippets_come_from_the_right_section():
+    a = {"version": 3, "sources": ["src/a.js"], "sourcesContent": ["const a = 1;"], "names": [], "mappings": "AAAA"}
+    b = {"version": 3, "sources": ["src/b.js"], "sourcesContent": ["const b = 2;"], "names": [], "mappings": "AAAA"}
+    m = SourceMap({"version": 3, "sections": [{"offset": {"line": 0, "column": 0}, "map": a},
+                                               {"offset": {"line": 1, "column": 0}, "map": b}]})
+    hit = m.lookup(2, 0)
+    assert hit["source"] == "src/b.js" and hit["index"] == 1
+    assert "const b = 2;" in m.snippet(hit["index"], hit["line"], 0)
+    assert "const a = 1;" in m.snippet(m.lookup(1, 0)["index"], 1, 0)
+
+
+def test_script_positions_count_utf16_units_like_the_protocol():
+    from src.web_explain.capture import _Script
+
+    s = _Script({"scriptId": "1", "url": "https://x.test/a.js"})
+    s.source = "\U0001F600" * 100 + "\nfunction f() {}\u2028x"
+    start = 200 + 1  # 100 astral characters are 200 UTF-16 units, then the line break
+    assert s.position(start) == (1, 0)
+    assert s.position(start + 9) == (1, 9)  # "f" of the function name
+    assert s.position(start + 16) == (2, 0)  # past U+2028, a JavaScript line terminator
+    s2 = _Script({"scriptId": "2", "url": "https://x.test/b.js"})
+    s2.source = "var a = '\U0001F600'; function g() {}"
+    assert s2.position(14) == (0, 14)  # "function" starts at UTF-16 unit 14: the emoji before it counts twice
+
+
+@pytest.mark.skipif(not _browser_ok(), reason="no Playwright Chromium here")
+def test_every_ordered_action_runs(site, tmp_path, monkeypatch):
+    monkeypatch.setenv("FAUSTUS_WEB_EXPLAIN_DIR", str(tmp_path))
+    actions = [{"type": "wait", "value": 1}] * 6 + [{"type": "click", "target": "Greet"}]
+    out = explain_feature(site + "/", "What does Greet fetch?", actions, wait_ms=300)
+    did = next(e for e in out["evidence"] if e["claim"].startswith("Actions performed"))
+    assert did["claim"].count("wait 1 ms") == 6 and "click 'Greet'" in did["claim"]
+    assert any(e["claim"].startswith("R1:") and "/api/hello" in e["claim"] for e in out["evidence"])

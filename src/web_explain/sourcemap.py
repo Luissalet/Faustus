@@ -192,7 +192,7 @@ class SourceMap:
 
     def __init__(self, data: dict, map_url: str = ""):
         self.map_url = map_url
-        self._sections: list[tuple[int, int, SourceMap]] = []
+        self._sections: list[tuple[int, int, SourceMap, int]] = []  # (line, column, child, first flat source index)
         self.sources: list[str] = []
         self.contents: list[str | None] = []
         self.names: list[str] = []
@@ -203,11 +203,14 @@ class SourceMap:
                 sub = sec.get("map")
                 if isinstance(sub, dict):
                     child = SourceMap(sub, map_url)
-                    self._sections.append((int(off.get("line", 0)), int(off.get("column", 0)), child))
+                    self._sections.append((int(off.get("line", 0)), int(off.get("column", 0)), child, 0))
             self._sections.sort(key=lambda s: (s[0], s[1]))
-            for _, _, child in self._sections:
+            flat = []
+            for sline, scol, child, _ in self._sections:
+                flat.append((sline, scol, child, len(self.sources)))
                 self.sources.extend(child.sources)
                 self.contents.extend(child.contents)
+            self._sections = flat
             return
         root = data.get("sourceRoot") or ""
         raw = [str(s or "") for s in data.get("sources") or []]
@@ -222,13 +225,14 @@ class SourceMap:
         """Original position for generated ``line`` (1-based) and ``column`` (0-based), or None when unmapped."""
         if self._sections:
             best = None
-            for sline, scol, child in self._sections:
-                if (sline, scol) <= (line - 1, column):
-                    best = (sline, scol, child)
+            for section in self._sections:
+                if (section[0], section[1]) <= (line - 1, column):
+                    best = section
             if best is None:
                 return None
-            sline, scol, child = best
-            return child.lookup(line - sline, column - scol if line - 1 == sline else column)
+            sline, scol, child, base = best
+            hit = child.lookup(line - sline, column - scol if line - 1 == sline else column)
+            return {**hit, "index": hit["index"] + base} if hit else None
         idx = line - 1
         if idx < 0 or idx >= len(self._lines):
             return None
