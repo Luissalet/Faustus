@@ -54,6 +54,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -71,6 +72,10 @@ DOC_SOURCE_PREFIX = "wired document context: "
 #: Under this a prefix is not worth a file; over `llamacpp_slot_cache_max_tokens`
 #: the file would be too big to restore quickly.
 MIN_PREFIX_TOKENS = 256
+
+#: The only file names this module ever writes, restores or deletes. An index
+#: is a file on disk like any other: its names are never trusted.
+_NAME_RE = re.compile(r"^fsc-[0-9a-f]{40}\.bin$")
 
 FILE_PREFIX = "fsc-"
 FILE_SUFFIX = ".bin"
@@ -92,6 +97,11 @@ PROBE_TIMEOUT_S = 2.0
 #: A restored or warm slot that served less than this share of the estimated
 #: prefix did not really keep it.
 REUSE_FLOOR = 0.5
+#: How long a server whose save folder is not the configured one is left alone
+#: (a changed `llamacpp_slot_cache_dir` lifts it at once).
+MISCONFIG_TTL = 60.0
+#: How long a state bigger than the size cap is not saved again.
+TOO_BIG_TTL = 3600.0
 
 STATUSES = ("restored", "saved", "saving", "warm", "miss", "off")
 #: Which status describes a turn made of several rounds (an agent turn).
@@ -100,7 +110,15 @@ STATUS_PRIORITY = {"restored": 5, "saved": 4, "saving": 4, "miss": 3, "warm": 2,
 _LOCK = threading.RLock()
 _STATE: Dict[Tuple[str, int], Optional[Dict[str, Any]]] = {}
 _PENDING: Dict[Tuple[str, int], "asyncio.Future"] = {}
-_PENDING_SESSION: Dict[Tuple[str, int], str] = {}
+#: Every save not finished yet, with the chat that made it (a slot can have
+#: several, one after another).
+_SAVES: Dict["asyncio.Future", str] = {}
+#: Saves of one key in flight: the last of them to land stale removes the file.
+_INFLIGHT: Dict[str, int] = {}
+#: Servers that answered a save but wrote the file elsewhere: base -> (the
+#: folder Faustus expected, until).
+_MISCONFIGURED: Dict[str, Tuple[str, float]] = {}
+_TOO_BIG: Dict[str, float] = {}
 #: Bumped by `clear`: a save that started before it must not be recorded.
 _GEN_ALL = 0
 _GEN_SESSION: Dict[str, int] = {}
@@ -172,7 +190,10 @@ def reset() -> None:
     with _LOCK:
         _STATE.clear()
         _PENDING.clear()
-        _PENDING_SESSION.clear()
+        _SAVES.clear()
+        _INFLIGHT.clear()
+        _MISCONFIGURED.clear()
+        _TOO_BIG.clear()
         _GEN_SESSION.clear()
         _LATE.clear()
         globals()["_GEN_ALL"] = 0
@@ -379,7 +400,26 @@ def _write_index(directory: str, index: Dict[str, Any]) -> None:
     os.replace(tmp, _index_path(directory))
 
 
-def _unlink(directory: str, filename: str) -> int:
+def _entry_file(key: str, entry: Any) -> Optional[str]:
+    """The file an index entry stands for: its recorded name when it is one we
+    could have written, else the name its key gives; None when neither is."""
+    recorded = entry.get("file") if isinstance(entry, dict) else None
+    for name in (recorded, filename_for(str(key))):
+        if isinstance(name, str) and _NAME_RE.match(name):
+            return name
+    return None
+
+
+def _unlink(directory: str, filename: str, force: bool = False) -> int:
+    """Delete one of our files. A file a save is still to land on (the server
+    has written it, or is about to) is left alone, except by that save itself
+    (`force`): deleting it would make the save look like it went elsewhere."""
+    if not isinstance(filename, str) or not _NAME_RE.match(filename):
+        return 0  # never a path out of the folder, whatever the index says
+    if not force:
+        with _LOCK:
+            if any(filename_for(key) == filename for key in _INFLIGHT):
+                return 0
     path = os.path.join(directory, filename)
     try:
         size = os.path.getsize(path)
@@ -403,7 +443,7 @@ def _drop_entry(key: str) -> None:
         index = _load_index(directory)
         entry = index["entries"].pop(key, None)
         if entry:
-            _unlink(directory, str(entry.get("file") or filename_for(key)))
+            _unlink(directory, (_entry_file(key, entry) or filename_for(key)))
             try:
                 _write_index(directory, index)
             except OSError:
@@ -436,7 +476,7 @@ def _record_entry(key: str, base: str, session_id: str, model: str, info: Dict[s
                     if sessions:
                         other["sessions"] = sessions
                     else:
-                        _unlink(directory, str(other.get("file") or filename_for(other_key)))
+                        _unlink(directory, (_entry_file(other_key, other) or filename_for(other_key)))
                         entries.pop(other_key, None)
         _write_index(directory, index)
 
@@ -469,7 +509,7 @@ def cleanup() -> Dict[str, int]:
         entries = index["entries"]
         now = time.time()
         for key, entry in list(entries.items()):
-            filename = str(entry.get("file") or filename_for(key))
+            filename = (_entry_file(key, entry) or filename_for(key))
             path = os.path.join(directory, filename)
             if not os.path.exists(path):
                 entries.pop(key, None)
@@ -482,18 +522,18 @@ def cleanup() -> Dict[str, int]:
         sizes = {}
         for key, entry in entries.items():
             try:
-                sizes[key] = os.path.getsize(os.path.join(directory, str(entry.get("file") or filename_for(key))))
+                sizes[key] = os.path.getsize(os.path.join(directory, (_entry_file(key, entry) or filename_for(key))))
             except OSError:
                 sizes[key] = int(entry.get("bytes") or 0)
         total = sum(sizes.values())
         for key in sorted(entries, key=lambda k: float(entries[k].get("last_used") or 0)):
             if total <= max_bytes():
                 break
-            freed += _unlink(directory, str(entries[key].get("file") or filename_for(key)))
+            freed += _unlink(directory, (_entry_file(key, entries[key]) or filename_for(key)))
             total -= sizes.get(key, 0)
             entries.pop(key, None)
             removed += 1
-        known = {str(e.get("file") or filename_for(k)) for k, e in entries.items()}
+        known = {(_entry_file(k, e) or filename_for(k)) for k, e in entries.items()}
         try:
             names = os.listdir(directory)
         except OSError:
@@ -525,7 +565,7 @@ def status() -> Dict[str, Any]:
             size = int(entry.get("bytes") or 0)
             total += size
             rows.append({
-                "key": key[:12], "file": entry.get("file"), "bytes": size,
+                "key": key[:12], "file": _entry_file(key, entry), "bytes": size,
                 "tokens": entry.get("tokens"), "model": entry.get("model"),
                 "sessions": len(entry.get("sessions") or []),
                 "servers": list(entry.get("servers") or []),
@@ -537,6 +577,9 @@ def status() -> Dict[str, Any]:
             "max_age_days": int(max_age_s() // 86400),
             "entries": rows, "total_bytes": total,
             "unsupported_servers": sorted(b for b, until in _UNSUPPORTED.items() if until > now),
+            # Servers that save to another folder than `dir`: not used until fixed.
+            "misconfigured_servers": [{"server": b, "expected_dir": d} for b, (d, until) in sorted(_MISCONFIGURED.items())
+                                      if until > now and d == directory],
             "stats": dict(_STATS),
         }
 
@@ -554,12 +597,11 @@ def clear(session_id: Optional[str] = None) -> Dict[str, int]:
         if session_id:
             _GEN_SESSION[str(session_id)] = _GEN_SESSION.get(str(session_id), 0) + 1
             _LATE.pop(str(session_id), None)
-            pending = sum(1 for k, t in _PENDING.items()
-                          if not t.done() and _PENDING_SESSION.get(k) == str(session_id))
+            pending = sum(1 for t, sid in list(_SAVES.items()) if not t.done() and sid == str(session_id))
         else:
             globals()["_GEN_ALL"] = _GEN_ALL + 1
             _LATE.clear()
-            pending = sum(1 for t in _PENDING.values() if not t.done())
+            pending = sum(1 for t in list(_SAVES) if not t.done())
         index = _load_index(directory) if os.path.isdir(directory) else {"entries": {}}
         entries = index["entries"]
         for key, entry in list(entries.items()):
@@ -570,7 +612,7 @@ def clear(session_id: Optional[str] = None) -> Dict[str, int]:
                 if sessions:
                     entry["sessions"] = sessions
                     continue
-            freed += _unlink(directory, str(entry.get("file") or filename_for(key)))
+            freed += _unlink(directory, (_entry_file(key, entry) or filename_for(key)))
             entries.pop(key, None)
             removed += 1
         if os.path.isdir(directory):
@@ -608,6 +650,9 @@ class Plan:
     will_save: bool = False
     restore_ms: Optional[float] = None
     done: bool = False
+    #: The restore failed in a way that says nothing about the file (a 5xx, the
+    #: network): the entry stays and the state is not saved over it.
+    transient: bool = False
     generation: Tuple[int, int] = (0, 0)
     report: Dict[str, Any] = field(default_factory=dict)
 
@@ -625,6 +670,34 @@ def _stale(plan: "Plan") -> bool:
 def _save_failed_lately(key: str) -> bool:
     with _LOCK:
         return time.monotonic() - _SAVE_FAILED.get(key, -SAVE_FAIL_RETRY_S * 2) <= SAVE_FAIL_RETRY_S
+
+
+def _slot_tokens(item: Dict[str, Any]) -> Optional[int]:
+    """How many tokens a /slots entry says the slot holds; None when the server
+    does not say. A llama-server that has not run a task on a slot lists only
+    its id and context size: that is an empty slot."""
+    for name in ("n_prompt_tokens", "n_past", "n_tokens"):
+        value = item.get(name)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return int(value)
+    if "n_ctx" in item and "id_task" not in item and "n_past" not in item:
+        return 0
+    return None
+
+
+async def _slot_lost(plan: "Plan") -> bool:
+    """Whether a slot Faustus believes still holds the prefix has been emptied
+    behind its back (a restart, an erase, another request on the same slot).
+    Only what /slots reports is trusted: any doubt means "not lost", and the
+    server's own `cache_n` after the turn remains the check."""
+    slots = await _get_json(plan.base, "/slots", plan.headers)
+    if not isinstance(slots, list):
+        return False
+    item = next((s for s in slots if isinstance(s, dict) and s.get("id") == plan.slot), None)
+    if item is None or item.get("is_processing"):
+        return False
+    tokens = _slot_tokens(item)
+    return tokens is not None and tokens < REUSE_FLOOR * plan.est_tokens
 
 
 def _forget_slot(base: str, slot: int) -> None:
@@ -676,8 +749,12 @@ async def _prepare(url, model, payload, messages, tools, session_id, headers) ->
     plan.est_tokens = estimate_tokens(prefix)
     with _LOCK:
         unsupported = _UNSUPPORTED.get(base, 0.0) > time.monotonic()
+        wrong = _MISCONFIGURED.get(base)
+        misconfigured = bool(wrong and wrong[1] > time.monotonic() and wrong[0] == cache_dir())
     if unsupported:
         plan.reason = "unsupported"
+    elif misconfigured:
+        plan.reason = "misconfigured"
     elif plan.est_tokens > max_tokens():
         plan.reason = "too_large"
     elif plan.est_tokens < MIN_PREFIX_TOKENS:
@@ -692,26 +769,38 @@ async def _prepare(url, model, payload, messages, tools, session_id, headers) ->
     with _LOCK:
         held = _STATE.get((base, slot))
         _STATE[(base, slot)] = None  # being rewritten until this turn ends
+    with _LOCK:
+        too_big = _TOO_BIG.get(plan.key, 0.0) > time.monotonic()
+    if too_big:
+        plan.reason = "too_big"
+        _forget_slot(base, slot)
+        return plan
     entry = _entry_for(plan.key, base)
-    if held and held.get("key") == plan.key:
+    warm = bool(held and held.get("key") == plan.key)
+    if warm and entry is not None and await _slot_lost(plan):
+        warm = False  # emptied behind our back: the file is there to restore
+        logger.debug("slot cache: slot %s of %s no longer holds the pinned document", slot, base)
+    if warm:
         plan.status = "warm"
         if entry:
             _touch(plan.key, sid)
-    elif entry and os.path.exists(os.path.join(cache_dir(), str(entry.get("file") or filename_for(plan.key)))):
+    elif entry and os.path.exists(os.path.join(cache_dir(), (_entry_file(plan.key, entry) or filename_for(plan.key)))):
         plan.status = "restored" if await _restore(plan, entry) else "miss"
     else:
         plan.status = "miss"
-    plan.will_save = (entry is None or plan.status == "miss") and not _save_failed_lately(plan.key)
+    plan.will_save = (entry is None or (plan.status == "miss" and not plan.transient)) \
+        and not _save_failed_lately(plan.key)
     return plan
 
 
 async def _restore(plan: Plan, entry: Dict[str, Any]) -> bool:
     started = time.monotonic()
-    filename = str(entry.get("file") or filename_for(plan.key))
+    filename = (_entry_file(plan.key, entry) or filename_for(plan.key))
     try:
         resp = await _call("POST", f"{plan.base}/slots/{plan.slot}", params={"action": "restore"},
                            body={"filename": filename}, headers=plan.headers, timeout=RESTORE_TIMEOUT_S)
     except Exception as exc:  # noqa: BLE001
+        plan.transient = True
         _log_once(f"restore-net:{plan.base}", "Slot cache: restore on %s failed (%s); reading the prompt normally",
                   plan.base, exc)
         return False
@@ -723,9 +812,12 @@ async def _restore(plan: Plan, entry: Dict[str, Any]) -> bool:
         with _LOCK:
             _UNSUPPORTED[plan.base] = time.monotonic() + UNSUPPORTED_TTL
         plan.reason = "unsupported"
-    else:
+    elif resp.status_code in (400, 404, 422):
         # The file is not usable (other context size, damaged, removed).
         _drop_entry(plan.key)
+    else:
+        # A 5xx, a busy server: nothing is known about the file. Keep it.
+        plan.transient = True
     _log_once(f"restore:{plan.base}:{resp.status_code}",
               "Slot cache: %s answered HTTP %s to a restore; reading the prompt normally",
               plan.base, resp.status_code)
@@ -733,6 +825,19 @@ async def _restore(plan: Plan, entry: Dict[str, Any]) -> bool:
 
 
 async def _save(plan: Plan, timings: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Save the slot (the caller counted it in `_INFLIGHT`)."""
+    try:
+        return await _save_inner(plan, timings)
+    finally:
+        with _LOCK:
+            left = _INFLIGHT.get(plan.key, 1) - 1
+            if left > 0:
+                _INFLIGHT[plan.key] = left
+            else:
+                _INFLIGHT.pop(plan.key, None)
+
+
+async def _save_inner(plan: Plan, timings: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     filename = filename_for(plan.key)
     try:
         resp = await _call("POST", f"{plan.base}/slots/{plan.slot}", params={"action": "save"},
@@ -765,19 +870,39 @@ async def _save(plan: Plan, timings: Dict[str, Any]) -> Optional[Dict[str, Any]]
     if isinstance(prompt_n, (int, float)) and isinstance(prompt_ms, (int, float)) and prompt_n >= 64 and prompt_ms > 0:
         rate = prompt_n / prompt_ms
     size = answer.get("n_written")
-    if not isinstance(size, int):
-        try:
-            size = os.path.getsize(os.path.join(cache_dir(), filename))
-        except OSError:
-            size = None
+    directory = cache_dir()
     try:
         with _LOCK:
             if _stale(plan):
                 # Cleared while the server was writing: record nothing, and
-                # remove the file unless a state another chat uses still has it.
-                if plan.key not in _load_index(cache_dir())["entries"]:
-                    _unlink(cache_dir(), filename)
+                # remove the file unless a state another chat uses still has
+                # it, or another save of the same state is still to land (the
+                # last one of them to land is the one that removes it).
+                if plan.key not in _load_index(directory)["entries"] and _INFLIGHT.get(plan.key, 0) <= 1:
+                    _unlink(directory, filename, force=True)
                 return {"discarded": True}
+            try:
+                on_disk = os.path.getsize(os.path.join(directory, filename))
+            except OSError:
+                # The server said 200 but the file is not where Faustus looks:
+                # it saves to another folder. Nothing was saved for our purposes.
+                _MISCONFIGURED[plan.base] = (directory, time.monotonic() + MISCONFIG_TTL)
+                plan.reason = "misconfigured"
+                _log_once(f"misconfigured:{plan.base}:{directory}",
+                          "Slot cache: %s saved a slot but the file did not appear in %s. Start it with "
+                          "--slot-save-path pointing there, or set llamacpp_slot_cache_dir to the folder it uses; "
+                          "its saved states are not used until then.", plan.base, directory)
+                return None
+            if on_disk > max_bytes():
+                # One state bigger than the whole cap can never be kept.
+                _unlink(directory, filename, force=True)
+                _drop_entry(plan.key)
+                _TOO_BIG[plan.key] = time.monotonic() + TOO_BIG_TTL
+                _log_once(f"too-big:{plan.key}", "Slot cache: a saved state of %.1f MB is over the %d MB cap; "
+                          "it is not kept", on_disk / 1048576.0, max_bytes() // 1048576)
+                return {"too_big": True}
+            if not isinstance(size, int):
+                size = on_disk
             _record_entry(plan.key, plan.base, plan.session_id, plan.model,
                           {"bytes": size, "tokens": answer.get("n_saved"), "rate_tpms": rate})
             cleanup()
@@ -811,9 +936,11 @@ def _save_settled(plan: Plan, task: "asyncio.Future") -> None:
     if broke:
         outcome = "failed"
     elif result is None:
-        outcome = "unsupported" if plan.reason == "unsupported" else "failed"
+        outcome = plan.reason if plan.reason in ("unsupported", "misconfigured") else "failed"
     elif result.get("discarded"):
         outcome = "discarded"
+    elif result.get("too_big"):
+        outcome = "too_big"
     else:
         outcome = "saved"
     with _LOCK:
@@ -831,9 +958,10 @@ def _save_settled(plan: Plan, task: "asyncio.Future") -> None:
                 if result and result.get("bytes"):
                     report["bytes"] = result["bytes"]
             else:
-                report["status"] = "off" if outcome == "unsupported" else "miss"
+                report["status"] = "off" if outcome in ("unsupported", "misconfigured", "too_big") else "miss"
                 report["reason"] = {"failed": "the save failed", "discarded": "cleared while it was being saved",
-                                    "unsupported": "unsupported"}[outcome]
+                                    "unsupported": "unsupported", "misconfigured": "misconfigured",
+                                    "too_big": "too_big"}[outcome]
     logger.debug("slot cache: late save of %s ended as %s", plan.key[:12], outcome)
 
 
@@ -898,15 +1026,23 @@ async def _finish(plan: Plan, timings: Dict[str, Any]) -> Dict[str, Any]:
     pending = False
     save_ms = None
     if plan.will_save and status in ("miss", "warm"):
+        with _LOCK:
+            _INFLIGHT[plan.key] = _INFLIGHT.get(plan.key, 0) + 1
         task = asyncio.ensure_future(_save(plan, timings))
         with _LOCK:
             _PENDING[(plan.base, plan.slot)] = task
-            _PENDING_SESSION[(plan.base, plan.slot)] = plan.session_id
+            _SAVES[task] = plan.session_id
+        task.add_done_callback(lambda done: _SAVES.pop(done, None))
         try:
             result = await asyncio.wait_for(asyncio.shield(task), SAVE_BUDGET_S)
         except asyncio.TimeoutError:
             pending, result = True, None
             task.add_done_callback(lambda done, p=plan: _save_settled(p, done))
+        except asyncio.CancelledError:
+            # The stream was cancelled while the save ran on: its outcome is
+            # still counted when it lands.
+            task.add_done_callback(lambda done, p=plan: _save_settled(p, done))
+            raise
         except Exception:  # noqa: BLE001
             result = None
         if pending:
@@ -915,18 +1051,20 @@ async def _finish(plan: Plan, timings: Dict[str, Any]) -> Dict[str, Any]:
             status = "saving"
         elif result is not None and result.get("discarded"):
             status, reason = "miss", "cleared while it was being saved"
+        elif result is not None and result.get("too_big"):
+            status, reason = "off", "too_big"
         elif result is not None:
             status = "saved"
             save_ms = result.get("save_ms")
             if result.get("bytes"):
                 report["bytes"] = result["bytes"]
-        elif plan.reason == "unsupported":
+        elif plan.reason in ("unsupported", "misconfigured"):
             status = "off"
 
     with _LOCK:
         _STATE[(plan.base, plan.slot)] = {"key": plan.key, "session": plan.session_id, "at": time.time()}
-    if plan.reason == "unsupported" and status == "off":
-        reason = "unsupported"
+    if plan.reason in ("unsupported", "misconfigured") and status == "off":
+        reason = plan.reason
     report["status"] = status
     if reason:
         report["reason"] = reason
@@ -956,7 +1094,7 @@ def merge_reports(current: Optional[Dict[str, Any]], new: Optional[Dict[str, Any
 async def drain() -> None:
     """Wait for saves still running in the background (tests, shutdown)."""
     with _LOCK:
-        tasks = [t for t in _PENDING.values() if not t.done()]
+        tasks = [t for t in _SAVES if not t.done()]
     for task in tasks:
         try:
             await asyncio.wait_for(asyncio.shield(task), SAVE_TIMEOUT_S)

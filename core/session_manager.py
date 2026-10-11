@@ -718,6 +718,13 @@ class SessionManager:
                 # the ghost had no rows) together with the session delete.
                 db.commit()
                 logger.info(f"Deleted session {session_id}")
+                try:
+                    # A saved llama-server slot holds the conversation's text:
+                    # it goes with the chat (src/slot_cache.py).
+                    from src import slot_cache
+                    slot_cache.clear(session_id)
+                except Exception as e:  # noqa: BLE001 - never blocks a delete
+                    logger.debug(f"Slot cache clear failed for deleted session {session_id}: {e}")
                 return True
             return False
 

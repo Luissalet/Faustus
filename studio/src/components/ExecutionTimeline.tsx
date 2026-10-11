@@ -100,6 +100,10 @@ function prefixReason(reason?: string): string {
       return t('larger than the limit set for saved slots');
     case 'too_small':
       return t('too short to be worth saving');
+    case 'misconfigured':
+      return t('the server saves to another folder than the one set for saved slots');
+    case 'too_big':
+      return t('the saved state would be bigger than the size limit');
     default:
       return reason || t('off');
   }

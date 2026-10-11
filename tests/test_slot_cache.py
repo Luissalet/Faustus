@@ -201,6 +201,7 @@ def test_a_failing_restore_falls_back_to_the_normal_path(server, monkeypatch, ca
     assert text.startswith("The document says")  # the turn answered
     assert usage["engine_timings"]["cache_n"] < 50  # and read the document normally
     assert usage["prefix_cache"]["status"] in ("miss", "saved")
+    assert len(slot_cache.status()["entries"]) == 1  # a 5xx says nothing about the file
     assert any("answered HTTP 500 to a restore" in r.message for r in caplog.records)
     # Logged once, not on every turn.
     caplog.clear()
@@ -467,20 +468,6 @@ def test_an_engine_started_from_faustus_gets_the_slot_save_path_only_when_enable
     assert engines._parse_fields(own)["slot_save_path"] == "D:/mine"
 
 
-def test_a_server_restart_costs_one_slow_turn_and_keeps_the_saved_file(server):
-    _turn(server, _messages("q1"))
-    name = server.calls("save")[0]["body"]["filename"]
-    server.slots = [[] for _ in range(server.n_slots)]  # the server restarted: every slot is empty
-    server.requests.clear()
-    _text, usage = _turn(server, _messages("q2"))
-    pc = usage["prefix_cache"]
-    assert pc["status"] == "miss" and "did not reuse" in pc["reason"]  # said so, from the server's own timings
-    assert not server.calls("save")  # the file was fine: no new one
-    assert os.path.exists(os.path.join(server.slot_save_path, name))
-    _text, usage3 = _turn(server, _messages("q3"))
-    assert usage3["prefix_cache"]["status"] == "warm"
-
-
 # ── review round 1: clears, unfinished saves and the server's identity ─────
 
 TIMINGS = {"prompt_n": 2000, "cache_n": 0, "prompt_ms": 400.0}
@@ -719,3 +706,250 @@ def test_props_is_read_every_turn_so_a_change_is_seen_at_once(server):
     _turn(server, _messages("q2"))
     props_reads = [r for r in server.requests if r["path"] == "/props"]
     assert len(props_reads) == 2
+
+
+# ── review round 2: shared files, other folders, emptied slots, trusted names ──
+
+def test_a_slot_emptied_behind_our_back_is_restored_from_its_file(server):
+    _turn(server, _messages("q1"))
+    name = server.calls("save")[0]["body"]["filename"]
+    server.slots = [[] for _ in range(server.n_slots)]  # a restart, an eviction under pressure
+    server.requests.clear()
+    _text, usage = _turn(server, _messages("q2"))
+    pc = usage["prefix_cache"]
+    assert pc["status"] == "restored" and _order(server) == ["restore", "chat"]
+    assert server.calls("restore")[0]["body"]["filename"] == name
+    assert usage["engine_timings"]["cache_n"] > 500  # no slow turn: the document was not read again
+    assert not server.calls("save")
+
+
+def test_an_erased_slot_and_a_slot_another_request_took_are_restored_too(server):
+    import httpx
+    _turn(server, _messages("q1"))
+    slot = server.chats()[-1]["body"]["id_slot"]
+    assert httpx.post(f"{server.base}/slots/{slot}?action=erase", timeout=5).status_code == 200
+    server.requests.clear()
+    _text, usage = _turn(server, _messages("q2"))
+    assert usage["prefix_cache"]["status"] == "restored" and _order(server) == ["restore", "chat"]
+    # A direct request on the same id_slot (not through Faustus) replaces its content.
+    httpx.post(server.url + "/chat/completions", timeout=5, json={
+        "messages": [{"role": "user", "content": "hi"}], "id_slot": slot, "cache_prompt": True})
+    server.requests.clear()
+    _text, usage3 = _turn(server, _messages("q3"))
+    assert usage3["prefix_cache"]["status"] == "restored" and _order(server) == ["restore", "chat"]
+    assert usage3["engine_timings"]["cache_n"] > 500
+
+
+def test_a_server_that_cannot_say_what_a_slot_holds_still_gets_the_check_after_the_turn(server, monkeypatch):
+    # Without usable /slots details the turn is believed warm; the server's own
+    # timings then say it read the prompt again (a miss), and the file is kept.
+    async def blind(base, path, headers):
+        return None
+    monkeypatch.setattr(slot_cache, "_get_json", blind)
+    _turn(server, _messages("q1"))
+    name = server.calls("save")[0]["body"]["filename"]
+    server.slots = [[] for _ in range(server.n_slots)]
+    server.requests.clear()
+    _text, usage = _turn(server, _messages("q2"))
+    pc = usage["prefix_cache"]
+    assert pc["status"] == "miss" and "did not reuse" in pc["reason"]
+    assert not server.calls("save") and os.path.exists(os.path.join(server.slot_save_path, name))
+    _text, usage3 = _turn(server, _messages("q3"))
+    assert usage3["prefix_cache"]["status"] == "warm"
+
+
+def test_slot_details_of_a_fresh_or_used_slot_are_read_the_way_llama_server_reports_them():
+    assert slot_cache._slot_tokens({"id": 0, "n_ctx": 6144, "speculative": False, "is_processing": False}) == 0
+    assert slot_cache._slot_tokens({"id": 0, "n_ctx": 6144, "id_task": 1, "n_prompt_tokens": 87}) == 87
+    assert slot_cache._slot_tokens({"id": 0, "n_ctx": 6144, "id_task": 1, "n_prompt_tokens": 0}) == 0
+    assert slot_cache._slot_tokens({"id": 0, "n_ctx": 6144, "id_task": -1}) is None  # says nothing
+    assert slot_cache._slot_tokens({"id": 0, "n_past": 1200}) == 1200  # an older server
+
+
+def test_clearing_one_chat_does_not_take_the_file_of_another_whose_save_is_still_running(server, monkeypatch):
+    monkeypatch.setattr(slot_cache, "SAVE_BUDGET_S", 0.1)
+    # The server writes the shared file at once; its answers come late (A first).
+    server.save_respond_delay.update({1: 1.5, 2: 3.0})
+
+    async def go():
+        both = await asyncio.gather(_plan_and_finish(server, session="chat-a", slot=1),
+                                    _plan_and_finish(server, session="chat-b", slot=2))
+        (_pa, report_a), (_pb, report_b) = both
+        assert report_a["status"] == "saving" and report_b["status"] == "saving"
+        assert slot_cache.clear("chat-a")["pending_saves"] == 1
+        await slot_cache.drain()
+        return report_a, report_b
+
+    report_a, report_b = asyncio.run(go())
+    entries = slot_cache.status()["entries"]
+    assert len(entries) == 1 and entries[0]["sessions"] == 1  # chat-b's
+    assert len(_files(server)) == 1  # the file the server wrote for it is still there
+    stats = slot_cache.status()["stats"]
+    assert stats["saved"] == 1 and stats["errors"] == 0
+    assert report_b["status"] == "saved" and report_a["status"] == "miss"
+    assert slot_cache.cleanup()["removed"] == 0  # nothing is dropped as "file missing"
+    assert len(slot_cache.status()["entries"]) == 1
+
+
+def test_clearing_the_chat_whose_save_landed_keeps_the_file_a_second_save_is_about_to_land_on(server, monkeypatch):
+    monkeypatch.setattr(slot_cache, "SAVE_BUDGET_S", 0.1)
+    server.save_respond_delay.update({1: 0.3, 2: 2.5})
+
+    async def go():
+        async def clear_when_a_landed():
+            while not slot_cache.status()["entries"]:
+                await asyncio.sleep(0.02)
+            return slot_cache.clear("chat-a")
+
+        done = await asyncio.gather(_plan_and_finish(server, session="chat-a", slot=1),
+                                    _plan_and_finish(server, session="chat-b", slot=2), clear_when_a_landed())
+        await slot_cache.drain()
+        return done[2]
+
+    cleared = asyncio.run(go())
+    assert cleared["removed"] == 1 and cleared["pending_saves"] == 0  # chat-a's entry went; chat-b's save runs on
+    st = slot_cache.status()
+    assert st["misconfigured_servers"] == []  # the file was not deleted under it: it did not "go elsewhere"
+    assert len(st["entries"]) == 1 and st["entries"][0]["sessions"] == 1 and len(_files(server)) == 1
+    assert slot_cache.cleanup()["removed"] == 0
+
+
+def test_the_last_stale_save_of_a_state_nobody_wants_removes_its_file(server, monkeypatch):
+    monkeypatch.setattr(slot_cache, "SAVE_BUDGET_S", 0.1)
+    server.save_respond_delay.update({1: 1.0, 2: 2.0})
+
+    async def go():
+        await asyncio.gather(_plan_and_finish(server, session="chat-a", slot=1),
+                             _plan_and_finish(server, session="chat-b", slot=2))
+        slot_cache.clear()
+        await slot_cache.drain()
+
+    asyncio.run(go())
+    assert slot_cache.status()["entries"] == [] and _files(server) == []
+
+
+def test_an_index_naming_a_path_outside_the_folder_never_deletes_it(conf, tmp_path):
+    directory = _seed(conf, [("a" * 64, 1000, 1, ["s1"])])
+    victim = tmp_path / "victim.txt"
+    victim.write_text("keep me")
+    index = slot_cache._load_index(directory)
+    index["entries"]["a" * 64]["file"] = "../victim.txt"
+    now = time.time()
+    for key, name in (("b" * 64, "..\\victim.txt"), ("c" * 64, str(victim)), ("not-a-key", "fsc-zz.bin")):
+        index["entries"][key] = {"file": name, "bytes": 1, "tokens": 1, "model": "m", "created": now,
+                                 "last_used": now, "sessions": ["s2"], "servers": ["x"]}
+    slot_cache._write_index(directory, index)
+    assert slot_cache._unlink(directory, "../victim.txt") == 0
+    assert slot_cache._unlink(directory, str(victim)) == 0
+    slot_cache.cleanup()
+    slot_cache.clear("s1")
+    slot_cache.clear("s2")
+    slot_cache.clear()
+    assert victim.read_text() == "keep me"
+    assert slot_cache._entry_file("a" * 64, {"file": "../victim.txt"}) == slot_cache.filename_for("a" * 64)
+    assert slot_cache._entry_file("not-a-key", {"file": "fsc-zz.bin"}) is None
+
+
+def test_a_server_that_saves_to_another_folder_is_not_used_and_says_so(conf, tmp_path, caplog):
+    other = tmp_path / "server_slots"
+    with FakeLlamaServer(slot_save_path=str(other), ms_per_prompt_token=0.2) as fake:
+        llama_slots.note_slot_count(fake.url, fake.n_slots)
+        with caplog.at_level("WARNING"):
+            _text, usage = _turn(fake, _messages("q1"))
+        pc = usage["prefix_cache"]
+        assert pc["status"] == "off" and pc["reason"] == "misconfigured"
+        st = slot_cache.status()
+        assert st["entries"] == [] and st["stats"]["saved"] == 0
+        assert st["misconfigured_servers"] == [{"server": fake.base, "expected_dir": conf["llamacpp_slot_cache_dir"]}]
+        assert any("did not appear" in r.message for r in caplog.records)
+        caplog.clear()
+        fake.requests.clear()
+        _text, usage2 = _turn(fake, _messages("q2"))
+        assert usage2["prefix_cache"]["reason"] == "misconfigured"
+        assert fake.calls() == []  # not asked again, so nothing piles up in its folder
+        assert not [r for r in caplog.records if "did not appear" in r.message]
+        # Pointing the setting at the folder the server really uses lifts it at once.
+        conf["llamacpp_slot_cache_dir"] = str(other)
+        _text, usage3 = _turn(fake, _messages("q3"))
+        assert usage3["prefix_cache"]["status"] == "saved"
+        assert slot_cache.status()["misconfigured_servers"] == []
+
+
+def test_an_engine_with_its_own_save_folder_is_warned_about(conf, monkeypatch, caplog):
+    from src import engines, launch_profiles
+    monkeypatch.setattr(launch_profiles, "update_profile", lambda pid, **f: None)
+    own = {"id": "e3", "name": "eng3", "argv": ["--slot-save-path", "D:/not/the/cache/folder"]}
+    with caplog.at_level("WARNING"):
+        assert engines._ensure_slot_save_path(own) is None
+    assert any("not used" in r.message and "D:/not/the/cache/folder" in r.message for r in caplog.records)
+    caplog.clear()
+    same = {"id": "e4", "name": "eng4", "argv": ["--slot-save-path", conf["llamacpp_slot_cache_dir"]]}
+    with caplog.at_level("WARNING"):
+        assert engines._ensure_slot_save_path(same) is None
+    assert not caplog.records
+
+
+def test_one_state_over_the_whole_cap_is_not_kept_nor_rewritten_every_turn(server, conf):
+    conf["llamacpp_slot_cache_max_mb"] = 1
+    conf["llamacpp_slot_cache_max_tokens"] = 20000
+    big = (DOC + " ") * 4  # ~1.6 MB in the fake (about 257 bytes a token)
+    _text, usage = _turn(server, _messages("q1", doc=big))
+    pc = usage["prefix_cache"]
+    assert pc["status"] == "off" and pc["reason"] == "too_big"
+    stats = slot_cache.status()["stats"]
+    assert slot_cache.status()["entries"] == [] and _files(server) == [] and stats["saved"] == 0
+    server.requests.clear()
+    _text, usage2 = _turn(server, _messages("q2", doc=big))
+    assert usage2["prefix_cache"]["reason"] == "too_big"
+    assert not server.calls("save")  # not rewritten (and thrown away) on every turn
+
+
+def test_deleting_a_chat_clears_its_saved_states(server, sm):
+    _mk_session(sm, "chat-del", n_messages=2)
+    _mk_session(sm, "chat-keep", n_messages=2)
+    _turn(server, _messages("q1"), session="chat-del")
+    _turn(server, _messages("q1"), session="chat-keep")  # the same state, used by both
+    assert slot_cache.status()["entries"][0]["sessions"] == 2
+    assert sm.delete_session("chat-del") is True
+    entries = slot_cache.status()["entries"]
+    assert len(entries) == 1 and entries[0]["sessions"] == 1  # the other chat keeps it
+    assert sm.delete_session("chat-keep") is True
+    assert slot_cache.status()["entries"] == [] and _files(server) == []
+
+
+def test_a_restore_that_fails_with_a_server_error_keeps_the_file_but_a_bad_file_goes(server, monkeypatch):
+    monkeypatch.setattr(llama_slots, "slot_for", lambda url, sid: 1)
+    other = [{"role": "system", "content": "other"}, {"role": "user", "content": "unrelated"}]
+    _turn(server, _messages("q1"), session="chat-a")
+    _turn(server, other, session="chat-b")  # takes the slot
+    server.fail_actions["restore"] = 503
+    server.requests.clear()
+    _text, usage = _turn(server, _messages("q2"), session="chat-a")
+    assert usage["prefix_cache"]["status"] == "miss"
+    assert len(slot_cache.status()["entries"]) == 1  # a busy server says nothing about the file
+    assert not server.calls("save")  # and it is not saved over
+    _turn(server, other, session="chat-b")
+    server.fail_actions["restore"] = 400  # "invalid slot save file"
+    server.requests.clear()
+    _turn(server, _messages("q3"), session="chat-a")
+    assert len(server.calls("save")) == 1  # the bad file went, a fresh one was saved
+    assert len(slot_cache.status()["entries"]) == 1
+
+
+def test_the_outcome_of_a_save_whose_stream_was_cancelled_is_still_counted(server, monkeypatch):
+    monkeypatch.setattr(slot_cache, "SAVE_BUDGET_S", 5.0)
+    server.action_delay["save"] = 0.5
+
+    async def go():
+        plan = await slot_cache.prepare(server.url, "fake-model", {"id_slot": 1}, _messages("q"), None, "chat-a")
+        task = asyncio.ensure_future(slot_cache.finish(plan, dict(TIMINGS)))
+        while not server.calls("save"):
+            await asyncio.sleep(0.02)
+        task.cancel()  # the client went away while the turn waited for the save
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        await slot_cache.drain()
+
+    asyncio.run(go())
+    stats = slot_cache.status()["stats"]
+    assert stats["saved"] == 1 and len(slot_cache.status()["entries"]) == 1

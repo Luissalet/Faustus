@@ -9647,3 +9647,5 @@ larger than the limit set for saved slots	supera el límite fijado para los slot
 too short to be worth saving	demasiado corto para guardarlo
 read now, still being saved	leído ahora, aún guardándose
 the earlier save did not finish	el guardado anterior no terminó
+the server saves to another folder than the one set for saved slots	el servidor guarda en otra carpeta que la fijada para los slots guardados
+the saved state would be bigger than the size limit	el estado guardado superaría el límite de tamaño

@@ -501,7 +501,13 @@ def _ensure_slot_save_path(engine: Dict[str, Any]) -> Optional[str]:
         if not slot_cache.enabled():
             return None
         argv = list(engine.get("argv") or [])
-        if _flag_value(argv, _SLOT_SAVE_FLAGS):
+        own = _flag_value(argv, _SLOT_SAVE_FLAGS)
+        if own:
+            wanted = slot_cache.cache_dir()
+            if os.path.normcase(os.path.abspath(str(own))) != os.path.normcase(os.path.abspath(wanted)):
+                logger.warning("[engine] %s saves slots to %s, not to the slot cache folder %s: its saved states "
+                               "are not used (set llamacpp_slot_cache_dir to that folder, or drop the flag)",
+                               engine.get("name") or engine.get("id"), own, wanted)
             return None
         directory = slot_cache.cache_dir()
         os.makedirs(directory, exist_ok=True)

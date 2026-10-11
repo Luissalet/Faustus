@@ -55,6 +55,8 @@ class FakeLlamaServer:
         self.build_info = build_info
         #: Seconds a slot action sleeps before it answers (a slow disk), per action.
         self.action_delay: Dict[str, float] = {}
+        #: Seconds a save of this slot takes to answer AFTER the file is written.
+        self.save_respond_delay: Dict[int, float] = {}
         self.slots: List[List[str]] = [[] for _ in range(n_slots)]
         self.requests: List[Dict[str, Any]] = []
         self.fail_actions: Dict[str, int] = {}
@@ -94,8 +96,13 @@ class FakeLlamaServer:
                                             "total_slots": outer.n_slots, "build_info": outer.build_info,
                                             "default_generation_settings": {"n_ctx": outer.n_ctx}})
                 if path == "/slots":
-                    return self._send(200, [{"id": i, "n_ctx": outer.n_ctx, "is_processing": False}
-                                            for i in range(outer.n_slots)])
+                    rows = []
+                    for i in range(outer.n_slots):
+                        row = {"id": i, "n_ctx": outer.n_ctx, "speculative": False, "is_processing": False}
+                        if outer.slots[i]:  # like llama-server: a slot that ran a task reports its prompt
+                            row.update(id_task=1, n_prompt_tokens=len(outer.slots[i]))
+                        rows.append(row)
+                    return self._send(200, rows)
                 if path in ("/v1/models", "/models"):
                     return self._send(200, {"object": "list", "data": [{"id": "fake-model", "object": "model"}]})
                 self._send(404, {"error": {"message": "not found", "code": 404}})
@@ -190,6 +197,8 @@ class FakeLlamaServer:
             data = json.dumps(tokens).encode("utf-8") + b"\0" * (len(tokens) * 256)  # a KV-sized file
             with open(path, "wb") as fh:
                 fh.write(data)
+            if self.save_respond_delay.get(slot):
+                time.sleep(self.save_respond_delay[slot])
             return handler._send(200, {"id_slot": slot, "filename": filename, "n_saved": len(tokens),
                                        "n_written": len(data),
                                        "timings": {"save_ms": round((time.time() - started) * 1000, 2)}})
@@ -267,6 +276,7 @@ def main() -> None:
     parser.add_argument("--n-ctx", type=int, default=16384)
     parser.add_argument("--save-delay", type=float, default=0.0, help="seconds a slot save takes to answer")
     parser.add_argument("--fail-save", type=int, default=0, help="answer slot saves with this HTTP status")
+    parser.add_argument("--save-respond-delay", default="", help="slot=seconds,...: answer a save of that slot this late, after writing the file")
     args = parser.parse_args()
     server = FakeLlamaServer(port=args.port, slot_save_path=args.slot_save_path, n_slots=args.slots,
                              ms_per_prompt_token=args.ms_per_token, log_path=args.log, n_ctx=args.n_ctx)
@@ -274,6 +284,9 @@ def main() -> None:
         server.action_delay["save"] = args.save_delay
     if args.fail_save:
         server.fail_actions["save"] = args.fail_save
+    for part in filter(None, args.save_respond_delay.split(",")):
+        slot_no, seconds = part.split("=")
+        server.save_respond_delay[int(slot_no)] = float(seconds)
     print(f"fake llama-server on {server.base}", flush=True)
     server.httpd.serve_forever()
 

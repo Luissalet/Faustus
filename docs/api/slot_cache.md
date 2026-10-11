@@ -69,11 +69,54 @@ and prefix alone.
    the chat's next turn carries `earlier_save: "failed"` or `"discarded"`.
    The next turn on the same slot waits (up to five seconds) for it.
 
-It never blocks a turn: any error ends in the normal path and is logged once.
+It never *fails* a turn: any error ends in the normal path and is logged once.
+It can *delay* one, within these budgets: a restore waits up to 30 s for the
+server; the end of a turn waits up to 2 s for the answer to a save; and the
+start of the next turn on the same slot waits up to 5 s for a save still
+running there. Reading `/props` (and, on a warm turn with a file to fall back
+on, `/slots`) costs one small local request each, with a 2 s timeout.
+
 A server that answers HTTP 501 (no `--slot-save-path`) is not asked again for
 ten minutes. If the server's own timings say it read the prefix again after a
 restore (`cache_n` under half the prefix), the turn is reported as a miss and
 the file is dropped and saved afresh.
+
+### Slots that lose their content, and saves that do not land
+
+- **A slot emptied behind Faustus's back** (a server restart, an erase, another
+  request on the same `id_slot`). On a turn Faustus believes warm, when a file
+  exists for the state, `GET /slots` is read: if the slot reports fewer tokens
+  than half the prefix (`n_prompt_tokens`, or `n_past` on older servers; a slot
+  that has run nothing is listed with only its id and context size), the state
+  is restored. A server that reports nothing usable, or an eviction that leaves
+  the figures stale, is not detected here: the turn is then a `miss` (from the
+  server's `cache_n`) and the file is kept.
+- **A server that saves to another folder** than `llamacpp_slot_cache_dir`
+  (an engine profile with its own `--slot-save-path`). After a `200` to a save
+  the file must exist in the configured folder; if not, the server is marked
+  misconfigured (`misconfigured_servers` in the status, a warning once in the
+  log, `off` / `misconfigured` in the turn): it is not saved to again until the
+  setting changes or a minute passes (the probe rewrites the same file name, so nothing piles up). Nothing is counted as saved.
+- **One state bigger than the whole cap** (`llamacpp_slot_cache_max_mb`) is
+  deleted again and not tried for an hour (`off` / `too_big`).
+- **A failed restore.** Only an answer that says the file is unusable (400,
+  404, 422) drops the entry; a 5xx or a network error keeps it and the state
+  is not saved over it.
+- **Names in `index.json` are never trusted:** only `fsc-<40 hex>.bin` inside the
+  folder is ever restored or deleted.
+- **Deleting a chat** clears its saved states (`slot_cache.clear(session)`),
+  since a saved slot holds the conversation's text; a state another chat also
+  uses stays for that chat.
+
+### Known limits
+
+- The identity is read from `/props`: a model file replaced **in place** while
+  the server keeps running its old weights in memory is not visible there. The
+  file's size and mtime change the identity, so the next turn saves a state
+  under the new identity from the old weights; restart the server after
+  replacing a model.
+- A state is the KV of the whole slot after the turn; it is only good for the
+  same weights, template and context on the server that saved it.
 
 ## Turn metadata
 
@@ -87,8 +130,9 @@ setting is on:
 ```
 
 `status` is `restored` | `saved` | `saving` | `warm` | `miss` | `off`. `off` carries
-`reason`: `unsupported` (server without a save path), `too_large`,
-`too_small`. `prefill_saved_ms` estimates the prefill time the cache saved,
+`reason`: `unsupported` (server without a save path), `misconfigured` (it saves
+elsewhere), `too_large`, `too_small`, `too_big` (the state would not fit the
+cap). `prefill_saved_ms` estimates the prefill time the cache saved,
 from the server's own prompt speed when the state was saved. An agent turn
 with several rounds folds them into one record (`rounds`). Studio shows it as
 the "Pinned document" row of "Why did it take this long?".
@@ -99,7 +143,8 @@ Admin level, like `GET /api/engines/status`.
 
 - `GET /api/engines/slot-cache` — `{enabled, dir, max_tokens, max_mb,
   max_age_days, entries: [{key, file, bytes, tokens, model, sessions, servers,
-  created, last_used}], total_bytes, unsupported_servers, stats}`.
+  created, last_used}], total_bytes, unsupported_servers,
+  misconfigured_servers: [{server, expected_dir}], stats}`.
 - `DELETE /api/engines/slot-cache[?session_id=...]` — delete every saved
   state, or only those only that chat uses; `{removed, freed_bytes,
   pending_saves}`. A save still running when this is called (`pending_saves`
