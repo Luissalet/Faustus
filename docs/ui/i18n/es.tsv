@@ -9714,3 +9714,40 @@ An administrator can view the fleet for this device.	Un administrador puede cons
 Last confirmed failure: {when}	Último fallo confirmado: {when}
 No schedule declared	Sin horario declarado
 Updating fleet…	Actualizando la flota…
+
+
+Credential stored in plain text	Credencial guardada en texto plano
+Use a reference to a secret in the vault or environment. Keep credentials out of launch arguments and URLs.	Usa una referencia a un secreto del almacén o del entorno. Evita las credenciales en argumentos de arranque y URL.
+Remote connection without encryption	Conexión remota sin cifrar
+Use HTTPS for remote servers. Local loopback connections can use HTTP.	Usa HTTPS en servidores remotos. Las conexiones locales de bucle pueden usar HTTP.
+Package version can change on restart	La versión del paquete puede cambiar al reiniciar
+Pin the package to a specific version and update it deliberately.	Fija una versión concreta del paquete y actualízala cuando decidas.
+Access to an entire drive or user profile	Acceso a toda una unidad o perfil de usuario
+Give the server only the project folders it needs.	Da al servidor solo las carpetas del proyecto que necesite.
+The server inherits the entire environment	El servidor hereda todo el entorno
+Use the minimal environment and declare the variables the server needs.	Usa el entorno mínimo y declara las variables que necesite el servidor.
+Launch command interpreted by a shell	Orden de arranque interpretada por una shell
+Point Command to the executable and supply its arguments directly.	Indica el ejecutable en Orden y proporciona sus argumentos directamente.
+Another server has the same configuration	Otro servidor tiene la misma configuración
+Keep one server or disable the duplicate.	Conserva un servidor o desactiva el duplicado.
+{n} configuration finding	{n} hallazgo de configuración
+{n} configuration findings	{n} hallazgos de configuración
+Review configuration findings	Revisar hallazgos de configuración
+These warnings do not prevent saving or using the server.	Estos avisos no impiden guardar ni usar el servidor.
+High priority	Prioridad alta
+Medium priority	Prioridad media
+Low priority	Prioridad baja
+Review the server configuration.	Revisa la configuración del servidor.
+Complete the JSON arguments and environment to preview configuration findings.	Completa los argumentos y el entorno JSON para consultar los hallazgos de configuración.
+Checking configuration…	Comprobando configuración…
+Configuration audit could not be loaded. You can still save the server.	No se ha podido cargar la auditoría de configuración. Puedes guardar el servidor.
+Retry audit	Reintentar auditoría
+No configuration findings in this draft.	No hay hallazgos de configuración en este borrador.
+Checking MCP configuration…	Comprobando configuración MCP…
+MCP audit could not be loaded. The integration list remains available.	No se ha podido cargar la auditoría MCP. La lista de integraciones sigue disponible.
+{n} MCP server has configuration findings	{n} servidor MCP tiene hallazgos de configuración
+{n} MCP servers have configuration findings	{n} servidores MCP tienen hallazgos de configuración
+No MCP configuration findings.	No hay hallazgos de configuración MCP.
+MCP configuration	Configuración MCP
+MCP configuration hygiene	Revisión de la configuración MCP
+{n} high findings in enabled servers ({names})	{n} hallazgos de prioridad alta en servidores activos ({names})

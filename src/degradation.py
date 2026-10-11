@@ -144,6 +144,11 @@ _HINTS: Dict[str, Dict[str, str]] = {
         "es": "Un servidor MCP esta caido o falla. Abre Ajustes > MCP, lee su ultima salida y reconectalo.",
         "command": "",
     },
+    "mcp_config": {
+        "en": "Open Settings > Integrations > MCP and review the configuration findings and fixes. These are warnings; servers remain available.",
+        "es": "Abre Ajustes > Integraciones > MCP y revisa los hallazgos y sus soluciones. Son avisos; los servidores siguen disponibles.",
+        "command": "",
+    },
 }
 
 _AFFECTS: Dict[str, List[str]] = {
@@ -154,6 +159,7 @@ _AFFECTS: Dict[str, List[str]] = {
     "providers": ["chat with those models", "agent runs", "model catalogue"],
     "sparks": ["Sparks cluster models", "default backend sync"],
     "mcp_servers": ["tools from the failing MCP servers"],
+    "mcp_config": ["MCP configuration hygiene"],
 }
 
 _LABELS: Dict[str, str] = {
@@ -164,6 +170,7 @@ _LABELS: Dict[str, str] = {
     "providers": "Model endpoints",
     "sparks": "Sparks",
     "mcp_servers": "MCP servers",
+    "mcp_config": "MCP configuration",
 }
 
 
@@ -280,6 +287,20 @@ def _mcp(ctx: Dict[str, Any]) -> Dict[str, Any]:
     return _result(DOWN if all_down else DEGRADED, cause)
 
 
+def _mcp_config(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    from src.mcp_config_audit import audit_servers, load_configured_servers
+
+    rows = ctx.get("mcp_audit_servers")
+    report = audit_servers(load_configured_servers() if rows is None else rows, include_disabled=False)
+    if not report["servers"]:
+        return _result(UNCONFIGURED, "no enabled MCP servers configured")
+    high = [f for f in report["findings"] if f["severity"] == "high"]
+    if not high:
+        return _result(OK)
+    names = ", ".join(f"{scrub(f['server'], 50)}: {f['code']}" for f in high[:5])
+    return _result(DEGRADED, f"MCPConfigWarning: {len(high)} high findings in enabled servers ({names})")
+
+
 def _install_builtin() -> None:
     def add(cid: str, fn: Callable, timeout: float = CHECK_TIMEOUT_S, needs_app: bool = False) -> None:
         register(Check(cid, _LABELS[cid], fn, affects=_AFFECTS[cid], hint=_HINTS[cid],
@@ -291,6 +312,7 @@ def _install_builtin() -> None:
     add("providers", _providers, timeout=FANOUT_TIMEOUT_S)
     add("sparks", _sparks)
     add("mcp_servers", _mcp, needs_app=True)
+    add("mcp_config", _mcp_config)
 
 
 _install_builtin()

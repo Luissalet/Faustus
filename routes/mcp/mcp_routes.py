@@ -7,7 +7,7 @@ import urllib.parse
 import html
 from pathlib import Path
 from typing import Any, List, Optional
-from fastapi import APIRouter, Form, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Form, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
 import logging
 import httpx
@@ -328,6 +328,13 @@ def setup_mcp_routes(mcp_manager: McpManager):
         from datetime import datetime, timezone
         report["checked_at"] = datetime.now(timezone.utc).isoformat()
         return report
+
+    @router.post("/audit/preview")
+    def preview_server_config(request: Request, config: dict = Body(...)):
+        """Offline advisory for an unsaved server; never starts or saves it."""
+        require_admin(request)
+        from src.mcp_config_audit import audit_candidate, load_configured_servers
+        return audit_candidate(config, load_configured_servers())
 
     @router.get("/servers")
     def list_servers(request: Request):

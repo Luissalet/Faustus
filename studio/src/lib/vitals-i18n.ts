@@ -16,7 +16,7 @@ export const HEALTH_LABEL: Record<string, string> = {
 
 const DEPENDENCY_LABEL: Record<string, string> = {
   chromadb: 'Vector store', searxng: 'Web search', ntfy: 'Notifications',
-  email: 'Email', providers: 'Model endpoints', sparks: 'Sparks', mcp_servers: 'MCP servers',
+  email: 'Email', providers: 'Model endpoints', sparks: 'Sparks', mcp_servers: 'MCP servers', mcp_config: 'MCP configuration',
 };
 
 function number(raw: string): string {
@@ -64,6 +64,9 @@ export function vitalsText(value: string, depth = 0): string {
   if ((m = value.match(/^Unreachable \((.+)\)\.$/))) return t('Unreachable ({why}).', { why: vitalsText(m[1], depth + 1) });
   if ((m = value.match(/^Search provider is '([^']+)', not SearXNG\.$/))) return t("Search provider is '{provider}', not SearXNG.", { provider: m[1] });
   // Keep exception classes, server ids, URLs and provider output intact.
+  if ((m = value.match(/^(\d+) high findings in enabled servers \((.*)\)$/))) {
+    return t('{n} high findings in enabled servers ({names})', { n: number(m[1]), names: m[2] });
+  }
   if ((m = value.match(/^([A-Za-z]\w*(?:Error|Warning)): (.+)$/))) return `${m[1]}: ${vitalsText(m[2], depth + 1)}`;
   if ((m = value.match(/^(\d+) of (\d+) servers failing \(([^)]*)\)(.*)$/))) {
     return t('{a} of {b} servers failing ({names})', { a: number(m[1]), b: number(m[2]), names: m[3] }) + m[4];

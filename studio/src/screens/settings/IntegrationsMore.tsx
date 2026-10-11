@@ -43,6 +43,7 @@ import { getGoogleOAuthClient } from '../../adapters/google';
 import { Field, Select, Toggle } from './fields';
 import { FormFoot, useMsg } from './IntegrationForms';
 import { GoogleOAuthSetup } from './GoogleOAuthSetup';
+import { McpAuditDraft } from './McpAudit';
 
 /* ── mail account ── */
 
@@ -639,6 +640,7 @@ function McpNew({ onClose, onChanged, say }: { onClose: () => void; onChanged: (
           </div>
         </>
       )}
+      <McpAuditDraft config={{ name, transport, command: isUrl ? '' : cmd, args: isUrl ? [] : args || '[]', env: isUrl ? {} : env || '{}', url: isUrl ? url : '' }} />
       {authId && (
         <Field label={t('Authorise in the tab that opened. If the redirect fails (remote access), paste the resulting URL here:')} htmlFor="mcp-cb">
           <div className="fs-set__inline">
@@ -726,6 +728,7 @@ function McpServerCard({ server, onClose, onChanged, say }: { server: McpServer;
       <p className="fs-set__help" data-tone={srv.status === 'connected' ? 'ok' : srv.status === 'error' ? 'bad' : undefined}>
         {status}
       </p>
+      <McpAuditDraft config={{ ...srv, inherit_env: srv.env_mode === 'inherited' }} />
       {srv.transport === 'stdio' ? <p className="fs-set__help"><code className="fs-tools__id">{[srv.command, ...(srv.args ?? [])].filter(Boolean).join(' ')}</code></p> : <p className="fs-set__help"><code className="fs-tools__id">{srv.url}</code></p>}
       {srv.transport === 'stdio' && (
         <Field

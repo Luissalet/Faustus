@@ -289,7 +289,7 @@ def normalize_server(row: Any) -> Dict[str, Any]:
 
     def _json(value, fallback):
         if isinstance(value, (list, dict)):
-            return value
+            return value if isinstance(value, type(fallback)) else fallback
         try:
             parsed = json.loads(value) if value else fallback
         except (TypeError, ValueError):
@@ -330,6 +330,27 @@ def audit_servers(servers: Iterable[Any], *, home: Optional[str] = None,
     for f in findings:
         srv = next((r for r in rows if r["id"] == f["server_id"]), None)
         f["enabled"] = bool(srv and srv["is_enabled"])
+    # A shell-wrapper or package detail may repeat a credential that another
+    # check identified. Mask every finding field, not only plaintext_secret.
+    from src.security_scan import mask_secrets
+    secrets = set()
+    for srv in rows:
+        secrets.update(str(v) for k, v in srv["env"].items() if _is_secret_value(k, v))
+        args = [str(a) for a in srv["args"]]
+        for i, arg in enumerate(args):
+            match = _FLAG_WITH_SECRET.match(arg)
+            if match:
+                value = match.group(4) if match.group(4) is not None else (args[i + 1] if i + 1 < len(args) else "")
+                if _is_secret_value(match.group(1), value):
+                    secrets.add(value)
+        secrets.update(m.group(2) for m in _URL_SECRET_PARAM.finditer(str(srv["url"] or "")))
+    for f in findings:
+        for key in ("message", "detail", "fix"):
+            if key in f:
+                text = str(f[key])
+                for value in sorted(secrets, key=len, reverse=True):
+                    text = re.sub(re.escape(value), lambda _: _mask(value), text, flags=re.IGNORECASE)
+                f[key] = mask_secrets(text)
     findings.sort(key=lambda f: (_SEVERITY_RANK.get(f["severity"], 9), not f["enabled"], str(f["server"]), f["code"]))
     counts = {s: sum(1 for f in findings if f["severity"] == s) for s in SEVERITIES}
     per_server = []
@@ -355,3 +376,24 @@ def load_configured_servers() -> List[Dict[str, Any]]:
         return [normalize_server(r) for r in db.query(McpServer).all()]
     finally:
         db.close()
+
+
+def audit_candidate(candidate: Mapping[str, Any], existing: Iterable[Any] = ()) -> Dict[str, Any]:
+    """Preview one unsaved configuration against the current list, without writes.
+
+    A supplied id replaces that row for duplicate detection; no raw launch/env
+    configuration is included in the receipt. Findings concern the candidate only.
+    """
+    row = normalize_server(candidate)
+    row["id"] = row["id"] or "__draft__"
+    row["name"] = row["name"] or row["id"]
+    peers = [normalize_server(s) for s in existing]
+    peers = [s for s in peers if s["id"] != row["id"]]
+    report = audit_servers([*peers, row])
+    report["findings"] = [f for f in report["findings"] if f["server_id"] == row["id"]]
+    report["per_server"] = [s for s in report["per_server"] if s["id"] == row["id"]]
+    report["servers"] = 1
+    report["with_findings"] = int(bool(report["findings"]))
+    report["counts"] = {s: sum(f["severity"] == s for f in report["findings"]) for s in SEVERITIES}
+    report["configuration"] = "candidate"
+    return report

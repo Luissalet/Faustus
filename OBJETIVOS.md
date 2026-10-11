@@ -1358,7 +1358,4 @@ Hecho en §294 (radar #458): corrección, herramienta fallida y respuesta vacía
 
 ## OBJ-59 · Auditoría de configuración MCP en la interfaz (11-10-2026)
 
-Hecho en §322 (#281, radar #503): `GET /api/mcp/audit` y `mcp_config_audit` en el MCP `harness`. Queda:
-- enseñar el informe en Ajustes → MCP (un aviso por servidor junto a la insignia del pre-escaneo y un resumen arriba), con el arreglo de cada hallazgo;
-- pasarlo también al añadir o editar un servidor, como aviso (nunca como bloqueo);
-- incluirlo en el diagnóstico unificado de degradación cuando haya hallazgos altos en servidores activos.
+Implementado en §322 (#281 y #284, radar #503): informe en Ajustes → Integraciones, resumen y aviso por servidor junto al pre-escaneo, soluciones ES/EN y secretos enmascarados; preview al añadir y al consultar/cambiar el entorno de uno existente. `POST /api/mcp/audit/preview` y `mcp_config_audit(candidate=...)` permiten el mismo diagnóstico sin guardar ni arrancar. El diagnóstico unificado incluye hallazgos altos de servidores activados como avisos. El editor existente permite cambiar entorno, herramientas y activación; no añade edición de command/args/URL de un servidor guardado.

@@ -1985,3 +1985,28 @@
   font-size: var(--fs-label-size);
   color: var(--fs-text-2);
 }
+/* MCP configuration advisories share the integration list's surfaces. */
+.fs-mcp-audit__summary, .fs-mcp-audit__retry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.fs-mcp-audit__summary { margin-block-end: 16px; }
+.fs-mcp-audit__summary p, .fs-mcp-audit__retry p { margin: 0; }
+.fs-mcp-audit__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-inline-start: 8px;
+  color: var(--fs-warning);
+}
+.fs-mcp-audit { min-width: 0; padding: 8px 12px; }
+.fs-mcp-audit summary { cursor: pointer; min-height: 44px; display: list-item; align-content: center; color: var(--fs-text-2); }
+.fs-mcp-audit__findings { padding-inline-start: 20px; margin-block: 8px; }
+.fs-mcp-audit__findings li { margin-block: 12px; overflow-wrap: anywhere; }
+.fs-mcp-audit__findings strong { font-weight: 600; }
+.fs-mcp-audit__findings li > .fs-set__help { display: block; }
+.fs-mcp-audit__detail { display: block; font-family: var(--fs-font-code); font-size: 13px; margin-block: 4px; overflow-wrap: anywhere; }
+.fs-mcp-audit__draft { min-width: 0; margin-block: 16px; }
+.fs-mcp-audit__draft > .fs-mcp-audit__badge { margin-inline-start: 0; }

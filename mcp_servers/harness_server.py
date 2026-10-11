@@ -204,13 +204,15 @@ async def list_tools() -> list[Tool]:
                 "fixed version, whole drives or the user profile handed out as roots, servers that "
                 "inherit the whole environment, shell wrappers and duplicates. Without `servers` it "
                 "reads the app's own configuration; with `servers` (a list of {id, name, transport, "
-                "command, args, env, url}) it audits that list. Secrets are masked. Read-only, no model."
+                "command, args, env, url}) it audits that list. With `candidate`, preview one unsaved "
+                "configuration against that list or the saved servers. Secrets are masked. Read-only, no model."
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "servers": {"type": "array", "items": {"type": "object"},
                                 "description": "Optional server list to audit instead of the configured one."},
+                    "candidate": {"type": "object", "description": "Unsaved server to preview; id replaces that saved row for duplicate detection."},
                     "include_disabled": {"type": "boolean",
                                          "description": "Also audit disabled servers (default true)."},
                 },
@@ -540,6 +542,17 @@ def _mcp_config_audit(args: dict) -> dict:
     include_disabled = args.get("include_disabled")
     include_disabled = True if include_disabled is None else bool(include_disabled)
     supplied = args.get("servers")
+    candidate = args.get("candidate")
+    if candidate is not None:
+        if not isinstance(candidate, dict):
+            return {"error": "candidate must be a server object"}
+        if supplied is not None and (not isinstance(supplied, list) or not all(isinstance(s, dict) for s in supplied)):
+            return {"error": "servers must be a list of server objects"}
+        try:
+            peers = supplied[:500] if supplied is not None else audit.load_configured_servers()
+        except Exception as exc:
+            return {"error": f"could not read configured servers ({type(exc).__name__}); pass servers for an offline preview"}
+        return audit.audit_candidate(candidate, peers)
     if supplied is not None:
         if not isinstance(supplied, list) or not all(isinstance(s, dict) for s in supplied):
             return {"error": "servers must be a list of server objects"}

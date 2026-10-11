@@ -40,6 +40,8 @@ import { useSearchParams } from 'react-router';
 import { ApiForm, CalDavForm, CALDAV_PRESETS, VaultForm, AgentForm } from './IntegrationForms';
 import { ContactsPanel, EmailForm, GoogleCalendarForm, McpPanel } from './IntegrationsMore';
 import { GoogleOAuthSetup } from './GoogleOAuthSetup';
+import { useMcpAudit } from '../../adapters/mcp-audit';
+import { McpAuditBadge, McpAuditFindings } from './McpAudit';
 
 /**
  * Integrations: every external connection in one list, the way the previous
@@ -257,6 +259,8 @@ const CALENDAR_PROVIDERS: { key: string; label: string }[] = [
 ];
 
 export function IntegrationsSection({ say }: { say: (t: string) => void }) {
+  const audit = useMcpAudit();
+  const refreshAudit = audit.refresh;
   const [items, setItems] = useState<Item[] | null>(null);
   const [googleConfigured, setGoogleConfigured] = useState(false);
   const [editing, setEditing] = useState<Editing>(null);
@@ -269,7 +273,10 @@ export function IntegrationsSection({ say }: { say: (t: string) => void }) {
   // so approving is never one click on a page that also shows the warning.
   const [scanOverride, setScanOverride] = useState<Record<string, boolean>>({});
 
-  const reload = useCallback(() => fetchAll().then(({ items: its, googleConfigured: gc }) => { setItems(its); setGoogleConfigured(gc); }), []);
+  const reload = useCallback(() => {
+    refreshAudit();
+    return fetchAll().then(({ items: its, googleConfigured: gc }) => { setItems(its); setGoogleConfigured(gc); });
+  }, [refreshAudit]);
   useEffect(() => {
     void reload();
   }, [reload]);
@@ -331,6 +338,13 @@ export function IntegrationsSection({ say }: { say: (t: string) => void }) {
           <Button size="sm" variant="primary" icon={Plus} label={t('Add')} onClick={() => { setAdding((a) => !a); setPickingCalendar(false); }} testId="intg-add" />
         </div>
       </header>
+
+      <div className="fs-mcp-audit__summary" aria-live="polite" data-testid="mcp-audit-summary">
+        {audit.loading ? <p className="fs-set__help">{t('Checking MCP configuration…')}</p>
+          : audit.error ? <><p className="fs-set__help">{t('MCP audit could not be loaded. The integration list remains available.')}</p><Button size="sm" variant="ghost" label={t('Retry audit')} onClick={audit.refresh} /></>
+          : audit.report?.with_findings ? <p className="fs-set__help">{tn(audit.report.with_findings, '{n} MCP server has configuration findings', '{n} MCP servers have configuration findings')}</p>
+          : <p className="fs-set__help">{t('No MCP configuration findings.')}</p>}
+      </div>
 
       {adding && !pickingCalendar && (
         <div className="fs-intg__kinds" role="group" aria-label={t('What to add')}>
@@ -396,10 +410,11 @@ export function IntegrationsSection({ say }: { say: (t: string) => void }) {
         <ul className="fs-intg">
           {items.map((item) => {
             const mcp = item.kind === 'mcp' ? (item.data as McpServerManifest) : null;
+            const findings = mcp ? audit.report?.findings.filter((f) => f.server_id === item.id) ?? [] : [];
             const gcal = item.kind === 'google_calendar' ? (item.data as GoogleCalendarAccount) : null;
             const needsReauth = gcal?.status === 'needs_reauth';
             return (
-            <li key={`${item.kind}-${item.id}`} className="fs-intg__row" data-testid={`intg-${item.kind}`} style={(mcp?.manifest_pending_approval || (item.kind === 'mcp' && mcp?.status === 'connected') || needsReauth) ? { display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '4px' } : undefined}>
+            <li key={`${item.kind}-${item.id}`} className="fs-intg__row" data-testid={`intg-${item.kind}`} style={(mcp || needsReauth) ? { display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '4px' } : undefined}>
               <div className="fs-intg__row-main" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
                 <button type="button" className="fs-intg__main" onClick={() => setEditing({ kind: item.kind, id: item.id })} title={t('Open')}>
                   <span className="fs-intg__kind">{t(KIND_LABEL[item.kind])}</span>
@@ -408,12 +423,14 @@ export function IntegrationsSection({ say }: { say: (t: string) => void }) {
                     <span className="fs-set__help">
                       {mcp && <McpStatusIcon status={mcp.status} />}
                       {item.detail}
+                      <McpAuditBadge findings={findings} />
                     </span>
                   </span>
                   <span className="fs-intg__dot" data-on={item.enabled || undefined} aria-label={item.enabled ? t('Enabled') : t('Disabled')} />
                 </button>
                 <IconButton icon={Trash2} label={t('Remove {name}', { name: item.name })} size="sm" onClick={() => void remove(item)} />
               </div>
+              <McpAuditFindings findings={findings} />
               {mcp?.security_scan_pending_approval ? (
                 <div className="fs-notice" data-tone="danger" role="alert" data-testid="mcp-security-scan-quarantine">
                   <ShieldAlert size={14} aria-hidden="true" />
