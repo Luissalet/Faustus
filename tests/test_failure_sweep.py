@@ -1,0 +1,166 @@
+"""Every-turn failure signature sweep (#276 / radar #498)."""
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from src import failure_sweep as fs
+
+
+def test_signatures_loop_breaker_and_empty_final():
+    hits = fs.signatures_for_turn(
+        content="   ",
+        metadata={"stop_reason": "non_progressing_loop", "run_id": "r1"},
+        session_id="s1",
+        message_id=9,
+    )
+    kinds = {h["signature"] for h in hits}
+    assert "loop_breaker" in kinds
+    assert "empty_final" in kinds
+    assert all(h["session_id"] == "s1" and h["message_id"] == "9" for h in hits)
+
+
+def test_repeated_empty_tools_and_identical_errors():
+    events = [
+        {"tool": "bash", "output": ""},
+        {"tool": "bash", "output": "   "},
+        {"tool": "bash", "result": ""},
+        {"tool": "read_file", "exit_code": 1, "error": "Permission denied: /x"},
+        {"tool": "read_file", "exit_code": 1, "error": "Permission denied: /x"},
+        {"tool": "read_file", "exit_code": 1, "error": "Permission denied: /x"},
+    ]
+    hits = fs.signatures_for_turn(
+        content="done",
+        metadata={"tool_events": events},
+        session_id="s2",
+        message_id="m2",
+    )
+    kinds = {(h["signature"], h["tool"]) for h in hits}
+    assert ("repeated_empty_tool", "bash") in kinds
+    assert ("identical_tool_error", "read_file") in kinds
+    # Error text must not appear in the report — only a fingerprint.
+    detail = next(h["detail"] for h in hits if h["signature"] == "identical_tool_error")
+    assert "Permission denied" not in detail
+    assert "err=" in detail
+
+
+def test_approval_expired_and_model_refusal():
+    hits = fs.signatures_for_turn(
+        content="I can't help with that request.",
+        metadata={"approval": {"state": "expired"}},
+        session_id="s3",
+        message_id=1,
+    )
+    assert {h["signature"] for h in hits} >= {"approval_expired", "model_refusal"}
+
+
+def test_scan_rows_groups_and_never_includes_prompt_text():
+    rows = [
+        {
+            "role": "assistant",
+            "session_id": "a",
+            "id": 1,
+            "content": "SECRET PROMPT LEAK?",
+            "metadata": json.dumps({
+                "stop_reason": "rounds_exhausted",
+                "tool_events": [
+                    {"tool": "bash", "exit_code": 2, "error": "boom SECRET"},
+                    {"tool": "bash", "exit_code": 2, "error": "boom SECRET"},
+                    {"tool": "bash", "exit_code": 2, "error": "boom SECRET"},
+                ],
+            }),
+        },
+        {
+            "role": "assistant",
+            "session_id": "b",
+            "id": 2,
+            "content": "ok",
+            "metadata": {"stop_reason": "rounds_exhausted"},
+        },
+        {"role": "user", "content": "hi", "session_id": "a"},
+    ]
+    out = fs.scan_rows(rows)
+    assert out["turns_scanned"] == 2
+    assert out["hit_count"] >= 3
+    blob = json.dumps(out)
+    assert "SECRET" not in blob
+    assert "PROMPT" not in blob
+    by = {(g["signature"], g["tool"]): g["count"] for g in out["by_signature"]}
+    assert by[("rounds_exhausted", "")] == 2
+    assert by[("identical_tool_error", "bash")] == 1
+
+
+def test_hub_payload_is_compact_and_keyed():
+    body = fs.scan_rows([{
+        "role": "assistant", "session_id": "s", "id": 1, "content": "",
+        "metadata": {"stop_reason": "budget_exhausted"},
+    }])
+    body.update({"owner": "luis", "days": 1, "since": "2026-10-11T00:00:00"})
+    payload = fs.build_hub_payload(body)
+    assert payload["signature_count"] >= 1
+    assert set(payload) <= set(fs._HUB_KEYS)
+    assert "content" not in json.dumps(payload)
+
+
+def test_report_reads_owner_sessions():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from core.database import Base, ChatMessage, Session
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine, tables=[Session.__table__, ChatMessage.__table__])
+    db = sessionmaker(bind=engine)()
+    try:
+        db.add(Session(id="own1", name="own1", endpoint_url="http://x", model="m", owner="alice"))
+        db.add(Session(id="other", name="other", endpoint_url="http://x", model="m", owner="bob"))
+        db.add(ChatMessage(
+            id="own1-1", session_id="own1", role="assistant", content="",
+            meta_data=json.dumps({"stop_reason": "loop_breaker"}),
+        ))
+        db.add(ChatMessage(
+            id="other-1", session_id="other", role="assistant", content="",
+            meta_data=json.dumps({"stop_reason": "loop_breaker"}),
+        ))
+        db.commit()
+        out = fs.report("alice", days=1, db=db)
+    finally:
+        db.close()
+    assert out["turns_scanned"] == 1
+    assert {g["signature"] for g in out["by_signature"]} >= {"loop_breaker", "empty_final"}
+    assert out["owner"] == "alice"
+
+
+@pytest.fixture()
+def api_client(tmp_path, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from src import settings as settings_mod
+    monkeypatch.setattr(settings_mod, "SETTINGS_FILE", str(tmp_path / "settings.json"))
+    settings_mod._invalidate_caches()
+    monkeypatch.setenv("AUTH_ENABLED", "false")
+    monkeypatch.setattr(
+        fs, "report",
+        lambda owner, days=1, db=None, publish=False: {
+            "owner": owner or "", "days": days, "turns_scanned": 0,
+            "hit_count": 0, "signature_count": 0, "by_signature": [],
+            "publish": bool(publish),
+        },
+    )
+    from routes.diagnostics_routes import setup_diagnostics_routes
+
+    app = FastAPI()
+    app.include_router(setup_diagnostics_routes(None, False, None))
+    with TestClient(app) as c:
+        yield c
+    settings_mod._invalidate_caches()
+
+
+def test_api_failure_sweep(api_client):
+    resp = api_client.get("/api/diagnostics/failure-sweep?days=7&publish=1")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["days"] == 7
+    assert body["publish"] is True

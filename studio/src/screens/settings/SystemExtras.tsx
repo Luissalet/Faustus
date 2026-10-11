@@ -1,8 +1,9 @@
-import { Download, RefreshCw, ShieldAlert, Stethoscope, Trash2, Upload } from 'lucide-react';
+import { Activity, Download, RefreshCw, ShieldAlert, Stethoscope, Trash2, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../components';
 import { diagnosticsLogs, exportBackup, importBackup, wipe, WIPE_KINDS } from '../../adapters/account';
 import { getJson } from '../../adapters/api';
+import { loadFailureSweep, type FailureSweepReport } from '../../adapters/failure-sweep';
 import { t } from '../../i18n';
 import { Select } from './fields';
 
@@ -36,6 +37,7 @@ export function SystemExtras({ say }: { say: (t: string) => void }) {
       <VersionCard />
       <SetupCard />
       <DoctorCard say={say} />
+      <FailureSweepCard say={say} />
       <SafeModeCard say={say} />
       <ChaosCard say={say} />
       <LogsCard />
@@ -212,6 +214,82 @@ function DoctorCard({ say }: { say: (t: string) => void }) {
                         disabled={repairing !== null} label={t('Repair')}
                         onClick={() => repair(f.facts!.repair as string)} />
               )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** Radar #498 / #276: every-turn failure signatures (not a sample). */
+function FailureSweepCard({ say }: { say: (t: string) => void }) {
+  const [report, setReport] = useState<FailureSweepReport | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [days, setDays] = useState(1);
+  const [loading, setLoading] = useState(false);
+
+  const load = (publish = false) => {
+    setLoading(true);
+    setErr(null);
+    loadFailureSweep(days, publish)
+      .then(setReport)
+      .catch((e: Error) => setErr(e.message))
+      .finally(() => setLoading(false));
+  };
+  useEffect(() => { load(false); }, [days]);
+
+  const groups = report?.by_signature ?? [];
+
+  return (
+    <div className="fs-set__card">
+      <h3 className="fs-set__card-title fs-tools__cat">
+        <span><Activity size={16} aria-hidden /> {t('Failure sweep')}</span>
+        <Button size="sm" variant="ghost" icon={RefreshCw} label={t('Re-check')}
+                loading={loading} onClick={() => load(false)} />
+      </h3>
+      <p className="fs-set__help">
+        {t('Every assistant turn in the window, scanned for fixed failure signatures (loop breaker, empty tools, repeated errors, refusals, caps). Linked ids only — no prompts or replies.')}
+      </p>
+      <div className="fs-set__row" style={{ gap: 8, flexWrap: 'wrap' }}>
+        <Select
+          id="failure-sweep-days"
+          value={String(days)}
+          onChange={(v) => setDays(Number(v) || 1)}
+          options={[
+            { value: '1', label: t('Last day') },
+            { value: '7', label: t('Last 7 days') },
+            { value: '30', label: t('Last 30 days') },
+          ]}
+        />
+        <Button size="sm" variant="secondary" label={t('Publish to Hub bus')}
+                disabled={loading} onClick={() => {
+                  load(true);
+                  say(t('Failure sweep published to the Hub bus when the Hub is available.'));
+                }} />
+      </div>
+      {err && <p className="fs-set__err">{err}</p>}
+      {report && (
+        <p className="fs-set__help">
+          {t('{turns} turns · {hits} hits · {sigs} signatures', {
+            turns: String(report.turns_scanned),
+            hits: String(report.hit_count),
+            sigs: String(report.signature_count),
+          })}
+        </p>
+      )}
+      {groups.length === 0 && report && !err ? (
+        <p className="fs-set__help">{t('No failure signatures in this window.')}</p>
+      ) : (
+        <ul className="fs-wipe">
+          {groups.map((g) => (
+            <li key={`${g.signature}/${g.tool}`} className="fs-wipe__row">
+              <span>
+                <strong>{g.count}× {g.signature}{g.tool ? ` · ${g.tool}` : ''}</strong>
+                <span className="fs-set__help">
+                  {(g.examples || []).map((ex) => ex.session_id).filter(Boolean).slice(0, 3).join(', ')}
+                </span>
+              </span>
             </li>
           ))}
         </ul>

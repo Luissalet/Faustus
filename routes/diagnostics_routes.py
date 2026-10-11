@@ -55,6 +55,21 @@ def setup_diagnostics_routes(
         owner = effective_user(request)
         return await asyncio.to_thread(think_calibration.report, owner, days)
 
+    @router.get("/api/diagnostics/failure-sweep")
+    async def get_failure_sweep(request: Request, days: int = 1, publish: int = 0) -> Dict[str, Any]:
+        """Sweep **every** assistant turn in the window for deterministic
+        failure signatures (radar #498 / #276): loop breaker, empty tool
+        streaks, identical tool errors, refusals, round/budget caps, expired
+        approvals, empty finals. Grouped by signature and tool with linked
+        examples (session/message ids only — never prompts or replies).
+        ``?publish=1`` also posts ``faustus.diag.failure_sweep`` on the Hub
+        bus for Cassandra. Only the caller's own sessions."""
+        from src.auth_helpers import effective_user
+        from src import failure_sweep
+        owner = effective_user(request)
+        return await asyncio.to_thread(
+            failure_sweep.report, owner, days, publish=bool(publish))
+
     @router.post("/api/diagnostics/services/reconnect")
     async def reconnect_services(request: Request) -> Dict[str, Any]:
         """Re-establish the ChromaDB-backed stores, then re-probe (FAUSTUS).

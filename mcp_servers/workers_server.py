@@ -1504,6 +1504,26 @@ TOOLS: List[Tool] = [
         }},
     ),
     Tool(
+        name="faustus_failure_sweep",
+        description=(
+            "Sweep EVERY assistant turn in a recent window for deterministic "
+            "failure signatures a sample eval would miss: loop breaker, repeated "
+            "empty tool results, the same tool error over and over, model "
+            "refusals, round/budget caps, expired approvals, empty finals. "
+            "Returns counts grouped by signature and tool with linked "
+            "session/message ids only — never prompts, replies or secrets. "
+            "Same report as GET /api/diagnostics/failure-sweep and Settings → "
+            "Diagnostics. Set publish=true to also post faustus.diag.failure_sweep "
+            "on the Hub bus for Cassandra."
+        ),
+        inputSchema={"type": "object", "properties": {
+            "days": {"type": "integer", "description":
+                     "How many past days to scan (default 1, max 30)."},
+            "publish": {"type": "boolean", "description":
+                        "Also emit faustus.diag.failure_sweep on the Hub bus."},
+        }},
+    ),
+    Tool(
         name="changeset_prove",
         description=(
             "Ask whether a finished dispatch job's report can be believed. Answers "
@@ -1916,6 +1936,16 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             data = await asyncio.to_thread(
                 _request, "GET", f"/api/doctor?area={area}&verbose={verbose}")
             return _text(data.get("rendered") or json.dumps(data)[:4000])
+        if name == "faustus_failure_sweep":
+            try:
+                days = int(args.get("days") or 1)
+            except (TypeError, ValueError):
+                days = 1
+            publish = "1" if args.get("publish") else "0"
+            data = await asyncio.to_thread(
+                _request, "GET",
+                f"/api/diagnostics/failure-sweep?days={days}&publish={publish}")
+            return _text(json.dumps(data, ensure_ascii=False)[:8000])
         if name == "changeset_prove":
             job = str(args.get("job_id") or "").strip()
             if not job:
