@@ -182,6 +182,41 @@ def test_typing_never_overrides_a_type_set_meanwhile(monkeypatch, brain):
     assert entities.get_entity(labs["id"])["type"] == "project"
 
 
+def test_typing_sentences_reads_several_distinct_sentences():
+    from src.brain import extract
+    texts = ["Cordera ships a release every month. Nothing else here.",
+             "We met at Cordera. Cordera ships a release every month.",
+             "The Cordera team is in Madrid."]
+    got = extract._sentences_for("Cordera", [], texts)
+    assert got == ["Cordera ships a release every month.", "We met at Cordera.",
+                   "The Cordera team is in Madrid."]
+    assert extract._sentences_for("Cordera", [], texts, limit=1) == [got[0]]
+    assert extract._sentence_for("Cordera", [], texts[1]) == "We met at Cordera."
+    # the character budget stops before a sentence that would not fit
+    assert extract._sentences_for("Cordera", [], texts, max_chars=50) == [got[0]]
+    assert extract._sentences_for("Zeta", [], texts) == []
+
+
+def test_typing_asks_with_sentences_from_every_source(monkeypatch, brain):
+    from src.brain import entities, extract
+    brain.add_item("Ada works at Cordera Labs", owner="ada", trust_class="human_explicit")
+    brain.add_item("Bruno works at Cordera Labs", owner="ada", trust_class="human_explicit")
+    run(extract.extract_pending("ada", use_llm=False))
+    labs = [e for e in entities.list_entities("ada") if e["name"] == "Cordera Labs"][0]
+    refs = entities.sources_for(labs["id"])
+    assert len(refs) >= 2
+    sources = [{"source_ref": refs[0], "text": "Ada works at Cordera Labs."},
+               {"source_ref": refs[1], "text": "Cordera Labs hired twelve engineers this year."}]
+    server = serve(monkeypatch, lambda p: (200, _type_answer("C")))
+    report = {}
+    run(extract.type_untyped_entities("ada", sources, report))
+    asked = [r["payload"]["messages"][1]["content"] for r in server.requests
+             if 'kind of thing is "Cordera Labs"' in r["payload"]["messages"][1]["content"]]
+    assert asked
+    assert "Ada works at Cordera Labs." in asked[0]
+    assert "Cordera Labs hired twelve engineers this year." in asked[0]
+    assert entities.get_entity(labs["id"])["type"] == "organization"
+
 # ── wiring: memory-conflict suggestions ─────────────────────────────────────
 
 @pytest.fixture()

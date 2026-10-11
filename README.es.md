@@ -426,7 +426,7 @@ del prompt, así que la caché del servidor paga el texto una sola vez. Nunca ca
 un modelo, tiene un presupuesto de latencia duro y es sólo consultiva: la regla
 decide siempre que está segura y siempre que el modelo no está disponible o duda.
 Hoy resuelve los casos dudosos de «¿esta pregunta necesita buscar en la web?», da
-tipo a las entidades del segundo cerebro que quedaron como «otro» y sugiere (nunca
+tipo a las entidades del segundo cerebro que quedaron como «otro» (leyendo hasta tres frases que las nombran, de todas sus fuentes) y sugiere (nunca
 resuelve) contradicciones de memoria que las reglas fijas no ven. Una evaluación
 compara la precisión de la regla, la decisión y la combinación, con calibración y
 tiempos de caché. [API de decisiones tipadas](docs/api/typed_decision.md),

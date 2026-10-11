@@ -8336,13 +8336,14 @@ confianza. Faltaba el punto intermedio.
     La pasada por reglas crea toda entidad como «other», y la del modelo
     también cuando duda. Tras la pasada desatendida (`background=True`, y
     sólo si `brain_llm_extraction` permite pasadas de modelo y la puerta no
-    las ha frenado ya), `type_untyped_entities` toma la frase que nombra cada
-    entidad «other» y pregunta su tipo entre los ocho del cerebro, con una
+    las ha frenado ya), `type_untyped_entities` toma hasta tres frases distintas que nombran
+    cada entidad «other» (de todas sus fuentes, máx. 1.200 caracteres, §331) y pregunta su tipo entre los ocho del cerebro, con una
     descripción por letra. `background_llm_gate` se consulta antes de CADA
     llamada (ningún turno en curso, modelo residente, no ocupado). El tipo se
     escribe sólo con una respuesta de log-probabilidades segura y sólo si la
     entidad sigue siendo «other» (un tipo puesto a mano siempre gana). Cada
-    par (entidad, frase) se pregunta una vez; lo cambiado queda en
+    par (entidad, contexto) se pregunta una vez y se repregunta si el
+    contexto cambia; lo cambiado queda en
     `brain_meta` (`typed_decision_types`) para auditarlo. Presupuesto de
     fondo: al menos 8 s por llamada.
   - **Sugerencias de conflicto de memoria** (`src/memory_conflicts.py`,
@@ -11306,3 +11307,7 @@ Un informe terminado guarda un *ledger* por sección (fuentes citadas con `fetch
 La edad sale de citation_registry (las sources de pantalla a menudo no traen `fetched_at`) y, si falta, de completed_at del informe. Las secciones sin citas también caducan con esa fecha. Los apéndices «Fuentes» / «Cómo leer este informe» (y equivalentes EN) no cuentan como secciones. El plan no descarga páginas solo: el contraste de contenido remoto queda como límite documentado hasta un comprobador acotado.
 
 API: GET /api/research/{id}/incremental, POST /api/research/{id}/refresh. Herramienta manage_research (reshness/efresh) y MCP austus_research_incremental. Pruebas: 	ests/test_research_incremental.py.
+
+## 331. Tipo de entidades con varias frases — #294 (11-10-2026)
+
+El pase de tipado del segundo cerebro (`type_untyped_entities`, §decisiones tipadas) ya no decide con la primera frase que nombra la entidad. `_sentences_for` reúne hasta tres frases distintas (sin repetir la misma frase de dos notas) de todas las fuentes de la entidad, en su orden, con un tope de 1.200 caracteres (la primera siempre entra). Así «Cordera» citada como empresa en una nota y por lo que hace en otra se tipa con las dos. El par (entidad, contexto) se guarda por hash: si aparecen frases nuevas, la entidad se vuelve a preguntar mientras siga en «other»; un tipo puesto a mano sigue ganando. Pruebas: `tests/test_typed_decision_wiring.py` (frases distintas, tope, contexto de dos fuentes en la petición).

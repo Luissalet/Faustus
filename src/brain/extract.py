@@ -733,12 +733,44 @@ def entity_type_field(name: str) -> Any:
 
 def _sentence_for(name: str, aliases: Sequence[str], text: str) -> str:
     """The first sentence of `text` naming the entity (or its alias), or ""."""
+    found = _sentences_for(name, aliases, [text], limit=1)
+    return found[0] if found else ""
+
+
+#: How many distinct sentences naming an entity the typing pass reads, and
+#: how many characters of them at most: one sentence is often too little
+#: ("Cordera" as a company in one note, as a product in another).
+_TYPING_MAX_SENTENCES = 3
+_TYPING_MAX_CHARS = 1200
+
+
+def _sentences_for(name: str, aliases: Sequence[str], texts: Sequence[str], *,
+                   limit: int = _TYPING_MAX_SENTENCES,
+                   max_chars: int = _TYPING_MAX_CHARS) -> List[str]:
+    """Up to `limit` distinct sentences naming the entity (or an alias),
+    in source order across `texts`, each cut at 600 characters and all of
+    them together within `max_chars` (the first one always fits)."""
     terms = [fold(t) for t in [name, *aliases] if fold(t)]
-    for sentence in _split_sentences(text):
-        sf = fold(sentence)
-        if any(_occurs(t, sf) for t in terms):
-            return sentence[:600]
-    return ""
+    out: List[str] = []
+    seen = set()
+    used = 0
+    for text in texts:
+        for sentence in _split_sentences(text or ""):
+            sf = fold(sentence)
+            if not any(_occurs(t, sf) for t in terms):
+                continue
+            cut = sentence[:600]
+            norm = fold(cut).strip()
+            if norm in seen:
+                continue
+            if out and used + len(cut) > max_chars:
+                return out
+            seen.add(norm)
+            out.append(cut)
+            used += len(cut)
+            if len(out) >= limit:
+                return out
+    return out
 
 
 def _untyped_entities(owner: str, limit: int) -> List[Dict[str, Any]]:
@@ -782,7 +814,7 @@ async def type_untyped_entities(owner: Any, sources: Sequence[Dict[str, Any]],
                                 deadline: Optional[float] = None) -> int:
     """Give entities left as ``other`` (the rule pass always creates them so;
     the model pass does when it was unsure) a type chosen by a typed decision
-    over the sentence that names them. Background only: the same
+    over up to three sentences that name them. Background only: the same
     :func:`background_llm_gate` as the model pass is asked before EACH call,
     and a type is changed only while the entity is still ``other`` (a person
     who typed it by hand always wins) and only on a confident log-probability
@@ -807,13 +839,11 @@ async def type_untyped_entities(owner: Any, sources: Sequence[Dict[str, Any]],
                 break
             if fold(ent["name"]) in SELF_WORDS + SELF_EXTRA_ALIASES:
                 continue
-            sentence = ""
-            for ref in sources_for(ent["id"]):
-                sentence = _sentence_for(ent["name"], ent.get("aliases") or [], texts.get(ref, ""))
-                if sentence:
-                    break
-            if not sentence:
+            found = _sentences_for(ent["name"], ent.get("aliases") or [],
+                                   [texts.get(ref, "") for ref in sources_for(ent["id"])])
+            if not found:
                 continue
+            sentence = "\n".join(found)
             key = sha(sentence)
             if tried.get(ent["id"]) == key:
                 continue

@@ -651,11 +651,11 @@ Pedido implícito en la comparación continua con otros entornos de trabajo para
 
 La herramienta `extract_to_schema`, sus rutas API/MCP y la pantalla `/extraction` están integradas y activas (#66). Permiten guardar y editar esquemas JSON, analizar texto o archivos, consultar el perfil y la ruta de extracción, y revisar citas/páginas, inferencias, descartes, campos ausentes, conflictos y límites de validación. El transporte MCP nativo se probó con cuerpos OpenAPI reales y un PDF aislado; la pantalla se comprobó a 1440 y 420 px, en claro y oscuro. La validación léxica no demuestra por sí sola la verdad de una afirmación.
 
-## OBJ-25 · Mostrar en Research los veredictos de citas y la revisión ciega — PENDIENTE
+## OBJ-25 · Mostrar en Research los veredictos de citas y la revisión ciega — HECHO (comprobado 11-10-2026: `studio/src/lib/researchVerdicts.ts`, `studio/checks/citation-verdicts.check.mjs`)
 
 La revisión ciega de informes (FAUSTUS.md §144) y los veredictos de verificación de citas existen como datos que viajan con el resultado de la investigación, pero la vista de informe de Research no los muestra todavía. Falta la pantalla.
 
-## OBJ-26 · Gancho de planificador para el pase de sueño de skills — PENDIENTE
+## OBJ-26 · Gancho de planificador para el pase de sueño de skills — HECHO (comprobado 11-10-2026: ajustes `skills_sleep_pass_enabled`/`skills_sleep_pass_hour`, bucle en `app.py`, estado en `routes/skills_routes.py`)
 
 El pase de sueño de skills (FAUSTUS.md §151) corre a demanda desde la pestaña "Proposals" o por API; queda pendiente el ajuste `skills_sleep_pass_enabled`/`skills_sleep_pass_hour` para que corra solo por la noche, como se pidió originalmente. Requiere primero decidir con qué patrón de `src/task_scheduler.py` debe encajar (tarea de sistema como el audit nocturno de skills, o un `ScheduledTask` de usuario) antes de cablearlo — ver PENDIENTES.md §151.
 
@@ -697,7 +697,7 @@ recuperación de herramientas (OBJ-7) son los primeros destinos. OBJ-24
 lado: si la fase 1 deja una capa de decodificación restringida reutilizable,
 OBJ-24 se apoya en ella.
 
-## OBJ-28 · Refinamiento del harness propuesto tras cada tarea — PENDIENTE (22-09-2026)
+## OBJ-28 · Refinamiento del harness propuesto tras cada tarea — HECHO (comprobado 11-10-2026: `src/harness_refinement/`, `routes/harness_proposals_routes.py`, pantalla `studio/src/screens/skills/harness_proposals.tsx`, MCP `mcp_servers/harness_server.py`)
 
 Del mismo barrido. El patrón: al terminar una tarea, revisar la trayectoria y
 **proponer el edit CRUD más pequeño** sobre el estado del harness — prompt,
@@ -1044,7 +1044,7 @@ Acordado el 25-09-2026 (noche): «que no sea sólo prueba y error: un flujo de i
 
 PENDIENTES queda para fallos y comprobaciones; lo que es una mejora o una función nueva vive aquí. Cada línea conserva su origen.
 
-- **Tipado de entidades sólo mira la primera frase** que las nombra (23-09, §177): una entidad mencionada de formas distintas podría merecer varios tipos.
+- **Hecho (11-10, #294, FAUSTUS.md §331): el tipado de entidades lee hasta tres frases.** Antes: **Tipado de entidades sólo mira la primera frase** que las nombra (23-09, §177): una entidad mencionada de formas distintas podría merecer varios tipos.
 - **Migrar a esquema los puntos de decisión de cada turno** (22-09, §160b, OBJ-27): clasificación de intención, enrutado de modelo, selección de herramienta siguen en texto libre; hoy sólo `auto_review`/`doubt_review`/`research_review` piden esquema.
 - **Cerrado: herramienta de agente `design_canvas_pass.draft` y comprobación de cierre** (09-10, #80): registrada e integrada, con revisión tras cambios, evidencias por requisito y resultado guardado en chat/concepto. Prueba del flujo con modelo simulado; calidad autónoma de GLM no certificada por esa prueba.
 - **Razonamiento + salida restringida no conviven** (22-09, §160b): si algún día se quieren juntos, hacerlo en dos llamadas (pensar libre, luego rellenar); el esquema tampoco viaja hoy junto a `tools`.

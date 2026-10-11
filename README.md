@@ -496,7 +496,7 @@ cache pays for the text once. It never loads a model, it has a hard latency
 budget, and it is advisory only: the rule decides whenever it is confident and
 whenever the model is unavailable or unsure. Today it settles the unsure cases
 of "does this question need a web search?", gives a type to second-brain
-entities left as "other", and suggests (never resolves) memory contradictions
+entities left as "other" (reading up to three sentences that name them, from all their sources), and suggests (never resolves) memory contradictions
 the fixed conflict rules cannot see. An eval compares rule, decision and
 combined accuracy with calibration and cache timings.
 [Typed decision API](docs/api/typed_decision.md), [eval](docs/evals/typed-decisions.md).
