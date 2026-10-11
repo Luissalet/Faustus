@@ -579,6 +579,30 @@ def test_a_duplicate_is_counted_not_stored_twice():
     assert worker.status()["stats"]["duplicates"] == 1
 
 
+def test_the_same_title_with_a_changed_fact_is_new_information():
+    """A value that changed again under the same title is a new note; only the
+    same content is a duplicate (review of r1: 20 then 25 kept only 20)."""
+    first = make("Updated stats.py default", turn="t1", facts=["stats.py default_limit is 20"], modified=["stats.py"])
+    second = make("Updated stats.py default", turn="t2", facts=["stats.py default_limit is 25"], modified=["stats.py"])
+    assert first and second and first != second
+    assert [h["id"] for h in store.search("25")] == [second]
+    # same content, other wording of case/spacing/order: still a duplicate
+    assert make("updated  stats.py DEFAULT", turn="t3", facts=["Stats.py default_limit is 25 "], modified=["stats.py"]) is None
+    # same facts in another chat: a different chat keeps its own note
+    assert make("Updated stats.py default", session="s2", facts=["stats.py default_limit is 25"], modified=["stats.py"])
+
+
+def test_the_worker_keeps_a_changed_fact_and_drops_a_true_repeat():
+    def answer(limit):
+        return reply(title="Updated stats.py default", facts=[f"stats.py default_limit is {limit}"])
+    assert run(worker.process_job(a_job(), model_call=fake_model(answer(20)))) == "stored"
+    assert run(worker.process_job(a_job(), model_call=fake_model(answer(25)))) == "stored"
+    assert run(worker.process_job(a_job(), model_call=fake_model(answer(25)))) == "duplicate"
+    records = store.details([h["id"] for h in store.search("default_limit")])
+    assert {tuple(r["facts"]) for r in records} == {
+        ("stats.py default_limit is 20",), ("stats.py default_limit is 25",)}
+
+
 def test_process_job_never_raises_whatever_the_model_does():
     async def boom(messages, *, owner="", max_tokens=0):
         raise RuntimeError("model fell over")

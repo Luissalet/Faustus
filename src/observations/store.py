@@ -245,15 +245,28 @@ def parse_ref(ref: Any) -> Optional[Tuple[str, int]]:
 
 # -- writes -----------------------------------------------------------------
 
+def _norm_text(value: str) -> str:
+    return " ".join(str(value or "").lower().split())
+
+
+def content_fingerprint(session_id: str, obs: Observation) -> str:
+    """What makes two notes the same: chat, type, title, facts and modified
+    files, compared without case, spacing or order. A later note with the same
+    title but a different fact (a value that changed again) is new information
+    and is kept; the model's wording of subtitle/narrative does not count."""
+    parts = [session_id, obs.type, _norm_text(obs.title),
+             "\x01".join(sorted(_norm_text(f) for f in obs.facts if _norm_text(f))),
+             "\x01".join(sorted(_norm_text(p) for p in obs.files_modified if _norm_text(p)))]
+    return hashlib.sha1("\x00".join(parts).encode("utf-8", errors="replace")).hexdigest()[:16]
+
+
 def add_observation(obs: Observation, *, owner: str = "", session_id: str = "", turn_id: str = "",
                     tool: str = "", project: str = "", workspace: str = "",
                     created: Optional[float] = None) -> Optional[int]:
-    """Store one observation; returns its id, or None for a duplicate (same
-    chat, type and title already stored). Raises sqlite3.Error on a storage
-    failure — the worker logs and drops."""
-    fingerprint = hashlib.sha1(
-        f"{session_id}\x00{obs.type}\x00{obs.title.lower()}".encode("utf-8", errors="replace")
-    ).hexdigest()[:16]
+    """Store one observation; returns its id, or None for a duplicate (the same
+    chat already holds a note with the same content). Raises sqlite3.Error on a
+    storage failure — the worker logs and drops."""
+    fingerprint = content_fingerprint(session_id, obs)
     stamp = float(created if created is not None else time.time())
     conn = connect()
     try:
