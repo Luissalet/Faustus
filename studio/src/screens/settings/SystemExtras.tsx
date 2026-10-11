@@ -1,5 +1,6 @@
 import { Activity, Download, RefreshCw, ShieldAlert, Stethoscope, Trash2, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router';
 import { Button } from '../../components';
 import { diagnosticsLogs, exportBackup, importBackup, wipe, WIPE_KINDS } from '../../adapters/account';
 import { getJson } from '../../adapters/api';
@@ -310,7 +311,12 @@ function FailureSweepCard({ say }: { say: (t: string) => void }) {
               <span>
                 <strong>{g.count}× {g.signature}{g.tool ? ` · ${g.tool}` : ''}</strong>
                 <span className="fs-set__help">
-                  {(g.examples || []).map((ex) => ex.session_id).filter(Boolean).slice(0, 3).join(', ')}
+                  {(g.examples || []).map((ex) => ex.session_id).filter(Boolean).slice(0, 3).map((sid, i, arr) => (
+                    <span key={sid}>
+                      {i > 0 ? ', ' : ''}
+                      <Link className="fs-link" to={`/studio?s=${encodeURIComponent(sid)}`}>{sid}</Link>
+                    </span>
+                  ))}
                 </span>
               </span>
             </li>
@@ -320,6 +326,26 @@ function FailureSweepCard({ say }: { say: (t: string) => void }) {
     </div>
   );
 }
+
+
+interface SafeModeStatus {
+  active: boolean;
+  reason: string;
+  disabled: Record<string, boolean>;
+  quarantined_mcp_servers: string[];
+  /** OPS-05 (lote 42): `src/safe_mode.py::status()` already returned this --
+   *  the "why" for a quarantined server was in the API response the whole
+   *  time, just never in this interface or rendered below. */
+  mcp_fail_counts: Record<string, number>;
+  core_available: boolean;
+}
+
+const SUBSYSTEM_LABEL: Record<string, string> = {
+  mcp_external: 'External MCP servers',
+  plugins_third_party: 'Third-party plugins',
+  skills_third_party: 'Skills not written by the owner',
+  scheduled_tasks: 'Scheduled / recurring tasks',
+};
 
 function SafeModeCard({ say }: { say: (t: string) => void }) {
   const [status, setStatus] = useState<SafeModeStatus | null>(null);
