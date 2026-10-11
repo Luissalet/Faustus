@@ -393,6 +393,11 @@ def test_the_file_lookup_matches_relative_absolute_and_other_roots():
     assert store.for_file("src/missing.py") == [] and store.for_file("") == []
 
 
+def test_a_file_read_and_modified_by_one_note_reports_modified():
+    both = make("read then fixed", read=["stats.py"], modified=["stats.py"])
+    assert [(h["id"], h["role"]) for h in store.for_file("stats.py")] == [(both, "modified")]
+
+
 def test_the_file_lookup_respects_the_owner():
     make("mine", read=["a.py"], owner="ada")
     make("theirs", read=["a.py"], owner="bob")
@@ -1103,6 +1108,9 @@ def test_a_real_stdio_round_trip(tmp_path, monkeypatch):
                 listed = await session.list_tools()
                 found = await session.call_tool("obs_search", {"query": "pipe works"})
                 opened = await session.call_tool("obs_details", {"ids": [str(note)]})
+                # the index hands out integer ids; a model that copies one as-is must not hit a schema error
+                by_int = await session.call_tool("obs_timeline", {"anchor_ids": [note]})
+                assert not by_int.isError, by_int.content[0].text
                 return listed, found, opened
 
     listed, found, opened = asyncio.run(asyncio.wait_for(go(), timeout=60))

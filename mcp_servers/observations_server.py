@@ -74,7 +74,7 @@ TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "anchor_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 5,
+                "anchor_ids": {"type": "array", "items": {"type": ["string", "integer"]}, "minItems": 1, "maxItems": 5,
                                "description": "Observation ids (12) or summary ids (S3)."},
                 "before": {"type": "integer", "minimum": 0, "maximum": 10, "description": "Earlier notes per anchor; default 2."},
                 "after": {"type": "integer", "minimum": 0, "maximum": 10, "description": "Later notes per anchor; default 2."},
@@ -92,7 +92,7 @@ TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "ids": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 5,
+                "ids": {"type": "array", "items": {"type": ["string", "integer"]}, "minItems": 1, "maxItems": 5,
                         "description": "Observation ids (12) or summary ids (S3); at most 5."},
             },
             "required": ["ids"],

@@ -581,7 +581,7 @@ def for_file(path: str, *, limit: int = 5, owner: str = "", workspace: str = "")
         rows = conn.execute(
             "SELECT o.id, o.created, o.type, o.title, f.path AS fpath, f.role AS role "
             "FROM observation_files f JOIN observations o ON o.id = f.obs_id "
-            f"WHERE f.base = ? AND {owner_sql} ORDER BY o.created DESC, o.id DESC LIMIT 400",
+            f"WHERE f.base = ? AND {owner_sql} ORDER BY o.created DESC, o.id DESC, (f.role = 'modified') DESC LIMIT 400",
             [base, *owner_params]).fetchall()
     except sqlite3.Error:
         logger.debug("observations: file lookup failed", exc_info=True)
