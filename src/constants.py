@@ -82,6 +82,11 @@ IMMUNE_SYSTEM_DB = os.path.join(DATA_DIR, "immune_system.db")
 # Futures are disposable, but their selection/commit ledger is not: it is the
 # answer to which isolated result was chosen and why.
 BRANCHING_FUTURES_DB = os.path.join(DATA_DIR, "branching_futures.db")
+# Observations (src/observations): what a tool call taught the agent, written by a
+# background worker with the small model after the call. Its own file because the
+# write rate is one row per useful tool call and none of it may hold a lock a turn
+# waits on; losing it costs the recall of past work, never a chat.
+OBSERVATIONS_DB = os.path.join(DATA_DIR, "observations.db")
 SCHEDULED_EMAILS_DB = os.path.join(DATA_DIR, "scheduled_emails.db")
 EMAIL_CACHE_DB = os.path.join(DATA_DIR, "email_cache.db")
 
