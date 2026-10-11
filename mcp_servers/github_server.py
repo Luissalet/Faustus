@@ -15,6 +15,8 @@ Same two constraints as the other built-in servers:
 
 * **stdout is the JSON-RPC stream.** `src/stdio_guard.py` is raised before
   anything else is imported.
+* **`root` is required** (a stdio server has no active workspace to default
+  to) and must lie under the allowed workspace roots.
 * **workspace confinement is the tool layer's.** `root` is resolved through
   the same guard the `git_*` agent tools use (`git_tools._confined_path`),
   then to the repository's top level; a path outside the workspace, or
@@ -67,7 +69,10 @@ def _ensure_init() -> None:
 
 
 _ROOT_PROP = {"root": {"type": "string",
-                       "description": "A path inside the repository. Omit for the active workspace's repository."}}
+                       "description": ("REQUIRED over MCP: an absolute path inside a git repository that lies under the "
+                                       "allowed workspace roots. A stdio server has no active workspace, so omitting it "
+                                       "answers 'no active workspace is bound to this turn'; a repository outside the "
+                                       "allowed roots is refused.")}}
 _LANG_PROP = {"lang": {"type": "string", "description": "'en' (default) or 'es' for the markdown headings."}}
 
 
@@ -110,7 +115,7 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="github_release_check",
             description=(
-                "Is this release ready? Checklist: clean working tree, branch pushed, tag free or on HEAD, CI of HEAD, "
+                "Is this release ready? Checklist: clean working tree, branch pushed, tag free (local AND on origin) or on HEAD, CI of HEAD, "
                 "open blocker issues/PRs, version strings consistent. GitHub items are skipped with the reason when gh "
                 "is unavailable. Comprobar que la versión está lista. Read-only; never tags or publishes."
             ),

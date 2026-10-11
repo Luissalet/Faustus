@@ -233,8 +233,7 @@ _ES_FMT = {
     "already points at HEAD, but the remote could not be checked (`{x}`)": "ya apunta a HEAD, pero no se pudo comprobar el remoto (`{x}`)",
     "no 'origin' remote": "no hay remoto 'origin'",
     "timed out": "se agotó el tiempo",
-    "No failures detected · partial check (1 skipped)": "No se han detectado fallos · comprobación parcial (1 omitido)",
-    "No failures detected · partial check ({n} skipped)": "No se han detectado fallos · comprobación parcial ({n} omitidos)",
+    "No failures detected · partial check ({n} unverified)": "No se han detectado fallos · comprobación parcial ({n} sin verificar)",
 }
 
 
@@ -337,7 +336,10 @@ def _gh_exec(ctx: Dict[str, Any], args: Sequence[str]) -> Optional[Dict[str, Any
     if not ctx.get("github"):
         return _no_github(ctx)
     try:
-        proc = run_gh([*args, "--repo", ctx["slug"]], ctx["root"], timeout=30.0)
+        argv = list(args)
+        at = argv.index("--") if "--" in argv else len(argv)
+        argv[at:at] = ["--repo", ctx["slug"]]  # options first: after "--" everything is positional
+        proc = run_gh(argv, ctx["root"], timeout=30.0)
     except GhNotAvailableError:
         return _err("gh.missing")
     if proc.returncode != 0:
@@ -459,6 +461,8 @@ def _norm_label(entry: Any, fallback_name: str = "") -> Tuple[Optional[Dict[str,
         return None, "a label has no name"
     if len(name) > 50:
         return None, f"label name {name!r} is longer than 50 characters"
+    if name.startswith("-"):
+        return None, f"label name {name!r} starts with '-': it would be read as an option by gh"
     color = str(entry.get("color") or "").strip().lstrip("#")
     if color and not _COLOR_RE.match(color):
         return None, f"label {name!r}: colour must be 6 hex digits, got {entry.get('color')!r}"
@@ -702,19 +706,21 @@ def execute_label_plan(ctx: Dict[str, Any], plan: Dict[str, Any]) -> List[Dict[s
     already checked policy and approval."""
     results: List[Dict[str, Any]] = []
     for c in plan["create"]:
-        args = ["label", "create", c["name"], "--color", c["color"] or "ededed"]
+        args = ["label", "create", "--color", c["color"] or "ededed"]
         if c.get("description"):
             args += ["--description", c["description"]]
+        args += ["--", c["name"]]
         err = _gh_exec(ctx, args)
         results.append({"op": "create", "name": c["name"], "ok": err is None, **({"error": err["error"]} if err else {})})
     for u in plan["update"]:
-        args = ["label", "edit", u["name"]]
+        args = ["label", "edit"]
         if u.get("color"):
             args += ["--color", u["color"]]
         if u.get("description"):
             args += ["--description", u["description"]]
         if u.get("new_name"):
             args += ["--name", u["new_name"]]
+        args += ["--", u["name"]]
         err = _gh_exec(ctx, args)
         results.append({"op": "update", "name": u["name"], "ok": err is None, **({"error": err["error"]} if err else {})})
     return results
@@ -1259,11 +1265,12 @@ def release_check(repo_root: str, tag: Optional[str] = None, blocker_labels: Opt
 
     fails = [i for i in items if i["status"] == "fail"]
     ready = not fails
-    # What could not be verified: CI, blockers or the remote tag skipped, or a
-    # branch with no upstream / a detached HEAD. "ready" stays "nothing
+    # What could not be verified: CI (skipped, still running or without runs),
+    # blockers or the remote tag (skipped / remote unreachable), or a branch
+    # with no upstream / a detached HEAD. "ready" stays "nothing
     # failed" (nothing here blocks); "complete" says every relevant check ran.
     unverified = [i["id"] for i in items
-                  if (i["id"] in ("ci", "blockers", "tag") and i["status"] == "skip")
+                  if (i["id"] in ("ci", "blockers", "tag") and i["status"] in ("skip", "warn"))
                   or (i["id"] == "pushed" and i["status"] == "warn")]
     result = {"ok": True, "kind": "release_check", "tag": tag, "head": head[:7] if head else "", "ready": ready,
               "complete": not unverified, "unverified": unverified,
@@ -1282,8 +1289,7 @@ def release_check_markdown(result: Dict[str, Any], lang: str = "en") -> str:
     if not result["ready"]:
         verdict = T("Not ready")
     elif unverified:
-        verdict = tf(lang, "No failures detected · partial check (1 skipped)" if len(unverified) == 1
-                     else "No failures detected · partial check ({n} skipped)", n=len(unverified))
+        verdict = tf(lang, "No failures detected · partial check ({n} unverified)", n=len(unverified))
     else:
         verdict = T("Ready to release")
     c = result["counts"]

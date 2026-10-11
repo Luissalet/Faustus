@@ -508,10 +508,19 @@ def test_release_check_dirty_tree_unpushed_and_version_mismatch(repo, gh):
 def test_release_check_ci_pending_and_no_runs_are_warnings(repo, gh):
     _track_upstream(repo)
     gh.runs = [{"workflowName": "CI", "status": "in_progress", "conclusion": ""}]
-    assert _by_id(github_ops.release_check(str(repo)))["ci"]["status"] == "warn"
+    res = github_ops.release_check(str(repo))
+    assert _by_id(res)["ci"]["status"] == "warn"
+    # still a warning (not a failure), but the verdict must not claim more than was verified
+    assert res["ready"] is True and res["blocking"] == [] and res["complete"] is False and res["unverified"] == ["ci"]
+    assert "**No failures detected · partial check (1 unverified)**" in res["markdown"] and "Ready to release" not in res["markdown"]
+    assert "*(warning)*" in res["markdown"]
     gh.runs = []
-    item = _by_id(github_ops.release_check(str(repo)))["ci"]
+    res = github_ops.release_check(str(repo))
+    item = _by_id(res)["ci"]
     assert item["status"] == "warn" and "pushed" in item["detail"]
+    assert res["complete"] is False and res["unverified"] == ["ci"] and "partial check" in res["markdown"]
+    es = github_ops.run_command(OWNER, str(repo), "release-check", "es")["markdown"]
+    assert "**No se han detectado fallos · comprobación parcial (1 sin verificar)**" in es and "Lista para publicar" not in es
 
 
 def test_release_check_custom_blocker_labels(repo, gh):
@@ -591,10 +600,12 @@ def test_sync_apply_runs_create_and_edit_only_after_approval(repo, gh):
     done = github_ops.apply_label_sync(OWNER, res["approval_id"], "es")
     assert done["ok"] and done["applied"] and [r["op"] for r in done["results"]] == ["create", "update"]
     create = next(c for c in gh.writes if c[:2] == ["label", "create"])
-    assert create[:5] == ["label", "create", "blocker", "--color", "b60205"] and "--description" in create
+    assert create[:4] == ["label", "create", "--color", "b60205"] and "--description" in create
+    assert create[-4:] == ["--repo", "acme/widgets", "--", "blocker"]  # the name is positional, after "--"
     edit = next(c for c in gh.writes if c[:2] == ["label", "edit"])
-    assert edit[:3] == ["label", "edit", "stale"] and "--name" in edit and edit[edit.index("--name") + 1] == "Stale"
-    assert all(c[-2:] == ["--repo", "acme/widgets"] for c in gh.writes)
+    assert edit[:2] == ["label", "edit"] and edit[-4:] == ["--repo", "acme/widgets", "--", "stale"]
+    assert "--name" in edit and edit[edit.index("--name") + 1] == "Stale"
+    assert all(c[-4:-2] == ["--repo", "acme/widgets"] and c[-2] == "--" for c in gh.writes)
     assert not any(c[:2] == ["label", "delete"] for c in gh.calls)
     assert "Aplicado" in done["markdown"]
     # the approval is spent
@@ -998,10 +1009,10 @@ def test_release_check_verdict_is_partial_when_checks_were_skipped(repo, gh):
     assert res["ready"] is True and res["complete"] is False
     assert set(res["unverified"]) == {"ci", "blockers", "pushed"}
     md = res["markdown"]
-    assert "**No failures detected · partial check (3 skipped)**" in md and "Ready to release" not in md
+    assert "**No failures detected · partial check (3 unverified)**" in md and "Ready to release" not in md
     assert "(warning)" in md  # warnings stay visible
     es = github_ops.run_command(OWNER, str(repo), "release-check", "es")["markdown"]
-    assert "**No se han detectado fallos · comprobación parcial (3 omitidos)**" in es and "Lista para publicar" not in es
+    assert "**No se han detectado fallos · comprobación parcial (3 sin verificar)**" in es and "Lista para publicar" not in es
     # nothing blocks: the verdict is "ready" for the callers that only read the flag
     assert res["blocking"] == []
 
@@ -1014,8 +1025,8 @@ def test_release_check_verdict_singular_and_full(repo, gh):
     _git(["checkout", "-q", "--detach"], repo)  # exactly one thing unverified: the branch
     one = github_ops.release_check(str(repo))
     assert one["unverified"] == ["pushed"] and one["ready"] is True
-    assert "**No failures detected · partial check (1 skipped)**" in one["markdown"]
-    assert "**No se han detectado fallos · comprobación parcial (1 omitido)**" in github_ops.run_command(OWNER, str(repo), "release-check", "es")["markdown"]
+    assert "**No failures detected · partial check (1 unverified)**" in one["markdown"]
+    assert "**No se han detectado fallos · comprobación parcial (1 sin verificar)**" in github_ops.run_command(OWNER, str(repo), "release-check", "es")["markdown"]
     _git(["checkout", "-q", "master"], repo)
     gh.runs = [{"name": "CI", "workflowName": "CI", "status": "completed", "conclusion": "failure"}]
     bad = github_ops.release_check(str(repo))
@@ -1086,3 +1097,46 @@ def test_breaking_note_parser_edge_cases():
     assert f("This has BREAKING CHANGE: inside a line") is None
     assert f("") is None and f(None) is None
     assert github_ops.has_bang("feat!: x") and github_ops.has_bang("fix(core)!: x") and not github_ops.has_bang("feat: x!")
+
+
+# ---------------------------------------------------------------------------
+# #234 review 2
+# ---------------------------------------------------------------------------
+def test_release_check_tag_at_head_with_an_unreachable_remote_is_partial(repo, gh, monkeypatch):
+    monkeypatch.setattr(github_ops, "_ls_remote_tag", REAL_LS_REMOTE_TAG)
+    _track_upstream(repo)
+    _git(["tag", "-f", "v1.0.0"], repo)  # at HEAD; package.json says 1.0.0
+    _git(["remote", "set-url", "origin", "http://127.0.0.1:1/acme/widgets.git"], repo)
+    gh.runs = [{"name": "CI", "workflowName": "CI", "status": "completed", "conclusion": "success"}]
+    res = github_ops.release_check(str(repo), "v1.0.0")
+    item = _by_id(res)["tag"]
+    assert item["status"] == "warn" and "could not be checked" in item["detail"]
+    assert res["ready"] is True and res["complete"] is False and "tag" in res["unverified"]
+    assert "Ready to release" not in res["markdown"] and "partial check" in res["markdown"]
+    es = github_ops.run_command(OWNER, str(repo), "release-check v1.0.0", "es")
+    assert "Lista para publicar" not in es["markdown"] and "comprobación parcial" in es["markdown"]
+    assert "*(aviso)*" in es["markdown"]
+
+
+@pytest.mark.parametrize("name", ["--force", "-x", "  --repo", "-"])
+def test_label_names_starting_with_a_dash_are_rejected_at_parse_time(repo, gh, name):
+    text = json.dumps({"labels": [{"name": name, "color": "ffffff"}]})
+    parsed = github_ops.parse_label_text(text, "labels.json")
+    assert parsed["ok"] is False and "starts with '-'" in parsed["error"]
+    (repo / "bad.json").write_text(text, encoding="utf-8")
+    res = github_ops.run_command(OWNER, str(repo), "labels sync bad.json", "en")
+    assert res["ok"] is False and "starts with '-'" in res["error"]
+    assert github_ops._PENDING == {} and gh.writes == []
+    yml = github_ops.parse_label_text(f"- name: \"{name.strip()}\"\n  color: ffffff\n", "labels.yml")
+    assert yml["ok"] is False
+
+
+def test_label_writes_put_the_name_after_double_dash_and_repo_before_it(repo, gh):
+    ctx = github_ops.repo_context(str(repo))
+    plan = {"create": [{"name": "ok-label", "color": "aabbcc", "description": "d"}],
+            "update": [{"name": "stale", "color": "", "description": "", "new_name": "Stale"}]}
+    results = github_ops.execute_label_plan(ctx, plan)
+    assert all(r["ok"] for r in results)
+    create, edit = gh.writes
+    assert create == ["label", "create", "--color", "aabbcc", "--description", "d", "--repo", "acme/widgets", "--", "ok-label"]
+    assert edit == ["label", "edit", "--name", "Stale", "--repo", "acme/widgets", "--", "stale"]

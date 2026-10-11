@@ -933,7 +933,7 @@ Comando del compositor de Studio (`/github`, alias `/gh`) sobre el CLI `gh` y el
 | `notes [<desde>..<hasta>]` | Notas de versión desde las PR fusionadas y los commits (por defecto, desde la última etiqueta). | No |
 | `release-check [<etiqueta>]` | Lista de comprobación: árbol limpio, etiqueta, CI del HEAD, bloqueos, versiones. | No |
 
-Etiqueta en `release-check <etiqueta>`: se mira lo local y además `git ls-remote --tags origin` (solo lectura, 20 s máximo, sin credenciales interactivas). En origin y no en local, o en otro commit, es `fail`; si el remoto no se puede consultar el elemento es `skip` con el motivo, nunca «libre». El resultado lleva `ready` (sin fallos), `complete` (todas las comprobaciones relevantes se ejecutaron) y `unverified` (ids de `ci`, `blockers`, `tag` omitidos o `pushed` con aviso). Con `complete: false` el veredicto es «No se han detectado fallos · comprobación parcial (N omitidos)» en lugar de «Lista para publicar».
+Etiqueta en `release-check <etiqueta>`: se mira lo local y además `git ls-remote --tags origin` (solo lectura, 20 s máximo, sin credenciales interactivas). En origin y no en local, o en otro commit, es `fail`; si el remoto no se puede consultar el elemento es `skip` con el motivo, nunca «libre». El resultado lleva `ready` (sin fallos), `complete` (todas las comprobaciones relevantes se ejecutaron) y `unverified` (ids de `ci`, `blockers`, `tag` omitidos o `pushed` con aviso). Con `complete: false` el veredicto es «No se han detectado fallos · comprobación parcial (N sin verificar)» en lugar de «Lista para publicar».
 
 Notas: un cambio incompatible es el que declara `BREAKING CHANGE:` o `BREAKING-CHANGE:` en el pie del commit, o `!` antes de los dos puntos (`feat!:`, `feat(api)!:`), o lleva la etiqueta `breaking`. Va solo bajo «Cambios incompatibles» (entrada con `group: "breaking"`, `type_group` con su grupo de tipo y `breaking_note` con la explicación del pie), no repetido en su tipo.
 
@@ -949,6 +949,8 @@ Errores como valor: `ok`, `error_class`, `error`, `error_key`, `error_args`. Cla
 
 `github_labels` (lista, o plan de solo lectura con `file`), `github_notes` y `github_release_check` son de lectura. `github_labels_sync` es más estricta que `git_push`: necesita la política de escritura remota (o el modo de acceso total) Y una aprobación humana (tarjeta sellada o `user_confirmed`); sin ella, la negativa lleva el plan.
 
+Matices que conviene tener presentes: (1) en el modo de acceso global «full» `github_labels_sync` se salta la política de push y la aprobación humana, igual que `git_push`; (2) `user_confirmed` es un argumento que el propio modelo puede poner (mecanismo ya existente de las herramientas de git), así que fuera de la tarjeta sellada no es una garantía de que una persona haya dicho que sí; (3) los nombres de etiqueta que empiezan por `-` se rechazan al leer el fichero (`gh` los leería como opción) y `gh label create|edit` recibe el nombre tras `--`.
+
 ### Servidor MCP integrado `github`
 
-`mcp_servers/github_server.py`, solo lectura: `github_labels`, `github_notes`, `github_release_check`. El parámetro `root` queda confinado al espacio de trabajo. No existe aplicar una sincronización por MCP.
+`mcp_servers/github_server.py`, solo lectura: `github_labels`, `github_notes`, `github_release_check`. El parámetro `root` queda confinado al espacio de trabajo. No existe aplicar una sincronización por MCP. `root` es obligatorio: un servidor stdio no tiene espacio de trabajo activo al que recurrir (sin `root` responde «no active workspace is bound to this turn») y debe ser una ruta absoluta dentro de un repositorio git bajo las raíces de trabajo permitidas; un repositorio fuera de ellas se rechaza.
