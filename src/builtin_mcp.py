@@ -128,6 +128,7 @@ _BUILTIN_SERVERS = {
     # aircraft near a point / identity / track, wind, satellite passes. Read-only GETs,
     # cached on disk with stale fallback (hoard_link.livefeed). Not owner-scoped.
     "public_data": ("mcp_servers/public_data_server.py", "Built-in: Public data"),
+    "instruction_portability": ("mcp_servers/instruction_portability/server.py", "Built-in: Instruction portability"),
     # How a feature of a website is built, with evidence (src/web_explain): a fresh headless
     # browser records requests with initiators, DOM changes and JS coverage of the user's
     # actions, mapped to original modules through published source maps. Read-only; only

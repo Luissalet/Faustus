@@ -746,3 +746,12 @@ message text and actual work dates, returning domain references and existing
 workspace information. The current domain object is read through its Hoard tools
 before editing. See [the shared copilot contract](docs/api/hoard_copilot.md).
 
+
+Studio → Skills → Export previews portable skills, project rules and specialist
+instructions for Claude Code, Codex and Cursor, including supporting resources.
+Export preserves source files and reports existing destination conflicts.
+Project `.faustus/hooks/*.md` checks show advisory messages on commands, file
+changes, prompts and final answers. Explicit corrections can produce proposed
+checks with evidence. The native API and seven MCP tools share canonical stores;
+host runtime fields that cannot be transferred are reported. See
+[instruction portability](docs/INSTRUCTION-PORTABILITY.md) for formats and limits.

@@ -843,6 +843,8 @@ from routes.skill_selector_routes import setup_skill_selector_routes
 app.include_router(setup_skill_selector_routes())
 from routes.skills_routes import setup_skills_routes
 app.include_router(setup_skills_routes(skills_manager))
+from routes.instruction_portability_routes import setup_instruction_portability_routes
+app.include_router(setup_instruction_portability_routes(skills_manager, session_manager))
 # Harness refinement proposals (src/harness_refinement/): pending edits to the
 # project instructions, a skill, a memory or a sub-agent spec. Approve/reject/undo
 # are human-only (require_human).

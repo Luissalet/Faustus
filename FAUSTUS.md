@@ -11487,3 +11487,18 @@ miniaturas; una web con comprobación anti-bots devuelve `Blocked` en `unknown`;
 del servidor es siempre `unknown`. Una acción que cambia datos ajenos (comprar, publicar) no debe pedirse; el perfil es nuevo en
 cada llamada.
 
+
+## Exportación portable de instrucciones y comprobaciones Markdown (#326)
+
+Skills → Exportar ofrece vista previa y exportación de skills, reglas y agentes
+a Claude Code, Codex y Cursor, con recursos de texto y binarios. Conserva las
+fuentes y los archivos de destino diferentes por defecto; informa de conflictos
+y de campos de ejecución que otro anfitrión no puede representar. Las skills
+manuales mantienen invocación explícita. Las definiciones de agentes del proyecto
+se leen para exportar su texto e instrucciones heredadas.
+
+Las comprobaciones `.faustus/hooks/*.md` se conectan al ciclo existente y muestran
+avisos para comandos, archivos, peticiones y respuestas finales. Correcciones
+explícitas generan propuestas deterministas con evidencia; sólo el ejemplo que
+se quiere evitar es el patrón. La API nativa y siete herramientas MCP comparten
+los almacenes canónicos. Detalle y límites: `docs/INSTRUCTION-PORTABILITY.md`.
