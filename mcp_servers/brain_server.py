@@ -271,6 +271,30 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="brain_fact_history",
+            description=(
+                "The change trace of ONE fact: the current value of an attribute "
+                "(works_at, lives_in, located_in, uses...) of a subject plus the "
+                "closed events that came before it, each linked to the one that "
+                "replaced it (supersedes / superseded_by) with dates and the "
+                "source memory. Donde trabajaba Ana antes / what did X use to "
+                "be, how did this fact change. Give `subject` (entity id or "
+                "name) and `attribute` (e.g. 'works at', 'trabaja en'). "
+                "Read-only."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "subject": {"type": "string",
+                                "description": "Entity id, name or alias."},
+                    "attribute": {"type": "string",
+                                  "description": "Relation wording, e.g. 'works at'."},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+                },
+                "required": ["subject", "attribute"],
+            },
+        ),
+        Tool(
             name="brain_graph_neighbors",
             description=(
                 "The local note or entity graph around one node: what links "
@@ -419,6 +443,17 @@ def _tool_facts(owner: str, args: dict) -> list[TextContent]:
     return _json_result({"ok": True, **view})
 
 
+def _tool_fact_history(owner: str, args: dict) -> list[TextContent]:
+    from src.brain import fact_history
+    try:
+        view = fact_history.fact_history(
+            owner, args.get("subject"), args.get("attribute"),
+            limit=_limit(args.get("limit"), 20, 200))
+    except ValueError as exc:
+        return _text_result(f"brain_fact_history: {exc}")
+    return _json_result({"ok": True, **view})
+
+
 def _tool_neighbors(owner: str, args: dict) -> list[TextContent]:
     notes, entities = _engine["notes"], _engine["entities"]
     path = str(args.get("path") or "").strip()
@@ -444,6 +479,7 @@ _HANDLERS = {
     "brain_entity": _tool_entity,
     "brain_timeline": _tool_timeline,
     "brain_facts_as_of": _tool_facts,
+    "brain_fact_history": _tool_fact_history,
     "brain_graph_neighbors": _tool_neighbors,
     "brain_sync": _tool_sync,
 }

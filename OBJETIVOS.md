@@ -1359,3 +1359,8 @@ Hecho en §294 (radar #458): corrección, herramienta fallida y respuesta vacía
 ## OBJ-59 · Auditoría de configuración MCP en la interfaz (11-10-2026)
 
 Implementado en §322 (#281 y #284, radar #503): informe en Ajustes → Integraciones, resumen y aviso por servidor junto al pre-escaneo, soluciones ES/EN y secretos enmascarados; preview al añadir y al consultar/cambiar el entorno de uno existente. `POST /api/mcp/audit/preview` y `mcp_config_audit(candidate=...)` permiten el mismo diagnóstico sin guardar ni arrancar. El diagnóstico unificado incluye hallazgos altos de servidores activados como avisos. El editor existente permite cambiar entorno, herramientas y activación; no añade edición de command/args/URL de un servidor guardado.
+
+## OBJ-60 · Traza de cambios de un hecho en el cerebro (11-10-2026)
+
+- **Hecho (#278, FAUSTUS §324, radar #500):** `fact_history`, `GET /api/brain/fact-history`, herramienta MCP `brain_fact_history` y línea «antes: X, hasta AAAA-MM» en la tarjeta de entidad cuando la pregunta trata del atributo.
+- **Pendiente de ampliar:** que la extracción de la memoria aprendida (frases sueltas) cree relaciones también para atributos no funcionales con cambio explícito («ya no usa X, ahora usa Y»), y mostrar la cadena en la pantalla Cerebro.

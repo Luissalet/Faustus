@@ -197,6 +197,18 @@ def setup_brain_routes() -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
+    @router.get("/fact-history")
+    async def get_fact_history(request: Request, subject: str = "", attribute: str = "",
+                               limit: int = 20, _u: str = Depends(require_user)) -> Dict[str, Any]:
+        """Current value and linked change chain of one subject + attribute
+        (events with supersedes / superseded_by, dates and source)."""
+        from src.brain.fact_history import fact_history
+        try:
+            return await asyncio.to_thread(fact_history, _owner(request), subject, attribute,
+                                           limit=_limit(limit, 20, 200))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
     @router.post("/temporal-graph")
     async def post_temporal_graph(request: Request, body: GraphQuery, _u: str = Depends(require_user)):
         from src.brain.temporal_graph import retrieve

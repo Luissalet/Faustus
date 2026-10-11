@@ -145,6 +145,9 @@ inmediato (best-effort — un fallo de exportación no rompe la respuesta).
 
 `GET /api/brain/facts` con `entity_id?`, `rel?`, `as_of?` (tiempo del mundo, ISO), `known_at?` (tiempo de registro, ISO), `include_closed?`, `limit?` (1-500). Sin fechas devuelve la vista vigente; con `as_of` lo que era cierto entonces (incluye relaciones cerradas; el intervalo es semiabierto `[valid_from, valid_until)`: una relacion cerrada justo en `as_of` ya no cuenta); con `known_at` lo que el cerebro creia entonces; ambos se combinan. Respuesta: `{mode, as_of, known_at, count, truncated, facts, functional_relations}`; cada hecho trae `valid_from`, `valid_until`, `recorded_at`, `superseded_at` (cuando empezo su retirada actual; vacio si esta vigente o restaurada), `status`, `superseded_by`. Fecha no ISO: 400. Un valor nuevo de una relacion funcional (`works_at`, `lives_in`, `located_in`) cierra el anterior sin borrarlo.
 
+### Historial de un hecho
+`GET /api/brain/fact-history` con `subject` (id, nombre o alias), `attribute` (por ejemplo `works_at`, «trabaja en») y `limit?` (1-200). Respuesta: `{subject, attribute, current, events, history_line, changes}`. Cada evento trae `id`, `value`, `valid_from`, `valid_until`, `recorded_at`, `status`, `supersedes` (el evento que reemplazó), `superseded_by` (el que lo reemplazó), `evidence`, `source` y `source_session`. Sujeto desconocido o atributo vacío: 400. Misma lectura en la herramienta MCP `brain_fact_history`.
+
 ### Línea de tiempo
 
 | Método | Ruta | Parámetros | Respuesta |

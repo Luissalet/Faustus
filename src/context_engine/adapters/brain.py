@@ -139,7 +139,7 @@ class BrainSource(ThreadedSource):
             source_ref=f"ent:{entity_id}",
             section="retrieved_memory",
             title=f"{entity.get('name') or entity_id} ({entity.get('type') or 'other'})",
-            body=_entity_body(entity, profile),
+            body=_entity_body(entity, profile, _history_lines(owner, entity_id, req)),
             lanes=("exact",),
             scores={"mention": 1.0},
             trust_class="agent_assertion",
@@ -231,8 +231,21 @@ class BrainSource(ThreadedSource):
         return None
 
 
-def _entity_body(entity: Dict[str, Any], profile: Dict[str, Any]) -> str:
-    """Name, summary, current relations and the most recent facts — enough
+def _history_lines(owner: str, entity_id: str, req: RetrievalRequest) -> List[str]:
+    """Short "antes: X, hasta 2026-09" lines, only for the attributes the
+    request's own text asks about and that actually changed."""
+    try:
+        from src.brain import fact_history
+
+        return fact_history.history_lines_for(owner, entity_id, req.query)
+    except Exception as exc:  # noqa: BLE001 - history is an extra, never a blocker
+        logger.debug("brain adapter: fact history failed: %s", exc)
+        return []
+
+
+def _entity_body(entity: Dict[str, Any], profile: Dict[str, Any],
+                 history: Sequence[str] = ()) -> str:
+    """Name, summary, current relations and the most recent facts - enough
     to orient a turn without duplicating the full entity page."""
     lines: List[str] = []
     summary = str(profile.get("summary") or "").strip()
@@ -247,6 +260,8 @@ def _entity_body(entity: Dict[str, Any], profile: Dict[str, Any]) -> str:
             for r in active
         )
         lines.append(f"Relations: {rel_text}")
+
+    lines.extend(history)
 
     facts = [f for f in (profile.get("facts") or []) if f.get("text")][-MAX_FACTS:]
     if facts:

@@ -27,7 +27,7 @@ from src.brain import db as brain_db
 TOOL_NAMES = {
     "brain_search", "brain_read_note", "brain_write_note", "brain_append_note",
     "brain_entity", "brain_timeline", "brain_graph_neighbors", "brain_sync",
-    "brain_facts_as_of",
+    "brain_facts_as_of", "brain_fact_history",
 }
 
 OWNER = "ada"
