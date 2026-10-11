@@ -33,6 +33,9 @@ def test_the_reachable_surface_is_exactly_this():
         "DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT /api/dispatch*": ("agents:dispatch",),
         "DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT /api/workflows/published*": ("agents:dispatch",),
         "GET|HEAD|OPTIONS /api/changesets/from-dispatch/*": ("agents:dispatch",),
+        "DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT /api/shell/command*": ("agents:dispatch",),
+        "GET|HEAD|OPTIONS /api/todos/{todo_id}/agent": ("todos:read", "todos:write"),
+        "POST /api/todos/{todo_id}/assign-agent": ("agents:dispatch",),
         # S1.1: the `sessions` surface — an external SDK client driving a
         # chat session end to end. See core/authz.py and
         # docs/api/sdk_surface.md for the full table and its ownership rule.
