@@ -124,6 +124,10 @@ _BUILTIN_SERVERS = {
     # label sync is a remote write behind policy + approval, which lives in the
     # agent tool and the Studio command, not here. Not owner-scoped.
     "github": ("mcp_servers/github_server.py", "Built-in: GitHub"),
+    # Live public data with no keys (src/public_data): earthquakes, tropical cyclones,
+    # aircraft near a point / identity / track, wind, satellite passes. Read-only GETs,
+    # cached on disk with stale fallback (hoard_link.livefeed). Not owner-scoped.
+    "public_data": ("mcp_servers/public_data_server.py", "Built-in: Public data"),
 }
 
 # Built-in servers whose every tool is a 1:1 twin of a native agent tool
