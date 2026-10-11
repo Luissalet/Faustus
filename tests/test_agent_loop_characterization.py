@@ -272,23 +272,22 @@ def test_failing_project_tests_give_exactly_one_fix_round_with_its_budget(drive,
 
 
 # -- partial result ------------------------------------------------------------------------
-def test_a_half_done_report_is_rejected_within_its_budget_then_annotated(drive, tmp_path):
+def test_a_half_done_report_is_kept_and_annotated_without_extra_rounds(drive, tmp_path):
     (tmp_path / "cart.py").write_text("def subtotal(items):\n    return 1\n", encoding="utf-8")
     half = ("He completado la tarea. He añadido la función en cart.py y el test en tests/test_cart.py "
             "que verifica el resultado.")
     edit = native_call("edit_file", {"path": "cart.py", "old_string": "return 1", "new_string": "return 2"})
     run = drive([edit, text(half)], user="Añade una función a cart.py y escribe también su test",
                 exec_result={"output": "Edited cart.py (1 replacement)", "exit_code": 0, "diff": {"added": 1, "removed": 1}})
-    rejected = [e for e in run.extra_rounds() if e["status"] == "rejected"]
-    # Two rejections spend the budget; the harness then grants one fresh
-    # execution cycle (which resets the rejection counter) and rejects twice
-    # more before it accepts the answer and annotates it.
-    order = [(e["cause"], e.get("budget_used"), e.get("budget_limit")) for e in run.extra_rounds()]
-    assert order == [("claim_rejection", 1, 2), ("claim_rejection", 2, 2), ("execution_recovery", 1, 1),
-                     ("claim_rejection", 1, 2), ("claim_rejection", 2, 2),
-                     ("configured_cycle", None, None)]  # the step budget itself ran out
-    assert rejected[0]["cause"] == "claim_rejection"
-    assert run.summary()["stop_reason"] != "complete"
+    # Claim evidence is advisory (7bfba264): the answer is kept, no extra
+    # model round is spent, and the turn is annotated instead of "complete".
+    assert run.extra_rounds() == []
+    assert run.calls == 2
+    advisory = [e for e in run.events if e.get("type") == "harness_check" and e.get("status") == "advisory"]
+    assert advisory and "fabricated_paths" in advisory[0]["reasons"]
+    summary = run.summary()
+    assert summary["stop_reason"] == "complete_unverified"
+    assert "claim_advisory:fabricated_paths" in summary["notes"]
 
 
 # -- cancellation -----------------------------------------------------------------------------
