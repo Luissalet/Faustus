@@ -231,6 +231,76 @@ def test_report_partial_coverage_and_continue():
         db.close()
 
 
+def test_cursor_preserves_microseconds_roundtrip():
+    from datetime import datetime
+
+    ts = datetime(2026, 10, 11, 12, 18, 27, 300000)
+    raw = fs._encode_cursor(ts, "qa-msg-3")
+    assert ".300000" in raw
+    back, mid = fs._decode_cursor(raw)
+    assert mid == "qa-msg-3"
+    assert back == ts
+
+
+def test_same_second_microsecond_pages_exhaust_full_report():
+    """CHANGES r2: five rows in one second must survive page_limit + continue."""
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from core.database import Base, ChatMessage, Session
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine, tables=[Session.__table__, ChatMessage.__table__])
+    db = sessionmaker(bind=engine)()
+    try:
+        db.add(Session(
+            id="qa-precision", name="Own QA", endpoint_url="http://x",
+            model="m", owner="qa-owner",
+        ))
+        stamp = (
+            datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
+            - timedelta(minutes=5)
+        )
+        for i in range(1, 6):
+            db.add(ChatMessage(
+                id=f"qa-msg-{i}", session_id="qa-precision", role="assistant",
+                content="own QA response",
+                meta_data=json.dumps({"stop_reason": "rounds_exhausted"}),
+                timestamp=stamp + timedelta(microseconds=i * 100000),
+            ))
+        db.commit()
+        full = fs.report("qa-owner", days=1, db=db, page_limit=100)
+        first = fs.report("qa-owner", days=1, db=db, page_limit=2)
+        assert full["turns_scanned"] == 5
+        assert first["coverage"] == "partial"
+        assert first["turns_scanned"] == 2
+        assert first["next_cursor"]
+        # Page-1 last row is newest-but-one → stamp+400000µs (ids desc: 5 then 4).
+        assert ".400000|" in first["next_cursor"]
+        decoded_ts, decoded_id = fs._decode_cursor(first["next_cursor"])
+        assert decoded_id == "qa-msg-4"
+        assert decoded_ts.microsecond == 400000
+        second = fs.report(
+            "qa-owner", days=1, db=db, page_limit=2, cursor=first["next_cursor"],
+        )
+        assert second["turns_scanned"] >= 1
+        merged = fs.merge_reports(first, second)
+        # Keep paging until complete and match the unpaginated report.
+        cursor = second.get("next_cursor")
+        pages = merged
+        while pages.get("coverage") == "partial" and cursor:
+            nxt = fs.report("qa-owner", days=1, db=db, page_limit=2, cursor=cursor)
+            pages = fs.merge_reports(pages, nxt)
+            cursor = nxt.get("next_cursor")
+        assert pages["turns_scanned"] == full["turns_scanned"] == 5
+        assert pages["coverage"] == "complete"
+        assert pages["hit_count"] == full["hit_count"]
+    finally:
+        db.close()
+
+
 @pytest.fixture()
 def api_client(tmp_path, monkeypatch):
     from fastapi import FastAPI

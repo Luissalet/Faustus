@@ -318,8 +318,15 @@ def scan_rows(rows: Iterable[Mapping[str, Any]]) -> Dict[str, Any]:
 
 
 def _encode_cursor(ts: Any, message_id: Any) -> str:
+    """Encode keyset cursor. Must keep full timestamp precision (incl. µs).
+
+    Truncating to seconds makes rows that share a wall-clock second but differ
+    in microseconds invisible to the next page: the filter compares exact
+    datetimes, so a cursor of ``T12:18:27`` skips ``T12:18:27.300000``.
+    """
     if isinstance(ts, datetime):
-        stamp = ts.isoformat(timespec="seconds")
+        # Always emit microseconds so encode→decode round-trips exactly.
+        stamp = ts.replace(tzinfo=None).isoformat(timespec="microseconds")
     else:
         stamp = str(ts or "")
     return f"{stamp}|{message_id}"
