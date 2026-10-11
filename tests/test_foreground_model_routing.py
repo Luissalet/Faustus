@@ -105,6 +105,22 @@ def test_stream_failure_status_uses_exact_http_statuses(status, expected):
     assert chat_routes._stream_failure_status(chunk) == expected
 
 
+def _without_observed_timing(buckets):
+    """Usage buckets carry the client-observed request duration, a measured
+    value no test can predict: check its shape, then drop it so the rest of
+    the bucket compares exactly."""
+    out = []
+    for bucket in buckets:
+        bucket = dict(bucket)
+        duration = bucket.pop("request_duration_ms", None)
+        source = bucket.pop("request_duration_source", None)
+        if duration is not None:
+            assert isinstance(duration, (int, float)) and duration >= 0
+            assert source == "observed_client"
+        out.append(bucket)
+    return out
+
+
 def _chat_stream_endpoint(
     monkeypatch,
     mode,
@@ -3054,7 +3070,7 @@ def test_agent_metrics_attribute_usage_to_each_answering_route(monkeypatch):
     assert metrics["input_tokens"] == 300
     assert metrics["output_tokens"] == 30
     assert metrics["usage_source"] == "real"
-    assert metrics["usage_buckets"] == [
+    assert _without_observed_timing(metrics["usage_buckets"]) == [
         {
             "round": 1,
             "model": "selected-alias",
@@ -3334,7 +3350,7 @@ def test_agent_terminal_retains_completed_paid_fallback_usage(monkeypatch):
     assert terminal["input_tokens"] == 125
     assert terminal["output_tokens"] == 25
     assert terminal["usage_source"] == "real"
-    assert terminal["usage_buckets"] == [{
+    assert _without_observed_timing(terminal["usage_buckets"]) == [{
         "round": 1,
         "model": "backup-model",
         "endpoint_id": "paid",
