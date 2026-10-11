@@ -154,6 +154,9 @@ def preview_bundle(skills, rules, agents, target):
         body = agent.get("prompt") or ""
         if target == "claude":
             fm = {"name": unique(name), "description": description}
+            omitted = [key for key in ("deny", "permission", "files", "mode", "model", "endpoint_id") if agent.get(key)]
+            if omitted:
+                warnings.append(f"{name}: host agent runtime settings are not transferred: {', '.join(omitted)}.")
             if agent.get("tools"):
                 aliases = {"read_file": "Read", "write_file": "Write", "edit_file": "Edit", "bash": "Bash", "grep": "Grep", "ls": "Glob", "web_fetch": "WebFetch", "web_search": "WebSearch"}
                 known = {"Read", "Write", "Edit", "Bash", "Grep", "Glob", "WebFetch", "WebSearch"}

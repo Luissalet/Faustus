@@ -6,6 +6,14 @@ from services.memory.skill_format import parse_frontmatter
 from src.instruction_portability import preview_bundle, write_bundle
 
 
+def test_claude_agent_reports_runtime_fields_that_are_not_transferred():
+    bundle=preview_bundle([],[],[{'slug':'fixture-agent','description':'A fixture','prompt':'Compare the output.',
+                                'mode':'reviewer','model':'configured-global','endpoint_id':'configured-endpoint',
+                                'files':['src/**'],'deny':['write_file'],'permission':[{'action':'read'}]}],'claude')
+    assert any('deny, permission, files, mode, model, endpoint_id' in warning for warning in bundle['warnings'])
+    assert 'configured-global' not in bundle['files'][0]['content']
+
+
 def sample(tmp_path):
     folder=tmp_path/'source';folder.mkdir()
     (folder/'references').mkdir();(folder/'references/check.md').write_text('Compare the output.\n')

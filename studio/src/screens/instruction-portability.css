@@ -1,0 +1,11 @@
+.fs-portability { display: grid; gap: 1rem; padding: 1rem 0; min-inline-size: 0; }
+.fs-portability h2, .fs-portability p { margin: 0; }
+.fs-portability__fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 1rem; }
+.fs-portability__fields label { display: grid; gap: .45rem; min-inline-size: 0; }
+.fs-portability__fields textarea { min-block-size: 5rem; resize: vertical; }
+.fs-portability__actions { display: flex; gap: .8rem; flex-wrap: wrap; align-items: center; }
+.fs-portability__actions label, .fs-portability__overwrite { display: flex; gap: .5rem; align-items: center; }
+.fs-portability__preview, .fs-portability__proposal { display: grid; gap: .7rem; border: 1px solid var(--fs-border); border-radius: .5rem; padding: 1rem; min-inline-size: 0; }
+.fs-portability pre { white-space: pre-wrap; overflow-wrap: anywhere; min-inline-size: 0; font-size: .85rem; }
+.fs-portability summary { cursor: pointer; overflow-wrap: anywhere; }
+.fs-portability__notice { overflow-wrap: anywhere; }

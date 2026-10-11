@@ -361,7 +361,13 @@ def evaluate(event: str, ctx: Optional[Dict[str, Any]] = None) -> List[HookHit]:
     ctx = ctx or {}
     if event not in EVENTS:
         return []
-    return [hook for hook in _load_hooks() if hook.get("event") == event and _hook_matches(hook, ctx)]
+    hooks = [hook for hook in _load_hooks() if hook.get("event") == event and _hook_matches(hook, ctx)]
+    try:
+        from src.markdown_hooks import lifecycle_matches
+        hooks.extend(lifecycle_matches(event, ctx))
+    except Exception as exc:  # Project checks must never strand an agent turn.
+        logger.warning("Project Markdown hooks unavailable: %s", exc)
+    return hooks
 
 
 # ---------------------------------------------------------------------------
