@@ -12,7 +12,7 @@ export const EMBED_STYLES = `
 .fc-conversations { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; border-bottom: 1px solid var(--fc-border); }
 .fc-conversations[hidden] { display: none; }
 .fc-context { flex-basis: 100%; font-size: 12px; color: var(--fc-muted); overflow-wrap: anywhere; }
-.fc-conversations select { flex: 1; min-width: 0; color: var(--fc-fg); background: var(--fc-bg); border: 1px solid var(--fc-border); padding: 6px; border-radius: 6px; }
+.fc-conversations select { flex: 1 0 100%; min-width: 0; max-width: 100%; color: var(--fc-fg); background: var(--fc-bg); border: 1px solid var(--fc-border); padding: 6px; border-radius: 6px; }
 .fc-tool summary { cursor: pointer; overflow-wrap: anywhere; }
 .fc-tool pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; margin: 8px 0 0; }
 :host {
