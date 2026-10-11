@@ -39,6 +39,8 @@ running a turn:
 * ``think_mode_calibration`` - how Auto's reasoning-mode choices held up: per
   mode, source and rule reason, how often the next message was a correction
   or the turn ended empty, and the reasons corrected well above the average.
+  ``thinking_leak`` adds the reasoning that still came out of fast turns per
+  model and the models capped for it (src/thinking_inertia.py).
   Owner-scoped: ODYSSEUS_MCP_HARNESS_OWNER (or the context/brain owner), or
   the only owner the database has.
 
@@ -353,6 +355,9 @@ async def list_tools() -> list[Tool]:
                 "source (rule, explicit, override) and per rule reason, how many were followed by a "
                 "correction ('no, eso esta mal', 'try again') or ended without an answer. 'flags' lists "
                 "the reasons or modes corrected well above the Auto average, to tune thresholds by hand. "
+                "'thinking_leak' reports, per model, how much reasoning still came out of fast (no-thinking) "
+                "turns (leak rate, average and maximum tokens) and which models are capped on their next "
+                "fast turn because they kept thinking. "
                 "Read-only. Calibracion del modo de razonamiento Auto."
             ),
             inputSchema={

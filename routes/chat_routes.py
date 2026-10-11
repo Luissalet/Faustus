@@ -981,7 +981,19 @@ def _resolve_think_mode(requested, gen_overrides: Optional[Dict[str, Any]], mess
             effort=effort_ok, default_mode=str(_gs("think_mode_default", "auto") or "auto"),
             prior=prior,
         )
-        return dict(result.get("overrides") or {}), result.get("event")
+        new_overrides, event = dict(result.get("overrides") or {}), result.get("event")
+        # Thinking inertia (#275): a model that kept reasoning in recent fast
+        # turns gets a reasoning cap on this one, and the calibration says so.
+        if isinstance(event, dict) and event.get("mode") == "fast" and new_overrides.get("think") is False:
+            try:
+                from src import thinking_inertia as _ti
+                _cap = _ti.cap_for(model)
+                if _cap and not new_overrides.get("reasoning_budget"):
+                    new_overrides["reasoning_budget"] = _cap
+                    event = {**event, "thinking_cap": _cap}
+            except Exception:  # noqa: BLE001
+                pass
+        return new_overrides, event
     except Exception as exc:  # noqa: BLE001 -- never fail a turn over this
         logger.debug("[think-mode] skipped: %s", exc)
         return base, None
@@ -2970,6 +2982,8 @@ def setup_chat_routes(
                         # Why Auto chose it, for the calibration report (#228).
                         "reasons": list(_think_mode_event.get("reasons") or [])[:12] or None,
                         "effort": (_gen_overrides or {}).get("reasoning_effort") or _think_mode_event.get("effort"),
+                        # Reasoning cap a leaky model ran this fast turn with (#275).
+                        "thinking_cap": _think_mode_event.get("thinking_cap"),
                     } if _think_mode_event else None)
                 except Exception:  # noqa: BLE001
                     pass

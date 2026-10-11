@@ -1235,6 +1235,26 @@ def stamp_behavior_mode_metadata(md: dict, behavior_mode: Optional[str], content
         logger.debug("behavior_modes.check_response failed for mode %r", behavior_mode, exc_info=True)
 
 
+def _stamp_thinking_leak(md: dict, metrics, incognito: bool = False, thinking=None) -> None:
+    """Add `thinking_leak_tokens` / `thinking_leak_chars` to the turn's `think_mode`
+    record when it was a fast turn (src/thinking_inertia.py, #275). Best effort."""
+    try:
+        turn = md.get("think_mode")
+        if not isinstance(turn, dict) or turn.get("mode") != "fast":
+            return
+        from src import thinking_inertia
+        text = thinking if thinking is not None else md.get("thinking")
+        model = md.get("requested_model") or md.get("model")
+        if incognito:
+            stamp = {k: v for k, v in thinking_inertia.measure(text, metrics).items() if k != "source"}
+            stamp = {"thinking_leak_tokens": stamp["tokens"], "thinking_leak_chars": stamp["chars"]}
+        else:
+            stamp = thinking_inertia.leak_stamp(turn, text, metrics, model)
+        md["think_mode"] = {**turn, **stamp}
+    except Exception:  # noqa: BLE001
+        logger.debug("thinking leak stamp failed", exc_info=True)
+
+
 def save_assistant_response(
     sess,
     session_manager,
@@ -1339,6 +1359,7 @@ def save_assistant_response(
         _content = _think_info["reply"]
     else:
         _content = full_response
+    _stamp_thinking_leak(md, last_metrics, incognito)
 
     # A round whose entire text is the synthetic (or legacy) untrusted-context
     # boundary marker is never a real answer — a local model on Ollama has
@@ -1620,6 +1641,7 @@ def save_empty_answer_record(
             md["stopped"] = True
         if isinstance(turn_mode, dict) and turn_mode.get("mode") and "think_mode" not in md:
             md["think_mode"] = {k: v for k, v in turn_mode.items() if v is not None}
+        _stamp_thinking_leak(md, last_metrics, False, thinking=thinking)
         if reasoned and not md.get("thinking"):
             md["thinking"] = str(thinking).strip()
         if thinking_time and not md.get("thinking_time"):

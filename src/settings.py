@@ -2068,6 +2068,11 @@ DEFAULT_SETTINGS = {
     # local model slot share its parallel slots (src/llm_core.py).
     "local_model_shared_slots": True,
     "think_mode_budget_deep": 16384,
+    # Thinking inertia (src/thinking_inertia.py): a fast turn that still reasoned
+    # more than this many tokens leaked; the next fast turn of that model gets a
+    # reasoning budget of think_leak_cap_tokens. Reported in the Auto calibration.
+    "think_leak_threshold_tokens": 64,
+    "think_leak_cap_tokens": 128,
     # How hard each mode asks the model to think (src/mode_effort.py):
     # auto | off | low | medium | high | max. "auto" = the mode's own default
     # (research and the teacher: max; a council member: high; reading one

@@ -3068,6 +3068,76 @@ def _supports_thinking(model: str) -> bool:
     return any(p in m for p in _THINKING_MODEL_PATTERNS)
 
 
+def _apply_fast_engine_switch(payload: Dict, url: str, model: str, provider: str,
+                              overrides: Optional[Dict], *, has_tools: bool = False) -> List[str]:
+    """Make "fast" (``think: False``) an engine-level switch for every provider
+    that has one, not only a prompt instruction (thinking inertia, #275).
+
+    Returns the labels of what was set (for logs and tests); ``[]`` when the
+    turn is not a fast one or the provider has no switch (Anthropic only
+    thinks when a ``thinking`` block is sent, and none is for a fast turn).
+    An ``overrides["reasoning_budget"]`` on a fast turn is the cap the
+    thinking-inertia memory hands a model that kept reasoning with the switch
+    off; it goes out as a budget where the engine reads one.
+    """
+    ov = overrides if isinstance(overrides, dict) else {}
+    if ov.get("think") is not False or not isinstance(payload, dict):
+        return []
+    applied: List[str] = []
+    try:
+        cap = int(ov.get("reasoning_budget") or 0)
+    except (TypeError, ValueError):
+        cap = 0
+    if provider == "anthropic":
+        return applied
+    if provider == "ollama" or _is_local_ollama_target(url):
+        payload["think"] = False
+        applied.append("think")
+        return applied
+    if _is_ollama_openai_compat_url(url):
+        # Any loopback /v1 server looks like Ollama here; it may be llama-server,
+        # so the engine switch below is sent as well.
+        payload["think"] = False
+        applied.append("think")
+    if _is_self_hosted_openai_compatible(url):
+        ctk = payload.get("chat_template_kwargs")
+        if not isinstance(ctk, dict):
+            ctk = {}
+            payload["chat_template_kwargs"] = ctk
+        ctk["enable_thinking"] = False
+        applied.append("enable_thinking")
+        if cap > 0 and "thinking_token_budget" not in payload:
+            payload["reasoning_budget"] = cap
+            payload["thinking_budget_tokens"] = cap
+            applied.append("cap")
+        elif "reasoning_budget" in payload and cap <= 0:
+            payload.pop("reasoning_budget", None)
+            payload.pop("thinking_budget_tokens", None)
+        return applied
+    if provider == "mistral":
+        if _supports_thinking(model):
+            payload["reasoning_effort"] = "none"
+            applied.append("reasoning_effort")
+        return applied
+    if provider == "openrouter":
+        payload["reasoning"] = {"effort": "none"}
+        applied.append("reasoning")
+        return applied
+    name = str(model or "").lower().split("/")[-1]
+    if _host_match(url, "deepseek.com") and name != "deepseek-reasoner":
+        payload["thinking"] = {"type": "disabled"}
+        applied.append("thinking")
+    elif _host_match(url, "moonshot.ai", "moonshot.cn") and re.search(r"k2[.-]?[56]", name):
+        payload["thinking"] = {"type": "disabled"}
+        applied.append("thinking")
+    elif provider == "openai" and _host_match(url, "api.openai.com") and not has_tools:
+        hit = re.match(r"gpt-5(?:\.(\d+))?", name)
+        if hit and "reasoning_effort" not in ov and "reasoning_effort" not in payload:
+            payload["reasoning_effort"] = "none" if int(hit.group(1) or 0) >= 1 else "minimal"
+            applied.append("reasoning_effort")
+    return applied
+
+
 def _resolve_think_decision(model: str, overrides: Optional[Dict]) -> Optional[bool]:
     """The same explicit-override-else-default-suppress decision the Ollama
     branches already make (an explicit `/think on|off`, the harness'
@@ -4994,6 +5064,7 @@ async def _llm_call_async_impl(
         # No `tools` here: this path is the tool-less completion helper.
         _suppress_thinking_for_small_talk(payload, model, messages_copy)
         _apply_verified_engine_controls(payload, url, model)
+        _apply_fast_engine_switch(payload, url, model, provider, _asked)
         if provider == "openrouter":
             # Same OpenRouter options application as llm_call (OBJ-8 Lote A2)
             # -- see that call site for the full rationale.
@@ -6466,6 +6537,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         # has already run a tool always keeps its reasoning.
         _suppress_thinking_for_small_talk(payload, model, messages_copy, tools)
         _apply_verified_engine_controls(payload, url, model)
+        _apply_fast_engine_switch(payload, url, model, provider, _overrides, has_tools=bool(tools))
         _drop_tools_for_small_talk(payload, messages_copy)
         if provider == "openrouter":
             # Same OpenRouter options application as llm_call (OBJ-8 Lote A2)

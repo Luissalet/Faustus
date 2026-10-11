@@ -46,7 +46,7 @@ def _metadata(raw: Any) -> Dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def _record(think: Mapping[str, Any], content: str, session: Any = None) -> Dict[str, Any]:
+def _record(think: Mapping[str, Any], content: str, session: Any = None, model: Any = None) -> Dict[str, Any]:
     reasons = think.get("reasons")
     mode = str(think.get("mode") or "")
     if mode == "think" and think.get("effort") == "low":
@@ -58,6 +58,10 @@ def _record(think: Mapping[str, Any], content: str, session: Any = None) -> Dict
         "empty": not (content or "").strip(),
         "corrected": None,
         "session": session,
+        "model": str(model or "") or None,
+        # Reasoning that still came out of a fast turn (src/thinking_inertia.py).
+        "thinking_leak_tokens": think.get("thinking_leak_tokens"),
+        "thinking_cap": think.get("thinking_cap"),
     }
 
 
@@ -82,11 +86,12 @@ def outcomes(rows: Iterable[Mapping[str, Any]]) -> List[Dict[str, Any]]:
         role = row.get("role")
         content = row.get("content") if isinstance(row.get("content"), str) else ""
         if role == "assistant":
-            think = _metadata(row.get("metadata")).get("think_mode")
+            meta = _metadata(row.get("metadata"))
+            think = meta.get("think_mode")
             if isinstance(think, Mapping) and think.get("mode"):
                 if pending is not None:
                     out.append(pending)
-                pending = _record(think, content, sid)
+                pending = _record(think, content, sid, meta.get("requested_model") or meta.get("model"))
         elif role == "user" and pending is not None:
             pending["corrected"] = is_correction(content[:_TEXT_CHARS])
             out.append(pending)
@@ -113,6 +118,15 @@ def _finish(bucket: Dict[str, Any]) -> Dict[str, Any]:
     bucket["correction_rate"] = round(bucket["corrected"] / followed, 3) if followed else None
     bucket["empty_rate"] = round(bucket["empty"] / bucket["turns"], 3) if bucket["turns"] else None
     return bucket
+
+
+def _thinking_leak(records: List[Mapping[str, Any]]) -> Dict[str, Any]:
+    """Per-model leak of reasoning out of fast turns, and the caps in force."""
+    try:
+        from src import thinking_inertia
+        return thinking_inertia.summarize(records)
+    except Exception:  # noqa: BLE001 -- the report never fails over this
+        return {}
 
 
 def summarize(records: List[Mapping[str, Any]], *, min_followed: int = MIN_FOLLOWED) -> Dict[str, Any]:
@@ -160,6 +174,7 @@ def summarize(records: List[Mapping[str, Any]], *, min_followed: int = MIN_FOLLO
         "turns": total, "auto": rule, "by_mode": by_mode, "auto_by_mode": auto_by_mode, "by_source": by_source,
         "by_reason": dict(sorted(by_reason.items(), key=lambda kv: -kv[1]["turns"])),
         "flags": flags, "min_followed": min_followed,
+        "thinking_leak": _thinking_leak(records),
     }
 
 

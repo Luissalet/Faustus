@@ -49,6 +49,8 @@ def setup_diagnostics_routes(
         """How Auto's reasoning-mode choices held up (OBJ-58, #228): per mode,
         source and rule reason, how many turns were followed by a correction
         or ended empty, and the buckets corrected well above the Auto average.
+        `thinking_leak` is the reasoning that still came out of fast turns, per
+        model, and the models capped for it (#275).
         Only the caller's own sessions. Read-only."""
         from src.auth_helpers import effective_user
         from src import think_calibration

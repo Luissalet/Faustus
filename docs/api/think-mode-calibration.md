@@ -44,4 +44,11 @@ owner in the database, and refuses when there are several.
 - `battery`: turns from daily-battery sessions (`scripts/daily_eval.py` writes each task's
   session to `logs/daily_eval/*.json`), with the battery's pass rate per mode and reason.
 
-Nothing here changes a decision; the thresholds stay in `src/think_mode.py`.
+- `thinking_leak` (#275): reasoning that still came out of fast turns. `by_model` gives, per model, `fast_turns`,
+  `measured`, `leaked` (more than `threshold_tokens`), `leak_rate`, `avg_leak_tokens`, `max_leak_tokens` and
+  `capped_turns`; `capped_models` lists the models whose next fast turn runs with a reasoning cap of
+  `cap_tokens`; `flags` explains each leaky model in one sentence. Settings: `think_leak_threshold_tokens`,
+  `think_leak_cap_tokens`.
+
+Nothing here changes a decision of Auto; the thresholds stay in `src/think_mode.py`. The only thing it feeds back is
+the reasoning cap on the next fast turn of a model that kept thinking with the switch off.
