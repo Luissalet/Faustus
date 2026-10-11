@@ -29,6 +29,7 @@ A wrong closure silently removes a true fact from the prompt, so the rules are n
 - The subject has to be the user (`User ...`, `The user ...`, `I ...`, `Yo ...`, `El usuario ...`, or no subject at all). A possessive ("User's sister lives in Berlin", "The user's brother ...", "Luis's wife works at ...", "El hermano del usuario ...", "Su hermana ..."), a name or any other subject is someone else's fact and gets no kind.
 - A place needs a proper noun after *lives in / vive en / based in / moved to* ("lives in the moment" is not a place). Only a residence closes a residence: "currently in Berlin" or "staying in Lisbon" get a lease of their own but never replace where the user lives.
 - A job is an employer (a proper noun after *works at/for*, *trabaja en/para*) or a role (*works as a ...*, *trabaja como ...*, *job title is ...*); employer and role are two slots. A side activity ("works at night", "works at home on Fridays", "trabaja en Faustus por las noches") is not the job.
+- Only what is true NOW closes anything. A wish, a plan, the future, the past, a hypothesis, an application, a negation or a search gets no single-valued kind and closes nothing: "wants to / would like to / hopes to / plans to / is going to live in Tokyo", "will live in Berlin next year", "is thinking of / dreams of living in ...", "applied to work at Google", "is looking for a job working at Google", "used to live in Paris", "no longer works at Acme", "doesn't live in Madrid anymore", and in Spanish "quiere / le gustaría / piensa / va a / vivirá / solía / antes vivía / ya no / busca trabajo / ha solicitado". The marker has to be in the same clause before the place or employer, so "used to live in Paris and now lives in Berlin" still replaces the old place. A relative clause belongs to somebody else ("User met Ana, who lives in Berlin", "una amiga que trabaja en Google"), and two candidates ("lives in Madrid or Berlin") are not a statement.
 - Vague sentences ("User is sick of Python", "User stays at hotels when travelling", "User dreams of moving to Berlin") get no kind.
 
 ## Older facts: opt-in backfill
@@ -39,7 +40,7 @@ Nothing is ever rewritten when the file is loaded. `backfill` gives the untyped 
 
 - `POST /api/memory/add` accepts the optional `kind` and `lease_days` (JSON body or form fields; 400 for an invalid kind, a non-number, a negative value or more than 3650) and returns `id` and a `lease` block. Adding the same text again renews it.
 - `GET /api/memory` annotates every entry that has a kind or is closed with a `lease` block (`state` is `none`, `active`, `expiring`, `expired` or `closed`, plus `days_left`, `lease_until`, `confirmed_at`).
-- `GET /api/memory/leases?window_days=7` returns `{expired, expiring, closed, counts, untyped, settings}`.
+- `GET /api/memory/leases?window_days=7` (400 for a negative value, like the MCP tool) returns `{expired, expiring, closed, counts, untyped, settings}`.
 - `POST /api/memory/leases/{memory_id}/renew` (form field `days`, optional, at most 3650) restarts the lease and reopens a closed fact; 400 if the fact has no lease and no `days` is given, 404 if unknown.
 - `POST /api/memory/leases/{memory_id}/forget` deletes the fact.
 - `POST /api/memory/leases/backfill` (form fields `apply`, default false, and `basis`) as described above; only the caller's own facts.

@@ -275,6 +275,59 @@ _SUBJECTLESS = re.compile(
 )
 
 
+#: A place or an employer that is NOT the user's current one: wishes, plans,
+#: the future, the past, hypotheses, negations and applications. Anything
+#: here, earlier in the same clause, keeps the phrase from being a residence
+#: or an employer ("wants to live in Tokyo", "used to work at Google").
+_NOT_CURRENT = re.compile(
+    r"\bwants?\s+to\b|\bwanted\s+to\b|\bwanting\s+to\b|\bwould\b|[\'\u2019]d\s+(?:like|love|rather)\b"
+    r"|\bhop(?:e|es|ed|ing)\s+to\b|\bplan(?:s|ned|ning)?\s+(?:to|on)\b|\bgoing\s+to\b|\bgonna\b|\babout\s+to\b"
+    r"|\bintend(?:s|ed|ing)?\s+to\b|(?-i:\bwill\b)|[\'\u2019]ll\b|\bwon[\'\u2019]t\b"
+    r"|\bthink(?:s|ing)?\s+(?:of|about)\b|\bdream(?:s|ed|t|ing)?\s+(?:of|about)\b"
+    r"|\bconsider(?:s|ed|ing)?\b|\bappl(?:ied|ies|ying|y)\b|\blook(?:s|ed|ing)?\s+(?:for|to)\b"
+    r"|\bused\s+to\b|\bformerly\b|\bpreviously\b|\bonce\b|\bex-|\bmight\b|\bcould\b|\bshould\b|\bwish(?:es|ed)?\b"
+    r"|\bif\b|\bsomeday\b|\bone\s+day\b|\bnext\s+(?:year|month|week)\b|\bin\s+the\s+future\b|\bsoon\b|\beventually\b"
+    r"|\b(?:was|were|had)\s+(?:been\s+)?(?:living|working|based|located|employed|residing|lived|worked)\b"
+    r"|n[\'\u2019]t\b|\bnot\b|\bnever\b|\bdid\b"
+    r"|\bquiere[n]?\b|\bquer(?:ia|ian)\b|\bquisiera\b|\bgustaria\b|\bpiensa[n]?\b|\bpensando\b|\bplanea[n]?\b"
+    r"|\bplaneando\b|\bplaneaba\b|\b(?:va|van|voy|vamos)\s+a\b|\bvivira[n]?\b|\btrabajara[n]?\b|\bviviria\b"
+    r"|\btrabajaria\b|\bsolia[n]?\b|\bya\s+no\b|\bantes\b|\bbusca[n]?\s+(?:trabajo|empleo)\b|\bbuscando\b"
+    r"|\bha\s+solicitado\b|\bsolicit(?:o|a|an|ando)\b|\bsuena\b|\bsonaba\b|\bespera[n]?\b|\besperaba\b"
+    r"|\bdesea[n]?\b|\bquizas?\b|\btal\s+vez\b|\balgun\s+dia\b|\bel\s+ano\s+que\s+viene\b|\bproximo\s+ano\b"
+    r"|\bproximamente\b|\bnunca\b|\bjamas\b|\bno\s+(?:vive|vivo|viven|trabaja|trabajo|trabajan|reside|resido)\b"
+    r"|\b(?:vivia|vivian|trabajaba|trabajaban|residia|era|fue)\b",
+    _I,
+)
+#: Said after the place or employer, but it ends the claim all the same.
+_NO_LONGER = re.compile(r"\banymore\b|\bany\s+more\b|\bno\s+longer\b|\bany\s+longer\b|\bya\s+no\b", _I)
+#: The place or employer belongs to somebody else: "Ana, who lives in Berlin",
+#: "a friend that works at Google", "una amiga que vive en Lima".
+_OTHER_SUBJECT = re.compile(
+    r"\b(?:who|whom|whose|quien|quienes|cuyo|cuya)\b|,\s*(?:that|which|que)\b"
+    r"|\b(?:that|which)\s+(?:live|lives|work|works|reside|resides)\b|\bque\s+(?:vive|viven|trabaja|trabajan|reside)\b",
+    _I,
+)
+#: "lives in Madrid or Berlin", "works at Acme or Globex": two candidates, not a statement.
+_ALTERNATIVE = re.compile(r"[^,.;:!?]*?\s(?:or|o)\s+(?:(?:the|el|la)\s+)?[A-Z]")
+_CLAUSE_SPLIT = re.compile(r"[.;:!?,]|\band\b|\bbut\b|\by\b|\bpero\b|\bwhile\b|\bmientras\b|\bthough\b|\bso\b|\bthen\b", _I)
+
+
+def _current_match(pattern: "re.Pattern[str]", folded: str):
+    """First match of ``pattern`` that states something CURRENT about the user:
+    not a wish, a plan, the past, a negation, and not somebody else's place."""
+    if _NO_LONGER.search(folded):
+        return None
+    for match in pattern.finditer(folded):
+        before = folded[:match.start()]
+        if _OTHER_SUBJECT.search(folded[:match.end()]) or _ALTERNATIVE.match(folded, match.end() - 1):
+            continue
+        # The first word of the match counts: "busca trabajo en Google" is a search, not an employer.
+        if _NOT_CURRENT.search(_CLAUSE_SPLIT.split(before)[-1] + " " + match.group(0).split()[0]):
+            continue
+        return match
+    return None
+
+
 def _about_someone_else(folded: str) -> bool:
     if _RELATIVE.search(folded) or _POSSESSED.search(folded) or _OF_USER.search(folded):
         return True
@@ -319,7 +372,7 @@ def classify_kind(text: Any, category: Any = "") -> str:
     found = None
     for kind, patterns in checks:
         for pattern in patterns:
-            match = pattern.search(folded)
+            match = _current_match(pattern, folded) if kind in SINGLE_VALUED else pattern.search(folded)
             if match:
                 found = (kind, match.start())
                 break
@@ -343,11 +396,11 @@ def slot_of(kind: str, text: Any) -> str:
     if _about_someone_else(folded) or not _subject_is_user(folded) or _PART_TIME.search(folded):
         return ""
     if kind == "location":
-        return "location" if _RESIDENCE.search(folded) else ""
+        return "location" if _current_match(_RESIDENCE, folded) else ""
     if kind == "job":
-        if _ROLE.search(folded):
+        if _current_match(_ROLE, folded):
             return "job:role"
-        if _EMPLOYER.search(folded):
+        if _current_match(_EMPLOYER, folded):
             return "job:employer"
     return ""
 

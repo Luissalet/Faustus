@@ -186,6 +186,8 @@ def setup_memory_routes(memory_manager: MemoryManager, session_manager: SessionM
         newer fact of the same kind. An expired fact is still shown to the
         model, marked as possibly outdated, until it is renewed or forgotten."""
         user = _owner(request)
+        if window_days is not None and window_days < 0:
+            raise HTTPException(400, "window_days must be 0 or more")
         return memory_leases.review(memory_manager.load(owner=user), window=window_days)
 
     @router.post("/leases/{memory_id}/renew")

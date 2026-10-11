@@ -226,6 +226,11 @@ def _fallback_memory_candidates(messages) -> list[dict]:
                 add(f"User wants to be called {name}.", "identity")
 
         m = re.search(r"\bi (?:live in|am from|'m from)\s+([^.!?\n]{2,80})", text, re.I)
+        # A question ("Do I live in Madrid or Berlin?") is not a statement, and two
+        # candidates joined by "or" are not a place.
+        if m and (text[m.end():m.end() + 1] == "?" or re.search(r"\b(?:do|did|does|should|can|could|would|will|where|am)\s+$", text[:m.start()], re.I)
+                  or re.search(r"\s(?:or|o)\s", m.group(1))):
+            m = None
         if m:
             place = _clean_memory_value(m.group(1), 80)
             if place:

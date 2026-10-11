@@ -1027,3 +1027,173 @@ def test_extractor_does_not_lose_a_move_to_a_look_alike_third_party_or_legacy_fa
     assert set(stored) == {"User's sister lives in Berlin.", "User lives in Paris", "User lives in Berlin"}
     shown = [e["text"] for e in memory_leases.prompt_view(manager.load_all())]
     assert "User lives in Berlin" in shown and "User's sister lives in Berlin." in shown
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Second review round: wishes, plans, the past and relative clauses
+# ══════════════════════════════════════════════════════════════════════════
+
+NOT_CURRENT_PLACE = [
+    "User wants to live in Tokyo",
+    "User used to live in Paris",
+    "User will live in Berlin next year",
+    "User is thinking of living in Tokyo",
+    "User dreams of living in Rome",
+    "User met Ana, who lives in Berlin",
+    "User would like to live in Lisbon",
+    "User hopes to live in Oslo",
+    "User is planning to live in Vienna",
+    "User is going to live in Porto",
+    "User is considering living in Prague",
+    "User applied to live in Canada",
+    "User has a friend that lives in Lima",
+    "El usuario quiere vivir en Tokio",
+    "Al usuario le gustaría vivir en Roma",
+    "El usuario piensa vivir en Lisboa",
+    "El usuario va a vivir en Berlín",
+    "El usuario vivirá en Berlín",
+    "El usuario solía vivir en París",
+    "El usuario antes vivía en París",
+    "El usuario ya no vive en Madrid",
+    "El usuario sueña con vivir en Roma",
+    "El usuario conoció a Ana, que vive en Berlín",
+]
+NOT_CURRENT_JOB = [
+    "User wants to work at Google",
+    "User applied to work at Google",
+    "User used to work at Google",
+    "User is looking for a job working at Google",
+    "User would like to work for Initech",
+    "User plans to work at Globex",
+    "User will work at Google next year",
+    "User dreams of working at Google",
+    "User has a friend who works at Google",
+    "User no longer works at Acme",
+    "El usuario quiere trabajar en Google",
+    "El usuario ha solicitado trabajar en Google",
+    "El usuario busca trabajo en Google",
+    "El usuario solía trabajar en Google",
+    "El usuario antes trabajaba en Google",
+    "El usuario trabajará en Google el año que viene",
+    "El usuario ya no trabaja en Acme",
+    "El usuario tiene una amiga que trabaja en Google",
+]
+
+
+@pytest.mark.parametrize("text", NOT_CURRENT_PLACE + NOT_CURRENT_JOB + ["User doesn't live in Madrid anymore"])
+def test_wishes_plans_the_past_and_relative_clauses_get_no_single_valued_kind(text):
+    assert memory_leases.classify_kind(text) not in memory_leases.SINGLE_VALUED
+    assert memory_leases.slot_of("location", text) == ""
+    assert memory_leases.slot_of("job", text) == ""
+
+
+@pytest.mark.parametrize("text", NOT_CURRENT_PLACE)
+def test_a_wish_a_plan_or_the_past_never_takes_the_place_of_where_the_user_lives(tmp_path, text):
+    manager = _manager(tmp_path)
+    home = _add(manager, "User lives in Madrid", at=T0)
+    _add(manager, text, at=T0 + DAY)
+    stored = {e["id"]: e for e in manager.load_all()}
+    assert "closed_at" not in stored[home["id"]]
+    assert "User lives in Madrid" in [e["text"] for e in memory_leases.prompt_view(manager.load_all(), T0 + 2 * DAY)]
+
+
+@pytest.mark.parametrize("text", NOT_CURRENT_JOB)
+def test_a_wish_a_plan_or_the_past_never_takes_the_place_of_the_users_employer(tmp_path, text):
+    manager = _manager(tmp_path)
+    job = _add(manager, "User works at Acme", at=T0)
+    _add(manager, text, at=T0 + DAY)
+    stored = {e["id"]: e for e in manager.load_all()}
+    assert "closed_at" not in stored[job["id"]]
+    assert "User works at Acme" in [e["text"] for e in memory_leases.prompt_view(manager.load_all(), T0 + 2 * DAY)]
+
+
+def test_leaving_a_place_does_not_state_a_new_one_and_the_old_fact_stays(tmp_path):
+    text = "User doesn't live in Madrid anymore"
+    assert memory_leases.classify_kind(text) not in memory_leases.SINGLE_VALUED
+    manager = _manager(tmp_path)
+    home = _add(manager, "User lives in Madrid", at=T0)
+    _add(manager, text, at=T0 + DAY)
+    # It cannot take over the residence slot: whatever happens to Madrid, no new place appears.
+    assert not [e for e in manager.load_all() if memory_leases.slot_of(e.get("kind", ""), e["text"]) == "location"
+                and e["text"] != "User lives in Madrid"]
+
+
+@pytest.mark.parametrize("old,new,slot", [
+    ("User lives in Madrid", "User moved to Berlin", "location"),
+    ("User lives in Madrid", "Vivo en Valencia", "location"),
+    ("User lives in Madrid", "User lives in Berlin", "location"),
+    ("User lives in Madrid", "User used to live in Paris and now lives in Berlin", "location"),
+    ("User lives in Madrid", "User lives in Berlin and wants to live in Tokyo", "location"),
+    ("User lives in Madrid", "Yo antes vivía en París pero ahora vivo en Berlín", "location"),
+    ("User works at Acme", "Trabajo en Globex", "job:employer"),
+    ("User works at Acme", "User works at Google", "job:employer"),
+    ("User works at Acme", "User used to work at Hooli but works at Google", "job:employer"),
+    ("User works at Acme", "User works at Google and would like to work at Initech", "job:employer"),
+])
+def test_real_current_statements_still_supersede_in_the_same_sentences_family(tmp_path, old, new, slot):
+    kind = memory_leases.classify_kind(new)
+    assert memory_leases.slot_of(kind, new) == slot
+    manager = _manager(tmp_path)
+    first = _add(manager, old, at=T0)
+    second = _add(manager, new, at=T0 + DAY)
+    stored = {e["id"]: e for e in manager.load_all()}
+    assert stored[first["id"]]["superseded_by"] == second["id"]
+    assert "closed_at" not in stored[second["id"]]
+
+
+def test_wishes_and_relative_clauses_through_the_add_endpoint_leave_the_prompt_alone(monkeypatch, tmp_path):
+    from src.request_models import MemoryAddRequest
+    manager = _manager(tmp_path)
+    find = _routes(monkeypatch, manager)
+    add = find("/api/memory/add", "POST")
+    monkeypatch.setattr("src.auth_helpers.require_privilege", lambda *a, **k: None)
+    asyncio.run(add(request=None, memory_data=MemoryAddRequest(text="User lives in Madrid")))
+    asyncio.run(add(request=None, memory_data=MemoryAddRequest(text="User works at Acme")))
+    for text in ("User wants to live in Tokyo", "User used to live in Paris", "User met Ana, who lives in Berlin",
+                 "User wants to work at Google", "User applied to work at Google", "User used to work at Google",
+                 "El usuario ya no vive en Madrid"):
+        asyncio.run(add(request=None, memory_data=MemoryAddRequest(text=text)))
+    rows = manager.load(owner="alice")
+    assert all("closed_at" not in e for e in rows)
+    assert "User lives in Madrid" in _injected(rows, "where does the user live in Madrid")
+    assert "User works at Acme" in _injected(rows, "where does the user work at Acme")
+
+
+def test_the_review_endpoint_rejects_a_negative_window_like_the_mcp_tool(monkeypatch, tmp_path):
+    from fastapi import HTTPException
+    manager = _manager(tmp_path)
+    review = _routes(monkeypatch, manager)("/api/memory/leases", "GET")
+    with pytest.raises(HTTPException) as err:
+        review(request=None, window_days=-3)
+    assert err.value.status_code == 400
+    assert review(request=None, window_days=0)["counts"]["expired"] == 0
+
+
+# ── two candidates joined by "or", and questions, are not statements ──────
+
+ALTERNATIVES = [
+    "User lives in Madrid or Berlin, and do I work at Acme Corp or Globex",
+    "User lives in Madrid or Berlin",
+    "User works at Acme or Globex",
+    "Vivo en Madrid o Berlin",
+]
+
+
+@pytest.mark.parametrize("text", ALTERNATIVES)
+def test_two_candidates_joined_by_or_are_not_a_residence_or_an_employer(tmp_path, text):
+    assert memory_leases.classify_kind(text) not in memory_leases.SINGLE_VALUED
+    assert memory_leases.slot_of("location", text) == "" and memory_leases.slot_of("job", text) == ""
+    manager = _manager(tmp_path)
+    home = _add(manager, "User lives in Madrid", at=T0)
+    job = _add(manager, "User works at Acme Corp", at=T0)
+    _add(manager, text, at=T0 + DAY)
+    stored = {e["id"]: e for e in manager.load_all()}
+    assert "closed_at" not in stored[home["id"]] and "closed_at" not in stored[job["id"]]
+
+
+def test_the_fallback_extractor_does_not_turn_a_question_into_a_place():
+    from services.memory.memory_extractor import _fallback_memory_candidates as fallback
+    for question in ("Do I live in Madrid or Berlin?", "Where do I live in Spain?", "Do I live in Madrid",
+                     "I live in Madrid or Berlin, I do not remember"):
+        assert fallback([{"role": "user", "content": question}]) == [], question
+    assert [c["text"] for c in fallback([{"role": "user", "content": "I live in Berlin."}])] == ["User lives in Berlin"]
