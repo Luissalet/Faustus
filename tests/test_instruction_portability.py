@@ -97,3 +97,34 @@ def test_duplicate_slugs_are_preserved_separately():
     bundle=preview_bundle([{'name':'same','procedure':['First']},{'name':'same','procedure':['Second']}],[],[],'codex')
     paths=[f['path'] for f in bundle['files']]
     assert len(paths)==len(set(paths)) and any('/same-2/' in p for p in paths)
+
+
+def test_codex_appearance_has_no_foreign_host_variables():
+    bundle=preview_bundle([{'name':'fixture','description':'Use ${CLAUDE_PROJECT_DIR}','procedure':['Check']}],[],[],'codex')
+    assert '${CLAUDE_' not in str(bundle['files'])
+
+
+def test_indented_code_body_keeps_leading_whitespace():
+    markdown='---\nname: fixture\ndescription: Use when checking\n---\n\n    print("fixture")\n'
+    bundle=preview_bundle([{'markdown':markdown}],[],[],'codex')
+    assert '\n\n    print("fixture")\n' in bundle['files'][0]['content']
+
+
+def test_cursor_reference_style_links_point_to_exported_resource(tmp_path):
+    item=sample(tmp_path)
+    item['markdown']+='\n[fixture]: references/check.md\n'
+    bundle=preview_bundle([item],[],[],'cursor')
+    assert '[fixture]: ../skills/fixture/references/check.md' in bundle['files'][0]['content']
+
+
+@pytest.mark.parametrize('target',['claude','codex','cursor'])
+def test_foreign_manual_only_policy_is_preserved(target):
+    markdown='---\nname: fixture\ndescription: Use when checking\ndisable-model-invocation: true\n---\n\nCheck the fixture.\n'
+    bundle=preview_bundle([{'markdown':markdown}],[],[],target)
+    if target=='claude':
+        assert parse_frontmatter(bundle['files'][0]['content'])[0]['disable-model-invocation'] is True
+    elif target=='codex':
+        import yaml
+        assert yaml.safe_load(bundle['files'][1]['content'])['policy']['allow_implicit_invocation'] is False
+    else:
+        assert not parse_frontmatter(bundle['files'][0]['content'])[0].get('description')

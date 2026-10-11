@@ -26,7 +26,8 @@ def _portable(text, target, warnings, label):
 
 
 def _markdown(frontmatter, body):
-    return "---\n" + emit_frontmatter(frontmatter) + "\n---\n\n" + str(body or "").strip() + "\n"
+    body = str(body or "")
+    return "---\n" + emit_frontmatter(frontmatter) + "\n---\n\n" + body + ("" if body.endswith("\n") else "\n")
 
 
 def _portable_metadata(value, target, warnings, label):
@@ -91,7 +92,7 @@ def preview_bundle(skills, rules, agents, target):
             metadata = _portable_metadata(metadata, target, warnings, name)
         add(f"{parent}/SKILL.md", _markdown(metadata, body))
         if target == "codex":
-            interface = {"display_name": str(description or name), "short_description": str(description or name), "default_prompt": f"Use ${name} to complete the requested workflow."}
+            interface = {"display_name": metadata["description"], "short_description": metadata["description"], "default_prompt": f"Use ${name} to complete the requested workflow."}
             appearance = {"interface": interface}
             if manual:
                 appearance["policy"] = {"allow_implicit_invocation": False}
@@ -100,7 +101,7 @@ def preview_bundle(skills, rules, agents, target):
 
     for item in skills or []:
         fm, body = _skill_parts(item)
-        manual = bool(fm.get("manual_only") or (item.get("extra") or {}).get("manual_only") or item.get("manual_only"))
+        manual = bool(fm.get("manual_only") or fm.get("disable-model-invocation") or (item.get("extra") or {}).get("manual_only") or item.get("manual_only"))
         parent = skill(fm["name"], fm["description"], body, fm, manual)
         source = Path(item["path"]).parent if item.get("path") else None
         if source and source.is_dir():
@@ -110,6 +111,7 @@ def preview_bundle(skills, rules, agents, target):
                 # folders. Resolve Markdown links from the exported rule file.
                 file = files[-1]
                 file["content"] = re.sub(r"(\]\()(?:(?:\./)?)(scripts|references|assets|templates)/", lambda m: m[1] + "../skills/" + asset_parent.rsplit('/', 1)[-1] + "/" + m[2] + "/", file["content"])
+                file["content"] = re.sub(r"(^[ \t]{0,3}\[[^\]]+\]:[ \t]*)(?:\./)?(scripts|references|assets|templates)/", lambda m: m[1] + "../skills/" + asset_parent.rsplit('/', 1)[-1] + "/" + m[2] + "/", file["content"], flags=re.MULTILINE)
                 file["content"] += f"\nSupporting scripts and assets are in `{asset_parent}` relative to the workspace.\n"
             for dirname in ("scripts", "references", "assets", "templates"):
                 folder = source / dirname
