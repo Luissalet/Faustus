@@ -668,6 +668,7 @@ class SkillsManager:
         *,
         active_toolsets: Optional[List[str]] = None,
         platform: Optional[str] = None,
+        include_manual: bool = False,
     ) -> List[Dict]:
         """Return the `[{name, description, category, status}]` list the
         agent sees in its system prompt.
@@ -686,7 +687,7 @@ class SkillsManager:
         """
         out = []
         for s in self.load(owner=owner):
-            if (s.get("extra") or {}).get("manual_only") or s.get("manual_only"):
+            if not include_manual and ((s.get("extra") or {}).get("manual_only") or s.get("manual_only")):
                 continue
             status = s.get("status")
             # Published + None (pre-status legacy) always included.

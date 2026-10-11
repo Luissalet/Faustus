@@ -1264,13 +1264,13 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
     async def get_slash_catalog(request: Request):
         """Return skills that are available as slash commands.
 
-        Mirrors the agent prompt's published-skill index so the UI never offers
-        a slash command the model would not normally be allowed to discover.
+        Uses the same ownership and publication rules as the automatic index,
+        including manual-only skills because a slash command is explicit use.
         """
         user = _owner(request)
         all_skills = {s.get("name"): s for s in skills_manager.load(owner=user)}
         entries = []
-        for s in skills_manager.index_for(owner=user):
+        for s in skills_manager.index_for(owner=user, include_manual=True):
             name = (s.get("name") or "").strip()
             if not name:
                 continue
@@ -1467,7 +1467,7 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
         request_text = (body.get("request") or "").strip() if isinstance(body, dict) else ""
 
         invokable = {
-            s.get("name"): s for s in skills_manager.index_for(owner=user)
+            s.get("name"): s for s in skills_manager.index_for(owner=user, include_manual=True)
             if (s.get("name") or "").strip()
         }
         match = invokable.get(skill_id)

@@ -206,3 +206,33 @@ async def test_extractor_reports_a_skill_that_is_really_persisted(tmp_path, monk
     assert result and not result.get('_lint_refused')
     assert any(s['name']==result['name'] for s in sm.load(owner='alice'))
     assert any(f['check']=='done-criterion' for f in result['_lint_warnings'])
+
+
+@pytest.mark.asyncio
+async def test_manual_only_skill_can_be_invoked_explicitly(tmp_path):
+    from fastapi import HTTPException
+    from services.memory.skills import SkillsManager
+    from routes.skills_routes import setup_skills_routes
+    from tests.test_skills_routes_owner_update import _request, _route_handler
+    folder=tmp_path/'skills'/'general'/'manual-recipe';folder.mkdir(parents=True)
+    markdown=GOOD.replace('name: fix-flask-mime',
+        'name: manual-recipe\nmanual_only: true\nstatus: published\nowner: alice')
+    (folder/'SKILL.md').write_text(markdown,encoding='utf8')
+    sm=SkillsManager(str(tmp_path));router=setup_skills_routes(sm)
+    index=_route_handler(router,'/api/skills/index','GET')
+    catalog=_route_handler(router,'/api/skills/slash-catalog','GET')
+    invoke=_route_handler(router,'/api/skills/{skill_id}/invoke','POST')
+    assert (await index(_request('alice')))['count']==0
+    assert (await catalog(_request('alice')))['skills'][0]['token']=='/manual-recipe'
+    result=await invoke(_request('alice',{'request':'Check the MIME fixture'}),'manual-recipe')
+    assert 'manual-recipe' in str(result) and 'Check the MIME fixture' in str(result)
+    assert sm.load(owner='alice')[0]['uses']==1
+    assert (await catalog(_request('bob')))['count']==0
+    with pytest.raises(HTTPException) as error:
+        await invoke(_request('bob',{'request':'Check'}),'manual-recipe')
+    assert error.value.status_code==404
+    (folder/'SKILL.md').write_text(markdown.replace('status: published','status: draft'),encoding='utf8')
+    assert (await catalog(_request('alice')))['count']==0
+    with pytest.raises(HTTPException) as error:
+        await invoke(_request('alice',{'request':'Check'}),'manual-recipe')
+    assert error.value.status_code==404
