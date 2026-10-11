@@ -207,7 +207,7 @@ class _FakeResp:
 
 class TestGetContextLength:
     def setup_method(self):
-        model_context._context_cache.clear()
+        model_context.clear_context_caches()
         model_context._catalog_ctx_cache.clear()
 
     def test_local_endpoint_requeries_same_model_after_restart(self, monkeypatch):
@@ -223,6 +223,8 @@ class TestGetContextLength:
         model = "Qwen/Qwen3-14B"
 
         first = model_context.get_context_length(endpoint, model)
+        # Within one turn the local answer is remembered; once the short TTL passes it is asked again.
+        monkeypatch.setattr(model_context, "LOCAL_CONTEXT_TTL_S", 0.0)
         second = model_context.get_context_length(endpoint, model)
 
         assert first == 8192
@@ -242,6 +244,8 @@ class TestGetContextLength:
         model = "gpt-5"
 
         first = model_context.get_context_length(endpoint, model)
+        # Within one turn the local answer is remembered; once the short TTL passes it is asked again.
+        monkeypatch.setattr(model_context, "LOCAL_CONTEXT_TTL_S", 0.0)
         second = model_context.get_context_length(endpoint, model)
 
         assert first == 200000

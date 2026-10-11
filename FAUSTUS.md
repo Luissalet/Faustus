@@ -11333,3 +11333,13 @@ La extracción por reglas de la memoria aprendida (`src/brain/extract.py`) recon
 - `fact_history` / `GET /api/brain/fact-history` / `brain_fact_history` devuelven la cadena y la línea «antes: Vim, hasta 2026-10» también para «usa», «prefiere», «vive en»…
 
 Pruebas: `tests/test_brain_fact_changes.py` (ES/EN, «dejó de»/«stopped», valor ya guardado, relación funcional sin duplicados, sin valor nuevo, cola que no es valor nuevo, frase normal intacta, reextracción idempotente, fuente antigua leída después, formas del análisis). En vivo, en carpeta de datos aislada: cuatro memorias por `memory_engine`, barrido `extract_pending` y `brain_fact_history` por el servidor MCP `brain` en stdio: «usa» vigente Helix y Obsidian con «antes: Vim, hasta 2026-10; Notion, hasta 2026-10»; «trabaja en» vigente Bluehaven Studio con Cordera Labs cerrado y enlazado. Pendiente (#303): enseñar la cadena en la pantalla Cerebro.
+
+## 336. Sondeos de contexto a servidores locales caídos: una vez por turno — #310, OBJ-57 (11-10-2026)
+
+`model_context` vuelve a preguntar a los servidores locales su ventana de contexto en cada llamada, porque pueden reiniciarse con otra. Un turno pregunta varias veces en pocos segundos, y contra un llama.cpp u Ollama apagado cada pregunta pagaba una conexión rechazada (~2 s en Windows).
+
+- La respuesta de un servidor local se recuerda `LOCAL_CONTEXT_TTL_S` = 5 s (`_local_context_recent`); pasado ese plazo se vuelve a preguntar, así que un reinicio con otra ventana se sigue viendo en la siguiente ronda.
+- Los sondeos `/slots` (llama.cpp) y `/api/ps` (Ollama) respetan y alimentan el enfriamiento de hosts caídos de `llm_core` que ya usaba `/models`: un host que no contesta deja de sondearse para cualquier modelo durante el enfriamiento.
+- `clear_context_caches()` olvida las dos cachés.
+
+Medido contra un puerto local sin servidor, cuatro consultas como en un turno: antes 4,69 + 4,65 + 2,18 + 2,18 = 13,7 s; ahora 4,69 + 0,05 + 0 + 0 = 4,7 s. Pruebas: `tests/test_model_context_local_probe_cache.py` (llama.cpp caído se sondea una vez, `/slots` alimenta el enfriamiento y otro modelo del mismo host no toca la red, `/api/ps` respeta el enfriamiento, se vuelve a preguntar tras el plazo) y `test_model_context.py` adaptado.
