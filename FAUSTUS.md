@@ -10396,6 +10396,8 @@ Idea del radar #434 (`mcp-footprint`, informe de tamaño y duplicados de un cat�
 
 **Descripciones nativas recortadas (OBJ-56, 11-10-2026).** Medición sobre `FUNCTION_TOOL_SCHEMAS` en `d95ec55`: 20 descripciones nativas >250 tokens (no 8; el umbral es el de `OVERSIZED_DESCRIPTION_TOKENS`). Recorte en `src/tool_schemas.py` y `src/coordination/tools.py` (poll/task/board + guidance compartida) sin tocar `src/tool_index_examples.py`. Tras el cambio: 0 oversized; total del catálogo nativo 91 426 → 87 784 tokens (−3 642). Prueba: `tests/test_native_tool_description_budget.py`.
 
+**Nombre de cada origen (#308, 11-10-2026).** Los servidores MCP salían como ids (`6944e368`, `2b27c03c`…). Ahora `footprint_report(labels=…)` pone `label` en cada origen y `source_label` en `heaviest` y `oversized_descriptions`; la ruta toma los nombres de la tabla `mcp_servers` (`2b27c03c` → «Funes's Hoard», `builtin` → «Built-in») y la sección de Ajustes los muestra con el id al lado. De paso se arreglaron dos errores de tipos que había dejado #300 (clave «Built-in» repetida en `es.ts`/`es.tsv` y `body` obligatorio en el estado vacío). Pruebas: `test_tool_footprint.py::test_sources_carry_their_names_when_known`, `test_tool_registry.py` (ruta) y `tsc --noEmit` limpio.
+
 ## Relevo del bucle y cobertura comprobada — 08-10-2026, 13:25
 
 La misma automatización horaria continúa en el chat `01a11a8a-1caa-73f1-a7a4-3f6ba97621d6`, con identidad `codex-relevo`. No hay segundo bucle.

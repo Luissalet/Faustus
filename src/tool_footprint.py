@@ -245,8 +245,13 @@ def footprint_report(rows: Sequence[Any], *, model: str = "", top: int = DEFAULT
                      similarity: float = DEFAULT_SIMILARITY,
                      exposure_of: Optional[Callable[[str], Optional[str]]] = None,
                      hidden_of: Optional[Callable[[str], bool]] = None,
-                     count: Optional[Counter] = None) -> Dict[str, Any]:
+                     count: Optional[Counter] = None,
+                     labels: Optional[Mapping[str, str]] = None) -> Dict[str, Any]:
     """The whole report for one catalogue. Deterministic for a given input.
+
+    `labels` names the sources (an MCP server id -> the server's name, e.g.
+    `2b27c03c` -> "Funes's Hoard"); every source then carries a `label`
+    (`Built-in` for the native tools, the id itself when it has no name).
 
     `hidden_of` marks tools the agent is never offered (native twins): they
     count in `hidden_tokens`, not in `offered_tokens`, and are left out of the
@@ -261,9 +266,17 @@ def footprint_report(rows: Sequence[Any], *, model: str = "", top: int = DEFAULT
     hidden_tokens = total - sum(c["tokens"] for c in visible)
     offered = sum(c["tokens"] for c in visible if c["exposure"] not in _NOT_UPFRONT)
 
+    names = dict(labels or {})
+
+    def label_of(source: str) -> str:
+        if source == "builtin":
+            return "Built-in"
+        return str(names.get(source) or source)
+
     by_source: Dict[str, Dict[str, Any]] = {}
     for cost in costs:
-        bucket = by_source.setdefault(cost["source"], {"source": cost["source"], "tools": 0, "tokens": 0})
+        bucket = by_source.setdefault(cost["source"], {"source": cost["source"], "label": label_of(cost["source"]),
+                                                       "tools": 0, "tokens": 0})
         bucket["tools"] += 1
         bucket["tokens"] += cost["tokens"]
     sources = sorted(by_source.values(), key=lambda b: (-b["tokens"], b["source"]))
@@ -293,9 +306,10 @@ def footprint_report(rows: Sequence[Any], *, model: str = "", top: int = DEFAULT
         "hidden_tools": len(costs) - len(visible),
         "by_source": sources,
         "by_exposure": by_exposure,
-        "heaviest": [_public(c) for c in ranked[:top]],
+        "heaviest": [dict(_public(c), source_label=label_of(c["source"])) for c in ranked[:top]],
         "oversized_descriptions": [
-            {"name": c["name"], "source": c["source"], "description_tokens": c["description_tokens"]}
+            {"name": c["name"], "source": c["source"], "source_label": label_of(c["source"]),
+             "description_tokens": c["description_tokens"]}
             for c in oversized[:top]
         ],
         "name_collisions": name_collisions(visible),

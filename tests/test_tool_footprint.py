@@ -146,3 +146,22 @@ def test_native_twins_are_hidden_not_collisions():
     assert [c["short_name"] for c in report["name_collisions"]] == ["reply_to_email"]
     assert [(p["a"], p["b"]) for p in report["near_duplicates"]] == [("mcp__email__reply_to_email", "reply_to_email")]
     assert all(h["name"] != "mcp__code_graph__code_graph_flows" for h in report["heaviest"])
+
+
+def test_sources_carry_their_names_when_known():
+    long = "Recall what the user did on this computer during a time window, with apps and files. " * 12
+    rows = [
+        _desc("bash", "Run a shell command in the workspace and return its output."),
+        _desc("mcp__2b27c03c__recall", long, "mcp:2b27c03c"),
+        _desc("mcp__ffff0000__ping", "Ping a host and report its latency.", "mcp:ffff0000"),
+    ]
+    report = tf.footprint_report(rows, count=chars4, labels={"2b27c03c": "Funes's Hoard"})
+    labels = {b["source"]: b["label"] for b in report["by_source"]}
+    assert labels == {"builtin": "Built-in", "2b27c03c": "Funes's Hoard", "ffff0000": "ffff0000"}
+    recall = next(c for c in report["heaviest"] if c["source"] == "2b27c03c")
+    assert recall["source_label"] == "Funes's Hoard"
+    over = report["oversized_descriptions"]
+    assert over and over[0]["source"] == "2b27c03c" and over[0]["source_label"] == "Funes's Hoard"
+    # without names every source is labelled by its id
+    plain = tf.footprint_report(rows, count=chars4)
+    assert {b["source"]: b["label"] for b in plain["by_source"]}["2b27c03c"] == "2b27c03c"

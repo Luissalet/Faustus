@@ -8,6 +8,8 @@ import { getJson } from './api';
 
 export interface FootprintSourceBucket {
   source: string;
+  /** The MCP server's name ("Funes's Hoard"), Built-in, or the id when unnamed. */
+  label?: string;
   tools: number;
   tokens: number;
   share?: number;
@@ -32,12 +34,14 @@ export interface FootprintNearDuplicate {
 export interface FootprintOversized {
   name: string;
   source: string;
+  source_label?: string;
   description_tokens: number;
 }
 
 export interface FootprintHeaviest {
   name: string;
   source: string;
+  source_label?: string;
   tokens: number;
   description_tokens: number;
   schema_tokens: number;
@@ -101,7 +105,7 @@ export function loadToolFootprint(
 }
 
 /** Human label for a footprint source id (`builtin` → Built-in). */
-export function footprintSourceLabel(source: string): string {
+export function footprintSourceLabel(source: string, label?: string): string {
   if (source === 'builtin') return 'Built-in';
-  return source;
+  return label || source;
 }

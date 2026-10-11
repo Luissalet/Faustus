@@ -105,6 +105,15 @@ def setup_tool_registry_routes():
             "tools": [_row_summary(d, mcp_manager) for d in rows],
         }
 
+    def _mcp_server_names() -> dict:
+        """MCP server id -> its configured name, for the footprint's labels."""
+        try:
+            from core.database import McpServer, SessionLocal
+            with SessionLocal() as db:
+                return {str(r.id): str(r.name or "") for r in db.query(McpServer.id, McpServer.name).all()}
+        except Exception:  # noqa: BLE001 - labels are a nicety; ids still identify sources
+            return {}
+
     @router.get("/footprint")
     def footprint(request: Request, model: str = "", top: int = DEFAULT_TOP,
                   similarity: float = DEFAULT_SIMILARITY, source: str = ""):
@@ -122,7 +131,8 @@ def setup_tool_registry_routes():
         if wanted:
             rows = [d for d in rows if footprint_source_of(d.executor) == wanted]
         report = footprint_report(rows, model=model.strip(), top=top, similarity=similarity,
-                                  exposure_of=builtin_exposure, hidden_of=native_twin)
+                                  exposure_of=builtin_exposure, hidden_of=native_twin,
+                                  labels=_mcp_server_names())
         report["checked_at"] = now_iso()
         report["fingerprint"] = catalog_fingerprint(rows)
         report["mcp_attached"] = mcp_manager is not None
