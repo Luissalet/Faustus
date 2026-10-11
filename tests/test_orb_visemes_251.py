@@ -381,3 +381,197 @@ def test_api_works_with_a_service_that_only_has_the_plain_interface():
     with TestClient(app) as c:
         marks = c.post("/api/tts/synthesize", json={"text": "Hola", "format": "base64", "marks": True}).json()["marks"]
     assert marks["words_source"] == "estimated"
+
+
+# ── The engine's words must be the text's words ──
+
+def _eng(text, start, end, ph="a"):
+    return {"text": text, "start_ms": start, "end_ms": end, "phonemes": ph}
+
+
+QUIET = wav([0.3] * (fake.RATE * 2))
+
+
+def test_engine_words_of_another_text_are_discarded_and_say_why():
+    """An engine report for other words must not paint its times and phonemes over this text."""
+    engine = {"words": [_eng("Adiós", 100, 700, ["a", "d"]), _eng("planeta", 800, 1500, ["p", "l"])],
+              "phonemes": [{"p": "a", "start_ms": 0, "end_ms": 500}]}
+    m = M.build_marks("Hola mundo", QUIET, "es", engine)
+    check_invariants(m, "Hola mundo")
+    assert (m["words_source"], m["visemes_source"]) == ("estimated", "estimated")
+    assert m["engine_ignored"] == "text_mismatch"
+    assert [(w["start_ms"], w["end_ms"]) for w in m["words"]] != [(100, 700), (800, 1500)]
+    # the mouth shapes come from the letters of the text, not from the foreign phonemes
+    assert [v["v"] for v in m["visemes"] if v["v"] != "rest"][:3] == ["O", "L", "AA"]
+
+
+def test_a_matching_report_does_not_carry_the_ignored_flag():
+    m = M.build_marks("Hola mundo", QUIET, "es", {"words": [_eng("Hola", 100, 700), _eng("mundo", 800, 1500)]})
+    assert m["words_source"] == "engine" and "engine_ignored" not in m
+
+
+def test_engine_words_match_whatever_the_case_accents_and_punctuation():
+    text = "¿Qué TAL, Señor Núñez?"
+    words = [_eng("que", 0, 300), _eng("tal", 300, 600), _eng("senor", 700, 1000), _eng("nunez", 1000, 1400)]
+    m = M.build_marks(text, QUIET, "es", {"words": words})
+    check_invariants(m, text)
+    assert m["words_source"] == "engine" and [w["start_ms"] for w in m["words"]] == [0, 300, 700, 1000]
+
+
+def test_a_number_the_engine_says_in_words_still_counts_as_the_text():
+    text = "Tengo 3 gatos negros"
+    words = [_eng("Tengo", 0, 300), _eng("tres", 300, 600), _eng("gatos", 700, 1000), _eng("negros", 1000, 1400)]
+    m = M.build_marks(text, QUIET, "es", {"words": words})
+    check_invariants(m, text)
+    assert m["words_source"] == "engine" and "engine_ignored" not in m
+    assert (m["words"][1]["start_ms"], m["words"][1]["end_ms"]) == (300, 600)
+    # a number that takes several words takes all of their time
+    text = "Hubo 1999 casos"
+    words = [_eng("Hubo", 0, 300), _eng("mil", 400, 600), _eng("novecientos", 600, 1100), _eng("noventa", 1100, 1400),
+             _eng("y", 1400, 1450), _eng("nueve", 1450, 1700), _eng("casos", 1800, 2000)]
+    m = M.build_marks(text, QUIET, "es", {"words": words})
+    check_invariants(m, text)
+    assert m["words_source"] == "engine"
+    assert [(w["start_ms"], w["end_ms"]) for w in m["words"]] == [(0, 300), (400, 1700), (1800, 2000)]
+
+
+def test_words_the_engine_splits_are_one_word_of_the_text():
+    text = "Mi ping-pong favorito"
+    words = [_eng("Mi", 0, 200), _eng("ping", 300, 600), _eng("pong", 600, 900), _eng("favorito", 1000, 1500)]
+    m = M.build_marks(text, QUIET, "es", {"words": words})
+    check_invariants(m, text)
+    assert m["words_source"] == "engine"
+    assert [(w["start_ms"], w["end_ms"]) for w in m["words"]] == [(0, 200), (300, 900), (1000, 1500)]
+
+
+def test_words_the_engine_merges_share_its_time():
+    text = "Dame un tele fono ya"
+    words = [_eng("Dame", 0, 300), _eng("un", 300, 400), _eng("telefono", 500, 1200), _eng("ya", 1300, 1500)]
+    m = M.build_marks(text, QUIET, "es", {"words": words})
+    check_invariants(m, text)
+    assert m["words_source"] == "engine"
+    tele, fono = m["words"][2], m["words"][3]
+    assert tele["start_ms"] == 500 and fono["end_ms"] == 1200 and tele["end_ms"] == fono["start_ms"]
+    assert (m["words"][4]["start_ms"], m["words"][4]["end_ms"]) == (1300, 1500)
+
+
+def test_a_word_the_engine_skipped_is_placed_between_its_neighbours():
+    text = "uno dos tres cuatro cinco seis siete ocho nueve diez"
+    spans = [(i * 150, i * 150 + 120) for i in range(10)]
+    words = [_eng(w, *spans[i]) for i, w in enumerate(text.split()) if w != "cinco"]
+    m = M.build_marks(text, QUIET, "es", {"words": words})
+    check_invariants(m, text)
+    assert m["words_source"] == "engine" and "engine_ignored" not in m
+    assert m["words"][3]["end_ms"] <= m["words"][4]["start_ms"] and m["words"][4]["end_ms"] <= m["words"][5]["start_ms"]
+    assert (m["words"][6]["start_ms"], m["words"][9]["end_ms"]) == (spans[6][0], spans[9][1])
+
+
+def test_a_report_that_mostly_disagrees_is_discarded():
+    text = "uno dos tres cuatro cinco seis siete ocho nueve diez"
+    words = [_eng(w, i * 150, i * 150 + 120) for i, w in enumerate("uno dos tres cuatro cinco seis alfa beta gamma delta".split())]
+    m = M.build_marks(text, QUIET, "es", {"words": words})
+    check_invariants(m, text)
+    assert m["words_source"] == "estimated" and m["engine_ignored"] == "text_mismatch"
+
+
+def test_a_long_text_is_aligned_quickly():
+    text = " ".join(f"palabra{i % 7}x" for i in range(800))
+    words = [_eng(w, i * 10, i * 10 + 8) for i, w in enumerate(text.split()[:-5])]
+    started = time.perf_counter()
+    m = M.build_marks(text, wav([0.3] * (fake.RATE * 10)), "es", {"words": words})
+    assert time.perf_counter() - started < 3
+    assert m["words_source"] == "engine"
+    check_invariants(m, text)
+
+
+# ── The cache keeps what the engine said ──
+
+class _FakeKokoro:
+    """A CPU stand-in for the neural engine: a known audio and the word times it would report."""
+    available = True
+
+    def __init__(self):
+        self.calls = 0
+        self.audio = wav([0.3] * (fake.RATE * 2))
+
+    def synthesize_raw_detailed(self, text, voice="af_heart"):
+        self.calls += 1
+        return self.audio, {"words": [_eng("Hola", 100, 700, ["o", "l", "a"]), _eng("mundo", 800, 1500, "m u n d o".split())]}
+
+    def synthesize_raw(self, text, voice="af_heart"):
+        return self.synthesize_raw_detailed(text, voice)[0]
+
+
+def _cached_service(tmp_path):
+    svc = TTSService(cache_dir=str(tmp_path / "cache"))
+    settings = {"tts_enabled": True, "tts_provider": "local", "tts_model": "m", "tts_voice": "v", "tts_speed": "1",
+                "tts_command_template": ""}
+    svc._load_settings = lambda: settings
+    engine = _FakeKokoro()
+    svc._get_kokoro = lambda: engine
+    app = FastAPI()
+    app.include_router(setup_tts_routes(svc))
+    return svc, engine, TestClient(app)
+
+
+def _marks(client, text="Hola mundo"):
+    r = client.post("/api/tts/synthesize", json={"text": text, "format": "base64", "marks": True, "use_cache": True, "language": "es"})
+    assert r.status_code == 200
+    body = r.json()
+    return base64.b64decode(body["audio"]), body["marks"]
+
+
+def test_a_cache_hit_returns_the_same_precise_marks_as_the_first_call(tmp_path):
+    svc, engine, client = _cached_service(tmp_path)
+    with client:
+        audio1, first = _marks(client)
+        audio2, second = _marks(client)
+    assert engine.calls == 1, "the second request must be served from the cache"
+    assert audio1 == audio2
+    assert (first["words_source"], first["visemes_source"]) == ("engine", "engine")
+    assert (second["words_source"], second["visemes_source"]) == ("engine", "engine")
+    assert [(w["start_ms"], w["end_ms"]) for w in second["words"]] == [(100, 700), (800, 1500)] == [(w["start_ms"], w["end_ms"]) for w in first["words"]]
+    assert second["visemes"] == first["visemes"]
+
+
+def test_audio_cached_by_a_plain_request_still_has_precise_marks_later(tmp_path):
+    svc, engine, client = _cached_service(tmp_path)
+    assert svc.synthesize("Hola mundo")          # a request that does not want marks fills the cache
+    with client:
+        _, marks = _marks(client)
+    assert engine.calls == 1 and marks["words_source"] == "engine"
+
+
+def test_an_old_cache_entry_without_marks_falls_back_to_the_estimate(tmp_path):
+    svc, engine, client = _cached_service(tmp_path)
+    with client:
+        _marks(client)
+        for sidecar in (tmp_path / "cache").glob("*.marks.json"):
+            sidecar.unlink()                    # an entry written before the marks were kept
+        _, marks = _marks(client)
+    assert engine.calls == 1 and marks["words_source"] == "estimated"
+    check_invariants(marks, "Hola mundo")
+
+
+def test_marks_that_belong_to_other_audio_are_not_used(tmp_path):
+    svc, engine, client = _cached_service(tmp_path)
+    with client:
+        _marks(client)
+        (audio_path,) = list((tmp_path / "cache").glob("*.wav"))
+        audio_path.write_bytes(wav([0.3] * (fake.RATE * 3)))   # the cached audio was replaced, the sidecar is stale
+        _, marks = _marks(client)
+    assert marks["words_source"] == "estimated" and marks["duration_ms"] == 3000
+
+
+def test_marks_leave_the_cache_with_their_audio(tmp_path):
+    svc, engine, client = _cached_service(tmp_path)
+    svc.max_cache_bytes = 1
+    with client:
+        _marks(client)
+    assert list((tmp_path / "cache").glob("*.wav")) == [] and list((tmp_path / "cache").glob("*.marks.json")) == []
+    svc.max_cache_bytes = 500 * 1024 * 1024
+    with client:
+        _marks(client)
+    assert len(list((tmp_path / "cache").glob("*.marks.json"))) == 1
+    svc.clear_cache()
+    assert list((tmp_path / "cache").iterdir()) == []

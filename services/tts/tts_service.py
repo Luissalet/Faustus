@@ -2,6 +2,7 @@
 """Multi-provider TTS service — dispatches to local Kokoro, OpenAI-compatible API, or browser."""
 
 import io
+import json
 import os
 import wave
 import logging
@@ -99,9 +100,35 @@ class TTSService:
                 return path.read_bytes()
         return None
 
-    def _put_cache(self, key: str, data: bytes):
+    def _marks_path(self, key: str) -> Path:
+        return self.cache_dir / f"{key}.marks.json"
+
+    def _get_cached_hints(self, key: str, audio: bytes) -> Optional[dict]:
+        """What the engine reported about the cached audio (word timings, phonemes), kept next to it so a cache hit
+        does not lose the precise marks. Only valid for these exact bytes: a missing, unreadable or foreign sidecar
+        (an old cache entry, audio replaced since) gives None and the marks are estimated from the audio."""
+        try:
+            data = json.loads(self._marks_path(key).read_text(encoding="utf-8"))
+            hints = data.get("hints")
+            if (isinstance(hints, dict) and data.get("audio_bytes") == len(audio)
+                    and data.get("audio_sha256") == hashlib.sha256(audio).hexdigest()):
+                return hints
+        except (OSError, ValueError, AttributeError):
+            pass
+        return None
+
+    def _put_cache(self, key: str, data: bytes, hints: Optional[dict] = None):
         ext = ".mp3" if (len(data) >= 3 and (data[:3] == b'ID3' or (data[0] == 0xff and (data[1] & 0xe0) == 0xe0))) else ".wav"
         (self.cache_dir / f"{key}{ext}").write_bytes(data)
+        marks_path = self._marks_path(key)
+        try:
+            if hints:
+                marks_path.write_text(json.dumps({"audio_bytes": len(data), "audio_sha256": hashlib.sha256(data).hexdigest(),
+                                                  "hints": hints}, ensure_ascii=False), encoding="utf-8")
+            elif marks_path.exists():
+                marks_path.unlink()  # new audio without hints: the old sidecar describes other bytes
+        except (OSError, TypeError, ValueError) as e:
+            logger.warning(f"Could not store speech marks next to the cached audio: {e}")
 
         self._enforce_cache_limit()
 
@@ -143,6 +170,9 @@ class TTSService:
                             size = f.stat().st_size
                             f.unlink()
                             total_size -= size
+                            sidecar = f.with_name(f"{f.stem}.marks.json")
+                            if sidecar.exists():
+                                sidecar.unlink()  # the marks live and die with their audio
                         except OSError as e:
                             logger.warning(f"Failed to evict cache file {f}: {e}")
                             continue
@@ -256,7 +286,7 @@ class TTSService:
             cached = self._get_cached(key)
             if cached:
                 logger.info(f"TTS cache hit ({len(text)} chars)")
-                return cached, None
+                return cached, (self._get_cached_hints(key, cached) if want_hints else None)
 
         audio_data = None
         hints = None
@@ -264,8 +294,12 @@ class TTSService:
         if provider == "local":
             kokoro = self._get_kokoro()
             if kokoro and kokoro.available:
-                if want_hints:
-                    audio_data, hints = kokoro.synthesize_raw_detailed(text, voice)
+                # The engine reports its timings at no extra cost, so whenever the audio is going to be cached it also
+                # keeps them: a later request that wants marks gets the precise ones from the cache.
+                detailed = getattr(kokoro, "synthesize_raw_detailed", None) if (want_hints or use_cache) else None
+                result = detailed(text, voice) if callable(detailed) else None
+                if isinstance(result, tuple) and len(result) == 2:
+                    audio_data, hints = result
                 else:
                     audio_data = kokoro.synthesize_raw(text, voice)
             else:
@@ -280,9 +314,9 @@ class TTSService:
 
         if audio_data and use_cache:
             key = self._cache_key(text, provider, model, voice, speed)
-            self._put_cache(key, audio_data)
+            self._put_cache(key, audio_data, hints if isinstance(hints, dict) else None)
 
-        return audio_data, hints
+        return audio_data, (hints if want_hints else None)
 
     def synthesize_to_base64(self, text: str) -> Optional[str]:
         import base64

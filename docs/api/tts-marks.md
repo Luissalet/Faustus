@@ -68,6 +68,9 @@ binario y `format: "base64"` sigue devolviendo `{"audio": "..."}`.
   labio (f; en inglés también v), `L` y `OTHER` el resto de consonantes.
 - `words_source` / `visemes_source`: `"engine"` si el dato lo informó el motor
   de voz, `"estimated"` si se calculó a partir del audio y del texto.
+- `engine_ignored` (solo aparece cuando pasa): `"text_mismatch"` si el motor
+  informó palabras que no son las del texto; se descarta todo lo que dijo y las
+  marcas se estiman (ver «De dónde salen las marcas»).
 - `timing`: `"audio"` si la duración sale del audio; `"text_only"` si el audio
   no se pudo leer (ni WAV ni cabecera MPEG) y se estimó por el texto.
 - `marks` es `null` si el cálculo falla: el audio nunca se pierde por eso.
@@ -79,8 +82,18 @@ binario y `format: "base64"` sigue devolviendo `{"audio": "..."}`.
    incluir `{marks_path}`: la ruta de un JSON que el comando escribe junto al
    audio. Formatos admitidos (todo opcional, lo que no cuadra con el texto o con
    el audio se ignora):
-   - `words`: `[{"text", "start_ms", "end_ms", "phonemes"?}]`, una por palabra del
-     texto → tiempos de palabra del motor (`words_source: "engine"`);
+   - `words`: `[{"text", "start_ms", "end_ms", "phonemes"?}]` (el `text` de cada
+     palabra es obligatorio) → tiempos de palabra del motor
+     (`words_source: "engine"`). Se comprueba que sean las palabras del texto:
+     se alinean sin mayúsculas, acentos ni signos y deben encontrar pareja al
+     menos el 80 % de las palabras del texto y el 80 % de las del motor. Se
+     toleran un número dicho con letras (`3` frente a `tres`, `1999` frente a
+     «mil novecientos noventa y nueve»), una palabra que el motor parte en
+     varias (`ping-pong` frente a `ping`, `pong`), varias que junta en una (el
+     tiempo se reparte entre ellas) y alguna palabra que el motor omite (se
+     coloca entre sus vecinas). Si no es el mismo texto, se descarta todo el
+     informe del motor (también sus fonemas y trozos), se estiman las marcas y
+     la respuesta lo dice con `engine_ignored: "text_mismatch"`;
    - `phonemes`: `[{"p", "start_ms", "end_ms"}]` para todo el audio (símbolos IPA
      o códigos ARPAbet) → visemas del motor (`visemes_source: "engine"`);
    - `segments`: `[{"text", "phonemes"?, "start_ms", "end_ms"}]`, trozos
@@ -102,17 +115,34 @@ binario y `format: "base64"` sigue devolviendo `{"audio": "..."}`.
 
 ## Precisión medida
 
-Contra un motor falso con tiempos conocidos (`tests/fake_tts_marks.py`, 7 frases
-en español e inglés, 91 palabras, pausas de coma y de punto): error medio de
-frontera 30 ms, mediana 24 ms, percentil 90 de 46 ms, máximo 57 ms; el punto
-medio de las 91 palabras cae dentro de la palabra pronunciada. El audio
-sintético tiene una envolvente más limpia que la voz real: en voz real los
-tiempos serán algo peores, y por eso la interfaz no depende de ellos (si las
-marcas no llegan o no cuadran con el texto, la esfera usa el volumen y el
-subtítulo se muestra sin resaltar).
+Importante: estas cifras están medidas **sobre un corpus sintético, no sobre voz
+real**. El corpus es un motor falso con tiempos conocidos
+(`tests/fake_tts_marks.py`: un tono de 150 ms por sílaba, palabras separadas por
+huecos cortos y pausas de coma y de punto; 7 frases en español e inglés, 91
+palabras). Ahí el error medio de frontera es de 30 ms, la mediana de 24 ms, el
+percentil 90 de 46 ms y el máximo de 57 ms, y el punto medio de las 91 palabras
+cae dentro de la palabra pronunciada. Ese audio tiene una envolvente mucho más
+limpia que la voz humana o la de un motor neuronal (sin coarticulación, sin
+sílabas átonas ni consonantes sordas casi sin energía), así que con voz real
+los errores serán mayores y **no hay todavía una medición con voz real**. Por
+eso la interfaz no depende de la precisión (si las marcas no llegan o no
+cuadran con el texto, la esfera usa el volumen y el subtítulo se muestra sin
+resaltar) y, cuando el motor informa sus propios tiempos, se usan esos.
 
 Coste: 14 ms para 282 caracteres (24 s de audio); 158 ms para 2.263 caracteres
 (187 s). Una frase de voz (50-250 caracteres) cuesta unos pocos milisegundos.
+
+## Caché de voz
+
+Con el motor local neuronal el audio se guarda en la caché de voz, y junto a él
+(`<clave>.marks.json`) lo que el motor informó de ese audio, con la huella
+(SHA-256 y tamaño) de los bytes a los que corresponde. Una petición que acierta
+en la caché devuelve las mismas marcas precisas que la primera
+(`words_source: "engine"`), aunque el audio lo hubiera guardado una petición
+que no pedía marcas. Las marcas se borran con su audio (al expulsarlo por límite
+de tamaño o al vaciar la caché); una entrada antigua sin ese fichero, o cuyo
+fichero ya no corresponde al audio, se estima como si no hubiera caché. Los
+motores `command`, `system` y `piper` no usan la caché compartida.
 
 ## Uso desde otra aplicación
 
@@ -138,11 +168,14 @@ palabra equivocada es peor que no iluminar ninguna).
 
 ## Verificación
 
-`tests/test_orb_visemes_251.py` (67 pruebas: visemas en español e inglés,
+`tests/test_orb_visemes_251.py` (81 pruebas: visemas en español e inglés,
 fonemas IPA/ARPAbet, sílabas, desplazamientos UTF-16, tiempos monótonos, dentro
 de límites y que cubren todas las palabras con 7 frases, precisión contra la
 verdad conocida, audio sin pausas, en silencio, estéreo, 8 bits, coma flotante,
 sin longitud, ilegible y MPEG, datos del motor correctos e incoherentes,
-contrato `{marks_path}`, forma de la API y que sin `marks` no cambia nada) y
+palabras del motor que no son las del texto, números dichos con letras,
+palabras partidas, juntas y omitidas, caché con aciertos que conservan las
+marcas del motor, contrato `{marks_path}`, forma de la API y que sin `marks` no
+cambia nada) y
 `tests/test_orb_visemes_251_js.py` con `tests/voice_visemes.check.mjs` (la parte
 pura del navegador contra marcas reales del servidor).

@@ -76,9 +76,14 @@ if __name__ == "__main__":
         k = argv.index("--lang")
         lang = argv[k + 1]
         del argv[k:k + 2]
+    foreign = "--foreign" in argv   # report the times of some other sentence, as an engine that mixed up its reports would
+    if foreign:
+        argv.remove("--foreign")
     text = open(argv[0], encoding="utf-8").read()
     samples, truth = render(text, lang)
     write_wav(argv[1], samples)
     if len(argv) > 2:
+        if foreign:
+            truth = render("Adiós planeta lejano, nos vemos mañana", lang)[1]
         with open(argv[2], "w", encoding="utf-8") as f:
             json.dump({"words": truth}, f)

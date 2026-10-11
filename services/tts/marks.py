@@ -28,6 +28,8 @@ synthesized, so a browser can slice the same string to highlight a word.
 from __future__ import annotations
 
 import bisect
+import difflib
+import functools
 import re
 import struct
 import sys
@@ -706,23 +708,167 @@ def _engine_visemes(phonemes: Any, duration_ms: int) -> Optional[List[Dict[str, 
 
 # ── Engine-provided data ──
 
-def _engine_words(words: List[Dict[str, Any]], given: Any, duration_ms: int) -> Optional[List[Tuple[int, int, Any]]]:
-    """Timings from an engine's own word list, if it lines up with the words of the text."""
-    if not isinstance(given, list) or len(given) != len(words) or not words:
-        return None
-    out: List[Tuple[int, int, Any]] = []
+ALIGN_MIN_SHARE = 0.8    # share of the text's words, and of the engine's, that must find their counterpart
+ALIGN_FUSE = 4           # an engine may split a word of the text into up to this many words, or merge as many into one
+ALIGN_NUMBER = 8         # words a spoken number may take ("mil novecientos noventa y nueve")
+ALIGN_BAND = 40          # how far from the diagonal the alignment looks
+
+
+def _norm_word(word: Any) -> str:
+    """Casefolded, without accents or punctuation: what two spellings of the same word share."""
+    folded = unicodedata.normalize("NFKD", str(word).casefold())
+    return "".join(c for c in folded if c.isalnum())
+
+
+@functools.lru_cache(maxsize=65536)
+def _similar(a: str, b: str) -> float:
+    if a == b:
+        return 1.0 if a else 0.0
+    if min(len(a), len(b)) < 4 or a[0] != b[0] or abs(len(a) - len(b)) > 3:
+        return 0.0
+    return 0.8 if difflib.SequenceMatcher(None, a, b).ratio() >= 0.8 else 0.0
+
+
+def _join_phonemes(parts: List[Any]) -> Any:
+    if parts and all(isinstance(p, str) and p for p in parts):
+        return " ".join(parts)
+    if parts and all(isinstance(p, list) for p in parts):
+        return [x for p in parts for x in p]
+    return None
+
+
+def _align_words(text_words: List[str], engine_words: List[str]) -> List[Tuple[str, int, int, int]]:
+    """Best alignment of the words of the text with the engine's, as steps (kind, i, j, k): `m` one to one, `s` the text
+    word i is the engine words j..j+k-1 (split, or a number said in words), `e` the text words i..i+k-1 are the engine
+    word j (merged), `t` text word i has no counterpart, `g` engine word j has none. Banded around the diagonal."""
+    m, n = len(text_words), len(engine_words)
+    has_digit = [any(c.isdigit() for c in w) for w in text_words]
+    band = ALIGN_BAND + abs(m - n)
+    best: Dict[Tuple[int, int], float] = {(0, 0): 0.0}
+    back: Dict[Tuple[int, int], Tuple[Tuple[int, int], Tuple[str, int, int, int]]] = {}
+
+    def relax(src: Tuple[int, int], dst: Tuple[int, int], gain: float, step: Tuple[str, int, int, int]) -> None:
+        score = best[src] + gain
+        if dst not in best or score > best[dst] + 1e-9:
+            best[dst] = score
+            back[dst] = (src, step)
+
+    for i in range(m + 1):
+        centre = int(i * n / m) if m else 0
+        for j in range(max(0, centre - band), min(n, centre + band) + 1):
+            if (i, j) not in best:
+                continue
+            if i < m:
+                relax((i, j), (i + 1, j), 0.0, ("t", i, j, 1))
+            if j < n:
+                relax((i, j), (i, j + 1), 0.0, ("g", i, j, 1))
+            if i < m and j < n:
+                sim = _similar(text_words[i], engine_words[j])
+                if sim:
+                    relax((i, j), (i + 1, j + 1), sim, ("m", i, j, 1))
+            if i < m:
+                limit = ALIGN_NUMBER if has_digit[i] else ALIGN_FUSE
+                for k in range(1 if has_digit[i] else 2, limit + 1):
+                    if j + k > n:
+                        break
+                    if has_digit[i] or "".join(engine_words[j:j + k]) == text_words[i]:
+                        relax((i, j), (i + 1, j + k), 1.0 + 0.001 * k, ("s", i, j, k))
+            if j < n:
+                for k in range(2, ALIGN_FUSE + 1):
+                    if i + k > m:
+                        break
+                    if "".join(text_words[i:i + k]) == engine_words[j]:
+                        relax((i, j), (i + k, j + 1), float(k), ("e", i, j, k))
+    if (m, n) not in best:
+        return []
+    steps: List[Tuple[str, int, int, int]] = []
+    cell = (m, n)
+    while cell != (0, 0):
+        cell, step = back[cell]
+        steps.append(step)
+    steps.reverse()
+    return steps
+
+
+def _engine_words(words: List[Dict[str, Any]], given: Any, duration_ms: int) -> Tuple[Optional[List[Tuple[int, int, Any]]], Optional[str]]:
+    """(spans, why): timings from an engine's own word list, one per word of the text, when that list is the text
+    spoken: the words are aligned (casefold, no accents or punctuation) and at least ALIGN_MIN_SHARE of the text's
+    words and of the engine's must find their counterpart, tolerating a number said in words, a word the engine split
+    in several and several it merged into one. `why` is "text_mismatch" when the list is well formed but belongs to
+    another text; a malformed list gives (None, None)."""
+    if not isinstance(given, list) or not given or not words:
+        return None, None
+    timed: List[Tuple[int, int, Any, str]] = []
     prev = 0
     for g in given:
-        if not isinstance(g, dict):
-            return None
+        if not isinstance(g, dict) or not isinstance(g.get("text"), str):
+            return None, None
         s, e = g.get("start_ms"), g.get("end_ms")
         if isinstance(s, bool) or isinstance(e, bool) or not isinstance(s, (int, float)) or not isinstance(e, (int, float)):
-            return None
+            return None, None
         s = int(min(max(s, prev, 0), duration_ms))
         e = int(min(max(e, s), duration_ms))
-        out.append((s, e, g.get("phonemes")))
+        timed.append((s, e, g.get("phonemes"), _norm_word(g["text"])))
         prev = e
-    return out
+    text_norm = [_norm_word(w["text"]) for w in words]
+    engine_norm = [t[3] for t in timed]
+
+    if len(timed) == len(words) and all(_similar(a, b) for a, b in zip(text_norm, engine_norm)):
+        return [(s, e, ph) for s, e, ph, _ in timed], None   # the usual case, no alignment needed
+
+    spans: List[Optional[Tuple[int, int, Any]]] = [None] * len(words)
+    matched_text = matched_engine = 0
+    for kind, i, j, k in _align_words(text_norm, engine_norm):
+        if kind == "m":
+            spans[i] = timed[j][:3]
+            matched_text += 1
+            matched_engine += 1
+        elif kind == "s":
+            spans[i] = (timed[j][0], timed[j + k - 1][1], _join_phonemes([t[2] for t in timed[j:j + k]]))
+            matched_text += 1
+            matched_engine += k
+        elif kind == "e":
+            s, e = timed[j][0], timed[j][1]
+            lengths = [max(1, len(text_norm[x])) for x in range(i, i + k)]
+            acc = 0
+            for x, ln in zip(range(i, i + k), lengths):
+                a = s + int(round((e - s) * acc / sum(lengths)))
+                acc += ln
+                spans[x] = (a, s + int(round((e - s) * acc / sum(lengths))), None)
+            matched_text += k
+            matched_engine += 1
+    if matched_text < ALIGN_MIN_SHARE * len(words) or matched_engine < ALIGN_MIN_SHARE * len(timed):
+        return None, "text_mismatch"
+
+    # The few words the engine did not report sit in the gap between their neighbours.
+    out: List[Tuple[int, int, Any]] = []
+    i = 0
+    while i < len(spans):
+        if spans[i] is not None:
+            out.append(spans[i])  # type: ignore[arg-type]
+            i += 1
+            continue
+        j = i
+        while j < len(spans) and spans[j] is None:
+            j += 1
+        left = out[-1][1] if out else 0
+        right = spans[j][0] if j < len(spans) else duration_ms  # type: ignore[index]
+        right = max(right, left)
+        lengths = [max(1, len(text_norm[x])) for x in range(i, j)]
+        acc = 0
+        for x, ln in zip(range(i, j), lengths):
+            a = left + int(round((right - left) * acc / sum(lengths)))
+            acc += ln
+            out.append((a, left + int(round((right - left) * acc / sum(lengths))), None))
+        i = j
+    fixed: List[Tuple[int, int, Any]] = []
+    prev = 0
+    for s, e, ph in out:
+        s = int(min(max(s, prev, 0), duration_ms))
+        e = int(min(max(e, s), duration_ms))
+        fixed.append((s, e, ph))
+        prev = e
+    return fixed, None
 
 
 def _segment_timings(text: str, words: List[Dict[str, Any]], segments: Any, frames: Optional[Sequence[float]],
@@ -787,7 +933,11 @@ def build_marks(text: str, audio: Optional[bytes] = None, language: str = "", en
     duration = int(duration)
     engine = engine if isinstance(engine, dict) else {}
 
-    spans = _engine_words(words, engine.get("words"), duration)
+    spans, why = _engine_words(words, engine.get("words"), duration)
+    engine_ignored = None
+    if why:
+        # The engine's words are those of another text: nothing else in the same report can be trusted for this one.
+        engine_ignored, engine = why, {}
     words_source = "engine"
     if spans is None:
         words_source = "estimated"   # chunk boundaries from the engine anchor the estimate, the words in them are still laid out
@@ -808,8 +958,11 @@ def build_marks(text: str, audio: Optional[bytes] = None, language: str = "", en
         visemes, visemes_source = engine_visemes, "engine"
     elif spans and all(p for _, _, p in spans):
         visemes_source = "engine"
-    return {
+    result = {
         "version": MARKS_VERSION, "language": lang, "duration_ms": duration, "timing": timing,
         "words_source": words_source, "visemes_source": visemes_source,
         "viseme_set": list(VISEMES), "words": out_words, "visemes": _with_rests(visemes, duration),
     }
+    if engine_ignored:
+        result["engine_ignored"] = engine_ignored
+    return result
