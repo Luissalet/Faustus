@@ -1455,6 +1455,9 @@ class McpManager:
     async def disconnect_server(self, server_id: str):
         """Disconnect from an MCP server."""
         self._server_versions.pop(server_id, None)
+        if _is_browser_connection(server_id):
+            # A browser that goes away gives the Hub's site lane back at once (no-op when it held none).
+            await asyncio.to_thread(browser_lanes.release, server_id)
         # Cancel any in-flight HTTP/OAuth background connect so it stops
         # publishing status for a server that may be getting deleted.
         task = self._connect_tasks.pop(server_id, None)
@@ -1502,6 +1505,7 @@ class McpManager:
         ids = list(self._sessions.keys())
         for sid in ids:
             await self.disconnect_server(sid)
+        await asyncio.to_thread(browser_lanes.release_all)       # shutdown: every browser lane goes back to the Hub
 
 
     async def connect_all_enabled(self):

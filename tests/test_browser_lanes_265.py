@@ -24,10 +24,16 @@ URL = "https://shop.example.co.uk/p/1"
 SINCE = 1_790_000_000.0
 
 
+def _reset():
+    bl.release_all()
+    bl._recent_busy.clear()
+    bl._gates.clear()
+
+
 @pytest.fixture()
 def hub(monkeypatch):
     """A stub Hub with lane endpoints; ``state.busy`` makes ``acquire`` answer that another app holds the lane."""
-    state = SimpleNamespace(posts=[], busy=None)
+    state = SimpleNamespace(posts=[], busy=None, auth=[], delay=0.0)
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):
@@ -47,7 +53,10 @@ def hub(monkeypatch):
         def do_POST(self):  # noqa: N802
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
             state.posts.append((self.path, body))
+            state.auth.append(self.headers.get("Authorization"))
             if self.path == "/api/lane/acquire":
+                if state.delay:
+                    time.sleep(state.delay)
                 if state.busy:
                     return self._reply({"ok": True, "granted": False, "busy": True, "queue_seq": 3, "waiting": 0, **state.busy})
                 n = sum(1 for p, _ in state.posts if p == "/api/lane/acquire")
@@ -60,11 +69,13 @@ def hub(monkeypatch):
     monkeypatch.setenv("HOARD_HUB_URL", state.url)
     monkeypatch.setenv("FAUSTUS_BROWSER_LANES", "1")
     monkeypatch.setattr(bl, "_down_until", 0.0)
-    bl.release_all()
+    monkeypatch.setattr(bl, "READ_WAIT_S", 0.3)                    # the stub answers at once; do not poll it for the real 20 s
+    monkeypatch.setattr(bl, "NAV_WAIT_S", 0.3)
+    _reset()
     state.paths = lambda: [p for p, _ in state.posts]
     state.acquired = lambda: [b_["domain"] for p, b_ in state.posts if p == "/api/lane/acquire"]
     yield state
-    bl.release_all()
+    _reset()
     srv.shutdown()
     srv.server_close()
 
@@ -77,6 +88,7 @@ def _dead_hub(monkeypatch):
     monkeypatch.setenv("HOARD_HUB_URL", f"http://127.0.0.1:{port}")
     monkeypatch.setenv("FAUSTUS_BROWSER_LANES", "1")
     monkeypatch.setattr(bl, "_down_until", 0.0)
+    _reset()
 
 
 def _page(monkeypatch, calls):
@@ -213,9 +225,8 @@ def test_closing_the_browser_and_idling_give_the_lane_back(hub):
 
 def test_a_snapshot_counts_as_use_so_an_active_browser_keeps_its_lane(hub):
     assert bl.guard_navigate("c1", URL) is None
-    h = bl._held["c1"]
-    h.last_used -= 1000
-    bl.touch("c1")
+    bl._shared["example.co.uk"].users["conn:c1"] -= 1000          # it has been idle for a long time...
+    bl.touch("c1")                                                  # ...until a snapshot
     assert bl.sweep() == 0
 
 
@@ -280,3 +291,175 @@ def test_other_servers_never_take_lanes(hub):
 
 def test_busy_text_without_a_time_or_name():
     assert bl.busy_text("a.test") == "ocupado por otra app: el carril de navegador de a.test lo tiene esa app del Hub (la está leyendo ahora mismo)"
+
+
+# ── Faustus never waits on itself (review of #265) ──────────────────────────
+
+def _acquires(hub):
+    return [b_["domain"] for p, b_ in hub.posts if p == "/api/lane/acquire"]
+
+
+def _releases(hub):
+    return hub.paths().count("/api/lane/release")
+
+
+def test_a_read_on_a_site_faustus_browser_already_holds_does_not_ask_the_hub(hub):
+    assert bl.guard_navigate("conn1", "https://other.test/x") is None
+    hub.busy = {"held_by": "faustus", "since": SINCE, "expires_in_s": 40}        # what the Hub says to a second lease of Faustus
+    t0 = time.monotonic()
+    with bl.read_lane("https://other.test/z"):                                     # same process: its own lane, no wait
+        pass
+    assert time.monotonic() - t0 < 2
+    assert _acquires(hub) == ["other.test"] and _releases(hub) == 0               # still held by the browser
+    bl.release("conn1")
+    assert _releases(hub) == 1
+
+
+def test_two_faustus_browsers_on_the_same_site_share_the_lane(hub):
+    assert bl.guard_navigate("conn1", "https://other.test/a") is None
+    hub.busy = {"held_by": "faustus", "since": SINCE, "expires_in_s": 40}
+    assert bl.guard_navigate("conn2", "https://www.other.test/b") is None          # another chat, same site: not blocked
+    assert _acquires(hub) == ["other.test"]
+    bl.release("conn1")
+    assert _releases(hub) == 0                                                      # conn2 still needs it
+    bl.release("conn2")
+    assert _releases(hub) == 1 and bl.held_lanes() == {}
+
+
+def test_concurrent_reads_of_one_site_take_one_lane_between_them(hub):
+    hub.delay = 0.4                                                                  # the Hub takes a moment to answer
+    errors, inside = [], []
+
+    def reader(n):
+        try:
+            with bl.read_lane("https://other.test/p%d" % n):
+                inside.append(n)
+                time.sleep(0.3)
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=reader, args=(n,)) for n in range(3)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join(20)
+    assert not errors and sorted(inside) == [0, 1, 2]
+    assert _acquires(hub) == ["other.test"] and _releases(hub) == 1
+
+
+def test_reads_of_different_sites_hold_their_own_lanes(hub):
+    with bl.read_lane("https://one.test/a"):
+        with bl.read_lane("https://two.test/a"):
+            assert sorted(_acquires(hub)) == ["one.test", "two.test"]
+    assert _releases(hub) == 2
+
+
+def test_a_busy_answer_is_shared_with_the_caller_that_was_waiting_behind(hub):
+    hub.busy = {"held_by": "tantalus", "since": SINCE, "expires_in_s": 40}
+    with pytest.raises(bl.BrowserLaneBusy, match="ocupado por tantalus"):
+        with bl.read_lane("https://other.test/p", wait_s=0.3):
+            pass
+    polls = len(_acquires(hub))
+    t0 = time.monotonic()
+    with pytest.raises(bl.BrowserLaneBusy, match="ocupado por tantalus"):
+        with bl.read_lane("https://other.test/p", wait_s=5):
+            pass
+    assert time.monotonic() - t0 < 1.0 and len(_acquires(hub)) == polls             # the second one did not wait again
+
+
+def test_faustus_talks_to_the_hub_with_its_token(hub, monkeypatch, tmp_path):
+    token = tmp_path / "hub-token"
+    token.write_text("tok-faustus")
+    monkeypatch.setenv("HOARD_HUB_TOKEN_FILE", str(token))
+    with bl.read_lane(URL):
+        pass
+    assert set(hub.auth) == {"Bearer tok-faustus"}
+
+
+def test_a_local_server_keeps_its_port_in_the_lane_key(hub):
+    with bl.read_lane("http://localhost:8080/x"):
+        with bl.read_lane("http://localhost:9090/x"):
+            pass
+    assert sorted(_acquires(hub)) == ["localhost:8080", "localhost:9090"]
+
+
+def test_idle_browsers_give_the_lane_back_on_their_own_and_the_sweeper_restarts(hub, monkeypatch):
+    monkeypatch.setattr(bl, "SWEEP_EVERY_S", 0.05)
+    monkeypatch.setattr(bl, "IDLE_RELEASE_S", 0.1)
+    assert bl.IDLE_RELEASE_S < 180 and bl.__dict__["IDLE_RELEASE_S"] == 0.1
+
+    def wait_for(cond, timeout=5):
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            if cond():
+                return True
+            time.sleep(0.02)
+        return False
+
+    for round_ in range(2):                                                         # the second round needs a fresh sweeper
+        assert bl.guard_navigate("c1", "https://other.test/%d" % round_) is None
+        assert wait_for(lambda: _releases(hub) == round_ + 1), "the idle lane was not given back"
+        assert wait_for(lambda: bl._sweeper is None), "the sweeper did not stop"
+    assert bl.held_lanes() == {}
+
+
+def test_the_default_idle_time_is_short():
+    assert 0 < bl.IDLE_RELEASE_S <= 60
+
+
+def test_disconnecting_a_browser_and_shutting_down_release_its_lane(hub):
+    m, session = _manager()
+    asyncio.run(m.call_tool("mcp__builtin_browser__browser_navigate", {"url": URL}))
+    assert bl.held_lanes()["builtin_browser"]["domain"] == "example.co.uk"
+    asyncio.run(m.disconnect_server("builtin_browser"))
+    assert bl.held_lanes() == {} and _releases(hub) == 1
+
+    m2, _ = _manager()
+    asyncio.run(m2.call_tool("mcp__builtin_browser__browser_navigate", {"url": "https://other.test/"}))
+    asyncio.run(m2.disconnect_all())
+    assert bl.held_lanes() == {} and _releases(hub) == 2
+
+
+# ── a busy site pauses a crawl instead of losing the page ───────────────────
+
+def test_a_crawl_pauses_on_a_busy_site_and_resumes_from_the_same_page(tmp_path, monkeypatch):
+    import httpx
+    from src.reach import browser as reach_browser
+    from src.reach import crawl
+
+    monkeypatch.setattr(crawl, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(crawl.threading.Thread, "start", lambda self: None)
+    monkeypatch.setattr(crawl.time, "sleep", lambda _: None)
+    crawl._RUNNING.clear()
+
+    def robots(url):
+        return httpx.Response(404, text="", headers={"content-type": "text/html"}, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(crawl, "fetch_page", robots)
+    state = {"busy": True, "reads": []}
+
+    def read_response(url, **kw):
+        state["reads"].append(url)
+        if state["busy"]:
+            raise bl.BrowserLaneBusy(bl.busy_text("other.test", "tantalus", SINCE), held_by="tantalus", domain="other.test")
+        return httpx.Response(200, text="<title>Page</title><h1>Hi</h1>", headers={"content-type": "text/html"},
+                              request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(reach_browser, "read_response", read_response)
+    try:
+        started = crawl.run_crawl(crawl.CrawlRequest(urls=["https://other.test/a"], transport="browser", delay_s=0.5), owner="alice")
+        run_id = started["run_id"]
+        crawl.work("alice", run_id)
+        status = crawl.run_crawl(crawl.CrawlRequest(action="status", run_id=run_id), owner="alice")
+        assert status["status"] == "paused" and status["reason"] == "browser_lane_busy"
+        assert status["pages"] == 0 and status["errors"][-1]["error"] == "BrowserLaneBusy"
+        saved = crawl._load("alice", run_id)
+        assert saved["frontier"] == [["https://other.test/a", 0]] and saved["visited"] == []      # the page is not lost
+        state["busy"] = False
+        crawl.run_crawl(crawl.CrawlRequest(action="resume", run_id=run_id), owner="alice")
+        crawl._RUNNING.clear()
+        crawl.work("alice", run_id)
+        done = crawl.run_crawl(crawl.CrawlRequest(action="status", run_id=run_id), owner="alice")
+        assert done["status"] == "completed" and done["pages"] == 1
+    finally:
+        crawl._RUNNING.clear()

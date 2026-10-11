@@ -18,6 +18,7 @@ from urllib.robotparser import RobotFileParser
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from src.browser_lanes import BrowserLaneBusy
 from src.constants import DATA_DIR
 from src.contracts.base import now_iso
 from src.reach.extract import ExtractField, ExtractRequest, _safe_ref, extract_html, fetch_page
@@ -208,6 +209,12 @@ def work(owner, run_id):
                                     and link not in queued and len(state["frontier"]) < 2000):
                                 state["frontier"].append([link, depth + 1])
                                 queued.add(link)
+                except BrowserLaneBusy as exc:
+                    # Another app holds this site's browser lane (the Hub): the page is not lost nor marked visited. The
+                    # crawl pauses with the reason and goes on from this very URL when it is resumed.
+                    state["status"], state["reason"] = "paused", "browser_lane_busy"
+                    state["errors"].append({"url": _safe_ref(url), "error": "BrowserLaneBusy", "detail": str(exc)[:240]})
+                    break
                 except Exception as exc:
                     state["errors"].append({"url": _safe_ref(url), "error": type(exc).__name__})
             state["visited"].append(url)

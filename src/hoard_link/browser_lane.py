@@ -56,6 +56,7 @@ log = logging.getLogger("hoard_link.browser_lane")
 DEFAULT_TTL_S = 300.0
 DEFAULT_WAIT_S = 30.0
 POLL_WAIT_S = 25.0
+RELEASE_TRIES = 3
 _warned: set[str] = set()
 
 
@@ -128,43 +129,70 @@ com.pk org.pk net.pk edu.pk gov.pk
 co.ke or.ke ac.ke go.ke
 asso.fr gouv.fr com.fr
 """.split())
-#: Hosting suffixes under which every customer is a different site (and a different lane).
+#: Suffixes under which every customer is a different site (and a different lane): hosting platforms and the "rented" ones.
 _PRIVATE_SUFFIX = frozenset("""
 github.io gitlab.io blogspot.com wordpress.com herokuapp.com vercel.app netlify.app pages.dev workers.dev
 myshopify.com azurewebsites.net web.app firebaseapp.com onrender.com fly.dev
+uk.com gb.com eu.org us.com de.com za.com br.com cn.com ru.com sa.com co.com
+duckdns.org ngrok-free.app trycloudflare.com nip.io sslip.io
 """.split())
 #: Second labels that, under a two-letter country code, mean "this is a suffix" (co.xx, com.xx, gov.xx ...).
 _GENERIC_SLD = frozenset("co com org net gov edu ac or ne go gob nom mil ltd plc sch".split())
 
 
-def _host_of(value: str) -> str:
+_DEFAULT_PORTS = {"http": 80, "https": 443, "ws": 80, "wss": 443}
+
+
+def _split_host(value: str) -> tuple[str, Optional[int]]:
+    """``(host, explicit port)`` of a URL, ``host:port``, a bare host or a bare IPv6 literal (the scheme's default port is dropped)."""
     text = (value or "").strip()
     if not text:
-        return ""
+        return "", None
     try:
-        parts = urlsplit(text if "://" in text or text.startswith("//") else "//" + text)
+        ipaddress.ip_address(text.strip("[]"))
+        return text.strip("[]").lower(), None
+    except ValueError:
+        pass
+    has_scheme = "://" in text
+    try:
+        parts = urlsplit(text if has_scheme or text.startswith("//") else "//" + text)
         host = parts.hostname or ""
     except ValueError:
-        host = ""
-    return host.strip(".").lower()
+        return "", None
+    try:
+        port = parts.port
+    except ValueError:
+        port = None
+    if has_scheme and port is not None and port == _DEFAULT_PORTS.get(parts.scheme.lower()):
+        port = None
+    return host.strip(".").lower(), port
 
 
 def registrable_domain(value: str) -> str:
     """The lane key for a URL or host name: its registrable root domain, lowercase.
 
-    ``https://shop.example.co.uk/x`` -> ``example.co.uk``; ``www.tienda.com`` -> ``tienda.com``; an IP address, ``localhost`` or
-    any single-label host is returned as it is; hosting suffixes (``myshopify.com``, ``github.io``...) keep the customer's
-    label (``acme.myshopify.com``). Empty when ``value`` has no host.
+    ``https://shop.example.co.uk/x`` -> ``example.co.uk``; ``www.tienda.com`` -> ``tienda.com``; an international name and its
+    punycode form are the same lane (``bücher.de`` == ``xn--bcher-kva.de``); hosting and rented suffixes (``myshopify.com``,
+    ``github.io``, ``uk.com``, ``eu.org``...) keep the customer's label (``acme.myshopify.com``). An IP address, ``localhost``
+    or any single-label host is its own site and, with an explicit port, one lane per port (``localhost:8080``,
+    ``[::1]:9000``): two dev servers on one machine are different sites. Empty when ``value`` has no host.
     """
-    host = _host_of(value)
+    host, port = _split_host(value)
     if not host:
         return ""
     try:
-        ipaddress.ip_address(host)
-        return host
+        ip = ipaddress.ip_address(host)
+        shown = f"[{host}]" if ip.version == 6 and port else host
+        return f"{shown}:{port}" if port else shown
     except ValueError:
         pass
+    try:
+        host = host.encode("idna").decode("ascii")
+    except UnicodeError:
+        pass
     labels = [p for p in host.split(".") if p]
+    if len(labels) == 1:
+        return labels[0] + (f":{port}" if port else "")
     if len(labels) <= 2:
         return ".".join(labels)
     last2 = ".".join(labels[-2:])
@@ -181,6 +209,25 @@ def profile_key(path: str) -> str:
     if not text:
         return ""
     return os.path.normcase(os.path.abspath(os.path.expanduser(text))).rstrip("\\/") or text
+
+
+def _read_token(path: Optional[str]) -> str:
+    if not path:
+        return ""
+    try:
+        with open(path, "r", encoding="utf-8-sig") as fh:
+            return fh.read().strip()
+    except OSError:
+        return ""
+
+
+def _family_token_file() -> str:
+    try:
+        from . import family
+
+        return str(family.status().get("token_file") or "")
+    except Exception:  # noqa: BLE001 - the family module is optional in a vendored copy
+        return ""
 
 
 def _default_holder() -> str:
@@ -206,7 +253,7 @@ class Lane:
 
     def __init__(self, domain: str = "", holder: Optional[str] = None, *, ttl_s: float = DEFAULT_TTL_S,
                  wait_s: float = DEFAULT_WAIT_S, profile: str = "", purpose: str = "", hub_url: Optional[str] = None,
-                 raise_on_busy: bool = True, autostart: bool = False, track: bool = True):
+                 raise_on_busy: bool = True, autostart: bool = False, track: bool = True, token_file: Optional[str] = None):
         self.domain = registrable_domain(domain)
         self.profile = profile_key(profile)
         if not self.domain and not self.profile:
@@ -216,6 +263,9 @@ class Lane:
         self.wait_s = max(0.0, float(wait_s))
         self.purpose = purpose
         self.hub_url = _hubclient.hub_url(hub_url)
+        #: The family token that says who this app is (the hub binds the lane to it): this file, else the app's own token
+        #: (``hoard_link.family.configure``, ``HOARD_TOKEN_FILE``), else the hub's (``HOARD_HUB_TOKEN_FILE``).
+        self.token_file = token_file
         self.raise_on_busy = bool(raise_on_busy)
         self.autostart = bool(autostart)
         #: False for a lane kept beyond one ``with`` block (a long-lived browser): it is not recorded for nesting detection.
@@ -255,15 +305,24 @@ class Lane:
             keys.append("profile:" + self.profile)
         return keys
 
-    def _body(self, wait: float, queue_seq: Optional[int]) -> dict[str, Any]:
+    def _body(self, wait: float, ticket: Optional[str], final: bool) -> dict[str, Any]:
         body: dict[str, Any] = {"domain": self.domain, "profile": self.profile, "holder": self.holder,
-                                "purpose": self.purpose, "ttl_s": self.ttl_s, "wait_s": wait, "pid": os.getpid()}
-        if queue_seq:
-            body["queue_seq"] = queue_seq
+                                "purpose": self.purpose, "ttl_s": self.ttl_s, "wait_s": wait, "pid": os.getpid(),
+                                "final": final}
+        if ticket:
+            body["ticket"] = ticket
         return body
 
+    def _auth(self) -> dict[str, str]:
+        for path in (self.token_file, _family_token_file(), os.environ.get("HOARD_TOKEN_FILE"),
+                     os.environ.get("HOARD_HUB_TOKEN_FILE")):
+            token = _read_token(path)
+            if token:
+                return {"Authorization": "Bearer " + token}
+        return {}
+
     def _post(self, path: str, body: dict[str, Any], timeout: float = 10.0) -> tuple[Optional[int], Any]:
-        return _hubclient.fetch(self.hub_url + path, body, timeout=timeout)
+        return _hubclient.fetch(self.hub_url + path, body, timeout=timeout, headers=self._auth())
 
     def _local(self, reason: str) -> None:
         """No usable hub: proceed (the apps worked before there were lanes), say so once."""
@@ -328,15 +387,18 @@ class Lane:
         if self.autostart and not _hubclient.hub_up(self.hub_url):
             _hubclient.ensure_hub(self.hub_url)
         started = time.monotonic()
-        queue_seq: Optional[int] = None
+        ticket: Optional[str] = None
         while True:
             left = self.wait_s - (time.monotonic() - started)
             wait = max(0.0, min(POLL_WAIT_S, left))
-            status, reply = self._post("/api/lane/acquire", self._body(wait, queue_seq), timeout=wait + 10.0)
+            final = left <= POLL_WAIT_S + 0.05             # this poll covers the rest of the wait: leave the queue after it
+            status, reply = self._post("/api/lane/acquire", self._body(wait, ticket, final), timeout=wait + 10.0)
             if status is None:
                 return self._local("no answer")
             if status == 400 and isinstance(reply, dict):
                 raise LaneError(f"hub refused the lane: {reply.get('error') or reply}")
+            if status in (401, 403):
+                return self._local(f"the hub refused this app's token (HTTP {status}): set HOARD_TOKEN_FILE or HOARD_HUB_TOKEN_FILE")
             if status >= 400 or not isinstance(reply, dict) or "granted" not in reply:
                 return self._local(f"unexpected answer (HTTP {status})")
             self.waited_s = time.monotonic() - started
@@ -347,7 +409,7 @@ class Lane:
                 self._start_renewer()
                 return
             self.busy = reply
-            queue_seq = reply.get("queue_seq") or queue_seq
+            ticket = reply.get("ticket") or ticket
             if self.wait_s - (time.monotonic() - started) <= 0.05:
                 self.via, self.acquired, self.state = "hub", False, "busy"
                 if self.raise_on_busy:
@@ -362,7 +424,7 @@ class Lane:
             while not self._stop.wait(every):
                 status, reply = self._post("/api/lane/renew", {"lease_id": self.lease_id, "holder": self.holder,
                                                                 "ttl_s": self.ttl_s}, timeout=5.0)
-                if status in (403, 404):
+                if status in (401, 403, 404):
                     self.lost = True
                     log.warning("browser lane %s was lost while in use (%s)", self.domain or self.profile, self.holder)
                     return
@@ -377,7 +439,15 @@ class Lane:
         if self.via == "hub" and self.acquired and self.lease_id:
             if self._nested:
                 log.debug("lane %s released with %s nested use(s) still open", self.domain, self._nested)
-            self._post("/api/lane/release", {"lease_id": self.lease_id, "holder": self.holder}, timeout=5.0)
+            for attempt in range(RELEASE_TRIES):          # a lane left behind blocks the site until its ttl runs out
+                status, _ = self._post("/api/lane/release", {"lease_id": self.lease_id, "holder": self.holder}, timeout=5.0)
+                if status is not None and status < 500:
+                    break
+                if attempt + 1 < RELEASE_TRIES:
+                    time.sleep(0.3 * (attempt + 1))
+            else:
+                log.warning("browser lane %s could not be released (%s); it frees itself when its ttl runs out",
+                            self.domain or self.profile, self.holder)
         if self._thread is not None and self._thread is not threading.current_thread():
             self._thread.join(timeout=2.0)
         self._thread = None
@@ -420,11 +490,11 @@ class Lane:
 
 def lane(domain: str = "", holder: Optional[str] = None, *, ttl_s: float = DEFAULT_TTL_S, wait_s: float = DEFAULT_WAIT_S,
          profile: str = "", purpose: str = "", hub_url: Optional[str] = None, raise_on_busy: bool = True,
-         autostart: bool = False, track: bool = True) -> Lane:
+         autostart: bool = False, track: bool = True, token_file: Optional[str] = None) -> Lane:
     """A :class:`Lane` to use with ``with`` or ``async with`` (see the module docstring). ``track=False`` is for a lane
     that outlives the block that took it (call ``acquire()`` / ``release()`` yourself)."""
     return Lane(domain, holder, ttl_s=ttl_s, wait_s=wait_s, profile=profile, purpose=purpose, hub_url=hub_url,
-                raise_on_busy=raise_on_busy, autostart=autostart, track=track)
+                raise_on_busy=raise_on_busy, autostart=autostart, track=track, token_file=token_file)
 
 
 def lane_status(hub_url: Optional[str] = None, timeout: float = 3.0) -> Optional[dict[str, Any]]:
