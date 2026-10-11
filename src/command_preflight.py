@@ -724,13 +724,25 @@ def inferred_shell_commands(code: str) -> List[str]:
 
 
 def _abs_index(code: str, lineno: int, col: int) -> int:
-    """0-based index for a 1-based ``lineno`` / 0-based ``col`` into ``code``."""
+    """0-based character index for AST ``lineno`` / ``col_offset``.
+
+    CPython reports ``col_offset`` / ``end_col_offset`` in UTF-8 bytes, not
+    Unicode code points, so a non-ASCII prefix on the same line must be
+    decoded through the line's encoded form.
+    """
     if lineno < 1:
         return 0
     lines = code.splitlines(keepends=True)
     if lineno > len(lines):
         return len(code)
-    return sum(len(lines[i]) for i in range(lineno - 1)) + col
+    prefix = sum(len(lines[i]) for i in range(lineno - 1))
+    line = lines[lineno - 1]
+    encoded = line.encode("utf-8")
+    if col < 0:
+        col = 0
+    if col > len(encoded):
+        col = len(encoded)
+    return prefix + len(encoded[:col].decode("utf-8"))
 
 
 def _replace_span(code: str, node: ast.AST, new_text: str) -> Optional[str]:
@@ -744,8 +756,30 @@ def _replace_span(code: str, node: ast.AST, new_text: str) -> Optional[str]:
     return code[:start] + new_text + code[end:]
 
 
+def _significant_char_before(code: str, index: int) -> str:
+    """Last non-space character before ``index``, skipping ``#`` comments."""
+    i = index - 1
+    while i >= 0:
+        ch = code[i]
+        if ch in " \t\r\n":
+            i -= 1
+            continue
+        if ch == "#":
+            # Walk back to start of this line's comment.
+            line_start = code.rfind("\n", 0, i) + 1
+            i = line_start - 1
+            continue
+        return ch
+    return ""
+
+
 def _insert_before_close(code: str, node: ast.Call, insertion: str) -> Optional[str]:
-    """Insert ``insertion`` just before the closing ``)`` of ``node``."""
+    """Insert ``insertion`` just before the closing ``)`` of ``node``.
+
+    When the call already ends with a trailing comma (black/ruff default for
+    multiline calls), drop the leading comma from ``insertion`` so we never
+    produce ``,\\n, cwd=...``.
+    """
     if getattr(node, "end_lineno", None) is None:
         return None
     end = _abs_index(code, node.end_lineno, node.end_col_offset)
@@ -754,7 +788,21 @@ def _insert_before_close(code: str, node: ast.Call, insertion: str) -> Optional[
     close = end - 1
     if code[close] != ")":
         return None
-    return code[:close] + insertion + code[close:]
+    text = insertion
+    if _significant_char_before(code, close) == "," and text.startswith(","):
+        text = text.lstrip(",").lstrip(" ")
+        # `,)` → `, cwd=...)` ; `,\n)` → `,\n    cwd=...)\n` matching indent.
+        j = close - 1
+        while j >= 0 and code[j] in " \t":
+            j -= 1
+        if j >= 0 and code[j] == ",":
+            text = " " + text
+        elif j >= 0 and code[j] == "\n":
+            line_start = code.rfind("\n", 0, close) + 1
+            indent = code[line_start:close]
+            if indent.strip() == "":
+                text = indent + text
+    return code[:close] + text + code[close:]
 
 
 def _shell_cd_prefix(rel: str) -> str:
@@ -767,13 +815,17 @@ def _shell_cd_prefix(rel: str) -> str:
 
 
 def _rewrite_launch(code: str, launch: _PyLaunch, rel: str) -> Optional[str]:
-    """Apply a call-local rewrite for ``rel`` (workspace-relative folder)."""
+    """Apply a call-local rewrite for ``rel`` (workspace-relative folder).
+
+    Returns ``None`` (fail open) when the edit would not parse.
+    """
     rel = _fwd(rel)
+    rewritten: Optional[str] = None
     if launch.kind == "subprocess":
         if launch.has_cwd:
             return None
-        return _insert_before_close(code, launch.node, f", cwd={rel!r}")
-    if launch.kind == "runpy":
+        rewritten = _insert_before_close(code, launch.node, f", cwd={rel!r}")
+    elif launch.kind == "runpy":
         joined = _fwd(os.path.join(rel, launch.path_literal.replace("\\", "/")))
         # Avoid backend/backend/server.py if the literal already had a dir.
         if launch.path_literal.replace("\\", "/").startswith(rel + "/"):
@@ -781,11 +833,17 @@ def _rewrite_launch(code: str, launch: _PyLaunch, rel: str) -> Optional[str]:
         else:
             base = os.path.basename(launch.path_literal.replace("\\", "/"))
             joined = _fwd(os.path.join(rel, base))
-        return _replace_span(code, launch.path_arg, repr(joined))
-    if launch.kind == "os_shell":
+        rewritten = _replace_span(code, launch.path_arg, repr(joined))
+    elif launch.kind == "os_shell":
         prefixed = _shell_cd_prefix(rel) + launch.path_literal
-        return _replace_span(code, launch.path_arg, repr(prefixed))
-    return None
+        rewritten = _replace_span(code, launch.path_arg, repr(prefixed))
+    if rewritten is None:
+        return None
+    try:
+        ast.parse(rewritten)
+    except SyntaxError:
+        return None
+    return rewritten
 
 
 def check_python_code(code: str, cwd: str) -> PreflightResult:

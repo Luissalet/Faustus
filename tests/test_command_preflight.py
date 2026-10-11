@@ -457,3 +457,61 @@ def test_python_explicit_cwd_still_works_when_executed(tree):
     proc = sp.run([sys.executable, "-c", code], cwd=str(tree), capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr
     assert "ok" in proc.stdout
+
+
+
+def test_python_trailing_comma_multiline_call(tree):
+    """Claude r2 CHANGES: black/ruff trailing comma must not yield SyntaxError."""
+    import subprocess as sp
+    import sys
+
+    code = (
+        "import subprocess, sys\n"
+        "r = subprocess.run([sys.executable, 'server.py'],\n"
+        ")\n"
+        "print('done', r.returncode)\n"
+    )
+    r = cp.check_python_code(code, str(tree))
+    assert r.action == "rewrite"
+    assert "cwd=" in r.command and "backend" in r.command
+    assert ",\n," not in r.command and ", ," not in r.command
+    compile(r.command, "<rewritten>", "exec")
+    proc = sp.run([sys.executable, "-c", r.command], cwd=str(tree),
+                  capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    assert "done" in proc.stdout
+
+
+def test_python_trailing_comma_with_kwarg(tree):
+    import subprocess as sp
+    import sys
+
+    code = (
+        "import subprocess, sys\n"
+        "r = subprocess.run(\n"
+        "    [sys.executable, 'server.py'],\n"
+        "    capture_output=True,\n"
+        ")\n"
+        "print(r.stdout.decode() if isinstance(r.stdout, bytes) else (r.stdout or ''))\n"
+        "raise SystemExit(r.returncode)\n"
+    )
+    r = cp.check_python_code(code, str(tree))
+    assert r.action == "rewrite"
+    compile(r.command, "<rewritten>", "exec")
+    proc = sp.run([sys.executable, "-c", r.command], cwd=str(tree),
+                  capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    assert "ok" in proc.stdout
+
+
+def test_python_nonascii_prefix_same_line_rewrites(tree):
+    """col_offset is UTF-8 bytes; rewrite must still land on the call."""
+    code = (
+        "import subprocess, sys\n"
+        "print('ñandú'); subprocess.run([sys.executable, 'server.py'])\n"
+    )
+    r = cp.check_python_code(code, str(tree))
+    assert r.action == "rewrite"
+    assert "cwd=" in r.command
+    compile(r.command, "<rewritten>", "exec")
+
