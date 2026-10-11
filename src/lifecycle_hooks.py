@@ -52,6 +52,17 @@ Public API
     validate_hooks(raw) -> list                              (raises HookError)
     PRESETS, preset(preset_id), apply_preset(existing, preset_id)
     recent(limit=50) -> list
+    register_listener(event, fn, *, listener_id, name="") / unregister_listener(listener_id)
+
+In-process listeners (`register_listener`) are Python callables other modules
+attach to an event — the observation recorder (src/observations) is one. They
+are NOT user hooks: they are not listed in the `lifecycle_hooks` setting, are
+not governed by `lifecycle_hooks_enabled` (each feature has its own switch) and
+run synchronously inside `run_async`, so they must only queue or read — never
+wait. A listener returns None or a short text; the text rides along as an
+`inject` HookResult (session_start/turn_start: untrusted context message;
+pre_tool/post_tool: `hook_notes` on the tool result). An exception in a
+listener is logged and ignored.
 """
 from __future__ import annotations
 
@@ -560,15 +571,76 @@ async def _run_one(hook: dict, ctx: Dict[str, Any], default_cmd_timeout: Any) ->
                            duration_ms=int((time.monotonic() - start) * 1000), level="warn")
 
 
+# ---------------------------------------------------------------------------
+# in-process listeners (see the module docstring)
+# ---------------------------------------------------------------------------
+
+_LISTENERS: Dict[str, List[Dict[str, Any]]] = {}
+_LISTENERS_LOCK = threading.Lock()
+
+
+def register_listener(event: str, fn: Any, *, listener_id: str, name: str = "") -> None:
+    """Attach `fn(ctx) -> Optional[str]` to `event`. Idempotent: a second
+    registration with the same `listener_id` for the same event replaces the
+    first. Raises HookError for an unknown event or a non-callable."""
+    _require(event in EVENTS, f"unknown lifecycle event: {event!r}")
+    _require(callable(fn), "listener must be callable")
+    _require(bool(listener_id), "listener_id is required")
+    entry = {"id": str(listener_id), "name": name or str(listener_id), "fn": fn}
+    with _LISTENERS_LOCK:
+        entries = [e for e in _LISTENERS.get(event, []) if e["id"] != entry["id"]]
+        entries.append(entry)
+        _LISTENERS[event] = entries
+
+
+def unregister_listener(listener_id: str) -> int:
+    """Remove every registration of `listener_id`; returns how many."""
+    removed = 0
+    with _LISTENERS_LOCK:
+        for event, entries in list(_LISTENERS.items()):
+            kept = [e for e in entries if e["id"] != listener_id]
+            removed += len(entries) - len(kept)
+            _LISTENERS[event] = kept
+    return removed
+
+
+def _run_listeners(event: str, ctx: Dict[str, Any]) -> List[HookResult]:
+    with _LISTENERS_LOCK:
+        entries = list(_LISTENERS.get(event, ()))
+    results: List[HookResult] = []
+    for entry in entries:
+        started = time.monotonic()
+        try:
+            text = entry["fn"](dict(ctx))
+        except Exception:  # noqa: BLE001 - a listener never costs a turn
+            logger.debug("[lifecycle_hooks] listener %s failed on %s", entry["id"], event, exc_info=True)
+            continue
+        if isinstance(text, str) and text.strip():
+            results.append(HookResult(
+                entry["id"], entry["name"], event, "inject", ok=True, output=text.strip(),
+                duration_ms=int((time.monotonic() - started) * 1000),
+            ))
+    return results
+
+
 async def run_async(
     event: str, ctx: Optional[Dict[str, Any]] = None, *, emit=None,
 ) -> List[HookResult]:
     """Execute every enabled hook of `event` whose match holds, in order,
-    under a total wall-clock cap (`lifecycle_hooks_total_timeout_seconds`).
+    under a total wall-clock cap (`lifecycle_hooks_total_timeout_seconds`),
+    then the in-process listeners of the event (`register_listener`).
     Never raises — a per-hook failure becomes `HookResult(ok=False, ...)` and
     execution continues with the next hook."""
     ctx = dict(ctx or {})
     ctx.setdefault("event", event)
+    listener_results = _run_listeners(event, ctx)
+    return list(await _run_configured_async(event, ctx, emit=emit)) + listener_results
+
+
+async def _run_configured_async(
+    event: str, ctx: Dict[str, Any], *, emit=None,
+) -> List[HookResult]:
+    """The user-configured hooks of `run_async` (the `lifecycle_hooks` setting)."""
 
     if not _get_setting("lifecycle_hooks_enabled", True):
         return []
