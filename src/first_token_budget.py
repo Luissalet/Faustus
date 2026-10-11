@@ -38,7 +38,14 @@ def effective(default: Optional[float]) -> Optional[float]:
 
 
 async def scoped_stream(source, seconds):
-    """Keep deferred comparison streams in scope; one task owns cleanup."""
+    """Keep deferred comparison streams in scope; one task owns cleanup.
+
+    Every way the producer can end reaches the consumer: a chunk, the end, an
+    error, or a cancellation raised by the source itself (an upstream call that
+    was stopped). Only a cancellation of the producer task (the consumer going
+    away) ends it silently. Without that, a source that raised CancelledError
+    left the consumer waiting on an empty queue forever.
+    """
     queue = asyncio.Queue(maxsize=1)
     async def produce():
         token = _OVERRIDE.set(seconds)
@@ -47,7 +54,10 @@ async def scoped_stream(source, seconds):
                 await queue.put(("chunk", chunk))
             await queue.put(("end", None))
         except asyncio.CancelledError:
-            raise
+            task = asyncio.current_task()
+            if task is not None and task.cancelling():
+                raise
+            await queue.put(("cancelled", None))
         except Exception as exc:
             await queue.put(("error", exc))
         finally:
@@ -63,6 +73,8 @@ async def scoped_stream(source, seconds):
                 return
             if kind == "error":
                 raise value
+            if kind == "cancelled":
+                raise asyncio.CancelledError()
             yield value
     finally:
         if not worker.done():
