@@ -735,3 +735,10 @@ keeps a skill available for explicit use while excluding it from automatic
 indexing and lexical or hybrid selection. See [skill checks](docs/SKILL_LINT.md).
 Explicit slash commands still list and invoke published manual-only skills;
 their ordinary publication, ownership and usage-count rules remain in effect.
+Faustus provides the shared Hoard copilot panel and canonical conversation,
+draft, execution and memory infrastructure. Native `hoard_project_search` and
+`hoard_project_recall` recover previous Hoard work by identity, title, historical
+message text and actual work dates, returning domain references and existing
+workspace information. The current domain object is read through its Hoard tools
+before editing. See [the shared copilot contract](docs/api/hoard_copilot.md).
+

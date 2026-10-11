@@ -11435,3 +11435,22 @@ Invocación explícita #357: el catálogo de comandos slash y la ruta invoke
 incluyen las habilidades publicadas manual_only sin añadirlas al índice del
 prompt. La llamada cuenta el uso y conserva propietario y estado de publicación.
 54 pruebas del área y MCP/navegador privados verifican el flujo completo.
+## Shared Hoard copilot recovery — 2026-10-12
+
+Faustus owns the shared chat panel, canonical conversations, drafts, execution,
+configured global model and project memory. Hoards provide domain tools and
+current editor context through the family relay. Studio groups and filters chats
+by immutable Hoard origin and displays native app icons. Cicero is active; Writer
+source is integrated and its installed update is being verified separately.
+
+Native agent/API/stdio MCP `hoard_project_search` searches earlier Hoard work by
+identity, title and canonical message text, with date ranges and pagination.
+Date ranges match actual messages within the interval even when the project has
+newer work; evidence dates and latest global activity remain separate.
+`hoard_project_recall` returns native IDs, current linked working-project memory,
+recent history and an existing workspace when present. It does not create Git for
+content projects or restore old selections. The agent reads the current native
+object with the app's tools before editing it. Retrieval is lexical, not a claim
+of semantic recall or universal model reliability. Tantalus and Prospero adapters
+remain under verification until their individual integration is completed.
+
