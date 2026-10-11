@@ -1340,7 +1340,7 @@ Hecho:
 Abierto:
 
 - **Visión en las Sparks.** GLM-5.3-Flash solo procesa texto. Con las GPU del PC reservadas (#111) no hay servidor de visión. Hace falta una receta con un modelo de visión en una Spark. Cada una tiene unos 24–28 GB libres con TP3 cargado. Decisión de Luis en PENDIENTES A.
-- **Sondeos de contexto a servidores locales caídos.** `model_context` vuelve a consultar los endpoints locales en cada llamada, a propósito, porque pueden reiniciarse con otra ventana. En Windows, una conexión rechazada a localhost tarda unos 2 s, y un turno contra un Ollama apagado puede pagar 6–9 s antes de la primera herramienta (medido con cProfile en `test_resource_claims`). Mejora propuesta: recordar el resultado unos segundos dentro del mismo turno.
+- **Sondeos de contexto a servidores locales caídos.** `model_context` vuelve a consultar los endpoints locales en cada llamada, a propósito, porque pueden reiniciarse con otra ventana. En Windows, una conexión rechazada a localhost tarda unos 2 s, y un turno contra un Ollama apagado puede pagar 6–9 s antes de la primera herramienta (medido con cProfile en `test_resource_claims`). Mejora propuesta: recordar el resultado unos segundos dentro del mismo turno. **Hecho (#310, FAUSTUS §336):** respuesta local recordada 5 s y `/slots`/`/api/ps` dentro del enfriamiento de hosts caídos; cuatro consultas contra un servidor apagado pasan de 13,7 s a 4,7 s.
 
 ## Agente nativo del Ágora — estado comprobado 10-10-2026
 

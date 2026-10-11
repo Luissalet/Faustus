@@ -13,6 +13,8 @@ from typing import Dict, List, Optional, Tuple
 
 from urllib.parse import urlparse
 
+import time
+
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -238,6 +240,39 @@ KNOWN_CONTEXT_WINDOWS = {
 # ---------------------------------------------------------------------------
 _context_cache: Dict[Tuple[str, str], Tuple[int, bool]] = {}
 
+# Local endpoints are re-queried because they can restart with another window,
+# but one turn asks several times within a few seconds; against a server that
+# is down every ask paid a refused connect (~2 s on Windows each). Remember a
+# local answer this long, then ask again.
+LOCAL_CONTEXT_TTL_S = 5.0
+_local_context_recent: Dict[Tuple[str, str], Tuple[int, bool, float]] = {}
+
+
+def clear_context_caches() -> None:
+    """Forget every remembered context window (remote and recent local)."""
+    _context_cache.clear()
+    _local_context_recent.clear()
+
+
+def _probe_host_dead(url: str) -> bool:
+    """True while `llm_core`'s shared dead-host cooldown covers `url`."""
+    try:
+        from src.llm_core import _is_host_dead
+        return bool(_is_host_dead(url))
+    except Exception:  # noqa: BLE001 -- the cooldown is an optimisation
+        return False
+
+
+def _probe_failed(url: str, exc: Exception) -> None:
+    """Feed the shared cooldown when a probe found nobody answering."""
+    if isinstance(exc, (OSError, ConnectionError, httpx.ConnectError, httpx.TimeoutException)) \
+            or "onnect" in str(exc) or "imeout" in str(exc):
+        try:
+            from src.llm_core import _mark_host_dead
+            _mark_host_dead(url)
+        except Exception:  # noqa: BLE001
+            pass
+
 
 def _get_context_length_cached(endpoint_url: str, model: str) -> Tuple[int, bool]:
     """Return (context_length, known). ``known`` is False only when the value is a
@@ -251,8 +286,14 @@ def _get_context_length_cached(endpoint_url: str, model: str) -> Tuple[int, bool
     cache_key = (endpoint_url, model)
     if not is_local and cache_key in _context_cache:
         return _context_cache[cache_key]
+    if is_local:
+        recent = _local_context_recent.get(cache_key)
+        if recent and time.monotonic() - recent[2] < LOCAL_CONTEXT_TTL_S:
+            return recent[0], recent[1]
 
     ctx, known = _query_context_length(endpoint_url, model)
+    if is_local:
+        _local_context_recent[cache_key] = (ctx, known, time.monotonic())
     # Only cache non-default values to allow retry on next request.
     # Local endpoints can restart with a different --max-model-len while keeping
     # the same model id, so always re-query them instead of serving stale cache.
@@ -452,8 +493,11 @@ def _ollama_runtime_context(endpoint_url: str, model: str) -> Optional[int]:
         return saved
     base = _ollama_base(endpoint_url)
     key = (base, (model or "").lower())
+    ps_url = f"{base}/api/ps"
     try:
-        r = httpx.get(f"{base}/api/ps", timeout=REQUEST_TIMEOUT)
+        if _probe_host_dead(ps_url):
+            raise ConnectionError(f"{base} is in the dead-host cooldown")
+        r = httpx.get(ps_url, timeout=REQUEST_TIMEOUT)
         if r.is_success:
             for m in (r.json().get("models") or []):
                 if _ollama_model_matches(m.get("name") or m.get("model") or "", model):
@@ -463,6 +507,8 @@ def _ollama_runtime_context(endpoint_url: str, model: str) -> Optional[int]:
                         return ctx
     except Exception as e:
         logger.debug(f"ollama /api/ps probe failed: {e}")
+        if "dead-host cooldown" not in str(e):
+            _probe_failed(ps_url, e)
     if key in _ollama_ctx_seen:
         return _ollama_ctx_seen[key]
     env_ctx = os.environ.get("OLLAMA_CONTEXT_LENGTH", "").strip()
@@ -510,7 +556,10 @@ def _query_context_length(endpoint_url: str, model: str) -> Tuple[int, bool]:
     if is_local_endpoint(endpoint_url) and not _looks_like_ollama_url(endpoint_url):
         try:
             base = endpoint_url.split("/v1")[0] if "/v1" in endpoint_url else endpoint_url.rsplit("/", 1)[0]
-            r = httpx.get(f"{base}/slots", timeout=REQUEST_TIMEOUT)
+            slots_url = f"{base}/slots"
+            if _probe_host_dead(slots_url):
+                raise ConnectionError(f"{base} is in the dead-host cooldown")
+            r = httpx.get(slots_url, timeout=REQUEST_TIMEOUT)
             if r.is_success:
                 slots = r.json()
                 if isinstance(slots, list) and slots:
@@ -523,8 +572,9 @@ def _query_context_length(endpoint_url: str, model: str) -> Tuple[int, bool]:
                     if n_ctx and isinstance(n_ctx, int) and n_ctx > 0:
                         logger.info(f"llama.cpp /slots reports n_ctx={n_ctx} for {model}")
                         return n_ctx, True
-        except Exception:
-            pass
+        except Exception as e:
+            if "dead-host cooldown" not in str(e):
+                _probe_failed(f"{base}/slots", e)
 
     # GitHub Copilot's /models requires auth + X-GitHub-Api-Version headers that
     # aren't available here; an unauthenticated probe just 400s. All Copilot
