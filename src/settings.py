@@ -1942,6 +1942,29 @@ DEFAULT_SETTINGS = {
     # Wall-clock cap (seconds) for ALL hooks of one lifecycle event combined —
     # protects a turn from stalling behind a chain of slow/misbehaving hooks.
     "lifecycle_hooks_total_timeout_seconds": 45,
+    # Observations (src/observations/): after each useful tool call the small model
+    # writes ONE structured note (what changed or was learned, which files) into
+    # DATA_DIR/observations.db, searchable in three steps (search, timeline,
+    # details). The work runs on a background thread, only when the model is
+    # already loaded and nobody is waiting; the turn never waits for it.
+    "agent_observations_enabled": True,
+    # At the end of a turn, one compact progress summary (request, investigated,
+    # learned, completed, next steps) built from that turn's observations.
+    "agent_observations_summaries": True,
+    # Opt-in: inject a measured timeline of recent observations when a chat starts.
+    "agent_observations_inject_session_start": False,
+    # Character budget of that session-start block.
+    "agent_observations_inject_max_chars": 6000,
+    # Opt-in: when read_file opens a file, add the titles of the latest observations about it.
+    "agent_observations_file_context": False,
+    # Pending tool calls kept for the background worker; beyond it the oldest is dropped.
+    "agent_observations_queue_max": 100,
+    # Most observations one turn may queue (a runaway loop cannot flood the model).
+    "agent_observations_max_per_turn": 40,
+    # Model that writes the observations; empty = the utility model.
+    "agent_observations_model": "",
+    # Observations older than this many days are deleted. 0 = keep them all.
+    "agent_observations_retention_days": 90,
     # Lot I: instincts (src/instincts.py) -- small learned per-project
     # behaviours mined from real sessions in the background. Master switch:
     # when False, render_block/injection is skipped entirely (read at call

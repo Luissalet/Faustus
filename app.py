@@ -916,6 +916,15 @@ app.include_router(setup_context_engine_routes())
 from routes.brain_routes import setup_brain_routes
 app.include_router(setup_brain_routes())
 
+# Observations: a short note per useful tool call, written by the small model in the
+# background, searchable in three steps (src/observations; settings agent_observations_*).
+# `install()` attaches its listeners to the lifecycle hooks (post_tool, turn_start, turn_end,
+# session_start); the HTTP routes read the same store.
+from routes.observations_routes import setup_observations_routes
+from src import observations as _observations
+app.include_router(setup_observations_routes())
+_observations.install()
+
 # One query across chats, brain, notes, documents, gallery, skills and the
 # board, mixed by rank (Ctrl+K "Everywhere"; src/unified_search.py).
 from routes.unified_search_routes import setup_unified_search_routes

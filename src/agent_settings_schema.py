@@ -1663,6 +1663,39 @@ GROUPS: list[dict[str, Any]] = [
                     ["normal", "lean"]),
         ],
     ),
+    _group(
+        "observations",
+        "Observations",
+        "After each useful tool call the small model writes one short structured note (what changed or "
+        "was learned, which files) into a local database. The agent finds them again in three steps: "
+        "search, timeline, details. Writing runs in the background, only when the model is already "
+        "loaded and nobody is waiting; a turn never waits for it.",
+        [
+            _bool("agent_observations_enabled", "Observations: write them",
+                  "Queue each tool call of the agent and its sub-agents for the small model, which keeps a note "
+                  "or skips the call as noise. Off = nothing is queued; notes already stored stay readable."),
+            _bool("agent_observations_summaries", "Observations: summary at the end of a turn",
+                  "One compact summary per turn (request, investigated, learned, completed, next steps) built "
+                  "from that turn's notes. Skipped when the turn left none."),
+            _bool("agent_observations_inject_session_start", "Observations: recap when a chat starts",
+                  "Adds a timeline by day of the project's recent notes and its last summary to the start of a "
+                  "chat, trimmed to the budget below. Reference data, never instructions."),
+            _int("agent_observations_inject_max_chars", "Observations: recap budget (characters)",
+                 "Hard ceiling of the recap. Narratives go first, then the summary, then older days, then "
+                 "older titles.", 500, 20000, step=100),
+            _bool("agent_observations_file_context", "Observations: notes about a file when it is read",
+                  "When read_file opens a file, the titles of the latest notes that touched it are added to the "
+                  "tool result (ids only; obs_details expands them)."),
+            _int("agent_observations_queue_max", "Observations: pending calls kept",
+                 "Tool calls waiting for the background worker. Past this the oldest is dropped.", 10, 1000),
+            _int("agent_observations_max_per_turn", "Observations: most per turn",
+                 "Most tool calls one turn may queue; the rest are ignored.", 1, 500),
+            _text("agent_observations_model", "Observations: model",
+                  "Model name used to write the notes, on the utility endpoint. Empty = the utility model."),
+            _int("agent_observations_retention_days", "Observations: days kept",
+                 "Notes and summaries older than this are deleted. 0 = keep them all.", 0, 3650),
+        ],
+    ),
 ]
 
 
