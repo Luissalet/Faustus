@@ -3335,7 +3335,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "blender_scene",
-            "description": "Build/render/verify a 3D scene as typed JSON headless in Blender (no free-form code). Scene: {meta, ops:[...]}; ops include meshes, materials, modifiers, lights, cameras, text, world/HDRI, render, import/export, asserts. Validated first; paths stay in the session folder. Actions: probe, schema (call first), validate, run, smoke. Use for 'renderiza una escena 3D', 'modela un cubo', 'export STL', 'check that Blender works'.",
+            "description": "Build/render/verify typed JSON 3D scenes headlessly in Blender. Scene: {meta,ops:[...]}. Actions: probe, schema (first), validate, run, smoke. Ops: new_scene, load_blend, save, delete, set_world, add_mesh, set_transform, add_empty, add_material, assign_material, add_modifier, add_light, add_camera, track_to, add_text, set_render, render, compositor_glare, import_model, export_model, assert. No free-form code; files stay in the session folder. Use for renderiza una escena 3D, modela un cubo, export STL.",
             "parameters": {
                 "type": "object",
                 "properties": {
