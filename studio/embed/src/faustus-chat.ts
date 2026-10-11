@@ -577,7 +577,11 @@ export class FaustusChatElement extends HTMLElement {
       const undo = el('button', { type: 'button', class: 'fc-btn', 'data-label-en': 'Undo', 'data-label-es': 'Deshacer' }, this.locale.startsWith('es') ? 'Deshacer' : 'Undo');
       undo.addEventListener('click', () => {
         undo.disabled = true;
-        void this.onToolUndo!(receipt).then(() => { undo.textContent = 'Deshecho'; })
+        void this.onToolUndo!(receipt).then(() => {
+          undo.dataset.labelEn = 'Undone';
+          undo.dataset.labelEs = 'Deshecho';
+          undo.textContent = this.locale.startsWith('es') ? 'Deshecho' : 'Undone';
+        })
           .catch(error => { undo.disabled = false; this.#emitError(String(error.message || error), error); });
       });
       node.appendChild(undo);
