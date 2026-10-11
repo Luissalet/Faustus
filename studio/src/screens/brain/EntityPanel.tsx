@@ -1,7 +1,9 @@
 import { AlertTriangle, Clock, RefreshCw, Sparkles } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router';
 import { Button, Skeleton } from '../../components';
 import { loadEntityProfile, runWikiRefresh, updateEntity, type EntityProfile } from '../../adapters/brain';
+import { loadFactHistory, sourceHref, type FactHistory } from '../../adapters/brainFactHistory';
 import { locale, t } from '../../i18n';
 
 /**
@@ -18,6 +20,70 @@ function fmt(iso: string | null): string {
   const at = Date.parse(iso);
   if (Number.isNaN(at)) return iso;
   return new Date(at).toLocaleDateString(locale(), { dateStyle: 'medium' });
+}
+
+/**
+ * Change chains: for every attribute that has closed (superseded) values, the
+ * value in force on top and the earlier ones under it with their window and the
+ * memory they came from. Loaded when the profile opens; an attribute with no
+ * changes renders nothing.
+ */
+function FactChains({ entityId, rels }: { entityId: string; rels: string[] }) {
+  const [chains, setChains] = useState<FactHistory[]>([]);
+  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const key = rels.join('|');
+
+  useEffect(() => {
+    if (rels.length === 0) {
+      setChains([]);
+      setState('ready');
+      return undefined;
+    }
+    const controller = new AbortController();
+    setState('loading');
+    Promise.all(rels.map((rel) => loadFactHistory(entityId, rel, controller.signal)))
+      .then((all) => {
+        setChains(all.filter((c) => c.changes > 0 && c.previous.length > 0));
+        setState('ready');
+      })
+      .catch((e) => {
+        if ((e as Error)?.name !== 'AbortError') setState('error');
+      });
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entityId, key]);
+
+  if (state === 'loading') return rels.length > 0 ? <p className="fs-muted" data-testid="brain-chains-loading">{t('Reading the change chains')}</p> : null;
+  if (state === 'error') return <p className="fs-notice" data-tone="warning" data-testid="brain-chains-error">{t('The change chains could not be read')}</p>;
+  if (chains.length === 0) return null;
+  return (
+    <div className="fs-brain__chains" data-testid="brain-fact-chains">
+      <h4>{t('Changes')}</h4>
+      {chains.map((chain) => (
+        <div key={chain.attribute} className="fs-brain__chain" data-testid="brain-fact-chain">
+          <span className="fs-brain__rel-verb">{chain.attribute.replace(/_/g, ' ')}</span>
+          <ol className="fs-brain__chain-list">
+            {chain.current.map((ev) => (
+              <li key={ev.id} data-current="true">
+                <strong>{ev.value}</strong>
+                <span className="fs-muted"> · {t('now')}{ev.validFrom ? ` (${t('since {date}', { date: fmt(ev.validFrom) })})` : ''}</span>
+              </li>
+            ))}
+            {chain.previous.map((ev) => {
+              const href = sourceHref(ev);
+              return (
+                <li key={ev.id}>
+                  <span>{ev.value}</span>
+                  <span className="fs-muted"> · {ev.validUntil ? t('until {date}', { date: fmt(ev.validUntil) }) : t('earlier')}</span>
+                  {href && <> <Link className="fs-link" to={href}>{t('source')}</Link></>}
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function EntityPanel({ entityId, onChanged }: { entityId: string; onChanged?: () => void }) {
@@ -37,6 +103,8 @@ export function EntityPanel({ entityId, onChanged }: { entityId: string; onChang
       .finally(() => setLoading(false));
     return () => controller.abort();
   }, [entityId, asOf]);
+
+  const changedRels = useMemo(() => [...new Set((profile?.history ?? []).map((r) => r.rel))].sort(), [profile]);
 
   async function toggleHidden() {
     if (!profile) return;
@@ -104,6 +172,8 @@ export function EntityPanel({ entityId, onChanged }: { entityId: string; onChang
           </li>
         ))}
       </ul>
+
+      <FactChains entityId={entityId} rels={changedRels} />
 
       {profile.history.length > 0 && (
         <details className="fs-brain__history">
