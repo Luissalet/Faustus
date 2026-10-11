@@ -105,7 +105,7 @@ export class HttpContext {
   constructor(opts: ClientOptions) {
     this.opts = opts;
     this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
-    const impl = opts.fetch ?? globalThis.fetch;
+    const impl = opts.fetch ?? globalThis.fetch?.bind(globalThis);
     if (!impl) {
       throw new Error(
         'No fetch implementation available. Pass one via ClientOptions.fetch, or run on Node 18+ / a browser.',

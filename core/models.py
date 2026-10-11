@@ -174,6 +174,10 @@ class Session:
             if (msg.metadata or {}).get("source") != "slash"
             and not (msg.metadata or {}).get("empty_answer")
         ]
+        # Imported Hoard histories keep their display metadata intact, while
+        # native tool call/result pairs must be visible to the model protocol.
+        from services.hoard_copilot import import_history_message
+        messages = [import_history_message(message) for message in messages]
         if not _history_grants_chat_session_approval(self.history, self.id):
             return messages
 

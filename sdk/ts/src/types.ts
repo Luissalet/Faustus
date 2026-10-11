@@ -147,6 +147,8 @@ export type ToolApprovalDecision = 'approve' | 'approve_action' | 'approve_task'
 export type StopScope = 'generation' | 'task' | 'work';
 
 export interface TurnInput {
+  /** Context supplied by the hosting Hoard, frozen for this send. */
+  hoardContext?: HoardContext;
   message: string;
   mode: 'chat' | 'agent';
   planMode?: boolean;
@@ -174,6 +176,31 @@ export interface TurnInput {
    *  the message twice (`X-Faustus-Idempotent-Replay` on the response, and
    *  `Turn.replayed`, say which happened). */
   clientMessageId?: string;
+}
+
+export interface HoardContext {
+  contract_version?: string;
+  origin: { app_id: string; data_space_id: string; surface?: string; hub_profile_id?: string | null; app_name?: string; tool_server_id?: string };
+  project?: { external_project_id?: string; title?: string; project_link_id?: string; faustus_project_id?: string };
+  active_objects?: Record<string, unknown>[];
+  selection?: Record<string, unknown> | null;
+  view?: Record<string, unknown>;
+  attachments?: unknown[];
+  instructions_ref?: string;
+}
+
+export interface HoardConversation {
+  session_id: string;
+  project_id: string | null;
+  project_link_id?: string | null;
+  context: HoardContext | null;
+  origin?: HoardContext['origin'];
+  name: string;
+  model?: string;
+  run_id?: string | null;
+  messages?: { role: string; content: string; metadata?: Record<string, unknown> }[];
+  archived?: boolean;
+  message_count?: number;
 }
 
 export interface AnswerQuestionInput {

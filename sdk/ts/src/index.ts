@@ -64,6 +64,8 @@ export type {
   ToolApprovalDecision,
   StopScope,
   TurnInput,
+  HoardContext,
+  HoardConversation,
   AnswerQuestionInput,
   DecideToolApprovalInput,
   StreamOptions,

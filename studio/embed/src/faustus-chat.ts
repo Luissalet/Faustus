@@ -19,7 +19,7 @@
 import { FaustusClient } from '../../../sdk/ts/src/client.js';
 import type { Turn } from '../../../sdk/ts/src/turn.js';
 import type { SseEvent } from '../../../sdk/ts/src/sse.js';
-import type { ToolApprovalDecision } from '../../../sdk/ts/src/types.js';
+import type { ToolApprovalDecision, HoardContext } from '../../../sdk/ts/src/types.js';
 import { EMBED_STYLES } from './styles.js';
 
 export type FaustusChatTheme = 'light' | 'dark' | 'auto';
@@ -80,6 +80,103 @@ export class FaustusChatElement extends HTMLElement {
   #messageCount = 0;
   #connected = false;
   #pendingInit: string | null = null;
+  #observer: AbortController | null = null;
+  #fetch: typeof fetch | undefined;
+  #contextProvider: (() => HoardContext | Promise<HoardContext>) | null = null;
+  #contextLabel!: HTMLDivElement;
+  #conversationSelect!: HTMLSelectElement;
+  #conversationBar!: HTMLDivElement;
+  #historyLoading = false;
+  #pendingSend: { message: string; context?: HoardContext; id: string } | null = null;
+  onToolUndo: ((receipt: Record<string, unknown>) => Promise<void>) | null = null;
+  onOpenSettings: (() => void) | null = null;
+  #locale = '';
+  #drafts = new Map<string, string>();
+  get locale(): string { return this.#locale || this.lang || document.documentElement.lang || 'en'; }
+  set locale(value: string) { this.#locale = value || ''; this.#applyLocale(); }
+
+  #applyLocale(): void {
+    const es = this.locale.startsWith('es');
+    this.#textarea.placeholder = es ? 'Mensaje…' : 'Message…';
+    this.#textarea.setAttribute('aria-label', es ? 'Mensaje' : 'Message');
+    this.#sendBtn.textContent = es ? 'Enviar' : 'Send';
+    this.#sendBtn.setAttribute('aria-label', es ? 'Enviar mensaje' : 'Send message');
+    this.#cancelBtn.textContent = es ? 'Detener' : 'Cancel';
+    this.#cancelBtn.setAttribute('aria-label', es ? 'Detener' : 'Cancel');
+    const empty = this.#shadow.querySelector('.fc-empty');
+    if (empty) empty.textContent = es ? 'Escribe un mensaje para empezar.' : 'Send a message to start this session.';
+  }
+
+  get fetch(): typeof fetch | undefined { return this.#fetch; }
+  set fetch(value: typeof fetch | undefined) { this.#fetch = value; this.#client = null; }
+  get contextProvider(): (() => HoardContext | Promise<HoardContext>) | null { return this.#contextProvider; }
+  set contextProvider(value: (() => HoardContext | Promise<HoardContext>) | null) {
+    this.#contextProvider = value;
+    this.#conversationBar.hidden = !value;
+    if (this.#connected && value) void this.refreshConversations();
+  }
+  get draft(): string { return this.#textarea.value; }
+  set draft(value: string) { this.#textarea.value = value || ''; }
+  appendDraft(text: string): void { this.draft = [this.draft, text].filter(Boolean).join('\n\n'); }
+  async retry(): Promise<void> { if (this.#pendingSend && !this.#busy) await this.#runTurn(this.#pendingSend.message); }
+
+  async refreshConversations(): Promise<void> {
+    if (!this.#contextProvider) return;
+    try {
+      const context = await this.#contextProvider();
+      if (typeof context.view?.locale === 'string') this.locale = context.view.locale;
+      this.#contextLabel.textContent = [context.origin.app_name || context.origin.app_id, context.project?.title].filter(Boolean).join(' · ');
+      const result = await this.#ensureClient().copilot.list(context);
+      this.#conversationSelect.replaceChildren(el('option', { value: '' }, 'Nueva conversación'));
+      for (const conversation of result.conversations) {
+        if (!conversation.archived) this.#conversationSelect.appendChild(el('option', { value: conversation.session_id }, conversation.name || 'Conversación'));
+      }
+      this.#conversationSelect.value = this.#sessionId || '';
+    } catch (error) { this.#emitError(String((error as Error).message || error), error); }
+  }
+
+  async loadHistory(): Promise<void> {
+    if (!this.#sessionId || this.#busy || this.#historyLoading) return;
+    this.#historyLoading = true;
+    const sid = this.#sessionId;
+    try {
+      const client = this.#ensureClient();
+      const conversation = await client.copilot.get(sid);
+      if (sid !== this.#sessionId) return;
+      this.#transcript.replaceChildren();
+      this.#messageCount = 0;
+      for (const message of conversation.messages || []) {
+        if (message.role === 'tool') this.#appendTool(message.content);
+        else this.#appendBubble(message.role === 'user' ? 'user' : 'agent', message.content);
+        const toolEvents = message.metadata?.tool_events;
+        if (Array.isArray(toolEvents)) for (const item of toolEvents) {
+          if (item && typeof item === 'object') {
+            const event = item as Record<string, unknown>;
+            const output = String(event.output || '');
+            this.#appendTool(`${String(event.tool || 'Herramienta')}\n${output || JSON.stringify(item)}`, this.#undoReceipt(output));
+          }
+        }
+        const legacy = message.metadata?.writer_tool_call as Record<string, unknown> | undefined;
+        if (legacy && typeof legacy.auditIndex === 'number') this.#appendTool(`Writer\n${JSON.stringify(legacy)}`, { app_id: 'writer', audit_index: legacy.auditIndex });
+      }
+      this.#syncEmptyState();
+      if (conversation.run_id) {
+        this.#observer = new AbortController();
+        try {
+          const turn = await client.turns.resume(sid, { signal: this.#observer.signal });
+          this.#setBusy(true);
+          void this.#consumeTurn(client, turn, sid);
+        } catch (error) {
+          // A completed run needs history, not another generation.
+          if ((error as { status?: number }).status !== 404) throw error;
+        }
+      }
+    } catch (error) { this.#emitError(String((error as Error).message || error), error); }
+    finally {
+      this.#historyLoading = false;
+      if (this.#connected && this.#sessionId !== sid) void this.loadHistory();
+    }
+  }
 
   constructor() {
     super();
@@ -113,7 +210,9 @@ export class FaustusChatElement extends HTMLElement {
     return this.#sessionId;
   }
   set session(v: string | null) {
+    this.#drafts.set(this.#sessionId || '', this.draft);
     this.#sessionId = v || null;
+    this.draft = this.#drafts.get(this.#sessionId || '') || '';
   }
 
   get theme(): FaustusChatTheme {
@@ -144,13 +243,21 @@ export class FaustusChatElement extends HTMLElement {
       this.removeAttribute('token');
     }
     this.#applyTheme();
+    this.#applyLocale();
     this.#syncEmptyState();
+    if (this.#contextProvider) {
+      void this.refreshConversations();
+      void this.loadHistory();
+    }
   }
 
   disconnectedCallback(): void {
     this.#connected = false;
-    this.#activeTurn?.cancel().catch(() => {});
+    // Removing a host panel detaches its observer, never cancels remote work.
+    this.#observer?.abort();
+    this.#observer = null;
     this.#activeTurn = null;
+    this.#setBusy(false);
   }
 
   attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void {
@@ -225,6 +332,46 @@ export class FaustusChatElement extends HTMLElement {
     const headerSlotHost = el('div', { class: 'fc-header' });
     headerSlotHost.appendChild(el('slot', { name: 'header' }));
     this.#root.appendChild(headerSlotHost);
+
+    this.#conversationBar = el('div', { class: 'fc-conversations' });
+    this.#conversationBar.hidden = true;
+    this.#contextLabel = el('div', { class: 'fc-context' });
+    this.#conversationSelect = el('select', { 'aria-label': 'Conversaciones del proyecto' }) as HTMLSelectElement;
+    this.#conversationSelect.addEventListener('change', () => {
+      if (this.#busy) return;
+      this.#drafts.set(this.#sessionId || '', this.draft);
+      this.#sessionId = this.#conversationSelect.value || null;
+      this.draft = this.#drafts.get(this.#sessionId || '') || '';
+      this.#transcript.replaceChildren();
+      this.#messageCount = 0;
+      this.#pendingSend = null;
+      this.#syncEmptyState();
+      this.#emit('faustus:session-change', { sessionId: this.#sessionId });
+      void this.loadHistory();
+    });
+    const refresh = el('button', { type: 'button', class: 'fc-btn' }, 'Actualizar');
+    refresh.addEventListener('click', () => { void this.refreshConversations(); void this.loadHistory(); });
+    const retry = el('button', { type: 'button', class: 'fc-btn' }, 'Reintentar');
+    retry.addEventListener('click', () => void this.retry());
+    const remove = el('button', { type: 'button', class: 'fc-btn' }, 'Borrar chat');
+    remove.addEventListener('click', () => {
+      if (!this.#sessionId || this.#busy) return;
+      void this.#ensureClient().sessions.remove(this.#sessionId).then(() => {
+        this.#sessionId = null;
+        this.#transcript.replaceChildren();
+        this.#messageCount = 0;
+        this.#syncEmptyState();
+        this.#emit('faustus:session-change', { sessionId: null });
+        return this.refreshConversations();
+      }).catch(error => this.#emitError(String(error.message || error), error));
+    });
+    const settings = el('button', { type: 'button', class: 'fc-btn' }, 'Ajustes de Faustus');
+    settings.addEventListener('click', () => {
+      if (this.onOpenSettings) this.onOpenSettings();
+      else window.open(this.#server.replace(/\/$/, '') + '/studio/settings', '_blank', 'noopener');
+    });
+    this.#conversationBar.append(this.#contextLabel, this.#conversationSelect, refresh, retry, remove, settings);
+    this.#root.appendChild(this.#conversationBar);
 
     this.#transcript = el('div', {
       class: 'fc-transcript',
@@ -310,17 +457,23 @@ export class FaustusChatElement extends HTMLElement {
   #ensureClient(): FaustusClient {
     if (!this.#server) throw new Error('faustus-chat: the "server" attribute/property is required');
     if (!this.#client) {
-      this.#client = new FaustusClient({ baseUrl: this.#server, token: this.#token ?? undefined });
+      this.#client = new FaustusClient({ baseUrl: this.#server, token: this.#token ?? undefined, fetch: this.#fetch });
     }
     return this.#client;
   }
 
-  async #ensureSession(client: FaustusClient): Promise<string> {
+  async #ensureSession(client: FaustusClient, context?: HoardContext): Promise<string> {
     if (this.#sessionId) return this.#sessionId;
     if (this.#pendingInit) return this.#pendingInit;
-    const created = await client.sessions.create({ skipValidation: true });
-    this.#sessionId = created.id;
-    return created.id;
+    if (context) {
+      const created = await client.copilot.create(context);
+      this.#sessionId = created.session_id;
+    } else {
+      const created = await client.sessions.create({ skipValidation: true });
+      this.#sessionId = created.id;
+    }
+    this.#emit('faustus:session-change', { sessionId: this.#sessionId });
+    return this.#sessionId;
   }
 
   #setBusy(busy: boolean): void {
@@ -328,6 +481,7 @@ export class FaustusChatElement extends HTMLElement {
     this.#sendBtn.disabled = busy;
     this.#textarea.disabled = busy;
     this.#cancelBtn.hidden = !busy;
+    this.#conversationSelect.disabled = busy;
   }
 
   #syncEmptyState(): void {
@@ -345,10 +499,33 @@ export class FaustusChatElement extends HTMLElement {
     return node;
   }
 
-  #appendTool(label: string): void {
-    const node = el('div', { class: 'fc-tool' }, label);
+  #appendTool(label: string, receipt?: Record<string, unknown>): void {
+    const node = el('div', { class: 'fc-tool' });
+    const split = label.indexOf('\n');
+    if (split >= 0) {
+      const details = el('details');
+      details.append(el('summary', {}, label.slice(0, split)), el('pre', {}, label.slice(split + 1)));
+      node.appendChild(details);
+    } else node.textContent = label;
+    if (receipt && this.onToolUndo) {
+      const undo = el('button', { type: 'button', class: 'fc-btn' }, 'Deshacer');
+      undo.addEventListener('click', () => {
+        undo.disabled = true;
+        void this.onToolUndo!(receipt).then(() => { undo.textContent = 'Deshecho'; })
+          .catch(error => { undo.disabled = false; this.#emitError(String(error.message || error), error); });
+      });
+      node.appendChild(undo);
+    }
     this.#transcript.appendChild(node);
     this.#transcript.scrollTop = this.#transcript.scrollHeight;
+  }
+
+  #undoReceipt(output: string): Record<string, unknown> | undefined {
+    try {
+      const result = JSON.parse(output);
+      const candidate = result?._undo || result?.result?._undo;
+      return candidate && typeof candidate === 'object' ? candidate : undefined;
+    } catch { return undefined; }
   }
 
   #emit<T>(name: string, detail: T): void {
@@ -365,35 +542,60 @@ export class FaustusChatElement extends HTMLElement {
     try {
       client = this.#ensureClient();
     } catch (err) {
+      this.draft = message;
       this.#emitError(String((err as { message?: string })?.message ?? err), err);
       return;
     }
 
-    this.#appendBubble('user', message);
     this.#setBusy(true);
-    this.#status.textContent = 'Sending…';
+    this.#status.textContent = this.locale.startsWith('es') ? 'Preparando el trabajo…' : 'Sending…';
+
+    let context: HoardContext | undefined;
+    try {
+      if (this.#pendingSend && this.#pendingSend.message !== message) this.#pendingSend = null;
+      context = this.#pendingSend?.context ?? (this.#contextProvider ? await this.#contextProvider() : undefined);
+      if (!this.#pendingSend) {
+        this.#pendingSend = { message, context: context ? structuredClone(context) : undefined, id: crypto.randomUUID() };
+        this.#appendBubble('user', message);
+      }
+    } catch (error) {
+      this.#setBusy(false);
+      this.draft = message;
+      this.#emitError(String((error as Error).message || error), error);
+      return;
+    }
 
     let sessionId: string;
     try {
-      const initPromise = this.#ensureSession(client);
+      const initPromise = this.#ensureSession(client, context);
       this.#pendingInit = await initPromise;
       sessionId = this.#pendingInit;
       this.#pendingInit = null;
     } catch (err) {
       this.#pendingInit = null;
       this.#setBusy(false);
+      this.draft = message;
       this.#emitError(String((err as { message?: string })?.message ?? err), err);
       return;
     }
 
     let turn: Turn;
     try {
-      turn = await client.turns.create(sessionId, { message, mode: this.#mode });
+      this.#observer = new AbortController();
+      turn = await client.turns.create(sessionId, {
+        message, mode: this.#mode, hoardContext: context, clientMessageId: this.#pendingSend.id,
+      }, { signal: this.#observer.signal });
     } catch (err) {
       this.#setBusy(false);
+      this.draft = message;
       this.#emitError(String((err as { message?: string })?.message ?? err), err);
       return;
     }
+    await this.#consumeTurn(client, turn, sessionId);
+  }
+
+  async #consumeTurn(client: FaustusClient, initialTurn: Turn, sessionId: string): Promise<void> {
+    let turn = initialTurn;
     this.#activeTurn = turn;
     this.#emit<TurnStartDetail>('faustus:turn-start', { sessionId, runId: turn.runId });
 
@@ -418,7 +620,8 @@ export class FaustusChatElement extends HTMLElement {
             continue;
           }
           if (event.type === 'tool_output') {
-            this.#appendTool(`✓ ${event.tool}${event.output ? `\n${event.output}` : ''}`);
+            const receipt = this.#undoReceipt(event.output || '');
+            this.#appendTool(`✓ ${event.tool}${event.output ? `\n${event.output}` : ''}`, receipt);
             continue;
           }
           if (event.type === 'ask_user') {
@@ -453,10 +656,14 @@ export class FaustusChatElement extends HTMLElement {
     }
 
     const end = await turn.done.catch((err) => ({ reason: 'error' as const, lastSequence: 0, error: err }));
+    if (this.#activeTurn !== turn) return;
     this.#setBusy(false);
-    this.#status.textContent = '';
+    this.#status.textContent = end.reason === 'error' ? 'No se pudo completar la conexión. Puedes reintentar el mismo envío.' : '';
     this.#activeTurn = null;
+    this.#observer = null;
+    if (end.reason !== 'error' && end.reason !== 'aborted') this.#pendingSend = null;
     this.#emit<TurnEndDetail>('faustus:turn-end', { sessionId, reason: end.reason });
+    if (this.#contextProvider && this.#connected) void this.refreshConversations();
   }
 
   /** Renders the ask_user card and resolves once the person picks an

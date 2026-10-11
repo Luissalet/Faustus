@@ -2436,6 +2436,19 @@ def setup_chat_routes(
             # chat_outbox.record_intent(owner=None, ...) and violates the
             # outbox table's NOT NULL column with a plain 500.
             owner = effective_user(request) or ""
+            # All embedded clients use this same turn and history. Capture the
+            # originating editor context once; Studio can continue the same chat.
+            from services import hoard_copilot as _hoard_copilot
+            try:
+                _hoard_context = _hoard_copilot.get_store().prepare_turn(
+                    session, getattr(sess, "owner", owner),
+                    form_data.get("hoard_context") or (body or {}).get("hoard_context"),
+                    client_message_id, message,
+                )
+                if _hoard_context is not None:
+                    _hoard_copilot.refresh_global_model(sess)
+            except _hoard_copilot.CopilotError as exc:
+                raise HTTPException(exc.status, {"code": exc.code, "message": str(exc)})
             # Resolve JSON/default session IDs and check ownership BEFORE reading
             # the pinned roster. A newly opened UI may send before its team GET.
             from src import chat_team
@@ -2886,6 +2899,8 @@ def setup_chat_routes(
             # model reads the selected fragment as context for THIS turn, never
             # as though the user had typed it.
             _doc_context_msgs = _doc_context_messages(_parse_doc_context_payload(doc_context_raw), ctx.user)
+            if _hoard_context is not None:
+                _doc_context_msgs.append(_hoard_copilot.context_message(_hoard_context))
             if _doc_context_msgs:
                 _insert_at = max(0, len(ctx.messages) - 1)
                 ctx.messages[_insert_at:_insert_at] = _doc_context_msgs
@@ -4250,8 +4265,10 @@ def setup_chat_routes(
                         _max_rounds = max(1, min(_max_rounds, 200))
 
                         _forced_tools = None
+                        if _hoard_context is not None:
+                            _forced_tools = {"lookup_tools"}
                         if _search_enabled:
-                            _forced_tools = set(WEB_TOOL_NAMES)
+                            _forced_tools = set(_forced_tools or set()) | set(WEB_TOOL_NAMES)
                             if _explicit_browser_intent:
                                 _forced_tools |= set(_BROWSER_MCP_TOOLS)
                         elif _explicit_browser_intent:

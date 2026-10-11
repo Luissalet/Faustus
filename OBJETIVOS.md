@@ -1367,3 +1367,13 @@ Implementado en §322 (#281 y #284, radar #503): informe en Ajustes → Integrac
 - **Hecho (#278, FAUSTUS §324, radar #500):** `fact_history`, `GET /api/brain/fact-history`, herramienta MCP `brain_fact_history` y línea «antes: X, hasta AAAA-MM» en la tarjeta de entidad cuando la pregunta trata del atributo.
 - **Hecho (#302, FAUSTUS §333):** la extracción de la memoria aprendida crea la cadena también para atributos no funcionales con cambio explícito («ya no usa X, ahora usa Y», «dejó de usar X», «no longer…, now…»).
 - **Hecho (#303, FAUSTUS §334):** la pantalla Cerebro muestra la cadena: la ficha de entidad tiene un bloque «Cambios» por atributo con el valor vigente, los anteriores con su ventana y el enlace a la sesión de origen.
+
+## Copilot común de los Hoards
+
+Tareas Ágora332-343, especificación D:/LocalAI/docs/faustus-hoards-copilot.
+El núcleo333/334/338 y el panel de336 reutilizan sesiones, ejecución, modelo y
+herramientas normales de Faustus. Writer340 integra el cliente ligero y
+conserva su historial y herramientas nativas. Pendientes: recuperación natural
+337, filtros globales336, transporte335, pilotoCicero339, Tantalus341,
+Prospero342 y QA/migración de familia343. No declarar completa la familia por
+la entrega del núcleo o de un piloto.

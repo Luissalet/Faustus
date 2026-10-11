@@ -11356,3 +11356,20 @@ La ficha de una entidad en Cerebro (`studio/src/screens/brain/EntityPanel.tsx`) 
 - `clear_context_caches()` olvida las dos cachés.
 
 Medido contra un puerto local sin servidor, cuatro consultas como en un turno: antes 4,69 + 4,65 + 2,18 + 2,18 = 13,7 s; ahora 4,69 + 0,05 + 0 + 0 = 4,7 s. Pruebas: `tests/test_model_context_local_probe_cache.py` (llama.cpp caído se sondea una vez, `/slots` alimenta el enfriamiento y otro modelo del mismo host no toca la red, `/api/ps` respeta el enfriamiento, se vuelve a preguntar tras el plazo) y `test_model_context.py` adaptado.
+
+## Copilot común de los Hoards
+
+Núcleo de las tareas333/334/338 y panel compartido de336: enlaces estables por
+aplicación, espacio de datos y proyecto nativo; conversaciones del almacén
+canónico; contexto del editor fijado al enviar; herencia del modelo global;
+importación idempotente con fechas y metadatos. El panel `@faustus/embed` se
+amplía con contexto/transporte del host, lista de chats, historial, borrar,
+reintentar, borradores, idioma y callback de deshacer nativo. Cerrar la vista
+separa el observador sin cancelar la ejecución. Los resultados largos se
+muestran en detalles desplegables. API y MCP: `docs/api/hoard_copilot.md`.
+
+Writer340 mantiene su integración independiente. Faltan búsqueda natural337,
+filtros globales de Studio336, migración del resto343 y las verificaciones
+completas con el modelo global. Las pruebas simuladas no certifican autonomía
+ni que todos los Hoards estén migrados. Las tareas siguen su revisión e
+integración normal del Ágora; no se cambian los modelos ni permisos globales.

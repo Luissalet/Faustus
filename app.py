@@ -1035,6 +1035,8 @@ app.include_router(setup_doctor_routes())
 
 # Chat
 from routes.chat_routes import setup_chat_routes
+from routes.hoard_copilot_routes import setup_hoard_copilot_routes
+app.include_router(setup_hoard_copilot_routes(session_manager))
 app.include_router(setup_chat_routes(
     session_manager, chat_handler, chat_processor,
     memory_manager, research_handler, upload_handler,

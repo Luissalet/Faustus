@@ -713,3 +713,15 @@ Home shows the Hub's configured apps, scheduled jobs, published watcher/task out
 Describing a report's verification section with generic quotations does not claim an external source was consulted. Explicit external checks still produce the existing advisory when unsupported.
 
 Full access runs Git commands through Bash, PowerShell and Studio's literal commands without compulsory rerouting to another tool.
+
+## Shared Hoard copilot
+
+The shared Hoard copilot links native projects to Faustus conversations and sends
+editor context through the normal agent harness. The existing `@faustus/embed`
+panel owns the conversation UI; hosts provide context and transport. Histories
+import idempotently into the canonical database, and native tools keep domain
+edits and undo in their Hoard. Build the shared bundle with
+`node studio/embed/build.mjs`; [API and MCP contract](docs/api/hoard_copilot.md).
+This is the common foundation; Writer integration and the remaining family
+migration are tracked separately. Global sidebar filters and natural-language
+project recovery are not part of this foundation yet.

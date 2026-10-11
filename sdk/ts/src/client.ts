@@ -28,6 +28,8 @@ import type {
   StreamStatus,
   ToolApprovalDecision,
   TurnInput,
+  HoardContext,
+  HoardConversation,
 } from './types.js';
 
 function newClientMessageId(): string {
@@ -62,6 +64,7 @@ function buildTurnRequestInit(sessionId: string, fields: InternalTurnFields, cli
     fd.append('message', fields.message);
     fd.append('mode', fields.mode);
     fd.append('client_message_id', clientMessageId);
+    if (fields.hoardContext) fd.append('hoard_context', JSON.stringify(fields.hoardContext));
     if (fields.planMode) fd.append('plan_mode', 'true');
     if (fields.allowBash) fd.append('allow_bash', 'true');
     if (fields.allowWebSearch) fd.append('allow_web_search', 'true');
@@ -113,6 +116,7 @@ function buildTurnRequestInit(sessionId: string, fields: InternalTurnFields, cli
   if (fields.selectedEndpointUrl) json.selected_endpoint_url = fields.selectedEndpointUrl;
   if (fields.selectedEndpointId) json.selected_endpoint_id = fields.selectedEndpointId;
   if (fields.genOverrides && Object.keys(fields.genOverrides).length) json.gen_overrides = fields.genOverrides;
+  if (fields.hoardContext) json.hoard_context = fields.hoardContext;
   if (fields.autonomyPreset) json.autonomy_preset = fields.autonomyPreset;
   if (fields.behaviorMode) json.behavior_mode = fields.behaviorMode;
   if (fields.presetId) json.preset_id = fields.presetId;
@@ -231,6 +235,13 @@ export class FaustusClient {
 
   readonly questions: { list(): Promise<OpenQuestion[]> };
 
+  readonly copilot: {
+    create(context: HoardContext, name?: string): Promise<HoardConversation>;
+    get(sessionId: string): Promise<HoardConversation>;
+    list(context: HoardContext): Promise<{ conversations: HoardConversation[] }>;
+    importConversation(input: Record<string, unknown>): Promise<{ session_id: string | null; deleted?: boolean; imported: number; message_count: number }>;
+  };
+
   readonly approvals: {
     pending(): Promise<ApprovalCard[]>;
     active(): Promise<ApprovalCard[]>;
@@ -247,6 +258,21 @@ export class FaustusClient {
   constructor(opts: ClientOptions) {
     const http = new HttpContext(opts);
     this.http = http;
+
+    this.copilot = {
+      create: (context, name = '') => http.requestJson('/api/hoard-copilot/conversations', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ context, name }),
+      }),
+      get: (id) => http.requestJson(`/api/hoard-copilot/conversations/${encodeURIComponent(id)}`),
+      list: (context) => {
+        const query = new URLSearchParams({ app_id: context.origin.app_id, data_space_id: context.origin.data_space_id });
+        if (context.project?.external_project_id) query.set('external_project_id', context.project.external_project_id);
+        return http.requestJson(`/api/hoard-copilot/conversations?${query}`);
+      },
+      importConversation: (input) => http.requestJson('/api/hoard-copilot/imports', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+      }),
+    };
 
     this.sessions = {
       create: (input) => http.createSession(sessionCreateForm(input)),
