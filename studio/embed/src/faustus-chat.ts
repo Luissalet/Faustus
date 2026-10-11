@@ -661,7 +661,10 @@ export class FaustusChatElement extends HTMLElement {
     this.#status.textContent = end.reason === 'error' ? 'No se pudo completar la conexión. Puedes reintentar el mismo envío.' : '';
     this.#activeTurn = null;
     this.#observer = null;
-    if (end.reason !== 'error' && end.reason !== 'aborted') this.#pendingSend = null;
+    if (end.reason !== 'error' && end.reason !== 'aborted') {
+      if (this.#pendingSend && this.draft === this.#pendingSend.message) this.draft = '';
+      this.#pendingSend = null;
+    }
     this.#emit<TurnEndDetail>('faustus:turn-end', { sessionId, reason: end.reason });
     if (this.#contextProvider && this.#connected) void this.refreshConversations();
   }
