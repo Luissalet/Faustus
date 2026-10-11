@@ -69,6 +69,17 @@ class IdBody(BaseModel):
     id: str
 
 
+class CommitmentsConfigBody(BaseModel):
+    enabled: Optional[bool] = None
+    all_chats: Optional[bool] = None
+    chats: Optional[list] = None
+
+
+class CommitmentsSyncBody(BaseModel):
+    refine: bool = False
+    hours: Optional[float] = None
+
+
 def _code(exc: Exception) -> int:
     from src.effect_outbox import OutcomeUnknownError
     if isinstance(exc, OutcomeUnknownError):
@@ -297,5 +308,31 @@ def setup_whatsapp_routes() -> APIRouter:
             return await asyncio.to_thread(wa.mark_read, body.chat)
         except wa.BridgeError as exc:
             raise HTTPException(503, str(exc))
+
+    # ── promises found in the chats, offered to People's Hoard (src/whatsapp_commitments.py) ──
+
+    @router.get("/commitments")
+    async def commitments_status(request: Request) -> Dict[str, Any]:
+        require_admin(request)
+        from src import whatsapp_commitments as wc
+        return await asyncio.to_thread(wc.status)
+
+    @router.post("/commitments/config")
+    async def commitments_config(body: CommitmentsConfigBody, request: Request) -> Dict[str, Any]:
+        # turning private chats over to another app is the person's decision, never the agent's
+        require_human(request)
+        from src import whatsapp_commitments as wc
+        from src.settings import SettingsError
+        try:
+            cfg = await asyncio.to_thread(lambda: wc.update_config(enabled=body.enabled, all_chats=body.all_chats, chats=body.chats))
+        except SettingsError as exc:
+            raise HTTPException(400, str(exc))
+        return {"config": cfg}
+
+    @router.post("/commitments/sync")
+    async def commitments_sync(body: CommitmentsSyncBody, request: Request) -> Dict[str, Any]:
+        require_human(request)
+        from src import whatsapp_commitments as wc
+        return await asyncio.to_thread(lambda: wc.sync(_owner(request), hours=body.hours, refine=body.refine))
 
     return router

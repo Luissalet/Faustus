@@ -595,12 +595,18 @@ async def action_whatsapp_digest(owner: str, **kwargs) -> Tuple[str, bool]:
     return await _whatsapp_digest_action()(owner, **kwargs)
 
 
+async def action_whatsapp_commitments(owner: str, **kwargs) -> Tuple[str, bool]:
+    from src.whatsapp_commitments import action_whatsapp_commitments as run
+    return await run(owner, **kwargs)
+
+
 WATCH_ACTIONS = {
     "weather_report": action_weather_report,
     "watch_page": action_watch_page,
     "news_brief": action_news_brief,
     "mail_digest": action_mail_digest,
     "whatsapp_digest": action_whatsapp_digest,
+    "whatsapp_commitments": action_whatsapp_commitments,
     "git_radar": action_git_radar,
     "night_shift_report": action_night_shift_report,
 }
@@ -610,6 +616,7 @@ WATCH_ACTION_INFO = {
     "news_brief": "News briefing on a topic from the last hours, summarised with sources — params: {\"topic\", \"hours\"}",
     "mail_digest": "Summary of the mail received in the last hours: what needs a reply, what is noteworthy, the bulk — params: {\"hours\", \"unread_only\"}",
     "whatsapp_digest": "Summary of the WhatsApp messages of the last hours (paired bridge): who waits for an answer, what is new per chat — params: {\"hours\", \"chat\", \"unread_only\"}",
+    "whatsapp_commitments": "Offer the new messages of the WhatsApp chats you enabled to People's Hoard, which records the promises in them (te lo mando el lunes, me debes la factura) — OFF unless whatsapp_commitments_enabled is on; params: {\"refine\": also ask the local model, \"always\": report every run}",
     "git_radar": "Which git repositories still have uncommitted or unpushed work; reports only when that set changes — params: {\"days\": only repos whose last commit is at least N days old (0 = all), \"always\": report every run}",
     "night_shift_report": "The morning report of the latest night shift (src/night_shift.py); reports only once per finished shift — params: {\"always\": report every run}",
 }

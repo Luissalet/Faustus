@@ -888,6 +888,13 @@ DEFAULT_SETTINGS = {
     # dropped) instead of loading it. A user-initiated run (a button click)
     # is never affected by this setting.
     "background_jobs_may_load_models": False,
+    # Promises made in WhatsApp chats ("te lo mando el lunes", "me debes la factura") offered to People's Hoard
+    # (src/whatsapp_commitments.py). Private chats, so it is opt-in twice: this switch (OFF by default) AND the chats the
+    # person names (a chat name, its JID or the phone number), or every one-to-one chat with `_all_chats`. Group chats are
+    # never sent; message text goes only to People's tool through the hub, never onto the event bus.
+    "whatsapp_commitments_enabled": False,
+    "whatsapp_commitments_all_chats": False,
+    "whatsapp_commitments_chats": [],
     # Gibberish-script guard (src.llm_core._DegenerateStreamGuard): over a
     # sliding window of `local_gibberish_window_chars` streamed characters,
     # abort as degenerate when more than this fraction of alphabetic

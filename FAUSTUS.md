@@ -11190,3 +11190,29 @@ Salida: hallazgos ordenados por gravedad (los de servidores activos antes), recu
 Lo que destapó la prueba en vivo (arreglado, con tests): la primera versión daba 19 falsos «secreto en claro» con la configuración real, uno por Hoard, porque todos declaran `X_TOKEN_FILE=<ruta del fichero del token>`, que es justo la forma correcta; y un falso duplicado entre Plato y Gepetto, que usan el mismo puente REST→MCP con distinto `REST_BASE_URL`. Ahora las variables puntero y los valores ruta no cuentan y el `env` forma parte de la identidad del arranque.
 
 Verificación: `tests/test_mcp_config_audit.py` (28 casos: configuración limpia sin hallazgos, secretos en `env`/argumentos/URL enmascarados, referencias y rutas que no son secretos, diez formas de lanzar paquetes, nueve raíces, http remoto frente a loopback, entorno heredado, envoltorio y duplicados, el puente con dos `env`, orden y resumen, filas de base de datos con JSON en texto y la herramienta MCP) y `tests/test_harness_mcp.py` (superficie de herramientas actualizada): 40 en verde; `tests/test_mcp*route*.py`: 19 en verde. En vivo, con una instancia aparte en el 7006 desde el worktree y una copia de la base de datos de Luis: `GET /api/mcp/audit` → 25 servidores y 0 hallazgos; con dos servidores de prueba desactivados añadidos a la copia (npx sin versión con `C:\` y un token en `env` y heredando el entorno; SSE por `http://192.168.1.50` con `api_key` en la URL) → 3 altos y 3 medios, ningún secreto en la respuesta, y con `include_disabled=false` vuelve a 25. Por stdio JSON-RPC (cliente MCP real contra `python -m mcp_servers.harness_server`): 14 herramientas, `mcp_config_audit` responde en 0,04 s con los mismos recuentos y audita una lista suministrada. Queda (OBJ-59): enseñarlo en Ajustes → MCP junto a la insignia del pre-escaneo.
+
+## 323. Compromisos de WhatsApp hacia People's — #240 (10-10-2026)
+
+**Qué hace.** Los mensajes de WhatsApp en los que alguien promete algo («te lo mando el viernes», «I'll call you tomorrow») o reclama algo («me debes la cena») pueden llegar al libro de compromisos de People's, con la cita, la fecha del mensaje, el vencimiento resuelto y la dirección «Le debo» / «Me debe». Está **apagado por defecto** y es de **adhesión voluntaria**.
+
+**Ajustes (todos en `src/settings.py`, validados por `update_settings`).**
+- `whatsapp_commitments_enabled` (falso por defecto): interruptor general. Apagado, no se lee ni se envía nada.
+- `whatsapp_commitments_chats` (lista vacía): chats habilitados, por nombre exacto (sin distinguir mayúsculas), JID o teléfono (6 cifras o más).
+- `whatsapp_commitments_all_chats` (falso): si se activa, vale cualquier chat individual. Con el interruptor activo y sin chats ni «todos», no hace nada (`no_chats`).
+- Los grupos no se ofrecen nunca, ni con «todos».
+
+**Módulo.** `src/whatsapp_commitments.py`:
+- `to_batch(filas, cfg)` convierte los mensajes que ya guarda el puente en el lote que espera People's (`chat`, `phone`, `sender` me/them, `text`, `timestamp` ISO UTC, `id`). Se salta lo que no es texto, lo borrado, lo reenviado y los grupos; devuelve también los contadores de lo omitido.
+- `sync(owner, hours=None, refine=False)` lee del puente local, trocea en lotes de 400 y llama a la herramienta `commitments_from_messages` de People's por el proxy del Hub (`POST /api/apps/people/call`). Estados: `off`, `no_chats`, `bridge_down`, `hub_down`, `hub_refused`, `hub_error`, `people_outdated`, `people_down`, `people_error`, `ok`.
+- Ventana: la primera vez 24 h; después, desde el cursor guardado más 1 h de solape, con tope de 72 h. El cursor solo avanza si todo el lote salió bien; si algo falla se vuelve a mirar la misma ventana (People's deduplica por id de mensaje, así que repetir no duplica).
+- `refine=True` pide a People's el repaso opcional con modelo local; apagado salvo petición expresa.
+
+**Privacidad.** El texto de los mensajes va **solo** del puente local a la herramienta de People's, en una llamada al proxy del Hub (que no lo registra: sus eventos `agent.call` no llevan cuerpos). No se emite ningún evento de Faustus con cuerpos, no hay regla nueva en el Hub y HoardLink no se toca. El estado guardado (`watchers.save_state`) son solo contadores y el cursor, nunca texto. Si People's no está o es antiguo, Faustus lo dice y no reintenta en bucle.
+
+**Tarea programada.** Acción `whatsapp_commitments` en `src/watchers.py` (`WATCH_ACTIONS` y `WATCH_ACTION_INFO`): sin novedades, apagado o sin chats lanza `TaskNoop` y no ensucia la bandeja; con compromisos nuevos devuelve líneas como «- Le debes a Marta: pasarle el presupuesto (para el 2026-10-16)».
+
+**Rutas** (`routes/whatsapp_routes.py`): `GET /api/whatsapp/commitments` (administrador; estado y configuración), `POST /api/whatsapp/commitments/config` (solo persona; `SettingsError` → 400) y `POST /api/whatsapp/commitments/sync` (solo persona; `hours`, `refine`). No hay pantalla nueva en Studio: se activa por esos ajustes/rutas o pidiéndoselo al asistente; los compromisos se ven en People's («WhatsApp», con el icono, la cita y el chip «Le debo» / «Me debe»).
+
+**Verificación.** `tests/test_whatsapp_commitments.py` (13): apagado por defecto y sin llamadas; filtrado de chats (nombre, JID, teléfono, grupos, «todos»); solo se envía a la herramienta de People's; cursor y ventana (primera, siguiente, tope); `refine` apagado salvo petición; fallos parametrizados (Hub caído, rechazado, People's antiguo/caído) sin mover el cursor; puente caído; acción programada con `TaskNoop`; rutas solo para humanos; normalización de la configuración. Lado People's: 135 pruebas en verde (15 nuevas), extracción ES/EN, fechas relativas, negativos, deduplicación, personas y eventos. Probado en vivo con un People's de QA (puerto libre, datos temporales).
+
+**Nota de numeración.** Esta sección es la 311 porque la última existente era la 310; si otra rama la ocupa antes, renumerar al integrar.
