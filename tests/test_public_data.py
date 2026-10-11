@@ -84,6 +84,8 @@ def test_earthquakes_worldwide_and_near(sources):
     assert "1.0_week" in sources["calls"][-1]
     with pytest.raises(pd.PublicDataError, match="period"):
         pd.earthquakes(period="year")
+    with pytest.raises(pd.PublicDataError, match="both lat and lon"):
+        pd.earthquakes(lat=40.0)
 
 
 def test_cached_then_stale_when_the_source_dies(sources):
@@ -114,7 +116,11 @@ def test_aircraft_nearby_lookup_and_track(sources):
     assert "/point/40.4700/-3.5600/30" in sources["calls"][-1]
     info = pd.aircraft_info("4951D4", "tap837")
     assert info["data"]["aircraft"]["registration"] == "CS-TNT" and info["data"]["route"]["destination"]["iata_code"] == "LIS"
-    assert "Rome (FCO) to Lisbon (LIS)" in info["summary"]
+    assert "Rome (FCO) to Lisbon (LIS)" in info["summary"] and info["freshness"] == "fresh"
+    pd.feed("adsbdb", 3600).ttl_s = 0
+    sources["down"].add("adsbdb.com/v0/callsign")
+    mixed = pd.aircraft_info("4951d4", "tap837")
+    assert mixed["freshness"] == "stale" and "source down" in mixed["error"]   # the older of the two lookups
     track = pd.aircraft_track("4951d4", max_points=50)
     assert track["total"] == 300 and len(track["data"]) == 50 and track["truncated"]
     assert track["data"][0]["time"] < track["data"][-1]["time"] and "highest 89700 m" in track["summary"]

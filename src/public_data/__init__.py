@@ -128,7 +128,9 @@ def earthquakes(min_magnitude: float = 2.5, period: str = "day", lat: Optional[f
     name = f"{bucket}_{period}"
     url = f"https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/{name}.geojson"
     got = _fetch("usgs-earthquakes", 120, name, lambda: http_json(url))
-    near = lat is not None and lon is not None
+    if (lat is None) != (lon is None):
+        raise PublicDataError("give both lat and lon to search near a point, or neither for worldwide")
+    near = lat is not None
     if near:
         _check_point(lat, lon)
     rows = []
@@ -234,9 +236,11 @@ def aircraft_info(hex_code: str = "", callsign: str = "") -> dict[str, Any]:
         raise PublicDataError("give the ICAO hex code (e.g. 4951d4) or the callsign (e.g. TAP837)")
     data: dict[str, Any] = {}
     got = None
+    seen = []
     if (hex_code or "").strip():
         hx = _hex6(hex_code)
         got = _fetch("adsbdb", 86400, f"aircraft:{hx}", lambda: http_json(f"https://api.adsbdb.com/v0/aircraft/{hx}"))
+        seen.append(got)
         resp = got.data.get("response") if isinstance(got.data, dict) else None
         a = resp.get("aircraft") if isinstance(resp, dict) else None
         if a:
@@ -244,6 +248,7 @@ def aircraft_info(hex_code: str = "", callsign: str = "") -> dict[str, Any]:
                                                       "registered_owner_country_name", "url_photo")}
     if callsign:
         got = _fetch("adsbdb", 3600, f"callsign:{callsign}", lambda: http_json(f"https://api.adsbdb.com/v0/callsign/{callsign}"))
+        seen.append(got)
         resp = got.data.get("response") if isinstance(got.data, dict) else None
         r = resp.get("flightroute") if isinstance(resp, dict) else None
         if r:
@@ -258,6 +263,8 @@ def aircraft_info(hex_code: str = "", callsign: str = "") -> dict[str, Any]:
         parts.append(f"{r['callsign']} ({r['airline']}) flies {r['origin']['municipality']} ({r['origin']['iata_code']}) to "
                      f"{r['destination']['municipality']} ({r['destination']['iata_code']})")
     summary = ". ".join(parts) + "." if parts else "The registry has no record for that aircraft or callsign."
+    rank = {"fresh": 0, "cached": 1, "stale": 2}
+    got = max(seen, key=lambda g: (rank.get(g.freshness, 3), g.age_s))   # two lookups: report the older, less fresh one
     return _answer(summary, data, got)
 
 
