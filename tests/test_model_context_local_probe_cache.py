@@ -10,6 +10,8 @@ from src import llm_core
 def _clean(monkeypatch):
     mc.clear_context_caches()
     monkeypatch.setattr(llm_core, "_dead_hosts", {}, raising=False)
+    monkeypatch.setattr(llm_core, "_host_fails", {}, raising=False)
+    monkeypatch.delenv("OLLAMA_CONTEXT_LENGTH", raising=False)
     monkeypatch.setattr(mc, "_configured_endpoint_kind", lambda url: None)
     yield
     mc.clear_context_caches()
@@ -48,11 +50,19 @@ def test_ollama_ps_honours_the_cooldown(monkeypatch):
     calls = []
     monkeypatch.setattr(mc.httpx, "get", _refusing(calls))
     monkeypatch.setattr(mc, "_saved_num_ctx", lambda *a: None)
-    mc.get_context_length_known("http://127.0.0.1:11434/v1", "qwen3:8b")
+    monkeypatch.setattr(llm_core, "_HOST_FAIL_THRESHOLD", 2)
+    mc._ollama_runtime_context("http://127.0.0.1:11434/v1", "qwen3:8b")
     assert any(c.endswith("/api/ps") for c in calls)
+    # The existing two-failure grace still permits the second probe.
+    assert not llm_core._is_host_dead("http://127.0.0.1:11434/api/ps")
     mc._local_context_recent.clear()
     calls.clear()
-    mc.get_context_length_known("http://127.0.0.1:11434/v1", "qwen3:8b")
+    mc._ollama_runtime_context("http://127.0.0.1:11434/v1", "qwen3:8b")
+    assert any(c.endswith("/api/ps") for c in calls)
+    assert llm_core._is_host_dead("http://127.0.0.1:11434/api/ps")
+    mc._local_context_recent.clear()
+    calls.clear()
+    mc._ollama_runtime_context("http://127.0.0.1:11434/v1", "qwen3:8b")
     assert calls == []
 
 
