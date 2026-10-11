@@ -673,10 +673,16 @@ _GIT_TOOL_FOR_SUBCOMMAND = {
 
 
 def git_mutation_routed_to_tools(command: str) -> Optional[dict]:
-    """A shell command that would CHANGE a git repository is refused with the
-    git_* tool to use instead (None for anything else, reads included).
+    """Route Git mutations to dedicated tools in Ask/Automatic mode.
+
+    Full access executes the selected shell command instead of imposing a
+    different tool. The same preference already governs the git_* tools.
     `git status`/`log`/`diff`/`show`/`rev-parse` in bash are harmless and
     stay allowed, so a script that merely inspects a repo keeps working."""
+    from src.tool_capabilities import tool_approval_mode
+
+    if tool_approval_mode() == "full":
+        return None
     text = command or ""
     m = _GIT_MUTATION_RE.search(text)
     if not m and _GIT_CONFIG_MUTATION_RE.search(text):
@@ -833,13 +839,8 @@ class BashTool:
         # byte-for-byte what it was. When it IS on and the container cannot
         # start, `run` returns a refusal rather than None — so there is no
         # arrangement of failures that puts the command back on the host.
-        # OBJ-4: git that CHANGES a repository goes through the git_* tools,
-        # never through the shell. Those tools honour the user's repository
-        # policy (branch / commit / push checkmarks) and show up in the Source
-        # control panel; a `git push` typed into bash would bypass both. Seen
-        # live: the model answered a git question with `bash: git ... status`
-        # even with git_status offered. Reads are let through (harmless) but
-        # a mutation is refused with the tool to use instead.
+        # Ask/Automatic keep the dedicated Git workflow. Full access honours
+        # the selected shell, including Git writes, without compulsory routing.
         routed = git_mutation_routed_to_tools(content)
         if routed is not None:
             return routed
