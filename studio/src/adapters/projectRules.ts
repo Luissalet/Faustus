@@ -1,4 +1,5 @@
 import { ApiError, getJson } from './api';
+import { loadSettings, saveSettings } from './settings';
 
 /**
  * Project rules (`src/project_rules.py`, `routes/project_rules_routes.py`)
@@ -86,4 +87,19 @@ export function uninstallProjectRules(workspace: string, ids: string[]): Promise
 /** Sets the path patterns of one of the folder's own .md rules; `[]` makes it a rule for every turn again. */
 export function setProjectRulePaths(workspace: string, id: string, paths: string[], origin = ''): Promise<{ status: string; paths: string[] }> {
   return postJson('/api/rules/paths', { workspace, id, origin, paths });
+}
+
+/** The Karpathy code-discipline variant selector (setting
+ * `project_rules_karpathy_variant`). Read through the settings API and
+ * written through the shared settings adapter. */
+export type KarpathyVariant = 'off' | 'original' | 'positive';
+
+export async function getKarpathyVariant(): Promise<KarpathyVariant> {
+  const data = await loadSettings();
+  const value = data.project_rules_karpathy_variant;
+  return value === 'original' || value === 'positive' || value === 'off' ? value : 'original';
+}
+
+export function setKarpathyVariant(variant: KarpathyVariant): Promise<unknown> {
+  return saveSettings({ project_rules_karpathy_variant: variant });
 }

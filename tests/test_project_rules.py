@@ -308,3 +308,70 @@ def test_rules_route_round_trips_install_and_uninstall(tmp_path, monkeypatch):
     resp = client.post("/api/rules/uninstall", json={"workspace": str(root), "ids": ["common/style"]})
     assert resp.status_code == 200
     assert resp.json()["results"][0]["status"] == "removed"
+
+
+def test_karpathy_variant_selector(tmp_path, monkeypatch):
+    lib = tmp_path / "lib"
+    (lib / "common").mkdir(parents=True)
+    (lib / "common" / "karpathy-code.md").write_text(
+        "---\nid: common/karpathy-code\ntitle: K original\napplies_to: []\n"
+        "priority: 15\nsummary: s\n---\n\n- original karpathy rule\n", encoding="utf-8")
+    (lib / "common" / "karpathy-code-positive.md").write_text(
+        "---\nid: common/karpathy-code-positive\ntitle: K positive\napplies_to: []\n"
+        "priority: 15\nsummary: s\n---\n\n- positive karpathy rule\n", encoding="utf-8")
+    monkeypatch.setattr(project_rules, "LIBRARY_DIR", str(lib))
+    project_rules._LIBRARY_CACHE = None
+    root = _make_repo(tmp_path / "ws")
+
+    monkeypatch.setattr(project_rules, "_setting", lambda k, d: "off" if k == "project_rules_karpathy_variant" else d)
+    text = project_rules.block(str(root), trusted=True, languages=[])
+    assert "karpathy" not in text
+
+    # Code-mode only: with the variant selected but no code language
+    # detected, the rule is skipped (a plain chat never gets it).
+    monkeypatch.setattr(project_rules, "_setting", lambda k, d: "original" if k == "project_rules_karpathy_variant" else d)
+    text = project_rules.block(str(root), trusted=True, languages=[])
+    assert "karpathy" not in text
+
+    text = project_rules.block(str(root), trusted=True, languages=["python"])
+    assert "original karpathy rule" in text
+    assert "positive karpathy rule" not in text
+
+    monkeypatch.setattr(project_rules, "_setting", lambda k, d: "positive" if k == "project_rules_karpathy_variant" else d)
+    text = project_rules.block(str(root), trusted=True, languages=["python"])
+    assert "positive karpathy rule" in text
+    assert "original karpathy rule" not in text
+
+
+def test_karpathy_default_is_original(tmp_path, monkeypatch):
+    """The setting default is "original" (Galton #322: B holds up under
+    pressure where C does not), and the real bundled rules carry it."""
+    import src.settings as settings_mod
+    assert settings_mod.DEFAULT_SETTINGS["project_rules_karpathy_variant"] == "original"
+    lib = tmp_path / "lib"
+    (lib / "common").mkdir(parents=True)
+    (lib / "common" / "karpathy-code.md").write_text(
+        "---\nid: common/karpathy-code\ntitle: K original\napplies_to: []\n"
+        "priority: 15\nsummary: s\n---\n\n- original karpathy rule\n", encoding="utf-8")
+    (lib / "common" / "karpathy-code-positive.md").write_text(
+        "---\nid: common/karpathy-code-positive\ntitle: K positive\napplies_to: []\n"
+        "priority: 15\nsummary: s\n---\n\n- positive karpathy rule\n", encoding="utf-8")
+    monkeypatch.setattr(project_rules, "LIBRARY_DIR", str(lib))
+    project_rules._LIBRARY_CACHE = None
+    root = _make_repo(tmp_path / "ws")
+    # No _setting override: the real default ("original") must inject B.
+    text = project_rules.block(str(root), trusted=True, languages=["python"])
+    assert "original karpathy rule" in text
+    assert "positive karpathy rule" not in text
+
+
+def test_selected_code_rule_fits_the_real_default_library_budget(tmp_path, monkeypatch):
+    import src.settings as settings_mod
+    monkeypatch.setattr(project_rules, "_setting", lambda key, default: settings_mod.DEFAULT_SETTINGS.get(key, default))
+    monkeypatch.setattr(project_rules, "_estimate_tokens", lambda text: max(1, len(text)//4))
+    project_rules._LIBRARY_CACHE = None
+    root = _make_repo(tmp_path / "real-code")
+    text = project_rules.block(str(root), languages=["Python"])
+    assert "(common/karpathy-code)" in text
+    assert "common/karpathy-code-positive" not in text
+    assert "common/karpathy-code" not in text.partition("More rules available:")[2]

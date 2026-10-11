@@ -519,7 +519,9 @@ def block(workspace: str, *, trusted: bool = True, languages: Optional[Sequence[
     library_sig = tuple((r.id, r.title, r.applies_to, r.priority,
                          hashlib.sha256(r.body.encode("utf-8")).hexdigest())
                         for r in captured_library)
-    sig = (_project_rules_signature(root, _rules=captured_rules), library_enabled, library_sig)
+    karpathy_variant = str(_setting("project_rules_karpathy_variant", "original")).strip().lower()
+    sig = (_project_rules_signature(root, _rules=captured_rules), library_enabled, library_sig,
+           karpathy_variant)
     with _BLOCK_LOCK:
         cached = _BLOCK_CACHE.get(key)
     if cached and cached[0] == sig:
@@ -558,8 +560,21 @@ def block(workspace: str, *, trusted: bool = True, languages: Optional[Sequence[
             parts.append(note.strip())
 
     if library_enabled:
+        # The two Karpathy variants are alternatives, not additions: the
+        # `project_rules_karpathy_variant` setting picks which one (if any)
+        # is injected, so both never appear together. Default "original"
+        # per the Galton A/B/C measurement (task #322). Code-mode only: the
+        # rule is about writing code, so it is skipped when no code language
+        # is detected in the workspace (a plain chat or docs-only folder).
+        variant = karpathy_variant
+        karpathy_ids = {"common/karpathy-code", "common/karpathy-code-positive"}
+        chosen = {"off": set(), "original": {"common/karpathy-code"},
+                  "positive": {"common/karpathy-code-positive"}}.get(variant, set())
         for r in captured_library:
-            if r.applies_to:
+            if r.id in karpathy_ids:
+                if r.id not in chosen or not langs:
+                    continue
+            elif r.applies_to:
                 if not langs or not (set(r.applies_to) & set(langs)):
                     continue
             piece = f"### {r.title} ({r.id})\n\n{r.body}"
