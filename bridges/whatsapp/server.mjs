@@ -10,7 +10,7 @@
 //
 //   GET  /status                 → {status, me, qr (data URL while pairing), counts}
 //   GET  /chats?limit=50         → [{jid, name, is_group, last_ts, last_text, unread, presence, muted, pinned, archived}]
-//   GET  /messages?chat=&since=&limit=&unread=1 → [{id, chat, chat_name, from, from_name, from_me, ts, text, kind, status?, reactions?, reply_to?, edited?, deleted?, forwarded?, mentions?}]
+//   GET  /messages?chat=&since=&until=&limit=&unread=1 → [{id, chat, chat_name, from, from_name, from_me, ts, text, kind, status?, reactions?, reply_to?, edited?, deleted?, forwarded?, mentions?}]
 //   GET  /search?q=&chat=&limit=50 → [WaMessage] newest first, substring (accent/case-insensitive) over text
 //   GET  /contacts?q=            → [{jid, name, phone}]
 //   GET  /avatar?jid=            → image/jpeg (profile picture, cached a day) | 404
@@ -535,11 +535,12 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/messages") {
       const chat = url.searchParams.get("chat");
       const since = Number(url.searchParams.get("since") || 0);
+      const until = Number(url.searchParams.get("until") || 0); // optional upper bound: lets a caller page back from the newest
       const limit = Math.min(Number(url.searchParams.get("limit") || 200), 2000);
       const unread = url.searchParams.get("unread") === "1";
       let jid = null;
       if (chat) { const r = resolveTarget(chat); if (r.error) return json(res, 404, r); if (r.ambiguous) return json(res, 409, r); jid = r.jid; }
-      const rows = messages.filter((m) => (!jid || m.chat === jid) && m.ts >= since && (!unread || m.unread)).slice(-limit)
+      const rows = messages.filter((m) => (!jid || m.chat === jid) && m.ts >= since && (!until || m.ts <= until) && (!unread || m.unread)).slice(-limit)
         .map((m) => ({ ...m, chat_name: nameOf(m.chat) || m.chat_name || "", from_name: m.from_me ? "me" : (nameOf(m.from) || m.from_name || "") }));
       return json(res, 200, rows);
     }

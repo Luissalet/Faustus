@@ -5,14 +5,22 @@ person *enabled* to People's Hoard (the personal address book), which finds the 
 "me debes la factura") and keeps them as commitments with the sentence, the date of the message, the contact and the direction.
 
 Privacy, in order of importance:
-  * **Off by default.** Nothing leaves this module unless `whatsapp_commitments_enabled` is on, and then only the chats named in
-    `whatsapp_commitments_chats` (a chat name, its JID or the contact's phone number) — or every one-to-one chat when the person
-    also turned on `whatsapp_commitments_all_chats`. Group chats are never sent.
+  * **Off by default, and only a person can turn it on.** Nothing leaves this module unless `whatsapp_commitments_enabled` is
+    on, and then only the chats named in `whatsapp_commitments_chats` (a chat name, its JID or the contact's phone number) — or
+    every one-to-one chat when the person also turned on `whatsapp_commitments_all_chats`. The three settings are in
+    `settings.HUMAN_ONLY_SETTINGS`: the agent's `manage_settings` tool and the settings API refuse them when the call comes from
+    the model, and the routes of this feature are `require_human`.
+  * **Never** groups, channels (`@newsletter`), status or broadcast lists, nor a hidden `@lid` chat the bridge has no name for.
   * **Message bodies go to one place only**: the `commitments_from_messages` tool of People's Hoard, through the Hoard Link hub's
     tool proxy (`POST /api/apps/people/call`). They are never put on the hub's event bus and never written to a log; the state
-    file this module keeps holds counts and a timestamp, not text.
+    file this module keeps holds counts, timestamps and message ids, not text. What this module reports (the scheduled task's
+    card, the sync route) names a commitment by its action in plain words («Mandar algo»), never by the sentence.
   * Only plain text messages that are not forwarded and not deleted are offered; voice notes, media and reactions are not.
-  * People's Hoard skips what it already read (a ledger of message ids), so a window that overlaps the last one is harmless.
+
+How nothing gets lost: each enabled chat is read on its own (`GET /messages?chat=`), paged back from the newest message with
+`until` when a page is full, and the window reaches 24 h before the last complete run so late arrivals (a history sync) are
+still seen. The ids already offered are remembered (ids only, 7 days), so the overlap costs nothing; People's Hoard also skips
+what it already read. The run's time only moves forward when every chat was read to the end and every call succeeded.
 
 A scheduled task with the action `whatsapp_commitments` (src/watchers.py) runs `sync()` periodically; the WhatsApp routes expose
 the same for a button (`/api/whatsapp/commitments*`).
@@ -37,8 +45,13 @@ PEOPLE_APP = "people"
 PEOPLE_TOOL = "commitments_from_messages"
 BATCH_SIZE = 400            # People's Hoard accepts 500 per call
 FIRST_WINDOW_HOURS = 24.0   # the first run only looks a day back
-MAX_WINDOW_HOURS = 72.0     # and a long pause is never replayed in full
-OVERLAP_HOURS = 1.0
+OVERLAP_HOURS = 24.0        # late arrivals (a history sync) show up with an old timestamp: look this far before the last run
+MAX_WINDOW_HOURS = 24.0 * 7  # and a long pause is never replayed in full
+PAGE_LIMIT = 500            # messages asked per page of one chat
+MAX_PAGES = 20
+CHAT_LIST_LIMIT = 500
+OFFERED_KEEP_HOURS = MAX_WINDOW_HOURS + OVERLAP_HOURS
+OFFERED_MAX = 6000
 CALL_TIMEOUT_S = 90.0
 STATE_TASK = "whatsapp_commitments"
 STATE_KEY = "cursor"
@@ -91,10 +104,27 @@ def is_group(jid: Any) -> bool:
     return str(jid or "").endswith("@g.us")
 
 
+def is_lid(jid: Any) -> bool:
+    return str(jid or "").endswith("@lid")
+
+
+def not_a_chat(jid: Any, name: Any = "") -> bool:
+    """True for what is not a conversation with a person: status, broadcast lists, channels, and a hidden `@lid` id the bridge has
+    no name for (the bridge turns an `@lid` into the phone JID when it has learnt the pair; when it only has a name, the chat is kept
+    and People's Hoard is told the name is unverified)."""
+    j = str(jid or "").lower()
+    if not j or j == "status@broadcast" or j.endswith("@broadcast") or j.endswith("@newsletter"):
+        return True
+    if is_lid(j):
+        label = str(name or "").strip()
+        return not label or label.isdigit() or label.lower() == j
+    return False
+
+
 def chat_enabled(row: Dict[str, Any], cfg: Dict[str, Any]) -> bool:
     """True when the person turned this chat on (by name, JID or phone), or every one-to-one chat is on."""
     jid = str(row.get("chat") or "")
-    if not jid or is_group(jid):
+    if not jid or is_group(jid) or not_a_chat(jid, row.get("chat_name")):
         return False
     if cfg.get("all_chats"):
         return True
@@ -121,14 +151,21 @@ def _iso(ts: Any) -> Optional[str]:
         return None
 
 
+def _key(row_or_item: Dict[str, Any]) -> str:
+    return f"{row_or_item.get('chat') or row_or_item.get('chat_id') or ''}|{row_or_item.get('id') or ''}"
+
+
 def to_batch(rows: Iterable[Dict[str, Any]], cfg: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
     """Messages in the shape People's Hoard takes, plus how many were left out and why. Pure: no I/O."""
     batch: List[Dict[str, Any]] = []
-    skipped = {"group": 0, "not_enabled": 0, "not_text": 0, "forwarded": 0}
+    skipped = {"group": 0, "not_enabled": 0, "not_chat": 0, "not_text": 0, "forwarded": 0}
     for m in rows:
         jid = str(m.get("chat") or "")
         if is_group(jid):
             skipped["group"] += 1
+            continue
+        if not_a_chat(jid, m.get("chat_name")):
+            skipped["not_chat"] += 1
             continue
         if not chat_enabled(m, cfg):
             skipped["not_enabled"] += 1
@@ -151,6 +188,8 @@ def to_batch(rows: Iterable[Dict[str, Any]], cfg: Dict[str, Any]) -> Tuple[List[
         phone = jid_phone(jid)
         if phone:
             item["phone"] = phone
+        elif is_lid(jid):
+            item["name_unverified"] = True   # only a nickname identifies this chat: People's Hoard asks before linking it
         batch.append(item)
     batch.sort(key=lambda it: it["timestamp"])
     return batch, skipped
@@ -198,11 +237,53 @@ def status() -> Dict[str, Any]:
     }
 
 
+# ── reading the bridge ──────────────────────────────────────────────────────
+
+def _eligible_chats(cfg: Dict[str, Any], since_ts: float) -> List[Dict[str, Any]]:
+    """The chats the person enabled that had any activity in the window (one entry per chat, in the bridge's words)."""
+    out: List[Dict[str, Any]] = []
+    for c in wa.chats(limit=CHAT_LIST_LIMIT) or []:
+        if not isinstance(c, dict):
+            continue
+        jid = str(c.get("jid") or "")
+        name = str(c.get("name") or "")
+        if not chat_enabled({"chat": jid, "chat_name": name}, cfg):
+            continue
+        try:
+            if c.get("last_ts") and float(c["last_ts"]) < since_ts:
+                continue            # quiet in the window
+        except (TypeError, ValueError):
+            pass
+        out.append({"jid": jid, "name": name})
+    return out
+
+
+def _read_chat(jid: str, hours: float) -> Tuple[List[Dict[str, Any]], bool]:
+    """Every message of one chat inside the window. The bridge answers the newest `limit` messages, so a full page means there may be
+    older ones: ask again for those up to the oldest time seen (`until`). Returns (rows, truncated); truncated is True when the
+    bridge could not be paged (an older bridge ignores `until`) or the chat has more than MAX_PAGES pages."""
+    rows: Dict[str, Dict[str, Any]] = {}
+    until: Optional[float] = None
+    for _ in range(MAX_PAGES):
+        page = [r for r in (wa.messages(jid, since_hours=hours, limit=PAGE_LIMIT, until_ts=until) or []) if isinstance(r, dict)]
+        for r in page:
+            rows[_key({"chat": r.get("chat") or jid, "id": r.get("id")})] = r
+        if len(page) < PAGE_LIMIT:
+            return list(rows.values()), False
+        oldest = min((float(r.get("ts") or 0) for r in page), default=0.0)
+        if until is not None and oldest >= until:
+            return list(rows.values()), True      # no progress: the bridge does not know `until`
+        until = oldest
+    return list(rows.values()), True
+
+
 def sync(owner: str = "", *, hours: Optional[float] = None, refine: bool = False,
          now: Optional[float] = None) -> Dict[str, Any]:
     """Offer the new messages of the enabled chats to People's Hoard. Safe to repeat and to call while the bridge or People are down.
 
     status: ok | off | no_chats | bridge_down | hub_down | hub_refused | hub_error | people_down | people_outdated | people_error.
+    `truncated` counts chats with more messages than could be read (the run's time does not advance, the next run tries again);
+    `chat_errors` the chats the bridge refused.
     """
     cfg = config()
     if not cfg["enabled"]:
@@ -211,23 +292,38 @@ def sync(owner: str = "", *, hours: Optional[float] = None, refine: bool = False
         return {"status": "no_chats", "detail": "Activado, pero sin chats elegidos: indica qué chats pueden leerse."}
     clock = time.time() if now is None else now
     state = _state()
+    last_ok = state.get("cursor_ts")
     if hours is None:
-        last = state.get("cursor_ts")
-        hours = FIRST_WINDOW_HOURS if not isinstance(last, (int, float)) else min(
-            MAX_WINDOW_HOURS, max(OVERLAP_HOURS, (clock - float(last)) / 3600.0 + OVERLAP_HOURS))
+        hours = FIRST_WINDOW_HOURS if not isinstance(last_ok, (int, float)) else min(
+            MAX_WINDOW_HOURS, max(OVERLAP_HOURS, (clock - float(last_ok)) / 3600.0 + OVERLAP_HOURS))
     hours = max(0.25, min(float(hours), 24.0 * 14))
+    since_ts = clock - hours * 3600.0
     try:
-        rows = wa.messages(None, since_hours=hours, limit=500)
+        chats = _eligible_chats(cfg, since_ts)
     except wa.BridgeError as exc:
         return {"status": "bridge_down", "detail": str(exc)[:200]}
-    rows = [r for r in rows if isinstance(r, dict)]
+    rows: List[Dict[str, Any]] = []
+    truncated = chat_errors = 0
+    for chat in chats:
+        try:
+            got, cut = _read_chat(chat["jid"], hours)
+        except wa.BridgeError as exc:
+            chat_errors += 1
+            if chat_errors == len(chats):
+                return {"status": "bridge_down", "detail": str(exc)[:200]}
+            continue
+        rows.extend(got)
+        truncated += 1 if cut else 0
     batch, skipped = to_batch(rows, cfg)
+    offered: Dict[str, float] = {k: float(v) for k, v in (state.get("offered") or {}).items() if isinstance(v, (int, float))}
+    fresh = [m for m in batch if _key(m) not in offered]
     totals = {"created": 0, "queued": 0, "duplicates": 0, "linked": 0, "unlinked": 0, "seen": 0}
     commitments: List[Dict[str, Any]] = []
     outcome = "ok"
     detail = ""
-    for start in range(0, len(batch), BATCH_SIZE):
-        reply = _call_people(batch[start:start + BATCH_SIZE], refine=refine)
+    for start in range(0, len(fresh), BATCH_SIZE):
+        chunk = fresh[start:start + BATCH_SIZE]
+        reply = _call_people(chunk, refine=refine)
         if reply["status"] != "ok":
             outcome, detail = reply["status"], reply.get("detail", "")
             break
@@ -235,30 +331,45 @@ def sync(owner: str = "", *, hours: Optional[float] = None, refine: bool = False
         for key in ("created", "queued", "duplicates", "linked", "unlinked"):
             totals[key] += int(res.get(key) or 0)
         totals["seen"] += int((res.get("skipped") or {}).get("seen") or 0)
-        commitments.extend(res.get("commitments") or [])
+        for c in res.get("commitments") or []:
+            if isinstance(c, dict):   # never the sentence: the action in plain words, who, which way and when
+                commitments.append({k: c.get(k) for k in ("id", "direction", "action", "due", "person_name")})
+        if not int(res.get("retry") or 0):   # with the model pass on, People may keep some unread: offer them again next time
+            for m in chunk:
+                offered[_key(m)] = float(_ts_of(m))
     stamp = datetime.fromtimestamp(clock, tz=timezone.utc).isoformat(timespec="seconds")
-    if outcome == "ok":
-        # the cursor only moves on success; People's ledger makes the overlap harmless
-        stamps = [float(r.get("ts") or 0) for r in rows]
-        if isinstance(state.get("cursor_ts"), (int, float)):
-            stamps.append(float(state["cursor_ts"]))
-        state["cursor_ts"] = max(stamps, default=clock)
-    state.update({"last_run_at": stamp, "last_status": outcome, "last_counts": {**totals, "read": len(rows), "offered": len(batch)}})
+    complete = outcome == "ok" and not truncated and not chat_errors
+    if complete:
+        state["cursor_ts"] = clock   # the window of the next run starts (with its overlap) from this complete run
+    horizon = clock - OFFERED_KEEP_HOURS * 3600.0
+    kept = sorted(((k, v) for k, v in offered.items() if v >= horizon), key=lambda kv: kv[1])[-OFFERED_MAX:]
+    state["offered"] = dict(kept)
+    state.update({"last_run_at": stamp, "last_status": outcome,
+                  "last_counts": {**totals, "read": len(rows), "offered": len(fresh), "truncated": truncated, "chat_errors": chat_errors}})
     _save(state)
     out: Dict[str, Any] = {
-        "status": outcome, "window_hours": round(hours, 2), "read": len(rows), "offered": len(batch), "skipped": skipped,
+        "status": outcome, "window_hours": round(hours, 2), "chats": len(chats), "read": len(rows), "offered": len(fresh),
+        "already_offered": len(batch) - len(fresh), "skipped": skipped, "truncated": truncated, "chat_errors": chat_errors,
         **totals, "commitments": commitments,
     }
     if detail:
         out["detail"] = detail
-    logger.info("[whatsapp_commitments] %s: read=%d offered=%d created=%d queued=%d", outcome, len(rows), len(batch),
-                totals["created"], totals["queued"])
+    logger.info("[whatsapp_commitments] %s: chats=%d read=%d offered=%d created=%d queued=%d truncated=%d", outcome, len(chats),
+                len(rows), len(fresh), totals["created"], totals["queued"], truncated)
     return out
+
+
+def _ts_of(item: Dict[str, Any]) -> float:
+    try:
+        return datetime.fromisoformat(str(item.get("timestamp"))).timestamp()
+    except (TypeError, ValueError):
+        return time.time()
 
 
 async def action_whatsapp_commitments(owner: str, **kwargs) -> Tuple[str, bool]:
     """Scheduled action `whatsapp_commitments`: offer the new messages of the enabled chats to People's Hoard and say what was
-    recorded. Quiet (a no-op run) when the feature is off, nothing is enabled or nothing new was found."""
+    recorded. Quiet (a no-op run) when the feature is off, nothing is enabled or nothing new was found. The report holds counts,
+    names and plain action names («Mandar algo»), never the words of a message."""
     import asyncio
     from src.builtin_actions import TaskNoop
     from src.watchers import parse_params
@@ -269,12 +380,15 @@ async def action_whatsapp_commitments(owner: str, **kwargs) -> Tuple[str, bool]:
         raise TaskNoop(f"whatsapp_commitments: {status}")
     if status != "ok":
         return summary_line(result), False
-    if not params.get("always") and not (int(result.get("created") or 0) or int(result.get("queued") or 0)):
+    if not params.get("always") and not (int(result.get("created") or 0) or int(result.get("queued") or 0)
+                                         or int(result.get("truncated") or 0) or int(result.get("chat_errors") or 0)):
         raise TaskNoop(f"whatsapp_commitments: nothing new ({result.get('offered', 0)} messages offered)")
     lines = [summary_line(result)]
     for c in (result.get("commitments") or [])[:10]:
         who = c.get("person_name") or "alguien"
-        lines.append(f"- {'Le debes a' if c.get('direction') == 'i_owe' else 'Te debe'} {who}: {c.get('text')}" + (f" (para el {c['due']})" if c.get("due") else ""))
+        what = c.get("action") or "un compromiso"
+        lines.append(f"- {'Le debes a' if c.get('direction') == 'i_owe' else 'Te debe'} {who}: {what}"
+                     + (f" (para el {c['due']})" if c.get("due") else ""))
     return "\n".join(lines), True
 
 
@@ -287,4 +401,10 @@ def summary_line(result: Dict[str, Any]) -> str:
     parts = [f"{created} compromiso{'s' if created != 1 else ''} nuevo{'s' if created != 1 else ''}"]
     if queued:
         parts.append(f"{queued} por revisar en People's Hoard")
-    return f"Compromisos de WhatsApp: {', '.join(parts)} (de {result.get('offered', 0)} mensajes de los chats activados)."
+    line = f"Compromisos de WhatsApp: {', '.join(parts)} (de {result.get('offered', 0)} mensajes nuevos de los chats activados)."
+    cut, errors = int(result.get("truncated") or 0), int(result.get("chat_errors") or 0)
+    if cut:
+        line += f" {cut} chat{'s' if cut != 1 else ''} con más mensajes de los que se pudieron leer de una vez: se reintentará."
+    if errors:
+        line += f" {errors} chat{'s' if errors != 1 else ''} que el puente no devolvió: se reintentará."
+    return line

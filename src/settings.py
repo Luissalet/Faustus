@@ -53,6 +53,15 @@ _WRITE_LOCK = threading.RLock()
 # tombstone boundary.
 RETIRED_SETTING_KEYS = frozenset({"default_model_fallbacks"})
 
+# Settings that decide whether private data leaves for another app: only a person may change them. The agent's
+# `manage_settings` tool and `POST /api/settings` refuse them when the call comes from the model (see
+# src/agent_tools/admin_tools.py and routes/auth_routes.py); the daily spend cap has its own set in src/spend_cap.py.
+HUMAN_ONLY_SETTINGS = frozenset({
+    "whatsapp_commitments_enabled",     # WhatsApp messages offered to People's Hoard (src/whatsapp_commitments.py)
+    "whatsapp_commitments_all_chats",
+    "whatsapp_commitments_chats",
+})
+
 # Tiny TTL cache for settings/features. get_setting() is called on hot paths
 # (every chat, every preprocess); without this it re-parses the JSON each call.
 # Picks up edits within _CACHE_TTL seconds, which is fine for human-edited config.

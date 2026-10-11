@@ -694,6 +694,9 @@ async def do_manage_settings(content: str, owner: Optional[str] = None) -> Dict:
             from src.spend_cap import PROTECTED_SETTINGS as _CAP_SETTINGS
             if key in _CAP_SETTINGS:
                 return {"error": f"'{key}' is part of the daily paid spend cap. Only a person can change it, in Settings > Agent; a tool call cannot raise, reset or switch off the cap.", "exit_code": 1}
+            from src.settings import HUMAN_ONLY_SETTINGS as _HUMAN_ONLY
+            if key in _HUMAN_ONLY:
+                return {"error": f"'{key}' decides whether private data leaves for another app. Only a person can change it (Settings, or the button of that feature); a tool call cannot turn it on, off or reset it.", "exit_code": 1}
             if _is_secret(key):
                 return {"response": f"'{key}' is a credential/secret. For security I can't set it from chat. Open Settings and set it there.", "exit_code": 0}
             # Structured settings (dicts/lists like keybinds or vision fallbacks)
@@ -732,6 +735,9 @@ async def do_manage_settings(content: str, owner: Optional[str] = None) -> Dict:
             from src.spend_cap import PROTECTED_SETTINGS as _CAP_SETTINGS
             if key in _CAP_SETTINGS:
                 return {"error": f"'{key}' is part of the daily paid spend cap. Only a person can change it, in Settings > Agent; a tool call cannot raise, reset or switch off the cap.", "exit_code": 1}
+            from src.settings import HUMAN_ONLY_SETTINGS as _HUMAN_ONLY
+            if key in _HUMAN_ONLY:
+                return {"error": f"'{key}' decides whether private data leaves for another app. Only a person can change it (Settings, or the button of that feature); a tool call cannot turn it on, off or reset it.", "exit_code": 1}
             if _is_secret(key):
                 return {"response": f"'{key}' is a credential. Reset it in the panel.", "exit_code": 0}
             s = load_settings()

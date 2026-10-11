@@ -936,6 +936,10 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
             for _cap_key in _cap_keys:
                 if _cap_key in body and body[_cap_key] != current.get(_cap_key, DEFAULT_SETTINGS.get(_cap_key)):
                     raise HTTPException(403, "The daily paid spend cap can only be changed by a person, not by a tool call")
+            from src.settings import HUMAN_ONLY_SETTINGS as _human_only
+            for _human_key in _human_only:
+                if _human_key in body and body[_human_key] != current.get(_human_key, DEFAULT_SETTINGS.get(_human_key)):
+                    raise HTTPException(403, "Settings that send private data to another app can only be changed by a person, not by a tool call")
         if "tool_approval_mode" in body and body["tool_approval_mode"] not in ("ask", "auto", "full"):
             raise HTTPException(400, "tool_approval_mode must be ask, auto or full")
         # Per-key validation for numeric settings: coerce to int and clamp to a

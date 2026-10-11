@@ -363,8 +363,12 @@ def chats(limit: int = 50) -> List[Dict[str, Any]]:
 
 
 def messages(chat: Optional[str] = None, *, since_hours: float = 24, limit: int = 200,
-             unread_only: bool = False) -> List[Dict[str, Any]]:
+             unread_only: bool = False, until_ts: Optional[float] = None) -> List[Dict[str, Any]]:
+    """The newest `limit` messages since `since_hours` ago (of one chat, or of all). `until_ts` (epoch seconds) keeps only messages up to
+    that time, so a caller can page back from the newest; a bridge older than this parameter ignores it."""
     params: Dict[str, Any] = {"limit": limit, "since": int(time.time() - since_hours * 3600)}
+    if until_ts:
+        params["until"] = int(until_ts)
     if chat:
         params["chat"] = chat
     if unread_only:
