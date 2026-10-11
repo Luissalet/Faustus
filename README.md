@@ -725,3 +725,5 @@ edits and undo in their Hoard. Build the shared bundle with
 This is the common foundation; Writer integration and the remaining family
 migration are tracked separately. Global sidebar filters and natural-language
 project recovery are not part of this foundation yet.
+
+Studio now filters and groups canonical conversations by originating Hoard and displays the family icon. Shared host panels persist unsent text in Faustus, independently by conversation, and retain Studio attachment selections. Opening a host panel prepares a chat without invoking a model.

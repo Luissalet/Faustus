@@ -22,13 +22,13 @@ import { t, tn } from '../../i18n';
 
 const SessionDialog = lazyChunk(() => import('./SessionDialog'));
 
-export type SortMode = 'active' | 'created' | 'name' | 'group';
+export type SortMode = 'active' | 'created' | 'name' | 'group' | 'hoard';
 const SORT_KEY = 'odysseus-session-sort'; // shared with the previous interface
 
 export function readSortMode(): SortMode {
   try {
     const v = localStorage.getItem(SORT_KEY)?.replace(/^"|"$/g, '');
-    return v === 'created' || v === 'name' || v === 'group' ? v : 'active';
+    return v === 'created' || v === 'name' || v === 'group' || v === 'hoard' ? v : 'active';
   } catch {
     return 'active';
   }
@@ -39,6 +39,7 @@ const SORT_LABELS: Record<SortMode, string> = {
   created: 'Creation date',
   name: 'Name',
   group: 'By folder',
+  hoard: 'By Hoard',
 };
 
 export interface SessionsPaneProps {
@@ -81,6 +82,7 @@ function Row({ s, i, depth, currentId, selecting, selected, live, queuePos, live
         }}
       >
         <span className="fs-studio__session-name">
+          {s.hoardOrigin && <img className="fs-studio__hoard-icon" src={`/api/hoard-copilot/apps/${encodeURIComponent(s.hoardOrigin.app_id)}/icon`} alt={s.hoardOrigin.app_name || s.hoardOrigin.app_id} width="16" height="16" onError={(event) => { event.currentTarget.hidden = true; }} />}
           {live && <ActivityDot state={live} position={queuePos} detail={liveDetail} />}
           {s.isImportant && <Star size={11} aria-label={t('Favourite')} className="fs-studio__star" />}
           {isGroupSessionName(s.name) && <Users size={11} aria-label={t('Group chat')} />}
@@ -163,6 +165,15 @@ export function SessionsPane({ sessions, currentId, filter, setFilter, searchRef
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
   const [confirmBulk, setConfirmBulk] = useState(false);
   const [tidying, setTidying] = useState(false);
+  const [hoardFilter, setHoardFilter] = useState('');
+  const hoards = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const session of sessions || []) {
+      const origin = session.hoardOrigin;
+      if (origin && (!names.has(origin.app_id) || names.get(origin.app_id) === origin.app_id)) names.set(origin.app_id, origin.app_name || origin.app_id);
+    }
+    return Array.from(names.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+  }, [sessions]);
   // What is running right now, so a conversation you walked away from still
   // says so from the list (src/agent_runs.py keeps the turn going).
   const activity: ChatActivity = useChatActivity();
@@ -199,21 +210,22 @@ export function SessionsPane({ sessions, currentId, filter, setFilter, searchRef
 
   const needle = filter.trim().toLowerCase();
   const visible = useMemo(() => {
-    const base = needle ? (sessions ?? []).filter((s) => `${s.name} ${s.model} ${s.folder ?? ''}`.toLowerCase().includes(needle)) : (sessions ?? []);
+    const originFiltered = hoardFilter ? (sessions || []).filter(s => s.hoardOrigin?.app_id === hoardFilter) : (sessions || []);
+    const base = needle ? originFiltered.filter((s) => `${s.name} ${s.model} ${s.folder ?? ''} ${s.hoardOrigin?.app_name || s.hoardOrigin?.app_id || ''}`.toLowerCase().includes(needle)) : originFiltered;
     return sortSessions(base, sort);
-  }, [sessions, needle, sort]);
+  }, [sessions, needle, sort, hoardFilter]);
 
   const groups = useMemo(() => {
-    if (sort !== 'group') return null;
+    if (sort !== 'group' && sort !== 'hoard') return null;
     const map = new Map<string, ChatSession[]>();
     for (const s of visible) {
-      const key = s.folder ?? '';
+      const key = sort === 'hoard' ? (s.hoardOrigin?.app_id || '') : (s.folder || '');
       if (!map.has(key)) map.set(key, []);
       map.get(key)?.push(s);
     }
     const names = Array.from(map.keys()).sort((a, b) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b, 'es')));
-    return names.map((name) => ({ name, items: map.get(name) ?? [] }));
-  }, [visible, sort]);
+    return names.map((key) => ({ key, name: sort === 'hoard' ? (hoards.find(([id]) => id === key)?.[1] || key) : key, items: map.get(key) ?? [] }));
+  }, [visible, sort, hoards]);
 
   const toggle = (id: string) =>
     setSelected((set) => {
@@ -310,6 +322,14 @@ export function SessionsPane({ sessions, currentId, filter, setFilter, searchRef
         />
       </label>
 
+      {hoards.length > 0 && <label className="fs-studio__hoard-filter">
+        <span>{t('Hoard')}</span>
+        <select aria-label={t('Filter by Hoard')} value={hoardFilter} onChange={event => setHoardFilter(event.target.value)}>
+          <option value="">{t('All Hoards')}</option>
+          {hoards.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+        </select>
+      </label>}
+
       {selecting && (
         <div className="fs-studio__bulk" data-testid="session-bulk">
           <span>{tn(selected.size, '{n} selected', '{n} selected#')}</span>
@@ -349,10 +369,10 @@ export function SessionsPane({ sessions, currentId, filter, setFilter, searchRef
           ? groups.map((g) => {
               const open = openFolders[g.name] ?? true;
               return (
-                <section key={g.name || '__none'} className="fs-studio__folder" data-open={open || undefined}>
+                <section key={g.key || '__none'} className="fs-studio__folder" data-open={open || undefined}>
                   <button type="button" className="fs-studio__folder-head" onClick={() => setOpenFolders((o) => ({ ...o, [g.name]: !open }))} aria-expanded={open}>
                     <FolderOpen size={13} aria-hidden="true" />
-                    <span>{g.name || t('No folder')}</span>
+                    <span>{g.name || t(sort === 'hoard' ? 'Faustus conversations' : 'No folder')}</span>
                     <span className="fs-studio__folder-count">{g.items.length}</span>
                   </button>
                   {open && renderRows(g.items)}

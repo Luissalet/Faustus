@@ -58,6 +58,16 @@ sending a message automatically. `faustus:session-change`, `faustus:event` and
 `.onToolUndo(receipt)` invokes the host's native undo when a result supplies an
 `_undo` receipt. Tool output is available under a collapsed details element.
 
+Hoard panels prepare a canonical conversation when opened, without generating a
+turn. Unsent text is saved through the existing session draft API, with independent
+drafts per session, flush on detach and retry after connection failures.
+`PATCH /api/sessions/{sid}/draft` updates text while preserving Studio attachment
+IDs when omitted; the existing PUT replacement and explicit attachment clear remain.
+
+Studio's conversation list includes immutable `hoard_origin`, the family's native
+icon through `GET /api/hoard-copilot/apps/{app_id}/icon`, a Hoard filter and grouping
+by app identity. Folder grouping and the normal search remain available.
+
 ## MCP
 
 Run `python -m mcp_servers.hoard_copilot_server` with `FAUSTUS_URL` and, when
@@ -68,8 +78,8 @@ conversation list/open/get/import and native turn start/status/stop.
 ## Scope
 
 This is the shared service and panel foundation. Writer's client integration is
-tracked separately in Agora 340. Natural-language project search, global Studio
-sidebar filters and the complete family migration remain separate tasks
-337, 336 and 343. The facade currently reuses native turn routes instead of
+tracked separately in Agora 340. Global Studio sidebar filters are available;
+natural project recovery and the complete family
+migration remain separate tasks 337 and 343. The facade currently reuses native turn routes instead of
 implementing a duplicate execution API. Transport and native tool registration
 continue to use the established family/connector capabilities.

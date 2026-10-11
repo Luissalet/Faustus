@@ -11373,3 +11373,5 @@ filtros globales de Studio336, migración del resto343 y las verificaciones
 completas con el modelo global. Las pruebas simuladas no certifican autonomía
 ni que todos los Hoards estén migrados. Las tareas siguen su revisión e
 integración normal del Ágora; no se cambian los modelos ni permisos globales.
+
+Copilot común336: Studio muestra icono y filtro/agrupación por Hoard de origen. El panel compartido prepara una conversación canónica sin generar al abrirse, conserva los borradores por SID en Faustus y reintenta guardados tras fallos de conexión. PATCH del borrador conserva adjuntos de Studio; PUT anterior y borrado explícito siguen disponibles. Writer340 integrado aparte; recuperación natural337 y migración completa343 todavía pendientes.

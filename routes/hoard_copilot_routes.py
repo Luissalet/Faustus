@@ -71,6 +71,30 @@ def setup_hoard_copilot_routes(session_manager):
             raise HTTPException(503, "Build @faustus/embed before loading the panel")
         return FileResponse(path, media_type="text/javascript", headers={"Cache-Control": "no-cache"})
 
+    @router.get("/apps/{app_id}/icon")
+    async def app_icon(request: Request, app_id: str):
+        owner(request)
+        import asyncio
+        import urllib.request
+        from urllib.parse import quote
+        from fastapi.responses import Response
+        from src.hoard_hub import hub_location
+        location = hub_location()
+        def read():
+            headers = {}
+            token_file = location.get("token_file")
+            if token_file and os.path.isfile(token_file):
+                from pathlib import Path
+                headers["Authorization"] = "Bearer " + Path(token_file).read_text(encoding="utf-8").strip()
+            query = urllib.request.Request(location["url"].rstrip("/") + "/api/apps/" + quote(app_id, safe="") + "/icon", headers=headers)
+            with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(query, timeout=3) as response:
+                return response.read(), response.headers.get("Content-Type", "image/png")
+        try:
+            data, content_type = await asyncio.to_thread(read)
+        except OSError:
+            raise HTTPException(404, "Hoard icon unavailable")
+        return Response(data, media_type=content_type, headers={"Cache-Control": "no-cache"})
+
     @router.post("/project-links/resolve")
     async def resolve(request: Request):
         who = owner(request)

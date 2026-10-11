@@ -458,6 +458,7 @@ def setup_session_routes(
         from src import session_draft
         return session_draft.load(sid, effective_user(request))
 
+    @router.patch("/sessions/{sid}/draft")
     @router.put("/sessions/{sid}/draft")
     async def put_session_draft(request: Request, sid: str):
         """UX-01: save (or, given empty text and no attachments, clear) the
@@ -478,7 +479,8 @@ def setup_session_routes(
                 raise ValueError("Body must be a JSON object")
             return session_draft.save(
                 sid, effective_user(request),
-                body.get("text", ""), body.get("attachment_ids", []),
+                body.get("text", ""), body.get("attachment_ids",
+                    session_draft.load(sid, effective_user(request))["attachment_ids"] if request.method == "PATCH" else []),
             )
         except (ValueError, KeyError, TypeError) as exc:
             raise HTTPException(409, str(exc)) from exc
@@ -582,6 +584,8 @@ def setup_session_routes(
         finally:
             db.close()
 
+        from services.hoard_copilot import get_store as copilot_store
+        hoard_origins = copilot_store().session_origins(user_sessions.values())
         sessions = [{"id": s.id, "name": s.name, "model": _public_model(s.name, s.model),
                      "endpoint_url": s.endpoint_url, "rag": s.rag,
                      "archived": s.archived, "folder": folder_map.get(s.id),
@@ -595,7 +599,8 @@ def setup_session_routes(
                      "mode": mode_map.get(s.id),
                      "reasoning_effort": effort_map.get(s.id),
                      "message_count": msg_count_map.get(s.id, 0),
-                     "forked_from": forked_map.get(s.id)}
+                     "forked_from": forked_map.get(s.id),
+                     "hoard_origin": hoard_origins.get(s.id)}
                     for s in user_sessions.values()
                     if not s.archived
                     and (s.name or "").strip() not in ("Nobody", "Incognito")

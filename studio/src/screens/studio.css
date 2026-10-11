@@ -5153,3 +5153,6 @@ aside.fs-panel { position: relative; }
   margin: 0;
   color: var(--fs-text-1);
 }
+.fs-studio__hoard-icon { object-fit: contain; flex: 0 0 16px; }
+.fs-studio__hoard-filter { display: flex; align-items: center; gap: 8px; padding: 0 12px 8px; color: var(--fs-text-2); font-size: 12px; }
+.fs-studio__hoard-filter select { min-width: 0; flex: 1; color: var(--fs-text-1); background: var(--fs-surface-1); border: 1px solid var(--fs-border); border-radius: 6px; padding: 6px; }
