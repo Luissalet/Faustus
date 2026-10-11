@@ -24,9 +24,12 @@ SDK_SRC = SDK / "src"
 # package (code, docs, examples) must never mention (CONTRATO_SDK_S2.md:
 # "No nombrar productos de terceros").
 _BANNED_THIRD_PARTY_NAMES = (
-    "openai", "chatgpt", "anthropic", "claude", "gemini", "copilot",
+    "openai", "chatgpt", "anthropic", "claude", "gemini", "github copilot", "githubcopilot", "vscode-copilot",
     "ollama", "mistral", "gpt-4", "gpt-3", "groq",
 )
+
+# "copilot" alone is the generic feature name Luis explicitly requested for
+# the Hoard clients. The branded product names above remain disallowed.
 
 
 def _sdk_ts_sources() -> list[Path]:
