@@ -40,6 +40,7 @@ import {
 } from '../../adapters/tools';
 import { t } from '../../i18n';
 import { Select, Toggle } from './fields';
+import { ToolFootprintPanel } from './ToolFootprint';
 
 /**
  * Built-in tools: which ones the agent may use, by family. The route
@@ -142,6 +143,7 @@ export function ToolsSection({ say }: { say: (t: string) => void }) {
         )}
       </section>
       <ToolCatalogPanel say={say} />
+      <ToolFootprintPanel />
       <ArgRulesPanel say={say} />
       <LifecycleHooksPanel say={say} />
     </>

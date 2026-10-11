@@ -1304,7 +1304,7 @@ Este inventario conserva la solicitud histórica de agrupar comprobaciones larga
 **Estado: abierto.** La huella ya existe (FAUSTUS §277, `GET /api/tools/footprint` y `tool_footprint` en el MCP `harness`). Lo que sacó en vivo y queda por hacer:
 
 - **Copias MCP que el agente sí ve.** `email` (16), `context_recall`, `manage_memory` y `generate_image` publican por MCP herramientas con el mismo nombre que las nativas, y sus servidores no están en `NATIVE_TWIN_SERVERS`, así que el índice de herramientas puede poner las dos copias en el mismo turno (el problema que ese conjunto evitaba con `code_graph`). Antes de añadirlos hay que comprobar que son copias 1:1: las descripciones no son idénticas (`manage_memory`, 0,77) y `email` puede depender del dueño.
-- **Interfaz.** Una sección en Ajustes → Herramientas con la tabla por origen, las colisiones y las parejas casi iguales. Hay que hacerla cuando `studio/` no tenga cambios sin versionar de otra sesión.
+- **Interfaz.** ~~Una sección en Ajustes → Herramientas…~~ **Hecho (11-10-2026, #300).** `ToolFootprintPanel` en Ajustes → Herramientas (`toolFootprint.ts`); orígenes, colisiones, casi iguales y descripciones largas; i18n ES/EN; check `tool-footprint.check.mjs`.
 - **Descripciones largas.** Hay 8 de más de 250 tokens; las más largas son `blender_scene` (414), `manage_tasks` (410) e `inspect_image` (390). Recortarlas sin perder los ejemplos que usa el índice.
 - **Huella por turno.** Guardar en el ledger del turno qué herramientas se ofrecieron y cuánto pesaron, no sólo el total.
 - **README.** Añadir la capacidad a `README.md` y `README.es.md`. Hoy esos ficheros tienen cambios sin versionar de otra sesión y no se tocaron.

@@ -9751,3 +9751,40 @@ No MCP configuration findings.	No hay hallazgos de configuración MCP.
 MCP configuration	Configuración MCP
 MCP configuration hygiene	Revisión de la configuración MCP
 {n} high findings in enabled servers ({names})	{n} hallazgos de prioridad alta en servidores activos ({names})
+Tool footprint	Huella de herramientas
+How much of the prompt the tool catalogue costs, by origin. Name collisions and near-duplicate descriptions are listed so the catalogue can be thinned. Nothing here changes permissions.	Cuánto pesa el catálogo de herramientas en el prompt, por origen. Se listan colisiones de nombre y descripciones casi iguales para poder adelgazarlo. Aquí no se cambian permisos.
+This account cannot see the tool footprint.	Esta cuenta no puede ver la huella de herramientas.
+Update Faustus before browsing the tool footprint.	Actualiza Faustus antes de consultar la huella de herramientas.
+Could not read the tool footprint.	No se pudo leer la huella de herramientas.
+GET /api/tools/footprint failed.	Falló GET /api/tools/footprint.
+No tools in the catalogue.	No hay herramientas en el catálogo.
+tokens total	tokens en total
+offered up front	ofertados de entrada
+deferred	diferidos
+hidden twins	gemelos ocultos
+By source	Por origen
+Built-in	Integradas
+No sources.	Sin orígenes.
+Name collisions	Colisiones de nombre
+No short names published by more than one source.	Ningún nombre corto publicado por más de un origen.
+Near-duplicate descriptions	Descripciones casi iguales
+No near-duplicate description pairs.	No hay parejas de descripciones casi iguales.
+similarity	similitud
+same source	mismo origen
+Long descriptions	Descripciones largas
+No descriptions over the trim threshold.	Ninguna descripción supera el umbral de recorte.
+description tokens	tokens de descripción
+All {turns} assistant turns scanned · {hits} hits · {sigs} signatures	Los {turns} turnos del asistente escaneados · {hits} aciertos · {sigs} firmas
+Assistant turns in the window, scanned for fixed failure signatures (loop breaker, empty tools, repeated errors, refusals, caps). Coverage is complete or partial with Continue. Linked ids only — no prompts or replies.	Turnos del asistente en la ventana, escaneados en busca de firmas de fallo fijas (rompebucles, herramientas vacías, errores repetidos, negativas, topes). La cobertura es completa o parcial con Continuar. Solo ids enlazados — sin prompts ni respuestas.
+Continue sweep	Continuar barrido
+Failure sweep	Barrido de fallos
+Failure sweep delivered to the Hub bus.	Barrido de fallos entregado al bus del Hub.
+Failure sweep publish failed.	Falló la publicación del barrido de fallos.
+Failure sweep queued for the Hub bus.	Barrido de fallos encolado para el bus del Hub.
+Hub bus unavailable; failure sweep not published.	Bus del Hub no disponible; barrido de fallos no publicado.
+Last 30 days	Últimos 30 días
+Last 7 days	Últimos 7 días
+Last day	Último día
+No failure signatures in this window.	No hay firmas de fallo en esta ventana.
+Partial coverage: {turns} turns · {hits} hits · {sigs} signatures	Cobertura parcial: {turns} turnos · {hits} aciertos · {sigs} firmas
+Publish to Hub bus	Publicar en el bus del Hub
