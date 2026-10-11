@@ -46,3 +46,23 @@ def test_index_examples_remain_for_formerly_oversized_tools():
     )
     missing = [n for n in formerly if not EXAMPLES.get(n)]
     assert missing == [], f"index examples missing after description trim: {missing}"
+
+
+def test_ui_control_name_param_lists_built_in_theme_presets():
+    """set_theme vs create_theme needs the preset names on the wire schema
+    (Claude #301 r1 CHANGES): keep them on the `name` property, not only in
+    the tool description, so the tool description can stay under 250 tokens.
+    """
+    entry = next(
+        e for e in FUNCTION_TOOL_SCHEMAS
+        if (e.get("function") or {}).get("name") == "ui_control"
+    )
+    name_prop = entry["function"]["parameters"]["properties"]["name"]["description"]
+    presets = (
+        "dark", "light", "midnight", "paper", "cyberpunk", "retrowave", "forest",
+        "ocean", "ume", "copper", "terminal", "organs", "lavender", "graphite",
+        "terracotta", "cute",
+    )
+    missing = [p for p in presets if p not in name_prop]
+    assert missing == [], f"ui_control name param missing presets: {missing}"
+    assert "library" in name_prop  # open_panel alias kept discoverable
