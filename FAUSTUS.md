@@ -11160,7 +11160,7 @@ La vista del dispositivo puede contener etiquetas de tareas de otros usuarios: e
 Revisión (11-10-2026): Home enseña aparte, en un desplegable «Sin horario declarado», lo que no tiene cadencia declarada (reglas, tareas por evento), y «Actualizando la flota…» mientras el Hub recalcula en segundo plano. Pruebas nuevas: `tests/test_family_fleet_auth.py` (servidor real con `AUTH_ENABLED=true` y sin `LOCALHOST_BYPASS`: sin token 401, token incorrecto 401/403, token del Hub 200, sesión de administrador 200, la excepción es solo esa ruta GET) y dos pruebas en `tests/test_fleet_status.py` (reanudación). Comprobado además que sin el cambio del middleware la prueba del token del Hub falla con 401.
 
 
-## 320. Registro de cambios de memoria con deshacer (10-10-2026)
+## 321. Registro de cambios de memoria con deshacer (10-10-2026)
 
 **Qué cambia (Ágora #242, radar #478).** `src/memory_journal.py` guarda en `DATA_DIR/memory_journal.db` cada recuerdo creado, editado o borrado en los cuatro almacenes: datos personales (`memory.json`, el gancho está en `MemoryManager.save`, por donde pasan los diez escritores), memoria aprendida (`memory_engine.add_item` y `delete_item`; `correct` queda como borrado + alta y `forget` borra además el texto del registro, ver «Revisión»), instintos (`instincts._save_raw`, comparando disparador/acción/ámbito; la confianza y el estado no cuentan) y notas del cerebro (`notes.write_note` y `delete_note`, que ya pasa por la papelera). Cada fila lleva el elemento antes y después, la sesión, `run_id`, `turn_id` y el origen (`ai_agent`, `user`, `memory_extractor`, `instinct_extractor`…); los extractores que corren tras el turno se atribuyen con `memory_journal.attribution`.
 
