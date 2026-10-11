@@ -886,3 +886,26 @@
   position: relative;
   z-index: 1;
 }
+
+.fs-brain__chains {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.fs-brain__chain {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.fs-brain__chain-list {
+  margin: 0;
+  padding: 0 0 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow-wrap: anywhere;
+}
+.fs-brain__chain-list li:not([data-current]) {
+  color: var(--fs-text-3);
+}

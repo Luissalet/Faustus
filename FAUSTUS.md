@@ -11309,7 +11309,8 @@ Un informe terminado guarda un *ledger* por sección (fuentes citadas con `fetch
 
 La edad sale de citation_registry (las sources de pantalla a menudo no traen `fetched_at`) y, si falta, de completed_at del informe. Las secciones sin citas también caducan con esa fecha. Los apéndices «Fuentes» / «Cómo leer este informe» (y equivalentes EN) no cuentan como secciones. El plan no descarga páginas solo: el contraste de contenido remoto queda como límite documentado hasta un comprobador acotado.
 
-API: GET /api/research/{id}/incremental, POST /api/research/{id}/refresh. Herramienta manage_research (reshness/efresh) y MCP austus_research_incremental. Pruebas: 	ests/test_research_incremental.py.
+API: GET /api/research/{id}/incremental, POST /api/research/{id}/refresh. Herramienta manage_research (reshness/
+efresh) y MCP austus_research_incremental. Pruebas: 	ests/test_research_incremental.py.
 
 ## 331. Tipo de entidades con varias frases — #294 (11-10-2026)
 
@@ -11332,4 +11333,14 @@ La extracción por reglas de la memoria aprendida (`src/brain/extract.py`) recon
 - El orden de lectura no importa: una fuente escrita antes del cambio («Ada usa Vim» en mayo) que el barrido lea después no reabre el valor (`entities.closed_relation_after` suma su evidencia a la fila cerrada); una fuente escrita después del cambio sí lo vuelve a abrir.
 - `fact_history` / `GET /api/brain/fact-history` / `brain_fact_history` devuelven la cadena y la línea «antes: Vim, hasta 2026-10» también para «usa», «prefiere», «vive en»…
 
-Pruebas: `tests/test_brain_fact_changes.py` (ES/EN, «dejó de»/«stopped», valor ya guardado, relación funcional sin duplicados, sin valor nuevo, cola que no es valor nuevo, frase normal intacta, reextracción idempotente, fuente antigua leída después, formas del análisis). En vivo, en carpeta de datos aislada: cuatro memorias por `memory_engine`, barrido `extract_pending` y `brain_fact_history` por el servidor MCP `brain` en stdio: «usa» vigente Helix y Obsidian con «antes: Vim, hasta 2026-10; Notion, hasta 2026-10»; «trabaja en» vigente Bluehaven Studio con Cordera Labs cerrado y enlazado. Pendiente (#303): enseñar la cadena en la pantalla Cerebro.
+Pruebas: `tests/test_brain_fact_changes.py` (ES/EN, «dejó de»/«stopped», valor ya guardado, relación funcional sin duplicados, sin valor nuevo, cola que no es valor nuevo, frase normal intacta, reextracción idempotente, fuente antigua leída después, formas del análisis). En vivo, en carpeta de datos aislada: cuatro memorias por `memory_engine`, barrido `extract_pending` y `brain_fact_history` por el servidor MCP `brain` en stdio: «usa» vigente Helix y Obsidian con «antes: Vim, hasta 2026-10; Notion, hasta 2026-10»; «trabaja en» vigente Bluehaven Studio con Cordera Labs cerrado y enlazado. La pantalla Cerebro enseña la cadena (§334, #303).
+
+## 334. La pantalla Cerebro muestra la cadena de cambios de cada hecho: OBJ-60, parte 2 (#303, 11-10-2026)
+
+La ficha de una entidad en Cerebro (`studio/src/screens/brain/EntityPanel.tsx`) tiene ahora un bloque **Cambios**. Por cada atributo del que hay valores cerrados en el historial de la entidad, pide `GET /api/brain/fact-history` y pinta una línea de tiempo compacta: el valor vigente arriba (con «desde <fecha>») y debajo los anteriores con su ventana («Vim · hasta 2026-10») y un enlace «origen» a `/studio?s=<sesión>` cuando el recuerdo de origen conoce su sesión. No muestra nada si el atributo no cambió; hay estados de carga y de error propios.
+
+- **Adaptador:** `studio/src/adapters/brainFactHistory.ts` (`loadFactHistory`, `factHistoryUrl`, `factHistoryFrom`, `sourceHref`), con `getJson` como el resto. Lee solo; no cambia el backend.
+- **Textos:** seis cadenas nuevas en `docs/ui/i18n/es.tsv` y `es.ts` regenerado (`scripts/i18n_es.py --check` limpio).
+- **Móvil:** la lista usa `overflow-wrap: anywhere`; a 390 px no hay scroll horizontal.
+- **Pruebas:** `studio/checks/brain-fact-history.check.mjs` (forma de la URL, mapeo, enlace de origen, error HTTP, cableado en el panel) lanzado por `tests/test_brain_fact_history_js.py`; el endpoint sigue cubierto por `tests/test_brain_fact_history.py`.
+- Con la parte 1 (#302, §333) las frases de cambio explícito («ya no usa Vim, ahora usa Helix») llegan aquí como cadena cerrada.

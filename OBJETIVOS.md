@@ -1366,4 +1366,4 @@ Implementado en §322 (#281 y #284, radar #503): informe en Ajustes → Integrac
 
 - **Hecho (#278, FAUSTUS §324, radar #500):** `fact_history`, `GET /api/brain/fact-history`, herramienta MCP `brain_fact_history` y línea «antes: X, hasta AAAA-MM» en la tarjeta de entidad cuando la pregunta trata del atributo.
 - **Hecho (#302, FAUSTUS §333):** la extracción de la memoria aprendida crea la cadena también para atributos no funcionales con cambio explícito («ya no usa X, ahora usa Y», «dejó de usar X», «no longer…, now…»).
-- **Pendiente:** mostrar la cadena en la pantalla Cerebro.
+- **Hecho (#303, FAUSTUS §334):** la pantalla Cerebro muestra la cadena: la ficha de entidad tiene un bloque «Cambios» por atributo con el valor vigente, los anteriores con su ventana y el enlace a la sesión de origen.

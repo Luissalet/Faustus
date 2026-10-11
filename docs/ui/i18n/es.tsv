@@ -9788,3 +9788,9 @@ Last day	Último día
 No failure signatures in this window.	No hay firmas de fallo en esta ventana.
 Partial coverage: {turns} turns · {hits} hits · {sigs} signatures	Cobertura parcial: {turns} turnos · {hits} aciertos · {sigs} firmas
 Publish to Hub bus	Publicar en el bus del Hub
+Reading the change chains	Leyendo las cadenas de cambios
+The change chains could not be read	No se pudieron leer las cadenas de cambios
+since {date}	desde {date}
+until {date}	hasta {date}
+earlier	antes
+source	origen
