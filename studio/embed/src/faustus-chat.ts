@@ -109,6 +109,12 @@ export class FaustusChatElement extends HTMLElement {
     this.#cancelBtn.setAttribute('aria-label', es ? 'Detener' : 'Cancel');
     const empty = this.#shadow.querySelector('.fc-empty');
     if (empty) empty.textContent = es ? 'Escribe un mensaje para empezar.' : 'Send a message to start this session.';
+    this.#conversationSelect.setAttribute('aria-label', es ? 'Conversaciones del proyecto' : 'Project conversations');
+    const newConversation = this.#conversationSelect.querySelector('option[value=""]');
+    if (newConversation) newConversation.textContent = es ? 'Nueva conversación' : 'New conversation';
+    for (const button of this.#shadow.querySelectorAll<HTMLButtonElement>('[data-label-en]')) {
+      button.textContent = button.dataset[es ? 'labelEs' : 'labelEn'] || '';
+    }
   }
 
   get fetch(): typeof fetch | undefined { return this.#fetch; }
@@ -131,7 +137,7 @@ export class FaustusChatElement extends HTMLElement {
       if (typeof context.view?.locale === 'string') this.locale = context.view.locale;
       this.#contextLabel.textContent = [context.origin.app_name || context.origin.app_id, context.project?.title].filter(Boolean).join(' · ');
       const result = await this.#ensureClient().copilot.list(context);
-      this.#conversationSelect.replaceChildren(el('option', { value: '' }, 'Nueva conversación'));
+      this.#conversationSelect.replaceChildren(el('option', { value: '' }, this.locale.startsWith('es') ? 'Nueva conversación' : 'New conversation'));
       for (const conversation of result.conversations) {
         if (!conversation.archived) this.#conversationSelect.appendChild(el('option', { value: conversation.session_id }, conversation.name || 'Conversación'));
       }
@@ -364,11 +370,11 @@ export class FaustusChatElement extends HTMLElement {
       if (!this.#sessionId && this.#contextProvider) void this.#initializeHostConversation();
       else void this.loadHistory();
     });
-    const refresh = el('button', { type: 'button', class: 'fc-btn' }, 'Actualizar');
+    const refresh = el('button', { type: 'button', class: 'fc-btn', 'data-label-en': 'Refresh', 'data-label-es': 'Actualizar' }, 'Refresh');
     refresh.addEventListener('click', () => { void this.refreshConversations(); void this.loadHistory(); });
-    const retry = el('button', { type: 'button', class: 'fc-btn' }, 'Reintentar');
+    const retry = el('button', { type: 'button', class: 'fc-btn', 'data-label-en': 'Retry', 'data-label-es': 'Reintentar' }, 'Retry');
     retry.addEventListener('click', () => void this.retry());
-    const remove = el('button', { type: 'button', class: 'fc-btn' }, 'Borrar chat');
+    const remove = el('button', { type: 'button', class: 'fc-btn', 'data-label-en': 'Delete chat', 'data-label-es': 'Borrar chat' }, 'Delete chat');
     remove.addEventListener('click', () => {
       if (!this.#sessionId || this.#busy) return;
       void this.#ensureClient().sessions.remove(this.#sessionId).then(() => {
@@ -380,7 +386,7 @@ export class FaustusChatElement extends HTMLElement {
         return this.refreshConversations();
       }).catch(error => this.#emitError(String(error.message || error), error));
     });
-    const settings = el('button', { type: 'button', class: 'fc-btn' }, 'Ajustes de Faustus');
+    const settings = el('button', { type: 'button', class: 'fc-btn', 'data-label-en': 'Faustus settings', 'data-label-es': 'Ajustes de Faustus' }, 'Faustus settings');
     settings.addEventListener('click', () => {
       if (this.onOpenSettings) this.onOpenSettings();
       else window.open(this.#server.replace(/\/$/, '') + '/studio/settings', '_blank', 'noopener');
@@ -568,7 +574,7 @@ export class FaustusChatElement extends HTMLElement {
       node.appendChild(details);
     } else node.textContent = label;
     if (receipt && this.onToolUndo) {
-      const undo = el('button', { type: 'button', class: 'fc-btn' }, 'Deshacer');
+      const undo = el('button', { type: 'button', class: 'fc-btn', 'data-label-en': 'Undo', 'data-label-es': 'Deshacer' }, this.locale.startsWith('es') ? 'Deshacer' : 'Undo');
       undo.addEventListener('click', () => {
         undo.disabled = true;
         void this.onToolUndo!(receipt).then(() => { undo.textContent = 'Deshecho'; })

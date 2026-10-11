@@ -70,6 +70,9 @@ by app identity. Folder grouping and the normal search remain available.
 
 ## MCP
 
+Host language changes update the shared composer, conversation controls and
+undo labels in place, preserving the current conversation and draft.
+
 `GET /api/hoard-copilot/projects/search` accepts query, app/data-space, explicit
 ISO after/before dates and offset/limit pagination. It returns stable native IDs,
 matched terms and cited canonical messages. Date ranges filter the actual
