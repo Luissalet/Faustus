@@ -301,12 +301,14 @@ class Lease:
             return self
         started = time.monotonic()
         body = self._body()
+        pending: Optional["asyncio.Future[Any]"] = None
         try:
             while True:
                 left = self._remaining(started)
                 if left is not None and body.get("wait"):
                     body["wait_s"] = max(0.0, min(POLL_WAIT_S, left))
-                status, reply = await self._apost("/api/lease/request", body, timeout=POLL_WAIT_S + 10)
+                pending = asyncio.ensure_future(self._apost("/api/lease/request", body, timeout=POLL_WAIT_S + 10))
+                status, reply = await asyncio.shield(pending)
                 problem = self._check(status, reply)
                 if problem == "lost":
                     body = self._body()
@@ -328,7 +330,17 @@ class Lease:
                 body = {"lease_id": self.lease_id, "wait": True}
         except asyncio.CancelledError:
             # Cancelled while queued: leave the queue (fire and forget, the
-            # loop may be going away).
+            # loop may be going away). If the cancellation landed while the
+            # first request was still in flight, the hub may already have
+            # queued us without the reply having reached this client yet:
+            # let that reply arrive (briefly) so the lease can be released.
+            if not self.lease_id and pending is not None and not pending.done():
+                try:
+                    status, reply = await asyncio.wait_for(pending, timeout=5.0)
+                    if isinstance(reply, dict) and reply.get("lease_id"):
+                        self.lease_id = reply["lease_id"]
+                except BaseException:  # noqa: BLE001  (second cancel, timeout, transport error)
+                    pass
             if self.lease_id:
                 lid = self.lease_id
                 threading.Thread(target=self._post, args=("/api/lease/release", {"lease_id": lid}),

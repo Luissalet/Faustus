@@ -109,10 +109,18 @@ def _looks_like_llamacpp_props(props: Any) -> bool:
 
 @_never_raise(None)
 async def probe_llamacpp_base(client: httpx.AsyncClient, base: str) -> Optional[dict]:
-    """Probe one llama-server by base URL (``http://host:port``)."""
+    """Probe one llama-server by base URL (``http://host:port``).
+
+    Requires ``/health`` 200 in addition to a llama.cpp ``/props`` signature so a
+    server that still answers ``/props`` while loading (health 503) is not treated
+    as resident. ``/health`` alone never proves identity.
+    """
     base = base.rstrip("/")
-    props = await _get_json(client, f"{base}/props")
-    if not _looks_like_llamacpp_props(props):
+    health, props = await asyncio.gather(
+        _get_json(client, f"{base}/health"),
+        _get_json(client, f"{base}/props"),
+    )
+    if health is None or not _looks_like_llamacpp_props(props):
         return None
     models, slots = await asyncio.gather(
         _get_json(client, f"{base}/v1/models"), _get_json(client, f"{base}/slots")
@@ -122,6 +130,7 @@ async def probe_llamacpp_base(client: httpx.AsyncClient, base: str) -> Optional[
         "port": port,
         "url": base,
         "props": props,
+        "health": health,
         "models": models if isinstance(models, dict) else None,
         "slots": [s for s in slots if isinstance(s, dict)] if isinstance(slots, list) else None,
     }

@@ -44,7 +44,7 @@ except Exception:  # noqa: BLE001
     _Request = Any  # type: ignore[misc,assignment]
     _JSONResponse = None  # type: ignore[assignment]
 
-FAMILY_VERSION = "0.8.1"
+FAMILY_VERSION = "0.8.2"
 _state: dict[str, Any] = {"app": "", "token_file": "", "hub_url": None, "enabled": True, "sent": 0, "dropped": 0,
                           "last_error": ""}
 _lock = threading.Lock()
@@ -187,16 +187,39 @@ def link_status(*, force: bool = False, timeout: float = 30.0) -> dict[str, Any]
     return {"ok": False, "error": f"http_{status_}", "detail": str((resp or {}).get("error") if isinstance(resp, dict) else "")}
 
 
-def record_call(tool: str, ok: bool, ms: Optional[int] = None, *, caller: str = "", error: str = "") -> None:
+def record_call(tool: str, ok: bool, ms: Optional[int] = None, *, caller: str = "", error: str = "", session: str = "") -> None:
     """One ``agent.call`` event per agent tool call — the audit trail."""
     data: dict[str, Any] = {"tool": str(tool), "ok": bool(ok)}
     if ms is not None:
         data["ms"] = int(ms)
     if caller:
         data["caller"] = str(caller)[:80]
+    if session:
+        data["session"] = str(session)[:120]
     if error:
         data["error"] = str(error)[:200]
     emit("agent.call", data)
+
+
+def record_write(entry: dict[str, Any]) -> None:
+    """One ``agent.write`` event per journalled agent write (``agentkit.make_agent_router`` calls it): ids and short texts
+    only, never the arguments. The full line is in the app's ``agent_journal.jsonl``."""
+    data: dict[str, Any] = {"journal_id": entry.get("id"), "tool": entry.get("tool"), "ok": bool(entry.get("ok")),
+                            "agent": str(entry.get("agent") or "")[:80], "session": str(entry.get("session") or "")[:120],
+                            "reason": str(entry.get("reason") or "")[:200], "undoable": bool(entry.get("undoable")),
+                            "objects": list(entry.get("objects") or [])[:8]}
+    if entry.get("error"):
+        data["error"] = str(entry["error"])[:200]
+    emit("agent.write", data)
+
+
+def record_undo(app: str, result: dict[str, Any], *, reason: str = "") -> None:
+    """One ``agent.undo`` event after a session was undone for real (not after a dry run)."""
+    counts = result.get("counts") or {}
+    emit("agent.undo", {"session": str(result.get("session") or "")[:120], "agent": str(result.get("agent") or "")[:80],
+                        "undone": len(result.get("undone") or []), "conflicts": len(result.get("conflicts") or []),
+                        "not_undoable": len(result.get("not_undoable") or []), "complete": bool(result.get("complete")),
+                        "reason": str(reason)[:200], "writes": counts.get("writes", 0)})
 
 
 def health_block() -> dict[str, Any]:

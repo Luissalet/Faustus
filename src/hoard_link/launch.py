@@ -63,7 +63,8 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlsplit
 
-__all__ = ["Launcher", "Service", "hoard_home", "comfy_port_from_url", "list_gpus", "memory", "host_stats"]
+__all__ = ["Launcher", "Service", "hoard_home", "comfy_port_from_url", "list_gpus", "memory", "host_stats",
+           "process_created", "process_alive", "spawn_orphan"]
 
 DEFAULT_COMFY_PORT = 8188
 OLLAMA_URL = "http://127.0.0.1:11434"
@@ -168,7 +169,7 @@ def list_gpus() -> list[dict[str, Any]]:
 
 # ------------------------------------------------------------ processes --
 
-def _creation_time(pid: int) -> Optional[float]:
+def process_created(pid: int) -> Optional[float]:
     """Epoch seconds the process was created, None when it is not alive."""
     if pid <= 0:
         return None
@@ -209,13 +210,18 @@ def _creation_time(pid: int) -> Optional[float]:
         return 0.0  # alive, creation time unknown (macOS): pid check only
 
 
-def _alive(pid: int, created: Optional[float]) -> bool:
-    now_created = _creation_time(pid)
+def process_alive(pid: int, created: Optional[float]) -> bool:
+    now_created = process_created(pid)
     if now_created is None:
         return False
     if created and now_created and abs(now_created - created) > 2.0:
         return False  # the pid was recycled by another process
     return True
+
+
+# Preserve the old private spellings for callers that reached into the launcher module.
+_creation_time = process_created
+_alive = process_alive
 
 
 # The server must not be a child of the app that starts it: stopping an app
@@ -242,7 +248,7 @@ sys.stdout.flush()
 """
 
 
-def _spawn_orphan(argv: list[str], cwd: Optional[str], env: dict[str, str], log_path: Path) -> int:
+def spawn_orphan(argv: list[str], cwd: Optional[str], env: dict[str, str], log_path: Path) -> int:
     """Start ``argv`` detached, as an orphan; returns its pid."""
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if IS_WIN else 0
     spec = json.dumps({"argv": argv, "cwd": cwd, "env": env, "log": str(log_path)})
@@ -253,14 +259,17 @@ def _spawn_orphan(argv: list[str], cwd: Optional[str], env: dict[str, str], log_
     return int(out.stdout.strip())
 
 
+_spawn_orphan = spawn_orphan
+
+
 def _kill_tree(pid: int, grace_s: float = 6.0) -> None:
     if IS_WIN:
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         subprocess.run(["taskkill", "/PID", str(pid), "/T"], capture_output=True, creationflags=flags, timeout=20)
         deadline = time.monotonic() + grace_s
-        while time.monotonic() < deadline and _creation_time(pid) is not None:
+        while time.monotonic() < deadline and process_created(pid) is not None:
             time.sleep(0.3)
-        if _creation_time(pid) is not None:
+        if process_created(pid) is not None:
             subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, creationflags=flags, timeout=20)
         return
     try:
@@ -271,9 +280,9 @@ def _kill_tree(pid: int, grace_s: float = 6.0) -> None:
         except ProcessLookupError:
             return
     deadline = time.monotonic() + grace_s
-    while time.monotonic() < deadline and _creation_time(pid) is not None:
+    while time.monotonic() < deadline and process_created(pid) is not None:
         time.sleep(0.2)
-    if _creation_time(pid) is not None:
+    if process_created(pid) is not None:
         try:
             os.killpg(pid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
@@ -553,7 +562,7 @@ class Launcher:
     # -- runtime ---------------------------------------------------------
     def _owned(self, service_id: str) -> Optional[dict[str, Any]]:
         st = self._state().get(service_id)
-        if st and st.get("pid") and _alive(int(st["pid"]), st.get("created")):
+        if st and st.get("pid") and process_alive(int(st["pid"]), st.get("created")):
             return st
         return None
 
@@ -613,7 +622,7 @@ class Launcher:
             return None
         busy = set(exclude or ())
         for sid, st in self._state().items():
-            if sid.startswith("comfyui@") and st.get("gpu") is not None and _alive(int(st.get("pid") or 0), st.get("created")):
+            if sid.startswith("comfyui@") and st.get("gpu") is not None and process_alive(int(st.get("pid") or 0), st.get("created")):
                 busy.add(int(st["gpu"]))
         pool = [g for g in gpus if g["index"] not in busy] or gpus
         return max(pool, key=lambda g: g["free_mb"])["index"]
@@ -657,11 +666,11 @@ class Launcher:
                 with open(log_path, "ab") as log:
                     log.write(f"\n--- started by {self.app} {time.strftime('%Y-%m-%d %H:%M:%S')}: "
                               f"{' '.join(svc.argv)}\n".encode("utf-8"))
-                pid = _spawn_orphan(svc.argv, svc.cwd, env, log_path)
+                pid = spawn_orphan(svc.argv, svc.cwd, env, log_path)
             except (OSError, subprocess.SubprocessError) as exc:
                 return {"ok": False, "service": svc.id, "error": f"could not start: {exc}", "log": str(log_path)}
             state = self._state()
-            state[svc.id] = {"pid": pid, "created": _creation_time(pid), "started_at": time.time(),
+            state[svc.id] = {"pid": pid, "created": process_created(pid), "started_at": time.time(),
                              "by": self.app, "gpu": chosen_gpu if svc.kind == "comfyui" else None,
                              "command": " ".join(svc.argv)}
             self._save_state(state)
@@ -678,8 +687,10 @@ class Launcher:
             if code is not None and code < 500:
                 return {"ready": True, "state": "running"}
             if svc.id in self._state() and self._owned(svc.id) is None:
-                return {"ok": False, "ready": False, "state": "exited",
-                        "error": f"{svc.label} exited while starting; last log lines:\n{self.log_tail(svc.id, 800)}"}
+                log_path = self.log_path(svc.id)
+                return {"ok": False, "ready": False, "state": "exited", "log": str(log_path),
+                        "error": f"{svc.label} exited while starting; see {log_path} (exit code unavailable); "
+                                 f"last log lines:\n{self.log_tail(svc.id, 800)}"}
             time.sleep(1.0)
         return {"ready": False, "state": "starting", "detail": f"not answering after {int(wait_s)} s; still starting"}
 
@@ -747,7 +758,7 @@ class Launcher:
                             "error": "it is running but was not started from the Hoard family; stop it where it runs"}
                 return {"ok": True, "service": service_id, "detail": "not running"}
             _kill_tree(int(own["pid"]))
-            gone = _creation_time(int(own["pid"])) is None
+            gone = process_created(int(own["pid"])) is None
             if gone:
                 state.pop(service_id, None)
                 self._save_state(state)

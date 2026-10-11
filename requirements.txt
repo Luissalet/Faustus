@@ -76,3 +76,5 @@ pytest-timeout
 # TestClient import when only classic httpx is present. Runtime code keeps
 # using `httpx` above; this is test-client only.
 httpx2
+# satellite passes (src/public_data/orbits.py)
+sgp4>=2.23

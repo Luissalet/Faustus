@@ -27,7 +27,12 @@
     "motion-timeline",
     "motion-mp4",
     "motion-html",
-    "composition-revisions"
+    "composition-revisions",
+    "diagrams",
+    "diagram-brand-profiles",
+    "mermaid-import",
+    "excalidraw-import",
+    "drawio-import"
   ],
   "placeholders": [
     "VITRUVIUS_DIR",

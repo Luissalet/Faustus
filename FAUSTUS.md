@@ -11373,3 +11373,51 @@ filtros globales de Studio336, migración del resto343 y las verificaciones
 completas con el modelo global. Las pruebas simuladas no certifican autonomía
 ni que todos los Hoards estén migrados. Las tareas siguen su revisión e
 integración normal del Ágora; no se cambian los modelos ni permisos globales.
+
+## 337. Datos públicos en vivo: terremotos, tormentas, aviones, viento y pases de satélites — #324 (11-10-2026)
+
+**Qué es.** Servidor MCP integrado `public_data` (`mcp_servers/public_data_server.py`, registrado en `src/builtin_mcp.py`) con
+siete tools de solo lectura sobre fuentes sin clave, implementadas en `src/public_data/`:
+`earthquakes` (feeds GeoJSON de USGS; mundial o cerca de un punto con radio, por magnitud mínima y periodo),
+`tropical_cyclones` (NOAA NHC: Atlántico y Pacífico este/central), `aircraft_nearby` (ADS-B de adsb.lol: indicativo, tipo,
+matrícula, altitud, velocidad, rumbo, distancia y squawks de emergencia), `aircraft_lookup` (adsbdb: avión por hex y ruta por
+indicativo), `aircraft_track` (OpenSky: trayectoria del último vuelo, adelgazada a `max_points`), `wind_at` (Open-Meteo: ahora
+y por horas) y `satellite_passes` (elementos de CelesTrak propagados aquí con SGP4: salida, culminación y puesta al segundo,
+direcciones, elevación máxima, distancia mínima; ISS por defecto, o NORAD o nombre).
+
+**Forma común.** Cada respuesta lleva `summary` (una o dos frases citables), `data`, `truncated`/`total` y la frescura de la
+fuente (`freshness` fresh/cached/stale, `age_s`, `source`, `error` si sirvió datos viejos). Todas pasan por
+`hoard_link.livefeed.LiveFeed` (nuevo en HoardLink): caché en memoria y disco (`DATA_DIR/public_data`), una petición en vuelo
+por clave, reintentos con pausa creciente y, si la fuente cae, la última respuesta buena marcada `stale` (hasta una semana).
+TTL: aviones 15 s, terremotos 2 min, viento y tormentas 10 min, elementos orbitales 6 h, registro de aviones 1 día.
+
+**Verificado.** `tests/test_public_data.py` (10, con fuentes simuladas: filtros, orden, caché → stale → error, hex inválidos,
+superficie y errores del servidor MCP). En vivo desde el PC: USGS, NHC, adsb.lol (Barajas y El Prat), adsbdb, OpenSky,
+Open-Meteo y CelesTrak contestan; el servidor por stdio con un cliente MCP real lista las 7 tools y responde. Los pases de la
+ISS sobre Madrid coinciden con un propagador independiente al segundo y a la décima de grado.
+
+**Límites.** Ciclones solo de la cuenca de NHC; la trayectoria es la del último vuelo que OpenSky tenga (anónimo, con
+cuota); el viento es del modelo de Open-Meteo a 10 m. Nada de cámaras ni capas militares.
+
+## 338. Diagramas en Vitruvius, banco de reglas en Galton, animaciones y revisión visual en Cicero (11-10-2026, noche)
+
+Lo que Faustus gana por MCP de tres Hoards (integrado en sus `main`, apps reiniciadas desde el Hub):
+
+- **Vitruvius: diagramas** (#323, 8 tools nuevas, 38 en total). `diagram_types` elige primero el patrón y luego el tipo
+  (flowchart, architecture, state, er, swimlane, sequence, timeline, gantt) y devuelve solo la ficha de ese tipo;
+  `diagram_render` dibuja SVG claro y oscuro desde la estructura o desde Mermaid, Excalidraw o draw.io: layout por capas y
+  enrutado ortogonal en código (aristas largas por los huecos, vueltas atrás por fuera, bandas por grupo), colores de un
+  perfil de marca y gates (contraste, solapes, aristas que cruzan cajas, etiquetas que no caben, grupos, bordes de carril,
+  lienzo). `diagram_brand_onboard` saca el perfil de una web abierta en el navegador real, de una carpeta de CSS/tokens, de
+  un design system o de colores. `plugins/vitruvius/plugin.json` con las capacidades nuevas.
+- **Galton: banco de reglas de código** (#322, `rulebench_tasks`, `rulebench_score`, `scripts/rulebench_eval.py`). 20
+  tareas con tests ocultos; variantes A/B/C; presiones neutra/a favor/en contra; pass@k y pass^k. Primera medición en GLM
+  (900 llamadas): sin presión B y C recortan un 47,5 % las líneas de más y escriben test seis veces más; con «hazlo
+  mínimo» solo B mejora. Recomendación para #321: la regla original (B) por defecto.
+- **Cicero: animaciones y transiciones nativas** (#314, `deck_animations`). El .pptx exportado lleva `<p:timing>` y
+  `<p:transition>` reales (203 efectos, 48 transiciones con Morph, modos builds/auto/mixed/none/efecto, por deck o por
+  diapositiva) sin depender del motor ofimático; la aplicación ofimática los lee tal cual.
+- **Cicero: revisión visual medida** (#315, `deck_visual_review`, en revisión al escribir esto): PNG por diapositiva y
+  reglas sobre lo que el navegador maquetó (fuera de la diapositiva, desborde, solapes, contraste real, imágenes rotas,
+  elementos clave), con el arreglo automático permitido.
+

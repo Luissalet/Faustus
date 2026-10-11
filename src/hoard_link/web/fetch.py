@@ -619,14 +619,22 @@ class Fetcher:
             result = self._attempt_browser(url, timeout_s, fr, window=False)
         else:
             result = self._attempt_http(url, headers, accept, etag, last_modified, timeout_s, cap, retries, profile, allowed_mime, fr, memo)
+        escalate = order[0] == "http" and len(order) > 1 and result.blocked and result.block_reason in BROWSER_RETRY_REASONS
+        if not escalate:
+            self._record(host, result)
+            return result
+        second = FetchResult(url=url, fetched_at=self.clock())
+        browser_result = self._attempt_browser(url, timeout_s, second, window=False)
+        if browser_result.error_kind == "busy":
+            # The browser could not be opened because another app holds the site (the Hub's browser lane): nothing was
+            # decided about the site, so the HTTP block is not held against it either (no failure, no cooldown) and the
+            # caller gets the busy answer to retry later.
+            return browser_result
         self._record(host, result)
-        if order[0] == "http" and len(order) > 1 and result.blocked and result.block_reason in BROWSER_RETRY_REASONS:
-            second = FetchResult(url=url, fetched_at=self.clock())
-            browser_result = self._attempt_browser(url, timeout_s, second, window=False)
-            self._record(host, browser_result)
-            if browser_result.ok or browser_result.blocked:
-                return browser_result
-            result.error = f"{result.error}; browser fallback failed: {browser_result.error}"
+        self._record(host, browser_result)
+        if browser_result.ok or browser_result.blocked:
+            return browser_result
+        result.error = f"{result.error}; browser fallback failed: {browser_result.error}"
         return result
 
     # ------------------------------------------------------------------ http rung

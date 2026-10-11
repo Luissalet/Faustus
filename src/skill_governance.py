@@ -71,7 +71,7 @@ __all__ = [
     "OBSOLETE_STATUSES", "MUTATING_ACTIONS", "REVIEW_REQUIRED_ORIGINS",
     "SkillVersionEntry", "is_obsolete", "gate_mutating_use",
     "privilege_escalation_flags", "as_context_message", "validate_promotion",
-    "record_version", "evaluation_manifest",
+    "record_version", "evaluation_manifest", "lint_skill",
 ]
 
 
@@ -258,3 +258,126 @@ def evaluation_manifest(skill: Mapping[str, Any]) -> Dict[str, Any]:
         "missing": missing,
         "evaluable": not missing,
     }
+
+
+# ── writing-for-agents linter (deterministic, no model) ─────────────────────
+
+#: Frontmatter keys a SKILL.md may carry; `manual_only` is the point-3 flag:
+#: a skill that sets it true is kept out of the automatic selector index and
+#: is only ever loaded by an explicit `manage_skills action=view`.
+_FRONTMATTER_KEYS = ("name", "description", "version", "category", "tags",
+                     "status", "confidence", "source", "owner", "created",
+                     "when_to_use", "manual_only")
+
+#: Generic names that say nothing about when to fire. A skill named one of
+#: these (after slug-normalisation) is rejected at learn time — the 22:39
+#: `general/skill` entry is the case this closes.
+_GENERIC_NAMES = frozenset({"skill", "skills", "test", "temp", "new", "draft",
+                            "misc", "stuff", "notes", "helper", "util", "utils"})
+
+#: UTF-8 read as cp1252/latin-1 leaves these artefacts. Their presence in a
+#: learned skill means the import path decoded with the wrong codec.
+_MOJIBAKE_PATTERNS = ("â€", "Ã©", "Ã­", "Ã³", "Ãº", "Ã±", "Â¿", "Â¡", "Ã‘", "Ã'")
+
+#: Negation openers that, without a positive action in the same sentence, are
+#: weak guidance for a small model (writing-for-agents check 3).
+_NEGATION_RE = re.compile(
+    r"(?<!\w)(?:no |never |don't |do not |nunca |no uses |no hagas )", re.I)
+
+
+def _split_frontmatter(markdown: str) -> Dict[str, str]:
+    """Best-effort `key: value` read of a SKILL.md frontmatter block. Tolerant
+    of missing/unclosed blocks: whatever parses, parses; the linter reports
+    what it can see rather than raising."""
+    out: Dict[str, str] = {}
+    lines = (markdown or "").splitlines()
+    if not lines or lines[0].strip() != "---":
+        return out
+    for line in lines[1:]:
+        if line.strip() in ("---", "..."):
+            break
+        m = re.match(r"^([A-Za-z_][\w-]*)\s*:\s*(.*)$", line)
+        if m:
+            out[m.group(1).lower()] = m.group(2).strip().strip('"').strip("'")
+    return out
+
+
+def lint_skill(markdown: str) -> List[Dict[str, str]]:
+    """writing-for-agents checks over one SKILL.md, as plain findings.
+
+    Each finding is `{"check", "severity", "message"}` with severity in
+    {blocking, major, minor}:
+    - blocking: no actionable steps, or no verifiable completion criterion;
+    - major: description that doesn't say when to fire, prose mention of
+      another skill where a literal call is needed;
+    - minor: bare negations without the positive action beside them.
+
+    Never raises; empty/None input yields the blocking findings it deserves.
+    The linter marks — the caller (learn/promote path) decides what to do.
+    """
+    text = markdown or ""
+    findings: List[Dict[str, str]] = []
+    fm = _split_frontmatter(text)
+    body = text.split("---", 2)[2] if text.count("---") >= 2 else text
+
+    # 1. description as a trigger pointer: it must say WHEN to use it.
+    desc = fm.get("description", "")
+    if desc and not re.search(
+            r"(?i)\b(when|use when|cuando|para|usar cuando|si |antes de|trigger)\b", desc):
+        findings.append({
+            "check": "description-trigger", "severity": "major",
+            "message": "description says what the skill is, not when to use it; "
+                       "rewrite it as a trigger ('Use when…' + the words the user would say)",
+        })
+
+    # 2. no-op test: the body must contain actionable steps.
+    has_steps = bool(re.search(r"(?m)^\s*(?:\d+\.|[-*+]\s)", body)) or "procedure" in fm
+    if not has_steps:
+        findings.append({
+            "check": "no-op", "severity": "blocking",
+            "message": "no numbered/bulleted steps in the body: loading this skill "
+                       "would change nothing an agent does",
+        })
+
+    # 3. negations without a positive action nearby.
+    for line in body.splitlines():
+        if _NEGATION_RE.search(line) and not re.search(
+                r"(?i)\b(use|do|run|call|prefer|usa|haz|ejecuta|llama|prefiere)\b", line):
+            findings.append({
+                "check": "negation", "severity": "minor",
+                "message": f"negation without the positive action beside it: {line.strip()[:80]!r}",
+            })
+            break  # one representative finding is enough
+
+    # 4. verifiable completion criterion.
+    if not re.search(r"(?i)\b(verify|check|expect|pass|exit code|verifica|comprueba|espera)\b", body):
+        findings.append({
+            "check": "done-criterion", "severity": "blocking",
+            "message": "no verifiable completion criterion (command to run, expected output); "
+                       "'it's done' without a check is decoration",
+        })
+
+    # 5. prose mention of another skill where a literal call is needed.
+    for m in re.finditer(r"(?i)\b(?:use|see|ver|usa)\s+(?:the\s+)?skill\s+[`\"']?([\w-]+)", body):
+        findings.append({
+            "check": "literal-call", "severity": "major",
+            "message": f"mentions skill {m.group(1)!r} in prose; if the reader must RUN it, "
+                       "call it literally (manage_skills action=view name=<slug>) at that step",
+        })
+
+    # hygiene: mojibake and generic names (the 22:39 general/skill case).
+    if any(p in text for p in _MOJIBAKE_PATTERNS):
+        findings.append({
+            "check": "mojibake", "severity": "major",
+            "message": "text contains mojibake (UTF-8 decoded with the wrong codec); "
+                       "re-import with the correct encoding",
+        })
+    name = (fm.get("name") or "").strip().lower().replace("_", "-")
+    if name in _GENERIC_NAMES:
+        findings.append({
+            "check": "generic-name", "severity": "major",
+            "message": f"skill name {name!r} is generic and says nothing about when to fire; "
+                       "rename to what the skill does",
+        })
+
+    return findings

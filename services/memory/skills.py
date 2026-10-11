@@ -374,6 +374,17 @@ class SkillsManager:
         # handles the fuzzier near-duplicates this cheap check won't catch.
         _all = self.load_all()
         _dedup_pool = _all if owner is None else [s for s in _all if s.get("owner") == owner]
+        # writing-for-agents lint (src/skill_governance.lint_skill): blocking
+        # findings refuse the learn; other findings ride along as warnings so
+        # the caller can surface them. Never blocks user-authored skills.
+        from src.skill_governance import lint_skill
+        _md = f"---\nname: {nm}\ndescription: {(description or title or '')}\n---\n\n" + "\n".join(
+            f"- {s}" for s in (procedure if procedure is not None else (steps or [])))
+        _lint = lint_skill(_md)
+        _blocking = [f for f in _lint if f["severity"] == "blocking"]
+        if _blocking and source != "user":
+            return {"_lint_refused": True, "_lint_findings": _lint, "name": nm}
+        _lint_warnings = [f for f in _lint if f["severity"] != "blocking"]
         if dedupe and source != "user":
             cand = _tokenize(" ".join([
                 nm, (description or title or ""),
@@ -427,7 +438,10 @@ class SkillsManager:
         )
         self._write_skill(sk)
 
-        return sk.to_dict()
+        out = sk.to_dict()
+        if _lint_warnings:
+            out["_lint_warnings"] = _lint_warnings
+        return out
 
     def import_bundle_from_files(
         self,

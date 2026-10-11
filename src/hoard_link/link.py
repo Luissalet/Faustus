@@ -39,6 +39,27 @@ _THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL | re.IGNORECASE)
 _THINK_OPEN_RE = re.compile(r"<think>", re.IGNORECASE)
 _THINK_CLOSE_RE = re.compile(r"</think>", re.IGNORECASE)
 _CACHE_TTL_S = 30.0
+# Per-URL llama.cpp base probes (registry residency / status) stay fresh for Hub's
+# ~5 s polls without repeating the same /health+/props sweep on every capability.
+_BASE_PROBE_CACHE_TTL_S = 2.5
+# The last model registry Faustus returned, kept for when it is too busy to answer within the short timeout.
+_REGISTRY_MEMORY_TTL_S = 900.0
+_last_registry: Optional[tuple[dict, float]] = None
+
+
+def _remember_registry(data: dict) -> None:
+    global _last_registry
+    _last_registry = (data, time.monotonic())
+
+
+def _remembered_registry() -> Optional[tuple[dict, float]]:
+    """``(registry, age_s)`` while the last registry is recent enough to try, else None."""
+    if _last_registry is None:
+        return None
+    age = time.monotonic() - _last_registry[1]
+    return (_last_registry[0], age) if age <= _REGISTRY_MEMORY_TTL_S else None
+
+
 _log = logging.getLogger("hoard_link")
 TTS_COMMAND_TIMEOUT_S = 120.0
 
@@ -331,17 +352,28 @@ class Link:
     # caching of probes (30 s, single-flight)
     # ------------------------------------------------------------------
 
-    async def _cached(self, key: str, factory: Any) -> Any:
-        """Cache a probe for 30 s; concurrent callers share one in-flight probe.
+    async def _cached(self, key: str, factory: Any, ttl_s: float | None = None) -> Any:
+        """Cache a probe; concurrent callers share one in-flight probe.
 
         Without single-flight, ``status()`` resolving eight capabilities in
         parallel would fire eight identical sweeps of eleven llama.cpp
-        ports at once.
+        ports at once. Default TTL is 30 s; per-URL base probes use a shorter
+        window so residency stays fresh under Hub polling.
+
+        An in-flight Future is always reused, even when its start timestamp is
+        older than ``ttl_s``. Only a *completed* result expires; otherwise a
+        slow probe that outlasts the TTL would launch a second factory.
         """
+        ttl = _CACHE_TTL_S if ttl_s is None else ttl_s
         loop = asyncio.get_running_loop()
         now = self._now()
         hit = self._cache.get(key)
-        if hit is None or now - hit[0] >= _CACHE_TTL_S or hit[2] is not loop:
+        reuse = (
+            hit is not None
+            and hit[2] is loop
+            and (not hit[1].done() or now - hit[0] < ttl)
+        )
+        if not reuse:
             hit = (now, asyncio.ensure_future(factory()), loop)
             self._cache[key] = hit
         try:
@@ -352,6 +384,14 @@ class Link:
             if self._cache.get(key) is hit:
                 del self._cache[key]
             raise
+
+    async def _probe_llamacpp_base(self, base: str) -> Any:
+        base = base.rstrip("/")
+        return await self._cached(
+            f"llamacpp_base:{base}",
+            lambda: _probes.probe_llamacpp_base(self._client, base),
+            ttl_s=_BASE_PROBE_CACHE_TTL_S,
+        )
 
     async def _probe_llamacpp(self) -> list[dict]:
         return await self._cached("llamacpp", lambda: _probes.probe_llamacpp(self._client))
@@ -430,6 +470,13 @@ class Link:
             res = await self._resolve_from_faustus(capability, faustus_url, reasons, ctx)
             if res is not None:
                 return res
+        elif _remembered_registry() is not None:
+            # Faustus did not answer its health check in time (a long turn can hold it), but it listed its
+            # servers recently: try those (each one is verified) before loading anything on this PC.
+            reasons.append("Faustus not reachable on configured/default ports right now")
+            res = await self._resolve_from_faustus(capability, None, reasons, ctx)
+            if res is not None:
+                return res
         else:
             reasons.append("Faustus not reachable on configured/default ports")
 
@@ -480,11 +527,26 @@ class Link:
         )
 
     async def _resolve_from_faustus(
-        self, capability: str, faustus_url: str, reasons: list[str], ctx: Optional[_RouteCtx] = None
+        self, capability: str, faustus_url: Optional[str], reasons: list[str], ctx: Optional[_RouteCtx] = None
     ) -> Optional[Resolution]:
+        """``faustus_url`` None means Faustus did not answer its health check: only a recent registry is tried."""
         token = self.config.faustus_token
         headers = _faustus.auth_headers(token)
-        status, data = await _faustus.get(self._client, f"{faustus_url}/api/models", headers=headers)
+        if faustus_url:
+            status, data = await _faustus.get(self._client, f"{faustus_url}/api/models", headers=headers)
+        else:
+            status, data = None, None
+        if status == 200 and isinstance(data, dict):
+            _remember_registry(data)
+        elif status is None:
+            remembered = _remembered_registry()
+            if remembered is not None:
+                # A busy Faustus can miss the short timeout; the servers it listed a moment ago are still
+                # verified one by one below, so a stale entry is skipped rather than trusted.
+                reasons.append(
+                    f"Faustus /api/models did not answer; using the registry it gave {remembered[1]:.0f}s ago"
+                )
+                status, data = 200, remembered[0]
 
         if status == 200 and isinstance(data, dict):
             matches = _faustus.find_model_items(_faustus.model_items(data), capability)
@@ -518,7 +580,7 @@ class Link:
         else:
             reasons.append(f"Faustus /api/models returned HTTP {status}")
 
-        if capability in ("tts", "stt"):
+        if capability in ("tts", "stt") and faustus_url:
             svc_status, svc_data = await _faustus.get(
                 self._client, f"{faustus_url}/api/{capability}/capabilities", headers=headers
             )
@@ -604,7 +666,7 @@ class Link:
             # The shared probe checks llama.cpp's /props signature (so a
             # generic OpenAI-compatible server is not mistaken for it) and
             # also reads model identity from /v1/models or model_path.
-            server = await _probes.probe_llamacpp_base(self._client, _server_root(url))
+            server = await self._probe_llamacpp_base(_server_root(url))
             if server is None:
                 reasons.append(
                     f"Faustus registry names llama.cpp at {_host(url)} but it is offline, "

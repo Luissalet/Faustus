@@ -116,7 +116,7 @@ def _unit(kind: str, title: str, text: str) -> dict[str, Any]:
 
 
 def _finish(units: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Drop empty units and number sections/slides/sheets/chapters 1..n (pages keep their number)."""
+    """Drop empty units; preserve declared physical page/slide numbers, number other units 1..n."""
     out = []
     for u in units:
         u["text"] = clean_text(u["text"], dehyphenate=False, unstack=False)
@@ -125,7 +125,7 @@ def _finish(units: list[dict[str, Any]]) -> list[dict[str, Any]]:
             out.append(u)
     n = 0
     for u in out:
-        if u["kind"] != "page":
+        if u["kind"] != "page" and not (u["kind"] == "slide" and u["number"] > 0):
             n += 1
             u["number"] = n
     return out
@@ -728,6 +728,8 @@ def _slide_text(root: ET.Element) -> tuple[str, list[str]]:
         for sh in parent:
             if sh.tag == f"{_P}sp":
                 ph = sh.find(f"{_P}nvSpPr/{_P}nvPr/{_P}ph")
+                if ph is not None and ph.get("type") == "sldNum":
+                    continue  # numbering placeholder, not speaker-note content
                 is_title = ph is not None and ph.get("type") in ("title", "ctrTitle")
                 paras = [_a_paragraph(p) for p in sh.findall(f"{_P}txBody/{_A}p")]
                 paras = [t for t in paras if t]
@@ -757,10 +759,25 @@ def read_pptx(src: Union[bytes, str, Path, Any], *, max_unzipped: int = MAX_UNZI
         names = z.namelist()
         slides = sorted((n for n in names if re.fullmatch(r"ppt/slides/slide\d+\.xml", n)),
                         key=lambda n: int(re.search(r"(\d+)\.xml$", n).group(1)))
+        presentation = _optional_xml(z, "ppt/presentation.xml")
+        order = presentation.find(f"{_P}sldIdLst") if presentation is not None else None
+        if order is not None:
+            relationships = _xml(z, "ppt/_rels/presentation.xml.rels")
+            targets = {r.get("Id"): r.get("Target") for r in relationships
+                       if (r.get("Type") or "").endswith("/slide") and r.get("TargetMode") != "External"}
+            slides = []
+            for slide in order:
+                target = targets.get(slide.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"))
+                if not target:
+                    raise ValueError("PowerPoint slide relationship is missing")
+                name = posixpath.normpath(target.lstrip("/") if target.startswith("/") else posixpath.join("ppt", target))
+                if name not in names:
+                    raise ValueError("PowerPoint slide part is missing")
+                slides.append(name)
         if not slides:
             raise ValueError("not a PowerPoint file (no slides)")
         units = []
-        for n in slides[:2000]:
+        for number, n in enumerate(slides[:2000], 1):
             title, lines = _slide_text(_xml(z, n))
             notes = ""
             rels = f"ppt/slides/_rels/{posixpath.basename(n)}.rels"
@@ -770,11 +787,13 @@ def read_pptx(src: Union[bytes, str, Path, Any], *, max_unzipped: int = MAX_UNZI
                         target = posixpath.normpath(posixpath.join("ppt/slides", rel.get("Target") or ""))
                         if target in names:
                             _, nl = _slide_text(_xml(z, target))
-                            notes = " ".join(t for t in nl if not t.isdigit())
+                            notes = " ".join(nl)
             body = "\n".join(lines)
             if notes:
                 body += ("\n\n" if body else "") + f"(notes) {notes}"
-            units.append(_unit("slide", title, body))
+            unit = _unit("slide", title, body or title)
+            unit["number"] = number
+            units.append(unit)
     return _finish(units)
 
 
