@@ -1506,21 +1506,28 @@ TOOLS: List[Tool] = [
     Tool(
         name="faustus_failure_sweep",
         description=(
-            "Sweep EVERY assistant turn in a recent window for deterministic "
+            "Sweep assistant turns in a recent window for deterministic "
             "failure signatures a sample eval would miss: loop breaker, repeated "
             "empty tool results, the same tool error over and over, model "
             "refusals, round/budget caps, expired approvals, empty finals. "
-            "Returns counts grouped by signature and tool with linked "
-            "session/message ids only — never prompts, replies or secrets. "
-            "Same report as GET /api/diagnostics/failure-sweep and Settings → "
-            "Diagnostics. Set publish=true to also post faustus.diag.failure_sweep "
-            "on the Hub bus for Cassandra."
+            "Returns a structured JSON projection (complete and parseable — "
+            "never character-truncated) with counts, coverage "
+            "(complete/partial), next_cursor when more turns remain, and "
+            "group pagination via group_offset. Linked session/message ids "
+            "only — never prompts, replies or secrets. Same report as "
+            "GET /api/diagnostics/failure-sweep and Settings → Diagnostics. "
+            "Set publish=true to also post faustus.diag.failure_sweep on the "
+            "Hub bus for Cassandra (hub_publish is delivered|skipped|failed)."
         ),
         inputSchema={"type": "object", "properties": {
             "days": {"type": "integer", "description":
                      "How many past days to scan (default 1, max 30)."},
             "publish": {"type": "boolean", "description":
                         "Also emit faustus.diag.failure_sweep on the Hub bus."},
+            "cursor": {"type": "string", "description":
+                       "Continue a partial sweep from report.next_cursor."},
+            "group_offset": {"type": "integer", "description":
+                             "Offset into by_signature for large reports."},
         }},
     ),
     Tool(
@@ -1942,10 +1949,25 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             except (TypeError, ValueError):
                 days = 1
             publish = "1" if args.get("publish") else "0"
+            q = [f"days={days}", f"publish={publish}"]
+            cursor = str(args.get("cursor") or "").strip()
+            if cursor:
+                q.append("cursor=" + urllib.parse.quote(cursor, safe=""))
             data = await asyncio.to_thread(
                 _request, "GET",
-                f"/api/diagnostics/failure-sweep?days={days}&publish={publish}")
-            return _text(json.dumps(data, ensure_ascii=False)[:8000])
+                f"/api/diagnostics/failure-sweep?{'&'.join(q)}")
+            # Structured projection — complete valid JSON, never character-sliced.
+            try:
+                from src import failure_sweep as _fs
+                try:
+                    goff = int(args.get("group_offset") or 0)
+                except (TypeError, ValueError):
+                    goff = 0
+                projected = _fs.project_for_mcp(data if isinstance(data, dict) else {},
+                                                group_offset=goff)
+            except Exception:  # noqa: BLE001
+                projected = data if isinstance(data, dict) else {"error": "projection_failed"}
+            return _text(json.dumps(projected, ensure_ascii=False))
         if name == "changeset_prove":
             job = str(args.get("job_id") or "").strip()
             if not job:

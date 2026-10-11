@@ -56,19 +56,32 @@ def setup_diagnostics_routes(
         return await asyncio.to_thread(think_calibration.report, owner, days)
 
     @router.get("/api/diagnostics/failure-sweep")
-    async def get_failure_sweep(request: Request, days: int = 1, publish: int = 0) -> Dict[str, Any]:
-        """Sweep **every** assistant turn in the window for deterministic
-        failure signatures (radar #498 / #276): loop breaker, empty tool
-        streaks, identical tool errors, refusals, round/budget caps, expired
-        approvals, empty finals. Grouped by signature and tool with linked
-        examples (session/message ids only — never prompts or replies).
-        ``?publish=1`` also posts ``faustus.diag.failure_sweep`` on the Hub
-        bus for Cassandra. Only the caller's own sessions."""
+    async def get_failure_sweep(
+        request: Request,
+        days: int = 1,
+        publish: int = 0,
+        cursor: str = "",
+        page_limit: int = 0,
+    ) -> Dict[str, Any]:
+        """Sweep assistant turns in the window for deterministic failure
+        signatures (radar #498 / #276): loop breaker, empty tool streaks,
+        identical tool errors (including canonical ``result_status``),
+        refusals, round/budget caps, expired approvals, empty finals.
+        Grouped by signature and tool with linked examples (session/message
+        ids only — never prompts or replies). Response includes ``coverage``
+        (``complete``/``partial``), ``next_cursor`` when more turns remain,
+        and ``hub_publish`` (``delivered``/``skipped``/``failed``) when
+        ``?publish=1``. Only the caller's own sessions."""
         from src.auth_helpers import effective_user
         from src import failure_sweep
         owner = effective_user(request)
+        kwargs: Dict[str, Any] = {"publish": bool(publish)}
+        if cursor:
+            kwargs["cursor"] = cursor
+        if page_limit and page_limit > 0:
+            kwargs["page_limit"] = page_limit
         return await asyncio.to_thread(
-            failure_sweep.report, owner, days, publish=bool(publish))
+            failure_sweep.report, owner, days, **kwargs)
 
     @router.post("/api/diagnostics/services/reconnect")
     async def reconnect_services(request: Request) -> Dict[str, Any]:

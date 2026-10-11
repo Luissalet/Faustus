@@ -45,6 +45,70 @@ def test_repeated_empty_tools_and_identical_errors():
     assert "err=" in detail
 
 
+def test_result_status_failed_counts_without_exit_code():
+    """Native agent_loop persists result_status via tool_result_fields."""
+    from src.tool_presentation import tool_result_fields
+
+    raw = {"status": "failed", "output": "QA semantic failure", "ok": False}
+    fields = tool_result_fields(raw)
+    assert fields.get("result_status") == "failed"
+    events = [
+        {"tool": "qa_native_tool", "output": "QA semantic failure",
+         "exit_code": None, **fields},
+        {"tool": "qa_native_tool", "output": "QA semantic failure",
+         "exit_code": None, **fields},
+        {"tool": "qa_native_tool", "output": "QA semantic failure",
+         "exit_code": None, **fields},
+    ]
+    hits = fs.signatures_for_turn(
+        content="done",
+        metadata={"tool_events": events},
+        session_id="s-rs",
+        message_id="m-rs",
+    )
+    assert ("identical_tool_error", "qa_native_tool") in {
+        (h["signature"], h["tool"]) for h in hits
+    }
+
+
+def test_result_status_partial_not_failed_via_stdout():
+    events = [
+        {"tool": "bash", "result_status": "partial",
+         "output": "error: looks scary but status is partial", "exit_code": None},
+        {"tool": "bash", "result_status": "cancelled",
+         "output": "error: cancelled", "exit_code": None},
+        {"tool": "bash", "result_status": "outcome_unknown",
+         "output": "error: unknown", "exit_code": None},
+    ]
+    hits = fs.signatures_for_turn(
+        content="ok", metadata={"tool_events": events}, session_id="s", message_id=1,
+    )
+    assert not any(h["signature"] == "identical_tool_error" for h in hits)
+
+
+def test_mcp_projection_is_complete_valid_json():
+    big = {
+        "days": 1, "since": "2026-10-11T00:00:00", "owner": "alice",
+        "turns_scanned": 2, "hit_count": 46, "signature_count": 46,
+        "rows_read": 2, "coverage": "complete", "truncated": False,
+        "by_signature": [
+            {"signature": f"sig_{i}", "tool": f"t{i}", "count": 3,
+             "examples": [{"session_id": "s", "message_id": str(i), "run_id": ""}]}
+            for i in range(46)
+        ],
+        "generated_at": "2026-10-11T12:00:00",
+    }
+    projected = fs.project_for_mcp(big, group_offset=0, group_limit=20)
+    blob = json.dumps(projected, ensure_ascii=False)
+    assert json.loads(blob) == projected  # round-trip, never sliced
+    assert projected["signature_count"] == 46
+    assert projected["groups_returned"] == 20
+    assert projected["next_group_offset"] == 20
+    more = fs.project_for_mcp(big, group_offset=20, group_limit=80)
+    assert more["groups_returned"] == 26
+    assert more["next_group_offset"] is None
+
+
 def test_approval_expired_and_model_refusal():
     hits = fs.signatures_for_turn(
         content="I can't help with that request.",
@@ -130,6 +194,41 @@ def test_report_reads_owner_sessions():
     assert out["turns_scanned"] == 1
     assert {g["signature"] for g in out["by_signature"]} >= {"loop_breaker", "empty_final"}
     assert out["owner"] == "alice"
+    assert out["coverage"] == "complete"
+    assert out["next_cursor"] is None
+
+
+def test_report_partial_coverage_and_continue():
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from core.database import Base, ChatMessage, Session
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine, tables=[Session.__table__, ChatMessage.__table__])
+    db = sessionmaker(bind=engine)()
+    try:
+        db.add(Session(id="p1", name="p1", endpoint_url="http://x", model="m", owner="alice"))
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        for i in range(5):
+            db.add(ChatMessage(
+                id=f"p1-{i}", session_id="p1", role="assistant", content="ok",
+                meta_data=json.dumps({"stop_reason": "rounds_exhausted"}),
+                timestamp=now - timedelta(seconds=i),
+            ))
+        db.commit()
+        page = fs.report("alice", days=1, db=db, page_limit=2)
+        assert page["coverage"] == "partial"
+        assert page["rows_read"] == 2
+        assert page["next_cursor"]
+        rest = fs.report("alice", days=1, db=db, page_limit=10, cursor=page["next_cursor"])
+        merged = fs.merge_reports(page, rest)
+        assert merged["turns_scanned"] == 5
+        assert merged["coverage"] == "complete"
+    finally:
+        db.close()
 
 
 @pytest.fixture()

@@ -3,7 +3,11 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../components';
 import { diagnosticsLogs, exportBackup, importBackup, wipe, WIPE_KINDS } from '../../adapters/account';
 import { getJson } from '../../adapters/api';
-import { loadFailureSweep, type FailureSweepReport } from '../../adapters/failure-sweep';
+import {
+  loadFailureSweep,
+  mergeFailureSweep,
+  type FailureSweepReport,
+} from '../../adapters/failure-sweep';
 import { t } from '../../i18n';
 import { Select } from './fields';
 
@@ -222,24 +226,34 @@ function DoctorCard({ say }: { say: (t: string) => void }) {
   );
 }
 
-/** Radar #498 / #276: every-turn failure signatures (not a sample). */
+/** Radar #498 / #276: failure signatures across assistant turns (not a sample). */
 function FailureSweepCard({ say }: { say: (t: string) => void }) {
   const [report, setReport] = useState<FailureSweepReport | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [days, setDays] = useState(1);
   const [loading, setLoading] = useState(false);
 
-  const load = (publish = false) => {
+  const load = (publish = false, cursor?: string) => {
     setLoading(true);
     setErr(null);
-    loadFailureSweep(days, publish)
-      .then(setReport)
+    loadFailureSweep(days, publish, cursor ? { cursor } : undefined)
+      .then((next) => {
+        setReport((prev) => (cursor && prev ? mergeFailureSweep(prev, next) : next));
+        if (publish) {
+          const st = next.hub_publish;
+          if (st === 'delivered') say(t('Failure sweep delivered to the Hub bus.'));
+          else if (st === 'queued') say(t('Failure sweep queued for the Hub bus.'));
+          else if (st === 'skipped') say(t('Hub bus unavailable; failure sweep not published.'));
+          else say(t('Failure sweep publish failed.'));
+        }
+      })
       .catch((e: Error) => setErr(e.message))
       .finally(() => setLoading(false));
   };
   useEffect(() => { load(false); }, [days]);
 
   const groups = report?.by_signature ?? [];
+  const partial = report?.coverage === 'partial' || !!report?.truncated;
 
   return (
     <div className="fs-set__card">
@@ -249,7 +263,7 @@ function FailureSweepCard({ say }: { say: (t: string) => void }) {
                 loading={loading} onClick={() => load(false)} />
       </h3>
       <p className="fs-set__help">
-        {t('Every assistant turn in the window, scanned for fixed failure signatures (loop breaker, empty tools, repeated errors, refusals, caps). Linked ids only — no prompts or replies.')}
+        {t('Assistant turns in the window, scanned for fixed failure signatures (loop breaker, empty tools, repeated errors, refusals, caps). Coverage is complete or partial with Continue. Linked ids only — no prompts or replies.')}
       </p>
       <div className="fs-set__row" style={{ gap: 8, flexWrap: 'wrap' }}>
         <Select
@@ -263,20 +277,29 @@ function FailureSweepCard({ say }: { say: (t: string) => void }) {
           ]}
         />
         <Button size="sm" variant="secondary" label={t('Publish to Hub bus')}
-                disabled={loading} onClick={() => {
-                  load(true);
-                  say(t('Failure sweep published to the Hub bus when the Hub is available.'));
-                }} />
+                disabled={loading} onClick={() => load(true)} />
       </div>
       {err && <p className="fs-set__err">{err}</p>}
       {report && (
         <p className="fs-set__help">
-          {t('{turns} turns · {hits} hits · {sigs} signatures', {
-            turns: String(report.turns_scanned),
-            hits: String(report.hit_count),
-            sigs: String(report.signature_count),
-          })}
+          {partial
+            ? t('Partial coverage: {turns} turns · {hits} hits · {sigs} signatures', {
+                turns: String(report.turns_scanned),
+                hits: String(report.hit_count),
+                sigs: String(report.signature_count),
+              })
+            : t('All {turns} assistant turns scanned · {hits} hits · {sigs} signatures', {
+                turns: String(report.turns_scanned),
+                hits: String(report.hit_count),
+                sigs: String(report.signature_count),
+              })}
         </p>
+      )}
+      {partial && report?.next_cursor && (
+        <div className="fs-set__row" style={{ marginBottom: 8 }}>
+          <Button size="sm" variant="secondary" label={t('Continue sweep')}
+                  disabled={loading} onClick={() => load(false, report.next_cursor || undefined)} />
+        </div>
       )}
       {groups.length === 0 && report && !err ? (
         <p className="fs-set__help">{t('No failure signatures in this window.')}</p>
@@ -298,29 +321,6 @@ function FailureSweepCard({ say }: { say: (t: string) => void }) {
   );
 }
 
-interface SafeModeStatus {
-  active: boolean;
-  reason: string;
-  disabled: Record<string, boolean>;
-  quarantined_mcp_servers: string[];
-  /** OPS-05 (lote 42): `src/safe_mode.py::status()` already returned this --
-   *  the "why" for a quarantined server was in the API response the whole
-   *  time, just never in this interface or rendered below. */
-  mcp_fail_counts: Record<string, number>;
-  core_available: boolean;
-}
-
-const SUBSYSTEM_LABEL: Record<string, string> = {
-  mcp_external: 'External MCP servers',
-  plugins_third_party: 'Third-party plugins',
-  skills_third_party: 'Skills not written by the owner',
-  scheduled_tasks: 'Scheduled / recurring tasks',
-};
-
-/** OPS-05 / QA-46: safe mode's status and one-at-a-time review, described in
- *  plain terms — which is off, why, and a button per item to turn it back on.
- *  Core (chat, files, settings) is never in this list; `src/safe_mode.py`
- *  never gates it. */
 function SafeModeCard({ say }: { say: (t: string) => void }) {
   const [status, setStatus] = useState<SafeModeStatus | null>(null);
   const [err, setErr] = useState<string | null>(null);
