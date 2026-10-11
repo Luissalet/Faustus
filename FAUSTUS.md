@@ -11453,4 +11453,37 @@ content projects or restore old selections. The agent reads the current native
 object with the app's tools before editing it. Retrieval is lexical, not a claim
 of semantic recall or universal model reliability. Tantalus and Prospero adapters
 remain under verification until their individual integration is completed.
+## 339. Cómo está hecha una función de una web, con evidencia — #318 (11-10-2026, noche)
+
+**Qué es.** Servidor MCP integrado `web_explain` (`mcp_servers/web_explain_server.py`, registrado en `src/builtin_mcp.py`,
+código en `src/web_explain/`) con cuatro tools de solo lectura:
+`explain_feature(url, question, actions)` carga la página en un Chromium sin perfil (sin sesiones, sin service workers, sin
+descargas), ejecuta las acciones que disparan la función (click, fill, hover, press, select, scroll, wait, goto; destino por
+selector CSS o por texto, etiqueta o placeholder visibles) y devuelve evidencia numerada `E1..` marcada **observed** (visto en el
+registro de red, el DOM, el código ejecutado o las fuentes originales), **inferred** (conclusión que nombra las `E` en las que
+se apoya) o **unknown** (lo que el navegador no puede ver: el servidor detrás de cada endpoint, scripts sin source map,
+páginas de comprobación anti-bots). `observe_web_execution` da la observación en bruto; `analyze_web_bundle` analiza un script
+o los scripts de una página sin navegador; `trace_web_source_location` lleva una posición minificada (línea, columna) a su
+fichero, línea y símbolo originales con un fragmento.
+
+**Cómo observa.** Por el protocolo de DevTools: cada petición con su iniciador (la pila de llamadas que la lanzó), cobertura
+JS precisa en dos cortes (carga y solo las acciones, porque `takePreciseCoverage` reinicia los contadores), mutaciones del DOM
+durante las acciones, consola y errores, capturas antes y después (`DATA_DIR/web_explain`). Las posiciones generadas se
+traducen con los source maps publicados (`src/web_explain/sourcemap.py`: VLQ, mapas con `sections`, `sourcesContent`) a módulos
+propios y paquetes de `node_modules` con su versión cuando la ruta la lleva (pnpm, yarn) o un banner de licencia. Los cuerpos
+de petición enmascaran claves con aspecto de secreto; los scripts sin URL (inyectados o `eval`) no cuentan como código del
+sitio; las comprobaciones anti-bots se informan y no se esquivan.
+
+**Verificado.** `tests/test_web_explain.py` (19): VLQ ida y vuelta, búsqueda en mapas, mapas indexados, paquetes y versiones,
+banners, URLs y enmascarado, y una pasada real en navegador contra un sitio local con un mapa hecho a mano (petición
+`/api/hello` atribuida a `src/app.js:3`, funciones `onClick`/`loadGreeting` y el paquete `tiny-format@1.2.3` ejecutados durante
+el click, inferencia apoyada en sus `E`). Por stdio con un cliente MCP real: en un editor de pizarra público, abrir la
+biblioteca se atribuye a `Sidebar/*` y `useLibraryItemSvg.ts` sin tráfico de red (captura posterior con el panel abierto); en la
+portada de una enciclopedia, escribir en la búsqueda muestra la llamada a `api.php?…prefixsearch` con su iniciador y agrupa las
+miniaturas; una web con comprobación anti-bots devuelve `Blocked` en `unknown`; `trace_web_source_location` sobre un bundle de
+2,2 MB devuelve fichero y línea originales con fragmento.
+
+**Límites.** Sin sesión: lo que exige login no se observa. Sin source maps solo hay posiciones y nombres minificados. El trabajo
+del servidor es siempre `unknown`. Una acción que cambia datos ajenos (comprar, publicar) no debe pedirse; el perfil es nuevo en
+cada llamada.
 

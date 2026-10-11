@@ -78,3 +78,5 @@ pytest-timeout
 httpx2
 # satellite passes (src/public_data/orbits.py)
 sgp4>=2.23
+# headless browser for src/web_explain (then: python -m playwright install chromium)
+playwright>=1.40
