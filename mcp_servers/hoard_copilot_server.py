@@ -16,6 +16,8 @@ from src.stdio_guard import guard
 server = Server("hoard-copilot")
 CONTEXT = {"type": "object", "description": "Hoard origin with app_id/data_space_id, native project, active objects and selection."}
 OPERATIONS = {
+    "hoard_project_search": ("GET", "/projects/search", "Find prior Hoard work by title, canonical conversation and actual activity dates, returning native references.", {**{key: {"type": "string"} for key in ('query', 'app_id', 'data_space_id', 'after', 'before')}, 'offset': {'type': 'integer'}, 'limit': {'type': 'integer'}}),
+    "hoard_project_recall": ("GET", "/projects/{project_link_id}", "Recall a linked Hoard project, recent canonical messages, memory scope and existing workspace.", {"project_link_id": {"type": "string"}}),
     "hoard_context_resolve": ("POST", "/project-links/resolve", "Resolve the Hoard project into the same stable Faustus working project.", {"context": CONTEXT}),
     "hoard_conversation_list": ("GET", "/conversations", "List canonical Faustus chats by Hoard, data space or native project.", {key: {"type": "string"} for key in ("app_id", "data_space_id", "external_project_id")}),
     "hoard_conversation_open": ("POST", "/conversations", "Create a canonical Faustus chat associated with the Hoard context; does not duplicate domain data.", {"context": CONTEXT, "name": {"type": "string"}}),
@@ -38,6 +40,9 @@ async def call_tool(name, arguments):
         raise ValueError("Unknown copilot operation")
     method, path, _, _ = OPERATIONS[name]
     payload = dict(arguments or {})
+    if '{project_link_id}' in path:
+        from urllib.parse import quote
+        path = path.replace('{project_link_id}', quote(str(payload.pop('project_link_id')), safe=''))
     if "{session_id}" in path:
         from urllib.parse import quote
         path = path.replace("{session_id}", quote(str(payload.pop("session_id")), safe=""))

@@ -42,6 +42,8 @@ _REQUIRED_NATIVE_TOOL_ARGS = {
 _emit_schema = AUTHORITY.emit
 
 FUNCTION_TOOL_SCHEMAS = [
+    {"type": "function", "function": {"name": "hoard_project_search", "description": "Find prior Hoard work by title, conversation, app and actual activity dates. Use for 'that project we made the other day' / 'aquel proyecto del otro día'. Returns native project IDs and evidence to continue with the app tools.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}, "app_id": {"type": "string"}, "data_space_id": {"type": "string"}, "after": {"type": "string", "description": "ISO date/time; resolve relative dates using the user timezone."}, "before": {"type": "string"}, "offset": {"type": "integer"}, "limit": {"type": "integer"}}}}},
+    {"type": "function", "function": {"name": "hoard_project_recall", "description": "Recall one Hoard project link, canonical chats, project memory scope and existing workspace. Read the current native object before editing; historic selections are not restored.", "parameters": {"type": "object", "properties": {"project_link_id": {"type": "string"}}, "required": ["project_link_id"]}}},
     _emit_schema("inspect_deliverable"),
     _emit_schema("plan_media_transform"),
     _emit_schema("transform_media"),
@@ -3335,7 +3337,7 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "blender_scene",
-            "description": "Build/render/verify a 3D scene as typed JSON headless in Blender (no free-form code). Scene: {meta, ops:[...]}; ops include meshes, materials, modifiers, lights, cameras, text, world/HDRI, render, import/export, asserts. Validated first; paths stay in the session folder. Actions: probe, schema (call first), validate, run, smoke. Use for 'renderiza una escena 3D', 'modela un cubo', 'export STL', 'check that Blender works'.",
+            "description": "Build/render/verify typed JSON 3D scenes headlessly in Blender. Scene: {meta,ops:[...]}. Actions: probe, schema (first), validate, run, smoke. Ops: new_scene, load_blend, save, delete, set_world, add_mesh, set_transform, add_empty, add_material, assign_material, add_modifier, add_light, add_camera, track_to, add_text, set_render, render, compositor_glare, import_model, export_model, assert. No free-form code; files stay in the session folder. Use for renderiza una escena 3D, modela un cubo, export STL.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -4308,6 +4310,8 @@ def function_call_to_tool_block(name: str, arguments: str) -> Optional[ToolBlock
         content = "\n".join(blocks)
     elif tool_type == "update_document":
         content = args.get("content", "")
+    elif tool_type in ('hoard_project_search', 'hoard_project_recall'):
+        content = json.dumps(args)
     elif tool_type in ("search_chats", "search_project_chats"):
         content = args.get("query", "")
     elif tool_type == "project_context":

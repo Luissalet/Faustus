@@ -95,6 +95,7 @@ from .doc_lint_tool import DocLintTool
 from .prune_tools import PagePruneTool
 from .blender_scene_tool import BlenderSceneTool
 from .schema_extraction_tool import ExtractToSchemaTool
+from .hoard_project_tool import HoardProjectTool
 from .process_tools import (
     ProcessListTool, ProcessReadTool, ProcessStartTool, ProcessStopTool, ProcessWriteStdinTool,
 )
@@ -126,6 +127,8 @@ TOOL_HANDLERS = {
     # A document (or text) into the user's JSON Schema, every kept value
     # backed by a quote of the document -- src/schema_extraction.py.
     "extract_to_schema": ExtractToSchemaTool().execute,
+    "hoard_project_search": HoardProjectTool('search').execute,
+    "hoard_project_recall": HoardProjectTool('recall').execute,
     "image_job": ImageJobTool().execute,
     # Targeted look at ONE image/PDF page: ask a specific question about a
     # region, crop/rotate/zoom/enhance, overlay a grid, detect shapes locally,
@@ -429,6 +432,7 @@ TOOL_TAGS = {"bash", "python", "powershell", "web_search", "web_fetch", "read_fi
              "plan_media_transform", "transform_media",
              # A document into the user's JSON Schema -- src/agent_tools/schema_extraction_tool.py.
              "extract_to_schema",
+             "hoard_project_search", "hoard_project_recall",
              "apply_patch", "todowrite", "delegate_agents",
              "grep", "glob", "ls", "find_symbol", "callers", "tests_for", "rename_symbol",
              # Lote 54 — cableado de tools sobre librerías ya existentes:

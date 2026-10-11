@@ -1377,3 +1377,5 @@ conserva su historial y herramientas nativas. Pendientes: recuperación natural
 337, filtros globales336, transporte335, pilotoCicero339, Tantalus341,
 Prospero342 y QA/migración de familia343. No declarar completa la familia por
 la entrega del núcleo o de un piloto.
+
+Copilot337 aporta búsqueda/recuperación por identidad/texto/fecha. Queda la migración familiar343 y medición del modelo global sobre encargos variados; las pruebas con proveedor simulado sólo validan el flujo.

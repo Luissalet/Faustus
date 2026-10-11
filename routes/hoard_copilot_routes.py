@@ -62,6 +62,22 @@ def setup_hoard_copilot_routes(session_manager):
                 "stop_path": "/api/chat/stop/{session_id}", "history_authority": "faustus",
                 "context_field": "hoard_context", "supports_import": True}
 
+    @router.get('/projects/search')
+    def project_search(request: Request, query: str = '', app_id: str = '', data_space_id: str = '', after: str = '', before: str = '', offset: int = 0, limit: int = 20):
+        from services.hoard_project_recovery import HoardProjectRecovery
+        try:
+            return HoardProjectRecovery().search(owner(request), query, app_id, data_space_id, after, before, offset, limit)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @router.get('/projects/{project_link_id}')
+    def project_recall(request: Request, project_link_id: str):
+        from services.hoard_project_recovery import HoardProjectRecovery
+        try:
+            return HoardProjectRecovery().recall(owner(request), project_link_id)
+        except copilot.CopilotError as exc:
+            raise failure(exc) from exc
+
     @router.get("/panel.js")
     def panel(request: Request):
         owner(request)
