@@ -10394,6 +10394,8 @@ Idea del radar #434 (`mcp-footprint`, informe de tamaño y duplicados de un cat�
 - El 7006 conecta el servidor `harness` con sus 4 herramientas tras el cambio.
 - No hubo turno del modelo: el 8081 estaba parado.
 
+**Descripciones nativas recortadas (OBJ-56, 11-10-2026).** Medición sobre `FUNCTION_TOOL_SCHEMAS` en `d95ec55`: 20 descripciones nativas >250 tokens (no 8; el umbral es el de `OVERSIZED_DESCRIPTION_TOKENS`). Recorte en `src/tool_schemas.py` y `src/coordination/tools.py` (poll/task/board + guidance compartida) sin tocar `src/tool_index_examples.py`. Tras el cambio: 0 oversized; total del catálogo nativo 91 426 → 87 784 tokens (−3 642). Prueba: `tests/test_native_tool_description_budget.py`.
+
 ## Relevo del bucle y cobertura comprobada — 08-10-2026, 13:25
 
 La misma automatización horaria continúa en el chat `01a11a8a-1caa-73f1-a7a4-3f6ba97621d6`, con identidad `codex-relevo`. No hay segundo bucle.
