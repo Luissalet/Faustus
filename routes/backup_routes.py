@@ -5,7 +5,7 @@ import logging
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Request, Response
-from core.middleware import require_admin
+from core.middleware import is_agent_channel, require_admin
 from services.memory import MemoryStoreUnreadable
 from src.auth_helpers import get_current_user
 from src.settings import load_settings, save_settings, load_features, save_features
@@ -72,6 +72,19 @@ def setup_backup_routes(memory_manager, preset_manager, skills_manager) -> APIRo
 
         if not isinstance(body, dict):
             raise HTTPException(400, "Expected a JSON object")
+
+        # `require_admin` lets the model's own tool layer in (the internal token), and the settings merge below writes ANY key.
+        # So an import sent by the model must not move the settings only a person may change: the daily paid spend cap and the
+        # switches that send private data to another app. The same keys POST /settings and manage_settings refuse. Refused
+        # before anything is written, so a refused import changes nothing; a value equal to the current one is not a change
+        # (an export put back as it was still works).
+        if is_agent_channel(request) and isinstance(body.get("settings"), dict):
+            from src.settings import DEFAULT_SETTINGS, HUMAN_ONLY_SETTINGS
+            from src.spend_cap import PROTECTED_SETTINGS
+            stored = load_settings()
+            for key in sorted(HUMAN_ONLY_SETTINGS | PROTECTED_SETTINGS):
+                if key in body["settings"] and body["settings"][key] != stored.get(key, DEFAULT_SETTINGS.get(key)):
+                    raise HTTPException(403, "Settings that cap spending or send private data to another app can only be changed by a person, not by a tool call")
 
         imported = []
 

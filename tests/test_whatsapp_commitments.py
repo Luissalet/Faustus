@@ -463,3 +463,88 @@ def test_update_config_normalises_and_validates(monkeypatch):
     assert captured == {"whatsapp_commitments_enabled": True, "whatsapp_commitments_chats": ["Marta Lozano", "+34 600 333 444"]}
     for key in captured:
         settings._validate_patch({key: captured[key]})
+
+
+@pytest.fixture()
+def backup_import(monkeypatch):
+    """`POST /api/import` as the router builds it, with an in-memory settings store."""
+    from unittest.mock import MagicMock
+    import routes.backup_routes as br
+    from src import spend_cap
+    store = dict(settings.DEFAULT_SETTINGS)
+    monkeypatch.setattr(br, "load_settings", lambda: dict(store))
+    monkeypatch.setattr(br, "save_settings", lambda new: store.update(new))
+    monkeypatch.setattr(br, "get_current_user", lambda request: "luis")
+    # `require_admin` lets BOTH an admin person and the internal tool token through (that is the hole being closed), so it is
+    # stubbed to pass; what separates them is the route's own `is_agent_channel` check, which stays real
+    monkeypatch.setattr(br, "require_admin", lambda request: None)
+    router = br.setup_backup_routes(MagicMock(), MagicMock(), MagicMock(spec=["load_all", "add_skill"]))
+    endpoint = next(r.endpoint for r in router.routes if r.path == "/api/import" and "POST" in getattr(r, "methods", ()))
+
+    def call(body, headers=None, user="luis"):
+        async def js():
+            return body
+        request = SimpleNamespace(cookies={}, headers=headers or {}, state=SimpleNamespace(current_user=user),
+                                  client=SimpleNamespace(host="127.0.0.1"), json=js)
+        return asyncio.run(endpoint(request))
+    return SimpleNamespace(store=store, call=call, cap_keys=sorted(spend_cap.PROTECTED_SETTINGS))
+
+
+def test_the_backup_import_cannot_switch_the_opt_in_or_the_spend_cap_from_the_agent_channel(backup_import):
+    tool = {middleware.INTERNAL_TOOL_HEADER: middleware.INTERNAL_TOOL_TOKEN}
+    before = dict(backup_import.store)
+    # the review's repro, verbatim
+    with pytest.raises(HTTPException) as err:
+        backup_import.call({"settings": {"whatsapp_commitments_enabled": True, "whatsapp_commitments_all_chats": True}}, tool)
+    assert err.value.status_code == 403
+    assert backup_import.store == before
+    for key in KEYS:
+        with pytest.raises(HTTPException) as err:
+            backup_import.call({"settings": {key: ["Marta Lozano"] if key.endswith("chats") else True, "agent_max_rounds": 9}}, tool)
+        assert err.value.status_code == 403
+    assert backup_import.store == before, "a refused import changes nothing, not even the other keys it carried"
+    # the same hole for the daily paid spend cap
+    for key in backup_import.cap_keys:
+        default = settings.DEFAULT_SETTINGS.get(key)
+        changed = (not default) if isinstance(default, bool) else (default or 0) + 1
+        with pytest.raises(HTTPException) as err:
+            backup_import.call({"settings": {key: changed}}, tool)
+        assert err.value.status_code == 403, key
+    assert backup_import.store == before
+    # a state-token caller (stamped as the internal user, no header) is the agent channel as well
+    with pytest.raises(HTTPException) as err:
+        backup_import.call({"settings": {"whatsapp_commitments_enabled": True}}, {}, user=middleware.INTERNAL_TOOL_USER)
+    assert err.value.status_code == 403 and backup_import.store == before
+
+
+def test_the_backup_import_still_works_for_the_agent_with_other_keys_and_for_a_person_with_all(backup_import):
+    tool = {middleware.INTERNAL_TOOL_HEADER: middleware.INTERNAL_TOOL_TOKEN}
+    # other settings, and an export put back unchanged (same values for the protected keys), go through
+    out = backup_import.call({"settings": {"agent_max_rounds": 9, "whatsapp_commitments_enabled": False,
+                                           "whatsapp_commitments_chats": []}}, tool)
+    assert out["ok"] is True and backup_import.store["agent_max_rounds"] == 9
+    assert backup_import.store["whatsapp_commitments_enabled"] is False
+    # a person (no internal token, a normal user) can change them
+    out = backup_import.call({"settings": {"whatsapp_commitments_enabled": True, "whatsapp_commitments_all_chats": True,
+                                           "whatsapp_commitments_chats": ["Marta Lozano"]}}, {})
+    assert out["ok"] is True
+    assert backup_import.store["whatsapp_commitments_enabled"] is True and backup_import.store["whatsapp_commitments_chats"] == ["Marta Lozano"]
+
+
+def test_the_generic_app_api_bridge_does_not_reach_the_bulk_import():
+    from src.tool_implementations import _APP_API_BLOCKLIST_METHOD_PATH
+    assert ("POST", "/api/import") in _APP_API_BLOCKLIST_METHOD_PATH
+
+
+def test_no_other_settings_route_takes_arbitrary_keys():
+    """The routes that merge a request body into the settings file. Anything new that does it must show up here on purpose:
+    the generic ones are /api/import (guarded above) and POST /api/auth/settings (guarded in test_the_settings_api_...)."""
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    merging = []
+    for path in sorted((root / "routes").glob("*.py")):
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        if re.search(r"\.update\(\s*body\[\s*[\"']settings[\"']\s*\]\s*\)", text) or re.search(r"\.update\(\s*(?:payload|body)\s*\)\s*\n\s*_?save_settings", text):
+            merging.append(path.name)
+    assert merging == ["backup_routes.py"], merging

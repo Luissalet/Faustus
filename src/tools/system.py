@@ -845,6 +845,9 @@ _APP_API_BLOCKLIST_METHOD_PATH = (
     # The human editor must not bypass the agent's write approval gate.
     ("PUT",    "/api/workspace/file"),
     ("GET",    "/api/email/accounts"),  # owner-filtered in tool context; use list_email_accounts MCP tool
+    # Restoring a backup merges arbitrary settings, memories and presets in one call. The route itself refuses the settings only a
+    # person may change when the model sends it; the generic bridge has no business doing a bulk restore at all.
+    ("POST",   "/api/import"),
     ("POST",   "/api/cookbook/state"),   # whole-file overwrite — agent must use serve_preset/serve_model instead
     ("DELETE", "/api/cookbook/state"),
     # Host-control routes: package install, engine rebuild, and process
