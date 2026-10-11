@@ -628,3 +628,5 @@ Studio admite `!!orden`: ejecuta la orden literal con el ejecutor normal de bash
 ## Flota
 
 Home muestra las apps configuradas del Hub, tareas programadas y resultados publicados de vigilantes y tareas, separados en Hoy, Esperando por ti, Bloqueado, Sin verificar y En pausa. Los intentos y las sondas de salud no se cuentan como éxitos. Tras dos oportunidades programadas sin éxito puede llegar un único aviso de transición. `/api/hoard/fleet` ofrece la misma vista; `/api/family/fleet` publica metadatos de tareas de Faustus para el Hub con autenticación, sin prompts ni resultados. MCP del Hub permite leer, declarar cadencias y reportar resultados. Las políticas de horario no calculadas quedan sin verificar. Hace falta un Hub configurado y funcionando; Flota no inicia, reinicia ni aprueba trabajo.
+
+Describir la sección de verificación de un informe con citas genéricas no afirma que se haya consultado una fuente externa. Las comprobaciones externas explícitas siguen produciendo el aviso existente si no están respaldadas.

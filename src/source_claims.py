@@ -94,6 +94,14 @@ _EXTERNAL_OBJECT_RE = re.compile(
     r"atlas|web|internet|online|biograf\w*)\b",
     re.IGNORECASE,
 )
+# Describing a deliverable's verification section does not assert an outside
+# source was consulted. Keep named/external objects and explicit source checks.
+_ARTIFACT_SECTION_REPORT_RE = re.compile(
+    r"\b(?:documento|informe|document|report|deliverable)\b[^.!?;\n]{0,100}?"
+    r"\b(?:incluye|contiene|includes|contains|has)\b[^.!?;\n]{0,80}?"
+    r"\b(?:secci[oó]n|apartado|section)\b", re.IGNORECASE,
+)
+_GENERIC_QUOTE_OBJECT_RE = re.compile(r"(?:citas?|quotes?|quotations?)", re.IGNORECASE)
 _LOCAL_INSTRUMENT_RE = re.compile(
     r"\b(?:python|pypdf|pil|pillow|script|c[oó]digo|code|c[aá]lculo|calculation|computed|visi[oó]n|vision|"
     r"imagen|image|im[aá]genes|zoom|archivo|file|transcripci[oó]n|transcription|vista|view|originales?|"
@@ -127,7 +135,13 @@ def find_source_claims(text: str, limit: int = 4) -> List[str]:
         m = next((r.search(s) for r in _CLAIM_RES if r.search(s)), None)
         if not m:
             v = _VERIFY_VERB_RE.search(s)
-            if v and _EXTERNAL_OBJECT_RE.search(s) and not _LOCAL_INSTRUMENT_RE.search(s):
+            objects = list(_EXTERNAL_OBJECT_RE.finditer(s))
+            section_description = (
+                _ARTIFACT_SECTION_REPORT_RE.search(s)
+                and objects
+                and all(_GENERIC_QUOTE_OBJECT_RE.fullmatch(obj.group(0)) for obj in objects)
+            )
+            if v and objects and not _LOCAL_INSTRUMENT_RE.search(s) and not section_description:
                 m = v
         if not m:
             continue
