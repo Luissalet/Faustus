@@ -1305,7 +1305,7 @@ Este inventario conserva la solicitud histórica de agrupar comprobaciones larga
 
 - **Copias MCP que el agente sí ve.** `email` (16), `context_recall`, `manage_memory` y `generate_image` publican por MCP herramientas con el mismo nombre que las nativas, y sus servidores no están en `NATIVE_TWIN_SERVERS`, así que el índice de herramientas puede poner las dos copias en el mismo turno (el problema que ese conjunto evitaba con `code_graph`). Antes de añadirlos hay que comprobar que son copias 1:1: las descripciones no son idénticas (`manage_memory`, 0,77) y `email` puede depender del dueño.
 - **Interfaz.** Una sección en Ajustes → Herramientas con la tabla por origen, las colisiones y las parejas casi iguales. Hay que hacerla cuando `studio/` no tenga cambios sin versionar de otra sesión.
-- **Descripciones largas.** Hay 8 de más de 250 tokens; las más largas son `blender_scene` (414), `manage_tasks` (410) e `inspect_image` (390). Recortarlas sin perder los ejemplos que usa el índice.
+- **Descripciones largas.** ~~Hay 8 de más de 250 tokens~~ **Hecho (11-10-2026, #301).** Remedido: 20 nativas >250 (`manage_tasks` 541, `run_code` 460, `blender_scene` 414, …). Recortadas en `tool_schemas.py` + `coordination/tools.py`; ejemplos del índice intactos; test `test_native_tool_description_budget.py`. Catálogo nativo −3 642 tokens; 0 oversized.
 - **Huella por turno.** Guardar en el ledger del turno qué herramientas se ofrecieron y cuánto pesaron, no sólo el total.
 - **README.** Añadir la capacidad a `README.md` y `README.es.md`. Hoy esos ficheros tienen cambios sin versionar de otra sesión y no se tocaron.
 

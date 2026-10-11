@@ -9,10 +9,10 @@ REQUIRED = {"task": ["task_id"], "detail": ["message_id", "digest"], "add": ["ti
             "review": ["task_id", "expected_submission_revision", "verdict", "body"],
             "done": ["task_id", "result"], "lock": ["resources"], "unlock": ["resources"]}
 DESCRIPTIONS = {
-    "poll": "Check current Agora work and pending details. Explicit thread_ids may select configured threads or threads linked to current tasks inside the repository/path scope. Read latest discussion there rather than searching private chat history for current Agora state. Omission counts expose compact limits; focus a thread filter to read its recent window. Read complete stored details before responding. No excerpts are acknowledged; inbox cursors stay independent from recent reading.",
+    "poll": "Check current Agora work and pending details. thread_ids may select configured or task-linked threads in repo/path scope — read those, not private chat history. Compact omission counts; focus a thread filter for its recent window. Reads do not acknowledge excerpts; inbox cursors stay separate.",
     "detail": "Read a stored Agora message by its id and digest from coordination_poll, in chunks. Preserve the poll's thread_ids filter when supplied. Follow next_offset until complete. No Hub acknowledgement is sent.",
-    "task": "Read the current full task snapshot before acting. Discussion references are paged: follow next_details_offset with task_digest and task_id to read all references from the same delivered snapshot. Before voting, read every complete discussion detail and test that submission. Task reads do not acknowledge excerpts.",
-    "board": "Read current Agora tasks, agents and scoped locks in pages (default eight entries per list). Follow next_offset with the returned digest; a changed snapshot rejects paging. full=true retrieves unabridged fields. Other repositories remain read-only global context and never confer mutation authority.",
+    "task": "Read the full current Agora task snapshot before acting. Page discussion with next_details_offset + task_digest + task_id from the same snapshot. Before voting, read every complete detail and test that submission. Task reads do not acknowledge excerpts.",
+    "board": "Paged read of Agora tasks, agents and scoped locks (default 8/list). Follow next_offset + digest; a changed snapshot rejects paging. full=true for unabridged fields. Other repos are read-only context without mutation authority.",
     "heartbeat": "Report working, waiting or idle to Agora. Renew only scoped locks; other owned locks are an advisory, not a heartbeat block.",
     "add": "Create an Agora task in the project's authorized repositories and paths. claim optionally takes scoped locks. Do this before changing a repository.",
     "claim": "Claim a task previously read with coordination_task and take scoped locks atomically. Another actor's task cannot be taken over.",
@@ -53,7 +53,7 @@ def definition(action):
             }, "required": ["summary"], "additionalProperties": False}
         else:
             properties[key] = {"type": "string"}
-    guidance = (" Task action_scope reports eligibility for claim/checkpoint/submit/review/done in this project's current scope. Choose work within that scope; read-only global tasks are context. Hints grant no permission or delivery receipt: read the task and complete discussion and test the actual submission before reviewing. Assigned reviewers retain their own identities." if action in {"board", "task", "poll"} else "")
+    guidance = (" action_scope reports claim/checkpoint/submit/review/done eligibility in this project's scope; choose work there (other repos are context). Hints ≠ permission or delivery receipt — read the task, full discussion, and test the submission before reviewing. Reviewers keep their own identities." if action in {"board", "task", "poll"} else "")
     return {"description": DESCRIPTIONS[action] + guidance + " Identity and connector come from the saved project binding; never impersonate another agent.",
             "parameters": {"type": "object", "properties": properties, "required": REQUIRED.get(action, []), "additionalProperties": False}}
 
