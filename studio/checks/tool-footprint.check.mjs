@@ -93,6 +93,11 @@ const sample = {
 
 assert(mod.footprintSourceLabel('builtin') === 'Built-in', 'builtin label');
 assert(mod.footprintSourceLabel('email') === 'email', 'mcp source passthrough');
+assert(mod.footprintSourceLabel('context') === 'context', 'mcp id not remapped');
+// UI must not wrap non-builtin labels in t() (would translate server ids).
+const fpTsx = readFileSync(join(root, 'studio', 'src', 'screens', 'settings', 'ToolFootprint.tsx'), 'utf8');
+assert(fpTsx.includes('displaySource'), 'displaySource helper present');
+assert(!/t\(footprintSourceLabel/.test(fpTsx), 'no t(footprintSourceLabel(...))');
 
 // UI wiring: Settings → Tools mounts the footprint panel.
 const toolsTsx = readFileSync(join(root, 'studio', 'src', 'screens', 'settings', 'Tools.tsx'), 'utf8');

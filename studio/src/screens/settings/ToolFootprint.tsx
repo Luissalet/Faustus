@@ -12,6 +12,17 @@ import { t } from '../../i18n';
  * Settings → Tools: read-only view of GET /api/tools/footprint so the
  * catalogue can be thinned with evidence (OBJ-56 / FAUSTUS §277).
  */
+
+function displaySource(source: string): string {
+  const label = footprintSourceLabel(source);
+  // Only translate the Built-in label; MCP server ids stay as-is (Claude #300 CHANGES).
+  return source === 'builtin' ? t(label) : label;
+}
+
+function toolsWord(n: number): string {
+  return n === 1 ? t('tool') : t('tools');
+}
+
 export function ToolFootprintPanel() {
   const [report, setReport] = useState<ToolFootprintReport | null>(null);
   const [failedStatus, setFailedStatus] = useState<number | 'other' | null>(null);
@@ -84,7 +95,7 @@ export function ToolFootprintPanel() {
         <>
           <div className="fs-set__card" data-testid="tool-footprint-summary">
             <p className="fs-set__help">
-              <strong>{report.count}</strong> {t('tools')} ·{' '}
+              <strong>{report.count}</strong> {toolsWord(report.count)} ·{' '}
               <strong>{report.total_tokens.toLocaleString()}</strong> {t('tokens total')} ·{' '}
               <strong>{report.offered_tokens.toLocaleString()}</strong> {t('offered up front')}
               {report.deferred_tokens > 0
@@ -105,9 +116,9 @@ export function ToolFootprintPanel() {
                 {report.by_source.map((bucket) => (
                   <li key={bucket.source} className="fs-tools__row">
                     <span className="fs-tools__text">
-                      <strong>{t(footprintSourceLabel(bucket.source))}</strong>
+                      <strong>{displaySource(bucket.source)}</strong>
                       <span className="fs-set__help">
-                        {bucket.tools} {t('tools')} · {bucket.tokens.toLocaleString()} {t('tokens')}
+                        {bucket.tools} {toolsWord(bucket.tools)} · {bucket.tokens.toLocaleString()} {t('tokens')}
                         {bucket.share != null
                           ? ` · ${Math.round(bucket.share * 100)}%`
                           : ''}
@@ -184,7 +195,7 @@ export function ToolFootprintPanel() {
                         <code>{row.name}</code>
                       </strong>
                       <span className="fs-set__help">
-                        {t(footprintSourceLabel(row.source))} · {row.description_tokens}{' '}
+                        {displaySource(row.source)} · {row.description_tokens}{' '}
                         {t('description tokens')}
                       </span>
                     </span>
