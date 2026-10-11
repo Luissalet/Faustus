@@ -69,6 +69,7 @@ export function modelStateLabel(raw: unknown): string {
  */
 
 export interface ChatSession {
+  hoardOrigin?: { app_id: string; app_name?: string; data_space_id: string } | null;
   id: string;
   name: string;
   model: string;
@@ -1159,6 +1160,7 @@ export async function listSessions(signal?: AbortSignal): Promise<ChatSession[]>
       hasImages: Boolean(s.has_images),
       totalTokens: typeof s.total_tokens === 'number' ? s.total_tokens : 0,
       forkedFrom: typeof s.forked_from === 'string' && s.forked_from ? s.forked_from : null,
+      hoardOrigin: (s as RawSession & { hoard_origin?: ChatSession['hoardOrigin'] }).hoard_origin || null,
     }))
     .sort((a, b) => (b.lastMessageAt ?? '').localeCompare(a.lastMessageAt ?? ''));
 }

@@ -192,6 +192,13 @@ class HoardCopilotStore:
             row = db.execute("SELECT session_id FROM imports WHERE owner=? AND app_id=? AND data_space_id=? AND source_thread_id=?", (owner or "", origin["app_id"], origin["data_space_id"], source_thread_id)).fetchone()
         return row["session_id"] if row else None
 
+    def session_origins(self, sessions):
+        allowed = {session.id: (session.owner or "") for session in sessions}
+        with self.connect() as db:
+            rows = db.execute("SELECT session_id,owner,origin FROM conversations").fetchall()
+        return {row["session_id"]: json.loads(row["origin"]) for row in rows
+                if allowed.get(row["session_id"]) == row["owner"] and row["session_id"] in allowed}
+
     def map_import(self, owner, context, source_thread_id, session_id):
         origin = normalize_context(context)["origin"]
         with self.connect() as db:

@@ -79,7 +79,7 @@ export class FaustusChatElement extends HTMLElement {
   #busy = false;
   #messageCount = 0;
   #connected = false;
-  #pendingInit: string | null = null;
+  #pendingInit: Promise<string> | null = null;
   #observer: AbortController | null = null;
   #fetch: typeof fetch | undefined;
   #contextProvider: (() => HoardContext | Promise<HoardContext>) | null = null;
@@ -92,6 +92,10 @@ export class FaustusChatElement extends HTMLElement {
   onOpenSettings: (() => void) | null = null;
   #locale = '';
   #drafts = new Map<string, string>();
+  #draftTimer: ReturnType<typeof setTimeout> | null = null;
+  #pendingDraft: { sid: string; text: string } | null = null;
+  #draftSave: Promise<unknown> = Promise.resolve();
+  #failedDrafts = new Map<string, string>();
   get locale(): string { return this.#locale || this.lang || document.documentElement.lang || 'en'; }
   set locale(value: string) { this.#locale = value || ''; this.#applyLocale(); }
 
@@ -116,7 +120,7 @@ export class FaustusChatElement extends HTMLElement {
     if (this.#connected && value) void this.refreshConversations();
   }
   get draft(): string { return this.#textarea.value; }
-  set draft(value: string) { this.#textarea.value = value || ''; }
+  set draft(value: string) { this.#textarea.value = value || ''; this.#queueDraft(); }
   appendDraft(text: string): void { this.draft = [this.draft, text].filter(Boolean).join('\n\n'); }
   async retry(): Promise<void> { if (this.#pendingSend && !this.#busy) await this.#runTurn(this.#pendingSend.message); }
 
@@ -142,7 +146,13 @@ export class FaustusChatElement extends HTMLElement {
     try {
       const client = this.#ensureClient();
       const conversation = await client.copilot.get(sid);
-      if (sid !== this.#sessionId) return;
+      if (sid !== this.#sessionId || this.#busy) return;
+      if (this.#contextProvider && !this.draft && !this.#drafts.has(sid)) {
+        const remote = await client.copilot.getDraft(sid);
+        if (sid !== this.#sessionId || this.#busy) return;
+        // A locally recovered draft wins over an asynchronously fetched one.
+        if (!this.draft && !this.#drafts.has(sid) && remote.text) this.#textarea.value = remote.text;
+      }
       this.#transcript.replaceChildren();
       this.#messageCount = 0;
       for (const message of conversation.messages || []) {
@@ -210,9 +220,10 @@ export class FaustusChatElement extends HTMLElement {
     return this.#sessionId;
   }
   set session(v: string | null) {
+    this.#flushDraft();
     this.#drafts.set(this.#sessionId || '', this.draft);
     this.#sessionId = v || null;
-    this.draft = this.#drafts.get(this.#sessionId || '') || '';
+    this.#textarea.value = this.#drafts.get(this.#sessionId || '') || '';
   }
 
   get theme(): FaustusChatTheme {
@@ -233,6 +244,7 @@ export class FaustusChatElement extends HTMLElement {
 
   connectedCallback(): void {
     this.#connected = true;
+    this.#retryDrafts();
     if (this.hasAttribute('server')) this.#server = this.getAttribute('server') || '';
     if (this.hasAttribute('session')) this.#sessionId = this.getAttribute('session') || null;
     if (this.hasAttribute('mode')) this.mode = (this.getAttribute('mode') as 'chat' | 'agent') || 'agent';
@@ -246,8 +258,7 @@ export class FaustusChatElement extends HTMLElement {
     this.#applyLocale();
     this.#syncEmptyState();
     if (this.#contextProvider) {
-      void this.refreshConversations();
-      void this.loadHistory();
+      void this.#initializeHostConversation();
     }
   }
 
@@ -258,6 +269,8 @@ export class FaustusChatElement extends HTMLElement {
     this.#observer = null;
     this.#activeTurn = null;
     this.#setBusy(false);
+    this.#flushDraft();
+    this.#retryDrafts();
   }
 
   attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void {
@@ -339,15 +352,17 @@ export class FaustusChatElement extends HTMLElement {
     this.#conversationSelect = el('select', { 'aria-label': 'Conversaciones del proyecto' }) as HTMLSelectElement;
     this.#conversationSelect.addEventListener('change', () => {
       if (this.#busy) return;
+      this.#flushDraft();
       this.#drafts.set(this.#sessionId || '', this.draft);
       this.#sessionId = this.#conversationSelect.value || null;
-      this.draft = this.#drafts.get(this.#sessionId || '') || '';
+      this.#textarea.value = this.#drafts.get(this.#sessionId || '') || '';
       this.#transcript.replaceChildren();
       this.#messageCount = 0;
       this.#pendingSend = null;
       this.#syncEmptyState();
       this.#emit('faustus:session-change', { sessionId: this.#sessionId });
-      void this.loadHistory();
+      if (!this.#sessionId && this.#contextProvider) void this.#initializeHostConversation();
+      else void this.loadHistory();
     });
     const refresh = el('button', { type: 'button', class: 'fc-btn' }, 'Actualizar');
     refresh.addEventListener('click', () => { void this.refreshConversations(); void this.loadHistory(); });
@@ -406,6 +421,7 @@ export class FaustusChatElement extends HTMLElement {
         this.#onSubmit();
       }
     });
+    this.#textarea.addEventListener('input', () => this.#queueDraft());
     composer.appendChild(this.#textarea);
 
     this.#cancelBtn = el('button', {
@@ -454,6 +470,48 @@ export class FaustusChatElement extends HTMLElement {
     void this.send(text);
   }
 
+  #queueDraft(): void {
+    this.#drafts.set(this.#sessionId || '', this.draft);
+    if (!this.#contextProvider || !this.#sessionId) return;
+    if (this.#pendingDraft && this.#pendingDraft.sid !== this.#sessionId) this.#flushDraft();
+    if (this.#draftTimer) clearTimeout(this.#draftTimer);
+    const sid = this.#sessionId;
+    const text = this.draft;
+    this.#pendingDraft = { sid, text };
+    this.#draftTimer = setTimeout(() => this.#flushDraft(), 400);
+  }
+
+  #flushDraft(): void {
+    if (this.#draftTimer) clearTimeout(this.#draftTimer);
+    this.#draftTimer = null;
+    const pending = this.#pendingDraft;
+    this.#pendingDraft = null;
+    if (pending) this.#saveDraft(pending.sid, pending.text);
+  }
+
+  #saveDraft(sid: string, text: string): void {
+    const client = this.#ensureClient();
+    this.#draftSave = this.#draftSave.catch(() => {}).then(() => client.copilot.saveDraft(sid, text))
+      .then(() => { this.#failedDrafts.delete(sid); })
+      .catch(error => {
+        this.#failedDrafts.set(sid, this.#drafts.get(sid) ?? text);
+        this.#emitError(String((error as Error).message || error), error);
+      });
+  }
+
+  #retryDrafts(): void {
+    for (const [sid, text] of this.#failedDrafts) this.#saveDraft(sid, text);
+  }
+
+  async #initializeHostConversation(): Promise<void> {
+    try {
+      if (!this.#sessionId) await this.#ensureSession(this.#ensureClient(), await this.#contextProvider!());
+      if (!this.#connected) return;
+      await this.refreshConversations();
+      await this.loadHistory();
+    } catch (error) { this.#emitError(String((error as Error).message || error), error); }
+  }
+
   #ensureClient(): FaustusClient {
     if (!this.#server) throw new Error('faustus-chat: the "server" attribute/property is required');
     if (!this.#client) {
@@ -465,15 +523,17 @@ export class FaustusChatElement extends HTMLElement {
   async #ensureSession(client: FaustusClient, context?: HoardContext): Promise<string> {
     if (this.#sessionId) return this.#sessionId;
     if (this.#pendingInit) return this.#pendingInit;
-    if (context) {
-      const created = await client.copilot.create(context);
-      this.#sessionId = created.session_id;
-    } else {
-      const created = await client.sessions.create({ skipValidation: true });
-      this.#sessionId = created.id;
-    }
-    this.#emit('faustus:session-change', { sessionId: this.#sessionId });
-    return this.#sessionId;
+    this.#pendingInit = (async () => {
+      const created = context ? await client.copilot.create(context) : await client.sessions.create({ skipValidation: true });
+      const createdId = 'session_id' in created ? created.session_id : created.id;
+      if (this.#sessionId) return createdId;
+      this.#sessionId = createdId;
+      this.#emit('faustus:session-change', { sessionId: this.#sessionId });
+      if (this.#contextProvider) this.#queueDraft();
+      return this.#sessionId;
+    })();
+    try { return await this.#pendingInit; }
+    finally { this.#pendingInit = null; }
   }
 
   #setBusy(busy: boolean): void {
@@ -567,10 +627,7 @@ export class FaustusChatElement extends HTMLElement {
 
     let sessionId: string;
     try {
-      const initPromise = this.#ensureSession(client, context);
-      this.#pendingInit = await initPromise;
-      sessionId = this.#pendingInit;
-      this.#pendingInit = null;
+      sessionId = await this.#ensureSession(client, context);
     } catch (err) {
       this.#pendingInit = null;
       this.#setBusy(false);
@@ -598,6 +655,7 @@ export class FaustusChatElement extends HTMLElement {
     let turn = initialTurn;
     this.#activeTurn = turn;
     this.#emit<TurnStartDetail>('faustus:turn-start', { sessionId, runId: turn.runId });
+    if (this.#pendingSend && !this.draft && this.#contextProvider) this.#queueDraft();
 
     let agentBubble: HTMLDivElement | null = null;
     let sawAnswer = false;

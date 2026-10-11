@@ -240,6 +240,8 @@ export class FaustusClient {
     get(sessionId: string): Promise<HoardConversation>;
     list(context: HoardContext): Promise<{ conversations: HoardConversation[] }>;
     importConversation(input: Record<string, unknown>): Promise<{ session_id: string | null; deleted?: boolean; imported: number; message_count: number }>;
+    getDraft(sessionId: string): Promise<{ text: string; attachment_ids: string[]; updated_at: number }>;
+    saveDraft(sessionId: string, text: string): Promise<unknown>;
   };
 
   readonly approvals: {
@@ -271,6 +273,10 @@ export class FaustusClient {
       },
       importConversation: (input) => http.requestJson('/api/hoard-copilot/imports', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+      }),
+      getDraft: (id) => http.requestJson(`/api/sessions/${encodeURIComponent(id)}/draft`),
+      saveDraft: (id, text) => http.requestJson(`/api/sessions/${encodeURIComponent(id)}/draft`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }),
       }),
     };
 
