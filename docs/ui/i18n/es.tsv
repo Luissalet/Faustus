@@ -9590,9 +9590,14 @@ Read in this turn	Leído en este turno
 Holds files written in this turn	Contiene ficheros escritos en este turno
 Holds files read in this turn	Contiene ficheros leídos en este turno
 Files touched in this turn	Ficheros tocados en este turno
-{n} written	{n} escritos
-{n} read	{n} leídos
+{n} written	{n} escrito
+{n} read	{n} leído
 Could not list this folder	No se pudo listar esta carpeta
 Empty folder	Carpeta vacía
 Showing the first entries only	Solo se muestran las primeras entradas
 Files the agent reads or writes in the current turn light up here until the next message.	Los ficheros que el agente lee o escribe en el turno actual se iluminan aquí hasta el siguiente mensaje.
+{n} written#	{n} escritos
+{n} read#	{n} leídos
+{n} hidden	{n} oculto
+{n} hidden#	{n} ocultos
+Touched files the tree cannot show (hidden files or beyond the listing)	Ficheros tocados que el árbol no puede mostrar (ocultos o fuera del listado)

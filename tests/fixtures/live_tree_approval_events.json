@@ -1,0 +1,291 @@
+{
+ "_comment": "Raw stream events captured from a live Faustus run (fake model): read_file calc.py, then edit_file docs/guide.md held at the approval gate; the second leg is the answer (approve_task or deny). {{WS}} stands for the workspace folder.",
+ "approve": [
+  [
+   {
+    "type": "tool_start",
+    "tool": "read_file",
+    "command": "calc.py",
+    "full_command": "calc.py",
+    "round": 1,
+    "call_id": "call_1_0"
+   },
+   {
+    "type": "tool_output",
+    "tool": "read_file",
+    "command": "calc.py",
+    "output": "def add(a, b):\n    return a + b\n",
+    "exit_code": 0,
+    "call_id": "call_1_0",
+    "result_status": "succeeded",
+    "duration_ms": 2
+   },
+   {
+    "type": "tool_output",
+    "tool": "edit_file",
+    "command": "{\"path\": \"docs/guide.md\", \"old_string\": \"old text\", \"new_string\": \"new text\"}",
+    "output": "Waiting for an exact user approval.",
+    "exit_code": null,
+    "call_id": "call_2_0",
+    "result_status": "succeeded",
+    "ask_user": {
+     "kind": "tool_approval",
+     "approval_id": "HGpz1SUWsxh4JNjCRRH90dKAVbTO-KAzABvMcU0wXaA",
+     "question": "Allow this task to continue?",
+     "description": "This run has already taken in content Faustus did not write itself, via read_file, prompt context (tool execution results). Content like that can carry instructions of its own, so 'edit_file' needs your go-ahead on its own because it can cause write_workspace.",
+     "options": [
+      {
+       "label": "Only this action",
+       "value": "approve_action",
+       "description": "Runs only the sealed action once. Does not authorize later actions."
+      },
+      {
+       "label": "Allow for this task",
+       "value": "approve_task",
+       "description": "Execute the sealed action and allow every otherwise-gated action needed to finish this request. Current tool, account, workspace, and sandbox restrictions still apply."
+      },
+      {
+       "label": "Allow for this chat session",
+       "value": "approve",
+       "description": "Execute the sealed action and stop asking at this gate for later requests in this chat. Current tool, account, workspace, and sandbox restrictions still apply."
+      },
+      {
+       "label": "Always for this workspace folder",
+       "value": "approve_workspace",
+       "description": "Execute the sealed action and remember the answer for this workspace folder: later chats in it stop asking at this gate. Destructive-command and desktop-input confirmations, tool, account and sandbox restrictions still apply."
+      },
+      {
+       "label": "Deny",
+       "value": "deny",
+       "description": "Do not execute the proposed action."
+      }
+     ],
+     "action": {
+      "tool": "edit_file",
+      "content": "{\"path\": \"docs/guide.md\", \"old_string\": \"old text\", \"new_string\": \"new text\"}",
+      "digest": "17a10e450dc1bcd2",
+      "effects": [
+       "write_workspace"
+      ],
+      "workspace": "{{WS}}",
+      "document_id": null,
+      "document_version": null,
+      "command_preview": "{\"path\": \"docs/guide.md\", \"old_string\": \"old text\", \"new_string\": \"new text\"}"
+     },
+     "revision": 1
+    }
+   },
+   {
+    "type": "ask_user",
+    "data": {
+     "kind": "tool_approval",
+     "approval_id": "HGpz1SUWsxh4JNjCRRH90dKAVbTO-KAzABvMcU0wXaA",
+     "question": "Allow this task to continue?",
+     "description": "This run has already taken in content Faustus did not write itself, via read_file, prompt context (tool execution results). Content like that can carry instructions of its own, so 'edit_file' needs your go-ahead on its own because it can cause write_workspace.",
+     "options": [
+      {
+       "label": "Only this action",
+       "value": "approve_action",
+       "description": "Runs only the sealed action once. Does not authorize later actions."
+      },
+      {
+       "label": "Allow for this task",
+       "value": "approve_task",
+       "description": "Execute the sealed action and allow every otherwise-gated action needed to finish this request. Current tool, account, workspace, and sandbox restrictions still apply."
+      },
+      {
+       "label": "Allow for this chat session",
+       "value": "approve",
+       "description": "Execute the sealed action and stop asking at this gate for later requests in this chat. Current tool, account, workspace, and sandbox restrictions still apply."
+      },
+      {
+       "label": "Always for this workspace folder",
+       "value": "approve_workspace",
+       "description": "Execute the sealed action and remember the answer for this workspace folder: later chats in it stop asking at this gate. Destructive-command and desktop-input confirmations, tool, account and sandbox restrictions still apply."
+      },
+      {
+       "label": "Deny",
+       "value": "deny",
+       "description": "Do not execute the proposed action."
+      }
+     ],
+     "action": {
+      "tool": "edit_file",
+      "content": "{\"path\": \"docs/guide.md\", \"old_string\": \"old text\", \"new_string\": \"new text\"}",
+      "digest": "17a10e450dc1bcd2",
+      "effects": [
+       "write_workspace"
+      ],
+      "workspace": "{{WS}}",
+      "document_id": null,
+      "document_version": null,
+      "command_preview": "{\"path\": \"docs/guide.md\", \"old_string\": \"old text\", \"new_string\": \"new text\"}"
+     },
+     "revision": 1
+    }
+   }
+  ],
+  [
+   {
+    "type": "tool_start",
+    "tool": "edit_file",
+    "command": "{\"path\": \"docs/guide.md\", \"old_string\": \"old text\", \"new_string\": \"new text\"}",
+    "full_command": "{\"path\": \"docs/guide.md\", \"old_string\": \"old text\", \"new_string\": \"new text\"}",
+    "round": 0,
+    "approved": true,
+    "call_id": "HGpz1SUWsxh4JNjCRRH90dKAVbTO-KAzABvMcU0wXaA"
+   },
+   {
+    "type": "tool_output",
+    "tool": "edit_file",
+    "command": "{\"path\": \"docs/guide.md\", \"old_string\": \"old text\", \"new_string\": \"new text\"}",
+    "output": "Edited {{WS}}\\docs\\guide.md (1 replacement)",
+    "exit_code": 0,
+    "result_status": "succeeded",
+    "attempt_id": "att_3025863d429d4fa4895ec180",
+    "effect_certainty": "confirmed",
+    "approved": true,
+    "call_id": "HGpz1SUWsxh4JNjCRRH90dKAVbTO-KAzABvMcU0wXaA",
+    "diff": {
+     "text": "--- a\n+++ b\n@@\n-old text\n+new text",
+     "added": 1,
+     "removed": 1,
+     "new_file": false,
+     "file": "guide.md"
+    }
+   }
+  ]
+ ],
+ "deny": [
+  [
+   {
+    "type": "tool_start",
+    "tool": "read_file",
+    "command": "calc.py",
+    "full_command": "calc.py",
+    "round": 1,
+    "call_id": "call_1_0"
+   },
+   {
+    "type": "tool_output",
+    "tool": "read_file",
+    "command": "calc.py",
+    "output": "def add(a, b):\n    return a + b\n",
+    "exit_code": 0,
+    "call_id": "call_1_0",
+    "result_status": "succeeded",
+    "duration_ms": 3
+   },
+   {
+    "type": "tool_output",
+    "tool": "edit_file",
+    "command": "{\"path\": \"docs/guide.md\", \"old_string\": \"old text\", \"new_string\": \"new text\"}",
+    "output": "Waiting for an exact user approval.",
+    "exit_code": null,
+    "call_id": "call_2_0",
+    "result_status": "succeeded",
+    "ask_user": {
+     "kind": "tool_approval",
+     "approval_id": "-DnMFhE5Be46sbvwrA29d0N6aNFhmcaA85fu9jyIeus",
+     "question": "Allow this task to continue?",
+     "description": "This run has already taken in content Faustus did not write itself, via read_file, prompt context (tool execution results). Content like that can carry instructions of its own, so 'edit_file' needs your go-ahead on its own because it can cause write_workspace.",
+     "options": [
+      {
+       "label": "Only this action",
+       "value": "approve_action",
+       "description": "Runs only the sealed action once. Does not authorize later actions."
+      },
+      {
+       "label": "Allow for this task",
+       "value": "approve_task",
+       "description": "Execute the sealed action and allow every otherwise-gated action needed to finish this request. Current tool, account, workspace, and sandbox restrictions still apply."
+      },
+      {
+       "label": "Allow for this chat session",
+       "value": "approve",
+       "description": "Execute the sealed action and stop asking at this gate for later requests in this chat. Current tool, account, workspace, and sandbox restrictions still apply."
+      },
+      {
+       "label": "Always for this workspace folder",
+       "value": "approve_workspace",
+       "description": "Execute the sealed action and remember the answer for this workspace folder: later chats in it stop asking at this gate. Destructive-command and desktop-input confirmations, tool, account and sandbox restrictions still apply."
+      },
+      {
+       "label": "Deny",
+       "value": "deny",
+       "description": "Do not execute the proposed action."
+      }
+     ],
+     "action": {
+      "tool": "edit_file",
+      "content": "{\"path\": \"docs/guide.md\", \"old_string\": \"old text\", \"new_string\": \"new text\"}",
+      "digest": "89b7915ce1167a9b",
+      "effects": [
+       "write_workspace"
+      ],
+      "workspace": "{{WS}}",
+      "document_id": null,
+      "document_version": null,
+      "command_preview": "{\"path\": \"docs/guide.md\", \"old_string\": \"old text\", \"new_string\": \"new text\"}"
+     },
+     "revision": 1
+    }
+   },
+   {
+    "type": "ask_user",
+    "data": {
+     "kind": "tool_approval",
+     "approval_id": "-DnMFhE5Be46sbvwrA29d0N6aNFhmcaA85fu9jyIeus",
+     "question": "Allow this task to continue?",
+     "description": "This run has already taken in content Faustus did not write itself, via read_file, prompt context (tool execution results). Content like that can carry instructions of its own, so 'edit_file' needs your go-ahead on its own because it can cause write_workspace.",
+     "options": [
+      {
+       "label": "Only this action",
+       "value": "approve_action",
+       "description": "Runs only the sealed action once. Does not authorize later actions."
+      },
+      {
+       "label": "Allow for this task",
+       "value": "approve_task",
+       "description": "Execute the sealed action and allow every otherwise-gated action needed to finish this request. Current tool, account, workspace, and sandbox restrictions still apply."
+      },
+      {
+       "label": "Allow for this chat session",
+       "value": "approve",
+       "description": "Execute the sealed action and stop asking at this gate for later requests in this chat. Current tool, account, workspace, and sandbox restrictions still apply."
+      },
+      {
+       "label": "Always for this workspace folder",
+       "value": "approve_workspace",
+       "description": "Execute the sealed action and remember the answer for this workspace folder: later chats in it stop asking at this gate. Destructive-command and desktop-input confirmations, tool, account and sandbox restrictions still apply."
+      },
+      {
+       "label": "Deny",
+       "value": "deny",
+       "description": "Do not execute the proposed action."
+      }
+     ],
+     "action": {
+      "tool": "edit_file",
+      "content": "{\"path\": \"docs/guide.md\", \"old_string\": \"old text\", \"new_string\": \"new text\"}",
+      "digest": "89b7915ce1167a9b",
+      "effects": [
+       "write_workspace"
+      ],
+      "workspace": "{{WS}}",
+      "document_id": null,
+      "document_version": null,
+      "command_preview": "{\"path\": \"docs/guide.md\", \"old_string\": \"old text\", \"new_string\": \"new text\"}"
+     },
+     "revision": 1
+    }
+   }
+  ],
+  [
+   {
+    "type": "tool_approval_resolved",
+    "decision": "deny"
+   }
+  ]
+ ]
+}

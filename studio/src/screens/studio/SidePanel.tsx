@@ -6,7 +6,7 @@ import { archiveDoc, docPdfUrl, getDoc, listDocVersions, renameDoc, restoreDocVe
 import { readWorkspaceFile, saveWorkspaceFile, type WorkspaceFileText } from '../../adapters/workspace';
 import { ApiError } from '../../adapters/api';
 import FileTree from './FileTree';
-import { markCounts, turnFileMarks } from './file-activity';
+import { currentTurnSteps, markCounts, splitHidden, turnFileMarks } from './file-activity';
 import { threeWayLines, threeWaySummary } from '../../adapters/fileConflict';
 import { Rich } from '../rich';
 import { autoOpenEnabled, setAutoOpen, fileKey,docKey,type PanelDraft,type DocState, type PanelAction, type PanelState, type PanelTab } from './panel';
@@ -752,7 +752,9 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
   const workers=[...new Map(turns.flatMap(turn=>turn.workers).map(worker=>[worker.id,worker])).values()];
   // #247: what the current turn has read / written, for the Files tab.
   const fileMarks=useMemo(()=>turnFileMarks(turns,workspace),[turns,workspace]);
-  const fileCounts=markCounts(fileMarks);
+  const fileCounts=markCounts(splitHidden(fileMarks).shown); // what the tree can list; the legend says how many it cannot
+  // A file the agent writes exists only once its step has finished: list the folders again then.
+  const settledSteps=useMemo(()=>currentTurnSteps(turns).filter(step=>step.state!=='running').length,[turns]);
   // The tree stays mounted once opened, so its folders stay open while a file is read in the other tab.
   const [filesSeen,setFilesSeen]=useState(false);
   useEffect(()=>{if(state.tab==='files')setFilesSeen(true);},[state.tab]);
@@ -831,7 +833,7 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
       </div>}
       <div className="fs-workbench-content" role="tabpanel" id="workbench-content" aria-labelledby={'workbench-tab-'+state.tab}>
       {(state.tab==='outputs'||state.tab==='sources')&&<WorkbenchResources kind={state.tab} state={state} turns={turns} workspace={workspace} project={project} dispatch={dispatch}/>}
-      {filesSeen&&workspace&&<div className="fs-workbench-files" hidden={state.tab!=='files'}><FileTree workspace={workspace} marks={fileMarks} refresh={fileCounts.written+(busy?'b':'i')} active={state.file?state.file.path:null} onOpen={path=>dispatch({type:'file',workspace,path})}/></div>}
+      {filesSeen&&workspace&&<div className="fs-workbench-files" hidden={state.tab!=='files'}><FileTree workspace={workspace} marks={fileMarks} refresh={settledSteps+(busy?'b':'i')} active={state.file?state.file.path:null} onOpen={path=>dispatch({type:'file',workspace,path})}/></div>}
       {state.tab==='progress'&&<ProgressTab state={state} turns={turns}/>}
       {state.tab === 'agents' && (
         <div className="fs-panel__body">

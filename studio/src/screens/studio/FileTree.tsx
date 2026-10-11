@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Eye, File as FileIcon, Folder, FolderOpen, Pencil } from 'lucide-react';
 import { basename, browseWorkspace, type BrowseResult } from '../../adapters/composer';
-import { t } from '../../i18n';
-import { folderMarkKind, folderMarks, markCounts, markKey, type FileMark, type FileMarks, type FolderMark } from './file-activity';
+import { t, tn } from '../../i18n';
+import { folderMarkKind, folderMarks, markCounts, markKey, splitHidden, type FileMark, type FileMarks, type FolderMark } from './file-activity';
 import './file-tree.css';
 
 /**
@@ -22,16 +22,22 @@ function MarkIcon({ mark, size = 12 }: { mark: FileMark; size?: number }) {
   return <Icon size={size} aria-hidden="true" />;
 }
 
-export function FileTreeLegend({ marks }: { marks: FileMarks }) {
+/** `hidden` = touched files the tree cannot show (dot-files, entries beyond the listing): said, not silently counted. */
+export function FileTreeLegend({ marks, hidden = 0 }: { marks: FileMarks; hidden?: number }) {
   const { read, written } = markCounts(marks);
   return (
     <div className="fs-ftree__legend" role="group" aria-label={t('Files touched in this turn')} data-testid="file-tree-legend">
       <span className="fs-ftree__chip" data-mark="written" data-testid="file-tree-count-written">
-        <MarkIcon mark="written" />{t('{n} written', { n: written })}
+        <MarkIcon mark="written" />{tn(written, '{n} written', '{n} written#')}
       </span>
       <span className="fs-ftree__chip" data-mark="read" data-testid="file-tree-count-read">
-        <MarkIcon mark="read" />{t('{n} read', { n: read })}
+        <MarkIcon mark="read" />{tn(read, '{n} read', '{n} read#')}
       </span>
+      {hidden > 0 && (
+        <span className="fs-ftree__chip" data-testid="file-tree-count-hidden" title={t('Touched files the tree cannot show (hidden files or beyond the listing)')}>
+          {tn(hidden, '{n} hidden', '{n} hidden#')}
+        </span>
+      )}
     </div>
   );
 }
@@ -127,7 +133,6 @@ export default function FileTree({ workspace, marks, refresh, onOpen, active }: 
   const [listings, setListings] = useState<Record<string, Listing>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const aborts = useRef(new Map<string, AbortController>());
-  const folders = useMemo(() => folderMarks(marks), [marks]);
 
   const load = useCallback((dir: string, quiet: boolean) => {
     aborts.current.get(dir)?.abort();
@@ -171,12 +176,37 @@ export default function FileTree({ workspace, marks, refresh, onOpen, active }: 
 
   const rootListing = listings[workspace];
   const base = rootListing && typeof rootListing === 'object' && 'path' in rootListing ? rootListing.path : workspace;
-  const props: TreeProps = { base, marks, folders, listings, expanded, toggle, open: onOpen, active };
+  // Marks the tree can really show: not under a dot-folder (the listing omits those) and not missing from a
+  // folder that is already listed (beyond the 500-entry cap, a symlinked folder, a file that is gone).
+  const { visible, hidden } = useMemo(() => {
+    const { shown, hidden: dotHidden } = splitHidden(marks);
+    const children = new Map<string, Set<string>>();
+    for (const listing of Object.values(listings)) {
+      if (typeof listing !== 'object' || 'error' in listing) continue;
+      const dir = markKey(listing.path, base);
+      if (dir === null) continue;
+      children.set(dir, new Set([...listing.dirs, ...listing.files].map((e) => markKey(e.path, base) ?? '')));
+    }
+    const visible: FileMarks = {};
+    let missing = 0;
+    for (const [key, mark] of Object.entries(shown)) {
+      const parts = key.split('/');
+      const unlisted = parts.some((_, i) => {
+        const known = children.get(parts.slice(0, i).join('/'));
+        return known !== undefined && !known.has(parts.slice(0, i + 1).join('/'));
+      });
+      if (unlisted) missing += 1;
+      else visible[key] = mark;
+    }
+    return { visible, hidden: dotHidden + missing };
+  }, [marks, listings, base]);
+  const folders = useMemo(() => folderMarks(visible), [visible]);
+  const props: TreeProps = { base, marks: visible, folders, listings, expanded, toggle, open: onOpen, active };
   return (
     <div className="fs-panel__body fs-ftree" data-testid="file-tree" data-marks={JSON.stringify(marks)}>
       <div className="fs-ftree__head">
         <h3 title={workspace}>{basename(workspace) || workspace}</h3>
-        <FileTreeLegend marks={marks} />
+        <FileTreeLegend marks={visible} hidden={hidden} />
       </div>
       <p className="fs-ftree__hint">{t('Files the agent reads or writes in the current turn light up here until the next message.')}</p>
       <ul role="tree" className="fs-ftree__list fs-ftree__root" aria-label={t('Workspace files')}>
