@@ -459,3 +459,75 @@ def test_no_slot_is_named_on_an_unknown_server(monkeypatch, endpoint):
     server = serve(monkeypatch, lambda p: (200, openai_body([{"token": "A", "logprob": -0.01}])))
     run(td.decide("ctx", [BOOL]))
     assert "id_slot" not in server.requests[0]["payload"]
+
+# -- self-hosted servers on the local network (the Sparks) --------------------
+
+SPARK_URL = "http://192.168.0.236:8002/v1/chat/completions"
+
+
+def test_lan_root_only_for_private_network_hosts():
+    from src.background_job_guard import lan_root
+    assert lan_root("http://192.168.0.236:8002/v1") == "http://192.168.0.236:8002"
+    assert lan_root("http://10.0.0.5:8000/v1/chat/completions") == "http://10.0.0.5:8000"
+    assert lan_root("http://100.101.2.3:8000/v1") == "http://100.101.2.3:8000"
+    for url in ("https://api.example.com/v1", "http://8.8.8.8:80/v1", "http://127.0.0.1:8082/v1",
+                "http://192.168.0.236/v1", "http://169.254.1.1:80/v1", "", "not a url"):
+        assert lan_root(url) is None, url
+
+
+def test_lan_server_residency_reads_v1_models(monkeypatch):
+    from src import background_job_guard as bjg, vram_admission
+    seen = []
+
+    def _get(root, path, timeout):
+        seen.append((root, path))
+        return {"data": [{"id": "glm-5.3-flash-nvfp4"}, {"id": "other", "status": {"value": "unloaded"}}]}
+
+    monkeypatch.setattr(vram_admission, "ollama_root", lambda url: None)
+    monkeypatch.setattr(vram_admission, "_get", _get)
+    assert bjg._resident_model_names("http://192.168.0.236:8002/v1") == ["glm-5.3-flash-nvfp4"]
+    assert seen == [("http://192.168.0.236:8002", "/v1/models")]
+    # a public provider is never probed
+    seen.clear()
+    assert bjg._resident_model_names("https://api.example.com/v1") is None
+    assert seen == []
+
+
+def test_lan_payload_switches_thinking_off_without_cache_prompt():
+    p = td.build_payload("openai", MODEL, [{"role": "user", "content": "x"}], 2, SPARK_URL)
+    assert p["chat_template_kwargs"] == {"enable_thinking": False}
+    assert "cache_prompt" not in p
+
+
+def _glm_like(payload):
+    """Answers `</think>` first unless the reasoning block is already closed."""
+    msgs = payload["messages"]
+    if msgs[-1]["role"] == "assistant" and msgs[-1]["content"] == "</think>":
+        return 200, openai_body([{"token": "C", "logprob": -0.001}, {"token": "A", "logprob": -9.0}], content="C")
+    return 200, openai_body([{"token": "</think>", "logprob": -0.2}, {"token": "C", "logprob": -1.6}],
+                            content="</think>")
+
+
+def test_think_close_first_is_retried_with_the_block_closed(monkeypatch, endpoint):
+    endpoint["url"] = SPARK_URL
+    server = serve(monkeypatch, _glm_like)
+    fld = td.Field("type", "What is Nimbus?", ["person", "project", "organization", "place"])
+    out = run(td.decide("Nimbus is a company in Berlin.", [fld], timeout_s=5))
+    d = out["type"]
+    assert d.value == "organization" and d.method == "logprobs" and d.mass > 0.9
+    assert len(server.requests) == 2
+    retry = server.requests[1]["payload"]
+    assert retry["messages"][-1] == {"role": "assistant", "content": "</think>"}
+    assert retry["continue_final_message"] is True and retry["add_generation_prompt"] is False
+    # the server is remembered: the next decision sends the closed block at once
+    out = run(td.decide("Nimbus is a company in Berlin.", [fld], timeout_s=5))
+    assert out["type"].value == "organization" and len(server.requests) == 3
+    assert server.requests[2]["payload"]["messages"][-1]["content"] == "</think>"
+
+
+def test_think_prefill_left_alone_when_the_answer_is_a_letter(monkeypatch, endpoint):
+    endpoint["url"] = SPARK_URL
+    server = serve(monkeypatch, lambda p: (200, openai_body([{"token": "A", "logprob": -0.01}], content="A")))
+    run(td.decide("Ada is a person.", [BOOL], timeout_s=5))
+    assert len(server.requests) == 1
+    assert server.requests[0]["payload"]["messages"][-1]["role"] != "assistant"

@@ -33,7 +33,7 @@ caché de prompt sólo rellena la cola a partir del segundo campo.
 
 | Servidor | Petición | Dónde se lee la respuesta |
 | --- | --- | --- |
-| OpenAI-compatible (`/v1/chat/completions`, p. ej. un `llama-server` en loopback) | `max_tokens: 1, temperature: 0, logprobs: true, top_logprobs: N`; en loopback además `cache_prompt: true` y `chat_template_kwargs: {"enable_thinking": false}` | `choices[0].logprobs.content[0].top_logprobs[] = {token, logprob}` |
+| OpenAI-compatible (`/v1/chat/completions`, p. ej. un `llama-server` en loopback) | `max_tokens: 1, temperature: 0, logprobs: true, top_logprobs: N`; en loopback además `cache_prompt: true` y `chat_template_kwargs: {"enable_thinking": false}`; en un servidor propio de la red local (vLLM en las Sparks) solo `chat_template_kwargs`. Si la primera ficha más probable es `</think>`, se repite una vez con un turno de asistente `</think>` y `continue_final_message: true, add_generation_prompt: false`, y ese servidor ya lo lleva desde el principio en las siguientes | `choices[0].logprobs.content[0].top_logprobs[] = {token, logprob}` |
 | Ollama nativo (`/api/chat`) | `think: false, options: {num_predict: 1, temperature: 0}, logprobs: true, top_logprobs: N`; si el modelo rechaza `think`, se repite sin él | `logprobs[0].top_logprobs[] = {token, logprob}` |
 
 Una URL `/v1` de un Ollama local se mueve a `/api/chat`: en la superficie
@@ -45,7 +45,7 @@ servidor no devuelve log-probabilidades, se lee la letra generada
 
 Nunca carga ni descarga un modelo. Antes de cualquier petición pregunta a
 `src.background_job_guard` qué modelos tiene el servidor en memoria (Ollama
-`/api/ps`; `llama-server` en loopback `/health` + `/v1/models`) y si está
+`/api/ps`; `llama-server` en loopback `/health` + `/v1/models`; servidor propio en la red local —IPv4 privada o 100.64/10— `/v1/models`) y si está
 ocupado (`/slots`); si el modelo configurado no está residente, no se sabe,
 o está ocupado, responde `method: "unavailable"` **sin llamar al modelo**.
 `typed_decisions_may_load` lo anula (apagado por defecto).

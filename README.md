@@ -488,7 +488,8 @@ fact that contradicts reality is worse than no fact at all.
 
 **Typed decisions.** Where a keyword rule is not sure, Faustus can ask a closed
 question instead of guessing: the options are labelled with single letters, the
-already-loaded utility model reads the text once, and the probabilities it puts
+already-loaded utility model (on this machine or on a self-hosted server in the local network, such as
+vLLM on the Sparks) reads the text once, and the probabilities it puts
 on each letter for its very next token are the answer, with a confidence and a
 "did it even want to answer this" mass, and no reasoning generated. Several
 questions about the same text share the prompt prefix, so the server's prompt

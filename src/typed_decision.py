@@ -332,6 +332,8 @@ def extract_answer(data: Any, wire: str) -> Tuple[Optional[list], str]:
 # Stats — tiny, in memory, per process
 # ---------------------------------------------------------------------------
 
+#: Servers seen answering `</think>` first (see `with_think_prefill`).
+_THINK_PREFILL_URLS: set = set()
 _STATS_LOCK = threading.Lock()
 _STATS: Dict[str, Any] = {}
 _LATENCIES: Deque[float] = deque(maxlen=256)
@@ -339,6 +341,7 @@ _RECENT: Deque[Dict[str, Any]] = deque(maxlen=50)
 
 
 def _reset_stats() -> None:
+    _THINK_PREFILL_URLS.clear()
     with _STATS_LOCK:
         _STATS.clear()
         _STATS.update({"calls": 0, "fields": 0, "logprobs": 0, "letter": 0,
@@ -516,7 +519,56 @@ def build_payload(wire: str, model: str, messages: List[Dict[str, str]], n_lette
         # thinking template from opening a reasoning block.
         payload["cache_prompt"] = True
         payload["chat_template_kwargs"] = {"enable_thinking": False}
+    elif _lan_server(request_url):
+        # A self-hosted server on the local network (vLLM on the Sparks):
+        # same switch; it has no `cache_prompt` (its prefix cache is automatic).
+        payload["chat_template_kwargs"] = {"enable_thinking": False}
+    if request_url and request_url in _THINK_PREFILL_URLS:
+        payload = with_think_prefill(payload)
     return payload
+
+
+#: What a reasoning template emits first even with thinking switched off
+#: (GLM on vLLM answers `</think>` before the letter). Seen once on a server,
+#: its later requests carry the prefill from the start.
+_THINK_CLOSERS = ("</think>",)
+
+
+def _lan_server(url: str) -> bool:
+    try:
+        from src.background_job_guard import lan_root
+        return bool(lan_root(url))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def opens_with_think_close(data: Any, wire: str) -> bool:
+    """True when the most likely first token of an OpenAI-compatible answer
+    closes a reasoning block instead of answering."""
+    if wire != "openai":
+        return False
+    top, _text = extract_answer(data, wire)
+    best = None
+    for entry in top or []:
+        if isinstance(entry, dict) and isinstance(entry.get("logprob"), (int, float)):
+            if best is None or entry["logprob"] > best["logprob"]:
+                best = entry
+    return bool(best) and str(best.get("token") or "").strip() in _THINK_CLOSERS
+
+
+def with_think_prefill(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """The same request with the reasoning block already closed: an
+    assistant turn holding `</think>` that the server continues
+    (`continue_final_message`; llama-server continues a final assistant turn
+    by itself), so the one generated token is the answer."""
+    messages = list(payload.get("messages") or [])
+    if messages and messages[-1].get("role") == "assistant":
+        return payload
+    out = dict(payload)
+    out["messages"] = messages + [{"role": "assistant", "content": _THINK_CLOSERS[0]}]
+    out["continue_final_message"] = True
+    out["add_generation_prompt"] = False
+    return out
 
 
 async def _post(url: str, payload: Dict[str, Any], headers: Dict[str, str], timeout: float) -> Any:
@@ -676,6 +728,16 @@ async def decide(context: str, fields: Sequence[Field], *, owner: Optional[str] 
                 logger.debug("typed_decision: request failed (%s: %s)", name, exc)
                 _finish(_unavailable(f, reason, model, (time.monotonic() - t0) * 1000))
                 continue
+            if opens_with_think_close(data, wire) and url not in _THINK_PREFILL_URLS:
+                remaining = budget - (time.monotonic() - started)
+                if remaining > 0.02:
+                    _THINK_PREFILL_URLS.add(url)
+                    try:
+                        data = await asyncio.wait_for(
+                            _post(url, with_think_prefill(payload), headers, remaining), timeout=remaining)
+                    except Exception as exc:  # noqa: BLE001 - keep the first answer
+                        _THINK_PREFILL_URLS.discard(url)
+                        logger.debug("typed_decision: think prefill retry failed (%s)", exc)
             ms = (time.monotonic() - t0) * 1000
             _finish(interpret(f, data, wire, min_confidence=min_conf, min_mass=min_m,
                               ms=ms, model=model))

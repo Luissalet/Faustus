@@ -44,9 +44,57 @@ def _resident_model_names(url: str) -> Optional[List[str]]:
         except Exception:
             return None
     loopback = _loopback_root(url)
-    if not loopback:
+    if loopback:
+        return _llama_server_models(vram_admission, loopback)
+    lan = lan_root(url)
+    if lan:
+        return _lan_server_models(vram_admission, lan)
+    return None
+
+
+def lan_root(url: str) -> Optional[str]:
+    """`http://192.168.0.236:8002/v1` -> `http://192.168.0.236:8002` for a
+    self-hosted server on the local network (private IPv4 ranges and the
+    100.64/10 range Tailscale uses), else None. A hostname is not resolved:
+    a public provider is never probed."""
+    import ipaddress
+    from urllib.parse import urlparse
+    try:
+        p = urlparse(str(url or "").strip())
+        ip = ipaddress.ip_address((p.hostname or "").strip("[]"))
+    except ValueError:
         return None
-    return _llama_server_models(vram_admission, loopback)
+    if p.scheme not in ("http", "https") or not p.port or ip.is_loopback:
+        return None
+    if not (ip.is_private or ip in ipaddress.ip_network("100.64.0.0/10")) or ip.is_link_local:
+        return None
+    shown = f"[{ip}]" if ip.version == 6 else str(ip)
+    return f"{p.scheme}://{shown}:{p.port}"
+
+
+def _lan_server_models(vram_admission, root: str) -> Optional[List[str]]:
+    """Residency on a self-hosted OpenAI-compatible server in the local
+    network (vLLM, SGLang, llama-server on another machine): the models its
+    `/v1/models` lists are the ones it serves from memory. Entries with a
+    `status` other than "loaded" (llama-server router mode) do not count.
+    Unreachable or not OpenAI-compatible: None ("cannot tell")."""
+    try:
+        data = vram_admission._get(root, "/v1/models", 2.5).get("data") or []
+    except Exception:
+        return None
+    names: List[str] = []
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        status = entry.get("status")
+        if isinstance(status, dict):
+            status = status.get("value")
+        if status not in (None, "", "loaded"):
+            continue
+        name = str(entry.get("id") or entry.get("model") or "").strip()
+        if name:
+            names.append(name)
+    return names or None
 
 
 def _loopback_root(url: str) -> Optional[str]:
