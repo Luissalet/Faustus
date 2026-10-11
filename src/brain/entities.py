@@ -859,6 +859,102 @@ def add_relation(owner: Any, src_id: Any, rel: Any, *, dst_id: Any = None,
     return _row_to_relation(row)
 
 
+def end_relation(owner: Any, src_id: Any, rel: Any, *, at: Any, dst_id: Any = None,
+                 dst_value: str = "", superseded_by: str = "", evidence: Sequence[str] = (),
+                 confidence: float = 0.6, method: str = "rule",
+                 project: str = "") -> Optional[Dict[str, Any]]:
+    """Close the value `src_id --rel--> dst` at `at` because the text says it
+    stopped holding ("ya no usa X", "no longer works at X"). Works for any
+    relation, not only the functional ones.
+
+    The active row is closed (`valid_until = at`, status `superseded`,
+    `superseded_by` the replacing relation when there is one). When the
+    brain never stored that value, it is recorded already closed so the
+    change chain exists. A window is never made to end before it starts:
+    a value that started after `at` keeps its start as its end. Returns the
+    closed relation, or None when `rel`/`dst` are empty."""
+    owner = str(owner or "")
+    src_id = str(src_id or "")
+    rel_key = _normalize_rel(rel)
+    dst_id = str(dst_id or "")
+    dst_value = "" if dst_id else " ".join(str(dst_value or "").split())[:400]
+    if not src_id or not rel_key or (not dst_id and not dst_value):
+        return None
+    now = now_iso()
+    at_iso = _norm_dt_arg(at) or now
+    current = _find_same_active_relation(owner, src_id, rel_key, dst_id, dst_value)
+    if current is None and superseded_by:
+        # A functional relation was already closed by the new value itself.
+        with db() as conn:
+            row = conn.execute(
+                "SELECT * FROM relations WHERE owner = ? AND src = ? AND rel = ? "
+                "AND superseded_by = ? AND COALESCE(dst, '') = ? AND dst_value = ?",
+                (owner, src_id, rel_key, str(superseded_by), dst_id,
+                 "" if dst_id else dst_value)).fetchone()
+        if row is not None:
+            closed = _row_to_relation(row)
+            _merge_into_relation(closed, evidence=evidence, confidence=confidence,
+                                 method=str(method or "rule"), valid_from=None, now=now)
+            return closed
+    if current is None:
+        relation_id = uuid.uuid4().hex
+        with db() as conn:
+            conn.execute(
+                "INSERT INTO relations (id, owner, project, src, rel, dst, dst_value, "
+                "valid_from, valid_until, asserted_at, evidence, confidence, method, "
+                "status, superseded_by, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (relation_id, owner, str(project or ""), src_id, rel_key, dst_id, dst_value,
+                 at_iso, at_iso, now, dumps(list(evidence)), float(confidence),
+                 str(method or "rule"), "superseded", str(superseded_by or ""), now, now),
+            )
+    else:
+        relation_id = str(current["id"])
+        _merge_into_relation(current, evidence=evidence, confidence=confidence,
+                             method=str(method or "rule"), valid_from=None, now=now)
+        start = parse_iso(current.get("valid_from"))
+        end = parse_iso(at_iso)
+        until = at_iso if (start is None or end is None or end >= start) else str(current["valid_from"])
+        _close_relation(relation_id, until, status="superseded",
+                        superseded_by=str(superseded_by or ""), now=now)
+    with db() as conn:
+        row = conn.execute("SELECT * FROM relations WHERE id = ?", (relation_id,)).fetchone()
+    return _row_to_relation(row) if row else None
+
+
+def closed_relation_after(owner: Any, src_id: Any, rel: Any, *, when: Any, dst_id: Any = None,
+                          dst_value: str = "", evidence: Sequence[str] = ()
+                          ) -> Optional[Dict[str, Any]]:
+    """The superseded `src_id --rel--> dst` row that was closed at or after
+    `when`, if any: a source written before a change ("Ada usa Vim" in May)
+    must not reopen a value a later source ended ("ya no usa Vim" in
+    October), whatever order the sweep reads them in. `evidence` is added
+    to that row when it is found."""
+    owner = str(owner or "")
+    rel_key = _normalize_rel(rel)
+    dst_id = str(dst_id or "")
+    dst_value = "" if dst_id else " ".join(str(dst_value or "").split())[:400]
+    when_iso = _norm_dt_arg(when)
+    if not owner or not rel_key or not when_iso or (not dst_id and not dst_value):
+        return None
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM relations WHERE owner = ? AND src = ? AND rel = ? AND status = 'superseded' "
+            "AND COALESCE(dst, '') = ? AND dst_value = ? AND valid_until != ''",
+            (owner, str(src_id or ""), rel_key, dst_id, dst_value)).fetchall()
+    when_dt = parse_iso(when_iso)
+    for row in rows:
+        until = parse_iso(row["valid_until"])
+        if until is not None and when_dt is not None and until >= when_dt:
+            closed = _row_to_relation(row)
+            if evidence:
+                return _merge_into_relation(closed, evidence=evidence, confidence=0.0,
+                                            method=str(closed.get("method") or "rule"),
+                                            valid_from=None, now=now_iso())
+            return closed
+    return None
+
+
 def _find_same_active_relation(owner: str, src_id: str, rel_key: str, dst_id: Any,
                                dst_value: str) -> Optional[Dict[str, Any]]:
     with db() as conn:
@@ -1546,7 +1642,7 @@ __all__ = [
     "proper_noun_in_source", "canonical_relation", "REVALIDATE_VERSION", "revalidate",
     "revalidate_if_needed", "undo_revalidate",
     "upsert_entity", "get_entity", "update_entity", "set_hidden", "list_entities",
-    "merge_entities", "self_entity", "add_relation", "list_relations", "add_mention",
+    "merge_entities", "self_entity", "add_relation", "end_relation", "closed_relation_after", "list_relations", "add_mention",
     "mentions_for", "sources_for", "repoint_source", "forget_source",
     "entities_in_text", "profile", "graph", "stats",
 ]

@@ -1365,4 +1365,5 @@ Implementado en §322 (#281 y #284, radar #503): informe en Ajustes → Integrac
 ## OBJ-60 · Traza de cambios de un hecho en el cerebro (11-10-2026)
 
 - **Hecho (#278, FAUSTUS §324, radar #500):** `fact_history`, `GET /api/brain/fact-history`, herramienta MCP `brain_fact_history` y línea «antes: X, hasta AAAA-MM» en la tarjeta de entidad cuando la pregunta trata del atributo.
-- **Pendiente de ampliar:** que la extracción de la memoria aprendida (frases sueltas) cree relaciones también para atributos no funcionales con cambio explícito («ya no usa X, ahora usa Y»), y mostrar la cadena en la pantalla Cerebro.
+- **Hecho (#302, FAUSTUS §333):** la extracción de la memoria aprendida crea la cadena también para atributos no funcionales con cambio explícito («ya no usa X, ahora usa Y», «dejó de usar X», «no longer…, now…»).
+- **Pendiente:** mostrar la cadena en la pantalla Cerebro.

@@ -58,6 +58,8 @@ from src.brain.entities import (
     add_relation,
     canonical_relation,
     clean_name,
+    closed_relation_after,
+    end_relation,
     entities_in_text,
     forget_source,
     proper_noun_in_source,
@@ -152,13 +154,105 @@ def _leading_proper_phrase(phrase: str) -> str:
     return " ".join(out)
 
 
+# ---------------------------------------------------------------------------
+# Explicit change of value — "Ada ya no usa Vim, ahora usa Helix", "no longer
+# works at X, now at Y", "dejó de usar X y ahora usa Y". The old value is
+# closed and the new one opens at the moment the source was written, for ANY
+# relation (the functional ones already close themselves; "uses"/"prefers"
+# did not, so the chain was lost and the past value stayed current).
+# ---------------------------------------------------------------------------
+
+#: Cue + conjugated predicate ("ya no usa", "no longer works at").
+_NEG_CUES = (r"ya\s+no", r"no\s+longer")
+#: Cue + infinitive/gerund ("dejó de usar", "stopped using").
+_STOP_CUES = (r"dej(?:o|ó|e|é|aste|amos|aron)\s+de", r"stopped", r"quit")
+_NONFINITE_PHRASES: Tuple[Tuple[str, str], ...] = (
+    ("trabajar en", "works_at"), ("trabajar sobre", "works_on"), ("vivir en", "lives_in"),
+    ("usar", "uses"), ("utilizar", "uses"), ("preferir", "prefers"), ("conocer a", "knows"),
+    ("ser miembro de", "member_of"), ("depender de", "depends_on"),
+    ("working at", "works_at"), ("working for", "works_at"), ("working on", "works_on"),
+    ("living in", "lives_in"), ("using", "uses"), ("preferring", "prefers"),
+    ("depending on", "depends_on"),
+)
+_EXTRA_FINITE: Tuple[Tuple[str, str], ...] = (("utiliza", "uses"), ("utilizo", "uses"),
+                                              ("works for", "works_at"), ("work for", "works_at"))
+
+
+def _phrase_re(phrase: str) -> str:
+    return r"\s+".join(re.escape(w) for w in phrase.split())
+
+
+_FINITE_ORDER = tuple(sorted(_REL_PHRASES + _EXTRA_FINITE, key=lambda p: len(p[0]), reverse=True))
+_NONFINITE_ORDER = tuple(sorted(_NONFINITE_PHRASES, key=lambda p: len(p[0]), reverse=True))
+_CHANGE_REGEXES: Tuple[Tuple[re.Pattern, str], ...] = tuple(
+    [(re.compile(r"\b(?:" + "|".join(_NEG_CUES) + r")\s+" + _phrase_re(p) + r"\b", re.IGNORECASE), rel)
+     for p, rel in _FINITE_ORDER]
+    + [(re.compile(r"\b(?:" + "|".join(_STOP_CUES) + r")\s+" + _phrase_re(p) + r"\b", re.IGNORECASE), rel)
+       for p, rel in _NONFINITE_ORDER]
+)
+_NEW_PREDICATE_REGEXES: Tuple[Tuple[re.Pattern, str], ...] = tuple(
+    (re.compile(r"^" + _phrase_re(p) + r"\b\s*", re.IGNORECASE), rel) for p, rel in _FINITE_ORDER)
+_CHANGE_PUNCT_RE = re.compile(r"\s*[,;:]\s*")
+_CHANGE_SPLIT_RE = re.compile(r"\s+(?:y|e|and|but|pero|sino(?:\s+que)?)\s+", re.IGNORECASE)
+_NOW_RE = re.compile(r"^(?:(?:y|and|pero|but)\s+)?(?:ahora|now|actualmente|currently|desde\s+entonces)\b[\s,]*",
+                     re.IGNORECASE)
+_PRONOUN_RE = re.compile(r"^(?:yo|el|él|ella|ellos|ellas|nosotros|i|he|she|they|we|it)\s+", re.IGNORECASE)
+_LEAD_PREP_RE = re.compile(r"^(?:en|at|in|on|for|a|sobre)\s+", re.IGNORECASE)
+_TRAIL_RE = re.compile(r"\s+(?:instead|en\s+su\s+lugar|desde\s+entonces)\s*$", re.IGNORECASE)
+
+
+def _extract_change(sentence: str) -> Optional[Dict[str, str]]:
+    """{"subject", "rel", "old", "new_rel", "new"} when the sentence states
+    that a value stopped holding; "new"/"new_rel" are empty when no
+    replacement is named. None for any other sentence."""
+    for pattern, rel in _CHANGE_REGEXES:
+        match = pattern.search(sentence)
+        if not match:
+            continue
+        subject = _strip_leading_article(sentence[:match.start()].strip(" ,;:-"))
+        rest = sentence[match.end():].strip(" .!?")
+        if not subject or not rest:
+            return None
+        parts = _CHANGE_PUNCT_RE.split(rest, maxsplit=1)
+        if len(parts) == 1:
+            parts = _CHANGE_SPLIT_RE.split(rest, maxsplit=1)
+        old = parts[0].strip(" ,;:.!?-")
+        new_rel, new = "", ""
+        if len(parts) > 1:
+            tail = parts[1].strip(" .!?")
+            had_now = bool(_NOW_RE.match(tail))
+            tail = _PRONOUN_RE.sub("", _NOW_RE.sub("", tail).strip())
+            tail = _NOW_RE.sub("", tail).strip()
+            for pred, pred_rel in _NEW_PREDICATE_REGEXES:
+                found = pred.match(tail)
+                if found:
+                    new_rel, tail = pred_rel, tail[found.end():]
+                    break
+            if new_rel or had_now:
+                new_rel = new_rel or rel
+                new = _TRAIL_RE.sub("", _LEAD_PREP_RE.sub("", tail.strip())).strip(" ,;:.!?-")
+                if not new:
+                    new_rel = ""
+        if not old:
+            return None
+        return {"subject": subject, "rel": rel, "old": old, "new_rel": new_rel, "new": new}
+    return None
+
+
+def _extract_changes(text: str) -> List[Dict[str, str]]:
+    return [c for c in (_extract_change(s) for s in _split_sentences(text)) if c]
+
+
 def _extract_relations(text: str) -> List[Tuple[str, str, str]]:
     """(subject, canonical_rel, object) triples, ORIGINAL casing preserved
     (unlike `memory_conflicts._extract_svo`, which lowercases for
     comparison) — the whole point here is that a capitalised subject/object
-    is the signal a NEW entity name exists to be created from."""
+    is the signal a NEW entity name exists to be created from. Sentences
+    that state a change of value are left to :func:`_extract_changes`."""
     out: List[Tuple[str, str, str]] = []
     for sentence in _split_sentences(text):
+        if _extract_change(sentence):
+            continue
         for pattern, rel in _REL_REGEXES:
             match = pattern.search(sentence)
             if not match:
@@ -258,6 +352,51 @@ def extract_source(owner: Any, source_ref: Any, text: Any, *, project: str = "",
     window = temporal.parse_temporal(text, now=parse_iso(created_at) if created_at else None)
     valid_from, valid_until = window.get("valid_from"), window.get("valid_until")
 
+    # Explicit changes first: the old value closes and the new one opens when
+    # the source was written (or at the date the text gives for the change).
+    change_at = valid_from or created_at or now_iso()
+    for change in _extract_changes(text):
+        src_entity, _ = _resolve_entity_ref(owner, change["subject"], project=project,
+                                            allow_create=True, source_text=text, subject=True)
+        if not src_entity:
+            continue
+        old_entity, old_literal = _resolve_entity_ref(owner, change["old"], project=project,
+                                                      allow_create=True, source_text=text)
+        new_entity, new_literal = (None, "")
+        if change["new"]:
+            new_entity, new_literal = _resolve_entity_ref(owner, change["new"], project=project,
+                                                          allow_create=True, source_text=text)
+        try:
+            new_relation = None
+            if new_entity or new_literal:
+                new_relation = add_relation(
+                    owner, src_entity["id"], change["new_rel"],
+                    dst_id=(new_entity["id"] if new_entity else None),
+                    dst_value=("" if new_entity else new_literal),
+                    valid_from=change_at, evidence=(source_ref,), confidence=0.6,
+                    method="rule", project=project,
+                )
+            old_relation = None
+            if old_entity or old_literal:
+                old_relation = end_relation(
+                    owner, src_entity["id"], change["rel"], at=change_at,
+                    dst_id=(old_entity["id"] if old_entity else None),
+                    dst_value=("" if old_entity else old_literal),
+                    superseded_by=(new_relation["id"] if new_relation and
+                                   new_relation["rel"] == change["rel"] else ""),
+                    evidence=(source_ref,), confidence=0.6, method="rule", project=project,
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("brain.extract: change of value failed (%s)", exc)
+            continue
+        add_mention(owner, src_entity["id"], source_ref)
+        _remember(src_entity)
+        for entity in (old_entity, new_entity):
+            if entity:
+                add_mention(owner, entity["id"], source_ref)
+                _remember(entity)
+        result_relations.extend(r for r in (old_relation, new_relation) if r)
+
     for subject, rel_key, obj in _extract_relations(text):
         src_entity, _ = _resolve_entity_ref(owner, subject, project=project, allow_create=True,
                                             source_text=text, subject=True)
@@ -268,7 +407,12 @@ def extract_source(owner: Any, source_ref: Any, text: Any, *, project: str = "",
         if not dst_entity and not dst_literal:
             continue
         try:
-            relation = add_relation(
+            # a value a LATER source already ended is not reopened by this one
+            relation = None if valid_until else closed_relation_after(
+                owner, src_entity["id"], rel_key, when=(valid_from or created_at),
+                dst_id=(dst_entity["id"] if dst_entity else None),
+                dst_value=("" if dst_entity else dst_literal), evidence=(source_ref,))
+            relation = relation or add_relation(
                 owner, src_entity["id"], rel_key,
                 dst_id=(dst_entity["id"] if dst_entity else None),
                 dst_value=("" if dst_entity else dst_literal),
