@@ -11399,3 +11399,25 @@ ISS sobre Madrid coinciden con un propagador independiente al segundo y a la dé
 **Límites.** Ciclones solo de la cuenca de NHC; la trayectoria es la del último vuelo que OpenSky tenga (anónimo, con
 cuota); el viento es del modelo de Open-Meteo a 10 m. Nada de cámaras ni capas militares.
 
+## 338. Diagramas en Vitruvius, banco de reglas en Galton, animaciones y revisión visual en Cicero (11-10-2026, noche)
+
+Lo que Faustus gana por MCP de tres Hoards (integrado en sus `main`, apps reiniciadas desde el Hub):
+
+- **Vitruvius: diagramas** (#323, 8 tools nuevas, 38 en total). `diagram_types` elige primero el patrón y luego el tipo
+  (flowchart, architecture, state, er, swimlane, sequence, timeline, gantt) y devuelve solo la ficha de ese tipo;
+  `diagram_render` dibuja SVG claro y oscuro desde la estructura o desde Mermaid, Excalidraw o draw.io: layout por capas y
+  enrutado ortogonal en código (aristas largas por los huecos, vueltas atrás por fuera, bandas por grupo), colores de un
+  perfil de marca y gates (contraste, solapes, aristas que cruzan cajas, etiquetas que no caben, grupos, bordes de carril,
+  lienzo). `diagram_brand_onboard` saca el perfil de una web abierta en el navegador real, de una carpeta de CSS/tokens, de
+  un design system o de colores. `plugins/vitruvius/plugin.json` con las capacidades nuevas.
+- **Galton: banco de reglas de código** (#322, `rulebench_tasks`, `rulebench_score`, `scripts/rulebench_eval.py`). 20
+  tareas con tests ocultos; variantes A/B/C; presiones neutra/a favor/en contra; pass@k y pass^k. Primera medición en GLM
+  (900 llamadas): sin presión B y C recortan un 47,5 % las líneas de más y escriben test seis veces más; con «hazlo
+  mínimo» solo B mejora. Recomendación para #321: la regla original (B) por defecto.
+- **Cicero: animaciones y transiciones nativas** (#314, `deck_animations`). El .pptx exportado lleva `<p:timing>` y
+  `<p:transition>` reales (203 efectos, 48 transiciones con Morph, modos builds/auto/mixed/none/efecto, por deck o por
+  diapositiva) sin depender del motor ofimático; la aplicación ofimática los lee tal cual.
+- **Cicero: revisión visual medida** (#315, `deck_visual_review`, en revisión al escribir esto): PNG por diapositiva y
+  reglas sobre lo que el navegador maquetó (fuera de la diapositiva, desborde, solapes, contraste real, imágenes rotas,
+  elementos clave), con el arreglo automático permitido.
+
