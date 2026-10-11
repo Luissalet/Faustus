@@ -28,7 +28,7 @@ from typing import Any, Iterable, Optional
 __all__ = ["CHUNK_VERSION", "Chunk", "Unit", "chunk_text", "chunk_units", "chunk_markdown", "merge_small_units",
            "markdown_title", "parse_frontmatter"]
 
-CHUNK_VERSION = 3
+CHUNK_VERSION = 4
 CHUNK_CHARS = 900          # ~220 Spanish tokens: inside a small embedding model's useful window
 OVERLAP_CHARS = 150
 MIN_TAIL = 200
@@ -52,7 +52,7 @@ class Unit:
 class Chunk:
     unit_index: int                # position in the unit list
     ordinal: int                   # position within the whole document
-    page: Optional[int]            # physical page for kind == "page", else None
+    page: Optional[int]            # physical page/slide number, else None
     section: str                   # the unit title (heading breadcrumb for markdown)
     line: Optional[int]            # 1-based source line of the chunk start (when the unit knows its first line)
     char_start: int                # offsets inside the unit text
@@ -97,8 +97,8 @@ def _split_point(text: str, start: int, limit: int) -> int:
 def merge_small_units(units: list[Unit], minimum: int = MIN_UNIT_CHARS) -> list[Unit]:
     """Merge units shorter than ``minimum`` into the following unit (the previous one at the end). The merged unit
     keeps the metadata of the larger part; the short ones' titles ride along as heading lines. Pages are never
-    merged: a document with any ``page`` unit is returned as it is."""
-    if len(units) <= 1 or any(u.kind == "page" for u in units):
+    merged: a document with any physical ``page`` or ``slide`` unit is returned as it is."""
+    if len(units) <= 1 or any(u.kind in ("page", "slide") for u in units):
         return list(units)
     pending: list[Unit] = []
     out: list[Unit] = []
@@ -128,7 +128,7 @@ def _absorb(main: Unit, others: list[Unit], before: bool) -> Unit:
 
 def _chunk_unit(unit: Unit, unit_index: int, first_ordinal: int, size: int, overlap: int, min_tail: int) -> list[Chunk]:
     text = unit.text
-    page = unit.number if unit.kind == "page" else None
+    page = unit.number if unit.kind in ("page", "slide") else None
     chunks: list[Chunk] = []
     start = 0
     n = len(text)

@@ -20,9 +20,9 @@ Behaviour (the union of what the copies did, plus what only the Node bridges had
 * Error envelopes of the app (``code``, ``hint``, ``issues``, ``details``, ``candidates``...) are forwarded; 401 says which token
   file was refused; a missing token file is not reported as a stopped app.
 * ``httpx`` with ``trust_env=False`` (a ``HTTP_PROXY`` must never capture loopback), or ``urllib`` when httpx is missing.
-* **Autostart** (:func:`ensure_running`): when nothing answers, ``python -m <package>`` is launched detached and without a console
-  window, with ``PORT_STRICT=1`` and no browser, its output in ``<data>/logs/<app>-app.log`` (rotated); disabled with
-  ``<APP>_BRIDGE_AUTOSTART=0``.
+* **Autostart** (:func:`ensure_running`): when nothing answers, a short-lived launcher starts ``python -m <package>`` and exits,
+  so the app server is no longer a descendant of the MCP host. It has no console window, gets ``PORT_STRICT=1`` and no browser,
+  logs to ``<data>/logs/<app>-app.log`` (rotated), and can be disabled with ``<APP>_BRIDGE_AUTOSTART=0``.
 * ``mcp`` 1.x (``FastMCP``) and 2.x (``MCPServer``) are both supported; it is imported only by :meth:`CatalogBridge.build_server`.
 
 Environment variables are derived from ``app`` (``"kafka"`` -> ``KAFKA_URL``, ``KAFKA_PORT``, ``KAFKA_TOKEN``,
@@ -48,7 +48,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Mapping, Optional, Sequence, Union
 from urllib.parse import urlparse
 
-from . import net, proc, service as service_mod, tokens
+from . import launch, net, proc, service as service_mod, tokens
 from .appconfig import env_flag
 from .waiting import clamp_wait
 
@@ -118,7 +118,7 @@ def bridge_token(app: str, data_dir: Union[str, "os.PathLike[str]", None] = None
 # ------------------------------------------------------------------------------------------------ autostart
 
 _launch_lock = threading.Lock()
-_children: dict[str, "subprocess.Popen[Any]"] = {}
+_children: dict[str, tuple[int, Optional[float]]] = {}
 
 
 def _healthy(port: int, service: str, host: str = "127.0.0.1") -> bool:
@@ -147,23 +147,27 @@ def ensure_running(package: str, port: int, *, service: str, data_dir: Union[str
     key = f"{package}:{port}"
     with _launch_lock:
         child = _children.get(key)
-        if child is None or child.poll() is not None:
+        if child is None or not launch.process_alive(*child):
             logs.mkdir(parents=True, exist_ok=True)
             target = logs / f"{log_name or service.removesuffix('-hoard')}-app.log"
             service_mod.rotate_log(target)
             environment = {**os.environ, **{k: str(v) for k, v in (env or {}).items()}, port_env or "HOARD_PORT": str(port),
                            "PORT_STRICT": "1", "PYTHONUNBUFFERED": "1", "HOARD_NO_BROWSER": "1"}
-            with open(target, "ab") as out:
-                child = proc.popen([sys.executable, "-m", package, *args], detached=True, cwd=str(cwd) if cwd else None,
-                                   env=environment, stdout=out, stderr=subprocess.STDOUT)
+            child_pid = launch.spawn_orphan([sys.executable, "-m", package, *args], str(cwd) if cwd else None,
+                                            environment, target)
+            created = launch.process_created(child_pid)
+            if created is None:
+                log.warning("%s exited before its process identity could be recorded; see %s (exit code unavailable)",
+                            package, target)
+                return False
+            child = (child_pid, created)
             _children[key] = child
     deadline = time.monotonic() + max(0.0, wait_s)
     while True:
         if _healthy(port, service):
             return True
-        code = child.poll()
-        if code not in (None, 0):
-            log.warning("%s exited with %s while starting", package, code)
+        if not launch.process_alive(*child):
+            log.warning("%s exited while starting; see %s (exit code unavailable)", package, target)
             return False
         if time.monotonic() >= deadline:
             return False
@@ -254,6 +258,19 @@ class BridgeResult:
     content: list[dict[str, Any]]
     is_error: bool = False
     body: Any = None
+
+
+def agent_headers(env: Optional[Mapping[str, str]] = None) -> dict[str, str]:
+    """``X-Agent-Id`` / ``X-Agent-Session`` from ``HOARD_AGENT_ID`` / ``HOARD_AGENT_SESSION``: whoever launches the MCP
+    server (an editor, a coding agent, the Hub) sets them so the app can tell which agent and which session a call came from
+    (journal, reasons, undo of a whole session). Printable ASCII only, 80 / 120 characters at most; empty values are left out."""
+    env = os.environ if env is None else env
+    out: dict[str, str] = {}
+    for name, header, limit in (("HOARD_AGENT_ID", "X-Agent-Id", 80), ("HOARD_AGENT_SESSION", "X-Agent-Session", 120)):
+        value = "".join(c for c in str(env.get(name) or "") if " " <= c <= "~").strip()[:limit]
+        if value:
+            out[header] = value
+    return out
 
 
 def _text(payload: Any) -> dict[str, Any]:
@@ -446,8 +463,12 @@ class CatalogBridge:
             return self._error({"error": self.message(NOT_RUNNING), "code": "not_running"})
         beat = asyncio.create_task(self._heartbeat(name, progress)) if progress is not None else None
         try:
-            status, body, raw = await _post(f"{self.base_url}/api/agent/call", {"name": name, "arguments": arguments},
-                                            {"Authorization": f"Bearer {token}"}, timeout)
+            who = agent_headers()
+            payload: dict[str, Any] = {"name": name, "arguments": arguments}
+            if who.get("X-Agent-Id"):
+                payload["caller"] = who["X-Agent-Id"]            # apps that predate the headers still log who called
+            status, body, raw = await _post(f"{self.base_url}/api/agent/call", payload,
+                                            {"Authorization": f"Bearer {token}", **who}, timeout)
         except _ConnectFailed:
             if retry and await asyncio.to_thread(self.start_app):
                 return await self._call(name, arguments, progress, retry=False)
