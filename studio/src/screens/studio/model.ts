@@ -234,6 +234,9 @@ export interface Turn {
   /** Memory changes this turn made (#242, `metadata.memory_changes`), each
    *  undoable in Memory → Changes. */
   memoryChanges?: { id: string; store: string; op: string; label: string }[];
+  /** The id the journal filed this turn's changes under (`metadata.turn_id`),
+   *  so the "Undo" link opens just this turn's changes. */
+  memoryTurnId?: string;
   /** CMP-09/CMP-12 (W3-A): see `TurnStrategy`'s doc comment. */
   strategy?: TurnStrategy;
   /** The advisor's notes for this turn (live `advisor_advice` events, or
@@ -1483,6 +1486,7 @@ export function restoreFromMetadata(turn: Turn, meta: Record<string, unknown>): 
           id: String(c.id ?? ''), store: String(c.store ?? ''), op: String(c.op ?? ''), label: String(c.label ?? ''),
         }))
       : turn.memoryChanges,
+    memoryTurnId: Array.isArray(meta.memory_changes) && typeof meta.turn_id === 'string' && meta.turn_id ? meta.turn_id : turn.memoryTurnId,
     strategy: strategyFromMeta(meta) ?? turn.strategy,
     advice: adviceFromMeta(meta) ?? turn.advice,
     plan: planUpdate?.plan ?? turn.plan,

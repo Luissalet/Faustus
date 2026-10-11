@@ -1,12 +1,19 @@
 """Journal of memory changes (#242).
 
-    GET  /api/memory-journal/changes?session_id=&run_id=&store=&limit=&include_undone=
-    POST /api/memory-journal/changes/{change_id}/undo
+    GET    /api/memory-journal/changes?session_id=&run_id=&turn_id=&store=&limit=&include_undone=
+    POST   /api/memory-journal/changes/{change_id}/undo
+    DELETE /api/memory-journal/changes                    (clear history)
 
 Lists what was created, edited or deleted in the facts store, the learned
 memory, the instincts and the second-brain notes, newest first, with the
-session and turn that did it; an undo puts one change back and refuses
-(409) when the item changed again since. Only the caller's own changes.
+session and turn that did it; an undo puts one change back. A refused undo
+answers with ``detail = {"code", "message", ...}``: 409 when the item changed
+again since (``code`` ``later_change`` names the change to undo first,
+``duplicate`` says the same text was added again), 410 when what it would
+bring back was erased on purpose (``store_wiped``, ``purged``), 404 for an
+unknown change or someone else's, 400 for the rest. ``DELETE`` clears the
+caller's history without touching the memories themselves. Only the caller's
+own changes.
 """
 from __future__ import annotations
 
@@ -40,9 +47,16 @@ def setup_memory_journal_routes(memory_vector: Any = None) -> APIRouter:
         try:
             return await asyncio.to_thread(memory_journal.undo, change_id, _owner(request),
                                            memory_vector=memory_vector)
+        except memory_journal.UndoGone as exc:
+            raise HTTPException(410, exc.payload())
         except memory_journal.UndoConflict as exc:
-            raise HTTPException(409, str(exc))
+            raise HTTPException(409, exc.payload())
         except memory_journal.UndoError as exc:
-            raise HTTPException(404 if "unknown" in str(exc) else 400, str(exc))
+            raise HTTPException(404 if exc.code == "unknown" else 400, exc.payload())
+
+    @router.delete("/changes")
+    async def clear_changes(request: Request) -> Dict[str, Any]:
+        removed = await asyncio.to_thread(memory_journal.clear, _owner(request))
+        return {"status": "success", "deleted": removed}
 
     return router

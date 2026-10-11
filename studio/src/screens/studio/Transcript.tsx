@@ -1850,7 +1850,11 @@ function StrategyLine({ strategy }: { strategy: TurnStrategy }) {
 function MemoryChangesLine({ turn, sessionId }: { turn: Turn; sessionId: string | null }) {
   const changes = turn.memoryChanges;
   if (!changes || changes.length === 0) return null;
-  const query = new URLSearchParams({ t: 'changes', ...(sessionId ? { session: sessionId } : {}) });
+  const query = new URLSearchParams({
+    t: 'changes',
+    ...(sessionId ? { session: sessionId } : {}),
+    ...(turn.memoryTurnId ? { turn: turn.memoryTurnId } : {}),
+  });
   return (
     <p className="fs-ctx__note" data-testid="memory-changes-line">
       {tn(changes.length, '{n} memory change', '{n} memory changes')}

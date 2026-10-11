@@ -1359,6 +1359,11 @@ app.include_router(setup_memory_engine_routes())
 # Journal of memory changes with undo (src/memory_journal.py, #242).
 from routes.memory_journal_routes import setup_memory_journal_routes
 app.include_router(setup_memory_journal_routes(memory_vector=memory_vector))
+try:
+    from src import memory_journal as _memory_journal
+    _memory_journal.prune()  # retention pass (at most one a day afterwards)
+except Exception:  # noqa: BLE001 - housekeeping never blocks startup
+    pass
 
 # Grounding lint: compiled memory checked against the evidence it cites
 # (src/memory_grounding.py).

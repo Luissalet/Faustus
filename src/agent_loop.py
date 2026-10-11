@@ -19169,6 +19169,7 @@ async def _stream_agent_loop_body(
     # or forgotten, each with its own undo in Studio.
     try:
         from src import memory_journal as _memory_journal
+        metrics["turn_id"] = _context_turn_id
         _turn_memory_changes = _memory_journal.for_turn(_context_turn_id)
         if _turn_memory_changes:
             metrics["memory_changes"] = _turn_memory_changes

@@ -516,7 +516,7 @@ def delete_note(owner: str, path: str) -> Dict[str, Any]:
     vault._db_delete_sync_state(owner, rel_path)
     from src import memory_journal
     memory_journal.record("notes", "delete", rel_path, owner=owner,
-                          before={"path": rel_path, "title": title, "content": text},
+                          before={"path": rel_path, "title": title, "chars": len(text)},
                           after={"path": rel_path, "trash_id": trash_id, "effect": effect})
     return {"trash_id": trash_id, "effect": effect}
 

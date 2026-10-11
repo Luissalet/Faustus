@@ -9411,6 +9411,34 @@ before	antes
 What was learned, edited or forgotten, by which conversation, with an undo for each change.	Qué se aprendió, editó u olvidó, en qué conversación, con un deshacer por cambio.
 {n} memory change	{n} cambio de memoria
 {n} memory changes	{n} cambios de memoria
+Rolled back	Deshecho
+Memory extractor	Extractor de memoria
+Instinct extractor	Extractor de instintos
+Legacy import	Importación antigua
+Entered by hand	A mano
+Promoted by use	Promovido por uso
+Observed in a session	Observado en una sesión
+Imported from file	Importado de un fichero
+Clear history	Vaciar historial
+Clear the change history?	¿Vaciar el historial de cambios?
+This deletes the record of what was learned, edited or forgotten, including the text it kept. Your memories are not touched, but these changes can no longer be undone.	Esto borra el registro de lo que se aprendió, editó u olvidó, incluido el texto que guardaba. Tus recuerdos no se tocan, pero estos cambios ya no se podrán deshacer.
+Could not clear the history.	No se pudo vaciar el historial.
+History cleared: {n} change	Historial vaciado: {n} cambio
+History cleared: {n} changes	Historial vaciado: {n} cambios
+{n} change in this turn	{n} cambio en este turno
+{n} changes in this turn	{n} cambios en este turno
+Only this turn	Solo este turno
+The text was erased when it was forgotten.	El texto se borró al olvidarlo.
+Undo the later change first: {op} “{label}”.	Deshaz antes el cambio posterior ({op}): «{label}».
+The item changed outside the journal after this change, so it cannot be undone.	El elemento cambió fuera del registro después de este cambio, así que no se puede deshacer.
+The item changed after this change, so it cannot be undone.	El elemento cambió después de este cambio, así que no se puede deshacer.
+The same text was added again under another id, so there is nothing to bring back.	El mismo texto se volvió a añadir con otro id, así que no hay nada que recuperar.
+This store was wiped after the change, so it cannot be undone.	Este almacén se vació después del cambio, así que no se puede deshacer.
+The memory was forgotten for good and its text erased, so this cannot be undone.	El recuerdo se olvidó del todo y su texto se borró, así que no se puede deshacer.
+Only the start of this very long text was kept, so it cannot be undone.	Solo se guardó el principio de este texto tan largo, así que no se puede deshacer.
+This change was already undone.	Este cambio ya se deshizo.
+This change no longer exists.	Este cambio ya no existe.
+The deleted note is no longer in the trash.	La nota borrada ya no está en la papelera.
 Daily paid spend cap	Límite diario de gasto en proveedores de pago
 Today's spend on paid providers against the daily cap. Change the limits in the list above.	Gasto de hoy en proveedores de pago frente al límite diario. Cambia los límites en la lista de arriba.
 Daily paid spend cap is off.	El límite diario de gasto está desactivado.

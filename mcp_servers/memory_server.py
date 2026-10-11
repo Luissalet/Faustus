@@ -183,8 +183,10 @@ async def list_tools() -> list[Tool]:
             description=(
                 "The journal of memory changes: what was learned, edited or forgotten in the facts store, "
                 "the learned memory, the instincts and the second-brain notes, newest first, with the chat "
-                "session that did it. action=list (optional session_id, store, limit) or action=undo with "
-                "change_id, which puts that one change back and refuses if the item changed again since. "
+                "session that did it. action=list (read only; optional session_id, turn_id, store, limit) or "
+                "action=undo with change_id (a destructive write that needs approval), which puts that one "
+                "change back and refuses if the item changed again since, was wiped or forgotten, or was "
+                "added again. Only this owner's changes. "
                 "Registro de cambios de memoria con deshacer."
             ),
             inputSchema={
@@ -192,6 +194,7 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "action": {"type": "string", "enum": ["list", "undo"]},
                     "session_id": {"type": "string", "description": "Only changes made in this chat."},
+                    "turn_id": {"type": "string", "description": "Only changes made in this turn."},
                     "store": {"type": "string", "enum": ["facts", "rules", "instincts", "notes"]},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 500},
                     "change_id": {"type": "string", "description": "Change to undo (from list)."},
@@ -305,14 +308,15 @@ def _memory_changes(arguments: dict) -> list[TextContent]:
     action = arguments.get("action", "")
     if action == "list":
         rows = memory_journal.list_changes(owner, session_id=str(arguments.get("session_id") or ""),
+                                           turn_id=str(arguments.get("turn_id") or ""),
                                            store=str(arguments.get("store") or ""),
                                            limit=arguments.get("limit") or 50)
         return _text_result(json.dumps({"changes": rows, "count": len(rows)}, ensure_ascii=False, indent=2))
     if action == "undo":
         try:
             out = memory_journal.undo(str(arguments.get("change_id") or ""), owner)
-        except (memory_journal.UndoConflict, memory_journal.UndoError) as exc:
-            return _text_result(f"Error: {exc}")
+        except memory_journal.UndoError as exc:
+            return _text_result(f"Error ({exc.code}): {exc}")
         return _text_result(json.dumps(out, ensure_ascii=False, indent=2))
     return _text_result("Error: action must be list or undo")
 

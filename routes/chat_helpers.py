@@ -1494,7 +1494,8 @@ def save_assistant_response(
                     if isinstance(m.get("content"), str)
                 ]
                 from src import memory_journal
-                with memory_journal.attribution(session_id=session_id, source="instinct_extractor"):
+                with memory_journal.attribution(session_id=session_id, source="instinct_extractor",
+                                                turn_id=md.get("turn_id")):
                     await extract_from_turn(
                         _post_turn_owner, session_id, history,
                         project=project_key(_post_turn_workspace, _post_turn_project_id),
@@ -1740,7 +1741,8 @@ def run_post_response_tasks(
         _extraction_jobs.append(("memory", _journal_attributed(extract_and_store(
             sess, memory_manager, memory_vector,
             t_url, t_model, t_headers,
-        ), session_id=session_id, source="memory_extractor")))
+        ), session_id=session_id, source="memory_extractor",
+            turn_id=(last_metrics or {}).get("turn_id") if isinstance(last_metrics, dict) else None)))
 
     # Skill extraction from complex agent runs. Only when the user actually
     # chose agent mode — not a chat we auto-escalated for a notes/calendar

@@ -138,18 +138,20 @@ def test_instincts_are_journaled_and_a_deleted_one_comes_back(data):
 
 # -- learned memory (engine) --------------------------------------------------------
 
-def test_a_forgotten_learned_memory_comes_back_without_its_tombstone(data):
+def test_a_deleted_learned_memory_comes_back_and_a_forgotten_one_does_not(data):
     item = engine.add_item("usa pnpm en este repo", owner=OWNER, project="p", level="semantic")
-    engine.forget(item["id"], reason="wrong")
-    assert engine.get_item(item["id"]) is None
-    assert engine.is_tombstoned("usa pnpm en este repo", OWNER, "p", "semantic")
+    engine.delete_item(item["id"])
     delete, create = mj.list_changes(OWNER, store="rules")
     assert (delete["op"], create["op"]) == ("delete", "create")
     mj.undo(delete["id"], OWNER)
     assert engine.get_item(item["id"])["text"] == "usa pnpm en este repo"
-    assert not engine.is_tombstoned("usa pnpm en este repo", OWNER, "p", "semantic")
     mj.undo(create["id"], OWNER)
     assert engine.get_item(item["id"]) is None
+    # a definitive forget (tombstone) is not undoable: see test_memory_journal_privacy.py
+    other = engine.add_item("usa yarn en este repo", owner=OWNER, project="p", level="semantic")
+    engine.forget(other["id"], reason="wrong")
+    assert engine.is_tombstoned("usa yarn en este repo", OWNER, "p", "semantic")
+    assert all(c["purged"] for c in mj.list_changes(OWNER, store="rules") if c["item_id"] == other["id"])
 
 
 # -- second-brain notes -----------------------------------------------------------------

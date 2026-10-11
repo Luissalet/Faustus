@@ -1037,6 +1037,18 @@ _register(
     ToolEffect.WRITE_PRIVATE,
     result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
 )
+_register(
+    # Journal of memory changes (#242), served by the memory MCP server as
+    # `memory_changes`: one multiplexed tool. `list` reads the caller's own
+    # journal (READ_PRIVATE, see _PRIVATE_ACTION_READS); `undo` puts a change
+    # back in a memory store, which can delete what was learned since, so it is
+    # a destructive private write that needs approval (_PRIVATE_ACTION_WRITES
+    # and _ACTION_DESTRUCTIVE). Any other action fails high.
+    {"mcp__memory__memory_changes"},
+    ToolEffect.READ_PRIVATE,
+    ToolEffect.WRITE_PRIVATE,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
 
 
 TOOL_CAPABILITIES: Mapping[str, ToolCapabilities] = MappingProxyType(dict(_REGISTRY))
@@ -1579,6 +1591,7 @@ _PRIVATE_ACTION_READS: Mapping[str, frozenset[str]] = MappingProxyType(
         "manage_contact": frozenset({"list"}),
         "manage_documents": frozenset({"list", "read", "view", "open", "get"}),
         "manage_memory": frozenset({"list", "search"}),
+        "mcp__memory__memory_changes": frozenset({"list"}),
         "manage_notes": frozenset({"list", "search", "find", "view"}),
         "manage_research": frozenset({"list", "read", "open", "view", "get"}),
         "manage_session": frozenset({"list", "switch", "open", "select", "view"}),
@@ -1597,6 +1610,7 @@ _PRIVATE_ACTION_WRITES: Mapping[str, frozenset[str]] = MappingProxyType(
         "manage_contact": frozenset({"add", "update", "edit", "delete"}),
         "manage_documents": frozenset({"delete", "tidy"}),
         "manage_memory": frozenset({"add", "edit", "delete"}),
+        "mcp__memory__memory_changes": frozenset({"undo"}),
         "manage_notes": frozenset({"add", "update", "delete", "toggle_item"}),
         "manage_research": frozenset({"delete"}),
         "manage_session": frozenset(
@@ -1628,6 +1642,7 @@ _ACTION_DESTRUCTIVE: Mapping[str, frozenset[str]] = MappingProxyType(
         "manage_endpoints": frozenset({"delete"}),
         "manage_bg_jobs": frozenset({"kill", "stop", "cancel", "terminate"}),
         "manage_memory": frozenset({"delete"}),
+        "mcp__memory__memory_changes": frozenset({"undo"}),
         "manage_mcp": frozenset({"delete"}),
         "manage_notes": frozenset({"delete"}),
         "manage_research": frozenset({"delete"}),

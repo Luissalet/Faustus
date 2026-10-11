@@ -38,7 +38,16 @@ logger = logging.getLogger(__name__)
 
 def _wipe_memory_files():
     """Blank memory.json + drop the per-owner tidy-state sidecar so the
-    next audit doesn't try to diff against gone memories."""
+    next audit doesn't try to diff against gone memories.
+
+    The journal of memory changes (#242) keeps the text of what it recorded,
+    so wiping the store drops its rows too: otherwise "undo" on a delete
+    would bring the wiped memory back."""
+    try:
+        from src import memory_journal
+        memory_journal.wipe_store("facts")
+    except Exception as e:  # noqa: BLE001 - the wipe itself must still finish
+        logger.warning(f"Could not clear the memory journal: {e}")
     for name in ("memory.json", "memory_tidy_state.json"):
         p = os.path.join(DATA_DIR, name)
         if not os.path.exists(p):

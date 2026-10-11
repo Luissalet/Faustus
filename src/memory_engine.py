@@ -1093,7 +1093,7 @@ def list_tombstones(owner: Optional[str] = None, project: Optional[str] = None,
 
 
 def forget(item_id: Any, *, reason: str = "", ref: str = "",
-          now: Optional[datetime] = None) -> Optional[Dict[str, Any]]:
+          now: Optional[datetime] = None, scrub_journal: bool = True) -> Optional[Dict[str, Any]]:
     """MEM-02: delete the item AND its derivatives, and leave a tombstone.
 
     "Derivatives" as of this store: the row itself (physical DELETE, same as
@@ -1133,6 +1133,12 @@ def forget(item_id: Any, *, reason: str = "", ref: str = "",
         )
     delete_item(item["id"])
     _purge_recall(item)
+    if scrub_journal:
+        # A definitive forget: the journal of memory changes (#242) must not
+        # keep the text either, or its undo would bring the item back.
+        # `correct` keeps it, because the correction itself is undoable.
+        from src import memory_journal
+        memory_journal.scrub_item("rules", item["id"], owner=item.get("owner") or "")
     return tombstone
 
 
@@ -1242,7 +1248,7 @@ def correct(item_id: Any, new_text: Any, *, reason: str = "",
         if value not in (None, "") and parse_iso(value) is None:
             raise MemoryEngineError(f"{key} must be an ISO date or timestamp")
 
-    tombstone = forget(item_id, reason=reason or "corrected", now=now)
+    tombstone = forget(item_id, reason=reason or "corrected", now=now, scrub_journal=False)
     if tombstone:
         provenance["tombstone_id"] = tombstone["id"]
     kwargs["respect_tombstones"] = False

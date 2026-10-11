@@ -755,7 +755,10 @@
 .fs-memory-changes__bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--fs-space-2); }
 .fs-memory-changes__stores { display: flex; flex-wrap: wrap; gap: var(--fs-space-1); }
 .fs-memory-changes__session { font-size: var(--fs-label-size); color: var(--fs-text-3); }
-.fs-memory-changes__bar > :last-child { margin-inline-start: auto; }
+.fs-memory-changes__tools { margin-inline-start: auto; display: flex; align-items: center; gap: var(--fs-space-1); }
+.fs-memory-changes__group { display: flex; flex-direction: column; gap: var(--fs-space-1); padding: var(--fs-space-2); border: 1px solid var(--fs-border); border-radius: var(--fs-radius-panel); background: var(--fs-surface-2, var(--fs-surface-1)); }
+.fs-memory-changes__grouphead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--fs-space-2); font-size: var(--fs-label-size); color: var(--fs-text-3); font-weight: 600; }
+.fs-memory-changes__group .fs-memory-changes__list { gap: var(--fs-space-1); }
 .fs-memory-changes__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--fs-space-2); }
 .fs-memory-changes__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--fs-space-1) var(--fs-space-3); padding: var(--fs-space-2) var(--fs-space-3); border: 1px solid var(--fs-border); border-radius: var(--fs-radius-panel); background: var(--fs-surface-1); }
 .fs-memory-changes__row[data-undone] { opacity: .6; }
