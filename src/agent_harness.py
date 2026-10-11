@@ -1174,15 +1174,55 @@ _READ_VERB_RE = re.compile(
 
 # Everything from here on in the sentence is a reference to code the model
 # *used*, not a file it wrote: "…en cart.py usando subtotal de utils.py".
+# Also cuts input-data narration: "He creado informe.md, calculado sobre ventas.csv"
+# (QA222 false claimed_paths_untouched when the CSV was only read).
 _REFERENCE_CUE_RE = re.compile(
     r"\b(?:usando|utilizando|reutilizando|basad[oa]s?\s+en|seg[uú]n|"
     r"definid[oa]s?\s+en|declarad[oa]s?\s+en|ubicad[oa]s?\s+en|localizad[oa]s?\s+en|"
     r"import(?:a|ad[oa]s?|ando)\s+(?:de|desde)|"
     r"que\s+(?:usa|utiliza|importa|llama|lee|est[aá]|estaba|contiene|vive|reside|depende|hereda)|"
+    r"calculad[oa]s?\s+sobre|calculat(?:ed|ing)\s+(?:from|over|on|against)|"
+    r"comput(?:ad[oa]|ed|ing)\s+(?:sobre|from|over|on)|"
+    r"sobre\s+(?:los\s+)?datos|"
+    # "a partir de la línea 20" is an edit locus, not an input-data cue.
+    r"a\s+partir\s+de\s+(?:(?:los\s+)?datos|(?:el\s+)?(?:fichero|archivo)|"
+    r"(?:la\s+)?(?:gu[ií]a|fuente)|[`*_\"']*[\w@./\\-]+\.\w)|"
+    r"partiendo\s+de\s+(?:(?:los\s+)?datos|(?:el\s+)?(?:fichero|archivo)|"
+    r"(?:la\s+)?(?:gu[ií]a|fuente)|[`*_\"']*[\w@./\\-]+\.\w)|"
+    r"from\s+(?:the\s+)?(?:real\s+)?(?:data|datos)(?:\s+(?:in|de|of))?|"
     r"using|based\s+on|according\s+to|defined\s+in|declared\s+in|located\s+in|"
     r"imported\s+from|"
     r"which\s+(?:uses|imports|calls|reads|is|lives|contains|depends)|"
     r"that\s+(?:uses|imports|calls|reads|lives))\b",
+    re.IGNORECASE,
+)
+
+# Closing markdown around a path token before the denial clause:
+# "`ventas.csv` (que no he modificado)" — after the basename comes "`".
+_MD_PATH_CLOSE_RE = re.compile(r"^(?:[`*_\"']+|\*\*|__)+")
+
+# Path-local denial of authorship: "ventas.csv (que no he modificado)",
+# "guia.txt, left untouched". Must not skip the whole sentence (that would
+# drop the real deliverable named earlier in the same claim).
+# "sin tocar setup.py" names the denied path as object — do not attach that
+# denial to the previous token (tests.py).
+_PATH_UNTOUCHED_AFTER_RE = re.compile(
+    r"^(?:\)|,|;)?\s*(?:"
+    r"\(?\s*que\s+no\s+(?:he|hemos)\s+(?:modificado|alterado|tocado|cambiado)\b|"
+    r"\(?\s*sin\s+(?:modificar|alterar|tocar)(?:lo|la|los|las)\b|"
+    r"\(?\s*sin\s+(?:modificar|alterar|tocar)\b(?!\s*(?:[`*_\"']*)?[\w@.-]+\.\w)|"
+    r"\(?\s*(?:which\s+)?(?:i\s+)?(?:did\s+not|didn't)\s+(?:modify|change|touch|alter)\b|"
+    r"\(?\s*(?:left\s+)?untouched\b|"
+    r"\(?\s*not\s+modified\b|"
+    r"\(?\s*unchanged\b"
+    r")",
+    re.IGNORECASE,
+)
+
+# "…sin tocar setup.py" / "without modifying setup.py": the object is denied.
+_PATH_DENIED_OBJECT_BEFORE_RE = re.compile(
+    r"(?:sin\s+(?:tocar|modificar|alterar)|without\s+(?:touching|modifying|altering)|"
+    r"leaving)\s+(?:[`*_\"']+|\*\*|__)*$",
     re.IGNORECASE,
 )
 
@@ -1219,44 +1259,106 @@ def _hedged_before(text: str, start: int) -> bool:
     return bool(_HEDGE_BEFORE_RE.search(text[max(0, start - 30):start]))
 
 
-def _accepted_write_claim(segment: str) -> Optional[re.Match]:
-    """First write-claim match in `segment` that is neither negated ("no he
-    modificado…") nor hedged ("should have been added")."""
-    best: Optional[re.Match] = None
+# English coordination after a prior write claim: "I created a.md … and updated b.py".
+_COORD_WRITE_EN_RE = re.compile(
+    r"\b(?:and|,)\s+(?:then\s+|also\s+|now\s+|just\s+)?" + _WRITE_PP_EN + r"\b",
+    re.IGNORECASE,
+)
+
+
+def _all_accepted_write_claims(segment: str) -> List[re.Match]:
+    """Every non-negated, non-hedged write claim in `segment`, in order.
+
+    Later claims after an input-data cue must still be seen: «…calculado sobre
+    ventas.csv y he modificado precios.csv» keeps precios.csv.
+    """
+    found: List[re.Match] = []
     for pat in WRITE_CLAIM_FRAMES:
         for m in pat.finditer(segment):
             if _negated_before(segment, m.start()) or _hedged_before(segment, m.start()):
                 continue
-            if best is None or m.start() < best.start():
-                best = m
+            found.append(m)
+    found.sort(key=lambda m: (m.start(), m.end()))
+    out: List[re.Match] = []
+    last_end = -1
+    for m in found:
+        if m.start() < last_end:
+            continue
+        out.append(m)
+        last_end = m.end()
+    if out:
+        for m in _COORD_WRITE_EN_RE.finditer(segment):
+            if m.start() < out[0].end():
+                continue
+            if _negated_before(segment, m.start()) or _hedged_before(segment, m.start()):
+                continue
+            if any(m.start() < c.end() and m.end() > c.start() for c in out):
+                continue
+            out.append(m)
+        out.sort(key=lambda m: (m.start(), m.end()))
+    return out
+
+
+def _accepted_write_claim(segment: str) -> Optional[re.Match]:
+    """First write-claim match in `segment` that is neither negated ("no he
+    modificado…") nor hedged ("should have been added")."""
+    claims = _all_accepted_write_claims(segment)
+    return claims[0] if claims else None
+
+
+def _after_path_token(region: str, idx: int, tok: str) -> str:
+    """Text after a path basename, with closing markdown wrappers stripped."""
+    after = region[idx + len(tok):idx + len(tok) + 100]
+    while True:
+        m = _MD_PATH_CLOSE_RE.match(after)
+        if not m:
             break
-    return best
+        after = after[m.end():]
+    return after.lstrip()
 
 
 def _paths_in_region(region: str) -> List[str]:
     """Path tokens in `region`, minus the ones that are arguments of a command
-    the reader is told to run."""
+    the reader is told to run, and minus paths the prose explicitly denies
+    having modified."""
     out: List[str] = []
     for tok in extract_path_tokens(region):
         idx = region.find(tok)
+        if idx < 0:
+            continue
         if idx > 0 and _RUNNER_BEFORE_RE.search(region[max(0, idx - 60):idx]):
+            continue
+        before = region[max(0, idx - 40):idx]
+        if _PATH_DENIED_OBJECT_BEFORE_RE.search(before):
+            continue
+        after = _after_path_token(region, idx, tok)
+        if _PATH_UNTOUCHED_AFTER_RE.search(after):
             continue
         out.append(tok)
     return out
 
 
-def _claim_region(segment: str, m: re.Match) -> str:
+def _claim_region(
+    segment: str,
+    m: re.Match,
+    until: Optional[int] = None,
+    *,
+    after_prior_write: bool = False,
+) -> str:
     """The slice of `segment` whose paths the claim is about: from the claim
     verb (or from the start, when nothing was read first) up to the first
-    "…using X from Y" reference cue."""
-    start = 0
-    for r in _READ_VERB_RE.finditer(segment):
-        if r.end() <= m.start():
-            start = m.start()          # the earlier paths belong to the reading
-            break
-    end = len(segment)
+    "…using X from Y" reference cue or the next write claim."""
+    if after_prior_write:
+        start = m.start()
+    else:
+        start = 0
+        for r in _READ_VERB_RE.finditer(segment):
+            if r.end() <= m.start():
+                start = m.start()          # the earlier paths belong to the reading
+                break
+    end = len(segment) if until is None else until
     cue = _REFERENCE_CUE_RE.search(segment, m.end())
-    if cue:
+    if cue and cue.start() < end:
         end = cue.start()
     return segment[start:max(start, end)]
 
@@ -1385,14 +1487,17 @@ def find_claimed_paths(text: str, limit: int = 8, *, expected_text: str = "") ->
             if not seg.strip() or _PREEXISTING_RE.search(seg):
                 prefix = (prefix + " " + seg).strip()
                 continue
-            m = _accepted_write_claim(seg)
-            if m:
-                hits = _paths_in_region(_claim_region(seg, m))
-                if hits:
-                    found.extend(hits)
-                elif seg.rstrip(" \t*_`").endswith(":"):
-                    # "He añadido:" — the files come in the list below.
-                    header = True
+            claims = _all_accepted_write_claims(seg)
+            if claims:
+                for i, m in enumerate(claims):
+                    until = claims[i + 1].start() if i + 1 < len(claims) else None
+                    hits = _paths_in_region(
+                        _claim_region(seg, m, until, after_prior_write=i > 0))
+                    if hits:
+                        found.extend(hits)
+                    elif i == 0 and seg.rstrip(" \t*_`").endswith(":"):
+                        # "He añadido:" — the files come in the list below.
+                        header = True
             elif bullet and prefix and len(seg) <= 70 and not extract_path_tokens(seg):
                 # "✅ cart.py — test añadido": the verb trails the file it is
                 # about, in its own clause. Only inside a list item, only when

@@ -125,6 +125,73 @@ def test_a_file_named_only_as_the_source_of_borrowed_code_is_not_claimed():
     assert h.find_claimed_paths("After reading cart.py, I updated shipping.py.") == ["shipping.py"]
 
 
+def test_input_data_after_calculated_from_is_not_a_write_claim():
+    """QA222: deliverable + 'calculado sobre' input must not accuse the CSV."""
+    es = ("Listo. He creado **`informe.md`** en la carpeta de trabajo, "
+          "calculado sobre los datos reales de `ventas.csv` (que no he modificado).")
+    en = ("I created `informe.md` calculated from the real data in `ventas.csv` "
+          "(which I did not modify).")
+    assert h.find_claimed_paths(es) == ["informe.md"]
+    assert h.find_claimed_paths(en) == ["informe.md"]
+
+
+def test_later_write_claim_after_input_cue_is_kept():
+    """Codex CHANGES: cue must not swallow a later explicit mutation."""
+    assert h.find_claimed_paths(
+        "He creado informe.md calculado sobre ventas.csv y he modificado precios.csv."
+    ) == ["informe.md", "precios.csv"]
+    assert h.find_claimed_paths(
+        "I created report.md calculated from input.csv and updated app.py."
+    ) == ["report.md", "app.py"]
+
+
+def test_markdown_path_local_untouched_denial_without_reference_cue():
+    """Claude/Codex: denial after closing backticks; no calculado-sobre cue."""
+    assert h.find_claimed_paths(
+        "He creado `informe.md` y he leído `ventas.csv` (que no he modificado)."
+    ) == ["informe.md"]
+    assert h.find_claimed_paths(
+        "He creado `informe.md`, con datos en `ventas.csv` (que no he modificado)."
+    ) == ["informe.md"]
+
+
+def test_sin_tocar_applies_to_following_path_not_previous():
+    """Claude: «…tests.py, sin tocar setup.py» keeps tests.py, drops setup.py."""
+    assert h.find_claimed_paths(
+        "He actualizado main.py y tests.py, sin tocar setup.py."
+    ) == ["main.py", "tests.py"]
+
+
+def test_a_partir_de_line_is_not_an_input_cue():
+    """Claude: edit locus «a partir de la línea 20» must not drop utils.py."""
+    assert h.find_claimed_paths(
+        "He modificado config.py a partir de la línea 20 y también utils.py."
+    ) == ["config.py", "utils.py"]
+
+
+def test_path_local_untouched_denial_keeps_the_real_deliverable(tmp_path):
+    """Parenthetical 'no he modificado' drops only that path, not informe.md."""
+    (tmp_path / "ventas.csv").write_text(
+        "producto,unidades,precio\nCuaderno,2,11\n", encoding="utf-8")
+    (tmp_path / "informe.md").write_text("# ok\n", encoding="utf-8")
+    user = ("Lee ventas.csv de la carpeta de trabajo y crea informe.md. "
+            "No hagas cambios en los datos.")
+    ledger = h.TurnLedger(str(tmp_path), user)
+    ledger.record(
+        "read_file", "ventas.csv",
+        {"output": (tmp_path / "ventas.csv").read_text(encoding="utf-8"), "exit_code": 0}, 1)
+    ledger.record(
+        "write_file",
+        json.dumps({"path": "informe.md", "content": "# ok\n"}),
+        {"output": "Wrote informe.md", "exit_code": 0, "paths": ["informe.md"]}, 2)
+    answer = ("He creado `informe.md` calculado sobre `ventas.csv` "
+              "(que no he modificado). Total 64.")
+    check = ledger.check_completion(answer)
+    assert "claimed_paths_untouched" not in check["reasons"], check
+    assert "fabricated_paths" not in check["reasons"], check
+    assert check.get("untouched_paths") in (None, [], ())
+
+
 def test_code_fences_are_not_claims():
     """A model that pastes the test it *would* write must not be read as having
     written the file the snippet is headed with."""
