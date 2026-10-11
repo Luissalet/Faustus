@@ -390,6 +390,13 @@ def _select_hybrid(sm, owner: Optional[str], query: str, skills: List[Dict],
     thr = threshold if threshold is not None else _get_threshold()
 
     candidates = sm._filter_candidates(skills, min_confidence)
+    # manual_only skills (frontmatter `manual_only: true`) never occupy the
+    # automatic index: they are only reachable by an explicit view. The
+    # lexical mode path goes through get_relevant_skills, which already
+    # excludes non-published/draft statuses; this guard covers both modes.
+    candidates = [sk for sk in candidates
+                  if not (sk.get("extra") or {}).get("manual_only")
+                  and not sk.get("manual_only")]
     if not candidates or not (query or "").strip():
         return []
 
