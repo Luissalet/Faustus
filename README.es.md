@@ -419,7 +419,8 @@ ninguno.
 
 **Decisiones tipadas.** Donde una regla de palabras clave no está segura,
 Faustus puede hacer una pregunta cerrada en vez de adivinar: las opciones van
-etiquetadas con una sola letra, el modelo de utilidad ya cargado lee el texto
+etiquetadas con una sola letra, el modelo de utilidad ya cargado (en este equipo o en un servidor propio de la red local, como
+vLLM en las Sparks) lee el texto
 una vez, y la probabilidad que pone en cada letra para su siguiente token es la
 respuesta, con una confianza y una «masa» (¿quería siquiera contestar esto?), sin
 generar razonamiento. Varias preguntas sobre el mismo texto comparten el prefijo
