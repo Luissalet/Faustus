@@ -11373,3 +11373,29 @@ filtros globales de Studio336, migración del resto343 y las verificaciones
 completas con el modelo global. Las pruebas simuladas no certifican autonomía
 ni que todos los Hoards estén migrados. Las tareas siguen su revisión e
 integración normal del Ágora; no se cambian los modelos ni permisos globales.
+
+## 337. Datos públicos en vivo: terremotos, tormentas, aviones, viento y pases de satélites — #324 (11-10-2026)
+
+**Qué es.** Servidor MCP integrado `public_data` (`mcp_servers/public_data_server.py`, registrado en `src/builtin_mcp.py`) con
+siete tools de solo lectura sobre fuentes sin clave, implementadas en `src/public_data/`:
+`earthquakes` (feeds GeoJSON de USGS; mundial o cerca de un punto con radio, por magnitud mínima y periodo),
+`tropical_cyclones` (NOAA NHC: Atlántico y Pacífico este/central), `aircraft_nearby` (ADS-B de adsb.lol: indicativo, tipo,
+matrícula, altitud, velocidad, rumbo, distancia y squawks de emergencia), `aircraft_lookup` (adsbdb: avión por hex y ruta por
+indicativo), `aircraft_track` (OpenSky: trayectoria del último vuelo, adelgazada a `max_points`), `wind_at` (Open-Meteo: ahora
+y por horas) y `satellite_passes` (elementos de CelesTrak propagados aquí con SGP4: salida, culminación y puesta al segundo,
+direcciones, elevación máxima, distancia mínima; ISS por defecto, o NORAD o nombre).
+
+**Forma común.** Cada respuesta lleva `summary` (una o dos frases citables), `data`, `truncated`/`total` y la frescura de la
+fuente (`freshness` fresh/cached/stale, `age_s`, `source`, `error` si sirvió datos viejos). Todas pasan por
+`hoard_link.livefeed.LiveFeed` (nuevo en HoardLink): caché en memoria y disco (`DATA_DIR/public_data`), una petición en vuelo
+por clave, reintentos con pausa creciente y, si la fuente cae, la última respuesta buena marcada `stale` (hasta una semana).
+TTL: aviones 15 s, terremotos 2 min, viento y tormentas 10 min, elementos orbitales 6 h, registro de aviones 1 día.
+
+**Verificado.** `tests/test_public_data.py` (10, con fuentes simuladas: filtros, orden, caché → stale → error, hex inválidos,
+superficie y errores del servidor MCP). En vivo desde el PC: USGS, NHC, adsb.lol (Barajas y El Prat), adsbdb, OpenSky,
+Open-Meteo y CelesTrak contestan; el servidor por stdio con un cliente MCP real lista las 7 tools y responde. Los pases de la
+ISS sobre Madrid coinciden con un propagador independiente al segundo y a la décima de grado.
+
+**Límites.** Ciclones solo de la cuenca de NHC; la trayectoria es la del último vuelo que OpenSky tenga (anónimo, con
+cuota); el viento es del modelo de Open-Meteo a 10 m. Nada de cámaras ni capas militares.
+
