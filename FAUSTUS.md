@@ -11430,3 +11430,8 @@ explícito y excluye del índice y de la selección automática léxica e híbri
 Verificado con 120 pruebas, creación y lectura por MCP nativo y biblioteca web
 aislada; no se usaron datos de Luis ni modelos reales. Detalle en
 `docs/SKILL_LINT.md`.
+
+Invocación explícita #357: el catálogo de comandos slash y la ruta invoke
+incluyen las habilidades publicadas manual_only sin añadirlas al índice del
+prompt. La llamada cuenta el uso y conserva propietario y estado de publicación.
+54 pruebas del área y MCP/navegador privados verifican el flujo completo.

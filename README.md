@@ -733,3 +733,5 @@ Skill writing checks return advice while preserving learned skills. They inspect
 the complete SKILL.md, including verification. Frontmatter `manual_only: true`
 keeps a skill available for explicit use while excluding it from automatic
 indexing and lexical or hybrid selection. See [skill checks](docs/SKILL_LINT.md).
+Explicit slash commands still list and invoke published manual-only skills;
+their ordinary publication, ownership and usage-count rules remain in effect.
