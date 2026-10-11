@@ -199,6 +199,23 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="turn_tools",
+            description=(
+                "Which tools saved chat turns really offered the model and what they weighed: distinct tools and "
+                "tokens over the turn, totals per source, the heaviest tools and, per round, how many went out "
+                "and their cost (sent_tokens = sum over rounds). By message_id, by session_id (its last turns) or "
+                "the newest turns across chats. Read-only. Herramientas ofrecidas por turno."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "description": "Chat whose last turns to read."},
+                    "message_id": {"type": "string", "description": "One assistant message."},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 50, "description": "Default 5."},
+                },
+            },
+        ),
+        Tool(
             name="mcp_config_audit",
             description=(
                 "Hygiene audit of the MCP servers configured in the app: credentials typed in plain "
@@ -541,6 +558,15 @@ def _tool_footprint(args: dict) -> dict:
     return report
 
 
+def _turn_tools(args: dict) -> dict:
+    from src import turn_tool_offer
+
+    owner = next((os.environ[k].strip() for k in _OWNER_ENV_KEYS if os.environ.get(k, "").strip()), "") or None
+    return turn_tool_offer.report(str(args.get("session_id") or "").strip() or None,
+                                  message_id=str(args.get("message_id") or "").strip() or None,
+                                  limit=args.get("limit") or 5, owner=owner)
+
+
 def _mcp_config_audit(args: dict) -> dict:
     from src import mcp_config_audit as audit
 
@@ -733,6 +759,7 @@ _TOOLS = {
     "resource_claims": _resource_claims,
     "paired_bench_reports": _paired_bench_reports,
     "tool_footprint": _tool_footprint,
+    "turn_tools": _turn_tools,
     "mcp_config_audit": _mcp_config_audit,
     "harness_proposals": _harness_proposals,
     "voice_turn_timeline": _voice_turn_timeline,

@@ -6,6 +6,7 @@ import { lazyChunk } from '../../shell/lazyChunk';
 import { createPortal } from 'react-dom';
 import { Button, describeError, ExecutionTimeline, friendlyError, IconButton, TurnCostBreakdown } from '../../components';
 import { TurnActivity } from './TurnActivity';
+import { ToolsOfferedLine } from './ToolsOfferedLine';
 import { AgentMessageTurn } from './AgentMessageTurn';
 import { fetchCompactionEvent, pinCompactionFragment, fetchLlmTraces, forkLlmTrace, faviconStripEntries, type AdvisorAdvice, type AskUser, type CompactionEvent, type ContextLedger, type ContextReceipt, type DelegationTask, type LlmTraceRow, type NetworkSummary, type WebSource } from '../../adapters/chat';
 import { createRecipeFromRun } from '../../adapters/strategy';
@@ -2312,6 +2313,7 @@ function AssistantTurn({
           </div>
         )}
         {!turn.streaming && turn.metrics?.execution && <ExecutionTimeline execution={turn.metrics.execution} promptCache={turn.metrics.prompt_cache} prefixCache={turn.metrics.prefix_cache} />}
+        {!turn.streaming && turn.metrics?.toolsOffered && <ToolsOfferedLine offered={turn.metrics.toolsOffered} />}
         {!turn.streaming && sessionId && turn.metrics?.runId && <TurnCostBreakdown sessionId={sessionId} runId={turn.metrics.runId} />}
       </div>
     </article>

@@ -239,6 +239,40 @@ export interface TurnMetrics {
   /** The detached run that produced this reply: the key of its cost view
    *  (`GET /api/runs/{session}/turn-cost?run_id=`). Absent on older history. */
   runId?: string;
+  /** OBJ-56: the tools the turn really offered the model (`metadata.tools_offered`,
+   *  src/turn_tool_offer.py). Absent on older history and on turns without tools. */
+  toolsOffered?: ToolsOffered;
+}
+
+export interface ToolsOffered {
+  count: number;
+  tokens: number;
+  sentTokens: number;
+  rounds: { round: number; count: number; tokens: number }[];
+  heaviest: { name: string; source: string; tokens: number }[];
+  bySource: { source: string; count: number; tokens: number }[];
+}
+
+export function toolsOfferedFrom(raw: unknown): ToolsOffered | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  const count = num(r.count);
+  if (count === undefined) return undefined;
+  const rows = (v: unknown) => (Array.isArray(v) ? (v as unknown[]) : []).filter((x): x is Record<string, unknown> => !!x && typeof x === 'object');
+  const bySource = r.by_source && typeof r.by_source === 'object'
+    ? Object.entries(r.by_source as Record<string, unknown>).map(([source, v]) => {
+        const s = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>;
+        return { source, count: num(s.count) ?? 0, tokens: num(s.tokens) ?? 0 };
+      })
+    : [];
+  return {
+    count,
+    tokens: num(r.tokens) ?? 0,
+    sentTokens: num(r.sent_tokens) ?? num(r.tokens) ?? 0,
+    rounds: rows(r.rounds).map((x) => ({ round: num(x.round) ?? 0, count: num(x.count) ?? 0, tokens: num(x.tokens) ?? 0 })),
+    heaviest: rows(r.heaviest).map((x) => ({ name: str(x.name), source: str(x.source), tokens: num(x.tokens) ?? 0 })),
+    bySource,
+  };
 }
 
 export interface RoundActivity {
@@ -988,6 +1022,7 @@ export function metricsFrom(meta: Record<string, unknown>): TurnMetrics {
     recovery_usage: asArray<Record<string, unknown>>(meta.recovery_usage),
     compaction_usage: asArray<Record<string, unknown>>(meta.compaction_usage),
     runId: str(meta.run_id) || str(meta.trace_id) || undefined,
+    toolsOffered: toolsOfferedFrom(meta.tools_offered),
   };
 }
 

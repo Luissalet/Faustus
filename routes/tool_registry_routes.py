@@ -138,6 +138,23 @@ def setup_tool_registry_routes():
         report["mcp_attached"] = mcp_manager is not None
         return report
 
+    @router.get("/footprint/turns")
+    def footprint_turns(request: Request, session_id: str = "", message_id: str = "", limit: int = 5):
+        """What saved turns really offered the model (src/turn_tool_offer.py, OBJ-56): per turn the
+        distinct tools and their tokens, totals per source, the heaviest and the cost of each round.
+        One message, the last turns of a session, or the newest turns of this user; a turn still
+        running in `session_id` comes first marked `running`."""
+        require_admin(request)
+        from src import turn_tool_offer
+        out = turn_tool_offer.report(session_id.strip() or None, message_id=message_id.strip() or None,
+                                     limit=limit, owner=None if (session_id or message_id) else _owner_of(request))
+        live = turn_tool_offer.peek(session_id.strip()) if session_id.strip() and not message_id.strip() else None
+        if live:
+            out["turns"].insert(0, {"session_id": session_id.strip(), **live})
+            out["count"] = len(out["turns"])
+        out["checked_at"] = now_iso()
+        return out
+
     @router.get("/catalog/{name}")
     def catalog_entry(name: str, request: Request):
         """One tool's complete descriptor (including its input schema) plus
