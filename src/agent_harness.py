@@ -1201,17 +1201,23 @@ _REFERENCE_CUE_RE = re.compile(
 # "`ventas.csv` (que no he modificado)" — after the basename comes "`".
 _MD_PATH_CLOSE_RE = re.compile(r"^(?:[`*_\"']+|\*\*|__)+")
 
+# Same shape as PATH_TOKEN_RE's capture (dirs + basename.ext), for lookaheads.
+_PATH_OBJECT_RE = (
+    r"(?:[`*_\"']*)?(?:\.{0,2}[\w@.-]+[/\\])*[\w@.-]*[A-Za-z_][\w@.-]*\.\w"
+)
+
 # Path-local denial of authorship: "ventas.csv (que no he modificado)",
 # "guia.txt, left untouched". Must not skip the whole sentence (that would
 # drop the real deliverable named earlier in the same claim).
-# "sin tocar setup.py" names the denied path as object — do not attach that
-# denial to the previous token (tests.py).
+# "sin tocar setup.py" / "sin tocar config/setup.py" names the denied path as
+# object — do not attach that denial to the previous token (tests.py).
 _PATH_UNTOUCHED_AFTER_RE = re.compile(
     r"^(?:\)|,|;)?\s*(?:"
     r"\(?\s*que\s+no\s+(?:he|hemos)\s+(?:modificado|alterado|tocado|cambiado)\b|"
     r"\(?\s*sin\s+(?:modificar|alterar|tocar)(?:lo|la|los|las)\b|"
-    r"\(?\s*sin\s+(?:modificar|alterar|tocar)\b(?!\s*(?:[`*_\"']*)?[\w@.-]+\.\w)|"
-    r"\(?\s*(?:which\s+)?(?:i\s+)?(?:did\s+not|didn't)\s+(?:modify|change|touch|alter)\b|"
+    r"\(?\s*sin\s+(?:modificar|alterar|tocar)\b(?!\s*" + _PATH_OBJECT_RE + r")|"
+    r"\(?\s*(?:which\s+)?(?:i\s+)?(?:did\s+not|didn't)\s+(?:modify|change|touch|alter)"
+    r"\b(?!\s*" + _PATH_OBJECT_RE + r")|"
     r"\(?\s*(?:left\s+)?untouched\b|"
     r"\(?\s*not\s+modified\b|"
     r"\(?\s*unchanged\b"

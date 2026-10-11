@@ -160,6 +160,10 @@ def test_sin_tocar_applies_to_following_path_not_previous():
     assert h.find_claimed_paths(
         "He actualizado main.py y tests.py, sin tocar setup.py."
     ) == ["main.py", "tests.py"]
+    # Codex r2: directory in the denied object must not drop tests.py either.
+    assert h.find_claimed_paths(
+        "He actualizado main.py y tests.py, sin tocar config/setup.py."
+    ) == ["main.py", "tests.py"]
 
 
 def test_a_partir_de_line_is_not_an_input_cue():
