@@ -144,6 +144,29 @@ _BUILTIN_SERVERS = {
 # to `mcp__code_graph__code_graph_*` for one question).
 NATIVE_TWIN_SERVERS = frozenset({"code_graph", "prior_art", "research_prune", "execution", "blender_scene", "github"})
 
+# Single tools of other built-in servers that copy a native tool of the same name and accept nothing the native one
+# does not (checked against the live schemas by tests/test_native_twin_tools.py). Same treatment as the servers above:
+# connected and usable by any MCP client, not offered to the agent next to the native tool. Copies that can do more
+# stay offered: email send_email (cc, bcc), reply_to_email (reply_all), read_email (message_id) and memory
+# manage_memory (kind, lease_days).
+NATIVE_TWIN_TOOLS: dict[str, frozenset[str]] = {
+    "email": frozenset({"list_email_accounts", "list_emails", "scan_email_unsubscribes", "unsubscribe_email",
+                        "archive_email", "delete_email", "mark_email_read", "bulk_email"}),
+    "context": frozenset({"context_recall"}),
+    "harness": frozenset({"doc_lint"}),
+    "image_gen": frozenset({"generate_image"}),
+}
+
+
+def is_native_twin(qualified_name: str) -> bool:
+    """True for `mcp__<server>__<tool>` that only mirrors a native tool: every tool of a NATIVE_TWIN_SERVERS server,
+    or one listed in NATIVE_TWIN_TOOLS. The agent's tool index skips these and the footprint counts them as hidden."""
+    name = str(qualified_name or "")
+    if not name.startswith("mcp__"):
+        return False
+    server, _, tool = name[5:].partition("__")
+    return server in NATIVE_TWIN_SERVERS or tool in NATIVE_TWIN_TOOLS.get(server, frozenset())
+
 # NPX-based built-in servers (run via npx, not Python).
 #
 # The browser's base args carry only the package; headless / profile /

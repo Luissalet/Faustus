@@ -515,16 +515,16 @@ def _examples_block(name: str) -> str:
 
 
 def _is_native_twin(tool_name: str) -> bool:
-    """`mcp__<server>__<tool>` from a built-in server that only mirrors native
-    tools (`src.builtin_mcp.NATIVE_TWIN_SERVERS`): not indexed for the agent."""
+    """`mcp__<server>__<tool>` that only mirrors a native tool (a whole
+    `src.builtin_mcp.NATIVE_TWIN_SERVERS` server or one of its
+    `NATIVE_TWIN_TOOLS`): not indexed for the agent."""
     if not tool_name.startswith("mcp__"):
         return False
     try:
-        from src.builtin_mcp import NATIVE_TWIN_SERVERS
+        from src.builtin_mcp import is_native_twin
     except Exception:  # noqa: BLE001 - never fail indexing over this
         return False
-    server = tool_name[5:].split("__", 1)[0]
-    return server in NATIVE_TWIN_SERVERS
+    return is_native_twin(tool_name)
 
 
 class ToolIndexUnavailable(RuntimeError):

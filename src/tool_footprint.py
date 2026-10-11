@@ -135,10 +135,10 @@ def native_twin(name: str) -> bool:
     if not name.startswith("mcp__"):
         return False
     try:
-        from src.builtin_mcp import NATIVE_TWIN_SERVERS
+        from src.builtin_mcp import is_native_twin
     except Exception:
         return False
-    return name[5:].split("__", 1)[0] in NATIVE_TWIN_SERVERS
+    return is_native_twin(name)
 
 
 def rows_from_mappings(tools: Iterable[Any]) -> List[Dict[str, Any]]:
