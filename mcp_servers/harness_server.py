@@ -197,6 +197,26 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="mcp_config_audit",
+            description=(
+                "Hygiene audit of the MCP servers configured in the app: credentials typed in plain "
+                "text (env, arguments, URL), remote servers on plain http, npx/uvx packages without a "
+                "fixed version, whole drives or the user profile handed out as roots, servers that "
+                "inherit the whole environment, shell wrappers and duplicates. Without `servers` it "
+                "reads the app's own configuration; with `servers` (a list of {id, name, transport, "
+                "command, args, env, url}) it audits that list. Secrets are masked. Read-only, no model."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "servers": {"type": "array", "items": {"type": "object"},
+                                "description": "Optional server list to audit instead of the configured one."},
+                    "include_disabled": {"type": "boolean",
+                                         "description": "Also audit disabled servers (default true)."},
+                },
+            },
+        ),
+        Tool(
             name="harness_proposals",
             description=(
                 "List or read the harness refinement proposals: the smallest edits the assistant "
@@ -514,6 +534,28 @@ def _tool_footprint(args: dict) -> dict:
     return report
 
 
+def _mcp_config_audit(args: dict) -> dict:
+    from src import mcp_config_audit as audit
+
+    include_disabled = args.get("include_disabled")
+    include_disabled = True if include_disabled is None else bool(include_disabled)
+    supplied = args.get("servers")
+    if supplied is not None:
+        if not isinstance(supplied, list) or not all(isinstance(s, dict) for s in supplied):
+            return {"error": "servers must be a list of server objects"}
+        report = audit.audit_servers(supplied[:500], include_disabled=include_disabled)
+        report["configuration"] = "supplied"
+        return report
+    try:
+        servers = audit.load_configured_servers()
+    except Exception as exc:  # noqa: BLE001 - no database in this process
+        return {"error": f"could not read the configured servers ({type(exc).__name__}: {exc}); "
+                         "pass `servers` or use GET /api/mcp/audit"}
+    report = audit.audit_servers(servers, include_disabled=include_disabled)
+    report["configuration"] = "app"
+    return report
+
+
 def _harness_proposals(args: dict) -> dict:
     from src.harness_refinement import store
 
@@ -673,6 +715,7 @@ _TOOLS = {
     "resource_claims": _resource_claims,
     "paired_bench_reports": _paired_bench_reports,
     "tool_footprint": _tool_footprint,
+    "mcp_config_audit": _mcp_config_audit,
     "harness_proposals": _harness_proposals,
     "voice_turn_timeline": _voice_turn_timeline,
     "cookbook_job_log": _cookbook_job_log,
@@ -698,6 +741,11 @@ async def run():
         try:
             _load_builtin_catalogue()
         except Exception:  # noqa: BLE001 - the other tools must still serve
+            pass
+        try:  # import before the stdio loop, same Windows hang as the catalogue
+            import src.mcp_config_audit  # noqa: F401
+            import core.database  # noqa: F401
+        except Exception:  # noqa: BLE001
             pass
     async with stdio_server() as (read_stream, write_stream):
         with stdout_guard():

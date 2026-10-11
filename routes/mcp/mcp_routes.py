@@ -314,6 +314,21 @@ def setup_mcp_routes(mcp_manager: McpManager):
     # happen to find first.
     router = APIRouter(prefix="/api/mcp", tags=["mcp"])
 
+    @router.get("/audit")
+    def audit_servers_config(request: Request, include_disabled: bool = True):
+        """Hygiene audit of every configured MCP server (src/mcp_config_audit.py):
+        plain-text credentials, plain-http remote URLs, packages run without a
+        fixed version, whole drives or the user profile handed out as roots,
+        servers that inherit the whole environment, shell wrappers and
+        duplicates. Read-only and offline; complements the per-server SEC-09
+        content scan (GET /servers/{id}/security-scan)."""
+        require_admin(request)
+        from src.mcp_config_audit import audit_servers, load_configured_servers
+        report = audit_servers(load_configured_servers(), include_disabled=include_disabled)
+        from datetime import datetime, timezone
+        report["checked_at"] = datetime.now(timezone.utc).isoformat()
+        return report
+
     @router.get("/servers")
     def list_servers(request: Request):
         """List all configured MCP servers with connection status."""
