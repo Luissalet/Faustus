@@ -487,10 +487,14 @@ def test_compare_mode_branch_skips_agent_runs_in_source():
         "StreamingResponse before normal streams are wrapped in agent_runs"
     )
     # And that direct StreamingResponse really does wrap _safe_stream() itself
-    # (not agent_runs.subscribe(...)) -- the whole point of the branch.
+    # (not agent_runs.subscribe(...)) -- the whole point of the branch. Since the
+    # initial-wait bound, the branch builds `_compare_stream = _safe_stream()`
+    # (optionally wrapped by `bounded(...)`) and returns a StreamingResponse of it.
+    branch_body = src[branch_idx:detach_idx]
+    assert "_compare_stream = _safe_stream()" in branch_body
     between = src[direct_return_idx:detach_idx]
-    assert "_safe_stream()" in between
-    assert "agent_runs.start" not in between and "agent_runs.subscribe" not in between
+    assert "_compare_stream" in between
+    assert "agent_runs.start" not in branch_body and "agent_runs.subscribe" not in branch_body
 
 
 def test_a_run_replaced_while_running_publishes_its_cancelled_frame_once():
