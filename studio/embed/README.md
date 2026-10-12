@@ -53,6 +53,11 @@ Each `<faustus-chat>` instance:
   boundary) — the host page's stylesheets never leak in, and this
   component's `<style>` never leaks out;
 - registers no router, no global event bus, no singleton of any kind.
+- shows the agent's replies as formatted Markdown (Studio's own parser in
+  `studio/src/lib/markdown.ts` turned into DOM nodes: headings, lists, tables,
+  code, quotes, links): no HTML from the model is ever parsed, only web and mail
+  links are live (new tab, no opener), and tool lines show the tool's own name
+  (`screen_status`, not `mcp__<server>__screen_status`). `tests/markdown.test.ts`.
 
 Two instances on the same page with two different `server`/`token`/`session`
 values are two fully independent chat sessions. See

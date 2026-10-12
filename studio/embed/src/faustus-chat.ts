@@ -21,6 +21,7 @@ import type { Turn } from '../../../sdk/ts/src/turn.js';
 import type { SseEvent } from '../../../sdk/ts/src/sse.js';
 import type { ToolApprovalDecision, HoardContext } from '../../../sdk/ts/src/types.js';
 import { EMBED_STYLES } from './styles.js';
+import { renderMarkdownInto, toolLabel } from './markdown-dom.js';
 
 export type FaustusChatTheme = 'light' | 'dark' | 'auto';
 
@@ -171,7 +172,7 @@ export class FaustusChatElement extends HTMLElement {
           if (item && typeof item === 'object') {
             const event = item as Record<string, unknown>;
             const output = String(event.output || '');
-            this.#appendTool(`${String(event.tool || 'Herramienta')}\n${output || JSON.stringify(item)}`, this.#undoReceipt(output));
+            this.#appendTool(`${toolLabel(event.tool) || 'Herramienta'}\n${output || JSON.stringify(item)}`, this.#undoReceipt(output));
           }
         }
         const legacy = message.metadata?.writer_tool_call as Record<string, unknown> | undefined;
@@ -559,12 +560,34 @@ export class FaustusChatElement extends HTMLElement {
 
   #appendBubble(role: 'user' | 'agent' | 'error', text: string): HTMLDivElement {
     const node = el('div', { class: 'fc-msg', 'data-role': role });
-    node.textContent = text;
+    if (role === 'agent') this.#renderAgent(node, text);
+    else node.textContent = text;
     this.#transcript.appendChild(node);
     this.#messageCount += 1;
     this.#syncEmptyState();
     this.#transcript.scrollTop = this.#transcript.scrollHeight;
     return node;
+  }
+
+  /** The agent's words as formatted Markdown; the raw text stays on the node for the streaming deltas. */
+  #renderAgent(node: HTMLDivElement, text: string): void {
+    node.dataset.raw = text;
+    node.classList.add('fc-md');
+    renderMarkdownInto(node, text);
+  }
+
+  /** Streaming: append a delta to the raw text and re-render at most once per frame. */
+  #appendDelta(node: HTMLDivElement, delta: string): void {
+    node.dataset.raw = (node.dataset.raw || '') + delta;
+    if (node.dataset.pending) return;
+    node.dataset.pending = '1';
+    const flush = () => {
+      delete node.dataset.pending;
+      this.#renderAgent(node, node.dataset.raw || '');
+      this.#transcript.scrollTop = this.#transcript.scrollHeight;
+    };
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(flush);
+    else setTimeout(flush, 16);
   }
 
   #appendTool(label: string, receipt?: Record<string, unknown>): void {
@@ -684,21 +707,21 @@ export class FaustusChatElement extends HTMLElement {
 
           if (event.type === 'delta') {
             if (!agentBubble) agentBubble = this.#appendBubble('agent', '');
-            agentBubble.textContent += event.delta;
-            this.#transcript.scrollTop = this.#transcript.scrollHeight;
+            this.#appendDelta(agentBubble, String(event.delta ?? ''));
             continue;
           }
           if (event.type === 'tool_start') {
-            this.#appendTool(`▶ ${event.tool}${event.command ? `: ${event.command}` : ''}`);
+            this.#appendTool(`▶ ${toolLabel(event.tool)}${event.command && event.command !== '{}' ? `: ${event.command}` : ''}`);
             continue;
           }
           if (event.type === 'tool_output') {
-            const receipt = this.#undoReceipt(event.output || '');
-            this.#appendTool(`✓ ${event.tool}${event.output ? `\n${event.output}` : ''}`, receipt);
+            const receipt = this.#undoReceipt(String(event.output || ''));
+            this.#appendTool(`✓ ${toolLabel(event.tool)}${event.output ? `\n${event.output}` : ''}`, receipt);
             continue;
           }
           if (event.type === 'ask_user') {
-            const decision = await this.#askUser(event);
+            // The SDK union also admits unknown event types, so the narrowing by \	ype\ needs saying.
+            const decision = await this.#askUser(event as Extract<SseEvent, { type: 'ask_user' }>);
             if (decision.kind === 'tool_approval') {
               turn = await client.turns.decideToolApproval(sessionId, {
                 approvalId: decision.approvalId,
@@ -717,7 +740,7 @@ export class FaustusChatElement extends HTMLElement {
             break;
           }
           if (event.type === 'error') {
-            turnError = event.error || event.message || event.text || event.detail || 'error';
+            turnError = String(event.error || event.message || event.text || event.detail || 'error');
             this.#emitError(turnError, event);
           }
         }
