@@ -12119,7 +12119,7 @@ async def _stream_agent_loop_body(
         try:
             from src import plan_tracker as _pt
             if bool(get_setting("agent_plan_tracker", True)):
-                _plan_scope = _pt.scope_for(_pid or None, workspace)
+                _plan_scope = _pt.scope_for(_pid or None, workspace, session_id)
                 if _has_inline_attachment:
                     # Only the current request imports an attachment. A resume
                     # uses the durable active tracker, not an unrelated old

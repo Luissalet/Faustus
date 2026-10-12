@@ -2597,6 +2597,20 @@ def _is_local_minimax_mlx_request(url: str, model: str) -> bool:
         return False
 
 
+#: Servers that rejected our automatic min_p (vLLM with speculative decoding).
+#: Later requests to them go without it instead of failing once per round.
+_MIN_P_REJECTED_HOSTS: set = set()
+
+
+def _min_p_host(url: str) -> str:
+    try:
+        from urllib.parse import urlparse as _up
+        parsed = _up(str(url or ""))
+        return f"{parsed.hostname}:{parsed.port}"
+    except Exception:
+        return ""
+
+
 def _neutralize_rejected_automatic_min_p(payload, url: str, status: int, error,
                                         *, automatic: bool, partial: bool = False) -> bool:
     """One compatibility correction after an explicit speculative sampler rejection.
@@ -2618,6 +2632,7 @@ def _neutralize_rejected_automatic_min_p(payload, url: str, status: int, error,
     except (TypeError, ValueError):
         return False
     payload["min_p"] = 0.0
+    _MIN_P_REJECTED_HOSTS.add(_min_p_host(url))
     logger.info("Local server rejected the automatic min_p default; retrying once with neutral min_p")
     return True
 
@@ -2685,6 +2700,8 @@ def _apply_local_generation_stability(payload: Dict, url: str, model: str) -> bo
         # or the reroute is bypassed.
         payload.setdefault("repeat_penalty", _local_sampler_default("local_repeat_penalty_default", 1.05))
         automatic_min_p = "min_p" not in payload
+        if automatic_min_p and _min_p_host(url) in _MIN_P_REJECTED_HOSTS:
+            payload["min_p"] = 0.0
         payload.setdefault("min_p", _local_sampler_default("local_min_p_default", 0.05))
         # `local_top_p_default`/`local_top_k_default`: same floor as the two
         # above (`setdefault` only — an explicit `/topp`/`/topk` already

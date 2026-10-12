@@ -24,6 +24,8 @@ def isolated_sampler(monkeypatch):
     monkeypatch.setattr(core, "_clear_host_dead", lambda *args: None)
     monkeypatch.setattr(core, "note_model_activity", lambda *args: None)
     monkeypatch.setattr(core, "_fit_reasoning_effort_to_template", lambda *args: None)
+    # Each case starts from a server that has not rejected min_p yet.
+    monkeypatch.setattr(core, "_MIN_P_REJECTED_HOSTS", set())
 
 
 def test_stability_tracks_only_its_own_default():
@@ -151,7 +153,9 @@ def test_stream_retry_stays_bounded_if_override_is_lost(monkeypatch):
     monkeypatch.setattr(core, "_apply_gen_overrides_openai", lambda *args: None)
     client, chunks = stream(monkeypatch, [Response([ERR_LINE]), Response([ERR_LINE])])
     assert len(client.calls) == 2
-    assert all(call["min_p"] == .05 for call in client.calls)
+    # The rejection is remembered for the server, so the rebuilt retry goes
+    # without min_p even though the override was lost; still two calls only.
+    assert [call["min_p"] for call in client.calls] == [.05, 0.0]
     assert any(chunk.startswith("event: error") for chunk in chunks)
 
 

@@ -30,7 +30,7 @@ def _scope_from_ctx(ctx: Dict[str, Any]) -> str:
             workspace = get_active_workspace()
         except Exception:
             workspace = None
-    return pt.scope_for(project_id or None, workspace)
+    return pt.scope_for(project_id or None, workspace, str((ctx or {}).get("session_id") or "") or None)
 
 
 def _active_tracker(ctx: Dict[str, Any]):
