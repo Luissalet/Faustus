@@ -37,7 +37,7 @@ Events (bubble, `composed: true` — they cross the shadow boundary so the
 host page can listen on the element itself):
 
 - `faustus:turn-start` — `detail: {sessionId, runId}`
-- `faustus:turn-end` — `detail: {sessionId, reason}`
+- `faustus:turn-end` — `detail: {sessionId, reason, error?}`; a turn the server refused mid-stream (an `error` frame, e.g. the queue wait ran out) ends with `reason: 'error'` and the server's text in `error`, which the status line also keeps
 - `faustus:error` — `detail: {sessionId, message, cause}`
 - `faustus:event` — `detail`: every raw decoded SSE event from `faustus-sdk`, for a host that wants more than the three above.
 
