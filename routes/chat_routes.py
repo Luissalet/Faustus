@@ -2901,6 +2901,10 @@ def setup_chat_routes(
             _doc_context_msgs = _doc_context_messages(_parse_doc_context_payload(doc_context_raw), ctx.user)
             if _hoard_context is not None:
                 _doc_context_msgs.append(_hoard_copilot.context_message(_hoard_context))
+                from src.hoard_copilot_turn import origin_hint_message as _origin_hint
+                _hint = _origin_hint(_hoard_context)
+                if _hint:
+                    _doc_context_msgs.append(_hint)
             if _doc_context_msgs:
                 _insert_at = max(0, len(ctx.messages) - 1)
                 ctx.messages[_insert_at:_insert_at] = _doc_context_msgs
@@ -4267,6 +4271,10 @@ def setup_chat_routes(
                         _forced_tools = None
                         if _hoard_context is not None:
                             _forced_tools = {"lookup_tools"}
+                            # The origin app's read tools are offered up front, so "what do I
+                            # have open" is answered with the app and not with desktop tools.
+                            from src.hoard_copilot_turn import origin_app_tools as _origin_tools
+                            _forced_tools |= _origin_tools(get_mcp_manager(), _hoard_context)
                         if _search_enabled:
                             _forced_tools = set(_forced_tools or set()) | set(WEB_TOOL_NAMES)
                             if _explicit_browser_intent:
