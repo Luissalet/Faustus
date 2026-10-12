@@ -23,9 +23,17 @@ does not create another account or approval flow.
 Creation takes `{context, name?}` and returns `session_id`, `project_id`,
 `project_link_id`, context and selected global model. Context includes
 `origin: {app_id, data_space_id, surface?}`, optional
-`project: {external_project_id, title?}`, `active_objects`, `selection`, `view`
+`project: {external_project_id, title?}`, `active_objects`, `selection`, `view`, `editor`
 and attachment references. The originating conversation stays stable when
 another surface continues it. A new turn captures its selection once.
+
+`editor` carries the application's current document revision, unsaved fields and
+other editor state. It survives normalization, storage and per-turn freezing,
+and reaches the normal agent as domain context. It does not create another
+editor or conversation store. App-level views omit `project` rather than sending
+`project: null`; new forms do not invent native object identifiers.
+Continuing from Faustus without a fresh host snapshot omits old `editor` state,
+as it does the previous selection. The original turn keeps its captured context.
 
 Send through the normal `/api/chat_stream` route with `hoard_context` and
 `client_message_id`. The SDK exposes these as `hoardContext` and

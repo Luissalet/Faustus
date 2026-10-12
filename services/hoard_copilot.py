@@ -31,7 +31,7 @@ def normalize_context(raw: Any) -> dict:
         raise CopilotError("invalid_context", "Application and data space are required")
     # Only domain context crosses into the prompt. Transport secrets stay in the host.
     context = {key: copy.deepcopy(raw[key]) for key in (
-        "project", "active_objects", "selection", "view", "attachments", "instructions_ref"
+        "project", "active_objects", "selection", "view", "editor", "attachments", "instructions_ref"
     ) if key in raw}
     context["contract_version"] = "1.0"
     context["origin"] = {key: origin[key] for key in (
@@ -165,6 +165,7 @@ class HoardCopilotStore:
                 return None
             context = copy.deepcopy(previous["context"])
             context.pop("selection", None)
+            context.pop("editor", None)
             context["view"] = {"surface": "faustus", "selection": "not provided for this turn"}
         else:
             context = normalize_context(raw_context)
