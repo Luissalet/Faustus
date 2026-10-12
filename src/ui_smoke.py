@@ -110,13 +110,30 @@ def _read_text(path: str, cap: int = 400_000) -> str:
         return ""
 
 
+def _index_html_is_served_source(dirpath: str) -> bool:
+    """True when this `index.html` is a dev-source entry (Vite/webpack dev),
+    not a servable build: it loads `.ts`/`.tsx`/`.jsx` modules that
+    `http.server` cannot serve as JavaScript (Windows maps them to
+    text/plain, so the browser refuses the module). Live 12-10: the smoke
+    picked `studio/` (Vite source loading /src/main.tsx) over
+    `static/studio/` (the real build) and failed on the MIME check."""
+    try:
+        with open(os.path.join(dirpath, "index.html"), "r", encoding="utf-8", errors="replace") as fh:
+            html = fh.read()
+    except OSError:
+        return False
+    return bool(re.search(r'src="[^"]*\.(?:tsx?|jsx)(?:[?#"][^"]*)?"', html))
+
+
 def _find_index_html_dir(workspace: str, max_depth: int = 2) -> Optional[str]:
     """The shallowest directory under `workspace` (workspace itself first)
-    that holds an `index.html`, skipping the usual noise directories."""
+    that holds a *servable* `index.html`, skipping the usual noise
+    directories."""
     # `templates/` holds Jinja sources, not a static site: serving it with
     # http.server yields a 200 page whose /static/* links all 404 (live 17-09).
     skip = {".git", "node_modules", "__pycache__", ".venv", "venv", "env", "dist", "build", "templates"}
     root_depth = workspace.rstrip("/\\").count(os.sep)
+    fallback: Optional[str] = None
     for dirpath, dirnames, filenames in os.walk(workspace):
         depth = dirpath.rstrip("/\\").count(os.sep) - root_depth
         if depth > max_depth:
@@ -124,8 +141,13 @@ def _find_index_html_dir(workspace: str, max_depth: int = 2) -> Optional[str]:
             continue
         dirnames[:] = [d for d in dirnames if d not in skip and not d.startswith(".")]
         if "index.html" in filenames:
-            return dirpath
-    return None
+            if not _index_html_is_served_source(dirpath):
+                return dirpath
+            # A dev-source index is only a last resort: remember it but keep
+            # looking for a real build (live 12-10).
+            if fallback is None:
+                fallback = dirpath
+    return fallback
 
 
 _LOCAL_IMPORT_RE = re.compile(r"^\s*(?:from\s+([\w.]+)\s+import|import\s+([\w.]+))", re.M)
