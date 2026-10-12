@@ -51,9 +51,15 @@ async def bounded(source, seconds: float, *, phase="model"):
                         raise TimeoutError
                     kind, chunk = await asyncio.wait_for(queue.get(), timeout=remaining)
             except TimeoutError:
-                worker.cancel()
                 current_phase = phase() if callable(phase) else phase
                 current_phase = current_phase if current_phase in {"queue", "admission", "preparation", "model"} else "preparation"
+                if current_phase == "queue":
+                    # Waiting behind another run is not the model failing to
+                    # answer: the turn keeps its place (the client sees its
+                    # queue position) and the budget restarts once admitted.
+                    deadline = time.monotonic() + seconds
+                    continue
+                worker.cancel()
                 messages = {
                     "queue": "El turno ha superado el limite de espera en la cola. El modelo todavia no ha recibido esta peticion.",
                     "admission": "El chat sigue ocupado y ha superado el limite de admision del turno.",

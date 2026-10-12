@@ -1325,6 +1325,7 @@ DEFAULT_SETTINGS = {
     "agent_mailbox_wakes_per_hour": 6,
     "agent_queue_local_concurrency": 1,
     "agent_queue_api_concurrency": 0,
+    "agent_queue_sparks_concurrency": 8,
     # delegate_agents: add a reviewer worker after the others by default.
     "agent_subagent_reviewer": False,
     # delegate_agents control board: watchdog heartbeat period (s), the idle /

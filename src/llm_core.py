@@ -6282,6 +6282,17 @@ async def _stream_llm_traced_entry(url: str, model: str, messages: List[Dict], t
             logger.debug("[llm_trace] streaming record failed", exc_info=True)
 
 
+def is_sparks_url(url: str) -> bool:
+    """True when the URL belongs to an endpoint published by a Sparks recipe."""
+    try:
+        from src.settings import load_settings
+        managed = set((load_settings().get("sparks_endpoints") or {}).values())
+        endpoint = _endpoint_id_for_url(url) if url else None
+        return bool(endpoint and endpoint in managed)
+    except Exception:
+        return False
+
+
 def _sparks_initial_wait(url: str) -> Optional[float]:
     from src.settings import load_settings
     from src.sparks import first_token_timeout

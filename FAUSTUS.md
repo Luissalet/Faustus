@@ -11557,3 +11557,10 @@ El panel común que abre el botón «Faustus» de cada Hoard (HoardLink #409: `i
 - El componente vuelve a pasar `tsc --strict` (había cuatro errores de tipos previos).
 - **Verificado en vivo:** turno real desde Argus que llamó a su herramienta `screen_status` y contestó «44.872 capturas» con la cifra en negrita y el campo en código; turno real «hola» desde Links por el relay Node; historial de Argus con la herramienta antes de la respuesta.
 
+
+## 342. Las Sparks tienen su propia cola y esperar turno no agota el plazo (12-10-2026)
+
+- Antes: el endpoint de las Sparks (IP de la LAN) caía en la cola `local` de las GPUs del PC, con 1 turno a la vez. Un chat corriendo bloqueaba a todos los demás, y el plazo de primera respuesta de las Sparks (30 s) contaba también el tiempo en cola: el turno moría con «El turno ha superado el limite de espera en la cola» sin llegar al modelo.
+- Ahora: los endpoints publicados por recetas de Sparks van a la cola `sparks`, con `agent_queue_sparks_concurrency` (Ajustes → Agente; por defecto 8, igual que `max_num_seqs` de glm53-tp3). La cola `local` del PC sigue igual.
+- `first_token_deadline.bounded`: mientras el turno está en fase `queue`, el plazo se reinicia en lugar de cortar; el turno conserva su puesto (el cliente ve la posición) y el plazo cuenta desde que entra.
+- Verificado en la 7000: dos chats simultáneos contra GLM-5.3 en las Sparks, ambos admitidos al momento en la cola `sparks` y respondidos (13 s y 18 s). Tests: `tests/test_sparks_queue_lane.py`, `test_first_token_budget.py`, `test_agent_settings_schema.py`.

@@ -4946,7 +4946,10 @@ def setup_chat_routes(
             _lane = None
             try:
                 from src.model_context import is_local_endpoint as _is_local_ep
-                if _is_local_ep(sess.endpoint_url):
+                from src.llm_core import is_sparks_url as _is_sparks_ep
+                if _is_sparks_ep(sess.endpoint_url):
+                    _lane = "sparks"
+                elif _is_local_ep(sess.endpoint_url):
                     _lane = "local"
                 else:
                     from src.settings import get_setting as _gs_queue

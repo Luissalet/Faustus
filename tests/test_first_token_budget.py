@@ -75,7 +75,7 @@ def test_native_endpoint_accepts_json_and_form_without_mutating_default():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("phase", ["queue", "preparation", "admission", "model"])
+@pytest.mark.parametrize("phase", ["preparation", "admission", "model"])
 async def test_deadline_records_the_phase_without_fallback(phase):
     closed = []
     async def source():
@@ -90,8 +90,6 @@ async def test_deadline_records_the_phase_without_fallback(phase):
     assert event["fallback_eligible"] is False
     assert event["retryable"] is False
     assert closed == [True]
-    if phase == "queue":
-        assert "todavia no ha recibido" in event["error"]
 
 
 @pytest.mark.asyncio

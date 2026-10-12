@@ -1345,10 +1345,13 @@ class _Lane:
     @property
     def limit(self) -> int:
         key = "agent_queue_local_concurrency" if self.name == "local" else f"agent_queue_{self.name}_concurrency"
+        # The Sparks serve several sequences at once (vLLM batching); they get
+        # their own lane instead of sharing the PC GPUs' one-at-a-time lane.
+        fallback = {"local": 1, "sparks": 8}.get(self.name, 0)
         try:
-            v = int(_setting(key, 1 if self.name == "local" else 0) or 0)
+            v = int(_setting(key, fallback) or 0)
         except (TypeError, ValueError):
-            v = 1 if self.name == "local" else 0
+            v = fallback
         return v  # 0 = unlimited
 
     def positions(self) -> Dict[str, int]:
