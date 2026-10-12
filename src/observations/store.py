@@ -251,12 +251,14 @@ def _norm_text(value: str) -> str:
 
 def content_fingerprint(session_id: str, obs: Observation) -> str:
     """What makes two notes the same: chat, type, title, facts and modified
-    files, compared without case, spacing or order. A later note with the same
-    title but a different fact (a value that changed again) is new information
-    and is kept; the model's wording of subtitle/narrative does not count."""
-    parts = [session_id, obs.type, _norm_text(obs.title),
-             "\x01".join(sorted(_norm_text(f) for f in obs.facts if _norm_text(f))),
-             "\x01".join(sorted(_norm_text(p) for p in obs.files_modified if _norm_text(p)))]
+    files. The title is compared without case or spacing; facts and paths are
+    compared literally (outer spaces aside, order ignored), because their case
+    and inner spacing can be the information itself ("Prod" vs "prod"). A later
+    note with the same title but a different fact is new and is kept; the
+    model's wording of subtitle/narrative does not count."""
+    facts = sorted(str(f).strip() for f in obs.facts if str(f or "").strip())
+    paths = sorted(str(p).strip() for p in obs.files_modified if str(p or "").strip())
+    parts = [session_id, obs.type, _norm_text(obs.title), "\x01".join(facts), "\x01".join(paths)]
     return hashlib.sha1("\x00".join(parts).encode("utf-8", errors="replace")).hexdigest()[:16]
 
 

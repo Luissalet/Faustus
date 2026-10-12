@@ -586,8 +586,12 @@ def test_the_same_title_with_a_changed_fact_is_new_information():
     second = make("Updated stats.py default", turn="t2", facts=["stats.py default_limit is 25"], modified=["stats.py"])
     assert first and second and first != second
     assert [h["id"] for h in store.search("25")] == [second]
-    # same content, other wording of case/spacing/order: still a duplicate
-    assert make("updated  stats.py DEFAULT", turn="t3", facts=["Stats.py default_limit is 25 "], modified=["stats.py"]) is None
+    # same content with the title cased or spaced differently and outer spaces on a fact: still a duplicate
+    assert make("updated  stats.py DEFAULT", turn="t3", facts=[" stats.py default_limit is 25 "], modified=["stats.py"]) is None
+    # a fact whose case is the information is new (review of r2: "Prod" then "prod" kept only "Prod")
+    prod = make("Set default mode", turn="t4", facts=['stats.py default_mode equals "Prod"'], modified=["stats.py"])
+    lower = make("Set default mode", turn="t5", facts=['stats.py default_mode equals "prod"'], modified=["stats.py"])
+    assert prod and lower and prod != lower
     # same facts in another chat: a different chat keeps its own note
     assert make("Updated stats.py default", session="s2", facts=["stats.py default_limit is 25"], modified=["stats.py"])
 
