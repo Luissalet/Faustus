@@ -290,6 +290,16 @@ These checks provide evidence about supported actions; they are not a proof that
 
 ### Project knowledge and extended context
 
+Useful tool outcomes can become **observations** with a title, facts, concepts and
+affected files; completed turns can also produce a progress summary. The background
+worker uses the configured utility model route and leaves interactive turns responsive.
+Progressive retrieval starts with titles, expands their temporal neighbours and then
+reads selected details. `obs_search`, `obs_timeline`, `obs_details` and `obs_recent`
+expose the same store through MCP. Settings → Agent → Observations also controls
+optional context at chat start and when reading a related file. Identical notes are
+deduplicated while changed facts and case-sensitive values remain distinct.
+See the [observations API](docs/api/observations.md).
+
 Project identity is stored independently of the sidebar folder name. An agent can attach a generated document or another supported source to its current project's context by reference.
 
 The context engine retrieves and budgets relevant material from project sources, history and memory. It tracks provenance, conflicts and compact context capsules instead of trying to place an entire disk in a model's prompt. Persistent storage extends what can be retrieved, **not the model's native context window**. Within a turn, a context packet built for a learned-memory query is reused in later rounds only after the same strict query, repeated against the same database, embedding runtime and scoring clock, returns the same rows; edits, new matches, conflicts, expiry or a changed vector store rebuild it.

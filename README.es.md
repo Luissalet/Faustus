@@ -254,6 +254,17 @@ Estas comprobaciones aportan evidencia sobre acciones compatibles; no son una pr
 
 ### Conocimiento del proyecto y contexto ampliado
 
+Los resultados útiles de las herramientas pueden convertirse en **observaciones**
+con título, hechos, conceptos y ficheros afectados; los turnos también pueden producir
+un resumen de progreso. El trabajo en segundo plano usa la ruta de modelo auxiliar
+configurada y mantiene disponible el turno interactivo. La recuperación progresiva
+empieza por títulos, amplía sus vecinos temporales y lee los detalles seleccionados.
+`obs_search`, `obs_timeline`, `obs_details` y `obs_recent` ofrecen el mismo almacén
+por MCP. Ajustes → Agent → Observations permite activar por separado el contexto
+inicial y las notas relacionadas con un fichero. Las notas idénticas se deduplican;
+los hechos cambiados y los valores sensibles a mayúsculas se conservan distintos.
+Detalle: [API de observaciones](docs/api/observations.md).
+
 La identidad del proyecto se guarda separada del nombre de su carpeta en la barra lateral. Un agente puede añadir un documento generado u otra fuente compatible al contexto de su proyecto actual mediante una referencia.
 
 El motor de contexto recupera y distribuye material relevante entre las fuentes del proyecto, el historial y la memoria. Registra procedencia, conflictos y cápsulas de contexto compactas, en lugar de intentar meter un disco entero en el prompt de un modelo. El almacenamiento persistente amplía lo que se puede recuperar, **no la ventana de contexto nativa del modelo**. Dentro de un turno, el paquete de contexto de una consulta a la memoria aprendida solo se reutiliza en rondas posteriores si la misma consulta estricta, repetida contra la misma base de datos, el mismo runtime de embeddings y el mismo reloj de puntuación, devuelve las mismas filas; ediciones, coincidencias nuevas, conflictos, caducidad o un almacén vectorial distinto lo reconstruyen.

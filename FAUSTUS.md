@@ -11503,3 +11503,25 @@ avisos para comandos, archivos, peticiones y respuestas finales. Correcciones
 explícitas generan propuestas deterministas con evidencia; sólo el ejemplo que
 se quiere evitar es el patrón. La API nativa y siete herramientas MCP comparten
 los almacenes canónicos. Detalle y límites: `docs/INSTRUCTION-PORTABILITY.md`.
+
+## Observaciones útiles y recuperación progresiva (#319)
+
+Tras resultados útiles de herramientas, el observador en segundo plano puede guardar
+notas con tipo, título, hechos, conceptos y ficheros leídos o modificados, además del
+resumen de progreso del turno. Usa la ruta auxiliar configurada y difiere su trabajo
+mientras hay un turno interactivo; no carga otro modelo para estas notas. En este
+equipo las consultas a LLM siguen en el servicio global de las Sparks.
+
+La búsqueda ofrece títulos, contexto temporal alrededor de las notas elegidas y sus
+detalles. API `/api/observations/*` y MCP `obs_search`, `obs_timeline`, `obs_details`
+y `obs_recent` comparten el almacén SQLite/FTS. El contexto al iniciar un chat y al
+leer un fichero se activa por separado en Ajustes. Los chats de incógnito no escriben
+ni inyectan estas observaciones. Los hechos nuevos, incluido un cambio de `Prod` a
+`prod`, se guardan; una repetición idéntica se suprime.
+
+Entrega R3 `d5d9cea7`, revisión independiente: 122 pruebas pasan con proveedor
+simulado, HTTP, SQLite, MCP stdio y el bucle real. Composición con #326/#359/#363:
+165 pruebas pasan y 71 se omiten por plataforma. La prueba real del autor con GLM
+en Sparks es evidencia separada; estas pruebas simuladas no califican la calidad
+del modelo. Activa en el 7000 desde `01abfa12`, con cuatro herramientas MCP y sus
+endpoints comprobados. Referencia: `docs/api/observations.md`.
