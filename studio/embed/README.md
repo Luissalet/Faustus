@@ -58,6 +58,8 @@ Each `<faustus-chat>` instance:
   code, quotes, links): no HTML from the model is ever parsed, only web and mail
   links are live (new tab, no opener), and tool lines show the tool's own name
   (`screen_status`, not `mcp__<server>__screen_status`). `tests/markdown.test.ts`.
+- keeps a reasoning model's thinking (deltas flagged `thinking`) out of the reply: while the model thinks the
+  status line says «Pensando…» / «Thinking…», and the live bubble holds only the answer, as the saved reply does.
 
 Two instances on the same page with two different `server`/`token`/`session`
 values are two fully independent chat sessions. See

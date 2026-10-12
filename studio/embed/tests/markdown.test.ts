@@ -71,6 +71,34 @@ const checks: Array<[string, () => Promise<void> | void]> = [
     const tools = [...root.querySelectorAll('.fc-tool')]; const tool = tools[tools.length - 1].textContent || '';
     assert.ok(tool.includes('▶ screen_status') && !tool.includes('mcp__') && !tool.includes('{}'), tool);
   }],
+  ['the model\'s thinking never lands inside the streamed answer', async () => {
+    const frames = ['data: {"delta":"Active objects: dataset ds_1 and version v1.","thinking":true}', 'data: {"delta":"Tienes abierto "}',
+      'data: {"delta":"el dataset."}', 'data: [DONE]'];
+    const transport: typeof fetch = async (input, init = {}) => {
+      const url = new URL(String(input));
+      if (url.pathname === '/api/chat_stream') return new Response(frames.join('\n\n') + '\n\n', { headers: { 'content-type': 'text/event-stream', 'X-Odysseus-Run-Id': 'think' } });
+      if (url.pathname.startsWith('/api/hoard-copilot/conversations/')) return Response.json({ messages: [] });
+      if (url.pathname.endsWith('/draft')) return Response.json({ text: '', attachment_ids: [], updated_at: 1 });
+      if (url.pathname === '/api/hoard-copilot/conversations') return Response.json({ conversations: [{ session_id: 'think', name: 'think' }] });
+      throw new Error(`Unhandled ${init.method || 'GET'} ${url.pathname}`);
+    };
+    const element = document.createElement('faustus-chat') as InstanceType<typeof FaustusChatElement>;
+    element.server = 'https://faustus.example';
+    element.fetch = transport;
+    element.locale = 'es';
+    element.contextProvider = () => ({ origin: { app_id: 'pygmalion', data_space_id: 'think-tests', surface: 'page' } });
+    element.session = 'think';
+    document.body.append(element);
+    await element.loadHistory();
+    const root = element.shadowRoot!;
+    await element.send('¿qué tengo abierto?');
+    for (let i = 0; i < 100 && !(root.querySelector('.fc-msg[data-role="agent"]')?.textContent || '').endsWith('dataset.'); i += 1) await pause();
+    const replies = root.querySelectorAll('.fc-msg[data-role="agent"]');
+    assert.equal(replies.length, 1);
+    assert.equal(replies[0].textContent, 'Tienes abierto el dataset.');
+    assert.ok(!root.textContent!.includes('Active objects'), 'the thinking stays out of the transcript');
+    assert.notEqual(root.querySelector('.fc-status')?.textContent, 'Pensando…', 'the thinking status clears once the answer streams');
+  }],
 ];
 let failed = 0;
 for (const [name, check] of checks) {

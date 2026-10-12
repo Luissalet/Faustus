@@ -694,6 +694,7 @@ export class FaustusChatElement extends HTMLElement {
     if (this.#pendingSend && !this.draft && this.#contextProvider) this.#queueDraft();
 
     let agentBubble: HTMLDivElement | null = null;
+    const thinkingLabel = this.locale.startsWith('es') ? 'Pensando…' : 'Thinking…';
     let sawAnswer = false;
     // The server's `error` frame says why a turn failed; the stream then closes without [DONE], the SDK's resume
     // finds no run and ends with `run_gone`. Keep the explanation so that ending does not wipe it.
@@ -707,6 +708,13 @@ export class FaustusChatElement extends HTMLElement {
           if (!this.#connected) break outer;
 
           if (event.type === 'delta') {
+            // A reasoning model streams its thinking as deltas flagged `thinking`. The saved reply keeps only the
+            // answer, so the live bubble does too: the thinking shows as a status line, never inside the answer.
+            if ((event as { thinking?: unknown }).thinking) {
+              this.#status.textContent = thinkingLabel;
+              continue;
+            }
+            if (this.#status.textContent === thinkingLabel) this.#status.textContent = '';
             if (!agentBubble) agentBubble = this.#appendBubble('agent', '');
             this.#appendDelta(agentBubble, String(event.delta ?? ''));
             continue;
