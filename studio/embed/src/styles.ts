@@ -140,6 +140,11 @@ export const EMBED_STYLES = `
   color: var(--fc-danger);
 }
 
+.fc-thinking { align-self: flex-start; max-width: 92%; font-size: 12px; color: var(--fc-muted); }
+.fc-thinking summary { cursor: pointer; }
+.fc-thinking-body { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 200px; overflow: auto;
+  border-left: 2px solid var(--fc-border); padding: 4px 0 4px 8px; margin-top: 4px; }
+
 .fc-msg.fc-md { white-space: normal; }
 .fc-md > :first-child { margin-top: 0; }
 .fc-md > :last-child { margin-bottom: 0; }

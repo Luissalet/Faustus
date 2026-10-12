@@ -42,7 +42,7 @@ const checks: Array<[string, () => Promise<void> | void]> = [
     assert.equal(toolLabel(undefined), '');
   }],
   ['a streamed reply ends formatted, and the history renders the same way', async () => {
-    const frames = ['data: {"type":"tool_start","tool":"mcp__4b142d9e__screen_status","command":"{}"}', 'data: {"delta":"Hay **12"}', 'data: {"delta":"** capturas."}', 'data: [DONE]'];
+    const frames = ['data: {"delta":"Active objects: dataset X and version v1.","thinking":true}', 'data: {"type":"tool_start","tool":"mcp__4b142d9e__screen_status","command":"{}"}', 'data: {"delta":"Hay **12"}', 'data: {"delta":"** capturas."}', 'data: [DONE]'];
     const transport: typeof fetch = async (input, init = {}) => {
       const url = new URL(String(input));
       if (url.pathname === '/api/chat_stream') return new Response(frames.join('\n\n') + '\n\n', { headers: { 'content-type': 'text/event-stream', 'X-Odysseus-Run-Id': 'md' } });
@@ -67,7 +67,10 @@ const checks: Array<[string, () => Promise<void> | void]> = [
     const replies = root.querySelectorAll('.fc-msg[data-role="agent"]');
     const last = replies[replies.length - 1];
     assert.equal(last.querySelector('strong')?.textContent, '12', 'the two deltas join before formatting');
-    assert.equal(last.textContent, 'Hay 12 capturas.');
+    assert.equal(last.textContent, 'Hay 12 capturas.', 'reasoning never lands in the reply');
+    const thinking = root.querySelector('details.fc-thinking');
+    assert.ok(thinking && !thinking.hasAttribute('open'), 'reasoning sits in its own folded block');
+    assert.equal(thinking!.querySelector('.fc-thinking-body')?.textContent, 'Active objects: dataset X and version v1.');
     const tools = [...root.querySelectorAll('.fc-tool')]; const tool = tools[tools.length - 1].textContent || '';
     assert.ok(tool.includes('▶ screen_status') && !tool.includes('mcp__') && !tool.includes('{}'), tool);
   }],

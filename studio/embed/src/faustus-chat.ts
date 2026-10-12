@@ -592,6 +592,17 @@ export class FaustusChatElement extends HTMLElement {
     return node;
   }
 
+  /** A folded "Reasoning" block for a turn's thinking deltas; returns the element the text goes into. */
+  #appendThinking(): HTMLElement {
+    const details = el('details', { class: 'fc-thinking' });
+    const es = this.locale.startsWith('es');
+    details.appendChild(el('summary', { 'data-label-en': 'Reasoning', 'data-label-es': 'Razonamiento' }, es ? 'Razonamiento' : 'Reasoning'));
+    const body = el('div', { class: 'fc-thinking-body' });
+    details.appendChild(body);
+    this.#transcript.appendChild(details);
+    return body;
+  }
+
   /** The agent's words as formatted Markdown; the raw text stays on the node for the streaming deltas. */
   #renderAgent(node: HTMLDivElement, text: string): void {
     node.dataset.raw = text;
@@ -716,6 +727,7 @@ export class FaustusChatElement extends HTMLElement {
     if (this.#pendingSend && !this.draft && this.#contextProvider) this.#queueDraft();
 
     let agentBubble: HTMLDivElement | null = null;
+    let thinkingBox: HTMLElement | null = null;
     let sawAnswer = false;
     // The server's `error` frame says why a turn failed; the stream then closes without [DONE], the SDK's resume
     // finds no run and ends with `run_gone`. Keep the explanation so that ending does not wipe it.
@@ -729,6 +741,13 @@ export class FaustusChatElement extends HTMLElement {
           if (!this.#connected) break outer;
 
           if (event.type === 'delta') {
+            // Reasoning deltas (thinking: true) are the model thinking aloud, not the answer: they go in their own
+            // folded block, the way Studio shows them, and never into the reply (which is saved without them).
+            if (event.thinking) {
+              if (!thinkingBox) thinkingBox = this.#appendThinking();
+              thinkingBox.textContent += String(event.delta ?? '');
+              continue;
+            }
             if (!agentBubble) agentBubble = this.#appendBubble('agent', '');
             this.#appendDelta(agentBubble, String(event.delta ?? ''));
             continue;
