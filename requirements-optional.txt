@@ -59,7 +59,10 @@ markitdown[docx,pptx,xlsx,xls]==0.1.6
 # Linux/X11). These are optional accelerators, imported lazily when present:
 #   mss       — faster, multi-monitor screen capture (used before ImageGrab)
 #   pyautogui — mouse/keyboard input on macOS (Windows/Linux do not need it)
+#   rapidocr_onnxruntime — local OCR: desktop_click {"text": ...} and the
+#     screen text given to models that cannot see screenshots
 mss
+rapidocr_onnxruntime
 pyautogui
 # ART-03: visual page-overflow check of PDFs (src/document_actions.py::detect_page_overflow).
 # Pure Python (pdfminer); the route answers 503 "pdfplumber is not installed" without it.

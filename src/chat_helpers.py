@@ -360,7 +360,81 @@ def model_supports_vision(model_name: str, endpoint_url: str = "") -> bool:
             advertised = None
         if advertised is not None:
             return advertised
+        try:
+            advertised = openai_compat_supports_vision(endpoint_url, model_name or "")
+        except Exception:
+            advertised = None
+        if advertised is not None:
+            return advertised
     return is_vision_model(model_name)
+
+
+# (chat url, model) -> (answer, expiry). Definite answers only.
+_openai_vision_cache: dict = {}
+_OPENAI_VISION_TTL = 3600.0
+# 8x8 white PNG: the smallest image every vision runner accepts.
+_PROBE_PNG = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP8//8/A27AhFtqBAD/"
+    "1QMPDVr0nAAAAABJRU5ErkJggg=="
+)
+
+
+def _chat_completions_url(endpoint_url: str) -> str:
+    base = str(endpoint_url or "").rstrip("/")
+    for suffix in ("/chat/completions", "/completions", "/models"):
+        if base.endswith(suffix):
+            base = base[: -len(suffix)]
+    if not base.endswith("/v1"):
+        base += "/v1"
+    return base + "/chat/completions"
+
+
+def openai_compat_supports_vision(endpoint_url: str, model_name: str) -> Optional[bool]:
+    """Ask a LAN OpenAI-compatible server (vLLM, SGLang...) with a tiny image.
+
+    Names do not say whether a served checkpoint carries a vision tower
+    (glm-5.3-flash does; nothing in the name tells). One 1-token request
+    answers it: 200 means images work, a 400 about images or multimodal
+    input means they do not. Anything else (down, timeout) is unknown.
+    Only for local/LAN hosts, never a paid API.
+    """
+    if not model_name or not _is_local_host(urlparse(endpoint_url).hostname):
+        return None
+    url = _chat_completions_url(endpoint_url)
+    key = (url, model_name)
+    now = time.time()
+    cached = _openai_vision_cache.get(key)
+    if cached and cached[1] > now:
+        return cached[0]
+    import json as _json
+    import urllib.error
+    import urllib.request
+
+    body = {
+        "model": model_name, "max_tokens": 1, "temperature": 0,
+        "messages": [{"role": "user", "content": [
+            {"type": "text", "text": "ok"},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64," + _PROBE_PNG}},
+        ]}],
+    }
+    request = urllib.request.Request(url, _json.dumps(body).encode(), {"Content-Type": "application/json"})
+    answer: Optional[bool] = None
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            answer = 200 <= response.status < 300
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            detail = exc.read(2000).decode("utf-8", "replace").lower()
+        except Exception:
+            pass
+        if exc.code in (400, 422) and any(w in detail for w in ("image", "multimodal", "multi-modal", "vision")):
+            answer = False
+    except Exception:
+        answer = None
+    if answer is not None:
+        _openai_vision_cache[key] = (answer, now + _OPENAI_VISION_TTL)
+    return answer
 
 
 def validate_message(message: str) -> str:

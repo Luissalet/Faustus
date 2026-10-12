@@ -987,16 +987,19 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "desktop_click",
-            "description": "Click the mouse on the user's desktop. x,y are pixels of the LAST desktop_screenshot image (default coords=\"screenshot\"; they are mapped back to real screen pixels using that screenshot's scale and origin) — take a screenshot first, then click what you see. Use coords=\"screen\" to pass raw screen pixels. Requires user approval on every call. Take a new screenshot afterwards to verify the effect.",
+            "description": "Click the mouse on the user's desktop. x,y are pixels of the LAST desktop_screenshot image (default coords=\"screenshot\"; they are mapped back to real screen pixels using that screenshot's scale and origin) — take a screenshot first, then click what you see. Use coords=\"screen\" to pass raw screen pixels. Or pass `text` (no x,y) to click a visible label found by OCR, e.g. {\"text\": \"Save\", \"window\": \"Blender\"}. Requires user approval on every call. Take a new screenshot afterwards to verify the effect.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "x": {"type": "integer", "description": "Horizontal position (pixels of the last screenshot image, or screen pixels with coords=\"screen\")."},
                     "y": {"type": "integer", "description": "Vertical position (same frame as x)."},
                     "button": {"type": "string", "enum": ["left", "right", "double", "middle"], "description": "Mouse button / double-click. Default left."},
-                    "coords": {"type": "string", "enum": ["screenshot", "screen"], "description": "Coordinate frame. Default screenshot."}
+                    "coords": {"type": "string", "enum": ["screenshot", "screen"], "description": "Coordinate frame. Default screenshot."},
+                    "text": {"type": "string", "description": "Instead of x,y: the visible label to click (button, menu, tab), found on screen by local OCR. Works in apps that draw their own UI (Blender, games) and for models that cannot see images."},
+                    "window": {"type": "string", "description": "With text: only look inside the window whose title contains this."},
+                    "index": {"type": "integer", "description": "With text: which match to click when the label appears several times (1 = first listed)."}
                 },
-                "required": ["x", "y"]
+                "required": []
             }
         }
     },

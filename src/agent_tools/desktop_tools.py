@@ -1081,12 +1081,70 @@ class DesktopTool:
         }
 
     # -- desktop_click --
+    def _locate_text(self, args: Dict[str, Any], backend: DesktopBackend) -> Dict[str, Any]:
+        """Find `text` on screen with local OCR; the chosen match in screen pixels."""
+        from src import screen_ocr
+
+        query = str(args.get("text") or "").strip()
+        if not screen_ocr.available():
+            raise DesktopError("clicking by text needs local OCR (pip install rapidocr_onnxruntime): "
+                               + screen_ocr.unavailable_reason())
+        window = str(args.get("window") or "").strip()
+        if window:
+            wins = [w for w in backend.list_windows() if window.lower() in str(w.get("title") or "").lower()]
+            if not wins:
+                raise DesktopError(f"no visible window title contains {window!r}; see desktop_list_windows")
+            left, top, right, bottom = wins[0]["rect"]
+            regions = [(left, top, right - left, bottom - top)]
+        else:
+            regions = [(m["left"], m["top"], m["width"], m["height"]) for m in backend.list_monitors()]
+        candidates: List[Dict[str, Any]] = []
+        for region in regions:
+            img = backend.grab(region)
+            if img is None:
+                continue
+            for line in screen_ocr.read_text(img):
+                score = screen_ocr.match_score(query, line["text"])
+                if score >= screen_ocr.MATCH_MIN:
+                    cx, cy = line["center"]
+                    candidates.append({"text": line["text"], "score": round(score, 3),
+                                       "screen_xy": [region[0] + cx, region[1] + cy]})
+        if not candidates:
+            raise DesktopError(
+                f"no text on screen matches {query!r}. Check the exact label (desktop_screenshot "
+                "lists the OCR text for a model that cannot see images), or pass `window`."
+            )
+        candidates.sort(key=lambda c: -c["score"])
+        index = _int_arg(args, "index", required=False)
+        if index:
+            if not 1 <= index <= len(candidates):
+                raise DesktopError(f"`index` {index} is out of range: {len(candidates)} match(es)")
+            return dict(candidates[index - 1], candidates=candidates)
+        best = [c for c in candidates if c["score"] >= candidates[0]["score"] - 1e-9]
+        if len(best) > 1:
+            listing = "; ".join(f"{i}: {c['text']!r} at {c['screen_xy']}" for i, c in enumerate(candidates[:10], 1))
+            raise DesktopError(f"{query!r} appears {len(best)} times on screen; pass `index` to pick one: {listing}")
+        return dict(candidates[0], candidates=candidates)
+
     def _click(self, args: Dict[str, Any], backend: DesktopBackend):
-        x = _int_arg(args, "x")
-        y = _int_arg(args, "y")
         button = str(args.get("button") or "left").strip().lower()
         if button not in _BUTTONS:
             raise DesktopError(f"`button` must be one of {', '.join(_BUTTONS)}; got {button!r}")
+        if str(args.get("text") or "").strip() and args.get("x") in (None, "") and args.get("y") in (None, ""):
+            found = self._locate_text(args, backend)
+            sx, sy = found["screen_xy"]
+            _check_on_screen(backend, sx, sy)
+            backend.click(sx, sy, button)
+            return f"desktop_click: {button} on {found['text'][:40]!r}", {
+                "output": (f"{button} click on the text {found['text']!r} at screen ({sx}, {sy}) "
+                           f"[found by OCR, match {found['score']}]. Take a new desktop_screenshot to see the effect."),
+                "exit_code": 0,
+                "screen_xy": [sx, sy],
+                "button": button,
+                "matched_text": found["text"],
+            }
+        x = _int_arg(args, "x")
+        y = _int_arg(args, "y")
         coords = str(args.get("coords") or "screenshot").strip().lower()
         sx, sy, note = map_to_screen(x, y, coords)
         _check_on_screen(backend, sx, sy)
