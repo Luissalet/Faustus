@@ -8409,6 +8409,10 @@ async def _stream_agent_loop_body(
             "session_id": session_id,
             "user_message": _last_user or "",
             "paths": [],
+            # Read by in-process listeners (src/observations), not by user hooks.
+            "owner": owner,
+            "project_id": _hopts.get("project_id"),
+            "incognito": bool(_hopts.get("incognito")),
         }
         _has_assistant_reply = any(
             isinstance(m, dict) and m.get("role") == "assistant" for m in messages
@@ -17087,6 +17091,11 @@ async def _stream_agent_loop_body(
                         "command": block.content if block.tool_type in ("bash", "python", "powershell") else "",
                         "workspace": workspace,
                         "session_id": session_id,
+                        # Read by in-process listeners (src/observations), not by user hooks.
+                        "result": result,
+                        "owner": owner,
+                        "project_id": _hopts.get("project_id"),
+                        "incognito": bool(_hopts.get("incognito")),
                     })
                 _all_hook_results = list(_pre_hook_results) + list(_post_hook_results)
                 if _all_hook_results and isinstance(result, dict):
