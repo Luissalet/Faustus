@@ -137,6 +137,10 @@ already say more plainly).
 
 ## Scope
 
+The shared panel keeps streamed reasoning in a separate, initially collapsed
+Reasoning block. Thinking deltas never enter the answer bubble; the answer
+matches its saved history after reload. Labels follow the panel locale.
+
 This lot (A21) shipped the Web Component, its build, its checks, and the
 documentation above. It deliberately did **not**:
 
