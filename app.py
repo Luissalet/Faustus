@@ -2487,6 +2487,25 @@ async def _startup_event():
             if idx:
                 await asyncio.to_thread(idx.get_tools_for_query, "warmup", 8)
                 logger.info("[startup] Tool index pre-warmed (backend=%s)", getattr(idx, "backend", "?"))
+                # MCP tools too, once the servers have connected, so the first
+                # agent turn does not pay for indexing them.
+                from src.tool_utils import get_mcp_manager
+                from src.agent_loop import _load_mcp_disabled_map
+                mgr = get_mcp_manager()
+                if mgr is not None:
+                    last, stable = -1, 0
+                    for _ in range(60):
+                        await asyncio.sleep(2)
+                        try:
+                            count = len(mgr.get_all_tools({}))
+                        except Exception:  # noqa: BLE001
+                            count = -1
+                        stable = stable + 1 if count == last and count > 0 else 0
+                        last = count
+                        if stable >= 3:
+                            break
+                    await asyncio.to_thread(idx.index_mcp_tools, mgr, _load_mcp_disabled_map())
+                    logger.info("[startup] MCP tools indexed (%d tools)", max(last, 0))
         except Exception as e:
             logger.warning(f"Tool index warmup failed (non-critical): {type(e).__name__}: {e}")
 

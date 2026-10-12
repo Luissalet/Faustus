@@ -738,6 +738,14 @@ class ToolIndex:
             logger.warning("MCP tool indexing failed in all embedding lanes")
             return
         self._mcp_generation = gen
+        for lane in self._lanes:
+            cache = getattr(lane.collection, "_cache", None)
+            if cache is not None and hasattr(cache, "settle"):
+                cache.settle()
+                try:
+                    lane.collection._persist()
+                except Exception:  # noqa: BLE001 - the cache is an optimisation
+                    pass
         if changed:
             logger.info("Indexed %d MCP tools (%d changed)", len(docs), changed)
 
