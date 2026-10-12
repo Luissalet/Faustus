@@ -101,3 +101,6 @@ Nada abierto a 09-10. Cerrado el 09-10: la prueba `test_loop_call_that_cannot_ge
 - 12-10-2026: con GLM en las Sparks, tras una captura de pantalla hubo 4 rondas seguidas con salida vacía (vLLM devolvió 0 tokens con la imagen en el prompt); al reproducir la misma petición fuera funcionó. Intermitente: vigilar si se repite.
 - 12-10-2026: al final de una respuesta en Studio aparece repetido el último párrafo en crudo (markdown sin renderizar, empezando a mitad de palabra: «cho. El clic…»).
 - 12-10-2026: desktop_focus_window con un título ambiguo («Quinn») falla y el modelo tiene que reintentar con el título exacto; podría elegir solo la ventana que no es de Faustus/navegador.
+
+- 13-10-2026: en la prueba de Blender, un clic por coordenadas cayó en la línea de tiempo y movió el fotograma de 1 a 192; las copias preparadas se generaron en ese fotograma. Revisar con Luis si hay que deshacer.
+- 13-10-2026: GLM con reasoning_effort max piensa 60-80 s en algunas rondas de escritorio; valorar un esfuerzo menor para rondas de control de pantalla.

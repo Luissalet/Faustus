@@ -6,8 +6,8 @@ import { t } from '../../i18n';
 import { Field, Select, Text, Toggle } from './fields';
 
 const FIRST_TOKEN_MIN = 5;
-const FIRST_TOKEN_MAX = 120;
-const FIRST_TOKEN_DEFAULT = 30;
+const FIRST_TOKEN_MAX = 900;
+const FIRST_TOKEN_DEFAULT = 300;
 
 /**
  * Settings → Sparks: where Prometheus's Hoard answers, whether the DGX Sparks are the default chat backend while a

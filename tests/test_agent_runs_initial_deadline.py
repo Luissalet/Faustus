@@ -17,7 +17,9 @@ def isolated(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_global_queue_wait_times_out_without_entering_model():
+async def test_queue_wait_keeps_the_turn_and_its_budget_starts_on_admission():
+    """Waiting behind another run is not the model failing: the turn keeps its
+    place well past the initial budget and runs once the lane frees."""
     lane = agent_runs._lane("local")
     lane.active = lane.limit
     entered = []
@@ -25,11 +27,12 @@ async def test_global_queue_wait_times_out_without_entering_model():
         entered.append(True)
         yield 'data: {"delta":"answer"}\n\n'
     run = agent_runs.start("queued-spark", body(), lane="local", endpoint_url="spark-test")
-    await asyncio.wait_for(run.task, 0.5)
-    assert run.status == "error"
-    assert not entered
-    assert not lane.waiting
-    assert any('first_token_timeout' in event for event in run.buffer)
+    await asyncio.sleep(0.2)  # five times the 0.04 s initial budget
+    assert not run.task.done() and not entered
+    await lane.release(run)
+    await asyncio.wait_for(run.task, 1)
+    assert entered and run.status == "done"
+    assert not any("first_token_timeout" in event for event in run.buffer)
     if run.evict_task:
         run.evict_task.cancel()
 

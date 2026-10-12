@@ -11575,3 +11575,15 @@ Prueba real: «Haz click en el botón Load Sculptors Textures de la ventana de B
 - **Índice de herramientas**: la caché de vectores perdía las ~1.600 herramientas MCP en cada arranque (el primer guardado solo tenía las internas), y el primer turno tardaba ~100 s en `lookup_tools`. Ahora se conservan y las MCP se indexan en segundo plano al arrancar.
 - Verificado en la 7000 con la app de escritorio abierta: list_windows → focus → screenshot → clic en (-483, 304) (el botón está en -477, 306) → captura de comprobación; Blender abrió el panel de la operación y cargó los mapas.
 - Ojo al reiniciar: el control de pantalla exige la app de escritorio (indicador + Escape). Reiniciar con `Start-Faustus.ps1 -Desktop`, no solo el servidor.
+## 344. Un turno de escritorio no se corta: harness sin topes que paren el trabajo (13-10-2026)
+
+Prueba de Luis: «En la ventana de Blender de Quinn, dale a Load profile en Profiles & Sequences y luego haz run», sin explicar los pasos. GLM-5.3 en las Sparks lo consiguió solo (57 rondas, 15 min): bajó el panel Figures, desplegó la sección, Load profile, Run, leyó el error «Select the body/clothing meshes», pasó de Pose Mode a Object Mode, seleccionó Body__mBody en el Outliner y relanzó; Blender creó Body__mBody_Prepared y _Top. Lo que cortaba los intentos anteriores, ya resuelto:
+- **Latido del control de escritorio** (`desktop_control_session._write`): la app de escritorio leyendo `desktop-control.json` hacía fallar el rename con «Access is denied» y esa excepción tumbaba el turno entero. Ahora reintenta, cae a escritura directa y nunca lanza.
+- **Corta-bucles**: una captura idéntica tras cada clic contaba como repetición; ahora las observaciones de escritorio llevan la «generación de pantalla» (`_loop_signature`), que avanza con cada acción.
+- **Anunciar sin hacer, en español** (`_INTENT_RE`): «Hago zoom…», «Compruebo…», «Espero unos segundos y verifico…» se reconocen y el turno sigue en vez de acabar.
+- **Topes holgados** (por defecto y en los ajustes de Luis): 150 rondas por mensaje, 6 empujones por acción anunciada, 8 por ronda vacía, 40 repeticiones antes de parar por bucle, 6 rondas de monólogo, 50 rondas sin progreso para el aviso, 4 h por turno, 300 s (hasta 900) para la primera respuesta de las Sparks.
+- **Actuar en pantalla es progreso**: clics/teclas/scroll reinician el aviso de «miras imágenes sin escribir» y el de «sin progreso», pensados para código.
+- **Clic por etiqueta primero**: el prompt pide `desktop_click {"text": …}` para todo lo que tenga texto; a ojo cayó en el campo de debajo del botón Run y en la línea de tiempo.
+- **`desktop_focus_window`** reintenta y espera la activación (fallaba siempre a la primera); un título ambiguo lista las ventanas candidatas.
+- **`desktop_screenshot {"window": "Blender"}`** captura una ventana por título, sin aritmética de rectángulos (el modelo pasaba [izq, arriba, der, abajo] como ancho/alto).
+- **Skills aprendidas visibles**: `manage_skills view` exigía dueño exacto mientras el índice (owner None en la app de escritorio) las listaba; ahora usa la misma visibilidad que `load`.

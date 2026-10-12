@@ -49,6 +49,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from src.tool_capabilities import (
@@ -396,7 +397,9 @@ class WindowsBackend(DesktopBackend):
         if not matches:
             raise DesktopError(f"no visible window title contains {title!r}")
         if len(matches) != 1:
-            raise DesktopError(f"ambiguous window title {title!r}; use the exact title from desktop_list_windows")
+            listing = "; ".join(repr(w["title"]) for w in matches[:8])
+            raise DesktopError(f"ambiguous window title {title!r}: {len(matches)} windows match ({listing}). "
+                               "Call desktop_focus_window again with the full title of the one you mean.")
         target = matches[0]
         return self.focus_target(target)
 
@@ -412,16 +415,27 @@ class WindowsBackend(DesktopBackend):
             # Windows refuses SetForegroundWindow from a background process
             # unless the caller "owns" the input; a synthetic ALT press is
             # the documented workaround.
-            self._send_key_vk(0x12, up=False)
-            self._send_key_vk(0x12, up=True)
-            ok = bool(self.user32.SetForegroundWindow(hwnd))
+            # Activation is asynchronous and the first request after another
+            # app had the foreground is often ignored: retry a few times and
+            # wait for it instead of failing on the first check.
+            ok = False
+            for _attempt in range(4):
+                self._send_key_vk(0x12, up=False)
+                self._send_key_vk(0x12, up=True)
+                ok = bool(self.user32.SetForegroundWindow(hwnd)) or ok
+                try:
+                    self.user32.BringWindowToTop(hwnd)
+                except Exception:  # noqa: BLE001 - best effort
+                    pass
+                for _ in range(10):
+                    if int(self.user32.GetForegroundWindow() or 0) == target["handle"]:
+                        return target
+                    time.sleep(0.05)
         except Exception as exc:  # noqa: BLE001
             raise DesktopError(f"could not focus {target['title']!r}: {exc}") from exc
         if not ok:
             raise DesktopError(f"Windows refused to bring {target['title']!r} to the foreground")
-        if int(self.user32.GetForegroundWindow()) != target["handle"]:
-            raise DesktopError("The selected window did not receive focus; input was not sent.")
-        return target
+        raise DesktopError("The selected window did not receive focus; input was not sent.")
 
     # -- input (SendInput) --
     def _input_structs(self):
@@ -992,6 +1006,14 @@ class DesktopTool:
         screen_w, screen_h = backend.screen_size()
         monitor_index = _int_arg(args, "monitor", required=False, default=0) or 0
         region_arg = args.get("region")
+        window_arg = str(args.get("window") or "").strip()
+        if window_arg and region_arg in (None, "", []):
+            # Capture a window by (part of) its title: no rect arithmetic.
+            wins = [w for w in backend.list_windows() if window_arg.lower() in str(w.get("title") or "").lower()]
+            if not wins:
+                raise DesktopError(f"no visible window title contains {window_arg!r}; see desktop_list_windows")
+            wl, wt, wr, wb = wins[0]["rect"]
+            region_arg = [wl, wt, wr - wl, wb - wt]
         if region_arg not in (None, "", []):
             if not isinstance(region_arg, (list, tuple)) or len(region_arg) != 4:
                 raise DesktopError("`region` must be [x, y, width, height] in screen pixels")

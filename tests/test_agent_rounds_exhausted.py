@@ -307,12 +307,15 @@ def test_wrong_reply_language_is_nudged_on_workspace_turn(monkeypatch, tmp_path)
 def test_emits_intent_nudge_exhausted_when_cap_is_exhausted(monkeypatch):
     _patch_common(monkeypatch)
 
-    events = _run_loop(monkeypatch, "Let me check the logs", max_rounds=5)
+    _real_setting = al.get_setting
+    # The monologue breaker (identical talk rounds) would end this first.
+    monkeypatch.setattr(al, "get_setting", lambda key, default=None: 50 if key == "agent_loop_breaker_monologue_rounds" else _real_setting(key, default))
+    events = _run_loop(monkeypatch, "Let me check the logs", max_rounds=20)
 
     guard = next((e for e in events if e.get("type") == "intent_nudge_exhausted"), None)
     assert guard is not None, events
     assert guard["reason"] == "intent_without_action_nudge_cap"
-    assert guard["nudges"] == 2
+    assert guard["nudges"] == 6
 
 
 def test_emits_loop_breaker_triggered_when_loop_breaker_trips(monkeypatch):
