@@ -13357,6 +13357,11 @@ async def _stream_agent_loop_body(
             bool(all_tool_schemas),
             agent_stream_timeout,
         )
+        try:  # OBJ-56: the tools this round really offers, kept for the turn's metadata (tools_offered)
+            from src import turn_tool_offer as _tto
+            _tto.record(session_id, round_num, all_tool_schemas or [], model or "")
+        except Exception:  # noqa: BLE001 - never cost a round
+            pass
         _steer_interrupted: List[Dict[str, Any]] = []
         _round_overrides = gen_overrides
         try:

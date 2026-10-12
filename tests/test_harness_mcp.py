@@ -25,7 +25,7 @@ def test_server_identity_and_tool_surface():
     assert srv.server.name == "harness"
     tools = asyncio.run(srv.list_tools())
     assert [t.name for t in tools] == ["degradation_status", "history_projection", "resource_claims", "paired_bench_reports",
-                                       "tool_footprint", "mcp_config_audit", "harness_proposals", "doc_lint",
+                                       "tool_footprint", "turn_tools", "mcp_config_audit", "harness_proposals", "doc_lint",
                                        "spend_cap_status", "injection_eval_run", "injection_eval_report",
                                        "voice_turn_timeline", "think_mode_calibration", "cookbook_job_log"]
     for t in tools:

@@ -153,7 +153,7 @@ def test_the_chat_pipeline_calls_the_hook_after_the_turn_is_saved():
     source = (root / "routes" / "chat_helpers.py").read_text(encoding="utf-8")
     assert "maybe_queue_after_turn(session_id, _post_turn_owner)" in source
     hook = source.index("maybe_queue_after_turn")
-    assert source.index("sess.add_message(ChatMessage(\"assistant\"") < hook < source.index("fix_memory.record_from_turn")
+    assert source.index("sess.add_message(_saved_reply)") < hook < source.index("fix_memory.record_from_turn")
 
 
 # -- the job ---------------------------------------------------------------

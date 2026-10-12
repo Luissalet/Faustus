@@ -11525,3 +11525,14 @@ simulado, HTTP, SQLite, MCP stdio y el bucle real. Composición con #326/#359/#3
 en Sparks es evidencia separada; estas pruebas simuladas no califican la calidad
 del modelo. Activa en el 7000 desde `01abfa12`, con cuatro herramientas MCP y sus
 endpoints comprobados. Referencia: `docs/api/observations.md`.
+
+## 340. Herramientas ofrecidas por turno — #327, OBJ-56 (12-10-2026)
+
+La huella del catálogo (§ tool_footprint) es una cota: lo que costaría ofrecer todo a la vez. La selección por turno manda muchas menos, y cuáles depende del mensaje. Ahora cada turno guarda las que de verdad se ofrecieron.
+
+- **`src/turn_tool_offer.py`**, sin modelo. `agent_loop` llama a `record(session_id, round, all_tool_schemas, model)` justo antes de cada llamada al modelo (la ronda 1 abre turno nuevo). `save_assistant_response` (y la rama de respuesta vacía) llama a `take(session_id)` y lo guarda en `metadata.tools_offered`: herramientas distintas del turno y sus tokens (mismo estimador y misma forma de llamada a función que la huella del catálogo, así que las sumas cuadran), totales por origen (una herramienta `mcp__<servidor>__<tool>` cuenta para su servidor aunque el esquema solo traiga el nombre), la lista completa `tools` con origen y tokens de cada una, las 10 que más pesan con detalle (`heaviest`, el resumen de la UI) y, por ronda, cuántas salieron y cuánto costaron (`sent_tokens` = suma de las rondas: lo que pagó el turno). Cada ronda refresca su turno; si hay más de 1024 turnos sin guardar se descartan los que llevan más tiempo quietos. Nunca cuesta una ronda: cualquier fallo se ignora.
+- **API:** `GET /api/tools/footprint/turns` con `message_id`, `session_id` (sus últimos turnos; el turno en curso sale primero con `running`) o, sin nada, los últimos del usuario.
+- **MCP:** herramienta `turn_tools` en el servidor integrado `harness` (15 herramientas).
+- **Studio:** bajo cada turno, entre «¿Por qué ha tardado tanto?» y «¿Adónde fue el coste?», la línea desplegable «Herramientas ofrecidas: N · X tokens» (con «Y tokens en Z rondas» si hubo varias) con las que más pesan, el reparto por origen y el coste por ronda (`studio/src/screens/studio/ToolsOfferedLine.tsx`, `metricsFrom` lee `tools_offered`).
+- Pruebas: `tests/test_turn_tool_offer.py` (la suma cuadra con `tool_costs` del catálogo; unión entre rondas y ronda 1 nueva; entradas malas; sello sin pisar uno existente; `report` por mensaje, sesión y dueño sobre SQLite en memoria).
+- **Verificado en vivo** (instancia de desarrollo en 7001 desde el worktree, GLM-5.3 en las Sparks): un turno de agente ofreció 44 herramientas, 18.885 tokens por ronda, 37.770 en 2 rondas; la continuación tras aprobar ofreció 49 (20.862). Lo más pesado: `inspect_image` 1.990 tokens (1.816 de esquema), `manage_tasks` 1.848, `delegate_agents` 1.184. El cliente MCP real por stdio lista 15 herramientas en harness y `turn_tools` devuelve lo mismo que la API; Studio pinta la línea en el turno.

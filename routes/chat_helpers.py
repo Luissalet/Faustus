@@ -1255,6 +1255,20 @@ def _stamp_thinking_leak(md: dict, metrics, incognito: bool = False, thinking=No
         logger.debug("thinking leak stamp failed", exc_info=True)
 
 
+def _stamp_tools_offered(md: dict, session_id: str) -> None:
+    """OBJ-56 (#327): the tools the agent loop really offered this turn and what they weighed
+    (`src/turn_tool_offer.py`), as `metadata["tools_offered"]`. Best effort."""
+    if "tools_offered" in md:
+        return
+    try:
+        from src import turn_tool_offer
+        offered = turn_tool_offer.take(session_id)
+        if offered:
+            md["tools_offered"] = offered
+    except Exception:  # noqa: BLE001
+        logger.debug("tools_offered stamp failed", exc_info=True)
+
+
 def save_assistant_response(
     sess,
     session_manager,
@@ -1339,6 +1353,7 @@ def save_assistant_response(
         md["tool_events"] = tool_events
     if wires:
         md["side_thread_wires"] = wires
+    _stamp_tools_offered(md, session_id)
     # The reasoning mode this turn really ran with (chat_routes stamps it on the
     # session before the turn); the next turn's Auto reads it (OBJ-58, #227).
     _turn_mode = getattr(sess, "_turn_think_mode", None)
@@ -1642,6 +1657,7 @@ def save_empty_answer_record(
         if isinstance(turn_mode, dict) and turn_mode.get("mode") and "think_mode" not in md:
             md["think_mode"] = {k: v for k, v in turn_mode.items() if v is not None}
         _stamp_thinking_leak(md, last_metrics, False, thinking=thinking)
+        _stamp_tools_offered(md, session_id)
         if reasoned and not md.get("thinking"):
             md["thinking"] = str(thinking).strip()
         if thinking_time and not md.get("thinking_time"):
