@@ -154,6 +154,10 @@ def rows_from_mappings(tools: Iterable[Any]) -> List[Dict[str, Any]]:
             continue
         schema = item.get("input_schema") or item.get("inputSchema") or item.get("parameters") or {}
         source = str(raw.get("source") or raw.get("server_id") or raw.get("server") or "").strip()
+        if not source and not raw.get("executor") and name.startswith("mcp__"):
+            # The schemas the agent loop sends (MCPManager.get_all_openai_schemas) only carry the qualified
+            # name `mcp__<server>__<tool>`: the server is in the name.
+            source = name[5:].split("__", 1)[0].strip()
         executor = str(raw.get("executor") or (f"mcp:{source}" if source and source != "builtin" else "native"))
         if executor.startswith("mcp:") and not name.startswith("mcp__"):
             # Qualify the way the app does, so two servers publishing the same

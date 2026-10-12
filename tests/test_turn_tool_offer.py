@@ -93,3 +93,61 @@ def test_report_reads_saved_turns():
     assert tto.report(message_id="m3", db=db)["turns"][0]["tokens"] == 50
     assert {t["message_id"] for t in tto.report(owner="admin", db=db)["turns"]} == {"m1"}
     assert len(tto.report(db=db)["turns"]) == 2
+
+
+def test_every_tool_is_kept_not_only_the_heaviest():
+    from routes.chat_helpers import _stamp_tools_offered
+    names = [f"fixture_{i:02d}" for i in range(11)]
+    tto.record("s5", 1, [_tool(n, "Fixture tool " + "x" * i) for i, n in enumerate(names)], "")
+    md = {}
+    _stamp_tools_offered(md, "s5")
+    offered = md["tools_offered"]
+    assert offered["count"] == 11 and len(offered["heaviest"]) == tto.TOP
+    assert sorted(t["name"] for t in offered["tools"]) == names              # fixture_10 is not lost
+    assert sum(t["tokens"] for t in offered["tools"]) == offered["tokens"]
+    assert all(t["source"] == "builtin" for t in offered["tools"])
+
+
+def test_report_returns_the_full_list(tmp_path):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from core.database import Base, ChatMessage, Session
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine, tables=[Session.__table__, ChatMessage.__table__])
+    db = sessionmaker(bind=engine)()
+    db.add(Session(id="sf", name="f", owner="admin", endpoint_url="http://x", model="m"))
+    tto.record("sf", 1, [_tool(f"fixture_{i:02d}") for i in range(12)], "")
+    db.add(ChatMessage(id="mf", session_id="sf", role="assistant", content="ok",
+                       meta_data=json.dumps({"tools_offered": tto.take("sf")})))
+    db.commit()
+    turn = tto.report("sf", db=db)["turns"][0]
+    assert len(turn["tools"]) == 12 and len(turn["heaviest"]) == tto.TOP
+
+
+def test_mcp_schemas_from_the_manager_keep_their_server():
+    # The exact shape MCPManager.get_all_openai_schemas hands the loop: only the qualified name says the server.
+    tools = [
+        {"type": "function", "function": {"name": "mcp__fixture_server__read", "description": "Read a record.",
+                                          "parameters": {"type": "object", "properties": {"id": {"type": "string"}}}}},
+        {"type": "function", "function": {"name": "mcp__2b27c03c__search", "description": "Search the archive.",
+                                          "parameters": {"type": "object", "properties": {"q": {"type": "string"}}}}},
+        _tool("read_file"),
+    ]
+    tto.record("s6", 1, tools, "")
+    got = tto.take("s6")
+    assert set(got["by_source"]) == {"fixture_server", "2b27c03c", "builtin"}
+    assert {t["name"]: t["source"] for t in got["tools"]} == {
+        "mcp__fixture_server__read": "fixture_server", "mcp__2b27c03c__search": "2b27c03c", "read_file": "builtin"}
+
+
+def test_a_running_turn_outlives_newer_abandoned_ones(monkeypatch):
+    monkeypatch.setattr(tto, "_MAX_SESSIONS", 4)
+    tto.record("active", 1, [_tool("read_file")], "")
+    for i in range(3):
+        tto.record(f"abandoned{i}", 1, [_tool("read_file")], "")
+    tto.record("active", 2, [_tool("read_file")], "")                     # its next round refreshes it
+    for i in range(3, 6):
+        tto.record(f"abandoned{i}", 1, [_tool("read_file")], "")
+    assert tto.peek("active") is not None and len(tto.peek("active")["rounds"]) == 2
+    assert tto.peek("abandoned0") is None

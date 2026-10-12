@@ -7,8 +7,9 @@ selection sends far fewer, and which ones depends on the message. This module ke
   list it sends (round 1 starts a new turn for that session);
 * ``save_assistant_response`` calls ``take(session_id)`` and stores the summary in the turn's metadata as
   ``tools_offered``: distinct tools offered over the turn and their tokens (same estimator and function-call shape as
-  the catalogue footprint, so the numbers add up the same way), totals per source, the heaviest tools, and per round
-  how many tools went out and what they cost (``sent_tokens`` is the sum over rounds: what the turn really paid);
+  the catalogue footprint, so the numbers add up the same way), totals per source, every tool with its source and
+  tokens (``tools``), the heaviest ones in detail (``heaviest``, the UI summary), and per round how many tools went out
+  and what they cost (``sent_tokens`` is the sum over rounds: what the turn really paid);
 * ``report(...)`` reads those records back from saved turns (the harness MCP tool ``turn_tools``).
 
 Best effort everywhere: a failure here never costs a turn.
@@ -23,10 +24,11 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 from src import tool_footprint as tf
 
-#: Heaviest tools kept in a turn's record.
+#: Heaviest tools detailed in a turn's record (every tool is listed in ``tools`` anyway).
 TOP = 10
-#: Sessions kept in memory between a turn's first round and its save (older ones are dropped).
-_MAX_SESSIONS = 256
+#: Turns kept in memory between their first round and their save. Every round refreshes its turn, so only the turns
+#: idle the longest (abandoned before a save) are dropped when there are more.
+_MAX_SESSIONS = 1024
 
 _LOCK = threading.Lock()
 _TURNS: Dict[str, Dict[str, Any]] = {}
@@ -70,6 +72,7 @@ def summarize(costs: Iterable[Mapping[str, Any]], *, top: int = TOP) -> Dict[str
         "count": len(rows),
         "tokens": sum(int(c.get("tokens") or 0) for c in rows),
         "by_source": dict(sorted(by_source.items(), key=lambda kv: -kv[1]["tokens"])),
+        "tools": [{"name": c.get("name"), "source": c.get("source"), "tokens": c.get("tokens")} for c in rows],
         "heaviest": [{"name": c.get("name"), "source": c.get("source"), "tokens": c.get("tokens"),
                       "description_tokens": c.get("description_tokens"), "schema_tokens": c.get("schema_tokens")}
                      for c in rows[:max(0, int(top))]],
@@ -87,13 +90,12 @@ def record(session_id: Any, round_num: Any, schemas: Optional[Iterable[Any]], mo
         except (TypeError, ValueError):
             rnd = 1
         with _LOCK:
-            turn = _TURNS.get(sid)
+            turn = _TURNS.pop(sid, None)                  # re-inserted below: the dict stays in recency order
             if turn is None or rnd <= 1:
                 turn = {"model": model or "", "rounds": [], "tools": {}, "cache": {}}
-                _TURNS.pop(sid, None)
-                _TURNS[sid] = turn
-                while len(_TURNS) > _MAX_SESSIONS:
-                    _TURNS.pop(next(iter(_TURNS)))
+            _TURNS[sid] = turn
+            while len(_TURNS) > _MAX_SESSIONS:
+                _TURNS.pop(next(iter(_TURNS)))
             costs = costs_of(schemas or [], model or turn["model"], turn["cache"])
             for c in costs:
                 turn["tools"][str(c["name"])] = c
