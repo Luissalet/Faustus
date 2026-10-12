@@ -68,6 +68,15 @@ async def do_manage_skills(content: str, owner: Optional[str] = None) -> Dict:
     # Accept legacy `skill_id` as an alias for `name`.
     name = (args.get("name") or args.get("skill_id") or "").strip()
 
+    def _reader_owner() -> Optional[str]:
+        """Without an owner (single-user desktop app) `list`/`search` show
+        every skill; `view` must open what they listed, so read it as the
+        owner the listing found. With an owner nothing changes."""
+        if owner is not None or not name:
+            return owner
+        match = next((s for s in sm.load(owner=None) if s.get("name") == name), None)
+        return (match or {}).get("owner") or None
+
     if action in ("list", "index"):
         all_skills = sm.load(owner=owner)
         if not all_skills:
@@ -88,7 +97,7 @@ async def do_manage_skills(content: str, owner: Optional[str] = None) -> Dict:
     if action == "view":
         if not name:
             return {"error": "name is required for view", "exit_code": 1}
-        md = sm.read_skill_md(name, owner=owner)
+        md = sm.read_skill_md(name, owner=_reader_owner())
         if md is None:
             return {"error": f"Skill {name!r} not found", "exit_code": 1}
         return {"results": md, "skill_receipt": _skill_file_receipt(sm, name, owner, md, 1)}
@@ -99,7 +108,7 @@ async def do_manage_skills(content: str, owner: Optional[str] = None) -> Dict:
         ref = (args.get("path") or "").strip()
         if not ref:
             return {"error": "path is required for view_ref", "exit_code": 1}
-        text = sm.read_skill_reference(name, ref, owner=owner)
+        text = sm.read_skill_reference(name, ref, owner=_reader_owner())
         if text is None:
             return {"error": f"Reference {ref!r} not found under {name!r}", "exit_code": 1}
         try:

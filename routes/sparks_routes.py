@@ -27,7 +27,7 @@ class PrefsBody(BaseModel):
     url: Optional[str] = Field(default=None, max_length=300)
     default_backend: Optional[bool] = None
     recipe: Optional[str] = Field(default=None, max_length=64)
-    first_token_timeout_s: Optional[float] = Field(default=None, ge=5, le=120)
+    first_token_timeout_s: Optional[float] = Field(default=None, ge=5, le=900)
 
 
 def setup_sparks_routes() -> APIRouter:

@@ -951,6 +951,7 @@ FUNCTION_TOOL_SCHEMAS = [
                 "type": "object",
                 "properties": {
                     "monitor": {"type": "integer", "description": "Monitor index (0 = primary). Default 0."},
+                    "window": {"type": "string", "description": "Capture just the window whose title contains this (e.g. \"Blender\"); easier than computing a region."},
                     "region": {
                         "type": "array",
                         "items": {"type": "integer"},

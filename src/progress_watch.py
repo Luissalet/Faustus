@@ -32,6 +32,10 @@ PLAN_TOOLS = frozenset({"todowrite", "update_plan"})
 #: Ledger kinds that fix something.
 PROGRESS_KINDS = frozenset({"mutation", "effect"})
 
+#: Acting on the screen is the work itself in a desktop task (pressing a
+#: button in Blender writes no file): those rounds are progress.
+SCREEN_ACTION_TOOLS = frozenset({"desktop_click", "desktop_type", "desktop_key", "desktop_scroll", "desktop_act"})
+
 
 @dataclass
 class ProgressWatch:
@@ -59,7 +63,7 @@ class ProgressWatch:
         done = sum(1 for t in (todos or []) if isinstance(t, dict) and str(t.get("status")) == "completed")
         closed_step = done > self.completed
         self.completed = max(self.completed, done)
-        fixed = asked_user or closed_step or any(
+        fixed = asked_user or closed_step or any(t in SCREEN_ACTION_TOOLS for t in tools) or any(
             isinstance(e, dict) and e.get("ok") and e.get("kind") in PROGRESS_KINDS for e in round_events
         )
         if fixed:

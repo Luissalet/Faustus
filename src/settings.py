@@ -563,7 +563,7 @@ DEFAULT_SETTINGS = {
     "research_blind_review_endpoint_id": "",
     "research_blind_review_model": "",
     "agent_max_tool_calls": 0,
-    "agent_max_rounds": 20,  # per-message agent step cap (clamped 1..200)
+    "agent_max_rounds": 150,  # per-message agent step cap (clamped 1..200)
     # Soft input-token budget for the agent loop. The DEFAULT value (6000) is the
     # "auto" sentinel: it means "scale the budget to the model's context window"
     # (#1230) — so long-context models aren't capped at 6000. Set ANY OTHER value
@@ -943,7 +943,7 @@ DEFAULT_SETTINGS = {
     # How many times the empty-round nudge (no text, no tool call) retries
     # before giving up and asking the user a concrete question instead of
     # ending the turn silently. Was hardcoded to 1.
-    "agent_empty_round_max_nudges": 3,
+    "agent_empty_round_max_nudges": 8,
     # PENDIENTES 23-09 noche / src/research_streak.py: how many CONSECUTIVE
     # rounds of reading only remote content (web_search/web_fetch, or a bash/
     # powershell call that is just curl/wget/Invoke-WebRequest/git clone),
@@ -962,7 +962,7 @@ DEFAULT_SETTINGS = {
     # Rounds of tool calls that write nothing, close no plan step and ask the
     # user nothing, whatever the tools, before one note asks for a first
     # version; twice this insists once (src/progress_watch.py). 0 = off.
-    "agent_no_progress_rounds": 15,
+    "agent_no_progress_rounds": 50,
     # PENDIENTES 23-09 noche / src/tool_index.py: names this instance's tool
     # index collection explicitly (e.g. so two instances keep sharing one on
     # purpose, or to pin a name across a data-dir move). Left empty (the
@@ -977,7 +977,7 @@ DEFAULT_SETTINGS = {
     # (a slow local endpoint, a turn stuck making tiny "progress" forever).
     # Checked at the top of every round; once exceeded the turn ends with a
     # summary of what it did and a concrete question — never silently.
-    "agent_turn_max_seconds": 3600,
+    "agent_turn_max_seconds": 14400,
     # Standing instructions from the repo (AGENTS.md / CLAUDE.md / …) in the
     # system prompt, and the repository map (files + symbols) before the
     # user's message (src/project_instructions.py, src/repo_map.py).
@@ -1414,7 +1414,7 @@ DEFAULT_SETTINGS = {
     # testable ahead of that wiring.
     "agent_loop_breaker_nudge_after": 3,
     "agent_loop_breaker_block_after": 6,
-    "agent_loop_breaker_stop_after": 10,
+    "agent_loop_breaker_stop_after": 40,
     # Cycle (oscillation) detection inside the same LoopPolicy: a weak local
     # model rarely repeats the IDENTICAL call three times running (the
     # streak above), but it does oscillate — read A, read B, read A, read
@@ -1435,7 +1435,7 @@ DEFAULT_SETTINGS = {
     # with a clear message (the first one compacts harder and redoes the round).
     # Failed path: the same tool + arguments returning an error this many
     # times closes that path (the next identical attempt is refused unrun).
-    "agent_loop_breaker_monologue_rounds": 3,
+    "agent_loop_breaker_monologue_rounds": 6,
     "agent_loop_breaker_context_error_limit": 2,
     "agent_loop_breaker_failed_path_limit": 3,
     # H4: src/rewrite_policy.py — discourages repeated whole-file `write_file`
@@ -1692,7 +1692,7 @@ DEFAULT_SETTINGS = {
     "sparks_url": "http://127.0.0.1:5205",
     "sparks_default_backend": True,
     "sparks_recipe": "",
-    "sparks_first_token_timeout_s": 30.0,
+    "sparks_first_token_timeout_s": 300.0,
     "sparks_endpoints": {},
     "sparks_local_default": {},
     "sparks_applied_default": {},

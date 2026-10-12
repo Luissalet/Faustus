@@ -61,10 +61,10 @@ def config() -> Dict[str, Any]:
 
 def first_token_timeout(settings: Dict[str, Any]) -> float:
     try:
-        value = float(settings.get("sparks_first_token_timeout_s", 30))
-        return min(120.0, max(5.0, value)) if value == value else 30.0
+        value = float(settings.get("sparks_first_token_timeout_s", 300))
+        return min(900.0, max(5.0, value)) if value == value else 300.0
     except (TypeError, ValueError):
-        return 30.0
+        return 300.0
 
 
 def _update(patch: Dict[str, Any]) -> None:
@@ -408,8 +408,8 @@ def set_preferences(*, enabled: Optional[bool] = None, url: Optional[str] = None
     if recipe is not None:
         patch["sparks_recipe"] = recipe.strip()
     if first_token_timeout_s is not None:
-        if not 5 <= first_token_timeout_s <= 120:
-            return {"ok": False, "error": "Initial response wait must be between 5 and 120 seconds"}
+        if not 5 <= first_token_timeout_s <= 900:
+            return {"ok": False, "error": "Initial response wait must be between 5 and 900 seconds"}
         patch["sparks_first_token_timeout_s"] = first_token_timeout_s
     if patch:
         _update(patch)

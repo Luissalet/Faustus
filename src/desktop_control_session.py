@@ -35,11 +35,34 @@ def _read(name):
 
 
 def _write(name, value):
-    RUNTIME.mkdir(parents=True, exist_ok=True)
-    path = RUNTIME / name
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(value), encoding="utf-8")
-    tmp.replace(path)
+    """Atomic write that survives a reader holding the file.
+
+    On Windows the desktop app reading desktop-control.json at the same
+    moment makes the rename fail with "Access is denied"; that exception used
+    to end the whole agent run mid-task. Retry briefly, then fall back to a
+    plain write, and never raise: a missed heartbeat is harmless, the next
+    one lands."""
+    try:
+        RUNTIME.mkdir(parents=True, exist_ok=True)
+        path = RUNTIME / name
+        tmp = path.with_name(f"{path.stem}.{uuid.uuid4().hex[:8]}.tmp")
+        tmp.write_text(json.dumps(value), encoding="utf-8")
+    except OSError:
+        return
+    for attempt in range(8):
+        try:
+            tmp.replace(path)
+            return
+        except OSError:
+            time.sleep(0.02 * (attempt + 1))
+    try:
+        path.write_text(json.dumps(value), encoding="utf-8")
+    except OSError:
+        pass
+    try:
+        tmp.unlink()
+    except OSError:
+        pass
 
 
 def cancelled(state):
