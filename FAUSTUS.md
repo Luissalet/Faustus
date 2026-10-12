@@ -11369,6 +11369,11 @@ reintentar, borradores, idioma y callback de deshacer nativo. Cerrar la vista
 separa el observador sin cancelar la ejecución. Los resultados largos se
 muestran en detalles desplegables. API y MCP: `docs/api/hoard_copilot.md`.
 
+Los títulos nativos de proyecto pueden llevar cualquier puntuación (`API: /article demo`, una URL como id):
+al enlazarlos, solo la etiqueta y la carpeta de la barra lateral pierden los caracteres que un nombre de proyecto
+no admite (`sidebar_label`, «Untitled» si no queda nada); el contexto conserva el título y el id externo, y la
+identidad sigue siendo la clave del enlace (#416).
+
 Writer340 mantiene su integración independiente. Faltan búsqueda natural337,
 filtros globales de Studio336, migración del resto343 y las verificaciones
 completas con el modelo global. Las pruebas simuladas no certifican autonomía
