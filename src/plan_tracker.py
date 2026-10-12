@@ -445,13 +445,21 @@ def parse_plan(title: str, body: str) -> PlanSpec:
 # Persistence (DATA_DIR only, never the user's repo)
 # ---------------------------------------------------------------------------
 
-def scope_for(project_id: Optional[str] = None, workspace: Optional[str] = None) -> str:
+def scope_for(project_id: Optional[str] = None, workspace: Optional[str] = None,
+              session_id: Optional[str] = None) -> str:
     """`project_id` when there is one, else sha1[:12] of a normalized
-    `workspace` path (Windows `\\` folded to `/`, case-folded)."""
+    `workspace` path (Windows `\\` folded to `/`, case-folded).
+
+    A chat with neither keeps its plans to itself (`session-<id>`): they used
+    to land in the scope of the empty workspace, shared by every such chat,
+    so one pasted plan was resumed and auto-continued in all of them."""
     pid = str(project_id or "").strip()
     if pid:
         return pid
     ws = str(workspace or "").strip().replace("\\", "/").rstrip("/").lower()
+    sid = str(session_id or "").strip()
+    if not ws and sid:
+        return "session-" + sid
     return hashlib.sha1(ws.encode("utf-8")).hexdigest()[:12]
 
 
