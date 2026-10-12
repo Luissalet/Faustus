@@ -165,16 +165,17 @@ export class FaustusChatElement extends HTMLElement {
       this.#transcript.replaceChildren();
       this.#messageCount = 0;
       for (const message of conversation.messages || []) {
-        if (message.role === 'tool') this.#appendTool(message.content);
-        else this.#appendBubble(message.role === 'user' ? 'user' : 'agent', message.content);
+        if (message.role === 'tool') { this.#appendTool(message.content); continue; }
+        // A reply's tools ran before its words: show them first, the way the turn looked while it streamed.
         const toolEvents = message.metadata?.tool_events;
-        if (Array.isArray(toolEvents)) for (const item of toolEvents) {
+        if (message.role !== 'user' && Array.isArray(toolEvents)) for (const item of toolEvents) {
           if (item && typeof item === 'object') {
             const event = item as Record<string, unknown>;
             const output = String(event.output || '');
             this.#appendTool(`${toolLabel(event.tool) || 'Herramienta'}\n${output || JSON.stringify(item)}`, this.#undoReceipt(output));
           }
         }
+        this.#appendBubble(message.role === 'user' ? 'user' : 'agent', message.content);
         const legacy = message.metadata?.writer_tool_call as Record<string, unknown> | undefined;
         if (legacy && typeof legacy.auditIndex === 'number') this.#appendTool(`Writer\n${JSON.stringify(legacy)}`, { app_id: 'writer', audit_index: legacy.auditIndex });
       }

@@ -46,7 +46,7 @@ const checks: Array<[string, () => Promise<void> | void]> = [
     const transport: typeof fetch = async (input, init = {}) => {
       const url = new URL(String(input));
       if (url.pathname === '/api/chat_stream') return new Response(frames.join('\n\n') + '\n\n', { headers: { 'content-type': 'text/event-stream', 'X-Odysseus-Run-Id': 'md' } });
-      if (url.pathname.startsWith('/api/hoard-copilot/conversations/')) return Response.json({ messages: [{ role: 'assistant', content: '*antes*' }] });
+      if (url.pathname.startsWith('/api/hoard-copilot/conversations/')) return Response.json({ messages: [{ role: 'user', content: 'pregunta' }, { role: 'assistant', content: '*antes*', metadata: { tool_events: [{ tool: 'mcp__4b142d9e__screen_status', output: '{}' }] } }] });
       if (url.pathname.endsWith('/draft')) return Response.json({ text: '', attachment_ids: [], updated_at: 1 });
       if (url.pathname === '/api/hoard-copilot/conversations') return Response.json({ conversations: [{ session_id: 'md', name: 'md' }] });
       throw new Error(`Unhandled ${init.method || 'GET'} ${url.pathname}`);
@@ -60,13 +60,15 @@ const checks: Array<[string, () => Promise<void> | void]> = [
     await element.loadHistory();
     const root = element.shadowRoot!;
     assert.equal(root.querySelector('.fc-msg[data-role="agent"] em')?.textContent, 'antes');
+    const order = [...root.querySelectorAll('.fc-msg, .fc-tool')].map(n => n.classList.contains('fc-tool') ? 'tool' : n.getAttribute('data-role'));
+    assert.deepEqual(order, ['user', 'tool', 'agent'], 'a saved reply shows its tools before its words');
     await element.send('¿cuántas?');
     for (let i = 0; i < 100 && root.querySelectorAll('.fc-msg[data-role="agent"] strong').length === 0; i += 1) await pause();
     const replies = root.querySelectorAll('.fc-msg[data-role="agent"]');
     const last = replies[replies.length - 1];
     assert.equal(last.querySelector('strong')?.textContent, '12', 'the two deltas join before formatting');
     assert.equal(last.textContent, 'Hay 12 capturas.');
-    const tool = [...root.querySelectorAll('.fc-tool')].map(n => n.textContent).join('|');
+    const tools = [...root.querySelectorAll('.fc-tool')]; const tool = tools[tools.length - 1].textContent || '';
     assert.ok(tool.includes('▶ screen_status') && !tool.includes('mcp__') && !tool.includes('{}'), tool);
   }],
 ];
