@@ -34,6 +34,7 @@ function server(initial: Record<string, string> = {}) {
   const creates: string[] = [];
   const held = new Map<string, ReturnType<typeof deferred>>();
   let failWrites = false;
+  let streamError = '';
   const transport: typeof fetch = async (input, init = {}) => {
     const url = new URL(String(input));
     const match = url.pathname.match(/^\/api\/sessions\/([^/]+)\/draft$/);
@@ -64,11 +65,14 @@ function server(initial: Record<string, string> = {}) {
     if (url.pathname.startsWith('/api/hoard-copilot/conversations/')) return Response.json({ messages: [] });
     if (url.pathname === '/api/chat_stream') {
       turns.push(String(init.body));
+      // A turn the server refuses mid-stream: an `error` frame, then the stream closes without [DONE].
+      if (streamError) return new Response(`event: error\ndata: ${JSON.stringify({ error: streamError, error_class: 'first_token_timeout', sequence: 1 })}\n\n`, { headers: { 'content-type': 'text/event-stream', 'X-Odysseus-Run-Id': 'draft-check' } });
       return new Response('data: {"delta":"done"}\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream', 'X-Odysseus-Run-Id': 'draft-check' } });
     }
+    if (url.pathname.startsWith('/api/chat/resume/')) return Response.json({ detail: 'No active run for this session' }, { status: 404 });
     throw new Error(`Unhandled request ${init.method || 'GET'} ${url.pathname}`);
   };
-  return { drafts, attachments, writes, reads, turns, creates, held, transport, setOffline(value: boolean) { failWrites = value; } };
+  return { drafts, attachments, writes, reads, turns, creates, held, transport, setOffline(value: boolean) { failWrites = value; }, failTurns(message: string) { streamError = message; } };
 }
 function panel(api: ReturnType<typeof server>, sid: string | null = 'a') {
   const element = document.createElement('faustus-chat') as InstanceType<typeof FaustusChatElement>;
@@ -194,6 +198,20 @@ const checks: Array<[string, () => Promise<void>]> = [
     catch (error) { throw new Error(`${(error as Error).message}; errors=${JSON.stringify(errors)}; local=${element.draft}`); }
     assert.equal(element.draft, '');
     assert.equal(api.turns.length, 1, 'Clearing an accepted draft must not send another turn');
+  }],
+  ['a turn the server refuses keeps its explanation, ends as an error and keeps the draft', async () => {
+    const api = server(); const element = panel(api); await pause(30);
+    const reason = 'The turn waited too long in the queue.'; api.failTurns(reason);
+    const ends: Array<{ reason: string; error?: string }> = [];
+    element.addEventListener('faustus:turn-end', event => ends.push((event as CustomEvent).detail));
+    element.draft = 'please retry me';
+    await element.send('please retry me');
+    await until(() => ends.length === 1, 'Turn ends after the refused stream');
+    assert.equal(ends[0].reason, 'error', 'A refused turn is an error, not a vanished run');
+    assert.equal(ends[0].error, reason);
+    const status = element.shadowRoot!.querySelector('[role="status"], .fc-status')?.textContent ?? '';
+    assert.ok(status.includes(reason), `The status keeps the server's reason (got: ${status})`);
+    assert.equal(element.draft, 'please retry me', 'The words stay for a retry');
   }],
 ];
 let failed = 0;

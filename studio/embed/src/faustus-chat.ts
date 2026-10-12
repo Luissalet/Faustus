@@ -47,6 +47,8 @@ export interface TurnStartDetail {
 export interface TurnEndDetail {
   sessionId: string;
   reason: string;
+  /** The server's own explanation when the turn failed (queue wait exceeded, model error...). */
+  error?: string;
 }
 export interface EmbedErrorDetail {
   sessionId: string | null;
@@ -669,6 +671,9 @@ export class FaustusChatElement extends HTMLElement {
 
     let agentBubble: HTMLDivElement | null = null;
     let sawAnswer = false;
+    // The server's `error` frame says why a turn failed; the stream then closes without [DONE], the SDK's resume
+    // finds no run and ends with `run_gone`. Keep the explanation so that ending does not wipe it.
+    let turnError: string | undefined;
 
     outer: for (;;) {
       sawAnswer = false;
@@ -712,7 +717,8 @@ export class FaustusChatElement extends HTMLElement {
             break;
           }
           if (event.type === 'error') {
-            this.#emitError(event.message || event.text || event.detail || 'error', event);
+            turnError = event.error || event.message || event.text || event.detail || 'error';
+            this.#emitError(turnError, event);
           }
         }
       } catch (err) {
@@ -726,14 +732,17 @@ export class FaustusChatElement extends HTMLElement {
     const end = await turn.done.catch((err) => ({ reason: 'error' as const, lastSequence: 0, error: err }));
     if (this.#activeTurn !== turn) return;
     this.#setBusy(false);
-    this.#status.textContent = end.reason === 'error' ? 'No se pudo completar la conexión. Puedes reintentar el mismo envío.' : '';
+    const failed = end.reason === 'error' || (end.reason === 'run_gone' && turnError !== undefined);
+    this.#status.textContent = turnError && end.reason !== 'done'
+      ? turnError
+      : end.reason === 'error' ? 'No se pudo completar la conexión. Puedes reintentar el mismo envío.' : '';
     this.#activeTurn = null;
     this.#observer = null;
-    if (end.reason !== 'error' && end.reason !== 'aborted') {
+    if (!failed && end.reason !== 'aborted') {
       if (this.#pendingSend && this.draft === this.#pendingSend.message) this.draft = '';
       this.#pendingSend = null;
     }
-    this.#emit<TurnEndDetail>('faustus:turn-end', { sessionId, reason: end.reason });
+    this.#emit<TurnEndDetail>('faustus:turn-end', { sessionId, reason: failed ? 'error' : end.reason, error: turnError });
     if (this.#contextProvider && this.#connected) void this.refreshConversations();
   }
 
