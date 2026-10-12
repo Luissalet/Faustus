@@ -44,7 +44,10 @@ Integrated conversations inherit the configured global model for each turn.
 The references database contains external project links, origins, context and
 import mappings. Chat messages are stored only in Faustus's canonical database.
 Apps without projects do not need a workspace. Same-title projects in different
-data spaces do not merge.
+data spaces do not merge. Native titles may hold any punctuation (`API: /article demo`, a URL used as
+the id): only the Faustus sidebar label and folder drop the characters a project name cannot hold
+(`<>:"/\|?*` and control characters; an empty result becomes «Untitled»). The context keeps the native
+title and the external id unchanged, and identity is the link key, never the label.
 
 Import takes `{context, source_thread_id, name?, messages}`. Each message has
 `source_id`, `role`, `content`, optional `created_at` and metadata/tool/attachment

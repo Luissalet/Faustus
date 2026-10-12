@@ -5,11 +5,25 @@ import copy
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import threading
 import uuid
 from datetime import datetime, timezone
 from typing import Any
+
+
+# Characters a Faustus project name or folder cannot hold (services/projects.py, _NAME_RE).
+_LABEL_FORBIDDEN = re.compile(r'[\x00-\x1f<>:"/\\|?*]+')
+
+
+def sidebar_label(title, limit: int = 80) -> str:
+    """The Faustus sidebar label for a Hoard project title: the characters a project name cannot hold become
+    spaces (``API: /article demo`` -> ``API article demo``), spacing is collapsed and the result is cut to the
+    name limit. Only the label is cleaned; the context keeps the native title and the external id unchanged,
+    and identity is the link key, never the label. An empty result falls back to «Untitled»."""
+    text = " ".join(_LABEL_FORBIDDEN.sub(" ", str(title or "")).split())[:limit].strip()
+    return text or "Untitled"
 
 
 class CopilotError(ValueError):
@@ -112,7 +126,7 @@ class HoardCopilotStore:
                 if not resolved:
                     raise CopilotError("reference_unavailable", "Faustus project not found", 404)
             else:
-                name = str(project.get("title") or external_id).replace("/", " ").replace("\\", " ")[:80]
+                name = sidebar_label(project.get("title") or external_id)
                 # A unique sidebar label avoids same-title projects becoming identity.
                 suffix = hashlib.sha256(json.dumps(key).encode()).hexdigest()[:8]
                 folder = f"{origin['app_id']} · {name}"[:69] + " · " + suffix
