@@ -87,6 +87,11 @@ class EmbeddingCache:
         self.model = model or ""
         self.dimension: Optional[int] = None
         self._vectors: Dict[str, np.ndarray] = {}
+        # Vectors read from the file are carried into every save until the
+        # index has been fully rebuilt once (`settle`). Without this, the
+        # first save after a start (built-in tools only) dropped every MCP
+        # tool's vector and the first agent turn re-embedded ~1.600 tools.
+        self._carry: set = set()
         self._lock = threading.RLock()
         self._load()
 
@@ -140,6 +145,7 @@ class EmbeddingCache:
             return
         with self._lock:
             self._vectors = loaded
+            self._carry = set(loaded)
             # The file's dimension is only trusted when it describes vectors
             # actually loaded; an empty cache takes its dimension from the
             # first vector remembered (a stale number would make every new
@@ -156,6 +162,11 @@ class EmbeddingCache:
             self._vectors[embedding_cache_key(self.model, text)] = arr
             if self.dimension is None:
                 self.dimension = int(arr.size)
+
+    def settle(self) -> None:
+        """The collection now holds everything: later saves mirror it exactly."""
+        with self._lock:
+            self._carry.clear()
 
     def forget(self, text: str) -> None:
         with self._lock:
@@ -174,7 +185,8 @@ class EmbeddingCache:
             if keys is None:
                 selected = dict(self._vectors)
             else:
-                selected = {k: self._vectors[k] for k in keys if k in self._vectors}
+                wanted = set(keys) | self._carry
+                selected = {k: self._vectors[k] for k in wanted if k in self._vectors}
             payload = {
                 "version": CACHE_VERSION,
                 "model": self.model,
