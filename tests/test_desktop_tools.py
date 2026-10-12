@@ -192,7 +192,8 @@ def test_registered_in_function_schemas():
         assert name in by_name, name
     props = by_name["desktop_click"]["parameters"]["properties"]
     assert {"x", "y", "button"} <= set(props)
-    assert by_name["desktop_click"]["parameters"]["required"] == ["x", "y"]
+    assert {"text", "window", "index"} <= set(props)
+    assert by_name["desktop_click"]["parameters"]["required"] == []
     assert "screenshot" in by_name["desktop_click"]["description"].lower()
     assert by_name["desktop_key"]["parameters"]["required"] == ["combo"]
     assert by_name["desktop_type"]["parameters"]["required"] == ["text"]
