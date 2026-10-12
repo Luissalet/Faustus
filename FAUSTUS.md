@@ -11369,6 +11369,11 @@ reintentar, borradores, idioma y callback de deshacer nativo. Cerrar la vista
 separa el observador sin cancelar la ejecución. Los resultados largos se
 muestran en detalles desplegables. API y MCP: `docs/api/hoard_copilot.md`.
 
+Los títulos nativos de proyecto pueden llevar cualquier puntuación (`API: /article demo`, una URL como id):
+al enlazarlos, solo la etiqueta y la carpeta de la barra lateral pierden los caracteres que un nombre de proyecto
+no admite (`sidebar_label`, «Untitled» si no queda nada); el contexto conserva el título y el id externo, y la
+identidad sigue siendo la clave del enlace (#416).
+
 Writer340 mantiene su integración independiente. Faltan búsqueda natural337,
 filtros globales de Studio336, migración del resto343 y las verificaciones
 completas con el modelo global. Las pruebas simuladas no certifican autonomía
@@ -11542,3 +11547,13 @@ La huella del catálogo (§ tool_footprint) es una cota: lo que costaría ofrece
 Un turno enviado desde el panel de Faustus de un Hoard (con `hoard_context`) lleva ahora, además del contexto de `services/hoard_copilot.context_message`, una nota de sistema de `src/hoard_copilot_turn.origin_hint_message`: nombra la app y dice que «esto», «aquí», «lo que tengo abierto» o «este documento» son los `active_objects`/`view`/campos sin guardar de ese contexto, no ventanas del escritorio ni otras apps; que conteste desde el contexto cuando baste y use las herramientas de esa app para leer o cambiar; y, si no hay objeto abierto, que lo diga. Además `routes/chat_routes.py` fuerza visibles, junto a `lookup_tools`, hasta 12 herramientas de lectura del servidor MCP de la app de origen (`origin_app_tools`): el servidor se encuentra por `tool_server_id`/`app_id`/`app_name` frente al id o el nombre del servidor («Kafka's Hoard» → `kafka`, sin acentos); sólo nombres de lectura (get/show/view, status/overview, list/search; cualquier verbo de escritura en el nombre la excluye) y primero las del tipo de los objetos abiertos (`document` → `doc_*`), luego el resumen de la propia app, luego el resto. Si la app no está conectada o el nombre es ambiguo, no se fuerza nada. Nunca rompe un turno.
 
 Visto en vivo (Faustus aislado desde la rama + Kafka aislado con el lanzador de #409, GLM de las Sparks): a «¿Qué tengo abierto?» en un documento, la rama ofrece las lecturas de Kafka y contesta con el documento y sus dos plazos sin tocar el escritorio; master no ofrecía ninguna herramienta de Kafka ni la nota (en la QA de cinco Hoards el agente se iba a `desktop_list_windows`/`hub_list_apps`). Con el catálogo real de Kafka (187 herramientas) y un documento + un plazo abiertos se ofrecen `doc_get, deadline_get, docs_list, doc_search, deadlines_list, kafka_status, kafka_overview, …`. Tests: `tests/test_hoard_copilot_turn_tools.py`.
+## 341. El panel `<faustus-chat>` de cada Hoard: Markdown, motivo de los rechazos y orden del historial (12-10-2026)
+
+El panel común que abre el botón «Faustus» de cada Hoard (HoardLink #409: `install_spa`/`installSpa` lo montan solos) es `studio/embed`. Probándolo en vivo en Argus (FastAPI) y Links (Express) con GLM-5.3 salieron tres cosas del propio panel:
+
+- **Motivo de un turno rechazado.** Si Faustus corta el turno a mitad (un `event: error` y el stream cerrado sin `[DONE]`, p. ej. «El turno ha superado el limite de espera en la cola» porque otro agente ocupaba el carril del modelo), el SDK reanudaba, `/api/chat/resume` daba 404 y el turno acababa como `run_gone` con la línea de estado vacía: el usuario no veía nada. Ahora el panel lee el texto de `error` del evento, lo deja en la línea de estado, emite `faustus:turn-end {reason: 'error', error}` y conserva el borrador para reintentar (`studio/embed/tests/drafts.test.ts`, falla sin el arreglo). Además el launcher de HoardLink manda `initial_response_timeout_s=600` en los turnos del copilot, así que un turno en cola espera su sitio en vez de morir a los 30 s del endpoint Sparks.
+- **Respuestas con formato.** Las burbujas del agente pasan por el parser de Markdown de Studio (`studio/src/lib/markdown.ts`) convertido a nodos DOM (`studio/embed/src/markdown-dom.ts`): encabezados, listas (y de tareas), tablas con alineación, código, citas, enlaces e imágenes. Nada del modelo se interpreta como HTML; solo son vivos los enlaces web y mailto (pestaña nueva, sin opener) y las imágenes http(s)/data. Durante el streaming se re-renderiza como mucho una vez por frame. Las líneas de herramienta muestran el nombre de la herramienta (`screen_status`, no `mcp__<servidor>__screen_status`) y omiten argumentos vacíos (`tests/markdown.test.ts`).
+- **Orden del historial.** Al reabrir una conversación, las herramientas de cada respuesta salían después de su texto; ahora salen antes, como en el streaming.
+- El componente vuelve a pasar `tsc --strict` (había cuatro errores de tipos previos).
+- **Verificado en vivo:** turno real desde Argus que llamó a su herramienta `screen_status` y contestó «44.872 capturas» con la cifra en negrita y el campo en código; turno real «hola» desde Links por el relay Node; historial de Argus con la herramienta antes de la respuesta.
+

@@ -253,6 +253,7 @@ export class FaustusChatElement extends HTMLElement {
   // ── Lifecycle ──────────────────────────────────────────────────────────
 
   connectedCallback(): void {
+    if (this.#connected) return;
     this.#connected = true;
     this.#retryDrafts();
     if (this.hasAttribute('server')) this.#server = this.getAttribute('server') || '';
@@ -272,15 +273,23 @@ export class FaustusChatElement extends HTMLElement {
     }
   }
 
+  // Native dialog hosts use moveBefore to keep this same connected panel.
+  // A state-preserving move must keep its observer, active turn and draft.
+  connectedMoveCallback(): void {}
+
   disconnectedCallback(): void {
-    this.#connected = false;
-    // Removing a host panel detaches its observer, never cancels remote work.
-    this.#observer?.abort();
-    this.#observer = null;
-    this.#activeTurn = null;
-    this.#setBusy(false);
-    this.#flushDraft();
-    this.#retryDrafts();
+    // append-based reparenting disconnects and reconnects within this turn.
+    // Only genuine removal detaches the observer; it never cancels remote work.
+    queueMicrotask(() => {
+      if (this.isConnected) return;
+      this.#connected = false;
+      this.#observer?.abort();
+      this.#observer = null;
+      this.#activeTurn = null;
+      this.#setBusy(false);
+      this.#flushDraft();
+      this.#retryDrafts();
+    });
   }
 
   attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void {
