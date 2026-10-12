@@ -14,9 +14,10 @@
  *   2. Events delivered to one instance's transcript never appear in the
  *      other's (checked both via the rendered Shadow DOM text and via each
  *      instance's own `faustus:event`/`faustus:turn-end` listeners).
- *   3. Each instance's styles live in its own shadow root (`<style>` node
- *      present in each, and the two shadow roots are different objects
- *      with no shared nodes).
+ *   3. Each instance's styles live in its own shadow root (an adopted
+ *      constructed sheet, or a `<style>` node where the DOM cannot adopt
+ *      sheets, in each; the two shadow roots are different objects with no
+ *      shared nodes).
  *   4. The bearer token never ends up in `localStorage`, in the light DOM
  *      (attribute stripped, `outerHTML`/`innerHTML` clean), or in any
  *      fetch URL.
@@ -162,10 +163,20 @@ async function main() {
   // --- Shadow DOM isolation -------------------------------------------
   assert(chatA.shadowRoot != null && chatB.shadowRoot != null, 'both instances have a shadow root');
   assert(chatA.shadowRoot !== chatB.shadowRoot, 'the two shadow roots are distinct objects');
-  assert(chatA.shadowRoot.querySelector('style') != null, 'panel A carries its own <style> in its shadow root');
-  assert(chatB.shadowRoot.querySelector('style') != null, 'panel B carries its own <style> in its shadow root');
+  // Styles are a constructed sheet adopted by each shadow root (allowed by a strict host CSP) or, where the DOM
+  // cannot adopt sheets, a <style> element in it.
+  const shadowCss = (root) => {
+    const sheets = root.adoptedStyleSheets || [];
+    if (sheets.length) return { sheet: sheets[0], text: Array.from(sheets[0].cssRules || [], (rule) => rule.cssText).join('\n') };
+    const style = root.querySelector('style');
+    return style ? { sheet: style, text: style.textContent } : null;
+  };
+  const cssA = shadowCss(chatA.shadowRoot);
+  const cssB = shadowCss(chatB.shadowRoot);
+  assert(cssA != null && cssA.text.length > 0, 'panel A carries its own stylesheet in its shadow root');
+  assert(cssB != null && cssB.text.length > 0, 'panel B carries its own stylesheet in its shadow root');
   assert(
-    chatA.shadowRoot.querySelector('style').textContent === chatB.shadowRoot.querySelector('style').textContent,
+    cssA && cssB && cssA.sheet !== cssB.sheet && cssA.text === cssB.text,
     'both panels ship the identical embed stylesheet (proves it is per-instance, not a shared singleton the host could clobber)',
   );
 

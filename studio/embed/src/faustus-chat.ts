@@ -355,9 +355,22 @@ export class FaustusChatElement extends HTMLElement {
   // ── Internals ──────────────────────────────────────────────────────────
 
   #buildShadowDom(): void {
-    const style = document.createElement('style');
-    style.textContent = EMBED_STYLES;
-    this.#shadow.appendChild(style);
+    // A constructed sheet is allowed by a host page's strict content security policy (``style-src 'self'``), which
+    // blocks a <style> element; browsers without adoptable sheets get the <style>.
+    let adopted = false;
+    try {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(EMBED_STYLES);
+      this.#shadow.adoptedStyleSheets = [sheet];
+      adopted = true;
+    } catch {
+      adopted = false;
+    }
+    if (!adopted) {
+      const style = document.createElement('style');
+      style.textContent = EMBED_STYLES;
+      this.#shadow.appendChild(style);
+    }
 
     this.#root = el('div', { class: 'fc-root' });
 
