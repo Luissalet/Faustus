@@ -60,9 +60,11 @@ function server() {
       return Response.json({files: [{id: `${sid}-${file.name}`, name: file.name, size: file.size, mime: file.type}]});
     }
     if (url.pathname === '/api/chat_stream') {
-      assert.ok(init.body instanceof FormData, 'Attached turns use native multipart');
-      const body = init.body as FormData;
-      turns.push({sid: String(body.get('session')), ids: JSON.parse(String(body.get('attachments'))), id: String(body.get('client_message_id')), mode: String(body.get('mode'))});
+      const body = init.body instanceof FormData ? init.body : new Map(Object.entries(JSON.parse(String(init.body))));
+      const attachments = body.get('attachments');
+      const ids = Array.isArray(attachments) ? attachments : attachments ? JSON.parse(String(attachments)) : [];
+      if (ids.length) assert.ok(init.body instanceof FormData, 'Attached turns use native multipart');
+      turns.push({sid: String(body.get('session')), ids, id: String(body.get('client_message_id')), mode: String(body.get('mode'))});
       if (failTurn) return Response.json({detail: 'Private turn unavailable'}, {status: 503});
       return new Response('data: {"delta":"Done"}\n\ndata: [DONE]\n\n', {headers: {'Content-Type': 'text/event-stream'}});
     }
@@ -186,6 +188,15 @@ const checks: Array<[string, () => Promise<void>]> = [
     element.session = 'b'; gate.resolve(); await pause(50);
     assert.equal(element.session, 'b');
     assert.equal(api.creates.length, 1);
+  }],
+  ['a send without an initial SID keeps its original creation when B opens', async () => {
+    const api = server(), gate = api.holdCreate(); const element = panel(api, null);
+    await until(() => api.creates.length === 1, 'Initial A creation is pending');
+    const sending = element.send('Original initial message');
+    element.session = 'b'; element.draft = 'Keep B message';
+    gate.resolve(); await sending;
+    assert.equal(api.turns[0].sid, 'created-1');
+    assert.equal(element.session, 'b'); assert.equal(element.draft, 'Keep B message');
   }],
 ];
 let failed = 0;
