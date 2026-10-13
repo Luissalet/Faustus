@@ -273,6 +273,7 @@ class WebFetchTool:
         # cap here) collapse into one explicit `truncated`/`kept_bytes` pair
         # instead of the caller having to notice a "[...truncated]" string.
         response: Dict[str, Any] = {"output": output, "exit_code": 0}
+        response["web_sources"] = [{"url": url, "title": title or url}]
         response["source_type"] = source_type
         response["is_official"] = is_official
         response["extraction_quality"] = extraction_quality

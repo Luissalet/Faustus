@@ -3,7 +3,10 @@ import { Check, Code2, Copy, CornerDownLeft, ImageOff, Play } from 'lucide-react
 import { createContext, useContext, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { findSensitive, getDisplay, stripEmojis, useDisplay } from '../shell/display';
 import { writeClipboardText } from '../lib/clipboard-write';
-import { parseMarkdown, workspaceLink, type Block, type Footnote, type Inline } from '../lib/markdown';
+import { parseMarkdown, safeHref, safeSrc, workspaceLink, type Block, type Footnote, type Inline } from '../lib/markdown';
+import { findResponseSource, parsePresentation, PRESENTATION_LANGS, type ResponseSource } from '../lib/responsePresentation';
+import { SourceLink } from '../components/ResponseSources';
+import './response-quality.css';
 import { replaceShortcodesInProse } from '../lib/emoji';
 import { CHART_FENCE_LANGS, parseChartSpec } from '../lib/chartSpec';
 import { ChartBlock } from '../components/ChartBlock';
@@ -36,6 +39,7 @@ function Censored({ text }: { text: string }) {
 }
 
 const OpenWorkspaceFile = createContext<((path: string) => void) | undefined>(undefined);
+const ObservedSources = createContext<readonly ResponseSource[]>([]);
 
 /** Where a pick in a ```choices``` / ```decision``` block goes: the
  * conversation's composer. Studio provides it around the transcript; every
@@ -112,7 +116,9 @@ function RichImage({ src, alt }: { src: string; alt: string }) {
 
 function RichLink({ href, children }: { href: string; children: ReactNode }) {
   const onOpenFile = useContext(OpenWorkspaceFile);
+  const source = findResponseSource(href, useContext(ObservedSources));
   const path = workspaceLink(href);
+  if (source) return <SourceLink source={source} href={href}>{children}</SourceLink>;
   return <a className="fs-link" href={href} target={path && onOpenFile ? undefined : '_blank'} rel="noreferrer" onClick={event => {
     if (!path || !onOpenFile || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
@@ -214,6 +220,22 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
 
 const HEADINGS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const;
 
+function PresentationFence({ lang, code }: { lang: string; code: string }) {
+  const sources = useContext(ObservedSources);
+  const onOpenFile = useContext(OpenWorkspaceFile);
+  const spec = useMemo(() => parsePresentation(lang, code), [lang, code]);
+  if (!spec) return <CodeBlock lang={lang} code={code} />;
+  const content = <Rich text={spec.body} sources={sources} onOpenFile={onOpenFile} />;
+  if (spec.kind === 'details') return <details className="fs-response-details"><summary>{plain(spec.summary, 'summary')}</summary>{content}</details>;
+  return <section className="fs-response-entity" aria-label={spec.title}>
+    {spec.image && <div className="fs-response-entity__image"><RichImage src={safeSrc(spec.image)} alt={spec.alt || spec.title} /></div>}
+    <div className="fs-response-entity__content">
+      <h3 className="fs-response-entity__title">{spec.url ? <RichLink href={safeHref(spec.url)}>{plain(spec.title, 'title')}</RichLink> : plain(spec.title, 'title')}</h3>
+      {content}
+    </div>
+  </section>;
+}
+
 function Item({ item, k, uid }: { item: { task?: boolean; done?: boolean; blocks: Block[] }; k: string; uid: string }) {
   const only = item.blocks.length === 1 && item.blocks[0].kind === 'para' ? item.blocks[0] : null;
   const body = only ? inlines(only.children, k, uid) : <Blocks blocks={item.blocks} k={k} uid={uid} />;
@@ -237,6 +259,9 @@ function One({ block, k, uid }: { block: Block; k: string; uid: string }) {
       );
     }
     case 'code': {
+      if (PRESENTATION_LANGS.has(block.lang.trim().toLowerCase())) {
+        return <PresentationFence lang={block.lang.trim()} code={block.code} />;
+      }
       if (CHART_FENCE_LANGS.has(block.lang.trim().toLowerCase())) {
         const parsed = parseChartSpec(block.code);
         if (parsed.ok) return <ChartBlock spec={parsed.spec} />;
@@ -324,7 +349,7 @@ function Notes({ notes, uid }: { notes: Footnote[]; uid: string }) {
   );
 }
 
-export function Rich({ text: raw, onOpenFile }: { text: string; onOpenFile?: (path:string)=>void }) {
+export function Rich({ text: raw, onOpenFile, sources = [] }: { text: string; onOpenFile?: (path:string)=>void; sources?: readonly ResponseSource[] }) {
   const display = useDisplay();
   // useId gives ':r3:'; a colon in a fragment id is legal but awkward to link.
   const uid = useId().replace(/:/g, 'x');
@@ -336,10 +361,12 @@ export function Rich({ text: raw, onOpenFile }: { text: string; onOpenFile?: (pa
   const { blocks, footnotes } = useMemo(() => parseMarkdown(text), [text]);
   return (
     <OpenWorkspaceFile.Provider value={onOpenFile}>
+    <ObservedSources.Provider value={sources}>
     <div className="fs-rich">
       <Blocks blocks={blocks} k="b" uid={uid} />
       {footnotes.length > 0 && <Notes notes={footnotes} uid={uid} />}
     </div>
+    </ObservedSources.Provider>
     </OpenWorkspaceFile.Provider>
   );
 }
