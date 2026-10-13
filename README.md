@@ -1,5 +1,7 @@
 <p align="center">
   <img src="assets/branding/faustus-wordmark.png" alt="Faustus" width="300">
+
+Persistent groups now keep their members, FIFO messages and progress on the server. New groups use the configured global Sparks model and native agent tools; selected models, personas, chat mode, parallel and ordered discussion remain available. Browser/MCP departure does not cancel work. Later participants receive actual tool results and user clarifications, with explicit Stop and native pending-question continuation. Existing groups retain their canonical sessions. See [the group API and verification limits](docs/api/groups.md).
 </p>
 
 <p align="center">A self-hosted AI workstation for local models, cloud providers and agent teams.</p>

@@ -77,6 +77,7 @@ def _find_npx() -> str:
 # carries hundreds of LOC of unique IMAP / HTTP / manager logic not worth
 # duplicating into the native path right now.
 _BUILTIN_SERVERS = {
+    "groups": ("mcp_servers/groups_server.py", "Built-in: Persistent working groups"),
     "channel_connections": ("mcp_servers/channel_connections_server.py", "Built-in: Native channels"),
     "image_gen":  ("mcp_servers/image_gen_server.py",  "Built-in: Image Generation"),
     "memory":     ("mcp_servers/memory_server.py",     "Built-in: Memory"),
@@ -748,6 +749,8 @@ def builtin_python_env(base_dir: str) -> dict[str, str]:
     from src.constants import internal_api_base
     from core.middleware import INTERNAL_TOOL_TOKEN
     return {"PYTHONPATH": os.pathsep.join(parts),
+            "FAUSTUS_INTERNAL_API_URL": internal_api_base(),
+            "FAUSTUS_INTERNAL_TOOL_TOKEN": INTERNAL_TOOL_TOKEN,
             "FAUSTUS_CHANNELS_API_URL": internal_api_base(),
             "FAUSTUS_CHANNELS_INTERNAL_TOKEN": INTERNAL_TOOL_TOKEN}
 

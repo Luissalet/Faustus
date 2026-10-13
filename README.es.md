@@ -1,5 +1,7 @@
 <p align="center">
   <img src="assets/branding/faustus-wordmark.png" alt="Faustus" width="300">
+
+Los grupos conservan participantes, mensajes en cola y progreso en el servidor. Los nuevos usan el modelo global configurado de las Sparks y herramientas nativas de agente; se mantienen los modelos elegidos, las personas, el modo chat y los turnos paralelos u ordenados. Salir del navegador o de MCP no cancela el trabajo. Los siguientes participantes reciben resultados reales de herramientas y aclaraciones del usuario. Stop es explícito y las preguntas reanudan al mismo participante. Los grupos anteriores conservan sus sesiones. Ver [API y límites comprobados](docs/api/groups.md).
 </p>
 
 <p align="center">Una estación de trabajo de IA autoalojada para modelos locales, proveedores en la nube y equipos de agentes.</p>

@@ -2,29 +2,20 @@ import { Check, ChevronDown, ExternalLink, Play, Plus, Save, Send, Square, Trash
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { Button, Dialog, EmptyState, IconButton, Menu, Skeleton, Toast } from '../../components';
-import { listModels, loadHistory, sendTurn, stopChat, type ModelRoute } from '../../adapters/chat';
+import { listModels, loadHistory, type ModelRoute } from '../../adapters/chat';
 import {
-  forgetGroupState,
-  listGroupPresets,
-  loadGroupState,
-  presetFrom,
-  recordReply,
-  recordUser,
-  saveGroupPresets,
-  saveGroupState,
-  speakerName,
-  startGroup,
-  type GroupMode,
-  type GroupPreset,
-  type GroupState,
-  type Participant,
+  archiveGroup, groupOptions, groupSnapshot, listGroups, listGroupPresets, openGroup,
+  presetFrom, questionFrom, resumeGroup, sendGroup, stopGroup, saveGroupPresets, speakerName, startGroup,
+  type GroupMode, type GroupPreset, type GroupSnapshot, type GroupState, type GroupToolResult, type Participant,
 } from '../../adapters/group';
 import { listPresets, type Preset } from '../../adapters/presets';
 import { hueIndex, initials } from '../../lib/mail';
 import ModelPalette from '../ModelPalette';
 import { Rich } from '../rich';
+import { AskCard } from '../studio/Transcript';
 import { t, tn } from '../../i18n';
 import '../group.css';
+import '../studio.css';
 
 /**
  * Group chat: several models talk with you and with each other. Set the
@@ -41,9 +32,8 @@ interface Entry {
   text: string;
   streaming: boolean;
   error: string;
+  tools?: GroupToolResult[];
 }
-
-const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
 function Avatar({ name }: { name: string }) {
   return (
@@ -55,8 +45,10 @@ function Avatar({ name }: { name: string }) {
 
 /* ── Setup ── */
 
-function Setup({ routes, personas, presets, onStart, onPresetsChanged, say }: { routes: ModelRoute[]; personas: Preset[]; presets: GroupPreset[]; onStart: (state: GroupState) => void; onPresetsChanged: (p: GroupPreset[]) => void; say: (m: string, tone?: 'ok' | 'warn') => void }) {
-  const [participants, setParticipants] = useState<Participant[]>(() => routes.slice(0, 2).map((route) => ({ route, personaId: '', personaName: '', personaPrompt: '' })));
+function Setup({ routes, defaultRoute, personas, presets, onStart, onPresetsChanged, say }: { routes: ModelRoute[]; defaultRoute: ModelRoute | null; personas: Preset[]; presets: GroupPreset[]; onStart: (state: GroupState) => void; onPresetsChanged: (p: GroupPreset[]) => void; say: (m: string, tone?: 'ok' | 'warn') => void }) {
+  const [participants, setParticipants] = useState<Participant[]>(() => (defaultRoute ? [defaultRoute, defaultRoute] : routes.slice(0, 2)).map((route) => ({ route, personaId: '', personaName: '', personaPrompt: '' })));
+  const [executionMode, setExecutionMode] = useState<'chat' | 'agent'>('agent');
+  const [workspace, setWorkspace] = useState('');
   const [mode, setMode] = useState<GroupMode>('round-robin');
   const [pick, setPick] = useState<number | null>(null);
   const [starting, setStarting] = useState(false);
@@ -111,7 +103,7 @@ function Setup({ routes, personas, presets, onStart, onPresetsChanged, say }: { 
   const start = async () => {
     setStarting(true);
     try {
-      onStart(await startGroup(participants, mode));
+      onStart(await startGroup(participants, mode, executionMode, workspace));
     } catch (err) {
       say((err as Error).message || t('Could not start the group.'), 'warn');
       setStarting(false);
@@ -153,7 +145,7 @@ function Setup({ routes, personas, presets, onStart, onPresetsChanged, say }: { 
         ))}
       </ul>
       <div className="fs-inline">
-        <Button variant="ghost" size="sm" icon={Plus} label={t('Add a participant')} onClick={() => setParticipants((cur) => [...cur, { route: routes[cur.length % routes.length], personaId: '', personaName: '', personaPrompt: '' }])} disabled={participants.length >= 8 || !routes.length} testId="group-add" />
+        <Button variant="ghost" size="sm" icon={Plus} label={t('Add a participant')} onClick={() => setParticipants((cur) => [...cur, { route: defaultRoute ?? routes[cur.length % routes.length], personaId: '', personaName: '', personaPrompt: '' }])} disabled={!routes.length} testId="group-add" />
         <span className="fs-spacer" />
         <div className="fs-seg" role="radiogroup" aria-label={t('Turns')}>
           <button type="button" role="radio" aria-checked={mode === 'round-robin'} onClick={() => setMode('round-robin')}>
@@ -165,6 +157,17 @@ function Setup({ routes, personas, presets, onStart, onPresetsChanged, say }: { 
         </div>
       </div>
       <p className="fs-muted">{mode === 'round-robin' ? t('Each participant answers after the previous one and sees what was said.') : t('Everyone answers at the same time; they see each other’s replies from the next message on.')}</p>
+      <div className="fs-grp__work-options">
+        <label className="fs-grp__option">{t('Participants can')}
+          <select className="fs-field" value={executionMode} onChange={(e) => setExecutionMode(e.target.value as 'chat' | 'agent')}>
+            <option value="agent">{t('Use tools and work as agents')}</option>
+            <option value="chat">{t('Discuss without tools')}</option>
+          </select>
+        </label>
+        <label className="fs-grp__option">{t('Working folder')}
+          <input className="fs-field" value={workspace} onChange={(e) => setWorkspace(e.target.value)} placeholder={t('Use the configured working folder')} />
+        </label>
+      </div>
       <div className="fs-inline">
         <Button variant="ghost" size="sm" icon={Save} label={t('Save as a group…')} onClick={() => setSaveName('')} disabled={participants.length < 2} />
         <span className="fs-spacer" />
@@ -188,16 +191,18 @@ export function GroupScreen() {
   const [routes, setRoutes] = useState<ModelRoute[] | null>(null);
   const [personas, setPersonas] = useState<Preset[]>([]);
   const [presets, setPresets] = useState<GroupPreset[]>([]);
-  const [state, setState] = useState<GroupState | null>(() => {
-    const s = params.get('s');
-    return s ? loadGroupState(s) : null;
-  });
+  const [defaultRoute, setDefaultRoute] = useState<ModelRoute | null>(null);
+  const [groups, setGroups] = useState<GroupState[]>([]);
+  const [state, setState] = useState<GroupState | null>(null);
+  const [opening, setOpening] = useState(Boolean(params.get('s')));
+  const [snapshot, setSnapshot] = useState<GroupSnapshot | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [draft, setDraft] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [connectionError, setConnectionError] = useState('');
   const [notice, setNotice] = useState<{ text: string; tone: 'ok' | 'warn' } | null>(null);
-  const controllers = useRef<AbortController[]>([]);
-  const busyStopped = useRef(false);
+  const retryRequest = useRef<{ message: string; id: string } | null>(null);
+  const busy = snapshot?.busy ?? false;
   const endRef = useRef<HTMLDivElement>(null);
   const noticeTimer = useRef<number | null>(null);
 
@@ -209,102 +214,94 @@ export function GroupScreen() {
 
   useEffect(() => {
     const c = new AbortController();
-    listModels(c.signal).then(setRoutes).catch(() => setRoutes([]));
+    Promise.all([listModels(c.signal), groupOptions(c.signal), listGroups(c.signal)]).then(([models, options, saved]) => {
+      setDefaultRoute(options.defaultRoute);
+      setRoutes(options.defaultRoute && !models.some((r) => r.model === options.defaultRoute?.model && r.endpointId === options.defaultRoute?.endpointId)
+        ? [options.defaultRoute, ...models] : models);
+      setGroups(saved);
+    }).catch((error: Error) => { if (!c.signal.aborted) { setRoutes([]); say(error.message, 'warn'); } });
     listPresets(c.signal).then((all) => setPersonas(all.filter((p) => p.own))).catch(() => undefined);
     listGroupPresets(c.signal).then(setPresets).catch(() => undefined);
-    return () => c.abort();
-  }, []);
+    return () => { c.abort(); if (noticeTimer.current) window.clearTimeout(noticeTimer.current); };
+  }, [say]);
 
-  /* A group opened from the list: the parent's history is the transcript. */
+  const selectedId = params.get('s');
   useEffect(() => {
-    if (!state) return;
     const c = new AbortController();
-    loadHistory(state.parentId, c.signal)
-      .then((h) =>
-        setEntries(
-          h.history.map((m) => ({
-            id: uid(),
-            role: m.role === 'user' ? 'user' : 'participant',
-            speaker: m.role === 'user' ? t('You') : String(m.metadata.group_model ?? m.metadata.model ?? ''),
-            model: String(m.metadata.model ?? ''),
-            text: m.content,
-            streaming: false,
-            error: '',
-          })),
-        ),
-      )
-      .catch(() => undefined);
-    return () => c.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state?.parentId]);
-
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ block: 'end' });
-  }, [entries]);
-
-  const patch = (id: string, p: Partial<Entry>) => setEntries((cur) => cur.map((e) => (e.id === id ? { ...e, ...p } : e)));
-
-  const speak = async (g: GroupState, p: GroupState['participants'][number], message: string) => {
-    const entry: Entry = { id: uid(), role: 'participant', speaker: speakerName(p), model: p.route.model, text: '', streaming: true, error: '' };
-    setEntries((cur) => [...cur, entry]);
-    const c = new AbortController();
-    controllers.current.push(c);
-    let text = '';
-    try {
-      for await (const ev of sendTurn({ sessionId: p.sessionId, message, mode: 'chat', route: p.route, useRag: false, signal: c.signal })) {
-        if (ev.type === 'delta' && !ev.thinking) {
-          text += ev.text;
-          patch(entry.id, { text });
-        } else if (ev.type === 'error') throw new Error(ev.message);
-        else if (ev.type === 'done') break;
+    let timer: ReturnType<typeof setTimeout>;
+    let first = true;
+    setState(null); setSnapshot(null); setEntries([]); setOpening(Boolean(selectedId)); setConnectionError('');
+    if (!selectedId) return () => c.abort();
+    const refresh = async () => {
+      try {
+        const current = first ? await openGroup(selectedId, c.signal) : await groupSnapshot(selectedId, c.signal);
+        first = false;
+        const history = await loadHistory(selectedId, c.signal);
+        if (c.signal.aborted) return;
+        const rows: Entry[] = history.history.filter((m) => m.role !== 'system').map((m) => ({
+          id: String(m.metadata.group_step_id ?? m.metadata.group_turn_id ?? m.metadata.group_answer_id ?? `history-${m.index}`),
+          role: m.role === 'user' ? 'user' : 'participant', speaker: m.role === 'user' ? t('You') : String(m.metadata.group_model ?? m.metadata.model ?? ''),
+          model: String(m.metadata.model ?? ''), text: m.content, streaming: false, error: '',
+          tools: Array.isArray(m.metadata.group_tool_results) ? m.metadata.group_tool_results as GroupToolResult[] : [],
+        }));
+        for (const turn of current.turns) {
+          if (!rows.some((r) => r.id === turn.id) && turn.status === 'queued') rows.push({ id: turn.id, role: 'user', speaker: t('Queued'), model: '', text: turn.message, streaming: false, error: '' });
+          for (const step of current.steps.filter((s) => s.turn_id === turn.id)) {
+            if (rows.some((r) => r.id === step.id) || step.status === 'queued') continue;
+            const member = current.group.participants.find((p) => p.sessionId === step.member_id);
+            if (!member) continue;
+            rows.push({ id: step.id, role: 'participant', speaker: speakerName(member), model: member.route.model,
+              text: step.text, streaming: step.status === 'running', error: step.error || (step.status === 'stopped' ? t('Stopped.') : ''), tools: step.detail.tool_results });
+          }
+        }
+        setState(current.group); setSnapshot(current); setEntries(rows); setOpening(false); setConnectionError('');
+      } catch (error) {
+        if (!c.signal.aborted) { setConnectionError((error as Error).message); setOpening(false); }
+      } finally {
+        if (!c.signal.aborted) timer = setTimeout(() => void refresh(), 1000);
       }
-    } catch (err) {
-      patch(entry.id, { error: c.signal.aborted ? t('Stopped.') : (err as Error).message || t('No answer.') });
-    } finally {
-      patch(entry.id, { streaming: false });
-      controllers.current = controllers.current.filter((x) => x !== c);
-    }
-    if (text.trim()) await recordReply(g, p, text);
-    return text;
-  };
+    };
+    void refresh();
+    // The browser owns only its observer. Leaving never stops the saved work.
+    return () => { c.abort(); clearTimeout(timer); };
+  }, [selectedId]);
+
+  const transcriptText = entries.map((e) => e.text).join('');
+  useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [transcriptText]);
 
   const send = async () => {
     const message = draft.trim();
-    if (!message || !state || busy) return;
-    setDraft('');
-    setBusy(true);
-    setEntries((cur) => [...cur, { id: uid(), role: 'user', speaker: t('You'), model: '', text: message, streaming: false, error: '' }]);
-    await recordUser(state, message);
-    if (state.mode === 'parallel') await Promise.all(state.participants.map((p) => speak(state, p, message)));
-    else {
-      const order = [...state.participants].sort(() => Math.random() - 0.5);
-      for (const p of order) {
-        if (controllers.current.length === 0 && busyStopped.current) break;
-        await speak(state, p, message);
-      }
-    }
-    busyStopped.current = false;
-    setBusy(false);
+    if (!message || !state || sending) return;
+    const request = retryRequest.current?.message === message ? retryRequest.current : { message, id: crypto.randomUUID() };
+    retryRequest.current = request; setSending(true);
+    try {
+      await sendGroup(state.parentId, message, request.id);
+      retryRequest.current = null; setDraft('');
+    } catch (error) { say((error as Error).message, 'warn'); }
+    finally { setSending(false); }
   };
-
-  const stop = () => {
-    busyStopped.current = true;
-    for (const c of controllers.current) c.abort();
-    if (state) for (const p of state.participants) void stopChat(p.sessionId);
+  const stop = async () => {
+    if (!state) return;
+    try { await stopGroup(state.parentId); } catch (error) { say((error as Error).message, 'warn'); }
   };
-
   const leave = () => {
-    stop();
-    setState(null);
-    setEntries([]);
-    setParams({}, { replace: true });
+    setState(null); setEntries([]); setSnapshot(null); setParams({}, { replace: true });
+    void listGroups().then(setGroups).catch((error: Error) => say(error.message, 'warn'));
   };
-
-  const forget = () => {
-    if (state) forgetGroupState(state.parentId);
-    leave();
-    say(t('Group closed. Its transcript stays in Studio.'));
+  const forget = async () => {
+    if (!state) return;
+    try { await archiveGroup(state.parentId); leave(); say(t('Group closed. Its transcript stays in Studio.')); }
+    catch (error) { say((error as Error).message, 'warn'); }
   };
+  const answer = async (message: string, fields: Record<string, unknown>) => {
+    if (!state || sending) return;
+    setSending(true);
+    try { await resumeGroup(state.parentId, message, fields); }
+    catch (error) { say((error as Error).message, 'warn'); }
+    finally { setSending(false); }
+  };
+  const pending = snapshot?.steps.find((s) => questionFrom(s));
+  const ask = pending ? questionFrom(pending) : null;
 
   const participants = useMemo(() => state?.participants ?? [], [state]);
 
@@ -329,15 +326,21 @@ export function GroupScreen() {
               align="end"
               items={[
                 { label: t('New group'), icon: Plus, onSelect: leave },
-                { label: t('Close this group (keep the transcript)'), icon: Trash2, variant: 'danger', onSelect: forget },
+                { label: t('Close this group (keep the transcript)'), icon: Trash2, variant: 'danger', onSelect: () => void forget() },
               ]}
             />
           </div>
         )}
       </header>
 
-      {!state && routes.length === 0 && <EmptyState icon={Users} title={t('No models')} body={t('Add an endpoint in Settings → Models first.')} />}
-      {!state && routes.length > 0 && <Setup routes={routes} personas={personas} presets={presets} onStart={(s) => { setState(s); setEntries([]); setParams({ s: s.parentId }, { replace: true }); }} onPresetsChanged={setPresets} say={say} />}
+      {connectionError && <p className="fs-notice" data-tone="danger" role="alert">{connectionError} {t('Reconnecting…')}</p>}
+      {opening && <Skeleton label={t('Opening group')} count={2} height="40px" />}
+      {!state && !opening && groups.length > 0 && <div className="fs-grp__presets" aria-label={t('Open groups')}>
+        <span className="fs-grp__label">{t('Open groups')}</span>
+        {groups.map((g) => <button key={g.parentId} type="button" className="fs-chip" onClick={() => setParams({ s: g.parentId })}>{g.name}</button>)}
+      </div>}
+      {!state && !opening && routes.length === 0 && <EmptyState icon={Users} title={t('No models')} body={t('Add an endpoint in Settings → Models first.')} />}
+      {!state && !opening && routes.length > 0 && <Setup routes={routes} defaultRoute={defaultRoute} personas={personas} presets={presets} onStart={(s) => { setState(s); setEntries([]); setParams({ s: s.parentId }, { replace: true }); }} onPresetsChanged={setPresets} say={say} />}
 
       {state && (
         <>
@@ -360,13 +363,25 @@ export function GroupScreen() {
                 </header>
                 {e.role === 'user' ? <p className="fs-grp__user">{e.text}</p> : e.text ? <Rich text={e.text} /> : e.streaming ? <p className="fs-cmp__waiting"><span className="fs-studio__pulse" /> {t('Thinking…')}</p> : null}
                 {e.error && <p className="fs-notice" data-tone="danger">{e.error}</p>}
+                {Boolean(e.tools?.length) && <details className="fs-grp__tools">
+                  <summary>{t('Tool results')} · {e.tools?.length}</summary>
+                  {e.tools?.map((tool, i) => <div key={tool.call_id ?? i}>
+                    <p className="fs-muted">{tool.tool} · {tool.command} {tool.exit_code === undefined ? '' : `(${tool.exit_code})`}</p>
+                    <pre className="fs-grp__tool-output"><code>{String(tool.output ?? '')}</code></pre>
+                  </div>)}
+                </details>}
               </article>
             ))}
             <div ref={endRef} />
           </section>
+          {ask && <AskCard ask={ask} busy={sending}
+            onAnswer={(text, optionIds) => void answer(text, { question_id: ask.questionId, question_revision: ask.revision, option_ids: optionIds })}
+            onApproval={(decision) => void answer('', { tool_approval_id: ask.approvalId, tool_approval_decision: decision })} />}
+          {busy && <p className="fs-muted" role="status">{ask ? t('Waiting for your answer') : t('Working. New messages join the queue; you can leave and return.')}</p>}
           <footer className="fs-grp__composer">
             <textarea
               className="fs-grp__textarea"
+              aria-label={t('Message to the group')}
               rows={2}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
@@ -379,7 +394,8 @@ export function GroupScreen() {
               }}
               data-testid="group-draft"
             />
-            {busy ? <Button variant="danger" size="sm" icon={Square} label={t('Stop')} onClick={stop} /> : <Button variant="primary" size="sm" icon={Send} label={t('Send')} disabled={!draft.trim()} onClick={() => void send()} testId="group-send" />}
+            {busy && <Button variant="danger" size="sm" icon={Square} label={t('Stop')} onClick={() => void stop()} />}
+            <Button variant="primary" size="sm" icon={Send} label={busy ? t('Queue message') : t('Send')} loading={sending} disabled={!draft.trim() || sending} onClick={() => void send()} testId="group-send" />
           </footer>
         </>
       )}
