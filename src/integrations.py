@@ -738,14 +738,12 @@ async def execute_api_call(
 
         # Internal typed consumers need the complete JSON, independent of the
         # existing display preview. Default callers retain their old result.
-        has_response_data = False
         response_data = None
         # Format response body
         if "application/json" in content_type:
             try:
                 data = response.json()
                 response_data = data
-                has_response_data = True
                 full = json.dumps(data, indent=2, ensure_ascii=False)
                 if len(full) > 12000:
                     if isinstance(data, list):
@@ -831,12 +829,12 @@ async def execute_api_call(
                 # it for diagnostics, but make its provenance explicit so the
                 # agent gate does not treat HTTP failure as content-free.
                 "untrusted_content": True,
-                **({"data": response_data, "status_code": status} if return_data and has_response_data else {}),
+                **({"data": response_data, "status_code": status} if return_data else {}),
             }
 
         return {"output": output, "exit_code": 0,
                 **({"data": response_data, "status_code": status, "untrusted_content": True}
-                   if return_data and has_response_data else {})}
+                   if return_data else {})}
 
     except effect_outbox.IntentNotPersisted as exc:
         return {"error": f"Request not sent: its intent could not be persisted ({exc})", "exit_code": 1,

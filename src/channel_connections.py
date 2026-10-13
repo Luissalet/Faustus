@@ -73,18 +73,31 @@ def _id(value, label):
     return value
 
 
-async def _request(row, method, path, *, params=None, body=None):
+async def _request(row, method, path, *, params=None, body=None, allow_no_content=False):
+    write = method != "GET"
+    attempt = {"attempt": {"id": uuid.uuid4().hex, "connection_id": row["id"],
+                           "method": method, "path": path}} if write else {}
     result = await integrations.execute_api_call(row["integration_id"], method, path,
                                                 params=params, body=body, return_data=True)
     if result.get("exit_code"):
-        return result
+        return {**result, **attempt}
     data = result.get("data")
+    if allow_no_content and result.get("status_code") == 204:
+        return {**result, **attempt, "untrusted_content": True}
     if row["provider"] == "slack" and isinstance(data, dict) and data.get("ok") is False:
         return {"exit_code": 1, "error": str(data.get("error") or "Slack request failed"),
-                "data": data, "untrusted_content": True}
-    if data is None:
-        return {"exit_code": 1, "error": "The channel service returned no JSON response", "untrusted_content": True}
-    return {"exit_code": 0, "data": data, "untrusted_content": True}
+                "data": data, "untrusted_content": True, **attempt}
+    expected = list if row["provider"] == "discord" and not write else dict
+    error = "The channel service returned no usable JSON response" if not isinstance(data, expected) else ""
+    if write and not error:
+        receipt = "ok" if path == "/api/reactions.add" else {"slack": "ts", "discord": "id", "matrix": "event_id"}[row["provider"]]
+        if not data.get(receipt):
+            error = "The channel service returned no write receipt"
+    if error:
+        return {"exit_code": 1, "error": error, "data": data, "untrusted_content": True,
+                **attempt, **({"outcome_unknown": True, "status": "outcome_unknown",
+                               "uncertainty": {"reconcile_action": "read the remote state before repeating the request"}} if write else {})}
+    return {"exit_code": 0, "data": data, "untrusted_content": True, **attempt}
 
 
 async def list_spaces(connection_id, parent_id="", cursor="", limit=100):
@@ -188,11 +201,9 @@ async def write_message(connection_id, channel_id, text, message_id="", transact
         return result
     data = result["data"]
     identifier = data.get("ts") if provider == "slack" else data.get("id") if provider == "discord" else data.get("event_id")
-    if not identifier:
-        return {"exit_code": 1, "error": "The channel service returned no message ID",
-                "outcome_unknown": True, "data": data, "untrusted_content": True}
     return {"exit_code": 0, "provider": provider, "channel_id": channel, "message_id": identifier,
-            "action": "edit" if message_id else "send", "data": data, "untrusted_content": True}
+            "action": "edit" if message_id else "send", "data": data, "untrusted_content": True,
+            "attempt": result["attempt"]}
 
 
 async def react(connection_id, channel_id, message_id, reaction, transaction_id=""):
@@ -206,7 +217,7 @@ async def react(connection_id, channel_id, message_id, reaction, transaction_id=
     if provider == "discord":
         path = f"/api/v10/channels/{quote(channel, safe='')}/messages/{quote(message, safe='')}/reactions/{quote(reaction, safe='')}/@me"
         # Discord reaction success is an empty 204, unlike JSON message writes.
-        return await integrations.execute_api_call(row["integration_id"], "PUT", path, return_data=True)
+        return await _request(row, "PUT", path, allow_no_content=True)
     txn = transaction_id or uuid.uuid4().hex
     return await _request(row, "PUT", f"/_matrix/client/v3/rooms/{quote(channel, safe='')}/send/m.reaction/{quote(txn, safe='')}",
                           body={"m.relates_to": {"rel_type": "m.annotation", "event_id": message, "key": reaction}})

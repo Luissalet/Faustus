@@ -33,3 +33,14 @@ async def test_configured_literal_address_uses_validated_pin(host):
     assert result["exit_code"] == 0
     assert result["data"] == {"ok": True}
     client.request.assert_awaited_once()
+
+
+@pytest.mark.parametrize('status',[200,204,429])
+async def test_non_json_response_keeps_status_and_explicit_absent_data(status):
+    response=MagicMock(status_code=status,headers={'content-type':'text/plain'},text='')
+    client=AsyncMock();client.__aenter__.return_value=client;client.request.return_value=response
+    integration={'id':'fixture','name':'Fixture','base_url':'http://127.0.0.1','enabled':True,'auth_type':'none'}
+    with patch.object(integrations,'_find_integration',return_value=integration),patch('httpx.AsyncClient',return_value=client):
+        result=await integrations.execute_api_call('fixture','PUT','/reaction',return_data=True)
+    assert result['data'] is None and result['status_code']==status
+    assert result['exit_code']==(1 if status==429 else 0)
