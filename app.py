@@ -984,6 +984,8 @@ app.include_router(setup_media_edit_routes())
 # of the existing src/integrations.py credential store.
 from routes.integrations_routes import setup_integrations_routes
 app.include_router(setup_integrations_routes())
+from routes.channel_connection_routes import setup_channel_connection_routes
+app.include_router(setup_channel_connection_routes())
 
 # "Prove it": a change set is assembled from records Faustus already keeps and
 # judged by src/prove.py. Nothing is stored — asking twice about the same job

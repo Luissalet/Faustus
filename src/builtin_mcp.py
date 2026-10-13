@@ -77,6 +77,7 @@ def _find_npx() -> str:
 # carries hundreds of LOC of unique IMAP / HTTP / manager logic not worth
 # duplicating into the native path right now.
 _BUILTIN_SERVERS = {
+    "channel_connections": ("mcp_servers/channel_connections_server.py", "Built-in: Native channels"),
     "image_gen":  ("mcp_servers/image_gen_server.py",  "Built-in: Image Generation"),
     "memory":     ("mcp_servers/memory_server.py",     "Built-in: Memory"),
     "rag":        ("mcp_servers/rag_server.py",        "Built-in: RAG"),
@@ -744,7 +745,11 @@ def builtin_python_env(base_dir: str) -> dict[str, str]:
     for item in existing.split(os.pathsep):
         if item and item not in parts:
             parts.append(item)
-    return {"PYTHONPATH": os.pathsep.join(parts)}
+    from src.constants import internal_api_base
+    from core.middleware import INTERNAL_TOOL_TOKEN
+    return {"PYTHONPATH": os.pathsep.join(parts),
+            "FAUSTUS_CHANNELS_API_URL": internal_api_base(),
+            "FAUSTUS_CHANNELS_INTERNAL_TOKEN": INTERNAL_TOOL_TOKEN}
 
 
 async def register_builtin_servers(mcp_manager):
