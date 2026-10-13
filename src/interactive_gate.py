@@ -1,8 +1,7 @@
-"""Foreground activity gate for background work.
+"""Optional foreground activity gate for background work.
 
-Background tasks are allowed to run only after normal UI/API traffic has
-settled. This keeps scheduled jobs and email pollers from competing with the
-user opening Faustus, Cookbook, email, documents, notes, or other panels.
+Autonomous work continues by default while the UI is open. Deployments may
+explicitly opt into pausing/preempting background tasks for foreground activity.
 """
 
 from __future__ import annotations
@@ -27,7 +26,7 @@ _COND_LOOP: asyncio.AbstractEventLoop | None = None
 
 
 def _enabled() -> bool:
-    return os.getenv("BACKGROUND_TASK_FOREGROUND_GATE", "true").lower() not in {"0", "false", "no", "off"}
+    return os.getenv("BACKGROUND_TASK_FOREGROUND_GATE", "false").lower() not in {"0", "false", "no", "off"}
 
 
 def _quiet_seconds() -> float:
