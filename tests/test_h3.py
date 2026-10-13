@@ -68,7 +68,7 @@ def test_failure_message_is_the_contract_sentence():
 def test_looks_like_write_task_by_verb_or_path():
     assert dr.looks_like_write_task("Implement 4 backend modules + their tests")
     assert dr.looks_like_write_task("Create silhouettes/editor/mesh_adapter.py")
-    assert dr.looks_like_write_task("read silhouettes/editor/constraints.py and match its API")  # path token
+    assert not dr.looks_like_write_task("read silhouettes/editor/constraints.py and match its API")
     assert not dr.looks_like_write_task("What do you think of this approach?")
     assert not dr.looks_like_write_task("")
 

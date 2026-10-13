@@ -24,9 +24,9 @@ def test_width_follows_the_setting(settings):
     assert len(out["tasks"]) == 30 and out["dropped_tasks"] == 10
 
 
-def test_default_width_is_unchanged(settings):
+def test_default_width_queues_every_task(settings):
     out = _parse([f"task {i}" for i in range(6)])
-    assert len(out["tasks"]) == st.MAX_SUBAGENTS and out["dropped_tasks"] == 2
+    assert len(out["tasks"]) == 6 and out["dropped_tasks"] == 0
 
 
 def test_tier_maps_to_the_owners_model_and_endpoint(settings):
@@ -55,4 +55,4 @@ def test_read_only_reviewer_contract(settings):
 
 def test_per_task_bounds(settings):
     row = _parse([{"instruction": "x", "max_rounds": 99, "timeout_s": 5}])["tasks"][0]
-    assert row["max_rounds"] == 40 and row["timeout_s"] == st.MIN_WORKER_TIMEOUT_S
+    assert row["max_rounds"] == 99 and row["timeout_s"] == 5

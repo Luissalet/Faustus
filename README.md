@@ -4,6 +4,13 @@
 
 <p align="center">A self-hosted AI workstation for local models, cloud providers and agent teams.</p>
 
+Delegated workers have no implicit deadline and queue every requested task by
+default. They inherit the coordinator's configured model route unless a task
+selects another one. Reading and research return reports without being retried
+as file edits; final reports discard narration before tool results and consume
+response corrections. Explicit limits, endpoint concurrency and Stop remain
+available. [Delegation continuity](docs/DELEGATION-CONTINUITY.md).
+
 Configured MCP HTTP/SSE connections recover on demand without restarting the
 agent. Healthy connections stay intact; a write whose response was lost is
 reported as uncertain and is not replayed. [Remote MCP recovery](docs/design/REMOTE-MCP-RECOVERY.md).

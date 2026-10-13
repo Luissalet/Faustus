@@ -1,5 +1,15 @@
 # Objetivos acordados
 
+## Delegación sin cortes impuestos — resuelto #457
+
+Trabajadores sin deadline implícito; cero ilimitado y positivos solicitados,
+ancho completo en cola, Stop y supervisor opcional. Informes de lectura y de
+herramientas no basadas en archivos reconocidos sin ordenar write_file. Reporte
+final del trabajador posterior a resultados y con correcciones de respuesta.
+Dos roles con el GLM global de Sparks verificaron el archivo privado 42 mediante
+la herramienta real; MCP desconectado no detuvo el trabajo. Mantener evaluación
+de tareas más largas y de grupos #443; esta prueba no certifica toda su calidad.
+
 ## Continuidad de conversaciones de grupo
 
 Ágora #443, derivada de la investigación #434 y el encargo de Luis del 13-10-2026.

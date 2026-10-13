@@ -4,6 +4,14 @@
 
 <p align="center">Una estación de trabajo de IA autoalojada para modelos locales, proveedores en la nube y equipos de agentes.</p>
 
+Los trabajadores delegados no tienen un plazo impuesto y admiten todas las
+tareas solicitadas por defecto, encoladas según la concurrencia del endpoint.
+Heredan el modelo configurado del coordinador salvo elección expresa de otro.
+Las lecturas e investigaciones entregan informes sin convertirse en órdenes de
+escritura; el informe final descarta narración anterior a los resultados y
+respeta las correcciones de respuesta. Se mantienen los límites solicitados y
+Stop. [Continuidad de delegación](docs/DELEGATION-CONTINUITY.md).
+
 Las conexiones MCP HTTP/SSE configuradas se recuperan al llamar a una herramienta
 sin reiniciar el agente. Las conexiones sanas se conservan; una escritura cuya
 respuesta se perdió queda incierta y no se repite. [Recuperación MCP remota](docs/design/REMOTE-MCP-RECOVERY.md).
