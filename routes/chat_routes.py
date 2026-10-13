@@ -4525,7 +4525,8 @@ def setup_chat_routes(
                                         _stream_set(session, partial=full_response)
                                         yield chunk
                                     elif data.get("type") == "web_sources":
-                                        web_sources = data.get("data", [])
+                                        from src.response_quality import merge_web_sources
+                                        web_sources = merge_web_sources(web_sources, data.get("data", []))
                                         yield chunk
                                     elif data.get("type") in (
                                         "tool_start", "tool_output", "agent_step",

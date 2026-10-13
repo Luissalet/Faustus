@@ -14,6 +14,7 @@ import type { AnswerVersion } from '../../adapters/sessions';
 import type { EvidenceRef } from '../../adapters/evidence';
 import { attachmentUrl, isImage } from '../../adapters/composer';
 import { Rich } from '../rich';
+import { ResponseSources } from '../../components/ResponseSources';
 import { issueIdRegex } from '../../adapters/board';
 import { IssueChip, renderIssueSegments } from '../board/IssueChips';
 import { splitMentions } from '../../lib/mentions';
@@ -734,7 +735,7 @@ function ToolRail({
       <div className="fs-trace fs-studio__tools-body">
         {sources && sources.length > 0 && (
           <div className="fs-studio__reading-row" data-testid="reading-row">
-            <FaviconStrip sources={sources} max={12} />
+            <ResponseSources sources={sources} expanded />
           </div>
         )}
         {nestedThoughts.map((thought) => (
@@ -2124,32 +2125,13 @@ function AssistantTurn({
         )}
         <TurnActivity turn={turn} />
         {turn.research && !turn.research.done && turn.streaming && <ResearchLine research={turn.research} />}
-        {body && <Rich text={body} onOpenFile={onOpenFile} />}
+        {body && <Rich text={body} onOpenFile={onOpenFile} sources={turn.sources} />}
         {turn.streaming && body && <span className="fs-studio__cursor" aria-hidden="true" />}
         {turn.streaming && <span className="fs-sr-only" aria-live="polite" data-testid="stream-announcement">{streamAnnouncement}</span>}
         {turn.images.map((url) => (
           <img key={url} className="fs-studio__image" src={url} alt={t('Generated image')} loading="lazy" />
         ))}
-        {turn.sources.length > 0 && (
-          <p className="fs-studio__sources">
-            {turn.sources.slice(0, 6).map((s) => {
-              // A citation's URL came from outside; a `javascript:` one is a
-              // script, so it is shown as text rather than made clickable.
-              const href = safeExternal(s.url);
-              const favicon = s.favicon ? (
-                <img className="fs-studio__source-favicon" src={s.favicon} alt="" width={16} height={16} loading="lazy" aria-hidden="true" />
-              ) : null;
-              return href ? (
-                <a key={s.url} className="fs-link fs-studio__source-link" href={href} target="_blank" rel="noreferrer" title={s.title}>
-                  {favicon}
-                  {s.title.slice(0, 48)}
-                </a>
-              ) : (
-                <span key={s.url} className="fs-studio__source-flat">{favicon}{s.title.slice(0, 48)}</span>
-              );
-            })}
-          </p>
-        )}
+        <ResponseSources sources={turn.sources} />
         {turn.advice && turn.advice.length > 0 && <AdviceCard advice={turn.advice} />}
         {!turn.streaming && turn.strategy && <StrategyLine strategy={turn.strategy} />}
         {!turn.streaming && <ContextReceiptCard turn={turn} />}

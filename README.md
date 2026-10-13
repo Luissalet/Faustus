@@ -75,6 +75,12 @@ Faustus brings chat, coding agents, research, writing, image and video workflows
 
 Use local models through Ollama and compatible servers, or connect cloud APIs. Configure an orchestrator and its specialist agents inside a conversation. Keep work, sources, generated files and project context together, and see what is running rather than guessing whether a model has frozen.
 
+Studio answers can show source links beside their claims, a complete sources disclosure,
+subject summaries with an image, and expandable supplementary Markdown. Search and
+direct page reads retain all observed sources after reload. Charts keep the existing
+native renderer; answer rules request real data, units and a nearby source caption
+([response formats and scope](docs/ui/response-quality.md)).
+
 The recurring idea is that the agent has to show its work: which context a turn was built from, which tool produced which evidence, which model answered and what it cost, which approval unlocked which action. Every feature below has a test that fails when that stops being true, and a section in [FAUSTUS.md](FAUSTUS.md) that explains why it exists.
 
 Local-first means you choose where inference happens. Cloud APIs and authenticated official clients use their provider's billing or subscription quota; local inference uses your own hardware. Selecting a remote provider sends it the context needed for that request.
