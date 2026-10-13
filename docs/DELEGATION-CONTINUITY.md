@@ -6,8 +6,11 @@ No external agent runtime, permission system or additional model is required.
 ## Behavior
 
 - Workers inherit the coordinator's endpoint, headers and model. Explicit task
-  models and configured tiers remain available, including the global Sparks
-  service. Selection does not replace or unload a served model.
+  `model`/`endpoint_id` and configured tiers remain available, including the
+  global Sparks service, and are advertised in the native tool schema. An
+  endpoint chosen without a model uses its own configured model and credentials.
+  The existing unavailable-route fallback appears in the report. Selection
+  does not replace or unload a served model.
 - Omitted deadlines and `timeout_s: 0` have no time limit. A positive job or task
   deadline is honored exactly, measured after queue admission. A task's zero
   can override a job deadline. Definitions that explicitly request a deadline
