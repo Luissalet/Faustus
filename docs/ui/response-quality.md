@@ -54,3 +54,8 @@ These native layouts belong to Studio's reader. The embedded Hoard panel and
 legacy chat have separate readers; their Markdown links remain usable but native
 entity/details layout parity is not implied. Autonomous model quality must be
 assessed with actual model-backed cases, separately from scripted rendering.
+
+Within table cells, source labels stay on one line so narrow columns cannot
+stretch rows by wrapping citations one letter at a time. Wide comparisons keep
+their horizontal scroll inside the existing table container. Source disclosures
+outside tables still wrap long titles normally.
