@@ -26,6 +26,21 @@ DATA_FILE = INTEGRATIONS_FILE
 # ---------------------------------------------------------------------------
 
 INTEGRATION_PRESETS: Dict[str, Dict[str, Any]] = {
+    "slack_messages": {
+        "name": "Slack messages", "base_url": "https://slack.com", "auth_type": "bearer",
+        "hint": "Slack bot/user token for the conversations it can access. Native channel tools use this saved credential.",
+        "description": "Native channel connection: conversations, history, sending, editing and reactions. Service permissions remain those of the supplied token.",
+    },
+    "discord_messages": {
+        "name": "Discord messages", "base_url": "https://discord.com", "auth_type": "header", "auth_header": "Authorization",
+        "hint": "Enter the complete Authorization value, e.g. Bot followed by the bot token, or Bearer followed by an OAuth token.",
+        "description": "Native channel connection: guilds/channels, history, sending, editing and reactions.",
+    },
+    "matrix_messages": {
+        "name": "Matrix messages", "base_url": "", "auth_type": "bearer",
+        "hint": "Set your homeserver origin and Matrix access token. Encrypted room decryption is not supplied by the REST connection.",
+        "description": "Native channel connection: joined rooms, history, sending, edits and reactions for readable room events.",
+    },
     "plausible": {
         "name": "Plausible Analytics", "base_url": "https://plausible.io", "auth_type": "bearer",
         "hint": "Statistics API key. Use Mercator for saved snapshots; this connection also supports site provisioning.",
@@ -565,6 +580,7 @@ async def execute_api_call(
     params: Optional[Dict[str, Any]] = None,
     body: Optional[Any] = None,
     extra_headers: Optional[Dict[str, str]] = None,
+    return_data: bool = False,
 ) -> Dict[str, Any]:
     """Execute an HTTP request against a registered integration."""
 
@@ -642,6 +658,13 @@ async def execute_api_call(
     )
     if not ok:
         return {"error": f"URL rejected: {reason}", "exit_code": 1}
+    # Literal addresses pass the shared check without invoking its DNS resolver.
+    # Pin that already checked literal too, preserving the same address policy.
+    if not resolved_ips:
+        try:
+            resolved_ips.append(str(ipaddress.ip_address(urlparse(url).hostname)))
+        except ValueError:
+            pass
     pinned_ips = _validated_ips(resolved_ips)
     if not pinned_ips:
         return {"error": "URL rejected: host did not resolve to a usable address", "exit_code": 1}
@@ -713,10 +736,16 @@ async def execute_api_call(
         content_type = response.headers.get("content-type", "")
         status = response.status_code
 
+        # Internal typed consumers need the complete JSON, independent of the
+        # existing display preview. Default callers retain their old result.
+        has_response_data = False
+        response_data = None
         # Format response body
         if "application/json" in content_type:
             try:
                 data = response.json()
+                response_data = data
+                has_response_data = True
                 full = json.dumps(data, indent=2, ensure_ascii=False)
                 if len(full) > 12000:
                     if isinstance(data, list):
@@ -802,9 +831,12 @@ async def execute_api_call(
                 # it for diagnostics, but make its provenance explicit so the
                 # agent gate does not treat HTTP failure as content-free.
                 "untrusted_content": True,
+                **({"data": response_data, "status_code": status} if return_data and has_response_data else {}),
             }
 
-        return {"output": output, "exit_code": 0}
+        return {"output": output, "exit_code": 0,
+                **({"data": response_data, "status_code": status, "untrusted_content": True}
+                   if return_data and has_response_data else {})}
 
     except effect_outbox.IntentNotPersisted as exc:
         return {"error": f"Request not sent: its intent could not be persisted ({exc})", "exit_code": 1,
