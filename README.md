@@ -14,6 +14,10 @@ built-in MCP tools and the API share the same implementation. Incoming push,
 binary attachments and Matrix encryption are pending; real accounts have not
 been tested. [Channel connections](docs/api/channel_connections.md).
 
+Autonomous tasks continue while the browser is open by default. The previous
+foreground preemption policy remains opt-in; explicit task Stop stays available.
+[Background continuity](docs/design/BACKGROUND-CONTINUITY.md).
+
 <p align="center">
   <a href="README.es.md">Español</a> ·
   <a href="#quick-start">Quick start</a> ·

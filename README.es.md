@@ -14,6 +14,10 @@ guardadas en Integrations. Ocho herramientas MCP y la API comparten código prop
 Quedan pendientes eventos entrantes, adjuntos binarios y cifrado Matrix; aún no
 se han probado cuentas reales. [Conexiones de canales](docs/api/channel_connections.md).
 
+Las tareas autónomas continúan por defecto mientras el navegador está abierto.
+La preempción por actividad sigue disponible como opción; parar una tarea
+explícitamente sigue funcionando. [Continuidad de tareas](docs/design/BACKGROUND-CONTINUITY.md).
+
 <p align="center">
   <a href="README.md">English</a> ·
   <a href="#inicio-rápido">Inicio rápido</a> ·
