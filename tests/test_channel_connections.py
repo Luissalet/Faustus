@@ -104,7 +104,8 @@ async def test_missing_write_receipt_remains_uncertain(profiles,monkeypatch,prov
 async def test_reactions_use_native_encoding_and_contract(profiles,monkeypatch,provider):
     requests=[]
     async def call(identifier,method,path,**kwargs):
-        requests.append((method,path,kwargs));return {'exit_code':0,'data':{'ok':True,'event_id':'$reaction'}}
+        requests.append((method,path,kwargs))
+        return {'exit_code':0,'data':None,'status_code':204} if provider=='discord' else {'exit_code':0,'data':{'ok':True,'event_id':'$reaction'}}
     monkeypatch.setattr(integrations,'execute_api_call',call)
     result=await channels.react(profiles[provider]['id'],'!room:fixture','001.0001','👍','txn=1')
     assert result['exit_code']==0
@@ -144,3 +145,35 @@ async def test_native_edit_route_rejects_missing_message_id_without_sending(prof
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://fixture') as client:
         result=await client.post('/api/channel-connections/run',json={'connection_id':profiles['slack']['id'],'operation':'edit','channel_id':'channel','text':'edited'})
     assert result.status_code==400 and calls==[]
+
+
+@pytest.mark.parametrize('provider',['slack','discord','matrix'])
+@pytest.mark.parametrize('data',[None,[],"unexpected text",{},True])
+@pytest.mark.parametrize('operation',['send','edit','react'])
+async def test_missing_or_malformed_write_receipt_keeps_attempt_uncertain(profiles,monkeypatch,provider,data,operation):
+    requests=[]
+    async def call(*args,**kwargs):
+        requests.append(True);return {'exit_code':0,'status_code':200,'data':data}
+    monkeypatch.setattr(integrations,'execute_api_call',call)
+    if operation=='react':
+        result=await channels.react(profiles[provider]['id'],'channel','old','reaction','stable-txn')
+    else:
+        result=await channels.write_message(profiles[provider]['id'],'channel','text','old' if operation=='edit' else '', 'stable-txn')
+    assert result['exit_code']==1 and result['outcome_unknown'] is True
+    assert result['attempt']['id'] and result['attempt']['connection_id']==profiles[provider]['id']
+    assert result['uncertainty']['reconcile_action']
+    assert len(requests)==1
+
+
+async def test_missing_read_json_is_an_error_without_write_uncertainty(profiles,monkeypatch):
+    async def call(*args,**kwargs):return {'exit_code':0,'status_code':200,'data':None}
+    monkeypatch.setattr(integrations,'execute_api_call',call)
+    result=await channels.history(profiles['slack']['id'],'channel')
+    assert result['exit_code']==1 and not result.get('outcome_unknown')
+
+
+async def test_discord_204_reaction_has_a_success_receipt(profiles,monkeypatch):
+    async def call(*args,**kwargs):return {'exit_code':0,'status_code':204,'data':None}
+    monkeypatch.setattr(integrations,'execute_api_call',call)
+    result=await channels.react(profiles['discord']['id'],'channel','message','👍')
+    assert result['exit_code']==0 and result['attempt']['id']

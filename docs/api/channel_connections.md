@@ -43,6 +43,10 @@ Matrix send/edit/reaction accept an optional `transaction_id` for service-side
 idempotency. Without it, a new ID is generated. A lost write reply is not retried;
 `outcome_unknown` remains visible. A successful HTTP response without a message ID
 also remains uncertain. No success receipt is invented.
+Empty, null or malformed JSON write replies carry `outcome_unknown`, an opaque
+attempt ID, connection/method/path and a request to reconcile remote state.
+Slack's explicit `ok:false` stays a definite service error. Discord reactions
+with HTTP204 stay successful; reads without usable JSON remain read errors.
 
 ## API
 
