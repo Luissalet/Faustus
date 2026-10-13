@@ -24,9 +24,11 @@ function deferred() {
 function server() {
   const uploads: Array<{ sid: string; name: string; bytes: string }> = [];
   const drafts = new Map<string, { text: string; attachment_ids: string[] }>();
-  const turns: Array<{ sid: string; ids: string[]; id: string }> = [];
+  const turns: Array<{ sid: string; ids: string[]; id: string; mode: string }> = [];
+  const creates: string[] = [];
   let failUpload = false, failTurn = false;
   let uploadGate: ReturnType<typeof deferred> | null = null;
+  let createGate: ReturnType<typeof deferred> | null = null;
   const transport: typeof fetch = async (input, init = {}) => {
     const url = new URL(String(input));
     const match = url.pathname.match(/^\/api\/sessions\/([^/]+)\/draft$/);
@@ -38,7 +40,14 @@ function server() {
       }
       return Response.json({...drafts.get(sid) ?? {text: '', attachment_ids: []}, updated_at: 1});
     }
-    if (url.pathname === '/api/hoard-copilot/conversations') return Response.json({conversations: ['a', 'b'].map(session_id => ({session_id, name: session_id}))});
+    if (url.pathname === '/api/hoard-copilot/conversations') {
+      if (init.method === 'POST') {
+        const session_id = `created-${creates.length + 1}`; creates.push(session_id);
+        await createGate?.promise;
+        return Response.json({session_id});
+      }
+      return Response.json({conversations: ['a', 'b', ...creates].map(session_id => ({session_id, name: session_id}))});
+    }
     if (url.pathname.startsWith('/api/hoard-copilot/conversations/')) return Response.json({messages: []});
     if (url.pathname === '/api/upload') {
       assert.ok(init.body instanceof FormData, 'Native multipart upload');
@@ -53,15 +62,15 @@ function server() {
     if (url.pathname === '/api/chat_stream') {
       assert.ok(init.body instanceof FormData, 'Attached turns use native multipart');
       const body = init.body as FormData;
-      turns.push({sid: String(body.get('session')), ids: JSON.parse(String(body.get('attachments'))), id: String(body.get('client_message_id'))});
+      turns.push({sid: String(body.get('session')), ids: JSON.parse(String(body.get('attachments'))), id: String(body.get('client_message_id')), mode: String(body.get('mode'))});
       if (failTurn) return Response.json({detail: 'Private turn unavailable'}, {status: 503});
       return new Response('data: {"delta":"Done"}\n\ndata: [DONE]\n\n', {headers: {'Content-Type': 'text/event-stream'}});
     }
     throw new Error(`Unhandled ${url.pathname}`);
   };
-  return {uploads, drafts, turns, transport, failUpload(value: boolean) {failUpload = value;}, failTurn(value: boolean) {failTurn = value;}, holdUpload() {uploadGate = deferred(); return uploadGate;}};
+  return {uploads, drafts, turns, creates, transport, failUpload(value: boolean) {failUpload = value;}, failTurn(value: boolean) {failTurn = value;}, holdUpload() {uploadGate = deferred(); return uploadGate;}, holdCreate() {createGate = deferred(); return createGate;}};
 }
-function panel(api: ReturnType<typeof server>, sid = 'a') {
+function panel(api: ReturnType<typeof server>, sid: string | null = 'a') {
   const element = document.createElement('faustus-chat') as InstanceType<typeof FaustusChatElement>;
   element.server = 'https://faustus.example'; element.fetch = api.transport;
   element.contextProvider = () => ({origin: {app_id: 'writer', data_space_id: 'private-attachments', surface: 'editor'}});
@@ -132,6 +141,51 @@ const checks: Array<[string, () => Promise<void>]> = [
     await element.send('');
     assert.equal(api.turns.length, 1);
     assert.deepEqual(api.turns[0].ids, ['a-standalone.txt']);
+  }],
+  ['sending during an asynchronous context capture stays in the original conversation', async () => {
+    const api = server(), element = panel(api); await pause(30);
+    await element.attachFiles([new File(['original'], 'original.txt')]);
+    const gate = deferred();
+    element.contextProvider = async () => {await gate.promise; return {origin: {app_id: 'writer', data_space_id: 'private-attachments'}};};
+    const sending = element.send('Use the original file');
+    element.session = 'b'; gate.resolve(); await sending;
+    assert.equal(api.turns[0].sid, 'a');
+    assert.deepEqual(api.turns[0].ids, ['a-original.txt']);
+  }],
+  ['a new B turn and draft survive the late completion of A context capture', async () => {
+    const api = server(), element = panel(api); await pause(30);
+    await element.attachFiles([new File(['A'], 'a.txt')]);
+    api.drafts.set('b', {text: 'B draft', attachment_ids: ['b-file']});
+    const gate = deferred();
+    element.contextProvider = async () => {await gate.promise; return {origin: {app_id: 'writer', data_space_id: 'private-attachments'}};};
+    const sendingA = element.send('Use A');
+    element.session = 'b'; element.mode = 'chat';
+    element.contextProvider = () => ({origin: {app_id: 'writer', data_space_id: 'private-attachments'}});
+    await until(() => element.draft === 'B draft', 'B draft loads');
+    await element.send('Use B');
+    gate.resolve(); await sendingA;
+    assert.deepEqual(api.turns.map(turn => [turn.sid, turn.ids]), [['b', ['b-file']], ['a', ['a-a.txt']]]);
+    assert.deepEqual(api.turns.map(turn => [turn.sid, turn.mode]), [['b', 'chat'], ['a', 'agent']]);
+    assert.equal(element.session, 'b'); assert.equal(element.draft, 'B draft');
+    assert.equal(element.shadowRoot!.querySelector('.fc-transcript')!.textContent!.includes('Use A'), false);
+  }],
+  ['failed original context capture restores A without replacing B message', async () => {
+    const api = server(), element = panel(api); await pause(30);
+    await element.attachFiles([new File(['A'], 'a.txt')]);
+    const gate = deferred();
+    element.contextProvider = async () => {await gate.promise; throw new Error('Original context failed');};
+    const sending = element.send('Restore A'); element.session = 'b'; element.draft = 'Preserve B';
+    gate.resolve(); await sending;
+    await until(() => api.drafts.get('a')?.text === 'Restore A', 'Original A draft restored');
+    assert.equal(element.draft, 'Preserve B'); assert.equal(element.session, 'b');
+    assert.deepEqual(api.drafts.get('a')!.attachment_ids, ['a-a.txt']);
+  }],
+  ['late new-conversation initialization cannot select itself over B', async () => {
+    const api = server(), gate = api.holdCreate(); const element = panel(api, null);
+    await until(() => api.creates.length === 1, 'Original creation in progress');
+    element.session = 'b'; gate.resolve(); await pause(50);
+    assert.equal(element.session, 'b');
+    assert.equal(api.creates.length, 1);
   }],
 ];
 let failed = 0;
