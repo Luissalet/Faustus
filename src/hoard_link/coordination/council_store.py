@@ -790,6 +790,14 @@ class CouncilStore:
         import time
         now = time.time()
         with self._db() as conn:
+            previous = conn.execute('SELECT * FROM council_drivers WHERE session_id=?', (session_id,)).fetchone()
+            if previous is None or previous['lease_until'] < now:
+                for control in conn.execute('SELECT id FROM council_controls WHERE session_id=? AND status="running"', (session_id,)).fetchall():
+                    result = {'ok': False, 'outcome_unknown': True, 'command_id': control['id'],
+                        'session_id': session_id, 'reference': control['id'],
+                        'reconcile': 'Read the room and control result before retrying; its executor lease was lost'}
+                    conn.execute('UPDATE council_controls SET status="unknown",result=? WHERE id=? AND status="running"',
+                                 (json.dumps(result), control['id']))
             return conn.execute('INSERT INTO council_drivers VALUES(?,?,?) ON CONFLICT(session_id) DO UPDATE SET '
                 'identity=excluded.identity,lease_until=excluded.lease_until WHERE council_drivers.identity=excluded.identity OR council_drivers.lease_until<?',
                 (session_id, identity, now + 180, now)).rowcount == 1
@@ -828,7 +836,7 @@ class CouncilStore:
 
     def control_sessions(self) -> list:
         with self._db() as conn:
-            return [row[0] for row in conn.execute('SELECT DISTINCT session_id FROM council_controls WHERE status="queued" ORDER BY ordinal')]
+            return [row[0] for row in conn.execute('SELECT DISTINCT session_id FROM council_controls WHERE status IN ("queued","running") ORDER BY ordinal')]
 
     def complete_control(self, ident: str, result: dict) -> None:
         with self._db() as conn:

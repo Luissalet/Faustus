@@ -534,8 +534,14 @@ class CouncilService:
         for control in store.controls(session_id, status='queued'):
             if not store.begin_control(control['id']):
                 continue
-            result = await self.command(session_id, control['command'], owner=control['owner'],
-                                        actor=control['actor'], **control['args'])
+            try:
+                result = await self.command(session_id, control['command'], owner=control['owner'],
+                                            actor=control['actor'], **control['args'])
+            except BaseException:
+                store.complete_control(control['id'], {'ok': False, 'outcome_unknown': True,
+                    'command_id': control['id'], 'session_id': session_id, 'reference': control['id'],
+                    'reconcile': 'Read the room and control result before retrying; execution was interrupted'})
+                raise
             store.complete_control(control['id'], result)
 
     async def recover_controls(self) -> None:

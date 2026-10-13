@@ -80,7 +80,7 @@ class GroupCoordinator:
         for turn in self.store.turns(group_id):
             for step in self.store.steps(turn['id']):
                 if step['member_id'] in removed and step['status'] == 'queued':
-                    self.store.update_step(step['id'], status='stopped', detail={**step['detail'], 'member_removed': True})
+                    self.store.update_step(step['id'], expected_status='queued', status='stopped', detail={**step['detail'], 'member_removed': True})
         return result
 
     async def submit(self, group_id, owner, message, request_id="", mentions=()):
@@ -171,8 +171,10 @@ class GroupCoordinator:
     async def _speak(self, turn, step, owner):
         if self._stopped(turn["id"]):
             return
+        step = self.store.start_step(step['id'])
+        if step is None:
+            return
         recovering = step["status"] == "running"
-        self.store.update_step(step["id"], status="running")
         member = next(p for p in turn["definition"]["participants"] if p["sessionId"] == step["member_id"])
         async def progress(text, detail):
             if not self._stopped(turn["id"]):

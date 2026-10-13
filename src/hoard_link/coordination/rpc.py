@@ -10,7 +10,7 @@ from . import council_store as persistence
 COUNCIL_METHODS = frozenset(name for name in vars(persistence.CouncilStore)
                            if not name.startswith('_') and name not in ('path', 'recover'))
 GROUP_METHODS = frozenset(('claim_driver', 'release_driver', 'group', 'list', 'save', 'enqueue',
-                          'turns', 'steps', 'update_step', 'update_turn', 'stop', 'recoverable', 'turn_status', 'archive'))
+                          'turns', 'steps', 'start_step', 'update_step', 'update_turn', 'stop', 'recoverable', 'turn_status', 'archive'))
 _TYPES = {cls.__name__: cls for cls in (contracts.CouncilSession, contracts.CouncilParticipant,
           contracts.CouncilMessage, contracts.CouncilTurn, contracts.CouncilTask, contracts.CouncilClaim,
           contracts.CouncilObjection, contracts.CouncilDecision)}

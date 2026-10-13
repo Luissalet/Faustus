@@ -6,6 +6,42 @@ from src.hoard_link.coordination import base, council_contracts, council_store
 from src.hoard_link.coordination.groups import GroupStore as SharedGroupStore
 
 
+def test_step_acquisition_observes_membership_and_conditional_removal(tmp_path):
+    store = GroupStore(tmp_path / 'groups.db')
+    original = {'parentId': 'room', 'mode': 'round-robin', 'participants': [
+        {'sessionId': name, 'personaName': name} for name in ('first', 'removed')]}
+    store.save(original, 'alice')
+    turn, _ = store.enqueue('room', 'alice', 'Work', 'request')
+    first, removed = store.steps(turn)
+    assert store.start_step(first['id'])['status'] == 'queued'
+    store.update_step(first['id'], expected_status='queued', status='stopped')
+    assert store.steps(turn)[0]['status'] == 'running'
+    store.save({**original, 'participants': original['participants'][:1]}, 'alice')
+    assert store.start_step(removed['id']) is None
+    assert store.steps(turn)[1]['status'] == 'stopped'
+    assert store.start_step(first['id'])['status'] == 'running'
+    store.stop('room')
+    assert store.start_step(first['id']) is None
+
+
+def test_control_recovery_preserves_live_executor_and_marks_lost_lease_unknown(tmp_path):
+    store = persistence.CouncilStore(path=str(tmp_path / 'council.db'))
+    store.create_session(contracts.CouncilSession.parse({'id': 'room', 'owner': 'alice'}))
+    assert store.claim_driver('room', 'old')
+    ident = store.queue_control('room', 'steer', 'alice', 'alice', {'message': 'Work'})
+    assert store.begin_control(ident)
+    assert not store.claim_driver('room', 'new')
+    assert store.controls('room')[0]['status'] == 'running'
+    with store._db() as conn:
+        conn.execute('UPDATE council_drivers SET lease_until=0 WHERE session_id="room"')
+    assert 'room' in store.control_sessions()
+    assert store.claim_driver('room', 'new')
+    row = store.controls('room')[0]
+    assert row['status'] == 'unknown'
+    assert row['result']['outcome_unknown'] and row['result']['reference'] == ident
+    assert not store.begin_control(ident)
+
+
 def test_compatibility_imports_preserve_error_types_and_singleton_seams(tmp_path):
     assert ContractError is base.ContractError
     assert contracts is council_contracts

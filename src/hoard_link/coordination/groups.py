@@ -126,14 +126,34 @@ class GroupStore:
             rows = db.execute("SELECT * FROM group_steps WHERE turn_id=? ORDER BY ordinal", (turn_id,)).fetchall()
         return [{**dict(row), "detail": json.loads(row["detail"])} for row in rows]
 
-    def update_step(self, step_id, **patch):
+    def start_step(self, step_id):
+        """Acquire the current step, without reviving a removed or stopped member."""
+        with self.lock, self.db() as db:
+            row = db.execute('SELECT s.*,g.definition,t.status AS turn_status FROM group_steps s '
+                'JOIN group_turns t ON t.id=s.turn_id JOIN groups g ON g.id=t.group_id WHERE s.id=?', (step_id,)).fetchone()
+            if not row or row['status'] not in ('queued', 'running') or row['turn_status'] == 'stopped':
+                return None
+            members = json.loads(row['definition'])['participants']
+            if row['status'] == 'queued' and row['member_id'] not in {m['sessionId'] for m in members}:
+                detail = {**json.loads(row['detail']), 'member_removed': True}
+                db.execute('UPDATE group_steps SET status="stopped",detail=? WHERE id=?', (json.dumps(detail), step_id))
+                return None
+            db.execute('UPDATE group_steps SET status="running" WHERE id=?', (step_id,))
+            db.execute('UPDATE groups SET revision=revision+1 WHERE id=(SELECT group_id FROM group_turns WHERE id=?)', (row['turn_id'],))
+            return {k: (json.loads(row[k]) if k == 'detail' else row[k]) for k in row.keys() if k not in ('definition', 'turn_status')}
+
+    def update_step(self, step_id, expected_status=None, **patch):
         allowed = {"status", "text", "error", "detail"}
         if not patch or set(patch) - allowed:
             raise ValueError("Invalid step update")
         if "detail" in patch:
             patch["detail"] = json.dumps(patch["detail"], ensure_ascii=False)
         with self.lock, self.db() as db:
-            db.execute("UPDATE group_steps SET " + ",".join(key + "=?" for key in patch) + " WHERE id=?", (*patch.values(), step_id))
+            changed = db.execute("UPDATE group_steps SET " + ",".join(key + "=?" for key in patch) + " WHERE id=?"
+                + (' AND status=?' if expected_status is not None else ''),
+                (*patch.values(), step_id, *((expected_status,) if expected_status is not None else ()))).rowcount
+            if not changed:
+                return
             db.execute("UPDATE groups SET revision=revision+1 WHERE id=(SELECT group_id FROM group_turns WHERE id=(SELECT turn_id FROM group_steps WHERE id=?))", (step_id,))
 
     def update_turn(self, turn_id, status):
