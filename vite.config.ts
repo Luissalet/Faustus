@@ -48,6 +48,7 @@ export default defineConfig({
     },
   },
   resolve: {
+    dedupe: ['react', 'react-dom'],
     alias: {
       '@studio': resolve(configRoot, 'studio/src'),
     },
