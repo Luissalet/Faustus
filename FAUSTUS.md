@@ -1,5 +1,14 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+**Caídas temporales de Sparks (13-10-2026, Ágora #467):** el transporte compartido
+espera y continúa ante HTTP503 tipado como reintentable antes de cualquier salida,
+sin cambiar el modelo, prompt o cabeceras ni repetir herramientas completadas.
+Chat, agentes, delegados, grupos y MCP usan el mismo transporte. Se informa de
+espera, Stop la cancela y se conservan deadlines explícitos; otros errores y
+respuestas parciales mantienen su tratamiento. QA privada API/MCP/navegador:
+una escritura, siete503, nueve peticiones y resultado final; ningún modelo real
+detenido o cargado. Detalle: docs/SPARKS-SERVICE-CONTINUITY.md.
+
 **Delegación y resultados (13-10-2026, Ágora #457):** sin plazo de 25 minutos
 impuesto al trabajador ni cancelación por silencio por defecto; cero conserva
 su significado de ilimitado y los plazos positivos se respetan. Ancho por defecto

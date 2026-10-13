@@ -1,5 +1,12 @@
 # Objetivos acordados
 
+## Continuar ante caídas temporales del servicio global — resuelto #467
+
+HTTP503 reintentable antes de salida mantiene el mismo turno/modelo y recibos
+previos en el transporte común; no agota rondas ni cambia a un modelo del PC.
+Stop, plazos iniciales explícitos y errores definitivos se conservan. Verificado
+por API/MCP/navegador con proveedor privado, siete fallos y una sola escritura.
+
 ## Delegación sin cortes impuestos — resuelto #457
 
 Trabajadores sin deadline implícito; cero ilimitado y positivos solicitados,

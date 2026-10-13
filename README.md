@@ -4,6 +4,10 @@
 
 <p align="center">A self-hosted AI workstation for local models, cloud providers and agent teams.</p>
 
+A temporary retryable Sparks service outage before output keeps the task alive
+on the same configured model. Completed tool results are retained; Stop and
+requested initial deadlines remain available. [Service continuity](docs/SPARKS-SERVICE-CONTINUITY.md).
+
 Delegated workers have no implicit deadline and queue every requested task by
 default. They inherit the coordinator's configured model route unless a task
 selects another one. Reading and research return reports without being retried

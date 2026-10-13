@@ -4,6 +4,10 @@
 
 <p align="center">Una estación de trabajo de IA autoalojada para modelos locales, proveedores en la nube y equipos de agentes.</p>
 
+Un fallo temporal de las Sparks antes de responder mantiene el trabajo con el
+mismo modelo configurado y los resultados de herramientas ya obtenidos. Se
+conservan Stop y los plazos iniciales solicitados. [Continuidad del servicio](docs/SPARKS-SERVICE-CONTINUITY.md).
+
 Los trabajadores delegados no tienen un plazo impuesto y admiten todas las
 tareas solicitadas por defecto, encoladas según la concurrencia del endpoint.
 Heredan el modelo configurado del coordinador salvo elección expresa de otro.
