@@ -306,7 +306,7 @@ GROUPS: list[dict[str, Any]] = [
                    "Stop a turn on a paid endpoint once it has spent this much, with a checkpoint of the "
                    "work so far. Counted from the provider's real cost when it reports one, else estimated "
                    "from tokens. Replaces the remote-spend ceiling above when set. 0 = use that ceiling "
-                   "(about 0.04 USD per turn with the supervised preset). Local models are never limited.",
+                   "(unlimited by default). Local models are never limited.",
                    0, 1000, 0.5),
             _bool("paid_spend_cap_enabled", "Daily paid spend cap",
                   "Refuse new calls to paid remote providers once today's spend reaches the limits below, "

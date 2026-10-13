@@ -15,8 +15,8 @@ as SEPARATE limits that can each run out on their own. This module is that:
 * `Ledger` — what one turn has actually spent so far. `Ledger.check(budget)`
   returns the first `Exhausted` dimension it finds (fixed order, so two
   ledgers with the same numbers always report the same cause), or `None`.
-* Three presets (`PRESETS`): `supervised` (medium budgets — the default),
-  `bounded_autonomous` (roughly 3x), `read_only` (roughly 1/3, AND only
+* Three presets (`PRESETS`): `supervised` (configured budgets — the default),
+  `bounded_autonomous` (roughly 3x configured positive limits), `read_only` (roughly 1/3, AND only
   read-effect tools are offered — see `read_only_disabled_names`).
 * `build_checkpoint` — what `src/agent_loop.py` saves when a budget runs out
   mid-turn: the plan as structured steps (via `src/plan_state.py`), the
@@ -38,8 +38,8 @@ All six dimensions derive from settings that exist and are read live:
 `max_subagents`, `max_remote_spend`, `max_memory_mb`) from their own
 `agent_autonomy_max_*` settings, registered in `src.settings.DEFAULT_SETTINGS`
 and `src.agent_settings_schema` the same way. The module constants below are
-only the fallback used when a setting is absent or left at the "0 =
-unlimited" sentinel (`_base_from_setting`) — still overridable per call via
+only the fallback used when a setting is absent or invalid. An explicit
+"0 = unlimited" remains unlimited in every preset — still overridable per call via
 `resolve_budget`'s `overrides`.
 """
 
@@ -57,9 +57,9 @@ DEFAULT_PRESET = "supervised"
 
 #: One line of consequence per preset, for the Studio selector.
 PRESET_CONSEQUENCE: Mapping[str, str] = {
-    "supervised": "Asks before anything with an external or destructive effect; medium budgets.",
-    "bounded_autonomous": "Runs without asking except for irreversible effects; higher budgets.",
-    "read_only": "Only read tools are offered — nothing changes on disk or anywhere else; low budgets.",
+    "supervised": "Asks before anything with an external or destructive effect; uses configured limits.",
+    "bounded_autonomous": "Runs without asking except for irreversible effects; scales configured positive limits.",
+    "read_only": "Only read tools are offered — nothing changes on disk or anywhere else; scales configured positive limits.",
 }
 
 _MULTIPLIER: Mapping[str, float] = {
@@ -68,17 +68,15 @@ _MULTIPLIER: Mapping[str, float] = {
     "read_only": 1.0 / 3.0,
 }
 
-# Fallbacks for the two settings-backed dimensions, used only when the
-# setting itself is unset/unlimited (0) — an unlimited base would otherwise
-# make every preset unlimited, defeating the point of a "budget".
-_FALLBACK_TOOL_CALLS = 40
+# Missing settings use the same unlimited tool-call default as the product.
+_FALLBACK_TOOL_CALLS = 0
 _FALLBACK_TOKENS = 200_000
 
 # Fallbacks for the four dimensions with no settings-backed ceiling yet.
-_FALLBACK_ACTIVE_SECONDS = 900.0
-_FALLBACK_SUBAGENTS = 4
-_FALLBACK_REMOTE_SPEND = 20_000.0
-_FALLBACK_MEMORY_MB = 2048.0
+_FALLBACK_ACTIVE_SECONDS = 0.0
+_FALLBACK_SUBAGENTS = 0
+_FALLBACK_REMOTE_SPEND = 0.0
+_FALLBACK_MEMORY_MB = 0.0
 
 # OBJ-8/A1: `max_remote_spend` has always been denominated in "1 unit == 1
 # estimated token" (see `remote_spend_units`'s token-sum fallback below) —
@@ -224,13 +222,11 @@ class Exhausted:
 def _base_from_setting(
     key: str, fallback: float, get_setting: Optional[Callable[[str, Any], Any]],
 ) -> float:
-    """The configured value for `key` when it is set and not the "0 =
-    unlimited" sentinel, else `fallback`. A preset multiplies THIS, so an
-    unlimited setting does not make every preset unlimited."""
+    """Keep configured zero unlimited; fall back only for an invalid value."""
     if get_setting is not None:
         try:
             value = float(get_setting(key, fallback))
-            if value > 0:
+            if math.isfinite(value) and value >= 0:
                 return value
         except (TypeError, ValueError):
             pass
@@ -268,12 +264,12 @@ def resolve_budget(
         "agent_autonomy_max_memory_mb", _FALLBACK_MEMORY_MB, get_setting)
 
     values: dict[str, float] = {
-        "max_tool_calls": max(1, round(base_tool_calls * mult)),
-        "max_tokens": max(1, round(base_tokens * mult)),
-        "max_active_seconds": max(1.0, round(base_active_seconds * mult, 1)),
-        "max_subagents": max(0, round(base_subagents * mult)),
-        "max_remote_spend": max(1.0, round(base_remote_spend * mult, 1)),
-        "max_memory_mb": max(1.0, round(base_memory_mb * mult, 1)),
+        "max_tool_calls": max(1, round(base_tool_calls * mult)) if base_tool_calls else 0,
+        "max_tokens": max(1, round(base_tokens * mult)) if base_tokens else 0,
+        "max_active_seconds": max(1.0, round(base_active_seconds * mult, 1)) if base_active_seconds else 0,
+        "max_subagents": max(1, round(base_subagents * mult)) if base_subagents else 0,
+        "max_remote_spend": max(1.0, round(base_remote_spend * mult, 1)) if base_remote_spend else 0,
+        "max_memory_mb": max(1.0, round(base_memory_mb * mult, 1)) if base_memory_mb else 0,
     }
     # A per-turn ceiling in dollars (`agent_turn_max_cost_usd`), for people
     # who think in money rather than spend units: when set it replaces the

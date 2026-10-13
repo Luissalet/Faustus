@@ -74,13 +74,11 @@ def test_resolve_budget_now_scales_the_four_settings_backed_ceilings():
     assert bounded.max_memory_mb > supervised.max_memory_mb
 
 
-def test_resolve_budget_ignores_the_unlimited_sentinel_for_the_four_new_ceilings():
-    """0 means unlimited to the rest of the codebase; a preset must not
-    become unlimited on this dimension just because the setting was left at
-    its 0 default (same rule already proven for max_tool_calls/max_tokens)."""
+def test_resolve_budget_preserves_the_unlimited_sentinel_for_the_four_new_ceilings():
+    """The settings UI's zero sentinel must also be unlimited at execution."""
     get_setting = lambda key, default=None: 0
     budget = ab.resolve_budget("supervised", get_setting=get_setting)
-    assert budget.max_active_seconds and budget.max_active_seconds > 0
-    assert budget.max_subagents and budget.max_subagents > 0
-    assert budget.max_remote_spend and budget.max_remote_spend > 0
-    assert budget.max_memory_mb and budget.max_memory_mb > 0
+    assert budget.max_active_seconds == 0
+    assert budget.max_subagents == 0
+    assert budget.max_remote_spend == 0
+    assert budget.max_memory_mb == 0
