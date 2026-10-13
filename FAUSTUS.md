@@ -1,5 +1,14 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+**Canales nativos (13-10-2026, Ágora #448):** Slack, Discord y Matrix por REST
+propio, reutilizando credenciales cifradas de Integrations y perfiles por referencia.
+Ocho herramientas MCP y API normal listan espacios/historial completo, envían,
+editan y añaden reacciones. IDs/cursors se preservan; escrituras inciertas no se
+repiten. No usa app/CLI/Gateway ajenos. La prueba aislada verifica tres protocolos,
+no cuentas reales; push entrante, archivos binarios y cifrado Matrix pendientes.
+Integrations también corrige el pin de direcciones IP literales ya validadas.
+[Contrato y alcance](docs/api/channel_connections.md).
+
 **Recuperación MCP remota (13-10-2026, Ágora #440):** HTTP y SSE tienen tareas
 propietarias del contexto SDK y recuperan el mismo servidor configurado al
 invocar una herramienta, conservando conexiones sanas y OAuth existente.
