@@ -7944,11 +7944,20 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                         logger.error(f"Error parsing stream data: {e}")
                         continue
 
-            # End of stream (no explicit [DONE] received)
+            # EOF is completion only when the provider already sent a finish
+            # reason. A clean socket close can still cut text or tool arguments.
             if _slot_plan is not None and not _slot_plan.done:
                 await _slot_cache_finish(_slot_plan, None)
             for event in _format_routed_content(_harmony_router.flush()):
                 yield event
+            if _finish_reason is None:
+                yield _stream_error_chunk(
+                    502, "The model stream ended before its completion signal",
+                    error_class="transport.incomplete_stream", attempts=_attempt,
+                    retryable=False, partial=_delta_emitted or _tc_assembler.has_calls(),
+                    fallback_eligible=False,
+                )
+                return
             tc_event = _emit_tool_calls()
             if tc_event:
                 yield tc_event

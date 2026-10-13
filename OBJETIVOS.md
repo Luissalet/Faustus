@@ -1,5 +1,16 @@
 # Objetivos acordados
 
+## Continuidad de conversaciones de grupo
+
+Ágora #443, derivada de la investigación #434 y el encargo de Luis del 13-10-2026.
+Persistir grupo, miembros, mensajes y pasos en el servidor; completar el reparto
+de turnos aunque se cierre el navegador y recuperarlo desde otro cliente.
+Reusar sesiones, ejecución normal y modelos globales configurados de Sparks,
+con menciones y cola durante un turno, Stop real y operaciones API/MCP.
+Conservar modos paralelo y round-robin y grupos existentes. La recuperación
+de una respuesta de participante está cubierta por #436; el coordinador
+persistente todavía no está implementado.
+
 Acordado con Luis; sólo lo que está por hacer. Al cerrar una entrada, se
 borra de aquí y su evidencia va a FAUSTUS.md. PENDIENTES.md conserva las decisiones y respuestas que necesita Luis.
 

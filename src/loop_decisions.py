@@ -63,6 +63,8 @@ def decide_text_round(state: TextRoundState, permits: Permits) -> str:
        a round left to redo it in
     otherwise the turn goes on to the claim checks.
     """
+    if state.finish_reason == "interrupted":
+        return CONTINUE_LENGTH
     if state.finish_reason == "length" and permits("length", state.length_continues, state.length_limit):
         return CONTINUE_LENGTH
     if state.dropped_tool_calls and permits("hallucinated_tool", state.unknown_tool_nudges, state.unknown_tool_limit):

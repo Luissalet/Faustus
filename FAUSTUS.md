@@ -1,5 +1,17 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+**Continuidad tras cortes del modelo (13-10-2026, Ágora #436):** chat normal y
+agente continúan la respuesta parcial en la misma ejecución cuando el transporte
+acaba sin señal de cierre, se resetea o agota la espera tras enviar texto. Conservan
+el prefijo y los resultados de herramientas anteriores; las llamadas nativas
+incompletas no se ejecutan. El chat sigue mientras el intento añade texto y no
+tiene un contador nuevo de reintentos. El agente conserva su presupuesto de
+rondas y no gasta la reserva de continuación por longitud en fallos de conexión.
+Stop permanece efectivo. Ver [contrato y pruebas](docs/design/STREAM-CONTINUITY.md).
+Las pruebas son sintéticas, incluidas HTTP real privado, MCP stdio nativo y
+navegador; no certifican calidad autónoma de GLM. Las respuestas de los grupos se
+benefician; la coordinación persistente de participantes sigue en #443.
+
 **Aprobaciones globales (09-10-2026):** el control persistente junto a Ajustes, en Ajustes y en el compositor cambia una única preferencia para todas las conversaciones y se sincroniza entre pestañas. «Preguntar» y «Automático» aplican actualmente las mismas comprobaciones; «Automático» puede seguir pidiendo aprobación. «Acceso completo» ejecuta las herramientas sin tarjetas de aprobación. La disponibilidad de herramientas y la configuración de ejecución son ajustes distintos. Ver [contrato y límites comprobados](docs/api/global-tool-approval-ui.md); esta mejora no demuestra por sí sola paridad como agente.
 
 **Git y Acceso completo (09-10-2026):** las herramientas Git respetan el modo global persistido, sin una segunda confirmación interna cuando la política del repositorio exige aprobación. Se mantiene esa política guardada, la disponibilidad de herramientas, la identidad del repositorio y la validación de rutas/referencias. «Preguntar» y «Automático» conservan su comportamiento anterior. Ver [contrato y verificación](docs/api/git-global-full-access.md). Esto no concede autorización para publicar ni demuestra paridad del agente.
