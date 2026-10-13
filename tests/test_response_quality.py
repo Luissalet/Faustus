@@ -124,7 +124,11 @@ def test_empty_length_after_search_gets_a_final_answer_with_same_generation_sett
     scripted = iter([('```web_search\nmoon phases\n```', 'tool_calls'), ('', 'length'), ('', 'length'), ('', 'length')])
     async def stream(*args, **kwargs):
         text, finish = next(scripted)
-        yield 'data: ' + __import__('json').dumps({'delta': text}) + '\n\n'
+        if finish == 'tool_calls':
+            yield 'data: ' + __import__('json').dumps({'type': 'tool_calls', 'calls': [
+                {'name': 'web_search', 'arguments': '{"query":"moon phases"}'}]}) + '\n\n'
+        elif text:
+            yield 'data: ' + __import__('json').dumps({'delta': text}) + '\n\n'
         yield 'data: ' + __import__('json').dumps({'type': 'finish', 'finish_reason': finish}) + '\n\n'
     calls = []
     async def closing(**kwargs):
@@ -133,6 +137,7 @@ def test_empty_length_after_search_gets_a_final_answer_with_same_generation_sett
             raise closing_value
         return closing_value
     monkeypatch.setattr(al, 'stream_llm_with_fallback', stream)
+    monkeypatch.setattr(al, '_agent_route_tool_mode', lambda *args, **kwargs: (True, False, False))
     monkeypatch.setattr(llm_core, 'llm_call_async', closing)
     overrides = {'num_ctx': 1048576, 'think': True, 'reasoning_effort': 'max'}
     events = _types(_collect(al.stream_agent_loop('http://x/v1', 'm',
