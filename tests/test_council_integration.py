@@ -632,7 +632,11 @@ def test_the_package_and_all_twelve_modules_import():
 
     for name in SUBMODULES:
         module = importlib.import_module(f"src.council.{name}")
-        assert module.__name__ == f"src.council.{name}"
+        shared = {'contracts': 'council_contracts', 'persistence': 'council_store'}
+        if name in shared:
+            assert module is importlib.import_module('src.hoard_link.coordination.' + shared[name])
+        else:
+            assert module.__name__ == f"src.council.{name}"
         assert sys.modules[f"src.council.{name}"] is module
 
 
@@ -649,7 +653,8 @@ def test_every_module_imports_alone_in_a_fresh_interpreter_state():
             capture_output=True, text=True, timeout=180)
         assert finished.returncode == 0, (
             f"src.council.{name} cannot be imported first:\n{finished.stderr[-2000:]}")
-        assert name in finished.stdout
+        expected = {'contracts': 'council_contracts', 'persistence': 'council_store'}.get(name, name)
+        assert expected in finished.stdout
 
 
 def test_the_facade_exports_what_the_routes_are_written_against():
