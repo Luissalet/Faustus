@@ -75,3 +75,38 @@ def test_sample_data_analysis_does_not_require_workspace_mutation(text):
 def test_real_test_work_with_sample_data_still_requires_tools(text):
     from src.agent_loop import _looks_like_workspace_coding_request
     assert _looks_like_workspace_coding_request(text)
+
+
+def test_real_linked_workspace_analysis_does_not_nudge(tmp_path, monkeypatch):
+    from tests.test_agent_harness_loop_partial_work import _patch, _run, _workspace
+    workspace = _workspace(tmp_path)
+    calls = _patch(monkeypatch, [('Los valores son12y18; faltan los intermedios.', 'stop')], workspace)
+    events = _run(workspace, user='Analiza estos datos de prueba: 12 y 18. Explica qué sabemos y qué falta.')
+    assert calls['n'] == 1
+    assert not any(e.get('reason') == 'no_workspace_action' for e in events)
+
+
+def test_completed_tool_progress_is_retained_separately_from_final_answer(tmp_path, monkeypatch):
+    from tests.test_agent_harness_loop_partial_work import _patch, _run, _workspace, EDIT_CART
+    workspace = _workspace(tmp_path)
+    progress = 'Compruebo y actualizo el cálculo.'
+    _patch(monkeypatch, [(progress + '\n\n' + EDIT_CART, 'tool_calls'),
+                        ('Resultado verificado en cart.py.', 'stop')], workspace)
+    events = _run(workspace, user='Implementa total_con_envio en cart.py y guarda el cambio.')
+    final = ''
+    for event in events:
+        if event.get('type') == 'response_replace':
+            final = event.get('text', '')
+        elif 'delta' in event and not event.get('thinking'):
+            final += event['delta']
+    assert progress not in final
+    assert 'Resultado verificado' in final
+    assert any(event.get('type') == 'response_replace' for event in events)
+    assert 'def total_con_envio' in Path(workspace, 'cart.py').read_text(encoding='utf-8')
+
+
+def test_source_list_ignores_search_navigation_urls():
+    from src.agent_loop import _enrich_web_sources
+    sources = _enrich_web_sources([{'url': '/clev?tracking=1', 'title': 'Navigation'},
+                                   {'url': 'https://example.com/article', 'title': 'Article'}])
+    assert [s['url'] for s in sources] == ['https://example.com/article']

@@ -25,7 +25,7 @@ for (const key of ['window','document','HTMLElement','SVGElement','Node','Elemen
 }
 document.body.innerHTML = '<div id="root"></div>';
 const mod = await import(pathToFileURL(join(dir, 'check.mjs')).href);
-const mounted = mod.mount(text, sources);
+const mounted = mod.mount(text, [...sources, {url:'/clev?tracking=1', title:'Search navigation'}]);
 assert.equal(document.querySelectorAll('.fs-response-sources__list li').length, 9, 'all observed sources survive');
 assert.equal(document.querySelector('.fs-response-sources').open, false, 'source list is a disclosure');
 assert.match(document.querySelector('.fs-response-sources summary').textContent, /9/);

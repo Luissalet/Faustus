@@ -523,6 +523,7 @@ _RESPONSE_QUALITY_RULES = """\
 - Include a relevant image or a real output preview when it helps the user understand. Use Markdown ![description](returned-image-url), retaining the original proportions, and link the actual downloadable artifact. Use only URLs or attachments returned by tools; do not substitute a local file path for an image URL.
 - For a useful compact subject overview, Studio supports an entity fence containing JSON {"title":"Subject","url":"source URL (optional)","image":"image URL (optional)","alt":"image description (optional)","body":"Markdown facts with nearby source links"}. For supplementary detail, a details fence takes {"summary":"Specific label","body":"Markdown detail"}. Keep the main answer and material limitations outside collapsed detail. These are optional; ordinary prose is enough for a simple answer. Invalid blocks remain visible as code.
 - During sustained work, give short factual progress updates: what was learned, what is being checked and what remains. Report completed actions only from their actual results. End with the useful outcome, links/previews and relevant limits; do not expose raw tool JSON or implementation chatter unless requested.
+- Text before a tool call is a progress update. The eventual final answer must be self-contained, including the necessary facts and source links, rather than relying on earlier updates.
 - Respect exact output requests such as JSON-only, code-only or a single sentence: do not add rich blocks, prose or extra formatting to them.
 """
 
@@ -1054,6 +1055,12 @@ def _enrich_web_sources(sources: list) -> list:
             continue
         item = dict(src)
         url = str(item.get("url") or "")
+        try:
+            parsed_url = urlparse(url)
+            if parsed_url.scheme not in {"http", "https"} or not parsed_url.hostname:
+                continue
+        except ValueError:
+            continue
         domain = str(item.get("domain") or "")
         if not domain and url:
             try:
@@ -2572,6 +2579,12 @@ def _answer_only_math_request(text: str, earlier_user_texts: Sequence[str] = ())
 #: A turn that OPENS by asking to be told something. Anchored at the start on
 #: purpose: "explain why you changed it, then fix Y" is not one of these, and
 #: neither is anything with a change verb anywhere in it.
+def _workspace_intent_text(text: str) -> str:
+    """Normalize dataset nouns once for all workspace/prose decisions."""
+    return re.sub(r"\b(?:datos\s+de\s+prueba|test\s+data|sample\s+data)\b", "",
+                  str(text or ""), flags=re.IGNORECASE)
+
+
 def _explanation_request(text: str) -> bool:
     """Did the user ask to be told something, rather than to have it changed?
 
@@ -2584,7 +2597,7 @@ def _explanation_request(text: str) -> bool:
     """
     from src.explanation_intents import is_explanation_request
 
-    return is_explanation_request(text, coding_action_re=_WORKSPACE_CODE_ACTION_RE)
+    return is_explanation_request(_workspace_intent_text(text), coding_action_re=_WORKSPACE_CODE_ACTION_RE)
 
 
 _TEXT_FOR_THE_USER_RE = re.compile(
@@ -2610,7 +2623,12 @@ def _asks_for_a_prose_answer(text: str) -> bool:
     in agent mode with a bound workspace was answered in round 1 and then sent
     back as "no workspace action", so it took four more rounds and the list was
     written twice."""
-    return bool(_PROSE_ANSWER_RE.search(str(text or "")))
+    raw = str(text or "")
+    supplied_analysis = (
+        re.search(r"\b(?:analiza|analy[sz]e|interpreta|interpret|compara|compare|explica|explain|resume|summari[sz]e|describe)\b", raw, re.IGNORECASE)
+        and re.search(r"\b(?:datos|data|valores|values|cifras|figures|m[eé]tricas|metrics|porcentajes|percentages)\b", raw, re.IGNORECASE)
+    )
+    return bool(_PROSE_ANSWER_RE.search(raw) or supplied_analysis)
 
 
 def _asks_for_a_text(text: str) -> bool:
@@ -2644,7 +2662,7 @@ def _looks_like_workspace_coding_request(text: str) -> bool:
     # A sample dataset is not an imperative to run a software test. The same
     # noun used to satisfy both the action and target regexes ("datos de prueba"),
     # forcing an already answered analysis into tools and a repeated answer.
-    text = re.sub(r"\b(?:datos\s+de\s+prueba|test\s+data|sample\s+data)\b", "", text, flags=re.IGNORECASE)
+    text = _workspace_intent_text(text)
     return bool(_WORKSPACE_CODE_ACTION_RE.search(text) and _WORKSPACE_CODE_TARGET_RE.search(text))
 
 
@@ -18354,18 +18372,16 @@ async def _stream_agent_loop_body(
             logger.info("[agent] odysseus completed from deterministic tool output")
             break
 
-        # MCP results do not exist until the call completes. A small local
-        # model can nonetheless stream a guessed result before its tool call
-        # (seen live: "29 links", followed by list_links returning zero).
-        # Keep that text in the model's own tool-call message for protocol
-        # continuity, but remove it from the user-visible answer/history.
-        if (round_response.strip() and converted_calls
-                and any((ev or {}).get("round") == round_num
-                        and str((ev or {}).get("tool") or "").startswith("mcp__")
-                        for ev in tool_events)
+        # Completed tool-round narration is progress, not the final answer.
+        # Keep it in round_texts and the provider's tool-call message so the
+        # API and trace retain it, while the final reply starts with the answer.
+        # ask_user and completed document cards have already kept their text above.
+        if (cleaned_round.strip() and tool_blocks
                 and full_response.endswith(round_response)):
             full_response = full_response[:-len(round_response)].rstrip()
-            _ledger.notes.append(f"pre_mcp_narration_dropped@{round_num}")
+            if any(str((ev or {}).get("tool") or "").startswith("mcp__")
+                   and (ev or {}).get("round") == round_num for ev in tool_events):
+                _ledger.notes.append(f"pre_mcp_narration_dropped@{round_num}")
             yield "data: " + json.dumps({"type": "response_replace", "text": full_response}) + "\n\n"
 
         # Feed results back to LLM for next round
