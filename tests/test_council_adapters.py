@@ -681,3 +681,18 @@ def test_the_defaults_are_the_two_bridges_and_not_something_new():
 def test_the_engine_seam_refuses_a_name_it_does_not_bridge_to():
     with pytest.raises(KeyError):
         adapters.use_engines(nonesuch=object())
+
+
+async def test_native_replacement_removes_retracted_council_answer():
+    llm=_FakeLLM([_delta('Wrong result'), 'data: {"type":"response_replace","text":"Verified result42"}\n\n', _DONE])
+    adapters.use_engines(llm=llm)
+    result=await adapters.StreamingChatInvoker(endpoint_resolver=_resolver).invoke(participant=_seat(),packet={'system':'rules'},turn=_turn())
+    assert result['content']=='Verified result42' and 'Wrong' not in result['content']
+
+
+async def test_named_native_http_error_after_prefix_is_not_a_success():
+    llm=_FakeLLM([_delta('Partial answer'), 'event: error\ndata: {"status":503,"text":"service unavailable"}\n\n', _DONE])
+    adapters.use_engines(llm=llm)
+    result=await adapters.StreamingChatInvoker(endpoint_resolver=_resolver).invoke(participant=_seat(),packet={'system':'rules'},turn=_turn())
+    assert not result['ok'] and result['reason']=='model_error'
+    assert 'service unavailable' in result['detail'] and result['content']=='Partial answer'

@@ -197,7 +197,7 @@ _VERDICT_FROM_PROOF: Dict[str, str] = {
 #: How long a delegated task may run before the executor stops waiting for it.
 #: Only a default: a session's `budgets.max_wall_seconds` wins when it has one,
 #: because that number is the one the user agreed to (§3.6).
-DEFAULT_TASK_TIMEOUT_S: float = 1800.0
+DEFAULT_TASK_TIMEOUT_S = None
 
 #: Dispatch statuses that mean the job is still alive.  Read from the engine
 #: when it is there; this tuple is the fallback for a double that has none.
@@ -353,15 +353,15 @@ class StreamingChatInvoker:
     loop through Dispatch exactly once.
     """
 
-    def __init__(self, *, endpoint_resolver: Any = None, timeout_s: float = 180.0) -> None:
+    def __init__(self, *, endpoint_resolver: Any = None, timeout_s: Optional[float] = None) -> None:
         #: `(model, *, owner) -> (url, model_id, headers)`, sync or async.
         #: Defaults to `ai_interaction._resolve_model`, the resolution normal
         #: chat and `tournament.default_llm_call` both use (§6.2).
         self._resolver = endpoint_resolver
         try:
-            self._timeout_s = max(1.0, float(timeout_s))
+            self._timeout_s = float(timeout_s) if timeout_s is not None and float(timeout_s) > 0 else None
         except (TypeError, ValueError):
-            self._timeout_s = 180.0
+            self._timeout_s = None
 
     async def invoke(self, *, participant: Any, packet: Any, turn: Any,
                      timeout_s: Optional[float] = None) -> Dict[str, Any]:
@@ -396,7 +396,7 @@ class StreamingChatInvoker:
             return _degraded(result, "engine_unavailable",
                              "src.llm_core.stream_llm is not available in this build; "
                              "no council intervention can be spoken")
-        budget = float(timeout_s or self._timeout_s)
+        budget = self._timeout_s if timeout_s is None else float(timeout_s) if float(timeout_s) > 0 else None
         # A council member speaks at the council level (high by default,
         # src/mode_effort.py): the point of a council is each model's
         # considered view, not its fastest.
@@ -405,13 +405,11 @@ class StreamingChatInvoker:
             member_overrides = mode_effort.for_mode("council")
         except Exception:  # noqa: BLE001 - the model's own default then
             member_overrides = None
-        if member_overrides and member_overrides.get("think") and timeout_s is None \
-                and self._timeout_s == 180.0:
-            # Thinking first, then the answer: the default 180 s was sized
-            # for an answer alone.
-            budget = max(budget, 600.0)
+        # Keep native transport/read timeouts, without another room-wide deadline.
+        from src.llm_core import LLMConfig
+        transport_timeout = int(max(1.0, budget)) if budget is not None else LLMConfig.STREAM_TIMEOUT
         stream = stream_llm(url, model_id or result["model"], messages,
-                            headers=headers or None, timeout=int(max(1.0, budget)),
+                            headers=headers or None, timeout=transport_timeout,
                             session_id=_text(_field(participant, "private_session_id")) or None,
                             gen_overrides=member_overrides)
         try:
@@ -474,8 +472,12 @@ async def _consume_stream(stream: Any) -> Tuple[str, Dict[str, Any], str]:
     error = ""
     try:
         async for chunk in stream:
+            raw = chunk.decode("utf-8") if isinstance(chunk, bytes) else str(chunk)
+            event_error = any(line.startswith("event:") and line.split(":", 1)[1].strip().casefold() == "error" for line in raw.splitlines())
             for payload in _sse_payloads(chunk):
-                if "delta" in payload:
+                if payload.get("type") == "response_replace":
+                    parts = [str(payload.get("text") or "")]
+                elif "delta" in payload:
                     # The member's reasoning streams too, marked `thinking`;
                     # only the answer is what it says to the council.
                     if payload.get("thinking"):
@@ -483,8 +485,8 @@ async def _consume_stream(stream: Any) -> Tuple[str, Dict[str, Any], str]:
                     parts.append(str(payload.get("delta") or ""))
                 elif payload.get("type") == "usage" and isinstance(payload.get("data"), dict):
                     usage = dict(payload["data"])
-                elif payload.get("error"):
-                    error = _text(payload.get("error")) or _text(payload.get("text"))
+                elif payload.get("error") or payload.get("type") == "error" or event_error:
+                    error = _text(payload.get("error")) or _text(payload.get("text")) or _text(payload.get("message")) or error or "Model request failed"
     finally:
         closer = getattr(stream, "aclose", None)
         if callable(closer):
@@ -606,12 +608,13 @@ class DispatchTaskExecutor:
         and the user gets the choice.
         """
         wait = getattr(engine, "wait", None)
-        deadline = time.monotonic() + _task_timeout(session)
+        timeout = _task_timeout(session)
+        deadline = time.monotonic() + timeout if timeout is not None else None
         while _text(_field(job, "status")) in _LIVE_STATUSES:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
+            remaining = deadline - time.monotonic() if deadline is not None else None
+            if remaining is not None and remaining <= 0:
                 return True
-            slice_s = min(_STREAM_POLL_S, remaining)
+            slice_s = min(_STREAM_POLL_S, remaining) if remaining is not None else _STREAM_POLL_S
             try:
                 if callable(wait):
                     await wait(job, slice_s)
@@ -786,7 +789,7 @@ def _task_timeout(session: Any) -> float:
         seconds = float(raw or 0)
     except (TypeError, ValueError):
         seconds = 0.0
-    return seconds if seconds > 0 else DEFAULT_TASK_TIMEOUT_S
+    return seconds if seconds > 0 else None
 
 
 def _absorb_compact(result: Dict[str, Any], compacted: Mapping[str, Any]) -> None:
@@ -832,7 +835,7 @@ class TournamentAdapter:
         self._owner = _text(owner)
 
     async def blind_round(self, *, question: str, participants: Sequence[Any],
-                          timeout_s: float = 180.0) -> Dict[str, Any]:
+                          timeout_s: Optional[float] = None) -> Dict[str, Any]:
         """Ask everyone the same question with nobody seeing anybody.
 
         `rounds=1` is round 0 and only round 0.  `tournament.run` still ranks
@@ -874,7 +877,7 @@ class TournamentAdapter:
             await asyncio.wait_for(
                 run(_text(question), models, rounds=1, llm_call=call,
                     state=state, cancel_event=cancel),
-                max(1.0, float(timeout_s or 180.0)))
+                float(timeout_s) if timeout_s is not None and float(timeout_s) > 0 else None)
         except asyncio.TimeoutError:
             cancel.set()
             timed_out = True
@@ -896,7 +899,7 @@ class TournamentAdapter:
             # still hands back whatever answers arrived — a partial round the
             # user can read beats an empty one they cannot.
             return _degraded(result, "timeout",
-                             f"the blind round did not finish within {float(timeout_s):.0f}s; "
+                             f"the blind round timed out ({timeout_s if timeout_s else 'native transport'}); "
                              f"{len([a for a in result['answers'] if a['content']])} of "
                              f"{len(seats)} answers arrived")
         spoke = [a for a in result["answers"] if a["content"]]

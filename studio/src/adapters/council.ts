@@ -1,3 +1,4 @@
+import type { ModelRoute } from './chat';
 import { asArray, getJson } from './api';
 
 /**
@@ -123,6 +124,7 @@ export interface RoleOption {
 }
 
 export interface CouncilConfig {
+  defaultRoute: ModelRoute | null;
   policies: string[];
   roles: RoleOption[];
   toolProfiles: string[];
@@ -324,6 +326,7 @@ export function configFrom(raw: unknown): CouncilConfig {
     ),
     completionModes: strList(c.completion_modes),
     sessionStatuses: strList(c.session_statuses),
+    defaultRoute: c.default_route && typeof c.default_route === 'object' ? c.default_route as ModelRoute : null,
     defaultBudgets: budgetsFrom(c.default_budgets),
     commands: strList(c.commands),
     errors: strList(c.errors),

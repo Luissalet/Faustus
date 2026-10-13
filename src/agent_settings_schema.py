@@ -1199,8 +1199,8 @@ GROUPS: list[dict[str, Any]] = [
         [
             _bool("agent_council", "Council",
                   "Let a council room run turns: several models answering, objecting and — under "
-                  "collaborate or pair — editing claimed files. Off is the default because one "
-                  "message becomes several models across several rounds, and some of them write. "
+                  "collaborate or pair — editing claimed files. Enabled by default; the existing "
+                  "switch remains available when you want to suspend council execution. "
                   "Off = a room can still be opened and every room already recorded stays fully "
                   "readable (transcript, ledger, decisions, evidence); only sending a message and "
                   "issuing a command are refused."),

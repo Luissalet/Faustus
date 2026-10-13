@@ -112,7 +112,7 @@ _STOP_FOR: Dict[str, str] = {
 
 #: A reservation that waits longer than this by default has stopped being a
 #: queue and started being a hang.  Callers override it per call.
-DEFAULT_RESERVE_TIMEOUT_S = 60.0
+DEFAULT_RESERVE_TIMEOUT_S = None
 
 _MAX_CACHED_LOCKS = 256
 
@@ -313,18 +313,13 @@ class CouncilScheduler:
     """
 
     def __init__(self, session_id: str, *, budgets: Any,
-                 max_parallel: int = 2, gpu_slots: Any = None,
+                 max_parallel: int = 0, gpu_slots: Any = None,
                  model_locks: Any = None,
                  clock: Optional[Callable[[], float]] = None) -> None:
         self.session_id = str(session_id or "")
         self.budgets = _as_budgets(budgets)
-        # A constructor argument may NARROW the room's parallelism and never
-        # widen it — the same rule section 11.1 gives for tool profiles, applied
-        # to concurrency: the budget is what the user authorised.  This is why
-        # `scheduler_for()` passes the session's own `max_parallel` explicitly
-        # instead of leaving the default 2 to silently cap a wider budget.
-        self.max_parallel = max(0, min(int(max_parallel),
-                                       int(self.budgets.max_parallel)))
+        positive_parallel = [int(value) for value in (max_parallel, self.budgets.max_parallel) if int(value) > 0]
+        self.max_parallel = min(positive_parallel) if positive_parallel else 0
         self._gpu_arg = gpu_slots
         self._gpu: Any = None
         self._gpu_resolved = False
@@ -350,13 +345,13 @@ class CouncilScheduler:
 
     # ── the primitives, resolved late ──────────────────────────────────────
 
-    def _parallel_semaphore(self) -> asyncio.Semaphore:
+    def _parallel_semaphore(self) -> Optional[asyncio.Semaphore]:
+        if self.max_parallel == 0:
+            return None
         key = _loop_key()
         sem = self._parallel.get(key)
         if sem is None:
-            # `max(1, ...)`: a limit of 0 is refused by `can_start()` long
-            # before anything reaches here, and a Semaphore(0) would hang
-            # rather than say no.
+            # Zero already returned above; positive room limits use a semaphore.
             sem = self._parallel[key] = asyncio.Semaphore(max(1, self.max_parallel))
         return sem
 
@@ -417,8 +412,9 @@ class CouncilScheduler:
         got_parallel = False
         got_lock = False
         try:
-            await parallel.acquire()
-            got_parallel = True
+            if parallel is not None:
+                await parallel.acquire()
+                got_parallel = True
             await lock.acquire()
             got_lock = True
             if slots is not None:
@@ -556,23 +552,14 @@ class CouncilScheduler:
     def _exhausted(self, rounds: int, turns: int, wall: float, tokens: int) -> str:
         """The name of the first limit in `LIMIT_NAMES` that is out, or `""`.
 
-        A limit of zero is a real instruction and not an unset field: a budget
-        of zero rounds is a room that has been told not to start one, and
-        `max_parallel` of zero is a room told to stop starting anything at all
-        (`contracts.CouncilBudgets` says so).  In-flight work reaching the
-        parallel ceiling is NOT exhaustion — that is backpressure, and
-        `reserve()` waits it out.
+        Zero leaves that budget unlimited. Positive limits prevent starting
+        another reservation and never cancel work already granted.
         """
-        if rounds >= int(self.budgets.max_rounds):
-            return "max_rounds"
-        if turns >= int(self.budgets.max_turns):
-            return "max_turns"
-        if wall >= float(self.budgets.max_wall_seconds):
-            return "max_wall_seconds"
-        if tokens >= int(self.budgets.max_total_tokens):
-            return "max_total_tokens"
-        if self.max_parallel <= 0:
-            return "max_parallel"
+        for field, spent in (("max_rounds", rounds), ("max_turns", turns),
+                             ("max_wall_seconds", wall), ("max_total_tokens", tokens)):
+            limit = getattr(self.budgets, field)
+            if limit > 0 and spent >= limit:
+                return field
         return ""
 
     def state(self) -> BudgetState:

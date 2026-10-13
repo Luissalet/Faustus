@@ -504,3 +504,19 @@ def test_a_participant_written_before_agent_profiles_existed_still_parses():
 
 def test_the_contracts_carry_a_schema_version():
     assert isinstance(C.SCHEMA_VERSION, int) and C.SCHEMA_VERSION >= 1
+
+
+def test_execution_budgets_have_no_fixed_ceiling_and_default_to_unlimited():
+    assert all(value==0 for value in C.CouncilBudgets().to_dict().values())
+    supplied={'max_rounds':1001,'max_turns':50000,'max_wall_seconds':200000,'max_total_tokens':200000000,'max_parallel':100}
+    assert C.CouncilBudgets.parse(supplied).to_dict()==supplied
+    with pytest.raises(C.ContractError):C.CouncilBudgets.parse({'max_rounds':-1})
+
+
+def test_large_council_roster_round_trips_without_a_fixed_seat_ceiling():
+    names=['seat'+str(i) for i in range(300)]
+    session=C.CouncilSession.parse({'participants':names})
+    assert len(session.participants)==300
+    assert C.CouncilSession.parse(session.to_dict()).participants==session.participants
+    turn=C.CouncilTurn.parse({'selected_participants':names})
+    assert len(turn.selected_participants)==300

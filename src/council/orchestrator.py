@@ -81,14 +81,10 @@ __all__ = [
 ]
 
 
-#: How long one participant may take before the room stops waiting for it.  A
-#: turn that waits forever on one model is a room the user cannot get back.
-DEFAULT_INVOKE_TIMEOUT_S = 120.0
-
-#: How long a participant waits for its turn on the machine.  Past this the
-#: scheduler answers `None`, which is a normal outcome of a busy box and is
-#: recorded rather than raised (3.6).
-RESERVE_TIMEOUT_S = 30.0
+#: No extra room deadline by default. Native provider timeouts and explicit
+#: caller limits remain in the model adapter; Stop remains available.
+DEFAULT_INVOKE_TIMEOUT_S = None
+RESERVE_TIMEOUT_S = None
 
 #: **The whole of the invoker's contract.**  Anything else in the returned
 #: mapping is logged at debug and ignored -- deliberately, and this is rule 8
@@ -767,10 +763,10 @@ class CouncilOrchestrator:
         if not selection.participant_ids:
             return self._blocked(turn, "the policy selected nobody for this message")
 
-        self._scheduler.spend(turns=1, rounds=1)
         turn = self._advance(turn, "running")
         turn = self._advance(turn, "speaking", participants=list(selection.participant_ids))
         committed = await self._round(turn, selection, participants)
+        self._scheduler.spend(turns=1, rounds=1)
 
         if turn_id in self._cancelled:
             return self._cancelled_outcome(turn_id, committed)

@@ -626,12 +626,9 @@ def test_with_the_flag_off_reads_answer_and_execution_refuses(client_pair, monke
     assert len(P.store().list_turns(room["id"])) == 1
 
 
-def test_the_flag_defaults_to_off():
-    """A council multiplies one request by several models and, under
-    collaborate, writes to the workspace. That is opt-in."""
+def test_the_flag_defaults_to_on_with_optional_off_switch():
     from src.settings import DEFAULT_SETTINGS
-
-    assert DEFAULT_SETTINGS["agent_council"] is False
+    assert DEFAULT_SETTINGS["agent_council"] is True
 
 
 def test_the_flag_has_a_settings_schema_entry():

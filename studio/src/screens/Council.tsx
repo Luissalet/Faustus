@@ -139,7 +139,7 @@ function Setup({ config, routes, onOpened, say }: {
   const [workspace, setWorkspace] = useState('');
   const [budgets, setBudgets] = useState<api.Budgets>(config.defaultBudgets);
   const [seats, setSeats] = useState<Seat[]>(() =>
-    routes.slice(0, 2).map((route) => ({ route, model: route.model, endpointId: route.endpointId, displayName: '', roles: [] })));
+    (config.defaultRoute ? [config.defaultRoute, config.defaultRoute] : routes.slice(0, 2)).map((route) => ({ route, model: route.model, endpointId: route.endpointId, displayName: '', roles: [] })));
   const [pick, setPick] = useState<number | null>(null);
   const [opening, setOpening] = useState(false);
 
@@ -235,8 +235,8 @@ function Setup({ config, routes, onOpened, say }: {
         </ul>
         <Button
           variant="ghost" size="sm" icon={Plus} label={t('Add a seat')} testId="council-add-seat"
-          disabled={!routes.length || seats.length >= 8}
-          onClick={() => setSeats((c) => [...c, { route: routes[c.length % routes.length] ?? null, model: routes[c.length % routes.length]?.model ?? '', endpointId: routes[c.length % routes.length]?.endpointId ?? '', displayName: '', roles: [] }])}
+          disabled={!routes.length}
+          onClick={() => setSeats((c) => [...c, { route: config.defaultRoute ?? routes[c.length % routes.length] ?? null, model: config.defaultRoute?.model ?? routes[c.length % routes.length]?.model ?? '', endpointId: config.defaultRoute?.endpointId ?? routes[c.length % routes.length]?.endpointId ?? '', displayName: '', roles: [] }])}
         />
       </div>
 
@@ -259,7 +259,7 @@ function Setup({ config, routes, onOpened, say }: {
             </label>
           ))}
         </div>
-        <p className="fs-muted">{t('A room without limits is a bill. Zero means «no more of this», and it is a real answer.')}</p>
+        <p className="fs-muted">{t('Zero means unlimited. Set a positive limit when you want one; Stop remains available.')}</p>
       </div>
 
       <div className="fs-inline">
@@ -579,9 +579,9 @@ function ClosePanel({ close, status, stopReason, usage, onSynthesise, busy }: {
         <p className="fs-muted">
           <Gauge size={11} aria-hidden="true" />{' '}
           {t('Spent so far: {rounds}/{maxRounds} rounds · {turns}/{maxTurns} turns · {tokens}/{maxTokens} tokens{exhausted}', {
-            rounds: usage.spent.rounds, maxRounds: usage.budgets.maxRounds,
-            turns: usage.spent.turns, maxTurns: usage.budgets.maxTurns,
-            tokens: usage.spent.totalTokens, maxTokens: usage.budgets.maxTotalTokens,
+            rounds: usage.spent.rounds, maxRounds: usage.budgets.maxRounds || t('Unlimited'),
+            turns: usage.spent.turns, maxTurns: usage.budgets.maxTurns || t('Unlimited'),
+            tokens: usage.spent.totalTokens, maxTokens: usage.budgets.maxTotalTokens || t('Unlimited'),
             exhausted: usage.exhausted ? t(' · {limit} ran out', { limit: usage.exhausted }) : '',
           })}
         </p>
@@ -836,7 +836,7 @@ export function CouncilScreen() {
           <p className="fs-prose fs-cnc__lede">
             {room
               ? t('{policy} · {status} · revision {revision} · {n} seats', { policy: room.policy, status: room.status, revision: room.revision, n: seats.length })
-              : t('Several models think about one matter, and exactly one of them may act on each resource. Group chat could not tell you who had said what; here authorship and permission are fields, not prose.')}
+              : t('Several models discuss, compare answers, or work on a task with an executor and a reviewer.')}
           </p>
         </div>
         {room && (
