@@ -34,7 +34,7 @@ pause/resume state machine.
 
 All six dimensions derive from settings that exist and are read live:
 `max_tool_calls`/`max_tokens` from `agent_max_tool_calls`/
-`agent_input_token_hard_max`, and the other four (`max_active_seconds`,
+`agent_budget_tokens_per_run`, and the other four (`max_active_seconds`,
 `max_subagents`, `max_remote_spend`, `max_memory_mb`) from their own
 `agent_autonomy_max_*` settings, registered in `src.settings.DEFAULT_SETTINGS`
 and `src.agent_settings_schema` the same way. The module constants below are
@@ -70,7 +70,7 @@ _MULTIPLIER: Mapping[str, float] = {
 
 # Missing settings use the same unlimited tool-call default as the product.
 _FALLBACK_TOOL_CALLS = 0
-_FALLBACK_TOKENS = 200_000
+_FALLBACK_TOKENS = 0
 
 # Fallbacks for the four dimensions with no settings-backed ceiling yet.
 _FALLBACK_ACTIVE_SECONDS = 0.0
@@ -240,7 +240,7 @@ def resolve_budget(
     overrides: Optional[Mapping[str, Any]] = None,
 ) -> Budget:
     """Build the `Budget` for `preset`. `max_tool_calls`/`max_tokens` scale
-    the existing `agent_max_tool_calls`/`agent_input_token_hard_max`
+    the existing `agent_max_tool_calls`/`agent_budget_tokens_per_run`
     settings (read through `get_setting` exactly like every other reader in
     this codebase, so a machine with no settings file still gets sane
     numbers); the other four dimensions scale fixed fallbacks (see the
@@ -253,7 +253,9 @@ def resolve_budget(
     mult = _MULTIPLIER[name]
 
     base_tool_calls = _base_from_setting("agent_max_tool_calls", _FALLBACK_TOOL_CALLS, get_setting)
-    base_tokens = _base_from_setting("agent_input_token_hard_max", _FALLBACK_TOKENS, get_setting)
+    # A context ceiling applies to each prompt, not the sum of repeated prompts
+    # across a tool loop. Only an explicit run budget can stop cumulative usage.
+    base_tokens = _base_from_setting("agent_budget_tokens_per_run", _FALLBACK_TOKENS, get_setting)
     base_active_seconds = _base_from_setting(
         "agent_autonomy_max_active_seconds", _FALLBACK_ACTIVE_SECONDS, get_setting)
     base_subagents = _base_from_setting(
