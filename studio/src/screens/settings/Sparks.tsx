@@ -11,8 +11,8 @@ const FIRST_TOKEN_DEFAULT = 300;
 
 /**
  * Settings → Sparks: where Prometheus's Hoard answers, whether the DGX Sparks are the default chat backend while a
- * recipe serves, and which recipe is preferred. The local GPUs keep their models and become the default again when
- * nothing serves on the Sparks (src/sparks.py). Nothing about the cluster is fixed in code.
+ * recipe serves, and which recipe is preferred. The global Sparks selection survives service outages;
+ * the previous model remains historical configuration. Nothing about the cluster is fixed in code.
  *
  * `first_token_timeout_s` comes from the typed Sparks adapter (#106 on master).
  */
@@ -91,7 +91,7 @@ export function SparksSection({ say }: { say: (text: string) => void }) {
           {state.url && <Button size="sm" variant="ghost" icon={ExternalLink} label={t('Open')} onClick={() => window.open(state.url, '_blank', 'noopener,noreferrer')} />}
         </div>
       </Field>
-      <Field label={t('Default backend')} htmlFor="sparks-default" help={t('While a recipe serves on the Sparks, new chats use it. When nothing serves, the default goes back to the model this PC had. Choosing another default by hand turns this off.')}>
+      <Field label={t('Default backend')} htmlFor="sparks-default" help={t('While a recipe serves on the Sparks, new chats use it. If the service is unavailable, its model stays selected. Choosing another default by hand turns automatic selection off.')}>
         <Toggle id="sparks-default" checked={state.default_backend} onChange={(v) => void save({ default_backend: v })} label={t('The Sparks by default')} disabled={saving || !state.enabled} />
       </Field>
       <Field label={t('Preferred recipe')} htmlFor="sparks-recipe" help={t('When several recipes serve at once, the default goes to this one.')}>
@@ -126,7 +126,7 @@ export function SparksSection({ say }: { say: (text: string) => void }) {
       <Field label={t('Default now')}>
         <p className="fs-prose" data-testid="sparks-default-now">
           {eff?.on_sparks ? t('Sparks · {model}', { model: eff.model }) : eff?.model ? t('This PC · {model}', { model: eff.model }) : '—'}
-          {state.local_default?.model ? ` · ${t('this PC when the Sparks stop: {model}', { model: state.local_default.model })}` : ''}
+          {state.local_default?.model ? ` · ${t('Previous model choice: {model}', { model: state.local_default.model })}` : ''}
         </p>
         <Button
           size="sm"
@@ -138,7 +138,7 @@ export function SparksSection({ say }: { say: (text: string) => void }) {
             setSyncing(true);
             const res = await syncSparks();
             setSyncing(false);
-            say(res.ok === false ? String(res.error) : t('Synced.'));
+            say(res.advisory ? String(res.advisory) : res.ok === false ? String(res.error) : t('Synced.'));
             await reload();
           }}
         />
