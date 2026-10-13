@@ -27,3 +27,27 @@ def test_native_client_uses_binding_space_even_when_mcp_default_differs():
     result = asyncio.run(client.remote('board',{'agent':'faustus-child'}))
     assert result['space_id'] == 'project-a'
     assert calls == [{'agent':'faustus-child','space_id':'project-a'}]
+
+
+def test_switching_space_restores_separate_cursor_details_and_task_observations(tmp_path):
+    from dataclasses import replace
+    import pytest
+    from src.coordination.bindings import CoordinationError
+    from src.coordination.store import Store
+    store = Store(tmp_path)
+    a = store.save(Binding(id='same-binding',owner='',project_id='project',session_id='session',
+        connector_id='hub',actor='faustus-private',operations=('poll','task'),space_id='project-a'))
+    store.receive(a,expected_cursor=0,next_cursor=100,
+        messages=[{'id':100,'thread_id':32,'body':'Only A','author':'tester'}])
+    receipt = store.observe_task(a,{'id':7,'thread_id':32,'title':'Only A task'})
+    store.confirm_task_delivery(a,receipt)
+    b = store.save(replace(a,space_id='project-b'),expected_revision=a.revision)
+    assert store.cursor(b) == 0 and not store.pending(b)
+    with pytest.raises(CoordinationError):store.observed_task(b,7)
+    with pytest.raises(CoordinationError):store.confirm_task_delivery(b,receipt)
+    store.receive(b,expected_cursor=0,next_cursor=3,
+        messages=[{'id':3,'thread_id':32,'body':'Only B','author':'tester'}])
+    back = store.save(replace(b,space_id='project-a'),expected_revision=b.revision)
+    assert store.cursor(back) == 100
+    assert store.pending(back)[0]['body_excerpt'] == 'Only A'
+    assert store.observed_task(back,7)['title'] == 'Only A task'

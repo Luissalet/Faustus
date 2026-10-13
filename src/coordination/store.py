@@ -28,6 +28,13 @@ def _digest(body: str) -> str:
     return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
+def _inbox_binding(snapshot):
+    # Keep the original ecosystem cache addressable; other spaces have their
+    # own cursors, message details, delivery receipts and task observations.
+    return snapshot.id if snapshot.space_id == 'ecosystem' else json.dumps(
+        [snapshot.id, snapshot.space_id], separators=(',', ':'))
+
+
 class Store:
     def __init__(self, root):
         self.path = Path(root) / "coordination.sqlite3"
@@ -186,8 +193,9 @@ class Store:
                                (json.dumps(replace(previous, active=False).serialise()), previous.owner, previous.id))
                 else:
                     binding = replace(binding, revision=previous.revision + 1)
-                    for table in ("observations", "deliveries"):
-                        db.execute(f"DELETE FROM {table} WHERE owner=? AND binding=?", (previous.owner, previous.id))
+                    if previous.space_id == binding.space_id:
+                        for table in ("observations", "deliveries"):
+                            db.execute(f"DELETE FROM {table} WHERE owner=? AND binding=?", (previous.owner, _inbox_binding(previous)))
             db.execute("INSERT OR REPLACE INTO bindings VALUES (?,?,?)",
                        (binding.owner, binding.id, json.dumps(binding.serialise())))
         return binding
@@ -201,7 +209,7 @@ class Store:
         with self.connect() as db:
             self._live(db, snapshot)
             row = db.execute("SELECT cursor FROM cursors WHERE owner=? AND binding=? AND filter=?",
-                             (snapshot.owner, snapshot.id, key)).fetchone()
+                             (snapshot.owner, _inbox_binding(snapshot), key)).fetchone()
         return row["cursor"] if row else 0
 
     def receive(self, snapshot, *, expected_cursor, next_cursor, messages, threads=(), pending_messages=()):
@@ -217,7 +225,7 @@ class Store:
             db.execute("BEGIN IMMEDIATE")
             self._live(db, snapshot)
             row = db.execute("SELECT cursor FROM cursors WHERE owner=? AND binding=? AND filter=?",
-                             (snapshot.owner, snapshot.id, key)).fetchone()
+                             (snapshot.owner, _inbox_binding(snapshot), key)).fetchone()
             current = row["cursor"] if row else 0
             if current != expected_cursor:
                 raise StaleBinding("poll cursor changed; do not overwrite a concurrent poll")
@@ -233,15 +241,15 @@ class Store:
                     raise CoordinationError("cursor does not cover the stored message")
                 digest = _digest(body)
                 existing = db.execute("SELECT digest FROM details WHERE owner=? AND binding=? AND filter=? AND message=?",
-                                      (snapshot.owner, snapshot.id, key, mid)).fetchone()
+                                      (snapshot.owner, _inbox_binding(snapshot), key, mid)).fetchone()
                 if existing and existing["digest"] == digest:
                     continue  # An inbox replay cannot reset delivered coverage.
                 metadata = {k: msg.get(k) for k in ("id", "thread_id", "author", "kind", "created", "relevant")}
                 db.execute("INSERT OR REPLACE INTO details VALUES (?,?,?,?,?,?,?,?,0)",
-                           (snapshot.owner, snapshot.id, key, mid, body, digest,
+                           (snapshot.owner, _inbox_binding(snapshot), key, mid, body, digest,
                             json.dumps(metadata, ensure_ascii=False), "[]"))
             db.execute("INSERT OR REPLACE INTO cursors VALUES (?,?,?,?)",
-                       (snapshot.owner, snapshot.id, key, next_cursor))
+                       (snapshot.owner, _inbox_binding(snapshot), key, next_cursor))
 
     def pending(self, snapshot, threads=(), limit=20):
         if type(limit) is not int or not 1 <= limit <= 100:
@@ -250,7 +258,7 @@ class Store:
         with self.connect() as db:
             self._live(db, snapshot)
             rows = db.execute("SELECT message,substr(body,1,240) AS excerpt,length(body) AS chars,digest,metadata FROM details WHERE owner=? AND binding=? AND filter=? AND delivered=0 AND json_extract(metadata,'$.relevant') IS NOT 0 ORDER BY message LIMIT ?",
-                              (snapshot.owner, snapshot.id, key, limit)).fetchall()
+                              (snapshot.owner, _inbox_binding(snapshot), key, limit)).fetchall()
         return [{**json.loads(r["metadata"]), "body_excerpt": r["excerpt"],
                  "body_chars": r["chars"], "digest": r["digest"], "detail_ref": f"message:{r['message']}"}
                 for r in rows]
@@ -260,7 +268,7 @@ class Store:
         with self.connect() as db:
             self._live(db, snapshot)
             return db.execute("SELECT count(*) FROM details WHERE owner=? AND binding=? AND filter=? AND delivered=0 AND json_extract(metadata,'$.relevant') IS NOT 0",
-                              (snapshot.owner, snapshot.id, key)).fetchone()[0]
+                              (snapshot.owner, _inbox_binding(snapshot), key)).fetchone()[0]
 
     def detail(self, snapshot, message_id, *, threads=(), offset=0, length=2000, expected_digest):
         if type(message_id) is not int or message_id < 1 or type(offset) is not int or offset < 0:
@@ -272,7 +280,7 @@ class Store:
             db.execute("BEGIN IMMEDIATE")
             self._live(db, snapshot)
             row = db.execute("SELECT * FROM details WHERE owner=? AND binding=? AND filter=? AND message=?",
-                             (snapshot.owner, snapshot.id, key, message_id)).fetchone()
+                             (snapshot.owner, _inbox_binding(snapshot), key, message_id)).fetchone()
             if not row or row["digest"] != expected_digest:
                 raise CoordinationError("message detail not found or changed")
             body = row["body"]
@@ -281,9 +289,9 @@ class Store:
             end = min(offset + length, len(body))
             receipt = uuid.uuid4().hex
             db.execute("INSERT OR IGNORE INTO deliveries VALUES (?,?,?,?,?,?,?,?)",
-                       (snapshot.owner, snapshot.id, key, receipt, message_id, expected_digest, offset, end))
+                       (snapshot.owner, _inbox_binding(snapshot), key, receipt, message_id, expected_digest, offset, end))
             receipt = db.execute("SELECT receipt FROM deliveries WHERE owner=? AND binding=? AND filter=? AND message=? AND digest=? AND start=? AND stop=?",
-                                 (snapshot.owner, snapshot.id, key, message_id, expected_digest, offset, end)).fetchone()["receipt"]
+                                 (snapshot.owner, _inbox_binding(snapshot), key, message_id, expected_digest, offset, end)).fetchone()["receipt"]
         # Fetching is not delivery: a dropped response must leave the detail pending.
         return {"message_id": message_id, "digest": expected_digest, "offset": offset,
                 "body": body[offset:end], "next_offset": end if end < len(body) else None,
@@ -300,12 +308,12 @@ class Store:
             db.execute("BEGIN IMMEDIATE")
             self._live(db, snapshot)
             delivery = db.execute("SELECT * FROM deliveries WHERE owner=? AND binding=? AND filter=? AND receipt=?",
-                                  (snapshot.owner, snapshot.id, key, receipt)).fetchone()
+                                  (snapshot.owner, _inbox_binding(snapshot), key, receipt)).fetchone()
             if not delivery:
                 raise CoordinationError("delivery receipt not found")
             message_id = delivery["message"]
             row = db.execute("SELECT * FROM details WHERE owner=? AND binding=? AND filter=? AND message=?",
-                             (snapshot.owner, snapshot.id, key, message_id)).fetchone()
+                             (snapshot.owner, _inbox_binding(snapshot), key, message_id)).fetchone()
             if not row or row["digest"] != delivery["digest"]:
                 raise CoordinationError("delivered message changed")
             spans = sorted([*json.loads(row["coverage"]), [delivery["start"], delivery["stop"]]])
@@ -317,7 +325,7 @@ class Store:
                     merged.append([start, stop])
             complete = merged == [[0, len(row["body"])]]
             db.execute("UPDATE details SET coverage=?,delivered=? WHERE owner=? AND binding=? AND filter=? AND message=?",
-                       (json.dumps(merged), int(complete), snapshot.owner, snapshot.id, key, message_id))
+                       (json.dumps(merged), int(complete), snapshot.owner, _inbox_binding(snapshot), key, message_id))
         return {"message_id": message_id, "complete": complete, "hub_acknowledged": False}
 
     def observe_task(self, snapshot, task, *, required_messages=()):
@@ -330,7 +338,7 @@ class Store:
             db.execute("BEGIN IMMEDIATE")
             self._live(db, snapshot)
             db.execute("INSERT OR REPLACE INTO observations VALUES (?,?,?,?,?,0)",
-                       (snapshot.owner, snapshot.id, task["id"], receipt, json.dumps(task)))
+                       (snapshot.owner, _inbox_binding(snapshot), task["id"], receipt, json.dumps(task)))
         return receipt
 
     def confirm_task_delivery(self, snapshot, receipt):
@@ -338,18 +346,18 @@ class Store:
             db.execute("BEGIN IMMEDIATE")
             self._live(db, snapshot)
             row = db.execute("SELECT task FROM observations WHERE owner=? AND binding=? AND receipt=?",
-                             (snapshot.owner, snapshot.id, receipt)).fetchone()
+                             (snapshot.owner, _inbox_binding(snapshot), receipt)).fetchone()
             if not row:
                 raise CoordinationError("task delivery receipt not found")
             db.execute("UPDATE observations SET delivered=1 WHERE owner=? AND binding=? AND receipt=?",
-                       (snapshot.owner, snapshot.id, receipt))
+                       (snapshot.owner, _inbox_binding(snapshot), receipt))
         return row["task"]
 
     def observed_task(self, snapshot, task_id):
         with self.connect() as db:
             self._live(db, snapshot)
             row = db.execute("SELECT body FROM observations WHERE owner=? AND binding=? AND task=? AND delivered=1",
-                             (snapshot.owner, snapshot.id, task_id)).fetchone()
+                             (snapshot.owner, _inbox_binding(snapshot), task_id)).fetchone()
         if not row:
             raise CoordinationError("read this task before acting on it")
         return json.loads(row["body"])
@@ -360,7 +368,7 @@ class Store:
         with self.connect() as db:
             self._live(db, snapshot)
             rows = db.execute("SELECT body FROM observations WHERE owner=? AND binding=? AND delivered=1",
-                              (snapshot.owner, snapshot.id)).fetchall()
+                              (snapshot.owner, _inbox_binding(snapshot))).fetchall()
         matches = [task for row in rows if (task := json.loads(row["body"])).get("thread_id") == thread_id]
         if len(matches) != 1:
             raise CoordinationError("read the task for this thread before posting, or use a configured coordination thread")
@@ -375,7 +383,7 @@ class Store:
             self._live(db, snapshot)
             for message in required:
                 row = db.execute("SELECT digest,delivered FROM details WHERE owner=? AND binding=? AND filter='[]' AND message=?",
-                                 (snapshot.owner, snapshot.id, message["id"])).fetchone()
+                                 (snapshot.owner, _inbox_binding(snapshot), message["id"])).fetchone()
                 if not row or row["digest"] != message["digest"] or not row["delivered"]:
                     raise CoordinationError("read the complete task discussion and submission before voting; excerpts are insufficient")
         return task

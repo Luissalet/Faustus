@@ -17,7 +17,7 @@ from src.coordination.runtime import client, connector_fingerprint, get_store, r
 class SaveBinding(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     connector_id: str = Field(min_length=1, max_length=128)
-    space_id: str = Field(default='ecosystem', max_length=64)
+    space_id: str = Field(default='ecosystem', max_length=96)
     actor: str | None = Field(None, max_length=48)
     operations: list[str] = Field(default_factory=lambda: sorted(OPERATIONS), max_length=100)
     resources: list[str] = Field(default_factory=list, max_length=100)
