@@ -76,3 +76,29 @@ def test_mcp_catalog_exposes_upload_and_draft_capabilities():
     tools = {tool.name: tool for tool in asyncio.run(copilot.list_tools())}
     assert {'hoard_attachment_upload', 'hoard_draft_get', 'hoard_draft_save'} <= tools.keys()
     assert 'attachments' in tools['hoard_turn_start'].inputSchema['properties']
+
+
+@pytest.mark.parametrize('method,body,text,ids', [
+    ('PATCH', {'attachment_ids': ['two']}, 'Original message', ['two']),
+    ('PATCH', {'text': 'Changed'}, 'Changed', ['one', 'two']),
+    ('PATCH', {}, 'Original message', ['one', 'two']),
+    ('PUT', {'attachment_ids': ['two']}, '', ['two']),
+    ('PUT', {'text': 'Changed'}, 'Changed', []),
+    ('PUT', {}, '', []),
+])
+def test_native_draft_patch_preserves_omitted_fields_and_put_replaces(tmp_path, monkeypatch, method, body, text, ids):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from routes import session_routes
+    from src import session_draft
+    monkeypatch.setattr(session_draft, 'DATA_DIR', tmp_path)
+    monkeypatch.setattr(session_routes, '_verify_session_owner', lambda *args: None)
+    monkeypatch.setattr(session_routes, 'effective_user', lambda request: 'alice')
+    session_draft.save('qa', 'alice', 'Original message', ['one', 'two'])
+    app = FastAPI()
+    app.include_router(session_routes.setup_session_routes(object(), {}))
+    with TestClient(app) as client:
+        response = client.request(method, '/api/sessions/qa/draft', json=body)
+    assert response.status_code == 200, response.text
+    assert response.json()['text'] == text
+    assert response.json()['attachment_ids'] == ids
