@@ -1,5 +1,12 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+**Trabajo autónomo y navegador (13-10-2026, Ágora #450):** abrir, consultar o
+recibir latidos del navegador no cancela por defecto tareas manuales/programadas.
+`BACKGROUND_TASK_FOREGROUND_GATE=true` conserva la política anterior opcional.
+Stop explícito, recursos, leases y prioridad de pools mantienen sus funciones.
+API/scheduler/SQLite nativos con acción sintética y MCP/browser privados prueban
+continuidad, Stop y finalización una vez. [Contrato](docs/design/BACKGROUND-CONTINUITY.md).
+
 **Canales nativos (13-10-2026, Ágora #448):** Slack, Discord y Matrix por REST
 propio, reutilizando credenciales cifradas de Integrations y perfiles por referencia.
 Ocho herramientas MCP y API normal listan espacios/historial completo, envían,
