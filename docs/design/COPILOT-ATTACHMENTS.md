@@ -7,7 +7,9 @@ original conversation before asynchronous context or network work begins.
 
 The TypeScript SDK exposes `uploads.create(files, sessionId?)`, returning native
 upload metadata. `copilot.saveDraft(sid, text, attachmentIds?)` preserves existing
-IDs when omitted and detaches files when given an empty list. The component keeps
+IDs when omitted and detaches files when given an empty list. The native PATCH
+endpoint preserves either omitted field; PUT still replaces the draft. An MCP
+update of attachment IDs alone never clears the message. The component keeps
 pending uploads and ready IDs separately for each conversation. Uploaded IDs
 survive panel recreation through the canonical draft. Unuploaded files remain
 available for retry while that panel instance exists; raw File objects are not
