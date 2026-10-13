@@ -303,6 +303,7 @@ def setup_council_routes() -> APIRouter:
                 participants=list(body.get("participants") or ()),
                 workspace=str(body.get("workspace") or ""),
                 project_id=str(body.get("project_id") or ""),
+                space_id=body.get("space_id", "ecosystem"),
                 budgets=body.get("budgets"),
                 parent_session_id=str(body.get("parent_session_id") or ""),
                 preset_id=str(body.get("preset_id") or ""))
@@ -326,12 +327,14 @@ def setup_council_routes() -> APIRouter:
             return []
 
     @router.get("")
-    async def index(request: Request, status: str = "", limit: int = 50):
+    async def index(request: Request, status: str = "", limit: int = 50, space_id: str = ""):
         """This owner's rooms, newest first. Archived rooms are not listed."""
         require_admin(request)
         owner = _require_owner(request)
-        rooms = _service().list(owner=owner, status=str(status or ""),
-                                limit=_int_arg(limit, 50, low=1, high=200))
+        options = {"owner": owner, "status": str(status or ""), "limit": _int_arg(limit, 50, low=1, high=200)}
+        if space_id:
+            options["space_id"] = space_id
+        rooms = _service().list(**options)
         return {"ok": True, "sessions": [s.to_dict() for s in rooms],
                 "count": len(rooms), "enabled": enabled()}
 

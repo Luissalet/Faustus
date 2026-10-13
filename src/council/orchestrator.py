@@ -596,7 +596,7 @@ class CouncilOrchestrator:
             return _synthesis.build(self._ledger, messages=self._history(),
                                     participants=self._participants(),
                                     usage=self._usage(), stop_reason=stop_reason,
-                                    proof=self._proof_packet())
+                                    proof=self._proof_packet(), conversation_only=self._policy_name() == 'chat')
         except Exception:  # noqa: BLE001 - a close that fails is reported, not raised
             logger.exception("council orchestrator %s: the summary could not be built",
                              self.session_id)

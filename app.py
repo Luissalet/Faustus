@@ -1896,6 +1896,11 @@ async def serve_council(request: Request):
     of them may act on each resource. The room, its ledger and its close."""
     return await serve_index(request)
 
+@app.get('/agora')
+async def serve_agora(request: Request):
+    """The common coordination spaces and native room modes."""
+    return await serve_index(request)
+
 @app.get("/state")
 async def serve_state_mirror(request: Request):
     """Studio State Mirror: what is true right now, when we last looked and how
@@ -2201,6 +2206,8 @@ async def runtime_info() -> Dict[str, object]:
 async def _lifespan(app):
     """Modern lifespan context manager replacing deprecated @app.on_event."""
     # ── STARTUP ──
+    from src.shared_coordination import configure as _configure_coordination
+    await asyncio.to_thread(_configure_coordination, group_coordinator)
     await _startup_event()
     await group_coordinator.recover()
     yield

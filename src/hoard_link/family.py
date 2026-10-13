@@ -118,7 +118,8 @@ def emit(type: str, data: Optional[dict[str, Any]] = None, *, block: bool = Fals
 def call(app: str, tool: str, arguments: Optional[dict[str, Any]] = None, *, timeout: float = 120.0) -> dict[str, Any]:
     """Call ``tool`` of ``app`` through the hub. Same result shape as the
     hub's proxy: ``{ok, app, tool, status, result|error, ms}``."""
-    status_, body = _post(f"/api/apps/{app}/call", {"tool": tool, "arguments": arguments or {}, "timeout_s": timeout},
+    endpoint = "/api/agent/call" if app == "hub" else f"/api/apps/{app}/call"
+    status_, body = _post(endpoint, {"tool": tool, "arguments": arguments or {}, "timeout_s": timeout},
                           timeout + 5.0)
     if status_ is None:
         return {"ok": False, "app": app, "tool": tool, "status": None, "error": f"hub not reachable at {_hub()}"}

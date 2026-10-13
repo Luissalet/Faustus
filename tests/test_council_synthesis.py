@@ -99,7 +99,8 @@ def test_build_has_no_parameter_a_narrative_could_arrive_through():
     somebody adds `narrative: str`, which is the only failure worth catching.
     """
     parameters = inspect.signature(build).parameters
-    structured = {"messages", "participants", "usage", "stop_reason", "proof"}
+    structured = {"messages", "participants", "usage", "stop_reason", "proof", 'conversation_only'}
+    assert parameters['conversation_only'].annotation in (bool, 'bool')
 
     assert list(parameters)[0] == "ledger"
     assert parameters["ledger"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
@@ -110,6 +111,16 @@ def test_build_has_no_parameter_a_narrative_could_arrive_through():
     for name in structured:
         assert name in parameters, f"build() lost {name}"
         assert parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
+
+
+def test_completed_conversation_is_distinct_from_execution_without_proof():
+    messages = [{'id': 'm', 'author_id': 'participant', 'author_kind': 'model', 'content': 'An opinion'}]
+    discussion = build(FakeLedger(), messages=messages, stop_reason='completed', conversation_only=True)
+    assert discussion.status == 'discussed'
+    assert discussion.verification['verdict'] == 'none'
+    execution = build(FakeLedger(tasks=[task(status='done')]), messages=messages, stop_reason='completed', conversation_only=True)
+    assert execution.status == 'unverified'
+    assert build(FakeLedger(), messages=messages, stop_reason='failed', conversation_only=True).status == 'unverified'
 
 
 def test_messages_are_counted_and_never_read_as_state():

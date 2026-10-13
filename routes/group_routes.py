@@ -14,6 +14,7 @@ class GroupCreate(BaseModel):
     executionMode: Literal["chat", "agent"] = "agent"
     name: str = ""
     workspace: str = ""
+    space_id: str = "ecosystem"
 
 
 class GroupMessage(BaseModel):
@@ -22,34 +23,50 @@ class GroupMessage(BaseModel):
     mentions: list[str] = Field(default_factory=list)
 
 
+class GroupUpdate(BaseModel):
+    name: str | None = None
+    participants: list[dict[str, Any]] | None = None
+    mode: Literal['parallel', 'round-robin'] | None = None
+    executionMode: Literal['chat', 'agent'] | None = None
+    workspace: str | None = None
+    expected_revision: int | None = None
+
+
 class GroupAnswer(BaseModel):
     message: str = ""
     answer: dict[str, Any] = Field(default_factory=dict)
+
+
+def group_owner(request):
+    require_user(request)
+    if _auth_disabled():
+        return None
+    from core.middleware import is_agent_channel
+    if is_agent_channel(request):
+        from src.owner_identity import REQUEST_SENTINEL_OWNERS
+        configured = request.headers.get('X-Faustus-Group-Owner', '').strip()
+        if configured and configured not in REQUEST_SENTINEL_OWNERS:
+            return configured
+        from core.database import SessionLocal, Session
+        with SessionLocal() as db:
+            owners = {r[0] for r in db.query(Session.owner).distinct().all()
+                      if r[0] and r[0] not in REQUEST_SENTINEL_OWNERS}
+        if len(owners) == 1:
+            return next(iter(owners))
+        raise HTTPException(400, 'Set FAUSTUS_GROUPS_OWNER for the authenticated native group client')
+    return effective_user(request)
 
 
 def setup_group_routes(coordinator):
     router = APIRouter(prefix="/api/groups", tags=["groups"])
 
     def owner(request):
-        require_user(request)
-        if _auth_disabled():
-            return None
-        from core.middleware import is_agent_channel
-        if is_agent_channel(request):
-            from src.owner_identity import REQUEST_SENTINEL_OWNERS
-            configured = request.headers.get("X-Faustus-Group-Owner", "").strip()
-            if configured and configured not in REQUEST_SENTINEL_OWNERS:
-                return configured
-            from core.database import SessionLocal, Session
-            with SessionLocal() as db:
-                owners = {r[0] for r in db.query(Session.owner).distinct().all()
-                          if r[0] and r[0] not in REQUEST_SENTINEL_OWNERS}
-            if len(owners) == 1:
-                return next(iter(owners))
-            raise HTTPException(400, "Set FAUSTUS_GROUPS_OWNER for the authenticated native group client")
-        return effective_user(request)
+        return group_owner(request)
 
     def fail(error):
+        from src.hoard_link.coordination.council_store import RevisionConflict
+        if isinstance(error, RevisionConflict):
+            raise HTTPException(409, str(error)) from error
         if isinstance(error, KeyError):
             raise HTTPException(404, "Group or participant session not found") from error
         raise HTTPException(400, str(error)) from error
@@ -69,8 +86,9 @@ def setup_group_routes(coordinator):
                 "executionModes": ["chat", "agent"], "modes": ["parallel", "round-robin"]}
 
     @router.get("")
-    def list_groups(request: Request):
-        return {"groups": coordinator.store.list(owner(request))}
+    def list_groups(request: Request, space_id: str = ""):
+        args = {"space_id": space_id} if space_id else {}
+        return {"groups": coordinator.store.list(owner(request), **args)}
 
     @router.post("")
     def create(request: Request, body: GroupCreate):
@@ -82,6 +100,7 @@ def setup_group_routes(coordinator):
                 _reject_raw_endpoint_url_for_non_admin(request, user, route.get("endpointId", ""), route.get("endpointUrl", ""))
             definition = coordinator.transcript.create(body.participants, body.mode, user, name=body.name,
                 workspace=body.workspace, execution_mode=body.executionMode)
+            definition["space_id"] = body.space_id
             return coordinator.adopt(definition, user)
         except (KeyError, ValueError) as error:
             fail(error)
@@ -104,6 +123,19 @@ def setup_group_routes(coordinator):
     async def send(request: Request, group_id: str, body: GroupMessage):
         try:
             return await coordinator.submit(group_id, owner(request), body.message, body.request_id or uuid.uuid4().hex, body.mentions)
+        except (KeyError, ValueError) as error:
+            fail(error)
+
+    @router.patch('/{group_id}')
+    def update(request: Request, group_id: str, body: GroupUpdate):
+        try:
+            from routes.session_routes import _reject_raw_endpoint_url_for_non_admin
+            user = owner(request)
+            for participant in body.participants or []:
+                route = participant.get('route') or {}
+                _reject_raw_endpoint_url_for_non_admin(request, user, route.get('endpointId', ''), route.get('endpointUrl', ''))
+            changes = body.model_dump(exclude_none=True, exclude={'expected_revision'})
+            return coordinator.update(group_id, user, changes, body.expected_revision)
         except (KeyError, ValueError) as error:
             fail(error)
 

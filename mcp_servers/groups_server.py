@@ -19,11 +19,15 @@ S = {"type": "string"}
 GROUP = {"group_id": S}
 SPECS = {
     "group_options": ("GET", "/config", {}, [], True, "Read the configured global model (Sparks), supported working-group modes and native tool execution options."),
-    "group_list": ("GET", "", {}, [], True, "List persistent groups of models/agents. Work continues when the observer disconnects."),
-    "group_create": ("POST", "", {"participants": {"type": "array", "items": {"type": "object"}}, "name": S, "workspace": S,
+    "group_list": ("GET", "", {"space_id": S}, [], True, "List persistent groups of models/agents, optionally in one Agora space. Work continues when the observer disconnects."),
+    "group_create": ("POST", "", {"participants": {"type": "array", "items": {"type": "object"}}, "name": S, "workspace": S, "space_id": S,
         "mode": {"type": "string", "enum": ["parallel", "round-robin"]}, "executionMode": {"type": "string", "enum": ["chat", "agent"]}},
         ["participants"], False, "Create a persistent group. Each participant may set a route/model and personaName/personaPrompt. Omitted routes use the global configured model. Agent mode uses native tools; chat mode preserves plain conversation."),
     "group_get": ("GET", "/{group_id}", GROUP, ["group_id"], True, "Read persistent members, ordered turns, partial/completed replies, errors and actual native run IDs."),
+    'group_update': ('PATCH', '/{group_id}', {**GROUP, 'name': S, 'participants': {'type': 'array', 'items': {'type': 'object'}},
+        'mode': {'type': 'string', 'enum': ['parallel', 'round-robin']}, 'executionMode': {'type': 'string', 'enum': ['chat', 'agent']},
+        'workspace': S, 'expected_revision': {'type': 'integer'}}, ['group_id'], False,
+        'Rename a group or edit its members without replacing the room or remaining member sessions. Removed members take no new turns; current work can finish. Use the observed revision for concurrent edits.'),
     "group_send": ("POST", "/{group_id}/messages", {**GROUP, "message": S, "request_id": S, "mentions": {"type": "array", "items": S}},
         ["group_id", "message"], False, "Queue an instruction without cancelling active participants. A repeated request_id reuses the same turn. Optional mentions select participant names/session IDs."),
     "group_stop": ("POST", "/{group_id}/stop", GROUP, ["group_id"], False, "Explicitly stop this group's queued/current work, preserving transcript and results. Other groups are unaffected."),

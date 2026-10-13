@@ -2,158 +2,45 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import contextmanager
 import copy
 import json
+import logging
 from pathlib import Path
-import sqlite3
-import threading
 import time
 import uuid
 
 from src.constants import DATA_DIR
+from src.hoard_link.coordination.groups import GroupStore as _SharedGroupStore
+logger = logging.getLogger(__name__)
 
 
-class GroupStore:
+class GroupStore(_SharedGroupStore):
     def __init__(self, path=None):
-        self.path = Path(path or Path(DATA_DIR) / "groups.db")
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.lock = threading.RLock()
-        with self.db() as db:
-            db.executescript("""
-                CREATE TABLE IF NOT EXISTS groups (
-                    id TEXT PRIMARY KEY, owner TEXT NOT NULL, definition TEXT NOT NULL,
-                    archived INTEGER NOT NULL DEFAULT 0, revision INTEGER NOT NULL DEFAULT 0,
-                    driver TEXT NOT NULL DEFAULT '', lease_until REAL NOT NULL DEFAULT 0);
-                CREATE TABLE IF NOT EXISTS group_turns (
-                    ordinal INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE NOT NULL,
-                    group_id TEXT NOT NULL, request_id TEXT NOT NULL, message TEXT NOT NULL,
-                    definition TEXT NOT NULL, status TEXT NOT NULL, created REAL NOT NULL,
-                    UNIQUE(group_id, request_id));
-                CREATE TABLE IF NOT EXISTS group_steps (
-                    id TEXT PRIMARY KEY, turn_id TEXT NOT NULL, member_id TEXT NOT NULL,
-                    ordinal INTEGER NOT NULL, status TEXT NOT NULL, text TEXT NOT NULL DEFAULT '',
-                    error TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '{}',
-                    UNIQUE(turn_id, member_id));
-            """)
+        super().__init__(path=path or Path(DATA_DIR) / "groups.db")
 
-    @contextmanager
-    def db(self):
-        db = sqlite3.connect(self.path, timeout=15)
-        db.row_factory = sqlite3.Row
-        db.execute("PRAGMA journal_mode=WAL")
-        try:
-            with db:
-                yield db
-        finally:
-            db.close()
 
-    def claim_driver(self, group_id, identity):
-        now = time.time()
-        with self.lock, self.db() as db:
-            return db.execute("UPDATE groups SET driver=?,lease_until=? WHERE id=? AND (driver='' OR driver=? OR lease_until<?)",
-                              (identity, now + 180, group_id, identity, now)).rowcount == 1
+class _DeferredGroupStore:
+    """Resolve legacy storage only if startup did not select the Hub authority."""
+    def __init__(self):
+        self._store = None
 
-    def release_driver(self, group_id, identity):
-        with self.lock, self.db() as db:
-            db.execute("UPDATE groups SET driver='',lease_until=0 WHERE id=? AND driver=?", (group_id, identity))
-
-    def group(self, group_id, owner):
-        with self.lock, self.db() as db:
-            row = db.execute("SELECT * FROM groups WHERE id=? AND owner=?", (group_id, owner or "")).fetchone()
-        if not row:
-            raise KeyError("Group not found")
-        return {**json.loads(row["definition"]), "archived": bool(row["archived"]), "revision": row["revision"]}
-
-    def list(self, owner):
-        with self.lock, self.db() as db:
-            return [json.loads(row["definition"]) for row in db.execute(
-                "SELECT definition FROM groups WHERE owner=? AND archived=0 ORDER BY rowid DESC", (owner or "",))]
-
-    def save(self, definition, owner):
-        group_id = definition["parentId"]
-        with self.lock, self.db() as db:
-            existing = db.execute("SELECT owner FROM groups WHERE id=?", (group_id,)).fetchone()
-            if existing and existing["owner"] != (owner or ""):
-                raise KeyError("Group not found")
-            db.execute("INSERT INTO groups(id,owner,definition) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET definition=excluded.definition,revision=groups.revision+1",
-                       (group_id, owner or "", json.dumps(definition, ensure_ascii=False)))
-        return self.group(group_id, owner)
-
-    def enqueue(self, group_id, owner, message, request_id, mentions=()):
-        definition = self.group(group_id, owner)
-        if definition["archived"]:
-            raise ValueError("Group is archived")
-        if not message.strip():
-            raise ValueError("Message is required")
-        members = definition["participants"]
-        if mentions:
-            selected = [p for p in members if p["sessionId"] in mentions or p["personaName"] in mentions]
-            if not selected:
-                raise ValueError("Mentioned participant not found")
-            members = selected
-        turn_id = uuid.uuid4().hex
-        with self.lock, self.db() as db:
-            prior = db.execute("SELECT id FROM group_turns WHERE group_id=? AND request_id=?", (group_id, request_id)).fetchone()
-            if prior:
-                return prior["id"], False
-            db.execute("INSERT INTO group_turns(id,group_id,request_id,message,definition,status,created) VALUES(?,?,?,?,?,'queued',?)",
-                       (turn_id, group_id, request_id, message, json.dumps(definition, ensure_ascii=False), time.time()))
-            for i, member in enumerate(members):
-                db.execute("INSERT INTO group_steps(id,turn_id,member_id,ordinal,status) VALUES(?,?,?,?,'queued')",
-                           (uuid.uuid4().hex, turn_id, member["sessionId"], i))
-            db.execute("UPDATE groups SET revision=revision+1 WHERE id=?", (group_id,))
-        return turn_id, True
-
-    def turns(self, group_id):
-        with self.lock, self.db() as db:
-            rows = db.execute("SELECT * FROM group_turns WHERE group_id=? ORDER BY ordinal", (group_id,)).fetchall()
-        return [{**dict(row), "definition": json.loads(row["definition"])} for row in rows]
-
-    def steps(self, turn_id):
-        with self.lock, self.db() as db:
-            rows = db.execute("SELECT * FROM group_steps WHERE turn_id=? ORDER BY ordinal", (turn_id,)).fetchall()
-        return [{**dict(row), "detail": json.loads(row["detail"])} for row in rows]
-
-    def update_step(self, step_id, **patch):
-        allowed = {"status", "text", "error", "detail"}
-        if not patch or set(patch) - allowed:
-            raise ValueError("Invalid step update")
-        if "detail" in patch:
-            patch["detail"] = json.dumps(patch["detail"], ensure_ascii=False)
-        with self.lock, self.db() as db:
-            db.execute("UPDATE group_steps SET " + ",".join(key + "=?" for key in patch) + " WHERE id=?", (*patch.values(), step_id))
-            db.execute("UPDATE groups SET revision=revision+1 WHERE id=(SELECT group_id FROM group_turns WHERE id=(SELECT turn_id FROM group_steps WHERE id=?))", (step_id,))
-
-    def update_turn(self, turn_id, status):
-        with self.lock, self.db() as db:
-            db.execute("UPDATE group_turns SET status=? WHERE id=?", (status, turn_id))
-            db.execute("UPDATE groups SET revision=revision+1 WHERE id=(SELECT group_id FROM group_turns WHERE id=?)", (turn_id,))
-
-    def stop(self, group_id):
-        with self.lock, self.db() as db:
-            active = [dict(row) for row in db.execute(
-                "SELECT s.* FROM group_steps s JOIN group_turns t ON t.id=s.turn_id WHERE t.group_id=? AND s.status='running'", (group_id,))]
-            db.execute("UPDATE group_steps SET status='stopped' WHERE turn_id IN (SELECT id FROM group_turns WHERE group_id=?) AND status IN ('queued','running','waiting_user')", (group_id,))
-            db.execute("UPDATE group_turns SET status='stopped' WHERE group_id=? AND status IN ('queued','running','waiting_user')", (group_id,))
-            db.execute("UPDATE groups SET revision=revision+1 WHERE id=?", (group_id,))
-        return [{**row, "detail": json.loads(row["detail"])} for row in active]
-
-    def recoverable(self):
-        with self.lock, self.db() as db:
-            return [(r["id"], r["owner"]) for r in db.execute("SELECT DISTINCT g.id,g.owner FROM groups g JOIN group_turns t ON t.group_id=g.id WHERE t.status IN ('queued','running') AND g.archived=0")]
+    def __getattr__(self, name):
+        if self._store is None:
+            self._store = GroupStore()
+        return getattr(self._store, name)
 
 
 class GroupCoordinator:
     """Strongly owned drivers survive observers; all generation uses the supplied native invoker."""
     def __init__(self, invoker, transcript, *, store=None):
-        self.store = store or GroupStore()
+        self.store = store if store is not None else _DeferredGroupStore()
         self.invoker = invoker
         self.transcript = transcript
         self.tasks = {}
         self.accepting = True
         self.identity = uuid.uuid4().hex
         self.recovery_task = None
+        self.control_task = None
 
     def adopt(self, definition, owner):
         definition = copy.deepcopy(definition)
@@ -170,6 +57,31 @@ class GroupCoordinator:
             raise ValueError("Choose chat or agent")
         self.transcript.validate(definition, owner)
         return self.store.save(definition, owner)
+
+    def update(self, group_id, owner, changes, expected_revision=None):
+        previous = self.store.group(group_id, owner)
+        if expected_revision is not None and previous['revision'] != expected_revision:
+            from src.hoard_link.coordination.council_store import RevisionConflict
+            raise RevisionConflict(group_id, expected_revision, previous['revision'])
+        if changes.get('participants') is not None:
+            definition = self.transcript.create(changes['participants'], changes.get('mode', previous['mode']), owner,
+                name=changes.get('name', previous['name']), workspace=changes.get('workspace', previous.get('workspace', '')),
+                execution_mode=changes.get('executionMode', previous.get('executionMode', 'agent')), existing=previous)
+        else:
+            definition = {**previous, **{k: v for k, v in changes.items() if k in ('name', 'mode', 'executionMode', 'workspace')}}
+        definition['space_id'] = previous.get('space_id', 'ecosystem')
+        self.transcript.validate(definition, owner)
+        result = self.store.save(definition, owner, expected_revision=expected_revision)
+        if hasattr(self.transcript, 'sessions'):
+            parent = self.transcript.sessions.get_session(group_id)
+            parent.name = '[GRP] ' + result['name']
+            self.transcript.sessions.save_sessions()
+        removed = {p['sessionId'] for p in previous['participants']} - {p['sessionId'] for p in result['participants']}
+        for turn in self.store.turns(group_id):
+            for step in self.store.steps(turn['id']):
+                if step['member_id'] in removed and step['status'] == 'queued':
+                    self.store.update_step(step['id'], status='stopped', detail={**step['detail'], 'member_removed': True})
+        return result
 
     async def submit(self, group_id, owner, message, request_id="", mentions=()):
         if not self.accepting:
@@ -240,7 +152,7 @@ class GroupCoordinator:
                                 break
                 if not self._stopped(pending["id"]):
                     steps = self.store.steps(pending["id"])
-                    status = "waiting_user" if any(s["status"] == "waiting_user" for s in steps) else "completed_with_errors" if any(s["status"] == "error" for s in steps) else "done"
+                    status = "waiting_user" if any(s["status"] == "waiting_user" for s in steps) else "completed_with_errors" if any(s["status"] == "error" for s in steps) else 'stopped' if steps and all(s['status'] == 'stopped' for s in steps) else "done"
                     self.store.update_turn(pending["id"], status)
                     if status == "waiting_user":
                         return
@@ -253,9 +165,8 @@ class GroupCoordinator:
                 self.store.update_turn(pending["id"], "completed_with_errors")
 
     def _stopped(self, turn_id):
-        with self.store.db() as db:
-            row = db.execute("SELECT status FROM group_turns WHERE id=?", (turn_id,)).fetchone()
-        return not row or row["status"] == "stopped"
+        status = self.store.turn_status(turn_id)
+        return status is None or status == "stopped"
 
     async def _speak(self, turn, step, owner):
         if self._stopped(turn["id"]):
@@ -298,8 +209,7 @@ class GroupCoordinator:
 
     async def archive(self, group_id, owner):
         await self.stop(group_id, owner)
-        with self.store.lock, self.store.db() as db:
-            db.execute("UPDATE groups SET archived=1,revision=revision+1 WHERE id=?", (group_id,))
+        self.store.archive(group_id)
         return {"archived": True}
 
     async def resume(self, group_id, owner, message, answer=None):
@@ -326,8 +236,21 @@ class GroupCoordinator:
     async def recover(self):
         self.accepting = True
         def scan():
-            for group_id, owner in self.store.recoverable():
-                self.kick(group_id, owner)
+            try:
+                from src.shared_coordination import resume_import
+                resume_import(self)
+                from src.shared_resources import renew
+                renew()
+                from src.council.service import service
+                service().resume_pending()
+                if self.control_task is None or self.control_task.done():
+                    self.control_task = asyncio.create_task(service().recover_controls())
+                for group_id, owner in self.store.recoverable():
+                    self.kick(group_id, owner)
+            except Exception as error:
+                # The existing recovery tick retries metadata; it never
+                # switches authority or repeats a turn just because a read failed.
+                logger.warning('Group coordination recovery unavailable: %s', error)
         scan()
         async def retry_orphaned_drivers():
             while self.accepting:
@@ -341,6 +264,8 @@ class GroupCoordinator:
         tasks = list(self.tasks.values())
         if self.recovery_task:
             tasks.append(self.recovery_task)
+        if self.control_task:
+            tasks.append(self.control_task)
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -348,7 +273,9 @@ class GroupCoordinator:
     def snapshot(self, group_id, owner):
         group = self.store.group(group_id, owner)
         turns = self.store.turns(group_id)
-        return {"group": group, "turns": [{k: v for k, v in t.items() if k != "definition"} for t in turns],
+        return {"group": group, "turns": [{**{k: v for k, v in t.items() if k != "definition"},
+                'participants': [{k: p[k] for k in ('sessionId', 'personaName', 'route') if k in p}
+                                 for p in t['definition']['participants']]} for t in turns],
                 "steps": [s for t in turns for s in self.store.steps(t["id"])],
                 "busy": any(t["status"] in ("queued", "running", "waiting_user") for t in turns)}
 
@@ -406,7 +333,7 @@ class NativeGroupBridge:
         self._append_once(turn["group_id"], "user", message,
                           {"group_answer_id": request_id}, ("group_answer_id", request_id))
 
-    def create(self, participants, mode, owner, *, name="", workspace="", execution_mode="agent"):
+    def create(self, participants, mode, owner, *, name="", workspace="", execution_mode="agent", existing=None):
         from services.hoard_copilot import global_model
         from src.endpoint_resolver import resolve_endpoint_by_id
         selected = []
@@ -434,15 +361,28 @@ class NativeGroupBridge:
                      "endpointName": route.get("endpointName", ""), "kind": route.get("kind", "")}
             selected.append({"route": route, "personaId": source.get("personaId", ""),
                              "personaName": label, "personaPrompt": source.get("personaPrompt", ""),
-                             "headers": headers})
+                             "headers": headers, '_previous_session': source.get('sessionId', '')})
         if len(selected) < 2:
             raise ValueError("A group needs at least two participants")
         title = name or ", ".join(p["personaName"] for p in selected)
         first = selected[0]
-        parent = self.sessions.create_session(uuid.uuid4().hex, "[GRP] " + title,
-                                              first["route"]["endpointUrl"], first["route"]["model"], owner=owner)
+        if existing:
+            self.validate(existing, owner)
+            parent = self.sessions.get_session(existing['parentId'])
+        else:
+            parent = self.sessions.create_session(uuid.uuid4().hex, "[GRP] " + title,
+                first["route"]["endpointUrl"], first["route"]["model"], owner=owner)
         members = []
         for p in selected:
+            previous = next((old for old in (existing or {}).get('participants', [])
+                             if old['sessionId'] == p['_previous_session'] and old['route']['model'] == p['route']['model']
+                             and old['route'].get('endpointId', '') == p['route'].get('endpointId', '')
+                             and old.get('personaPrompt', '') == p['personaPrompt']), None)
+            p.pop('_previous_session', None)
+            if previous:
+                p.pop('headers', None)
+                members.append({**p, 'sessionId': previous['sessionId']})
+                continue
             session = self.sessions.create_session(uuid.uuid4().hex, "[GRP] " + p["personaName"],
                 p["route"]["endpointUrl"], p["route"]["model"], owner=owner, mode=execution_mode)
             session.headers = p.pop("headers")
@@ -460,14 +400,29 @@ class NativeGroupBridge:
                 "startedAt": time.time() * 1000, "executionMode": execution_mode, "workspace": workspace}
 
     def _context(self, turn, member):
+        return self._context_packet(turn, member)['text']
+
+    def _context_packet(self, turn, member):
         parent = self.sessions.get_session(turn["group_id"])
+        own = self.sessions.get_session(member['sessionId'])
+        cursor = next((m.metadata.get('group_seen_cursor') for m in reversed(own.history)
+                       if m.metadata and m.metadata.get('group_seen_cursor')), '')
+        def event_id(message):
+            meta = message.metadata or {}
+            return next((key + ':' + str(meta[key]) for key in ('group_step_id', 'group_answer_id', 'group_turn_id') if meta.get(key)), '')
+        rows = list(parent.history)
+        start = next((i + 1 for i, m in enumerate(rows) if event_id(m) == cursor), 0) if cursor else 0
         parts = []
-        for m in parent.history:
+        if cursor and not start:
+            parts.append('The previous context cursor is absent from the retained transcript. This is the available history; inspect earlier records if needed.')
+        seen = cursor
+        for m in rows[start:]:
             meta = m.metadata or {}
+            if turn['definition'].get('mode') == 'parallel' and meta.get('group_turn_id') == turn['id']:
+                break  # Same-round replies must remain unread for the next turn.
+            seen = event_id(m) or seen
             if meta.get("group_answer_id"):
                 parts.append("[User clarification]: " + str(m.content))
-            if turn["definition"].get("mode") == "parallel" and meta.get("group_turn_id") == turn["id"]:
-                continue
             if meta.get("group_step_id") and meta.get("group_model") != member["personaName"]:
                 parts.append(f"[{meta.get('group_model', 'Participant')}]: {m.content}")
                 if meta.get("group_error"):
@@ -475,7 +430,8 @@ class NativeGroupBridge:
                 if meta.get("group_tool_results"):
                     parts.append("Native tool results and outcome metadata from that participant:\n" +
                                  json.dumps(meta["group_tool_results"], ensure_ascii=False))
-        return "Shared group discussion. Preserve completed work and verify unresolved results:\n" + "\n\n".join(parts)
+        return {'text': "Shared group discussion. Preserve completed work and verify unresolved results:\n" + "\n\n".join(parts),
+                'cursor': seen}
 
     def _saved_response(self, session_id, step_id):
         history = self.sessions.get_session(session_id).history
@@ -523,8 +479,10 @@ class NativeGroupBridge:
                     return {"text": step["text"], "error": "The previous participant attempt was interrupted; its effects were not repeated.",
                             "detail": {**detail, "outcome_unknown": True}}
             else:
-                self._append_once(member["sessionId"], "system", self._context(turn, member),
-                                  {"group_request_boundary": request_id}, ("group_request_boundary", request_id))
+                context = self._context_packet(turn, member)
+                self._append_once(member["sessionId"], "system", context['text'],
+                                  {"group_request_boundary": request_id, 'group_seen_cursor': context['cursor']},
+                                  ("group_request_boundary", request_id))
                 body = {"session": member["sessionId"],
                     "message": continuation.get("message", turn["message"]), "client_message_id": request_id,
                     "mode": turn["definition"]["executionMode"], "model": member["route"]["model"],

@@ -20,8 +20,8 @@ I = {"type": "integer"}
 ID = {"session_id": S}
 SPECS = {
     "council_options": ("GET", "/config", {}, [], True, "Read native room modes, role capabilities, commands, configured global Sparks route and optional budgets. Zero means unlimited."),
-    "council_list": ("GET", "", {"status": S}, [], True, "List the caller's persistent model council rooms."),
-    "council_create": ("POST", "", {"title": S, "policy": S, "participants": {"type": "array", "items": {"type": "object"}}, "workspace": S, "project_id": S, "budgets": {"type": "object"}}, ["participants"], False,
+    "council_list": ("GET", "", {"status": S, "space_id": S}, [], True, "List the caller's persistent model council rooms, optionally in one Agora space."),
+    "council_create": ("POST", "", {"title": S, "policy": S, "participants": {"type": "array", "items": {"type": "object"}}, "workspace": S, "project_id": S, "space_id": S, "budgets": {"type": "object"}}, ["participants"], False,
         "Create a native model council. Participant specs set model/endpoint_id/display_name/roles. Use the configured global route from council_options by default. Budget values0 are unlimited; positive choices remain optional."),
     "council_get": ("GET", "/{session_id}", ID, ["session_id"], True, "Read the owned room, members and current state."),
     "council_update": ("PATCH", "/{session_id}", {**ID,"changes": {"type": "object"}, "expected_revision": I}, ["session_id","changes","expected_revision"], False, "Update native room settings with the actual expected revision. Preserve existing roles, data and explicit budget choices."),

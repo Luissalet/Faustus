@@ -75,6 +75,8 @@ DEFAULT_RESERVE_TOKENS_PER_ROUND = 6000
 class FileLockRegistry:
     def __init__(self, workspace: Optional[str]):
         self.workspace = os.path.realpath(workspace) if workspace else None
+        from src.shared_resources import client
+        self.shared = client(self.workspace)
         # Owners are keyed by the run's ID (`sa{i}-{hex}`), never by its name:
         # the name comes from the MODEL, and two tasks that happened to share a
         # name were one owner — so they never blocked each other.
@@ -116,6 +118,8 @@ class FileLockRegistry:
 
         `provisional=True` marks a claim made before the write ran (see
         `write_block_reason`): `settle()` keeps or releases it afterwards."""
+        if self.shared and not self.shared.call('claim', worker, ['file:' + p for p in paths if self.norm(p)]).get('ok'):
+            return list(paths)
         taken: List[str] = []
         for p in paths:
             key = self.norm(p)
@@ -143,11 +147,17 @@ class FileLockRegistry:
                 continue
             self.provisional.discard(key)
             if not ok:
+                if self.shared:
+                    self.shared.call('release', worker, ['file:' + p])
                 self.owner.pop(key, None)
                 self.display.pop(key, None)
 
     def blocked_by(self, worker: str, paths: List[str]) -> Optional[str]:
         """The other worker that owns one of `paths`, or None."""
+        if self.shared:
+            conflicts = self.shared.call('check', worker, ['file:' + p for p in paths if self.norm(p)]).get('conflicts') or []
+            if conflicts:
+                return self.shared.worker(conflicts[0]['owner'])
         for p in paths:
             key = self.norm(p)
             if key and self.owner.get(key) not in (None, worker):
@@ -162,11 +172,25 @@ class FileLockRegistry:
         no second writer to clobber. Returns the released display paths."""
         mine = [k for k, w in self.owner.items() if w == worker]
         out = [self.display.get(k, k) for k in mine]
+        if self.shared:
+            self.shared.call('release', worker, ['file:' + p for p in out])
+            self.shared.holders.discard(worker)
         for k in mine:
             self.owner.pop(k, None)
             self.display.pop(k, None)
             self.provisional.discard(k)
         return out
+
+    def release_path(self, worker: str, path: str) -> bool:
+        key = self.norm(path)
+        if not key or self.owner.get(key) != worker:
+            return False
+        if self.shared:
+            self.shared.call('release', worker, ['file:' + path])
+        self.owner.pop(key, None)
+        self.display.pop(key, None)
+        self.provisional.discard(key)
+        return True
 
     def owned_by(self, worker: str) -> List[str]:
         return [self.display[k] for k, w in self.owner.items() if w == worker]

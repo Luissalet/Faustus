@@ -42,6 +42,7 @@ import asyncio
 import logging
 import threading
 import time
+import uuid
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from src.council import contracts as _contracts
@@ -204,6 +205,8 @@ class CouncilService:
         #: collect a running task mid-turn, which looks exactly like a room
         #: that stopped answering for no reason.
         self._turn_tasks: Dict[str, "asyncio.Task[Any]"] = {}
+        self._turn_rooms: Dict[str, str] = {}
+        self._driver_id = uuid.uuid4().hex
 
     # -- ownership: the check every method starts with ----------------------
 
@@ -231,7 +234,7 @@ class CouncilService:
 
     def create(self, *, owner: str, title: str, policy: str, participants: Sequence[Any],
                workspace: str = "", project_id: str = "", budgets: Any = None,
-               parent_session_id: str = "", preset_id: str = "") -> CouncilSession:
+               parent_session_id: str = "", preset_id: str = "", space_id: str = "ecosystem") -> CouncilSession:
         """Open a room.  The owner is the caller's, and the seats are resolved.
 
         `participants` are REQUESTS (`participants.ParticipantSpec` or the
@@ -262,6 +265,7 @@ class CouncilService:
             "status": "draft",
             "workspace": _text(workspace),
             "project_id": _text(project_id),
+            "space_id": space_id,
             "parent_session_id": _text(parent_session_id),
             "budgets": _budgets(budgets),
         })
@@ -317,11 +321,13 @@ class CouncilService:
         """The room, or `None` when it is absent or somebody else's."""
         return self._visible(session_id, owner)
 
-    def list(self, *, owner: str = "", status: str = "", limit: int = 50) -> List[CouncilSession]:
+    def list(self, *, owner: str = "", status: str = "", limit: int = 50, space_id: str = "") -> List[CouncilSession]:
         """This owner's rooms, newest first.  Never raises, never leaks."""
         try:
-            return self._db().list_sessions(owner=_text(owner), status=_text(status),
-                                            limit=int(limit or 50))
+            options = {"owner": _text(owner), "status": _text(status), "limit": int(limit or 50)}
+            if space_id:
+                options["space_id"] = space_id
+            return self._db().list_sessions(**options)
         except Exception:  # noqa: BLE001 - a read path
             logger.exception("council service: listing sessions for %r failed", owner)
             return []
@@ -418,8 +424,12 @@ class CouncilService:
         if not turn_id:
             return _fail("command_failed", "the orchestrator opened no turn")
         started = self._start_turn(orchestrator, session.id, turn_id)
+        persisted = self._db().get_turn(turn_id)
+        phase = persisted.state if persisted is not None else ''
+        status = ('running' if started else phase if phase in TERMINAL_TURN_STATES
+                  else 'queued' if phase == 'received' else 'already_running')
         return {"ok": True, "turn_id": turn_id, "session_id": session.id,
-                "status": "running" if started else "already_running",
+                "status": status, **({'turn_state': phase} if phase else {}),
                 "stream": "events"}
 
     def _start_turn(self, orchestrator: Any, session_id: str, turn_id: str) -> bool:
@@ -433,8 +443,40 @@ class CouncilService:
             existing = self._turn_tasks.get(turn_id)
             if existing is not None and not existing.done():
                 return False
+        store = self._db()
+        stored = store.get_turn(turn_id) if callable(getattr(store, 'get_turn', None)) else None
+        if stored is not None and stored.state != 'received':
+            # Reconnecting to a settled or interrupted turn does not restart
+            # its effects, including effects whose outcome is still unknown.
+            return False
+        session = store.get_session(session_id) if callable(getattr(store, 'get_session', None)) else None
+        if session is not None and session.status == 'paused':
+            return False
+        if stored is not None:
+            for prior in store.list_turns(session_id, limit=0):
+                if prior.id == turn_id:
+                    break
+                if prior.state not in TERMINAL_TURN_STATES:
+                    return False
+        claim = getattr(store, 'claim_driver', None)
+        if callable(claim) and not claim(session_id, self._driver_id):
+            return False
 
         async def _run() -> None:
+            current = asyncio.current_task()
+            async def renew_driver():
+                while True:
+                    await asyncio.sleep(30)
+                    try:
+                        owned = claim(session_id, self._driver_id) if callable(claim) else True
+                    except Exception:
+                        owned = False
+                    if not owned:
+                        self._publish_error(session_id, turn_id, RuntimeError('The room executor lost its lease; reconcile the saved turn before retrying'))
+                        current.cancel()
+                        return
+                    await self.apply_controls(session_id)
+            renewal = asyncio.create_task(renew_driver())
             try:
                 await orchestrator.run_turn(turn_id)
             except asyncio.CancelledError:
@@ -442,16 +484,69 @@ class CouncilService:
             except Exception as exc:  # noqa: BLE001 - a turn dies in the room, not in a log
                 logger.exception("council service: turn %s failed", turn_id)
                 self._publish_error(session_id, turn_id, exc)
+            finally:
+                renewal.cancel()
+                await asyncio.gather(renewal, return_exceptions=True)
+                try:
+                    await self.apply_controls(session_id)
+                except Exception:
+                    logger.warning('Council controls remain pending for %s', session_id)
 
         task = asyncio.ensure_future(_run())
         with self._guard:
             self._turn_tasks[turn_id] = task
+            self._turn_rooms[turn_id] = session_id
         task.add_done_callback(lambda _t, key=turn_id: self._forget_turn(key))
         return True
 
     def _forget_turn(self, turn_id: str) -> None:
         with self._guard:
             self._turn_tasks.pop(turn_id, None)
+            session_id = self._turn_rooms.pop(turn_id, '')
+            remaining = session_id in self._turn_rooms.values()
+        if session_id and not remaining:
+            release = getattr(self._db(), 'release_driver', None)
+            if callable(release):
+                try:
+                    release(session_id, self._driver_id)
+                except Exception:
+                    logger.warning('Council executor lease release unavailable for %s', session_id)
+        if session_id and not remaining:
+            try:
+                self.resume_pending()
+            except Exception:
+                logger.warning('Council pending queue recovery unavailable for %s', session_id)
+
+    def resume_pending(self) -> None:
+        """Drain saved, unstarted turns in the existing native recovery tick."""
+        for session in self._db().pending_sessions():
+            for turn in self._db().list_turns(session.id, state='received', limit=0):
+                if turn.state == 'received':
+                    orchestrator = self._orchestrator_for(session)
+                    if orchestrator is not None:
+                        self._start_turn(orchestrator, session.id, turn.id)
+
+    async def apply_controls(self, session_id: str) -> None:
+        store = self._db()
+        driver = store.driver(session_id)
+        if driver.get('identity') != self._driver_id:
+            return
+        for control in store.controls(session_id, status='queued'):
+            if not store.begin_control(control['id']):
+                continue
+            result = await self.command(session_id, control['command'], owner=control['owner'],
+                                        actor=control['actor'], **control['args'])
+            store.complete_control(control['id'], result)
+
+    async def recover_controls(self) -> None:
+        store = self._db()
+        for session_id in store.control_sessions():
+            if store.claim_driver(session_id, self._driver_id):
+                try:
+                    await self.apply_controls(session_id)
+                finally:
+                    if session_id not in self._turn_rooms.values():
+                        store.release_driver(session_id, self._driver_id)
 
     def _publish_error(self, session_id: str, turn_id: str, exc: BaseException) -> None:
         """Tell the room its turn died.  A failure nobody can see is a hang."""
@@ -548,6 +643,10 @@ class CouncilService:
                              command=name, revision=session.revision)
         if name == "assign_role":
             return self._assign_role(session, kw, actor=_text(actor))
+        driver = self._db().driver(session.id)
+        if driver and driver.get('identity') != self._driver_id:
+            ident = self._db().queue_control(session.id, name, owner, actor, kw)
+            return {'ok': True, 'command': name, 'session_id': session.id, 'status': 'queued', 'command_id': ident}
         orchestrator = self._orchestrator_for(session)
         if orchestrator is None:
             return _fail("engine_unavailable",
@@ -562,7 +661,11 @@ class CouncilService:
         except Exception as exc:  # noqa: BLE001 - the engine refused; say so with a token
             logger.exception("council service: %s failed in %s", name, session.id)
             return _fail("command_failed",
-                         f"{name} was refused: {type(exc).__name__}: {exc}", command=name)
+                         f"{name} was refused: {type(exc).__name__}: {exc}", command=name,
+                         **({'outcome_unknown': True, 'operation': getattr(exc, 'operation', name)}
+                            if getattr(exc, 'outcome_unknown', False) else {}))
+        if name == 'resume':
+            self.resume_pending()
         return {"ok": True, "command": name, "session_id": session.id,
                 "revision": session.revision, "result": _outcome(outcome)}
 
@@ -663,14 +766,15 @@ class CouncilService:
         if session is None:
             return {}
         try:
-            from src.council.ledger import CouncilLedger
+            from src.council.ledger import CouncilLedger, MemoryClaims
 
             # `publisher=None` on purpose: this ledger exists to answer a GET.
             # Left unset it would resolve the room's live event stream, and a
             # read view that can publish is one bad refactor away from
             # re-announcing hydrated rows to every page watching the room.
             book = CouncilLedger(session.id, store=self._db(),
-                                 workspace=session.workspace, publisher=None)
+                                 workspace=session.workspace, publisher=None,
+                                 claims_backend=MemoryClaims())
             return dict(book.snapshot())
         except Exception:  # noqa: BLE001 - a read path
             logger.exception("council service: reading the ledger of %s failed", session.id)
@@ -765,6 +869,10 @@ class CouncilService:
             "running": self._turn_in_flight(session.id),
             "live": orchestrator is not None,
         }
+        driver = self._db().driver(session.id)
+        base['controls'] = self._db().controls(session.id)
+        base['running'] = bool(base['running'] or driver)
+        base['execution_elsewhere'] = bool(driver and driver['identity'] != self._driver_id)
         if orchestrator is None:
             return base
         try:

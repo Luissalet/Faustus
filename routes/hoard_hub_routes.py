@@ -13,6 +13,8 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
+from fastapi.responses import RedirectResponse
+from urllib.parse import urlencode
 from pydantic import BaseModel, Field
 
 from core.middleware import require_admin
@@ -25,6 +27,36 @@ class ActiveSphere(BaseModel):
 
 def setup_hoard_hub_routes() -> APIRouter:
     router = APIRouter(tags=["hoard-hub"])
+
+    @router.get('/api/hoard/coordination')
+    def coordination_status():
+        from src.shared_coordination import status
+        return status()
+
+    @router.get('/api/hoard/agora/spaces')
+    async def coordination_spaces():
+        from src.shared_coordination import call
+        return await asyncio.to_thread(call, 'hub_agora_spaces')
+
+    @router.get('/api/hoard/agora/rooms')
+    async def coordination_rooms(request: Request, space_id: str = 'ecosystem'):
+        from src.shared_coordination import call
+        from routes.council_routes import _require_owner
+        from routes.group_routes import group_owner
+        return await asyncio.to_thread(call, 'hub_coordination_rooms', {'space_id': space_id,
+            'owner': _require_owner(request), 'group_owner': group_owner(request) or ''})
+
+    @router.post('/api/hoard/agora/spaces')
+    async def create_coordination_space(request: Request):
+        require_admin(request)
+        from src.shared_coordination import call
+        body = await request.json()
+        return await asyncio.to_thread(call, 'hub_agora_space_create', {'agent': 'faustus', 'title': body.get('title', '')})
+
+    @router.get('/api/hoard/agora/open')
+    def open_coordination_board(space_id: str = 'ecosystem'):
+        where = hoard_hub.hub_location()
+        return RedirectResponse(where['url'].rstrip('/') + '/agora/?' + urlencode({'space_id': space_id}))
 
     @router.get("/api/hoard/spheres")
     async def get_spheres() -> Dict[str, Any]:

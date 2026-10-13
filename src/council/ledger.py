@@ -398,6 +398,9 @@ class FileLockRegistryBackend(ClaimsBackend):
         return _text(self.registry.blocked_by(self.PROBE, [resource]))
 
     def release(self, resource: str, holder: str) -> bool:
+        release_path = getattr(self.registry, 'release_path', None)
+        if release_path is not None:
+            return release_path(holder, resource)
         key = self.registry.norm(resource)
         if not key or self.registry.owner.get(key) != holder:
             return False
@@ -464,6 +467,10 @@ def default_claims_backend(workspace: str = "") -> RoutedClaims:
             "in-process table and will NOT be seen by the write gate", exc,
         )
         files = MemoryClaims()
+    shared = getattr(getattr(files, 'registry', None), 'shared', None)
+    if shared is not None:
+        from src.shared_resources import ClaimsBackend as SharedClaims
+        return RoutedClaims(files, SharedClaims(shared))
     return RoutedClaims(files, MemoryClaims())
 
 

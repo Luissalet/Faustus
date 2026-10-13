@@ -60,7 +60,7 @@ __all__ = [
 NO_EVIDENCE_WEIGHT = 0.5
 
 #: The five states a close may report (plan 3.4).
-STATUSES = ("decided", "verified", "unverified", "blocked", "disputed")
+STATUSES = ("decided", "verified", "unverified", "blocked", "disputed", 'discussed')
 
 #: The only verdict from `src/prove.py` that earns `verified`.
 PROVED_VERDICT = "proved"
@@ -542,7 +542,7 @@ def _result_line(snapshot: Mapping[str, Any], status: str, decisions: Sequence[M
 
 
 def build(ledger: Any, *, messages: Sequence[Any] = (), participants: Sequence[Any] = (),
-          usage: Any = None, stop_reason: str = "", proof: Any = None) -> CouncilSummary:
+          usage: Any = None, stop_reason: str = "", proof: Any = None, conversation_only: bool = False) -> CouncilSummary:
     """Build the close of an activity FROM THE LEDGER.
 
     This function calls no model and reads no prose. Its only source of state
@@ -574,6 +574,10 @@ def build(ledger: Any, *, messages: Sequence[Any] = (), participants: Sequence[A
     # key on each row, never a change to the existing decision fields a
     # caller may already read.
     message_rows = _rows(messages)
+    if (conversation_only and status == 'unverified' and stop_reason in ('completed', 'convergence')
+            and not snapshot.get('tasks') and not snapshot.get('claims') and not snapshot.get('persistence_errors')
+            and any(m.get('author_kind') == 'model' and m.get('content') for m in message_rows)):
+        status = 'discussed'
     for row in decisions:
         row["evidence_support"] = evidence_weighted_support(row, message_rows)
     changes = _changes(snapshot)

@@ -5,7 +5,8 @@ from mcp_servers import groups_server as groups
 
 async def test_native_catalog_exposes_tools_modes_queue_and_pending_questions():
     catalog={t.name:t for t in await groups.list_tools()}
-    assert len(catalog)==8
+    assert len(catalog)==9
+    assert catalog['group_update'].inputSchema['properties']['expected_revision']['type']=='integer'
     assert catalog['group_create'].inputSchema['properties']['executionMode']['enum']==['chat','agent']
     assert catalog['group_send'].inputSchema['properties']['request_id']['type']=='string'
     assert catalog['group_resume'].inputSchema['properties']['answer']['type']=='object'
