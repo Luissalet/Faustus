@@ -1065,7 +1065,11 @@ class UploadHandler:
 
             now = datetime.now()
             current_info = matching_rows[0]
-            if owner and not is_admin and current_info.get("owner") != owner:
+            stored_owner = current_info.get("owner")
+            from src.owner_identity import DEFAULT_LOCAL_OWNER, auth_disabled, effective_storage_owner
+            if owner == DEFAULT_LOCAL_OWNER and auth_disabled():
+                stored_owner = effective_storage_owner(stored_owner)
+            if owner and not is_admin and stored_owner != owner:
                 return None
             if not owner and current_info.get("owner") is not None:
                 return None

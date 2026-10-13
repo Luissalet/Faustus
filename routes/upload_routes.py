@@ -21,7 +21,8 @@ from core.database import (
     Note,
     Session as DbSession,
 )
-from src.auth_helpers import effective_user
+from src.auth_helpers import storage_owner_for_request
+from src.owner_identity import effective_storage_owner
 from src.attachment_refs import attachment_refs_from_metadata
 from src.constants import GENERATED_IMAGES_DIR
 from src.upload_handler import (
@@ -302,7 +303,7 @@ def setup_upload_routes(upload_handler):
         
         for u in files:
             try:
-                owner = effective_user(request)
+                owner = storage_owner_for_request(request)
                 meta = upload_handler.save_upload(u, client_ip, owner=owner)
                 gallery_id = _promote_chat_image_to_gallery(meta, owner, session_id)
                 item = {
@@ -389,7 +390,7 @@ def setup_upload_routes(upload_handler):
             raise HTTPException(400, "JSON body required")
         if not isinstance(body, dict):
             raise HTTPException(400, "JSON object required")
-        owner = effective_user(request)
+        owner = storage_owner_for_request(request)
         return upload_handler.start_chunked_upload(
             filename=str(body.get("filename") or ""),
             total_size=int(body.get("total_size") or 0),
@@ -408,13 +409,13 @@ def setup_upload_routes(upload_handler):
     async def api_chunked_chunk(session_id: str, index: int, request: Request):
         """The raw chunk bytes as the request body (not multipart) — one
         PUT per chunk, so a dropped connection only loses that one chunk."""
-        owner = effective_user(request)
+        owner = storage_owner_for_request(request)
         data = await request.body()
         return upload_handler.write_chunk(session_id, index, data, owner=owner)
 
     @router.post("/chunked/{session_id}/complete")
     async def api_chunked_complete(request: Request, session_id: str):
-        owner = effective_user(request)
+        owner = storage_owner_for_request(request)
         client_ip = request.client.host if request.client else "unknown"
         meta = upload_handler.complete_chunked_upload(session_id, client_ip, owner=owner)
         return {
@@ -452,8 +453,8 @@ def setup_upload_routes(upload_handler):
             original_name = info.get("name", file_id)
         auth_mgr = getattr(request.app.state, "auth_manager", None)
         auth_configured = bool(auth_mgr and auth_mgr.is_configured)
-        current_user = effective_user(request)
-        file_owner = info.get("owner") if info else None
+        current_user = storage_owner_for_request(request)
+        file_owner = effective_storage_owner(info.get("owner") if info else None)
         if auth_configured:
             if not current_user:
                 raise HTTPException(403, "Access denied")
@@ -541,8 +542,8 @@ def setup_upload_routes(upload_handler):
         info = _load_upload_info(file_id)
         auth_mgr = getattr(request.app.state, "auth_manager", None)
         auth_configured = bool(auth_mgr and auth_mgr.is_configured)
-        current_user = effective_user(request)
-        file_owner = info.get("owner") if info else None
+        current_user = storage_owner_for_request(request)
+        file_owner = effective_storage_owner(info.get("owner") if info else None)
         if auth_configured:
             if not current_user:
                 raise HTTPException(403, "Access denied")
@@ -587,8 +588,8 @@ def setup_upload_routes(upload_handler):
             raise HTTPException(404, "File not found")
         auth_mgr = getattr(request.app.state, "auth_manager", None)
         auth_configured = bool(auth_mgr and auth_mgr.is_configured)
-        current_user = effective_user(request)
-        file_owner = info.get("owner")
+        current_user = storage_owner_for_request(request)
+        file_owner = effective_storage_owner(info.get("owner"))
         if auth_configured:
             if not current_user:
                 raise HTTPException(403, "Access denied")
