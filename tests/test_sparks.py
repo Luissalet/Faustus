@@ -98,7 +98,7 @@ def test_status_trims_nodes(fake):
     assert [r["name"] for r in out["recipes"]] == ["glm53-tp3", "qwen38-27b-1m"]
 
 
-def test_default_moves_to_the_sparks_and_back(fake):
+def test_default_stays_on_sparks_when_no_recipe_serves(fake):
     assert sparks.sync()["action"] == "none"       # nothing serving: the local default stays
     assert load_settings()["default_endpoint_id"] == "local1"
     fake.running = [fake.endpoint("glm53-tp3")]
@@ -112,9 +112,9 @@ def test_default_moves_to_the_sparks_and_back(fake):
     assert ep.is_enabled and ep.base_url == "http://spark:8000/v1" and json.loads(ep.cached_models) == ["glm-5.3-flash"]
     assert ep.name == "Sparks · glm53-tp3"
     fake.running = []
-    assert sparks.sync()["action"] == "to_local"
+    assert sparks.sync()["action"] == "none"
     s = load_settings()
-    assert s["default_endpoint_id"] == "local1" and s["default_model"] == "qwen3.8:27b-q4_K_M"
+    assert s["default_endpoint_id"] == ep_id and s["default_model"] == "glm-5.3-flash"
     assert _endpoint(ep_id).is_enabled is False
 
 
@@ -154,7 +154,7 @@ def test_deploy_proxies_and_syncs(fake):
     assert sparks.deploy("glm53-tp3", "start", stop_conflicts=True)["ok"]
     assert load_settings()["default_model"] == "glm-5.3-flash"
     sparks.deploy("glm53-tp3", "stop")
-    assert load_settings()["default_endpoint_id"] == "local1"
+    assert load_settings()["default_endpoint_id"].startswith("sparks-")
     assert sparks.deploy("x", "restart")["ok"] is False
 
 
@@ -174,6 +174,7 @@ def test_routes_registered():
 
 
 def test_detected_servers_show_as_loaded(fake, monkeypatch):
+    ep_id = load_settings()["default_endpoint_id"]
     orig = fake.request
 
     def request(method, path, body=None, **kw):
@@ -188,13 +189,13 @@ def test_detected_servers_show_as_loaded(fake, monkeypatch):
     assert dep["detected"] and dep["state"] == "running" and dep["served"] == ["qwen3.8-27b-nvfp4"]
 
 
-def test_disabling_gives_the_default_back(fake):
+def test_disabling_preserves_the_selected_sparks_default(fake):
     fake.running = [fake.endpoint("glm53-tp3")]
     sparks.sync()
     ep_id = load_settings()["default_endpoint_id"]
     update_settings({"sparks_enabled": False})
     out = sparks.sync()
-    assert out["action"] == "to_local" and load_settings()["default_endpoint_id"] == "local1"
+    assert out["action"] == "none" and load_settings()["default_endpoint_id"] == ep_id
     assert _endpoint(ep_id).is_enabled is False
 
 
@@ -203,6 +204,7 @@ def test_prometheus_closed_keeps_a_server_that_still_answers(fake, monkeypatch):
     sparks.sync()
     ep_id = load_settings()["default_endpoint_id"]
     answers = {"v": {"data": [{"id": "glm-5.3-flash"}]}}
+    ep_id = load_settings()["default_endpoint_id"]
     orig = fake.request
 
     def request(method, path, body=None, *, timeout=4.0, url=None):
@@ -220,9 +222,10 @@ def test_prometheus_closed_keeps_a_server_that_still_answers(fake, monkeypatch):
 
 
 @pytest.mark.parametrize("served", [{"data": []}, {"data": [{"id": "otro"}]}])
-def test_prometheus_closed_drops_a_port_that_serves_something_else(fake, monkeypatch, served):
+def test_prometheus_closed_marks_unavailable_without_selecting_pc(fake, monkeypatch, served):
     fake.running = [fake.endpoint("glm53-tp3")]
     sparks.sync()
+    ep_id = load_settings()["default_endpoint_id"]
     orig = fake.request
 
     def request(method, path, body=None, *, timeout=4.0, url=None):
@@ -232,7 +235,7 @@ def test_prometheus_closed_drops_a_port_that_serves_something_else(fake, monkeyp
         return orig(method, path, body, timeout=timeout, url=url)
 
     monkeypatch.setattr(sparks, "_request", request)
-    assert sparks.sync()["action"] == "to_local" and load_settings()["default_endpoint_id"] == "local1"
+    assert sparks.sync()["action"] == "none" and load_settings()["default_endpoint_id"].startswith("sparks-")
 
 
 @pytest.mark.parametrize("response", [(None, None), (503, {"error": "busy"}),
@@ -273,15 +276,15 @@ def test_a_sparks_model_picked_by_hand_stays_with_the_switch_off(fake):
     s["default_endpoint_id"], s["default_model"] = ep, "glm-5.3-flash"
     save_settings(s)
     assert sparks.sync()["action"] == "none" and load_settings()["default_endpoint_id"] == ep
-    fake.running = []                                   # it stops serving: back to the local default
-    assert sparks.sync()["action"] == "to_local" and load_settings()["default_endpoint_id"] == "local1"
+    fake.running = []                                   # it stops serving: preserve the global backend
+    assert sparks.sync()["action"] == "none" and load_settings()["default_endpoint_id"].startswith("sparks-")
 
 
-def test_turning_the_switch_off_undoes_the_automatic_default(fake):
+def test_turning_the_switch_off_keeps_current_global_model(fake):
     fake.running = [fake.endpoint("glm53-tp3")]
     assert sparks.sync()["action"] == "to_sparks"
     update_settings({"sparks_default_backend": False})
-    assert sparks.sync()["action"] == "to_local" and load_settings()["default_endpoint_id"] == "local1"
+    assert sparks.sync()["action"] == "none" and load_settings()["default_endpoint_id"].startswith("sparks-")
 
 
 def test_another_sparks_model_picked_by_hand_is_an_override(fake):
@@ -294,3 +297,28 @@ def test_another_sparks_model_picked_by_hand_is_an_override(fake):
     s = load_settings()
     assert s["sparks_default_backend"] is False and s["default_model"] == "qwen3.8-27b"
     assert sparks.sync()["action"] == "none" and load_settings()["default_model"] == "qwen3.8-27b"
+
+
+def test_disabled_and_missing_model_never_call_default_setter(fake,monkeypatch):
+    fake.running=[fake.endpoint('glm53-tp3')];sparks.sync()
+    initial=load_settings()['default_endpoint_id'];calls=[]
+    monkeypatch.setattr(sparks,'_set_default',lambda eid,model:calls.append((eid,model)))
+    fake.running=[]
+    out=sparks.sync()
+    assert out['endpoint_status']=='unavailable' and out['advisory']
+    assert out['default']['endpoint_id']==initial and calls==[]
+    update_settings({'sparks_enabled':False})
+    out=sparks.sync()
+    assert out['default']['endpoint_id']==initial and out['action']=='none' and calls==[]
+    update_settings({'sparks_enabled':True});fake.running=[fake.endpoint('glm53-tp3')]
+    sparks.sync()
+    assert _endpoint(initial).is_enabled and calls==[]
+
+
+def test_status_keeps_effective_backend_visible_when_controller_is_down(fake):
+    fake.running=[fake.endpoint('glm53-tp3')];sparks.sync()
+    initial=load_settings()['default_endpoint_id']
+    fake.up=False
+    assert sparks.status()['effective']['endpoint_id']==initial
+    update_settings({'sparks_enabled':False})
+    assert sparks.status()['effective']['endpoint_id']==initial
