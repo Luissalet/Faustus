@@ -3195,7 +3195,7 @@ def setup_model_routes(model_discovery):
             ep = None
             if ep_id:
                 ep_q = db.query(ModelEndpoint).filter(
-                    ModelEndpoint.id == ep_id, ModelEndpoint.is_enabled == True
+                    ModelEndpoint.id == ep_id
                 )
                 # Honor the same owner-scope rule as /api/models — a per-user
                 # default that points at an endpoint owned by a different user
@@ -3204,6 +3204,14 @@ def setup_model_routes(model_discovery):
                 if _user and not _is_admin:
                     ep_q = owner_filter(ep_q, ModelEndpoint, _user)
                 ep = ep_q.first()
+            if ep_id and (ep is None or not ep.is_enabled):
+                # A configured model remains the default when its service is
+                # unavailable. Another enabled endpoint is not a substitute.
+                if ep is not None and not model:
+                    visible = _visible_models(ep.cached_models, getattr(ep, "hidden_models", None), getattr(ep, "pinned_models", None))
+                    model = visible[0] if visible else ""
+                return {"endpoint_id": ep_id, "endpoint_url": build_chat_url(_normalize_base(ep.base_url)) if ep else "",
+                        "model": model, "missing": True}
             # Last resort: first enabled endpoint owned by THIS user. Do not
             # include null-owner/shared endpoints here: a brand-new user with
             # no explicit default should not auto-open a pending chat using an
