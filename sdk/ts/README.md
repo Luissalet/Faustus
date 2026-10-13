@@ -50,6 +50,9 @@ console.log('\n', (await turn.done).reason); // 'done'
 | Call | Wire | Notes |
 | --- | --- | --- |
 | `client.version()` | `GET /api/version` | server version, build, the client-adaptation notice |
+| `client.uploads.create(files, sessionId?)` | `POST /api/upload` | Native multipart upload; returns file IDs and metadata |
+| `client.copilot.getDraft(sid)` | `GET /api/sessions/{sid}/draft` | Canonical text and attachment IDs |
+| `client.copilot.saveDraft(sid, text, attachmentIds?)` | `PATCH /api/sessions/{sid}/draft` | Omitted IDs preserves files; `[]` explicitly detaches them |
 | `client.sessions.create(input)` | `POST /api/session` | form-urlencoded |
 | `client.sessions.list()` | `GET /api/sessions` | bare array |
 | `client.sessions.update(id, patch)` | `PATCH /api/session/{id}` | see "Deviations" below |

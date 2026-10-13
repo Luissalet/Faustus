@@ -146,6 +146,17 @@ export type AutonomyPreset = 'supervised' | 'bounded_autonomous' | 'read_only';
 export type ToolApprovalDecision = 'approve' | 'approve_action' | 'approve_task' | 'approve_workspace' | 'deny';
 export type StopScope = 'generation' | 'task' | 'work';
 
+/** Metadata returned by the ordinary Faustus upload service. */
+export interface UploadedFile {
+  id: string;
+  name: string;
+  mime: string;
+  size: number;
+  status?: string;
+  partial?: boolean;
+  partial_reason?: string | null;
+}
+
 export interface TurnInput {
   /** Context supplied by the hosting Hoard, frozen for this send. */
   hoardContext?: HoardContext;
