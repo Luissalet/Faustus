@@ -11710,3 +11710,12 @@ Formatos/alcance: docs/ui/response-quality.md. Evidencia:
 research-inbox/respuestas-20261013. Los lectores embed/legado conservan Markdown
 pero no se declara paridad de entity/details con Studio. Modelos y datos reales
 del usuario no se cambiaron en QA.
+
+
+## Vitruvius: colecciones locales y estudios HTML propios (13-10-2026)
+
+La tarea501 está integrada y activa en Vitruvius Main9b5854f. La galería añade una colección de100 capturas clasificadas, con procedencia y comprobaciones históricas; importa manifiestos portables, copia las imágenes a sus datos, reutiliza versiones idénticas y conserva las anteriores cuando cambian. Los filtros se aplican antes de paginar y se pueden recorrer todas las entradas. Los metadatos JSON se muestran como texto sin alterar su estructura. Ocho estudios HTML originales generan fuente completa editable: retícula editorial, capas SVG, letras elásticas, dibujo radial, constelaciones, semitonos, pulsos y tarjeta prismática. El editor conserva cada borrador anterior al aplicar otro patrón y puede restaurar las ediciones intermedias durante la visita. Mantiene Render, Crítica, ensayo funcional, historial, URL y las funciones existentes.
+
+Cuenta con42 herramientas MCP y el proveedor51ac2f3d está conectado con el catálogo actualizado. La revisión independiente aprobó R3a5ff31e:78 pruebas del área con navegador real; la suite del autor pasó379 pruebas, incluido el caso de licencia estructurada y recuperación B/A/vacío. Las ocho recetas se probaron a390/1440 y con controles/exportaciones reales. La activación conservó las25 tablas y21 archivos protegidos, el token y el copilot.py ajeno; después de importar, conserva todas las filas anteriores y suma100 referencias nuevas (101 total), con los4 renderizados previos intactos. Manual nativo actualizado con control de revisión y lectura posterior:161 párrafos,1 cambiado y160 textos/estilos ajenos intactos; grafo actualizado sin embeddings. Las capturas son referencias privadas y no certifican todas las interacciones de los originales. El código de los estudios es propio; no depende de aplicaciones ni CLIs de los repositorios investigados. Evidencia: `D:/LocalAI/research-inbox/referencias-vitruvius-20261013/` y `D:/LocalAI/research-inbox/referencias-core501-review-20261013/REVIEW-501-R3.md`.
+
+La ampliación de proyectos completos, tarea504, continúa en una copia aislada y todavía no está activa. No se declara equivalencia con todos los renderizadores, SSR en streaming, destinos edge ni compiladores de las referencias investigadas.
