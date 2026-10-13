@@ -54,3 +54,11 @@ These native layouts belong to Studio's reader. The embedded Hoard panel and
 legacy chat have separate readers; their Markdown links remain usable but native
 entity/details layout parity is not implied. Autonomous model quality must be
 assessed with actual model-backed cases, separately from scripted rendering.
+
+If a normal turn ends on a thinking-only token-limit exit without a final answer,
+the existing tool-free closing synthesis now also uses the gathered information
+for that exit. It preserves the turn's generation overrides and requested output
+format. It does not replace a partial answer or resume a cancelled/budget exit.
+A failed or bare-completion synthesis reports that the turn is incomplete,
+rather than allowing an empty answer to become `Done.` in history. This recovery
+does not establish factual accuracy: multi-domain model tests remain separate.
