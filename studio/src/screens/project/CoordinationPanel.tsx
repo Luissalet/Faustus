@@ -9,6 +9,7 @@ import { choiceKey, choiceSelected, coordinationDraft, coordinationState, getCoo
 import type { Project } from '../../adapters/projects';
 import { t } from '../../i18n';
 import './coordination.css';
+import '../../components/coordinationFields.css';
 
 const STATE_TEXT = {
   not_configured: 'Not configured', disabled: 'Coordination disabled', unavailable: 'Coordination unavailable',
@@ -123,7 +124,7 @@ export function CoordinationPanel({ project, onNotice }: { project: Project; onN
         {view.template.active && <Button variant="ghost" size="sm" label={t('Disable coordination')} onClick={() => void save(false)} disabled={busy} />}
       </>}
       {editing && view && <form className="fs-coordination__form" onSubmit={event => { event.preventDefault(); void save(); }}>
-        <label>{t('Agora')}<select className="fs-field" aria-label={t('Agora')} value={spaceId} disabled={busy} onChange={event => {dirty.current = true; setSpaceId(event.target.value);}}>
+        <label>{t('Agora')}<select className="fs-field fs-coordination-agora-select" aria-label={t('Agora')} value={spaceId} disabled={busy} onChange={event => {dirty.current = true; setSpaceId(event.target.value);}}>
           {!agoras.some(space => space.id === spaceId) && <option value={spaceId}>{spaceId}</option>}
           {agoras.map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
         </select></label>

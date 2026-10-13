@@ -4,6 +4,7 @@ import {Plus, X} from 'lucide-react';
 import {Button} from './Button';
 import {createSpace, spaces, type CoordinationSpace} from '../adapters/coordination';
 import {t} from '../i18n';
+import './coordinationFields.css';
 
 export function CoordinationSpaces({value, onChange, homeLink = true}: {value: string; onChange: (id: string) => void; homeLink?: boolean}) {
   const [all, setAll] = useState<CoordinationSpace[]>([]);
@@ -29,7 +30,7 @@ export function CoordinationSpaces({value, onChange, homeLink = true}: {value: s
     finally {setBusy(false);}
   }
   return <section className="fs-inline" aria-label={t('Coordination spaces')} data-testid="coordination-spaces">
-    <label className="fs-inline">{t('Agora')} <select className="fs-field" value={value} onChange={(event) => onChange(event.target.value)} aria-label={t('Agora')}>
+    <label className="fs-inline">{t('Agora')} <select className="fs-field fs-coordination-agora-select" value={value} onChange={(event) => onChange(event.target.value)} aria-label={t('Agora')}>
       {!all.length && <option value={value}>{value === 'ecosystem' ? t('Ecosystem') : value}</option>}
       {all.map((space) => <option key={space.id} value={space.id}>{space.title}</option>)}
     </select></label>
