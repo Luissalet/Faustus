@@ -14,6 +14,8 @@
 }
 .fs-response-source > span { overflow-wrap: anywhere; min-width: 0; }
 .fs-response-source > img, .fs-response-source > svg { flex-shrink: 0; }
+.fs-rich td:has(> .fs-response-source) { white-space: nowrap; }
+.fs-rich td .fs-response-source { max-width: none; white-space: nowrap; }
 .fs-response-source:hover { color: var(--fs-text-1); background: var(--fs-surface-2); }
 .fs-response-source:focus-visible, .fs-response-sources > summary:focus-visible,
 .fs-response-details > summary:focus-visible { outline: 2px solid var(--fs-focus); outline-offset: 3px; }
