@@ -408,16 +408,26 @@ class StreamingChatInvoker:
         # Keep native transport/read timeouts, without another room-wide deadline.
         from src.llm_core import LLMConfig
         transport_timeout = int(max(1.0, budget)) if budget is not None else LLMConfig.STREAM_TIMEOUT
-        stream = stream_llm(url, model_id or result["model"], messages,
-                            headers=headers or None, timeout=transport_timeout,
-                            session_id=_text(_field(participant, "private_session_id")) or None,
-                            gen_overrides=member_overrides)
+        stream_options = dict(timeout=transport_timeout,
+                              session_id=_text(_field(participant, "private_session_id")) or None,
+                              gen_overrides=member_overrides)
+        # Reuse the native Sparks wait/recovery policy on exactly this route.
+        # No second model, intervention loop or tool execution is introduced.
+        resilient_stream = getattr(engine, "stream_llm_with_fallback", None)
+        if callable(resilient_stream):
+            stream = resilient_stream([(url, model_id or result["model"], headers or None)],
+                                      messages, fallback_statuses=(), fallback_on_empty=False,
+                                      **stream_options)
+        else:
+            stream = stream_llm(url, model_id or result["model"], messages,
+                                headers=headers or None, **stream_options)
         try:
             content, usage, error = await asyncio.wait_for(_consume_stream(stream), budget)
         except asyncio.TimeoutError:
             result["elapsed_ms"] = _ms_since(started)
-            return _degraded(result, "timeout",
-                             f"{result['model']} did not finish within {budget:.0f}s")
+            detail = (f"{result['model']} did not finish within {budget:.0f}s"
+                      if budget is not None else f"{result['model']} transport timed out")
+            return _degraded(result, "timeout", detail)
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 - a provider failure is a reason

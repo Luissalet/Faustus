@@ -7,6 +7,67 @@ import pytest
 from src import llm_core as core
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize('failure', ['connect', 'read', '503'])
+@pytest.mark.parametrize('reasoning_budget', [4096, 0, None])
+async def test_thinking_budget_does_not_replace_transport_retry_budget(monkeypatch, failure, reasoning_budget):
+    import httpx
+    from tests.test_thinking_inertia import _Client
+
+    payloads = []
+
+    class FailedContext:
+        async def __aenter__(self):
+            if failure == '503':
+                class Response:
+                    status_code = 503
+                    headers = {}
+
+                    async def aread(self):
+                        return b'{"error":{"message":"temporary service unavailable"}}'
+                return Response()
+            raise (httpx.ConnectTimeout if failure == 'connect' else httpx.ReadTimeout)('transient transport failure')
+
+        async def __aexit__(self, *args):
+            return False
+
+    class SuccessfulContext:
+        async def __aenter__(self):
+            class Response:
+                status_code = 200
+
+                async def aiter_lines(self):
+                    yield 'data: ' + json.dumps({'choices': [{'delta': {'content': 'ok'}, 'finish_reason': 'stop'}]})
+                    yield 'data: [DONE]'
+            return Response()
+
+        async def __aexit__(self, *args):
+            return False
+
+    class Client(_Client):
+        def stream(self, method, url, **kwargs):
+            payloads.append(kwargs['json'])
+            return FailedContext() if len(payloads) == 1 else SuccessfulContext()
+
+    monkeypatch.setattr(core, '_get_http_client', lambda: Client())
+    monkeypatch.setattr(core, '_ollama_model_caps', lambda *args: None)
+    monkeypatch.setattr(core, '_is_host_dead', lambda url: False)
+    monkeypatch.setattr(core, '_mark_host_dead', lambda url: False)
+    monkeypatch.setattr(core, '_clear_host_dead', lambda *args: None)
+    monkeypatch.setattr(core, 'note_model_activity', lambda *args, **kwargs: None)
+    monkeypatch.setattr(core, 'get_context_length', lambda *args: 32768)
+    monkeypatch.setattr(core, '_retry_delay', lambda *args, **kwargs: 0)
+    overrides = {'think': True}
+    if reasoning_budget is not None:
+        overrides['reasoning_budget'] = reasoning_budget
+    chunks = [chunk async for chunk in core.stream_llm('http://127.0.0.1:63490/v1',
+        'glm-5.3-flash-nvfp4', [{'role': 'user', 'content': 'finish'}], gen_overrides=overrides, max_retries=3)]
+    assert len(payloads) == 2
+    assert payloads[0] == payloads[1]
+    assert any('"delta": "ok"' in chunk for chunk in chunks)
+    assert not any(chunk.startswith('event: error') for chunk in chunks)
+
+
 def error(status=503, *, retryable=True, partial=False):
     return 'event: error\ndata: ' + json.dumps({'error': 'temporary service outage',
         'status': status, 'retryable': retryable, 'partial': partial,
