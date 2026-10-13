@@ -1,3 +1,4 @@
+import { chooseStudioRoute, configuredDefaultRoute } from '../adapters/model-selection';
 import { CheckSquare, FileText, FolderKanban, GitBranch, MessageSquare, PanelRight, Waypoints, X } from 'lucide-react';
 import {withImageReferences} from '../lib/image-references';
 import {MessageNavigator} from './studio/MessageNavigator';
@@ -411,17 +412,17 @@ export function StudioScreen() {
      configured default. Read the same `default_endpoint_id`/`default_model`
      the Settings screen's "Default AI" section writes, and prefer the route
      that matches them before falling back to `routes[0]`. */
-  const [serverDefault, setServerDefault] = useState<{ endpointId: string; model: string } | null>(null);
+  const [serverDefault, setServerDefault] = useState<ModelRoute | null>(null);
+  const [defaultLoaded, setDefaultLoaded] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    getSettings()
-      .then((s) => {
+    configuredDefaultRoute()
+      .then((selected) => {
         if (cancelled) return;
-        const endpointId = typeof s.default_endpoint_id === 'string' ? s.default_endpoint_id : '';
-        const model = typeof s.default_model === 'string' ? s.default_model : '';
-        if (model) setServerDefault({ endpointId, model });
+        setServerDefault(selected);
+        setDefaultLoaded(true);
       })
-      .catch(() => undefined);
+      .catch(() => undefined); // A failed read is not permission to select a different model.
     return () => {
       cancelled = true;
     };
@@ -671,29 +672,9 @@ export function StudioScreen() {
   const freshRef = useRef<string | null>(null);
   const spotlight = useSpotlight();
 
-  const route = useMemo<ModelRoute | null>(() => {
-    const hit = routes.find((r) => r.id === routeId);
-    if (hit) return hit;
-    const kept = rememberedRoute.current;
-    if (routeId && routes.length > 0 && kept.id === routeId && kept.model) {
-      return {
-        id: routeId,
-        model: kept.model,
-        endpointId: kept.endpointId ?? '',
-        endpointName: kept.endpointName ?? '',
-        endpointUrl: kept.endpointUrl ?? '',
-        kind: kept.kind ?? '',
-        missing: true,
-      };
-    }
-    if (!routeId && routes.length > 0 && serverDefault) {
-      const exact = routes.find((r) => r.endpointId === serverDefault.endpointId && r.model === serverDefault.model);
-      if (exact) return exact;
-      const byModel = routes.find((r) => r.model === serverDefault.model);
-      if (byModel) return byModel;
-    }
-    return routes[0] ?? null;
-  }, [routes, routeId, serverDefault]);
+  const route = useMemo<ModelRoute | null>(() =>
+    chooseStudioRoute(routes, routeId, rememberedRoute.current, serverDefault, defaultLoaded),
+    [routes, routeId, serverDefault, defaultLoaded]);
   useEffect(() => {
     const pending = pendingSessionRoute.current;
     if (!pending || routes.length === 0) return;
@@ -1563,7 +1544,7 @@ export function StudioScreen() {
         // picker rather than answering with a model the user never chose.
         // The text goes back to the composer: a message must never vanish
         // into a toast (seen live — typed while the routes were loading).
-        say(t('{model} is not installed on {where} any more — pick another model.', { model: route.model, where: route.endpointName || route.endpointUrl }), 'warning');
+        say(route.kind === 'configured-default' ? t('The configured default model is unavailable right now. Its selection and your message are preserved.') : t('{model} is not installed on {where} any more — pick another model.', { model: route.model, where: route.endpointName || route.endpointUrl }), 'warning');
         setModelSignal((n) => n + 1);
         if (!options.approval && message) setDraft((current) => (current.trim() ? current : message));
         return;
@@ -1837,6 +1818,10 @@ export function StudioScreen() {
   const ensureSession = useCallback(
     async (name: string): Promise<string | null> => {
       if (sessionId) return sessionId;
+      if (!route || route.missing) {
+        say(t('The configured model is unavailable. Your draft and model selection are preserved.'), 'warning');
+        return null;
+      }
       try {
         // Nobody mode: the session is named so the list hides it, and it is
         // remembered so it can be deleted when the mode ends.

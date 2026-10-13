@@ -47,6 +47,7 @@ export function ModelPicker({
      against them (unloaded, disconnected, renamed) gets flagged instead of
      silently showing a label for a route that isn't there anymore. */
   const notInstalled = !!current && routes.length > 0 && !isInstalled(current, routes);
+  const missingLabel = current?.kind === 'configured-default' ? t('Unavailable') : t('not installed');
 
   return (
     <>
@@ -56,7 +57,7 @@ export function ModelPicker({
         aria-haspopup="dialog"
         aria-expanded={open}
         data-not-installed={notInstalled ? 'true' : undefined}
-        title={notInstalled ? t('not installed') : undefined}
+        title={notInstalled ? missingLabel : undefined}
         onClick={() => {
           setLoaded(true);
           setOpen(true);
@@ -65,7 +66,7 @@ export function ModelPicker({
       >
         <Cpu size={13} aria-hidden="true" />
         <span>{current ? modelLabel(current, routes) : routes.length ? t('Choose model') : t('No models')}</span>
-        {notInstalled && <span data-testid="studio-model-not-installed">{t('not installed')}</span>}
+        {notInstalled && <span data-testid="studio-model-not-installed">{missingLabel}</span>}
         <ChevronDown size={12} aria-hidden="true" />
       </button>
       {loaded && (
