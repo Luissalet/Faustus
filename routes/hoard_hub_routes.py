@@ -54,9 +54,10 @@ def setup_hoard_hub_routes() -> APIRouter:
         return await asyncio.to_thread(call, 'hub_agora_space_create', {'agent': 'faustus', 'title': body.get('title', '')})
 
     @router.get('/api/hoard/agora/open')
-    def open_coordination_board(space_id: str = 'ecosystem'):
+    def open_coordination_board(space_id: str = 'ecosystem', embedded: bool = False):
         where = hoard_hub.hub_location()
-        return RedirectResponse(where['url'].rstrip('/') + '/agora/?' + urlencode({'space_id': space_id}))
+        args = {'space_id': space_id, **({'embedded': '1'} if embedded else {})}
+        return RedirectResponse(where['url'].rstrip('/') + '/agora/?' + urlencode(args))
 
     @router.get("/api/hoard/spheres")
     async def get_spheres() -> Dict[str, Any]:
