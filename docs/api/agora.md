@@ -35,6 +35,10 @@ The embedded Hub shows that space as context. The standalone Hub has its
 own selector, native provider model and reasoning controls, quota freshness,
 and existing delivery status.
 
+The Ágora page permits an iframe from the configured Hub origin (currently
+`http://127.0.0.1:8810` on the local desktop); backend activation, data
+preservation and verification in Main remain pending before closure.
+
 ## Project coordination
 
 In **Project → The agent here**, choose the Ágora alongside the connected
