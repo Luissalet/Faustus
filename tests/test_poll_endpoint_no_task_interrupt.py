@@ -19,7 +19,8 @@ def test_tasks_runs_recent_is_passive():
     )
 
 
-def test_tasks_runs_recent_does_not_affect_other_task_paths():
+def test_tasks_runs_recent_does_not_affect_other_task_paths(monkeypatch):
+    monkeypatch.setenv("BACKGROUND_TASK_FOREGROUND_GATE", "true")
     ig = _reload_gate()
 
     # A neighboring mutating path must remain interactive.
@@ -49,7 +50,7 @@ def test_heartbeat_does_not_stop_background_tasks_when_gate_disabled(monkeypatch
 
 def test_heartbeat_stops_background_tasks_when_gate_enabled(monkeypatch):
     ig = _reload_gate()
-    monkeypatch.delenv("BACKGROUND_TASK_FOREGROUND_GATE", raising=False)
+    monkeypatch.setenv("BACKGROUND_TASK_FOREGROUND_GATE", "true")
 
     stop_calls = []
 
@@ -64,3 +65,18 @@ def test_heartbeat_stops_background_tasks_when_gate_enabled(monkeypatch):
 
     assert result is True
     assert stop_calls == ["browser heartbeat"]
+
+
+def test_default_browser_activity_keeps_autonomous_work_running(monkeypatch):
+    ig = _reload_gate()
+    monkeypatch.delenv("BACKGROUND_TASK_FOREGROUND_GATE", raising=False)
+    cancelled=[]
+    async def stop(**kwargs):cancelled.append(kwargs)
+    async def run():
+        await ig.mark_browser_activity()
+        assert await ig.maybe_stop_background_tasks_for_heartbeat(stop) is False
+        assert ig.has_foreground_activity() is False
+        assert ig.should_track_interactive_request('/api/tasks','POST') is False
+        await asyncio.wait_for(ig.wait_for_interactive_quiet('autonomous task'),timeout=.2)
+    asyncio.run(run())
+    assert cancelled==[]

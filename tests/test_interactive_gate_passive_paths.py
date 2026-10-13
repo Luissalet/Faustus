@@ -8,7 +8,8 @@ def test_email_unread_state_is_passive_like_urgency_state():
     assert should_track_interactive_request("/api/email/unread-state") is False
 
 
-def test_real_interactive_paths_still_tracked():
+def test_real_interactive_paths_still_tracked(monkeypatch):
+    monkeypatch.setenv("BACKGROUND_TASK_FOREGROUND_GATE", "true")
     assert should_track_interactive_request("/api/chat_stream") is True
     assert should_track_interactive_request("/api/email/messages") is True
     assert should_track_interactive_request("/api/tasks", method="POST") is True
