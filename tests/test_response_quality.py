@@ -31,6 +31,7 @@ def test_both_tool_protocols_receive_answer_quality_rules():
         assert 'never invent' in env[key].lower()
         assert 'details fence' in env[key]
         assert 'exact output requests' in env[key]
+        assert 'unsourced benchmarks' in env[key]
         assert 'Otherwise reply with one short confirmation' not in env[key]
 
 
@@ -54,3 +55,23 @@ async def test_direct_fetch_exposes_observed_source(monkeypatch):
     assert result['exit_code'] == 0, result
     assert result['web_sources'] == [{'url': 'https://example.com/read', 'title': 'Read page'}]
     assert 'Observed values 12 and 18.' in result['output']
+
+
+@pytest.mark.parametrize('text', [
+    'Analiza estos datos de prueba: día1=120000, día4=45000 y día14=16000. ¿Ha fracasado?',
+    'Compare this test data: first=12, last=18. Is that enough to conclude success?',
+    'Analyze this sample data and explain its limitations.',
+])
+def test_sample_data_analysis_does_not_require_workspace_mutation(text):
+    from src.agent_loop import _looks_like_workspace_coding_request
+    assert not _looks_like_workspace_coding_request(text)
+
+
+@pytest.mark.parametrize('text', [
+    'Prueba la app con datos de prueba.',
+    'Crea datos de prueba en fixtures.py.',
+    'Fix the failing test using this test data.',
+])
+def test_real_test_work_with_sample_data_still_requires_tools(text):
+    from src.agent_loop import _looks_like_workspace_coding_request
+    assert _looks_like_workspace_coding_request(text)

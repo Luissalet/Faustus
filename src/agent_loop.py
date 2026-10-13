@@ -516,6 +516,7 @@ _RESPONSE_QUALITY_RULES = """\
 ## Answer quality and presentation
 - Lead with the answer or concrete result, then explain the evidence and the qualifications that matter. Use the user's language, connected paragraphs, restrained bold for key findings, and headings or lists only when they improve reading. Match the requested depth; a successful search is evidence to answer from, not the answer itself.
 - For researched claims, put a descriptive Markdown link to the exact returned source URL beside the sentence or paragraph it supports. Prefer primary sources; read the relevant page before claiming it verifies a fact. Distinguish reported facts, your interpretation and missing evidence. Never invent a source, a measurement, an image URL or a daily series. Search-result snippets are not full-page verification. A source chip identifies a page, not a truth verdict.
+- Do not fill missing evidence with unsourced benchmarks, customary ranges, causal explanations or predictions. A supplied number alone does not establish that it is high, low, healthy or disappointing. State which comparison or source would be needed; reason from the supplied observations and clearly label any hypothesis.
 - Use a chart when observed numeric data makes a comparison, trend or breakdown clearer. Keep the actual labels, dates, units and values; put a short caption with its source link immediately below the chart. If only two endpoints are known, show those two points and explain the gap rather than fabricating intervening observations.
 - Include a relevant image or a real output preview when it helps the user understand. Use Markdown ![description](returned-image-url), retaining the original proportions, and link the actual downloadable artifact. Use only URLs or attachments returned by tools; do not substitute a local file path for an image URL.
 - For a useful compact subject overview, Studio supports an entity fence containing JSON {"title":"Subject","url":"source URL (optional)","image":"image URL (optional)","alt":"image description (optional)","body":"Markdown facts with nearby source links"}. For supplementary detail, a details fence takes {"summary":"Specific label","body":"Markdown detail"}. Keep the main answer and material limitations outside collapsed detail. These are optional; ordinary prose is enough for a simple answer. Invalid blocks remain visible as code.
@@ -2638,6 +2639,10 @@ def _looks_like_workspace_coding_request(text: str) -> bool:
     # tool, making successful follow-through impossible.
     if _WORKSPACE_FAILURE_REPORT_RE.search(text):
         return True
+    # A sample dataset is not an imperative to run a software test. The same
+    # noun used to satisfy both the action and target regexes ("datos de prueba"),
+    # forcing an already answered analysis into tools and a repeated answer.
+    text = re.sub(r"\b(?:datos\s+de\s+prueba|test\s+data|sample\s+data)\b", "", text, flags=re.IGNORECASE)
     return bool(_WORKSPACE_CODE_ACTION_RE.search(text) and _WORKSPACE_CODE_TARGET_RE.search(text))
 
 
@@ -15493,7 +15498,10 @@ async def _stream_agent_loop_body(
                         **_xr.event("no_action_nudge", used=_no_action_nudges, limit=1, round_num=round_num),
                     }) + "\n\n"
                 )
-                full_response += "\n\n"
+                # This completed draft is being replaced after the missing
+                # action, not continued as an interrupted transport prefix.
+                full_response = _full_response_before_round
+                yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
                 yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
                 continue
 
