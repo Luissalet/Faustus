@@ -59,6 +59,89 @@ def _error(message: str) -> str:
 _DONE = "data: [DONE]\n\n"
 
 
+async def test_sparks_intervention_recovers_seven_outages_on_the_same_route(monkeypatch):
+    from src import llm_core
+    calls = []
+
+    async def provider(url, model, messages, **kwargs):
+        calls.append((url, model, messages, kwargs))
+        if len(calls) <= 7:
+            yield "event: error\n" + _sse({"status": 503, "retryable": True, "text": "unavailable"})
+        else:
+            yield _delta("Recovered council contribution")
+        yield _DONE
+
+    async def no_wait(attempt):
+        await asyncio.sleep(0)
+
+    monkeypatch.setattr(llm_core, "stream_llm", provider)
+    monkeypatch.setattr(llm_core, "is_sparks_url", lambda url: True)
+    monkeypatch.setattr(llm_core, "_wait_for_sparks_service", no_wait)
+    adapters.use_engines(llm=llm_core)
+    result = await adapters.StreamingChatInvoker(endpoint_resolver=_resolver).invoke(
+        participant=_seat(), packet={"system": "room rules"}, turn=_turn(), timeout_s=0)
+    assert result["ok"] is True
+    assert result["content"] == "Recovered council contribution"
+    assert len(calls) == 8
+    assert all(call == calls[0] for call in calls)
+
+
+async def test_sparks_intervention_does_not_replay_partial_content(monkeypatch):
+    from src import llm_core
+    calls = []
+
+    async def provider(*args, **kwargs):
+        calls.append(args)
+        yield _delta("Partial contribution")
+        yield "event: error\n" + _sse({"status": 503, "retryable": True, "partial": True, "text": "lost"})
+        yield _DONE
+
+    monkeypatch.setattr(llm_core, "stream_llm", provider)
+    monkeypatch.setattr(llm_core, "is_sparks_url", lambda url: True)
+    adapters.use_engines(llm=llm_core)
+    result = await adapters.StreamingChatInvoker(endpoint_resolver=_resolver).invoke(
+        participant=_seat(), packet={"system": "room rules"}, turn=_turn(), timeout_s=0)
+    assert result["ok"] is False
+    assert result["content"] == "Partial contribution"
+    assert len(calls) == 1
+
+
+async def test_provider_timeout_without_room_budget_is_a_typed_failure():
+    class TimeoutProvider:
+        async def stream_llm(self, *args, **kwargs):
+            raise asyncio.TimeoutError("transport read timed out")
+            yield ""  # async generator contract
+
+    adapters.use_engines(llm=TimeoutProvider())
+    result = await adapters.StreamingChatInvoker(endpoint_resolver=_resolver).invoke(
+        participant=_seat(), packet={"system": "room rules"}, turn=_turn(), timeout_s=0)
+    assert result["ok"] is False
+    assert result["reason"] == "timeout"
+
+
+async def test_explicit_intervention_budget_cancels_sparks_wait(monkeypatch):
+    from src import llm_core
+    waits = []
+
+    async def provider(*args, **kwargs):
+        yield "event: error\n" + _sse({"status": 503, "retryable": True, "text": "unavailable"})
+        yield _DONE
+
+    async def wait(attempt):
+        waits.append(attempt)
+        await asyncio.sleep(1)
+
+    monkeypatch.setattr(llm_core, "stream_llm", provider)
+    monkeypatch.setattr(llm_core, "is_sparks_url", lambda url: True)
+    monkeypatch.setattr(llm_core, "_wait_for_sparks_service", wait)
+    adapters.use_engines(llm=llm_core)
+    result = await adapters.StreamingChatInvoker(endpoint_resolver=_resolver).invoke(
+        participant=_seat(), packet={"system": "room rules"}, turn=_turn(), timeout_s=.03)
+    assert result["ok"] is False
+    assert result["reason"] == "timeout"
+    assert waits == [1]
+
+
 class _FakeLLM:
     """`llm_core` as far as this module is concerned: one `stream_llm`."""
 
