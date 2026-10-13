@@ -8,7 +8,7 @@ def _gs(values):
 
 def test_usd_ceiling_replaces_the_preset_spend_ceiling():
     base = ab.resolve_budget("bounded_autonomous", get_setting=_gs({}))
-    assert base.max_remote_spend == 60_000.0  # 20k units x 3
+    assert base.max_remote_spend == 0  # no implicit spend ceiling
     b = ab.resolve_budget("bounded_autonomous", get_setting=_gs({"agent_turn_max_cost_usd": 2.0}))
     assert b.max_remote_spend == round(2.0 / ab.USD_PER_UNIT, 1)
 

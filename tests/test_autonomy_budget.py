@@ -117,14 +117,31 @@ def test_resolve_budget_scales_existing_settings():
     assert bounded.max_tokens > supervised.max_tokens > read_only.max_tokens
 
 
-def test_resolve_budget_ignores_the_unlimited_sentinel_as_a_base():
-    """agent_max_tool_calls: 0 means unlimited to the rest of the codebase; a
-    preset must not become unlimited too, or 'read_only' would offer no
-    protection at all on a machine that left the setting at 0 (its default)."""
+@pytest.mark.parametrize("preset", ab.PRESETS)
+def test_resolve_budget_preserves_unlimited_settings_in_every_preset(preset):
+    """Preset scaling must not silently introduce a ceiling the user disabled."""
     get_setting = lambda key, default=None: 0
-    budget = ab.resolve_budget("supervised", get_setting=get_setting)
-    assert budget.max_tool_calls and budget.max_tool_calls > 0
-    assert budget.max_tokens and budget.max_tokens > 0
+    budget = ab.resolve_budget(preset, get_setting=get_setting)
+    assert all(value == 0 for value in budget.as_dict().values())
+    ledger = ab.Ledger(tool_calls=500, tokens=1_000_000, active_seconds=4000,
+                       subagents=50, remote_spend=70_446, memory_mb=4096)
+    assert ledger.check(budget) is None
+
+
+def test_default_optional_autonomy_dimensions_are_unlimited():
+    from src.settings import DEFAULT_SETTINGS
+    optional = ('agent_autonomy_max_active_seconds', 'agent_autonomy_max_subagents',
+                'agent_autonomy_max_remote_spend', 'agent_autonomy_max_memory_mb')
+    assert all(DEFAULT_SETTINGS[key] == 0 for key in optional)
+    budget = ab.resolve_budget('supervised', get_setting=lambda key, default=None: DEFAULT_SETTINGS.get(key, default))
+    assert budget.max_remote_spend == budget.max_active_seconds == budget.max_subagents == budget.max_memory_mb == 0
+
+
+def test_explicit_remote_spend_limit_still_stops_at_the_configured_amount():
+    budget = ab.resolve_budget('supervised', get_setting=lambda key, default=None: 20_000 if key == 'agent_autonomy_max_remote_spend' else 0)
+    exhausted = ab.Ledger(remote_spend=70_446).check(budget)
+    assert exhausted.kind == 'remote_spend'
+    assert exhausted.limit == 20_000
 
 
 def test_resolve_budget_overrides_replace_individual_fields():
