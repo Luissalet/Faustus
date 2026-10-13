@@ -78,7 +78,7 @@ def slugify(text: str, fallback: str = "skill") -> str:
 
 # We accept a small subset of YAML: scalar `key: value`, inline lists `[a, b]`,
 # block lists with `-`, one level of nested `key: value` map (the open skill
-# format's `metadata:`), and `|` / `>` block scalars (a long `description:`
+# format's `metadata:`), nested JSON flow mappings, and `|` / `>` block scalars (a long `description:`
 # in skills written for other agents). That covers our schema and the open
 # SKILL.md format without a new dependency. Keys may contain hyphens
 # (`allowed-tools`).
@@ -108,12 +108,22 @@ def _block_scalar(style: str, lines: List[str]) -> str:
             out.append(line)
     return "".join(out).strip()
 _FM_BLOCK_LIST_RE = re.compile(r"^\s*-\s*(.*)$")
+_JSON_TRAILING_COMMA_RE = re.compile(r'"(?:\\.|[^"\\])*"|,(\s*[}\]])')
 
 
 def _parse_scalar(raw: str) -> Any:
     raw = raw.strip()
     if raw == "":
         return ""
+    if raw.startswith("{") and raw.endswith("}"):
+        # External skills use YAML's JSON flow mappings, often with trailing
+        # commas. Leave quoted strings untouched when accepting those commas.
+        normalized = _JSON_TRAILING_COMMA_RE.sub(
+            lambda match: match.group(1) if match.group(1) is not None else match.group(0), raw)
+        try:
+            return json.loads(normalized)
+        except ValueError:
+            pass
     if raw.startswith("[") and raw.endswith("]"):
         inner = raw[1:-1].strip()
         if not inner:
@@ -150,21 +160,26 @@ def _parse_scalar(raw: str) -> Any:
 
 
 def _split_top_level(s: str, sep: str) -> List[str]:
-    """Split `s` on `sep` ignoring separators inside [] or quotes."""
+    """Split `s` on `sep` ignoring separators inside [] / {} or quotes."""
     out, buf, depth, quote = [], [], 0, None
+    escaped = False
     for ch in s:
         if quote:
             buf.append(ch)
-            if ch == quote:
+            if escaped:
+                escaped = False
+            elif ch == "\\" and quote == '"':
+                escaped = True
+            elif ch == quote:
                 quote = None
             continue
         if ch in ("'", '"'):
             quote = ch
             buf.append(ch)
             continue
-        if ch == "[":
+        if ch in "[{":
             depth += 1
-        elif ch == "]":
+        elif ch in "]}":
             depth = max(0, depth - 1)
         if ch == sep and depth == 0:
             out.append("".join(buf).strip())
@@ -197,6 +212,18 @@ def parse_frontmatter(text: str) -> tuple[Dict[str, Any], str]:
         m = _FM_KEY_RE.match(line)
         if m:
             key, val = m.group(1), m.group(2)
+            # A flow mapping may span indented lines, including a separate
+            # opening brace after `metadata:`. Stop before the next root key.
+            flow_start = val.lstrip().startswith("{") or (
+                not val.strip() and i < len(lines) and lines[i].lstrip().startswith("{"))
+            if flow_start:
+                block = [val]
+                while i < len(lines) and (not lines[i].strip() or lines[i][:1] in (" ", "\t")):
+                    block.append(lines[i])
+                    i += 1
+                fm[key] = _parse_scalar("\n".join(block))
+                pending_key = None
+                continue
             if val.strip() in _FM_BLOCK_SCALARS:
                 block: List[str] = []
                 while i < len(lines) and (not lines[i].strip() or lines[i][:1] in (" ", "\t")):
@@ -256,6 +283,11 @@ def _emit_scalar(v: Any) -> str:
         return "true" if v else "false"
     if isinstance(v, (int, float)):
         return str(v)
+    if isinstance(v, dict):
+        out = json.dumps(v, ensure_ascii=False)
+        for ch, esc in _FM_POST_DUMPS_ESCAPES:
+            out = out.replace(ch, esc)
+        return out
     if isinstance(v, list):
         return "[" + ", ".join(_emit_scalar(x) for x in v) + "]"
     s = str(v)

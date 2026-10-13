@@ -1450,15 +1450,14 @@ masterplan dice *hasta la raíz del repositorio* y ahora lo cumple: para en el d
 una UI pueda decir «paré en la raíz del repo» en vez de enseñar una lista vacía.
 
 ### 32.6 El formato que existe, no el que me gustaría
-El parser de frontmatter de `skill_format` lee un escalar o una lista por línea: **no admite mapas
-anidados**, así que un bloque `permissions:` no se puede escribir en un SKILL.md. En vez de
+El parser de frontmatter de `skill_format` lee escalares, listas, mapas YAML de un nivel y mapas
+JSON anidados, incluidos bloques multilínea. No es un parser de YAML general. El contrato de
+permisos del puente sigue usando claves planas. En vez de
 inventar un segundo formato, el puente lee claves planas —`permissions_backends`,
 `permissions_network`, `permissions_max_seconds`— y para inputs/outputs una lista `name=type`
 (`outputs: [report=artifact:document]`), porque `name:type` pelearía con los dos puntos de
-`artifact:document`. Y como `Skill` solo conserva los campos que conoce, `manifest_from_markdown`
-lee el fichero directamente: si no, una declaración de permisos se perdería entre `from_markdown` y
-`to_frontmatter` y la skill volvería sin permisos, que se parece demasiado a no haber pedido
-ninguno.
+`artifact:document`. `Skill` conserva los campos adicionales en `extra`; `manifest_from_markdown`
+lee el fichero directamente para resolver su propio contrato.
 
 ### 32.7 La vista de memoria: lo que un run vio y lo que no
 `src/memory_view.py` sobre `contracts.MemoryView`. La lista de **descartados con motivo** es la
