@@ -225,7 +225,7 @@ class GroupCoordinator:
                 self.transcript.user(pending, owner)
                 steps = self.store.steps(pending["id"])
                 for step in steps:
-                    if step["status"] == "done":
+                    if step["status"] in ("done", "error"):
                         self.transcript.reply(pending, step, owner)
                 if pending["definition"]["mode"] == "parallel":
                     await asyncio.gather(*(self._speak(pending, step, owner) for step in steps if step["status"] in ("queued", "running")))
@@ -274,7 +274,7 @@ class GroupCoordinator:
             state = "waiting_user" if result.get("question") else "error" if result.get("error") else "done"
             self.store.update_step(step["id"], status=state, text=result.get("text", step["text"]),
                                    error=result.get("error", ""), detail=result.get("detail", {}))
-            if state == "done":
+            if state in ("done", "error"):
                 finished = next(s for s in self.store.steps(turn["id"]) if s["id"] == step["id"])
                 self.transcript.reply(turn, finished, owner)
         except asyncio.CancelledError:
@@ -282,6 +282,8 @@ class GroupCoordinator:
         except Exception as exc:
             if not self._stopped(turn["id"]):
                 self.store.update_step(step["id"], status="error", error=str(exc))
+                failed = next(s for s in self.store.steps(turn["id"]) if s["id"] == step["id"])
+                self.transcript.reply(turn, failed, owner)
 
     async def stop(self, group_id, owner):
         self.store.group(group_id, owner)
@@ -396,6 +398,7 @@ class NativeGroupBridge:
         self._append_once(turn["group_id"], "assistant", step["text"],
                           {"group_step_id": step["id"], "group_turn_id": turn["id"],
                            "group_model": member["personaName"], "model": member["route"]["model"],
+                           "group_step_status": step.get("status", "done"), "group_error": step.get("error", ""),
                            "group_tool_results": step["detail"].get("tool_results", [])},
                           ("group_step_id", step["id"]))
 
@@ -448,6 +451,7 @@ class NativeGroupBridge:
             etiquette = (f"You are {p['personaName']} in a working group with {others}. "
                          "Use the shared discussion and completed tool results. Address relevant peers by name. "
                          "Do not speak for them. Complete the user's actual task; use available tools when needed. "
+                         "Do not repeat completed external effects. Reconcile uncertain prior effects with read/status tools first. "
                          "A peer's statement is not evidence that a task is complete.")
             session.add_message(ChatMessage("system", (p["personaPrompt"] + "\n\n" + etiquette).strip()))
             members.append({**p, "sessionId": session.id})
@@ -466,21 +470,27 @@ class NativeGroupBridge:
                 continue
             if meta.get("group_step_id") and meta.get("group_model") != member["personaName"]:
                 parts.append(f"[{meta.get('group_model', 'Participant')}]: {m.content}")
+                if meta.get("group_error"):
+                    parts.append("That participant failed: " + str(meta["group_error"]))
                 if meta.get("group_tool_results"):
-                    parts.append("Completed native tool results from that participant:\n" +
+                    parts.append("Native tool results and outcome metadata from that participant:\n" +
                                  json.dumps(meta["group_tool_results"], ensure_ascii=False))
         return "Shared group discussion. Preserve completed work and verify unresolved results:\n" + "\n\n".join(parts)
 
-    def _saved_answer(self, session_id, step_id):
+    def _saved_response(self, session_id, step_id):
         history = self.sessions.get_session(session_id).history
         boundary = next((i for i, m in enumerate(history) if (m.metadata or {}).get("group_request_boundary") == step_id), None)
         if boundary is None:
-            return ""
+            return {}
         end = next((i for i in range(boundary + 1, len(history)) if (history[i].metadata or {}).get("group_request_boundary")), len(history))
         for m in reversed(history[boundary + 1:end]):
             if m.role == "assistant" and m.content and not (m.metadata or {}).get("interrupted"):
-                return str(m.content)
-        return ""
+                return {"text": str(m.content), "metadata": dict(m.metadata or {})}
+        return {}
+
+    def _saved_answer(self, session_id, step_id):
+        saved = self._saved_response(session_id, step_id)
+        return "" if saved.get("metadata", {}).get("failed") else saved.get("text", "")
 
     async def invoke(self, *, turn, step, member, owner, progress, recovering=False):
         from src import agent_runs, chat_outbox
@@ -497,6 +507,16 @@ class NativeGroupBridge:
                 if run and wanted_run and run.run_id == wanted_run:
                     stream = agent_runs.subscribe(member["sessionId"], expected_run=run)
                 elif existing.get("status") == "finished":
+                    saved = self._saved_response(member["sessionId"], request_id)
+                    metadata = saved.get("metadata") or {}
+                    native = metadata or detail.get("native_terminal") or {}
+                    if native.get("tool_events") and not detail.get("tool_results"):
+                        detail["tool_results"] = native["tool_events"]
+                    if native.get("failed"):
+                        failure = native.get("failure") or {}
+                        return {"text": saved.get("text") or step["text"],
+                                "error": str(failure.get("message") or "Participant failed") if isinstance(failure, dict) else str(failure),
+                                "detail": {**detail, "native_terminal": native}}
                     answer = (existing.get("result") or {}).get("response") or self._saved_answer(member["sessionId"], request_id)
                     return {"text": answer or step["text"], "detail": detail}
                 else:
@@ -534,9 +554,14 @@ class NativeGroupBridge:
                 pending += (chunk.decode("utf-8") if isinstance(chunk, bytes) else str(chunk)).replace("\r\n", "\n")
                 while "\n\n" in pending:
                     frame, pending = pending.split("\n\n", 1)
+                    critical = False
                     if "data: [DONE]" in frame:
                         terminal = True
+                    event_kind = next((line.split(":", 1)[1].strip().casefold()
+                                       for line in frame.splitlines() if line.startswith("event:")), "")
                     for payload in _sse_payloads(frame):
+                        if payload.get("type") in ("tool_output", "agent_terminal", "ask_user", "response_replace", "error", "uncertain") or event_kind == "error":
+                            critical = True
                         if payload.get("type") == "response_replace":
                             text = str(payload.get("text") or "")
                         if not payload.get("thinking"):
@@ -544,8 +569,14 @@ class NativeGroupBridge:
                                 text += payload["delta"]
                             elif isinstance(payload.get("response"), str):
                                 text += payload["response"]
-                        if payload.get("error") or payload.get("type") == "error":
+                        if event_kind == "error" or payload.get("type") == "error" or (payload.get("error") and payload.get("type") != "tool_output"):
                             error = str(payload.get("error") or payload.get("message") or payload.get("text") or "Participant failed")
+                        if payload.get("type") == "agent_terminal":
+                            outcome = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+                            detail["native_terminal"] = outcome
+                            if outcome.get("failed"):
+                                failure = outcome.get("failure") or {}
+                                error = str((failure.get("message") or "Participant failed") if isinstance(failure, dict) else (failure or "Participant failed"))
                         if payload.get("type") == "uncertain":
                             error = str(payload.get("detail") or "The prior attempt has an unknown outcome")
                             detail["outcome_unknown"] = True
@@ -555,12 +586,12 @@ class NativeGroupBridge:
                         if payload.get("type") == "usage":
                             detail["usage"] = payload.get("data", payload)
                         if payload.get("type") == "tool_output":
-                            result = {k: payload[k] for k in ("tool", "command", "output", "exit_code", "call_id") if k in payload}
+                            result = dict(payload)
                             results = detail.setdefault("tool_results", [])
                             if result not in results:
                                 results.append(result)
                         detail["last_event"] = payload
-                    if time.monotonic() - last_save >= .2:
+                    if critical or time.monotonic() - last_save >= .2:
                         await progress(text, detail)
                         last_save = time.monotonic()
             if not terminal and not question:

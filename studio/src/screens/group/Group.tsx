@@ -241,7 +241,7 @@ export function GroupScreen() {
         const rows: Entry[] = history.history.filter((m) => m.role !== 'system').map((m) => ({
           id: String(m.metadata.group_step_id ?? m.metadata.group_turn_id ?? m.metadata.group_answer_id ?? `history-${m.index}`),
           role: m.role === 'user' ? 'user' : 'participant', speaker: m.role === 'user' ? t('You') : String(m.metadata.group_model ?? m.metadata.model ?? ''),
-          model: String(m.metadata.model ?? ''), text: m.content, streaming: false, error: '',
+          model: String(m.metadata.model ?? ''), text: m.content, streaming: false, error: String(m.metadata.group_error ?? ''),
           tools: Array.isArray(m.metadata.group_tool_results) ? m.metadata.group_tool_results as GroupToolResult[] : [],
         }));
         for (const turn of current.turns) {
@@ -367,6 +367,7 @@ export function GroupScreen() {
                   <summary>{t('Tool results')} · {e.tools?.length}</summary>
                   {e.tools?.map((tool, i) => <div key={tool.call_id ?? i}>
                     <p className="fs-muted">{tool.tool} · {tool.command} {tool.exit_code === undefined ? '' : `(${tool.exit_code})`}</p>
+                    {tool.result_status === 'outcome_unknown' && <p className="fs-notice">{t('Outcome not confirmed')} {tool.uncertainty ? JSON.stringify(tool.uncertainty) : ''}</p>}
                     <pre className="fs-grp__tool-output"><code>{String(tool.output ?? '')}</code></pre>
                   </div>)}
                 </details>}
