@@ -1417,3 +1417,7 @@ preguntas reales variadas y comparar fuentes/conclusiones: las expresiones
 cualitativas aún pueden ir más allá de la muestra. No declarar igualdad de
 calidad general por disponer de los mismos bloques visuales. Extender los nuevos
 bloques a los lectores embed/legado antes de declarar paridad entre lectores.
+
+## Ágora común — entrega494–497
+
+Implementados y revisados los espacios múltiples, autoridad única en el Hub, adopción nativa de persistencia, importación histórica, recursos globales, navegación Ágora, borradores/ACK, salas recordadas, ámbito de proyecto y último cierre durable. La activación se comprueba en el cierre494; no se dejan estos componentes como fases futuras. Ampliar la evaluación de calidad con encargos reales y modelos globales sigue siendo investigación, sin convertir las pruebas deterministas en una comparación universal con otros proyectos.

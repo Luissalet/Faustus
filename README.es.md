@@ -1,7 +1,7 @@
 <p align="center">
   <img src="assets/branding/faustus-wordmark.png" alt="Faustus" width="300">
 
-Los grupos conservan participantes, mensajes en cola y progreso en el servidor. Los nuevos usan el modelo global configurado de las Sparks y herramientas nativas de agente; se mantienen los modelos elegidos, las personas, el modo chat y los turnos paralelos u ordenados. Salir del navegador o de MCP no cancela el trabajo. Los siguientes participantes reciben resultados reales de herramientas y aclaraciones del usuario. Stop es explícito y las preguntas reanudan al mismo participante. Los grupos anteriores conservan sus sesiones. Ver [API y límites comprobados](docs/api/groups.md).
+Ágora reúne conversaciones, deliberación y coordinación de proyectos en una sola entrada. Cada ágora conserva sus salas, participantes, tareas y decisiones; el Hub comparte la autoridad de los datos y Faustus ejecuta los modelos y herramientas. Se mantienen los modelos elegidos, las personas, el chat y los turnos paralelos u ordenados. Salir del navegador o de MCP no cancela el trabajo. [Uso de Ágora](docs/api/agora.md) · [API de grupos compatible](docs/api/groups.md).
 </p>
 
 <p align="center">Una estación de trabajo de IA autoalojada para modelos locales, proveedores en la nube y equipos de agentes.</p>
@@ -56,6 +56,8 @@ con HTTP, MCP y navegador y la coordinación de grupos que queda por completar.
 GLM en tres Sparks es el modelo por defecto configurable. Thinking, esfuerzo según motor y plazo inicial están activos. Studio incluye esquemas JSON guardables y extracción documental con evidencias, inferencias, descartes, conflictos y límites de validación. Los canvas tienen una comprobación final persistida, y el modo de solo lectura resuelve los alias antes de permitir lecturas. Estos cambios están revisados y activados. La evaluación aislada Q4 anterior es histórica: las pruebas con modelo usan las Sparks y dejan las cuatro GPU del PC para Luis. Véanse [verificación y límites medidos](FAUSTUS.md) y [objetivos restantes](OBJETIVOS.md).
 
 ## Qué es Faustus
+
+El ágora original se llama **Faustus y Hoards** y conserva su identidad `ecosystem`, historial y vínculo con el proyecto común. Otros proyectos pueden tener ágoras independientes, con Conversación, Deliberación y Tareas y decisiones. Los recursos físicos y cuotas siguen compartidos. Las rutas y herramientas Council/Group anteriores continúan funcionando; los borradores se conservan hasta confirmar el envío y el último cierre de deliberación permanece tras recargar. La consola completa está en http://127.0.0.1:8810/agora/. [Arquitectura y verificación](docs/api/agora.md).
 
 Faustus reúne chat, agentes de programación, investigación, escritura, flujos de imagen y vídeo, voz y conocimiento de proyectos en un solo espacio. Es un fork personal de [Odysseus](https://github.com/odysseus-dev/odysseus), con backend Python/FastAPI e interfaz React/TypeScript.
 
