@@ -46,3 +46,25 @@ def test_successful_non_file_tool_work_does_not_need_write_file(task):
     assert dr.receipt_for(run).verdict == 'reported'
     run.tool_calls = 0
     assert dr.receipt_for(run).verdict == dr.VERDICT_EMPTY
+
+
+@pytest.mark.parametrize('task', ['Implement pagination in the backend.', 'Fix the validation bug in the API.',
+                                 'Implement authentication correctly.'])
+def test_code_changes_without_named_path_still_need_mutations(task):
+    run = SimpleNamespace(name='editor', instruction=task, files=['src/api.py'], mutations=[],
+                          tool_calls=1, failed_calls=0, text='I recommend using this fix.', stop_reason='complete', error=None)
+    assert dr.looks_like_write_task(task, run.files)
+    assert dr.receipt_for(run).verdict == dr.VERDICT_EMPTY
+
+
+def test_calendar_input_csv_is_not_an_output_file():
+    task = 'Create a calendar event using dates.csv.'
+    assert not dr.looks_like_write_task(task)
+    assert dr.looks_like_write_task('Create events.ics for the calendar.')
+
+
+def test_explicit_read_only_task_can_report_review_findings_without_edits():
+    run = SimpleNamespace(name='reviewer', instruction='Review how to fix the API bug.', files=['src/api.py'],
+                          read_only=True, mutations=[], tool_calls=1, failed_calls=0,
+                          text='The validation should reject null.', stop_reason='complete', error=None)
+    assert dr.receipt_for(run).verdict == 'reported'
