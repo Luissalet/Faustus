@@ -1004,6 +1004,8 @@ def parse_delegation_args(content: str, *, workspace: Optional[str] = None) -> D
         row: Dict[str, Any] = {"name": name[:80], "instruction": instruction[:8000],
                                "model": model[:120], "files": files}
         if isinstance(t, dict):
+            if str(t.get("endpoint_id") or "").strip():
+                row["endpoint_id"] = str(t["endpoint_id"]).strip()[:120]
             # Selection vocabulary belongs to TaskSpec, not to the resolver's
             if isinstance(t.get('team_member'), str):
                 row['team_member'] = t['team_member'][:80]
@@ -1056,7 +1058,7 @@ def parse_delegation_args(content: str, *, workspace: Optional[str] = None) -> D
                     if _mdl:
                         row["model"] = _mdl[:120]
                     if _ep:
-                        row["endpoint_id"] = _ep[:120]
+                        row.setdefault("endpoint_id", _ep[:120])
             for _key, _lo in (("max_rounds", 1), ("timeout_s", 0)):
                 try:
                     _v = float(t.get(_key)) if t.get(_key) not in (None, "") else None
@@ -1242,6 +1244,7 @@ class SubagentRun:
                                            if isinstance(task.get("category"), list)]
         self.system_prompt = str(task.get("system_prompt") or "")
         self.endpoint_id = str(task.get("endpoint_id") or "")
+        self.route_note = ""
         self.team_bound = bool(task.get('team_bound'))
         self.max_rounds_override = task.get("max_rounds") or None
         self.timeout_s_override = task.get("timeout_s")
@@ -1429,6 +1432,7 @@ class SubagentRun:
             "duration_s": round((self.finished or time.time()) - self.started, 1),
             "final_text": self.text.strip()[:2500],
             "role": self.role, "files": self.files, "model": self.model_override or None,
+            **({"route_note": self.route_note} if self.route_note else {}),
             "instruction": self.instruction[:2000],
             "input_tokens": self.input_tokens, "output_tokens": self.output_tokens,
             **({"round_activity": list(self.round_activity)} if self.round_activity else {}),
@@ -1982,6 +1986,8 @@ def _build_report_text(runs: List[SubagentRun], workspace: Optional[str], locks:
         lines.append(f"## {tag} {r.name} — {status} in {rep['duration_s']}s, {r.rounds} rounds, {r.tool_calls} tool calls ({r.failed_calls} failed){tokens}, child chat {r.session_id}")
         if r.error:
             lines.append(f"   error: {r.error}")
+        if r.route_note:
+            lines.append(f"   route: {r.route_note}")
         if r.stop_reason == "stalled":
             lines.append("   STALLED: the supervisor stopped this worker because it made no progress; its task is NOT done.")
         elif r.stop_reason == "stopped":
@@ -2321,12 +2327,19 @@ def _route_for(run: "SubagentRun", default_url: str, owner: Optional[str], defau
         resolved = None
     if resolved and resolved[0]:
         # Authentication belongs to the destination, never the coordinator.
+        if not run.model_override:
+            selected_model = str(resolved[1] or "")
+            refusal = model_refusal(selected_model)
+            if refusal:
+                raise ValueError(refusal)
+            run.model_override = selected_model
         return str(resolved[0]), resolved[2]
     if run.team_bound:
         raise ValueError('The selected team model is unavailable; no fallback was used.')
     note = (f"endpoint `{run.endpoint_id}` from the agent definition did not resolve; this worker ran "
             f"on the coordinator's endpoint instead")
     logger.info("delegate_agents: %s", note)
+    run.route_note = note
     if run.agent_def is not None:
         run.agent_def = dict(run.agent_def, caveats=list(run.agent_def.get("caveats") or []) + [note])
     return default_url, default_headers

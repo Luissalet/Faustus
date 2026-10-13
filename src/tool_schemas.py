@@ -152,6 +152,9 @@ FUNCTION_TOOL_SCHEMAS = [
                             "type": "object",
                             "properties": {
                                 "name": {"type": "string", "description": "Short label shown in the UI"},
+                                "model": {"type": "string", "description": "Optional configured model for this worker. Omit to inherit the coordinator's model."},
+                                "endpoint_id": {"type": "string", "description": "Optional configured endpoint for this worker. Omit to inherit the coordinator's route; a configured tier can also choose an endpoint."},
+                                "timeout_s": {"type": "number", "minimum": 0, "description": "Optional worker deadline in seconds after admission. Omitted or 0 = no deadline."},
                                 "team_member": {"type": "string", "description": "Configured chat team member ID. Required when the user enabled a chat team; routes and restrictions come from that member."},
                                 "instruction": {"type": "string", "description": "Complete instruction for the worker"},
                                 "tier": {"type": "string", "enum": ["local", "fast", "mid", "frontier"], "description": "Model tier instead of a model name; the owner maps each tier to a model. Use 'fast' for wide read-only reviews, 'frontier' for the hardest step or final verification."},
@@ -167,6 +170,7 @@ FUNCTION_TOOL_SCHEMAS = [
                     },
                     "context": {"type": "string", "description": "Optional shared context every worker should know (conventions, constraints)"},
                     "parallel": {"type": "boolean", "description": "Run workers concurrently (default true)"},
+                    "timeout_s": {"type": "number", "minimum": 0, "description": "Optional default worker deadline in seconds. Omitted or 0 = no deadline; a task can override it."},
                     "max_rounds": {"type": "integer", "description": "Tool rounds allowed per worker (default 14)"}
                 },
                 "required": ["tasks"]

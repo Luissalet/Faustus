@@ -23,6 +23,40 @@ def test_zero_and_positive_worker_deadlines_are_preserved(monkeypatch):
     assert [task["timeout_s"] for task in parsed["tasks"]] == [0, 9000]
 
 
+def test_native_schema_offers_actual_model_route_and_deadline_controls():
+    from src.tool_schemas import FUNCTION_TOOL_SCHEMAS
+    schema = next(s['function']['parameters'] for s in FUNCTION_TOOL_SCHEMAS
+                  if s['function']['name'] == 'delegate_agents')
+    props = schema['properties']['tasks']['items']['properties']
+    assert {'model', 'endpoint_id', 'timeout_s'} <= props.keys()
+    assert props['timeout_s']['minimum'] == 0
+    assert schema['properties']['timeout_s']['minimum'] == 0
+
+
+def test_endpoint_task_selects_its_configured_model_and_auth(monkeypatch):
+    import src.endpoint_resolver as er
+    monkeypatch.setattr(st, '_setting', lambda k, d=None: d)
+    parsed = st.parse_delegation_args(json.dumps({'tasks': [{
+        'instruction': 'inspect the value', 'endpoint_id': 'spark-alternative',
+    }]}))
+    run = st.SubagentRun(0, parsed['tasks'][0])
+    monkeypatch.setattr(er, 'resolve_endpoint_by_id', lambda *a, **k:
+                        ('http://192.168.0.237:8002/v1', 'configured-model-b', {'Authorization': 'destination-fixture'}))
+    url, headers = st._route_for(run, 'http://192.168.0.236:8002/v1', None,
+                                  {'Authorization': 'coordinator-fixture'})
+    assert url == 'http://192.168.0.237:8002/v1'
+    assert run.model_override == 'configured-model-b'
+    assert headers == {'Authorization': 'destination-fixture'}
+
+
+def test_unavailable_named_route_is_visible_in_worker_report(monkeypatch):
+    import src.endpoint_resolver as er
+    run = st.SubagentRun(0, {'name': 'reader', 'instruction': 'inspect the value', 'endpoint_id': 'gone'})
+    monkeypatch.setattr(er, 'resolve_endpoint_by_id', lambda *a, **k: None)
+    assert st._route_for(run, 'http://192.168.0.236:8002/v1', None) == ('http://192.168.0.236:8002/v1', None)
+    assert 'coordinator' in run.report()['route_note']
+
+
 @pytest.mark.parametrize("width,count", [(0, 135), (130, 130), (12, 12)])
 def test_width_is_requested_not_silently_capped(monkeypatch, width, count):
     monkeypatch.setattr(st, "_setting", lambda k, d=None: width if k == "agent_subagent_max_tasks" else d)
