@@ -3,6 +3,7 @@ import asyncio
 import json
 import os
 import sys
+from contextlib import ExitStack
 from pathlib import Path
 
 import httpx
@@ -23,7 +24,10 @@ OPERATIONS = {
     "hoard_conversation_open": ("POST", "/conversations", "Create a canonical Faustus chat associated with the Hoard context; does not duplicate domain data.", {"context": CONTEXT, "name": {"type": "string"}}),
     "hoard_conversation_get": ("GET", "/conversations/{session_id}", "Read the same chat, history and working references visible in Faustus and the Hoard.", {"session_id": {"type": "string"}}),
     "hoard_conversation_import": ("POST", "/imports", "Import a legacy Hoard conversation idempotently, preserving its source IDs and metadata without executing historical instructions.", {"context": CONTEXT, "source_thread_id": {"type": "string"}, "name": {"type": "string"}, "messages": {"type": "array", "items": {"type": "object"}}}),
-    "hoard_turn_start": ("POST", "/api/chat_stream", "Start the normal Faustus agent turn with Hoard context; closing the observer leaves the run executing on the server.", {"session_id": {"type": "string"}, "message": {"type": "string"}, "context": CONTEXT, "client_message_id": {"type": "string"}}),
+    "hoard_attachment_upload": ("POST", "/api/upload", "Upload local files through Faustus, returning attachment IDs for the canonical draft and next turn.", {"paths": {"type": "array", "items": {"type": "string"}}, "session_id": {"type": "string"}}),
+    "hoard_draft_get": ("GET", "/api/sessions/{session_id}/draft", "Read the canonical unsent message and its attachment IDs shared by Studio and Hoard panels.", {"session_id": {"type": "string"}}),
+    "hoard_draft_save": ("PATCH", "/api/sessions/{session_id}/draft", "Update the canonical draft; omitted attachment_ids preserves existing files, and an empty list explicitly detaches them.", {"session_id": {"type": "string"}, "text": {"type": "string"}, "attachment_ids": {"type": "array", "items": {"type": "string"}}}),
+    "hoard_turn_start": ("POST", "/api/chat_stream", "Start the normal Faustus agent turn with Hoard context and optional uploaded attachment IDs; closing the observer leaves the run executing on the server.", {"session_id": {"type": "string"}, "message": {"type": "string"}, "context": CONTEXT, "client_message_id": {"type": "string"}, "attachments": {"type": "array", "items": {"type": "string"}}}),
     "hoard_turn_status": ("GET", "/api/chat/stream_status/{session_id}", "Read the actual state of the shared Faustus execution without starting or repeating it.", {"session_id": {"type": "string"}}),
     "hoard_turn_stop": ("POST", "/api/chat/stop/{session_id}", "Stop the shared Faustus turn; domain changes already applied remain in their Hoard.", {"session_id": {"type": "string"}, "scope": {"type": "string", "enum": ["generation", "task", "work"]}}),
 }
@@ -54,11 +58,25 @@ async def call_tool(name, arguments):
     base = os.environ.get("FAUSTUS_URL", "http://127.0.0.1:7000").rstrip("/")
     url = base + (path if path.startswith("/api/") else "/api/hoard-copilot" + path)
     async with httpx.AsyncClient(timeout=60, trust_env=False) as client:
+        if name == "hoard_attachment_upload":
+            paths = [Path(path) for path in payload.pop('paths', [])]
+            if not paths:
+                raise ValueError('At least one local file path is required')
+            with ExitStack() as stack:
+                files = [('files', (path.name, stack.enter_context(path.open('rb')))) for path in paths]
+                response = await client.post(url, headers=headers, data=payload, files=files)
+                response.raise_for_status()
+            return [TextContent(type="text", text=json.dumps(response.json(), ensure_ascii=False))]
         if name == "hoard_turn_start":
             payload["session"] = payload.pop("session_id")
             payload["hoard_context"] = payload.pop("context", None)
             payload["mode"] = "agent"
-            async with client.stream("POST", url, headers=headers, json=payload) as response:
+            request_body = {'json': payload}
+            if payload.get('attachments'):
+                form = {key: json.dumps(value) if isinstance(value, (dict, list)) else str(value)
+                        for key, value in payload.items() if value is not None}
+                request_body = {'files': [(key, (None, value)) for key, value in form.items()]}
+            async with client.stream("POST", url, headers=headers, **request_body) as response:
                 response.raise_for_status()
                 result = {"session_id": payload["session"], "run_id": response.headers.get("X-Odysseus-Run-Id"),
                           "replayed": response.headers.get("X-Faustus-Idempotent-Replay") == "1"}

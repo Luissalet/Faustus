@@ -477,10 +477,10 @@ def setup_session_routes(
             body = json.loads(raw)
             if not isinstance(body, dict):
                 raise ValueError("Body must be a JSON object")
+            current = session_draft.load(sid, effective_user(request)) if request.method == "PATCH" else {"text": "", "attachment_ids": []}
             return session_draft.save(
                 sid, effective_user(request),
-                body.get("text", ""), body.get("attachment_ids",
-                    session_draft.load(sid, effective_user(request))["attachment_ids"] if request.method == "PATCH" else []),
+                body.get("text", current["text"]), body.get("attachment_ids", current["attachment_ids"]),
             )
         except (ValueError, KeyError, TypeError) as exc:
             raise HTTPException(409, str(exc)) from exc

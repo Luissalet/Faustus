@@ -43,6 +43,15 @@ host page can listen on the element itself):
 
 Methods: `.send(message)`, `.cancel()`. Read-only: `.sessionId`, `.busy`.
 
+The shared composer also provides Attach, Remove and Retry controls. Files use
+Faustus's ordinary upload service and belong to the conversation selected when
+they were chosen. `await panel.attachFiles(files)` exposes the same operation to
+hosts. Uploaded IDs are saved with the canonical draft, restored by `loadHistory`,
+and sent through the normal turn API; an empty message with attached files is
+supported. A failed upload keeps its file for retry, and a failed turn keeps the
+same attachment IDs and idempotency key. Removing an attachment detaches it from
+the draft without deleting the uploaded file.
+
 ## Isolation
 
 Each `<faustus-chat>` instance:
@@ -149,7 +158,7 @@ documentation above. It deliberately did **not**:
 - touch `app.py` or `core/` at all (no wiring gap: nothing here needed a
   change to a file this lot doesn't own — see the contract's file-ownership
   table, `studio/embed/` + `sdk/ts/` additive is U7's whole scope);
-- build a richer approval UI (attachments, `revision` conflict retry beyond
+- build a richer approval UI (`revision` conflict retry beyond
   what `faustus-sdk` itself already handles, voice, etc.) — only the
   baseline `ask_user` (question + `tool_approval`) response the blueprint
   asked for.

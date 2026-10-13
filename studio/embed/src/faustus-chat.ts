@@ -19,7 +19,7 @@
 import { FaustusClient } from '../../../sdk/ts/src/client.js';
 import type { Turn } from '../../../sdk/ts/src/turn.js';
 import type { SseEvent } from '../../../sdk/ts/src/sse.js';
-import type { ToolApprovalDecision, HoardContext } from '../../../sdk/ts/src/types.js';
+import type { ToolApprovalDecision, HoardContext, UploadedFile } from '../../../sdk/ts/src/types.js';
 import { EMBED_STYLES } from './styles.js';
 import { renderMarkdownInto, toolLabel } from './markdown-dom.js';
 
@@ -57,6 +57,10 @@ export interface EmbedErrorDetail {
   cause?: unknown;
 }
 
+type AttachmentDraft = { text: string; attachmentIds?: string[] };
+type PendingFile = { key: string; file: File; state: 'uploading' | 'failed'; error?: string };
+type PendingSend = { message: string; context?: HoardContext; id: string; attachmentIds: string[] };
+
 export class FaustusChatElement extends HTMLElement {
   static get observedAttributes(): readonly string[] {
     return OBSERVED;
@@ -69,6 +73,9 @@ export class FaustusChatElement extends HTMLElement {
   #textarea!: HTMLTextAreaElement;
   #sendBtn!: HTMLButtonElement;
   #cancelBtn!: HTMLButtonElement;
+  #attachBtn!: HTMLButtonElement;
+  #fileInput!: HTMLInputElement;
+  #attachmentList!: HTMLDivElement;
   #emptySlotHost!: HTMLDivElement;
 
   // Never reflected to an attribute, never persisted anywhere. This is the
@@ -81,6 +88,7 @@ export class FaustusChatElement extends HTMLElement {
   #activeTurn: Turn | null = null;
   #busy = false;
   #messageCount = 0;
+  #latestUserBubble: HTMLDivElement | null = null;
   #connected = false;
   #pendingInit: Promise<string> | null = null;
   #observer: AbortController | null = null;
@@ -90,15 +98,23 @@ export class FaustusChatElement extends HTMLElement {
   #conversationSelect!: HTMLSelectElement;
   #conversationBar!: HTMLDivElement;
   #historyLoading = false;
-  #pendingSend: { message: string; context?: HoardContext; id: string } | null = null;
+  #pendingSends = new Map<string, PendingSend>();
+  #sessionEpoch = 0;
+  get #pendingSend(): PendingSend | null { return this.#pendingSends.get(this.#sessionId || '') || null; }
+  set #pendingSend(value: PendingSend | null) {
+    if (value) this.#pendingSends.set(this.#sessionId || '', value);
+    else this.#pendingSends.delete(this.#sessionId || '');
+  }
   onToolUndo: ((receipt: Record<string, unknown>) => Promise<void>) | null = null;
   onOpenSettings: (() => void) | null = null;
   #locale = '';
   #drafts = new Map<string, string>();
   #draftTimer: ReturnType<typeof setTimeout> | null = null;
-  #pendingDraft: { sid: string; text: string } | null = null;
+  #pendingDraft: { sid: string; text: string; attachmentIds?: string[] } | null = null;
   #draftSave: Promise<unknown> = Promise.resolve();
-  #failedDrafts = new Map<string, string>();
+  #failedDrafts = new Map<string, AttachmentDraft>();
+  #attachments = new Map<string, UploadedFile[]>();
+  #pendingFiles = new Map<string, PendingFile[]>();
   get locale(): string { return this.#locale || this.lang || document.documentElement.lang || 'en'; }
   set locale(value: string) { this.#locale = value || ''; this.#applyLocale(); }
 
@@ -110,6 +126,10 @@ export class FaustusChatElement extends HTMLElement {
     this.#sendBtn.setAttribute('aria-label', es ? 'Enviar mensaje' : 'Send message');
     this.#cancelBtn.textContent = es ? 'Detener' : 'Cancel';
     this.#cancelBtn.setAttribute('aria-label', es ? 'Detener' : 'Cancel');
+    this.#attachBtn.textContent = es ? 'Adjuntar' : 'Attach';
+    this.#attachBtn.setAttribute('aria-label', es ? 'Adjuntar archivos' : 'Attach files');
+    this.#fileInput.setAttribute('aria-label', es ? 'Archivos adjuntos' : 'Attachments');
+    this.#renderAttachments();
     const empty = this.#shadow.querySelector('.fc-empty');
     if (empty) empty.textContent = es ? 'Escribe un mensaje para empezar.' : 'Send a message to start this session.';
     this.#conversationSelect.setAttribute('aria-label', es ? 'Conversaciones del proyecto' : 'Project conversations');
@@ -131,6 +151,106 @@ export class FaustusChatElement extends HTMLElement {
   get draft(): string { return this.#textarea.value; }
   set draft(value: string) { this.#textarea.value = value || ''; this.#queueDraft(); }
   appendDraft(text: string): void { this.draft = [this.draft, text].filter(Boolean).join('\n\n'); }
+  /** Upload through the same native service used by Studio; keep files in their original chat. */
+  async attachFiles(files: File[]): Promise<void> {
+    if (!files.length || this.#busy) return;
+    const originalSid = this.#sessionId, originalKey = originalSid || '';
+    const pendingInit = this.#pendingInit, provider = this.#contextProvider, epoch = this.#sessionEpoch;
+    const entries = files.map(file => ({ key: crypto.randomUUID(), file, state: 'uploading' as const })) as PendingFile[];
+    this.#pendingFiles.set(originalKey, [...(this.#pendingFiles.get(originalKey) || []), ...entries]);
+    this.#renderAttachments();
+    try {
+      const client = this.#ensureClient();
+      const context = originalSid ? undefined : provider ? await provider() : undefined;
+      const sid = await this.#ensureSession(client, context, originalSid, pendingInit, epoch);
+      if (sid !== originalKey) {
+        this.#pendingFiles.set(originalKey, (this.#pendingFiles.get(originalKey) || []).filter(entry => !entries.includes(entry)));
+        this.#pendingFiles.set(sid, [...(this.#pendingFiles.get(sid) || []), ...entries]);
+      }
+      if (!this.#attachments.has(sid) && provider) {
+        const remote = await client.copilot.getDraft(sid);
+        this.#restoreAttachments(sid, remote.attachment_ids);
+      }
+      this.#renderAttachments();
+      for (const entry of entries) await this.#uploadFile(sid, entry);
+    } catch (error) {
+      for (const entry of entries) { entry.state = 'failed'; entry.error = String((error as Error).message || error); }
+      this.#renderAttachments();
+      this.#emitError(String((error as Error).message || error), error);
+    }
+  }
+
+  #attachmentIds(sid: string): string[] | undefined {
+    return this.#attachments.get(sid)?.map(file => file.id);
+  }
+
+  #restoreAttachments(sid: string, ids: string[]): void {
+    if (!this.#attachments.has(sid)) this.#attachments.set(sid, (ids || []).map(id => ({
+      id, name: '', mime: '', size: 0,
+    })));
+    this.#renderAttachments();
+  }
+
+  async #uploadFile(sid: string, entry: PendingFile): Promise<void> {
+    entry.state = 'uploading'; entry.error = undefined;
+    this.#renderAttachments();
+    try {
+      const result = await this.#ensureClient().uploads.create([entry.file], sid);
+      const file = result.files?.[0];
+      if (!file?.id) throw new Error(this.locale.startsWith('es') ? 'No se pudo adjuntar el archivo. Reintenta.' : 'The file could not be attached. Retry.');
+      if (!this.#pendingFiles.get(sid)?.includes(entry)) return;
+      const ready = this.#attachments.get(sid) || [];
+      if (!ready.some(item => item.id === file.id)) this.#attachments.set(sid, [...ready, file]);
+      this.#pendingFiles.set(sid, this.#pendingFiles.get(sid)!.filter(item => item !== entry));
+      this.#saveDraft(sid, this.#drafts.get(sid) ?? (sid === this.#sessionId ? this.draft : ''), this.#attachmentIds(sid));
+    } catch (error) {
+      entry.state = 'failed'; entry.error = String((error as Error).message || error);
+    }
+    this.#renderAttachments();
+  }
+
+  #renderAttachments(): void {
+    if (!this.#attachmentList) return;
+    const sid = this.#sessionId || '', es = this.locale.startsWith('es');
+    const ready = this.#attachments.get(sid) || [], pending = this.#pendingFiles.get(sid) || [];
+    this.#attachmentList.replaceChildren();
+    this.#attachmentList.hidden = !ready.length && !pending.length;
+    const row = (name: string, remove: () => void) => {
+      const item = el('div', { class: 'fc-attachment', role: 'listitem' });
+      item.append(el('span', { class: 'fc-attachment-name' }, name));
+      const button = el('button', { type: 'button', class: 'fc-btn', 'aria-label': `${es ? 'Retirar' : 'Remove'} ${name}` }, es ? 'Retirar' : 'Remove');
+      button.disabled = this.#busy;
+      button.addEventListener('click', remove);
+      item.append(button); this.#attachmentList.append(item);
+      return item;
+    };
+    for (const [index, file] of ready.entries()) {
+      const item = row(file.name || (es ? `Archivo adjunto ${index + 1}` : `Attached file ${index + 1}`), () => {
+        this.#attachments.set(sid, (this.#attachments.get(sid) || []).filter(other => other.id !== file.id));
+        this.#queueDraft(); this.#renderAttachments();
+      });
+      if (file.partial) item.append(el('span', { class: 'fc-attachment-note' }, file.partial_reason || (es ? 'Lectura parcial' : 'Partial reading')));
+    }
+    for (const entry of pending) {
+      const item = row(entry.file.name, () => {
+        this.#pendingFiles.set(sid, (this.#pendingFiles.get(sid) || []).filter(other => other !== entry));
+        this.#renderAttachments();
+      });
+      item.append(el('span', { class: 'fc-attachment-note', role: 'status' }, entry.error || (es ? 'Adjuntando…' : 'Uploading…')));
+      if (entry.state === 'failed') {
+        const retry = el('button', { type: 'button', class: 'fc-btn', 'aria-label': `${es ? 'Reintentar' : 'Retry'} ${entry.file.name}` }, es ? 'Reintentar' : 'Retry');
+        retry.addEventListener('click', () => {
+          if (sid && this.#attachments.has(sid)) void this.#uploadFile(sid, entry);
+          else {
+            this.#pendingFiles.set(sid, (this.#pendingFiles.get(sid) || []).filter(other => other !== entry));
+            void this.attachFiles([entry.file]);
+          }
+        });
+        item.append(retry);
+      }
+    }
+    this.#sendBtn.disabled = this.#busy || Boolean(pending.length);
+  }
   async retry(): Promise<void> { if (this.#pendingSend && !this.#busy) await this.#runTurn(this.#pendingSend.message); }
 
   async refreshConversations(): Promise<void> {
@@ -156,11 +276,12 @@ export class FaustusChatElement extends HTMLElement {
       const client = this.#ensureClient();
       const conversation = await client.copilot.get(sid);
       if (sid !== this.#sessionId || this.#busy) return;
-      if (this.#contextProvider && !this.draft && !this.#drafts.has(sid)) {
+      if (this.#contextProvider && ((!this.draft && !this.#drafts.has(sid)) || !this.#attachments.has(sid))) {
         const remote = await client.copilot.getDraft(sid);
         if (sid !== this.#sessionId || this.#busy) return;
         // A locally recovered draft wins over an asynchronously fetched one.
         if (!this.draft && !this.#drafts.has(sid) && remote.text) this.#textarea.value = remote.text;
+        this.#restoreAttachments(sid, remote.attachment_ids);
       }
       this.#transcript.replaceChildren();
       this.#messageCount = 0;
@@ -175,7 +296,8 @@ export class FaustusChatElement extends HTMLElement {
             this.#appendTool(`${toolLabel(event.tool) || 'Herramienta'}\n${output || JSON.stringify(item)}`, this.#undoReceipt(output));
           }
         }
-        this.#appendBubble(message.role === 'user' ? 'user' : 'agent', message.content);
+        const bubble = this.#appendBubble(message.role === 'user' ? 'user' : 'agent', message.content);
+        if (message.role === 'user') this.#appendMessageAttachments(bubble, message.metadata?.attachments);
         const legacy = message.metadata?.writer_tool_call as Record<string, unknown> | undefined;
         if (legacy && typeof legacy.auditIndex === 'number') this.#appendTool(`Writer\n${JSON.stringify(legacy)}`, { app_id: 'writer', audit_index: legacy.auditIndex });
       }
@@ -230,10 +352,25 @@ export class FaustusChatElement extends HTMLElement {
     return this.#sessionId;
   }
   set session(v: string | null) {
+    const changed = this.#sessionId !== (v || null);
     this.#flushDraft();
     this.#drafts.set(this.#sessionId || '', this.draft);
     this.#sessionId = v || null;
     this.#textarea.value = this.#drafts.get(this.#sessionId || '') || '';
+    if (changed) {
+      ++this.#sessionEpoch;
+      this.#pendingInit = null;
+      if (this.#busy) {
+        this.#observer?.abort(); // Detach this view; never cancel the server's turn.
+        this.#observer = null; this.#activeTurn = null;
+        this.#setBusy(false);
+        this.#status.textContent = '';
+        this.#transcript.replaceChildren(); this.#latestUserBubble = null;
+        this.#messageCount = 0; this.#syncEmptyState();
+        if (this.#connected && this.#sessionId) void this.loadHistory();
+      }
+    }
+    this.#renderAttachments();
   }
 
   get theme(): FaustusChatTheme {
@@ -311,7 +448,7 @@ export class FaustusChatElement extends HTMLElement {
         }
         break;
       case 'session':
-        this.#sessionId = newValue || null;
+        this.session = newValue;
         break;
       case 'theme':
         this.#applyTheme();
@@ -329,7 +466,7 @@ export class FaustusChatElement extends HTMLElement {
   /** Sends a turn programmatically (the composer button calls this too). */
   async send(message: string): Promise<void> {
     const text = message.trim();
-    if (!text || this.#busy) return;
+    if ((!text && !this.#attachmentIds(this.#sessionId || '')?.length) || this.#busy || this.#pendingFiles.get(this.#sessionId || '')?.length) return;
     await this.#runTurn(text);
   }
 
@@ -386,11 +523,11 @@ export class FaustusChatElement extends HTMLElement {
       if (this.#busy) return;
       this.#flushDraft();
       this.#drafts.set(this.#sessionId || '', this.draft);
-      this.#sessionId = this.#conversationSelect.value || null;
+      this.session = this.#conversationSelect.value || null;
       this.#textarea.value = this.#drafts.get(this.#sessionId || '') || '';
+      this.#renderAttachments();
       this.#transcript.replaceChildren();
       this.#messageCount = 0;
-      this.#pendingSend = null;
       this.#syncEmptyState();
       this.#emit('faustus:session-change', { sessionId: this.#sessionId });
       if (!this.#sessionId && this.#contextProvider) void this.#initializeHostConversation();
@@ -440,6 +577,18 @@ export class FaustusChatElement extends HTMLElement {
     this.#root.appendChild(this.#status);
 
     const composer = el('form', { class: 'fc-composer' });
+    this.#attachmentList = el('div', { class: 'fc-attachments', role: 'list' });
+    this.#attachmentList.hidden = true;
+    this.#root.appendChild(this.#attachmentList);
+    this.#fileInput = el('input', { type: 'file', multiple: '', hidden: '' }) as HTMLInputElement;
+    this.#fileInput.addEventListener('change', () => {
+      const files = Array.from(this.#fileInput.files || []);
+      this.#fileInput.value = '';
+      void this.attachFiles(files);
+    });
+    this.#attachBtn = el('button', { type: 'button', class: 'fc-btn fc-attach' }, 'Attach');
+    this.#attachBtn.addEventListener('click', () => this.#fileInput.click());
+    composer.append(this.#fileInput, this.#attachBtn);
     this.#textarea = el('textarea', {
       role: 'textbox',
       'aria-label': 'Message',
@@ -497,6 +646,7 @@ export class FaustusChatElement extends HTMLElement {
   }
 
   #onSubmit(): void {
+    if (this.#busy || this.#pendingFiles.get(this.#sessionId || '')?.length) return;
     const text = this.#textarea.value;
     this.#textarea.value = '';
     void this.send(text);
@@ -509,7 +659,7 @@ export class FaustusChatElement extends HTMLElement {
     if (this.#draftTimer) clearTimeout(this.#draftTimer);
     const sid = this.#sessionId;
     const text = this.draft;
-    this.#pendingDraft = { sid, text };
+    this.#pendingDraft = { sid, text, attachmentIds: this.#attachmentIds(sid) };
     this.#draftTimer = setTimeout(() => this.#flushDraft(), 400);
   }
 
@@ -518,21 +668,21 @@ export class FaustusChatElement extends HTMLElement {
     this.#draftTimer = null;
     const pending = this.#pendingDraft;
     this.#pendingDraft = null;
-    if (pending) this.#saveDraft(pending.sid, pending.text);
+    if (pending) this.#saveDraft(pending.sid, pending.text, pending.attachmentIds);
   }
 
-  #saveDraft(sid: string, text: string): void {
+  #saveDraft(sid: string, text: string, attachmentIds?: string[]): void {
     const client = this.#ensureClient();
-    this.#draftSave = this.#draftSave.catch(() => {}).then(() => client.copilot.saveDraft(sid, text))
+    this.#draftSave = this.#draftSave.catch(() => {}).then(() => client.copilot.saveDraft(sid, text, attachmentIds))
       .then(() => { this.#failedDrafts.delete(sid); })
       .catch(error => {
-        this.#failedDrafts.set(sid, this.#drafts.get(sid) ?? text);
+        this.#failedDrafts.set(sid, { text: this.#drafts.get(sid) ?? text, attachmentIds: this.#attachmentIds(sid) ?? attachmentIds });
         this.#emitError(String((error as Error).message || error), error);
       });
   }
 
   #retryDrafts(): void {
-    for (const [sid, text] of this.#failedDrafts) this.#saveDraft(sid, text);
+    for (const [sid, draft] of this.#failedDrafts) this.#saveDraft(sid, draft.text, draft.attachmentIds);
   }
 
   async #initializeHostConversation(): Promise<void> {
@@ -552,28 +702,32 @@ export class FaustusChatElement extends HTMLElement {
     return this.#client;
   }
 
-  async #ensureSession(client: FaustusClient, context?: HoardContext): Promise<string> {
-    if (this.#sessionId) return this.#sessionId;
-    if (this.#pendingInit) return this.#pendingInit;
-    this.#pendingInit = (async () => {
+  async #ensureSession(client: FaustusClient, context?: HoardContext,
+    originalSid = this.#sessionId, originalInit = this.#pendingInit, epoch = this.#sessionEpoch): Promise<string> {
+    if (originalSid) return originalSid;
+    if (originalInit) return originalInit;
+    const pending = (async () => {
       const created = context ? await client.copilot.create(context) : await client.sessions.create({ skipValidation: true });
       const createdId = 'session_id' in created ? created.session_id : created.id;
-      if (this.#sessionId) return createdId;
+      if (this.#sessionId || epoch !== this.#sessionEpoch) return createdId;
       this.#sessionId = createdId;
       this.#emit('faustus:session-change', { sessionId: this.#sessionId });
       if (this.#contextProvider) this.#queueDraft();
       return this.#sessionId;
     })();
-    try { return await this.#pendingInit; }
-    finally { this.#pendingInit = null; }
+    if (epoch === this.#sessionEpoch) this.#pendingInit = pending;
+    try { return await pending; }
+    finally { if (this.#pendingInit === pending) this.#pendingInit = null; }
   }
 
   #setBusy(busy: boolean): void {
     this.#busy = busy;
-    this.#sendBtn.disabled = busy;
+    this.#sendBtn.disabled = busy || Boolean(this.#pendingFiles.get(this.#sessionId || '')?.length);
+    this.#attachBtn.disabled = busy;
     this.#textarea.disabled = busy;
     this.#cancelBtn.hidden = !busy;
     this.#conversationSelect.disabled = busy;
+    this.#renderAttachments();
   }
 
   #syncEmptyState(): void {
@@ -585,11 +739,20 @@ export class FaustusChatElement extends HTMLElement {
     const node = el('div', { class: 'fc-msg', 'data-role': role });
     if (role === 'agent') this.#renderAgent(node, text);
     else node.textContent = text;
+    if (role === 'user') this.#latestUserBubble = node;
     this.#transcript.appendChild(node);
     this.#messageCount += 1;
     this.#syncEmptyState();
     this.#transcript.scrollTop = this.#transcript.scrollHeight;
     return node;
+  }
+
+  #appendMessageAttachments(bubble: HTMLDivElement, attachments: unknown): void {
+    if (!Array.isArray(attachments)) return;
+    const names = attachments.map(file => typeof file?.name === 'string' ? file.name : '').filter(Boolean);
+    if (!names.length) return;
+    bubble.querySelector('.fc-message-files')?.remove();
+    bubble.append(el('div', { class: 'fc-message-files' }, names.join(' · ')));
   }
 
   /** A folded "Reasoning" block for a turn's thinking deltas; returns the element the text goes into. */
@@ -667,12 +830,28 @@ export class FaustusChatElement extends HTMLElement {
   }
 
   async #runTurn(message: string): Promise<void> {
+    const originalSid = this.#sessionId, originalKey = originalSid || '';
+    const originalInit = this.#pendingInit, epoch = this.#sessionEpoch;
+    const mode = this.#mode;
+    const attachmentIds = this.#attachmentIds(originalKey) || [];
+    const previous = this.#pendingSend;
+    const pending: PendingSend = previous && previous.message === message && JSON.stringify(previous.attachmentIds) === JSON.stringify(attachmentIds)
+      ? previous : {message, id: crypto.randomUUID(), attachmentIds};
+    this.#pendingSends.set(originalKey, pending);
+    const restore = (sid = originalSid) => {
+      if (epoch === this.#sessionEpoch) {
+        this.#setBusy(false);
+        if (!this.draft || this.draft === message) this.draft = message;
+      } else if (sid && !this.#drafts.get(sid)) {
+        this.#drafts.set(sid, message); this.#saveDraft(sid, message, pending.attachmentIds);
+      }
+    };
     let client: FaustusClient;
     try {
       client = this.#ensureClient();
     } catch (err) {
-      this.draft = message;
-      this.#emitError(String((err as { message?: string })?.message ?? err), err);
+      restore();
+      if (epoch === this.#sessionEpoch) this.#emitError(String((err as { message?: string })?.message ?? err), err);
       return;
     }
 
@@ -681,42 +860,43 @@ export class FaustusChatElement extends HTMLElement {
 
     let context: HoardContext | undefined;
     try {
-      if (this.#pendingSend && this.#pendingSend.message !== message) this.#pendingSend = null;
-      context = this.#pendingSend?.context ?? (this.#contextProvider ? await this.#contextProvider() : undefined);
-      if (!this.#pendingSend) {
-        this.#pendingSend = { message, context: context ? structuredClone(context) : undefined, id: crypto.randomUUID() };
-        this.#appendBubble('user', message);
+      context = pending.context ?? (this.#contextProvider ? await this.#contextProvider() : undefined);
+      if (!pending.context) pending.context = context ? structuredClone(context) : undefined;
+      if (pending !== previous && epoch === this.#sessionEpoch) {
+        const bubble = this.#appendBubble('user', message);
+        this.#appendMessageAttachments(bubble, this.#attachments.get(this.#sessionId || ''));
       }
     } catch (error) {
-      this.#setBusy(false);
-      this.draft = message;
-      this.#emitError(String((error as Error).message || error), error);
+      restore();
+      if (epoch === this.#sessionEpoch) this.#emitError(String((error as Error).message || error), error);
       return;
     }
 
     let sessionId: string;
     try {
-      sessionId = await this.#ensureSession(client, context);
+      sessionId = await this.#ensureSession(client, context, originalSid, originalInit, epoch);
+      if (this.#pendingSends.get(originalKey) === pending) this.#pendingSends.delete(originalKey);
+      this.#pendingSends.set(sessionId, pending);
     } catch (err) {
-      this.#pendingInit = null;
-      this.#setBusy(false);
-      this.draft = message;
-      this.#emitError(String((err as { message?: string })?.message ?? err), err);
+      restore();
+      if (epoch === this.#sessionEpoch) this.#emitError(String((err as { message?: string })?.message ?? err), err);
       return;
     }
 
     let turn: Turn;
+    const observer = new AbortController();
     try {
-      this.#observer = new AbortController();
+      if (epoch === this.#sessionEpoch) this.#observer = observer;
       turn = await client.turns.create(sessionId, {
-        message, mode: this.#mode, hoardContext: context, clientMessageId: this.#pendingSend.id,
-      }, { signal: this.#observer.signal });
+        message, mode, hoardContext: context, clientMessageId: pending.id,
+        attachments: pending.attachmentIds,
+      }, { signal: observer.signal });
     } catch (err) {
-      this.#setBusy(false);
-      this.draft = message;
-      this.#emitError(String((err as { message?: string })?.message ?? err), err);
+      restore(sessionId);
+      if (epoch === this.#sessionEpoch) this.#emitError(String((err as { message?: string })?.message ?? err), err);
       return;
     }
+    if (epoch !== this.#sessionEpoch) { observer.abort(); return; }
     await this.#consumeTurn(client, turn, sessionId);
   }
 
@@ -738,7 +918,7 @@ export class FaustusChatElement extends HTMLElement {
       try {
         for await (const event of turn) {
           this.#emit<SseEvent>('faustus:event', event);
-          if (!this.#connected) break outer;
+          if (!this.#connected || this.#activeTurn !== turn || this.#sessionId !== sessionId) break outer;
 
           if (event.type === 'delta') {
             // Reasoning deltas (thinking: true) are the model thinking aloud, not the answer: they go in their own
@@ -750,6 +930,10 @@ export class FaustusChatElement extends HTMLElement {
             }
             if (!agentBubble) agentBubble = this.#appendBubble('agent', '');
             this.#appendDelta(agentBubble, String(event.delta ?? ''));
+            continue;
+          }
+          if (event.type === 'attachments' && this.#latestUserBubble) {
+            this.#appendMessageAttachments(this.#latestUserBubble, event.data);
             continue;
           }
           if (event.type === 'tool_start') {
@@ -804,6 +988,11 @@ export class FaustusChatElement extends HTMLElement {
     this.#activeTurn = null;
     this.#observer = null;
     if (!failed && end.reason !== 'aborted') {
+      const sentIds = new Set(this.#pendingSend?.attachmentIds || []);
+      if (sentIds.size) {
+        this.#attachments.set(sessionId, (this.#attachments.get(sessionId) || []).filter(file => !sentIds.has(file.id)));
+        this.#queueDraft(); this.#renderAttachments();
+      }
       if (this.#pendingSend && this.draft === this.#pendingSend.message) this.draft = '';
       this.#pendingSend = null;
     }
