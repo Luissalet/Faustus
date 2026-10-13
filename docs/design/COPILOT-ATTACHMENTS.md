@@ -35,3 +35,9 @@ retry IDs, attachment-only turns, authenticated owner attribution, byte-exact
 native multipart relay and actual HTTP/MCP upload-to-turn behavior. The private
 CPU provider receives the uploaded CSV. This is interface and data-flow evidence,
 not a GLM quality or completed family acceptance claim.
+
+Conversation changes detach the local observer without cancelling the original
+remote turn. A send fixes its session, mode, context and attachment IDs before
+asynchronous preparation. An older completion cannot replace the newer
+conversation's draft or transcript. Pending retries are kept per conversation,
+and an older initialization cannot select itself over a newer session.

@@ -59,6 +59,7 @@ export interface EmbedErrorDetail {
 
 type AttachmentDraft = { text: string; attachmentIds?: string[] };
 type PendingFile = { key: string; file: File; state: 'uploading' | 'failed'; error?: string };
+type PendingSend = { message: string; context?: HoardContext; id: string; attachmentIds: string[] };
 
 export class FaustusChatElement extends HTMLElement {
   static get observedAttributes(): readonly string[] {
@@ -97,7 +98,13 @@ export class FaustusChatElement extends HTMLElement {
   #conversationSelect!: HTMLSelectElement;
   #conversationBar!: HTMLDivElement;
   #historyLoading = false;
-  #pendingSend: { message: string; context?: HoardContext; id: string; attachmentIds: string[] } | null = null;
+  #pendingSends = new Map<string, PendingSend>();
+  #sessionEpoch = 0;
+  get #pendingSend(): PendingSend | null { return this.#pendingSends.get(this.#sessionId || '') || null; }
+  set #pendingSend(value: PendingSend | null) {
+    if (value) this.#pendingSends.set(this.#sessionId || '', value);
+    else this.#pendingSends.delete(this.#sessionId || '');
+  }
   onToolUndo: ((receipt: Record<string, unknown>) => Promise<void>) | null = null;
   onOpenSettings: (() => void) | null = null;
   #locale = '';
@@ -148,22 +155,14 @@ export class FaustusChatElement extends HTMLElement {
   async attachFiles(files: File[]): Promise<void> {
     if (!files.length || this.#busy) return;
     const originalSid = this.#sessionId, originalKey = originalSid || '';
-    const pendingInit = this.#pendingInit, provider = this.#contextProvider;
+    const pendingInit = this.#pendingInit, provider = this.#contextProvider, epoch = this.#sessionEpoch;
     const entries = files.map(file => ({ key: crypto.randomUUID(), file, state: 'uploading' as const })) as PendingFile[];
     this.#pendingFiles.set(originalKey, [...(this.#pendingFiles.get(originalKey) || []), ...entries]);
     this.#renderAttachments();
     try {
       const client = this.#ensureClient();
       const context = originalSid ? undefined : provider ? await provider() : undefined;
-      let sid = originalSid || (pendingInit ? await pendingInit : null);
-      if (!sid) {
-        if (!this.#sessionId) sid = await this.#ensureSession(client, context);
-        else {
-          // A different chat was selected while creating the original context.
-          const created = context ? await client.copilot.create(context) : await client.sessions.create({skipValidation: true});
-          sid = 'session_id' in created ? created.session_id : created.id;
-        }
-      }
+      const sid = await this.#ensureSession(client, context, originalSid, pendingInit, epoch);
       if (sid !== originalKey) {
         this.#pendingFiles.set(originalKey, (this.#pendingFiles.get(originalKey) || []).filter(entry => !entries.includes(entry)));
         this.#pendingFiles.set(sid, [...(this.#pendingFiles.get(sid) || []), ...entries]);
@@ -353,10 +352,24 @@ export class FaustusChatElement extends HTMLElement {
     return this.#sessionId;
   }
   set session(v: string | null) {
+    const changed = this.#sessionId !== (v || null);
     this.#flushDraft();
     this.#drafts.set(this.#sessionId || '', this.draft);
     this.#sessionId = v || null;
     this.#textarea.value = this.#drafts.get(this.#sessionId || '') || '';
+    if (changed) {
+      ++this.#sessionEpoch;
+      this.#pendingInit = null;
+      if (this.#busy) {
+        this.#observer?.abort(); // Detach this view; never cancel the server's turn.
+        this.#observer = null; this.#activeTurn = null;
+        this.#setBusy(false);
+        this.#status.textContent = '';
+        this.#transcript.replaceChildren(); this.#latestUserBubble = null;
+        this.#messageCount = 0; this.#syncEmptyState();
+        if (this.#connected && this.#sessionId) void this.loadHistory();
+      }
+    }
     this.#renderAttachments();
   }
 
@@ -435,7 +448,7 @@ export class FaustusChatElement extends HTMLElement {
         }
         break;
       case 'session':
-        this.#sessionId = newValue || null;
+        this.session = newValue;
         break;
       case 'theme':
         this.#applyTheme();
@@ -510,12 +523,11 @@ export class FaustusChatElement extends HTMLElement {
       if (this.#busy) return;
       this.#flushDraft();
       this.#drafts.set(this.#sessionId || '', this.draft);
-      this.#sessionId = this.#conversationSelect.value || null;
+      this.session = this.#conversationSelect.value || null;
       this.#textarea.value = this.#drafts.get(this.#sessionId || '') || '';
       this.#renderAttachments();
       this.#transcript.replaceChildren();
       this.#messageCount = 0;
-      this.#pendingSend = null;
       this.#syncEmptyState();
       this.#emit('faustus:session-change', { sessionId: this.#sessionId });
       if (!this.#sessionId && this.#contextProvider) void this.#initializeHostConversation();
@@ -690,20 +702,22 @@ export class FaustusChatElement extends HTMLElement {
     return this.#client;
   }
 
-  async #ensureSession(client: FaustusClient, context?: HoardContext): Promise<string> {
-    if (this.#sessionId) return this.#sessionId;
-    if (this.#pendingInit) return this.#pendingInit;
-    this.#pendingInit = (async () => {
+  async #ensureSession(client: FaustusClient, context?: HoardContext,
+    originalSid = this.#sessionId, originalInit = this.#pendingInit, epoch = this.#sessionEpoch): Promise<string> {
+    if (originalSid) return originalSid;
+    if (originalInit) return originalInit;
+    const pending = (async () => {
       const created = context ? await client.copilot.create(context) : await client.sessions.create({ skipValidation: true });
       const createdId = 'session_id' in created ? created.session_id : created.id;
-      if (this.#sessionId) return createdId;
+      if (this.#sessionId || epoch !== this.#sessionEpoch) return createdId;
       this.#sessionId = createdId;
       this.#emit('faustus:session-change', { sessionId: this.#sessionId });
       if (this.#contextProvider) this.#queueDraft();
       return this.#sessionId;
     })();
-    try { return await this.#pendingInit; }
-    finally { this.#pendingInit = null; }
+    if (epoch === this.#sessionEpoch) this.#pendingInit = pending;
+    try { return await pending; }
+    finally { if (this.#pendingInit === pending) this.#pendingInit = null; }
   }
 
   #setBusy(busy: boolean): void {
@@ -816,12 +830,28 @@ export class FaustusChatElement extends HTMLElement {
   }
 
   async #runTurn(message: string): Promise<void> {
+    const originalSid = this.#sessionId, originalKey = originalSid || '';
+    const originalInit = this.#pendingInit, epoch = this.#sessionEpoch;
+    const mode = this.#mode;
+    const attachmentIds = this.#attachmentIds(originalKey) || [];
+    const previous = this.#pendingSend;
+    const pending: PendingSend = previous && previous.message === message && JSON.stringify(previous.attachmentIds) === JSON.stringify(attachmentIds)
+      ? previous : {message, id: crypto.randomUUID(), attachmentIds};
+    this.#pendingSends.set(originalKey, pending);
+    const restore = (sid = originalSid) => {
+      if (epoch === this.#sessionEpoch) {
+        this.#setBusy(false);
+        if (!this.draft || this.draft === message) this.draft = message;
+      } else if (sid && !this.#drafts.get(sid)) {
+        this.#drafts.set(sid, message); this.#saveDraft(sid, message, pending.attachmentIds);
+      }
+    };
     let client: FaustusClient;
     try {
       client = this.#ensureClient();
     } catch (err) {
-      this.draft = message;
-      this.#emitError(String((err as { message?: string })?.message ?? err), err);
+      restore();
+      if (epoch === this.#sessionEpoch) this.#emitError(String((err as { message?: string })?.message ?? err), err);
       return;
     }
 
@@ -830,45 +860,43 @@ export class FaustusChatElement extends HTMLElement {
 
     let context: HoardContext | undefined;
     try {
-      const attachmentIds = this.#attachmentIds(this.#sessionId || '') || [];
-      if (this.#pendingSend && (this.#pendingSend.message !== message || JSON.stringify(this.#pendingSend.attachmentIds) !== JSON.stringify(attachmentIds))) this.#pendingSend = null;
-      context = this.#pendingSend?.context ?? (this.#contextProvider ? await this.#contextProvider() : undefined);
-      if (!this.#pendingSend) {
-        this.#pendingSend = { message, context: context ? structuredClone(context) : undefined, id: crypto.randomUUID(), attachmentIds };
+      context = pending.context ?? (this.#contextProvider ? await this.#contextProvider() : undefined);
+      if (!pending.context) pending.context = context ? structuredClone(context) : undefined;
+      if (pending !== previous && epoch === this.#sessionEpoch) {
         const bubble = this.#appendBubble('user', message);
         this.#appendMessageAttachments(bubble, this.#attachments.get(this.#sessionId || ''));
       }
     } catch (error) {
-      this.#setBusy(false);
-      this.draft = message;
-      this.#emitError(String((error as Error).message || error), error);
+      restore();
+      if (epoch === this.#sessionEpoch) this.#emitError(String((error as Error).message || error), error);
       return;
     }
 
     let sessionId: string;
     try {
-      sessionId = await this.#ensureSession(client, context);
+      sessionId = await this.#ensureSession(client, context, originalSid, originalInit, epoch);
+      if (this.#pendingSends.get(originalKey) === pending) this.#pendingSends.delete(originalKey);
+      this.#pendingSends.set(sessionId, pending);
     } catch (err) {
-      this.#pendingInit = null;
-      this.#setBusy(false);
-      this.draft = message;
-      this.#emitError(String((err as { message?: string })?.message ?? err), err);
+      restore();
+      if (epoch === this.#sessionEpoch) this.#emitError(String((err as { message?: string })?.message ?? err), err);
       return;
     }
 
     let turn: Turn;
+    const observer = new AbortController();
     try {
-      this.#observer = new AbortController();
+      if (epoch === this.#sessionEpoch) this.#observer = observer;
       turn = await client.turns.create(sessionId, {
-        message, mode: this.#mode, hoardContext: context, clientMessageId: this.#pendingSend.id,
-        attachments: this.#pendingSend.attachmentIds,
-      }, { signal: this.#observer.signal });
+        message, mode, hoardContext: context, clientMessageId: pending.id,
+        attachments: pending.attachmentIds,
+      }, { signal: observer.signal });
     } catch (err) {
-      this.#setBusy(false);
-      this.draft = message;
-      this.#emitError(String((err as { message?: string })?.message ?? err), err);
+      restore(sessionId);
+      if (epoch === this.#sessionEpoch) this.#emitError(String((err as { message?: string })?.message ?? err), err);
       return;
     }
+    if (epoch !== this.#sessionEpoch) { observer.abort(); return; }
     await this.#consumeTurn(client, turn, sessionId);
   }
 
@@ -890,7 +918,7 @@ export class FaustusChatElement extends HTMLElement {
       try {
         for await (const event of turn) {
           this.#emit<SseEvent>('faustus:event', event);
-          if (!this.#connected) break outer;
+          if (!this.#connected || this.#activeTurn !== turn || this.#sessionId !== sessionId) break outer;
 
           if (event.type === 'delta') {
             // Reasoning deltas (thinking: true) are the model thinking aloud, not the answer: they go in their own
