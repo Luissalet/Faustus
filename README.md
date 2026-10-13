@@ -19,6 +19,11 @@
 
 ## Current verification (9 October 2026)
 
+Normal chat and agent turns continue partial responses after an interrupted
+model stream, retaining the text and prior tool results in the same run. Group
+participant replies use the same recovery. See [response continuity](docs/design/STREAM-CONTINUITY.md)
+for the synthetic HTTP, native MCP and browser checks and the remaining group scheduling work.
+
 **Global approvals** is available beside Settings, in Settings and as a clearly global Studio shortcut. Its saved value applies to every conversation and synchronizes across open tabs. **Ask** and **Automatic** currently apply the same existing tool checks; Automatic can still ask for approval. **Full access** runs tools without approval prompts. Tool availability and execution configuration remain separate. See [global approval settings](docs/api/global-tool-approval-ui.md).
 
 Git tools honor the saved global **Full access** approval mode, including repositories whose Git agent policy otherwise requires explicit approval. They do not ask for a second Git confirmation or require a model-supplied confirmation flag in that mode. Ask/Automatic retain their existing behavior; disabled tools, repository identity, paths and Git validation still apply. [Git approval contract](docs/api/git-global-full-access.md).

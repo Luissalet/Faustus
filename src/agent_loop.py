@@ -11115,6 +11115,7 @@ async def _stream_agent_loop_body(
     _harness_enabled = bool(get_setting("agent_harness_checks", True)) and not guide_only
     _HARNESS_MAX_REJECTIONS = 2
     _HARNESS_MAX_LENGTH_CONTINUES = 2
+    _stream_interruptions = 0
     # Every round beyond the model's own tool calls is granted by one policy
     # (src/extra_round_policy.py): a known cause, a counted budget, a receipt.
     from src.extra_round_policy import ExtraRounds as _ExtraRounds
@@ -13578,6 +13579,19 @@ async def _stream_agent_loop_body(
                         "failed or timed out — falling through to the normal error",
                         round_num,
                     )
+                # The transport cannot replay deltas already delivered, but the
+                # agent can continue from its existing transcript. No tools from
+                # this unfinished generation have been dispatched. Completed
+                # tools from earlier rounds remain in messages and the ledger.
+                from src.stream_recovery import interrupted_response
+                if (
+                    interrupted_response(error_data)
+                    and _harness_enabled and not _force_answer and not plan_mode
+                    and round_num < max_rounds
+                ):
+                    _round_finish_reason = "interrupted"
+                    native_tool_calls = []
+                    break
                 if is_degenerate_output_error(error_data) and not _recovery_ladder_used:
                     # Step 1 (the branch above) already ran once and didn't
                     # help. The owner's requirement is that a loaded model
@@ -14835,7 +14849,7 @@ async def _stream_agent_loop_body(
         # turn evidently finished, and decide: go on, ask, or let the turn end.
         if (not tool_blocks and _plan_tracker is not None and _plan_ac_enabled
                 and not _force_answer and not plan_mode and not guide_only
-                and _round_finish_reason != "length" and not _awaiting_user):
+                and _round_finish_reason not in {"length", "interrupted"} and not _awaiting_user):
             _pac = None
             _pac_tr = _plan_tracker
             try:
@@ -15140,7 +15154,8 @@ async def _stream_agent_loop_body(
             # ── (1) Truncated output: continue instead of accepting a cut-off
             # answer as the end of the turn.
             if _text_action == _loop_decisions.CONTINUE_LENGTH:
-                if (_think_watchdog_on and not _think_pinned_for_budget and not _think_user_off
+                if (_round_finish_reason == "length"
+                        and _think_watchdog_on and not _think_pinned_for_budget and not _think_user_off
                         and round_reasoning.strip() and not _hc_text):
                     # A token limit may stop a thinking-only round before the
                     # clock watchdog can fire. Repeating the same budget then
@@ -15159,9 +15174,15 @@ async def _stream_agent_loop_body(
                         "think": gen_overrides["think"],
                         "reasoning_budget": gen_overrides.get("reasoning_budget"),
                     }) + "\n\n"
-                _ledger.length_continues += 1
-                logger.info("[harness] round %s hit max_tokens (finish_reason=length) — auto-continue #%s",
-                            round_num, _ledger.length_continues)
+                _continuation_reason = "stream_interrupted" if _round_finish_reason == "interrupted" else "length"
+                if _round_finish_reason == "interrupted":
+                    _stream_interruptions += 1
+                    _continuation_used = _stream_interruptions
+                else:
+                    _ledger.length_continues += 1
+                    _continuation_used = _ledger.length_continues
+                logger.info("[harness] round %s cut short (%s) — auto-continue #%s",
+                            round_num, _continuation_reason, _continuation_used)
                 if round_response.strip():
                     messages.append({"role": "assistant", "content": round_response})
                 messages.append({
@@ -15169,7 +15190,11 @@ async def _stream_agent_loop_body(
                     "_harness_note": True,
                     "content": (
                         _lang_note("[Harness check — automatic message from the runtime, not from the user] "
-                        "Your previous output was cut off by the max_tokens limit (finish_reason=length). "
+                        + ("The connection ended before your response completed. Any unfinished native tool calls "
+                           "from that generation were discarded without execution. Earlier tool results remain valid. "
+                           if _round_finish_reason == "interrupted" else
+                           "Your previous output was cut off by the max_tokens limit (finish_reason=length). ")
+                        +
                         "Continue EXACTLY where you stopped without repeating anything already written. "
                         "If you were about to call a tool, call it now. "
                         "Preserve the original user's requested output format, including JSON-only; "
@@ -15178,11 +15203,12 @@ async def _stream_agent_loop_body(
                 })
                 yield (
                     "data: " + json.dumps({
-                        "type": "harness_check", "status": "auto_continue", "reason": "length",
-                        "round": round_num, "attempt": _ledger.length_continues,
-                        "max_attempts": _HARNESS_MAX_LENGTH_CONTINUES,
-                        **_xr.event("length", used=_ledger.length_continues,
-                                    limit=_HARNESS_MAX_LENGTH_CONTINUES, round_num=round_num),
+                        "type": "harness_check", "status": "auto_continue", "reason": _continuation_reason,
+                        "round": round_num, "attempt": _continuation_used,
+                        **({"max_attempts": _HARNESS_MAX_LENGTH_CONTINUES,
+                            **_xr.event("length", used=_ledger.length_continues,
+                                        limit=_HARNESS_MAX_LENGTH_CONTINUES, round_num=round_num)}
+                           if _round_finish_reason == "length" else {}),
                     }) + "\n\n"
                 )
                 full_response += "\n\n"

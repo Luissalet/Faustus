@@ -587,7 +587,11 @@ def _ensure_current_request_is_latest_user(
     current = str(current_message or "").strip()
     if not current:
         return messages
-    latest_msg = _last_user_message(messages)
+    # Runtime continuation notes belong after the partial assistant response.
+    # They must not trigger a duplicate of the original human request behind
+    # them, which would ask the model to restart the answer instead.
+    latest_msg = next((msg for msg in reversed(messages or [])
+                       if msg.get("role") == "user" and not msg.get("_harness_note")), None)
     latest = _message_plain_text(latest_msg.get("content")).strip() if latest_msg else ""
     if latest == current or current in latest or latest in current:
         return messages
@@ -3739,6 +3743,8 @@ def setup_chat_routes(
                     try:
                         while True:
                             _chat_got_done = False
+                            _chat_interrupted = False
+                            _chat_generation_start = len(full_response)
                             async for chunk in stream_llm_with_fallback(
                                 _foreground_candidates,
                                 messages,
@@ -3894,6 +3900,26 @@ def setup_chat_routes(
                                         yield chunk
                                 elif chunk.startswith("event: error"):
                                     logger.warning(f"Stream error for {sess.model} on {sess.endpoint_url}: {chunk!r}")
+                                    from src.stream_recovery import interrupted_response
+                                    try:
+                                        _chat_error = json.loads(next(line[6:] for line in chunk.splitlines()
+                                                                     if line.startswith("data: ")))
+                                    except (ValueError, StopIteration):
+                                        _chat_error = {}
+                                    if (not compare_mode and interrupted_response(_chat_error)
+                                            and len(full_response) > _chat_generation_start):
+                                        # Keep only this attempt's new text in the
+                                        # transcript; earlier pieces are already there.
+                                        messages.append({"role": "assistant", "content": full_response[_chat_generation_start:]})
+                                        messages.append({"role": "user", "_harness_note": True, "content": (
+                                            "[Automatic continuation after an interrupted connection] "
+                                            "Continue exactly where the last response stopped without repeating it. "
+                                            "Keep the original request, language and output format."
+                                        )})
+                                        _chat_interrupted = True
+                                        yield 'data: ' + json.dumps({"type": "harness_check", "status": "auto_continue",
+                                                                    "reason": "stream_interrupted"}) + '\n\n'
+                                        break
                                     if (
                                         not _chat_terminal_saved
                                         and (full_response.strip() or thinking_response.strip())
@@ -4153,6 +4179,8 @@ def setup_chat_routes(
                                     _ce_chat_receipt("empty")
                                     _stream_set(session, status="done")
                                     yield chunk
+                            if _chat_interrupted:
+                                continue
                             if not _chat_got_done:
                                 _live_steers = agent_runs.take_steers(session)
                                 if _live_steers:

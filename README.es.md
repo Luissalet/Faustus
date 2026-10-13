@@ -19,6 +19,12 @@
 
 ## Verificación actual (9 de octubre de 2026)
 
+El chat normal y el agente continúan las respuestas parciales tras un corte del
+flujo del modelo, conservando el texto y los resultados anteriores en la misma
+ejecución. Las respuestas de participantes en grupos usan esa recuperación.
+Ver [continuidad de respuestas](docs/design/STREAM-CONTINUITY.md), sus pruebas
+con HTTP, MCP y navegador y la coordinación de grupos que queda por completar.
+
 GLM en tres Sparks es el modelo por defecto configurable. Thinking, esfuerzo según motor y plazo inicial están activos. Studio incluye esquemas JSON guardables y extracción documental con evidencias, inferencias, descartes, conflictos y límites de validación. Los canvas tienen una comprobación final persistida, y el modo de solo lectura resuelve los alias antes de permitir lecturas. Estos cambios están revisados y activados. La evaluación aislada Q4 anterior es histórica: las pruebas con modelo usan las Sparks y dejan las cuatro GPU del PC para Luis. Véanse [verificación y límites medidos](FAUSTUS.md) y [objetivos restantes](OBJETIVOS.md).
 
 ## Qué es Faustus
