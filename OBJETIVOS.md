@@ -1407,3 +1407,13 @@ Prospero342 y QA/migración de familia343. No declarar completa la familia por
 la entrega del núcleo o de un piloto.
 
 Copilot337 aporta búsqueda/recuperación por identidad/texto/fecha. Queda la migración familiar343 y medición del modelo global sobre encargos variados; las pruebas con proveedor simulado sólo validan el flujo.
+# Calidad de respuestas y presentación
+
+488 implementa citas cercanas, todas las fuentes durables, entity/details y
+lectura móvil. La aceptación visual/API/MCP está verificada en instancias propias;
+el modelo global demuestra gráficos correctos y JSON puro en dos casos de prueba.
+El caso inicial fallido y las repeticiones se conservan. Ampliar la evaluación a
+preguntas reales variadas y comparar fuentes/conclusiones: las expresiones
+cualitativas aún pueden ir más allá de la muestra. No declarar igualdad de
+calidad general por disponer de los mismos bloques visuales. Extender los nuevos
+bloques a los lectores embed/legado antes de declarar paridad entre lectores.
