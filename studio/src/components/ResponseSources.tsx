@@ -2,7 +2,7 @@ import { ChevronDown, Globe } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { t } from '../i18n';
 import { safeExternal } from '../lib/markdown';
-import { sourceDomain, type ResponseSource } from '../lib/responsePresentation';
+import { sourceDomain, sourceKey, type ResponseSource } from '../lib/responsePresentation';
 
 export function SourceLink({ source, href = source.url, children }: { source: ResponseSource; href?: string; children?: ReactNode }) {
   const url = safeExternal(href);
@@ -17,6 +17,7 @@ export function SourceLink({ source, href = source.url, children }: { source: Re
 
 /** Keep the complete observed list available, including sources beyond the first six. */
 export function ResponseSources({ sources, expanded = false }: { sources: readonly ResponseSource[]; expanded?: boolean }) {
+  sources = sources.filter(source => sourceKey(source.url));
   if (!sources.length) return null;
   const links = <ul className="fs-response-sources__list">{sources.map((source, i) =>
     <li key={`${source.url}-${i}`}><SourceLink source={source}>{source.title || sourceDomain(source)}</SourceLink><small>{sourceDomain(source)}</small></li>,
