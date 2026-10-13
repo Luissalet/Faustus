@@ -1,5 +1,19 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+**Delegación y resultados (13-10-2026, Ágora #457):** sin plazo de 25 minutos
+impuesto al trabajador ni cancelación por silencio por defecto; cero conserva
+su significado de ilimitado y los plazos positivos se respetan. Ancho por defecto
+cero acepta toda la lista, sin el techo oculto de 128; la concurrencia por
+endpoint sigue encolando. Se conservan elección de modelos/tier, ruta heredada,
+Stop y supervisor explícito. Una lectura con informe no se reintenta como
+escritura; efectos de herramientas fuera del sistema de archivos pueden
+entregar informes sin fingir modificaciones locales. El informe del trabajador
+aplica response_replace y descarta narración previa al resultado de una
+herramienta. API/chat, MCP y controles existentes comparten el mismo código.
+QA con transporte simulado y dos modelos distintos; dos roles con GLM global
+real leen 42, una llamada correcta cada uno, y terminan tras cerrar el observador
+MCP. No es una demostración de superioridad universal de calidad del modelo.
+
 **Trabajo autónomo y navegador (13-10-2026, Ágora #450):** abrir, consultar o
 recibir latidos del navegador no cancela por defecto tareas manuales/programadas.
 `BACKGROUND_TASK_FOREGROUND_GATE=true` conserva la política anterior opcional.

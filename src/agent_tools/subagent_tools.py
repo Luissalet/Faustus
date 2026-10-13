@@ -36,8 +36,7 @@ from src import effort_profile
 
 logger = logging.getLogger(__name__)
 
-MAX_SUBAGENTS = 4          # default width; `agent_subagent_max_tasks` raises it
-HARD_MAX_SUBAGENTS = 128   # ceiling for `agent_subagent_max_tasks`
+MAX_SUBAGENTS = 0          # zero queues every requested task
 #: Tiers a task may name instead of a model (`tier: "fast"`), each mapped by
 #: the owner to a model in Settings (`agent_subagent_tier_<name>`).
 SUBAGENT_TIERS = ("local", "fast", "mid", "frontier")
@@ -45,8 +44,8 @@ SUBAGENT_TIERS = ("local", "fast", "mid", "frontier")
 REVIEWER_MAX_ROUNDS = 6
 REVIEWER_MAX_FINDINGS = 4
 DEFAULT_MAX_ROUNDS = 14
-DEFAULT_WORKER_TIMEOUT_S = 1500   # wall-clock bound per worker (25 min; qwen3-coder on this GPU does a task in 1-5 min)
-MIN_WORKER_TIMEOUT_S = 60         # floor for the per-worker timeout (counted from `started`, not from queueing)
+DEFAULT_WORKER_TIMEOUT_S = 0      # no deadline unless the caller requests one
+MIN_WORKER_TIMEOUT_S = 0          # zero means unlimited; positive deadlines are caller-owned
 SUBAGENT_FOLDER = "Agents"
 REVIEWER_NAME = "reviewer"
 
@@ -872,14 +871,16 @@ REVIEWER_CONTRACT = (
 
 
 def max_tasks() -> int:
-    """How many tasks one delegate_agents call may run (the rest are dropped
-    and reported). The owner sets it; a local GPU still runs only
-    `agent_subagent_max_parallel` of them at once, the rest queue."""
+    """An optional owner-set width; zero queues every requested task.
+
+    Execution concurrency remains controlled independently by the endpoint's
+    shared slots, so accepting a larger task list does not launch it all at once.
+    """
     try:
-        n = int(_setting("agent_subagent_max_tasks", MAX_SUBAGENTS) or MAX_SUBAGENTS)
+        n = int(_setting("agent_subagent_max_tasks", MAX_SUBAGENTS))
     except (TypeError, ValueError):
         n = MAX_SUBAGENTS
-    return max(1, min(n, HARD_MAX_SUBAGENTS))
+    return max(0, n)
 
 
 def tier_route(tier: str):
@@ -965,7 +966,7 @@ def parse_delegation_args(content: str, *, workspace: Optional[str] = None) -> D
     if not isinstance(tasks_raw, list) or not tasks_raw:
         raise ValueError("delegate_agents: 'tasks' must be a non-empty list")
     tasks: List[Dict[str, Any]] = []
-    width = max_tasks()
+    width = max_tasks() or len(tasks_raw)
     refused: List[Dict[str, str]] = []
     for i, t in enumerate(tasks_raw[:width]):
         files: List[str] = []
@@ -1056,13 +1057,13 @@ def parse_delegation_args(content: str, *, workspace: Optional[str] = None) -> D
                         row["model"] = _mdl[:120]
                     if _ep:
                         row["endpoint_id"] = _ep[:120]
-            for _key, _lo, _hi in (("max_rounds", 1, 40), ("timeout_s", MIN_WORKER_TIMEOUT_S, 7200)):
+            for _key, _lo in (("max_rounds", 1), ("timeout_s", 0)):
                 try:
-                    _v = int(t.get(_key)) if t.get(_key) not in (None, "") else None
+                    _v = float(t.get(_key)) if t.get(_key) not in (None, "") else None
                 except (TypeError, ValueError):
                     _v = None
-                if _v is not None:
-                    row[_key] = max(_lo, min(_v, _hi))
+                if _v is not None and math.isfinite(_v):
+                    row[_key] = max(_lo, int(_v)) if _key == "max_rounds" else max(0, _v)
             if _as_bool(t.get("read_only") or (str(t.get("role") or "").lower() == "reviewer"), False):
                 row["read_only"] = True
                 if not agent:
@@ -1110,10 +1111,10 @@ def parse_delegation_args(content: str, *, workspace: Optional[str] = None) -> D
     except (TypeError, ValueError):
         max_rounds = DEFAULT_MAX_ROUNDS
     try:
-        timeout_s = float(data.get("timeout_s") or data.get("timeout") or DEFAULT_WORKER_TIMEOUT_S)
+        timeout_s = float(data.get("timeout_s", data.get("timeout", DEFAULT_WORKER_TIMEOUT_S)))
     except (TypeError, ValueError):
         timeout_s = float(DEFAULT_WORKER_TIMEOUT_S)
-    timeout_s = max(MIN_WORKER_TIMEOUT_S, min(timeout_s, 7200))
+    timeout_s = max(0, timeout_s) if math.isfinite(timeout_s) else DEFAULT_WORKER_TIMEOUT_S
     job_agent = str(data.get("agent") or "").strip()[:60]
     if job_agent:
         for row in tasks:
@@ -1122,7 +1123,7 @@ def parse_delegation_args(content: str, *, workspace: Optional[str] = None) -> D
     out = {
         "tasks": tasks,
         "parallel": _as_bool(data.get("parallel"), True),
-        "max_rounds": max(3, min(max_rounds, 40)),
+        "max_rounds": max(1, max_rounds),
         "shared_context": str(data.get("context") or data.get("shared_context") or "").strip()[:4000],
         "timeout_s": int(timeout_s) if float(timeout_s).is_integer() else timeout_s,
         "reviewer": _as_bool(reviewer, False),
@@ -1243,7 +1244,7 @@ class SubagentRun:
         self.endpoint_id = str(task.get("endpoint_id") or "")
         self.team_bound = bool(task.get('team_bound'))
         self.max_rounds_override = task.get("max_rounds") or None
-        self.timeout_s_override = task.get("timeout_s") or None
+        self.timeout_s_override = task.get("timeout_s")
         #: Derived by DelegateAgentsTool before the run starts; None means an
         #: unrestricted worker, i.e. exactly today's behaviour.
         self.permissions: Any = None
@@ -1728,7 +1729,11 @@ async def _run_subagent(
                 if not ev.get("thinking"):
                     run.text += ev["delta"]
                 continue
-            if et == "tool_start":
+            if et == "response_replace":
+                # The normal chat consumes these corrections too. A child report
+                # must not keep retracted prose or tool syntax from earlier rounds.
+                run.text = str(ev.get("text") or "")
+            elif et == "tool_start":
                 run.note_tool_start(ev.get("tool"), ev.get("full_command") or ev.get("command"))
                 await emit({"event": "tool", "tool": ev.get("tool"), "command": _short(ev.get("command"), 120), "phase": "start"})
             elif et == "tool_progress":
@@ -1737,6 +1742,9 @@ async def _run_subagent(
                             "elapsed_s": float(ev.get("elapsed_s") or ev.get("elapsed") or 0),
                             "tail": _short(ev.get("tail") or ev.get("message"), 200)})
             elif et == "tool_output":
+                # Earlier narration can guess the result before the tool returns.
+                # Keep it in the round transcript, not in the worker's final report.
+                run.text = ""
                 run.tool_calls += 1
                 from src.agent_harness import _result_ok
                 from src.contracts.tool import TOOL_RESULT_STATUSES
@@ -1996,6 +2004,8 @@ def _build_report_text(runs: List[SubagentRun], workspace: Optional[str], locks:
             if attempts > 1:
                 lines.append(f"   receipt: {last_verdict} (retried once — first attempt was "
                               f"{r.receipts[0].get('verdict')})")
+            elif last_verdict == delegation_receipts.VERDICT_REPORTED:
+                lines.append("   receipt: reported (no file changes requested; inspect the tool results and report)")
             if last_verdict in (delegation_receipts.VERDICT_EMPTY, delegation_receipts.VERDICT_ACK_ONLY):
                 lines.append("   " + delegation_receipts.failure_message(last_verdict))
         bad = [c for c in r.static_checks if not c.get("ok")]
@@ -2267,7 +2277,7 @@ def _attach_resolution(runs: List["SubagentRun"], workspace: Optional[str],
             task.update({k: v for k, v in (("model", run.model_override),
                                            ("endpoint_id", run.endpoint_id),
                                            ("max_rounds", run.max_rounds_override),
-                                           ("timeout_s", run.timeout_s_override)) if v})
+                                           ("timeout_s", run.timeout_s_override)) if v is not None})
             resolution = resolver.resolve(
                 agent=run.agent, task=task, defs=catalogue, workspace=workspace,
                 scope={"owner": str(owner or ""), "project_id": project_id,
@@ -2493,7 +2503,7 @@ class DelegateAgentsTool:
             except (TypeError, ValueError):
                 tick_s, stall_s = 5.0, 120.0
             tick_s = max(0.05, tick_s)
-            supervise = _as_bool(_setting("agent_subagent_supervisor", True), True)
+            supervise = _as_bool(_setting("agent_subagent_supervisor", False), False)
             nudged_at: Optional[float] = None
             while True:
                 await asyncio.sleep(tick_s)
@@ -2574,7 +2584,9 @@ class DelegateAgentsTool:
             # definition can narrow a worker but never buy it more than a task
             # could have asked for directly.
             rounds = run.max_rounds_override or max_rounds or args["max_rounds"]
-            limit = float(run.timeout_s_override or args["timeout_s"])
+            requested_limit = (run.timeout_s_override if run.timeout_s_override is not None
+                               else args["timeout_s"])
+            limit = float(requested_limit) or None
             # A definition or a tier may name the endpoint its worker runs on
             # (routed once, above). A local worker keeps the COORDINATOR's GPU
             # slot: it bounds how many workers generate at once on this box.
@@ -2622,9 +2634,8 @@ class DelegateAgentsTool:
                     raise
                 try:
                     dog = asyncio.create_task(watchdog(run, emit))
-                    # Wall-clock bound per worker: a worker stuck on a foreground
-                    # server or a silent model must not hang the coordinator.
-                    # Counted from here — queue time is not the worker's.
+                    # Only a requested deadline cancels the worker. Silence during
+                    # a model/tool call is not evidence that work should be stopped.
                     await asyncio.wait_for(
                         _run_subagent(
                             run,

@@ -1334,13 +1334,13 @@ DEFAULT_SETTINGS = {
     # may run at the same time on one GPU (the rest wait, "queued").
     "agent_subagent_tick_seconds": 5,
     "agent_subagent_stall_seconds": 120,
-    "agent_subagent_supervisor": True,
+    "agent_subagent_supervisor": False,
     "agent_subagent_max_parallel": 2,
     # Wide fan-outs: tasks per delegate_agents call, the lane for workers on
     # a hosted API (they do not take the GPU slot), model tiers a task can
     # name instead of a model, and an enforced model list (empty = any).
     "agent_subagent_max_parallel_api": 16,
-    "agent_subagent_max_tasks": 12,
+    "agent_subagent_max_tasks": 0,
     "agent_subagent_tier_local": "",
     "agent_subagent_tier_fast": "",
     "agent_subagent_tier_mid": "",

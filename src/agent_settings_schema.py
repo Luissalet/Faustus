@@ -668,8 +668,8 @@ GROUPS: list[dict[str, Any]] = [
             _int("agent_subagent_max_tasks", "Max tasks per delegation",
                  "How many workers one delegate_agents call may start (the rest are dropped and reported). "
                  "Width is not speed on one GPU: past 'Max parallel workers' the rest queue. Wide read-only "
-                 "review fan-outs are what this is for.",
-                 1, 128),
+                 "review fan-outs are what this is for. 0 = queue every requested task.",
+                 0, 2**53 - 1),
             _text("agent_subagent_tier_local", "Tier: local",
                   "Model a task gets when it asks for `tier: local`. A model name, or `endpoint_id|model` to run it "
                   "on another endpoint. Empty = the coordinator's model."),
@@ -703,7 +703,8 @@ GROUPS: list[dict[str, Any]] = [
                  "Heartbeat period of the control board.",
                  1, 60),
             _bool("agent_subagent_supervisor", "Deterministic supervisor",
-                  "Nudge a stalled worker once, then stop it."),
+                  "When explicitly enabled, nudge a stalled worker once, then stop it. Disabled by default: "
+                  "a silent model or tool call keeps running until completion, an explicit deadline or Stop."),
             _bool("agent_subagent_lean_tools", "Lean worker toolset",
                   "Workers skip web, memory, skills and background-job tools unless their task mentions them (fewer schema tokens per round)."),
             _int("agent_budget_tokens_per_run", "Run token ceiling",

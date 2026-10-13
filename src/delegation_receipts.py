@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional
 # ---------------------------------------------------------------------------
 
 VERDICT_PRODUCED = "produced"
+VERDICT_REPORTED = "reported"
 VERDICT_EMPTY = "empty"
 VERDICT_ACK_ONLY = "ack_only"
 VERDICT_ERROR = "error"
@@ -135,6 +136,14 @@ def receipt_for(run: Any) -> DelegationReceipt:
     tool_calls = int(getattr(run, "tool_calls", 0) or 0)
     error = getattr(run, "error", None)
     verdict = classify(text, mutations, tool_calls, error=error)
+    # A completed reading/research task produces a report, not a file mutation.
+    # Keep that distinct from a verified edit and from an unfulfilled write.
+    failed_calls = int(getattr(run, "failed_calls", 0) or 0)
+    if (verdict == VERDICT_EMPTY and getattr(run, "stop_reason", "") == "complete"
+            and not looks_like_write_task(getattr(run, "instruction", ""))
+            and (failed_calls < tool_calls or
+                 (tool_calls == 0 and not _WRITE_VERB_RE.search(getattr(run, "instruction", ""))))):
+        verdict = VERDICT_REPORTED
     return DelegationReceipt(
         worker=str(getattr(run, "name", "") or ""),
         task=_short(getattr(run, "instruction", "") or "", 200),
@@ -175,6 +184,15 @@ _WRITE_VERB_RE = re.compile(
 # call sites are allowed to diverge without either one silently breaking the
 # other.
 _PATH_TOKEN_RE = re.compile(r"[\w][\w./\\-]*\.[A-Za-z0-9]{1,8}\b")
+_READ_VERB_RE = re.compile(
+    r"\b(read|inspect|review|analy[sz]e|check|verify|compare|find|audit|explain|"
+    r"lee|leer|revisa|revisar|analiza|analizar|comprueba|comprobar|verifica|verificar|"
+    r"compara|comparar|busca|buscar|audita|auditar|explica|explicar)\b", re.I,
+)
+_FILE_TARGET_RE = re.compile(
+    r"\b(files?|modules?|scripts?|code|tests?|functions?|classes|"
+    r"archivos?|ficheros?|módulos?|código|pruebas?|funciones|clases)\b", re.I,
+)
 
 
 def looks_like_write_task(instruction: Any) -> bool:
@@ -186,7 +204,13 @@ def looks_like_write_task(instruction: Any) -> bool:
     text = str(instruction or "")
     if not text.strip():
         return False
-    return bool(_WRITE_VERB_RE.search(text) or _PATH_TOKEN_RE.search(text))
+    if _WRITE_VERB_RE.search(text):
+        # Tool work can edit a slide, create an event or send a message without
+        # writing a filesystem artifact. Never turn those tasks into write_file.
+        return bool(_PATH_TOKEN_RE.search(text) or _FILE_TARGET_RE.search(text))
+    if _READ_VERB_RE.search(text):
+        return False
+    return bool(_PATH_TOKEN_RE.search(text))
 
 
 def extract_paths(instruction: Any, limit: int = 8) -> List[str]:
