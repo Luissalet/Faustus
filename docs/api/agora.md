@@ -76,3 +76,13 @@ separate spaces, desktop and mobile layouts, project settings, draft
 recovery, room restoration, and embedded context. Scripted replies verify
 interface and integration behaviour; they do not establish global-model
 quality, universal harness rankings, or production activation.
+
+## Production activation — 14 October 2026
+
+Hubad94cd6 and nativef493eb2d are integrated and active. The original ecosystem is titled Faustus y Hoards and linked to existing project100d012d1ff3/workspaceD:/LocalAI. Native coordination binding reports bound=true/pending=false/authority=hub. Original Council and Group databases were empty at activation and remain unchanged; populated histories and migration are separately verified in private fixtures.
+
+The actual Main browser shows all three modes at1440/390 with the selected title,44px mobile selector, loaded Hub iframe, no page errors or horizontal overflow. Main stdio MCP reads Hub173/Group9/Council12 tools with six read-only calls. Production page CSP initially blocked the embedded Hub; reviewed520R3 c20b5878+83cc4eac now allows the configured Hub origin on /agora, preserving all other pages. Independent review28PASS and real Main iframe pass. The initial blocked capture/log remain historical failures.
+
+Consistent backups precede activation. All6330 original Agora messages retain IDs and field values;552 original threads and519 tasks retain IDs, with only subsequent coordination/doc activity changed. Native412 sessions and35 MCP configurations remain exact; original9 Council tables,3 Group tables and6 native coordination-cache tables are unchanged. Hub configuration/token and project/session/connector/key/controller files retain hashes; settings differ only in three existing runtime metadata fields, with Full/global Sparks selection and execution preferences preserved. All25 child Python processes of the previous Hub survive. The owned watcher pause is removed, its scheduled watcher restarted on reviewed all-space source and original SID preserved. No production QA room/model generation, model stop/load or push.
+
+Evidence: research-inbox/council-agora-20261013/main-browser494.json, main-mcp494.json, history494-proof.json, activation-preservation494.json, activation-delta494.json and RESULT-494.md. Private model fixtures establish integration behaviour; global-model quality and universal comparative superiority remain unmeasured. Manual CAS/readback preserves161 paragraphs/158 other paragraphs and4 tables; the project graph adds only the owned feature node without embeddings. Final subsequent commits containing documentation only do not require another runtime reload.
