@@ -9,8 +9,8 @@ endpoints they serve. Faustus does not talk to the Sparks itself. This module:
 * keeps one Faustus endpoint per recipe (``Sparks · <title>``), enabled while that recipe serves and disabled when it does not, so the
   model picker offers exactly what the Sparks can answer now;
 * when ``sparks_default_backend`` is on, makes the Sparks the default chat backend while a recipe serves (the preferred recipe in
-  ``sparks_recipe``, else the one Prometheus marks as default, else the first one running) and gives the default back to the local
-  model the person had (remembered in ``sparks_local_default``) when the Sparks stop serving. Choosing another default by hand while
+  ``sparks_recipe``, else the one Prometheus marks as default, else the first one running) and preserves the configured Sparks selection when its service is unavailable.
+  ``sparks_local_default`` remains historical configuration, never an automatic text-model fallback. Choosing another default by hand while
   the Sparks serve turns ``sparks_default_backend`` off, so the two never fight.
 
 Every value is a setting, editable in Settings → Sparks: nothing about the cluster is fixed here.
@@ -138,7 +138,7 @@ def status(*, with_recipes: bool = True) -> Dict[str, Any]:
     cfg = config()
     base = {"enabled": cfg["enabled"], "url": cfg["url"], "default_backend": cfg["default_backend"], "recipe": cfg["recipe"],
             "first_token_timeout_s": cfg.get("first_token_timeout_s", 30.0),
-            "local_default": cfg["local_default"]}
+            "local_default": cfg["local_default"], "effective": effective_default()}
     if not cfg["enabled"]:
         return {"ok": False, "error": "disabled", **base}
     code, overview = _request("GET", "/api/overview")
@@ -266,10 +266,10 @@ def sync() -> Dict[str, Any]:
     with _lock:
         cfg = config()
         if not cfg["enabled"]:
-            # Switched off: nothing of the Sparks may stay in use — disable their endpoints and give the default back.
+            # Stop synchronization without silently selecting a PC text model.
             _disable_managed(cfg["endpoints"])
-            action = _restore_local(cfg) if effective_default()["on_sparks"] else "none"
-            return {"ok": False, "error": "disabled", "action": action}
+            return {"ok": False, "error": "disabled", "action": "none",
+                    "default": effective_default(), "advisory": "Sparks synchronization is disabled; the configured model stays selected. Choose another model explicitly to change it."}
         running = _endpoints_from_prometheus()
         if running is None:
             # A failed observation is not evidence that the selected model disappeared.
@@ -278,7 +278,8 @@ def sync() -> Dict[str, Any]:
                 answers = _endpoint_answers(eff["endpoint_id"], eff.get("model") or "")
                 if answers is False:
                     _disable_managed({k: v for k, v in cfg["endpoints"].items() if v == eff["endpoint_id"]})
-                    return {**_UNREACHABLE, "action": _restore_local(cfg)}
+                    return {**_UNREACHABLE, "action": "none", "endpoint_status": "unavailable",
+                            "advisory": "The selected Sparks model is not serving. Its default was preserved; no PC text model was selected."}
                 if answers is None:
                     return {**_UNREACHABLE, "action": "none", "endpoint_status": "unknown",
                             "advisory": "Could not verify the selected Sparks model; its endpoint and default were preserved."}
@@ -289,11 +290,10 @@ def sync() -> Dict[str, Any]:
         patch: Dict[str, Any] = {}
         if ids != cfg["endpoints"]:
             patch["sparks_endpoints"] = ids
-        managed = set(ids.values())
         eff = effective_default()
         applied = cfg["applied"]
         action = "none"
-        # Remember the latest local default, so whatever puts the Sparks in its place (the switch or a pick by hand) can give it back.
+        # Retain the previous selection as historical configuration, without automatic fallback.
         if not eff["on_sparks"] and eff["endpoint_id"]:
             here = {"endpoint_id": eff["endpoint_id"], "model": eff["model"]}
             if cfg.get("local_default") != here:
@@ -316,26 +316,19 @@ def sync() -> Dict[str, Any]:
                 _set_default(ep_id, model)
                 patch["sparks_applied_default"] = {"endpoint_id": ep_id, "model": model, "recipe": target["recipe"]}
                 action = "to_sparks"
-        elif eff["endpoint_id"] in managed and eff["endpoint_id"]:
-            # The default is on the Sparks while the automatic switch is off (or nothing serves). Give it back only when it no longer
-            # serves, or when it is still the automatic choice being undone; a Sparks model picked by hand stays.
+        endpoint_status = None
+        if eff["on_sparks"]:
             serving = {ids.get(e["recipe"]): set(e.get("models") or []) for e in running}
-            still_serves = eff["model"] in serving.get(eff["endpoint_id"], set())
-            automatic = bool(applied.get("endpoint_id")) and action != "user_override"
-            if not still_serves or automatic:
-                action = _restore_local(cfg)
+            if eff["model"] not in serving.get(eff["endpoint_id"], set()):
+                endpoint_status = "unavailable"
         if patch:
             _update(patch)
-        return {"ok": True, "running": [e["recipe"] for e in running], "endpoints": ids, "action": action,
+        result = {"ok": True, "running": [e["recipe"] for e in running], "endpoints": ids, "action": action,
                 "default": effective_default()}
-
-
-def _restore_local(cfg: Dict[str, Any]) -> str:
-    """Give the chat default back to the local model it had before the Sparks (or leave it empty if there was none)."""
-    local = cfg.get("local_default") or {}
-    _set_default(local.get("endpoint_id", ""), local.get("model", ""))
-    _update({"sparks_applied_default": {}})
-    return "to_local"
+        if endpoint_status and action != "to_sparks":
+            result.update(endpoint_status=endpoint_status,
+                advisory="The selected Sparks model is not serving. Its default was preserved; no PC text model was selected.")
+        return result
 
 
 def _disable_managed(ids: Dict[str, str]) -> None:
