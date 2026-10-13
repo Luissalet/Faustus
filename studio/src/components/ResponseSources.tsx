@@ -11,7 +11,7 @@ export function SourceLink({ source, href = source.url, children }: { source: Re
     : <Globe size={13} aria-hidden="true" />;
   const content = <>{icon}<span>{children || sourceDomain(source)}</span></>;
   return url
-    ? <a className="fs-response-source" href={url} target="_blank" rel="noreferrer" title={source.title || url} aria-label={`${source.title || sourceDomain(source)} · ${sourceDomain(source)}`}>{content}</a>
+    ? <a className="fs-response-source" href={url} target="_blank" rel="noreferrer" title={source.title || url}>{content}</a>
     : <span className="fs-response-source">{content}</span>;
 }
 

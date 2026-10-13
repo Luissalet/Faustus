@@ -1,5 +1,5 @@
 import { t } from '../i18n';
-import { Check, Code2, Copy, CornerDownLeft, ImageOff, Play } from 'lucide-react';
+import { Check, ChevronDown, Code2, Copy, CornerDownLeft, ImageOff, Play } from 'lucide-react';
 import { createContext, useContext, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { findSensitive, getDisplay, stripEmojis, useDisplay } from '../shell/display';
 import { writeClipboardText } from '../lib/clipboard-write';
@@ -226,7 +226,7 @@ function PresentationFence({ lang, code }: { lang: string; code: string }) {
   const spec = useMemo(() => parsePresentation(lang, code), [lang, code]);
   if (!spec) return <CodeBlock lang={lang} code={code} />;
   const content = <Rich text={spec.body} sources={sources} onOpenFile={onOpenFile} />;
-  if (spec.kind === 'details') return <details className="fs-response-details"><summary>{plain(spec.summary, 'summary')}</summary>{content}</details>;
+  if (spec.kind === 'details') return <details className="fs-response-details"><summary><ChevronDown size={14} aria-hidden="true" />{plain(spec.summary, 'summary')}</summary>{content}</details>;
   return <section className="fs-response-entity" aria-label={spec.title}>
     {spec.image && <div className="fs-response-entity__image"><RichImage src={safeSrc(spec.image)} alt={spec.alt || spec.title} /></div>}
     <div className="fs-response-entity__content">
