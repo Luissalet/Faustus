@@ -6541,16 +6541,16 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                     # already does above.
                     if "reasoning_budget" in _overrides:
                         try:
-                            _budget = int(_overrides["reasoning_budget"])
+                            _reasoning_budget = int(_overrides["reasoning_budget"])
                         except (TypeError, ValueError):
-                            _budget = 4096
+                            _reasoning_budget = 4096
                     else:
                         try:
-                            _budget = int(_local_sampler_default("local_openai_reasoning_budget_default", 4096))
+                            _reasoning_budget = int(_local_sampler_default("local_openai_reasoning_budget_default", 4096))
                         except (TypeError, ValueError):
-                            _budget = 4096
-                    if _budget > 0:
-                        payload["reasoning_budget"] = _budget
+                            _reasoning_budget = 4096
+                    if _reasoning_budget > 0:
+                        payload["reasoning_budget"] = _reasoning_budget
         if _overrides:
             _apply_gen_overrides_openai(payload, _overrides, url)
         _fit_reasoning_effort_to_template(payload, url)
