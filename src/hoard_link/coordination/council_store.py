@@ -579,6 +579,7 @@ register_schema("council", (
     """,
     'CREATE TABLE IF NOT EXISTS council_drivers (session_id TEXT PRIMARY KEY, identity TEXT NOT NULL, lease_until REAL NOT NULL)',
     'CREATE TABLE IF NOT EXISTS council_controls (ordinal INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT UNIQUE,session_id TEXT,command TEXT,owner TEXT,actor TEXT,args TEXT,status TEXT DEFAULT "queued",result TEXT DEFAULT "{}")',
+    'CREATE TABLE IF NOT EXISTS council_closes (id TEXT PRIMARY KEY,session_id TEXT NOT NULL,turn_id TEXT NOT NULL,summary TEXT NOT NULL,created_at TEXT NOT NULL)',
 ))
 
 
@@ -824,6 +825,22 @@ class CouncilStore:
             conn.execute('INSERT INTO council_controls(id,session_id,command,owner,actor,args) VALUES(?,?,?,?,?,?)',
                          (ident, session_id, command, owner, actor, json.dumps(args, ensure_ascii=False)))
         return ident
+
+    def save_close(self, session_id: str, summary: dict, turn_id: str = '') -> str:
+        """Save the actual ledger-derived close before publishing it."""
+        import uuid
+        ident = turn_id or uuid.uuid4().hex
+        with self._db() as conn:
+            if not conn.execute('SELECT 1 FROM council_sessions WHERE id=?', (session_id,)).fetchone():
+                raise NotFound('session', session_id)
+            conn.execute('INSERT INTO council_closes VALUES(?,?,?,?,?) ON CONFLICT(id) DO NOTHING',
+                (ident, session_id, turn_id, json.dumps(summary, ensure_ascii=False), now_iso()))
+        return ident
+
+    def last_close(self, session_id: str) -> dict:
+        with self._db() as conn:
+            row = conn.execute('SELECT summary FROM council_closes WHERE session_id=? ORDER BY rowid DESC LIMIT 1', (session_id,)).fetchone()
+            return json.loads(row[0]) if row else {}
 
     def controls(self, session_id: str, status: str = '') -> list:
         with self._db() as conn:

@@ -5,6 +5,7 @@ export interface CoordinationTemplate {
   id: string;
   project_id: string;
   connector_id: string;
+  space_id?: string;
   actor: string;
   operations: string[];
   resources: string[];
@@ -82,6 +83,7 @@ export function coordinationDraft(template: CoordinationTemplate | null, connect
   ])];
   return {
     connector_id: connector,
+    space_id: template?.space_id || 'ecosystem',
     resources: unchanged && template ? [...template.resources] : resources,
     repos: unchanged && template ? [...template.repos] : repos,
     thread_ids: [...new Set([...(template?.thread_ids ?? []), 32])],

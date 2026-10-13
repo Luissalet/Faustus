@@ -1,7 +1,7 @@
 import { Check, ChevronDown, ExternalLink, Play, Plus, Save, Send, Square, Trash2, Users, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
-import {useCoordinationParams, useCoordinationDraft} from '../../components/coordinationNavigation';
+import {useCoordinationParams, useCoordinationDraft, coordinationAttempt, acknowledgeCoordinationAttempt} from '../../components/coordinationNavigation';
 import { Button, Dialog, EmptyState, IconButton, Menu, Skeleton, Toast } from '../../components';
 import { listModels, loadHistory, type ModelRoute } from '../../adapters/chat';
 import {
@@ -214,7 +214,8 @@ export function GroupScreen({embedded = false}: {embedded?: boolean} = {}) {
   const [sending, setSending] = useState(false);
   const [connectionError, setConnectionError] = useState('');
   const [notice, setNotice] = useState<{ text: string; tone: 'ok' | 'warn' } | null>(null);
-  const retryRequest = useRef<{ message: string; id: string } | null>(null);
+  const sendTarget = useRef('');
+  sendTarget.current = spaceId + ':' + (params.get('s') || '');
   const busy = snapshot?.busy ?? false;
   const endRef = useRef<HTMLDivElement>(null);
   const noticeTimer = useRef<number | null>(null);
@@ -239,7 +240,7 @@ export function GroupScreen({embedded = false}: {embedded?: boolean} = {}) {
   }, [say, spaceId]);
 
   const selectedId = params.get('s');
-  useEffect(() => {setRecipient(''); setEditing(false);}, [selectedId, spaceId]);
+  useEffect(() => {setRecipient(''); setEditing(false); setSending(false);}, [selectedId, spaceId]);
   useEffect(() => {
     const c = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
@@ -288,13 +289,17 @@ export function GroupScreen({embedded = false}: {embedded?: boolean} = {}) {
   const send = async () => {
     const message = draft.trim();
     if (!message || !state || sending) return;
-    const request = retryRequest.current?.message === message ? retryRequest.current : { message, id: crypto.randomUUID() };
-    retryRequest.current = request; setSending(true);
+    const scope = spaceId + ':' + state.parentId;
+    const attemptScope = 'groups:' + scope;
+    const request = coordinationAttempt(attemptScope, message, recipient);
+    setSending(true);
     try {
-      await sendGroup(state.parentId, message, request.id, recipient ? [recipient] : []);
-      retryRequest.current = null; setDraft('');
+      const answer = await sendGroup(state.parentId, message, request.id, recipient ? [recipient] : []);
+      if (!answer?.turn_id) throw new Error(t('Message not confirmed. Retry the same send.'));
+      acknowledgeCoordinationAttempt(attemptScope, request.id);
+      setDraft((current) => current.trim() === message ? '' : current);
     } catch (error) { say((error as Error).message, 'warn'); }
-    finally { setSending(false); }
+    finally { if (sendTarget.current === scope) setSending(false); }
   };
   const stop = async () => {
     if (!state) return;

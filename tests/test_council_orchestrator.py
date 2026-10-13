@@ -88,6 +88,10 @@ class FakeStore:
         self.idempotency: Dict[str, str] = {}
 
     # -- turns
+    def save_close(self, session_id, summary, turn_id=''):
+        self.last_summary = dict(summary)
+        return turn_id or 'requested-close'
+
     def create_turn(self, turn: CouncilTurn) -> CouncilTurn:
         if turn.idempotency_key:
             for existing in self.turns.values():

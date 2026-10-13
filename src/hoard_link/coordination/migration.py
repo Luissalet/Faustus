@@ -8,7 +8,7 @@ import sqlite3
 
 TABLES = {
     'council': ('council_sessions', 'council_participants', 'council_messages', 'council_turns',
-                'council_tasks', 'council_claims', 'council_objections', 'council_decisions', 'council_idempotency', 'council_controls'),
+                'council_tasks', 'council_claims', 'council_objections', 'council_decisions', 'council_idempotency', 'council_controls', 'council_closes'),
     'groups': ('groups', 'group_turns', 'group_steps'),
 }
 

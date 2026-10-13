@@ -3823,6 +3823,7 @@ export const es: Record<string, string> = {
   "Message from {name}": "Mensaje de {name}",
   "Message matches (regex)": "El mensaje coincide con (regex)",
   "Message navigation": "Navegación de mensajes",
+  "Message not confirmed. Retry the same send.": "El envío no se ha confirmado. Vuelve a intentarlo.",
   "Message recipients": "Destinatarios del mensaje",
   "Message sent to the worker; it reads it before its next round.": "Mensaje enviado al worker; lo lee antes de su siguiente ronda.",
   "Message without text": "Mensaje sin texto",

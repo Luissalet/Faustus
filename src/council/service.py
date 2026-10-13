@@ -877,6 +877,7 @@ class CouncilService:
         }
         driver = self._db().driver(session.id)
         base['controls'] = self._db().controls(session.id)
+        base['last_close'] = self._db().last_close(session.id)
         base['running'] = bool(base['running'] or driver)
         base['execution_elsewhere'] = bool(driver and driver['identity'] != self._driver_id)
         if orchestrator is None:

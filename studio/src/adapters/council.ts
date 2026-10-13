@@ -1011,6 +1011,11 @@ export async function loadRoom(id: string, signal?: AbortSignal): Promise<RoomDe
   return roomDetailFrom(await getJson<unknown>(path(id), signal));
 }
 
+export async function loadClose(id: string, signal?: AbortSignal): Promise<CouncilClose | null> {
+  const state = obj(unwrap(await getJson<unknown>(path(id, '/state'), signal), 'state'));
+  return Object.keys(obj(state.last_close)).length ? closeFrom(state.last_close) : null;
+}
+
 export interface SeatRequest {
   model: string;
   endpointId?: string;

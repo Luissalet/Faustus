@@ -66,7 +66,7 @@ def compact_board(board, binding, *, offset=0, limit=8, full=False, read_only=Fa
             agent["doing"] = doing[:160]
             if len(doing) > 160:
                 agent["doing_chars"] = len(doing)
-    result = {"counts": board.get("counts", {}), "tasks": shown,
+    result = {"space_id": binding.space_id, "counts": board.get("counts", {}), "tasks": shown,
             "tasks_total": len(tasks), "tasks_omitted": len(tasks) - len(shown),
             "offset": offset, "next_offset": offset + limit if offset + limit < max(len(tasks), len(agents), len(locks)) else None,
             "digest": digest,
@@ -109,7 +109,7 @@ class Client:
             raise CoordinationError("the bound connector does not offer this coordination operation")
         writing = suffix not in {"inbox", "board", "task", "locks", "thread_recent"}
         try:
-            result = await self.manager.call_tool(name, dict(args))
+            result = await self.manager.call_tool(name, {**args, 'space_id': self.binding.space_id})
         except Exception as exc:
             if writing:
                 raise UnknownOutcome("coordination write lost its result; inspect before retrying") from exc

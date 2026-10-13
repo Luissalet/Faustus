@@ -4,7 +4,7 @@ import {
   Square, UserCog, Users, X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {useCoordinationParams, useCoordinationDraft} from '../components/coordinationNavigation';
+import {useCoordinationParams, useCoordinationDraft, coordinationAttempt, acknowledgeCoordinationAttempt} from '../components/coordinationNavigation';
 import { Button, Dialog, EmptyState, IconButton, Menu, Skeleton, Toast } from '../components';
 import { listModels, type ModelRoute } from '../adapters/chat';
 import * as api from '../adapters/council';
@@ -666,11 +666,12 @@ export function CouncilScreen({embedded = false}: {embedded?: boolean} = {}) {
     if (!id) return;
     const scope = spaceId + ':' + id;
     if (scope !== currentRoom.current) return;
-    const [room, transcript, book, spend] = await Promise.all([
+    const [room, transcript, book, spend, savedClose] = await Promise.all([
       api.loadRoom(id).catch(() => null),
       api.loadMessages(id).catch(() => [] as api.CouncilMessage[]),
       api.loadLedger(id).catch(() => null),
       api.loadUsage(id).catch(() => null),
+      api.loadClose(id).catch(() => null),
     ]);
     if (scope !== currentRoom.current) return;
     if (room && room.room.spaceId !== spaceId) {setDetail(null); return;}
@@ -678,10 +679,12 @@ export function CouncilScreen({embedded = false}: {embedded?: boolean} = {}) {
     setMessages(transcript);
     if (book) setLedger(book);
     if (spend) setUsage(spend);
+    if (savedClose) {setClose(savedClose); setCloseStatus(savedClose.status); setStopReason(savedClose.stopReason);}
   }, [spaceId]);
 
   /* Opening a room: everything is read once, then the stream keeps it fresh. */
   useEffect(() => {
+    setBusy('');
     if (!roomId) {
       setDetail(null); setMessages([]); setLedger(null); setUsage(null);
       setClose(null); setCloseStatus(''); setStopReason(''); setGap(null);
@@ -795,15 +798,21 @@ export function CouncilScreen({embedded = false}: {embedded?: boolean} = {}) {
 
   const send = async () => {
     const content = draft.trim();
-    if (!content || !roomId) return;
-    setDraft('');
+    if (!content || !roomId || busy) return;
+    const scope = spaceId + ':' + roomId;
+    const attemptScope = 'council:' + scope;
+    const attempt = coordinationAttempt(attemptScope, content);
     setBusy('send');
     try {
       // One key per composed message: a retry of the same POST lands on the
       // turn the first one opened instead of paying for a second round.
       const answer = await api.postMessage(roomId, content, {
-        idempotencyKey: `${roomId}:${Date.now().toString(36)}`,
+        idempotencyKey: attempt.id,
       });
+      if (!answer.turnId) throw new Error(t('Message not confirmed. Retry the same send.'));
+      acknowledgeCoordinationAttempt(attemptScope, attempt.id);
+      setDraft((current) => current.trim() === content ? '' : current);
+      if (currentRoom.current !== scope) return;
       setTurn({ id: answer.turnId, state: answer.status });
       setClose(null);
       setCloseStatus('');
@@ -813,7 +822,7 @@ export function CouncilScreen({embedded = false}: {embedded?: boolean} = {}) {
       const refusal = error as api.CouncilRefusal;
       say(refusal.code ? `${refusal.code}: ${refusal.message}` : (error as Error).message, 'warn');
     } finally {
-      setBusy('');
+      if (currentRoom.current === scope) setBusy('');
     }
   };
 

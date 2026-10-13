@@ -131,7 +131,7 @@ export async function startGroup(input: Participant[], mode: GroupMode,
   saveGroupState(state);
   return state;
 }
-export function sendGroup(id: string, message: string, requestId: string, mentions: string[] = []): Promise<unknown> {
+export function sendGroup(id: string, message: string, requestId: string, mentions: string[] = []): Promise<{turn_id: string}> {
   return command(`/api/groups/${encodeURIComponent(id)}/messages`, { message, request_id: requestId, mentions });
 }
 export function stopGroup(id: string): Promise<unknown> {

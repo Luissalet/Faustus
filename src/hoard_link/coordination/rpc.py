@@ -15,7 +15,7 @@ _TYPES = {cls.__name__: cls for cls in (contracts.CouncilSession, contracts.Coun
           contracts.CouncilMessage, contracts.CouncilTurn, contracts.CouncilTask, contracts.CouncilClaim,
           contracts.CouncilObjection, contracts.CouncilDecision)}
 
-READ_METHODS = frozenset(name for name in COUNCIL_METHODS if name.startswith(('get_', 'list_')) or name in ('stats', 'idempotency_ref')) | frozenset(('group', 'list', 'turns', 'steps', 'recoverable', 'turn_status'))
+READ_METHODS = frozenset(name for name in COUNCIL_METHODS if name.startswith(('get_', 'list_')) or name in ('stats', 'idempotency_ref', 'last_close', 'driver', 'controls', 'control_sessions', 'pending_sessions')) | frozenset(('group', 'list', 'turns', 'steps', 'recoverable', 'turn_status'))
 
 
 class UnknownOutcome(persistence.CouncilStoreError):

@@ -54,8 +54,14 @@ class Binding:
     active: bool = True
     template_id: str | None = None
     template_revision: int | None = None
+    space_id: str = 'ecosystem'
 
     def __post_init__(self):
+        from src.hoard_link.coordination.spaces import space_id
+        try:
+            object.__setattr__(self, 'space_id', space_id(self.space_id))
+        except ValueError as error:
+            raise CoordinationError(str(error)) from error
         for field in ("id", "project_id", "session_id", "connector_id"):
             if not isinstance(getattr(self, field), str) or not getattr(self, field).strip():
                 raise CoordinationError(f"{field} is required")
@@ -110,10 +116,11 @@ class ProjectTemplate:
     connector_fingerprint: str = ""
     revision: int = 1
     active: bool = True
+    space_id: str = 'ecosystem'
 
     def __post_init__(self):
         probe = Binding(session_id="project:" + self.project_id, **self.serialise())
-        for key in ("operations", "resources", "repos", "thread_ids"):
+        for key in ("operations", "resources", "repos", "thread_ids", "space_id"):
             object.__setattr__(self, key, getattr(probe, key))
 
     def serialise(self):

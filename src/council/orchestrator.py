@@ -791,6 +791,8 @@ class CouncilOrchestrator:
         stop_reason = self._scheduler.stop_reason() or "completed"
         turn = self._advance(turn, "synthesizing")
         summary = self._summary(stop_reason)
+        if summary is not None:
+            self._store.save_close(self.session_id, summary.to_dict(), turn_id)
         turn = self._advance(turn, "completed", stop_reason=stop_reason)
         self._publish("council_activity_completed", turn_id=turn_id, activity_id=turn_id,
                       stop_reason=stop_reason,
@@ -1458,6 +1460,8 @@ class CouncilOrchestrator:
         async with self._guard():
             stop_reason = self._scheduler.stop_reason() or "user_stopped"
             summary = self._summary(stop_reason)
+            if summary is not None:
+                self._store.save_close(self.session_id, summary.to_dict())
             status = _text(_get(summary, "status", "")) if summary else ""
             self._publish("council_activity_completed", stop_reason=stop_reason,
                           status=status, requested=True)

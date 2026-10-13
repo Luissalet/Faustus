@@ -17,6 +17,7 @@ from src.coordination.runtime import client, connector_fingerprint, get_store, r
 class SaveBinding(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     connector_id: str = Field(min_length=1, max_length=128)
+    space_id: str = Field(default='ecosystem', max_length=64)
     actor: str | None = Field(None, max_length=48)
     operations: list[str] = Field(default_factory=lambda: sorted(OPERATIONS), max_length=100)
     resources: list[str] = Field(default_factory=list, max_length=100)
@@ -107,7 +108,7 @@ def setup_coordination_routes():
             template = ProjectTemplate(id=identifier, owner=owner, project_id=project_id,
                 connector_id=body.connector_id, actor=previous.actor if previous else "faustus-" + identifier[:12],
                 operations=tuple(body.operations), resources=tuple(body.resources), repos=tuple(body.repos),
-                thread_ids=tuple(body.thread_ids), active=body.active,
+                thread_ids=tuple(body.thread_ids), active=body.active, space_id=body.space_id,
                 connector_fingerprint=connector_fingerprint(body.connector_id))
             return store.save_template(template, expected_revision=body.expected_revision).serialise()
         try:
@@ -179,7 +180,7 @@ def setup_coordination_routes():
             binding = Binding(id=identifier, owner=storage_owner(owner), project_id=project["id"],
                               session_id=session_id, connector_id=body.connector_id, actor=actor,
                               operations=tuple(body.operations), resources=tuple(body.resources), repos=tuple(body.repos),
-                              thread_ids=tuple(body.thread_ids), active=body.active,
+                              thread_ids=tuple(body.thread_ids), active=body.active, space_id=body.space_id,
                               connector_fingerprint=connector_fingerprint(body.connector_id))
             # Revocation must work even when the connector is offline or removed.
             if body.active:

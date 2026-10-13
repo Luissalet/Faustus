@@ -5,7 +5,7 @@ import { Button } from '../../components';
 import { ApiError } from '../../adapters/api';
 import { connectorKey, connectorName, hasConnectorServer, listConnectors, stateLabel, type Connector } from '../../adapters/connectors';
 import { choiceKey, choiceSelected, coordinationDraft, coordinationState, getCoordinationChoices,
-  getProjectCoordination, saveProjectCoordination, type CoordinationChoice, type CoordinationView } from '../../adapters/coordination';
+  getProjectCoordination, saveProjectCoordination, spaces, type CoordinationSpace, type CoordinationChoice, type CoordinationView } from '../../adapters/coordination';
 import type { Project } from '../../adapters/projects';
 import { t } from '../../i18n';
 import './coordination.css';
@@ -19,6 +19,8 @@ export function CoordinationPanel({ project, onNotice }: { project: Project; onN
   const [view, setView] = useState<CoordinationView | null>(null);
   const [connections, setConnections] = useState<Connector[]>([]);
   const [connector, setConnector] = useState('');
+  const [agoras, setAgoras] = useState<CoordinationSpace[]>([]);
+  const [spaceId, setSpaceId] = useState('ecosystem');
   const [choices, setChoices] = useState<CoordinationChoice[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [enabled, setEnabled] = useState(true);
@@ -37,19 +39,21 @@ export function CoordinationPanel({ project, onNotice }: { project: Project; onN
     let cancelled = false;
     if (loadedProject.current !== project.id) { dirty.current = false; loadedProject.current = project.id; }
     setLoading(true); setFailure(null);
-    Promise.allSettled([getProjectCoordination(project.id, controller.signal), listConnectors()]).then(results => {
+    Promise.allSettled([getProjectCoordination(project.id, controller.signal), listConnectors(), spaces(controller.signal)]).then(results => {
       if (cancelled) return;
       const state = results[0], catalogue = results[1];
       if (state.status === 'fulfilled') {
         setView(state.value);
         if (!dirty.current) {
           setConnector(state.value.template?.connector_id ?? '');
+          setSpaceId(state.value.template?.space_id || 'ecosystem');
           setEnabled(state.value.template?.active ?? true);
           setEditing(!state.value.template);
         }
       } else setFailure(t('Could not read coordination settings. Try again.'));
       if (catalogue.status === 'fulfilled') setConnections(catalogue.value);
       else { setConnections([]); setFailure(t('Could not load saved connections. Try again.')); }
+      if (results[2].status === 'fulfilled') setAgoras(results[2].value);
       setLoading(false);
     });
     return () => { cancelled = true; controller.abort(); };
@@ -84,7 +88,9 @@ export function CoordinationPanel({ project, onNotice }: { project: Project; onN
         ? { ...coordinationDraft(view.template, view.template.connector_id, [], new Set(), false),
             resources: view.template.resources, repos: view.template.repos }
         : coordinationDraft(view.template, connector, choices, selected, active);
-      await saveProjectCoordination(project.id, draft);
+      const previousSpace = view.template?.space_id || 'ecosystem';
+      await saveProjectCoordination(project.id, {...draft, space_id: spaceId,
+        thread_ids: spaceId === previousSpace ? draft.thread_ids : spaceId === 'ecosystem' ? [32] : []});
       dirty.current = false;
       setEditing(false); setRefresh(value => value + 1);
       onNotice(t(active ? 'Project coordination saved.' : 'Project coordination disabled.'));
@@ -93,7 +99,7 @@ export function CoordinationPanel({ project, onNotice }: { project: Project; onN
         ? t('The coordination settings changed. Reload them before saving again.')
         : t('Could not save coordination settings. Check the connection and try again.'));
     } finally { setBusy(false); }
-  }, [view, connector, busy, enabled, choices, selected, project.id, onNotice]);
+  }, [view, connector, spaceId, busy, enabled, choices, selected, project.id, onNotice]);
 
   const permitted = connections.filter(connection => !hasConnectorServer(connection) || !project.connector_ids || project.connector_ids.includes(connection.server.id));
   const savedConnection = connections.find(connection => hasConnectorServer(connection) && connection.server.id === view?.template?.connector_id);
@@ -110,12 +116,17 @@ export function CoordinationPanel({ project, onNotice }: { project: Project; onN
       <p>{t('Faustus uses this project configuration in its conversations. Write the assignment in the usual chat.')}</p>
       {view?.template && !editing && <>
         <p className="fs-coordination__secondary">{t('Connection')}: {savedConnection ? connectorName(savedConnection) : t('Saved connection unavailable')}</p>
+        <p className="fs-coordination__secondary">{t('Agora')}: {agoras.find(space => space.id === spaceId)?.title || spaceId}</p>
         {choices.filter(choice => choiceSelected(view.template, choice)).length > 0 && <ul className="fs-coordination__folders">
           {choices.filter(choice => choiceSelected(view.template, choice)).map(choice => <li key={choiceKey(choice)}>{choice.label}<small>{choice.path}</small></li>)}
         </ul>}
         {view.template.active && <Button variant="ghost" size="sm" label={t('Disable coordination')} onClick={() => void save(false)} disabled={busy} />}
       </>}
       {editing && view && <form className="fs-coordination__form" onSubmit={event => { event.preventDefault(); void save(); }}>
+        <label>{t('Agora')}<select className="fs-field" aria-label={t('Agora')} value={spaceId} disabled={busy} onChange={event => {dirty.current = true; setSpaceId(event.target.value);}}>
+          {!agoras.some(space => space.id === spaceId) && <option value={spaceId}>{spaceId}</option>}
+          {agoras.map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
+        </select></label>
         <label>{t('Saved connection')}<select className="fs-field" value={connector} onChange={event => { dirty.current = true; setSelected(new Set()); setConnector(event.target.value); }} disabled={busy} data-testid="coordination-connector">
           <option value="">{t('Choose a saved connection')}</option>
           {connector && !permitted.some(connection => connection.server?.id === connector) && <option value={connector}>{t('Saved connection unavailable')}</option>}

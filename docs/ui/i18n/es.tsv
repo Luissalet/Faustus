@@ -9837,3 +9837,4 @@ The command is queued for the room’s active executor.	La orden está en cola p
 New Agora	Nueva ágora
 Deliberation	Deliberación
 Loading room…	Cargando sala…
+Message not confirmed. Retry the same send.	El envío no se ha confirmado. Vuelve a intentarlo.

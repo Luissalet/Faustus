@@ -18,7 +18,7 @@ CREATE TABLE coordination_spaces (
     created_by TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1,
     created REAL NOT NULL, updated REAL NOT NULL);
 INSERT INTO coordination_spaces(id, title, created_by, created, updated)
-    VALUES('ecosystem', 'Ecosistema', 'system', 0, 0);
+    VALUES('ecosystem', 'Faustus y Hoards', 'system', 0, 0);
 ALTER TABLE tasks ADD COLUMN space_id TEXT NOT NULL DEFAULT 'ecosystem';
 ALTER TABLE threads ADD COLUMN space_id TEXT NOT NULL DEFAULT 'ecosystem';
 CREATE INDEX tasks_space ON tasks(space_id, status, priority);

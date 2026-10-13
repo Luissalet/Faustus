@@ -89,7 +89,7 @@ async def test_heartbeat_records_metadata_and_derives_only_scoped_owned_renewals
         {'owner':'other','resource':'path:writer/src/foreign.ts'}]}
     result = await client.execute('heartbeat', {'doing':'scoped project work'})
     assert manager.calls[-1][1] == {'doing':'scoped project work','agent':binding.actor,
-                                   'renew_resources':['path:writer/src/file.ts']}
+                                   'renew_resources':['path:writer/src/file.ts'], 'space_id': binding.space_id}
     assert result['ok'] and result['advisories'][0]['count'] == 2
     assert 'private-token' not in json.dumps(result)
 
@@ -129,7 +129,7 @@ async def test_old_live_hub_legacy_heartbeat_with_no_outside_locks_and_no_receip
     manager.responses['heartbeat']={'ok':True,'agent':binding.actor}
     result=await client.execute('heartbeat',{'doing':'legacy metadata'})
     assert result['heartbeat_recorded'] is True and result['renewal_mode']=='legacy_all'
-    assert manager.calls[-1][1]=={'doing':'legacy metadata','agent':binding.actor}
+    assert manager.calls[-1][1]=={'doing':'legacy metadata','agent':binding.actor,'space_id':binding.space_id}
     assert result['advisories'][0]['code']=='legacy_renewal_snapshot'
 
 
@@ -207,7 +207,7 @@ async def test_post_to_delivered_task_thread_resolves_task_without_model_task_id
     assert manager.calls == []
     store.confirm_task_delivery(binding, receipt)
     await client.execute('post', {'thread_id': 90, 'body': 'A synthetic task reply'})
-    assert manager.calls[-1][1] == {'thread_id': 90, 'body': 'A synthetic task reply', 'agent': binding.actor}
+    assert manager.calls[-1][1] == {'thread_id': 90, 'body': 'A synthetic task reply', 'agent': binding.actor, 'space_id':binding.space_id}
 
 
 def recent_contract(manager, messages):
@@ -233,7 +233,7 @@ async def test_recent_configured_thread_exposes_latest_without_skipping_unfetche
     assert result['recent'][0]['id'] == 1500
     assert result['recent'][0]['body_excerpt'] == 'Current reparto: 133 is done'
     assert result['recent'][0]['detail_available']
-    assert manager.calls[-1][1] == {'thread_id': 32, 'limit': 5}
+    assert manager.calls[-1][1] == {'thread_id': 32, 'limit': 5, 'space_id':binding.space_id}
     assert store.cursor(binding) == 100
     assert store.detail(binding, 1500, expected_digest=result['recent'][0]['digest'])['body'] == 'Current reparto: 133 is done'
     assert all('agent' not in args for name, args in manager.calls if name.endswith('_thread_recent'))
@@ -428,7 +428,7 @@ async def test_native_poll_compacts_and_persists_without_sync_or_ack(native):
     assert len(first["pending"][0]["body_excerpt"]) == 240
     assert len(json.dumps(first)) < 2000
     assert first["hub_acknowledged"] is False
-    assert manager.calls[0] == ("mcp__hub-a__hub_agora_inbox", {"agent": binding.actor, "peek": True, "mine_only": False, "since_id": 0})
+    assert manager.calls[0] == ("mcp__hub-a__hub_agora_inbox", {"agent": binding.actor, "peek": True, "mine_only": False, "since_id": 0, "space_id":binding.space_id})
     manager.responses["inbox"] = {"ok": True, "messages": []}
     await client.execute("poll", {})
     assert manager.calls[2][1]["since_id"] == 2
@@ -449,7 +449,7 @@ async def test_task_read_is_not_authority_until_native_delivery(native, monkeypa
     args = {"task_id": 7, "expected_revision": 0, "payload": {"summary": "x"}}
     assert grant.allows("coordination_checkpoint", args)
     await client.execute("checkpoint", args)
-    assert manager.calls[-1][1] == {**args, "agent": binding.actor}
+    assert manager.calls[-1][1] == {**args, "agent": binding.actor, "space_id":binding.space_id}
 
 
 @pytest.mark.asyncio

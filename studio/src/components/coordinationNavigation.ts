@@ -20,10 +20,31 @@ export function useCoordinationDraft<T>(key: string, initial: T) {
   const initialRef = useRef(initial);
   const [stored, setStored] = useState(() => ({key, value: read(key) ?? initial}));
   const value = stored.key === key ? stored.value : read(key) ?? initialRef.current;
+  const latest = useRef({key, value});
+  latest.current = {key, value};
   const setValue = (next: T | ((old: T) => T)) => {
-    const resolved = typeof next === 'function' ? (next as (old: T) => T)(value) : next;
+    const previous = read(key) ?? (latest.current.key === key ? latest.current.value : value);
+    const resolved = typeof next === 'function' ? (next as (old: T) => T)(previous) : next;
     try {sessionStorage.setItem(key, JSON.stringify(resolved));} catch { /* Keep the in-memory draft. */ }
     setStored({key, value: resolved});
   };
   return [value, setValue] as const;
+}
+
+const pendingAttempts = new Map<string, {content: string; recipient: string; id: string}>();
+/** An uncertain acknowledgement keeps the same composed message identity. */
+export function coordinationAttempt(scope: string, content: string, recipient = '') {
+  const key = 'agora:pending:' + scope;
+  let previous = pendingAttempts.get(key);
+  try {previous = JSON.parse(sessionStorage.getItem(key) || 'null') || previous;} catch { /* Use memory. */ }
+  const attempt = previous?.content === content && previous.recipient === recipient ? previous : {content, recipient, id: crypto.randomUUID()};
+  pendingAttempts.set(key, attempt);
+  try {sessionStorage.setItem(key, JSON.stringify(attempt));} catch { /* Use memory. */ }
+  return attempt;
+}
+
+export function acknowledgeCoordinationAttempt(scope: string, id: string) {
+  const key = 'agora:pending:' + scope;
+  if (pendingAttempts.get(key)?.id === id) pendingAttempts.delete(key);
+  try {if (JSON.parse(sessionStorage.getItem(key) || 'null')?.id === id) sessionStorage.removeItem(key);} catch { /* Use memory. */ }
 }
