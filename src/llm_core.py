@@ -8255,6 +8255,58 @@ def _provider_stream_error_status(error, *, default: int = 400) -> int:
     return default
 
 
+async def _wait_for_sparks_service(attempt):
+    # Poll gently while preserving the task; this is a wait interval, not a
+    # deadline or a count after which work is discarded.
+    await asyncio.sleep(min(30.0, 2.0 ** min(attempt - 1, 5)))
+
+
+async def _stream_sparks_service(url, model, messages, **kwargs):
+    from src.first_token_deadline import meaningful
+    from src.stream_recovery import temporary_service_outage
+
+    attempt = 0
+    while True:
+        pending = []
+        started = False
+        recover = False
+        source = stream_llm(url, model, messages, **kwargs)
+        try:
+            async for chunk in source:
+                data = {}
+                try:
+                    line = next(line[6:] for line in chunk.splitlines() if line.startswith("data: "))
+                    data = json.loads(line)
+                except (StopIteration, TypeError, ValueError):
+                    pass
+                if (chunk.startswith("event: error") and not started
+                        and temporary_service_outage(data)):
+                    recover = True
+                    break
+                substantive = meaningful(chunk) or (isinstance(data, dict)
+                    and data.get("type") == "tool_calls" and bool(data.get("calls")))
+                if substantive or chunk.startswith("event: error"):
+                    for buffered in pending:
+                        yield buffered
+                    pending.clear()
+                    started = True
+                if started:
+                    yield chunk
+                else:
+                    pending.append(chunk)
+        finally:
+            await source.aclose()
+        if not recover:
+            for buffered in pending:
+                yield buffered
+            return
+        attempt += 1
+        yield "data: " + json.dumps({"type": "harness_check", "status": "auto_continue",
+            "reason": "sparks_service_unavailable", "retry": attempt, "model": model,
+            "message": "Sparks no está disponible temporalmente; el mismo turno continuará cuando responda."}) + "\n\n"
+        await _wait_for_sparks_service(attempt)
+
+
 async def stream_llm_with_fallback(candidates, messages, **kwargs):
     """Wrap stream_llm with an ordered fallback chain.
 
@@ -8338,7 +8390,9 @@ async def stream_llm_with_fallback(candidates, messages, **kwargs):
                 yield error_chunk
                 return
         candidate_messages = await _vision_filter_for_route(url, model, candidate_messages)
-        candidate_stream = stream_llm(
+        managed_sparks = is_sparks_url(url)
+        stream_factory = _stream_sparks_service if managed_sparks else stream_llm
+        candidate_stream = stream_factory(
             url,
             model,
             candidate_messages,
@@ -8348,6 +8402,12 @@ async def stream_llm_with_fallback(candidates, messages, **kwargs):
                 "availability_only_transport": True,
             },
         )
+        if managed_sparks:
+            from src.first_token_budget import effective
+            explicit_deadline = effective(None)
+            if explicit_deadline is not None:
+                from src.first_token_deadline import bounded
+                candidate_stream = bounded(candidate_stream, explicit_deadline)
         try:
             async for chunk in candidate_stream:
                 if chunk.startswith("event: error"):
@@ -8396,6 +8456,15 @@ async def stream_llm_with_fallback(candidates, messages, **kwargs):
 
                 delta = event_data.get("delta")
                 event_type = event_data.get("type")
+                if event_type == "harness_check" and event_data.get("reason") == "sparks_service_unavailable":
+                    yield chunk
+                    if callable(abort_when):
+                        try:
+                            if abort_when():
+                                return
+                        except Exception:
+                            pass
+                    continue
                 substantive = (
                     isinstance(delta, str) and bool(delta.strip())
                 ) or (
