@@ -8,6 +8,12 @@ Configured MCP HTTP/SSE connections recover on demand without restarting the
 agent. Healthy connections stay intact; a write whose response was lost is
 reported as uncertain and is not replayed. [Remote MCP recovery](docs/design/REMOTE-MCP-RECOVERY.md).
 
+Native Slack, Discord and Matrix tools list conversations, read full history,
+send/edit text and add reactions using saved Integrations credentials. Eight
+built-in MCP tools and the API share the same implementation. Incoming push,
+binary attachments and Matrix encryption are pending; real accounts have not
+been tested. [Channel connections](docs/api/channel_connections.md).
+
 <p align="center">
   <a href="README.es.md">Español</a> ·
   <a href="#quick-start">Quick start</a> ·

@@ -8,6 +8,12 @@ Las conexiones MCP HTTP/SSE configuradas se recuperan al llamar a una herramient
 sin reiniciar el agente. Las conexiones sanas se conservan; una escritura cuya
 respuesta se perdió queda incierta y no se repite. [Recuperación MCP remota](docs/design/REMOTE-MCP-RECOVERY.md).
 
+Slack, Discord y Matrix tienen herramientas nativas para listar conversaciones,
+leer historial completo, enviar/editar texto y añadir reacciones con credenciales
+guardadas en Integrations. Ocho herramientas MCP y la API comparten código propio.
+Quedan pendientes eventos entrantes, adjuntos binarios y cifrado Matrix; aún no
+se han probado cuentas reales. [Conexiones de canales](docs/api/channel_connections.md).
+
 <p align="center">
   <a href="README.md">English</a> ·
   <a href="#inicio-rápido">Inicio rápido</a> ·
