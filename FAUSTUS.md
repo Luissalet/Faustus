@@ -11369,8 +11369,10 @@ Un informe terminado guarda un *ledger* por sección (fuentes citadas con `fetch
 
 La edad sale de citation_registry (las sources de pantalla a menudo no traen `fetched_at`) y, si falta, de completed_at del informe. Las secciones sin citas también caducan con esa fecha. Los apéndices «Fuentes» / «Cómo leer este informe» (y equivalentes EN) no cuentan como secciones. El plan no descarga páginas solo: el contraste de contenido remoto queda como límite documentado hasta un comprobador acotado.
 
-API: GET /api/research/{id}/incremental, POST /api/research/{id}/refresh. Herramienta manage_research (reshness/
-efresh) y MCP austus_research_incremental. Pruebas: 	ests/test_research_incremental.py.
+API: GET /api/research/{id}/incremental, POST /api/research/{id}/refresh. Herramienta manage_research (
+reshness/
+efresh) y MCP 
+austus_research_incremental. Pruebas: 	ests/test_research_incremental.py.
 
 ## 331. Tipo de entidades con varias frases — #294 (11-10-2026)
 
@@ -11653,3 +11655,9 @@ El conductor nativo guarda composición, FIFO, pasos, respuestas parciales, IDs 
 API y ocho herramientas MCP ofrecen crear, abrir, encolar, consultar, responder, Stop y cerrar. Los siguientes participantes reciben output/exit_code/call_id reales y aclaraciones del usuario. Se preserva response_replace y el outbox nativo; un intento interrumpido con efectos desconocidos se muestra sin repetirlo a ciegas. Recuperar no equivale a afirmar que una acción incierta terminó.
 
 Pruebas privadas de producto completo: dos modelos simulados, cuatro lecturas reales de fichero en dos turnos FIFO después de desconectar MCP, duplicado deduplicado, y navegador que salió tras enviar antes de completar ambos participantes. GLM global residente real: dos lectores verifican73129 en archivo privado, con MCP desconectado. Chat con carpeta autoescala a herramientas por intención y también completa; un único contraste18.05s/9.159s no prueba que el selector agente sea universalmente superior ni establece una comparación externa. Ver docs/api/groups.md y evidencia local research-inbox/multimodel-20261013.
+
+## Backend global de Sparks preservado (13-10-2026, tarea459)
+
+La sincronización ya no restaura un LLM de texto del PC al faltar la receta/modelo, desactivar Sparks o apagar su selección automática. Conserva endpoint/modelo global, muestra unknown/unavailable y advisory según la evidencia, y sigue respetando una elección manual explícita. `sparks_local_default` queda como configuración histórica, sin pérdida de datos. Estado y UI muestran el modelo efectivo incluso si el controlador no responde. El MCP propio `sparks` añade estado, sincronización, preferencias y deployment explícito a las mismas rutas API; no usa una CLI ni runtime de referencia.
+
+31 pruebas del área/MCP/builtin, build normal y API/MCP stdio de producto completo con controlador privado: modelo ausente, desactivar, recuperar y volver a faltar preservan ID/modelo global; cero llamadas de deployment. El navegador muestra0modelos sirviendo y mantiene Sparks como Default now. No se simula salud del servicio ni se cargan/detienen modelos reales; cuentas y texto de producción permanecen intactos.
