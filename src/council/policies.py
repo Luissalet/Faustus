@@ -728,7 +728,7 @@ def _max_rounds(session: Any) -> int:
     try:
         return max(0, int(value))
     except (TypeError, ValueError):
-        return 4
+        return 0
 
 
 def _ordered(selection: Selection, participants: Sequence[Any], *, seed: str) -> Selection:

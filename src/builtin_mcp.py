@@ -79,6 +79,7 @@ def _find_npx() -> str:
 _BUILTIN_SERVERS = {
     "groups": ("mcp_servers/groups_server.py", "Built-in: Persistent working groups"),
     "sparks": ("mcp_servers/sparks_server.py", "Built-in: Global Sparks models"),
+    "council": ("mcp_servers/council_server.py", "Built-in: Model councils"),
     "channel_connections": ("mcp_servers/channel_connections_server.py", "Built-in: Native channels"),
     "image_gen":  ("mcp_servers/image_gen_server.py",  "Built-in: Image Generation"),
     "memory":     ("mcp_servers/memory_server.py",     "Built-in: Memory"),

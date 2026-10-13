@@ -1118,13 +1118,10 @@ DEFAULT_SETTINGS = {
     # review the same matter, and exactly one of them owns each file and each
     # effect. Default OFF, unlike the rest of this block, and deliberately: a
     # council multiplies one request by several models across several rounds,
-    # and in `collaborate`/`pair` it also WRITES to the workspace through a
-    # claim. That is a cost and a blast radius the operator should switch on
-    # knowingly rather than discover. Off = /api/council/{id}/messages and
-    # /commands refuse and say so; every read still answers, so a room already
-    # recorded keeps its transcript, ledger, decisions and evidence — turning
-    # the feature off is a decision about what may RUN, never a delete.
-    "agent_council": False,
+    # and in `collaborate`/`pair` it also works on claimed files. Enabled by
+    # default. Explicitly switching it off suspends execution while keeping
+    # all existing rooms, transcripts, decisions and evidence readable.
+    "agent_council": True,
     # State Mirror (src/state_mirror/): the read model of what is true right
     # now -- one row per project, service, model, run and artifact, and every
     # field carrying WHEN it was observed, by WHICH source and how strongly it

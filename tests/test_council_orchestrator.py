@@ -872,9 +872,10 @@ async def test_request_synthesis_builds_the_close_from_the_ledger():
 # --- budgets (3.6, 12.3) ---------------------------------------------------
 
 async def test_an_exhausted_budget_blocks_the_turn_before_anybody_is_called():
-    session = _session("chat", budgets=CouncilBudgets(max_rounds=0).to_dict())
+    session = _session("chat", budgets=CouncilBudgets(max_rounds=1).to_dict())
     invoker = ScriptedInvoker()
     orchestrator, store, events, _, _ = _build("chat", invoker=invoker, session=session)
+    orchestrator._scheduler.spend(rounds=1)
     turn_id = await orchestrator.submit(author_id="p_user", content="implementa el callback")
     outcome = await orchestrator.run_turn(turn_id)
     assert outcome.state == "blocked"
@@ -893,3 +894,16 @@ async def test_state_reports_what_the_room_is_doing():
     assert state["usage"]["source"] == "council_scheduler"
     assert state["invoker"] == "ScriptedInvoker"
     assert state["executor"] == ""
+
+
+async def test_positive_one_round_budget_allows_the_first_round_then_stops_next():
+    session=_session('chat',budgets=CouncilBudgets(max_rounds=1).to_dict())
+    invoker=ScriptedInvoker();orchestrator,store,events,_,_=_build('chat',invoker=invoker,session=session)
+    first=await orchestrator.submit(author_id='p_user',content='Discuss the first question')
+    result=await orchestrator.run_turn(first)
+    assert result.state=='completed' and invoker.calls
+    count=len(invoker.calls)
+    second=await orchestrator.submit(author_id='p_user',content='Discuss the second question')
+    blocked=await orchestrator.run_turn(second)
+    assert blocked.state=='blocked' and blocked.stop_reason=='max_rounds'
+    assert len(invoker.calls)==count
