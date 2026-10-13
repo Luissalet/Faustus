@@ -71,7 +71,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from core.middleware import require_admin
+from core.middleware import is_agent_channel, require_admin
 from src.auth_helpers import effective_user, get_current_user
 from src.council import persistence as council_persistence
 from src.council import service as council_service
@@ -123,7 +123,7 @@ def enabled() -> bool:
     try:
         from src.settings import get_setting
 
-        return bool(get_setting("agent_council", False))
+        return bool(get_setting("agent_council", True))
     except Exception:  # noqa: BLE001 - a read never fails over a settings lookup
         logger.debug("council routes: agent_council unreadable; treated as off", exc_info=True)
         return False
@@ -189,6 +189,13 @@ def _owner(request: Request) -> str:
     """
     try:
         who = effective_user(request) or get_current_user(request) or ""
+        if is_agent_channel(request):
+            from src.owner_identity import auth_disabled, DEFAULT_LOCAL_OWNER, REQUEST_SENTINEL_OWNERS
+            if auth_disabled():
+                return DEFAULT_LOCAL_OWNER
+            configured = request.headers.get("X-Faustus-Council-Owner", "").strip()
+            if configured and configured not in REQUEST_SENTINEL_OWNERS:
+                return configured
     except Exception:  # noqa: BLE001 - attribution must not 500 a route
         logger.debug("council routes: the caller could not be resolved", exc_info=True)
         who = ""
@@ -339,6 +346,14 @@ def setup_council_routes() -> APIRouter:
         require_admin(request)
         payload = dict(_service().config())
         payload["enabled"] = enabled()
+        from services.hoard_copilot import global_model
+        from src.settings import get_setting
+        model = global_model(_owner(request) or None)
+        eid = get_setting("default_endpoint_id", "")
+        configured_model = model["model"] or get_setting("default_model", "")
+        payload["default_route"] = ({"id": eid + "::" + configured_model, "model": configured_model,
+            "endpointId": eid, "endpointName": "Global model", "endpointUrl": model["endpoint_url"], "kind": "global", "missing": not bool(model["endpoint_url"])}
+            if configured_model else None)
         payload["route_errors"] = list(ROUTE_ERRORS)
         return {"ok": True, "config": payload}
 

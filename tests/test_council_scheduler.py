@@ -242,22 +242,20 @@ async def test_wall_clock_exhausted_is_budget_exhausted():
     assert sched.stop_reason() == "budget_exhausted"
 
 
-async def test_zero_parallel_means_start_nothing_further():
-    sched = _make(budgets=_budgets(max_parallel=0), max_parallel=0)
-    allowed, why = sched.can_start()
-    assert allowed is False
-    assert "max_parallel" in why
-    assert sched.stop_reason() == "budget_exhausted"
-    assert await sched.reserve("p_claude", "qwen3:32b", timeout_s=DEADLINE) is None
+async def test_zero_parallel_adds_no_room_ceiling_but_keeps_model_locks():
+    sched = _make(budgets=CouncilBudgets(), max_parallel=0)
+    reservations = await asyncio.gather(*(sched.reserve('seat'+str(i), 'model'+str(i), timeout_s=DEADLINE) for i in range(6)))
+    assert all(reservations) and sched.stats()['peak_parallel']==6
+    assert sched.can_start() == (True, '')
+    for reservation in reservations: await sched.release(reservation)
 
-
-async def test_every_stop_reason_comes_from_the_closed_vocabulary():
+async def test_every_optional_budget_stop_reason_uses_closed_vocabulary():
     for limit in LIMIT_NAMES:
-        sched = _make(budgets=_budgets(**{limit: 0}), max_parallel=0 if limit == "max_parallel" else 2)
-        reason = sched.stop_reason()
-        assert reason, f"{limit} at zero must stop the room"
-        assert reason in STOP_REASONS
-
+        if limit == 'max_parallel':continue  # backpressure, not a stop condition
+        clock=_Clock();sched=_make(budgets=_budgets(**{limit:1}),clock=clock)
+        if limit=='max_wall_seconds':clock.advance(1)
+        else:sched.spend(**{{'max_rounds':'rounds','max_turns':'turns','max_total_tokens':'tokens'}[limit]:1})
+        assert sched.stop_reason() and sched.stop_reason() in STOP_REASONS
 
 async def test_an_exhausted_budget_refuses_a_new_reservation():
     sched = _make(budgets=_budgets(max_turns=1))
@@ -417,3 +415,12 @@ async def test_scheduler_for_accepts_a_bare_session_id():
     sched = scheduler_for("council_plain")
     assert sched.session_id == "council_plain"
     assert scheduler_for("council_plain") is sched
+
+
+async def test_default_budget_survives_work_beyond_previous_all_limits():
+    clock=_Clock();sched=_make(budgets=CouncilBudgets(),max_parallel=0,clock=clock)
+    clock.advance(100000);sched.spend(rounds=200,turns=2000,tokens=200000000)
+    assert sched.can_start()==(True,'') and sched.stop_reason()==''
+    reservation=await sched.reserve('continue','configured-model',timeout_s=DEADLINE)
+    assert reservation is not None
+    await sched.release(reservation)

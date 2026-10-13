@@ -367,6 +367,13 @@ const message = (over) => c.messageFrom({
   assert(plain.claimsIdentity === '', 'and an honest message is not marked');
 }
 
+{
+  const value = c.configFrom({default_budgets:{max_rounds:0,max_turns:0,max_wall_seconds:0,max_total_tokens:0,max_parallel:0},
+    default_route:{id:'spark::global',model:'global',endpointId:'spark',endpointUrl:'http://fixture',endpointName:'Sparks',kind:'global'}});
+  assert(Object.values(value.defaultBudgets).every(v=>v===0),'zero optional budgets survive the native UI codec');
+  assert(value.defaultRoute.model==='global','the native global model remains the initial council route');
+}
+
 if (failed) {
   console.error(`\n${failed} check(s) failed.`);
   process.exit(1);

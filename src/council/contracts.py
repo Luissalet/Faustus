@@ -310,22 +310,21 @@ ROLE_TOOL_PROFILES: Dict[str, str] = {
 #: somebody puts it here on purpose.
 WRITING_PROFILES: Tuple[str, ...] = ("scoped_write", "integrator", "full_with_gates")
 
-#: §7.1.  Every room has limits; a room without them is a bill.
+#: §7.1.  Budgets are optional; zero means unlimited, as in the native agent harness.
 DEFAULT_BUDGETS: Dict[str, int] = {
-    "max_rounds": 4,
-    "max_turns": 20,
-    "max_wall_seconds": 1800,
-    "max_total_tokens": 120_000,
-    "max_parallel": 2,
+    "max_rounds": 0,
+    "max_turns": 0,
+    "max_wall_seconds": 0,
+    "max_total_tokens": 0,
+    "max_parallel": 0,
 }
 
-#: Sanity ceilings.  These are not policy — policy lives in `scheduler.py` —
-#: they only stop a typo from asking for ten thousand rounds.
-MAX_BUDGET_ROUNDS = 100
-MAX_BUDGET_TURNS = 1000
-MAX_BUDGET_WALL_SECONDS = 86_400
-MAX_BUDGET_TOKENS = 100_000_000
-MAX_BUDGET_PARALLEL = 32
+#: Compatibility names for optional ceilings. There is no fixed execution cap.
+MAX_BUDGET_ROUNDS = None
+MAX_BUDGET_TURNS = None
+MAX_BUDGET_WALL_SECONDS = None
+MAX_BUDGET_TOKENS = None
+MAX_BUDGET_PARALLEL = None
 
 MAX_CONTENT_CHARS = 1_000_000
 
@@ -525,15 +524,21 @@ def has_blocking(objections: Iterable[Any]) -> bool:
     return False
 
 
+def _seat_ids(data, key, path):
+    raw = data.get(key)
+    count = len(raw) if isinstance(raw, (list, tuple)) else 0
+    return text_list(data, key, path, max_items=count, max_len=128)
+
+
 # ── the session ────────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class CouncilBudgets:
     """§3.6.  Cost and latency are part of the contract, so they are a field.
 
-    Zero is a legal value everywhere and means "no more of this": `max_parallel`
-    of 0 is a room that has been told to stop starting things, and it must
-    survive being read back as 0 rather than becoming the default."""
+    Zero is a legal value everywhere and means "unlimited": `max_parallel`
+    of 0 leaves concurrency to the physical model/GPU scheduler. Positive
+    values preserve explicitly configured limits across persistence."""
 
     max_rounds: int = DEFAULT_BUDGETS["max_rounds"]
     max_turns: int = DEFAULT_BUDGETS["max_turns"]
@@ -623,7 +628,7 @@ class CouncilSession:
             parent_session_id=_identifier(data, "parent_session_id", path),
             workspace=text(data, "workspace", path, required=False, max_len=1024),
             project_id=_identifier(data, "project_id", path),
-            participants=text_list(data, "participants", path, max_items=64, max_len=128),
+            participants=_seat_ids(data, "participants", path),
             budgets=CouncilBudgets.parse(data.get("budgets") or {}, f"{path}.budgets"),
             # Completion modes are resolved by the agent-profile layer; this
             # field carries the name it chose, it does not re-declare the list.
@@ -879,8 +884,7 @@ class CouncilTurn:
             content=text(data, "content", path, required=False,
                          max_len=MAX_CONTENT_CHARS, allow_blank=True),
             policy=_choice(data, "policy", path, choices=POLICIES, default="chat"),
-            selected_participants=text_list(data, "selected_participants", path,
-                                            max_items=64, max_len=128),
+            selected_participants=_seat_ids(data, "selected_participants", path),
             idempotency_key=text(data, "idempotency_key", path,
                                  required=False, max_len=256),
             stop_reason=_choice(data, "stop_reason", path, choices=STOP_REASONS,
