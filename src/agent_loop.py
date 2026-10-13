@@ -13762,6 +13762,10 @@ async def _stream_agent_loop_body(
                     if (data.get("type") in {"tool_call_delta", "tool_calls", "finish", "usage"}
                             or "delta" in data or "reasoning_delta" in data):
                         _prompt_audit.accepted(round_num, data.get("candidate_index", candidate_index))
+                    if (data.get("type") == "harness_check"
+                            and data.get("reason") == "sparks_service_unavailable"):
+                        yield chunk
+                        continue
                     if data.get("type") == "tool_call_delta":
                         # Tool-call argument deltas are model proposals, not an
                         # authorization decision.  Document UI events are built

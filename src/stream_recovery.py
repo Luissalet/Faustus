@@ -11,3 +11,10 @@ def interrupted_response(error):
             "timeout.deadline_exceeded",
         }
     )
+
+
+def temporary_service_outage(error):
+    """The transport explicitly identified an unavailable, retryable service."""
+    return (isinstance(error, dict) and error.get("status") == 503
+            and error.get("retryable") is True
+            and ("partial" not in error or error.get("partial") is False))
