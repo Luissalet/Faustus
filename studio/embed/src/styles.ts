@@ -239,6 +239,7 @@ export const EMBED_STYLES = `
 
 .fc-composer textarea {
   flex: 1 1 auto;
+  min-width: 0;
   resize: none;
   min-height: 36px;
   max-height: 140px;
@@ -276,5 +277,17 @@ export const EMBED_STYLES = `
   font-size: 12px;
   color: var(--fc-muted);
   min-height: 18px;
+}
+
+.fc-attachments { display: flex; flex-direction: column; gap: 8px; padding: 8px 12px; }
+.fc-attachments[hidden] { display: none; }
+.fc-attachment { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 14px; }
+.fc-attachment-name { flex: 1 1 120px; min-width: 0; overflow-wrap: anywhere; }
+.fc-attachment-note { flex-basis: 100%; color: var(--fc-muted); overflow-wrap: anywhere; }
+.fc-message-files { margin-top: 8px; font-size: 13px; overflow-wrap: anywhere; }
+.fc-attach { min-height: 36px; }
+@media (max-width: 480px) {
+  .fc-composer textarea { font-size: 16px; }
+  .fc-attach, .fc-attachment .fc-btn { min-height: 44px; min-width: 44px; }
 }
 `;

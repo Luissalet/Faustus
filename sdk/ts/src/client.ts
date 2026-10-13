@@ -30,6 +30,7 @@ import type {
   TurnInput,
   HoardContext,
   HoardConversation,
+  UploadedFile,
 } from './types.js';
 
 function newClientMessageId(): string {
@@ -241,7 +242,11 @@ export class FaustusClient {
     list(context: HoardContext): Promise<{ conversations: HoardConversation[] }>;
     importConversation(input: Record<string, unknown>): Promise<{ session_id: string | null; deleted?: boolean; imported: number; message_count: number }>;
     getDraft(sessionId: string): Promise<{ text: string; attachment_ids: string[]; updated_at: number }>;
-    saveDraft(sessionId: string, text: string): Promise<unknown>;
+    saveDraft(sessionId: string, text: string, attachmentIds?: string[]): Promise<unknown>;
+  };
+
+  readonly uploads: {
+    create(files: File[], sessionId?: string): Promise<{ files: UploadedFile[] }>;
   };
 
   readonly approvals: {
@@ -275,9 +280,19 @@ export class FaustusClient {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
       }),
       getDraft: (id) => http.requestJson(`/api/sessions/${encodeURIComponent(id)}/draft`),
-      saveDraft: (id, text) => http.requestJson(`/api/sessions/${encodeURIComponent(id)}/draft`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }),
+      saveDraft: (id, text, attachmentIds) => http.requestJson(`/api/sessions/${encodeURIComponent(id)}/draft`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, ...(attachmentIds === undefined ? {} : { attachment_ids: attachmentIds }) }),
       }),
+    };
+
+    this.uploads = {
+      create: (files, sessionId) => {
+        const body = new FormData();
+        for (const file of files) body.append('files', file, file.name);
+        if (sessionId) body.append('session_id', sessionId);
+        return http.requestJson('/api/upload', { method: 'POST', body });
+      },
     };
 
     this.sessions = {
