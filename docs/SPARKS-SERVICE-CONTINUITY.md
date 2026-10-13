@@ -7,7 +7,9 @@ failure after content remains handled by the existing partial-response logic.
 Other endpoints retain their existing retry/fallback behavior.
 
 No new agent loop or external runtime is introduced. Chat, agents, delegated
-workers, persistent groups and the native copilot MCP use the shared transport.
+workers, persistent groups, Council interventions and the native copilot MCP use
+the shared transport. Council selects one existing route; service recovery does
+not switch the participant's model or create another intervention.
 The existing continuation event tells observers that the task is waiting;
 closing an observer does not cancel a detached turn. Retry intervals increase
 to 30 seconds, without imposing a maximum attempt count. Completed actions are
@@ -38,3 +40,12 @@ field; the classifier now combines that protocol with its observed pre-content
 state. The initial failed receipt was preserved. No real Sparks outage was
 induced and no production sessions or files were used. These are fault-tolerance
 results, not a universal model-quality or performance ranking.
+
+Council verification adds four cases: seven pre-content outages recovered on
+the same route, partial content not replayed, an explicit intervention deadline
+cancelling the wait, and a provider timeout without a room budget returning its
+typed failure. The last case previously raised an exception while formatting
+the absent duration. A private full-product Council turn through its native
+12-tool MCP server completes two contributions after seven HTTP503 responses
+and nine model requests, with the observer already closed. No real service
+outage is induced.
