@@ -132,17 +132,14 @@ async def test_fresh_multifile_upload_succeeds():
     assert len(result["files"]) == 5
 
 
-async def test_genuine_recent_volume_still_throttled():
-    """The guard is preserved: enough genuine recent uploads still 429s."""
-    from fastapi import HTTPException
-
+async def test_completed_recent_volume_is_not_concurrent_work():
+    """The existing per-minute limiter owns volume; recent completed work is not concurrency."""
     h = _fake_handler()
     h.upload_rate_log["1.2.3.4"] = [_NOW - 1, _NOW - 2, _NOW - 3]  # 3 recent events
     endpoint = _upload_endpoint(h)
 
-    with pytest.raises(HTTPException) as ei:
-        await endpoint(_request(), _files(1))
-    assert ei.value.status_code == 429
+    result = await endpoint(_request(), _files(1))
+    assert len(result['files']) == 1
 
 
 # ── #1346 follow-up: the per-minute rate limit must not reject a single

@@ -27,7 +27,6 @@ from src.attachment_refs import attachment_refs_from_metadata
 from src.constants import GENERATED_IMAGES_DIR
 from src.upload_handler import (
     UploadCleanupSafetyError,
-    count_recent_uploads,
     extract_upload_ids,
 )
 
@@ -285,21 +284,9 @@ def setup_upload_routes(upload_handler):
         client_ip = request.client.host if request.client else "unknown"
         out = []
 
-        # Limit concurrent uploads per IP. Count genuine recent upload events —
-        # NOT the number of files in this batch. The previous check summed over
-        # `files`, so a single multi-file request counted itself as N concurrent
-        # uploads and tripped the limit (issue #1346: "attach more than one file
-        # → the model doesn't even see them"). save_upload still enforces the
-        # per-minute sliding-window rate limit per file.
-        recent_uploads = count_recent_uploads(
-            upload_handler.upload_rate_log.get(client_ip, []), time.time()
-        )
-
-        if recent_uploads >= upload_handler.max_concurrent_uploads:
-            raise HTTPException(
-                status_code=429,
-                detail=f"Maximum concurrent uploads ({upload_handler.max_concurrent_uploads}) exceeded"
-            )
+        # save_upload completes synchronously before the next file is handled.
+        # Completed entries in its rate log are not active concurrent work.
+        # It still enforces its per-minute limiter and file validation below.
         
         for u in files:
             try:
