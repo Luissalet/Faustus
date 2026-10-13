@@ -156,3 +156,27 @@ def test_user_clarification_is_shared_with_next_participant():
     sessions=Sessions();bridge=NativeGroupBridge(sessions,None,FastAPI());t=turn()
     sessions.get_session('parent').add_message(ChatMessage('user','Use evidence.txt',metadata={'group_answer_id':'actual-answer'}))
     assert 'Use evidence.txt' in bridge._context(t,t['definition']['participants'][1])
+
+
+async def test_recovered_finished_transport_does_not_hide_canonical_failure(monkeypatch):
+    from core.models import ChatMessage
+    from src import chat_outbox
+    monkeypatch.setattr(chat_outbox,'get',lambda **kwargs:{'status':'finished','run_id':'old','result':{}})
+    sessions=Sessions();session=sessions.get_session('a')
+    session.add_message(ChatMessage('system','boundary',metadata={'group_request_boundary':'step'}))
+    session.add_message(ChatMessage('assistant','[Agent stopped]',metadata={'failed':True,'failure':{'message':'503 service unavailable'}}))
+    calls=[]
+    async def endpoint(*args,**kw):calls.append(True)
+    bridge=NativeGroupBridge(sessions,endpoint,FastAPI());t=turn()
+    async def progress(*args):pass
+    result=await bridge.invoke(turn=t,step=step(),member=t['definition']['participants'][0],owner='owner',progress=progress,recovering=True)
+    assert result['error']=='503 service unavailable' and calls==[]
+
+
+def test_failed_member_shares_typed_uncertainty_and_failure_with_next_model():
+    sessions=Sessions();bridge=NativeGroupBridge(sessions,None,FastAPI());t=turn();st=step()
+    evidence={'tool':'send','result_status':'outcome_unknown','uncertainty':{'reconcile_action':'read history'},'attempt_id':'attempt1','effect_certainty':'unknown'}
+    bridge.reply(t,{**st,'status':'error','text':'Receipt missing','error':'503 after attempt','detail':{'tool_results':[evidence]}},'owner')
+    context=bridge._context(t,t['definition']['participants'][1])
+    assert 'outcome_unknown' in context and 'read history' in context and 'attempt1' in context
+    assert 'failed: 503 after attempt' in context

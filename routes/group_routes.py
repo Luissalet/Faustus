@@ -61,9 +61,11 @@ def setup_group_routes(coordinator):
         from src.settings import get_setting
         model = global_model(user)
         endpoint_id = get_setting("default_endpoint_id", "")
-        route = {"id": endpoint_id + "::" + model["model"], "model": model["model"],
-                 "endpointId": endpoint_id, "endpointName": "Global model", "endpointUrl": model["endpoint_url"], "kind": "global"}
-        return {"defaultRoute": route if model["endpoint_url"] and model["model"] else None,
+        configured_model = model["model"] or get_setting("default_model", "")
+        route = {"id": endpoint_id + "::" + configured_model, "model": configured_model,
+                 "endpointId": endpoint_id, "endpointName": "Global model", "endpointUrl": model["endpoint_url"], "kind": "global",
+                 "missing": not bool(model["endpoint_url"])}
+        return {"defaultRoute": route if configured_model else None,
                 "executionModes": ["chat", "agent"], "modes": ["parallel", "round-robin"]}
 
     @router.get("")

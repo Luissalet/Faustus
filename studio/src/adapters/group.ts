@@ -79,7 +79,7 @@ export interface GroupStep {
   id: string; turn_id: string; member_id: string; status: string; text: string; error: string;
   detail: { question?: Record<string, unknown>; last_event?: Record<string, unknown>; run_id?: string; tool_results?: GroupToolResult[] };
 }
-export interface GroupToolResult { tool?: string; command?: string; output?: string; exit_code?: number; call_id?: string }
+export interface GroupToolResult { tool?: string; command?: string; output?: string; exit_code?: number; call_id?: string; result_status?: string; uncertainty?: unknown; [key: string]: unknown }
 export interface GroupSnapshot {
   group: GroupState; busy: boolean;
   turns: { id: string; message: string; status: string }[];

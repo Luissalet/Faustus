@@ -72,3 +72,13 @@ async def test_trusted_native_client_can_use_explicit_owner(group_api,monkeypatc
         response=await client.get('/api/groups/bob-parent',headers={'X-Odysseus-Internal-Token':INTERNAL_TOOL_TOKEN,'X-Faustus-Group-Owner':'bob'})
         assert response.status_code==200
         assert response.json()['group']['parentId']=='bob-parent'
+
+
+async def test_unavailable_global_route_stays_selected_instead_of_pc_fallback(group_api,monkeypatch):
+    app,_,_=group_api
+    monkeypatch.setattr('services.hoard_copilot.global_model',lambda owner:{'endpoint_url':'','model':'','headers':{}})
+    monkeypatch.setattr('src.settings.get_setting',lambda key,default=None:{'default_endpoint_id':'sparks-configured','default_model':'configured-global'}.get(key,default))
+    async with AsyncClient(transport=ASGITransport(app=app),base_url='http://127.0.0.1') as client:
+        route=(await client.get('/api/groups/config')).json()['defaultRoute']
+        assert route['endpointId']=='sparks-configured' and route['model']=='configured-global'
+        assert route['missing'] and route['endpointUrl']==''
