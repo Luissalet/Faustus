@@ -11274,6 +11274,8 @@ async def _stream_agent_loop_body(
     _harness_final_note = ""
     _harness_execution_recoveries = 0
     _no_action_nudges = 0
+    _editorial_review_started = False
+    _editorial_draft = ""
     _language_mismatch_nudges = 0
     # Mid-turn narration in the wrong language (tools also ran): exam run 31
     # drifted into English after its one nudge and stayed there for two
@@ -16154,6 +16156,41 @@ async def _stream_agent_loop_body(
                 )
                 _ledger.stop_reason = "intent_nudge_exhausted"
                 break
+            # A researched answer gets an editorial pass using the same route,
+            # tools and collected evidence. This is drafting, not a truth gate:
+            # no approval, external verifier or new execution budget is added.
+            # Explicit round limits and effectful tasks keep their existing flow.
+            if (cleaned_round.strip() and not _editorial_review_started
+                    and not _effectful_used and not _ledger.effects and not plan_mode
+                    and round_num < max_rounds
+                    and any((event or {}).get("tool") in {"web_search", "web_fetch"}
+                            and (event or {}).get("exit_code") == 0
+                            for event in tool_events)):
+                _editorial_review_started = True
+                _editorial_draft = full_response
+                messages.append({"role": "assistant", "content": round_response})
+                messages.append({
+                    "role": "user",
+                    "_harness_note": True,
+                    "content": _lang_note(
+                        "[Editorial drafting pass — automatic runtime message, not a new user request] "
+                        "Review the researched draft against the tool evidence already in this conversation. "
+                        "Do not accept a claim because the draft sounds confident or contains a link. "
+                        "Check that the conclusion uses the same metrics, subjects, dates and populations as "
+                        "the evidence: historical peaks are not launch performance, concurrent counts are not "
+                        "unique people, and estimates are not official sales. Verify both sides of key factual "
+                        "comparisons from their own sources. Read a missing primary source if necessary; "
+                        "otherwise omit the unsupported assertion or say what is unknown. "
+                        "Remove unmeasured causal explanations and ungrounded verdicts. "
+                        "Return only the complete improved answer to the original question, preserving its "
+                        "language and exact output requirements, useful images/charts and nearby source links. "
+                        "Do not narrate this internal review or describe the draft."
+                    ),
+                })
+                full_response = ""
+                yield f'data: {json.dumps({"type": "response_replace", "text": ""})}\n\n'
+                yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                continue
             # ── Completion engine (plan 7) ────────────────────────────
             # The model has stopped calling tools, so this is the moment the
             # turn ends -- and the only moment where "is this actually done?"
@@ -18861,6 +18898,12 @@ async def _stream_agent_loop_body(
         full_response += _out
         if round_texts:
             round_texts[-1] = (round_texts[-1] or "") + _out
+
+    # An interrupted/empty editorial pass must not erase the completed draft.
+    # The existing terminal state still reports cancellation/failure/limits.
+    if _editorial_draft and not _strip_think_blocks(strip_tool_blocks(full_response)).strip():
+        full_response = _editorial_draft
+        yield f'data: {json.dumps({"type": "response_replace", "text": full_response})}\n\n'
 
     # If the response is completely empty and no tools were executed,
     # yield a fallback message so the user is not left hanging.

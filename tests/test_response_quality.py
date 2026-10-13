@@ -110,3 +110,37 @@ def test_source_list_ignores_search_navigation_urls():
     sources = _enrich_web_sources([{'url': '/clev?tracking=1', 'title': 'Navigation'},
                                    {'url': 'https://example.com/article', 'title': 'Article'}])
     assert [s['url'] for s in sources] == ['https://example.com/article']
+
+
+def test_researched_answer_gets_one_editorial_round_with_same_evidence(monkeypatch):
+    from tests.test_agent_harness_loop_partial_work import _patch, _run
+    from src import agent_loop
+    search = '```web_search\n{"query":"two observations"}\n```'
+    calls = _patch(monkeypatch, [(search, 'tool_calls'), ('Draft with an unsupported conclusion.', 'stop'),
+                                ('Two observations are supported; the cause is unknown.', 'stop')])
+    async def evidence(block, *args, **kwargs):
+        return block.tool_type, {'output': 'Source https://example.com/data: observed values12and18.', 'exit_code': 0}
+    monkeypatch.setattr(agent_loop, 'execute_tool_block', evidence)
+    events = _run(None, user='Find these two observations and explain what they show.')
+    final = ''
+    for event in events:
+        if event.get('type') == 'response_replace':
+            final = event.get('text', '')
+        elif 'delta' in event and not event.get('thinking'):
+            final += event['delta']
+    assert calls['n'] == 3
+    assert 'unsupported conclusion' not in final
+    assert 'cause is unknown' in final
+
+
+def test_editorial_round_respects_explicit_round_budget(monkeypatch):
+    from tests.test_agent_harness_loop_partial_work import _patch, _run
+    from src import agent_loop
+    search = '```web_search\n{"query":"data"}\n```'
+    calls = _patch(monkeypatch, [(search, 'tool_calls'), ('Answer from the source.', 'stop')])
+    async def evidence(block, *args, **kwargs):
+        return block.tool_type, {'output': 'Source https://example.com/data: value12.', 'exit_code': 0}
+    monkeypatch.setattr(agent_loop, 'execute_tool_block', evidence)
+    events = _run(None, user='Find these data and summarize them.', max_rounds=2)
+    assert calls['n'] == 2
+    assert any('Answer from the source' in str(event.get('delta', '')) for event in events)
