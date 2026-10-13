@@ -225,6 +225,15 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             )
         else:
             response.headers["X-Frame-Options"] = "DENY"
+            frame_sources = "'self'"
+            if route_path.rstrip('/') == '/agora':
+                from urllib.parse import urlsplit
+                from src.hoard_hub import hub_location
+                hub_url = urlsplit(hub_location()['url'])
+                if hub_url.scheme in ('http', 'https') and hub_url.hostname:
+                    host = f'[{hub_url.hostname}]' if ':' in hub_url.hostname else hub_url.hostname
+                    port = f':{hub_url.port}' if hub_url.port else ''
+                    frame_sources += f' {hub_url.scheme}://{host}{port}'
             # No external script/style/font hosts: all front-end assets are served
             # from this origin (guarded by tests/test_csp_no_external_hosts.py).
             # NOTE: `style-src 'unsafe-inline'` is intentionally retained.
@@ -243,7 +252,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 "img-src 'self' data: blob: https:; "
                 "media-src 'self' blob:; "
                 "connect-src 'self'; "
-                "frame-src 'self'; "
+                f"frame-src {frame_sources}; "
                 "frame-ancestors 'none'"
             )
         return await _with_error_class(response)
