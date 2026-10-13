@@ -4,6 +4,10 @@
 
 <p align="center">A self-hosted AI workstation for local models, cloud providers and agent teams.</p>
 
+Configured MCP HTTP/SSE connections recover on demand without restarting the
+agent. Healthy connections stay intact; a write whose response was lost is
+reported as uncertain and is not replayed. [Remote MCP recovery](docs/design/REMOTE-MCP-RECOVERY.md).
+
 <p align="center">
   <a href="README.es.md">Español</a> ·
   <a href="#quick-start">Quick start</a> ·

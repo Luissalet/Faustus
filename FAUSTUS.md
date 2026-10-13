@@ -1,5 +1,12 @@
 # Faustus — qué añade este fork sobre Odysseus
 
+**Recuperación MCP remota (13-10-2026, Ágora #440):** HTTP y SSE tienen tareas
+propietarias del contexto SDK y recuperan el mismo servidor configurado al
+invocar una herramienta, conservando conexiones sanas y OAuth existente.
+Reintentan una llamada aún no enviada o una lectura interrumpida; una escritura
+con resultado perdido no se duplica. La recuperación es por llamada, sin bucle
+permanente de backoff. [Contrato y pruebas](docs/design/REMOTE-MCP-RECOVERY.md).
+
 **Continuidad tras cortes del modelo (13-10-2026, Ágora #436):** chat normal y
 agente continúan la respuesta parcial en la misma ejecución cuando el transporte
 acaba sin señal de cierre, se resetea o agota la espera tras enviar texto. Conservan

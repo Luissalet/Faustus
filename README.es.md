@@ -4,6 +4,10 @@
 
 <p align="center">Una estación de trabajo de IA autoalojada para modelos locales, proveedores en la nube y equipos de agentes.</p>
 
+Las conexiones MCP HTTP/SSE configuradas se recuperan al llamar a una herramienta
+sin reiniciar el agente. Las conexiones sanas se conservan; una escritura cuya
+respuesta se perdió queda incierta y no se repite. [Recuperación MCP remota](docs/design/REMOTE-MCP-RECOVERY.md).
+
 <p align="center">
   <a href="README.md">English</a> ·
   <a href="#inicio-rápido">Inicio rápido</a> ·
