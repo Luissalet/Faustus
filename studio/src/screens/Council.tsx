@@ -4,7 +4,7 @@ import {
   Square, UserCog, Users, X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import {useCoordinationParams, useCoordinationDraft} from '../components/coordinationNavigation';
 import { Button, Dialog, EmptyState, IconButton, Menu, Skeleton, Toast } from '../components';
 import { listModels, type ModelRoute } from '../adapters/chat';
 import * as api from '../adapters/council';
@@ -13,6 +13,7 @@ import ModelPalette from './ModelPalette';
 import { Rich } from './rich';
 import { t, tn } from '../i18n';
 import './council.css';
+import {CoordinationSpaces} from '../components/CoordinationSpaces';
 
 /**
  * Council: several models think about one matter, and exactly one of them may
@@ -85,6 +86,7 @@ function typeTone(kind: string): Tone {
 
 function closeLabel(status: string): string {
   switch (status) {
+    case 'discussed': return t('Discussion completed');
     case 'verified': return t('Verified');
     case 'decided': return t('Decided');
     case 'unverified': return t('Unverified');
@@ -128,20 +130,24 @@ function policyLine(policy: string): string {
   }
 }
 
-function Setup({ config, routes, onOpened, say }: {
+function Setup({ config, routes, onOpened, say, spaceId }: {
   config: api.CouncilConfig;
   routes: ModelRoute[];
   onOpened: (id: string) => void;
   say: (message: string, tone?: 'ok' | 'warn') => void;
+  spaceId: string;
 }) {
-  const [title, setTitle] = useState('');
-  const [policy, setPolicy] = useState(config.policies[0] ?? 'chat');
-  const [workspace, setWorkspace] = useState('');
-  const [budgets, setBudgets] = useState<api.Budgets>(config.defaultBudgets);
-  const [seats, setSeats] = useState<Seat[]>(() =>
+  const prefix = 'agora:setup:council:' + spaceId + ':';
+  const [title, setTitle] = useCoordinationDraft(prefix + 'title', '');
+  const [policy, setPolicy] = useCoordinationDraft(prefix + 'policy', config.policies[0] ?? 'chat');
+  const [workspace, setWorkspace] = useCoordinationDraft(prefix + 'workspace', '');
+  const [budgets, setBudgets] = useCoordinationDraft<api.Budgets>(prefix + 'budgets', config.defaultBudgets);
+  const [seats, setSeats] = useCoordinationDraft<Seat[]>(prefix + 'seats',
     (config.defaultRoute ? [config.defaultRoute, config.defaultRoute] : routes.slice(0, 2)).map((route) => ({ route, model: route.model, endpointId: route.endpointId, displayName: '', roles: [] })));
   const [pick, setPick] = useState<number | null>(null);
   const [opening, setOpening] = useState(false);
+  const mounted = useRef(true);
+  useEffect(() => {mounted.current = true; return () => {mounted.current = false;};}, []);
 
   const ceiling = config.policyCeilings[policy] ?? 'none';
   const patch = (index: number, over: Partial<Seat>) =>
@@ -160,12 +166,13 @@ function Setup({ config, routes, onOpened, say }: {
         title: title.trim() || t('Untitled room'),
         policy,
         workspace: workspace.trim(),
+        spaceId,
         budgets,
         participants: seats.filter((s) => s.model).map((s) => ({
           model: s.model, endpointId: s.endpointId, displayName: s.displayName?.trim() ?? '', roles: s.roles,
         })),
       });
-      onOpened(detail.room.id);
+      if (mounted.current) onOpened(detail.room.id);
     } catch (error) {
       say((error as Error).message || t('The room could not be opened.'), 'warn');
       setOpening(false);
@@ -490,7 +497,7 @@ function ClosePanel({ close, status, stopReason, usage, onSynthesise, busy }: {
       <header className="fs-cnc__close-head">
         {reading.trusted ? <ShieldCheck size={14} aria-hidden="true" /> : <Scale size={14} aria-hidden="true" />}
         <b>{closeLabel(reading.value)}</b>
-        <span className="fs-muted">{reading.note}</span>
+        <span className="fs-muted">{t(reading.note)}</span>
         <span className="fs-spacer" />
         <Button variant="secondary" size="sm" icon={RefreshCw} label={t('Close what there is')} loading={busy} onClick={onSynthesise} testId="council-synthesise" />
       </header>
@@ -609,9 +616,10 @@ const LEDGER_EVENTS = [
   'council_activity_verified',
 ];
 
-export function CouncilScreen() {
-  const [params, setParams] = useSearchParams();
+export function CouncilScreen({embedded = false}: {embedded?: boolean} = {}) {
+  const [params, setParams] = useCoordinationParams('council');
   const roomId = params.get('s') ?? '';
+  const spaceId = params.get('space_id') || 'ecosystem';
 
   const [config, setConfig] = useState<api.CouncilConfig | null>(null);
   const [routes, setRoutes] = useState<ModelRoute[] | null>(null);
@@ -627,7 +635,7 @@ export function CouncilScreen() {
   const [close, setClose] = useState<api.CouncilClose | null>(null);
   const [gap, setGap] = useState<api.Gap | null>(null);
   const [live, setLive] = useState(true);
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useCoordinationDraft('agora:draft:council:' + spaceId + ':' + roomId, '');
   const [busy, setBusy] = useState('');
   const [notice, setNotice] = useState<{ text: string; tone: 'ok' | 'warn' } | null>(null);
   const [steering, setSteering] = useState<{ id: string; text: string } | null>(null);
@@ -637,6 +645,8 @@ export function CouncilScreen() {
   const cursor = useRef(0);
   const endRef = useRef<HTMLDivElement>(null);
   const noticeTimer = useRef<number | null>(null);
+  const currentRoom = useRef('');
+  currentRoom.current = spaceId + ':' + roomId;
 
   const say = useCallback((text: string, tone: 'ok' | 'warn' = 'ok') => {
     setNotice({ text, tone });
@@ -648,23 +658,27 @@ export function CouncilScreen() {
     const controller = new AbortController();
     api.loadConfig(controller.signal).then(setConfig).catch(() => setConfig(null));
     listModels(controller.signal).then(setRoutes).catch(() => setRoutes([]));
-    api.listRooms(controller.signal).then(setRooms).catch(() => setRooms([]));
+    api.listRooms(controller.signal, spaceId).then(setRooms).catch(() => {if (!controller.signal.aborted) setRooms([]);});
     return () => controller.abort();
-  }, []);
+  }, [spaceId]);
 
   const refresh = useCallback(async (id: string) => {
     if (!id) return;
+    const scope = spaceId + ':' + id;
+    if (scope !== currentRoom.current) return;
     const [room, transcript, book, spend] = await Promise.all([
       api.loadRoom(id).catch(() => null),
       api.loadMessages(id).catch(() => [] as api.CouncilMessage[]),
       api.loadLedger(id).catch(() => null),
       api.loadUsage(id).catch(() => null),
     ]);
+    if (scope !== currentRoom.current) return;
+    if (room && room.room.spaceId !== spaceId) {setDetail(null); return;}
     if (room) setDetail(room);
     setMessages(transcript);
     if (book) setLedger(book);
     if (spend) setUsage(spend);
-  }, []);
+  }, [spaceId]);
 
   /* Opening a room: everything is read once, then the stream keeps it fresh. */
   useEffect(() => {
@@ -768,8 +782,8 @@ export function CouncilScreen() {
     if (!roomId) return;
     setBusy(name);
     try {
-      await api.command(roomId, name, args);
-      say(label);
+      const receipt = await api.command(roomId, name, args);
+      say(receipt.status === 'queued' ? t('The command is queued for the room’s active executor.') : label);
       void refresh(roomId);
     } catch (error) {
       const refusal = error as api.CouncilRefusal;
@@ -825,14 +839,15 @@ export function CouncilScreen() {
   const paused = room?.status === 'paused';
 
   if (routes === null || rooms === null || config === null) {
-    return <Skeleton label={t('Loading the council')} count={4} height="48px" />;
+    return <Skeleton label={t('Loading room…')} count={4} height="48px" />;
   }
 
   return (
     <div className="fs-screen fs-cnc" data-testid="council">
+      {!embedded && <CoordinationSpaces value={spaceId} onChange={(id) => setParams({space_id: id}, {replace: true})} />}
       <header className="fs-screen__head">
         <div>
-          <h1 className="fs-screen__title">{room ? room.title || t('Council') : t('Council')}</h1>
+          <h2 className="fs-screen__title">{room ? room.title || t('Deliberation') : t('Deliberation')}</h2>
           <p className="fs-prose fs-cnc__lede">
             {room
               ? t('{policy} · {status} · revision {revision} · {n} seats', { policy: room.policy, status: room.status, revision: room.revision, n: seats.length })
@@ -841,7 +856,7 @@ export function CouncilScreen() {
         </div>
         {room && (
           <div className="fs-inline">
-            <Button variant="ghost" size="sm" icon={Users} label={t('Rooms')} onClick={() => setParams({}, { replace: true })} />
+            <Button variant="ghost" size="sm" icon={Users} label={t('Rooms')} onClick={() => setParams({space_id: spaceId}, { replace: true })} />
             <Menu
               trigger={<Button variant="secondary" size="sm" icon={Hand} label={t('Take the floor')} />}
               align="end"
@@ -859,10 +874,10 @@ export function CouncilScreen() {
 
       {!roomId && (
         <>
-          {rooms.length > 0 && (
+          {!embedded && rooms.length > 0 && (
             <section className="fs-cnc__list" aria-label={t('Your rooms')}>
               {rooms.map((entry) => (
-                <button key={entry.id} type="button" className="fs-cnc__card" onClick={() => setParams({ s: entry.id }, { replace: true })}>
+                <button key={entry.id} type="button" className="fs-cnc__card" onClick={() => setParams({ s: entry.id, space_id: spaceId }, { replace: true })}>
                   <b>{entry.title || entry.id}</b>
                   <span className="fs-muted">{t('{policy} · {status} · {n} seats', { policy: entry.policy, status: entry.status, n: entry.participantIds.length })}</span>
                 </button>
@@ -871,7 +886,7 @@ export function CouncilScreen() {
           )}
           {routes.length === 0
             ? <EmptyState icon={Users} title={t('No models')} body={t('Add an endpoint in Settings → Models first.')} />
-            : <Setup config={config} routes={routes} say={say} onOpened={(id) => setParams({ s: id }, { replace: true })} />}
+            : <Setup key={spaceId} config={config} routes={routes} spaceId={spaceId} say={say} onOpened={(id) => setParams({ s: id, space_id: spaceId }, { replace: true })} />}
         </>
       )}
 

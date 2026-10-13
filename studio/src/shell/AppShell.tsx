@@ -43,8 +43,7 @@ const ResearchScreen = lazyChunk(() => import('../screens/research/Research').th
 const CookbookScreen = lazyChunk(() => import('../screens/cookbook/Cookbook').then((m) => ({ default: m.CookbookScreen })));
 const CompareScreen = lazyChunk(() => import('../screens/compare/Compare').then((m) => ({ default: m.CompareScreen })));
 const ContextScreen = lazyChunk(() => import('../screens/Context').then((m) => ({ default: m.ContextScreen })));
-const GroupScreen = lazyChunk(() => import('../screens/group/Group').then((m) => ({ default: m.GroupScreen })));
-const CouncilScreen = lazyChunk(() => import('../screens/Council').then((m) => ({ default: m.CouncilScreen })));
+const AgoraScreen = lazyChunk(() => import('../screens/Agora').then((m) => ({default: m.AgoraScreen})));
 const StateMirrorScreen = lazyChunk(() => import('../screens/StateMirror').then((m) => ({ default: m.StateMirrorScreen })));
 const DeltasScreen = lazyChunk(() => import('../screens/Deltas').then((m) => ({ default: m.DeltasScreen })));
 const CompletionScreen = lazyChunk(() => import('../screens/Completion').then((m) => ({ default: m.CompletionScreen })));
@@ -247,6 +246,13 @@ function RouteStage() {
   );
 }
 
+function LegacyAgora({mode}: {mode: string}) {
+  const {search, hash} = useLocation();
+  const params = new URLSearchParams(search);
+  params.set('mode', mode);
+  return <Navigate replace to={'/agora?' + params.toString() + hash} />;
+}
+
 function RouteBody() {
   return (
     <div className="fs-route">
@@ -269,8 +275,9 @@ function RouteBody() {
         <Route path="/email" element={<EmailScreen />} />
         <Route path="/research" element={<ResearchScreen />} />
         <Route path="/compare" element={<CompareScreen />} />
-        <Route path="/group" element={<GroupScreen />} />
-        <Route path="/council" element={<CouncilScreen />} />
+        <Route path="/group" element={<LegacyAgora mode="groups" />} />
+        <Route path="/council" element={<LegacyAgora mode="council" />} />
+        <Route path="/agora" element={<AgoraScreen />} />
         <Route path="/state" element={<StateMirrorScreen />} />
         <Route path="/deltas" element={<DeltasScreen />} />
         <Route path="/completion" element={<CompletionScreen />} />

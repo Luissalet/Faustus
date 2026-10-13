@@ -1,12 +1,13 @@
 import { Check, ChevronDown, ExternalLink, Play, Plus, Save, Send, Square, Trash2, Users, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { useNavigate } from 'react-router';
+import {useCoordinationParams, useCoordinationDraft} from '../../components/coordinationNavigation';
 import { Button, Dialog, EmptyState, IconButton, Menu, Skeleton, Toast } from '../../components';
 import { listModels, loadHistory, type ModelRoute } from '../../adapters/chat';
 import {
   archiveGroup, groupOptions, groupSnapshot, listGroups, listGroupPresets, openGroup,
   presetFrom, questionFrom, resumeGroup, sendGroup, stopGroup, saveGroupPresets, speakerName, startGroup,
-  type GroupMode, type GroupPreset, type GroupSnapshot, type GroupState, type GroupToolResult, type Participant,
+  updateGroup, type GroupMode, type GroupPreset, type GroupSnapshot, type GroupState, type GroupToolResult, type Participant,
 } from '../../adapters/group';
 import { listPresets, type Preset } from '../../adapters/presets';
 import { hueIndex, initials } from '../../lib/mail';
@@ -16,6 +17,7 @@ import { AskCard } from '../studio/Transcript';
 import { t, tn } from '../../i18n';
 import '../group.css';
 import '../studio.css';
+import {CoordinationSpaces} from '../../components/CoordinationSpaces';
 
 /**
  * Group chat: several models talk with you and with each other. Set the
@@ -45,14 +47,18 @@ function Avatar({ name }: { name: string }) {
 
 /* ── Setup ── */
 
-function Setup({ routes, defaultRoute, personas, presets, onStart, onPresetsChanged, say }: { routes: ModelRoute[]; defaultRoute: ModelRoute | null; personas: Preset[]; presets: GroupPreset[]; onStart: (state: GroupState) => void; onPresetsChanged: (p: GroupPreset[]) => void; say: (m: string, tone?: 'ok' | 'warn') => void }) {
-  const [participants, setParticipants] = useState<Participant[]>(() => (defaultRoute ? [defaultRoute, defaultRoute] : routes.slice(0, 2)).map((route) => ({ route, personaId: '', personaName: '', personaPrompt: '' })));
-  const [executionMode, setExecutionMode] = useState<'chat' | 'agent'>('agent');
-  const [workspace, setWorkspace] = useState('');
-  const [mode, setMode] = useState<GroupMode>('round-robin');
+function Setup({ routes, defaultRoute, personas, presets, onStart, onPresetsChanged, say, spaceId, existing }: { routes: ModelRoute[]; defaultRoute: ModelRoute | null; personas: Preset[]; presets: GroupPreset[]; onStart: (state: GroupState) => void; onPresetsChanged: (p: GroupPreset[]) => void; say: (m: string, tone?: 'ok' | 'warn') => void; spaceId: string; existing?: GroupState }) {
+  const prefix = 'agora:setup:groups:' + spaceId + ':' + (existing?.parentId || 'new') + ':';
+  const [participants, setParticipants] = useCoordinationDraft<Participant[]>(prefix + 'participants', existing?.participants ?? (defaultRoute ? [defaultRoute, defaultRoute] : routes.slice(0, 2)).map((route) => ({ route, personaId: '', personaName: '', personaPrompt: '' })));
+  const [executionMode, setExecutionMode] = useCoordinationDraft<'chat' | 'agent'>(prefix + 'execution', existing?.executionMode || 'agent');
+  const [workspace, setWorkspace] = useCoordinationDraft(prefix + 'workspace', existing?.workspace || '');
+  const [mode, setMode] = useCoordinationDraft<GroupMode>(prefix + 'mode', existing?.mode || 'round-robin');
+  const [name, setName] = useCoordinationDraft(prefix + 'name', existing?.name || '');
   const [pick, setPick] = useState<number | null>(null);
   const [starting, setStarting] = useState(false);
   const [saveName, setSaveName] = useState<string | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => {mounted.current = true; return () => {mounted.current = false;};}, []);
 
   const setPersona = (i: number, id: string) => {
     const p = personas.find((x) => x.id === id);
@@ -103,7 +109,10 @@ function Setup({ routes, defaultRoute, personas, presets, onStart, onPresetsChan
   const start = async () => {
     setStarting(true);
     try {
-      onStart(await startGroup(participants, mode, executionMode, workspace));
+      const created = existing
+        ? await updateGroup(existing, {participants: participants as GroupState['participants'], mode, executionMode, workspace, name})
+        : await startGroup(participants, mode, executionMode, workspace, spaceId, name);
+      if (mounted.current) onStart(created);
     } catch (err) {
       say((err as Error).message || t('Could not start the group.'), 'warn');
       setStarting(false);
@@ -112,6 +121,7 @@ function Setup({ routes, defaultRoute, personas, presets, onStart, onPresetsChan
 
   return (
     <section className="fs-grp__setup" aria-label={t('Set the table')}>
+      <label className="fs-grp__option">{t('Room name')}<input className="fs-field" value={name} onChange={(event) => setName(event.target.value)} /></label>
       {presets.length > 0 && (
         <div className="fs-grp__presets">
           <span className="fs-grp__label">{t('Saved groups')}</span>
@@ -171,7 +181,7 @@ function Setup({ routes, defaultRoute, personas, presets, onStart, onPresetsChan
       <div className="fs-inline">
         <Button variant="ghost" size="sm" icon={Save} label={t('Save as a group…')} onClick={() => setSaveName('')} disabled={participants.length < 2} />
         <span className="fs-spacer" />
-        <Button variant="primary" size="sm" icon={Play} label={t('Start')} loading={starting} disabled={participants.length < 2} onClick={() => void start()} testId="group-start" />
+        <Button variant="primary" size="sm" icon={existing ? Check : Play} label={t(existing ? 'Save members' : 'Start')} loading={starting} disabled={participants.length < 2} onClick={() => void start()} testId="group-start" />
       </div>
       <ModelPalette open={pick !== null} onOpenChange={(o) => !o && setPick(null)} routes={routes} current={pick !== null ? participants[pick]?.route ?? null : null} onPick={(r) => { if (pick !== null) setParticipants((cur) => cur.map((x, j) => (j === pick ? { ...x, route: r } : x))); setPick(null); }} />
       {saveName !== null && (
@@ -185,9 +195,10 @@ function Setup({ routes, defaultRoute, personas, presets, onStart, onPresetsChan
 
 /* ── Screen ── */
 
-export function GroupScreen() {
+export function GroupScreen({embedded = false}: {embedded?: boolean} = {}) {
   const navigate = useNavigate();
-  const [params, setParams] = useSearchParams();
+  const [params, setParams] = useCoordinationParams('groups');
+  const spaceId = params.get('space_id') || 'ecosystem';
   const [routes, setRoutes] = useState<ModelRoute[] | null>(null);
   const [personas, setPersonas] = useState<Preset[]>([]);
   const [presets, setPresets] = useState<GroupPreset[]>([]);
@@ -195,9 +206,11 @@ export function GroupScreen() {
   const [groups, setGroups] = useState<GroupState[]>([]);
   const [state, setState] = useState<GroupState | null>(null);
   const [opening, setOpening] = useState(Boolean(params.get('s')));
+  const [editing, setEditing] = useState(false);
+  const [recipient, setRecipient] = useState('');
   const [snapshot, setSnapshot] = useState<GroupSnapshot | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useCoordinationDraft('agora:draft:groups:' + spaceId + ':' + (params.get('s') || ''), '');
   const [sending, setSending] = useState(false);
   const [connectionError, setConnectionError] = useState('');
   const [notice, setNotice] = useState<{ text: string; tone: 'ok' | 'warn' } | null>(null);
@@ -214,7 +227,7 @@ export function GroupScreen() {
 
   useEffect(() => {
     const c = new AbortController();
-    Promise.all([listModels(c.signal), groupOptions(c.signal), listGroups(c.signal)]).then(([models, options, saved]) => {
+    Promise.all([listModels(c.signal), groupOptions(c.signal), listGroups(c.signal, spaceId)]).then(([models, options, saved]) => {
       setDefaultRoute(options.defaultRoute);
       setRoutes(options.defaultRoute && !models.some((r) => r.model === options.defaultRoute?.model && r.endpointId === options.defaultRoute?.endpointId)
         ? [options.defaultRoute, ...models] : models);
@@ -223,9 +236,10 @@ export function GroupScreen() {
     listPresets(c.signal).then((all) => setPersonas(all.filter((p) => p.own))).catch(() => undefined);
     listGroupPresets(c.signal).then(setPresets).catch(() => undefined);
     return () => { c.abort(); if (noticeTimer.current) window.clearTimeout(noticeTimer.current); };
-  }, [say]);
+  }, [say, spaceId]);
 
   const selectedId = params.get('s');
+  useEffect(() => {setRecipient(''); setEditing(false);}, [selectedId, spaceId]);
   useEffect(() => {
     const c = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
@@ -236,19 +250,21 @@ export function GroupScreen() {
       try {
         const current = first ? await openGroup(selectedId, c.signal) : await groupSnapshot(selectedId, c.signal);
         first = false;
-        const history = await loadHistory(selectedId, c.signal);
+        const history = await loadHistory(selectedId, c.signal).catch(() => ({history: []}));
         if (c.signal.aborted) return;
-        const rows: Entry[] = history.history.filter((m) => m.role !== 'system').map((m) => ({
+        // Historical pre-driver messages remain available. Durable group turns
+        // and replies come from canonical coordination, not the model context.
+        const rows: Entry[] = history.history.filter((m) => m.role !== 'system' && !m.metadata.group_turn_id && !m.metadata.group_step_id).map((m) => ({
           id: String(m.metadata.group_step_id ?? m.metadata.group_turn_id ?? m.metadata.group_answer_id ?? `history-${m.index}`),
           role: m.role === 'user' ? 'user' : 'participant', speaker: m.role === 'user' ? t('You') : String(m.metadata.group_model ?? m.metadata.model ?? ''),
           model: String(m.metadata.model ?? ''), text: m.content, streaming: false, error: String(m.metadata.group_error ?? ''),
           tools: Array.isArray(m.metadata.group_tool_results) ? m.metadata.group_tool_results as GroupToolResult[] : [],
         }));
         for (const turn of current.turns) {
-          if (!rows.some((r) => r.id === turn.id) && turn.status === 'queued') rows.push({ id: turn.id, role: 'user', speaker: t('Queued'), model: '', text: turn.message, streaming: false, error: '' });
+          rows.push({ id: turn.id, role: 'user', speaker: turn.status === 'queued' ? t('Queued') : t('You'), model: '', text: turn.message, streaming: false, error: '' });
           for (const step of current.steps.filter((s) => s.turn_id === turn.id)) {
             if (rows.some((r) => r.id === step.id) || step.status === 'queued') continue;
-            const member = current.group.participants.find((p) => p.sessionId === step.member_id);
+            const member = (turn.participants ?? current.group.participants).find((p) => p.sessionId === step.member_id);
             if (!member) continue;
             rows.push({ id: step.id, role: 'participant', speaker: speakerName(member), model: member.route.model,
               text: step.text, streaming: step.status === 'running', error: step.error || (step.status === 'stopped' ? t('Stopped.') : ''), tools: step.detail.tool_results });
@@ -264,7 +280,7 @@ export function GroupScreen() {
     void refresh();
     // The browser owns only its observer. Leaving never stops the saved work.
     return () => { c.abort(); clearTimeout(timer); };
-  }, [selectedId]);
+  }, [selectedId, spaceId]);
 
   const transcriptText = entries.map((e) => e.text).join('');
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [transcriptText]);
@@ -275,7 +291,7 @@ export function GroupScreen() {
     const request = retryRequest.current?.message === message ? retryRequest.current : { message, id: crypto.randomUUID() };
     retryRequest.current = request; setSending(true);
     try {
-      await sendGroup(state.parentId, message, request.id);
+      await sendGroup(state.parentId, message, request.id, recipient ? [recipient] : []);
       retryRequest.current = null; setDraft('');
     } catch (error) { say((error as Error).message, 'warn'); }
     finally { setSending(false); }
@@ -285,7 +301,7 @@ export function GroupScreen() {
     try { await stopGroup(state.parentId); } catch (error) { say((error as Error).message, 'warn'); }
   };
   const leave = () => {
-    setState(null); setEntries([]); setSnapshot(null); setParams({}, { replace: true });
+    setState(null); setEntries([]); setSnapshot(null); setParams({space_id: spaceId}, { replace: true });
     void listGroups().then(setGroups).catch((error: Error) => say(error.message, 'warn'));
   };
   const forget = async () => {
@@ -309,9 +325,10 @@ export function GroupScreen() {
 
   return (
     <div className="fs-screen fs-grp" data-testid="group">
+      {!embedded && <CoordinationSpaces value={spaceId} onChange={(id) => setParams({space_id: id}, {replace: true})} />}
       <header className="fs-screen__head">
         <div>
-          <h1 className="fs-screen__title">{state ? state.name : t('Group chat')}</h1>
+          <h2 className="fs-screen__title">{state ? state.name : t('Conversation')}</h2>
           <p className="fs-prose fs-grp__lede">
             {state
               ? `${state.mode === 'parallel' ? t('All at once') : t('Taking turns')} · ${tn(participants.length, '{n} participant', '{n} participants')}`
@@ -326,6 +343,7 @@ export function GroupScreen() {
               align="end"
               items={[
                 { label: t('New group'), icon: Plus, onSelect: leave },
+                { label: t('Manage members'), icon: Users, onSelect: () => setEditing(true) },
                 { label: t('Close this group (keep the transcript)'), icon: Trash2, variant: 'danger', onSelect: () => void forget() },
               ]}
             />
@@ -335,12 +353,12 @@ export function GroupScreen() {
 
       {connectionError && <p className="fs-notice" data-tone="danger" role="alert">{connectionError} {t('Reconnecting…')}</p>}
       {opening && <Skeleton label={t('Opening group')} count={2} height="40px" />}
-      {!state && !opening && groups.length > 0 && <div className="fs-grp__presets" aria-label={t('Open groups')}>
+      {!embedded && !state && !opening && groups.length > 0 && <div className="fs-grp__presets" aria-label={t('Open groups')}>
         <span className="fs-grp__label">{t('Open groups')}</span>
-        {groups.map((g) => <button key={g.parentId} type="button" className="fs-chip" onClick={() => setParams({ s: g.parentId })}>{g.name}</button>)}
+        {groups.map((g) => <button key={g.parentId} type="button" className="fs-chip" onClick={() => setParams({ s: g.parentId, space_id: spaceId })}>{g.name}</button>)}
       </div>}
       {!state && !opening && routes.length === 0 && <EmptyState icon={Users} title={t('No models')} body={t('Add an endpoint in Settings → Models first.')} />}
-      {!state && !opening && routes.length > 0 && <Setup routes={routes} defaultRoute={defaultRoute} personas={personas} presets={presets} onStart={(s) => { setState(s); setEntries([]); setParams({ s: s.parentId }, { replace: true }); }} onPresetsChanged={setPresets} say={say} />}
+      {!state && !opening && routes.length > 0 && <Setup key={spaceId} routes={routes} defaultRoute={defaultRoute} personas={personas} presets={presets} spaceId={spaceId} onStart={(s) => { setState(s); setEntries([]); setParams({ s: s.parentId, space_id: spaceId }, { replace: true }); }} onPresetsChanged={setPresets} say={say} />}
 
       {state && (
         <>
@@ -396,11 +414,19 @@ export function GroupScreen() {
               data-testid="group-draft"
             />
             {busy && <Button variant="danger" size="sm" icon={Square} label={t('Stop')} onClick={() => void stop()} />}
+            <label className="fs-inline">{t('To')}<select className="fs-field" value={recipient} onChange={(event) => setRecipient(event.target.value)} aria-label={t('Message recipients')}>
+              <option value="">{t('Everyone')}</option>{participants.map((p) => <option key={p.sessionId} value={p.sessionId}>{speakerName(p)}</option>)}
+            </select></label>
             <Button variant="primary" size="sm" icon={Send} label={busy ? t('Queue message') : t('Send')} loading={sending} disabled={!draft.trim() || sending} onClick={() => void send()} testId="group-send" />
           </footer>
         </>
       )}
 
+      {editing && state && <Dialog open onOpenChange={setEditing} title={t('Manage members')} testId="group-members">
+        <Setup key={state.parentId} routes={routes} defaultRoute={defaultRoute} personas={personas} presets={presets}
+          spaceId={spaceId} existing={state} onStart={(next) => {setState(next); setEditing(false);}}
+          onPresetsChanged={setPresets} say={say} />
+      </Dialog>}
       {notice && (
         <Toast>
           {notice.tone === 'warn' ? <X size={12} aria-hidden="true" /> : <Check size={12} aria-hidden="true" />} {notice.text}

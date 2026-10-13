@@ -160,6 +160,7 @@ export interface CouncilRoom {
   createdAt: string;
   updatedAt: string;
   revision: number;
+  spaceId: string;
 }
 
 export interface Participant {
@@ -351,6 +352,7 @@ export function roomFrom(raw: unknown): CouncilRoom {
     createdAt: str(s.created_at),
     updatedAt: str(s.updated_at),
     revision: num(s.revision) || 1,
+    spaceId: str(s.space_id) || 'ecosystem',
   };
 }
 
@@ -824,11 +826,13 @@ export interface Reading {
  * server shows up as a status this file cannot read rather than as one it
  * renders wrongly.
  */
-export const CLOSE_STATUSES = ['decided', 'verified', 'unverified', 'blocked', 'disputed'];
+export const CLOSE_STATUSES = ['decided', 'verified', 'unverified', 'blocked', 'disputed', 'discussed'];
 
 export function closeReading(status: unknown): Reading {
   const value = str(status).trim();
   switch (value) {
+    case 'discussed':
+      return {value, label: 'Discussion completed', tone: 'neutral', trusted: false, note: 'The discussion finished.'};
     case 'verified':
       return { value, label: 'Verified', tone: 'ok', trusted: true,
         note: 'a proof packet came back proved and every task finished well' };
@@ -981,8 +985,8 @@ export async function loadConfig(signal?: AbortSignal): Promise<CouncilConfig> {
   return configFrom(unwrap(await getJson<unknown>(`${BASE}/config`, signal), 'config'));
 }
 
-export async function listRooms(signal?: AbortSignal): Promise<CouncilRoom[]> {
-  const payload = await getJson<unknown>(BASE, signal);
+export async function listRooms(signal?: AbortSignal, spaceId?: string): Promise<CouncilRoom[]> {
+  const payload = await getJson<unknown>(BASE + (spaceId ? '?space_id=' + encodeURIComponent(spaceId) : ''), signal);
   return asArray<unknown>(payload, 'sessions').map(roomFrom).filter((r) => r.id);
 }
 
@@ -1021,6 +1025,7 @@ export interface NewRoom {
   workspace?: string;
   projectId?: string;
   budgets?: Budgets;
+  spaceId?: string;
 }
 
 /**
@@ -1035,6 +1040,7 @@ export async function createRoom(input: NewRoom): Promise<RoomDetail> {
     policy: input.policy,
     workspace: input.workspace ?? '',
     project_id: input.projectId ?? '',
+    space_id: input.spaceId ?? 'ecosystem',
     budgets: input.budgets ? budgetsPayload(input.budgets) : undefined,
     participants: input.participants.map((seat) => ({
       model: seat.model,
@@ -1057,9 +1063,17 @@ export async function archiveRoom(id: string): Promise<void> {
 }
 
 export async function loadMessages(id: string, sinceId = '', signal?: AbortSignal): Promise<CouncilMessage[]> {
-  const query = sinceId ? `?since_id=${encodeURIComponent(sinceId)}` : '';
-  const payload = await getJson<unknown>(path(id, `/messages${query}`), signal);
-  return asArray<unknown>(payload, 'messages').map(messageFrom);
+  const all: CouncilMessage[] = [];
+  let cursor = sinceId;
+  while (true) {
+    const query = '?limit=200' + (cursor ? '&since_id=' + encodeURIComponent(cursor) : '');
+    const payload = await getJson<unknown>(path(id, `/messages${query}`), signal);
+    const page = asArray<unknown>(payload, 'messages').map(messageFrom);
+    all.push(...page);
+    const next = page.at(-1)?.id || '';
+    if (page.length < 200 || !next || next === cursor) return all;
+    cursor = next;
+  }
 }
 
 /**

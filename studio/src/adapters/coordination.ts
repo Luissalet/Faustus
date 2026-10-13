@@ -97,3 +97,30 @@ export async function saveProjectCoordination(id: string, draft: ReturnType<type
   if (!response.ok) throw new ApiError(await responseReason(response, path), response.status);
   return await response.json() as { template: CoordinationTemplate };
 }
+
+
+
+export type CoordinationSpace = {id: string; title: string; description: string; revision: number; members: string[]};
+export type CoordinationRoom = {id: string; kind: 'council' | 'groups'; title: string; space_id: string; owner: string; mode: string; status: string};
+
+export async function spaces(signal?: AbortSignal): Promise<CoordinationSpace[]> {
+  const result = await getJson<{ok: boolean; spaces?: CoordinationSpace[]; error?: string}>('/api/hoard/agora/spaces', signal);
+  if (!result.ok) throw new Error(result.error || 'Coordination unavailable');
+  return result.spaces || [];
+}
+
+export async function rooms(spaceId: string, signal?: AbortSignal): Promise<CoordinationRoom[]> {
+  const result = await getJson<{ok: boolean; rooms?: CoordinationRoom[]; error?: string}>(
+    '/api/hoard/agora/rooms?space_id=' + encodeURIComponent(spaceId), signal);
+  if (!result.ok) throw new Error(result.error || 'Coordination unavailable');
+  return result.rooms || [];
+}
+
+export async function createSpace(title: string): Promise<CoordinationSpace> {
+  const response = await fetch('/api/hoard/agora/spaces', {method: 'POST', credentials: 'same-origin',
+    headers: {'Content-Type': 'application/json'}, body: JSON.stringify({title})});
+  if (!response.ok) throw new Error(await responseReason(response, 'Coordination'));
+  const result = await response.json() as {ok: boolean; space: CoordinationSpace; error?: string};
+  if (!result.ok) throw new Error(result.error || 'Coordination unavailable');
+  return result.space;
+}

@@ -5,6 +5,7 @@ import { t } from '../i18n';
 /** Persistent groups use canonical sessions and the native server conductor. */
 
 export interface Participant {
+  sessionId?: string;
   route: ModelRoute;
   /** A saved persona (template id) or nothing: the model as itself. */
   personaId: string;
@@ -15,6 +16,7 @@ export interface Participant {
 export type GroupMode = 'parallel' | 'round-robin';
 
 export interface GroupState {
+  revision?: number;
   parentId: string;
   name: string;
   mode: GroupMode;
@@ -22,6 +24,7 @@ export interface GroupState {
   startedAt: number;
   executionMode?: 'chat' | 'agent';
   workspace?: string;
+  space_id?: string;
 }
 
 export interface GroupPreset {
@@ -82,7 +85,7 @@ export interface GroupStep {
 export interface GroupToolResult { tool?: string; command?: string; output?: string; exit_code?: number; call_id?: string; result_status?: string; uncertainty?: unknown; [key: string]: unknown }
 export interface GroupSnapshot {
   group: GroupState; busy: boolean;
-  turns: { id: string; message: string; status: string }[];
+  turns: { id: string; message: string; status: string; participants?: (Participant & {sessionId: string})[] }[];
   steps: GroupStep[];
 }
 
@@ -93,11 +96,18 @@ async function command<T>(path: string, body: unknown = {}): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export async function updateGroup(state: GroupState, changes: Partial<GroupState>): Promise<GroupState> {
+  const response = await fetch('/api/groups/' + encodeURIComponent(state.parentId), {method: 'PATCH', credentials: 'same-origin',
+    headers: {'Content-Type': 'application/json'}, body: JSON.stringify({...changes, expected_revision: state.revision})});
+  if (!response.ok) throw new ApiError(await responseReason(response, 'Group'), response.status);
+  return response.json() as Promise<GroupState>;
+}
+
 export function groupOptions(signal?: AbortSignal): Promise<{ defaultRoute: ModelRoute | null }> {
   return getJson('/api/groups/config', signal);
 }
-export async function listGroups(signal?: AbortSignal): Promise<GroupState[]> {
-  const result = await getJson<{ groups: GroupState[] }>('/api/groups', signal);
+export async function listGroups(signal?: AbortSignal, spaceId?: string): Promise<GroupState[]> {
+  const result = await getJson<{ groups: GroupState[] }>('/api/groups' + (spaceId ? '?space_id=' + encodeURIComponent(spaceId) : ''), signal);
   for (const state of result.groups) saveGroupState(state); // Studio's synchronous navigation cache.
   return result.groups;
 }
@@ -116,13 +126,13 @@ export async function openGroup(id: string, signal?: AbortSignal): Promise<Group
   }
 }
 export async function startGroup(input: Participant[], mode: GroupMode,
-  executionMode: 'chat' | 'agent' = 'agent', workspace = ''): Promise<GroupState> {
-  const state = await command<GroupState>('/api/groups', { participants: input, mode, executionMode, workspace });
+  executionMode: 'chat' | 'agent' = 'agent', workspace = '', spaceId = 'ecosystem', name = ''): Promise<GroupState> {
+  const state = await command<GroupState>('/api/groups', { participants: input, mode, executionMode, workspace, space_id: spaceId, name });
   saveGroupState(state);
   return state;
 }
-export function sendGroup(id: string, message: string, requestId: string): Promise<unknown> {
-  return command(`/api/groups/${encodeURIComponent(id)}/messages`, { message, request_id: requestId });
+export function sendGroup(id: string, message: string, requestId: string, mentions: string[] = []): Promise<unknown> {
+  return command(`/api/groups/${encodeURIComponent(id)}/messages`, { message, request_id: requestId, mentions });
 }
 export function stopGroup(id: string): Promise<unknown> {
   return command(`/api/groups/${encodeURIComponent(id)}/stop`);
