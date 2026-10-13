@@ -1245,6 +1245,7 @@ class SubagentRun:
         self.system_prompt = str(task.get("system_prompt") or "")
         self.endpoint_id = str(task.get("endpoint_id") or "")
         self.route_note = ""
+        self.read_only = bool(task.get("read_only"))
         self.team_bound = bool(task.get('team_bound'))
         self.max_rounds_override = task.get("max_rounds") or None
         self.timeout_s_override = task.get("timeout_s")
@@ -2681,11 +2682,12 @@ class DelegateAgentsTool:
                                     and int(getattr(run, "failed_calls", 0) or 0)
                                     >= int(getattr(run, "tool_calls", 0) or 0))
                     if (run.role != "reviewer"
+                            and not run.read_only
                             and not _worker_retry_is_uncertain(run)
                             and not _all_refused
                             and receipt.verdict in (delegation_receipts.VERDICT_EMPTY,
                                                      delegation_receipts.VERDICT_ACK_ONLY)
-                            and delegation_receipts.looks_like_write_task(run.instruction)):
+                            and delegation_receipts.looks_like_write_task(run.instruction, run.files)):
                         await emit({"event": "retry", "reason": receipt.verdict})
                         original_instruction = run.instruction
                         original_started = run.started

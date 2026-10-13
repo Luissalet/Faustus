@@ -140,7 +140,8 @@ def receipt_for(run: Any) -> DelegationReceipt:
     # Keep that distinct from a verified edit and from an unfulfilled write.
     failed_calls = int(getattr(run, "failed_calls", 0) or 0)
     if (verdict == VERDICT_EMPTY and getattr(run, "stop_reason", "") == "complete"
-            and not looks_like_write_task(getattr(run, "instruction", ""))
+            and (getattr(run, "read_only", False) or getattr(run, "role", "") == "reviewer"
+                 or not looks_like_write_task(getattr(run, "instruction", ""), getattr(run, "files", None)))
             and (failed_calls < tool_calls or
                  (tool_calls == 0 and not _WRITE_VERB_RE.search(getattr(run, "instruction", ""))))):
         verdict = VERDICT_REPORTED
@@ -191,11 +192,17 @@ _READ_VERB_RE = re.compile(
 )
 _FILE_TARGET_RE = re.compile(
     r"\b(files?|modules?|scripts?|code|tests?|functions?|classes|"
-    r"archivos?|ficheros?|módulos?|código|pruebas?|funciones|clases)\b", re.I,
+    r"backend|frontend|api|bugs?|validation|pagination|routes?|endpoints?|"
+    r"archivos?|ficheros?|módulos?|código|pruebas?|funciones|clases|fallos?|validación|paginación)\b", re.I,
 )
+_NON_FILE_TARGET_RE = re.compile(
+    r"\b(calendars?|meetings?|events?|slides?|messages?|emails?|appointments?|"
+    r"calendarios?|reuniones?|eventos?|diapositivas?|mensajes?|correos?|citas?)\b", re.I,
+)
+_CODE_CHANGE_RE = re.compile(r"\b(implement|refactor|fix|implementa|implementar|corrige|corregir|arregla|arreglar)\b", re.I)
 
 
-def looks_like_write_task(instruction: Any) -> bool:
+def looks_like_write_task(instruction: Any, files=None) -> bool:
     """A conservative heuristic, never authoritative on its own (the caller
     still checks the run's own verdict first): a task that names a file path
     (``mesh_adapter.py``, ``tests/editor/test_stack.py`` — exactly the shape
@@ -204,10 +211,16 @@ def looks_like_write_task(instruction: Any) -> bool:
     text = str(instruction or "")
     if not text.strip():
         return False
-    if _WRITE_VERB_RE.search(text):
+    verb = _WRITE_VERB_RE.search(text)
+    if verb:
         # Tool work can edit a slide, create an event or send a message without
         # writing a filesystem artifact. Never turn those tasks into write_file.
-        return bool(_PATH_TOKEN_RE.search(text) or _FILE_TARGET_RE.search(text))
+        target = text[verb.end():]
+        native_target = _NON_FILE_TARGET_RE.search(target)
+        file_targets = [match for match in (_PATH_TOKEN_RE.search(target), _FILE_TARGET_RE.search(target)) if match]
+        if native_target and (not file_targets or native_target.start() < min(m.start() for m in file_targets)):
+            return False
+        return bool(file_targets or files or _CODE_CHANGE_RE.search(text))
     if _READ_VERB_RE.search(text):
         return False
     return bool(_PATH_TOKEN_RE.search(text))

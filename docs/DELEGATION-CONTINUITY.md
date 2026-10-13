@@ -25,7 +25,11 @@ No external agent runtime, permission system or additional model is required.
   file edits. Failed reads and acknowledgement-only replies are not reports.
   A read mentioning a filename does not trigger an instruction to write it.
   Successful non-file tools can report their result without inventing local
-  mutations. Requested file edits still need recorded mutations.
+  mutations. Requested source edits still need recorded mutations, including
+  implementation tasks naming a backend/API rather than a literal path.
+  Assigned files supply additional context; an input CSV for a calendar action
+  does not become a file to rewrite. Explicit read-only reviews never trigger
+  the write-oriented retry.
 - A worker's final report starts after its last tool result, so guessed
   pre-result narration is not presented as the result. Native response
   replacements are consumed. Round activity and tool outcomes stay available.
