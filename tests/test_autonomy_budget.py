@@ -104,9 +104,9 @@ def test_normalize_preset_defaults_unknown_and_empty_to_supervised():
 
 def test_resolve_budget_scales_existing_settings():
     """max_tool_calls/max_tokens derive from the settings that already exist
-    (agent_max_tool_calls, agent_input_token_hard_max) — bounded_autonomous
+    (agent_max_tool_calls, agent_budget_tokens_per_run) — bounded_autonomous
     is strictly more than supervised, read_only strictly less."""
-    settings = {"agent_max_tool_calls": 30, "agent_input_token_hard_max": 100_000}
+    settings = {"agent_max_tool_calls": 30, "agent_budget_tokens_per_run": 100_000}
     get_setting = lambda key, default=None: settings.get(key, default)
     supervised = ab.resolve_budget("supervised", get_setting=get_setting)
     bounded = ab.resolve_budget("bounded_autonomous", get_setting=get_setting)
@@ -135,6 +135,19 @@ def test_default_optional_autonomy_dimensions_are_unlimited():
     assert all(DEFAULT_SETTINGS[key] == 0 for key in optional)
     budget = ab.resolve_budget('supervised', get_setting=lambda key, default=None: DEFAULT_SETTINGS.get(key, default))
     assert budget.max_remote_spend == budget.max_active_seconds == budget.max_subagents == budget.max_memory_mb == 0
+
+
+def test_prompt_context_ceiling_does_not_stop_cumulative_run_tokens():
+    settings = {'agent_input_token_hard_max': 200_000, 'agent_budget_tokens_per_run': 0}
+    budget = ab.resolve_budget('supervised', get_setting=lambda key, default=None: settings.get(key, default))
+    assert budget.max_tokens == 0
+    assert ab.Ledger(tokens=243_306).check(budget) is None
+
+
+def test_explicit_run_token_budget_still_stops_cumulative_usage():
+    budget = ab.resolve_budget('supervised', get_setting=lambda key, default=None: 200_000 if key == 'agent_budget_tokens_per_run' else 0)
+    exhausted = ab.Ledger(tokens=243_306).check(budget)
+    assert exhausted.kind == 'tokens' and exhausted.limit == 200_000
 
 
 def test_explicit_remote_spend_limit_still_stops_at_the_configured_amount():
