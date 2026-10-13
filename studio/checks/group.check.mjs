@@ -1,0 +1,36 @@
+import assert from 'node:assert/strict';
+import {pathToFileURL,fileURLToPath} from 'node:url';
+import {dirname,resolve,join} from 'node:path';
+import {mkdtempSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+const root=resolve(dirname(fileURLToPath(import.meta.url)),'..','..');
+const {build}=await import(pathToFileURL(join(root,'node_modules/esbuild/lib/main.js')));
+const out=join(mkdtempSync(join(tmpdir(),'fs-group-')),'group.mjs');
+await build({entryPoints:[join(root,'studio/src/adapters/group.ts')],bundle:true,format:'esm',platform:'node',outfile:out,logLevel:'silent'});
+const group=await import(pathToFileURL(out));
+const cache=new Map();
+globalThis.localStorage={getItem:k=>cache.get(k)??null,setItem:(k,v)=>cache.set(k,v)};
+const legacy={parentId:'legacy',name:'Existing',mode:'parallel',startedAt:1,participants:[{sessionId:'a'},{sessionId:'b'}]};
+group.saveGroupState(legacy);
+const calls=[];let adopted=false;
+globalThis.fetch=async(path,options={})=>{
+  calls.push({path,options});
+  if(path==='/api/groups/adopt'){adopted=true;return new Response(JSON.stringify(legacy));}
+  if(path==='/api/groups/legacy')return adopted?new Response(JSON.stringify({group:legacy,steps:[],turns:[],busy:false})):new Response('{}',{status:404});
+  if(path.endsWith('/messages'))return new Response('{"turn_id":"saved","fresh":false}');
+  return new Response('{"detail":"Temporarily unavailable"}',{status:503});
+};
+const current=await group.openGroup('legacy');
+assert.equal(current.group.parentId,'legacy');
+assert.equal(JSON.parse(calls.find(x=>x.path.endsWith('/adopt')).options.body).executionMode,'chat');
+assert.equal(group.loadGroupState('legacy').participants[0].sessionId,'a');
+const count=calls.length;
+await assert.rejects(group.openGroup('down'),/Temporarily unavailable/);
+assert.equal(calls.length,count+1,'an unavailable server never triggers a fake migration');
+await group.sendGroup('legacy','original','same-request');
+await group.sendGroup('legacy','original','same-request');
+assert.deepEqual(JSON.parse(calls.at(-1).options.body),{message:'original',request_id:'same-request'});
+const question=group.questionFrom({status:'waiting_user',detail:{question:{question:'Which?',question_id:'q',revision:4,options:[{id:'first',label:'First'}]}}});
+assert.equal(question.questionId,'q');assert.equal(question.revision,4);
+assert.equal(group.questionFrom({status:'done',detail:{question:{question:'Old'}}}),null);
+console.log('PASS: existing sessions migrate only on 404, chat is preserved, errors stay visible, IDs are stable and actual questions decode.');

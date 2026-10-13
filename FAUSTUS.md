@@ -11644,3 +11644,12 @@ Prueba de Luis: «En la ventana de Blender de Quinn, dale a Load profile en Prof
 - **`desktop_focus_window`** reintenta y espera la activación (fallaba siempre a la primera); un título ambiguo lista las ventanas candidatas.
 - **`desktop_screenshot {"window": "Blender"}`** captura una ventana por título, sin aritmética de rectángulos (el modelo pasaba [izq, arriba, der, abajo] como ancho/alto).
 - **Skills aprendidas visibles**: `manage_skills view` exigía dueño exacto mientras el índice (owner None en la app de escritorio) las listaba; ahora usa la misma visibilidad que `load`.
+
+
+## Grupos persistentes y modelos globales (13-10-2026, tarea443)
+
+El conductor nativo guarda composición, FIFO, pasos, respuestas parciales, IDs de envío y ejecución. Navegador y MCP observan; salir no detiene el siguiente participante. Los participantes pueden usar el arnés de agente normal, con su modelo/endpoint/persona y carpeta, o conservar chat. La selección inicial usa el modelo global configurado de las Sparks y no los primeros modelos del catálogo del PC. No hay un techo fijo de ocho participantes. Presets y grupos previos conservan sus sesiones.
+
+API y ocho herramientas MCP ofrecen crear, abrir, encolar, consultar, responder, Stop y cerrar. Los siguientes participantes reciben output/exit_code/call_id reales y aclaraciones del usuario. Se preserva response_replace y el outbox nativo; un intento interrumpido con efectos desconocidos se muestra sin repetirlo a ciegas. Recuperar no equivale a afirmar que una acción incierta terminó.
+
+Pruebas privadas de producto completo: dos modelos simulados, cuatro lecturas reales de fichero en dos turnos FIFO después de desconectar MCP, duplicado deduplicado, y navegador que salió tras enviar antes de completar ambos participantes. GLM global residente real: dos lectores verifican73129 en archivo privado, con MCP desconectado. Chat con carpeta autoescala a herramientas por intención y también completa; un único contraste18.05s/9.159s no prueba que el selector agente sea universalmente superior ni establece una comparación externa. Ver docs/api/groups.md y evidencia local research-inbox/multimodel-20261013.

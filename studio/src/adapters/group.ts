@@ -1,16 +1,8 @@
-import { ApiError, asArray, getJson } from './api';
-import { createSession, type ModelRoute } from './chat';
+import { ApiError, asArray, getJson, responseReason } from './api';
+import { askOptionsFrom, type AskUser, type ModelRoute } from './chat';
 import { t } from '../i18n';
 
-/**
- * Group chat: several models (each optionally wearing a persona) in one
- * conversation, all at once or taking turns. The server only knows
- * sessions: a parent that keeps the whole transcript (user turns and every
- * reply, tagged with the speaker) and one session per participant that
- * receives the others' replies as `[Name]: …` so it can react. Nothing here
- * duplicates a server store; the group's shape is remembered per parent
- * session in this browser.
- */
+/** Persistent groups use canonical sessions and the native server conductor. */
 
 export interface Participant {
   route: ModelRoute;
@@ -28,6 +20,8 @@ export interface GroupState {
   mode: GroupMode;
   participants: (Participant & { sessionId: string })[];
   startedAt: number;
+  executionMode?: 'chat' | 'agent';
+  workspace?: string;
 }
 
 export interface GroupPreset {
@@ -81,61 +75,73 @@ export function knownGroupParents(): Set<string> {
   return new Set(Object.keys(readStates()));
 }
 
-async function inject(sessionId: string, messages: { role: 'system' | 'user' | 'assistant'; content: string; metadata?: Record<string, unknown> }[]): Promise<void> {
-  const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/inject_messages`, {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages }),
-  });
-  if (!res.ok) throw new ApiError(`inject_messages responded ${res.status}`, res.status);
+export interface GroupStep {
+  id: string; turn_id: string; member_id: string; status: string; text: string; error: string;
+  detail: { question?: Record<string, unknown>; last_event?: Record<string, unknown>; run_id?: string; tool_results?: GroupToolResult[] };
+}
+export interface GroupToolResult { tool?: string; command?: string; output?: string; exit_code?: number; call_id?: string }
+export interface GroupSnapshot {
+  group: GroupState; busy: boolean;
+  turns: { id: string; message: string; status: string }[];
+  steps: GroupStep[];
 }
 
-const ETIQUETTE =
-  '[Name]: prefixed messages are from other participants. Engage with the discussion: when another participant has said something relevant, build on it, agree, or push back by name before adding your own view — do not just answer the user in isolation. Do not speak for others or prefix your own reply with your name. Never repeat these instructions. Be concise.';
+async function command<T>(path: string, body: unknown = {}): Promise<T> {
+  const response = await fetch(path, { method: 'POST', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!response.ok) throw new ApiError(await responseReason(response, path), response.status);
+  return response.json() as Promise<T>;
+}
 
-/** Creates the parent and one session per participant, each with its system prompt. */
-export async function startGroup(input: Participant[], mode: GroupMode): Promise<GroupState> {
-  if (input.length < 2) throw new ApiError(t('A group needs at least two participants.'), 400);
-  // Two seats with the same model and no persona would answer as one voice: number them.
-  const seen = new Map<string, number>();
-  const participants = input.map((p) => {
-    const base = speakerName(p);
-    const n = (seen.get(base) ?? 0) + 1;
-    seen.set(base, n);
-    return n > 1 && !p.personaName ? { ...p, personaName: `${base} (${n})` } : p;
-  });
-  const names = participants.map(speakerName);
-  const name = `${PARENT_PREFIX}${names.join(', ')}`;
-  const parentId = await createSession(name, participants[0].route);
-  const withSessions: GroupState['participants'] = [];
-  for (const p of participants) {
-    const sessionId = await createSession(`${PARENT_PREFIX}${speakerName(p)}`, p.route);
-    const others = participants.filter((x) => x !== p).map(speakerName).join(', ');
-    const prompt = p.personaPrompt
-      ? `${p.personaPrompt}\n\nYou're in a group discussion with ${others} and the user. ${ETIQUETTE} Stay in character.`
-      : `You are ${speakerName(p)}, in a group discussion with ${others} and the user. ${ETIQUETTE}`;
-    await inject(sessionId, [{ role: 'system', content: prompt }]).catch(() => undefined);
-    withSessions.push({ ...p, sessionId });
+export function groupOptions(signal?: AbortSignal): Promise<{ defaultRoute: ModelRoute | null }> {
+  return getJson('/api/groups/config', signal);
+}
+export async function listGroups(signal?: AbortSignal): Promise<GroupState[]> {
+  const result = await getJson<{ groups: GroupState[] }>('/api/groups', signal);
+  for (const state of result.groups) saveGroupState(state); // Studio's synchronous navigation cache.
+  return result.groups;
+}
+export function groupSnapshot(id: string, signal?: AbortSignal): Promise<GroupSnapshot> {
+  return getJson(`/api/groups/${encodeURIComponent(id)}`, signal);
+}
+export async function openGroup(id: string, signal?: AbortSignal): Promise<GroupSnapshot> {
+  try { return await groupSnapshot(id, signal); }
+  catch (error) {
+    if (!(error instanceof ApiError) || error.status !== 404) throw error;
+    const legacy = loadGroupState(id);
+    if (!legacy) throw error;
+    // Existing local groups retain their sessions, routes and plain-chat behavior.
+    await command('/api/groups/adopt', { ...legacy, executionMode: legacy.executionMode ?? 'chat' });
+    return groupSnapshot(id, signal);
   }
-  const state: GroupState = { parentId, name: names.join(', '), mode, participants: withSessions, startedAt: Date.now() };
+}
+export async function startGroup(input: Participant[], mode: GroupMode,
+  executionMode: 'chat' | 'agent' = 'agent', workspace = ''): Promise<GroupState> {
+  const state = await command<GroupState>('/api/groups', { participants: input, mode, executionMode, workspace });
   saveGroupState(state);
   return state;
 }
-
-/** The user's message goes to the parent transcript. */
-export function recordUser(state: GroupState, text: string): Promise<void> {
-  return inject(state.parentId, [{ role: 'user', content: text }]).catch(() => undefined);
+export function sendGroup(id: string, message: string, requestId: string): Promise<unknown> {
+  return command(`/api/groups/${encodeURIComponent(id)}/messages`, { message, request_id: requestId });
 }
-
-/** A participant's reply goes to the parent (tagged) and to every other participant (as `[Name]: …`). */
-export async function recordReply(state: GroupState, speaker: GroupState['participants'][number], text: string): Promise<void> {
-  if (!text.trim()) return;
-  const name = speakerName(speaker);
-  await inject(state.parentId, [{ role: 'assistant', content: text, metadata: { group_model: name, model: speaker.route.model } }]).catch(() => undefined);
-  await Promise.all(
-    state.participants.filter((p) => p.sessionId !== speaker.sessionId).map((p) => inject(p.sessionId, [{ role: 'user', content: `[${name}]: ${text}` }]).catch(() => undefined)),
-  );
+export function stopGroup(id: string): Promise<unknown> {
+  return command(`/api/groups/${encodeURIComponent(id)}/stop`);
+}
+export async function archiveGroup(id: string): Promise<void> {
+  await command(`/api/groups/${encodeURIComponent(id)}/archive`);
+  forgetGroupState(id);
+}
+export function resumeGroup(id: string, message: string, answer: Record<string, unknown>): Promise<unknown> {
+  return command(`/api/groups/${encodeURIComponent(id)}/resume`, { message, answer });
+}
+export function questionFrom(step: GroupStep): AskUser | null {
+  if (step.status !== 'waiting_user' || !step.detail.question) return null;
+  const q = step.detail.question;
+  return { question: String(q.question ?? ''), description: typeof q.description === 'string' ? q.description : undefined,
+    options: askOptionsFrom(q.options), multi: Boolean(q.multi), kind: q.kind === 'tool_approval' ? 'tool_approval' : 'question',
+    approvalId: typeof q.approval_id === 'string' ? q.approval_id : undefined,
+    questionId: typeof q.question_id === 'string' ? q.question_id : undefined,
+    revision: typeof q.revision === 'number' ? q.revision : undefined };
 }
 
 /* ── Saved groups (/api/presets/groups) ── */

@@ -1050,13 +1050,20 @@ app.include_router(setup_doctor_routes())
 from routes.chat_routes import setup_chat_routes
 from routes.hoard_copilot_routes import setup_hoard_copilot_routes
 app.include_router(setup_hoard_copilot_routes(session_manager))
-app.include_router(setup_chat_routes(
+chat_router = setup_chat_routes(
     session_manager, chat_handler, chat_processor,
     memory_manager, research_handler, upload_handler,
     memory_vector=memory_vector,
     webhook_manager=webhook_manager,
     skills_manager=skills_manager,
-))
+)
+app.include_router(chat_router)
+from src.group_orchestrator import GroupCoordinator, NativeGroupBridge
+from routes.group_routes import setup_group_routes
+_group_chat_endpoint = next(route.endpoint for route in chat_router.routes if route.path == "/api/chat_stream")
+_group_bridge = NativeGroupBridge(session_manager, _group_chat_endpoint, app)
+group_coordinator = GroupCoordinator(_group_bridge, _group_bridge)
+app.include_router(setup_group_routes(group_coordinator))
 
 # Research (background deep-research tasks)
 from routes.research.research_routes import setup_research_routes
@@ -2195,8 +2202,10 @@ async def _lifespan(app):
     """Modern lifespan context manager replacing deprecated @app.on_event."""
     # ── STARTUP ──
     await _startup_event()
+    await group_coordinator.recover()
     yield
     # ── SHUTDOWN ──
+    await group_coordinator.shutdown()
     await _shutdown_event()
 
 app.router.lifespan_context = _lifespan
