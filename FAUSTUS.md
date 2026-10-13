@@ -11683,3 +11683,30 @@ La investigación437/469 contrastó las diez capturas, el curso y los100HTML/100
 La colección de100HTML no declara licencia y no se incorporó su código; la licencia personalizada deFincept tampoco se reutilizó. La fuente de CodeRabbit se identificó en su [anuncio OSS26-08-2026](https://www.coderabbit.ai/blog/coderabbit-expands-its-commitment-to-open-source): revisión gratuita para repos públicos, con ejemplos de proyectos usuarios del servicio. El principio aprovechado es revisión independiente con reproducción de fallos, aplicada en el Ágora; no se conecta el SaaS ni se migra nuestro framework por esa lista. No hay certificación Disney, ranking de modelos, invisibilidad antibots,90% de ahorro ni paridad con100juegos. Migraciones de motores deotras apps están en454 y siguen abiertas. Los resultados y límites por entrega se conservan en el Ágora y en los informes locales.
 
 **Lumiere485, integrado y activo.** Mainb8e5381,67MCP/9HTML, proveedor99cda536 conectado. Cuatro escenas de partida propias, calculadas desde el tiempo y editables, por catálogo/creación API/MCP; se abren en el selector de composiciones existente. R2 conserva grafemas completos (acentos combinantes yemoji unido), texto literal ySHA repetido; fuentes previas yotros proyectos intactos.397PASS7SKIP pertenece aR1;50pruebas reales de área R2 ymisma reproducción antes/después PASS, más MCP/PNG/HTML/H.264 yUI del taller.7skips opcionales no se presentan como probados. Activación gestionada conactive_jobs0, todas las filas/archivos históricos/token conservados; sin nuevos binarios ni frontend/Rust cambiado. No se afirma precisión científica ni una galeríaUI nueva.
+# Respuestas visuales y fuentes cercanas (13-10-2026, tarea488)
+
+Studio convierte enlaces a fuentes observadas en citas junto al texto, conserva
+etiquetas/query/fragmentos y permite abrir todas las fuentes sin el antiguo corte
+de seis. Las búsquedas sucesivas se fusionan también al guardar el historial;
+web_fetch aporta la página leída directamente. API/MCP conservan esos metadatos.
+
+Los bloques entity/details muestran una ficha con imagen o Markdown ampliable,
+con notas, gráficos y enlaces habituales; los bloques incompletos siguen como
+código. La lectura móvil conserva navegación, gana ancho y usa al menos16px.
+Las reglas de ambos protocolos piden respuesta clara, citas cercanas, datos y
+caption del gráfico, y respetan JSON puro. Un dataset de prueba ya no obliga a
+ejecutar pruebas de software; una respuesta descartada por falta de acción se
+reemplaza y conserva sólo el texto de rondas anteriores.
+
+202tests de composición con489/498 PASS, TS/build y API/MCP13/navegador propios:
+nueve fuentes guardadas/recuperadas, imagen original y desplegables. GLM global
+1M/max: en el mismo caso de datos ficticios, R3 inventó umbrales y repitió la
+respuesta; R7 responde en una ronda, conserva los valores y captions de dos
+gráficos, elimina umbrales externos y respeta JSON puro. Persisten juicios
+cualitativos discutibles; no se certifica paridad factual universal. Esta evidencia
+es de candidato hasta su revisión y activación registradas en el Ágora.
+
+Formatos/alcance: docs/ui/response-quality.md. Evidencia:
+research-inbox/respuestas-20261013. Los lectores embed/legado conservan Markdown
+pero no se declara paridad de entity/details con Studio. Modelos y datos reales
+del usuario no se cambiaron en QA.
