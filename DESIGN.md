@@ -438,3 +438,96 @@ are the only way a surface reads as lifted on paper.
   not exist on touch and must not be load-bearing.
 - Nothing in this layer may be the only carrier of a state. Colour, icon
   and text still say what is running, waiting or failed.
+
+## Ágora workspace extension
+
+This section records the completed source implementation of the Ágora
+workspace. It preserves every Studio rule above. Source review and private
+interface checks do not establish production activation or model quality.
+
+### Overview
+
+Ágora extends the existing warm, editorial Studio with a space selector,
+room browser and three working modes. The selected room remains the centre
+of the work. The embedded Hub keeps its own dark amber interface and native
+provider controls inside the Studio frame.
+
+**Key Characteristics:**
+- Existing Studio typography, surfaces and restrained control motion.
+- A persistent space context above the room and mode controls.
+- Compact mobile room browsing with the active work immediately below it.
+
+### Colors
+
+Studio controls reuse the established surface, border and text tokens.
+Selection uses the raised surface and a visible border; keyboard focus uses
+the Studio focus colour. The embedded Hub retains its amber accent, dark
+surfaces and semantic provider states; those colours belong to that embedded
+surface and do not replace Studio's coral identity.
+
+### Typography
+
+Studio inherits Inter and the existing title, body and label hierarchy.
+Room status and mode metadata use label size; titles keep the existing
+screen hierarchy. The Hub's Source Sans 3 body and Cinzel brand remain inside
+its own interface. User room titles wrap rather than becoming new display
+styles.
+
+### Layout
+
+The desktop workspace places a bounded room column (210–260 px) beside a
+flexible main column, separated by the existing border and section spacing.
+The mode row wraps. At the surface breakpoint (760 px), the workspace uses
+one column and a Rooms toggle opens the browser; the room list has its own
+bounded scrolling area (180 px). This surface breakpoint does not redefine
+the Studio shell breakpoints above.
+
+The native Agora selector retains compact desktop height (28 px) and a
+mobile minimum height (44 px at widths up to 760 px), including Project
+coordination settings. Tasks and decisions fills the available main-column
+width; its embedded Hub drawer fits the narrow iframe rather than assuming
+the outer viewport width. Embedded content keeps one visible space context.
+
+### Elevation & Depth
+
+The room and mode controls use tonal selection and borders. The room browser
+is a column or collapsible block, with no added floating-card treatment.
+The embedded Hub retains its existing drawer elevation.
+
+### Shapes
+
+Room rows, mode controls and fields keep the existing control radius. The
+Rooms toggle and separate-window link reuse the existing chip primitive.
+No new radius scale or icon family is introduced.
+
+### Components
+
+**The Single Space Context Rule.** The outer Ágora selector owns the selected
+space; embedded Tasks and decisions displays that context without a second
+editable space selector.
+
+**The Separate Working Contexts Rule.** Mode and space changes restore the
+last room for each space and mode in the current browser tab. Room and setup
+drafts remain attached to their own working context. An unconfirmed send
+retains its draft and message identity; only confirmed acknowledgement can
+clear the corresponding draft, and a late response cannot clear another
+room's draft.
+
+The mode navigation offers Conversation, Deliberation, and Tasks and
+decisions. Active rooms and modes expose `aria-current`; the mobile Rooms
+toggle exposes `aria-expanded`. Search, selector and actions retain visible
+keyboard focus. Loading, empty, no-match and unavailable states have text.
+
+### Do's and Don'ts
+
+- **Do** reuse the Studio tokens and native room controls.
+- **Do** preserve the embedded Hub's dark amber interface and provider states.
+- **Do** keep the selected space visible across modes and mobile layouts.
+- **Don't** introduce a second editable selector inside the embedded Hub.
+- **Don't** turn private QA fixtures or simulated replies into product claims.
+
+Evidence: `studio/src/screens/agora.css`,
+`studio/src/components/coordinationFields.css`,
+`studio/src/components/coordinationNavigation.ts`, `Agora.tsx`, and
+`CoordinationSpaces.tsx`. The accompanying sidecar records this extension
+only; the incumbent tokens and atmosphere above remain authoritative.

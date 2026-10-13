@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-13T22:04:08Z",
+  "title": "Faustus Studio — Ágora workspace extension",
+  "extensions": {
+    "breakpoints": [{"name": "agora-compact", "value": "760px"}]
+  },
+  "components": [
+    {
+      "name": "Ágora selector",
+      "kind": "input",
+      "description": "Native space selector; compact desktop control, minimum mobile height 44 px. Uses the incumbent Studio tokens.",
+      "html": "<label class=\"ds-agora-label\">Ágora <select class=\"ds-agora-select\" aria-label=\"Ágora\"><option>Faustus y Hoards</option><option>Investigación</option></select></label>",
+      "css": ".ds-agora-label{display:flex;align-items:center;gap:var(--fs-space-2,8px);flex-wrap:wrap;font-family:var(--fs-font-ui,Inter,sans-serif);color:var(--fs-text-1,#f2f1ed)}.ds-agora-select{min-inline-size:0;block-size:var(--fs-control-sm,28px);padding:0 var(--fs-space-3,12px);border:1px solid var(--fs-border,#2b3038);border-radius:var(--fs-radius-control,6px);background:var(--fs-surface-1,#121418);color:var(--fs-text-1,#f2f1ed);font:inherit;font-size:var(--fs-label-size,13px)}.ds-agora-select:focus-visible{outline:2px solid var(--fs-focus,#8ab4ff);outline-offset:2px}@media(max-width:760px){.ds-agora-select{min-height:44px}}"
+    },
+    {
+      "name": "Ágora mode navigation",
+      "kind": "nav",
+      "description": "Wrapping mode row with tonal selection, border and aria-current.",
+      "html": "<nav class=\"ds-agora-modes\" aria-label=\"Modos de coordinación\"><button aria-current=\"page\">Conversación</button><button>Deliberación</button><button>Tareas y decisiones</button></nav>",
+      "css": ".ds-agora-modes{display:flex;flex-wrap:wrap;gap:var(--fs-space-2,8px);border-bottom:1px solid var(--fs-border,#2b3038);padding-bottom:var(--fs-space-3,12px);font-family:var(--fs-font-ui,Inter,sans-serif)}.ds-agora-modes button{background:transparent;color:var(--fs-text-3,#8c929e);border:1px solid transparent;border-radius:var(--fs-radius-control,6px);padding:var(--fs-space-2,8px) var(--fs-space-3,12px);font:inherit;cursor:pointer}.ds-agora-modes button[aria-current]{color:var(--fs-text-1,#f2f1ed);border-color:var(--fs-border,#2b3038);background:var(--fs-surface-2,#191c21)}.ds-agora-modes button:focus-visible{outline:2px solid var(--fs-focus,#8ab4ff);outline-offset:2px}"
+    },
+    {
+      "name": "Room search",
+      "kind": "input",
+      "description": "A labelled native search field within the room browser.",
+      "html": "<label class=\"ds-agora-search\"><input aria-label=\"Buscar una sala\" placeholder=\"Buscar una sala\"></label>",
+      "css": ".ds-agora-search{display:flex;align-items:center;gap:var(--fs-space-2,8px);margin:var(--fs-space-3,12px) 0;color:var(--fs-text-1,#f2f1ed);font-family:var(--fs-font-ui,Inter,sans-serif)}.ds-agora-search input{width:100%;min-width:0;background:transparent;color:inherit;border:1px solid var(--fs-border,#2b3038);border-radius:var(--fs-radius-control,6px);padding:var(--fs-space-2,8px);font:inherit}.ds-agora-search input:focus-visible{outline:2px solid var(--fs-focus,#8ab4ff);outline-offset:2px}"
+    },
+    {
+      "name": "Selected room",
+      "kind": "nav",
+      "description": "Room title and mode/status metadata with tonal selection; user titles may wrap.",
+      "html": "<button class=\"ds-agora-room\" aria-current=\"page\"><strong>Sala de proyecto</strong><span>Conversación · hecha</span></button>",
+      "css": ".ds-agora-room{display:flex;flex-direction:column;width:100%;text-align:left;gap:var(--fs-space-1,4px);padding:var(--fs-space-3,12px);margin-bottom:var(--fs-space-1,4px);background:transparent;color:var(--fs-text-1,#f2f1ed);border:1px solid transparent;border-radius:var(--fs-radius-control,6px);cursor:pointer;overflow-wrap:anywhere;font-family:var(--fs-font-ui,Inter,sans-serif);font-size:var(--fs-body-size,0.9375rem)}.ds-agora-room span{font-size:var(--fs-label-size,13px);color:var(--fs-text-3,#8c929e)}.ds-agora-room[aria-current]{border-color:var(--fs-border,#2b3038);background:var(--fs-surface-2,#191c21)}.ds-agora-room:focus-visible{outline:2px solid var(--fs-focus,#8ab4ff);outline-offset:2px}"
+    },
+    {
+      "name": "Separate window chip",
+      "kind": "chip",
+      "description": "Existing Studio chip reused for the standalone task window action.",
+      "html": "<a class=\"ds-agora-chip\" href=\"#\">Abrir en otra ventana</a>",
+      "css": ".ds-agora-chip{display:inline-flex;align-items:center;gap:6px;block-size:var(--fs-control-sm,28px);padding:0 var(--fs-space-3,12px);border:1px solid var(--fs-border,#2b3038);border-radius:var(--fs-radius-pill,999px);background:transparent;color:var(--fs-text-2,#bdc1c9);font-family:var(--fs-font-ui,Inter,sans-serif);font-size:var(--fs-label-size,13px);font-weight:var(--fs-label-weight,500);cursor:pointer;white-space:nowrap;text-decoration:none;transition:background-color var(--fs-duration-fast,120ms) var(--fs-ease,cubic-bezier(.2,.8,.2,1)),border-color var(--fs-duration-fast,120ms) var(--fs-ease,cubic-bezier(.2,.8,.2,1)),color var(--fs-duration-fast,120ms) var(--fs-ease,cubic-bezier(.2,.8,.2,1)),translate var(--fs-duration-normal,180ms) var(--fs-ease-spring,cubic-bezier(0.34,1.56,0.64,1))}.ds-agora-chip:hover{color:var(--fs-text-1,#f2f1ed);border-color:var(--fs-border-strong,#3b424d);translate:0 -1px}.ds-agora-chip:focus-visible{outline:2px solid var(--fs-focus,#8ab4ff);outline-offset:2px}"
+    }
+  ],
+  "narrative": {
+    "overview": "Ágora extends the existing warm, editorial Studio with a space selector, room browser and three working modes. The selected room remains the centre of the work. The embedded Hub keeps its own dark amber interface and native provider controls inside the Studio frame.",
+    "keyCharacteristics": ["Existing Studio typography, surfaces and restrained control motion.", "A persistent space context above the room and mode controls.", "Compact mobile room browsing with the active work immediately below it."],
+    "rules": [
+      {"name": "The Single Space Context Rule", "body": "The outer Ágora selector owns the selected space; embedded Tasks and decisions displays that context without a second editable space selector.", "section": "components"},
+      {"name": "The Separate Working Contexts Rule", "body": "Mode and space changes restore the last room for each space and mode in the current browser tab. Room and setup drafts remain attached to their own working context. An unconfirmed send retains its draft and message identity; only confirmed acknowledgement can clear the corresponding draft, and a late response cannot clear another room's draft.", "section": "components"}
+    ],
+    "dos": ["Do reuse the Studio tokens and native room controls.", "Do preserve the embedded Hub's dark amber interface and provider states.", "Do keep the selected space visible across modes and mobile layouts."],
+    "donts": ["Don't introduce a second editable selector inside the embedded Hub.", "Don't turn private QA fixtures or simulated replies into product claims."]
+  }
+}
