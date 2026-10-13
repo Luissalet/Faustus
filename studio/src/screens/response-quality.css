@@ -40,7 +40,7 @@
 .fs-response-entity__title { font: inherit; font-weight: 650; margin: 0 0 var(--fs-space-2); }
 .fs-response-entity__content > p:first-of-type { margin-top: 0; }
 @media (max-width: 480px) {
-  .fs-studio__transcript-stage[data-message-nav] > .fs-studio__scroll { padding-inline-start: 20px; }
+  .fs-studio .fs-studio__transcript-stage[data-message-nav] > .fs-studio__scroll { padding-inline-start: 20px; }
   .fs-turn--assistant .fs-rich { font-size: max(var(--fs-body-size), 1rem); }
   .fs-response-entity { gap: var(--fs-space-3); }
   .fs-response-sources__list > li { display: grid; gap: var(--fs-space-1); }
