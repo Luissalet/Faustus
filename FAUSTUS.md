@@ -11621,3 +11621,10 @@ Prueba de Luis: «En la ventana de Blender de Quinn, dale a Load profile en Prof
 - **`desktop_focus_window`** reintenta y espera la activación (fallaba siempre a la primera); un título ambiguo lista las ventanas candidatas.
 - **`desktop_screenshot {"window": "Blender"}`** captura una ventana por título, sin aritmética de rectángulos (el modelo pasaba [izq, arriba, der, abajo] como ancho/alto).
 - **Skills aprendidas visibles**: `manage_skills view` exigía dueño exacto mientras el índice (owner None en la app de escritorio) las listaba; ahora usa la misma visibilidad que `load`.
+
+
+## Backend global de Sparks preservado (13-10-2026, tarea459)
+
+La sincronización ya no restaura un LLM de texto del PC al faltar la receta/modelo, desactivar Sparks o apagar su selección automática. Conserva endpoint/modelo global, muestra unknown/unavailable y advisory según la evidencia, y sigue respetando una elección manual explícita. `sparks_local_default` queda como configuración histórica, sin pérdida de datos. Estado y UI muestran el modelo efectivo incluso si el controlador no responde. El MCP propio `sparks` añade estado, sincronización, preferencias y deployment explícito a las mismas rutas API; no usa una CLI ni runtime de referencia.
+
+31 pruebas del área/MCP/builtin, build normal y API/MCP stdio de producto completo con controlador privado: modelo ausente, desactivar, recuperar y volver a faltar preservan ID/modelo global; cero llamadas de deployment. El navegador muestra0modelos sirviendo y mantiene Sparks como Default now. No se simula salud del servicio ni se cargan/detienen modelos reales; cuentas y texto de producción permanecen intactos.
