@@ -200,6 +200,8 @@ _NON_FILE_TARGET_RE = re.compile(
     r"calendarios?|reuniones?|eventos?|diapositivas?|mensajes?|correos?|citas?)\b", re.I,
 )
 _CODE_CHANGE_RE = re.compile(r"\b(implement|refactor|fix|implementa|implementar|corrige|corregir|arregla|arreglar)\b", re.I)
+_SOURCE_FILE_RE = re.compile(r"[\w][\w./\\-]*\.(?:py|js|jsx|ts|tsx|rs|go|java|c|h|cpp|cs|rb|php|html|css|sql)\b", re.I)
+_CODE_OBJECT_RE = re.compile(r"\b(handlers?|parsers?|callbacks?|listeners?|backend|frontend|bugs?|validation|pagination|code|modules?|functions?|clases?|código|fallos?|validación|paginación)\b", re.I)
 
 
 def looks_like_write_task(instruction: Any, files=None) -> bool:
@@ -216,6 +218,12 @@ def looks_like_write_task(instruction: Any, files=None) -> bool:
         # Tool work can edit a slide, create an event or send a message without
         # writing a filesystem artifact. Never turn those tasks into write_file.
         target = text[verb.end():]
+        if re.search(r"(?:how to|cómo)\s*$", text[:verb.start()], re.I):
+            return False
+        if (_CODE_CHANGE_RE.fullmatch(verb.group()) and
+                (_SOURCE_FILE_RE.search(target) or _CODE_OBJECT_RE.search(target)
+                 or any(_SOURCE_FILE_RE.search(str(path)) for path in (files or [])))):
+            return True
         native_target = _NON_FILE_TARGET_RE.search(target)
         file_targets = [match for match in (_PATH_TOKEN_RE.search(target), _FILE_TARGET_RE.search(target)) if match]
         if native_target and (not file_targets or native_target.start() < min(m.start() for m in file_targets)):

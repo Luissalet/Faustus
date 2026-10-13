@@ -49,7 +49,8 @@ def test_successful_non_file_tool_work_does_not_need_write_file(task):
 
 
 @pytest.mark.parametrize('task', ['Implement pagination in the backend.', 'Fix the validation bug in the API.',
-                                 'Implement authentication correctly.'])
+                                 'Implement authentication correctly.', 'Fix the event handler in src/events.py.',
+                                 'Fix the calendar callback.', 'Fix the message parser in src/protocol.ts.'])
 def test_code_changes_without_named_path_still_need_mutations(task):
     run = SimpleNamespace(name='editor', instruction=task, files=['src/api.py'], mutations=[],
                           tool_calls=1, failed_calls=0, text='I recommend using this fix.', stop_reason='complete', error=None)
@@ -68,3 +69,7 @@ def test_explicit_read_only_task_can_report_review_findings_without_edits():
                           read_only=True, mutations=[], tool_calls=1, failed_calls=0,
                           text='The validation should reject null.', stop_reason='complete', error=None)
     assert dr.receipt_for(run).verdict == 'reported'
+
+
+def test_explaining_how_to_fix_is_not_an_instruction_to_edit():
+    assert not dr.looks_like_write_task('Explain how to fix the event handler in src/events.py.')
