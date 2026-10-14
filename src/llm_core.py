@@ -6109,6 +6109,13 @@ def _stream_refusal_event(text: str = "", *, stop_reason: Optional[str] = None) 
     return f'data: {json.dumps(payload)}\n\n'
 
 
+def _stale_connection(exc: Optional[BaseException]) -> bool:
+    """A pooled connection the server had already closed: the request got no response at all."""
+    if exc is None or type(exc).__name__ != "RemoteProtocolError":
+        return False
+    return "without sending a response" in str(exc).lower()
+
+
 def _stream_retry_decision(*, status: Optional[int] = None,
                             exc: Optional[BaseException] = None,
                             headers: Optional[Mapping] = None,
@@ -6141,6 +6148,11 @@ def _stream_retry_decision(*, status: Optional[int] = None,
     """
     classification = classify_http(status=status, headers=headers, exc=exc)
     retryable = classification is not RetryClass.NO_RETRY
+    if _stale_connection(exc) and not delta_emitted and attempt <= 1:
+        # The server closed an idle keep-alive connection just as the request went out: nothing reached it and it
+        # is up. One immediate retry on a fresh connection, even for a caller that otherwise fails fast to move to
+        # its next candidate (with no other candidate, the turn would end for a race, not an outage).
+        return True, 0.0, classification, True
     if fail_fast:
         _note_final_status(status, headers)
         return False, 0.0, classification, False
