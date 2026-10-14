@@ -11836,3 +11836,27 @@ con micrófono simulado): la pregunta y la interrupción hablada por encima de l
 Límites conocidos: el primer audio no bajará mucho mientras el reconocimiento corra en CPU; un reconocedor
 en GPU o Parakeet es la palanca. El modo «palabra de activación» y las frases de parada se aplican igual que
 en el panel. Las sesiones viven en memoria (4 por usuario, 15 min sin actividad, 90 s sin WebSocket).
+
+## Pasada editorial de respuestas investigadas — 502, 14-10-2026
+
+Qué hace: cuando un turno del agente responde tras una búsqueda o lectura web con éxito en ese mismo turno, el bucle
+(`src/agent_loop.py`) añade una sola ronda más con la misma ruta, herramientas y evidencias: revisa el borrador
+contra lo leído (mismas métricas, sujetos, fechas y poblaciones; picos históricos no son estreno; concurrentes no son
+personas únicas; ambos lados de una comparación con su fuente), quita afirmaciones y causas sin respaldo, y si el turno
+guardó un documento o visual lo relee y lo corrige en el mismo ID. No es una puerta de verdad: sin aprobación, sin
+verificador externo, sin presupuesto nuevo; respeta un límite explícito de rondas y no se aplica a turnos con otros
+efectos (salvo documentos), al modo plan ni a un turno que sólo guarda un documento sin investigación web.
+
+Conservación del borrador: si la ronda editorial se corta por longitud, se detiene, se interrumpe o el proveedor
+falla, se restaura el borrador completo (`response_replace`) y el turno termina con ese texto (o con el error del
+proveedor, sin perder el borrador).
+
+Herramientas por MCP: la instancia de escritorio busca con las herramientas web del Hub
+(`mcp__<servidor>__hub_web_search`/`hub_web_fetch`); `is_web_research_tool` (`src/tool_policy.py`) las reconoce igual
+que `web_search`/`web_fetch`, de modo que la pasada también corre ahí (antes no corría nunca en 7000).
+
+Comprobado: 21 tests del área (borrador conservado ante longitud, Stop, error del proveedor; documento exprés sin
+pasada; ronda límite respetada; investigación por MCP) y en 7000 real con GLM global: pregunta sobre el fin de soporte
+de Python 3.9 → búsqueda y lectura por el Hub, ronda editorial tras la respuesta y respuesta final guardada con la
+fuente oficial. Límite honesto: la pasada no garantiza precisión factual; los controles negativos del prototipo
+(Dungeons, 507) siguen siendo la referencia de lo que puede seguir fallando.
