@@ -106,6 +106,8 @@ export default function VoicePanel(props: Props) {
   const [serverStream, setServerStream] = useState(prefs.current.serverStream);
   const [streamCaps, setStreamCaps] = useState<VoiceStreamCapabilities | null>(null);
   const [streamReady, setStreamReady] = useState(false);
+  // False while the voice session is still opening: the first hands-free turn waits for it (briefly) so it streams too.
+  const [streamSettled, setStreamSettled] = useState(false);
   const stream = useRef<VoiceStream | null>(null);
   const tap = useRef<PcmTap | null>(null);
   const player = useRef<StreamPlayer | null>(null);
@@ -187,8 +189,10 @@ export default function VoicePanel(props: Props) {
   // runs and speaks them; Studio still sends every message itself.
   useEffect(() => {
     const sid = props.sessionId;
-    if (!sid || !serverStream || !streamCaps?.available || !configs || configs.stt.execution === 'browser') { setStreamReady(false); return; }
+    if (!sid || !serverStream || !streamCaps?.available || !configs || configs.stt.execution === 'browser') { setStreamReady(false); setStreamSettled(Boolean(configs)); return; }
     const controller = new AbortController();
+    setStreamSettled(false);
+    const settleAnyway = window.setTimeout(() => setStreamSettled(true), 2500);
     const speech = streamSpeech.current;
     speech.pending.clear(); speech.muted.clear(); speech.played.clear(); speech.lastRun = '';
     let opened: VoiceStream | null = null;
@@ -243,10 +247,11 @@ export default function VoicePanel(props: Props) {
           if (run.marks && !run.marks.tts_chunk) { run.marks.tts_chunk = Date.now(); run.marks.tts_server_ms = audio.synthMs; }
           playing.push(audio);
         }));
-        setStreamReady(true);
+        setStreamReady(true); setStreamSettled(true);
       })
-      .catch(err => { console.debug('[voice] streaming session unavailable; per-sentence speech is used', err); setStreamReady(false); });
+      .catch(err => { console.debug('[voice] streaming session unavailable; per-sentence speech is used', err); setStreamReady(false); setStreamSettled(true); });
     return () => {
+      clearTimeout(settleAnyway);
       controller.abort(); offs.forEach(off => off()); playing.clear();
       if (player.current === playing) player.current = null;
       opened?.close(); if (stream.current === opened) stream.current = null;
@@ -368,11 +373,16 @@ export default function VoicePanel(props: Props) {
   // `listen` closes over `configs`, so the first listen waits for the
   // render that has them.
   useEffect(() => {
-    if (!configs || !autoStart.current) return;
+    if (!configs || !autoStart.current || !streamSettled) return;
     autoStart.current = false;
     engaged.current = true;
     void listen();
-  }, [configs, listen]);
+  }, [configs, listen, streamSettled]);
+  // Keep the pre-roll ring filling from the moment the hot mic and the stream are both there,
+  // so even the first barge-in keeps its first syllables.
+  useEffect(() => {
+    if (streamIn && mic.current && !tap.current) tap.current = new PcmTap(mic.current);
+  }, [streamIn, phase]);
 
   const drain = useCallback(async () => {
     const run = reply.current;

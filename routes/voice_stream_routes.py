@@ -166,6 +166,7 @@ def setup_voice_stream_routes(manager: VoiceSessionManager) -> APIRouter:
             await websocket.close(code=4404)
             return
         await websocket.accept()
+        session.attach()
         try:
             after = int(websocket.query_params.get("after") or 0)
         except ValueError:
@@ -250,6 +251,7 @@ def setup_voice_stream_routes(manager: VoiceSessionManager) -> APIRouter:
         except WebSocketDisconnect:
             pass
         finally:
+            session.detach()
             pump_task.cancel()
             for task in list(work):
                 if not task.done():

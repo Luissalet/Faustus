@@ -141,12 +141,23 @@ export class PcmTap {
   private ringSamples = 0;
   private sink: ((samples: Int16Array) => void) | null = null;
   private pos = 0;
+  private own: AudioContext | null = null;
   readonly maxPreroll: number;
 
   constructor(mic: OpenMic, prerollMs = 700) {
     this.maxPreroll = Math.round(TARGET_RATE * prerollMs / 1000);
-    const ctx = mic.ctx;
-    const source = ctx.createMediaStreamSource(mic.stream);
+    // A 16 kHz context of its own lets the browser's resampler (properly filtered) do the conversion;
+    // where a browser cannot mix sample rates on one microphone, decimate the shared context here instead.
+    let ctx: AudioContext = mic.ctx;
+    let source: MediaStreamAudioSourceNode;
+    try {
+      const own = new AudioContext({ sampleRate: TARGET_RATE });
+      try { source = own.createMediaStreamSource(mic.stream); } catch (e) { void own.close(); throw e; }
+      void own.resume();
+      this.own = own; ctx = own;
+    } catch {
+      source = ctx.createMediaStreamSource(mic.stream);
+    }
     this.node = ctx.createScriptProcessor(2048, 1, 1);
     this.mute = ctx.createGain(); this.mute.gain.value = 0;
     source.connect(this.node); this.node.connect(this.mute); this.mute.connect(ctx.destination);
@@ -186,6 +197,8 @@ export class PcmTap {
   close(): void {
     this.sink = null; this.node.onaudioprocess = null;
     try { this.node.disconnect(); this.mute.disconnect(); } catch { /* already gone */ }
+    if (this.own && this.own.state !== 'closed') void this.own.close();
+    this.own = null;
   }
 }
 

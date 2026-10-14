@@ -299,6 +299,9 @@ SEND_MODES = ("server", "client")
 EVENT_KEEP = 400
 AUDIO_KEEP = 60
 IDLE_TIMEOUT_S = 15 * 60
+# A session whose WebSocket went away (tab closed or crashed) is closed after this grace period.
+PENDING_METRICS_TTL_S = 20.0
+DETACHED_TTL_S = 90
 MAX_SESSIONS_PER_OWNER = 4
 # The first spoken chunk of a reply may end at a clause break once it is this long.
 FIRST_CLAUSE_CHARS = 40
@@ -382,10 +385,14 @@ class VoiceSession:
         self._partial_bytes = 0
         self._send_seq = 0
         self._sending = 0
+        self._ws_clients = 0
+        self._had_ws = False
+        self._detached_at = 0.0
         self.heard_language = ""
         self.metrics: Dict[str, Any] = {}
         self.history: List[Dict[str, Any]] = []
         self._pending_metrics: Optional[Dict[str, Any]] = None
+        self._pending_metrics_at = 0.0
         self._run_metrics: Dict[str, Dict[str, Any]] = {}
         self._speak_task: Optional[asyncio.Task] = None
         self._speaking_run = ""
@@ -618,18 +625,22 @@ class VoiceSession:
             await self.interrupt("stop_phrase")
         result: Dict[str, Any] = {"verdict": verdict, "text": text, "raw": raw, "utterance": seq,
                                   "language": self.heard_language, "stt_ms": meta.get("server_ms")}
+        record = dict(self.metrics)
+        if verdict == "ok" and self.send_mode != "server":
+            # The client sends this transcript itself as soon as it hears it, so the timings must be waiting
+            # for that run before the transcript leaves; otherwise they land on the next turn.
+            self._pending_metrics = record
+            self._pending_metrics_at = time.time()
         await self.emit("transcript", {"final": True, **result})
         if verdict != "ok":
             self._set_state("idle")
             return result
-        record = dict(self.metrics)
         if self.send_mode == "server":
             try:
                 result["turn"] = await self.send_text(text, source="voice", metrics=record)
             except VoiceTurnError as exc:
                 result["turn_error"] = {"status": exc.status, "detail": exc.detail}
         else:
-            self._pending_metrics = record
             self._set_state("thinking")
         return result
 
@@ -696,9 +707,32 @@ class VoiceSession:
 
     # ── output: follow runs and speak them ──
 
+    def attach(self) -> None:
+        """A WebSocket client connected (reconnects included)."""
+        self._ws_clients += 1
+        self._had_ws = True
+        self.touch()
+
+    def detach(self) -> None:
+        self._ws_clients = max(0, self._ws_clients - 1)
+        if not self._ws_clients:
+            self._detached_at = time.time()
+
+    def _expired(self) -> Optional[str]:
+        now = time.time()
+        if self._had_ws and not self._ws_clients and now - self._detached_at > DETACHED_TTL_S:
+            return "detached"  # the tab went away without closing the panel
+        if now - self.last_activity > IDLE_TIMEOUT_S and not self._ws_clients:
+            return "idle"
+        return None
+
     async def _follow_loop(self) -> None:
         runs = self.manager.runs
         while not self.closed:
+            reason = self._expired()
+            if reason:
+                await self.manager.close(self.id, reason)
+                return
             try:
                 run = runs.get_active_run(self.sid) if runs else None
                 run_id = str(getattr(run, "run_id", "") or "") if run is not None else ""
@@ -714,7 +748,10 @@ class VoiceSession:
     def _start_speaking(self, run: Any, run_id: str, record: Optional[Dict[str, Any]]) -> None:
         self._followed.add(run_id)
         if record is None and self._pending_metrics is not None:
-            record = self._pending_metrics
+            # Only a run that starts soon after the transcript is the one it asked for; a transcript the
+            # client discarded (echo, hallucination) must not lend its timings to a later turn.
+            if time.time() - self._pending_metrics_at <= PENDING_METRICS_TTL_S:
+                record = self._pending_metrics
             self._pending_metrics = None
         record = dict(record or {"utterance": None, "source": "chat"})
         record["run_id"] = run_id

@@ -77,3 +77,21 @@ El panel de voz usa esta sesión cuando el servidor transcribe (no reconocimient
 «Voz en streaming» está activa (por defecto). Studio sigue enviando el mensaje él mismo (`send_mode=client`)
 para que su vista del chat sea la de siempre; el servidor habla el turno y el panel reproduce lo que llega.
 Desactivar la opción vuelve al camino anterior (grabar, transcribir y sintetizar cada frase a petición).
+
+## Comportamiento fino
+
+- **Primera frase antes**: el primer fragmento hablado puede cortarse en una coma, punto y coma o dos puntos
+  a partir de ~40 caracteres, para que la voz empiece sin esperar a la frase entera. Los emojis y
+  pictogramas no se leen.
+- **Parciales que no estorban**: si el reconocedor tarda más de ~0,7 s por segundo de audio (Whisper en
+  CPU), las transcripciones parciales se apagan solas para no competir con la final.
+- **Transcripción especulativa**: tras ~350 ms de pausa el servidor transcribe lo que tiene; si se vuelve a
+  hablar, esa conjetura se retira y no cuesta nada más.
+- **Pre-roll desde el primer momento**: Studio mantiene el anillo de pre-roll lleno en cuanto el micro y la
+  sesión están abiertos, así que incluso la primera interrupción conserva sus primeras sílabas. El audio se
+  convierte a 16 kHz con el remuestreador del navegador cuando éste lo permite.
+- **Sesión huérfana**: si el WebSocket se cae y nadie se reconecta en 90 s, la sesión se cierra sola (el
+  turno del chat sigue). Cerrar el panel la cierra al momento.
+- **Métricas en modo `client`**: los tiempos de una intervención quedan asociados al turno que su
+  transcripción inicia aunque Studio lo envíe antes de que el servidor termine de anotarla; una transcripción
+  que el cliente descarta no presta sus tiempos a un turno posterior (caducan a los 20 s).

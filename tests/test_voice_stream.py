@@ -372,3 +372,52 @@ def test_slow_recognizer_turns_partials_off():
     manager, _, _ = make_manager()
     manager.note_stt(4000, 96000)  # 3 s of audio took 4 s
     assert not manager.partials_affordable()
+
+
+def test_a_session_left_by_its_websocket_closes_after_the_grace_period(monkeypatch):
+    async def scenario():
+        manager, _, _ = make_manager()
+        session = await manager.create("luis", "sid-1", send_mode="client")
+        session.attach()
+        session.detach()
+        monkeypatch.setattr(vs, "DETACHED_TTL_S", 0.1)
+        await asyncio.sleep(0.4)
+        assert session.closed and manager.list("luis") == []
+        rest = await manager.create("luis", "sid-1")  # REST/MCP sessions never had a socket: not closed by this
+        await asyncio.sleep(0.3)
+        assert not rest.closed
+        await manager.close_all()
+    asyncio.run(scenario())
+
+
+def test_client_mode_timings_belong_to_the_run_the_transcript_started(monkeypatch):
+    async def scenario():
+        manager, runs, sent = make_manager()
+        session = await manager.create("luis", "sid-1", send_mode="client")
+        emit = session.emit
+
+        async def eager_client(kind, data=None, **extra):
+            event = await emit(kind, data, **extra)
+            if kind == "transcript" and (data or {}).get("final"):
+                # The client sends the moment it hears the transcript; its run starts before emit returns.
+                runs.active["sid-1"] = FakeRun("studio-run", [delta("Respuesta."), DONE])
+                await asyncio.sleep(0.2)
+            return event
+
+        monkeypatch.setattr(session, "emit", eager_client)
+        await session.submit_clip(vs.pcm16_to_wav(pcm(1.0)))
+        await collect_until(session, "speech_end")
+        assert session.history[-1]["run_id"] == "studio-run"
+        assert session.history[-1]["utterance"] == 1
+
+        # A transcript the client discarded must not lend its timings to a much later turn.
+        monkeypatch.setattr(session, "emit", emit)
+        await session.submit_clip(vs.pcm16_to_wav(pcm(1.0)))
+        session._pending_metrics_at -= vs.PENDING_METRICS_TTL_S + 1
+        cursor = session.events[-1].seq
+        runs.active["sid-1"] = FakeRun("later-run", [delta("Otra."), DONE])
+        await collect_until(session, "speech_end", after=cursor)
+        assert session.history[-1]["run_id"] == "later-run"
+        assert session.history[-1].get("utterance") is None and session.history[-1]["source"] == "chat"
+        await manager.close_all()
+    asyncio.run(scenario())
