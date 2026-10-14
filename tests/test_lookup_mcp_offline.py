@@ -129,3 +129,31 @@ def test_a_panel_turn_finds_its_own_app_tools_first(monkeypatch):
     assert rename_deck not in disabled
     assert rename_deck not in plain  # what a lookup from the Cicero panel got before
     assert len(panel) <= 4
+
+
+def test_inflected_words_still_find_the_tool(monkeypatch):
+    update = 'mcp__898369d2__wh_update_writing'
+    schemas = [
+        {'type': 'function', 'function': {'name': 'mcp__898369d2__wh_pin_reference',
+         'description': '[MCP:writer] Pin or unpin a codex entry for a chapter (or the whole book) in the reference panel.',
+         'parameters': {'type': 'object', 'properties': {}}}},
+        {'type': 'function', 'function': {'name': 'mcp__898369d2__wh_set_coverage_cell',
+         'description': '[MCP:writer] Set a manual character x chapter coverage role. Does not edit the manuscript.',
+         'parameters': {'type': 'object', 'properties': {}}}},
+        {'type': 'function', 'function': {'name': update,
+         'description': '[MCP:writer] Change a manuscript piece; replacing content snapshots the old version first. Passing content REPLACES the whole body.',
+         'parameters': {'type': 'object', 'properties': {}}}},
+    ]
+    class Manager:
+        def get_all_openai_schemas(self, ctx): return schemas
+    monkeypatch.setattr('src.tool_utils.get_mcp_manager', lambda: Manager())
+    monkeypatch.setattr('src.tool_index.get_tool_index', lambda: None)
+    monkeypatch.setattr('src.tool_security.owner_is_admin_or_single_user', lambda owner: True)
+    from src import hoard_copilot_turn as turn
+    token = turn._ORIGIN_SERVER.set('898369d2')
+    try:
+        found = tool_serve.execute_lookup('{"query":"edit or replace text in a writing chapter","k":5}', {'disabled_tools': ()})[1]['promote']
+    finally:
+        turn._ORIGIN_SERVER.reset(token)
+    assert update in found[:3]
+    assert tool_serve._stemmed('Replacing REPLACES replace writes writing') == 'replac replac replac writ writ'

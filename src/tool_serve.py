@@ -299,7 +299,29 @@ def _explicit_mcp_hits(query: str) -> List[str]:
     return [name for _, _, name in sorted(targeted)]
 
 
-def _offline_mcp_hits(query: str) -> List[str]:
+_WORD = re.compile(r"[A-Za-z]+|[^A-Za-z]+")
+
+
+def _stemmed(text: str) -> str:
+    """Light English stemming for the lexical lane, so "replace" finds "replacing"/"REPLACES" and "write" finds
+    "writing": one inflection (-ing, -ed, -es, -s) and a final -e are dropped from words long enough to keep a stem."""
+    out = []
+    for part in _WORD.findall(str(text or "")):
+        word = part.lower()
+        if not word.isalpha() or len(word) < 5:
+            out.append(word)
+            continue
+        for suffix in ("ing", "ed", "es", "s"):
+            if word.endswith(suffix) and len(word) - len(suffix) >= 4:
+                word = word[: -len(suffix)]
+                break
+        if word.endswith("e") and len(word) > 4:
+            word = word[:-1]
+        out.append(word)
+    return "".join(out)
+
+
+def _offline_mcp_hits(query: str, stem: bool = False) -> List[str]:
     """Rank the live plugin descriptions without constructing an embedder.
 
     A disconnected embedding service must not make a connected MCP tool
@@ -317,8 +339,9 @@ def _offline_mcp_hits(query: str) -> List[str]:
             fn = entry.get("function") if isinstance(entry, dict) else None
             name = str((fn or {}).get("name") or "")
             if name.startswith("mcp__"):
-                docs.append((name, f"{name.rsplit('__', 1)[-1].replace('_', ' ')} {(fn or {}).get('description') or ''}"))
-        scores = bm25_scores(query, docs)
+                text = f"{name.rsplit('__', 1)[-1].replace('_', ' ')} {(fn or {}).get('description') or ''}"
+                docs.append((name, _stemmed(text) if stem else text))
+        scores = bm25_scores(_stemmed(query) if stem else query, docs)
         return [name for name, score in sorted(scores.items(), key=lambda row: (-row[1], row[0])) if score > 0]
     except Exception:
         logger.debug("tool catalog: offline MCP search failed", exc_info=True)
@@ -334,8 +357,11 @@ def search_catalog(
     admin: bool = True,
     candidate_filter: Optional[Callable[[str], bool]] = None,
     offline_mcp_limit: Optional[int] = None,
+    lexical_stem: bool = False,
 ) -> List[str]:
-    """Ranked tool names for a natural-language query and/or exact names."""
+    """Ranked tool names for a natural-language query and/or exact names.
+
+    ``lexical_stem`` matches inflections in the MCP lexical lane (used for the working app's own tools)."""
     blocked = {str(n) for n in (disabled or ()) if n}
     wanted = [str(n).strip() for n in (names or ()) if str(n).strip()]
     ordered: List[str] = []
@@ -405,7 +431,7 @@ def search_catalog(
         # stale or unrelated built-ins. Always merge live MCP lexical matches
         # ahead of that list; the lexical lane returns only descriptions that
         # match the query, and _add still applies permissions and category.
-        offline_mcp = _offline_mcp_hits(q)
+        offline_mcp = _offline_mcp_hits(q, stem=lexical_stem)
         # Keep the lexical MCP lane complementary to native search rather
         # than letting a large connected catalog crowd built-ins out.
         offline_budget = (
@@ -674,10 +700,12 @@ def serve(
     preferred = str(prefer_server or "").strip()
     if preferred and query and not wanted_category and not names:
         prefix = f"mcp__{preferred}__"
+        own_k = max(1, min(int(k or _DEFAULT_K), _ORIGIN_FIRST))
         own = search_catalog(
-            query, [], k=max(1, min(int(k or _DEFAULT_K), _ORIGIN_FIRST)), disabled=disabled, admin=admin,
+            query, [], k=own_k, disabled=disabled, admin=admin,
             candidate_filter=lambda name: name.startswith(prefix) and is_permitted(
                 name, disabled_tools=disabled, tool_policy=tool_policy, admin=admin),
+            offline_mcp_limit=own_k, lexical_stem=True,
         )
         if own:
             found = own + [name for name in found if name not in own]
