@@ -23,7 +23,9 @@ function startDictation({BrowserWindow,globalShortcut,ipcMain,net},{origin,pollM
 
   async function fetchSettings(){
     try{
-      const response=await net.fetch(origin+'/api/settings');
+      // The settings live at /api/auth/settings (what Studio reads); the old
+      // /api/settings answered 404 every poll, so the hotkey never registered.
+      const response=await net.fetch(origin+'/api/auth/settings');
       if(!response.ok)return null;
       return await response.json();
     }catch(error){logger.error?.('Faustus dictation: could not read settings:',error.message);return null;}

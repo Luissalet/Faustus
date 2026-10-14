@@ -64,7 +64,15 @@ def _require_admin(request: Request):
     # honour it here as admin-equivalent.
     if user == INTERNAL_TOOL_USER:
         return
-    if not user or user == "api":
+    if user == "api":
+        raise HTTPException(403, "Admin only")
+    # No-login install: the person at the desktop is the owner, same rule
+    # as core.middleware.require_admin and tool_security's single-user check.
+    # Without this the Cookbook package check/install answered 403 there.
+    from src.owner_identity import single_user_mode
+    if single_user_mode():
+        return
+    if not user:
         raise HTTPException(403, "Admin only")
     if not auth_manager.is_admin(user):
         raise HTTPException(403, "Admin only")

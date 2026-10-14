@@ -45,6 +45,10 @@ def _push_owner(request: Request) -> str:
     require_admin(request)
     user = effective_user(request)
     if not user:
+        # No-login install: one person, one bucket (see src/push.py sink).
+        from src.owner_identity import DEFAULT_LOCAL_OWNER, single_user_mode
+        if single_user_mode():
+            return DEFAULT_LOCAL_OWNER
         raise HTTPException(403, "Admin only")
     return user
 

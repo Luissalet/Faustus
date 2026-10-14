@@ -95,3 +95,199 @@ def test_bare_acknowledgements_are_recognised():
         assert _is_bare_ack(text), text
     for text in ("Done: the project is in C:\\x", "Hecho, lo he movido a la carpeta del proyecto."):
         assert not _is_bare_ack(text), text
+
+
+def test_app_owned_copilot_projects_never_get_a_folder(tmp_path, monkeypatch):
+    import services.projects as projects
+    monkeypatch.setattr(projects, "default_projects_root", lambda rows=None: str(tmp_path))
+    copilot = {"id": "x", "name": "QA Dragon", "folder": "gepetto · QA Dragon · 81c36b8f", "workspace": ""}
+    assert projects.is_app_owned_project(copilot)
+    assert projects.ensure_project_workspace(dict(copilot)) == ""
+    assert not (tmp_path / "QA Dragon").exists()
+    assert not projects.is_app_owned_project({"name": "Blood Arrows", "folder": "Blood Arrows"})
+
+
+def test_codex_direct_calls_get_real_query_defaults():
+    # /api/codex/emails answered 500: the email list endpoint was called as a
+    # plain coroutine and `since` arrived as the Query object.
+    import asyncio
+
+    from fastapi import APIRouter, Query
+
+    from routes.codex_routes import _find_endpoint
+
+    router = APIRouter()
+
+    @router.get("/api/email/list")
+    async def list_emails(folder: str = Query("INBOX"), since: str | None = Query(None), owner: str = "x"):
+        return {"folder": folder, "since": since, "owner": owner}
+
+    endpoint = _find_endpoint(router, "GET", "/api/email/list")
+    out = asyncio.run(endpoint(owner="me"))
+    assert out == {"folder": "INBOX", "since": None, "owner": "me"}
+    assert asyncio.run(endpoint(folder="Sent", owner="me"))["folder"] == "Sent"
+
+
+def test_codex_finds_routes_inside_included_routers():
+    # Newer FastAPI nests every include_router: /api/codex/cookbook/cached and
+    # the serve wrappers answered 503 «endpoint unavailable» forever.
+    import asyncio
+
+    from fastapi import APIRouter, FastAPI
+
+    from routes.codex_routes import _find_app_endpoint
+
+    app = FastAPI()
+    flat = APIRouter()
+    nested = APIRouter()
+
+    @flat.get("/api/model/cached")
+    async def cached(host: str | None = None):
+        return {"host": host}
+
+    @nested.post("/serve")
+    async def serve():
+        return "served"
+
+    app.include_router(flat)
+    app.include_router(nested, prefix="/api/model")
+    endpoint = _find_app_endpoint(app, "GET", "/api/model/cached")
+    assert endpoint is not None and asyncio.run(endpoint(host="h")) == {"host": "h"}
+    assert asyncio.run(_find_app_endpoint(app, "POST", "/api/model/serve")()) == "served"
+    assert _find_app_endpoint(app, "GET", "/api/model/serve") is None
+
+
+def test_single_user_desktop_reaches_cookbook_packages_and_push(monkeypatch):
+    from types import SimpleNamespace
+
+    import pytest
+    from fastapi import HTTPException
+
+    from routes.push_routes import _push_owner
+    from routes.shell_routes import _require_admin
+
+    class _Auth:
+        is_configured = True
+
+        def is_admin(self, user):
+            return user == "admin"
+
+    def _request(user=None):
+        return SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(auth_manager=_Auth())),
+                               state=SimpleNamespace(current_user=user), headers={})
+
+    monkeypatch.setenv("AUTH_ENABLED", "false")
+    _require_admin(_request())  # no login: the person at the desktop is the owner
+    assert _push_owner(_request()) == DEFAULT_LOCAL_OWNER
+    with pytest.raises(HTTPException):
+        _require_admin(_request("api"))  # bearer pseudo-user stays out
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    with pytest.raises(HTTPException):
+        _require_admin(_request())
+    with pytest.raises(HTTPException):
+        _require_admin(_request("bob"))
+    _require_admin(_request("admin"))
+
+
+def test_single_user_push_events_reach_the_desktop_devices(monkeypatch):
+    from src import push
+
+    seen = []
+    monkeypatch.setenv("AUTH_ENABLED", "false")
+    monkeypatch.setattr(push, "list_subscriptions", lambda owner: seen.append(owner) or [])
+    push._push_sink({"owner": "admin", "kind": "x"})
+    push._push_sink({"kind": "x"})
+    assert seen == [DEFAULT_LOCAL_OWNER, DEFAULT_LOCAL_OWNER]
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    seen.clear()
+    push._push_sink({"owner": "alice", "kind": "x"})
+    push._push_sink({"kind": "x"})
+    assert seen == ["alice"]
+
+
+def test_closed_local_ollama_is_started_before_the_call(monkeypatch):
+    import asyncio
+
+    from src import engine_swap, ollama_autostart
+
+    monkeypatch.setenv("FAUSTUS_TEST_OLLAMA_AUTOSTART", "1")
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
+    monkeypatch.setattr(ollama_autostart, "_last_failure", 0.0)
+    monkeypatch.setattr(ollama_autostart, "find_binary", lambda: "ollama")
+    state = {"open": False, "spawned": 0}
+    monkeypatch.setattr(ollama_autostart, "_port_open", lambda port, timeout=0.3: state["open"])
+
+    def _spawn(binary):
+        state["spawned"] += 1
+        state["open"] = True
+
+    monkeypatch.setattr(ollama_autostart, "_spawn", _spawn)
+    monkeypatch.setattr(engine_swap, "engine_for_url", lambda url: None)
+
+    assert ollama_autostart.is_local_ollama_url("http://127.0.0.1:11434/v1")
+    assert not ollama_autostart.is_local_ollama_url("http://192.168.1.5:11434/v1")
+    assert not ollama_autostart.is_local_ollama_url("http://127.0.0.1:8080/v1")
+    assert asyncio.run(engine_swap.ensure_ready("http://127.0.0.1:11434/v1"))["action"] == "started"
+    assert asyncio.run(engine_swap.ensure_ready("http://127.0.0.1:11434/v1"))["action"] == "none"
+    assert state["spawned"] == 1
+    assert engine_swap.recoverable_url("http://127.0.0.1:11434/v1")
+    assert not engine_swap.recoverable_url("https://api.example.com/v1")
+
+
+def test_ollama_is_never_started_from_a_test_run_by_default(monkeypatch):
+    import asyncio
+
+    from src import ollama_autostart
+
+    monkeypatch.delenv("FAUSTUS_TEST_OLLAMA_AUTOSTART", raising=False)
+    monkeypatch.setattr(ollama_autostart, "_spawn", lambda binary: (_ for _ in ()).throw(AssertionError("spawned")))
+    assert asyncio.run(ollama_autostart.ensure("http://127.0.0.1:11434/v1")) == {"action": "none"}
+
+
+def test_an_emptied_local_ollama_is_believed(monkeypatch):
+    # The models folder was emptied and the picker kept offering eight deleted
+    # models (and one as the automatic vision model) because an empty list
+    # was always read as a failed probe.
+    from types import SimpleNamespace
+
+    import routes.model_routes as mr
+
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
+    answers = {"models": []}
+    seen = []
+
+    def _get(url, timeout=None):
+        seen.append(url)
+        return SimpleNamespace(status_code=200, json=lambda: answers)
+
+    monkeypatch.setattr(mr.httpx, "get", _get)
+    assert mr._local_ollama_confirms_empty("http://127.0.0.1:11434/v1")
+    assert seen == ["http://127.0.0.1:11434/api/tags"]
+    answers["models"] = [{"name": "qwen"}]
+    assert not mr._local_ollama_confirms_empty("http://127.0.0.1:11434/v1")
+    assert not mr._local_ollama_confirms_empty("http://192.168.0.5:11434/v1")
+    assert not mr._local_ollama_confirms_empty("http://127.0.0.1:8081/v1")
+
+
+def test_an_engine_whose_model_file_moved_says_so_and_does_not_start(tmp_path, monkeypatch):
+    # The 27B engine pointed at a deleted model-store blob: it only failed
+    # inside llama-server. Now the engine reports it and refuses to start.
+    import asyncio
+
+    from src import engines
+
+    real = tmp_path / "model.gguf"
+    real.write_bytes(b"GGUF")
+    gone = str(tmp_path / "blobs" / "sha256-gone")
+    monkeypatch.setattr(engines, "_parse_fields", lambda profile: dict(profile))
+    monkeypatch.setattr(engines, "mtp_supported_for", lambda path: None)
+    monkeypatch.setattr(engines, "find_mmproj", lambda path: None)
+    moved = engines._decorate({"model_path": gone, "mmproj_path": str(real), "port": 8081})
+    assert moved["model_missing"] is True and moved["mmproj_missing"] is False
+    fine = engines._decorate({"model_path": str(real), "mmproj_path": "", "port": 8081})
+    assert fine["model_missing"] is False and fine["mmproj_missing"] is False
+
+    monkeypatch.setattr(engines, "get_engine", lambda engine_id: moved)
+    out = asyncio.run(engines.start_engine("x"))
+    assert out["started"] is False and out["code"] == "model_missing"
+    assert gone in out["error"]

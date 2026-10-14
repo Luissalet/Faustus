@@ -5304,7 +5304,7 @@ async def _llm_call_async_impl(
                 if not _engine_wait_used:
                     _engine_wait_used = True
                     from src import engine_swap
-                    if engine_swap.restartable_engine_for_url(target_url) is not None:
+                    if engine_swap.recoverable_url(target_url):
                         logger.warning(
                             "LLM async call to %s: retries exhausted on a managed engine — "
                             "starting it again before failing the turn",
@@ -7993,7 +7993,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         _should_retry = _should_retry and not _cooled
         if not _should_retry and not _delta_emitted and not _engine_wait_used:
             from src import engine_swap
-            if engine_swap.restartable_engine_for_url(target_url) is not None:
+            if engine_swap.recoverable_url(target_url):
                 logger.warning(
                     "Stream connect to %s: retries exhausted on a managed engine — "
                     "starting it again before failing the turn",

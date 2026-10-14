@@ -353,6 +353,10 @@ DEFAULT_SETTINGS = {
     # disables the idle reaper entirely (default: engines stay up once
     # started, like today).
     "engine_autostart": True,
+    # The local Ollama server (loopback, OLLAMA_HOST port or 11434) is started
+    # with `ollama serve` when a call or the residency keeper finds its port
+    # closed and the binary is installed (src/ollama_autostart.py).
+    "ollama_autostart": True,
     # A local server stuck answering garbage is checked and restarted
     # (src/model_server_heal.py). Commands are "host:port=command" for servers
     # no launcher keeps running; the timeout covers a big model loading again.

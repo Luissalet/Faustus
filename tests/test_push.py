@@ -389,6 +389,9 @@ def test_event_to_push_payload_url_mapping(kind, session_id, expected_url):
 
 
 def test_bus_sink_broadcasts_to_subscribed_owner(isolated_push, monkeypatch):
+    # Per-owner targeting is the login-on behaviour; without login every event
+    # goes to the local owner's devices (test_single_user_chat_fixes).
+    monkeypatch.setenv("AUTH_ENABLED", "true")
     push.subscribe("luis", _sub())
     push.start()
 

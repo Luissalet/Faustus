@@ -41,7 +41,8 @@ def owned_gallery_id_for_upload(file_info: Dict[str, Any], owner: Optional[str])
                 GalleryImage.file_hash == file_hash,
                 GalleryImage.is_active == True,  # noqa: E712
             )
-            if owner:
+            from src.owner_identity import single_user_mode
+            if owner and not single_user_mode():
                 query = query.filter(GalleryImage.owner == owner)
             row = query.first()
             return row.id if row is not None else None
@@ -73,7 +74,8 @@ def _sync_upload_vision_to_gallery(file_info: Dict[str, Any], owner: Optional[st
                 GalleryImage.file_hash == file_hash,
                 GalleryImage.is_active == True,  # noqa: E712
             )
-            if owner:
+            from src.owner_identity import single_user_mode
+            if owner and not single_user_mode():
                 q = q.filter(GalleryImage.owner == owner)
             img = q.first()
             if not img:

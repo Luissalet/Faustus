@@ -35,6 +35,9 @@ export interface EngineConfig {
   /** The projector that ships with this model (Ollama store or a sibling
    * `mmproj*.gguf`), or null when there is none. */
   mmproj_available?: string | null;
+  /** The saved model / projector file is no longer on disk (moved or deleted). */
+  model_missing?: boolean;
+  mmproj_missing?: boolean;
   description?: string | null;
 }
 

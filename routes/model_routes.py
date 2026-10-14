@@ -1002,6 +1002,25 @@ def _probe_google_models(base_url: str, api_key: str = None, timeout: int = 5, p
     return models
 
 
+def _local_ollama_confirms_empty(base_url: str, timeout: float = 2.0) -> bool:
+    """True when `base_url` is the local Ollama and it answers that it has no
+    models at all. An empty probe is normally read as a failure so a hiccup
+    never wipes the cached list, but then a model folder that was emptied
+    kept offering eight deleted models in the picker and as the automatic
+    vision model (seen live 14-10). `/api/tags` answering 200 with
+    `models: []` is the server's own word, not a hiccup."""
+    try:
+        from src import ollama_autostart
+        if not ollama_autostart.is_local_ollama_url(base_url):
+            return False
+        from urllib.parse import urlparse
+        p = urlparse(base_url)
+        r = httpx.get(f"{p.scheme or 'http'}://{p.hostname}:{p.port}/api/tags", timeout=timeout)
+        return r.status_code == 200 and (r.json() or {}).get("models") == []
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _probe_endpoint(base_url: str, api_key: str = None, timeout: int = 5) -> List[str]:
     """Probe a base URL's /models endpoint and return list of model IDs.
     For Anthropic, queries their /v1/models API, falling back to hardcoded list."""
@@ -1683,6 +1702,8 @@ def setup_model_routes(model_discovery):
                     def _probe_one(key: str, data: Dict[str, Any]):
                         try:
                             ids = _probe_endpoint(data["base"], data.get("api_key"), timeout=data.get("timeout") or 2)
+                            if not ids and _local_ollama_confirms_empty(data["base"]):
+                                return key, data["endpoint_ids"], [], "empty"
                             return key, data["endpoint_ids"], ids, None
                         except Exception as e:
                             return key, data["endpoint_ids"], None, e
@@ -1693,7 +1714,7 @@ def setup_model_routes(model_discovery):
                             for fut in as_completed(futures):
                                 key, endpoint_ids, ids, err = fut.result()
                                 st = _refresh_state.setdefault(key, {})
-                                if ids:
+                                if ids or err == "empty":
                                     for ep_id in endpoint_ids:
                                         ep_obj = db.query(ModelEndpoint).filter(ModelEndpoint.id == ep_id).first()
                                         if ep_obj:
@@ -1792,6 +1813,20 @@ def setup_model_routes(model_discovery):
             logger.debug("Inline local model refresh failed for %s: %s", _redact_url_for_log(base), e)
 
         changed = False
+        if ids is not None and not ids and _local_ollama_confirms_empty(base):
+            ids = []
+            ep.cached_models = json.dumps(ids)
+            try:
+                db.add(ep)
+                db.commit()
+                changed = True
+            except Exception:  # noqa: BLE001
+                db.rollback()
+            state["last_success"] = _time.time()
+            state["fail_count"] = 0
+            state.pop("last_failure", None)
+            state["inflight"] = False
+            return changed
         if ids:
             ep.cached_models = json.dumps(ids)
             try:

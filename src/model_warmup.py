@@ -538,6 +538,14 @@ async def check_once() -> Dict[str, Any]:
         _keeper.update({"resident": None, "expires_at": "", "backend": None})
         return dict(_keeper)
     _keeper["backend"] = "ollama"
+    # The default model lives in the local Ollama: if its server is not
+    # running (tray app closed, crashed), start it instead of polling a
+    # closed port every cycle (src/ollama_autostart.py).
+    try:
+        from src import ollama_autostart
+        await ollama_autostart.ensure(target["root"])
+    except Exception:  # noqa: BLE001 - never break the keeper
+        pass
 
     # Lote L (shared model lease): several instances of this app can share
     # one Ollama. Every instance still PUBLISHES its own default every

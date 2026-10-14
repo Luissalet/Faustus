@@ -40,6 +40,13 @@ def db_factory(tmp_path):
     return sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
+@pytest.fixture
+def login_on(monkeypatch):
+    """Owner isolation only exists with login on; without it (the desktop
+    default in .env) every bucket is the same person (owners_match)."""
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+
+
 def _document(db_factory, *, doc_id="doc_1", owner=OWNER, title="Voice architecture",
               content="# Voice\n\nDecisions.\n", versions=1):
     db = db_factory()
@@ -104,7 +111,7 @@ def test_document_metadata_for_its_owner(db_factory):
     assert meta.revision.startswith(f"document:{doc_id}:v1:")
 
 
-def test_a_document_of_another_owner_is_forbidden_and_leaks_nothing(db_factory):
+def test_a_document_of_another_owner_is_forbidden_and_leaks_nothing(db_factory, login_on):
     """MANDATORY. A refusal that names the document has already leaked it."""
     doc_id = _document(db_factory, owner=OTHER, title=SECRET_TITLE,
                        content="Layoffs are planned for November.")
@@ -375,7 +382,7 @@ def test_artifact_metadata_and_text(db_factory, tmp_path):
     assert resolver.extract(ref).chunks
 
 
-def test_an_artifact_of_another_owner_leaks_nothing(db_factory, tmp_path):
+def test_an_artifact_of_another_owner_leaks_nothing(db_factory, tmp_path, login_on):
     store = tmp_path / "store"
     store.mkdir()
     art_id = _artifact(db_factory, store, owner=OTHER, label=SECRET_TITLE)
@@ -442,7 +449,7 @@ def test_gallery_image_metadata_and_description(db_factory):
     assert "a quiet room" in resolver.read(ref).text
 
 
-def test_a_gallery_image_of_another_owner_leaks_nothing(db_factory):
+def test_a_gallery_image_of_another_owner_leaks_nothing(db_factory, login_on):
     image_id = _image(db_factory, owner=OTHER, caption=SECRET_TITLE)
     meta = GalleryImageResolver(db_factory).metadata(
         SourceRef(kind="gallery_image", id=image_id), owner=OWNER, project=PROJECT)

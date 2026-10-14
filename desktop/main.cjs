@@ -3,7 +3,7 @@ const {execFile}=require('node:child_process');
 const {promisify}=require('node:util');
 const {join,resolve}=require('node:path');
 const {existsSync,mkdirSync}=require('node:fs');
-const {localNavigation,externalNavigation,permissionCheck,permissionRequest,deepLinkPath,findDeepLink}=require('./policy.cjs');
+const {localNavigation,localOpenTarget,externalNavigation,permissionCheck,permissionRequest,deepLinkPath,findDeepLink}=require('./policy.cjs');
 const execute=promisify(execFile),root=resolve(__dirname,'..');
 const python=join(root,'venv',process.platform==='win32'?'Scripts/python.exe':'bin/python');
 const port=Number(process.env.FAUSTUS_PORT||7000),origin=`http://127.0.0.1:${port}`;
@@ -59,9 +59,18 @@ async function closeConfirmed(target,senderUrl){
 function secureWindow(window){
   for(const event of ['maximize','unmaximize','enter-full-screen','leave-full-screen'])window.on(event,()=>{if(!alive(window))return;window.webContents.send('faustus:window-state',windowState(window));});
   window.webContents.setWindowOpenHandler(({url})=>{
-    if(localNavigation(url,origin))return {action:'allow',overrideBrowserWindowOptions:{frame:false,autoHideMenuBar:true,webPreferences:{preload:join(__dirname,'preload.cjs'),nodeIntegration:false,contextIsolation:true,sandbox:true}}};
+    const local=localOpenTarget(url,origin);
+    if(local==='page'){if(alive(window))void window.loadURL(url);return {action:'deny'};}
+    if(local==='file'){void shell.openExternal(url);return {action:'deny'};}
     if(externalNavigation(url))void shell.openExternal(url);
     return {action:'deny'};
+  });
+  // Ctrl+R / F5 reload the page (a new build of the interface), F12 opens the developer tools.
+  window.webContents.on('before-input-event',(event,input)=>{
+    if(input.type!=='keyDown')return;
+    const key=String(input.key||'').toLowerCase();
+    if(key==='f5'||(key==='r'&&(input.control||input.meta)&&!input.alt)){event.preventDefault();window.webContents.reload();}
+    else if(key==='f12'){event.preventDefault();window.webContents.toggleDevTools();}
   });
   window.webContents.on('will-navigate',(event,url)=>{
     if(!localNavigation(url,origin)){event.preventDefault();if(externalNavigation(url))void shell.openExternal(url);}

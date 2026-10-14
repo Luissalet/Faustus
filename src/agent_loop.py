@@ -13609,7 +13609,7 @@ async def _stream_agent_loop_body(
                     _looks_like_engine_lost(error_data, terminal_status)
                     and _xr.permits("engine_lost_recovered", int(_engine_lost_recovered), 1)
                     and round_num < max_rounds
-                    and engine_swap.restartable_engine_for_url(endpoint_url) is not None
+                    and engine_swap.recoverable_url(endpoint_url)
                 ):
                     _engine_lost_recovered = True
                     logger.warning(

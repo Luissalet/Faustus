@@ -89,7 +89,18 @@ def test_colours_come_from_tokens() -> None:
     # rgb(0 0 0 / x) in the overlay backdrop is the one legitimate literal:
     # a scrim is not a surface and has no token.
     offences = [o for o in offences if "fs-overlay-backdrop" not in o and "rgb(0 0 0 / 0.5)" not in o]
+    # «#235» in a comment is an issue/radar number, not a colour.
+    offences = [o for o in offences if not _issue_ref_in_comment(o)]
     assert not offences, "hardcoded colour; add a token instead:\n" + "\n".join(offences)
+
+
+def _issue_ref_in_comment(offence: str) -> bool:
+    text = offence.split(": ", 1)[1] if ": " in offence else offence
+    if not text.lstrip().startswith(("//", "/*", "*", "{/*")):
+        return False
+    if re.search(r"\b(rgba?|hsla?)\(", text):
+        return False
+    return all(re.fullmatch(r"\d+", m) for m in re.findall(r"#([0-9a-fA-F]{3,8})\b", text))
 
 
 def test_durations_come_from_tokens() -> None:
@@ -180,7 +191,7 @@ def test_server_serves_every_route_the_shell_owns() -> None:
     assert declared, "SERVER_ROUTES is empty - the guard would pass on nothing"
 
     app_py = (repo / "app.py").read_text(encoding="utf-8")
-    served = set(re.findall(r'@app\.get\("(/[^"]*)"\)', app_py))
+    served = set(re.findall(r'''@app\.get\(["'](/[^"']*)["']\)''', app_py))
     # FastAPI spells a parameter {name}; the list uses the same spelling, so
     # only the API surface needs filtering out.
     served = {r for r in served if not r.startswith("/api/")}

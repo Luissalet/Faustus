@@ -1649,6 +1649,15 @@ def default_projects_root(rows: Optional[List[Dict[str, Any]]] = None) -> str:
 _BAD_FOLDER_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 
+def is_app_owned_project(project: Optional[Mapping[str, Any]]) -> bool:
+    """A project a family app created for its copilot (folder «app · name ·
+    hash», owned by the local owner). It never gets a folder of its own on
+    disk: dozens of them exist and their work lives in the app."""
+    folder = str((project or {}).get("folder") or "")
+    name = str((project or {}).get("name") or "")
+    return folder != name and folder.count(" · ") >= 2
+
+
 def ensure_project_workspace(project: Optional[Dict[str, Any]]) -> str:
     """Give a project with no workspace its own folder under the projects root.
 
@@ -1662,6 +1671,8 @@ def ensure_project_workspace(project: Optional[Dict[str, Any]]) -> str:
     existing = str(project.get("workspace") or "").strip()
     if existing:
         return existing
+    if is_app_owned_project(project):
+        return ""
     root = default_projects_root()
     name = _BAD_FOLDER_CHARS.sub(" ", str(project.get("name") or project.get("folder") or "")).strip(" .")
     if not root or not name:

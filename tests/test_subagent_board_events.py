@@ -102,7 +102,10 @@ def test_parse_accepts_string_booleans():
 
 # ── the fifth task is not dropped silently ─────────────────────────────────
 
-def test_parse_reports_dropped_tasks():
+def test_parse_reports_dropped_tasks(monkeypatch):
+    # The default cap is 0 (no limit) since the delegation-continuity change;
+    # a configured cap still reports what it dropped.
+    monkeypatch.setattr(st, "max_tasks", lambda: 4)
     n = st.max_tasks()
     args = st.parse_delegation_args(json.dumps({"tasks": [f"task {i}" for i in range(n + 2)]}))
     assert len(args["tasks"]) == n
@@ -111,7 +114,9 @@ def test_parse_reports_dropped_tasks():
 
 
 @pytest.mark.asyncio
-async def test_tool_result_tells_the_model_about_dropped_tasks(delegation):
+async def test_tool_result_tells_the_model_about_dropped_tasks(delegation, monkeypatch):
+    monkeypatch.setattr(st, "max_tasks", lambda: 4)
+
     async def _loop(endpoint_url, model, messages, **kwargs):
         yield _harness_summary([])
         yield "data: [DONE]\n\n"
@@ -591,7 +596,9 @@ def test_settings_have_the_board_knobs():
     from src.settings import DEFAULT_SETTINGS
     assert DEFAULT_SETTINGS["agent_subagent_tick_seconds"] == 5
     assert DEFAULT_SETTINGS["agent_subagent_stall_seconds"] == 120
-    assert DEFAULT_SETTINGS["agent_subagent_supervisor"] is True
+    # Off by default since delegated tasks keep running instead of being
+    # nudged then stopped (docs/DELEGATION-CONTINUITY.md).
+    assert DEFAULT_SETTINGS["agent_subagent_supervisor"] is False
     assert DEFAULT_SETTINGS["agent_subagent_max_parallel"] == 2
 
 

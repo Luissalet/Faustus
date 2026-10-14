@@ -195,6 +195,9 @@ def list_vision_endpoints(owner: Optional[str]) -> List[Dict[str, Any]]:
                 "url": url,
                 "headers": build_headers(api_key, base),
                 "models": models,
+                # A stored list, even an empty one, is an answer: the server
+                # said what it has. Only an endpoint never listed is unknown.
+                "models_known": str(getattr(ep, "cached_models", None) or "").strip().startswith("["),
                 "local": local,
             })
     except EndpointConfigurationChanged:
@@ -396,7 +399,10 @@ def _auto_detect(owner: Optional[str]) -> Dict[str, Any]:
         return found
     # (c) the old live lookup — only when some endpoint had nothing cached to
     # match against (or the listing itself was unavailable).
-    if not endpoints or any(not ep.get("models") for ep in endpoints):
+    # An endpoint whose stored list is known to be empty (a local Ollama with
+    # its models deleted) used to send every status read through this probe
+    # of each candidate on each endpoint: 45 s and a 504 (seen live 14-10).
+    if not endpoints or any(not ep.get("models") and not ep.get("models_known") for ep in endpoints):
         from src import ai_interaction
         for cand in AUTO_CANDIDATES:
             try:

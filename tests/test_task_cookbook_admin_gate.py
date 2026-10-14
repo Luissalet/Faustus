@@ -240,8 +240,14 @@ async def test_webhook_rejects_stale_non_admin_cookbook_serve_task(
     )
     webhook_trigger = _endpoint("POST", "/api/tasks/{task_id}/webhook/{token}")
 
+    async def _body():
+        return b""
+
+    # The webhook reads its payload (request.body()) since the trigger
+    # started passing it on to the task.
+    request = SimpleNamespace(state=SimpleNamespace(current_user=None), body=_body)
     with pytest.raises(HTTPException) as exc:
-        await webhook_trigger("alice-task", "secret")
+        await webhook_trigger("alice-task", "secret", request)
 
     assert exc.value.status_code == 403
     db = task_db()

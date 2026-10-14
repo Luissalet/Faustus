@@ -698,6 +698,7 @@ export function LocalModelsSection({ admin, say }: { admin: boolean; say: (t: st
  * the GPU. Plain settings, saved through /api/auth/settings. */
 function EngineSwapFields({ say }: { say: (t: string) => void }) {
   const [autostart, setAutostart] = useState(true);
+  const [ollamaAutostart, setOllamaAutostart] = useState(true);
   const [ttl, setTtl] = useState('0');
   const [loaded, setLoaded] = useState(false);
 
@@ -705,6 +706,7 @@ function EngineSwapFields({ say }: { say: (t: string) => void }) {
     void getSettings()
       .then((s) => {
         setAutostart(s.engine_autostart !== false);
+        setOllamaAutostart(s.ollama_autostart !== false);
         setTtl(String(Number(s.engine_idle_ttl_minutes ?? 0) || 0));
         setLoaded(true);
       })
@@ -735,6 +737,18 @@ function EngineSwapFields({ say }: { say: (t: string) => void }) {
           data-testid="engine-autostart"
         />{' '}
         {t('Start the engine when a chat needs it')}
+      </label>
+      <label className="fs-set__help">
+        <input
+          type="checkbox"
+          checked={ollamaAutostart}
+          onChange={(e) => {
+            setOllamaAutostart(e.target.checked);
+            void save({ ollama_autostart: e.target.checked });
+          }}
+          data-testid="ollama-autostart"
+        />{' '}
+        {t('Start Ollama when it is closed')}
       </label>
       <label className="fs-set__help">
         {t('Unload after idle (minutes, 0 = never)')}{' '}
@@ -883,6 +897,13 @@ function EnginesSection({ admin, say, defaultModel }: { admin: boolean; say: (t:
                   {status?.context_length ? <span className="fs-set__help"> · {fmtCtx(status.context_length)}</span> : null}
                   {status?.footprint_bytes ? <span className="fs-set__help"> · {fmtGb(status.footprint_bytes)}</span> : null}
                   <div className="fs-set__help">{engine.host}:{engine.port ?? '—'} · {engine.model_path || t('no model configured')}</div>
+                  {(engine.model_missing || engine.mmproj_missing) && (
+                    <p className="fs-notice" data-tone="warning" data-testid="engine-model-missing">
+                      {engine.model_missing
+                        ? t('The model file is no longer there (moved or deleted). Edit the engine and choose the file again.')
+                        : t('The vision projector file is no longer there (moved or deleted). Edit the engine and choose it again.')}
+                    </p>
+                  )}
                   {engine.mtp && (engine.parallel ?? 4) > 1 && (
                     <div className="fs-set__help" data-testid="engine-mtp-parallel-hint">
                       {t('MTP speeds up one request at a time the most; while several run at once the gain is small. No need for -np 1.')}

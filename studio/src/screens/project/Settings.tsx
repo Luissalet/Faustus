@@ -1,5 +1,5 @@
 import { FolderOpen, Save, Sparkles, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../components';
 import { pickNative } from '../../adapters/composer';
 import { AGENT_FLAGS, createProject, draftAgentsMd, flagOn, setProjectConnectors, updateProject, type Project } from '../../adapters/projects';
@@ -22,6 +22,12 @@ export function ProjectSettings({ project, onSaved, onCancel, say }: { project: 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState('');
+  // The folder dialog in flight, and the folder as of the last keystroke or
+  // pick: `save` reads these, never a render's stale copy of `workspace`.
+  const pendingPick = useRef<Promise<void> | null>(null);
+  const [picking, setPicking] = useState(false);
+  const workspaceRef = useRef(workspace);
+  workspaceRef.current = workspace;
 
   // Lote 94: the board key (CONTRATO_BOARD) — a per-project setting with its
   // OWN endpoint (`PUT .../board/key`, `adapters/board.ts`'s `setBoardKey`),
@@ -80,11 +86,17 @@ export function ProjectSettings({ project, onSaved, onCancel, say }: { project: 
     setError(null);
     const agent = { ...flags, test_command: testCommand.trim(), review_model: reviewModel.trim() };
     try {
+      // The folder dialog runs in its own process, so «Create» can be pressed
+      // while it is still open or closing. Seen live (14-10-2026): the project
+      // was created half a second before the chosen folder arrived, without
+      // it, and the folder was lost. Wait for the dialog, then use its answer.
+      if (pendingPick.current) await pendingPick.current;
+      const folderPath = workspaceRef.current.trim();
       let saved: Project;
       if (project) {
-        saved = await updateProject(project.id, { name: clean, workspace: workspace.trim(), instructions, ...agent });
+        saved = await updateProject(project.id, { name: clean, workspace: folderPath, instructions, ...agent });
       } else {
-        const created = await createProject({ name: clean, folder: clean, workspace: workspace.trim(), instructions });
+        const created = await createProject({ name: clean, folder: clean, workspace: folderPath, instructions });
         saved = await updateProject(created.id, agent);
       }
       say(project ? t('Project saved') : t('Project “{name}” created', { name: saved.name }));
@@ -97,12 +109,25 @@ export function ProjectSettings({ project, onSaved, onCancel, say }: { project: 
   };
 
   const browse = async () => {
+    if (pendingPick.current) return;
+    const run = (async () => {
+      try {
+        const pick = await pickNative('folder', workspaceRef.current);
+        if (pick.status === 'ok' && pick.path) {
+          workspaceRef.current = pick.path;
+          setWorkspace(pick.path);
+        } else if (pick.status === 'unavailable') say(t('No system dialog here; type the path.'));
+      } catch (e) {
+        say((e as Error).message);
+      }
+    })();
+    pendingPick.current = run;
+    setPicking(true);
     try {
-      const pick = await pickNative('folder', workspace);
-      if (pick.status === 'ok' && pick.path) setWorkspace(pick.path);
-      else if (pick.status === 'unavailable') say(t('No system dialog here; type the path.'));
-    } catch (e) {
-      say((e as Error).message);
+      await run;
+    } finally {
+      pendingPick.current = null;
+      setPicking(false);
     }
   };
 
@@ -143,7 +168,7 @@ export function ProjectSettings({ project, onSaved, onCancel, say }: { project: 
         </span>
         <span className="fs-pj__row">
           <input className="fs-field fs-pj__grow" value={workspace} onChange={(e) => setWorkspace(e.target.value)} placeholder="D:\\Projects\\my-project" spellCheck={false} data-testid="project-workspace" />
-          <Button variant="secondary" size="sm" icon={FolderOpen} label={t('Browse…')} onClick={() => void browse()} />
+          <Button variant="secondary" size="sm" icon={FolderOpen} label={t('Browse…')} loading={picking} onClick={() => void browse()} />
         </span>
       </label>
       <label className="fs-pj__field">

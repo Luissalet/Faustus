@@ -39,7 +39,7 @@ function fakeElectron({windows=[]}={}){
 
 test('polling registers the configured hotkey only when dictation is enabled', async()=>{
   const electron=fakeElectron();
-  const net=fakeNet([['/api/settings',()=>jsonResponse({dictation_anywhere_enabled:false,dictation_global_hotkey:'Ctrl+Alt+Space'})]]);
+  const net=fakeNet([['/api/auth/settings',()=>jsonResponse({dictation_anywhere_enabled:false,dictation_global_hotkey:'Ctrl+Alt+Space'})]]);
   const stop=startDictation({...electron,net},{origin:'http://127.0.0.1:7000',pollMs:1000000});
   await new Promise(r=>setImmediate(r));
   assert.deepEqual(electron.globalShortcut._registered(),[]);
@@ -50,7 +50,7 @@ test('enabling dictation registers the hotkey; disabling unregisters it', async(
   const electron=fakeElectron();
   let enabled=true;
   const net={fetch: async url=>{
-    if(url.includes('/api/settings'))return jsonResponse({dictation_anywhere_enabled:enabled,dictation_global_hotkey:'Ctrl+Alt+Space'});
+    if(url.includes('/api/auth/settings'))return jsonResponse({dictation_anywhere_enabled:enabled,dictation_global_hotkey:'Ctrl+Alt+Space'});
     return jsonResponse({});
   }};
   const stop=startDictation({...electron,net},{origin:'http://127.0.0.1:7000',pollMs:5});
@@ -66,7 +66,7 @@ test('changing the hotkey re-registers the new one and drops the old', async()=>
   const electron=fakeElectron();
   let hotkey='Ctrl+Alt+Space';
   const net={fetch: async url=>{
-    if(url.includes('/api/settings'))return jsonResponse({dictation_anywhere_enabled:true,dictation_global_hotkey:hotkey});
+    if(url.includes('/api/auth/settings'))return jsonResponse({dictation_anywhere_enabled:true,dictation_global_hotkey:hotkey});
     return jsonResponse({});
   }};
   const stop=startDictation({...electron,net},{origin:'http://127.0.0.1:7000',pollMs:5});
@@ -83,7 +83,7 @@ test('press captures the foreground target and starts the hidden recorder; press
   const states=[];
   const captured={handle:42,title:'Notepad'};
   const net={fetch: async url=>{
-    if(url.includes('/api/settings'))return jsonResponse({dictation_anywhere_enabled:true,dictation_global_hotkey:'Ctrl+Alt+Space',dictation_paste_method:'type'});
+    if(url.includes('/api/auth/settings'))return jsonResponse({dictation_anywhere_enabled:true,dictation_global_hotkey:'Ctrl+Alt+Space',dictation_paste_method:'type'});
     if(url.includes('/api/dictation/capture-target'))return jsonResponse(captured);
     return jsonResponse({});
   }};
@@ -103,7 +103,7 @@ test('a failed capture-target never starts a recording window', async()=>{
   const electron=fakeElectron();
   const states=[];
   const net={fetch: async url=>{
-    if(url.includes('/api/settings'))return jsonResponse({dictation_anywhere_enabled:true,dictation_global_hotkey:'Ctrl+Alt+Space'});
+    if(url.includes('/api/auth/settings'))return jsonResponse({dictation_anywhere_enabled:true,dictation_global_hotkey:'Ctrl+Alt+Space'});
     if(url.includes('/api/dictation/capture-target'))return jsonResponse({},false,501);
     return jsonResponse({});
   }};
@@ -120,7 +120,7 @@ test('a dictation result destroys the hidden recorder window', async()=>{
   const win=new FakeWindow();
   const electron=fakeElectron({windows:[win]});
   const net={fetch: async url=>{
-    if(url.includes('/api/settings'))return jsonResponse({dictation_anywhere_enabled:true,dictation_global_hotkey:'Ctrl+Alt+Space'});
+    if(url.includes('/api/auth/settings'))return jsonResponse({dictation_anywhere_enabled:true,dictation_global_hotkey:'Ctrl+Alt+Space'});
     if(url.includes('/api/dictation/capture-target'))return jsonResponse({handle:1,title:'x'});
     return jsonResponse({});
   }};
@@ -138,7 +138,7 @@ test('stop() unregisters the hotkey and tears down the recorder window', async()
   const win=new FakeWindow();
   const electron=fakeElectron({windows:[win]});
   const net={fetch: async url=>{
-    if(url.includes('/api/settings'))return jsonResponse({dictation_anywhere_enabled:true,dictation_global_hotkey:'Ctrl+Alt+Space'});
+    if(url.includes('/api/auth/settings'))return jsonResponse({dictation_anywhere_enabled:true,dictation_global_hotkey:'Ctrl+Alt+Space'});
     if(url.includes('/api/dictation/capture-target'))return jsonResponse({handle:1,title:'x'});
     return jsonResponse({});
   }};

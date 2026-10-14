@@ -1,5 +1,13 @@
 const {URL}=require('node:url');
 function localNavigation(value,origin){try{const url=new URL(value);return url.origin===origin&&!url.username&&!url.password;}catch{return false;}}
+// A local link opened as a new window: app pages go to the window that asked
+// (a second Faustus window was never what a click meant), files and reports
+// served under /api/, /static/ or /uploads/ go to the system browser, which
+// shows or saves them; a blank Electron window used to stay behind a download.
+function localOpenTarget(value,origin){
+  if(!localNavigation(value,origin))return null;
+  try{const path=new URL(value).pathname;return /^\/(api|static|uploads|media|files)\//.test(path)?'file':'page';}catch{return null;}
+}
 function externalNavigation(value){try{const url=new URL(value);return ['https:','http:'].includes(url.protocol)&&!url.username&&!url.password;}catch{return false;}}
 // clipboard-sanitized-write is navigator.clipboard.writeText: the same as
 // Ctrl+C, so the local page gets it without a prompt. clipboard-read, media
@@ -40,4 +48,4 @@ function findDeepLink(argv){
   for(const arg of argv||[])if(typeof arg==='string'&&arg.toLowerCase().startsWith('faustus:')){const path=deepLinkPath(arg);if(path)return path;}
   return null;
 }
-module.exports={localNavigation,externalNavigation,permissionCheck,permissionRequest,deepLinkPath,findDeepLink};
+module.exports={localNavigation,localOpenTarget,externalNavigation,permissionCheck,permissionRequest,deepLinkPath,findDeepLink};

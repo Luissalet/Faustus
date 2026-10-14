@@ -1009,10 +1009,13 @@ def setup_gallery_routes() -> APIRouter:
         redact_location = bool(data.get("redact_location", False))
         db = SessionLocal()
         try:
-            imgs = db.query(GalleryImage).filter(
-                GalleryImage.id.in_(ids),
-                GalleryImage.owner == user,
-            ).all()
+            # No login (desktop): there is no user on the request, and
+            # `owner == None` matched only legacy ownerless rows, so exporting
+            # a selection answered «No images found». Filter only with a user.
+            _export_q = db.query(GalleryImage).filter(GalleryImage.id.in_(ids))
+            if user:
+                _export_q = _export_q.filter(GalleryImage.owner == user)
+            imgs = _export_q.all()
             if not imgs:
                 raise HTTPException(404, "No images found")
             import io

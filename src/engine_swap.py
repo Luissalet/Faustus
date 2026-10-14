@@ -219,6 +219,18 @@ def restartable_engine_for_url(url: str) -> Optional[Dict[str, Any]]:
     return engine_for_url(url)
 
 
+def recoverable_url(url: str) -> bool:
+    """Whether a lost connection to `url` can be healed by starting its
+    server: a managed llama.cpp engine, or the local Ollama port."""
+    if restartable_engine_for_url(url) is not None:
+        return True
+    try:
+        from src import ollama_autostart
+        return ollama_autostart.is_local_ollama_url(url) and ollama_autostart.find_binary() is not None
+    except Exception:  # noqa: BLE001
+        return False
+
+
 async def recover_after_connect_failure(url: str) -> bool:
     """A local model call lost its engine mid-turn: bring it back.
 
@@ -233,7 +245,8 @@ async def recover_after_connect_failure(url: str) -> bool:
     try:
         engine = restartable_engine_for_url(url)
         if engine is None:
-            return False
+            from src import ollama_autostart
+            return (await ollama_autostart.ensure(url)).get("action") == "started"
         logger.warning("[engine-swap] lost engine %s mid-call; starting it again", engine.get("id"))
         result = await ensure_ready(url)
         if result.get("action") in ("started", "waited"):
@@ -354,7 +367,17 @@ async def ensure_ready(url: str, *, timeout_s: Optional[float] = None) -> Dict[s
     try:
         engine = engine_for_url(url)
         if engine is None:
-            return {"action": "none"}
+            # Not a managed llama.cpp engine; the local Ollama server is
+            # started the same way when its port is closed.
+            from src import ollama_autostart
+            result = await ollama_autostart.ensure(url)
+            if result.get("action") == "started":
+                try:
+                    from src.llm_core import _clear_host_dead
+                    _clear_host_dead(url)
+                except Exception:  # noqa: BLE001
+                    pass
+            return result
         cfg = _settings()
         if not cfg["autostart"]:
             return {"action": "none", "engine_id": engine["id"]}

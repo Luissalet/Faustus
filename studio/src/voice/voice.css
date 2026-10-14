@@ -38,14 +38,14 @@
 .fs-voice__latency { font-variant-numeric: tabular-nums; }
 /* Subtitle of what is being spoken: the word being said is lit as it is said. */
 .fs-voice__subtitle { margin: 10px 0 4px; min-block-size: 3em; font-size: 15px; line-height: 1.5; color: var(--fs-text-2); overflow-wrap: anywhere; }
-.fs-voice__word { padding: 0 1px; border-radius: 4px; transition: background-color 90ms linear, color 90ms linear; }
+.fs-voice__word { padding: 0 1px; border-radius: 4px; transition: background-color var(--fs-duration-fast) linear, color var(--fs-duration-fast) linear; }
 .fs-voice__word[data-state="done"] { color: var(--fs-text-1); }
 .fs-voice__word[data-state="now"] { color: var(--fs-on-brand); background: var(--fs-brand); }
 @media (prefers-reduced-motion: reduce) { .fs-voice__word { transition: none; } }
 /* The breakdown opens on hover or keyboard focus, not only as a mouse-only title. */
 .fs-voice__timeline-wrap { position: relative; }
 .fs-voice__timeline:focus-visible { outline: 2px solid var(--fs-accent, currentColor); outline-offset: 2px; border-radius: 4px; }
-.fs-voice__timeline-detail { display: none; margin: 4px 0 0; padding: 8px 10px; font: inherit; font-size: 12px; text-align: left; white-space: pre-line; border: 1px solid var(--fs-border, rgba(127,127,127,.4)); border-radius: 6px; background: var(--fs-surface, Canvas); color: inherit; }
+.fs-voice__timeline-detail { display: none; margin: 4px 0 0; padding: 8px 10px; font: inherit; font-size: 12px; text-align: left; white-space: pre-line; border: 1px solid var(--fs-border); border-radius: 6px; background: var(--fs-surface-2); color: inherit; }
 .fs-voice__timeline:hover + .fs-voice__timeline-detail,
 .fs-voice__timeline:focus + .fs-voice__timeline-detail,
 .fs-voice__timeline-detail:hover { display: block; }

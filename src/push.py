@@ -658,6 +658,15 @@ def _push_sink(event: Dict[str, Any]) -> None:
         pass
 
     owner = (event.get("owner") or "").strip()
+    try:
+        from src.owner_identity import DEFAULT_LOCAL_OWNER, single_user_mode
+        if single_user_mode():
+            # Without login every event belongs to the one person at the
+            # desktop, whatever bucket the emitter stamped (admin, local, none);
+            # the push routes register their devices under the local owner.
+            owner = DEFAULT_LOCAL_OWNER
+    except Exception:
+        pass
     if not owner:
         return  # nothing to target — no ownerless push fan-out
     if not list_subscriptions(owner):

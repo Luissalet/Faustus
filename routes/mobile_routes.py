@@ -86,6 +86,9 @@ def _mobile_owner(request: Request) -> str:
     require_admin(request)
     user = effective_user(request)
     if not user:
+        from src.owner_identity import DEFAULT_LOCAL_OWNER, single_user_mode
+        if single_user_mode():
+            return DEFAULT_LOCAL_OWNER
         raise HTTPException(403, "Admin only")
     return user
 

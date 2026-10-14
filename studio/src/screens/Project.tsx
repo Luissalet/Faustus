@@ -301,7 +301,11 @@ function ProjectSources({ project, links, statuses, say, reload }: SourcesProps)
     if (!draft) return;
     try {
       const pick = await pickNative(draft.kind === 'folder' ? 'folder' : 'file', project.workspace ?? '');
-      if (pick.status === 'ok' && pick.path) setDraft({ ...draft, locator: pick.path });
+      // Functional update: the label may have been typed while the dialog was open.
+      if (pick.status === 'ok' && pick.path) {
+        const chosen = pick.path;
+        setDraft((current) => (current ? { ...current, locator: chosen } : current));
+      }
     } catch (e) {
       say((e as Error).message);
     }
@@ -950,7 +954,27 @@ export function ProjectScreen() {
       <header className="fs-screen__head">
         <div className="fs-pj__title">
           <h1 className="fs-screen__title">{project.name}</h1>
-          <p className="fs-screen__sub">{project.workspace ?? project.folder}</p>
+          {project.workspace ? (
+            <p className="fs-screen__sub">{project.workspace}</p>
+          ) : (
+            <p className="fs-screen__sub fs-pj__no-folder" data-testid="project-no-folder">
+              {t('No working folder: the agent will get one under the projects folder the first time it works here.')}{' '}
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={FolderOpen}
+                label={t('Choose folder…')}
+                loading={busy === 'workspace'}
+                onClick={() => {
+                  void pickNative('folder', '').then((pick) => {
+                    if (pick.status === 'ok' && pick.path) void patch('workspace', { workspace: pick.path }, t('Working folder set'));
+                    else if (pick.status === 'unavailable') say(t('No system dialog here; type the path.'));
+                  }).catch((e: Error) => say(e.message));
+                }}
+                testId="project-choose-folder"
+              />
+            </p>
+          )}
         </div>
         <div className="fs-pj__head-actions">
           <Button variant="ghost" size="sm" icon={project.pinned ? PinOff : Pin} label={project.pinned ? t('Unpin') : t('Pin')} loading={busy === 'pin'} onClick={() => void patch('pin', { pinned: !project.pinned }, project.pinned ? t('Unpinned') : t('Pinned'))} testId="project-pin" />

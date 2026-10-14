@@ -187,8 +187,78 @@ def _find_endpoint(router: APIRouter | None, method: str, path: str):
         return None
     for route in getattr(router, "routes", []):
         if getattr(route, "path", "") == path and method in getattr(route, "methods", set()):
-            return route.endpoint
+            return _with_param_defaults(route.endpoint)
     return None
+
+
+def _iter_app_routes(routes, prefix: str = ""):
+    """Yield ``(full_path, route)`` for every leaf route under ``routes``.
+
+    Since FastAPI 0.14x ``app.include_router`` no longer copies routes flat
+    into ``app.routes``: each include is one ``_IncludedRouter`` holding the
+    original router, so a plain ``for route in app.routes`` never saw
+    ``/api/model/cached`` or ``/api/model/serve`` (the codex cookbook routes
+    answered 503 "endpoint unavailable" forever).
+    """
+    for route in routes or ():
+        inner = getattr(route, "original_router", None)
+        if inner is not None:
+            ctx = getattr(route, "include_context", None)
+            yield from _iter_app_routes(getattr(inner, "routes", ()), prefix + (getattr(ctx, "prefix", "") or ""))
+            continue
+        path = getattr(route, "path", None)
+        if path is not None:
+            yield prefix + path, route
+
+
+def _find_app_endpoint(app, method: str, path: str):
+    for full_path, route in _iter_app_routes(getattr(app, "routes", ())):
+        if full_path == path and method in (getattr(route, "methods", None) or set()):
+            return _with_param_defaults(route.endpoint)
+    return None
+
+
+def _with_param_defaults(endpoint):
+    """Wrap a FastAPI endpoint so a direct call gets real defaults.
+
+    Called as a plain coroutine, an omitted ``x: str = Query(None)`` arrives
+    as the ``Query`` object itself, not ``None`` — ``/api/codex/emails``
+    answered 500 on exactly that. Every omitted Query/Header/Cookie/Body/Form
+    parameter is filled with its declared default (``Depends`` ones are left
+    to the caller, which always passes ``owner``).
+    """
+    import functools
+    import inspect
+
+    from fastapi import params as fa_params
+
+    try:
+        sig = inspect.signature(endpoint)
+    except (TypeError, ValueError):
+        return endpoint
+    fills = {}
+    for name, param in sig.parameters.items():
+        default = param.default
+        if isinstance(default, fa_params.Param) or isinstance(default, fa_params.Body):
+            value = getattr(default, "default", None)
+            if value is ... or type(value).__name__ == "PydanticUndefinedType":
+                continue
+            fills[name] = value
+    if not fills:
+        return endpoint
+
+    @functools.wraps(endpoint)
+    async def _call(*args, **kwargs):
+        bound = sig.bind_partial(*args, **kwargs).arguments
+        for name, value in fills.items():
+            if name not in bound:
+                kwargs[name] = value
+        result = endpoint(*args, **kwargs)
+        if inspect.isawaitable(result):
+            result = await result
+        return result
+
+    return _call
 
 
 def _clamp_pagination(offset: Any, limit: Any, *, default_limit: int = 50, max_limit: int = 50) -> tuple[int, int]:
@@ -334,7 +404,13 @@ def setup_codex_routes(
             from_addr=from_addr,
             account_id=account_id,
             has_attachments=has_attachments,
+            cached_only=0,
             cache_bust=None,
+            # Called as a plain function, so every Query() default must be
+            # given explicitly or it arrives as the Query object (500 before).
+            since=None,
+            until=None,
+            unread_only=False,
             owner=owner,
         )
 
@@ -695,15 +771,7 @@ def setup_codex_routes(
             req = ServeRequest(**norm)
         except Exception as exc:
             raise HTTPException(400, f"Invalid serve payload: {exc}")
-        serve_endpoint = _find_endpoint(None, "POST", "/api/model/serve")
-        # Fall back to importing from the cookbook router registered on app.
-        if serve_endpoint is None:
-            from fastapi import FastAPI
-            app: FastAPI = request.app
-            for route in app.routes:
-                if getattr(route, "path", None) == "/api/model/serve" and "POST" in getattr(route, "methods", set()):
-                    serve_endpoint = route.endpoint
-                    break
+        serve_endpoint = _find_app_endpoint(request.app, "POST", "/api/model/serve")
         if serve_endpoint is None:
             raise HTTPException(503, "model serve endpoint unavailable")
         return await serve_endpoint(request, req)
@@ -768,14 +836,7 @@ def setup_codex_routes(
             params["ssh_port"] = str(srv["port"])
         if srv.get("platform"):
             params["platform"] = srv["platform"]
-        cached_endpoint = _find_endpoint(None, "GET", "/api/model/cached")
-        if cached_endpoint is None:
-            from fastapi import FastAPI
-            app: FastAPI = request.app
-            for route in app.routes:
-                if getattr(route, "path", None) == "/api/model/cached" and "GET" in getattr(route, "methods", set()):
-                    cached_endpoint = route.endpoint
-                    break
+        cached_endpoint = _find_app_endpoint(request.app, "GET", "/api/model/cached")
         if cached_endpoint is None:
             raise HTTPException(503, "model cached endpoint unavailable")
         # The endpoint reads host/model_dir/ssh_port/platform as kwargs.
@@ -846,14 +907,7 @@ def setup_codex_routes(
             req = ServeRequest(**body)
         except Exception as exc:
             raise HTTPException(400, f"Preset payload invalid: {exc}")
-        serve_endpoint = _find_endpoint(None, "POST", "/api/model/serve")
-        if serve_endpoint is None:
-            from fastapi import FastAPI
-            app: FastAPI = request.app
-            for route in app.routes:
-                if getattr(route, "path", None) == "/api/model/serve" and "POST" in getattr(route, "methods", set()):
-                    serve_endpoint = route.endpoint
-                    break
+        serve_endpoint = _find_app_endpoint(request.app, "POST", "/api/model/serve")
         if serve_endpoint is None:
             raise HTTPException(503, "model serve endpoint unavailable")
         return await serve_endpoint(request, req)

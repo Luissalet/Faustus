@@ -121,11 +121,15 @@ def test_restore_puts_the_block_back_in_the_legacy_slot():
     assert not none and unchanged == messages
 
 
-def _run_turn(monkeypatch, *, deliveries, rounds=(("Hecho.", "stop"),),
+def _run_turn(monkeypatch, *, deliveries,
+              rounds=(("server.py arranca el servidor web y registra las rutas.", "stop"),),
               stop_after_packet=False):
     """Run one agent turn with the live engine on and `deliver_round` scripted.
 
-    Returns (messages sent per provider call, events)."""
+    Returns (messages sent per provider call, events). The default reply is a
+    real answer, not a bare «Hecho.»: since 14-10 a bare acknowledgement with
+    no tool call is sent back to the model for a full answer, which would add
+    rounds these delivery scripts do not expect."""
     from tests.test_agent_harness_loop import _patch_common
 
     _patch_common(monkeypatch)

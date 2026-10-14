@@ -282,6 +282,12 @@ def _decorate(profile: Dict[str, Any]) -> Dict[str, Any]:
     out.update(fields)
     out["mtp_supported"] = mtp_supported_for(fields.get("model_path") or "")
     out["mmproj_available"] = find_mmproj(fields.get("model_path") or "")
+    model_path = str(fields.get("model_path") or "")
+    # A model moved or deleted after the engine was saved: say so on the
+    # engine itself instead of a llama-server that dies on start.
+    out["model_missing"] = bool(model_path) and os.path.isabs(model_path) and not os.path.isfile(model_path)
+    mmproj = str(fields.get("mmproj_path") or "")
+    out["mmproj_missing"] = bool(mmproj) and os.path.isabs(mmproj) and not os.path.isfile(mmproj)
     return out
 
 
@@ -526,6 +532,13 @@ async def start_engine(engine_id: str, *, request_client_host: Optional[str] = N
     port = engine.get("port")
     if not port:
         return {"started": False, "error": "engine has no port configured"}
+    if engine.get("model_missing"):
+        return {"started": False, "code": "model_missing",
+                "error": f"model file not found: {engine.get('model_path')} (moved or deleted?); "
+                         "point the engine at the file in Settings › Local models"}
+    if engine.get("mmproj_missing"):
+        return {"started": False, "code": "mmproj_missing",
+                "error": f"vision projector not found: {engine.get('mmproj_path')} (moved or deleted?)"}
 
     from src import process_center
     held = process_center.pid_listening_on(int(port))
