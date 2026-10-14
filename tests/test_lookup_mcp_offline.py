@@ -94,3 +94,38 @@ def test_category_filter_does_not_resolve_an_unconnected_server(offline):
         query='interpolate video asset fps', category='mcp:missing', k=8,
     )
     assert payload['promote'] == []
+
+
+def test_a_panel_turn_finds_its_own_app_tools_first(monkeypatch):
+    rename_deck = 'mcp__ac3e1027__deck_update'
+    schemas = [
+        {'type': 'function', 'function': {'name': 'mcp__writer__project_rename',
+         'description': '[MCP:Writer] Rename a project: change its title.', 'parameters': {'type': 'object', 'properties': {}}}},
+        {'type': 'function', 'function': {'name': 'mcp__kafka__document_rename',
+         'description': '[MCP:Kafka] Rename a document title.', 'parameters': {'type': 'object', 'properties': {}}}},
+        {'type': 'function', 'function': {'name': 'mcp__links__link_rename',
+         'description': '[MCP:Links] Rename a saved link title.', 'parameters': {'type': 'object', 'properties': {}}}},
+        {'type': 'function', 'function': {'name': rename_deck,
+         'description': '[MCP:Cicero] Update deck settings: theme, language, metadata.',
+         'parameters': {'type': 'object', 'properties': {'deck_id': {'type': 'string'}, 'title': {'type': 'string'}}}}},
+        {'type': 'function', 'function': {'name': 'mcp__ac3e1027__slide_add',
+         'description': '[MCP:Cicero] Add a slide to a deck.', 'parameters': {'type': 'object', 'properties': {}}}},
+    ]
+    class Manager:
+        def get_all_openai_schemas(self, ctx): return schemas
+    monkeypatch.setattr('src.tool_utils.get_mcp_manager', lambda: Manager())
+    monkeypatch.setattr('src.tool_index.get_tool_index', lambda: None)
+    monkeypatch.setattr('src.tool_security.owner_is_admin_or_single_user', lambda owner: True)
+    query = '{"query":"rename title of the presentation deck","k":3}'
+    plain = tool_serve.execute_lookup(query, {'disabled_tools': ()})[1]['promote']
+    from src import hoard_copilot_turn as turn
+    token = turn._ORIGIN_SERVER.set('ac3e1027')
+    try:
+        panel = tool_serve.execute_lookup(query, {'disabled_tools': ()})[1]['promote']
+        disabled = tool_serve.execute_lookup(query, {'disabled_tools': (rename_deck,)})[1]['promote']
+    finally:
+        turn._ORIGIN_SERVER.reset(token)
+    assert panel[0] == rename_deck
+    assert rename_deck not in disabled
+    assert rename_deck not in plain  # what a lookup from the Cicero panel got before
+    assert len(panel) <= 4

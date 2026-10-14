@@ -4305,7 +4305,9 @@ def setup_chat_routes(
                             # The origin app's read tools are offered up front, so "what do I
                             # have open" is answered with the app and not with desktop tools.
                             from src.hoard_copilot_turn import origin_app_tools as _origin_tools
+                            from src.hoard_copilot_turn import remember_origin_server as _remember_origin
                             _forced_tools |= _origin_tools(get_mcp_manager(), _hoard_context)
+                            _remember_origin(get_mcp_manager(), _hoard_context)
                         if _search_enabled:
                             _forced_tools = set(_forced_tools or set()) | set(WEB_TOOL_NAMES)
                             if _explicit_browser_intent:

@@ -17,6 +17,7 @@ Both are pure helpers: they never call a tool and never fail a turn.
 
 from __future__ import annotations
 
+import contextvars
 import json
 import re
 import time
@@ -81,6 +82,28 @@ def find_origin_server(servers: Mapping[str, Any], context: Optional[Mapping[str
                 return same[0]
         return None
     return None
+
+
+#: The MCP server of the Hoard a panel turn comes from, for the rest of that turn
+#: (``lookup_tools`` lists its matches first). Task-local like the turn itself.
+_ORIGIN_SERVER: contextvars.ContextVar = contextvars.ContextVar("hoard_origin_server", default="")
+
+
+def current_origin_server() -> str:
+    return _ORIGIN_SERVER.get() or ""
+
+
+def remember_origin_server(manager: Any, context: Optional[Mapping[str, Any]]) -> str:
+    """Resolve and keep the origin server for this turn; '' when unknown."""
+    try:
+        connections = getattr(manager, "_connections", {}) or {}
+        tools = getattr(manager, "_tools", {}) or {}
+        servers = {sid: (connections.get(sid) or {}).get("name", sid) for sid in tools}
+        server = find_origin_server(servers, context, server_data_spaces) or ""
+    except Exception:  # noqa: BLE001
+        server = ""
+    _ORIGIN_SERVER.set(server)
+    return server
 
 
 #: server_id -> (data_space_id or "", checked_at)
@@ -259,4 +282,5 @@ def origin_hint_message(context: Optional[Mapping[str, Any]], manager: Any = Non
 
 
 __all__ = ["ORIGIN_TOOL_LIMIT", "origin_of", "find_origin_server", "pick_read_tools", "server_data_spaces",
-           "origin_app_tools", "origin_server_note", "origin_hint_message"]
+           "origin_app_tools", "origin_server_note", "origin_hint_message", "current_origin_server",
+           "remember_origin_server"]

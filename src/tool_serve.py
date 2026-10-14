@@ -29,6 +29,8 @@ logger = logging.getLogger(__name__)
 LOOKUP_TOOL = "lookup_tools"
 _MAX_RETURN = 12
 _DEFAULT_K = 8
+#: How many of the working app's own matches lead a lookup from its panel.
+_ORIGIN_FIRST = 4
 _ONE_LINER_LIMIT = 160
 _CATALOG_LIMIT = 80
 _ELLIPSIS = "…"
@@ -624,8 +626,13 @@ def serve(
     admin: bool = True,
     tool_policy: Any = None,
     category: str = "",
+    prefer_server: str = "",
 ) -> Dict[str, Any]:
-    """Search/index result the model can act on. Never executes the listed tools."""
+    """Search/index result the model can act on. Never executes the listed tools.
+
+    ``prefer_server``: the MCP server of the app the user is working in (a Hoard
+    panel turn). Its best matches are listed first, so "rename this" finds that
+    app's tool before same-named tools of other apps or built-ins."""
     disabled = tuple(disabled or ())
     mode = (detail or "").strip().lower()
     if mode not in (_DETAIL_SCHEMA, _DETAIL_CATALOG):
@@ -664,6 +671,17 @@ def serve(
         offline_mcp_limit=(max(1, min(int(k or _DEFAULT_K), _MAX_RETURN))
                            if wanted_category == "mcp" or wanted_category.startswith("mcp:") else None),
     )
+    preferred = str(prefer_server or "").strip()
+    if preferred and query and not wanted_category and not names:
+        prefix = f"mcp__{preferred}__"
+        own = search_catalog(
+            query, [], k=max(1, min(int(k or _DEFAULT_K), _ORIGIN_FIRST)), disabled=disabled, admin=admin,
+            candidate_filter=lambda name: name.startswith(prefix) and is_permitted(
+                name, disabled_tools=disabled, tool_policy=tool_policy, admin=admin),
+        )
+        if own:
+            found = own + [name for name in found if name not in own]
+            found = found[:max(int(k or _DEFAULT_K), len(own))]
     tools = [catalog_entry(name, detail=mode) for name in found]
     payload: Dict[str, Any] = {
         "tools": tools,
@@ -748,6 +766,12 @@ def execute_lookup(content: str, ctx: Optional[Mapping[str, Any]] = None) -> Tup
             "promote": payload.get("promote") or [],
         }
 
+    prefer_server = ""
+    try:
+        from src.hoard_copilot_turn import current_origin_server
+        prefer_server = current_origin_server()
+    except Exception:
+        prefer_server = ""
     payload = serve(
         query=query,
         names=list(names),
@@ -757,6 +781,7 @@ def execute_lookup(content: str, ctx: Optional[Mapping[str, Any]] = None) -> Tup
         admin=admin,
         tool_policy=ctx.get("tool_policy"),
         category=category,
+        prefer_server=prefer_server,
     )
     listed = ", ".join(payload.get("promote") or []) or "none"
     desc = f"{LOOKUP_TOOL}: {listed}"
