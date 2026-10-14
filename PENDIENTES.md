@@ -91,13 +91,13 @@ Acciones físicas o de cuentas que sólo puede hacer Luis (micrófono, móvil, W
 
 ## B. Código por hacer
 
+Cerrado el 15-10: «Di solo: hola A» se leía como italiano (701546e6), `desktop_focus_window` con título ambiguo prefiere la ventana de la app frente a pestañas del navegador o Faustus (509ebdd1), y las dos pruebas rojas (guías públicas movidas a `website/`, b7f3a78c; aviso en vez de rechazo en la reanudación, f8255848).
+
 Nada abierto a 09-10. Cerrado el 09-10: la prueba `test_loop_call_that_cannot_get_its_claims_is_refused_not_started` (mantenía la reserva 3 s fijos y en Windows el turno tardaba más en llegar a la llamada; ahora la suelta al acabar el bucle, `f0f16648`), `extract_to_schema` sin ejemplos en el índice de herramientas (`604f046d`), el endpoint de pruebas `capture-8090` del 7000 sin servidor detrás (desactivado, no borrado) y la recarga del Hub para la revisión ligada a entregas (el Hub corre desde las 21:14 del 08-10 con `2886aef` dentro).
 
-- 12-10-2026: GLM-5.3 en las Sparks, modo agente, chat nuevo: a «Di solo: hola A» respondió en italiano («Ciao! Come posso aiutarti oggi?»). Revisar la detección de idioma / el prompt de sistema con GLM.
 
 - 12-10-2026: con GLM en las Sparks, tras una captura de pantalla hubo 4 rondas seguidas con salida vacía (vLLM devolvió 0 tokens con la imagen en el prompt); al reproducir la misma petición fuera funcionó. Intermitente: vigilar si se repite.
-- 12-10-2026: al final de una respuesta en Studio aparece repetido el último párrafo en crudo (markdown sin renderizar, empezando a mitad de palabra: «cho. El clic…»).
-- 12-10-2026: desktop_focus_window con un título ambiguo («Quinn») falla y el modelo tiene que reintentar con el título exacto; podría elegir solo la ventana que no es de Faustus/navegador.
+- 12-10-2026: al final de una respuesta en Studio aparece repetido el último párrafo en crudo (markdown sin renderizar, empezando a mitad de palabra: «cho. El clic…»). 15-10: no está en los datos guardados (ningún mensaje de asistente de app.db repite su último párrafo), así que es solo de pintado; falta una reproducción en vivo para corregirlo.
 
 - 13-10-2026: en la prueba de Blender, un clic por coordenadas cayó en la línea de tiempo y movió el fotograma de 1 a 192; las copias preparadas se generaron en ese fotograma. Revisar con Luis si hay que deshacer.
 - 13-10-2026: GLM con reasoning_effort max piensa 60-80 s en algunas rondas de escritorio; valorar un esfuerzo menor para rondas de control de pantalla.
