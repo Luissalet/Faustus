@@ -76,4 +76,9 @@ def test_resume_accepts_completed_effect_only_from_the_pending_runtime_snapshot(
         max_rounds=3,relevant_tools={'ask_user'},harness_options={'no_memory':True,'no_skills':True,'repo_map':False,'review_model':'off'})))
     summary=[e['data'] for e in events if e.get('type')=='harness_summary'][-1]
     assert summary['effects'] == (1 if server_snapshot else 0)
-    assert (summary['rejections']==0) is server_snapshot
+    # Final reports are kept and flagged, not rewritten (advisory evidence diagnostics): without the server
+    # snapshot the alleged write is an unsupported claim and the turn is not verified.
+    assert summary['rejections'] == 0
+    assert (summary['verification']['outcome'] == 'verified') is server_snapshot
+    advisory = [e for e in events if e.get('type') == 'harness_check' and e.get('advisory')]
+    assert bool(advisory) is (not server_snapshot)
