@@ -11909,3 +11909,18 @@ Estado de la matriz A01–A38: los 12 parciales y el «sin prueba» quedan verif
 A23, A27, A30, A33, A36) y A32 con dos excepciones de dominio documentadas (cuaderno con fuentes de Hypatia y reflexión
 de Dorian: son el producto, no un copiloto paralelo). Evidencia en
 `research-inbox/copilot343-claude-20261014/` y documento `docs/faustus-hoards-copilot/09-estado-aceptacion-20261013.md`.
+
+## Decisiones auxiliares en las Sparks (#424): evaluadas, no adoptadas — 15-10-2026
+
+Corpus congelado de 88 casos ES/EN (elección de herramienta con distractores reales, qué hacer tras un fallo, nivel de
+esfuerzo; variantes con opciones invertidas y contexto largo, 216 preguntas). THX-01 y Laya multilingual (receta `decider`
+en Spark2, contenedor aparte junto a GLM, `/v1/systemone`) frente a la decisión tipada actual con GLM:
+
+- GLM 84,7 % (91,7 % repitiendo 16 timeouts pasajeros), THX-01 63,4 %, Laya 51,4 %. Latencia: 15 ms frente a ~1 s.
+- THX-01 está bien calibrado (con confianza ≥ 0,7 acierta el 100 %) pero solo se pronuncia en el 19 % de los casos; Laya
+  es sensible al orden de las opciones y comete 33 errores confiados.
+- Una cascada THX-01→GLM no empeora el acierto, pero el ahorro (~0,2 s en una de cada cinco decisiones, en puntos que están
+  apagados por defecto) no es medible en un turno real. Sin interruptor nuevo; el producto se mantiene.
+
+Queda como capacidad: recetas `coexist`/`kind` en Prometheus (0d61a8a) y en Faustus los servidores no-chat fuera de la
+lista de modelos (`sparks_aux_endpoints`, f4324cf1, 3c9b04ea). Evidencia: `research-inbox/decision-models-claude-20261015/`.
