@@ -380,7 +380,8 @@ def test_stream_llm_body_carries_the_floor_for_a_loopback_llama_server(monkeypat
     assert client.url.endswith("/v1/chat/completions")
     assert client.payload["repeat_penalty"] == 1.05
     assert client.payload["min_p"] == 0.05
-    assert client.payload["max_tokens"] == 8192
+    # The normal call defaults to max_tokens=0 (no application output cap).
+    assert "max_tokens" not in client.payload
 
 
 # ── thinking decision reaches a loopback llama-server via chat_template_kwargs ──

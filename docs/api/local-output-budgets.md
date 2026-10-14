@@ -1,0 +1,9 @@
+# Local output budgets
+
+Synchronous, asynchronous and streaming OpenAI-compatible requests preserve the caller's output budget. A positive `max_tokens` value remains in the request. A non-positive value means that Faustus imposes no output-token cap: its payload builders omit the output field, and automatic local sampler defaults must not replace that omission with 8,192 or 2,048 tokens.
+
+This preserves the requested reasoning mode and budget, context, tools and model. It does not disable thinking, change a requested positive ceiling or alter Stop and transport cancellation. A configured positive generation override already present in the payload remains present. Provider limits and the model's physical context window still apply; field omission does not promise an unlimited provider.
+
+The optional `requested_max_tokens` argument to `_apply_local_generation_stability` distinguishes a caller's explicit non-positive budget from an older direct helper call with no such information. Direct helper calls retain configured local defaults. A non-positive `local_openai_max_tokens_default` no longer becomes an implicit 8,192-token fallback.
+
+Regression evidence: three wire-level failures on the base became four passes, including a retained positive 512-token ceiling and unchanged 16,384-token reasoning budget. In a private scripted endpoint, the same native API/MCP turn produced `Done.` on the base after three length exits and a complete fixture response on the candidate; the browser renders the persisted answer and nine fixture sources. Those tests verify transport and product flow. They do not establish factual quality or latency improvements of a real model. The real global Sparks case is required before adopting the candidate as the demonstrated correction for task507; its prior negative prototype is preserved.

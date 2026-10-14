@@ -2637,11 +2637,12 @@ def _neutralize_rejected_automatic_min_p(payload, url: str, status: int, error,
     return True
 
 
-def _apply_local_generation_stability(payload: Dict, url: str, model: str) -> bool:
+def _apply_local_generation_stability(payload: Dict, url: str, model: str, *,
+                                      requested_max_tokens: Optional[int] = None) -> bool:
     """Sampling/output-length safety net for a local OpenAI-compatible
     server's JSON body, applied AFTER `_apply_gen_overrides_openai` (an
-    explicit saved/per-turn value always wins — everything here is
-    `setdefault`).
+    explicit saved/per-turn value always wins). An explicit non-positive
+    requested output budget also wins: omitted output fields stay omitted.
 
     Two local families are covered, each gated on its own detector so one
     does not leak the other's defaults:
@@ -2665,6 +2666,10 @@ def _apply_local_generation_stability(payload: Dict, url: str, model: str) -> bo
         `local_repeat_penalty_default`/`local_min_p_default` floor settings
         apply directly here.
     """
+    # The builders omit the output field for an explicit zero/unlimited
+    # request. That omission must not become an automatic 8k/2k cap here:
+    # deep reasoning alone can already need more than those defaults.
+    unlimited = requested_max_tokens is not None and requested_max_tokens <= 0
     automatic_min_p = False
     if _is_local_minimax_mlx_request(url, model):
         if "temperature" in payload:
@@ -2687,7 +2692,7 @@ def _apply_local_generation_stability(payload: Dict, url: str, model: str) -> bo
         payload.setdefault("stop", ["<|im_end|>", "<|endoftext|>", "</s>"])
         # A max_tokens of 0 means "server default/unbounded" for many local
         # endpoints. Keep simple chats from running forever when the model loops.
-        if not payload.get("max_tokens") and not payload.get("max_completion_tokens"):
+        if not unlimited and not payload.get("max_tokens") and not payload.get("max_completion_tokens"):
             payload["max_tokens"] = 2048
         return False
 
@@ -2720,12 +2725,13 @@ def _apply_local_generation_stability(payload: Dict, url: str, model: str) -> bo
             _top_k = _local_sampler_default_optional("local_top_k_default")
             if _top_k is not None:
                 payload["top_k"] = int(_top_k)
-        if not payload.get("max_tokens") and not payload.get("max_completion_tokens"):
+        if not unlimited and not payload.get("max_tokens") and not payload.get("max_completion_tokens"):
             try:
                 cap = int(_local_sampler_default("local_openai_max_tokens_default", 8192))
             except (TypeError, ValueError):
                 cap = 8192
-            payload["max_tokens"] = cap if cap > 0 else 8192
+            if cap > 0:
+                payload["max_tokens"] = cap
     return automatic_min_p
 
 
@@ -4218,7 +4224,7 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
         if max_tokens and max_tokens > 0:
             tok_key = "max_completion_tokens" if _uses_max_completion_tokens(model) else "max_tokens"
             payload[tok_key] = max_tokens
-        _automatic_min_p = _apply_local_generation_stability(payload, target_url, model)
+        _automatic_min_p = _apply_local_generation_stability(payload, target_url, model, requested_max_tokens=max_tokens)
         # `url`, not `target_url`: the gate in `_resolve_response_schema` was
         # decided on the endpoint as configured, and the backend registry is
         # keyed the same way. Asking about the normalised /chat/completions
@@ -5076,7 +5082,7 @@ async def _llm_call_async_impl(
             _widen_output_for_reasoning(payload, _asked, key=("max_completion_tokens"
                                         if "max_completion_tokens" in payload else "max_tokens",))
         _apply_local_cache_affinity(payload, url, session_id)
-        _automatic_min_p = _apply_local_generation_stability(payload, target_url, model)
+        _automatic_min_p = _apply_local_generation_stability(payload, target_url, model, requested_max_tokens=max_tokens)
         _apply_openai_response_format(payload, url, schema, model=model)  # `url`: see llm_call
         # No `tools` here: this path is the tool-less completion helper.
         _suppress_thinking_for_small_talk(payload, model, messages_copy)
@@ -6557,7 +6563,7 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
         _apply_local_cache_affinity(payload, url, session_id)
         if session_id:
             _apply_llamacpp_slot(payload, url, session_id)
-        _automatic_min_p = _apply_local_generation_stability(payload, target_url, model)
+        _automatic_min_p = _apply_local_generation_stability(payload, target_url, model, requested_max_tokens=max_tokens)
         _scrub_openai_chat_tool_reasoning(payload, target_url, model)
         # The streaming path is the one the user is watching, and agent mode
         # is the default here, so this is where a greeting arrives with the
