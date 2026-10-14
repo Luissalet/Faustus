@@ -488,6 +488,18 @@ EXAMPLES: Dict[str, List[str]] = {
         "find where 'connection refused' shows up in that offloaded result",
         "encuentra en qué parte del resultado aparece esa palabra",
     ],
+    "hoard_project_search": [
+        "recupera la presentación que hicimos el otro día en Cicero",
+        "find the novel project we started last week",
+        "busca aquel proyecto de Tantalus del martes",
+        "which Prospero project had the podcast intro",
+    ],
+    "hoard_project_recall": [
+        "abre ese proyecto de la app con su historial y su carpeta de código",
+        "recall the linked Hoard project before editing it",
+        "qué conversaciones y memoria tiene este proyecto de Writer",
+        "continue the existing workspace of that app project",
+    ],
     "lookup_tools": [
         "qué herramienta uso para enviar un correo",
         "load the schema for git_commit",
