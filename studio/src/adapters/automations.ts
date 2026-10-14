@@ -164,6 +164,20 @@ const post = (path: string, body?: unknown): Promise<Response> =>
 
 const enc = (id: string) => encodeURIComponent(id);
 
+export interface EventJob {
+  id: string; task_id: string; session_id: string | null; execution: string;
+  delivery: string; delivery_error: string | null; result: string | null; model: string | null;
+}
+export interface AutomationEvent {
+  id: string; source: string; event_type: string; event_key: string; jobs: EventJob[];
+}
+export function automationEvents(id: string): Promise<AutomationEvent[]> {
+  return getJson<{ events: AutomationEvent[] }>(`/api/tasks/events?task_id=${enc(id)}`).then((r) => r.events);
+}
+export async function retryEventDelivery(id: string): Promise<void> {
+  await ok(await post(`/api/tasks/events/${enc(id)}/retry-delivery`), 'events/retry-delivery');
+}
+
 /** The task routes report the connector selection as a nested
  *  `connectors: {connector_ids, effective, source}` block (F2); the
  *  screens read the flat `connector_ids`, so lift it here once. */

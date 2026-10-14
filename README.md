@@ -805,3 +805,9 @@ changes, prompts and final answers. Explicit corrections can produce proposed
 checks with evidence. The native API and seven MCP tools share canonical stores;
 host runtime fields that cannot be transferred are reported. See
 [instruction portability](docs/INSTRUCTION-PORTABILITY.md) for formats and limits.
+
+External document, IMAP and webhook/PubSub notifications can queue native tasks
+with stable source identities. Automations shows incoming work, retained results
+and separate family delivery; retrying delivery does not repeat execution.
+The Execution MCP exposes three event operations alongside its process tools.
+See [external events](docs/api/external-events.md) for envelopes and semantics.

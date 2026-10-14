@@ -9839,4 +9839,12 @@ export const es: Record<string, string> = {
   "…or upload a file": "…o sube un archivo",
   "≥ {lower} GB (incomplete: {reason})": "≥ {lower} GB (incompleto: {reason})",
   "⟨insert⟩": "⟨insertar⟩",
+  "Incoming events": "Entradas recibidas",
+  "No incoming events yet.": "Todavía no se han recibido entradas.",
+  "Retry delivery": "Reintentar entrega",
+  "Execution": "Ejecución",
+  "Delivery": "Entrega",
+  "Succeeded": "Completado",
+  "Sending": "Enviando",
+  "No delivery": "Sin entrega",
 };

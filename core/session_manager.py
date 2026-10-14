@@ -862,6 +862,14 @@ class SessionManager:
         if session_id in self.sessions:
             return self.sessions[session_id]
 
+        # The scheduler may already have committed this session before asking
+        # the manager to cache it. Rehydrate instead of inserting its ID again.
+        try:
+            self._load_session_from_db(session_id)
+        except KeyError:
+            pass
+        else:
+            return self.sessions[session_id]
         session = self.create_session(session_id, name, endpoint_url, model, owner=owner)
         if task is not None:
             task.session_id = session_id

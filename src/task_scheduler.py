@@ -2141,6 +2141,8 @@ class TaskScheduler:
         while self._running:
             try:
                 await self._check_due_tasks()
+                from src.external_events import deliver_pending
+                await deliver_pending()
             except Exception:
                 logger.exception("Error in task scheduler loop")
             # Sleep until the next scheduled run, capped at 60s. A `* * * * *`
@@ -2479,11 +2481,24 @@ class TaskScheduler:
                     if not success:
                         run.error = result
                 elif task_type == "research":
+                    if task_id.startswith("event-"):
+                        from services.hoard_copilot import global_model
+                        selected = global_model(task.owner)
+                        if not selected["endpoint_url"] or not selected["model"]:
+                            raise RuntimeError("The configured global model is unavailable")
+                        task.endpoint_url, task.model = selected["endpoint_url"], selected["model"]
                     result = await self._execute_research_task(task, db)
                     run.status = "success"
                     run.result = result
                 else:
                     # LLM task — use agent loop for tool access
+                    if task_id.startswith("event-"):
+                        from services.hoard_copilot import global_model
+                        selected = global_model(task.owner)
+                        if not selected["endpoint_url"] or not selected["model"]:
+                            raise RuntimeError("The configured global model is unavailable")
+                        task.endpoint_url, task.model = selected["endpoint_url"], selected["model"]
+                        task._external_global_event = True
                     result = await self._execute_llm_task(task, db)
                     run.status = "success"
                     run.result = result
@@ -3309,13 +3324,16 @@ class TaskScheduler:
             if _dt_msg:
                 messages.append(_dt_msg)
             messages.append({"role": "user", "content": task.prompt})
-            result = await task_llm_call_async(
-                messages,
-                fallback_url=endpoint_url,
-                fallback_model=model,
-                owner=task.owner,
-                timeout=120,
-            )
+            if getattr(task, "_external_global_event", False):
+                from services.hoard_copilot import global_model
+                from src.llm_core import llm_call_async_with_fallback
+                primary = global_model(task.owner)
+                result = await llm_call_async_with_fallback(
+                    [(primary["endpoint_url"], primary["model"], primary["headers"])], messages, timeout=120)
+            else:
+                result = await task_llm_call_async(
+                    messages, fallback_url=endpoint_url, fallback_model=model,
+                    owner=task.owner, timeout=120)
 
         # Strip the model's chain-of-thought before saving/delivering. Task
         # output is LLM-only, so prose=True (which also removes untagged
@@ -3600,6 +3618,8 @@ class TaskScheduler:
                 owner=task.owner or None,
             )[1:]
         except Exception:
+            _task_fallbacks = []
+        if getattr(task, "_external_global_event", False):
             _task_fallbacks = []
         agen = stream_agent_loop(
             endpoint_url=endpoint_url,
@@ -4066,7 +4086,10 @@ class TaskScheduler:
                 for legacy in defs.get("legacy_names") or []:
                     name_to_action[legacy] = action
             possible_names = list(name_to_action.keys())
+            from core.database import ExternalEventJob
+            definition_only = ScheduledTask.id.notin_(db.query(ExternalEventJob.task_id))
             legacy_named = db.query(ScheduledTask).filter(
+                definition_only,
                 ScheduledTask.owner == owner,
                 ScheduledTask.name.in_(possible_names),
             ).all()
@@ -4109,6 +4132,7 @@ class TaskScheduler:
             }
             renamed = []
             builtin_tasks = db.query(ScheduledTask).filter(
+                definition_only,
                 ScheduledTask.owner == owner,
                 ScheduledTask.task_type == "action",
                 ScheduledTask.action.in_(list(HOUSEKEEPING_DEFAULTS.keys())),

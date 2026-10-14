@@ -1501,6 +1501,62 @@ def _scheduled_poll_once() -> dict:
     return {"sent": sent, "failed": failed}
 
 
+def _observe_incoming_event_mail():
+    """Header-only observation inside the existing central mail poller."""
+    import sqlite3
+    from core.database import SessionLocal, EmailAccount, ScheduledTask
+    from src.event_bus import fire_event, _resolve_event_owner
+    from routes.email_routes import _record_email_received_events
+    with SessionLocal() as db:
+        subscribed = {row[0] for row in db.query(ScheduledTask.owner).filter(ScheduledTask.status == "active",
+            ScheduledTask.trigger_type == "event", ScheduledTask.trigger_event == "email_received").distinct()}
+        primary = _resolve_event_owner(None)
+        accounts = [(a.id, a.owner or primary) for a in db.query(EmailAccount).filter(EmailAccount.enabled == True).all()
+                    if (a.owner or primary) in subscribed]
+    for account_id, owner in accounts:
+        owner_key = owner or ""
+        conn = None
+        state = sqlite3.connect(SCHEDULED_DB, timeout=30)
+        try:
+            state.execute("CREATE TABLE IF NOT EXISTS email_event_uid_cursor (owner TEXT, account_id TEXT, uidvalidity TEXT, last_uid INTEGER, PRIMARY KEY(owner, account_id))")
+            state.commit()
+            conn = _imap_connect(account_id, owner=owner)
+            conn.select("INBOX", readonly=True)
+            _, raw_validity = conn.response("UIDVALIDITY")
+            validity = (raw_validity[0] or b"").decode() if raw_validity else ""
+            saved = state.execute("SELECT uidvalidity,last_uid FROM email_event_uid_cursor WHERE owner=? AND account_id=?", (owner_key, account_id)).fetchone()
+            baseline = not saved or saved[0] != validity
+            last_uid = 0 if baseline else saved[1]
+            status, data = conn.uid("SEARCH", None, "ALL" if baseline else f"UID {last_uid + 1}:*")
+            if status != "OK":
+                continue
+            uids = sorted(int(u) for u in (data[0] or b"").split()) if data else []
+            if baseline:
+                last_uid = max(uids, default=0)
+            else:
+                for uid in (u for u in uids if u > last_uid):
+                    status, headers = conn.uid("FETCH", str(uid).encode(), "(BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)])")
+                    raw = next((part[1] for part in (headers or []) if isinstance(part, tuple) and isinstance(part[1], bytes)), None)
+                    if status != "OK" or raw is None:
+                        break  # Keep the cursor before the unobserved message.
+                    key = str(email_mod.message_from_bytes(raw).get("Message-ID") or uid).strip()
+                    fire_event("email_received", owner, event_id=account_id + ":" + key,
+                        payload={"account_id": account_id, "folder": "INBOX", "message_id": key}, source="imap")
+                    _record_email_received_events(owner, account_id, "INBOX", [{"message_id": key}])
+                    last_uid = uid
+            state.execute("INSERT INTO email_event_uid_cursor VALUES (?,?,?,?) ON CONFLICT(owner,account_id) DO UPDATE SET uidvalidity=excluded.uidvalidity,last_uid=excluded.last_uid", (owner_key, account_id, validity, last_uid))
+            state.commit()
+        except Exception:
+            logger.warning("Incoming mail event observation failed for account %s", account_id, exc_info=True)
+        finally:
+            state.close()
+            if conn is not None:
+                try:
+                    conn.logout()
+                except Exception:
+                    pass
+
+
 async def _scheduled_email_poller():
     """Background task that checks for due scheduled emails every 30
     seconds. Each tick delegates to `_scheduled_poll_once`, which is
@@ -1508,9 +1564,14 @@ async def _scheduled_email_poller():
     cron-driven deployments."""
     import asyncio
 
+    observation = None
     while True:
         try:
             await asyncio.sleep(30)
+            if observation is None or observation.done():
+                if observation and not observation.cancelled() and observation.exception():
+                    logger.warning("Incoming event observation failed: %s", observation.exception())
+                observation = asyncio.create_task(asyncio.to_thread(_observe_incoming_event_mail))
             await asyncio.to_thread(_scheduled_poll_once)
         except Exception as e:
             logger.error(f"Scheduled poller error: {e}")

@@ -1115,9 +1115,16 @@ FUNCTION_TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "action": {"type": "string", "enum": ["list", "create", "edit", "delete", "pause", "resume", "run", "history"],
+                    "action": {"type": "string", "enum": ["list", "create", "edit", "delete", "pause", "resume", "run", "history", "event", "events", "retry_delivery"],
                                "description": "The action to perform"},
-                    "task_id": {"type": "string", "description": "Task ID (for edit/delete/pause/resume/run/history)"},
+                    "task_id": {"type": "string", "description": "Task ID (for edit/delete/pause/resume/run/history, or an external event target)"},
+                    "event_id": {"type": "string", "description": "Stable source event ID; replay returns the original jobs."},
+                    "event_type": {"type": "string", "description": "Event subscription name, e.g. document_created or email_received."},
+                    "source": {"type": "string", "description": "Source namespace, e.g. imap, documents, webhook or gmail_pubsub."},
+                    "payload": {"type": "object", "description": "Source data passed to the normal task's prompt."},
+                    "message": {"type": "object", "description": "Gmail PubSub message envelope with base64 data."},
+                    "delivery": {"type": "object", "description": "Optional separate Hub delivery: {app,tool,arguments,result_field,key_field} or {event_type}. Result stays recoverable even if delivery fails."},
+                    "job_id": {"type": "string", "description": "Event job for explicit delivery retry; never reruns execution."},
                     "window_minutes": {"type": "integer", "description": "Schedule-triggered tasks only. Minutes after the scheduled time during which a run is still wanted; a catch-up that reaches the task later is recorded as skipped-window instead of running late. Omit for no window; 0 on edit clears it."},
                     "period_key": {"type": "string", "enum": ["day", "iso_week", "month", ""], "description": "Schedule-triggered tasks only. At most one run per day / ISO week / month (in the task's timezone); a second or late firing in the same period is recorded as skipped-period. An empty string on edit clears it."},
                     "limit": {"type": "integer", "description": "For action=history: how many recent runs to return (default 10, max 50)."},

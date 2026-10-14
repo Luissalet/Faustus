@@ -4,6 +4,9 @@ import { useSearchParams } from 'react-router';
 import { Button, Dialog, EmptyState, Skeleton, StatusBadge, Toast } from '../components';
 import {
   CACHE_LABELS,
+  automationEvents,
+  retryEventDelivery,
+  type AutomationEvent,
   categoryOf,
   clearAutomationCache,
   closedBadge,
@@ -152,6 +155,37 @@ function History({ id, refreshKey }: { id: string; refreshKey: number }) {
 }
 
 /* ── The screen ── */
+
+function IncomingEvents({ id, refreshKey }: { id: string; refreshKey: number }) {
+  const labels: Record<string, string> = {success: 'Succeeded', pending: 'Pending', queued: 'Queued', running: 'Running', error: 'Failed', aborted: 'Cancelled', failed: 'Failed', unknown: 'Unknown', delivered: 'Delivered', sending: 'Sending', none: 'No delivery'};
+  const [items, setItems] = useState<AutomationEvent[]>([]);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+  const reload = useCallback(() => automationEvents(id).then((r) => { setItems(r); setError(''); }).catch((e: Error) => setError(e.message)), [id]);
+  useEffect(() => { void reload(); }, [reload, refreshKey]);
+  const retry = async (job: string) => {
+    setBusy(job);
+    try { await retryEventDelivery(job); await reload(); } catch (e) { setError((e as Error).message); }
+    finally { setBusy(null); }
+  };
+  return <div className="fs-au__block" data-testid="automation-events">
+    <h3>{t('Incoming events')}</h3>
+    <Button variant="ghost" size="sm" icon={RefreshCw} label={t('Refresh')} onClick={() => void reload()} />
+    {error && <p role="alert">{error}</p>}
+    {!items.length && <p className="fs-au__hint">{t('No incoming events yet.')}</p>}
+    <ul className="fs-au__runs">{items.map((item) => <li key={item.id}>
+      <p>{item.source} · {item.event_type} · {item.event_key}</p>
+      {item.jobs.map((job) => <div key={job.id}>
+        <p>{t('Execution')}: {t(labels[job.execution] ?? job.execution)} · {t('Delivery')}: {t(labels[job.delivery] ?? job.delivery)}</p>
+        {job.model && <p>{t('Model')}: {job.model}</p>}
+        {job.result && <p className="fs-au__run-text">{job.result}</p>}
+        {job.delivery_error && <p>{job.delivery_error}</p>}
+        {job.session_id && <a href={`/studio?s=${encodeURIComponent(job.session_id)}`}>{t('Open conversation')}</a>}
+        {['failed', 'unknown'].includes(job.delivery) && <Button variant="secondary" size="sm" label={t('Retry delivery')} loading={busy === job.id} onClick={() => void retry(job.id)} />}
+      </div>)}
+    </li>)}</ul>
+  </div>;
+}
 
 export function AutomationsScreen() {
   const [params, setParams] = useSearchParams();
@@ -627,6 +661,7 @@ export function AutomationsScreen() {
                 </h3>
                 <History id={current.id} refreshKey={historyKey} />
               </div>
+              <IncomingEvents id={current.id} refreshKey={historyKey} />
             </section>
           )}
 

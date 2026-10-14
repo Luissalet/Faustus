@@ -30,7 +30,8 @@ def get_task_scheduler():
     return _task_scheduler
 
 
-def fire_event(event_name: str, owner: Optional[str] = None, trace_id: Optional[str] = None):
+def fire_event(event_name: str, owner: Optional[str] = None, trace_id: Optional[str] = None,
+               *, event_id=None, payload=None, source="faustus", dispatch=True):
     """Fire an event — increments counters and triggers tasks that hit threshold.
 
     Safe to call from both sync and async contexts.
@@ -42,6 +43,10 @@ def fire_event(event_name: str, owner: Optional[str] = None, trace_id: Optional[
     firing exactly as before — this only gives a future caller somewhere to
     put it instead of a second, parallel correlation mechanism.
     """
+    if event_id is not None:
+        from src.external_events import ingest
+        return ingest(owner=_resolve_event_owner(owner), source=source, event_type=event_name,
+                      event_key=str(event_id), payload=payload or {}, dispatch=dispatch)
     try:
         loop = asyncio.get_running_loop()
         loop.create_task(_handle_event(event_name, owner, trace_id))

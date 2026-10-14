@@ -502,7 +502,8 @@ class CreateDocumentTool:
                                  relation="created")
             try:
                 from src.event_bus import fire_event
-                fire_event("document_created", _owner)
+                fire_event("document_created", _owner, event_id=doc_id,
+                           payload={"document_id": doc_id, "title": title}, source="documents")
             except Exception:
                 logger.debug("document_created event dispatch failed", exc_info=True)
 

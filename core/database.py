@@ -1595,6 +1595,29 @@ def _stamp_task_resume(target, value, oldvalue, initiator):
         target.resumed_at = utcnow_naive()
 
 
+class ExternalEvent(TimestampMixin, Base):
+    """Stable incoming event receipt, committed together with native jobs."""
+    __tablename__ = "external_events"
+    id = Column(String, primary_key=True)
+    owner = Column(String, nullable=True, index=True)
+    source = Column(String, nullable=False)
+    event_type = Column(String, nullable=False)
+    event_key = Column(String, nullable=False)
+    payload = Column(Text, nullable=False)
+
+
+class ExternalEventJob(TimestampMixin, Base):
+    """Links a receipt to ordinary scheduled work and its separate delivery."""
+    __tablename__ = "external_event_jobs"
+    id = Column(String, primary_key=True)
+    event_id = Column(String, ForeignKey("external_events.id"), nullable=False, index=True)
+    parent_task_id = Column(String, nullable=False, index=True)
+    task_id = Column(String, nullable=False, unique=True)
+    delivery = Column(Text, nullable=True)
+    delivery_status = Column(String, nullable=False, default="none")
+    delivery_error = Column(Text, nullable=True)
+
+
 class EditorDraft(TimestampMixin, Base):
     """Persisted in-progress gallery-editor session — layered project state
     that the user can close and reopen later. Stores the full layer payload

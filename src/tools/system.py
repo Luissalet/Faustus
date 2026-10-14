@@ -396,6 +396,21 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
     if args.get("task") and not args.get("prompt"):
         args["prompt"] = args["task"]
     action = args.get("action", "list")
+    if action in ("event", "events", "retry_delivery"):
+        from src.external_events import decode_input, ingest, list_events, retry_delivery, deliver_pending
+        try:
+            if action == "events":
+                return {"events": list_events(owner, args.get("task_id")), "exit_code": 0}
+            if action == "retry_delivery":
+                retry_delivery(args.get("job_id"), owner)
+                await deliver_pending()
+                return {"ok": True, "exit_code": 0}
+            source, event_type, key, payload = decode_input(args)
+            value = ingest(owner=owner, source=source, event_type=event_type, event_key=key,
+                           payload=payload, task_id=args.get("task_id"), delivery=args.get("delivery"))
+            return {**value, "exit_code": 0}
+        except (ValueError, TypeError) as exc:
+            return {"error": str(exc), "exit_code": 1}
     # Watcher actions take their parameters as an object (`params`, or the
     # bare keys) and store them as JSON in `prompt`; a model that has to
     # nest JSON inside a tool-call string gets the quoting wrong.
@@ -469,7 +484,9 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
     db = SessionLocal()
     try:
         if action == "list":
+            from core.database import ExternalEventJob
             q = db.query(ScheduledTask)
+            q = q.filter(ScheduledTask.id.notin_(db.query(ExternalEventJob.task_id)))
             if owner:
                 q = q.filter(ScheduledTask.owner == owner)
             tasks = q.order_by(ScheduledTask.created_at.desc()).all()
@@ -516,7 +533,8 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
                 limit = max(1, min(int(args.get("limit") or 10), 50))
             except (TypeError, ValueError):
                 limit = 10
-            runs = (db.query(TaskRun).filter(TaskRun.task_id == task_id)
+            from src.external_events import related_runs
+            runs = (related_runs(db, task_id)
                     .order_by(TaskRun.started_at.desc()).limit(limit).all())
             rows = []
             lines = [f"Last {len(runs)} runs of '{task.name}':"] if runs else [f"'{task.name}' has no runs yet."]

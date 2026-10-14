@@ -55,6 +55,14 @@ def _text_result(text: str) -> list[TextContent]:
 _HANDLE = {"handle": {"type": "string", "description": "Handle returned by process_start."}}
 
 _TOOLS = {
+    "event_ingest": ("Persist an external event and queue ordinary native jobs. Stable source/event_id deduplicates redelivery.",
+        {"source": {"type": "string"}, "event_type": {"type": "string"}, "event_id": {"type": "string"},
+         "payload": {"type": "object"}, "message": {"type": "object"}, "task_id": {"type": "string"},
+         "delivery": {"type": "object"}}, ["source"]),
+    "event_receipts": ("Read event jobs, execution results and separate delivery outcomes, including recoverable chat IDs.",
+        {"task_id": {"type": "string"}}, []),
+    "event_retry_delivery": ("Retry only delivery of an event result. Work is not rerun, delivered results are not resent.",
+        {"job_id": {"type": "string"}}, ["job_id"]),
     "process_start": ("Start a process and get a handle: output within yield_ms, a cursor, and it keeps "
                       "running after this call. Silent processes stay valid. Refused when command "
                       "confinement is required.",
@@ -105,6 +113,24 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     if name not in _TOOLS:
         return _text_result(f"Unknown tool: {name}")
     args = arguments if isinstance(arguments, dict) else {}
+    if name in ("event_ingest", "event_receipts", "event_retry_delivery"):
+        try:
+            from src.external_events import decode_input, ingest, list_events, retry_delivery, deliver_pending
+            from src.event_bus import _resolve_event_owner
+            event_owner = _resolve_event_owner(OWNER or None)
+            if name == "event_ingest":
+                source, kind, key, payload = decode_input(args)
+                result = ingest(owner=event_owner, source=source, event_type=kind, event_key=key,
+                                payload=payload, task_id=args.get("task_id"), delivery=args.get("delivery"))
+            elif name == "event_receipts":
+                result = {"events": list_events(event_owner, args.get("task_id"))}
+            else:
+                result = retry_delivery(args.get("job_id"), event_owner)
+                await deliver_pending()
+                result = next(j for e in list_events(event_owner) for j in e["jobs"] if j["id"] == args.get("job_id"))
+            return _text_result(json.dumps(result, ensure_ascii=False))
+        except Exception as exc:
+            return _text_result(f"Error in {name}: {type(exc).__name__}: {exc}")
     try:
         from src.agent_tools import TOOL_HANDLERS
 

@@ -310,10 +310,11 @@ def _task_to_dict(t: ScheduledTask, include_last_run_result: bool = False, last_
         )
     else:
         d["is_modified"] = False
-    if include_last_run_result and t.runs:
-        last = t.runs[0]  # ordered desc by started_at
-        d["last_run_status"] = last.status
-        d["last_run_result"] = (last.result or last.error or "")[:500]
+    if include_last_run_result:
+        last = last_run or (t.runs[0] if t.runs else None)
+        if last:
+            d["last_run_status"] = last.status
+            d["last_run_result"] = (last.result or last.error or "")[:500]
     # #263: the optional guards, the pause as a plain boolean, and the closed
     # status (with its reason) of the newest run, skips included.
     try:
@@ -447,6 +448,32 @@ def setup_task_routes(task_scheduler) -> APIRouter:
     def _owner(request: Request):
         return get_current_user(request)
 
+    @router.get("/events")
+    def external_events(request: Request, task_id: Optional[str] = None):
+        from src.external_events import list_events
+        return {"events": list_events(_owner(request), task_id)}
+
+    @router.post("/events")
+    async def receive_event(request: Request):
+        from src.external_events import decode_input, ingest
+        body = await request.json()
+        try:
+            source, event_type, key, payload = decode_input(body)
+            return ingest(owner=_owner(request), source=source, event_type=event_type,
+                          event_key=key, payload=payload, task_id=body.get("task_id"), delivery=body.get("delivery"))
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(400, str(exc))
+
+    @router.post("/events/{job_id}/retry-delivery")
+    async def retry_event_delivery(request: Request, job_id: str):
+        from src.external_events import retry_delivery, deliver_pending
+        try:
+            retry_delivery(job_id, _owner(request))
+            await deliver_pending()
+            return {"ok": True}
+        except ValueError as exc:
+            raise HTTPException(404, str(exc))
+
     async def _generate_task_name(prompt: str, owner: Optional[str] = None) -> str:
         """Use LLM to generate a short task name from the prompt."""
         try:
@@ -506,15 +533,26 @@ def setup_task_routes(task_scheduler) -> APIRouter:
                 await task_scheduler.ensure_defaults(owner)
         db = SessionLocal()
         try:
-            q = db.query(ScheduledTask)
+            from core.database import ExternalEventJob
+            q = db.query(ScheduledTask).filter(ScheduledTask.id.notin_(db.query(ExternalEventJob.task_id)))
             if user:
                 q = q.filter(ScheduledTask.owner == user)
             if status:
                 q = q.filter(ScheduledTask.status == status)
             tasks = q.order_by(ScheduledTask.created_at.desc()).all()
             latest = _latest_runs(db, [t.id for t in tasks])
-            return {"tasks": [_task_to_dict(t, include_last_run_result=include_last_run,
-                                            last_run=latest.get(t.id)) for t in tasks]}
+            output = []
+            from src.external_events import related_runs
+            for task in tasks:
+                has_events = db.query(ExternalEventJob.id).filter(ExternalEventJob.parent_task_id == task.id).first()
+                recent = related_runs(db, task.id).order_by(TaskRun.started_at.desc()).first() if has_events else latest.get(task.id)
+                item = _task_to_dict(task, include_last_run_result=include_last_run, last_run=recent)
+                if has_events:
+                    item["run_count"] = related_runs(db, task.id).count()
+                    if recent and recent.finished_at:
+                        item["last_run"] = recent.finished_at.isoformat() + "Z"
+                output.append(item)
+            return {"tasks": output}
         finally:
             db.close()
 
@@ -1194,10 +1232,11 @@ def setup_task_routes(task_scheduler) -> APIRouter:
                 raise HTTPException(404, "Task not found")
             if user and task.owner != user:
                 raise HTTPException(403, "Access denied")
-            runs = db.query(TaskRun).filter(TaskRun.task_id == task_id)\
+            from src.external_events import related_runs
+            runs = related_runs(db, task_id)\
                 .order_by(TaskRun.started_at.desc())\
                 .offset(offset).limit(limit).all()
-            total = db.query(TaskRun).filter(TaskRun.task_id == task_id).count()
+            total = related_runs(db, task_id).count()
             return {"runs": [_run_to_dict(r) for r in runs], "total": total}
         finally:
             db.close()
@@ -1266,7 +1305,7 @@ def setup_task_routes(task_scheduler) -> APIRouter:
         ]}
 
     @router.post("/{task_id}/webhook/{token}")
-    async def webhook_trigger(task_id: str, token: str):
+    async def webhook_trigger(task_id: str, token: str, request: Request):
         """Unauthenticated endpoint — the token IS the auth."""
         db = SessionLocal()
         try:
@@ -1285,8 +1324,19 @@ def setup_task_routes(task_scheduler) -> APIRouter:
                 task.next_run = None
                 db.commit()
                 raise HTTPException(403, f"Action '{task.action}' requires admin privileges")
+            owner = task.owner
         finally:
             db.close()
+        raw = await request.body()
+        if raw:
+            from src.external_events import decode_input, ingest
+            try:
+                body = json.loads(raw)
+                source, event_type, key, payload = decode_input(body)
+                return ingest(owner=owner, source=source, event_type=event_type,
+                              event_key=key, payload=payload, task_id=task_id, delivery=body.get("delivery"))
+            except (ValueError, TypeError) as exc:
+                raise HTTPException(400, str(exc))
         started = await task_scheduler.run_task_now(task_id)
         if not started:
             raise HTTPException(409, "Task is already running")

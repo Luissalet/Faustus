@@ -404,6 +404,12 @@ def _record_email_received_events(owner: str, account_id: str | None, folder: st
                 ).fetchall()
                 existing = {r[0] for r in rows}
             new_keys = [k for k in keys if k not in existing]
+            # Persist the work receipt before marking mail observed. A retry after
+            # either database commit uses the same receipt; initial inbox is baseline.
+            for key in keys:
+                fire_event("email_received", owner, event_id=account_key + ":" + key,
+                           payload={"account_id": account_key, "folder": folder, "message_id": key},
+                           source="imap", dispatch=bool(count and key in new_keys))
             conn.executemany(
                 "INSERT OR IGNORE INTO email_event_seen "
                 "(owner, account_key, folder, message_key, first_seen_at) VALUES (?, ?, ?, ?, ?)",
@@ -414,9 +420,7 @@ def _record_email_received_events(owner: str, account_id: str | None, folder: st
             conn.close()
 
         if count and new_keys:
-            for _ in new_keys[:50]:
-                fire_event("email_received", owner)
-            logger.info("Fired email_received for %d new message(s)", min(len(new_keys), 50))
+            logger.info("Persisted email_received for %d new message(s)", len(new_keys))
             try:
                 loop = asyncio.get_running_loop()
 
