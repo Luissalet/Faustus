@@ -811,3 +811,10 @@ with stable source identities. Automations shows incoming work, retained results
 and separate family delivery; retrying delivery does not repeat execution.
 The Execution MCP exposes three event operations alongside its process tools.
 See [external events](docs/api/external-events.md) for envelopes and semantics.
+
+
+### Requested output budgets (507, 14 October 2026)
+
+Native synchronous, asynchronous and streaming local-compatible requests preserve explicit output budgets. Zero/negative requests impose no application output cap; automatic sampler defaults no longer silently replace them with8,192/2,048 tokens. Positive limits/overrides, thinking, tools, model and cancellation remain. Provider limits still apply. See `docs/api/local-output-budgets.md`.
+
+Approved transport source e940bff3, rebased with identical functional blobs, passes53 composition checks plus earlier382 core checks. The real configured global Sparks astronomy run at1M/max/16k reasoning returned2,001 characters and a saved HTML document; one round stopped at20,452 tokens. API/MCP history agrees. This demonstrates useful text delivery for the reproduced empty-answer case, not general quality or latency superiority. Generated diagram shading and orbit/phase-period errors remain open under502; the earlier793.86s failed prototype is preserved. Evidence: `D:/LocalAI/research-inbox/faustus507-backlog-20261014/LIVE-RESULT.md`.
