@@ -254,3 +254,35 @@ def test_provider_error_after_partial_editorial_review_preserves_draft(monkeypat
     assert draft in final
     assert any(event.get('type') == 'agent_terminal' and event.get('data', {}).get('failed')
             for event in events)
+
+
+def test_web_research_through_mcp_counts_as_researched():
+    from src.tool_policy import is_web_research_tool
+    for name in ('web_search', 'web_fetch', 'mcp__85276bea__hub_web_search', 'mcp__85276bea__hub_web_fetch',
+                 'brave_web_search', 'MCP__X__WEB_FETCH'):
+        assert is_web_research_tool(name), name
+    for name in ('', None, 'lookup_tools', 'mcp__85276bea__hub_web_search_status', 'read_file', 'fetch_url'):
+        assert not is_web_research_tool(name), name
+
+
+def test_editorial_round_runs_when_search_came_from_an_mcp_server(monkeypatch):
+    # The desktop instance searches through the Hub's MCP tools; their events carry the
+    # prefixed name, and that research deserves the same editorial pass.
+    from tests.test_agent_harness_loop_partial_work import _patch, _run
+    from src import agent_loop
+    search = '```web_search\n{"query":"two observations"}\n```'
+    calls = _patch(monkeypatch, [(search, 'tool_calls'), ('Draft with an unsupported conclusion.', 'stop'),
+                                ('Two observations are supported; the cause is unknown.', 'stop')])
+    async def evidence(block, *args, **kwargs):
+        return block.tool_type, {'output': 'Source https://example.com/data: observed values12and18.', 'exit_code': 0}
+    monkeypatch.setattr(agent_loop, 'execute_tool_block', evidence)
+    monkeypatch.setattr(agent_loop, '_resolved_tool_event_name', lambda event: 'mcp__85276bea__hub_web_search')
+    events = _run(None, user='Find these two observations and explain what they show.')
+    final = ''
+    for event in events:
+        if event.get('type') == 'response_replace':
+            final = event.get('text', '')
+        elif 'delta' in event and not event.get('thinking'):
+            final += event['delta']
+    assert calls['n'] == 3
+    assert 'cause is unknown' in final

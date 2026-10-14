@@ -60,7 +60,7 @@ from src.tool_security import (
     email_tool_policy_names,
     plan_mode_disabled_tools,
 )
-from src.tool_policy import GUIDE_ONLY_DIRECTIVE, MCP_ONLY_DIRECTIVE, WEB_TOOL_NAMES, ToolPolicy
+from src.tool_policy import GUIDE_ONLY_DIRECTIVE, MCP_ONLY_DIRECTIVE, WEB_TOOL_NAMES, ToolPolicy, is_web_research_tool
 from src.user_request_gate import user_request_text as _user_request_text
 from src.user_request_gate import asked_before_text as _asked_before_text
 from src.tool_capabilities import (
@@ -16177,7 +16177,7 @@ async def _stream_agent_loop_body(
                     and (_editorial_artifact_only or (not _effectful_used and not _ledger.effects))
                     and not plan_mode
                     and round_num < max_rounds
-                    and any((event or {}).get("tool") in {"web_search", "web_fetch"}
+                    and any(is_web_research_tool((event or {}).get("tool"))
                             and (event or {}).get("exit_code") == 0
                             for event in tool_events)):
                 _editorial_review_started = True

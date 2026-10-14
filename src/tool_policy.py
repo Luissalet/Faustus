@@ -18,6 +18,14 @@ GUIDE_ONLY_DIRECTIVE = (
 )
 
 WEB_TOOL_NAMES = frozenset({"web_search", "web_fetch"})
+
+
+def is_web_research_tool(name: str) -> bool:
+    """True for the built-in web tools and for the same tools reached through MCP
+    (``mcp__<server>__hub_web_search``, ``mcp__<server>__web_fetch``, ``brave_web_search``…)."""
+    tool = str(name or "").strip().lower().rsplit("__", 1)[-1]
+    return tool in WEB_TOOL_NAMES or tool.endswith(("_web_search", "_web_fetch"))
+
 MCP_ONLY_HELPERS = frozenset({"lookup_tools", "todowrite", "update_plan", "ask_user",
                               "read_artifact", "artifact_search"})
 
