@@ -437,8 +437,13 @@ def test_static_check_files(tmp_path):
     assert "notes.md" not in by and "missing.py" not in by
 
 
-def test_delegation_args_parsing():
-    from src.agent_tools.subagent_tools import parse_delegation_args, max_tasks
+def test_delegation_args_parsing(monkeypatch):
+    from src.agent_tools import subagent_tools
+    from src.agent_tools.subagent_tools import parse_delegation_args
+    # The default cap is 0 (queue every task) since the delegation-continuity
+    # change; a configured cap still trims and reports what it dropped.
+    monkeypatch.setattr(subagent_tools, "max_tasks", lambda: 4)
+    max_tasks = subagent_tools.max_tasks
     args = parse_delegation_args('{"tasks": [{"name": "backend", "instruction": "add route"}, "write tests for it"], "parallel": false}')
     assert len(args["tasks"]) == 2 and args["parallel"] is False
     assert args["tasks"][1]["name"].startswith("write tests")
