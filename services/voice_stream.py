@@ -52,6 +52,9 @@ _URL = re.compile(r"https?://\S+")
 _TABLE_ROW = re.compile(r"^\s*\|.*$", re.M)
 _MARKUP = re.compile(r"[*_#>`]")
 _SPACES = re.compile(r"\s+")
+# Emoji and pictographs: speech engines either skip them or read their names aloud.
+_PICTOGRAPHS = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\uFE0F\u200D]")
+_SPEAKABLE = re.compile(r"[^\W_]", re.UNICODE)
 
 
 def spoken_text(text: str) -> str:
@@ -64,11 +67,13 @@ def spoken_text(text: str) -> str:
     prose = _URL.sub("", prose)
     prose = _TABLE_ROW.sub("", prose)
     prose = _MARKUP.sub("", prose)
+    prose = _PICTOGRAPHS.sub("", prose)
     return _SPACES.sub(" ", prose).strip()
 
 
 _SENTENCE_END = re.compile(r"[.!?。！？](?:\s|$)")
 _ABBREVIATION = re.compile(r"\b(?:Dr|Mr|Mrs|Sr|Sra|etc|vs)\.$", re.I)
+_CLAUSE_BREAK = re.compile(r"[,;:—](?=\s)")
 
 
 class SentenceBuffer:
@@ -79,11 +84,15 @@ class SentenceBuffer:
     complete answer is always in the chat.
     """
 
-    def __init__(self, budget: int = 4000) -> None:
+    def __init__(self, budget: int = 4000, first_clause: int = 0) -> None:
         self.budget = budget
         self.cursor = 0
         self.spent = 0
         self.truncated = False
+        # >0: the first chunk of a reply may end at a clause break (", ", ": ", "; ")
+        # once it has this many characters, so the voice starts before the
+        # first full sentence is written.
+        self.first_clause = first_clause
 
     def take(self, text: str, final: bool = False) -> List[str]:
         clean = spoken_text(text)
@@ -99,6 +108,11 @@ class SentenceBuffer:
                     continue
                 end = at
                 break
+            if end < 0 and self.first_clause and self.cursor == 0 and not final:
+                for match in _CLAUSE_BREAK.finditer(remaining, self.first_clause):
+                    if match.start() < 200:
+                        end = match.start() + 1
+                    break
             if end < 0 and len(remaining) > 320:
                 end = remaining.rfind(" ", 0, 280)
             if end < 0 and final:
@@ -111,7 +125,7 @@ class SentenceBuffer:
                 break
             self.cursor = len(clean) - len(remaining) + end
             self.spent += len(part)
-            if part:
+            if part and _SPEAKABLE.search(part):
                 out.append(part)
         return out
 
@@ -286,6 +300,11 @@ EVENT_KEEP = 400
 AUDIO_KEEP = 60
 IDLE_TIMEOUT_S = 15 * 60
 MAX_SESSIONS_PER_OWNER = 4
+# The first spoken chunk of a reply may end at a clause break once it is this long.
+FIRST_CLAUSE_CHARS = 40
+# Partial transcripts only when the recognizer is fast enough not to delay the
+# final one (a CPU Whisper re-transcribing a growing clip competes with it).
+PARTIAL_MAX_STT_MS = 700
 
 # One local transcription and one synthesis at a time across all voice
 # sessions: both run on this machine and compete with the chat for it.
@@ -472,7 +491,8 @@ class VoiceSession:
         self._utt.extend(chunk)
         self.touch()
         min_bytes = int(self._utt_rate * 2 * 0.6)
-        if (self.partials and (self._partial_task is None or self._partial_task.done())
+        if (self.partials and self.manager.partials_affordable()
+                and (self._partial_task is None or self._partial_task.done())
                 and time.monotonic() - self._partial_at >= 1.0
                 and len(self._utt) - self._partial_bytes >= min_bytes):
             self._partial_at = time.monotonic()
@@ -556,6 +576,7 @@ class VoiceSession:
             started = time.perf_counter()
             text = await asyncio.to_thread(self.manager.transcribe, data, language, meta)
             meta["server_ms"] = int((time.perf_counter() - started) * 1000)
+        self.manager.note_stt(meta["server_ms"], len(data))
         return (text or "").strip(), meta
 
     async def _finish(self, audio: bytes, fmt: str, rate: int,
@@ -688,7 +709,7 @@ class VoiceSession:
                 raise
             except Exception:  # noqa: BLE001 - following is best effort, the chat is unaffected
                 logger.debug("voice follow loop", exc_info=True)
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.05)
 
     def _start_speaking(self, run: Any, run_id: str, record: Optional[Dict[str, Any]]) -> None:
         self._followed.add(run_id)
@@ -705,7 +726,7 @@ class VoiceSession:
 
     async def _speak_run(self, run: Any, run_id: str) -> None:
         reply = ReplyText()
-        state = {"buffer": SentenceBuffer(), "spoken": set()}
+        state = {"buffer": SentenceBuffer(first_clause=FIRST_CLAUSE_CHARS), "spoken": set()}
         record = self._run_metrics.get(run_id, {})
         self._speaking_run = run_id
         self._run_done[run_id] = False
@@ -858,6 +879,16 @@ class VoiceSessionManager:
         self._start_turn = start_turn
         self._session_check = session_check
         self.sessions: Dict[str, VoiceSession] = {}
+        self.stt_ms_per_second: Optional[float] = None  # recognizer speed seen so far (ms per second of audio)
+
+    def note_stt(self, server_ms: int, wav_bytes: int) -> None:
+        seconds = max(0.25, wav_bytes / 32000.0)
+        rate = server_ms / seconds
+        self.stt_ms_per_second = rate if self.stt_ms_per_second is None else 0.7 * self.stt_ms_per_second + 0.3 * rate
+
+    def partials_affordable(self) -> bool:
+        """Partials while speaking only when a 2 s clip transcribes well under PARTIAL_MAX_STT_MS."""
+        return self.stt_ms_per_second is not None and self.stt_ms_per_second * 2 < PARTIAL_MAX_STT_MS
 
     # speech services (called in worker threads)
 

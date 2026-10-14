@@ -293,6 +293,9 @@ def test_streamed_pcm_gives_partials_then_one_final_with_preroll():
         stt = FakeSTT(text=lambda audio: f"{len(audio)} bytes")
         manager, runs, sent = make_manager(stt=stt)
         session = await manager.create("luis", "sid-1", send_mode="client")
+        assert not manager.partials_affordable()  # unknown recognizer speed: no guesses that could delay the final
+        manager.note_stt(100, 64000)               # 2 s transcribed in 0.1 s
+        assert manager.partials_affordable()
         session.begin_utterance(16000, preroll_ms=500)
         for _ in range(4):
             await session.add_audio(pcm(0.5))
@@ -354,3 +357,18 @@ def test_speculative_transcript_is_used_unless_withdrawn():
         assert session.metrics.get("speculations_withdrawn") == 1 and not session.metrics.get("speculative")
         await manager.close_all()
     asyncio.run(scenario())
+
+
+def test_first_chunk_can_end_at_a_clause_and_pictographs_are_not_spoken():
+    buf = vs.SentenceBuffer(first_clause=40)
+    text = "La población de Tokio depende de cómo definas la ciudad, porque hay tres cifras distintas"
+    assert buf.take(text) == ["La población de Tokio depende de cómo definas la ciudad,"]
+    assert buf.take(text + ". Fin.", final=True) == ["porque hay tres cifras distintas.", "Fin."]
+    assert vs.SentenceBuffer().take("¡De nada! 😊", final=True) == ["¡De nada!"]
+    assert vs.SentenceBuffer(first_clause=40).take("Son 1,200 euros en total y algo más") == []
+
+
+def test_slow_recognizer_turns_partials_off():
+    manager, _, _ = make_manager()
+    manager.note_stt(4000, 96000)  # 3 s of audio took 4 s
+    assert not manager.partials_affordable()
