@@ -188,3 +188,69 @@ def test_stop_after_partial_editorial_review_preserves_draft_and_cancel_state(mo
             final += event['delta']
     assert draft in final
     assert any(event.get('type') == 'cancelled' for event in events)
+
+
+def test_express_document_turn_does_not_get_editorial_pass(monkeypatch):
+    # A turn that only saved a document and already gave its final text must
+    # not lose that text to an editorial round: the draft IS the answer.
+    from tests.test_agent_harness_loop_partial_work import _patch, _run
+    from src import agent_loop
+    doc = ('```create_document\n'
+           'Informe de observaciones\n'
+           'The measured values are twelve and eighteen.\n'
+           '```')
+    calls = _patch(monkeypatch, [(doc, 'tool_calls'),
+                                 ('The report is saved with both measured values.', 'stop')])
+    async def save_doc(block, *args, **kwargs):
+        return block.tool_type, {'output': 'Document created: Informe de observaciones',
+                                 'doc_id': 'doc-1', 'content': 'The measured values are twelve and eighteen.',
+                                 'title': 'Informe de observaciones', 'version': 1, 'exit_code': 0}
+    monkeypatch.setattr(agent_loop, 'execute_tool_block', save_doc)
+    events = _run(None, user='Save these observations as a document and tell me what they are.')
+    final = ''
+    for event in events:
+        if event.get('type') == 'response_replace':
+            final = event.get('text', '')
+        elif 'delta' in event and not event.get('thinking'):
+            final += event['delta']
+    assert calls['n'] == 2
+    assert 'The report is saved with both measured values.' in final
+
+def test_provider_error_after_partial_editorial_review_preserves_draft(monkeypatch):
+    # A provider failure (real "event: error" chunk) during the editorial
+    # round must not erase the completed draft; the turn still ends failed.
+    import json as _json
+    from tests.test_agent_harness_loop_partial_work import _events, _collect
+    from src import agent_loop
+    draft = 'Both measurements are observed; the cause is unknown.'
+    calls = {'n': 0}
+
+    async def _fake_stream(_candidates, messages, **kwargs):
+        i = calls['n']
+        calls['n'] += 1
+        if i == 0:
+            yield 'data: ' + _json.dumps({'delta': '```web_search' + chr(10) + '{"query":"two measurements"}' + chr(10) + '```'}) + chr(10) + chr(10)
+            yield 'data: ' + _json.dumps({'type': 'finish', 'finish_reason': 'tool_calls'}) + chr(10) + chr(10)
+        elif i == 1:
+            yield 'data: ' + _json.dumps({'delta': draft}) + chr(10) + chr(10)
+            yield 'data: ' + _json.dumps({'type': 'finish', 'finish_reason': 'stop'}) + chr(10) + chr(10)
+        else:
+            yield 'event: error' + chr(10) + 'data: ' + _json.dumps({'status': 502, 'error': 'Connection reset by peer'}) + chr(10) + chr(10)
+        yield 'data: [DONE]' + chr(10) + chr(10)
+    monkeypatch.setattr(agent_loop, 'stream_llm_with_fallback', _fake_stream, raising=False)
+
+    async def evidence(block, *args, **kwargs):
+        return block.tool_type, {'output': 'https://example.com/data measurements12and18', 'exit_code': 0}
+    monkeypatch.setattr(agent_loop, 'execute_tool_block', evidence)
+    events = _events(_collect(agent_loop.stream_agent_loop(
+        'http://127.0.0.1:11434/v1', 'qwen3.5:9b',
+        [{'role': 'user', 'content': 'Find both measurements and what is known.'}],
+        max_rounds=8, relevant_tools={'web_search'},
+    )))
+    final = ''
+    for event in events:
+        if event.get('type') == 'response_replace':
+            final = event.get('text', '')
+    assert draft in final
+    assert any(event.get('type') == 'agent_terminal' and event.get('data', {}).get('failed')
+            for event in events)

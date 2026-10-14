@@ -13775,6 +13775,14 @@ async def _stream_agent_loop_body(
                         # Never show/persist the collapsed output itself
                         # ("0000000000…") — only the fact that it happened.
                         partial_round = ""
+                    if _editorial_draft:
+                        # A provider failure during the editorial pass must not
+                        # erase the completed draft: restore it for the client
+                        # and keep it in the terminal round text. The turn
+                        # still ends failed.
+                        full_response = _editorial_draft
+                        partial_round = _editorial_draft
+                        yield f'data: {json.dumps({"type": "response_replace", "text": full_response})}\n\n'
                     failure_note = f"[Agent stopped: {terminal_error['message']}]"
                     terminal_round = (
                         f"{partial_round}\n\n{failure_note}"
@@ -18912,10 +18920,10 @@ async def _stream_agent_loop_body(
         if round_texts:
             round_texts[-1] = (round_texts[-1] or "") + _out
 
-    # An interrupted/empty editorial pass must not erase the completed draft.
-    # The existing terminal state still reports cancellation/failure/limits.
+    # An interrupted/empty/failed editorial pass must not erase the completed
+    # draft. The existing terminal state still reports cancellation/failure.
     if _editorial_draft and (
-        _round_finish_reason in {"length", "interrupted"}
+        _round_finish_reason in {"length", "interrupted", "error"}
         or _ledger.stop_reason not in {"complete", "complete_unverified"}
         or not _strip_think_blocks(strip_tool_blocks(full_response)).strip()
     ):
