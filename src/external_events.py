@@ -30,6 +30,8 @@ def decode_input(body):
         if not isinstance(message, dict):
             raise ValueError("Gmail message envelope must be an object")
         payload = json.loads(base64.b64decode(message.get("data") or "", validate=True))
+        if not isinstance(payload, dict):
+            raise ValueError("Gmail notification data must be an object")
         event_key = str(payload.get("emailAddress") or "") + ":" + str(payload.get("historyId") or "")
         if not payload.get("emailAddress") or not payload.get("historyId"):
             raise ValueError("Gmail notification needs emailAddress and historyId")
@@ -140,10 +142,13 @@ def retry_delivery(job_id, owner):
             ExternalEventJob.id == job_id, ExternalEvent.owner == owner).first()
         if not row or not row.delivery:
             raise ValueError("Event delivery not found")
-        if row.delivery_status != "delivered":
-            row.delivery_status = "pending"
-            row.delivery_error = None
-            db.commit()
+        # A retry never supersedes an active sender. Conditional update also
+        # closes the race between reading failed and another sender claiming it.
+        db.query(ExternalEventJob).filter(ExternalEventJob.id == job_id,
+            ExternalEventJob.delivery_status.in_(["failed", "unknown"])).update(
+                {"delivery_status": "pending", "delivery_error": None}, synchronize_session=False)
+        db.commit()
+        db.refresh(row)
         return _view(db, row)
     finally:
         db.close()

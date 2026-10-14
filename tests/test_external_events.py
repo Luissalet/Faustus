@@ -192,3 +192,41 @@ def test_event_jobs_follow_current_global_service_instead_of_parent_endpoint(fac
     with factory() as db:
         assert db.get(cdb.ScheduledTask,'parent').model=='retired-local'
         assert db.query(cdb.TaskRun).filter(cdb.TaskRun.status=='success').count()==2
+
+
+def test_retry_while_receiver_is_sending_does_not_overlap_delivery(factory,monkeypatch):
+    import threading
+    jid=send(delivery={'app':'private-receiver','tool':'store_result'})['jobs'][0]['id']
+    with factory() as db:
+        db.add(cdb.TaskRun(id='one-work-run',task_id=jid,status='success',result='Retained result'));db.commit()
+    from src import hoard_hub
+    entered=threading.Event();release=threading.Event();calls=[]
+    def receiver(*args,**kwargs):
+        calls.append(args);entered.set();assert release.wait(10)
+        return 200,{'ok':True},{}
+    monkeypatch.setattr(hoard_hub,'_call',receiver)
+    first=threading.Thread(target=events._deliver,args=(jid,));first.start()
+    try:
+        assert entered.wait(10)
+        assert events.retry_delivery(jid,'tester')['delivery']=='sending'
+        events._deliver(jid)
+        assert len(calls)==1
+    finally:
+        release.set();first.join(10)
+    assert not first.is_alive()
+    view=events.list_events('tester')[0]['jobs'][0]
+    assert view['delivery']=='delivered' and view['run_id']=='one-work-run'
+    with factory() as db:assert db.query(cdb.TaskRun).count()==1
+
+
+@pytest.mark.parametrize('decoded',[[], 'not an object', None, 17])
+def test_gmail_decoded_non_object_is_a_client_error(factory,monkeypatch,decoded):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from routes.task import task_routes
+    monkeypatch.setattr(task_routes,'get_current_user',lambda request:'tester')
+    app=FastAPI();app.include_router(task_routes.setup_task_routes(None))
+    body={'source':'gmail_pubsub','message':{'data':base64.b64encode(json.dumps(decoded).encode()).decode()}}
+    with pytest.raises(ValueError,match='must be an object'):events.decode_input(body)
+    response=TestClient(app).post('/api/tasks/events',json=body)
+    assert response.status_code==400 and 'must be an object' in response.json()['detail']
