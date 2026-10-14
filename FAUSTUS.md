@@ -11942,3 +11942,22 @@ compartido; el Hub la descubre y la arranca). Simulador de combates sobre el mot
 
 Verificado en el PC: 39 pruebas del motor y 16 de la app en Windows, liga de Johto instalada y combate IA contra IA por el
 puente del Hub, partida humana en el navegador con sprites descargados y registro en castellano.
+
+## Gulliver's Hoard como plugin — 15-10-2026
+
+Nueva app de la familia (`plugins/gulliver/plugin.json`, puerto 5206, servicio `gulliver-hoard`, 20 herramientas por el
+contrato compartido; el Hub la descubre y la arranca; conector creado en Conectores). Sustituye al prototipo de línea de
+comandos que había empezado el proyecto «3d terrain tiling» (archivado en `Proyectos independientes\_archivo`):
+
+- Maquetas 3D imprimibles de un sitio real: MDT del IGN (5/25/200 m) en España y teselas Terrarium fuera; OpenStreetMap
+  por Overpass con carrera escalonada entre servidores y reintentos; multipolígonos bien montados.
+- Sólido cerrado con booleanos de manifold3d: agua cortada a nivel por tramos, puentes sobre el agua, edificios apoyados en
+  el punto más bajo, calles y vías grabadas o en relieve, curvas de nivel, marco, texto grabado debajo; formas rectángulo,
+  redondeado, círculo y hexágono.
+- Piezas para la cama de la impresora con agujeros para pines de filamento de 1,75 mm y la letra grabada en cada pieza.
+- STL de una pieza, 3MF con una parte por filamento, STL y 3MF por pieza, ZIP con instrucciones, GLB para el visor 3D.
+- Cada maqueta terminada se anuncia (`gulliver.export.done`) y la regla del Hub la archiva en Vulcan's Hoard.
+
+Verificado en el PC: 47 pruebas en Windows, Toledo (IGN 5 m, 678 edificios, Tajo y relieve) y Peñíscola (mar, círculo con
+marco, 2 piezas con pines) generadas desde la interfaz y por MCP, mallas cerradas en todas las partes y piezas, archivo en
+Vulcan por la regla del Hub, y el panel de Faustus contestando con las herramientas de Gulliver.
