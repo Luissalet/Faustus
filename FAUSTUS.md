@@ -11811,3 +11811,28 @@ Revisión de cuatro chats reales del escritorio. Causas y arreglos:
 - **«faustus run»**: era el vigilante del Ágora (`FaustusAgoraWatch`) lanzando turnos de Faustus como agente cada 90 min; llevaba desde el 11-10 repitiendo el aviso de `outcomes.json`. Tareas `FaustusAgoraWatch`, `faustus_agora_turn1/2` desactivadas.
 
 Pruebas: `tests/test_single_user_chat_fixes.py` (8) y 835 de las suites relacionadas en verde (falla aparte `test_approval_runtime_evidence[False]`, que ya fallaba en HEAD). Ledger's Hoard: `subscription_create` (222 tests).
+
+## Voz en streaming alrededor del chat de siempre — 420, 14-10-2026
+
+Qué hay: `services/voice_stream.py` (sesiones efímeras por chat), `routes/voice_stream_routes.py`
+(`/api/voice`: capacidades, sesiones, eventos con espera larga, clip, `say`, `interrupt`, `cancel_turn`,
+`played`, opciones y WebSocket `/stream`), servidor MCP integrado `voice` y el panel de voz de Studio con la
+opción «Voz en streaming» (activa por defecto). Referencia: `docs/api/voice-stream.md`.
+
+Cómo funciona: la sesión no es otro chat. Studio sigue enviando el mensaje (`send_mode=client`); con
+`send_mode=server` (MCP, REST) el texto final se envía una sola vez a la llamada nativa de `/api/chat_stream`
+como el dueño del chat. La salida sigue cualquier turno activo del SID con `agent_runs.subscribe`, habla sólo
+el texto visible y sintetiza la frase siguiente mientras suena la actual. Interrumpir no cancela el turno.
+
+Medido en privado (Whisper en CPU, mismo modelo y mismas 16 preguntas habladas, A/B por frases contra
+streaming): el primer audio sigue rondando 9–10 s porque lo domina la transcripción en CPU (~4–5 s); lo que
+cambia es que entre frases ya no hay silencios (440–500 ms → 0), la interrupción se reconoce al instante, no
+llega audio después de interrumpir, ningún mensaje se envía dos veces y la fidelidad fue 14/16 exactas (las
+otras dos, respuestas reescritas por la pasada editorial, sin frases repetidas). En navegador real (Chromium
+con micrófono simulado): la pregunta y la interrupción hablada por encima de la respuesta llegan completas
+(«Cuéntame mejor algo breve de la antigua Grecia.»), las métricas quedan con su turno y cerrar el panel deja
+0 sesiones abiertas. Evidencia: `research-inbox/voice-stream-420-claude-20261014/`.
+
+Límites conocidos: el primer audio no bajará mucho mientras el reconocimiento corra en CPU; un reconocedor
+en GPU o Parakeet es la palanca. El modo «palabra de activación» y las frases de parada se aplican igual que
+en el panel. Las sesiones viven en memoria (4 por usuario, 15 min sin actividad, 90 s sin WebSocket).
