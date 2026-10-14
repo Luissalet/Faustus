@@ -115,6 +115,8 @@ export interface CaptureOptions {
   mic?: OpenMic;
   onPartial?: (text: string) => void;
   onTranscribing?: () => void;
+  /** Another recorder with the same contract (the streaming voice session, ./stream.ts); default: record and POST. */
+  raw?: (options: CaptureOptions) => Promise<Capture>;
 }
 const aborted = () => new DOMException('Cancelled', 'AbortError');
 
@@ -123,7 +125,9 @@ export async function capture(config: SpeechCapabilities, options: CaptureOption
   const signal = AbortSignal.any([options.signal, controller.signal]);
   let transcribing = false;
   const onTranscribing = () => { if (!transcribing) { transcribing = true; options.onTranscribing?.(); } };
-  const recording = await captureRaw(config, { ...options, signal, onTranscribing });
+  const recording = options.raw
+    ? await options.raw({ ...options, signal, onTranscribing })
+    : await captureRaw(config, { ...options, signal, onTranscribing });
   let rawText = '';
   const done = recording.done.then(async text => {
     signal.throwIfAborted();

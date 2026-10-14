@@ -9838,3 +9838,27 @@ New Agora	Nueva ágora
 Deliberation	Deliberación
 Loading room…	Cargando sala…
 Message not confirmed. Retry the same send.	El envío no se ha confirmado. Vuelve a intentarlo.
+Could not open the voice stream.	No se pudo abrir la voz en streaming.
+Streaming voice · the server transcribes as you speak and voices the answer while it is written	Voz en streaming · el servidor transcribe mientras hablas y pone voz a la respuesta mientras se escribe
+Delivery	Entrega
+Execution	Ejecución
+Hoard	Hoard
+Incoming events	Entradas recibidas
+Message to the group	Mensaje al grupo
+No incoming events yet.	Todavía no se han recibido entradas.
+Open groups	Abrir grupos
+Opening group	Abriendo el grupo
+Outcome not confirmed	Resultado sin confirmar
+Previous model choice: {model}	Modelo elegido antes: {model}
+Queue message	Poner el mensaje en cola
+Retry delivery	Reintentar entrega
+Several models discuss, compare answers, or work on a task with an executor and a reviewer.	Varios modelos debaten, comparan respuestas o trabajan en una tarea con un ejecutor y un revisor.
+The configured default model is unavailable right now. Its selection and your message are preserved.	El modelo predeterminado configurado no está disponible ahora mismo. Se conservan su selección y tu mensaje.
+The configured model is unavailable. Your draft and model selection are preserved.	El modelo configurado no está disponible. Se conservan tu borrador y la selección de modelo.
+Unlimited	Sin límite
+While a recipe serves on the Sparks, new chats use it. If the service is unavailable, its model stays selected. Choosing another default by hand turns automatic selection off.	Mientras una receta sirve en las Sparks, los chats nuevos la usan. Si el servicio no está disponible, su modelo sigue seleccionado. Elegir otro predeterminado a mano desactiva la selección automática.
+Working. New messages join the queue; you can leave and return.	Trabajando. Los mensajes nuevos se ponen en cola; puedes irte y volver.
+Zero means unlimited. Set a positive limit when you want one; Stop remains available.	Cero significa sin límite. Pon un límite positivo cuando lo quieras; Detener sigue disponible.
+Succeeded	Completado
+Sending	Enviando
+No delivery	Sin entrega

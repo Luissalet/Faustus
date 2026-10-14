@@ -69,6 +69,7 @@ def test_the_reachable_surface_is_exactly_this():
         "GET|HEAD|OPTIONS /api/session/{sid}/export": ("sessions",),
         "GET|HEAD|OPTIONS /api/history/{session_id}": ("sessions",),
         "POST /api/chat_stream": ("sessions",),
+        "DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT /api/voice*": ("sessions",),
         "GET|HEAD|OPTIONS /api/chat/resume/{session_id}": ("sessions",),
         "GET|HEAD|OPTIONS /api/chat/stream_status/{session_id}": ("sessions",),
         "GET|HEAD|OPTIONS /api/chat/activity": ("sessions",),

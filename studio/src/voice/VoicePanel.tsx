@@ -3,12 +3,13 @@ import { Link } from 'react-router';
 import { Mic, Square, VolumeX, X, Send, Settings2 } from 'lucide-react';
 import { locale, t } from '../i18n';
 import type { Turn } from '../screens/studio/model';
-import { capabilities, capture, openMic, playSpeech, watchForSpeech, type Capture, type OpenMic, type SpeechCapabilities } from './audio';
+import { capabilities, capture, openMic, playSpeech, watchForSpeech, type Capture, type CaptureOptions, type OpenMic, type SpeechCapabilities } from './audio';
 import { SentenceBuffer, isEcho, isHallucination, isStopPhrase, speechLanguage, stripWakeWord, dictationEditTimeout, type VoicePhase } from './engine';
 import { VoiceOrb } from './VoiceOrb';
 import { VoiceSubtitle } from './VoiceSubtitle';
 import type { Playback } from './visemes';
 import { postTimeline, timelineDetail, timelineLine, type VoiceMarks } from './timeline';
+import { PcmTap, StreamPlayer, VoiceStream, streamCapture, voiceStreamCapabilities, type StreamAudio, type VoiceStreamCapabilities } from './stream';
 import './voice.css';
 
 const labels: Record<VoicePhase, string> = {
@@ -24,13 +25,16 @@ interface Props { busy: boolean; turn?: Turn; sessionName: string; sessionId?: s
    whoever wants to review each transcript; what you choose is kept. */
 const PREFS_KEY = 'faustus_voice_prefs';
 type SilenceMs = 600 | 900 | 1500;
-interface VoicePrefs { continuous: boolean; autoSend: boolean; readAloud: boolean | null; silenceMs: SilenceMs; wakeWord: boolean; natural: boolean }
+/* `serverStream`: audio goes to the server over one WebSocket (with pre-roll)
+   and replies come back already spoken sentence by sentence (./stream.ts). Off
+   = the previous path: record, POST, and synthesize each sentence on demand. */
+interface VoicePrefs { continuous: boolean; autoSend: boolean; readAloud: boolean | null; silenceMs: SilenceMs; wakeWord: boolean; natural: boolean; serverStream: boolean }
 function readPrefs(): VoicePrefs {
   try {
     const raw = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') as Partial<VoicePrefs>;
     const silenceMs: SilenceMs = raw.silenceMs === 600 || raw.silenceMs === 1500 ? raw.silenceMs : 900;
-    return { continuous: raw.continuous ?? true, autoSend: raw.autoSend ?? true, readAloud: raw.readAloud ?? null, silenceMs, wakeWord: raw.wakeWord ?? false, natural: raw.natural ?? true };
-  } catch { return { continuous: true, autoSend: true, readAloud: null, silenceMs: 900, wakeWord: false, natural: true }; }
+    return { continuous: raw.continuous ?? true, autoSend: raw.autoSend ?? true, readAloud: raw.readAloud ?? null, silenceMs, wakeWord: raw.wakeWord ?? false, natural: raw.natural ?? true, serverStream: raw.serverStream ?? true };
+  } catch { return { continuous: true, autoSend: true, readAloud: null, silenceMs: 900, wakeWord: false, natural: true, serverStream: true }; }
 }
 // A short pool of the last things Faustus said, so a barge-in (or an
 // utterance heard right after TTS stops) that is actually the mic
@@ -96,6 +100,20 @@ export default function VoicePanel(props: Props) {
   // Wall-clock marks of the utterance being captured (see ./timeline.ts); handed to the reply when it is sent.
   const utteranceMarks = useRef<VoiceMarks>({});
   const [timeline, setTimeline] = useState<{ line: string; detail: string } | null>(null);
+  // Streaming voice session (./stream.ts): the WebSocket, the PCM tap on the
+  // hot mic (its pre-roll keeps the first syllable of a barge-in) and the
+  // player of sentences the server already synthesized.
+  const [serverStream, setServerStream] = useState(prefs.current.serverStream);
+  const [streamCaps, setStreamCaps] = useState<VoiceStreamCapabilities | null>(null);
+  const [streamReady, setStreamReady] = useState(false);
+  const stream = useRef<VoiceStream | null>(null);
+  const tap = useRef<PcmTap | null>(null);
+  const player = useRef<StreamPlayer | null>(null);
+  // Server-side runs whose speech is still on its way, and the ones silenced by the person.
+  const streamSpeech = useRef({ pending: new Set<string>(), muted: new Set<string>(), played: new Set<string>(), lastRun: '' });
+  const streamOut = useRef(false);
+  streamOut.current = streamReady && serverStream && readAloud && !!streamCaps?.speech_output && configs?.tts.execution !== 'browser';
+  const streamIn = streamReady && serverStream && !!streamCaps?.available && configs?.stt.execution !== 'browser';
   /** Show the line and store the turn; partial turns (no audio) are stored once, when the reply ends. */
   const finishTimeline = useCallback((run: typeof reply.current) => {
     if (!run.marks || run.posted || !run.id) return;
@@ -116,19 +134,31 @@ export default function VoicePanel(props: Props) {
 
   const silence = useCallback(() => {
     reply.current.muted = true; reply.current.queue = []; reply.current.controller.abort(); reply.current.draining = false;
+    // Streamed speech: stop what plays, drop what is queued, and tell the
+    // server to stop speaking this reply. The agent's work is not cancelled.
+    const speech = streamSpeech.current;
+    if (player.current?.busy || speech.pending.size) {
+      speech.pending.forEach(runId => speech.muted.add(runId));
+      if (speech.lastRun) speech.muted.add(speech.lastRun);
+      speech.pending.clear();
+      player.current?.clear();
+      stream.current?.interrupt('user');
+    }
     setAnalyser(null); setPlayback(null);
   }, []);
   const pause = useCallback(() => {
     engaged.current = false; input.current?.abort(); input.current = null;
     recording.current = null; silence(); setPhase(revising.current ? 'review' : 'idle'); revising.current = false; setRevisionInstruction(''); setContinuous(false);
+    tap.current?.close(); tap.current = null;
     mic.current?.close(); mic.current = null;
   }, [silence]);
   useEffect(() => {
     alive.current = true;
     const controller = new AbortController();
-    Promise.all([capabilities('stt', controller.signal), capabilities('tts', controller.signal)])
-      .then(([stt, tts]) => {
+    Promise.all([capabilities('stt', controller.signal), capabilities('tts', controller.signal), voiceStreamCapabilities(controller.signal)])
+      .then(([stt, tts, streaming]) => {
         if (controller.signal.aborted) return;
+        setStreamCaps(streaming);
         setConfigs({ stt, tts });
         const speakable = tts.configured && tts.dependency_installed;
         setReadAloud(speakable && (prefs.current.readAloud ?? true));
@@ -142,6 +172,7 @@ export default function VoicePanel(props: Props) {
     return () => {
       alive.current = false; controller.abort(); input.current?.abort(); reply.current.controller.abort();
       document.removeEventListener('visibilitychange', hidden);
+      tap.current?.close(); tap.current = null;
       mic.current?.close(); mic.current = null;
     };
   }, [pause]);
@@ -151,6 +182,80 @@ export default function VoicePanel(props: Props) {
     const start = Date.now(); const timer = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
     return () => clearInterval(timer);
   }, [phase]);
+
+  // The streaming voice session of this chat. It only listens for this chat's
+  // runs and speaks them; Studio still sends every message itself.
+  useEffect(() => {
+    const sid = props.sessionId;
+    if (!sid || !serverStream || !streamCaps?.available || !configs || configs.stt.execution === 'browser') { setStreamReady(false); return; }
+    const controller = new AbortController();
+    const speech = streamSpeech.current;
+    speech.pending.clear(); speech.muted.clear(); speech.played.clear(); speech.lastRun = '';
+    let opened: VoiceStream | null = null;
+    const offs: Array<() => void> = [];
+    const finishSpeech = () => {
+      if (!alive.current || speech.pending.size || player.current?.busy) return;
+      setAnalyser(null); setPlayback(null);
+      if (phaseRef.current !== 'speaking' && phaseRef.current !== 'thinking') return;
+      const turn = latest.current.turn;
+      setPhase(turn?.ask ? 'approval' : latest.current.busy ? 'thinking' : 'idle');
+      if (!latest.current.busy && !turn?.ask && latest.current.continuous && engaged.current && !document.hidden) nextListen.current();
+    };
+    const playing = new StreamPlayer({
+      onStart: (audio, node, currentMs) => {
+        if (!alive.current) return;
+        setAnalyser(node); setPhase('speaking');
+        setPlayback({ text: audio.text, marks: null, currentMs });
+        lastSpoken.current = { text: audio.text, at: performance.now() };
+        const run = reply.current;
+        if (run.marks && !run.marks.first_audio) { run.marks.first_audio = Date.now(); finishTimeline(run); }
+        if (!run.firstAudioLogged && run.speechEndAt) {
+          run.firstAudioLogged = true;
+          setLatency(t('Heard in {heard}s · first reply audio in {first}s', {
+            heard: (run.heardMs / 1000).toFixed(1), first: ((performance.now() - run.speechEndAt) / 1000).toFixed(1) }));
+        }
+        if (!speech.played.has(audio.runId)) { speech.played.add(audio.runId); stream.current?.played(audio.runId); }
+      },
+      onEnd: () => { if (alive.current) setPlayback(null); },
+      onIdle: finishSpeech,
+      onError: e => { if (alive.current) setError(e.message); },
+    });
+    player.current = playing;
+    VoiceStream.open(sid, { language, readAloud: readAloud && !!streamCaps.speech_output, partials: true }, controller.signal)
+      .then(opening => {
+        if (controller.signal.aborted || !alive.current) { opening.close(); return; }
+        opened = opening; stream.current = opening;
+        offs.push(opening.onEvent(event => {
+          const runId = String(event.run_id || '');
+          if (event.type === 'turn' && runId) {
+            speech.lastRun = runId;
+            if (event.state === 'running' && !speech.muted.has(runId)) speech.pending.add(runId);
+          } else if ((event.type === 'speech_end' || event.type === 'interrupted') && runId) {
+            speech.pending.delete(runId);
+            finishSpeech();
+          } else if (event.type === 'error' && event.stage === 'tts' && alive.current) {
+            setError(String(event.message || ''));
+          }
+        }));
+        offs.push(opening.onAudio((audio: StreamAudio) => {
+          if (!alive.current || !streamOut.current || speech.muted.has(audio.runId)) return;
+          const run = reply.current;
+          if (run.marks && !run.marks.tts_chunk) { run.marks.tts_chunk = Date.now(); run.marks.tts_server_ms = audio.synthMs; }
+          playing.push(audio);
+        }));
+        setStreamReady(true);
+      })
+      .catch(err => { console.debug('[voice] streaming session unavailable; per-sentence speech is used', err); setStreamReady(false); });
+    return () => {
+      controller.abort(); offs.forEach(off => off()); playing.clear();
+      if (player.current === playing) player.current = null;
+      opened?.close(); if (stream.current === opened) stream.current = null;
+      setStreamReady(false);
+    };
+    // Reopened only for another chat or when switched on/off; options travel over the open stream.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.sessionId, serverStream, streamCaps, configs]);
+  useEffect(() => { stream.current?.options({ read_aloud: readAloud && !!streamCaps?.speech_output, language }); }, [readAloud, language, streamCaps, streamReady]);
 
   /** `reviewed`: the person read and sent the transcript by hand, so the wait is theirs, not the system's: no timeline. */
   const commit = useCallback((text: string, reviewed = false) => {
@@ -168,9 +273,13 @@ export default function VoicePanel(props: Props) {
     const controller = new AbortController(); input.current = controller;
     setError(''); setTranscript(''); setOriginal(''); setPreviousDraft(null); setPhase('starting'); setInterrupted(false);
     const openedMic = await ensureMic(controller.signal);
+    // Streaming input: PCM over the voice session, pre-roll included.
+    if (openedMic && streamIn && stream.current?.connected && !tap.current) tap.current = new PcmTap(openedMic);
+    const viaStream = openedMic && streamIn && stream.current?.connected && tap.current
+      ? (options: CaptureOptions) => streamCapture(stream.current!, tap.current!, options) : undefined;
     try {
       const cap = await capture(configs.stt, {
-        signal: controller.signal, deviceId, autoStop: true, lang: language,
+        signal: controller.signal, deviceId, autoStop: true, lang: language, raw: viaStream,
         mic: openedMic ?? undefined, silenceMs, natural,
         onPartial: text => { if (!controller.signal.aborted) setTranscript(text); },
         onTranscribing: () => { if (!controller.signal.aborted) { timing.current.endOfSpeech = performance.now(); utteranceMarks.current = { speech_end: Date.now() }; setPhase('transcribing'); setAnalyser(null); } },
@@ -213,7 +322,7 @@ export default function VoicePanel(props: Props) {
         setError((e as Error).name === 'NotAllowedError' ? t('Microphone permission was denied. Allow it in your browser and retry.') : (e as Error).message);
       }
     }
-  }, [configs, deviceId, language, silence, commit, ensureMic, silenceMs, wakeWord, natural]);
+  }, [configs, deviceId, language, silence, commit, ensureMic, silenceMs, wakeWord, natural, streamIn]);
   const revise = useCallback(async () => {
     if (!configs || !transcript.trim() || recording.current || revising.current) return;
     const draft = transcript;
@@ -336,12 +445,16 @@ export default function VoicePanel(props: Props) {
     if (turn.ask) { silence(); setPhase('approval'); setContinuous(false); return; }
     if (turn.error) { silence(); setPhase('error'); setError(turn.error); setContinuous(false); return; }
     if (['starting', 'listening', 'transcribing', 'review'].includes(phaseRef.current)) return;
-    if (readAloud && !run.muted) {
+    // With the streaming session the server speaks this run itself (already
+    // synthesized ahead); the panel only plays it and waits for its end.
+    const streamed = streamOut.current;
+    if (readAloud && !run.muted && !streamed) {
       run.queue.push(...run.buffer.take(turn.text, !props.busy));
       if (run.buffer.truncated) setShortened(true);
       if (run.queue.length) void drain();
     }
-    if (!run.draining && !run.queue.length) {
+    const streamSpeaking = streamed && (streamSpeech.current.pending.size > 0 || !!player.current?.busy);
+    if (!run.draining && !run.queue.length && !streamSpeaking) {
       if (!props.busy) finishTimeline(run);   // the reply ended without (more) audio: store what was measured
       setPhase(props.busy ? 'thinking' : 'idle');
       if (!props.busy && continuous && engaged.current && !document.hidden) nextListen.current();
@@ -416,6 +529,7 @@ export default function VoicePanel(props: Props) {
       <details className="fs-voice__settings"><summary><Settings2 size={14} />{t('Voice options & privacy')}</summary>
         <label><input type="checkbox" checked={readAloud} disabled={!configs?.tts.configured || !configs.tts.dependency_installed} onChange={e => { setReadAloud(e.target.checked); writePrefs({ readAloud: e.target.checked }); if (!e.target.checked) { silence(); if (phaseRef.current === 'speaking') setPhase(props.busy ? 'thinking' : 'idle'); } }} />{t('Read responses aloud')}</label>
         <label><input type="checkbox" checked={continuous} onChange={e => chooseContinuous(e.target.checked)} />{t('Listen again after each response')}</label>
+        {streamCaps?.available && <label><input type="checkbox" checked={serverStream} disabled={captureActive} onChange={e => { setServerStream(e.target.checked); writePrefs({ serverStream: e.target.checked }); }} />{t('Streaming voice · the server transcribes as you speak and voices the answer while it is written')}</label>}
         <label><input type="checkbox" checked={natural} disabled={captureActive} onChange={e => { setNatural(e.target.checked); writePrefs({ natural: e.target.checked }); }} />{t('Natural dictation · clean fillers and self-corrections')}</label>
         <label><input type="checkbox" checked={autoSend} onChange={e => chooseAutoSend(e.target.checked)} />{t('Send without reviewing transcription')}</label>
         <label><input type="checkbox" checked={wakeWord} onChange={e => chooseWakeWord(e.target.checked)} />{t('Only answer when I say Faustus first')}</label>

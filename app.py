@@ -1149,6 +1149,17 @@ from routes.stt_routes import setup_stt_routes
 app.include_router(setup_stt_routes(stt_service))
 logger.info("STT service initialized (provider managed via settings)")
 
+# Streaming voice sessions over the ordinary chat (audio in, transcripts, speech out).
+from services.voice_stream import VoiceSessionManager, native_turn_starter, session_owner_check
+from routes.voice_stream_routes import setup_voice_stream_routes
+voice_sessions = VoiceSessionManager(
+    stt=stt_service, tts=tts_service,
+    start_turn=native_turn_starter(app, _group_chat_endpoint),
+    session_check=session_owner_check(session_manager),
+)
+app.state.voice_sessions = voice_sessions
+app.include_router(setup_voice_stream_routes(voice_sessions))
+
 # Voice turn latency timeline (speech end -> text -> first token -> first audio).
 from routes.voice_timeline_routes import setup_voice_timeline_routes
 app.include_router(setup_voice_timeline_routes())

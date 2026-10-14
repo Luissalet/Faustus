@@ -237,6 +237,8 @@ API_TOKEN_RULES: Tuple[Rule, ...] = (
           note="an owned session's message history (the route the Studio itself loads a chat from)"),
     Rule(frozenset({"POST"}), "/api/chat_stream", ("sessions",), effect="external",
          note="run a turn (including in-turn tool-approval answers) — executes tools"),
+    _any("/api/voice", "sessions", prefix=True, effect="external",
+         note="streaming voice sessions over an owned chat: audio in, transcripts, the ordinary turn, speech out"),
     _read("/api/chat/resume/{session_id}", "sessions",
           note="reattach to an owned session's in-flight turn"),
     _read("/api/chat/stream_status/{session_id}", "sessions",
