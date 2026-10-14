@@ -68,20 +68,23 @@ def find_origin_server(servers: Mapping[str, Any], context: Optional[Mapping[str
     if not keys:
         return None
     family = [sid for sid, name in servers.items() if _family(sid, name, keys)]
-    if len(family) == 1:
-        return family[0]
-    if len(family) > 1:
-        space = str(origin.get("data_space_id") or "").strip()
-        if space and spaces is not None:
-            try:
-                known = spaces(family) or {}
-            except Exception:  # noqa: BLE001 - an unreachable app only means no match
-                known = {}
-            same = [sid for sid in family if known.get(sid) == space]
-            if len(same) == 1:
-                return same[0]
+    if not family:
         return None
-    return None
+    space = str(origin.get("data_space_id") or "").strip()
+    known: Mapping[str, str] = {}
+    if space and spaces is not None:
+        try:
+            known = spaces(family) or {}
+        except Exception:  # noqa: BLE001 - an unreachable app only means no match
+            known = {}
+    if len(family) == 1:
+        # The one connected instance serves another data space (a QA panel next to the everyday app's tools):
+        # its tools are not this panel's.
+        if known.get(family[0]) and known[family[0]] != space:
+            return None
+        return family[0]
+    same = [sid for sid in family if known.get(sid) == space]
+    return same[0] if len(same) == 1 else None
 
 
 #: The MCP server of the Hoard a panel turn comes from, for the rest of that turn
@@ -228,6 +231,68 @@ def origin_app_tools(manager: Any, context: Optional[Mapping[str, Any]], limit: 
         return set()
 
 
+def _refs_from(tool: str, args: Any, result: Mapping[str, Any]) -> list:
+    """Typed references a tool call names: ``*_id`` arguments, and the object a creation returns."""
+    refs, seen = [], set()
+
+    def add(kind: str, object_id: Any, title: Any = "") -> None:
+        oid = str(object_id or "").strip()
+        if oid and oid not in seen and len(oid) <= 200:
+            seen.add(oid)
+            refs.append({"kind": kind, "object_id": oid, "title": str(title or "")[:200]})
+
+    first = (_tokens(tool) or [""])[0]
+    try:
+        parsed = json.loads(args) if isinstance(args, str) and args.strip().startswith("{") else args
+    except ValueError:
+        parsed = None
+    if isinstance(parsed, Mapping):
+        for key, value in parsed.items():
+            if str(key).endswith("_id") and isinstance(value, (str, int)):
+                add(str(key)[:-3], value, parsed.get("title") or parsed.get("name"))
+    output = result.get("output")
+    try:
+        body = json.loads(output or "") if isinstance(output, str) else output
+    except ValueError:
+        body = None
+    if isinstance(body, Mapping) and isinstance(body.get("result"), Mapping):
+        body = body["result"]
+    if isinstance(body, Mapping):
+        candidates = [(first, body)] + [(str(k), v) for k, v in body.items() if isinstance(v, Mapping)]
+        for kind, item in candidates:
+            if item.get("id") and (item.get("title") or item.get("name")):
+                add(kind, item.get("id"), item.get("title") or item.get("name"))
+    elif isinstance(output, str):
+        # A long result arrives cut for the model; its head still names the object.
+        head = re.match(r'\s*\{\s*"id"\s*:\s*"([^"]{1,200})"', output)
+        title = re.search(r'"(?:title|name)"\s*:\s*"([^"]{1,200})"', output[:2000])
+        if head:
+            add(first, head.group(1), title.group(1) if title else "")
+    if isinstance(output, str):
+        # Typed references the Hoards print (hoard://<app>/<kind>/<id>).
+        for match in re.finditer(r"hoard://[a-z0-9_-]+/([a-z0-9_-]+)/([A-Za-z0-9_.:-]{1,200})", output[:20000]):
+            add(match.group(1), match.group(2))
+    return refs[:8]
+
+
+def note_participation(manager: Any, session_id: str, tool_name: str, args: Any, result: Mapping[str, Any]) -> bool:
+    """After a successful MCP call in a Hoard conversation, keep which other app took part and with what."""
+    try:
+        name = str(tool_name or "")
+        if not session_id or not name.startswith("mcp__") or (result or {}).get("exit_code") not in (0, None):
+            return False
+        _, server, tool = name.split("__", 2)
+        connections = getattr(manager, "_connections", {}) or {}
+        app = _norm((connections.get(server) or {}).get("name") or server)
+        if not app:
+            return False
+        effect = "read" if _rank(tool) is not None else ("write" if any(t in _WRITE for t in _tokens(tool)) else "read")
+        from services.hoard_copilot import get_store
+        return get_store().record_participation(session_id, app, server, _refs_from(tool, args, result or {}), effect, tool)
+    except Exception:  # noqa: BLE001 - bookkeeping must never break a turn
+        return False
+
+
 def origin_server_note(manager: Any, context: Optional[Mapping[str, Any]]) -> Optional[str]:
     """When the origin app is connected more than once (same tool names on several
     servers), name the server that serves this panel's data space."""
@@ -238,10 +303,16 @@ def origin_server_note(manager: Any, context: Optional[Mapping[str, Any]]) -> Op
         origin = origin_of(context)
         keys = {_norm(origin.get("tool_server_id")), _norm(origin.get("app_id")), _norm(origin.get("app_name"))} - {""}
         family = [sid for sid, name in servers.items() if keys and _family(sid, name, keys)]
-        if len(family) < 2:
+        if not family:
             return None
         server = find_origin_server(servers, context, server_data_spaces)
         app = str(origin.get("app_name") or origin.get("app_id") or "").strip()
+        if len(family) == 1:
+            if server:
+                return None
+            return (f"The {app} tools connected to Faustus (mcp__{family[0]}__*) serve another {app} data space, not this "
+                    f"panel's ({origin.get('data_space_id')}). Do not use them to read or change the objects of this "
+                    f"panel; say that this {app} is not connected to Faustus as a tool server.")
         if server:
             others = ", ".join(f"mcp__{sid}__*" for sid in family if sid != server)
             return (f"{app} is connected more than once with the same tool names. This panel's data is served by "
@@ -270,6 +341,10 @@ def origin_hint_message(context: Optional[Mapping[str, Any]], manager: Any = Non
         f"{app}'s own tools (find them with lookup_tools if they are not listed). Do not inspect desktop windows "
         "or other apps unless the user asks for them.",
     ]
+    if has_objects:
+        lines.append("The context objects are identified by their ids, not their titles. If one of them can no longer be read "
+                     "(deleted or unavailable), say that it is no longer available and do not act on another object because it "
+                     "has the same title or name; ask which one the user means before changing anything else.")
     if not has_objects:
         lines.append("Right now no specific object is open in the app" +
                      (f" (page: {view.get('page')})" if isinstance(view, Mapping) and view.get("page") else "") +
@@ -283,4 +358,4 @@ def origin_hint_message(context: Optional[Mapping[str, Any]], manager: Any = Non
 
 __all__ = ["ORIGIN_TOOL_LIMIT", "origin_of", "find_origin_server", "pick_read_tools", "server_data_spaces",
            "origin_app_tools", "origin_server_note", "origin_hint_message", "current_origin_server",
-           "remember_origin_server"]
+           "remember_origin_server", "note_participation"]

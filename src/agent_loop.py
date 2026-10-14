@@ -18084,6 +18084,15 @@ async def _stream_agent_loop_body(
                 tool_event["screenshot"] = _shot_url
             _flush_open_thought()
             tool_events.append(tool_event)
+            if session_id and str(tool_event.get("tool") or "").startswith("mcp__"):
+                # A Hoard conversation remembers which other apps took part and with what (no-op elsewhere).
+                try:
+                    from src.hoard_copilot_turn import note_participation as _note_participation
+                    from src.tool_utils import get_mcp_manager as _participation_mcp
+                    _note_participation(_participation_mcp(), session_id, tool_event.get("tool"),
+                                        block.content, result if isinstance(result, dict) else {})
+                except Exception:
+                    pass
             if block.tool_type in _VERIFIER_EFFECTFUL_TOOLS:
                 _effectful_used = True
                 if _loop_recovery_active:

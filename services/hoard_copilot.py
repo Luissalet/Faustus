@@ -92,6 +92,13 @@ class HoardCopilotStore:
                     source_thread_id TEXT NOT NULL, session_id TEXT NOT NULL,
                     PRIMARY KEY(owner, app_id, data_space_id, source_thread_id)
                 );
+                CREATE TABLE IF NOT EXISTS participants (
+                    session_id TEXT NOT NULL, owner TEXT NOT NULL, app_id TEXT NOT NULL,
+                    server_id TEXT NOT NULL, object_id TEXT NOT NULL, kind TEXT NOT NULL DEFAULT '',
+                    title TEXT NOT NULL DEFAULT '', effect TEXT NOT NULL, tool TEXT NOT NULL,
+                    first_at TEXT NOT NULL, last_at TEXT NOT NULL,
+                    PRIMARY KEY(session_id, app_id, object_id)
+                );
             """)
 
     def connect(self):
@@ -153,13 +160,50 @@ class HoardCopilotStore:
                 "canonical_project": {"app_id": link["app_id"], "data_space_id": link["data_space_id"],
                     "external_project_id": link["external_project_id"], "faustus_project_id": link["project_id"]} if link else None}
 
-    def list(self, owner: str | None, app_id=None, data_space_id=None, external_project_id=None):
+    def record_participation(self, session_id: str, app_id: str, server_id: str, refs, effect: str, tool: str) -> bool:
+        """Another app took part in a Hoard conversation (its tools read or changed its objects). Kept with the
+        conversation so the chat stays linked to what it did there; the origin never changes."""
+        app_id = str(app_id or "").strip()
+        if not session_id or not app_id:
+            return False
+        with self.lock, self.connect() as db:
+            row = db.execute("SELECT owner, origin FROM conversations WHERE session_id=?", (session_id,)).fetchone()
+            if not row or json.loads(row["origin"]).get("app_id") == app_id:
+                return False
+            now = datetime.now(timezone.utc).isoformat()
+            for ref in list(refs or [])[:8] or [{}]:
+                object_id = str(ref.get("object_id") or "")[:200]
+                db.execute(
+                    "INSERT INTO participants VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(session_id, app_id, object_id) DO UPDATE SET "
+                    "kind=CASE WHEN excluded.kind<>'' THEN excluded.kind ELSE kind END, "
+                    "title=CASE WHEN excluded.title<>'' THEN excluded.title ELSE title END, "
+                    "effect=CASE WHEN effect='write' OR excluded.effect='write' THEN 'write' ELSE 'read' END, "
+                    "tool=excluded.tool, server_id=excluded.server_id, last_at=excluded.last_at",
+                    (session_id, row["owner"], app_id, str(server_id or ""), object_id, str(ref.get("kind") or "")[:60],
+                     str(ref.get("title") or "")[:200], "write" if effect == "write" else "read", str(tool or "")[:120], now, now))
+        return True
+
+    def participants(self, session_id: str) -> list:
+        with self.connect() as db:
+            rows = db.execute("SELECT app_id, server_id, object_id, kind, title, effect, tool, first_at, last_at "
+                              "FROM participants WHERE session_id=? ORDER BY first_at", (session_id,)).fetchall()
+        rows = [dict(row) for row in rows]
+        # An app-level row (no object named) only matters while nothing more precise is known about that app.
+        precise = {row["app_id"] for row in rows if row["object_id"]}
+        return [row for row in rows if row["object_id"] or row["app_id"] not in precise]
+
+    def list(self, owner: str | None, app_id=None, data_space_id=None, external_project_id=None, participant_app_id=None):
         with self.connect() as db:
             rows = db.execute("SELECT session_id FROM conversations WHERE owner=?", (owner or "",)).fetchall()
+            joined = {r["session_id"] for r in db.execute(
+                "SELECT DISTINCT session_id FROM participants WHERE owner=? AND app_id=?",
+                (owner or "", participant_app_id))} if participant_app_id else set()
         result = []
         for row in rows:
             item = self.get(row["session_id"], owner)
             origin = item["origin"]
+            if participant_app_id and row["session_id"] not in joined:
+                continue
             if app_id and origin.get("app_id") != app_id:
                 continue
             if data_space_id and origin.get("data_space_id") != data_space_id:

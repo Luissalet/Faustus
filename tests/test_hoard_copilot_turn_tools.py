@@ -72,7 +72,7 @@ def test_the_hint_names_the_app_and_says_what_this_means():
     assert origin_hint_message({}) is None
 
 
-def test_two_instances_of_one_app_are_told_apart_by_data_space():
+def test_two_instances_of_one_app_are_told_apart_by_data_space(monkeypatch):
     from src import hoard_copilot_turn as turn
     names = {"a9e6fd58": "tantalus", "936e1b27": "tantalus-b", "e5f6a7b8": "Phileas's Hoard"}
     panel_b = ctx(app_id="tantalus", app_name="Tantalus's Hoard", tool_server_id="tantalus", data_space_id="space-b")
@@ -82,10 +82,16 @@ def test_two_instances_of_one_app_are_told_apart_by_data_space():
     # Without knowing the spaces (or with an unknown one) neither instance is guessed.
     assert find_origin_server(names, panel_b) is None
     assert find_origin_server(names, {**panel_b, "origin": {**panel_b["origin"], "data_space_id": "space-z"}}, spaces) is None
-    # A single instance needs no lookup at all.
-    asked = []
-    assert find_origin_server({"a9e6fd58": "Tantalus's Hoard"}, panel_b, lambda ids: asked.append(ids) or {}) == "a9e6fd58"
-    assert asked == []
+    # A single instance is the panel's unless it reports another data space (a QA panel, everyday tools).
+    single = {"a9e6fd58": "Tantalus's Hoard"}
+    assert find_origin_server(single, panel_b, lambda ids: {}) == "a9e6fd58"
+    assert find_origin_server(single, panel_b, lambda ids: {"a9e6fd58": "space-b"}) == "a9e6fd58"
+    assert find_origin_server(single, panel_b, lambda ids: {"a9e6fd58": "space-prod"}) is None
+    mgr = manager({"a9e6fd58": ("Tantalus's Hoard", ["watcher_get"])})
+    monkeypatch.setattr(turn, "server_data_spaces", lambda ids, *a, **k: {"a9e6fd58": "space-prod"})
+    note = turn.origin_server_note(mgr, panel_b)
+    assert "another" in note and "mcp__a9e6fd58__*" in note
+    assert origin_app_tools(mgr, panel_b) == set()
 
 
 def test_data_spaces_come_from_each_app_and_are_cached(monkeypatch):
@@ -119,3 +125,10 @@ def test_the_hint_names_the_server_of_this_panel_when_the_app_is_connected_twice
     # One instance: the hint stays as it was.
     single = manager({"a9e6fd58": ("tantalus", ["target_get"])})
     assert "connected more than once" not in origin_hint_message(panel_b, single)["content"]
+
+
+def test_open_objects_are_held_by_id_not_by_title():
+    hint = origin_hint_message(ctx(app_id="cicero", app_name="Cicero's Hoard"))["content"]
+    assert "identified by their ids" in hint and "same title" in hint
+    empty = origin_hint_message({"origin": {"app_id": "cicero"}, "active_objects": []})["content"]
+    assert "identified by their ids" not in empty

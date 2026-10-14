@@ -130,16 +130,19 @@ def setup_hoard_copilot_routes(session_manager):
             raise failure(exc)
 
     @router.get("/conversations")
-    def conversations_list(request: Request, app_id: str = "", data_space_id: str = "", external_project_id: str = ""):
+    def conversations_list(request: Request, app_id: str = "", data_space_id: str = "", external_project_id: str = "",
+                           participant_app_id: str = ""):
         who = owner(request)
         result = []
-        for item in copilot.get_store().list(who, app_id, data_space_id, external_project_id):
+        store = copilot.get_store()
+        for item in store.list(who, app_id, data_space_id, external_project_id, participant_app_id):
             try:
                 session = session_for(item["session_id"], who)
             except (HTTPException, KeyError):
                 continue
             result.append({**item, "name": session.name, "project_id": session.project_id,
-                           "archived": session.archived, "message_count": len(session.history)})
+                           "archived": session.archived, "message_count": len(session.history),
+                           "participants": store.participants(item["session_id"])})
         return {"conversations": result}
 
     @router.get("/conversations/{sid}")
@@ -151,6 +154,7 @@ def setup_hoard_copilot_routes(session_manager):
         return {"session_id": sid, "name": session.name, "project_id": session.project_id,
                 "context": (item or {}).get("context"), "origin": (item or {}).get("origin"),
                 "messages": [message.to_dict() for message in session.history],
+                "participants": copilot.get_store().participants(sid),
                 "run_id": agent_runs.get_run_id(sid) if agent_runs.get_active_run(sid) else None}
 
     @router.post("/imports")

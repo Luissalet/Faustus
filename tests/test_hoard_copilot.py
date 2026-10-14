@@ -102,3 +102,39 @@ def test_switching_application_repeatedly_keeps_canonical_project(store):
         switched = store.prepare_turn("sid", "owner", context(app="cicero", project="deck"), f"send-{index}", "use deck")
         assert switched["conversation_project"]["external_project_id"] == "novel"
         assert switched["conversation_project"]["faustus_project_id"] == linked["project_id"]
+
+
+def test_another_app_taking_part_is_linked_to_the_conversation(store, monkeypatch):
+    from types import SimpleNamespace
+    from src import hoard_copilot_turn as turn
+    import services.hoard_copilot as copilot
+    monkeypatch.setattr(copilot, "_store", store)
+    store.attach("sid", context(app="tantalus", space="t-space"), "owner")
+    store.attach("other", context(app="writer"), "owner")
+    manager = SimpleNamespace(_connections={"ac3e1027": {"name": "Cicero's Hoard"}, "t1": {"name": "Tantalus's Hoard"}})
+    created = {"exit_code": 0, "output": json.dumps({"result": {"id": "deck-9", "title": "Resumen de la vigilancia", "slides": []}})}
+    assert turn.note_participation(manager, "sid", "mcp__ac3e1027__deck_create", '{"title": "Resumen de la vigilancia"}', created)
+    assert turn.note_participation(manager, "sid", "mcp__ac3e1027__deck_get", '{"deck_id": "deck-9"}', {"exit_code": 0, "output": "{}"})
+    # The origin app itself, a failed call and a chat that is not a Hoard conversation add nothing.
+    assert not turn.note_participation(manager, "sid", "mcp__t1__watcher_get", '{"watcher_id": "w1"}', {"exit_code": 0})
+    assert not turn.note_participation(manager, "sid", "mcp__ac3e1027__deck_update", '{"deck_id": "deck-9"}', {"exit_code": 1})
+    assert not turn.note_participation(manager, "studio-chat", "mcp__ac3e1027__deck_get", '{"deck_id": "deck-9"}', {"exit_code": 0})
+    rows = store.participants("sid")
+    assert [(r["app_id"], r["object_id"], r["kind"], r["title"], r["effect"]) for r in rows] == [
+        ("cicero", "deck-9", "deck", "Resumen de la vigilancia", "write")]
+    assert store.get("sid", "owner")["origin"]["app_id"] == "tantalus"
+    assert [item["session_id"] for item in store.list("owner", participant_app_id="cicero")] == ["sid"]
+    assert store.list("owner", participant_app_id="writer") == []
+
+
+def test_a_cut_result_still_names_the_object_it_created(store, monkeypatch):
+    from types import SimpleNamespace
+    from src import hoard_copilot_turn as turn
+    import services.hoard_copilot as copilot
+    monkeypatch.setattr(copilot, "_store", store)
+    store.attach("sid", context(app="tantalus", space="t-space"), "owner")
+    manager = SimpleNamespace(_connections={"ac3e1027": {"name": "Cicero's Hoard"}})
+    cut = '{"id": "01M4Y050", "ref": "hoard://cicero/deck/01M4Y050", "title": "Vigilancia X100VI", "brief": "' + "x" * 5000
+    assert turn.note_participation(manager, "sid", "mcp__ac3e1027__deck_create", '{"title": "Vigilancia X100VI"}',
+                                   {"exit_code": 0, "output": cut})
+    assert [(r["object_id"], r["kind"], r["title"]) for r in store.participants("sid")] == [("01M4Y050", "deck", "Vigilancia X100VI")]
