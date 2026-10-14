@@ -11925,3 +11925,20 @@ en Spark2, contenedor aparte junto a GLM, `/v1/systemone`) frente a la decisión
 
 Queda como capacidad: recetas `coexist`/`kind` en Prometheus (0d61a8a) y en Faustus los servidores no-chat fuera de la
 lista de modelos (`sparks_aux_endpoints`, f4324cf1, 3c9b04ea). Evidencia: `research-inbox/decision-models-claude-20261015/`.
+
+## Silver's Hoard como plugin — 15-10-2026
+
+Nueva app de la familia (`plugins/silver/plugin.json`, puerto 5230, servicio `silvers-hoard`, 48 herramientas por el contrato
+compartido; el Hub la descubre y la arranca). Simulador de combates sobre el motor abierto de Showdown en un proceso Node:
+
+- Entrenadores (equipo importado, creado con el editor visual o aleatorio; nivel y estilo de IA; avatar; frases), combates
+  contra la IA o IA contra IA, series con porcentajes y MVP, torneos por eliminatoria o liga.
+- Gimnasios (entrenadores, líder, medalla, reglas de nivel) y ligas (gimnasios, Alto Mando, campeón, salón de la fama); los
+  equipos de Cristal, Rojo Fuego/Verde Hoja y Esmeralda se instalan como ligas completas.
+- Compartir: fichero, código de texto o página HTML jugable sin conexión con el motor dentro; el código de resultado que da
+  la página registra la medalla del amigo.
+- Sprites de entrenador desde una foto: pixel art local o dibujados por Prospero (contrato real comprobado en vivo hasta el
+  render: proyecto, importación con `reason`, descarga por id; el render no se lanzó para no ocupar la GPU principal).
+
+Verificado en el PC: 39 pruebas del motor y 16 de la app en Windows, liga de Johto instalada y combate IA contra IA por el
+puente del Hub, partida humana en el navegador con sprites descargados y registro en castellano.
