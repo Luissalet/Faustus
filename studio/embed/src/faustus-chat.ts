@@ -787,8 +787,27 @@ export class FaustusChatElement extends HTMLElement {
     else setTimeout(flush, 16);
   }
 
-  #appendTool(label: string, receipt?: Record<string, unknown>): void {
+  #appendTool(label: string, receipt?: Record<string, unknown>): HTMLDivElement {
     const node = el('div', { class: 'fc-tool' });
+    this.#fillTool(node, label, receipt);
+    this.#transcript.appendChild(node);
+    this.#transcript.scrollTop = this.#transcript.scrollHeight;
+    return node;
+  }
+
+  /** One line per tool call: the running line becomes the result when it arrives (matched by call id, else by tool). */
+  #finishTool(callId: string, tool: string, label: string, receipt?: Record<string, unknown>): void {
+    const running = [...this.#transcript.querySelectorAll<HTMLDivElement>('.fc-tool[data-running="1"]')];
+    const node = (callId && running.find(item => item.dataset.call === callId))
+      || running.find(item => !item.dataset.call && item.dataset.tool === tool)
+      || (!callId ? running.find(item => item.dataset.tool === tool) : undefined);
+    if (!node) { this.#appendTool(label, receipt); return; }
+    node.replaceChildren();
+    delete node.dataset.running;
+    this.#fillTool(node, label, receipt);
+  }
+
+  #fillTool(node: HTMLDivElement, label: string, receipt?: Record<string, unknown>): void {
     const split = label.indexOf('\n');
     if (split >= 0) {
       const details = el('details');
@@ -808,8 +827,6 @@ export class FaustusChatElement extends HTMLElement {
       });
       node.appendChild(undo);
     }
-    this.#transcript.appendChild(node);
-    this.#transcript.scrollTop = this.#transcript.scrollHeight;
   }
 
   #undoReceipt(output: string): Record<string, unknown> | undefined {
@@ -937,12 +954,16 @@ export class FaustusChatElement extends HTMLElement {
             continue;
           }
           if (event.type === 'tool_start') {
-            this.#appendTool(`▶ ${toolLabel(event.tool)}${event.command && event.command !== '{}' ? `: ${event.command}` : ''}`);
+            const node = this.#appendTool(`▶ ${toolLabel(event.tool)}${event.command && event.command !== '{}' ? `: ${event.command}` : ''}`);
+            node.dataset.running = '1';
+            node.dataset.tool = String(event.tool ?? '');
+            if (event.call_id) node.dataset.call = String(event.call_id);
             continue;
           }
           if (event.type === 'tool_output') {
             const receipt = this.#undoReceipt(String(event.output || ''));
-            this.#appendTool(`✓ ${toolLabel(event.tool)}${event.output ? `\n${event.output}` : ''}`, receipt);
+            this.#finishTool(String(event.call_id ?? ''), String(event.tool ?? ''),
+              `✓ ${toolLabel(event.tool)}${event.output ? `\n${event.output}` : ''}`, receipt);
             continue;
           }
           if (event.type === 'ask_user') {
