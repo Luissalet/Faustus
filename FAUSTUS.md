@@ -7,7 +7,7 @@ Chat, agentes, delegados, grupos y MCP usan el mismo transporte. Se informa de
 espera, Stop la cancela y se conservan deadlines explícitos; otros errores y
 respuestas parciales mantienen su tratamiento. QA privada API/MCP/navegador:
 una escritura, siete503, nueve peticiones y resultado final; ningún modelo real
-detenido o cargado. Detalle: docs/SPARKS-SERVICE-CONTINUITY.md.
+detenido o cargado. Detalle: website/SPARKS-SERVICE-CONTINUITY.md.
 
 **Delegación y resultados (13-10-2026, Ágora #457):** sin plazo de 25 minutos
 impuesto al trabajador ni cancelación por silencio por defecto; cero conserva
@@ -11494,7 +11494,7 @@ por estilo. `manual_only: true` se conserva al leer y guardar: permite el uso
 explícito y excluye del índice y de la selección automática léxica e híbrida.
 Verificado con 120 pruebas, creación y lectura por MCP nativo y biblioteca web
 aislada; no se usaron datos de Luis ni modelos reales. Detalle en
-`docs/SKILL_LINT.md`.
+`website/SKILL_LINT.md`.
 
 Invocación explícita #357: el catálogo de comandos slash y la ruta invoke
 incluyen las habilidades publicadas manual_only sin añadirlas al índice del
@@ -11566,7 +11566,7 @@ Las comprobaciones `.faustus/hooks/*.md` se conectan al ciclo existente y muestr
 avisos para comandos, archivos, peticiones y respuestas finales. Correcciones
 explícitas generan propuestas deterministas con evidencia; sólo el ejemplo que
 se quiere evitar es el patrón. La API nativa y siete herramientas MCP comparten
-los almacenes canónicos. Detalle y límites: `docs/INSTRUCTION-PORTABILITY.md`.
+los almacenes canónicos. Detalle y límites: `website/INSTRUCTION-PORTABILITY.md`.
 
 ## Observaciones útiles y recuperación progresiva (#319)
 

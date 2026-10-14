@@ -597,7 +597,7 @@ def test_settings_have_the_board_knobs():
     assert DEFAULT_SETTINGS["agent_subagent_tick_seconds"] == 5
     assert DEFAULT_SETTINGS["agent_subagent_stall_seconds"] == 120
     # Off by default since delegated tasks keep running instead of being
-    # nudged then stopped (docs/DELEGATION-CONTINUITY.md).
+    # nudged then stopped (website/DELEGATION-CONTINUITY.md).
     assert DEFAULT_SETTINGS["agent_subagent_supervisor"] is False
     assert DEFAULT_SETTINGS["agent_subagent_max_parallel"] == 2
 

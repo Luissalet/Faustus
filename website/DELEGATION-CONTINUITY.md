@@ -1,3 +1,6 @@
+---
+layout: default
+---
 # Delegation continuity and usable reports
 
 `delegate_agents` runs through the existing chat, API and MCP entry points.

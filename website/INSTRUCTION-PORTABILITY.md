@@ -1,3 +1,6 @@
+---
+layout: default
+---
 # Portable instructions and project Markdown checks
 
 Studio → Skills → Export previews and exports the user's canonical skills,

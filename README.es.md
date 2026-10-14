@@ -8,7 +8,7 @@
 
 Un fallo temporal de las Sparks antes de responder mantiene el trabajo con el
 mismo modelo configurado y los resultados de herramientas ya obtenidos. Se
-conservan Stop y los plazos iniciales solicitados. [Continuidad del servicio](docs/SPARKS-SERVICE-CONTINUITY.md).
+conservan Stop y los plazos iniciales solicitados. [Continuidad del servicio](website/SPARKS-SERVICE-CONTINUITY.md).
 
 Los trabajadores delegados no tienen un plazo impuesto y admiten todas las
 tareas solicitadas por defecto, encoladas según la concurrencia del endpoint.
@@ -16,7 +16,7 @@ Heredan el modelo configurado del coordinador salvo elección expresa de otro.
 Las lecturas e investigaciones entregan informes sin convertirse en órdenes de
 escritura; el informe final descarta narración anterior a los resultados y
 respeta las correcciones de respuesta. Se mantienen los límites solicitados y
-Stop. [Continuidad de delegación](docs/DELEGATION-CONTINUITY.md).
+Stop. [Continuidad de delegación](website/DELEGATION-CONTINUITY.md).
 
 Las conexiones MCP HTTP/SSE configuradas se recuperan al llamar a una herramienta
 sin reiniciar el agente. Las conexiones sanas se conservan; una escritura cuya

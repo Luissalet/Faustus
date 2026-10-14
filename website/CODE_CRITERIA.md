@@ -1,3 +1,6 @@
+---
+layout: default
+---
 # Code criteria
 
 Project → Rules offers three app-wide choices for the bundled code criteria:

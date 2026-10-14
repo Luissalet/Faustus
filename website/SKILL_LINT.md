@@ -1,3 +1,6 @@
+---
+layout: default
+---
 # Skill writing checks
 
 Faustus checks the complete saved SKILL.md, including its verification section,

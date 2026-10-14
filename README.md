@@ -8,14 +8,14 @@ Agora brings conversations, deliberation and project coordination into one works
 
 A temporary retryable Sparks service outage before output keeps the task alive
 on the same configured model. Completed tool results are retained; Stop and
-requested initial deadlines remain available. [Service continuity](docs/SPARKS-SERVICE-CONTINUITY.md).
+requested initial deadlines remain available. [Service continuity](website/SPARKS-SERVICE-CONTINUITY.md).
 
 Delegated workers have no implicit deadline and queue every requested task by
 default. They inherit the coordinator's configured model route unless a task
 selects another one. Reading and research return reports without being retried
 as file edits; final reports discard narration before tool results and consume
 response corrections. Explicit limits, endpoint concurrency and Stop remain
-available. [Delegation continuity](docs/DELEGATION-CONTINUITY.md).
+available. [Delegation continuity](website/DELEGATION-CONTINUITY.md).
 
 Configured MCP HTTP/SSE connections recover on demand without restarting the
 agent. Healthy connections stay intact; a write whose response was lost is
@@ -796,7 +796,7 @@ Studio now filters and groups canonical conversations by originating Hoard and d
 Skill writing checks return advice while preserving learned skills. They inspect
 the complete SKILL.md, including verification. Frontmatter `manual_only: true`
 keeps a skill available for explicit use while excluding it from automatic
-indexing and lexical or hybrid selection. See [skill checks](docs/SKILL_LINT.md).
+indexing and lexical or hybrid selection. See [skill checks](website/SKILL_LINT.md).
 Explicit slash commands still list and invoke published manual-only skills;
 their ordinary publication, ownership and usage-count rules remain in effect.
 Faustus provides the shared Hoard copilot panel and canonical conversation,
@@ -825,7 +825,7 @@ Project `.faustus/hooks/*.md` checks show advisory messages on commands, file
 changes, prompts and final answers. Explicit corrections can produce proposed
 checks with evidence. The native API and seven MCP tools share canonical stores;
 host runtime fields that cannot be transferred are reported. See
-[instruction portability](docs/INSTRUCTION-PORTABILITY.md) for formats and limits.
+[instruction portability](website/INSTRUCTION-PORTABILITY.md) for formats and limits.
 
 External document, IMAP and webhook/PubSub notifications can queue native tasks
 with stable source identities. Automations shows incoming work, retained results

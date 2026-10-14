@@ -1,3 +1,6 @@
+---
+layout: default
+---
 # Continuing after temporary Sparks service outages
 
 The shared streaming transport waits for the configured Sparks endpoint to
