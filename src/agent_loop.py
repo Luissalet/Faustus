@@ -16159,9 +16159,15 @@ async def _stream_agent_loop_body(
             # A researched answer gets an editorial pass using the same route,
             # tools and collected evidence. This is drafting, not a truth gate:
             # no approval, external verifier or new execution budget is added.
-            # Explicit round limits and effectful tasks keep their existing flow.
+            # Authored documents can be reviewed in place. Other effectful
+            # work keeps its existing completion flow.
+            _editorial_document_tools = {"create_document", "update_document", "edit_document"}
+            _editorial_artifact_only = bool(_ledger.effects) and all(
+                effect.get("tool") in _editorial_document_tools for effect in _ledger.effects
+            )
             if (cleaned_round.strip() and not _editorial_review_started
-                    and not _effectful_used and not _ledger.effects and not plan_mode
+                    and (_editorial_artifact_only or (not _effectful_used and not _ledger.effects))
+                    and not plan_mode
                     and round_num < max_rounds
                     and any((event or {}).get("tool") in {"web_search", "web_fetch"}
                             and (event or {}).get("exit_code") == 0
@@ -16182,6 +16188,13 @@ async def _stream_agent_loop_body(
                         "comparisons from their own sources. Read a missing primary source if necessary; "
                         "otherwise omit the unsupported assertion or say what is unknown. "
                         "Remove unmeasured causal explanations and ungrounded verdicts. "
+                        "If this turn produced a document or visual artifact, read its current persisted "
+                        "content using its existing ID. Compare its statements, numbers, units, labels and "
+                        "visual geometry with the sources and the prose; a correct recap does not prove "
+                        "a correct diagram. Correct a concrete contradiction through the normal artifact "
+                        "editing tool, preserving the same ID and unrelated content. Read the corrected "
+                        "artifact and inspect its rendering where available before describing it as fixed. "
+                        "Do not create a replacement copy or repeat unrelated external actions. "
                         "Return only the complete improved answer to the original question, preserving its "
                         "language and exact output requirements, useful images/charts and nearby source links. "
                         "Do not narrate this internal review or describe the draft."
@@ -18901,7 +18914,11 @@ async def _stream_agent_loop_body(
 
     # An interrupted/empty editorial pass must not erase the completed draft.
     # The existing terminal state still reports cancellation/failure/limits.
-    if _editorial_draft and not _strip_think_blocks(strip_tool_blocks(full_response)).strip():
+    if _editorial_draft and (
+        _round_finish_reason in {"length", "interrupted"}
+        or _ledger.stop_reason not in {"complete", "complete_unverified"}
+        or not _strip_think_blocks(strip_tool_blocks(full_response)).strip()
+    ):
         full_response = _editorial_draft
         yield f'data: {json.dumps({"type": "response_replace", "text": full_response})}\n\n'
 

@@ -144,3 +144,47 @@ def test_editorial_round_respects_explicit_round_budget(monkeypatch):
     events = _run(None, user='Find these data and summarize them.', max_rounds=2)
     assert calls['n'] == 2
     assert any('Answer from the source' in str(event.get('delta', '')) for event in events)
+
+
+def test_incomplete_editorial_review_preserves_completed_draft(monkeypatch):
+    from tests.test_agent_harness_loop_partial_work import _patch, _run
+    from src import agent_loop
+    draft = 'The measured values are twelve and eighteen. Their cause is unknown.'
+    _patch(monkeypatch, [('```web_search\n{"query":"observed values"}\n```', 'tool_calls'),
+                         (draft, 'stop'), ('Review still in progress: ', 'length')])
+    async def evidence(block, *args, **kwargs):
+        return block.tool_type, {'output': 'https://example.com/data observed12and18', 'exit_code': 0}
+    monkeypatch.setattr(agent_loop, 'execute_tool_block', evidence)
+    events = _run(None, user='Find the observations and explain what is known.', max_rounds=3)
+    final = ''
+    for event in events:
+        if event.get('type') == 'response_replace':
+            final = event.get('text', '')
+        elif 'delta' in event and not event.get('thinking'):
+            final += event['delta']
+    assert draft in final
+
+
+def test_stop_after_partial_editorial_review_preserves_draft_and_cancel_state(monkeypatch):
+    from tests.test_agent_harness_loop_partial_work import _patch, _events, _collect
+    from src import agent_loop
+    draft = 'Both measurements are observed; no causal evidence was collected.'
+    calls = _patch(monkeypatch, [('```web_search\n{"query":"two measurements"}\n```', 'tool_calls'),
+                                (draft, 'stop'), ('Unfinished review', 'length')])
+    async def evidence(block, *args, **kwargs):
+        return block.tool_type, {'output': 'https://example.com/data measurements12and18', 'exit_code': 0}
+    monkeypatch.setattr(agent_loop, 'execute_tool_block', evidence)
+    events = _events(_collect(agent_loop.stream_agent_loop(
+        'http://127.0.0.1:11434/v1', 'qwen3.5:9b',
+        [{'role': 'user', 'content': 'Find both measurements and what is known.'}],
+        max_rounds=8, relevant_tools={'web_search'},
+        pending_cancel=lambda: 'user_stop' if calls['n'] >= 3 else None,
+    )))
+    final = ''
+    for event in events:
+        if event.get('type') == 'response_replace':
+            final = event.get('text', '')
+        elif 'delta' in event and not event.get('thinking'):
+            final += event['delta']
+    assert draft in final
+    assert any(event.get('type') == 'cancelled' for event in events)
