@@ -276,3 +276,11 @@ def test_a_requested_output_language_is_recognised():
     assert req("Escríbelo en francés") == "fr"
     assert req("¿Qué tal el inglés de Marta?") is None
     assert req("Hola") is None
+
+
+def test_a_short_spanish_order_with_di_is_not_italian():
+    # "Di solo: hola A" was read as Italian ("di" listed only there) and GLM answered "Ciao!".
+    from src.reply_language import language_of
+    assert language_of("Di solo: hola A") == "es"
+    assert language_of("dime solo hola") == "es"
+    assert language_of("Dimmi la verità su questo e quello") == "it"

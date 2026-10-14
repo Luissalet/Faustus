@@ -1261,10 +1261,13 @@ _STOPWORDS = {
     # calc.py conservando add()." read as English 2.0 against Spanish 0.75,
     # the harness judged a correct Spanish answer to be in the wrong language
     # and asked the model for it again -- a second completion, billed.
+    # `di` is the Spanish imperative of decir as much as the Italian preposition: listed only under it,
+    # "Di solo: hola A" settled Italian and GLM answered "Ciao!". `hola`, `gracias`, `dime`, `quiero` and
+    # `puedes` are everyday Spanish that no other listed language writes.
     "es": """el la los las un una unos unas y o de del que en por para con como es son era
              sobre según qué cuál cuáles cuánto cuánta cuántos dónde cómo porqué al se no
              ni hay más entre desde tienen tiene sus su este esta estos estas necesito
-             dos da segundo a""".split(),
+             dos da segundo a di hola gracias dime quiero puedes""".split(),
     "pt": """o os as um uma e de do da dos das que em por para com como é são era sobre
              segundo qual quais quanto quanta quantos onde não há mais entre desde têm tem
              seus sua este esta estes estas você são melhores leva a""".split(),
