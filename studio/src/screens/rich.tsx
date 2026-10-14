@@ -39,6 +39,8 @@ function Censored({ text }: { text: string }) {
 }
 
 const OpenWorkspaceFile = createContext<((path: string) => void) | undefined>(undefined);
+/** Opens a document in the side panel: by id, or by title when the link lost its id. */
+const OpenDocument = createContext<((id: string, title: string) => void) | undefined>(undefined);
 const ObservedSources = createContext<readonly ResponseSource[]>([]);
 
 /** Where a pick in a ```choices``` / ```decision``` block goes: the
@@ -114,12 +116,39 @@ function RichImage({ src, alt }: { src: string; alt: string }) {
   );
 }
 
+/** `[Title](#document-<id>)` is how the document tools link what they wrote.
+ * Returns the id ('' when the model dropped it) or null for any other href. */
+export function documentLinkId(href: string): string | null {
+  const match = /^#document-([\w-]*)$/.exec(String(href || '').trim());
+  return match ? match[1] : null;
+}
+
+/** An in-app link (a fragment or a path on this same server) must never get
+ * `target=_blank`: in the desktop app that opens a second Faustus window. */
+function sameOrigin(href: string): boolean {
+  if (href.startsWith('#')) return true;
+  try {
+    return new URL(href, window.location.href).origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
 function RichLink({ href, children }: { href: string; children: ReactNode }) {
   const onOpenFile = useContext(OpenWorkspaceFile);
+  const onOpenDoc = useContext(OpenDocument);
   const source = findResponseSource(href, useContext(ObservedSources));
   const path = workspaceLink(href);
+  const docId = documentLinkId(href);
   if (source) return <SourceLink source={source} href={href}>{children}</SourceLink>;
-  return <a className="fs-link" href={href} target={path && onOpenFile ? undefined : '_blank'} rel="noreferrer" onClick={event => {
+  if (docId !== null) {
+    return <a className="fs-link" href={href} onClick={event => {
+      event.preventDefault();
+      onOpenDoc?.(docId, (event.currentTarget.textContent || '').trim());
+    }}>{children}</a>;
+  }
+  const local = sameOrigin(href);
+  return <a className="fs-link" href={href} target={(path && onOpenFile) || local ? undefined : '_blank'} rel="noreferrer" onClick={event => {
     if (!path || !onOpenFile || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
     onOpenFile(path);
@@ -349,7 +378,7 @@ function Notes({ notes, uid }: { notes: Footnote[]; uid: string }) {
   );
 }
 
-export function Rich({ text: raw, onOpenFile, sources = [] }: { text: string; onOpenFile?: (path:string)=>void; sources?: readonly ResponseSource[] }) {
+export function Rich({ text: raw, onOpenFile, onOpenDoc, sources = [] }: { text: string; onOpenFile?: (path:string)=>void; onOpenDoc?: (id: string, title: string) => void; sources?: readonly ResponseSource[] }) {
   const display = useDisplay();
   // useId gives ':r3:'; a colon in a fragment id is legal but awkward to link.
   const uid = useId().replace(/:/g, 'x');
@@ -361,12 +390,14 @@ export function Rich({ text: raw, onOpenFile, sources = [] }: { text: string; on
   const { blocks, footnotes } = useMemo(() => parseMarkdown(text), [text]);
   return (
     <OpenWorkspaceFile.Provider value={onOpenFile}>
+    <OpenDocument.Provider value={onOpenDoc}>
     <ObservedSources.Provider value={sources}>
     <div className="fs-rich">
       <Blocks blocks={blocks} k="b" uid={uid} />
       {footnotes.length > 0 && <Notes notes={footnotes} uid={uid} />}
     </div>
     </ObservedSources.Provider>
+    </OpenDocument.Provider>
     </OpenWorkspaceFile.Provider>
   );
 }

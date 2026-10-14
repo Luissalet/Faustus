@@ -181,6 +181,43 @@ def _call(method: str, path: str, body: Optional[dict] = None, *,
     return status, parsed, where
 
 
+def _app_key(name: str) -> str:
+    return "".join(ch for ch in str(name or "").lower() if ch.isalnum())
+
+
+def start_app_named(name: str, *, timeout: float = 90.0) -> bool:
+    """Start the family app called ``name`` (the MCP server's display name,
+    e.g. «Ledger's Hoard») through the Hub and wait until it answers.
+
+    True when the Hub reports it running. Used when a Hoard tool answers
+    "not running": the agent should open the app, not ask the user to.
+    """
+    key = _app_key(name)
+    if not key:
+        return False
+    status, body, _ = _call("GET", "/api/apps")
+    apps = (body or {}).get("apps") if isinstance(body, dict) else None
+    if status != 200 or not isinstance(apps, list):
+        return False
+    match = None
+    for app in apps:
+        if not isinstance(app, dict):
+            continue
+        names = {_app_key(app.get("name")), _app_key(app.get("id")),
+                 _app_key(str(app.get("name") or "").replace("'s", ""))}
+        if key in names or key.replace("hoard", "") in {n.replace("hoard", "") for n in names if n}:
+            match = app
+            break
+    if not match or not match.get("id"):
+        return False
+    status, body, _ = _call("POST", f"/api/apps/{match['id']}/start", {}, timeout=timeout)
+    if status is None or status >= 400:
+        return False
+    if isinstance(body, dict) and body.get("ok") is False:
+        return False
+    return True
+
+
 def _slim(spheres: Any) -> List[Dict[str, Any]]:
     """Only what the chip needs: the hub's mail rules and VIP lists stay there."""
     out: List[Dict[str, Any]] = []

@@ -1,9 +1,9 @@
-import { Archive, Check, Copy, FileText, GitBranch, Globe, History, Kanban, ListChecks, Monitor, MessageSquarePlus, Redo2, Save, SkipForward, Undo2, X, Users, Paperclip, Files, FolderTree } from 'lucide-react';
+import { Archive, Check, Copy, FileText, FolderOpen, GitBranch, Globe, History, Kanban, ListChecks, Monitor, MessageSquarePlus, Redo2, Save, SkipForward, Undo2, X, Users, Paperclip, Files, FolderTree } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Link } from 'react-router';
 import { Button, IconButton, Popover, Skeleton } from '../../components';
-import { archiveDoc, docPdfUrl, getDoc, listDocVersions, renameDoc, restoreDocVersion, saveDoc, type DocVersion } from '../../adapters/documents';
-import { readWorkspaceFile, saveWorkspaceFile, type WorkspaceFileText } from '../../adapters/workspace';
+import { archiveDoc, docPdfUrl, getDoc, listDocVersions, renameDoc, restoreDocVersion, revealDoc, saveDoc, type DocVersion } from '../../adapters/documents';
+import { readWorkspaceFile, revealWorkspaceFile, saveWorkspaceFile, type WorkspaceFileText } from '../../adapters/workspace';
 import { ApiError } from '../../adapters/api';
 import FileTree from './FileTree';
 import { currentTurnSteps, markCounts, splitHidden, turnFileMarks } from './file-activity';
@@ -208,7 +208,7 @@ function OccurrencePicker({ occurrences, onPick, onAll, onCancel }: { occurrence
   );
 }
 
-function DocTab({ doc, dispatch, onNotice }: { doc: DocState | null; dispatch: SidePanelProps['dispatch']; onNotice: SidePanelProps['onNotice'] }) {
+function DocTab({ doc, dispatch, onNotice, workspace }: { doc: DocState | null; dispatch: SidePanelProps['dispatch']; onNotice: SidePanelProps['onNotice']; workspace?: string | null }) {
   // CMP-01: identity/draft/selection/undo/proposals live in the shared
   // `docSession`, not component state — that is what makes them survive
   // switching to the full editor (a different mounted tree) and back.
@@ -460,6 +460,17 @@ function DocTab({ doc, dispatch, onNotice }: { doc: DocState | null; dispatch: S
           {doc.id && (
             <>
               <IconButton
+                icon={FolderOpen}
+                label={t('Show in folder')}
+                size="sm"
+                testId="doc-reveal"
+                onClick={() => {
+                  revealDoc(doc.id as string, workspace)
+                    .then((r) => onNotice(t('Saved as {path}', { path: r.path })))
+                    .catch((e: Error) => onNotice(e.message, 'danger'));
+                }}
+              />
+              <IconButton
                 icon={History}
                 label={t('Versions')}
                 size="sm"
@@ -631,6 +642,7 @@ function FileTab({ file,draft,dispatch, onNotice }: { file: PanelState['file']; 
         <strong title={data?.path ?? file.path}>{data?.rel ?? file.path}</strong>
         {data && <span>{tn(data.lines, '{n} line', '{n} lines')} · {data.size} B{data.truncated ? t(' · truncated') : ''}</span>}
         <IconButton icon={Copy} label={t('Copy the path')} size="sm" onClick={() => void navigator.clipboard?.writeText(data?.path ?? file.path).then(() => onNotice(t('Path copied.')))} />
+        <IconButton icon={FolderOpen} label={t('Show in folder')} size="sm" testId="file-reveal" onClick={() => void revealWorkspaceFile(file.workspace, file.path).catch((e: Error) => onNotice(e.message, 'danger'))} />
       </p>
       {error && <p className="fs-notice" data-tone="danger">{error}</p>}
       {!data && !error && <Skeleton label={t('Reading the file')} count={8} height="16px" />}
@@ -844,7 +856,7 @@ export default function SidePanel({ state, dispatch, onNotice,turns,workspace,pr
         </div>
       )}
       {state.tab === 'browser' && <BrowserTab state={state} dispatch={dispatch} onVisualSelection={onVisualSelection} />}
-      {state.tab === 'doc' && <DocTab key={state.doc?.id||'streaming'} doc={state.doc} dispatch={dispatch} onNotice={onNotice} />}
+      {state.tab === 'doc' && <DocTab key={state.doc?.id||'streaming'} doc={state.doc} dispatch={dispatch} onNotice={onNotice} workspace={workspace} />}
       {state.tab === 'file' && <FileTab key={state.file?fileKey(state.file):'none'} file={state.file} draft={state.file?state.drafts[fileKey(state.file)]:undefined} dispatch={dispatch} onNotice={onNotice} />}
       {state.tab === 'git' && (workspace || project) && (
         <div className="fs-panel__body">

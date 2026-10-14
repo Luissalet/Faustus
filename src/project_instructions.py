@@ -304,6 +304,80 @@ def block(workspace: str, trusted: bool = True) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Engine projects: tell the agent which official tool drives them
+# ---------------------------------------------------------------------------
+
+_ENGINE_SKIP_DIRS = {"library", "temp", "obj", "logs", "build", "builds", "node_modules", ".git", "usersettings"}
+
+
+def unity_projects(workspace: str, max_depth: int = 3, limit: int = 4) -> List[str]:
+    """Unity project folders (``Assets/`` beside ``ProjectSettings/``) at or
+    under ``workspace``, shallow first. Cheap: directory names only."""
+    try:
+        root = os.path.realpath(os.path.expanduser(workspace or ""))
+    except Exception:  # noqa: BLE001
+        return []
+    if not root or not os.path.isdir(root):
+        return []
+    found: List[str] = []
+    frontier = [(root, 0)]
+    while frontier and len(found) < limit:
+        folder, depth = frontier.pop(0)
+        try:
+            names = os.listdir(folder)
+        except OSError:
+            continue
+        if "Assets" in names and "ProjectSettings" in names:
+            found.append(folder)
+            continue
+        if depth >= max_depth:
+            continue
+        for name in sorted(names):
+            if name.lower() in _ENGINE_SKIP_DIRS or name.startswith("."):
+                continue
+            child = os.path.join(folder, name)
+            if os.path.isdir(child):
+                frontier.append((child, depth + 1))
+    return found
+
+
+def engine_block(workspace: str) -> str:
+    """For a workspace holding a Unity project: the official Unity CLI and how
+    to use it, so the agent drives the Editor instead of hand-editing scene
+    YAML (14-10-2026: a whole session of broken prefabs and a character off
+    its collider, with the CLI installed and never used)."""
+    projects = unity_projects(workspace)
+    if not projects:
+        return ""
+    import shutil
+    cli = shutil.which("unity") or ""
+    if not cli:
+        local = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Unity", "bin", "unity.exe")
+        cli = local if os.path.isfile(local) else ""
+    listed = "\n".join(f"- `{p}`" for p in projects)
+    guide = ""
+    try:
+        skill_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                  "skills", "library", "unity-editor", "SKILL.md")
+        with open(skill_path, encoding="utf-8") as fh:
+            text = fh.read()
+        start = text.find("## Procedure")
+        guide = text[start:].strip() if start >= 0 else ""
+    except OSError:
+        guide = ""
+    head = (
+        "\n\n## Unity project in this workspace\n"
+        f"{listed}\n"
+        + (f"The official Unity CLI is installed (`{cli}`). " if cli else
+           "Install the official Unity CLI (`irm https://unity.com/install.ps1 | iex`) before working on it. ")
+        + "Drive the Editor with it (`unity status`, `unity command eval`, `unity recompile`, `unity test`) — "
+        "never hand-write .unity/.prefab/.controller/.meta YAML while an Editor can do it — and check every change "
+        "in Play mode before reporting it.\n"
+    )
+    return head + (("\n" + guide[:6000]) if guide else "")
+
+
+# ---------------------------------------------------------------------------
 # Draft an AGENTS.md from what the runtime can already see
 # ---------------------------------------------------------------------------
 

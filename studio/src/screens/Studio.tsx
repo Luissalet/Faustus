@@ -1448,11 +1448,56 @@ export function StudioScreen() {
     if (!el || !pinnedRef.current) return;
     el.scrollTop = el.scrollHeight;
   }, [turns]);
+  // The transcript is virtualized: its height keeps growing for a while
+  // after a long chat opens, as rows are measured. Stay at the bottom while
+  // that happens, or the chat opens somewhere in the middle.
+  const hasTurns = Boolean(turns && turns.length);
+  const followTurnCount = turns?.length ?? 0;
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !followTurnCount || typeof ResizeObserver === 'undefined') return;
+    const follow = () => { if (pinnedRef.current) el.scrollTop = el.scrollHeight; };
+    const ro = new ResizeObserver(follow);
+    ro.observe(el);
+    const watch = () => {
+      const sizer = el.querySelector('.fs-studio__turns');
+      if (sizer) ro.observe(sizer);
+      if (el.firstElementChild) ro.observe(el.firstElementChild);
+    };
+    watch();
+    // The sizer can mount a little after the turns arrive (a long chat's
+    // history is large): look for it again until it is there.
+    const timers = [100, 400, 1000, 2500].map((ms) => window.setTimeout(() => { watch(); follow(); }, ms));
+    return () => { timers.forEach((id) => window.clearTimeout(id)); ro.disconnect(); };
+  }, [sessionId, followTurnCount]);
 
+  // Only the reader un-pins the view. The virtualizer moves scrollTop itself
+  // while it measures rows; reading those moves as "the reader scrolled up"
+  // left a long chat stuck tens of thousands of pixels above its end.
+  const userScrollAt = useRef(0);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const mark = () => { userScrollAt.current = Date.now(); };
+    const onKey = (event: KeyboardEvent) => {
+      if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) mark();
+    };
+    el.addEventListener('wheel', mark, { passive: true });
+    el.addEventListener('touchmove', mark, { passive: true });
+    el.addEventListener('pointerdown', mark, { passive: true });
+    el.addEventListener('keydown', onKey);
+    return () => {
+      el.removeEventListener('wheel', mark);
+      el.removeEventListener('touchmove', mark);
+      el.removeEventListener('pointerdown', mark);
+      el.removeEventListener('keydown', onKey);
+    };
+  }, [sessionId, hasTurns]);
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) pinnedRef.current = true;
+    else if (Date.now() - userScrollAt.current < 1500) pinnedRef.current = false;
   }, []);
 
   const patchLast = useCallback((fn: (turn: Turn) => Turn) => {
@@ -3621,7 +3666,19 @@ export function StudioScreen() {
               answerVersions={answerVersions}
               onUseVersion={(id) => void adoptVersion(id)}
               onOpenFile={workspace ? (path) => panelDispatch({ type: 'file', workspace, path }) : undefined}
-              onOpenDoc={(docId) => panelDispatch({ type: 'doc', doc: { streaming: false, id: docId, title: '', language: '', content: '', version: 0, suggestions: [] } })}
+              onOpenDoc={(docId, title) => {
+                const open = (id: string) => panelDispatch({ type: 'doc', doc: { streaming: false, id, title: '', language: '', content: '', version: 0, suggestions: [] } });
+                if (docId) { open(docId); return; }
+                // A link the model wrote without its id: find the document by title.
+                const wanted = (title || '').trim();
+                if (!wanted) return;
+                void import('../adapters/documents').then(({ loadDocLibrary }) => loadDocLibrary({ search: wanted, limit: 5 }))
+                  .then((page) => {
+                    const hit = page.documents.find((d) => d.title.trim() === wanted) ?? page.documents[0];
+                    if (hit) open(hit.id); else say(t('No document called «{title}» was found.', { title: wanted }), 'warning');
+                  })
+                  .catch((error) => say((error as Error).message, 'danger'));
+              }}
               onOpenEvidence={setEvidenceRef}
               onRerun={rerunWorker}
               onFork={knobs.incognito ? undefined : (turn) => void forkFrom(turn)}

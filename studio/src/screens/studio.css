@@ -222,7 +222,10 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: var(--fs-space-5) var(--fs-space-5) var(--fs-space-4);
-  scroll-behavior: smooth;
+  /* Never smooth: the transcript is virtualized, and a smooth jump to the
+     end of a long chat animates through every row, measuring each one on the
+     way, so the end keeps moving and the jump never arrives. */
+  scroll-behavior: auto;
 }
 
 .fs-studio__loading,

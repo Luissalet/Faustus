@@ -52,5 +52,27 @@ def effective_storage_owner(owner: str | None, *, auth_is_disabled: bool | None 
     return None
 
 
+def single_user_mode() -> bool:
+    """True when the install runs without login (AUTH_ENABLED=false).
+
+    One person sits behind every owner bucket there: rows written as the
+    first admin, as the reserved local owner or as legacy NULL all belong to
+    the operator, so owner checks between them must not reject anything.
+    """
+    return auth_disabled()
+
+
+def owners_match(stored: str | None, caller: str | None) -> bool:
+    """Whether ``caller`` may use a row stored for ``stored``.
+
+    With login on this is a plain identity check; in single-user mode every
+    bucket is the same person (see :func:`single_user_mode`).
+    """
+    if single_user_mode():
+        return True
+    caller_norm = normalize_owner(caller)
+    return bool(caller_norm) and caller_norm == normalize_owner(stored)
+
+
 def is_default_local_owner(owner: str | None) -> bool:
     return owner_key(owner) == DEFAULT_LOCAL_OWNER

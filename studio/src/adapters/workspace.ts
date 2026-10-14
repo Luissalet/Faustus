@@ -79,6 +79,11 @@ export async function fileDiff(workspace: string, path: string, checkpoint?: str
   return { git: Boolean(raw.git), diff: raw.diff ?? '', status: raw.status ?? null, rel: raw.rel ?? path };
 }
 
+/** Open the system file manager with this workspace file selected. */
+export async function revealWorkspaceFile(workspace: string, path: string): Promise<void> {
+  await post(`/api/workspace/reveal?${q({ workspace, path })}`);
+}
+
 export async function revertFile(workspace: string, path: string, checkpoint?: string): Promise<string> {
   const res = await post(`/api/workspace/revert?${q({ workspace, path, checkpoint: checkpoint ?? '' })}`);
   return String(res.action ?? 'restored');

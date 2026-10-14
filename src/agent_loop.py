@@ -4575,6 +4575,18 @@ def _looks_like_destructive_request(text: str) -> bool:
     return bool(_DESTRUCTIVE_REQUEST_RE.search(text or ""))
 
 
+_BARE_ACK_RE = re.compile(
+    r"^\W*(done|ok(ay)?|completed?|finished|all set|hecho|listo|vale|terminado|completado|perfecto|"
+    r"ya est[aá]|de acuerdo)\W*$",
+    re.IGNORECASE,
+)
+
+
+def _is_bare_ack(text: str) -> bool:
+    """A reply that is only an acknowledgement («Done.», «Hecho.», «OK»)."""
+    return bool(_BARE_ACK_RE.match((text or "").strip()))
+
+
 def _looks_like_success_claim(text: str) -> bool:
     return bool(_FAKE_SUCCESS_RE.search(text or ""))
 
@@ -5815,6 +5827,12 @@ def _build_system_prompt(
                 )
         except Exception as _pr_err:
             logger.debug("[project_rules] injection failed: %s", _pr_err)
+        # Engine projects (Unity): the official CLI and how to drive the Editor.
+        try:
+            from src import project_instructions as _pinstr_engine
+            agent_prompt += _pinstr_engine.engine_block(workspace)
+        except Exception as _eng_err:
+            logger.debug("[instructions] engine block failed: %s", _eng_err)
         try:
             if not _chat_mode.is_lean():
                 agent_prompt += _big_task_strategy_block()
@@ -15172,13 +15190,29 @@ async def _stream_agent_loop_body(
                 str(tc.get("name") or "?") for tc in (native_tool_calls or [])
                 if tc not in (converted_calls or [])
             ]
-            _empty_give_up = (
-                not _hc_text
-                and not _boundary_echo_only
+            # A bare «Done.» / «Hecho.» to a real request is a give-up with a
+            # word in it (14-10-2026: «¿dónde está el proyecto?» → «Done.»
+            # after a refused tool call). It gets the empty-round nudge.
+            _bare_ack_round = (
+                bool(_hc_text) and _is_bare_ack(_hc_text) and len((_last_user or "").strip()) > 12
                 and (
-                    _recover_empty_completion
-                    or _harness_scope_active
-                    or (_ledger.progress and any(t.get("status") != "completed" for t in _ledger.progress))
+                    "?" in (_last_user or "")
+                    or not tool_events
+                    or any(isinstance(_ev, dict) and _ev.get("ok") is False for _ev in (_ledger.events or []))
+                )
+            )
+            _empty_give_up = (
+                not _boundary_echo_only
+                and (
+                    _bare_ack_round
+                    or (
+                        not _hc_text
+                        and (
+                            _recover_empty_completion
+                            or _harness_scope_active
+                            or (_ledger.progress and any(t.get("status") != "completed" for t in _ledger.progress))
+                        )
+                    )
                 )
             )
             _text_action = _loop_decisions.decide_text_round(_loop_decisions.TextRoundState(
@@ -15330,12 +15364,22 @@ async def _stream_agent_loop_body(
                 logger.warning("[harness] round %s ended with no text and no tool call — nudging (open objectives: %s)",
                                round_num, _open[:4])
                 _ledger.notes.append(f"empty_round_nudge@{round_num}")
+                if _bare_ack_round:
+                    # Drop the bare acknowledgement from what the user will read.
+                    _ack_tail = round_response.strip()
+                    if _ack_tail and full_response.rstrip().endswith(_ack_tail):
+                        full_response = full_response.rstrip()[: -len(_ack_tail)].rstrip()
+                        yield f"data: {json.dumps({'type': 'response_replace', 'text': full_response})}\n\n"
                 messages.append({
                     "role": "user",
                     "_harness_note": True,
                     "content": (
                         _lang_note("[Harness check — automatic message from the runtime, not from the user] "
-                        "Your last message was EMPTY: no text and no tool call, so nothing happened. "
+                        + ("Your last message was only an acknowledgement, which answers nothing. Answer the "
+                           "user's last message in full: what you did, where (exact paths), what failed and why, "
+                           "and finish the requested work with tools if it is not finished. "
+                           if _bare_ack_round else
+                           "Your last message was EMPTY: no text and no tool call, so nothing happened. ")
                         + (f"Open objectives: {'; '.join(str(o) for o in _open[:4])}. " if _open else "")
                         + "Either continue the task by calling a tool now, or write the final answer "
                         "stating exactly what was done and what remains. "
@@ -18843,11 +18887,10 @@ async def _stream_agent_loop_body(
             and _looks_like_success_claim(full_response)
         ):
             full_response = "I couldn't make that change because no matching tool action completed."
-    # Evidence warnings append context without replacing the model's report.
+    # Evidence warnings stay in the harness metadata (the strip under the
+    # turn shows them); they are not appended to the answer text.
     if _harness_final_note:
-        _note_delta = ("\n\n" if full_response.strip() else "") + _harness_final_note
-        full_response = (full_response.rstrip() + _note_delta).strip()
-        yield f"data: {json.dumps({'delta': _note_delta})}\n\n"
+        _ledger.notes.append("evidence_notice: " + _harness_final_note)
     # Preserve the report and show deterministic evidence beside it.
     try:
         from src import answer_checks as _final_calculation_checks
@@ -18907,10 +18950,10 @@ async def _stream_agent_loop_body(
         if _links_evidence_note:
             _notice_parts.append(_links_evidence_note)
         if _notice_parts:
-            _notice = ("Comprobación de evidencias: " if _es_evidence else "Evidence notice: ") + " ".join(_notice_parts)
-            _notice_delta = ("\n\n" if full_response.strip() else "") + _notice
-            full_response = (full_response.rstrip() + _notice_delta).strip()
-            yield "data: " + json.dumps({"delta": _notice_delta}) + "\n\n"
+            # The notice travels as metadata for the harness strip only; it is
+            # never glued onto the answer the user reads (14-10-2026: it read
+            # as noise under every reply and replaced nothing).
+            _ledger.notes.append("evidence_notice: " + " ".join(_notice_parts))
     # A link to an image a tool produced this turn must use the URL that tool
     # returned; small models keep the ID but invent a host (seen live with a
     # 3B model after a Prospero edit), which renders as a broken image.

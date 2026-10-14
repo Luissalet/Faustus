@@ -66,7 +66,8 @@ class GalleryImageResolver(ResolverBase):
         row = db.query(GalleryImage).filter(GalleryImage.id == str(image_id or "")).first()
         if row is None:
             return None, "missing", "not found"
-        if not owner or (row.owner or "") != owner:
+        from src.owner_identity import owners_match
+        if not owners_match(row.owner, owner):
             return None, "forbidden", "not owned by the caller"
         return row, "ok", ""
 

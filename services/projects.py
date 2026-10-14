@@ -1613,9 +1613,82 @@ def project_context_for_session(
     )
 
 
+def default_projects_root(rows: Optional[List[Dict[str, Any]]] = None) -> str:
+    """Folder where a project without its own workspace gets one.
+
+    The ``projects_root`` setting wins; otherwise the parent folder that
+    already holds most project workspaces (on Luis's machine, the
+    «Proyectos independientes» folder). '' when nothing sensible exists.
+    """
+    try:
+        from src.settings import get_setting
+        configured = str(get_setting("projects_root") or "").strip()
+        if configured and os.path.isdir(configured):
+            return configured
+    except Exception:
+        pass
+    if rows is None:
+        try:
+            rows = list(get_store()._load())
+        except Exception:
+            rows = []
+    counts: Dict[str, int] = {}
+    for row in rows or []:
+        ws = str((row or {}).get("workspace") or "").strip()
+        if not ws:
+            continue
+        parent = os.path.dirname(os.path.normpath(ws))
+        if parent and parent != os.path.normpath(ws):
+            counts[parent] = counts.get(parent, 0) + 1
+    for parent, count in sorted(counts.items(), key=lambda kv: -kv[1]):
+        if count >= 2 and os.path.isdir(parent):
+            return parent
+    return ""
+
+
+_BAD_FOLDER_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+def ensure_project_workspace(project: Optional[Dict[str, Any]]) -> str:
+    """Give a project with no workspace its own folder under the projects root.
+
+    Before 14-10-2026 such a project ran with no workspace at all, so the file
+    tools fell back to Faustus's own data/ folder and the agent built a whole
+    prototype in there. Now the folder is created (``<root>/<project name>``)
+    and stored on the project, so the next turn and the UI both see it.
+    """
+    if not project:
+        return ""
+    existing = str(project.get("workspace") or "").strip()
+    if existing:
+        return existing
+    root = default_projects_root()
+    name = _BAD_FOLDER_CHARS.sub(" ", str(project.get("name") or project.get("folder") or "")).strip(" .")
+    if not root or not name:
+        return ""
+    target = os.path.join(root, name)
+    try:
+        os.makedirs(target, exist_ok=True)
+        updated = get_store().update(project.get("id") or "", {"workspace": target},
+                                     owner=project.get("owner"))
+    except Exception as exc:  # noqa: BLE001 - a turn never fails over this
+        logger.warning("Could not give project %s a default workspace: %s", project.get("id"), exc)
+        return ""
+    if updated:
+        project["workspace"] = updated.get("workspace") or target
+        return project["workspace"]
+    return ""
+
+
 def workspace_for_session(session_id: str, owner: Optional[str] = None) -> str:
-    """The project's workspace for this chat, or '' when there is none."""
+    """The project's workspace for this chat, or '' when there is none.
+
+    A project that never got a folder gets its default one here (see
+    :func:`ensure_project_workspace`).
+    """
     project = project_for_session(session_id, owner)
+    if project and not project.get("workspace"):
+        return ensure_project_workspace(project)
     return (project or {}).get("workspace") or ""
 
 

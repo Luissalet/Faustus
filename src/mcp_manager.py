@@ -555,6 +555,19 @@ _MCP_READONLY_VERBS = (
 )
 
 
+_APP_CLOSED_RE = re.compile(
+    r"\"code\"\s*:\s*\"(?:not_running|app-closed|app_closed)\"|is not running, so its data is unreachable",
+    re.I)
+
+
+def _app_closed_result(result: Any) -> bool:
+    """A family app's MCP tool answered that the app itself is closed."""
+    if not isinstance(result, dict):
+        return False
+    text = " ".join(str(result.get(key) or "") for key in ("output", "error", "stderr", "stdout", "content"))
+    return bool(_APP_CLOSED_RE.search(text))
+
+
 _UNKNOWN_TOOL_RE = re.compile(r"unknown tool|tool not found|no such tool|tool '?[\w.-]+'? (?:is )?not found", re.I)
 
 
@@ -1844,6 +1857,35 @@ class McpManager:
         }
 
     async def call_tool(self, qualified_name: str, arguments: Dict) -> Dict:
+        """Call an MCP tool; a family app that answers "not running" is started
+        through the Hub and the call is retried once.
+
+        Before 14-10-2026 the agent relayed «open Ledger's Hoard (npm start)»
+        to the user and stopped; the Hub can open any family app itself.
+        """
+        result = await self._call_tool_once(qualified_name, arguments)
+        if not _app_closed_result(result):
+            return result
+        parts = qualified_name.split("__", 2)
+        server_id = parts[1] if len(parts) == 3 else ""
+        name = str((self._connections.get(server_id) or {}).get("name") or "")
+        if not name:
+            return result
+        try:
+            from src import hoard_hub
+            started = await asyncio.to_thread(hoard_hub.start_app_named, name)
+        except Exception:  # noqa: BLE001 - keep the original answer
+            logger.debug("auto-start of %s failed", name, exc_info=True)
+            return result
+        if not started:
+            return result
+        logger.info("[mcp] %s was closed; started it through the Hub and retried %s", name, qualified_name)
+        retried = await self._call_tool_once(qualified_name, arguments)
+        if isinstance(retried, dict):
+            retried.setdefault("auto_started_app", name)
+        return retried
+
+    async def _call_tool_once(self, qualified_name: str, arguments: Dict) -> Dict:
         """Call an MCP tool by its qualified name (mcp__{server_id}__{tool_name}).
 
         Returns a result dict compatible with agent_tools format.

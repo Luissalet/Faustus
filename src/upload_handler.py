@@ -1066,13 +1066,16 @@ class UploadHandler:
             now = datetime.now()
             current_info = matching_rows[0]
             stored_owner = current_info.get("owner")
-            from src.owner_identity import DEFAULT_LOCAL_OWNER, auth_disabled, effective_storage_owner
-            if owner == DEFAULT_LOCAL_OWNER and auth_disabled():
-                stored_owner = effective_storage_owner(stored_owner)
-            if owner and not is_admin and stored_owner != owner:
-                return None
-            if not owner and current_info.get("owner") is not None:
-                return None
+            from src.owner_identity import single_user_mode
+            # Single-user install: the chat session may be owned by the first
+            # admin while the upload went in as the local owner (no login on
+            # the upload request). Both are the same person; rejecting here
+            # silently dropped every image from the turn.
+            if not single_user_mode():
+                if owner and not is_admin and stored_owner != owner:
+                    return None
+                if not owner and stored_owner is not None:
+                    return None
 
             existing_paths: set[str] = set()
             for row in matching_rows:

@@ -183,6 +183,14 @@ export async function loadDocLibrary(query: { search?: string; language?: string
   };
 }
 
+/** Save the document as a file (in the chat's project folder when there is
+ * one) and open the system file manager with it selected. */
+export async function revealDoc(id: string, workspace?: string | null): Promise<{ path: string; opened: boolean }> {
+  const query = workspace ? `?workspace=${encodeURIComponent(workspace)}` : '';
+  const raw = await send(`/api/document/${enc(id)}/reveal${query}`, 'POST');
+  return { path: String(raw.path ?? ''), opened: Boolean(raw.opened) };
+}
+
 export async function setDocArchived(id: string, archived: boolean): Promise<void> {
   await send(`/api/document/${enc(id)}/archive?archived=${archived ? 'true' : 'false'}`, 'POST');
 }

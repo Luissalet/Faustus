@@ -106,7 +106,8 @@ class ArtifactResolver(ResolverBase):
         row = self._row(db, artifact_id)
         if row is None:
             return None, "missing", "not found"
-        if not owner or (row.owner or "") != owner:
+        from src.owner_identity import owners_match
+        if not owners_match(row.owner, owner):
             return None, "forbidden", "not owned by the caller"
         row_project = (row.project_id or "").strip()
         want = str((project or {}).get("id") or "").strip()

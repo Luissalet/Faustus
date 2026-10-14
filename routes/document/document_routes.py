@@ -75,6 +75,15 @@ from routes.document_helpers import (
 )
 
 
+_DOC_EXTENSIONS = {
+    "markdown": ".md", "md": ".md", "python": ".py", "javascript": ".js", "typescript": ".ts",
+    "tsx": ".tsx", "jsx": ".jsx", "json": ".json", "html": ".html", "css": ".css", "csharp": ".cs",
+    "c#": ".cs", "cpp": ".cpp", "c": ".c", "java": ".java", "go": ".go", "rust": ".rs", "yaml": ".yaml",
+    "yml": ".yml", "toml": ".toml", "sql": ".sql", "bash": ".sh", "shell": ".sh", "powershell": ".ps1",
+    "xml": ".xml", "csv": ".csv", "latex": ".tex", "text": ".txt", "plaintext": ".txt",
+}
+
+
 def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
     router = APIRouter(tags=["documents"])
 
@@ -494,6 +503,61 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
             return {"ok": True, "id": doc_id, "archived": doc.archived}
         finally:
             db.close()
+
+    # ---- POST /api/document/{doc_id}/reveal — save as a file and show it ----
+    @router.post("/api/document/{doc_id}/reveal")
+    async def reveal_document(request: Request, doc_id: str, workspace: str = Query("")) -> Dict[str, Any]:
+        """Write the document's current text as a file in the chat's project
+        folder (or data/documents when there is none) and open the file
+        manager with it selected. Documents live in the database; this is how
+        the user gets to «where is it» in one click."""
+        import os as _os
+        import re as _re
+        import subprocess as _subprocess
+        from src.tool_security import owner_is_admin_or_single_user
+        from src.tool_execution import vet_workspace
+        from src.constants import DATA_DIR
+        user = get_current_user(request)
+        if not owner_is_admin_or_single_user(user):
+            raise HTTPException(403, "Admin-only")
+        db = SessionLocal()
+        try:
+            doc = db.query(Document).filter(Document.id == doc_id).first()
+            if not doc:
+                raise HTTPException(404, "Document not found")
+            _verify_doc_owner(db, doc, user)
+            title = (doc.title or "document").strip() or "document"
+            content = doc.current_content or ""
+            language = (doc.language or "markdown").strip().lower()
+        finally:
+            db.close()
+        ext = _DOC_EXTENSIONS.get(language, ".md" if language in ("", "markdown", "md") else ".txt")
+        folder = vet_workspace(workspace) if workspace else ""
+        if not folder:
+            folder = _os.path.join(DATA_DIR, "documents")
+        _os.makedirs(folder, exist_ok=True)
+        stem = _re.sub(r'[<>:"/\\|?*\x00-\x1f]', " ", title).strip(" .")[:120] or "document"
+        target = _os.path.join(folder, stem + ext)
+        if _os.path.exists(target):
+            try:
+                with open(target, "r", encoding="utf-8") as fh:
+                    same = fh.read() == content
+            except (OSError, UnicodeDecodeError):
+                same = False
+            if not same:
+                target = _os.path.join(folder, f"{stem} ({doc_id[:8]}){ext}")
+        with open(target, "w", encoding="utf-8", newline="") as fh:
+            fh.write(content)
+        try:
+            if _os.name == "nt":
+                _subprocess.Popen(["explorer", "/select,", target])
+            elif __import__("sys").platform == "darwin":
+                _subprocess.Popen(["open", "-R", target])
+            else:
+                _subprocess.Popen(["xdg-open", folder])
+        except OSError as exc:
+            return {"ok": True, "path": target, "opened": False, "error": str(exc)}
+        return {"ok": True, "path": target, "opened": True}
 
     # ---- POST /api/document/{doc_id}/extract-pdf-text ----
     @router.post("/api/document/{doc_id}/extract-pdf-text")

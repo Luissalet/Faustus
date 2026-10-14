@@ -393,6 +393,10 @@ const GAP_MAX_MS = 4_000;
 /** Enough to be steady, short enough to still be "right now". */
 const RECENT = 40;
 
+/** DOM event on the transcript's scroll element asking it to show one turn
+ *  (`detail.index`), mounted or not — the transcript is virtualized. */
+export const SCROLL_TO_TURN_EVENT = 'faustus:scroll-to-turn';
+
 export function newLive(now: number): LiveRate {
   return { tokens: 0, recent: [], lastTokenAt: 0, lastAt: now, phase: 'waiting', phaseAt: now };
 }

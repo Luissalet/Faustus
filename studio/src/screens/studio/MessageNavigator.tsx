@@ -1,6 +1,6 @@
 import {useEffect, useRef, useState, type RefObject} from 'react';
 import {Search, X} from 'lucide-react';
-import type {Turn} from './model';
+import {SCROLL_TO_TURN_EVENT, type Turn} from './model';
 import {t} from '../../i18n';
 
 export function navigationIndex(y:number, top:number, height:number, count:number) {
@@ -79,10 +79,19 @@ export function MessageNavigator({turns,scrollRef,onJump}:{turns:Turn[];scrollRe
   const go=(index:number)=>{
     index=Math.max(0,Math.min(turns.length-1,index));
     const scroll=scrollRef.current;
-    const node=scroll&&Array.from(scroll.querySelectorAll<HTMLElement>('[data-nav-id]')).find(node=>node.dataset.navId===turns[index].id);
-    if(!scroll||!node)return;
-    onJump();
+    if(!scroll)return;
+    // Going to the last message means «follow the chat again»: leave the pin alone.
+    if(index!==turns.length-1)onJump();
     setActive(index);setPreview(index);
+    const node=Array.from(scroll.querySelectorAll<HTMLElement>('[data-nav-id]')).find(node=>node.dataset.navId===turns[index].id);
+    // A turn far away is not mounted (virtualized transcript), and the last
+    // one has to land at the real bottom: both go through the transcript,
+    // which knows every row's position. Before 14-10-2026 an unmounted
+    // target was silently ignored, so «last message» did nothing in a long chat.
+    if(!node||index===turns.length-1){
+      scroll.dispatchEvent(new CustomEvent(SCROLL_TO_TURN_EVENT,{detail:{index}}));
+      return;
+    }
     scroll.scrollTo({top:Math.max(0,scroll.scrollTop+node.getBoundingClientRect().top-scroll.getBoundingClientRect().top-24),behavior:'instant'});
   };
   const point=(y:number)=>{const bounds=rail.current!.getBoundingClientRect();return navigationIndex(y,bounds.top,bounds.height,turns.length);};

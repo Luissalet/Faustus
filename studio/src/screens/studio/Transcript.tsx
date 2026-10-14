@@ -22,7 +22,7 @@ import { writeClipboardText } from '../../lib/clipboard-write';
 import { safeExternal } from '../../lib/markdown';
 import { stripExecutedFences, toolFenceRegex } from '../../lib/fences';
 import { frameBatcher } from '../../lib/frame-batch';
-import { formatMetrics, liveTps, type CoverageItem, type LiveRate, type PlanStepView, type Step, type Thought, type Turn, type TurnStrategy } from './model';
+import { formatMetrics, liveTps, SCROLL_TO_TURN_EVENT, type CoverageItem, type LiveRate, type PlanStepView, type Step, type Thought, type Turn, type TurnStrategy } from './model';
 import { locale, t, tn, useLang } from '../../i18n';
 import { getDisplay } from '../../shell/display';
 import { nextStreamAnnouncement } from '../../adapters/streamAnnounce';
@@ -120,7 +120,7 @@ export interface TranscriptProps {
   onUseVersion?: (versionId: string) => void;
   /** Side panel hooks: a workspace file, a living document, a worker to re-run. */
   onOpenFile?: (path: string) => void;
-  onOpenDoc?: (docId: string) => void;
+  onOpenDoc?: (docId: string, title?: string) => void;
   /** Lote 50 (BENCH-03 wiring): open the evidence inspector for one
    *  `EvidenceRef` a tool call attached to its result (`step.evidenceRefs`). */
   onOpenEvidence?: (ref: EvidenceRef) => void;
@@ -694,7 +694,7 @@ function ToolRail({
   sessionId?: string | null;
   sources?: WebSource[];
   onOpenFile?: (path: string) => void;
-  onOpenDoc?: (docId: string) => void;
+  onOpenDoc?: (docId: string, title?: string) => void;
   onOpenEvidence?: (ref: EvidenceRef) => void;
 }) {
   const nestedThoughts = thoughts?.length ? thoughts : [];
@@ -916,7 +916,7 @@ function ActivityTrail({
   sessionId?: string | null;
   sources?: WebSource[];
   onOpenFile?: (path: string) => void;
-  onOpenDoc?: (docId: string) => void;
+  onOpenDoc?: (docId: string, title?: string) => void;
   onOpenEvidence?: (ref: EvidenceRef) => void;
 }) {
   const showThoughts = getDisplay().thinking;
@@ -2065,7 +2065,7 @@ function AssistantTurn({
           {!alt.sameQuestion && alt.question && (
             <p className="fs-turn__version-q">{t('Asked as: {q}', { q: alt.question.slice(0, 280) })}</p>
           )}
-          <Rich text={alt.answer} onOpenFile={onOpenFile} />
+          <Rich text={alt.answer} onOpenFile={onOpenFile} onOpenDoc={onOpenDoc} />
           {alt.truncated && <p className="fs-turn__version-q">{t('Shortened here; using this version brings back all of it.')}</p>}
           <div className="fs-turn__foot">
             <span className="fs-turn__foot-left">{pager}</span>
@@ -2125,7 +2125,7 @@ function AssistantTurn({
         )}
         <TurnActivity turn={turn} />
         {turn.research && !turn.research.done && turn.streaming && <ResearchLine research={turn.research} />}
-        {body && <Rich text={body} onOpenFile={onOpenFile} sources={turn.sources} />}
+        {body && <Rich text={body} onOpenFile={onOpenFile} onOpenDoc={onOpenDoc} sources={turn.sources} />}
         {turn.streaming && body && <span className="fs-studio__cursor" aria-hidden="true" />}
         {turn.streaming && <span className="fs-sr-only" aria-live="polite" data-testid="stream-announcement">{streamAnnouncement}</span>}
         {turn.images.map((url) => (
@@ -2473,6 +2473,17 @@ function ResearchLine({ research }: { research: NonNullable<Turn['research']> })
  *  each row mounts and reports its real size (`measureElement`); only
  *  changes how many off-screen rows the very first paint guesses at. */
 const ESTIMATED_TURN_HEIGHT = 180;
+
+/** A first guess at a turn's rendered height from what it holds. */
+function estimateTurnHeight(turn: Turn | undefined): number {
+  if (!turn) return ESTIMATED_TURN_HEIGHT;
+  const text = turn.text || '';
+  const lines = text.split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / 95)), 0);
+  const steps = Array.isArray(turn.steps) ? turn.steps.length : 0;
+  const attachments = Array.isArray(turn.attachments) ? turn.attachments.length : 0;
+  const base = turn.role === 'user' ? 70 : 110;
+  return Math.min(6000, base + lines * 22 + Math.min(steps, 12) * 30 + attachments * 90);
+}
 /** Same "close enough to the bottom" reading as Studio.tsx's own
  *  pinned-scroll effect (`pinnedRef`, a fichero ajeno to this lote), so the
  *  back-to-bottom button and the auto-scroll agree on what "at the bottom"
@@ -2532,10 +2543,68 @@ export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdi
   const rowVirtualizer = useVirtualizer({
     count: turns.length,
     getScrollElement: () => scrollElRef.current,
-    estimateSize: () => ESTIMATED_TURN_HEIGHT,
+    // A guess from the turn's own size: a flat 180 px made a long chat's
+    // total height wrong by thousands of pixels until every row had been
+    // measured, so the scrollbar jumped and «latest» landed mid-chat.
+    estimateSize: useCallback((index: number) => estimateTurnHeight(turns[index]), [turns]),
     overscan: 8,
     getItemKey: useCallback((index: number) => turns[index]?.id ?? index, [turns]),
   });
+
+  // Scrolls until the target turn stays put: rows measured on the way change
+  // the total height, so a single scrollTo lands short in a long chat.
+  const settleOn = useCallback((index: number) => {
+    const el = scrollElRef.current;
+    if (!el || turns.length === 0) return;
+    const target = Math.max(0, Math.min(turns.length - 1, index));
+    const last = target === turns.length - 1;
+    // Keep correcting until the position has held for a dozen frames (rows
+    // mount and get measured a frame or two after each move), at most ~2 s.
+    const started = performance.now();
+    let steady = 0;
+    let previous = '';
+    // The reader takes over the moment they scroll themselves.
+    let cancelled = false;
+    const stop = () => { cancelled = true; };
+    el.addEventListener('wheel', stop, { once: true, passive: true });
+    el.addEventListener('touchstart', stop, { once: true, passive: true });
+    const step = () => {
+      if (cancelled) return;
+      if (last) {
+        rowVirtualizer.scrollToIndex(target, { align: 'end' });
+        el.scrollTop = el.scrollHeight;
+      } else {
+        rowVirtualizer.scrollToIndex(target, { align: 'start' });
+      }
+      const now = `${Math.round(el.scrollTop)}:${el.scrollHeight}`;
+      steady = now === previous ? steady + 1 : 0;
+      previous = now;
+      if (steady < 12 && performance.now() - started < 3000) requestAnimationFrame(step);
+    };
+    step();
+  }, [rowVirtualizer, turns.length]);
+
+  // Opening a conversation lands on its last message, however long it is.
+  const settledSession = useRef<string | null>(null);
+  useEffect(() => {
+    const key = sessionId ?? '';
+    if (!turns.length || settledSession.current === key || !scrollElRef.current) return;
+    settledSession.current = key;
+    settleOn(turns.length - 1);
+  }, [sessionId, turns.length, settleOn, jumpHost]);
+
+  // MessageNavigator (and anything else) asks for a turn that may not be
+  // mounted at all; the virtualizer is the only one that knows where it is.
+  useEffect(() => {
+    const el = scrollElRef.current;
+    if (!el) return;
+    const onJump = (event: Event) => {
+      const index = (event as CustomEvent<{ index?: number }>).detail?.index;
+      if (typeof index === 'number') settleOn(index);
+    };
+    el.addEventListener(SCROLL_TO_TURN_EVENT, onJump);
+    return () => el.removeEventListener(SCROLL_TO_TURN_EVENT, onJump);
+  }, [jumpHost, settleOn]);
 
   // A turn's id enters this set the first render it is seen at all; a LATER
   // render — virtualization mounting it again after a scroll, or a delta
@@ -2590,8 +2659,7 @@ export function Transcript({ turns, busy, sessionId, onApproval, onAnswer, onEdi
           type="button"
           className="fs-studio__back-to-bottom"
           onClick={() => {
-            const el = scrollElRef.current;
-            if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+            settleOn(turns.length - 1);
             setPastBottom(false);
           }}
           data-testid="turn-back-to-bottom"

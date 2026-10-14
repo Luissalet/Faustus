@@ -161,7 +161,8 @@ class DocumentResolver(ResolverBase):
         doc = db.query(Document).filter(Document.id == str(doc_id or "")).first()
         if doc is None:
             return None, "missing"
-        if not owner or (doc.owner or "") != owner:
+        from src.owner_identity import owners_match
+        if not owners_match(doc.owner, owner):
             # Same shape as "missing" to the caller — see obligation 2. The two
             # states differ only so the *owner* can be told which one it was.
             return None, "forbidden"
