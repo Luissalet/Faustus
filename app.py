@@ -1693,6 +1693,7 @@ from routes.agent_mailbox_routes import setup_agent_mailbox_routes
 from routes.prior_art_routes import setup_prior_art_routes
 from routes.blender_scene_routes import setup_blender_scene_routes
 from routes.extraction_routes import setup_extraction_routes
+from routes.visual_index_routes import setup_visual_index_routes
 from routes.chat_bridge_routes import setup_chat_bridge_routes
 app.include_router(setup_contacts_routes())
 app.include_router(setup_code_graph_routes())
@@ -1709,6 +1710,7 @@ app.include_router(setup_prior_art_routes())
 app.include_router(setup_blender_scene_routes())
 # Structured extraction into the user's JSON Schema (src/schema_extraction.py).
 app.include_router(setup_extraction_routes())
+app.include_router(setup_visual_index_routes())
 app.include_router(setup_chat_bridge_routes())
 
 # Autonomous engineering wave: bug hunter, CI failure analyzer, fix memory,
@@ -1889,6 +1891,11 @@ async def serve_research(request: Request):
 @app.get("/extraction")
 async def serve_extraction(request: Request):
     """Studio Extraction: fill a user JSON Schema from a document (OBJ-24)."""
+    return await serve_index(request)
+
+@app.get("/visual-index")
+async def serve_visual_index(request: Request):
+    """Studio Visual index: search PDFs, pictures and pages by what they look like."""
     return await serve_index(request)
 
 @app.get("/compare")

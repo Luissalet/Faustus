@@ -146,6 +146,8 @@ NON_ADMIN_BLOCKED_TOOLS = BUILTIN_EMAIL_TOOLS | {
     "inspect_media",
     "inspect_deliverable",
     "extract_to_schema",
+    # Reads local files into the index.
+    "visual_index_add",
     "inspect_image",
     "plan_media_transform",
     "transform_media",
@@ -265,6 +267,10 @@ PLAN_MODE_READONLY_TOOLS = {
     "inspect_media",
     "inspect_deliverable",
     "extract_to_schema",
+    # Reading the visual index changes nothing (add/remove are absent on purpose).
+    "visual_search",
+    "view_tile",
+    "visual_index_list",
     "inspect_image",
     "plan_media_transform",
     "grep",

@@ -142,6 +142,26 @@ _register(
     result_integrity=ResultIntegrity.WORKSPACE_UNTRUSTED,
 )
 _register(
+    # Visual index (src/visual_index/): search, view_tile and list only read the owner's own index (strips of pages
+    # the owner added). What they show quotes pages and PDFs, some fetched from the web, so the result is untrusted.
+    {"visual_search", "view_tile", "visual_index_list"},
+    ToolEffect.READ_PRIVATE,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+_register(
+    # visual_index_add reads workspace files and public URLs (through the SSRF-guarded broker or the browser) and writes
+    # strips and vectors under DATA_DIR/visual_index; visual_index_remove deletes from that same store only.
+    {"visual_index_add"},
+    ToolEffect.READ_WORKSPACE,
+    ToolEffect.BROKERED_NETWORK_READ,
+    ToolEffect.WRITE_PRIVATE,
+    result_integrity=ResultIntegrity.EXTERNAL_UNTRUSTED,
+)
+_register(
+    {"visual_index_remove"},
+    ToolEffect.WRITE_PRIVATE,
+)
+_register(
     # find_symbol/callers/tests_for (Lote 38, IDX-02/IDX-03) only read what
     # `src.code_index` has already indexed from the workspace — same class as
     # grep/glob/ls: a workspace-scoped reader whose result quotes source text

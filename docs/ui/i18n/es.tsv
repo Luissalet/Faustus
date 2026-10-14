@@ -9862,3 +9862,43 @@ Zero means unlimited. Set a positive limit when you want one; Stop remains avail
 Succeeded	Completado
 Sending	Enviando
 No delivery	Sin entrega
+Add a PDF, a picture or a URL to start one.	Añade un PDF, una imagen o una URL para empezar una.
+Add to the index	Añadir al índice
+All collections	Todas las colecciones
+Collection	Colección
+Collections	Colecciones
+Delete collection	Borrar colección
+Give at least one path or URL	Indica al menos una ruta o una URL
+In	En
+Indexing finished	Indexado terminado
+Loading collections	Cargando colecciones
+No collections yet	Aún no hay colecciones
+No strips matched.	Ninguna franja coincide.
+No vision model	Sin modelo de visión
+PDF pages	Páginas del PDF
+Paths or URLs (one per line)	Rutas o URLs (una por línea)
+Question for the vision model (optional)	Pregunta para el modelo de visión (opcional)
+Read strip	Leer franja
+Remove source	Quitar fuente
+Search PDFs, pictures and web pages by what they look like: tables, diagrams, charts, scans.	Busca en PDF, imágenes y páginas web por su aspecto: tablas, diagramas, gráficos, escaneos.
+Sources in {name}	Fuentes en {name}
+The embedding model downloads the first time you index or search (several GB).	El modelo de embeddings se descarga la primera vez que indexas o buscas (varios GB).
+The visual embedder is not installed	El embebedor visual no está instalado
+The visual index is switched off in Settings.	El índice visual está desactivado en Ajustes.
+Visual index	Índice visual
+What are you looking for?	¿Qué buscas?
+What is the value for 2024?	¿Cuál es el valor de 2024?
+Write what you are looking for	Escribe lo que buscas
+reused	reutilizadas
+strips	franjas
+strips can be searched but not read	las franjas se pueden buscar pero no leer
+the sales chart for 2024	el gráfico de ventas de 2024
+No document called «{title}» was found.	No hay ningún documento llamado «{title}».
+Show in folder	Mostrar en la carpeta
+No working folder: the agent will get one under the projects folder the first time it works here.	Sin carpeta de trabajo: el agente recibirá una dentro de la carpeta de proyectos la primera vez que trabaje aquí.
+Choose folder…	Elegir carpeta…
+Working folder set	Carpeta de trabajo guardada
+Saved as {path}	Guardado como {path}
+Start Ollama when it is closed	Arrancar Ollama si está cerrado
+The model file is no longer there (moved or deleted). Edit the engine and choose the file again.	El fichero del modelo ya no está ahí (movido o borrado). Edita el motor y vuelve a elegirlo.
+The vision projector file is no longer there (moved or deleted). Edit the engine and choose it again.	El fichero del proyector de visión ya no está ahí (movido o borrado). Edita el motor y vuelve a elegirlo.

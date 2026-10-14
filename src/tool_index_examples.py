@@ -1252,6 +1252,34 @@ EXAMPLES: Dict[str, List[str]] = {
         "exporta este modelo a STL con Blender sin abrir la interfaz",
         "comprueba si Blender está instalado y funciona en modo headless",
     ],
+    # ── Local visual index of screenshots (src/visual_index/) ───────────────
+    "visual_index_add": [
+        "indexa estos PDFs para poder buscar tablas y diagramas por imagen",
+        "add this report to the visual index",
+        "make the scanned pages of this document searchable",
+        "añade esta página web al índice visual",
+    ],
+    "visual_search": [
+        "busca en mis PDFs la gráfica de ventas del tercer trimestre",
+        "find the architecture diagram in my documents",
+        "qué página del manual tiene la tabla de pesos",
+        "search my screenshots for the error dialog",
+    ],
+    "view_tile": [
+        "enséñame la franja del primer resultado",
+        "léeme la tabla de ese resultado",
+        "look at the second strip and tell me the values",
+        "what does that chart say",
+    ],
+    "visual_index_list": [
+        "qué hay en el índice visual",
+        "list the collections of my visual index",
+    ],
+    "visual_index_remove": [
+        "quita este PDF del índice visual",
+        "delete the docs collection from the visual index",
+    ],
+
     "doc_lint": [
         "lint FAUSTUS.md and the README",
         "revisa que la numeracion de secciones del markdown no tenga huecos",

@@ -66,6 +66,28 @@
       "destination": "src/repo_map.py",
       "reason": "Adapted the TECHNIQUE Aider's repo map uses -- ranking symbols by weighing definitions against how often they are referenced elsewhere, under a character budget -- to Faustus's own `code_index` symbol/edge store, for `symbols_for()`'s budgeted, per-file symbol listing.",
       "modifications": "Reimplementation, not a port: no code from aider/repomap.py is copied or transliterated; no PageRank/graph-rank library is introduced. Faustus's ranking runs over `src/context_engine/code_index.py`'s own `Symbol`/`Edge` sqlite3 tables (definitions + reference counts already stored there) and Faustus's own budget/degradation vocabulary (`parser: regex` when tree-sitter is absent) rather than any aider-specific data structure."
+    },
+    {
+      "id": "pixelrag-strip-geometry",
+      "source_repo": "https://github.com/StarTrail-org/PixelRAG",
+      "commit": "7fef9d8e8c3db3fd3ef7c1c3cf7d1ab54d106031",
+      "path": "embed/src/pixelrag_embed/chunk.py (strip geometry and per-strip MD5; reimplemented)",
+      "license": "Apache-2.0",
+      "notice_kept": true,
+      "destination": "src/visual_index/tiling.py",
+      "reason": "Cutting a rendered page into strips of at most 1024 px high by 875 px wide (8192 px tiles, 28 px minimum side, an MD5 per strip) so a local visual index can embed screenshots of PDFs and web pages and re-embed only the strips that changed.",
+      "modifications": "Reimplementation for Faustus' own data model, not a copy: Pillow only, row-major grid over a `Strip` dataclass with page/x/y in page coordinates, blank (flat-colour) strips skipped, tails under the minimum dropped. The module docstring carries the Apache-2.0 attribution."
+    },
+    {
+      "id": "pixelrag-embedder-pooling",
+      "source_repo": "https://github.com/StarTrail-org/PixelRAG",
+      "commit": "7fef9d8e8c3db3fd3ef7c1c3cf7d1ab54d106031",
+      "path": "embed/src/pixelrag_embed/embed.py (last-token pooling and query instruction; technique, not copied)",
+      "license": "Apache-2.0",
+      "notice_kept": true,
+      "destination": "src/visual_index/embedder.py",
+      "reason": "Embedding screenshot strips and text queries with a Qwen3-VL embedding model: last non-padding token, L2 normalised, with an instruction on the query side, so a text query retrieves images.",
+      "modifications": "Reimplementation, not a port: a lazy transformers loader that downloads into the Faustus models folder, never uses GPUs 0 or 1 (a VRAM-arbiter lease on the allowed cards, else CPU), unloads after an idle TTL, and ships a deterministic fake embedder for tests. No server, Docker or vector-database code is carried over."
     }
   ]
 }

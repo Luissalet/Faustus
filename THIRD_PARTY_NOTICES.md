@@ -84,6 +84,22 @@ forget to keep in sync with the code.
   budget/degradation vocabulary (`parser: regex` when tree-sitter is
   absent); no graph-ranking library was introduced.
 
+- **[PixelRAG](https://github.com/StarTrail-org/PixelRAG)** by the
+  **PixelRAG authors**. **Apache-2.0.** The local visual index
+  (`src/visual_index/`) reimplements two things from it, against
+  Faustus's own data model and without copying source files:
+  `src/visual_index/tiling.py` follows its page chunker (strips of at
+  most 1024 x 875 px cut from tiles of at most 8192 px, a 28 px minimum
+  side, an MD5 per strip so a re-index embeds only what changed), and
+  `src/visual_index/embedder.py` follows its way of embedding a strip or
+  a query with a Qwen3-VL embedding model (last non-padding token, L2
+  normalised, an instruction on the query side). Everything else (the
+  Pillow/pypdfium2 renderers, the browser capture, the numpy store, the
+  GPU lease, the REST routes and agent tools) is original to this repo.
+  Both module docstrings carry the Apache-2.0 attribution; the model
+  weights (`Qwen/Qwen3-VL-Embedding-2B`) are downloaded by the user on
+  first use under their own license and are not redistributed here.
+
 - **[clodfarm](https://github.com/matank001/clodfarm)** by **Duke
   Security, Inc.** **MIT** (Copyright (c) Duke Security, Inc.). Three
   small ideas from its worker-farm, reimplemented against Faustus's own

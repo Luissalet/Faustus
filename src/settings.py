@@ -516,6 +516,23 @@ DEFAULT_SETTINGS = {
     "research_prune_pages": True,
     "research_prune_max_chars": 6000,
     "research_prune_threshold": 0.48,
+    # Visual index (src/visual_index/): PDF pages, web pages and pictures as
+    # screenshot strips, searched by meaning with a local multimodal embedder
+    # (torch + transformers are optional installs; the weights download on first
+    # use into `visual_index_models_dir`, default data/models/visual-embedding).
+    # GPUs 0 and 1 are never used, whatever `visual_index_gpus` says; the model
+    # asks the GPU arbiter for memory on the listed cards, else runs on the CPU,
+    # and is dropped after `visual_index_idle_unload_seconds` without use.
+    "visual_index_enabled": True,
+    "visual_index_max_pages": 100,
+    "visual_index_max_web_tiles": 8,
+    "visual_index_view_limit_per_turn": 6,
+    "visual_index_device": "auto",
+    "visual_index_gpus": "2,3",
+    "visual_index_gpu_lease": True,
+    "visual_index_lease_timeout_seconds": 20,
+    "visual_index_idle_unload_seconds": 120,
+    "visual_index_models_dir": "",
     # Typed 3D scenes rendered headless with Blender (src/blender_scene).
     # `blender_path` is the blender executable (or its folder); empty means
     # search BLENDER_PATH, PATH and the usual install folders.

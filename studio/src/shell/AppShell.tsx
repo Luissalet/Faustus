@@ -51,6 +51,7 @@ const SettingsScreen = lazyChunk(() => import('../screens/Settings').then((m) =>
 const AgentsScreen = lazyChunk(() => import('../screens/Agents').then((m) => ({ default: m.AgentsScreen })));
 const SkillsScreen = lazyChunk(() => import('../screens/Skills').then((m) => ({ default: m.SkillsScreen })));
 const ExtractionScreen = lazyChunk(() => import('../screens/extraction/Extraction').then((m) => ({ default: m.ExtractionScreen })));
+const VisualIndexScreen = lazyChunk(() => import('../screens/visual/VisualIndex').then((m) => ({ default: m.VisualIndexScreen })));
 const SourceControlScreen = lazyChunk(() => import('../screens/SourceControl').then((m) => ({ default: m.SourceControlScreen })));
 const ConnectorsScreen = lazyChunk(() => import('../screens/connectors/Connectors').then((m) => ({ default: m.ConnectorsScreen })));
 const WhatsAppScreen = lazyChunk(() => import('../screens/whatsapp/WhatsApp').then((m) => ({ default: m.WhatsAppScreen })));
@@ -287,6 +288,7 @@ function RouteBody() {
         <Route path="/agents" element={<AgentsScreen />} />
         <Route path="/skills" element={<SkillsScreen />} />
         <Route path="/extraction" element={<ExtractionScreen />} />
+        <Route path="/visual-index" element={<VisualIndexScreen />} />
         <Route path="/source-control" element={<SourceControlScreen />} />
         <Route path="/connectors" element={<ConnectorsScreen />} />
         <Route path="/whatsapp" element={<WhatsAppScreen />} />

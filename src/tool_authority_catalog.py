@@ -48,6 +48,7 @@ DEFERRED_FAMILIES = {
     "documents_ops": re.compile(r"^(pdf_ops|page_prune|check_score|research_podcast|design_canvas)$"),
     "self_management": re.compile(r"^(manage_instincts|memory_rules|branch_futures|capability_health|manage_teach_mode)$"),
     "messaging": re.compile(r"^whatsapp_"),
+    "visual_index": re.compile(r"^(visual_index_|visual_search$|view_tile$)"),
 }
 
 
