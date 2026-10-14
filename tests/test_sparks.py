@@ -339,3 +339,19 @@ def test_a_decision_model_beside_the_main_model_is_never_a_chat_endpoint(fake):
     fake.running = [fake.endpoint("glm53-tp3")]
     sparks.sync()
     assert sparks.aux_endpoint("decision") is None
+
+
+def test_an_endpoint_made_earlier_for_a_decision_server_is_removed(fake):
+    decider = {"recipe": "decider", "title": "Decisiones", "base_url": "http://spark2:8095/v1", "models": ["thx-01"],
+               "max_model_len": 1024, "default": False, "kind": "decision", "coexist": True}
+    db = cdb.SessionLocal()
+    db.add(ModelEndpoint(id="sparks-dec1", name="Sparks · Decisiones", base_url="http://spark2:8095/v1", is_enabled=True))
+    db.commit()
+    db.close()
+    update_settings({"sparks_endpoints": {"decider": "sparks-dec1"}})
+    fake.recipes = fake.recipes + [{"name": "decider", "title": "Decisiones", "kind": "decision"}]
+    fake.running = [decider, fake.endpoint("glm53-tp3")]
+    sparks.sync()
+    assert "decider" not in load_settings()["sparks_endpoints"]
+    assert _endpoint("sparks-dec1") is None
+    assert load_settings()["default_model"] == "glm-5.3-flash"

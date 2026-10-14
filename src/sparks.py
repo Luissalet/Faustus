@@ -302,8 +302,13 @@ def sync() -> Dict[str, Any]:
                             "advisory": "Could not verify the selected Sparks model; its endpoint and default were preserved."}
             return {**_UNREACHABLE, "action": "none"}
         rec = _call("recipes_list", {}, timeout=10)
-        recipes = [r for r in (rec["result"].get("recipes", []) if rec.get("ok") else []) if _kind(r) == "chat"]
-        ids = _upsert_endpoints(running, recipes, cfg["endpoints"])
+        all_recipes = rec["result"].get("recipes", []) if rec.get("ok") else []
+        recipes = [r for r in all_recipes if _kind(r) == "chat"]
+        non_chat = {r.get("name") for r in all_recipes if _kind(r) != "chat"} | {e["recipe"] for e in everything or [] if _kind(e) != "chat"}
+        stray = {k: v for k, v in cfg["endpoints"].items() if k in non_chat}
+        if stray:   # a chat endpoint made for a non-chat server before Faustus knew the kind: not a chat model, remove it
+            _forget_managed(stray)
+        ids = _upsert_endpoints(running, recipes, {k: v for k, v in cfg["endpoints"].items() if k not in non_chat})
         patch: Dict[str, Any] = {}
         aux: Dict[str, List[Dict[str, Any]]] = {}
         for e in everything or []:
@@ -354,6 +359,25 @@ def sync() -> Dict[str, Any]:
             result.update(endpoint_status=endpoint_status,
                 advisory="The selected Sparks model is not serving. Its default was preserved; no PC text model was selected.")
         return result
+
+
+def _forget_managed(ids: Dict[str, str]) -> None:
+    """Delete endpoints this module created (``sparks-`` ids) for recipes that are not chat models."""
+    from core.database import ModelEndpoint, SessionLocal
+
+    mine = [v for v in ids.values() if str(v).startswith(ENDPOINT_PREFIX)]
+    if not mine:
+        return
+    db = SessionLocal()
+    try:
+        for row in db.query(ModelEndpoint).filter(ModelEndpoint.id.in_(mine)).all():
+            db.delete(row)
+        db.commit()
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        logger.debug("sparks: could not remove endpoints", exc_info=True)
+    finally:
+        db.close()
 
 
 def _disable_managed(ids: Dict[str, str]) -> None:
