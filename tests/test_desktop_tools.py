@@ -740,3 +740,15 @@ def test_auto_mode_does_not_skip_the_desktop_confirmation(_settings, monkeypatch
     assert ToolRunSecurityContext(approval_gate_bypassed=True).decision_for("desktop_click").allowed is True
     monkeypatch.setattr(caps, "tool_approval_mode", lambda: "full")
     assert ToolRunSecurityContext().decision_for("desktop_click").allowed is True
+
+
+def test_an_ambiguous_title_prefers_the_app_over_a_browser_tab_or_faustus():
+    from src.agent_tools.desktop_tools import prefer_app_windows
+    names = {1: "chrome.exe", 2: "quinn.exe", 3: "faustus.exe"}
+    wins = [{"title": "Quinn - Google Chrome", "pid": 1}, {"title": "Quinn", "pid": 2}, {"title": "Quinn · Faustus", "pid": 3}]
+    assert prefer_app_windows(wins, process_name=lambda pid: names.get(pid, "")) == [wins[1]]
+    # two real app windows stay ambiguous; only browser windows are left as they were
+    apps = [{"title": "Quinn", "pid": 2}, {"title": "Quinn editor", "pid": 4}]
+    assert prefer_app_windows(apps, process_name=lambda pid: names.get(pid, "")) == apps
+    tabs = [{"title": "Quinn - Google Chrome", "pid": 1}, {"title": "Quinn wiki - Google Chrome", "pid": 1}]
+    assert prefer_app_windows(tabs, process_name=lambda pid: names.get(pid, "")) == tabs

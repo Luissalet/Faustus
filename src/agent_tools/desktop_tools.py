@@ -71,6 +71,32 @@ _MAX_SCROLL_NOTCHES = 100
 _focused_targets: Dict[str, Dict[str, Any]] = {}
 
 
+
+#: Processes whose windows only MENTION a title (a browser tab or this very chat showing the app's name): when a title
+#: matches several windows, these give way to the one window of the app itself.
+_MENTION_PROCESSES = frozenset({"chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "vivaldi.exe",
+                                "arc.exe", "faustus.exe", "electron.exe"})
+
+
+def _process_name(pid: Any) -> str:
+    try:
+        import psutil
+        return str(psutil.Process(int(pid)).name() or "").lower()
+    except Exception:  # noqa: BLE001 - unknown process: keep the window
+        return ""
+
+
+def prefer_app_windows(matches: List[Dict[str, Any]], process_name=_process_name) -> List[Dict[str, Any]]:
+    """Several windows match a title (\"Quinn\" is the game and also the browser tab where Faustus talks about it): keep the
+    windows that are not a browser, Faustus itself or this process. Returns ``matches`` unchanged when that would leave none."""
+    import os
+    own = os.getpid()
+    kept = [w for w in matches
+            if w.get("pid") != own and "faustus" not in str(w.get("title", "")).lower()
+            and process_name(w.get("pid")) not in _MENTION_PROCESSES]
+    return kept or matches
+
+
 class DesktopError(Exception):
     """A user-facing failure: the message is what the model reads."""
 
@@ -396,6 +422,8 @@ class WindowsBackend(DesktopBackend):
             matches = [w for w in windows if needle in w["title"].lower()]
         if not matches:
             raise DesktopError(f"no visible window title contains {title!r}")
+        if len(matches) > 1:
+            matches = prefer_app_windows(matches)
         if len(matches) != 1:
             listing = "; ".join(repr(w["title"]) for w in matches[:8])
             raise DesktopError(f"ambiguous window title {title!r}: {len(matches)} windows match ({listing}). "
