@@ -1,11 +1,12 @@
 # Pendientes de cierre
 
-Actualizado: 14-10-2026. REGLA: nunca nombres de empresas/personas del buzón de Luis en commits, docs, tests ni comentarios — ejemplos siempre ficticios. Sólo trabajo vigente; quitar cada entrada al cerrarla.
+Actualizado: 15-10-2026. REGLA: nunca nombres de empresas/personas del buzón de Luis en commits, docs, tests ni comentarios — ejemplos siempre ficticios. Sólo trabajo vigente; quitar cada entrada al cerrarla.
 
 Ordenado por tipo de trabajo (reorganizado el 26-09: se quitaron las entradas ya cerradas u obsoletas, con la prueba de cada cierre en FAUSTUS.md, los tests o el historial de git). Dentro de cada sección, lo más reciente primero.
 
 ## A. Decisiones o acciones de Luis
 
+- **Código antiguo del copiloto dentro de Writer** (15-10, A32 de #343): el bucle de herramientas propio de Writer (`electron/ai/agentLoop.ts`, `src/services/copilot/runner.ts`, `useCopilotThread.ts`, `CopilotMessage.tsx`, `ToolCallCard.tsx`, `src/services/aiRuntime/copilot.ts`) ya no lo usa nada: el copiloto de Writer va por Faustus. Solo lo ejercitan dos pruebas (`testCopilotRunGuards`, `testCopilotRetryPlan`). No se pierde ninguna función ni dato al quitarlo (las tablas de historial se quedan). ¿Lo borro?
 - **Rutas absolutas fuera del workspace** (14-10): en modo de un usuario las herramientas de ficheros siguen limitadas al workspace del proyecto (o a `data/` sin él). Para que Faustus lea o escriba en cualquier carpeta que nombres hay dos caminos: añadir carpetas a `tool_path_extra_roots` en Ajustes, o abrir las rutas absolutas en modo de un usuario (cambio de código que hay que aprobar expresamente). ¿Cuál quieres?
 - **Ollama sin modelos** (14-10): la carpeta de modelos de Ollama (`OLLAMA_MODELS=D:\LocalAI\ollama-models`) no existía; el selector de Faustus seguía ofreciendo 8 modelos borrados (qwen3-vl, qwen3.8 27B, qwen3-coder-next…) y usaba `qwen3-vl:8b-instruct` como visión automática. Desde hoy, si Ollama dice que no tiene modelos, el selector lo refleja, y si un chat usa un modelo de Ollama con el servidor parado, Faustus lo arranca. El motor llama.cpp 27B, que apuntaba a blobs de esa carpeta, ya apunta a `D:\LocalAI\models\qwen3.8-27b-q8_0.gguf` (+ su mmproj). ¿Vuelves a descargar algún modelo en Ollama o desactivo el endpoint `127.0.0.1:11434`?
 - **Vigilante del Ágora de Faustus** (14-10): desactivado (`FaustusAgoraWatch`, `faustus_agora_turn1/2`). Si quieres que Faustus vuelva a participar en el Ágora, antes hay que limpiar `D:\LocalAI\faustus-agora\outcomes.json` y bajar la frecuencia; si no, se queda apagado.

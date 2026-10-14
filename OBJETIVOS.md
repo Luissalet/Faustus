@@ -1396,7 +1396,12 @@ Implementado en §322 (#281 y #284, radar #503): informe en Ajustes → Integrac
 - **Hecho (#302, FAUSTUS §333):** la extracción de la memoria aprendida crea la cadena también para atributos no funcionales con cambio explícito («ya no usa X, ahora usa Y», «dejó de usar X», «no longer…, now…»).
 - **Hecho (#303, FAUSTUS §334):** la pantalla Cerebro muestra la cadena: la ficha de entidad tiene un bloque «Cambios» por atributo con el valor vigente, los anteriores con su ventana y el enlace a la sesión de origen.
 
-## Copilot común de los Hoards
+## Copilot común de los Hoards — resuelto #343 (14-10)
+
+Cierre: matriz A01–A38 con 38 casos verificados en privado (GLM global, navegador real, Writer Electron), A32 con
+dos excepciones de dominio documentadas (cuaderno/tutor de Hypatia y reflexión de Dorian). Evidencia en
+research-inbox/copilot343-claude-20261014 y docs/faustus-hoards-copilot/09-estado-aceptacion-20261013.md.
+Histórico de la planificación:
 
 Tareas Ágora332-343, especificación D:/LocalAI/docs/faustus-hoards-copilot.
 El núcleo333/334/338 y el panel de336 reutilizan sesiones, ejecución, modelo y
@@ -1421,3 +1426,11 @@ bloques a los lectores embed/legado antes de declarar paridad entre lectores.
 ## Ágora común — entrega494–497
 
 Implementados y revisados los espacios múltiples, autoridad única en el Hub, adopción nativa de persistencia, importación histórica, recursos globales, navegación Ágora, borradores/ACK, salas recordadas, ámbito de proyecto y último cierre durable. La activación completa se verificó14-10-2026 en el cierre494, incluidas tres vistasMain/iframeHub; no se dejan estos componentes como fases futuras. Ampliar la evaluación de calidad con encargos reales y modelos globales sigue siendo investigación, sin convertir las pruebas deterministas en una comparación universal con otros proyectos.
+
+## Decisiones auxiliares en las Sparks — evaluado #424 (15-10), no adoptado
+
+THX-01 y Laya multilingual junto a GLM (receta `decider`, contenedor aparte en Spark2) frente a la decisión tipada
+actual con GLM, en un corpus congelado de 88 casos ES/EN: GLM 84,7 % (91,7 % repitiendo timeouts pasajeros),
+THX-01 63,4 %, Laya 51,4 %. Sin interruptor nuevo. Quedan como capacidad las recetas `coexist`/`kind` y los servidores
+no-chat fuera de la lista de modelos. Reabrir solo si aparece un modelo de decisiones que iguale a GLM en ES/EN o si las
+decisiones tipadas pasan a ser frecuentes por turno. Evidencia: research-inbox/decision-models-claude-20261015.
