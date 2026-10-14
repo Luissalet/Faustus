@@ -70,3 +70,52 @@ def test_the_hint_names_the_app_and_says_what_this_means():
     empty = origin_hint_message({"origin": {"app_id": "phileas"}, "view": {"page": "settings"}, "active_objects": []})
     assert "no specific object is open" in empty["content"] and "settings" in empty["content"]
     assert origin_hint_message({}) is None
+
+
+def test_two_instances_of_one_app_are_told_apart_by_data_space():
+    from src import hoard_copilot_turn as turn
+    names = {"a9e6fd58": "tantalus", "936e1b27": "tantalus-b", "e5f6a7b8": "Phileas's Hoard"}
+    panel_b = ctx(app_id="tantalus", app_name="Tantalus's Hoard", tool_server_id="tantalus", data_space_id="space-b")
+    spaces = lambda ids: {"a9e6fd58": "space-a", "936e1b27": "space-b"}
+    assert find_origin_server(names, panel_b, spaces) == "936e1b27"
+    assert find_origin_server(names, {**panel_b, "origin": {**panel_b["origin"], "data_space_id": "space-a"}}, spaces) == "a9e6fd58"
+    # Without knowing the spaces (or with an unknown one) neither instance is guessed.
+    assert find_origin_server(names, panel_b) is None
+    assert find_origin_server(names, {**panel_b, "origin": {**panel_b["origin"], "data_space_id": "space-z"}}, spaces) is None
+    # A single instance needs no lookup at all.
+    asked = []
+    assert find_origin_server({"a9e6fd58": "Tantalus's Hoard"}, panel_b, lambda ids: asked.append(ids) or {}) == "a9e6fd58"
+    assert asked == []
+
+
+def test_data_spaces_come_from_each_app_and_are_cached(monkeypatch):
+    from src import hoard_copilot_turn as turn
+    monkeypatch.setattr(turn, "_SPACE_CACHE", {})
+    env = {"s1": {"TANTALUS_URL": "http://127.0.0.1:5197", "TANTALUS_TOKEN_FILE": "x"},
+           "s2": {"TANTALUS_URL": "http://127.0.0.1:63741/", "REST_OPENAPI_URL": "http://127.0.0.1:1/openapi.json"},
+           "s3": {}}
+    calls = []
+
+    def fetch(url):
+        calls.append(url)
+        return {"data_space_id": {"http://127.0.0.1:5197/api/copilot/info": "prod",
+                                  "http://127.0.0.1:63741/api/copilot/info": "qa"}.get(url)}
+
+    assert turn.server_data_spaces(["s1", "s2", "s3"], env.get, fetch) == {"s1": "prod", "s2": "qa"}
+    assert turn.server_data_spaces(["s1", "s2", "s3"], env.get, fetch) == {"s1": "prod", "s2": "qa"}
+    assert len(calls) == 2
+
+
+def test_the_hint_names_the_server_of_this_panel_when_the_app_is_connected_twice(monkeypatch):
+    from src import hoard_copilot_turn as turn
+    mgr = manager({"a9e6fd58": ("tantalus", ["target_get", "watcher_list"]),
+                   "936e1b27": ("tantalus-b", ["target_get", "watcher_list"])})
+    monkeypatch.setattr(turn, "server_data_spaces", lambda ids, *a, **k: {"a9e6fd58": "space-a", "936e1b27": "space-b"})
+    panel_b = ctx(app_id="tantalus", app_name="Tantalus's Hoard", tool_server_id="tantalus", data_space_id="space-b")
+    hint = origin_hint_message(panel_b, mgr)["content"]
+    assert "mcp__936e1b27__*" in hint and "mcp__a9e6fd58__*" in hint
+    assert hint.index("mcp__936e1b27__*") < hint.index("mcp__a9e6fd58__*")
+    assert origin_app_tools(mgr, panel_b) == {"mcp__936e1b27__target_get", "mcp__936e1b27__watcher_list"}
+    # One instance: the hint stays as it was.
+    single = manager({"a9e6fd58": ("tantalus", ["target_get"])})
+    assert "connected more than once" not in origin_hint_message(panel_b, single)["content"]

@@ -2906,7 +2906,10 @@ def setup_chat_routes(
             if _hoard_context is not None:
                 _doc_context_msgs.append(_hoard_copilot.context_message(_hoard_context))
                 from src.hoard_copilot_turn import origin_hint_message as _origin_hint
-                _hint = _origin_hint(_hoard_context)
+                try:
+                    _hint = _origin_hint(_hoard_context, get_mcp_manager())
+                except Exception:  # noqa: BLE001 - the hint without the server note
+                    _hint = _origin_hint(_hoard_context)
                 if _hint:
                     _doc_context_msgs.append(_hint)
             if _doc_context_msgs:
