@@ -11860,3 +11860,31 @@ pasada; ronda límite respetada; investigación por MCP) y en 7000 real con GLM 
 de Python 3.9 → búsqueda y lectura por el Hub, ronda editorial tras la respuesta y respuesta final guardada con la
 fuente oficial. Límite honesto: la pasada no garantiza precisión factual; los controles negativos del prototipo
 (Dungeons, 507) siguen siendo la referencia de lo que puede seguir fallando.
+
+## Copiloto común: aceptación 343 cerrada — 14-10-2026
+
+Recorridos nuevos en privado (Faustus 63720 con GLM global de las Sparks, Cicero/Tantalus/Atlas privados, Writer con su
+fixture Electron nativo, navegador real con Playwright), sin tocar datos reales: los de Cicero 5194 y Faustus 7000 se
+leyeron antes y después y quedaron idénticos byte a byte.
+
+Arreglos que salieron de esos recorridos (todos en main):
+- **Instancia correcta por espacio de datos** (`src/hoard_copilot_turn.py`): con dos Tantalus conectados (mismas 57
+  herramientas), el panel de la instancia B leía la A — control sin el arreglo: «Lámpara Flos (instancia A)». Ahora el
+  origen se resuelve por el `data_space_id` que cada app publica en `/api/copilot/info` (caché 10 min) y el turno sabe
+  qué servidor es el suyo; si la única instancia conectada es de otro espacio, el agente lo dice y no la usa.
+- **Herramientas de la app primero** (`src/tool_serve.py`): desde Cicero, «cambia el título» buscaba en todo el
+  catálogo y respondía que no había herramienta para renombrar. Los resultados de la app de origen van delante, con
+  derivaciones («replace» encuentra «replacing»), y las frases de ejemplo de `hoard_project_search/recall`.
+- **Objetos por ID** (pista de origen): con el objeto borrado y otro del mismo título, el agente editaba el homónimo;
+  ahora dice que ya no existe y pregunta.
+- **Participación** (`services/hoard_copilot.py`): la conversación guarda qué otras apps tocó y con qué objetos
+  (`participants`, filtro `participant_app_id`, MCP `hoard_conversation_list`); el origen no cambia.
+- **Una línea por herramienta** en el panel (`studio/embed`), **reintento único** cuando el servidor del modelo cerró
+  una conexión ociosa (antes el turno fallaba con «Server disconnected without sending a response»), y **mensaje claro
+  cuando Faustus no está** (lanzador común sincronizado en 38 Hoards y los paneles propios de Cicero, Tantalus, Prospero
+  e Hypatia).
+
+Estado de la matriz A01–A38: los 12 parciales y el «sin prueba» quedan verificados (A04, A05, A06, A18/A37, A19, A22,
+A23, A27, A30, A33, A36) y A32 con dos excepciones de dominio documentadas (cuaderno con fuentes de Hypatia y reflexión
+de Dorian: son el producto, no un copiloto paralelo). Evidencia en
+`research-inbox/copilot343-claude-20261014/` y documento `docs/faustus-hoards-copilot/09-estado-aceptacion-20261013.md`.

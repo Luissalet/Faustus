@@ -801,6 +801,17 @@ message text and actual work dates, returning domain references and existing
 workspace information. The current domain object is read through its Hoard tools
 before editing. See [the shared copilot contract](docs/api/hoard_copilot.md).
 
+**One copilot across the family (14 October 2026).** A turn from a Hoard panel works with the instance that serves the
+panel's data space: when the same app is connected more than once (a QA copy beside the everyday one), Faustus asks each
+app for its `data_space_id` and offers that instance's tools, and if the only connected instance belongs to another data
+space the agent says so instead of touching it. Lookups from a panel list the working app's own tools first (matching
+inflections such as "replace"/"replacing"). Open objects are held by ID: if one was deleted, the agent says it is gone
+instead of editing another object with the same title. A conversation remembers the other apps it acted in and with which
+objects (`participants` on the conversation, `participant_app_id` filter in the API and the `hoard_conversation_list` MCP
+tool), while its origin never changes. Each tool call is a single line in the panel, and a request sent on a model
+connection the server had just closed is retried once instead of failing the turn. When Faustus is down the panel says
+so in plain words, keeps the draft and offers to try again.
+
 
 Studio → Skills → Export previews portable skills, project rules and specialist
 instructions for Claude Code, Codex and Cursor, including supporting resources.
