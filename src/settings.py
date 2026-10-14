@@ -1697,6 +1697,8 @@ DEFAULT_SETTINGS = {
     "sparks_endpoints": {},
     "sparks_local_default": {},
     "sparks_applied_default": {},
+    # Serving Sparks endpoints that are not chat models (decision, embedding, rerank), by kind; written by sparks.sync().
+    "sparks_aux_endpoints": {},
     # Optional prose style used only for normal document writing/editing.
     # Email replies use email_writing_style instead because greetings,
     # signatures, and mailbox identity rules are medium-specific.

@@ -322,3 +322,20 @@ def test_status_keeps_effective_backend_visible_when_controller_is_down(fake):
     assert sparks.status()['effective']['endpoint_id']==initial
     update_settings({'sparks_enabled':False})
     assert sparks.status()['effective']['endpoint_id']==initial
+
+
+def test_a_decision_model_beside_the_main_model_is_never_a_chat_endpoint(fake):
+    decider = {"recipe": "decider", "title": "Decisiones", "base_url": "http://spark2:8095/v1", "models": ["thx-01", "laya-multilingual"],
+               "max_model_len": 1024, "default": False, "kind": "decision", "coexist": True}
+    fake.recipes = fake.recipes + [{"name": "decider", "title": "Decisiones", "kind": "decision"}]
+    fake.running = [decider, fake.endpoint("glm53-tp3")]   # listed first on purpose
+    res = sparks.sync()
+    s = load_settings()
+    assert res["action"] == "to_sparks" and s["default_model"] == "glm-5.3-flash"
+    assert set(s["sparks_endpoints"]) == {"glm53-tp3"}
+    assert res["aux"] == {"decision": ["decider"]}
+    assert sparks.aux_endpoint("decision") == {"recipe": "decider", "base_url": "http://spark2:8095/v1",
+                                               "models": ["thx-01", "laya-multilingual"]}
+    fake.running = [fake.endpoint("glm53-tp3")]
+    sparks.sync()
+    assert sparks.aux_endpoint("decision") is None

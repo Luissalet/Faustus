@@ -13,6 +13,10 @@ endpoints they serve. Faustus does not talk to the Sparks itself. This module:
   ``sparks_local_default`` remains historical configuration, never an automatic text-model fallback. Choosing another default by hand while
   the Sparks serve turns ``sparks_default_backend`` off, so the two never fight.
 
+Recipes that Prometheus marks with another ``kind`` than ``chat`` (a decision, embedding or rerank model that coexists with the
+main model) never become chat endpoints or the default: they are kept in ``sparks_aux_endpoints`` by kind, for the features that use
+them (``aux_endpoint("decision")``).
+
 Every value is a setting, editable in Settings → Sparks: nothing about the cluster is fixed here.
 """
 from __future__ import annotations
@@ -179,6 +183,18 @@ def effective_default() -> Dict[str, Any]:
 
 # ── endpoints and the default ──────────────────────────────────────────────
 
+def _kind(item: Dict[str, Any]) -> str:
+    return str(item.get("kind") or "chat").strip().lower() or "chat"
+
+
+def aux_endpoint(kind: str) -> Optional[Dict[str, Any]]:
+    """The first serving Sparks endpoint of a non-chat ``kind`` (``{"recipe", "base_url", "models"}``), from the last sync."""
+    from src.settings import load_settings
+
+    rows = (load_settings().get("sparks_aux_endpoints") or {}).get(str(kind).lower()) or []
+    return dict(rows[0]) if rows and isinstance(rows[0], dict) and rows[0].get("base_url") else None
+
+
 def _endpoints_from_prometheus() -> Optional[List[Dict[str, Any]]]:
     code, body = _request("GET", "/api/endpoints")
     if code != 200 or not isinstance(body, dict):
@@ -270,7 +286,8 @@ def sync() -> Dict[str, Any]:
             _disable_managed(cfg["endpoints"])
             return {"ok": False, "error": "disabled", "action": "none",
                     "default": effective_default(), "advisory": "Sparks synchronization is disabled; the configured model stays selected. Choose another model explicitly to change it."}
-        running = _endpoints_from_prometheus()
+        everything = _endpoints_from_prometheus()
+        running = None if everything is None else [e for e in everything if _kind(e) == "chat"]
         if running is None:
             # A failed observation is not evidence that the selected model disappeared.
             eff = effective_default()
@@ -285,9 +302,17 @@ def sync() -> Dict[str, Any]:
                             "advisory": "Could not verify the selected Sparks model; its endpoint and default were preserved."}
             return {**_UNREACHABLE, "action": "none"}
         rec = _call("recipes_list", {}, timeout=10)
-        recipes = rec["result"].get("recipes", []) if rec.get("ok") else []
+        recipes = [r for r in (rec["result"].get("recipes", []) if rec.get("ok") else []) if _kind(r) == "chat"]
         ids = _upsert_endpoints(running, recipes, cfg["endpoints"])
         patch: Dict[str, Any] = {}
+        aux: Dict[str, List[Dict[str, Any]]] = {}
+        for e in everything or []:
+            if _kind(e) != "chat":
+                aux.setdefault(_kind(e), []).append({"recipe": e["recipe"], "base_url": e["base_url"],
+                                                     "models": [m for m in (e.get("models") or []) if m]})
+        from src.settings import load_settings
+        if (load_settings().get("sparks_aux_endpoints") or {}) != aux:
+            patch["sparks_aux_endpoints"] = aux
         if ids != cfg["endpoints"]:
             patch["sparks_endpoints"] = ids
         eff = effective_default()
@@ -324,7 +349,7 @@ def sync() -> Dict[str, Any]:
         if patch:
             _update(patch)
         result = {"ok": True, "running": [e["recipe"] for e in running], "endpoints": ids, "action": action,
-                "default": effective_default()}
+                "default": effective_default(), "aux": {k: [x["recipe"] for x in v] for k, v in aux.items()}}
         if endpoint_status and action != "to_sparks":
             result.update(endpoint_status=endpoint_status,
                 advisory="The selected Sparks model is not serving. Its default was preserved; no PC text model was selected.")
