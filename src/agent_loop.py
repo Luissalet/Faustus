@@ -11987,6 +11987,15 @@ async def _stream_agent_loop_body(
             logger.warning("[context-tools] %s not applied: %s", approved.tool_name, _ctx_hook_err)
         if _ctx_evt:
             yield "data: " + json.dumps(_ctx_evt) + "\n\n"
+        # Files the tool made for the user (a downloaded video) become owner-scoped
+        # artifact downloads, with their links in the result the model reads.
+        try:
+            from src.tool_deliverables import deliver as _deliver
+            approved_result = _deliver(
+                approved_result, owner=_storage_owner_for_offload(owner),
+                session_id=session_id or "", call_id=_approved_call_id, tool=approved.tool_name)
+        except Exception:  # noqa: BLE001
+            logger.debug("[tool_deliverables] skipped for %s", approved.tool_name, exc_info=True)
         # A12: an oversized result is stored whole (owner-scoped, sha256) and
         # the model reads a bounded summary + artifact_id it can open with
         # read_artifact — never a silent truncation.
@@ -18289,6 +18298,14 @@ async def _stream_agent_loop_body(
                         "count": int(result.get("count") or 0),
                     }) + "\n\n"
                 )
+            # Files the tool made for the user become downloads (see the approved-result site).
+            try:
+                from src.tool_deliverables import deliver as _deliver
+                _model_result = _deliver(
+                    _model_result, owner=_storage_owner_for_offload(owner),
+                    session_id=session_id or "", call_id=_call_id, tool=block.tool_type)
+            except Exception:  # noqa: BLE001
+                logger.debug("[tool_deliverables] skipped for %s", block.tool_type, exc_info=True)
             # A12: offload an oversized result (see the approved-result site).
             try:
                 from src.tool_result_offload import offload_if_oversized as _offload

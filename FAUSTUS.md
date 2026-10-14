@@ -11961,3 +11961,18 @@ comandos que había empezado el proyecto «3d terrain tiling» (archivado en `Pr
 Verificado en el PC: 47 pruebas en Windows, Toledo (IGN 5 m, 678 edificios, Tajo y relieve) y Peñíscola (mar, círculo con
 marco, 2 piezas con pines) generadas desde la interfaz y por MCP, mallas cerradas en todas las partes y piezas, archivo en
 Vulcan por la regla del Hub, y el panel de Faustus contestando con las herramientas de Gulliver.
+
+## Archivos que entrega una herramienta: descarga en el chat — 15-10-2026
+
+Una app de la familia puede terminar el resultado de una herramienta con `"deliverables": [{"path": ..., "name": ...}]`:
+archivos de este equipo que el usuario ha pedido. `src/tool_deliverables.py` copia cada uno al almacén de artefactos del
+dueño (ocurrencia `occ_…` determinista por dueño, sesión, llamada, herramienta, sha256 y nombre; tope
+`tool_deliverable_max_mb`, 2048 por defecto; como mucho 10 por llamada) y añade al resultado que lee el modelo los
+enlaces `/api/artifacts/{id}/download` en Markdown, con la instrucción de dárselos al usuario tal cual. Se engancha en
+`agent_loop.py` justo antes del volcado de resultados grandes, en la ruta normal y en la de aprobación. El enlace es el
+de siempre de los artefactos (solo su dueño lo abre): en la app de escritorio sale el diálogo de guardar, en el navegador o
+en el móvil por la red privada es una descarga normal, y el archivo queda también en la Biblioteca.
+
+Primer uso: Links Hoard. «Descárgame este vídeo: <tweet>» → `media_download` guarda el MP4 en la carpeta de descargas de
+Links, guarda el enlace en su historial (etiqueta «descarga») y lista el archivo en `deliverables`; Faustus contesta con el
+enlace de descarga. Pruebas: `tests/test_tool_deliverables.py` (5).
