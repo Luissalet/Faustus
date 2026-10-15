@@ -1437,10 +1437,10 @@ decisiones tipadas pasan a ser frecuentes por turno. Evidencia: research-inbox/d
 
 ## OBJ-61 · Gulliver's Hoard: lo que queda abierto tras la tanda mundial (15-10-2026)
 
-- Bocas de túnel: hoy los túneles se omiten (la calle no se graba); dibujar la boca en la ladera.
 - Alturas por láser en España: el MDS05/MDSn del CNIG solo se baja por formulario; si aparece un servicio WCS o COG sin clave,
   añadirlo como proveedor en sources/dsm.py (Gulliver usa hoy el Catastro y OpenStreetMap).
-- Dinamarca y Finlandia tienen modelo de superficie abierto pero con clave gratuita: proveedor con clave opcional en Ajustes.
+- Dinamarca y Finlandia tienen modelo de superficie abierto pero con clave gratuita (necesita que Luis la saque: Dataforsyningen y Maanmittauslaitos): proveedor con clave opcional en Ajustes.
 - El paso «Partes» en modelos rurales grandes con «todo el campo en verde» tarda 200–600 s (Kerzers, 2,4 km a 0,3 mm):
   capas de color sobre una malla más gruesa donde el terreno es llano, o por piezas en paralelo.
-- Surcos: hoy siguen el lado largo de la parcela; la dirección real del cultivo se podría leer de la ortofoto en España.
+- Hecho el 15-10 (tarde): bocas de túnel en la ladera (`tunnels`) y surcos en la dirección que muestra la ortofoto en España
+  (`rows_from_photo`). Fuera de España los surcos siguen el lado largo de la parcela.

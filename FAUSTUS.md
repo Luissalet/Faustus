@@ -12103,6 +12103,38 @@ Verificado en el PC: pruebas en Windows en verde; Novo Airão, Utrecht, Villaló
 (con placa, ruta y «tu sitio», creado desde el formulario en Chrome) generados con todas las partes cerradas; foto y vídeo
 guardados desde el visor; nuevas opciones del formulario y tarjeta de imprimibilidad revisadas en Chrome.
 
+## Gulliver's Hoard con el acabado de las maquetas comerciales — 15-10-2026 (tarde)
+
+Luis pasó fotos de maquetas comerciales de ciudad y montaña (Alpes, Washington, Estocolmo, Helsinki, Passau, Varsovia,
+Moscú, Nueva York, Naarden, Roma, París…) y pidió no parar hasta acabar. Commits `622014f`, `5628b73`, `ceca69c`, `3fedd69`
+`199da12`, `de390a1` y `570050e` del repo de Gulliver, publicado en https://github.com/Luissalet/GulliversHoard:
+
+- **Paletas de color** (`palette`): clásica, arena (suelo arena, calles y edificios blancos, verde vivo, agua azul claro),
+  gris, blanco (todo blanco salvo el agua) y alpina (verde vivo, roca gris oscuro, nieve blanca). Llegan al 3MF, al GLB, a
+  la miniatura y al visor; Ciudad usa arena y Paisaje alpina; en el formulario, selector con muestras.
+- **Torres en su color** (`tall_buildings_m`): los edificios más altos que eso forman la parte «Torres», azul claro
+  (Badajoz a 40 m: 27).
+- **Pantalanes, muelles, escolleras y espigones** (`man_made=pier|breakwater|groyne`) como tablero en el agua, también en
+  el mar (Peñíscola).
+- **Líneas de orilla** (`water_lines`): surcos finos en el agua a 0,7 + 0,8·i mm de la orilla, como las líneas de una carta
+  náutica (Toledo 2, Peñíscola 9).
+- **Nieve en manchas**: sobre la cota, donde la pendiente la sostiene; por debajo, solo en las caras a la sombra; los
+  cortados quedan de roca.
+- Pistas deportivas de superficie dura y pistas de atletismo en la capa de plazas.
+- **Bocas de túnel** (`tunnels`): donde una carretera o un tren entra en un monte, una abertura al pie de la ladera con el
+  monte de techo; los pasos bajo terreno llano no se dibujan (Despeñaperros: 2).
+- **Surcos según la foto aérea** (`rows_from_photo`): en España cada campo lleva los surcos en la dirección que muestra la
+  ortofoto PNOA (tensor de estructura del brillo dentro de la parcela); si no se ve clara, a lo largo del campo.
+- Arreglos: cambiar una maqueta mientras se generaba no la regeneraba con los ajustes nuevos (ahora se encola otra
+  generación detrás); en las maquetas a color la placa y el texto grabado debajo decían «green» en vez del nombre (el bucle
+  de capas pisaba la variable); la página de una maqueta se refresca sola cuando la generación se lanza desde fuera
+  (asistente, MCP u otra pestaña).
+
+Verificado en el PC: 182 pruebas en Windows; las 11 maquetas de la biblioteca (Toledo y Peñíscola en arena, Cáceres en
+gris, Badajoz en arena con torres, Picos de Europa en alpina, Despeñaperros, Villalón de Campos con 188 campos con surcos
+según la foto, Utrecht, Kerzers, Novo Airão y el paseo por Toledo) regeneradas por la ruta MCP con todas las partes y piezas
+cerradas; paletas, líneas de orilla, nieve, interruptores nuevos, placa y refresco de la página revisados en Chrome.
+
 ## Archivos que entrega una herramienta: descarga en el chat — 15-10-2026
 
 Una app de la familia puede terminar el resultado de una herramienta con `"deliverables": [{"path": ..., "name": ...}]`:
