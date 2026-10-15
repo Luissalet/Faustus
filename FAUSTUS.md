@@ -12363,3 +12363,56 @@ Verificado: 196 pruebas en la nube y en Windows; por MCP regeneradas y cerradas 
 comercial y el Euskalduna, 3.540 árboles), Utrecht (168 cubiertas del láser), Cáceres (sin degradarse) y Kerzers (477
 cubiertas del láser, 3.028 árboles con 767 coníferas, nota 77); renders comparados antes y después; interruptor y línea del
 informe revisados en Chrome.
+
+## Gulliver y Silver: terreno, impresión y ejercicios — 15-10-2026
+
+Trabajo coordinado en sus Ágoras por codex-gulliver-silver: terreno #601, impresión #597 y ejercicios #598;
+Cursor aporta #602 y participa en la revisión independiente. Evidencias en
+`D:\LocalAI\research-inbox\gulliver-silver-next-20261015`.
+
+Gulliver utiliza suelo LiDAR de Navarra (2 m), Gipuzkoa (1 m), Países Bajos y Francia (0,5 m) cuando está disponible,
+muestreado al tamaño de celda solicitado y con IGN/Terrarium de respaldo. Interpola huecos cercanos sin reintroducir
+azoteas del radar; el informe distingue medidas, relleno y respaldo. Son resoluciones de origen, sin garantía de
+detalle impreso universal. En dos zonas reales de 400 × 400 m se conservaron 510/218 edificios y todas las mallas
+cerradas. Utrecht perdió falsas elevaciones de edificios de unos 17 m (relieve final 0,4–6,1 m); en Donostia permanecen
+los 8 puentes y 2 muelles. La mitad del raster leído de Utrecht es interpolada y se declara así.
+
+Los perfiles guardan cama, boquilla y filamentos por capa con densidad, precio y color. Cada maqueta conserva una
+copia: editar el perfil no cambia generaciones previas. Aplicarlo crea otra maqueta por defecto. El presupuesto
+geométrico estima paredes/relleno y reparte el material por volumen; un precio desconocido deja el total desconocido.
+No incluye purga, soportes, energía ni tiempo. Las marcas del visor localizan detalles finos por capa y se mueven con
+las piezas separadas; no entran en STL/3MF. Los cuerpos diminutos permanecen como recuentos. `model_issues` pagina
+las posiciones sin perderlas por el límite de transporte: 213 posiciones verificadas en cinco páginas.
+Catálogo de 30 herramientas. Verificación conjunta: 210 pruebas Python, 4 Node, compilación, MCP y navegador privado.
+
+Silver compara variantes contra los mismos rivales y semillas, con resultados por rival, diferencias respecto a una
+referencia, mejoras/empeoramientos y MVP, sin modificar el palmarés. Revisión independiente: 4 Node, 3 Python,
+compilación, MCP y navegador; la muestra determinista dio 2 G/2 P, 4 G/0 P y 0 G/4 P. Es una comparación bajo las
+condiciones elegidas, sin certificación de superioridad universal ni evaluación de la política neuronal.
+
+Los ejercicios parten de posiciones de nuevas repeticiones clásicas con decisiones: ganar, opcionalmente en N turnos,
+o mantenerse N turnos/ganar antes. Texto y archivo `.silverexercise` se importan en otra biblioteca sin el combate
+original; solo llevan el pasado y la posición canónica. Los intentos son independientes y reanudables y no alteran
+récords, medallas ni copas. Tres éxitos o tres fallos completados a un nivel proponen un escalón arriba/abajo entre
+aleatorio y experto; se puede elegir manualmente hasta maestro. Compartir muestra objetivos, intentos, explicación
+del nivel y archivo/restauración. V7 añade ejercicios y conserva gimnasios y arenas de V6. Catálogo de 110 herramientas.
+Verificación de la composición con los cambios de entrenamiento en tiempo real e importación de partidas: 169 Python, 152 Node y un caso opcional de Rust omitido; ambas compilaciones; MCP con 32 llamadas,
+importación en una biblioteca receptora vacía y navegador ES/EN en escritorio y a 390 px. Las repeticiones antiguas
+sin decisiones, resultados importados, muestras simuladas y tiempo real no proporcionan estas posiciones.
+
+Activación: Gulliver main `8f6db3b`, aprobado por Cursor en la entrega 597 revisión 2 y activo con MCP 30.
+El terreno 601 (`693a624`, ancestro) se integró tras las dos horas reglamentarias sin voto; su revisión posterior
+sigue abierta y no se presenta como aprobación cruzada. La biblioteca conserva 12 maquetas y 168 archivos exactos.
+Faustus actualizó el proveedor existente de Gulliver a 30 herramientas sin reinicio, conservando las 36 configuraciones.
+
+Silver main `bd6868f` conserva como padres la entrega aprobada `bebcd1a` (598 revisión 1) y los cambios pares `8087abb`.
+El voto independiente cubre `bebcd1a`; la composición está verificada por el propietario con las pruebas indicadas,
+y el cierre del Ágora registra ambos hashes como equivalentes con su motivo. MCP 110 y Compartir confirmados en Main;
+V7 añade una tabla vacía de ejercicios y preserva todas las filas de las doce tablas previas y 111 archivos.
+Kakuna estaba parado antes de esta última activación y se recuperó después bajo reserva de GPU 0, sin inferencia.
+Los servidores de QA propios se cerraron con PID y carpeta comprobados. No se ha hecho push.
+
+El equipo se reinició a las 17:27 durante el trabajo. El Hub volvió por su arranque automático; se recuperaron solo
+las aplicaciones necesarias y la conexión de Gulliver en Faustus. Recibos de activación, equivalencia, cuotas y
+preservación de datos en la carpeta de evidencia. Manual actualizado mediante revisión condicionada: dos párrafos
+propios y 164 ajenos conservados con su texto y estilos; siguen las cuatro tablas.

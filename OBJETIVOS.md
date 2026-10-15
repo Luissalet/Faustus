@@ -1447,3 +1447,15 @@ decisiones tipadas pasan a ser frecuentes por turno. Evidencia: research-inbox/d
   generaciones se guardan con sus parámetros, se comparan, se recuperan y los consejos de imprimibilidad se aplican con
   vista previa. Ver FAUSTUS.md «láser en España, generaciones comparadas y consejos aplicables».
 
+## Gulliver597/601 y Silver598/602 — implementación 15-10-2026
+
+Terreno de suelo fino con respaldo y cobertura declarada; auditoría espacial real de agua/puentes; perfiles de
+impresión con copia por maqueta, presupuesto por filamento y marcas finas; comparación de equipos a semillas
+iguales; ejercicios portátiles con objetivos e intentos, dificultad adaptativa explicada y elección manual.
+No convierten resoluciones nativas en exactitud universal, presupuestos en cotizaciones de laminador ni muestras
+de combates en rankings universales. Evidencia y activación final en la sección correspondiente de FAUSTUS.md.
+
+
+Propuestas posteriores, sin implementar ni asignar: Ágora Gulliver #608, guía visual de montaje vinculada a una
+generación (amplía el LEEME existente con un plano numerado); Silver #609, sugerencias de posiciones para ejercicios
+a partir de las alternativas explicadas por la IA, con utilidad por validar y sin usar decisiones futuras.
