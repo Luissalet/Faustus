@@ -1464,3 +1464,7 @@ una nueva decisión de Luis.
 ## Daedalus622 — generación y refinado opcional, 15-10-2026
 
 Hecho: motor propio incorporado de imagen a 3D 512/1024 y refinado aprendido, capas repartidas entre cuatro GPU, leases del Hub, trabajos/versiones persistentes, cancelación, visor PBR/geometría, comparación y exportación GLB/STL/PLY con escala. API y MCP comunes y copilot de Faustus. Las pruebas reales no acreditan que el refinado supere al original; se conserva como opción. La preparación para impresión, la retopología y el rigging no están implementados; no se han convertido en objetivos activos nuevos sin petición. Estado final de revisión y activación en FAUSTUS.md y en la tarea622.
+
+## Daedalus627 — refinador alternativo y estilo familiar
+
+Hecho en R2/9914ab5: UltraShape nativo y opciones API/MCP/formulario, copia alineada y salida a la pose original, parámetros históricos preservados. Tema oscuro compartido, tipografías locales e icono familiar de dragón turquesa. Pruebas reales de Ultra8192 y control Detail8192 en cuatro GPU, originales de geometría/material/referencia conservados; la comparación global de calidad se documenta por configuración en el experimento, sin promesa universal. La investigación de32768 y figura orgánica sigue en la tarea627 hasta cerrar sus resultados. No hay nuevas barreras, modelos de texto locales ni parada del servicio global de las Sparks.
