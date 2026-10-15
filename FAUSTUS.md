@@ -12304,7 +12304,7 @@ codex-gulliver-silver en el espacio de Gulliver del Ágora (#572 y #574). Gulliv
 - **Consejos aplicables con vista previa**: el informe de imprimibilidad trae los consejos como cambios de parámetros
   (`fixes`). «Aplicar consejos» (y `model_advice`) deja elegirlos, enseña cómo queda (tamaño, piezas, cama, malla) y al
   aplicar regenera conservando la generación anterior para compararla. Los edificios finos ya no se arreglan quitándolos:
-  `thicken` ensancha también edificios, alas, cobertizos y agujas a dos pasadas.
+  `thicken` ensancha también edificios, alas, cobertizos y agujas a dos pasadas. Kerzers con los consejos aplicados: nota de 40 a 78, los 1.131 edificios conservados y la maqueta igual de cerrada y de 200 × 200 mm.
 - 24 herramientas MCP (antes 20).
 
 Verificado: 192 pruebas en la nube y en Windows; por MCP (stdio y ruta de la interfaz) `area_check` con placa y con
