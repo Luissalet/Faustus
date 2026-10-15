@@ -5334,6 +5334,17 @@ def _prepend_agent_directive(messages: List[Dict], directive: str) -> List[Dict]
     return messages
 
 
+def _degenerate_retry_limit(round_num: int, unattended: bool = False) -> int:
+    """How many repeated-output retries a turn gets by `round_num`.
+
+    Three, plus one per ten rounds. An unattended run has nobody to rephrase
+    the request after the turn errors out, and a looping model mostly
+    recovers on the next try, so it gets more: six, plus one per four rounds.
+    """
+    base = 3 + round_num // 10
+    return max(base, 6 + round_num // 4) if unattended else base
+
+
 def _unattended_dropped_sections() -> tuple:
     """Prompt sections an unattended run has no use for.
 
@@ -11564,6 +11575,7 @@ async def _stream_agent_loop_body(
     # A reasoning-loop retry thinks at low effort for that one round; the
     # turn's own settings come back once the round is through.
     _loop_retry_restore: Optional[Dict[str, Any]] = None
+    _reasoning_loops = 0
     # The server refused an image (a text-only model behind a server that
     # does not say so): drop the images, retry the round once, and attach no
     # more for the rest of the turn.
@@ -12234,7 +12246,11 @@ async def _stream_agent_loop_body(
     # off, or the route's freshness check settled on "not time-sensitive")
     # gets no instruction to use them.
     _web_withheld = set(WEB_TOOL_NAMES) <= set(disabled_tools or ())
-    if _intent.get("freshness_reasons") and not guide_only and not _web_withheld:
+    # An unattended job on a workspace (a bug report, a task brief) mentions
+    # versions and "latest" all the time; the work is in the files, and a
+    # "search the web first" nudge only sends a small model off to search.
+    if (_intent.get("freshness_reasons") and not guide_only and not _web_withheld
+            and not (unattended and workspace)):
         messages.append({
             "role": "system",
             "content": _lang_note("This question is time-sensitive: search the web before answering."),
@@ -13708,7 +13724,8 @@ async def _stream_agent_loop_body(
                     # Three retries, plus one more per ten rounds: a long task
                     # on a model that loops now and then (the GLM on the
                     # Sparks) used to end on its third loop at round 13.
-                    and _xr.permits("degenerate_output_retry", _degenerate_retries, 3 + round_num // 10)
+                    and _xr.permits("degenerate_output_retry", _degenerate_retries,
+                                    _degenerate_retry_limit(round_num, unattended))
                     and (not _degenerate_output_retried
                          or round_num - _last_degenerate_retry_round >= 4
                          # Mid-task (tools already ran), the ladder below
@@ -14589,7 +14606,11 @@ async def _stream_agent_loop_body(
                 })
                 # This round thinks briefly; the turn's own effort returns
                 # after it (see `_loop_retry_restore`).
-                if _loop_retry_restore is None:
+                _reasoning_loops += 1
+                # A model that keeps looping at the turn's effort is better
+                # kept at low effort for the rest of an unattended turn than
+                # sent back to loop again (live: four loops in eight rounds).
+                if _loop_retry_restore is None and not (unattended and _reasoning_loops >= 2):
                     _loop_retry_restore = dict(gen_overrides or {})
                 gen_overrides["think"] = True
                 gen_overrides["reasoning_effort"] = "low"
@@ -14600,7 +14621,8 @@ async def _stream_agent_loop_body(
                     "type": "harness_check", "status": "auto_continue",
                     "reason": "degenerate_output_retry", "round": round_num,
                     "dropped_untrusted_context": _dropped_untrusted,
-                    **_xr.event("degenerate_output_retry", used=_degenerate_retries, limit=3 + round_num // 10, round_num=round_num),
+                    **_xr.event("degenerate_output_retry", used=_degenerate_retries,
+                                limit=_degenerate_retry_limit(round_num, unattended), round_num=round_num),
                 }) + "\n\n"
             )
             yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'

@@ -92,7 +92,13 @@ logger = logging.getLogger(__name__)
 
 # Unattended turns (headless runs, task containers) leave these out: no such
 # run called them, and their schemas are among the largest offered.
-UNATTENDED_LEAN_OFF = frozenset({"delegate_agents", "manage_skills", "ask_teacher"})
+UNATTENDED_LEAN_OFF = frozenset({
+    "delegate_agents", "manage_skills", "ask_teacher",
+    # Studio's own panels and the hosted-forge helpers: nothing to drive and
+    # no account in a headless job; plain git in the shell covers the repo.
+    "ui_control", "git_radar", "github_issue", "github_labels", "github_notes",
+    "github_release_check", "code_history",
+})
 _IMAGE_CUE_RE = re.compile(
     r"\.(?:png|jpe?g|gif|webp|bmp|svg)\b|\b(?:image|images|screenshot|picture|photo|diagram|imagen|captura|foto)\b",
     re.IGNORECASE,
