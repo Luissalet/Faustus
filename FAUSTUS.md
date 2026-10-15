@@ -12012,6 +12012,12 @@ Segunda sesión sobre Gulliver, midiendo los 3MF generados (vértices, aristas, 
 - La Badajoz guardada tenía 2 aristas abiertas porque era de un código anterior; regenerada, cerrada. Peñíscola estaba en
   2×1 piezas de 154×308 mm que no caben en la cama de 256 mm: pasada a 2×2.
 
+- Segunda tanda (`b0d7863`): puentes sobre calles, vías y barrancos con tablero de 0,35 mm sobre la hondonada que el MDT
+  muestra bajo ellos (con arcos si hay sitio), azudes y presas de OpenStreetMap como murete de orilla a orilla (Toledo: 7)
+  y, en la montaña española, roca, prados y bosques leídos de la ortofoto PNOA a pocos metros por píxel (`ground_from_photo`;
+  donde la foto no se ve clara, roca por pendiente). Picos de Europa regenerado: bosques donde la foto los muestra, 3.414
+  árboles. 59 pruebas.
+
 Verificado en el PC: 57 pruebas en Windows y 4 del panel; las cinco maquetas regeneradas por la ruta MCP de Gulliver
 (`/api/agent/call`) con todas las partes y piezas cerradas; visor y biblioteca revisados en Chrome.
 
