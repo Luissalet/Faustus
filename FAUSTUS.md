@@ -12527,3 +12527,16 @@ la barra (`PresetPicker` con `hideWhenEmpty`). Solo se abre con una señal nueva
 Verificado con Playwright contra el 7000: chip visible con «Code Analyze», la × lo vacía, «+ › Preset» abre la paleta,
 elegir «Reason» lo pone en la barra y sobrevive a recargar sin abrir la paleta sola; `tsc`, build y
 `tests/test_studio_guards.py` + `tests/test_studio_commands_js.py` en verde.
+
+## Silver's Hoard: movimientos que aprende, ligas de los juegos y entrenadores propios — 15-10-2026
+
+- El selector de movimientos del editor de equipos solo ofrece lo que aprende el Pokémon. Un Pokémon que no está en la
+  Pokédex de su generación (Scolipede en la 9.ª) tenía vacía la lista de esa generación y el selector enseñaba los 937
+  movimientos; ahora usa la de National Dex, que también es la de los formatos National Dex (el de por defecto,
+  `gen9nationaldexag`). `dex_search` y `species_info` aceptan `format`. Las filas van por nombre: los 17 Poder Oculto
+  comparten id y dejaban filas viejas al estrechar la búsqueda.
+- Ligas: pestañas «De los juegos» (las 15 ligas desde el principio; la que no está montada se monta al abrirla), «Propias» y
+  «De amigos». Herramienta nueva `leagues_catalog`; `leagues_list` acepta `origin`. 130 herramientas.
+- Entrenadores › Propios incluye los aleatorios que sacas; renombrar, cambiar el equipo o la imagen de un aleatorio lo hace
+  propio. Verificado en la 5230 con Chrome (Scolipede: 90 filas, sin Sentencia; «poder oculto fu» deja una sola fila; Liga
+  Kanto de Rojo y Azul montada al abrirla) y con la batería completa de pytest y del motor.
