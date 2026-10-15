@@ -12,7 +12,7 @@ import threading
 from collections import OrderedDict
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
-from .embedder import EmbedderPool, EmbedderUnavailable, Qwen3VLEmbedder, default_pool
+from .embedder import EmbedderPool, EmbedderUnavailable, default_pool, embedder_status
 from .render import Rendered, RenderError, Renderers, render_source
 from .store import DEFAULT_COLLECTION, StoreError, VisualStore, check_collection, split_strip_id
 from .tiling import TILE_HEIGHT, describe_geometry, strips_from_image
@@ -104,6 +104,13 @@ class VisualIndexService:
                     "total": known.get("strips", 0), "kind": rendered.kind, "notes": ["unchanged since it was last indexed"]}
         totals = {"added": 0, "reused": 0, "removed": 0}
         scopes: List[Any] = []
+        ensure = getattr(embedder, "ensure_loaded", None)
+        if ensure is not None:
+            try:
+                ensure()                    # `embedder.dim` is the loaded model's, not a default, from here on
+            except EmbedderUnavailable:
+                _close(rendered)
+                raise
         try:
             for piece in rendered.pieces:
                 strips = strips_from_image(piece.image, page=piece.page, y_offset=piece.y_offset)
@@ -133,7 +140,10 @@ class VisualIndexService:
         finally:
             _close(rendered)
         total = (col.sources().get(key) or {}).get("strips", 0)
-        return {"source": key, "ok": True, "unchanged": False, "kind": rendered.kind, "added": totals["added"],
+        # Nothing embedded and nothing dropped: the source is as it was, even when it had to be rendered again to find out
+        # (a web page has no file fingerprint, so only its strips' MD5 can say so).
+        unchanged = totals["added"] == 0 and totals["removed"] == 0 and totals["reused"] > 0
+        return {"source": key, "ok": True, "unchanged": unchanged, "kind": rendered.kind, "added": totals["added"],
                 "reused": totals["reused"], "removed": totals["removed"], "total": total,
                 "pages": len(set(rendered.pages_rendered)), "pages_total": rendered.pages_total, "notes": list(rendered.notes)}
 
@@ -246,13 +256,8 @@ class VisualIndexService:
         return {"collection": col.name, "removed_strips": n, "deleted_collection": True}
 
     # ------------------------------------------------------------------------------------------ status
-    def status(self, owner: Optional[str]) -> Dict[str, Any]:
-        pool = self.pool
-        if pool._factory is None:
-            embedder = Qwen3VLEmbedder().status()
-            embedder["loaded"] = pool.loaded()
-        else:
-            embedder = {"embedder": "custom", "loaded": pool.loaded()}
+    def status(self, owner: Optional[str], *, probe: bool = False) -> Dict[str, Any]:
+        embedder = embedder_status(self.pool, probe=probe)
         vision: Dict[str, Any] = {"available": False}
         try:
             from .vision import vision_ready

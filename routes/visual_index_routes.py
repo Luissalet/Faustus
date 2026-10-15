@@ -1,6 +1,6 @@
 """routes/visual_index_routes.py -- HTTP surface of the local visual index (src/visual_index/).
 
-GET    /api/visual-index/status                     embedder / vision / limits / collections
+GET    /api/visual-index/status[?probe=1]           embedder (mode, python, device) / vision / limits / collections
 GET    /api/visual-index/collections                the caller's collections
 GET    /api/visual-index/collections/{name}         its sources
 DELETE /api/visual-index/collections/{name}         ?source=<path or URL> removes one source, else the whole collection
@@ -86,8 +86,8 @@ def setup_visual_index_routes():
     router = APIRouter(prefix="/api/visual-index")
 
     @router.get("/status")
-    def status(request: Request):
-        return svc.get_service().status(_owner(request))
+    def status(request: Request, probe: bool = False):
+        return svc.get_service().status(_owner(request), probe=probe)
 
     @router.get("/collections")
     def collections(request: Request):

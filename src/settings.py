@@ -550,6 +550,17 @@ DEFAULT_SETTINGS = {
     "visual_index_lease_timeout_seconds": 20,
     "visual_index_idle_unload_seconds": 120,
     "visual_index_models_dir": "",
+    # Run the embedder in ANOTHER Python (src/visual_index/worker.py), so the
+    # index can use a GPU without changing Faustus' own environment (whose
+    # torch may be CPU-only on purpose). Empty: the model loads in the Faustus
+    # process, as before. Otherwise the full path of a python.exe (or of the
+    # environment's folder) whose torch is a CUDA build, with transformers
+    # >=4.57, pillow and numpy installed. The worker is started with
+    # CUDA_VISIBLE_DEVICES set to the one card chosen (never GPU 0 or 1; the CPU
+    # when no card is free), closed with `visual_index_idle_unload_seconds`, and
+    # each request waits at most `visual_index_worker_timeout_seconds`.
+    "visual_index_python": "",
+    "visual_index_worker_timeout_seconds": 900,
     # Typed 3D scenes rendered headless with Blender (src/blender_scene).
     # `blender_path` is the blender executable (or its folder); empty means
     # search BLENDER_PATH, PATH and the usual install folders.

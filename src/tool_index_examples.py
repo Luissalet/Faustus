@@ -1274,6 +1274,8 @@ EXAMPLES: Dict[str, List[str]] = {
     "visual_index_list": [
         "qué hay en el índice visual",
         "list the collections of my visual index",
+        "estado del embebedor del índice visual, ¿usa la GPU?",
+        "check the visual index worker python (probe)",
     ],
     "visual_index_remove": [
         "quita este PDF del índice visual",

@@ -1,14 +1,17 @@
 """Embedding strips and text queries into one vector space.
 
-``VisualEmbedder`` is the interface the index talks to; two implementations:
+``VisualEmbedder`` is the interface the index talks to; three implementations:
 
 * :class:`Qwen3VLEmbedder` -- ``Qwen/Qwen3-VL-Embedding-2B`` through ``transformers``. Optional: ``torch`` and
-  ``transformers`` are NOT in ``requirements.txt``; without them :func:`get_embedder` raises
+  ``transformers`` are NOT in ``requirements.txt``; without them the first use raises
   :class:`EmbedderUnavailable` with the exact install line, and nothing else in Faustus is affected (the module imports
   neither at import time). The weights are downloaded on first use into ``DATA_DIR/models/visual-embedding``.
   Strips and queries go through the model's chat template (document side: system "Represent the user's input.", user =
   the image; query side: system "Retrieve images or text relevant to the user's query.", user = the text), the vector is
   the hidden state of the LAST token after the final norm, L2-normalised (2048 dimensions).
+* :class:`subprocess_embedder.SubprocessEmbedder` -- the same model run by ``src/visual_index/worker.py`` under ANOTHER Python
+  (setting ``visual_index_python``: the interpreter must have a CUDA ``torch``, ``transformers>=4.57``, Pillow and numpy), for
+  when Faustus' own environment must keep a CPU-only ``torch``. :func:`get_embedder` picks it when that setting is set.
 * :class:`FakeEmbedder` -- deterministic, no dependencies, for tests.
 
 Where the model runs is decided by :func:`choose_device`: **never GPU 0 or GPU 1** (they are the owner's), GPUs 2 and 3
@@ -204,6 +207,7 @@ def model_downloaded(model_id: str = DEFAULT_MODEL, directory: Optional[str] = N
 class Qwen3VLEmbedder:
     name = DEFAULT_MODEL
     dim = 2048
+    mode = "in_process"
 
     def __init__(self, model_id: str = DEFAULT_MODEL, *, directory: Optional[str] = None, batch_size: Optional[int] = None,
                  lease_factory: Optional[Callable[..., Any]] = None):
@@ -220,7 +224,7 @@ class Qwen3VLEmbedder:
     # ---- loading
     def status(self) -> dict:
         missing = dependencies_missing()
-        return {"embedder": self.name, "dim": self.dim, "dependencies_missing": missing,
+        return {"embedder": self.name, "mode": "in_process", "dim": self.dim, "dependencies_missing": missing,
                 "install_hint": INSTALL_HINT if missing else "",
                 "model_downloaded": model_downloaded(self.name, self.directory), "models_dir": self.directory,
                 "loaded": self._model is not None, "device": self._choice.device if self._choice else "",
@@ -333,6 +337,33 @@ class Qwen3VLEmbedder:
             return self._pool([prompt], None)[0].astype(np.float32)
 
 
+def get_embedder() -> VisualEmbedder:
+    """The real embedder the settings ask for: in a worker process under ``visual_index_python`` when that is set, else the
+    model in this process. Cheap: nothing is loaded or started until the first embedding."""
+    from .subprocess_embedder import SubprocessEmbedder, configured_python
+
+    python = configured_python()
+    if python:
+        return SubprocessEmbedder(python)
+    return Qwen3VLEmbedder()
+
+
+def embedder_status(pool: "EmbedderPool", *, probe: bool = False) -> dict:
+    """Status of the embedder of ``pool``: the resident one when there is one (so ``device`` and ``loaded`` are real), else
+    what a new one would be. ``probe=True`` also runs the interpreter check of ``visual_index_python`` (slow: it imports torch)."""
+    current = pool.current()
+    if current is None:
+        if pool._factory is not None:
+            return {"embedder": "custom", "mode": "custom", "loaded": False, "device": ""}
+        current = get_embedder()
+    status = getattr(current, "status", None)
+    if status is None:
+        return {"embedder": getattr(current, "name", "custom"), "mode": "custom", "loaded": True, "device": ""}
+    out = status(probe=True) if probe and getattr(current, "mode", "") == "subprocess" else status()
+    out["resident"] = pool.loaded()
+    return out
+
+
 # --------------------------------------------------------------------------------------------- the fake
 _COLOURS = {"red": (220, 40, 40), "green": (40, 190, 60), "blue": (40, 70, 220), "black": (10, 10, 10),
             "white": (245, 245, 245), "yellow": (230, 220, 40)}
@@ -391,6 +422,7 @@ class EmbedderPool:
         self._idle_override = idle_s
         self._lock = threading.RLock()
         self._embedder: Optional[VisualEmbedder] = None
+        self._embedder_key = ""
         self._active = 0
         self._timer: Optional[threading.Timer] = None
 
@@ -402,7 +434,15 @@ class EmbedderPool:
     def _build(self) -> VisualEmbedder:
         if self._factory is not None:
             return self._factory()
-        return Qwen3VLEmbedder()
+        return get_embedder()
+
+    def _wanted_key(self) -> str:
+        """Which kind of embedder the settings ask for now (only meaningful when the pool builds the real one)."""
+        if self._factory is not None:
+            return ""
+        from .subprocess_embedder import configured_python
+
+        return configured_python()
 
     @contextmanager
     def use(self) -> Iterator[VisualEmbedder]:
@@ -410,7 +450,10 @@ class EmbedderPool:
             if self._timer is not None:
                 self._timer.cancel()
                 self._timer = None
+            if self._embedder is not None and self._active == 0 and self._embedder_key != self._wanted_key():
+                self._unload_now()                      # visual_index_python changed while an embedder was resident
             if self._embedder is None:
+                self._embedder_key = self._wanted_key()
                 self._embedder = self._build()
             self._active += 1
             embedder = self._embedder
@@ -453,6 +496,9 @@ class EmbedderPool:
 
     def loaded(self) -> bool:
         return self._embedder is not None
+
+    def current(self) -> Optional[VisualEmbedder]:
+        return self._embedder
 
 
 _POOL = EmbedderPool()

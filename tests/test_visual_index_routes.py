@@ -124,3 +124,8 @@ def test_routes_are_in_the_real_app():
 
     paths = set(app_module.app.openapi()["paths"])
     assert "/api/visual-index/search" in paths and "/api/visual-index/tiles/{tile_id}/image" in paths
+
+
+def test_status_accepts_probe(client):
+    body = client.get("/api/visual-index/status?probe=1").json()
+    assert "embedder" in body and "geometry" in body

@@ -151,11 +151,35 @@ class ViewTileTool:
                 "views_left": remaining, "exit_code": 0}
 
 
+def _status_text(status: Dict[str, Any]) -> str:
+    emb = status.get("embedder") or {}
+    parts = [f"Embedder {emb.get('embedder', '?')}: mode {emb.get('mode', '?')}, "
+             + ("loaded" if emb.get("loaded") else "not loaded")
+             + (f" on {emb['device']}" if emb.get("device") else "")]
+    if emb.get("mode") == "subprocess":
+        parts.append(f"python {emb.get('python') or '(empty)'}" + ("" if emb.get("python_exists") else " (NOT FOUND)"))
+        info = emb.get("python_info")
+        if info:
+            parts.append(f"torch {info.get('torch')} cuda {info.get('cuda')} cards {info.get('device_count')} transformers {info.get('transformers')}")
+        if emb.get("problem"):
+            parts.append(f"problem: {emb['problem']}")
+    elif emb.get("dependencies_missing"):
+        parts.append(f"missing {', '.join(emb['dependencies_missing'])}: {emb.get('install_hint')}")
+    parts.append(f"model downloaded: {emb.get('model_downloaded')}; allowed GPUs {emb.get('allowed_gpus')}")
+    vision = status.get("vision") or {}
+    parts.append("vision model: " + (str(vision.get("model")) if vision.get("available") else f"none ({vision.get('note', '')})"))
+    return "\n".join(parts)
+
+
 class VisualIndexListTool:
     async def execute(self, content: str, ctx: dict) -> dict:
         args = _args(content)
-        if set(args) - {"collection"}:
-            return {"error": 'visual_index_list: expected {"collection"?: "name"}', "error_code": "invalid_arguments", "exit_code": 1}
+        if set(args) - {"collection", "status", "probe"}:
+            return {"error": 'visual_index_list: expected {"collection"?: "name"} or {"status": true, "probe"?: true}',
+                    "error_code": "invalid_arguments", "exit_code": 1}
+        if args.get("status") or args.get("probe"):
+            status = await asyncio.to_thread(svc.get_service().status, _owner(ctx), probe=bool(args.get("probe")))
+            return {"output": _status_text(status), "status": status, "exit_code": 0}
         try:
             result = await asyncio.to_thread(svc.get_service().list, _owner(ctx), args.get("collection") or None)
         except (svc.VisualIndexError, ValueError) as exc:
