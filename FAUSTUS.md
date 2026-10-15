@@ -11975,7 +11975,10 @@ compartido; el Hub la descubre y la arranca). Simulador de combates sobre el mot
 - Nivel de IA «maestro»: búsqueda en árbol de Montecarlo de poke-engine (motor en Rust, opcional,
   requirements-master.txt) que explora cientos de miles de futuros por turno en individuales de 9.ª generación; sin él
   juega como el experto. El panel «Por qué» muestra los futuros explorados (tool ai_levels).
-- 79 herramientas.
+- Créditos visibles: página «Créditos» con todas las fuentes y licencias, los artistas de los sprites de entrenador
+  (índice de Showdown) y de los sprites de la arena en tiempo real (SpriteCollab), con búsqueda; el autor sale en las
+  páginas de entrenador y personaje, en el selector de sprites y bajo la arena (tool credits).
+- 80 herramientas.
 
 Verificado en el PC: 47 pruebas del motor y 29 de la app en Windows, liga de Johto instalada y combate IA contra IA por el
 puente del Hub, partida humana en el navegador con sprites descargados y registro en castellano.
