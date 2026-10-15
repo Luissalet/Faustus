@@ -11986,7 +11986,11 @@ compartido; el Hub la descubre y la arranca). Simulador de combates sobre el mot
   turnos y la app lo vuelve a jugar al importar el código (equipos esperados, elecciones legales, mismo final y, con la
   misma versión de la IA, las elecciones del rival tienen que ser las suyas); la medalla lo indica. De paso, la IA de la
   página jugable ya juega de verdad (antes se quedaba en elecciones por defecto).
-- 80 herramientas.
+- Clasificación de amigos y reto de la semana (página «Amigos»): cada código importado cuenta una vez y se clasifica por
+  gimnasio o entrenador (victoria, comprobado, combate más lejano, menos turnos, más PS); una página exportada como «Reto de
+  la semana» juega todos los combates con la semilla y la suerte de la IA de esa semana, iguales para todos, y la
+  importación lo comprueba (tools leaderboard, leaderboard_remove; export weekly).
+- 82 herramientas.
 
 Verificado en el PC: 47 pruebas del motor y 29 de la app en Windows, liga de Johto instalada y combate IA contra IA por el
 puente del Hub, partida humana en el navegador con sprites descargados y registro en castellano.
