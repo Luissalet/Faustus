@@ -12544,7 +12544,7 @@ elegir «Reason» lo pone en la barra y sobrevive a recargar sin abrir la paleta
 ## Silver's Hoard: batalla campal — 15-10-2026
 
 Silver (plugin `silver`) suma un modo de batallas multitudinarias al estilo de los simuladores de batallas épicas, sacado de los
-vídeos de battle royale de Pokémon: hasta 300 Pokémon en un campo, cada uno con su IA, en todos contra todos, por equipos (dos
+vídeos de battle royale de Pokémon: hasta 1100 Pokémon en un campo (cabe la Pokédex Nacional entera), cada uno con su IA, en todos contra todos, por equipos (dos
 ejércitos o las nueve generaciones) o muchos contra pocos (gigantes con vida, tamaño y fuerza calculados según la multitud). Quién
 lucha sale de generaciones de la Pokédex, los más fuertes de cada una, iniciales, legendarios, al azar, nombres o el equipo de un
 entrenador, con movimientos elegidos de lo que cada uno aprende. El motor juega la batalla en segundos y la pantalla la repite
