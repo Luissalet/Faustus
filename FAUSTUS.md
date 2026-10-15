@@ -11928,7 +11928,7 @@ lista de modelos (`sparks_aux_endpoints`, f4324cf1, 3c9b04ea). Evidencia: `resea
 
 ## Silver's Hoard como plugin — 15-10-2026
 
-Nueva app de la familia (`plugins/silver/plugin.json`, puerto 5230, servicio `silvers-hoard`, 48 herramientas por el contrato
+Nueva app de la familia (`plugins/silver/plugin.json`, puerto 5230, servicio `silvers-hoard`, 55 herramientas por el contrato
 compartido; el Hub la descubre y la arranca). Simulador de combates sobre el motor abierto de Showdown en un proceso Node:
 
 - Entrenadores (equipo importado, creado con el editor visual o aleatorio; nivel y estilo de IA; avatar; frases), combates
@@ -11937,10 +11937,14 @@ compartido; el Hub la descubre y la arranca). Simulador de combates sobre el mot
   equipos de Cristal, Rojo Fuego/Verde Hoja y Esmeralda se instalan como ligas completas.
 - Compartir: fichero, código de texto o página HTML jugable sin conexión con el motor dentro; el código de resultado que da
   la página registra la medalla del amigo.
-- Sprites de entrenador desde una foto: pixel art local o dibujados por Prospero (contrato real comprobado en vivo hasta el
-  render: proyecto, importación con `reason`, descarga por id; el render no se lanzó para no ocupar la GPU principal).
+- Sprites de entrenador: pixel art local desde una foto, o dibujados por Prospero (Qwen-Image 2.1) a partir de hasta cuatro
+  fotos y/o una descripción, con el estilo anime de los juegos tomado de referencias de estilo (tres sprites de Blanco y Negro
+  por defecto, o imágenes propias como arte oficial), recortados con BiRefNet y devueltos como dibujo y como sprite de 96 px.
+  Probado de verdad en las GPU 1-3 con fotos de Luis y retratos oficiales de personajes públicos.
+- Por defecto todo vale (`gen9nationaldexag`): Mega, movimientos Z y teracristalización juntos; la IA usa los tres.
+- Hay además un modo de combate en tiempo real (otra sesión, f85ed5d).
 
-Verificado en el PC: 39 pruebas del motor y 16 de la app en Windows, liga de Johto instalada y combate IA contra IA por el
+Verificado en el PC: 47 pruebas del motor y 29 de la app en Windows, liga de Johto instalada y combate IA contra IA por el
 puente del Hub, partida humana en el navegador con sprites descargados y registro en castellano.
 
 ## Gulliver's Hoard como plugin — 15-10-2026
