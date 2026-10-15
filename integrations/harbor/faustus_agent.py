@@ -40,6 +40,10 @@ def _bundle_dir() -> Path:
     return Path(os.environ.get("FAUSTUS_HARBOR_BUNDLE") or Path(__file__).resolve().parent / "bundle")
 
 
+#: A day: longer than any benchmark task's agent timeout.
+UNBOUNDED_SECONDS = 86400
+
+
 class Faustus(BaseInstalledAgent):
     MODEL_CONNECTION = ModelConnectionSpec(default_provider="openai", passthrough=True)
     # A task's MCP servers are registered in the headless server before the
@@ -53,8 +57,12 @@ class Faustus(BaseInstalledAgent):
         self._think_mode = think_mode
         if isinstance(settings, str) and settings.strip():
             settings = json.loads(settings)
-        self._settings = settings or {}
-        self._run_timeout = float(run_timeout or 7200)
+        # The trial's own agent timeout is the only clock that should end a
+        # run: Faustus's turn ceiling (4 h by default) and the runner's own
+        # timeout are pushed past it, so a long task is never cut short by
+        # the harness rather than by the benchmark.
+        self._settings = {"agent_turn_max_seconds": UNBOUNDED_SECONDS, **(settings or {})}
+        self._run_timeout = float(run_timeout or UNBOUNDED_SECONDS)
 
     @staticmethod
     def name() -> str:
