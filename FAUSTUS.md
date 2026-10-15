@@ -11985,3 +11985,10 @@ GLM-5.3-Flash de las Sparks (multimodal; el nombre no lo dice) salía como solo 
 sonda y, si aún no la hay, la lanza en segundo plano (una vez por modelo cada 10 minutos, solo para backends con nombre
 que no son Ollama, en este equipo o la red local); el listado nunca espera a la red. Hoard Link resuelve ya `vision` a GLM
 por su lado (HoardLink 3f9d8fd). Pruebas: `tests/test_vision_routing.py` (2 nuevas).
+
+## Un enlace pegado ya no decide el idioma de la respuesta — 15-10-2026
+
+«Descárgame este vídeo: https://x.com/…» se contestó en portugués: «com» del dominio es una palabra funcional
+portuguesa y daba a `pt` señal suficiente. `src/reply_language.instruction_text_for_language` quita ahora los enlaces
+(`esquema://…` y `www.…`) antes de puntuar; un mensaje que sin el enlace no decide nada usa
+`reply_language_default` (es). Prueba en `tests/test_reply_language.py`.

@@ -54,6 +54,8 @@ _ATTACHMENT_CHROME_LINE_RE = re.compile(
     r"|Gallery image ID: [A-Za-z0-9_-]{1,128}|Image attached but could not be processed)\]\s*$"
 )
 
+_URL_RE = re.compile(r"(?i)(?:\b[a-z][a-z0-9+.-]*://|\bwww\.)\S+")
+
 # Each directive is written in the language it names.  This is a runtime
 # requirement, not merely descriptive context: weaker wording was easy for
 # small/local models to lose among English tool descriptions and retrieved
@@ -163,6 +165,10 @@ def instruction_text_for_language(text: Any) -> str:
     if match:
         value = value[: match.start()]
     value = _ATTACHMENT_CHROME_LINE_RE.sub("", value)
+    # A pasted link is not the user's language: "x.com/..." carries "com",
+    # a Portuguese function word, and turned «Descárgame este vídeo: <tweet>»
+    # into a reply in Portuguese.
+    value = _URL_RE.sub(" ", value)
     return value.strip()
 
 

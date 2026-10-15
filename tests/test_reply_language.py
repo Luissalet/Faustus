@@ -284,3 +284,13 @@ def test_a_short_spanish_order_with_di_is_not_italian():
     assert language_of("Di solo: hola A") == "es"
     assert language_of("dime solo hola") == "es"
     assert language_of("Dimmi la verità su questo e quello") == "it"
+
+
+def test_a_pasted_link_does_not_decide_the_reply_language():
+    """«x.com» carries «com», a Portuguese function word: a Spanish request with a tweet was answered in Portuguese."""
+    from src import reply_language as rl
+    # alone, the request is too short to settle anything (the default-language setting decides); never Portuguese
+    assert rl.language_of("Descárgame este vídeo: https://x.com/NASA/status/2107095768821576019") is None
+    assert rl.language_of("Descárgame este vídeo de la NASA y guárdalo en el móvil: https://x.com/NASA/status/1") == "es"
+    assert rl.language_of("Can you download this video for me and keep it? https://www.youtube.com/watch?v=abc") == "en"
+    assert rl.instruction_text_for_language("mira www.example.com/com/com y esto") == "mira   y esto"
