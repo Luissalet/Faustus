@@ -11976,3 +11976,12 @@ en el móvil por la red privada es una descarga normal, y el archivo queda tambi
 Primer uso: Links Hoard. «Descárgame este vídeo: <tweet>» → `media_download` guarda el MP4 en la carpeta de descargas de
 Links, guarda el enlace en su historial (etiqueta «descarga») y lista el archivo en `deliverables`; Faustus contesta con el
 enlace de descarga. Pruebas: `tests/test_tool_deliverables.py` (5).
+
+## Visión de un modelo multimodal en un servidor de la red — 15-10-2026
+
+`/api/models` marcaba `models_vision` solo con las cachés de Ollama, LM Studio y llama.cpp o por el nombre, así que
+GLM-5.3-Flash de las Sparks (multimodal; el nombre no lo dice) salía como solo texto aunque la sonda de imagen de
+`model_supports_vision` ya lo sabía. `src/vision_routing.known_vision_models` cuenta ahora la respuesta cacheada de esa
+sonda y, si aún no la hay, la lanza en segundo plano (una vez por modelo cada 10 minutos, solo para backends con nombre
+que no son Ollama, en este equipo o la red local); el listado nunca espera a la red. Hoard Link resuelve ya `vision` a GLM
+por su lado (HoardLink 3f9d8fd). Pruebas: `tests/test_vision_routing.py` (2 nuevas).

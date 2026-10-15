@@ -518,3 +518,38 @@ def test_sync_llm_call_puts_num_ctx_in_ollama_options(monkeypatch):
         pass
     assert sent, "no request was sent"
     assert sent["payload"]["options"]["num_ctx"] == 8192
+
+
+def test_known_vision_models_counts_the_image_probe_of_a_network_server(monkeypatch):
+    """glm-5.3-flash on the Sparks sees; nothing in its name says so. A cached probe
+    answer marks it, and with none yet the probe starts in the background once."""
+    url = "http://192.168.0.236:8002/v1/chat/completions"
+    monkeypatch.setattr(ch, "_openai_vision_cache", {})
+    monkeypatch.setattr(vr, "_probe_started", {})
+    started = []
+
+    class FakeThread:
+        def __init__(self, target, args, name, daemon):
+            started.append((target, args))
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(vr.threading, "Thread", FakeThread)
+    assert vr.known_vision_models(url, ["glm-5.3-flash-nvfp4"], backend="unknown") == []
+    assert started == [(ch.openai_compat_supports_vision, (url, "glm-5.3-flash-nvfp4"))]
+    assert vr.known_vision_models(url, ["glm-5.3-flash-nvfp4"], backend="unknown") == []
+    assert len(started) == 1, "one probe per model until it answers or the retry time passes"
+    ch._openai_vision_cache[(url, "glm-5.3-flash-nvfp4")] = (True, 1e18)
+    assert vr.known_vision_models(url, ["glm-5.3-flash-nvfp4"], backend="unknown") == ["glm-5.3-flash-nvfp4"]
+    ch._openai_vision_cache[(url, "glm-5.3-flash-nvfp4")] = (False, 1e18)
+    assert vr.known_vision_models(url, ["glm-5.3-flash-nvfp4"], backend="unknown") == []
+
+
+def test_no_background_probe_for_ollama_unknown_backends_or_remote_hosts(monkeypatch):
+    monkeypatch.setattr(ch, "_openai_vision_cache", {})
+    monkeypatch.setattr(vr, "_probe_started", {})
+    monkeypatch.setattr(vr.threading, "Thread", lambda *a, **k: (_ for _ in ()).throw(AssertionError("probe")))
+    vr.known_vision_models("http://127.0.0.1:11434/v1/chat/completions", ["qwen3:8b"], backend="ollama")
+    vr.known_vision_models("http://127.0.0.1:11434/v1/chat/completions", ["qwen3:8b"])
+    vr.known_vision_models("https://api.example.com/v1/chat/completions", ["some-model"], backend="unknown")

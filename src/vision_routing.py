@@ -534,6 +534,37 @@ def vision_status(owner: Optional[str]) -> Dict[str, Any]:
 # /api/models: capability from caches only
 # ---------------------------------------------------------------------------
 
+_probe_lock = threading.Lock()
+_probe_started: Dict[tuple, float] = {}
+#: How long before a probe that gave no answer (server down, model cold) is tried again.
+PROBE_RETRY_S = 600.0
+
+
+def _openai_vision_answer(ch: Any, chat_url: str, model: str, host: str, backend: str) -> Optional[bool]:
+    """The cached image-probe answer for `model` on an OpenAI-compatible server;
+    without one, start the probe in a background thread (at most once every
+    `PROBE_RETRY_S` per model, only for a named non-Ollama backend on this machine
+    or the local network) and return None so the caller falls back to the name."""
+    try:
+        url = ch._chat_completions_url(chat_url)
+        hit = ch._openai_vision_cache.get((url, model))
+        if hit and hit[1] > time.time():
+            return hit[0]
+        if not backend or backend in ("ollama", "llamacpp", "lmstudio") or not ch._is_local_host(host):
+            return None
+    except Exception:  # noqa: BLE001 - never let a listing fail on this
+        return None
+    key = (url, model)
+    now = time.time()
+    with _probe_lock:
+        if now - _probe_started.get(key, 0.0) < PROBE_RETRY_S:
+            return None
+        _probe_started[key] = now
+    threading.Thread(target=ch.openai_compat_supports_vision, args=(chat_url, model),
+                     name="vision-probe", daemon=True).start()
+    return None
+
+
 def known_vision_models(chat_url: str, model_ids: Sequence[str], backend: str = "") -> List[str]:
     """Which of `model_ids` on `chat_url` accept images, from what is already
     known: the Ollama capability cache, the LM Studio and llama.cpp probe
@@ -582,6 +613,14 @@ def known_vision_models(chat_url: str, model_ids: Sequence[str], backend: str = 
                 answer = "vision" in caps
         if answer is None and backend == "llamacpp":
             continue
+        if answer is None and root and backend not in ("ollama", "lmstudio"):
+            # An OpenAI-compatible server on this machine or the local network
+            # (vLLM on the Sparks): a name does not say whether the checkpoint
+            # sees (glm-5.3-flash does). The 1-token image probe of
+            # `model_supports_vision` answers that; its cached answer counts
+            # here, and with none yet the probe runs in the background so the
+            # next listing has it.
+            answer = _openai_vision_answer(ch, chat_url, mid, host, backend)
         if answer is None:
             answer = ch.is_vision_model(mid)
         if answer:
