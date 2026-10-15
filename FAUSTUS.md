@@ -12540,3 +12540,13 @@ elegir «Reason» lo pone en la barra y sobrevive a recargar sin abrir la paleta
 - Entrenadores › Propios incluye los aleatorios que sacas; renombrar, cambiar el equipo o la imagen de un aleatorio lo hace
   propio. Verificado en la 5230 con Chrome (Scolipede: 90 filas, sin Sentencia; «poder oculto fu» deja una sola fila; Liga
   Kanto de Rojo y Azul montada al abrirla) y con la batería completa de pytest y del motor.
+
+## Silver's Hoard: batalla campal — 15-10-2026
+
+Silver (plugin `silver`) suma un modo de batallas multitudinarias al estilo de los simuladores de batallas épicas, sacado de los
+vídeos de battle royale de Pokémon: hasta 300 Pokémon en un campo, cada uno con su IA, en todos contra todos, por equipos (dos
+ejércitos o las nueve generaciones) o muchos contra pocos (gigantes con vida, tamaño y fuerza calculados según la multitud). Quién
+lucha sale de generaciones de la Pokédex, los más fuertes de cada una, iniciales, legendarios, al azar, nombres o el equipo de un
+entrenador, con movimientos elegidos de lo que cada uno aprende. El motor juega la batalla en segundos y la pantalla la repite
+desde la semilla, con cámara, velocidades y clasificación. Por MCP: `mass_presets`, `mass_start`, `mass_get`, `mass_list`,
+`mass_delete` y `mass_check`.
