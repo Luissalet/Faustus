@@ -91,12 +91,14 @@ forget to keep in sync with the code.
   `src/visual_index/tiling.py` follows its page chunker (strips of at
   most 1024 x 875 px cut from tiles of at most 8192 px, a 28 px minimum
   side, an MD5 per strip so a re-index embeds only what changed), and
-  `src/visual_index/embedder.py` follows its way of embedding a strip or
+  `src/visual_index/embedder.py` (and the stand-alone
+  `src/visual_index/worker.py`, which runs the same model in another
+  Python) follows its way of embedding a strip or
   a query with a Qwen3-VL embedding model (last non-padding token, L2
   normalised, an instruction on the query side). Everything else (the
   Pillow/pypdfium2 renderers, the browser capture, the numpy store, the
   GPU lease, the REST routes and agent tools) is original to this repo.
-  Both module docstrings carry the Apache-2.0 attribution; the model
+  The module docstrings carry the Apache-2.0 attribution; the model
   weights (`Qwen/Qwen3-VL-Embedding-2B`) are downloaded by the user on
   first use under their own license and are not redistributed here.
 

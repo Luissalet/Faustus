@@ -12057,3 +12057,42 @@ Deep Research, `web_fetch`, Studio) en verde; pantalla de Studio abierta con Chr
 de visión); captura real de `https://example.org/` con el navegador de Faustus. **No probado**: el modelo real
 `Qwen3-VL-Embedding-2B` (sin descarga posible desde este entorno ni GPU), una lectura real con un modelo de visión y una
 investigación completa con una página de tabla dinámica; ver PENDIENTES.
+
+**Embebedor en proceso aparte (`visual_index_python`).** El venv de Faustus puede llevar un `torch` solo CPU a propósito (la voz,
+la transcripción y la galería preguntan `torch.cuda.is_available()` y empezarían a usar la GPU 0 de Luis). En CPU el modelo real
+tarda ~20 s por franja (medido: 17 franjas, 345 s). Con el ajuste `visual_index_python` (ruta a un `python.exe`, o a la carpeta de
+su entorno; vacío = en proceso, como antes) el índice embebe en otro intérprete y Faustus no cambia:
+- **Requisitos del otro Python**: `torch` con CUDA (para usar GPU), `transformers>=4.57`, `pillow` y `numpy`. El ajuste no instala
+  nada: si falta algo, el error nombra ese Python y la línea `pip install` exacta. Se acepta la ruta con comillas pegada del
+  Explorador.
+- **`src/visual_index/worker.py`**: script autónomo (solo biblioteca estándar + torch + transformers + PIL + numpy; no importa nada
+  de Faustus). Mismo modelo y misma lógica que `Qwen3VLEmbedder` (plantilla de chat con la instrucción de documento / de consulta,
+  último token, L2, `bfloat16` si la tarjeta es de capacidad ≥8, `float16` si no, `float32` en CPU). Atiende JSON por líneas en
+  stdin/stdout (`info`, `load`, `embed_images` con rutas de PNG, `embed_query`, `close`; vectores en base64 de float32), devuelve
+  los errores como JSON con `code` y manda sus logs a stderr: al arrancar duplica el stdout real para el protocolo y apunta el fd 1
+  a stderr, así que nada que imprima una biblioteca rompe el canal. `--probe` imprime una línea JSON sobre el intérprete (versión de
+  torch, CUDA, número de tarjetas sin abrir ninguna, transformers). `VISUAL_WORKER_FAKE=1` cambia el modelo por uno determinista
+  sin torch (pruebas).
+- **`SubprocessEmbedder`** (`subprocess_embedder.py`, misma interfaz `VisualEmbedder`): sondea el intérprete una vez (caché), elige
+  la tarjeta con el `choose_device` de siempre usando el número de tarjetas **de ese Python** (el torch de Faustus no hace falta),
+  con lo que **nunca GPU 0 ni 1**, memoria pedida al árbitro (`hoard_link.lease`, que se mantiene mientras viva el worker) y CPU
+  dentro del worker si no hay tarjeta libre; lanza el worker con `CUDA_DEVICE_ORDER=PCI_BUS_ID` y `CUDA_VISIBLE_DEVICES=<n>` (vacío en
+  CPU), de modo que dentro la tarjeta elegida es `cuda:0` y no existe otra; no le pasa `PYTHONPATH`/`PYTHONHOME`/`VIRTUAL_ENV`;
+  envía las franjas como PNG temporales; si el worker muere a mitad de una petición lo arranca otra vez y repite (una vez; a la
+  segunda, `worker_died` con el final de su log); una petición que no contesta en `visual_index_worker_timeout_seconds` (900) lo
+  mata (`worker_timeout`) y la siguiente lo arranca de nuevo; `close()` (el TTL `visual_index_idle_unload_seconds` del pool) le manda
+  `close`, espera 5 s, lo mata y suelta el lease. `EmbedderPool` (vía `get_embedder()`) lo usa cuando el ajuste está fijado y lo
+  reconstruye si el ajuste cambia con un embebedor residente.
+- **Estado** (`GET /api/visual-index/status[?probe=1]`, o `visual_index_list {"status": true, "probe"?: true}` para el agente):
+  `embedder.mode` (`in_process` / `subprocess`), `python`, `device` real (`cuda:2` en la numeración del equipo; `worker_device`
+  `cuda:0` es la vista desde dentro), `loaded`, `worker_pid`, `restarts`, y con `probe` la versión de torch, CUDA, tarjetas y
+  transformers de ese Python o el problema concreto. Arregla de paso que `device` saliera vacío con el modelo cargado: el estado
+  se construía con un embebedor nuevo en vez de leer el residente.
+- **`add` repetido**: ya devuelve `unchanged: true` también cuando la fuente se vuelve a renderizar y ninguna franja cambió (páginas
+  web, o PDF con `pages`/`force`); antes solo lo hacía el atajo por huella del fichero (PDF e imágenes locales sin `pages`).
+  Además el servicio carga el embebedor antes de leer su `dim`, para que la colección guarde la dimensión real del modelo.
+- **Comprobado en Linux, sin GPU ni torch**: 8 pruebas del worker (protocolo por pipes reales, stdout limpio con ruido de
+  bibliotecas, errores, probe, constantes iguales a las del embebedor en proceso) y 19 de `SubprocessEmbedder` con un worker falso
+  escrito en la prueba y con `worker.py` en modo falso (arranque, aislamiento de la tarjeta, CPU sin tarjeta, GPU 0/1 rechazadas,
+  reinicio tras muerte, timeout, TTL con lease, Python inexistente / sin torch / transformers viejo, `get_embedder` y el pool según
+  el ajuste, estado). **No probado**: `worker.py` con el modelo real ni con CUDA (ver PENDIENTES).
