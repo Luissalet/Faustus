@@ -284,6 +284,11 @@ export function SourceList({ sources }: { sources: ResearchSource[] }) {
                 {s.ageDays != null ? t('stale · {n}d old', { n: Math.round(s.ageDays) }) : t('stale')}
               </span>
             )}
+            {s.fromCapture && (
+              <span className="fs-rs__source-flag" data-tone="info" title={s.captureModel || undefined}>
+                {t('read from a screenshot')}
+              </span>
+            )}
             {checked && <SourceVerdict source={s} />}
           </li>
         ))}

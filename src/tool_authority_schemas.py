@@ -45,7 +45,9 @@ CORE_SCHEMAS = {
                     "open-ended searches (use web_search) or 'research X' jobs (use trigger_research). Downloads "
                     "are size-budgeted; a '[partial content: ...]' notice in the result means the body was cut "
                     'short and you can re-call with full=true for the rest. Set inspect=true for a passive HTTP '
-                    'profile (status, final URL and selected headers), without extra scans or security verdicts.',
+                    'profile (status, final URL and selected headers), without extra scans or security verdicts. A page whose '
+                    'data sits in tables, charts or images is read from a screenshot by the vision model when one is '
+                    'available (look, question).',
      'parameters': {'type': 'object',
                     'properties': {'url': {'type': 'string',
                                            'description': 'The URL or domain to fetch (http/https; a bare domain '
@@ -55,7 +57,13 @@ CORE_SCHEMAS = {
                                    'full': {'type': 'boolean',
                                             'description': 'Raise the download budget to the hard cap for large '
                                                            'pages/files. Use only after a result reported '
-                                                           'partial content.'}},
+                                                           'partial content.'},
+                                   'look': {'type': 'boolean',
+                                            'description': 'Read a screenshot of the page with the vision model, for '
+                                                           'pages whose data is in tables/charts/images. Automatic '
+                                                           'when the text is little; true forces it, false skips it.'},
+                                   'question': {'type': 'string',
+                                                'description': 'What to read from the screenshot (used with look).'}},
                     'required': ['url']}},
     'read_file': {'description': 'Read a file from disk. Optionally read a line range with offset/limit for large files. An '
                     'image file (png, jpg, gif, webp) comes back as the picture itself, so this is how you look '

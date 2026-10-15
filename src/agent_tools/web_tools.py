@@ -126,12 +126,17 @@ class WebFetchTool:
         url = ""
         max_bytes = None
         inspect_http = False
+        look_flag = None          # None: automatic (setting); True: always look; False: never
+        look_question = ""
         if raw.startswith("{"):
             try:
                 parsed = json.loads(raw)
                 if isinstance(parsed, dict):
                     url = str(parsed.get("url") or "").strip()
                     inspect_http = parsed.get("inspect") is True
+                    if isinstance(parsed.get("look"), bool):
+                        look_flag = parsed["look"]
+                    look_question = str(parsed.get("question") or "").strip()[:1200]
                     # Download-budget override (#3812): "full": true raises the
                     # budget to the hard cap; an explicit max_bytes is clamped
                     # to the hard cap downstream. Default stays the soft cap.
@@ -161,6 +166,8 @@ class WebFetchTool:
                         kwargs["max_bytes"] = max_bytes
                     if "inspect" in sig.parameters and inspect_http:
                         kwargs["inspect"] = True
+                    if "keep_html" in sig.parameters and look_flag is not False and not inspect_http and _look_setting():
+                        kwargs["keep_html"] = True        # to tell a page of tables/charts from a short page
                 except (TypeError, ValueError):
                     # Some deployed/test shims may not expose a signature.
                     # Prefer compatibility over failing the whole fetch.
@@ -218,7 +225,20 @@ class WebFetchTool:
         text = (result.get("content") or "").strip()
         title = result.get("title") or ""
 
-        if not text:
+        # "Look at the page": when the text is little or the page is mostly tables/charts/canvases, read a screenshot of it
+        # with the resident vision model (src/visual_index/lookpage.py). Never fatal.
+        look = None
+        look_note = ""
+        if look_flag is not False and not err:
+            look, look_note = await _look_at(url, look_question, text, result, ctx, forced=look_flag is True)
+        capture_block = ""
+        if look is not None and look.has_text:
+            capture_block = f"\n\n---\n{look.marker()}\n{look.text}"
+
+        if not text and not capture_block:
+            if look_note:
+                return {"error": f"web_fetch: {url}: no readable text content. {look_note}", "exit_code": 1,
+                        "look": look.as_dict() if look is not None else None, "untrusted_content": True}
             if err:
                 return {
                     "error": f"web_fetch: {url}: {err}",
@@ -259,7 +279,13 @@ class WebFetchTool:
         if len(title) > 300:
             title = title[:300] + "..."
         header = (f"# {title}\n" if title else "") + f"Source: {url}\n\n"
-        output = size_note + header + text
+        if look_note:
+            size_note += f"[note: {look_note}]\n\n"
+        if capture_block:
+            room = max(2000, MAX_OUTPUT_CHARS - len(size_note) - len(header) - len(capture_block) - 40)
+            output = size_note + header + (text[:room] if len(text) > room else text) + capture_block
+        else:
+            output = size_note + header + text
         download_truncated = bool(result.get("truncated"))
         fetched_bytes = result.get("fetched_bytes")
         total_bytes = result.get("total_bytes")
@@ -289,6 +315,10 @@ class WebFetchTool:
         headings = result.get("headings")
         if headings:
             response["headings"] = headings
+        if look is not None:
+            response["look"] = look.as_dict()
+            if look.has_text:
+                response["from_capture"] = True
         response["truncated"] = download_truncated or output_truncated
         if download_truncated:
             response["kept_bytes"] = fetched_bytes
@@ -309,8 +339,45 @@ class WebFetchTool:
                 fetched_bytes=fetched_bytes,
                 total_bytes=total_bytes,
             )
-            response["evidence_refs"] = [evidence.to_mapping()]
+            response["evidence_refs"] = [evidence.to_mapping()] if text else []
+            if capture_block:
+                shot = _evidence_for_fetch(
+                    url, look.text, owner_id=owner_id or "system", project_id=project_id,
+                    truncated=False, fetched_bytes=None, total_bytes=None).to_mapping()
+                shot["locator"] = {"kind": "whole", "value": "screenshot of the page, read by the vision model"}
+                response["evidence_refs"].append(shot)
         except Exception:
             pass
 
         return response
+
+
+def _look_setting() -> bool:
+    try:
+        from src.settings import get_setting
+
+        return bool(get_setting("web_fetch_look_at_page", True))
+    except Exception:  # noqa: BLE001
+        return True
+
+
+async def _look_at(url: str, question: str, text: str, result: dict, ctx: dict, *, forced: bool):
+    """``(LookResult | None, note)``: read a screenshot when the page needs it. ``note`` is one honest sentence for the model
+    when the page seems to keep its data visually and nobody could read it; "" otherwise. Never raises."""
+    if not forced and not _look_setting():
+        return None, ""
+    try:
+        from src.visual_index import lookpage
+
+        assessment = lookpage.assess_page(text, str(result.get("raw_html") or ""), js_rendered=bool(result.get("js_rendered")))
+        if not forced and not assessment.wants_look:
+            return None, ""
+        owner = (ctx.get("owner") if isinstance(ctx, dict) else None) or None
+        look = await lookpage.look_at_page(url, question, owner=owner, reason=assessment.reason or "requested by the caller")
+        if look.has_text:
+            return look, ""
+        if forced or assessment.visual_signals:
+            return look, lookpage.gap_sentence(look, url) or ""
+        return look, ""
+    except Exception:  # noqa: BLE001
+        return None, ""

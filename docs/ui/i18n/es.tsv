@@ -9902,3 +9902,4 @@ Saved as {path}	Guardado como {path}
 Start Ollama when it is closed	Arrancar Ollama si está cerrado
 The model file is no longer there (moved or deleted). Edit the engine and choose the file again.	El fichero del modelo ya no está ahí (movido o borrado). Edita el motor y vuelve a elegirlo.
 The vision projector file is no longer there (moved or deleted). Edit the engine and choose it again.	El fichero del proyector de visión ya no está ahí (movido o borrado). Edita el motor y vuelve a elegirlo.
+read from a screenshot	leído de una captura

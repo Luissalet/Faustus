@@ -860,6 +860,11 @@ class DeepResearcher:
         saturation_min_new_facts: int = 2,
         saturation_patience: int = 1,
         confidence_stop: float = 0.0,
+        look_at_pages: bool = False,
+        look_min_chars: int = 600,
+        look_max_strips_per_page: int = 4,
+        look_max_strips_per_run: int = 16,
+        look_max_pages_per_run: int = 8,
     ):
         self.llm_endpoint = llm_endpoint
         # How hard the model thinks (src/mode_effort.py). The stages that
@@ -992,6 +997,23 @@ class DeepResearcher:
         self.research_trace: Dict[str, List[Dict[str, Any]]] = {"pages": [], "rounds": []}
         # url -> the search query that returned it (the pruning focus).
         self._url_query: Dict[str, str] = {}
+        # "Look at the page" (src/visual_index/lookpage.py): a page whose text
+        # lacks its data (tables, charts, canvases drawn by a script) is
+        # captured in strips and read by the resident vision model; what it
+        # reads is evidence marked as read from a screenshot. Bounded per page
+        # and per run. When no vision model is available nothing is invented:
+        # the page is listed in `visual_gaps`, which closes the report.
+        self.look_at_pages: bool = bool(look_at_pages)
+        self.look_min_chars: int = max(50, int(look_min_chars or 600))
+        self.look_max_strips_per_page: int = max(1, int(look_max_strips_per_page or 4))
+        self._look_budget: Any = None
+        self.look_budget_args = (max(0, int(look_max_pages_per_run)), max(0, int(look_max_strips_per_run)),)
+        self.visual_gaps: Dict[str, str] = {}
+        self.look_log: List[Dict[str, Any]] = []
+        # Test seams: fake browser (a visual_index.render.Renderers), fake vision model.
+        self.look_renderers: Any = None
+        self.look_ask: Any = None
+        self.look_vision_check: Any = None
 
     def cancel(self):
         """Request cooperative cancellation of the research loop."""
@@ -1278,6 +1300,7 @@ class DeepResearcher:
         else:
             final = await self._final_report(question, report)
         final = self._finalize_citations(final)
+        final = self._append_visual_gaps(final)
         elapsed = time.time() - self._start_time
         logger.info(
             f"Research complete: {self.round_count} rounds, "
@@ -2334,7 +2357,7 @@ class DeepResearcher:
 
         if not page or not page.get("success") or not page.get("content"):
             try:
-                if getattr(self, "prune_pages", False):
+                if getattr(self, "prune_pages", False) or getattr(self, "look_at_pages", False):
                     # Ask for the raw markup too, so the DOM can be scored; a
                     # fetcher that does not know the option just returns the
                     # extracted text, which is pruned as Markdown instead.
@@ -2348,11 +2371,19 @@ class DeepResearcher:
                 logger.warning(f"Failed to fetch {url}: {e}")
                 return None
 
-        if not page.get("success") or not page.get("content"):
+        # A page that fetched fine but gave no text may be all picture or canvas:
+        # "look at the page" may still read it from a screenshot.
+        if not page.get("success") or not (page.get("content") or (
+                getattr(self, "look_at_pages", False) and page.get("success"))):
             return None
 
-        content = page["content"]
-        if getattr(self, "prune_pages", False):
+        content = page.get("content") or ""
+        look = await self._maybe_look(url, question, content, page)
+        if look is not None and look.has_text:
+            content = self._with_capture(content, look)
+        elif not content.strip():
+            return None
+        if getattr(self, "prune_pages", False) and not (look is not None and look.has_text):
             content, _prune_row = self._prune_content(page, content, url, title, question)
         # Truncate to avoid blowing up context, preferring paragraph boundary
         if len(content) > self.max_content_chars:
@@ -2391,25 +2422,27 @@ class DeepResearcher:
                 evidence = parsed.get("evidence")
                 evidence = evidence.strip() if isinstance(evidence, str) else ""
                 if not summary and not evidence:
-                    return self._rendered_page_finding(url, title, page, content, engine=engine)
+                    return self._stamp_capture(
+                        self._rendered_page_finding(url, title, page, content, engine=engine), look)
                 # An empty `summary` beside real `evidence` is the extractor
                 # skipping a field, not a verdict that the page was useless.
                 # is_low_quality("") is True, so this finding used to be thrown
                 # away along with the fetch we already paid for.
                 if not summary and evidence:
-                    return parsed
+                    return self._stamp_capture(parsed, look)
                 # Skip findings where the LLM says the page is useless
                 if is_low_quality(summary):
                     logger.info(f"Skipping low-quality extraction from {url}")
                     return None
-                return parsed
+                return self._stamp_capture(parsed, look)
             raw_response = str(response or "").strip()
             if not raw_response:
-                return self._rendered_page_finding(url, title, page, content, engine=engine)
+                return self._stamp_capture(
+                    self._rendered_page_finding(url, title, page, content, engine=engine), look)
             if is_low_quality(raw_response):
                 return None
             # Preserve substantive non-JSON output, never an empty finding.
-            return {
+            return self._stamp_capture({
                 "url": url,
                 "title": title or page.get("title", ""),
                 "og_image": page.get("og_image", ""),
@@ -2418,7 +2451,7 @@ class DeepResearcher:
                 "evidence": raw_response[:3000],
                 "summary": raw_response[:500],
                 "_fetch_headers": page.get("headers"),
-            }
+            }, look)
         except Exception as e:
             # RES-05: this URL's own failure — the round keeps whatever the
             # OTHER URLs yielded (`_search_and_extract` gathers with
@@ -2427,7 +2460,86 @@ class DeepResearcher:
             # rather than losing the fetch entirely.
             err = ExtractionStageError(str(e), stage="extract", cause=e)
             logger.warning(f"LLM extraction failed for {url} [{err.error_info.code}]: {e}")
-            return self._rendered_page_finding(url, title, page, content, engine=engine)
+            return self._stamp_capture(
+                self._rendered_page_finding(url, title, page, content, engine=engine), look)
+
+    # ------------------------------------------------------------------
+    # LOOK AT THE PAGE (src/visual_index/lookpage.py)
+    # ------------------------------------------------------------------
+    async def _maybe_look(self, url: str, question: str, content: str, page: Dict) -> Optional[Any]:
+        """Read a screenshot of the page when its text is probably missing its data. Never raises; returns the
+        :class:`LookResult` (or None when no look was wanted). A page the vision model could not read is recorded in
+        ``visual_gaps`` for the end of the report."""
+        if not getattr(self, "look_at_pages", False) or self._cancelled:
+            return None
+        try:
+            from src.visual_index import lookpage
+
+            assessment = lookpage.assess_page(
+                content, str(page.get("raw_html") or ""), min_chars=getattr(self, "look_min_chars", 600),
+                js_rendered=bool(page.get("js_rendered")))
+            if not assessment.wants_look:
+                return None
+            if self._look_budget is None:
+                pages_cap, strips_cap = getattr(self, "look_budget_args", (8, 16))
+                self._look_budget = lookpage.LookBudget(pages_cap, strips_cap)
+            self._emit(phase="reading", url=url, title=page.get("title") or url, detail="screenshot",
+                       total_sources=len(self.urls_fetched))
+            look = await lookpage.look_at_page(
+                url, question, owner=self.owner or None, reason=assessment.reason, budget=self._look_budget,
+                max_strips=getattr(self, "look_max_strips_per_page", 4),
+                renderers=getattr(self, "look_renderers", None), ask=getattr(self, "look_ask", None),
+                vision_check=getattr(self, "look_vision_check", None))
+            log = getattr(self, "look_log", None)
+            if log is not None:
+                log.append({**look.as_dict(), "signals": assessment.signals})
+            if not look.has_text:
+                # Only a page whose markup really shows tables/charts/pictures is a "visual-only" gap; a short page
+                # (a login wall, a stub) is not claimed to hold hidden data.
+                if assessment.visual_signals or assessment.reason in ("canvas", "scripted_data", "tables_not_in_text",
+                                                                      "image_data"):
+                    sentence = lookpage.gap_sentence(look, url, getattr(self, "report_language", "en"))
+                    if sentence and isinstance(getattr(self, "visual_gaps", None), dict):
+                        self.visual_gaps[url] = sentence
+            return look
+        except Exception as exc:  # noqa: BLE001 - looking is a bonus, never a reason to lose the page
+            logger.warning("Look at the page failed for %s: %s", url, exc, exc_info=True)
+            return None
+
+    def _with_capture(self, content: str, look: Any) -> str:
+        """The text the extractor reads: the page's own text, then what the vision model read from the screenshot, under
+        a line that says so (the extractor must not take it for page text)."""
+        budget = max(2000, int(self.max_content_chars))
+        capture = f"{look.marker()}\n{look.text}"
+        keep = max(1000, budget - min(len(capture), budget // 2))
+        head = content[:keep] if len(content) > keep else content
+        return (head + "\n\n" if head.strip() else "") + capture
+
+    @staticmethod
+    def _stamp_capture(finding: Optional[Dict], look: Any) -> Optional[Dict]:
+        """Mark a finding whose evidence includes text read from a screenshot (``from_capture``), so the report, the
+        source list and the synthesis can tell it from extracted page text."""
+        if not finding or look is None or not getattr(look, "has_text", False):
+            return finding
+        finding["from_capture"] = True
+        finding["capture"] = {"model": look.model, "strips_read": look.strips_read, "strips_total": look.strips_total,
+                              "reason": look.reason}
+        evidence = str(finding.get("evidence") or "")
+        tag = "[from a screenshot] "
+        if not evidence.startswith(tag):
+            finding["evidence"] = tag + evidence
+        return finding
+
+    def _append_visual_gaps(self, report: str) -> str:
+        gaps = list((getattr(self, "visual_gaps", None) or {}).values())
+        if not gaps:
+            return report
+        try:
+            from src.visual_index.lookpage import gaps_section
+
+            return report.rstrip() + gaps_section(gaps, getattr(self, "report_language", "en"))
+        except Exception:  # noqa: BLE001
+            return report
 
     @staticmethod
     def _rendered_page_finding(url: str, title: str, page: Dict, content: str,
@@ -3030,6 +3142,10 @@ class DeepResearcher:
         """Give synthesis both conclusion and bounded evidence, labelled honestly."""
         summary = str(finding.get("summary") or "")[:500]
         evidence = str(finding.get("evidence") or "")[:2000]
+        if finding.get("from_capture"):
+            model = (finding.get("capture") or {}).get("model") or "the vision model"
+            return (f"Read from a screenshot of the page by {model} (not extracted text; may contain reading errors; cite "
+                    f"it as a capture):\nSummary: {summary}\n\nEvidence:\n{evidence}")
         if finding.get("extraction_mode") == "rendered_page_fallback":
             return "Unprocessed source excerpt (extraction failed; not a verified conclusion):\n" + evidence
         if evidence and summary and not evidence.startswith(summary):
@@ -3191,6 +3307,11 @@ class DeepResearcher:
         rounds = trace.get("rounds") or []
         if rounds:
             stats["Confidence"] = f"{rounds[-1].get('confidence', 0):.2f}"
+        looked = [r for r in (getattr(self, "look_log", None) or []) if r.get("status") == "read"]
+        if looked:
+            stats["Screenshots read"] = f"{len(looked)} page(s), {sum(int(r.get('strips_read') or 0) for r in looked)} strip(s)"
+        if getattr(self, "visual_gaps", None):
+            stats["Visual pages not read"] = len(self.visual_gaps)
         stop = getattr(self, "stop_reason", None)
         if stop and stop.get("code"):
             stats["Stopped"] = f"{stop.get('code')}: {stop.get('reason')}"

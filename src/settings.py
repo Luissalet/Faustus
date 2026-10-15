@@ -516,6 +516,23 @@ DEFAULT_SETTINGS = {
     "research_prune_pages": True,
     "research_prune_max_chars": 6000,
     "research_prune_threshold": 0.48,
+    # Look at the page (src/visual_index/lookpage.py): when the text extractor
+    # returns little (under `research_look_min_chars`), or the page is mostly
+    # tables, charts or canvases whose data is not in the text, capture it with
+    # the browser in strips and show them to the resident vision model with the
+    # question of the research. What it reads is added as evidence marked "read
+    # from a screenshot", never as page text. Bounded per page and per run. No
+    # vision model: nothing is captured and the report says the data is visual.
+    "research_look_at_pages": True,
+    "research_look_min_chars": 600,
+    "research_look_max_strips_per_page": 4,
+    "research_look_max_strips_per_run": 16,
+    "research_look_max_pages_per_run": 8,
+    "research_look_max_tiles": 3,
+    "research_look_timeout_seconds": 180,
+    # The same look in the agent's web_fetch: when the fetched text is little or
+    # the page is visual, append what the vision model reads from a screenshot.
+    "web_fetch_look_at_page": True,
     # Visual index (src/visual_index/): PDF pages, web pages and pictures as
     # screenshot strips, searched by meaning with a local multimodal embedder
     # (torch + transformers are optional installs; the weights download on first

@@ -38,6 +38,10 @@ export interface ResearchSource {
    *  means "no signal", not "fresh" — same passthrough dependency as above. */
   stale?: boolean;
   ageDays?: number;
+  /** "Look at the page": the evidence of this source was read from a screenshot of it by the
+   *  vision model (`captureModel`), not extracted as text. Undefined for ordinary sources. */
+  fromCapture?: boolean;
+  captureModel?: string;
   /** §144's citation checking pass (`src.research_citations.check_claims`,
    *  attached per source by `src.research_handler._attach_citation_verdicts`):
    *  whether the sentences citing this source actually check out against it.
@@ -60,6 +64,8 @@ function sourceFrom(s: Record<string, unknown>): ResearchSource {
     duplicateOf: typeof s.duplicate_of === 'string' && s.duplicate_of ? s.duplicate_of : undefined,
     stale: typeof s.stale === 'boolean' ? s.stale : undefined,
     ageDays: typeof s.age_days === 'number' ? s.age_days : undefined,
+    fromCapture: s.from_capture === true ? true : undefined,
+    captureModel: s.from_capture === true && typeof s.capture_model === 'string' && s.capture_model ? s.capture_model : undefined,
     citationVerdict: verdict === 'supported' || verdict === 'not_supported' || verdict === 'unverifiable' ? verdict : undefined,
     citationCounts: countsFrom(s.citation_check_counts),
     citationChecks: checks.length ? checks : undefined,

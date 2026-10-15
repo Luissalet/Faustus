@@ -8980,6 +8980,7 @@ export const es: Record<string, string> = {
   "re-encoded": "recodificado",
   "reachable": "accesible",
   "read again, not saved": "leído otra vez, sin guardar",
+  "read from a screenshot": "leído de una captura",
   "read from a stored record, not asserted by a model": "leído de un registro guardado, no afirmado por un modelo",
   "read now, saved for the next turns": "leído ahora y guardado para los próximos turnos",
   "read now, still being saved": "leído ahora, aún guardándose",

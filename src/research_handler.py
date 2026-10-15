@@ -974,6 +974,10 @@ class ResearchHandler:
                     entry["stale"] = bool(f["stale"])
                 if f.get("age_days") is not None:
                     entry["age_days"] = f["age_days"]
+                # "Look at the page": the evidence was read from a screenshot by the vision model, not extracted text.
+                if f.get("from_capture"):
+                    entry["from_capture"] = True
+                    entry["capture_model"] = str((f.get("capture") or {}).get("model") or "")
                 sources.append(entry)
         return sources
 
@@ -1099,6 +1103,8 @@ class ResearchHandler:
                         item["stale"] = bool(f["stale"])
                     if f.get("age_days") is not None:
                         item["age_days"] = f["age_days"]
+                    if f.get("from_capture"):
+                        item["from_capture"] = True
                     items.append(item)
             return items
         except Exception as e:
@@ -1798,6 +1804,15 @@ class ResearchHandler:
                 _prune_threshold = min(1.0, max(0.0, float(get_setting("research_prune_threshold", 0.48))))
             except (TypeError, ValueError):
                 _prune_threshold = 0.48
+            _look_at_pages = bool(get_setting("research_look_at_pages", True))
+            _look_min_chars = _bounded_int(
+                get_setting("research_look_min_chars", 600), default=600, minimum=50, maximum=20000)
+            _look_strips_page = _bounded_int(
+                get_setting("research_look_max_strips_per_page", 4), default=4, minimum=1, maximum=40)
+            _look_strips_run = _bounded_int(
+                get_setting("research_look_max_strips_per_run", 16), default=16, minimum=0, maximum=400)
+            _look_pages_run = _bounded_int(
+                get_setting("research_look_max_pages_per_run", 8), default=8, minimum=0, maximum=100)
             _saturation_stop = bool(get_setting("research_saturation_stop", True))
             _saturation_min_new = _bounded_int(
                 get_setting("research_saturation_min_new_facts", 2), default=2, minimum=0, maximum=50)
@@ -1835,6 +1850,11 @@ class ResearchHandler:
                 saturation_min_new_facts=_saturation_min_new,
                 saturation_patience=_saturation_patience,
                 confidence_stop=_confidence_stop,
+                look_at_pages=_look_at_pages,
+                look_min_chars=_look_min_chars,
+                look_max_strips_per_page=_look_strips_page,
+                look_max_strips_per_run=_look_strips_run,
+                look_max_pages_per_run=_look_pages_run,
             )
             if _task_entry is not None:
                 _task_entry["researcher"] = researcher
