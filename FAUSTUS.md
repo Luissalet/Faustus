@@ -12475,3 +12475,13 @@ ficheros marcados como de Reborn en pokerogue-assets con sus hojas PRAS y sonido
 caché /api/reborn y herramienta `reborn_cache` (124 herramientas). Main conserva el trabajo sin commitear de
 otro agente (fusión de tres vías de sus ficheros). Se restauró con `npm ci` el node_modules de main, que apareció
 vacío. 181 Python (2 omitidos) y 168 Node en verde; probado en 5235 con Playwright y desplegado en 5230. No push.
+
+
+## Silver's Hoard: presentación del tiempo real — 15-10-2026
+
+Silver (plugin `silver`, puerto 5230) estrena una presentación para el modo en tiempo real, sacada de los combates de un canal de
+pixel art digeridos con el digestor de vídeo de Links: pantalla de VS, Poké Balls con «¡Adelante!», rótulos de K.O., debilitado,
+último Pokémon, combos y choques, viñeta de impacto con las siluetas, cámara que se acerca, marcas en el suelo, ola de Surf, franja
+del ganador, caras de los Pokémon en las barras con el daño reciente en blanco y efectos propios de Hipnosis, Lengüetazo, martillos,
+engranajes, cadenas, drenajes, Fuego Fatuo, Cometa Draco y Doble Equipo. Es solo dibujo: el combate y sus herramientas MCP no
+cambian (mismo resultado con y sin ella). Se ajusta en Ajustes de Silver (espectáculo o sobria, % o PS, cámara e impacto).
