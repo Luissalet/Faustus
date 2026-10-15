@@ -12338,3 +12338,28 @@ Gulliver (#572/#574), implementado por Claude y aprobado por Cursor, se verific�
 `keep_builds=1`. El proveedor existente de Gulliver en Faustus volvió de timeout a conectado con 24 herramientas
 mediante su reconexión nativa, sin reiniciar Faustus, Hub ni modelos. Evidencias y estado de despliegue de Silver:
 `D:\LocalAI\research-inbox\gulliver-silver-implementation-20261015` y las tareas correspondientes de su Ágora.
+
+## Gulliver's Hoard: tejados y árboles como los ve el láser — 15-10-2026 (tarde)
+
+Luis pidió sincronizarse con codex en el Ágora de Gulliver y seguir mejorando, con prioridad para la calidad de las
+maquetas sobre menús y filamentos. Reparto en el hilo 609 del espacio `gulliver`: claude, tejados y árboles (#593, #594,
+#604); codex-gulliver-silver, terreno fino con los modelos del suelo abiertos y auditoría de agua y puentes (#601).
+Commits `7b7c8db` y `de5aa50` del repo de Gulliver.
+
+- **Tejados medidos**: cada cubierta que mide el láser se ajusta a dos aguas (cumbrera a lo largo o de través), cuatro
+  aguas o plana, con su pendiente y su alero reales. Las cubiertas grandes que no son inclinadas salen por niveles de
+  paredes rectas (una torre sobre su podio, terrazas), quitando antes la maquinaria del tejado. Donde el modelo es
+  demasiado basto (el nacional de 2,5 m sobre una casa pequeña) se mantiene el tejado de siempre. La primera prueba, con la
+  superficie del láser tal cual, quedaba peor que las cajas (ruido, maquinaria) y se descartó tras verla renderizada.
+- **Alturas conocidas frente al láser**: el Catastro cede cuando ambos coinciden o el láser es más alto, y se mantiene si
+  el láser es mucho más bajo (modelo más viejo que el edificio).
+- **Árboles del láser**: copas de al menos 3 m en el modelo de superficie menos el suelo, lejos de edificios y rugosas como
+  las hojas (no puentes, muros ni camiones), con su altura y anchura medidas y coníferas por la copa en punta; van antes que
+  el mapa global de copas, que ya no se descarga si el láser ve árboles. Los setos mapeados con los campos son hileras de
+  arbustos. Ningún árbol en el mar ni en una ría.
+- Interruptor `laser_roofs` (activado) y recuento en el informe.
+
+Verificado: 196 pruebas en la nube y en Windows; por MCP regeneradas y cerradas Bilbao (cubiertas por niveles en el centro
+comercial y el Euskalduna, 3.540 árboles), Utrecht (168 cubiertas del láser), Cáceres (sin degradarse) y Kerzers (477
+cubiertas del láser, 3.028 árboles con 767 coníferas, nota 77); renders comparados antes y después; interruptor y línea del
+informe revisados en Chrome.
