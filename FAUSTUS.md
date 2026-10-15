@@ -12416,3 +12416,49 @@ El equipo se reinició a las 17:27 durante el trabajo. El Hub volvió por su arr
 las aplicaciones necesarias y la conexión de Gulliver en Faustus. Recibos de activación, equivalencia, cuotas y
 preservación de datos en la carpeta de evidencia. Manual actualizado mediante revisión condicionada: dos párrafos
 propios y 164 ajenos conservados con su texto y estilos; siguen las cuatro tablas.
+
+
+## Montaje y posiciones sugeridas en Gulliver y Silver — 15-10-2026
+
+Encargo de Luis coordinado en sus Ágoras por codex-gulliver-silver: investigación #608 e implementación #615
+de Gulliver; posiciones #609 y habilidades #611 de Silver. Cursor devolvió #608 sin código para revisar las
+entregas congeladas de forma independiente. Aprobó las dos revisiones CAS 1 de Gulliver; Main cfa1a6e activo,
+168 archivos originales conservados por SHA, catálogo MCP 32 y visor habitual verificados. Faustus refrescó
+el proveedor Gulliver existente de 30 a 32 herramientas, conservando exactamente sus 36 configuraciones MCP.
+Silver Main 70d83f4 también está aprobado y activo. Manual nativo actualizado con revisión condicionada:
+dos párrafos propios, conservando todo el contenido y estilos ajenos. No hay decisiones pendientes de Luis.
+
+Gulliver ofrece en el visor una guía de montaje por generación conservada: contornos cóncavos de las bases de
+los STL originales, plano numerado con norte, escala, dimensiones/ajuste a cama y nombres STL/3MF por pieza.
+Colores y materiales vienen del informe y perfil guardados, nunca de los parámetros actuales. El HTML autónomo
+lleva SVG y miniatura embebidos; se descarga, imprime o guarda en PDF desde el navegador. Las guías preparadas
+se incorporan a archivos/exportación normal sin reescribir mallas ni informes. Los cuadros son independientes.
+No es plantilla 1:1 ni proyección de voladizos; no dibuja posiciones de pines. Sin snapshot antiguo conserva
+plano/archivos y declara desconocidos pines/marcas inferiores. model_assembly pagina piezas; model_assembly_export
+crea el documento. Catálogo de 32 herramientas. Cambiar tamaño, etiquetas, profundidad de pin o perfil no altera
+la guía anterior. Código cfa1a6e sobre 8f6db3b: 213 Python, 4 Node, 3 focales finales, build y MCP 32/28 llamadas.
+Navegador real ES/EN en escritorio y 390 px, selección histórica, HTML autónomo y PDF A4 de dos páginas renderizadas
+e inspeccionadas, sin fichas partidas; casos de seis cortes por calles/curvas, díptico y pieza única.
+
+Silver analiza diez turnos por página de repeticiones clásicas terminadas con decisiones guardadas. Compara la
+jugada registrada con un entrenador experto equilibrado que solo conoce lo revelado, sin la elección pendiente
+del rival ni el futuro. Explica alternativa, objetivo, transformación y puntuación heurística (no probabilidad
+de victoria ni prueba de error). Permite practicar desde ella, guardar ejercicio o descartar, conservando original,
+récords, medallas y copas. Antiguas sin registro, importadas, muestras y tiempo real no ofrecen estas posiciones.
+Los avisos laterales identifican Pokémon y habilidad activada en su lado, con cola independiente y movimiento
+reducido, en app, repeticiones y HTML exportado. El motor normal usa mensajes públicos, sin habilidades ocultas.
+Tiempo real guarda identidad en el evento. Saltar una repetición no reproduce todos los avisos pasados.
+
+Las reglas RT 6 corrigen Rompemoldes/Teravoltaje/Turbollama frente a Levitación, Robustez y modificadores defensivos
+anulables, manteniendo las excepciones de Escudo Espectro y Armadura Prisma; absorción eléctrica de Onda Trueno,
+reflexión única entre dos Espejo Mágico y falsos avisos de Neblina. Clima, Intimidación, absorción, contacto,
+inmunidades de estado y Cura Natural verificados. No certifica paridad universal de todas las habilidades.
+Diez huellas de eventos/resultados de individuales/dobles con reglas 1–5 coinciden con la base anterior.
+8e422f3 compuesto en 70d83f4 conserva salas en directo, Champions, liga de amigos y votación de Main a568990.
+179 Python y 168 Node pasan, un caso opcional Rust omitido; build app/HTML, MCP 112/26 llamadas y 123/4 al componer.
+Navegador ES/EN escritorio/móvil y exportación normal/RT: avisos por lado, lluvia y Ataque↓ efectivos;
+posición sugerida desde turno 2 → Psíquico → victoria, guardar y descartar. Cursor aprobó CAS 1 tras 10 Node y
+4 Python propios; no repitió MCP/UI. Main activo con MCP 123 y UI real, 111 archivos SHA y filas de 13 tablas
+anteriores exactos, sin QA en datos reales. Política neuronal previamente OFF, conservada; no inferencia ni LLM local.
+
+Evidencias y recibos: D:\LocalAI\research-inbox\gulliver-silver-guide-practice-20261015. No push.

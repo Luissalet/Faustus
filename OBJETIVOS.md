@@ -1456,6 +1456,7 @@ No convierten resoluciones nativas en exactitud universal, presupuestos en cotiz
 de combates en rankings universales. Evidencia y activación final en la sección correspondiente de FAUSTUS.md.
 
 
-Propuestas posteriores, sin implementar ni asignar: Ágora Gulliver #608, guía visual de montaje vinculada a una
-generación (amplía el LEEME existente con un plano numerado); Silver #609, sugerencias de posiciones para ejercicios
-a partir de las alternativas explicadas por la IA, con utilidad por validar y sin usar decisiones futuras.
+Luis autorizó las dos propuestas: guía de montaje por generación (Gulliver #608/#615), posiciones sugeridas
+desde repeticiones (Silver #609) y habilidades con avisos laterales en ambos modos (#611). Implementadas y
+verificadas por pruebas, MCP y navegador; estado final de revisión/activación en FAUSTUS.md. No requieren
+una nueva decisión de Luis.
