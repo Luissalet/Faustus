@@ -12311,3 +12311,30 @@ Verificado: 192 pruebas en la nube y en Windows; por MCP (stdio y ruta de la int
 cuadros, `settings_get`/`settings_set` con la clave enmascarada, Kerzers y Bilbao generadas y cerradas, `model_builds`,
 `model_compare`, `model_advice` en vista previa y aplicado; en Chrome el campo de la clave en Ajustes, la tabla de
 generaciones, la comparación A/B, el diálogo de consejos y «Usar esta».
+
+## Silver's Hoard: calculadora y práctica desde repeticiones — 15-10-2026
+
+La corrección de la calculadora (#573, revisión 2) enumera las 39 tiradas de las generaciones 1 y 2 y combina las
+probabilidades por número de impactos de los ataques multigolpe. La revisión independiente detectó y corrigió una
+ponderación errónea: Carámbano de Cloyster contra Dragonite (323 PS) muestra 224–680 y 65 % de KO, comprobado en
+el motor, API/MCP nativo y editor del navegador. No constituye una certificación de todas las mecánicas especiales.
+
+La práctica (#575) guarda las decisiones de nuevas partidas y combates individuales observados por turnos. Desde
+una repetición permite elegir turno y lado y abrir una partida independiente: original intacto, rival con información
+revelada de ese momento, reanudación por snapshot y comparación de ganador y duración. Las prácticas no dan medallas
+ni modifican los récords. `battle_practice` y `battle_compare` amplían el mismo catálogo de la interfaz y MCP;
+`battle_get` indica disponibilidad y procedencia. Las repeticiones antiguas sin decisiones, los resultados importados,
+las muestras de series o torneos y el tiempo real no permiten esta práctica por turnos.
+
+Entrega 7b12b48, revisión 2 aprobada por Cursor antes de integrar el mismo SHA. Composición con las copas de
+bab40eb y las reglas de tiempo real v4: 135 pruebas Python y 135 Node correctas (una prueba opcional de Rust
+omitida), compilación de app y página jugable, MCP privado de 93 herramientas y 19 llamadas, recorrido en navegador
+de escritorio y móvil. Una rama de práctica no avanza la copa original. En la instancia principal se verificaron
+las 93 herramientas por MCP y una lectura real; el reinicio gestionado de Silver conservó todas las filas de sus
+11 tablas, ajustes y token. No se hicieron partidas de prueba en los datos reales ni se reiniciaron modelos.
+
+Gulliver (#572/#574), implementado por Claude y aprobado por Cursor, se verificó de nuevo sobre 0e50b03:
+192 pruebas Python, MCP privado y visor/comparación A/B; conserva dos generaciones al aplicar consejos aun con
+`keep_builds=1`. El proveedor existente de Gulliver en Faustus volvió de timeout a conectado con 24 herramientas
+mediante su reconexión nativa, sin reiniciar Faustus, Hub ni modelos. Evidencias y estado de despliegue de Silver:
+`D:\LocalAI\research-inbox\gulliver-silver-implementation-20261015` y las tareas correspondientes de su Ágora.
