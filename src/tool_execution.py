@@ -2888,6 +2888,14 @@ def format_tool_result(description: str, result: Dict, *, tool: str = "", comman
     elif "output" in result:
         # bash / python canonical result shape: {"output": ..., "exit_code": ...}
         _output = _compress_shell_text(tool, command, result, result["output"])
+        if tool in _COMPRESSIBLE_SHELL_TOOLS:
+            try:
+                from src.command_output_filters import zero_tests_note as _zero_tests_note
+                _zt = _zero_tests_note(command, str(result.get("output") or ""))
+                if _zt:
+                    _output = f"{_output}\n{_zt}" if _output else _zt
+            except Exception:  # noqa: BLE001 - a hint never costs a result
+                pass
         parts.append(f"```\n{_output}\n```")
         if result.get("exit_code") not in (0, None):
             parts.append(f"**exit_code:** {result['exit_code']}")
