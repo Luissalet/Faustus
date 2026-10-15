@@ -11951,6 +11951,20 @@ compartido; el Hub la descubre y la arranca). Simulador de combates sobre el mot
   pantallas y PS restantes, con la fórmula del propio simulador; los movimientos se miden como se usan (Pixilate, Bola Voltio
   del tiempo...), también en la IA.
 
+- Más modos (sesión del 15-10, mañana): rachas de instalación (Torre, Metro, Maison, Árbol y Torre de SV con sus ases y
+  rivales generados de cada época, récords y racha abierta), Fábrica Batalla con equipos de alquiler e intercambio tras cada
+  victoria, 11 ligas completas más desde los equipos de los personajes (Kanto a Paldea, con nombres de WikiDex) y una página
+  de Progreso (récords, rachas, Pokémon estrella, 22 logros y Pokédex de usados, vistos y debilitados).
+- Poses del sprite propio dibujadas por Prospero: de espaldas (el lado del jugador en el combate) y en pose de victoria (la
+  pantalla final), con el sprite actual como referencia; solo sprites propios, nunca los de los juegos.
+- Por qué juega así la IA: cada decisión de la IA en combates por turnos deja una nota (opciones con daño esperado, K.O. y
+  precisión, amenaza, quién es más rápido y, en la experta, los turnos simulados); se ve bajo la arena siguiendo el turno, y en
+  directo la experta te aconseja (`battle_explain`). La traza no cambia ni la elección ni los números aleatorios.
+- Vídeo de la repetición (`battle_video`): un Chrome o Edge sin ventana graba la repetición con su sonido (efectos, gritos y
+  música) y deja un MP4 en exportaciones; opcionalmente lo manda a Lumiere's Hoard (`media_receive`). Probado en el PC:
+  clip de 25 s con sonido recibido por Lumiere.
+- 73 herramientas.
+
 Verificado en el PC: 47 pruebas del motor y 29 de la app en Windows, liga de Johto instalada y combate IA contra IA por el
 puente del Hub, partida humana en el navegador con sprites descargados y registro en castellano.
 
