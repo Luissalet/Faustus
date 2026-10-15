@@ -1434,3 +1434,13 @@ actual con GLM, en un corpus congelado de 88 casos ES/EN: GLM 84,7 % (91,7 % rep
 THX-01 63,4 %, Laya 51,4 %. Sin interruptor nuevo. Quedan como capacidad las recetas `coexist`/`kind` y los servidores
 no-chat fuera de la lista de modelos. Reabrir solo si aparece un modelo de decisiones que iguale a GLM en ES/EN o si las
 decisiones tipadas pasan a ser frecuentes por turno. Evidencia: research-inbox/decision-models-claude-20261015.
+
+## OBJ-61 · Gulliver's Hoard: lo que queda abierto tras la tanda mundial (15-10-2026)
+
+- Bocas de túnel: hoy los túneles se omiten (la calle no se graba); dibujar la boca en la ladera.
+- Alturas por láser en España: el MDS05/MDSn del CNIG solo se baja por formulario; si aparece un servicio WCS o COG sin clave,
+  añadirlo como proveedor en sources/dsm.py (Gulliver usa hoy el Catastro y OpenStreetMap).
+- Dinamarca y Finlandia tienen modelo de superficie abierto pero con clave gratuita: proveedor con clave opcional en Ajustes.
+- El paso «Partes» en modelos rurales grandes con «todo el campo en verde» tarda 200–600 s (Kerzers, 2,4 km a 0,3 mm):
+  capas de color sobre una malla más gruesa donde el terreno es llano, o por piezas en paralelo.
+- Surcos: hoy siguen el lado largo de la parcela; la dirección real del cultivo se podría leer de la ortofoto en España.

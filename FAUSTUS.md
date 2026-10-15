@@ -12047,6 +12047,45 @@ Segunda sesión sobre Gulliver, midiendo los 3MF generados (vértices, aristas, 
 Verificado en el PC: 57 pruebas en Windows y 4 del panel; las cinco maquetas regeneradas por la ruta MCP de Gulliver
 (`/api/agent/call`) con todas las partes y piezas cerradas; visor y biblioteca revisados en Chrome.
 
+## Gulliver's Hoard para cualquier sitio del mundo — 15-10-2026 (mañana)
+
+Luis: «cualquier persona del mundo pueda tener su trocito de mundo, aunque viva en lo más profundo del Amazonas», y las 13
+mejoras propuestas «a por todo». Commits `ca477f3`, `bb19a7e`, `507e0a1` y `9711463` del repo de Gulliver (sin push), integrados encima
+del trabajo de claude-3:
+
+- **Edificios en todo el mundo**: OpenStreetMap completado con las huellas de Microsoft (Global ML Building Footprints) y,
+  en África, Asia del Sur y del Sureste y Latinoamérica, con los tejados y alturas que ve Google Open Buildings 2.5D
+  (raster de presencia y altura → casas una a una, cuadradas cuando son rectángulos). Una huella con altura presta la suya
+  al edificio de OSM que no la tiene. Novo Airão (Amazonas): de 28 edificios en OSM a 1.442 añadidos.
+- **Alturas reales por láser** donde el modelo de superficie es abierto y sin clave (Países Bajos AHN4, Francia LiDAR HD,
+  Inglaterra, Renania del Norte-Westfalia, Suiza, Flandes, Noruega, Polonia): cada edificio a su altura, las torres y agujas
+  como volumen propio y el tejado a dos aguas cuando el láser lo ve (Utrecht: 1.901 edificios medidos, la torre de la
+  catedral con su aguja).
+- **Árboles con su altura** del mapa global de copas de Meta/WRI (1,2 m, en todo el mundo), coníferas como conos (por
+  `leaf_type`, bosques de aguja, latitud y altitud) y frondosos redondeados; en España se suman los de la ortofoto.
+- **Cobertura del suelo por satélite** (ESA WorldCover 10 m) donde el mapa no llega: bosques, prados y matorral fuera de los
+  pueblos, cultivos como campos, roca en montaña, nieve y lagos sin cartografiar (nunca el mar ni las orillas de un río).
+- **Campos parcela a parcela con surcos**: las fincas de OSM y los cultivos vistos desde el satélite, cortados por los
+  linderos, las parcelas rústicas del Catastro (WFS INSPIRE CP), caminos, acequias y setos; cada parcela en su color con una
+  raya de tierra entre medias y filas grabadas a lo largo (más juntas en viñas y frutales, ninguna en prados). Villalón de
+  Campos: 228 campos.
+- **Plazas y zonas peatonales** en su color; **«tu sitio»** en dorado (el edificio que hay debajo, con sus torres, o una
+  chincheta); **ruta GPX/KML/GeoJSON** en relieve como cinta roja (por MCP basta la ruta para encuadrar la maqueta).
+- **Acabado**: marco plano, biselado o escalonado; placa con título, coordenadas, escala, flecha del norte y barra de escala
+  incrustada en el marco; **paneles enmarcados** (la maqueta en 2×1, 2×2… cuadros con su marco y su placa «i/n»); piezas
+  cortadas **por las calles** con los pasadores en perpendicular a la costura.
+- **Imprimibilidad**: informe con nota 0–100, veredicto y consejos que nombran el parámetro a tocar; opción de engordar lo
+  que no se imprimiría. **Foto de producto y vídeo de giro** desde el visor, guardados con la maqueta.
+- **Relieve de radar sin hoyos falsos**: los conos de decenas de metros que el SRTM deja en orillas y huecos se rellenan
+  hasta el borde (salían como pozos grises en la orilla del río Negro); la roca de satélite solo cuenta en montaña.
+- **Regenerar rápido**: los datos del mapa de una zona se guardan 7 días y una maqueta que solo cambia de ajustes de
+  impresión salta directa a la malla. Las capas de color se restan del terreno una a una y la caché de mallas soldadas va por
+  presupuesto de triángulos: Kerzers (Suiza, 5,8 km² de campos) pasó de quedarse sin memoria a construirse con menos de 5 GB.
+
+Verificado en el PC: pruebas en Windows en verde; Novo Airão, Utrecht, Villalón de Campos, Kerzers y un paseo por Toledo
+(con placa, ruta y «tu sitio», creado desde el formulario en Chrome) generados con todas las partes cerradas; foto y vídeo
+guardados desde el visor; nuevas opciones del formulario y tarjeta de imprimibilidad revisadas en Chrome.
+
 ## Archivos que entrega una herramienta: descarga en el chat — 15-10-2026
 
 Una app de la familia puede terminar el resultado de una herramienta con `"deliverables": [{"path": ..., "name": ...}]`:

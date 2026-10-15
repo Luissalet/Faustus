@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "gulliver",
   "name": "Gulliver's Hoard",
-  "purpose": "Makes printable 3D models of real places: an area chosen on the map (by name or coordinates) becomes a closed solid with the relief (IGN MDT 5 m in Spain, Terrarium tiles elsewhere), every building at its height (in Spain from the cadastre, part by part with its real floors; OpenStreetMap elsewhere) with mapped roofs, towers, spires and domes, every tree seen on the aerial photo (Spain) or mapped, lakes, ponds, rivers and the sea lowered as water, streets cut along their real outline, railway beds, paths through the parks, bridges on arches over water, snow and bare rock on mountains, contour lines, a frame and text engraved underneath; rectangle, rounded, circle or hexagon; cut into tiles that fit the printer bed with holes for filament pins; exported as one STL, a 3MF with one coloured part per filament (terrain, buildings, water, roads, rails, green, trees, rock, snow, frame), one STL and 3MF per tile and a GLB preview; library of models with reports (scale, size, PLA grams, watertight check), export to a folder and filing in Vulcan's Hoard.",
+  "purpose": "Makes printable 3D models of any place on Earth: an area chosen on the map (by name, coordinates or a GPX route) becomes a closed solid with the relief (IGN MDT 5 m in Spain, Terrarium tiles elsewhere), every building at its height (Spain: cadastre part by part with real floors; elsewhere OpenStreetMap completed with worldwide building footprints; laser surface heights with towers and spires where open: NL, FR, England, NRW, CH, Flanders, NO, PL) with mapped roofs, towers, spires and domes, 3D trees with real heights from the global canopy map (conifers as cones) and the aerial photo in Spain, woods, grass, rock, snow and lakes from satellite land cover, farm fields parcel by parcel with crop rows, squares, lakes, rivers and the sea lowered as water, streets cut along their real outline, railway beds, paths, bridges on arches and over streets, weirs, contour lines; your home highlighted in gold and your route as a raised ribbon; frames (flat, bevel, step) with a plaque (title, coordinates, north arrow, scale bar), framed multi-panel pictures, tiles cut along the streets with pin holes; exported as STL, 3MF with one coloured part per filament, per-tile files and a GLB preview, plus a product photo and turntable video; reports with a printability score and advice, a thicken option, map data kept per area for fast rebuilds; library, export to a folder and filing in Vulcan's Hoard.",
   "capabilities": [
     "3d-printing",
     "map-model",
@@ -16,7 +16,17 @@
     "geocoding",
     "buildings-cadastre",
     "3d-trees",
-    "roofs"
+    "roofs",
+    "worldwide",
+    "building-footprints",
+    "canopy-height",
+    "land-cover",
+    "lidar-heights",
+    "farm-fields",
+    "gpx-route",
+    "plaque",
+    "framed-panels",
+    "printability"
   ],
   "x-family": {
     "copilot": true
