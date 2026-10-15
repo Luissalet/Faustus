@@ -1434,3 +1434,20 @@ actual con GLM, en un corpus congelado de 88 casos ES/EN: GLM 84,7 % (91,7 % rep
 THX-01 63,4 %, Laya 51,4 %. Sin interruptor nuevo. Quedan como capacidad las recetas `coexist`/`kind` y los servidores
 no-chat fuera de la lista de modelos. Reabrir solo si aparece un modelo de decisiones que iguale a GLM en ES/EN o si las
 decisiones tipadas pasan a ser frecuentes por turno. Evidencia: research-inbox/decision-models-claude-20261015.
+
+## OBJ-61 · Faustus, el mejor motor para GLM 5.3 flash en todos los benchmarks (15-10-2026)
+
+Encargo de Luis: que Faustus gane a cualquier otro harness con el GLM flash de las Sparks en todos los
+benchmarks de Galton (agentbench). Plan vivo con prueba y medida por punto: doc del proyecto
+`claude/faustus-glm-flash-mejoras-15-10.md`. Resumen:
+1. Verificar contra el contrato oculto (mensajes exactos, `None` frente a `False`), no contra pruebas
+   de humo propias; «0 tests ejecutados» no cuenta como verificado. Regla hecha en `da55e3c2`.
+2. Turnos desatendidos sin preguntas: marcar el turno como desatendido desde `faustus_run --approve`
+   (hoy `UNATTENDED_DIRECTIVE` no se activa nunca) y no ofrecer `ask_user` ahí.
+3. Dieta de prompt para modelos flash: base de unos 14k tokens (9k herramientas, 8k sistema) → objetivo
+   ≤5k en el perfil de código; sin herramientas de escritorio sin pantalla; sin correo en el respaldo
+   de selección de herramientas cuando no hay embedder.
+4. Prefijo estable entre rondas para la caché de prefijos de vLLM.
+5. Esfuerzo de razonamiento adaptativo por ronda (alto para planificar/depurar, bajo para editar).
+6. A/B de muestreo (hoy la temperatura se recorta a 0,4).
+7. Frecuencia y causa de las salidas degeneradas por modo de pensamiento.
