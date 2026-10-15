@@ -523,3 +523,15 @@ class TestWebSearchSourcesKeyLookup:
         src_text = result.get("output") or result.get("results") or result.get("stdout") or ""
         assert src_text != ""
         assert "SOURCES" in src_text
+
+
+def test_unattended_prompt_drops_whole_sections_only():
+    from src.agent_loop import _strip_prompt_sections
+    body = ("## Base rules\n- keep\n\n## Answer quality and presentation\n- charts\n- choices\n\n"
+            "## File rules\n- keep too\n\n## Desktop rules\n- screenshots\n")
+    msgs = [{"role": "system", "content": body, "_agent_injected": "merged_prompt"},
+            {"role": "user", "content": "## Answer quality and presentation\nuser text stays"}]
+    _strip_prompt_sections(msgs, ("## Answer quality and presentation", "## Desktop rules"))
+    assert "charts" not in msgs[0]["content"] and "screenshots" not in msgs[0]["content"]
+    assert "## Base rules\n- keep" in msgs[0]["content"] and "## File rules\n- keep too" in msgs[0]["content"]
+    assert msgs[1]["content"].startswith("## Answer quality")

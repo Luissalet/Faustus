@@ -102,6 +102,9 @@ class Faustus(BaseInstalledAgent):
             # default 10 s to accept a connection.
             "LLM_CONNECT_TIMEOUT": os.environ.get("FAUSTUS_LLM_CONNECT_TIMEOUT", "30"),
         })
+        if os.environ.get("FAUSTUS_HARBOR_PROMPT_DUMP"):
+            # Each round's exact messages and tool schemas, next to the trial logs.
+            env["FAUSTUS_PROMPT_DUMP"] = f"{logs}/prompt"
         run_flags = ["--approve", "--json", "--timeout", str(int(self._run_timeout)), "--max-legs", "200"]
         if self._effort:
             run_flags += ["--effort", self._effort]

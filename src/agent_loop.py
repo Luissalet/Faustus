@@ -5334,6 +5334,42 @@ def _prepend_agent_directive(messages: List[Dict], directive: str) -> List[Dict]
     return messages
 
 
+def _unattended_dropped_sections() -> tuple:
+    """Prompt sections an unattended run has no use for.
+
+    How Studio renders charts, choice buttons and inline HTML is for a person
+    reading the reply; nobody reads it here, and a small model treats every
+    rule it is given as something to act on. The desktop rules go too when
+    this host has no screen (the desktop tools are never offered there).
+    """
+    drop = ["## Answer quality and presentation"]
+    try:
+        from src.host_tools import unavailable_tools
+        if "desktop_screenshot" in unavailable_tools():
+            drop.append("## Desktop rules")
+    except Exception:  # noqa: BLE001 - keep the rules when unsure
+        pass
+    return tuple(drop)
+
+
+def _strip_prompt_sections(messages: List[Dict], headers) -> List[Dict]:
+    """Remove whole ``## `` sections, by exact heading, from the generated prompt."""
+    for message in messages:
+        if message.get("_agent_injected") not in {"prompt", "merged_prompt"}:
+            continue
+        content = message.get("content")
+        if not isinstance(content, str):
+            continue
+        for header in headers:
+            start = content.find(header + "\n")
+            if start < 0:
+                continue
+            nxt = content.find("\n## ", start + len(header))
+            content = content[:start].rstrip("\n") + ("\n\n" + content[nxt + 1:] if nxt >= 0 else "\n")
+        message["content"] = content
+    return messages
+
+
 def _is_odysseus_qwen_model(model: str) -> bool:
     return (model or "").lower().startswith("odysseus-qwen3")
 
@@ -10795,6 +10831,7 @@ async def _stream_agent_loop_body(
         elif approved_plan and approved_plan.strip() and not guide_only:
             _prepend_agent_directive(route_messages, build_active_plan_note(approved_plan))
         if unattended and not plan_mode and not guide_only:
+            _strip_prompt_sections(route_messages, _unattended_dropped_sections())
             _prepend_agent_directive(route_messages, UNATTENDED_DIRECTIVE)
         if guide_only:
             _prepend_agent_directive(route_messages, GUIDE_ONLY_DIRECTIVE)
@@ -13513,6 +13550,17 @@ async def _stream_agent_loop_body(
             bool(all_tool_schemas),
             agent_stream_timeout,
         )
+        # Diagnostics for prompt-size work: FAUSTUS_PROMPT_DUMP=<dir> writes
+        # the exact messages and tool schemas of each round to that folder.
+        _dump_dir = os.environ.get("FAUSTUS_PROMPT_DUMP")
+        if _dump_dir:
+            try:
+                os.makedirs(_dump_dir, exist_ok=True)
+                with open(os.path.join(_dump_dir, f"round-{round_num:03d}.json"), "w", encoding="utf-8") as _df:
+                    json.dump({"messages": messages, "tools": all_tool_schemas or []}, _df,
+                              ensure_ascii=False, indent=1, default=str)
+            except Exception as _dump_err:  # noqa: BLE001 - diagnostics never cost a round
+                logger.debug("[prompt-dump] skipped: %s", _dump_err)
         try:  # OBJ-56: the tools this round really offers, kept for the turn's metadata (tools_offered)
             from src import turn_tool_offer as _tto
             _tto.record(session_id, round_num, all_tool_schemas or [], model or "")

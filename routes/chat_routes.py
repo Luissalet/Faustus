@@ -90,6 +90,14 @@ from src.tool_utils import get_mcp_manager
 
 logger = logging.getLogger(__name__)
 
+# Unattended turns (headless runs, task containers) leave these out: no such
+# run called them, and their schemas are among the largest offered.
+UNATTENDED_LEAN_OFF = frozenset({"delegate_agents", "manage_skills", "ask_teacher"})
+_IMAGE_CUE_RE = re.compile(
+    r"\.(?:png|jpe?g|gif|webp|bmp|svg)\b|\b(?:image|images|screenshot|picture|photo|diagram|imagen|captura|foto)\b",
+    re.IGNORECASE,
+)
+
 # Track active streams for partial-save safety net
 _active_streams: Dict[str, dict] = {}
 
@@ -3247,8 +3255,14 @@ def setup_chat_routes(
                 from src.tool_security import plan_mode_disabled_tools
                 disabled_tools.update(plan_mode_disabled_tools())
             # Unattended turn: a question would only end the run unanswered.
+            # It is also a lean one: tools no unattended run in the bench
+            # campaigns ever called (60 runs) cost ~3.5k prompt tokens a round,
+            # which a small model pays in attention as well as in prefill.
             elif unattended:
                 disabled_tools.add("ask_user")
+                disabled_tools.update(UNATTENDED_LEAN_OFF)
+                if not _IMAGE_CUE_RE.search(message or ""):
+                    disabled_tools.add("inspect_image")
 
             tool_policy = build_effective_tool_policy(
                 disabled_tools=disabled_tools,
