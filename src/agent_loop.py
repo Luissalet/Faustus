@@ -8536,7 +8536,11 @@ async def _stream_agent_loop_body(
         messages = _insert_before_latest_user(messages, _upload_msg)
 
     _t0 = time.time()
-    _needs_admin = _detect_admin_intent(messages)
+    # An unattended workspace run is a job on files, not app administration:
+    # a word like "settings" in its brief ("factory settings") must not bring
+    # in a dozen session/endpoint/webhook schemas. `lookup_tools` still
+    # reaches them if the job really needs one.
+    _needs_admin = _detect_admin_intent(messages) and not (unattended and workspace)
     _last_user = _extract_last_user_message(messages)
     from src.coordination.continuation import objective as _approval_objective
     _continuation_objective = _approval_objective(_last_user, exact_approval)
