@@ -1435,12 +1435,15 @@ THX-01 63,4 %, Laya 51,4 %. Sin interruptor nuevo. Quedan como capacidad las rec
 no-chat fuera de la lista de modelos. Reabrir solo si aparece un modelo de decisiones que iguale a GLM en ES/EN o si las
 decisiones tipadas pasan a ser frecuentes por turno. Evidencia: research-inbox/decision-models-claude-20261015.
 
-## OBJ-61 · Gulliver's Hoard: lo que queda abierto tras la tanda mundial (15-10-2026)
+## OBJ-61 · Gulliver's Hoard: lo que quedaba abierto tras la tanda mundial — HECHO (15-10-2026)
 
-- Alturas por láser en España: el MDS05/MDSn del CNIG solo se baja por formulario; si aparece un servicio WCS o COG sin clave,
-  añadirlo como proveedor en sources/dsm.py (Gulliver usa hoy el Catastro y OpenStreetMap).
-- Dinamarca y Finlandia tienen modelo de superficie abierto pero con clave gratuita (necesita que Luis la saque: Dataforsyningen y Maanmittauslaitos): proveedor con clave opcional en Ajustes.
-- El paso «Partes» en modelos rurales grandes con «todo el campo en verde» tarda 200–600 s (Kerzers, 2,4 km a 0,3 mm):
-  capas de color sobre una malla más gruesa donde el terreno es llano, o por piezas en paralelo.
-- Hecho el 15-10 (tarde): bocas de túnel en la ladera (`tunnels`) y surcos en la dirección que muestra la ortofoto en España
-  (`rows_from_photo`). Fuera de España los surcos siguen el lado largo de la parcela.
+- Hecho: alturas por láser en España sin clave (PNOA-LiDAR nacional por `wcs-mds.idee.es`, y Navarra, Gipuzkoa y Cantabria
+  primero donde existen), respetando las alturas del Catastro salvo cubierta mucho más alta.
+- Hecho: Dinamarca con la clave gratuita de Dataforsyningen en Ajustes (enmascarada). Finlandia no tiene modelo de
+  superficie abierto (solo nubes de puntos), así que no hay nada que añadir.
+- Hecho: paso «Partes» tres veces más rápido (terreno simplificado a 0,02 mm; Kerzers de 364 s a 133 s).
+- Hecho: bocas de túnel y surcos según la ortofoto.
+- Hecho también (tareas #572 y #574 del espacio `gulliver` del Ágora): el marco automático cuenta en `area_check`, y las
+  generaciones se guardan con sus parámetros, se comparan, se recuperan y los consejos de imprimibilidad se aplican con
+  vista previa. Ver FAUSTUS.md «láser en España, generaciones comparadas y consejos aplicables».
+

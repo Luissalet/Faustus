@@ -12276,3 +12276,38 @@ su entorno; vacío = en proceso, como antes) el índice embebe en otro intérpre
   el ajuste, estado). Con el modelo real y CUDA se probó después: ver «Medido en el PC» abajo.
 
 **Medido en el PC (15-10-2026).** Con `visual_index_python` apuntando al Python de ComfyUI (torch 2.11+cu128, transformers 5.16): un PDF de 5 páginas, 28-29 franjas, se indexa en ~28 s en frío en la GPU 2 (carga del modelo incluida; el worker ocupa ~5,1 GB frente a los 7000 MB que pide al árbitro) y la búsqueda tarda 0,05 s; repetirlo devuelve `unchanged: true` y la GPU queda libre al cerrar el worker. En CPU, el mismo modelo tarda ~20 s por franja. Con el troceo uniforme y el filtro de franjas casi vacías, la consulta «table of regional equity allocation» devuelve las gráficas del informe en vez de los pies de página. «Mira la página» con un modelo de visión real (Qwen3.8-27B con mmproj, GPU 2+3) leyó una gráfica de esperanza de vida dibujada por script (4 franjas, 32 s) y marcó el valor como aproximado. La pantalla del 7000 se probó con Playwright: indexar, buscar, ver franjas y borrar colecciones.
+
+## Gulliver's Hoard: láser en España, generaciones comparadas y consejos aplicables — 15-10-2026 (mediodía)
+
+Luis pidió «implementa todo»: lo que quedaba abierto en OBJ-61 y las dos tareas que abrió la revisión de
+codex-gulliver-silver en el espacio de Gulliver del Ágora (#572 y #574). Gulliver tiene ya su espacio propio en el Ágora
+(`gulliver`, hilo de trabajo 609), al que se ha unido claude.
+
+- **Alturas por láser en España, sin clave**: el modelo de superficies PNOA-LiDAR nacional del IGN por WCS
+  (`wcs-mds.idee.es`: 0,5 m donde está volado, 2,5 m en el resto) y, antes que él donde existen, los autonómicos de Navarra
+  (IDENA), Gipuzkoa (b5m) y Cantabria. Si un servicio falla se pasa al siguiente. Una altura ya conocida (las plantas del
+  Catastro, una altura mapeada) se respeta salvo que el láser vea una cubierta mucho más alta (más de 1,25 × + 3 m: un
+  edificio crecido después), porque el modelo de superficie puede tener años; las torres y agujas se añaden siempre.
+  Bilbao (Abandoibarra, sin Catastro común): 144 edificios medidos, la torre Iberdrola con su altura.
+- **Dinamarca con clave**: campo en Ajustes para la clave gratuita de Dataforsyningen; se guarda en el equipo, la interfaz
+  y las herramientas solo ven «••••••» y llega al proceso de generación. Finlandia no tiene modelo de superficie abierto.
+- **Paso «Partes» tres veces más rápido**: el sólido del terreno se simplifica a 0,02 mm antes de los cortes de color.
+  Kerzers (2,4 km a 0,3 mm): de 364 s a 133 s y de 7,1 a 2,5 millones de triángulos, cerrada.
+- **#572, el marco que de verdad se dibuja**: `area_check`, «cabe en la cama» y las piezas sugeridas cuentan ya el marco
+  automático (14 mm con placa, 8 mm por cuadro enmarcado). Con cuadros, sugiere cuántos cuadros caben y el botón los aplica.
+  El caso de la revisión (250 mm con placa en cama de 256) dice ahora 278 × 278 y 2 × 2 piezas.
+- **#574, generaciones comparadas**: cada generación guarda los parámetros con que se hizo. La página de la maqueta lista
+  las guardadas con su nota de imprimibilidad; cada una se descarga, se exporta, se compara con la actual (vistas lado a lado,
+  parámetros que cambian, tamaño, peso, triángulos, edificios, piezas, nota, piezas nuevas o perdidas) o vuelve a ser la
+  actual con sus parámetros. Herramientas `model_builds`, `model_compare`, `model_build_use`; `model_files` y `model_export`
+  aceptan `build_id`.
+- **Consejos aplicables con vista previa**: el informe de imprimibilidad trae los consejos como cambios de parámetros
+  (`fixes`). «Aplicar consejos» (y `model_advice`) deja elegirlos, enseña cómo queda (tamaño, piezas, cama, malla) y al
+  aplicar regenera conservando la generación anterior para compararla. Los edificios finos ya no se arreglan quitándolos:
+  `thicken` ensancha también edificios, alas, cobertizos y agujas a dos pasadas.
+- 24 herramientas MCP (antes 20).
+
+Verificado: 192 pruebas en la nube y en Windows; por MCP (stdio y ruta de la interfaz) `area_check` con placa y con
+cuadros, `settings_get`/`settings_set` con la clave enmascarada, Kerzers y Bilbao generadas y cerradas, `model_builds`,
+`model_compare`, `model_advice` en vista previa y aplicado; en Chrome el campo de la clave en Ajustes, la tabla de
+generaciones, la comparación A/B, el diálogo de consejos y «Usar esta».
