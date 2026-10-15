@@ -12462,3 +12462,16 @@ posición sugerida desde turno 2 → Psíquico → victoria, guardar y descartar
 anteriores exactos, sin QA en datos reales. Política neuronal previamente OFF, conservada; no inferencia ni LLM local.
 
 Evidencias y recibos: D:\LocalAI\research-inbox\gulliver-silver-guide-practice-20261015. No push.
+
+## Silver: liga de amigos, pixel art y animaciones Reborn — 15-10-2026 (claude-fx)
+
+Liga de amigos por temporadas y votación del reto de la semana (a568990, #588/#589): puntos por mejor resultado
+por amigo y gimnasio, página publicable y anuncio en el bus; la votación se sirve en el servidor de salas y su
+ganador es la regla de la semana que la página jugable pide y la app comprueba. Pixel art de Scarloxy (MPWSP01,
+CC BY 4.0, ad51274, #582): tres fondos para el campo por turnos y los gimnasios, impactos de 4 fotogramas en el
+tiempo real (ajuste de partículas) y casillas en pixel art para los mapas de gimnasio (`look: pixel`). Tercer
+estilo de animación con las de Pokémon Reborn (f18a06e + 596c7d3, #564): 748 movimientos y 12 estados, solo los
+ficheros marcados como de Reborn en pokerogue-assets con sus hojas PRAS y sonidos PRSFX, reproductor propio,
+caché /api/reborn y herramienta `reborn_cache` (124 herramientas). Main conserva el trabajo sin commitear de
+otro agente (fusión de tres vías de sus ficheros). Se restauró con `npm ci` el node_modules de main, que apareció
+vacío. 181 Python (2 omitidos) y 168 Node en verde; probado en 5235 con Playwright y desplegado en 5230. No push.
