@@ -11968,6 +11968,10 @@ compartido; el Hub la descubre y la arranca). Simulador de combates sobre el mot
   los más usados; se descargan al pedirlos y se guardan una semana. Tools sets_popular, usage_top, sample_team.
 - Equipos por enlace de pokepast.es: Importar acepta un enlace (título y formato de sus notas) y el diálogo de
   exportar publica el equipo tras confirmarlo (tool pokepaste_export).
+- Animaciones de Pokémon Showdown en la pantalla por turnos: las 934 de su cliente de combate (tablas CC0 y MIT generadas
+  con `scripts/build_ps_anims.mjs`, reproducidas por una adaptación propia en canvas que mueve los sprites como allí), su
+  fondo de combate según la generación del formato y sus capas de tiempo atmosférico y de campo; los dibujos se descargan
+  una vez (`fx_cache`, `prefetch` los baja todos). En Ajustes se vuelve a los efectos de Silver o al campo con degradado.
 - 78 herramientas.
 
 Verificado en el PC: 47 pruebas del motor y 29 de la app en Windows, liga de Johto instalada y combate IA contra IA por el
