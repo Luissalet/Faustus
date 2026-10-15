@@ -12550,3 +12550,25 @@ lucha sale de generaciones de la Pokédex, los más fuertes de cada una, inicial
 entrenador, con movimientos elegidos de lo que cada uno aprende. El motor juega la batalla en segundos y la pantalla la repite
 desde la semilla, con cámara, velocidades y clasificación. Por MCP: `mass_presets`, `mass_start`, `mass_get`, `mass_list`,
 `mass_delete` y `mass_check`.
+
+
+## Silver's Hoard: imágenes de entrenador a lo grande, propias, arte oficial y dibujos sin pixelar — 15-10-2026
+
+- Pulsar la imagen de un entrenador, un sprite del selector, una pose o un aspecto de un personaje la abre en un visor
+  (`client/src/components/viewer.jsx`): el pixel art se amplía a saltos enteros sin difuminar; dibujos, fotos y arte se ajustan
+  y se suavizan; flechas y miniaturas para pasar (frente, espalda y victoria del entrenador). En el selector, un clic amplía y
+  doble clic usa.
+- Cualquier imagen propia tal cual, hasta 1024 px y sin generar nada: «Subir imagen» arriba del diálogo, Ctrl+V, arrastrar o
+  pegar un enlace (`avatar_from_url`). Pestaña «Tus imágenes» (`avatar_images`): cada imagen una vez aunque esté guardada varias
+  veces, con búsqueda por entrenador y por tipo (fotos, arte, dibujos, sprites, poses, subidas).
+- Arte oficial de personajes y clases de entrenador, juego a juego, desde la API de la Pokémon Wiki (`silvers_hoard/official_art.py`,
+  `official_art_search`, caché de una semana): pestaña en el diálogo y sección en la página de cada personaje, que crea el
+  entrenador con ese arte (`character_install` con `avatar`/`art`). El servidor de imágenes de la wiki rechaza scripts
+  (Cloudflare), así que es la página la que descarga la imagen elegida y la sube; el crédito queda con la imagen.
+- Prospero puede dibujar en estilo de arte oficial sin pixelar (`avatar_draw` con `look: art`, ajuste `prospero_prompt_art`):
+  el dibujo se guarda hasta 1024 px, el entrenador se queda con él y solo se mandan como referencias de estilo las imágenes propias.
+- Las imágenes grandes se suavizan en todas partes (`client/src/smooth-art.js`, lienzo del tiempo real, overworld con su
+  proporción, mapa del editor) y en ficheros y páginas viajan reducidas a 700 KB (códigos, 48 KB).
+- Tres herramientas nuevas en el plugin (`official_art_search`, `avatar_images`, `avatar_from_url`). Probado en una instancia
+  privada con copia de los datos (subir, enlace, arte de Cintia y Lance, entrenador desde personaje, combate por turnos y en tiempo
+  real) y después en la 5230 reiniciada desde el Hub (visor, diálogo, herramientas por la API del agente); pytest y motor en verde.

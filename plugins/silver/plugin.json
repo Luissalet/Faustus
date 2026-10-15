@@ -2,7 +2,7 @@
   "schema": 1,
   "id": "silver",
   "name": "Silver's Hoard",
-  "purpose": "Pokémon battle simulator on Pokémon Showdown's engine (every generation, singles and doubles): trainers with a team, an AI level and style, an avatar and battle lines; battles you play against the AI, AI-vs-AI battles to watch, series of battles with win rates and MVPs, and tournaments (bracket or round robin) played by the AI; gyms (gym trainers, a leader, a badge, level rules) and leagues (gyms, Elite Four, champion, hall of fame) you challenge or let the AI challenge; the in-game teams of the leaders, Elite Four, champions and rivals of Crystal, FireRed/LeafGreen and Emerald, ready to install as whole leagues; trainers, gyms and leagues sent to friends as files, share codes or one playable HTML page they open in a browser, with result codes that record their badges here; a real-time mode (the same trainers on a 2D arena with move cooldowns instead of turns, lock-on or free aim, rocks, Plus moves and Mega Evolution); anything goes by default (Mega Evolution, Z-moves and Terastal together, no tiers); trainer sprites as pixel art from a photo here, or drawn by Prospero's Hoard from up to four photos and/or a description in the games' anime style taken from style references (trainer sprites or your own pictures), returned as the drawing and as a 96-px sprite; Pokémon Showdown's own animation of every move (934) and its battle backdrops and weather overlays on the turn-based screen; and battle lines written by the family's model.",
+  "purpose": "Pokémon battle simulator on Pokémon Showdown's engine (every generation, singles and doubles): trainers with a team, an AI level and style, an avatar and battle lines; battles you play against the AI, AI-vs-AI battles to watch, series of battles with win rates and MVPs, and tournaments (bracket or round robin) played by the AI; gyms (gym trainers, a leader, a badge, level rules) and leagues (gyms, Elite Four, champion, hall of fame) you challenge or let the AI challenge; the in-game teams of the leaders, Elite Four, champions and rivals of Crystal, FireRed/LeafGreen and Emerald, ready to install as whole leagues; trainers, gyms and leagues sent to friends as files, share codes or one playable HTML page they open in a browser, with result codes that record their badges here; a real-time mode (the same trainers on a 2D arena with move cooldowns instead of turns, lock-on or free aim, rocks, Plus moves and Mega Evolution); anything goes by default (Mega Evolution, Z-moves and Terastal together, no tiers); trainer pictures: any Showdown trainer sprite, any picture of your own as it is (uploaded, pasted, dropped or by link), the games' official artwork of characters and trainer classes, pixel art from a photo here, or drawn by Prospero's Hoard from up to four photos and/or a description, as a 96-px sprite or in the games' official art style without pixels; every picture opens big; Pokémon Showdown's own animation of every move (934) and its battle backdrops and weather overlays on the turn-based screen; and battle lines written by the family's model.",
   "capabilities": [
     "pokemon",
     "battle-simulator",
@@ -32,7 +32,10 @@
     "unbound-frontier",
     "sprites",
     "realtime-battles",
-    "drawn-sprites"
+    "drawn-sprites",
+    "official-art",
+    "own-pictures",
+    "picture-viewer"
   ],
   "x-family": {
     "copilot": true
