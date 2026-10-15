@@ -28,6 +28,8 @@ Image.MAX_IMAGE_PIXELS = None          # a tall capture can pass the default dec
 TILE_HEIGHT = 8192
 STRIP_HEIGHT = 1024
 STRIP_WIDTH = 875
+INK_DELTA = 24                 # grey levels from the background that count as ink
+INK_MIN_FRACTION = 0.004       # below 0.4 % ink a strip is treated as blank
 MIN_SIDE = 28
 #: A strip whose pixel values vary less than this (max - min over the greyscale image) is "blank".
 BLANK_RANGE = 6
@@ -58,27 +60,45 @@ def image_md5(image: Image.Image) -> str:
 
 
 def is_blank(image: Image.Image) -> bool:
-    lo, hi = image.convert("L").getextrema()
-    return (hi - lo) <= BLANK_RANGE
+    """A strip with nothing to find: one flat colour, or so little ink (a page number, a running footer, a rule) that it
+    would only match every query a little. Ink is a pixel far from the strip's commonest grey."""
+    grey = image.convert("L")
+    lo, hi = grey.getextrema()
+    if (hi - lo) <= BLANK_RANGE:
+        return True
+    hist = grey.histogram()
+    bg = max(range(256), key=hist.__getitem__)
+    ink = sum(c for v, c in enumerate(hist) if abs(v - bg) > INK_DELTA)
+    return ink < INK_MIN_FRACTION * grey.width * grey.height
+
+
+def _even(total: int, cap: int) -> List[Tuple[int, int]]:
+    """``(start, size)`` pieces of ``total`` px, each at most ``cap``, as even as possible (no thin tail: a 2200 px page
+    with a 1024 cap gives 734 + 733 + 733, not 1024 + 1024 + 152, so a footer never becomes a strip of its own)."""
+    if total <= 0:
+        return []
+    n = -(-total // cap)
+    base, extra = divmod(total, n)
+    out, pos = [], 0
+    for i in range(n):
+        size = base + (1 if i < extra else 0)
+        out.append((pos, size))
+        pos += size
+    return out
 
 
 def grid(width: int, height: int, *, strip_height: int = STRIP_HEIGHT, strip_width: int = STRIP_WIDTH,
          min_side: int = MIN_SIDE) -> List[Tuple[int, int, int, int]]:
-    """The ``(x, y, w, h)`` boxes of the strips of a ``width x height`` image, row-major, tails under ``min_side`` dropped."""
+    """The ``(x, y, w, h)`` boxes of the strips of a ``width x height`` image, row-major, every side at most the cap and
+    the pieces of a row or a column as even as possible; pieces under ``min_side`` are dropped."""
     boxes: List[Tuple[int, int, int, int]] = []
-    y = 0
-    while y < height:
-        h = min(strip_height, height - y)
+    for y, h in _even(height, strip_height):
         if h < min_side:
-            break
-        x = 0
-        while x < width:
-            w = min(strip_width, width - x)
+            continue
+        for x, w in _even(width, strip_width):
             if w < min_side:
-                break
+                continue
             boxes.append((x, y, w, h))
-            x += w
-        y += h
     return boxes
 
 

@@ -28,19 +28,20 @@ def _fresh_vision_cache():
 
 # ------------------------------------------------------------------------------------------------ tiling
 def test_grid_heights_widths_and_minimum_side():
-    boxes = tiling.grid(1654, 2339)             # A4 at 200 dpi
+    boxes = tiling.grid(1654, 2339)             # A4 at 200 dpi: three even rows of two even columns, no thin tail
     assert len(boxes) == 6
-    assert {b[3] for b in boxes} == {1024, 291}
-    assert [b[2] for b in boxes[:2]] == [875, 779]
+    assert {b[3] for b in boxes} == {780, 779}
+    assert [b[2] for b in boxes[:2]] == [827, 827]
     assert all(w >= tiling.MIN_SIDE and h >= tiling.MIN_SIDE for _, _, w, h in boxes)
-    assert tiling.grid(100, 1040) == [(0, 0, 100, 1024)]             # the 16 px tail is under the minimum: dropped
+    assert tiling.grid(100, 1040) == [(0, 0, 100, 520), (0, 520, 100, 520)]   # no 16 px tail of its own
+    assert tiling.grid(1700, 2200)[-1][3] == 733 and max(b[3] for b in tiling.grid(1700, 2200)) == 734   # footer not alone
     assert tiling.grid(20, 500) == []
 
 
 def test_strips_are_at_most_1024_high_and_hash_by_content():
     img = page([(1500, RED), (600, BLUE)])
     strips = tiling.strips_from_image(img)
-    assert [s.height for s in strips] == [1024, 1024, 52]
+    assert [s.height for s in strips] == [700, 700, 700]
     assert len({s.md5 for s in strips}) == 3                          # different pixels, different hashes
     again = tiling.strips_from_image(img.copy())
     assert [s.md5 for s in again] == [s.md5 for s in strips]
@@ -50,8 +51,11 @@ def test_strips_are_at_most_1024_high_and_hash_by_content():
 def test_blank_strips_are_skipped_and_wide_images_split():
     img = page([(1024, (255, 255, 255)), (200, RED)], width=1800)
     strips = tiling.strips_from_image(img)
-    assert [(s.x, s.y, s.width) for s in strips] == [(0, 1024, 875), (875, 1024, 875), (1750, 1024, 50)]
+    assert [(s.x, s.y, s.width) for s in strips] == [(0, 612, 600), (600, 612, 600), (1200, 612, 600)]
     assert tiling.strips_from_image(img, skip_blank=False)[0].y == 0
+    footer = Image.new("RGB", (875, 700), (255, 255, 255))           # a running footer: a few dark pixels only
+    footer.paste(Image.new("RGB", (120, 8), (0, 0, 0)), (380, 680))
+    assert tiling.is_blank(footer) and tiling.strips_from_image(footer) == []
 
 
 def test_tall_pages_are_tiled_at_8192_and_y_is_in_page_coordinates():
@@ -116,13 +120,13 @@ def test_incremental_reindex_embeds_only_what_changed(tmp_path):
 
 
 def test_web_sources_are_tiled_and_reindexed_by_hash(tmp_path):
-    shot = page([(1024, RED), (1024, GREEN), (52, BLUE)], 875)
+    shot = page([(700, RED), (700, GREEN), (700, BLUE)], 875)
     renderers = fake_web({"https://example.org/p": [(0, shot)]})
     service, emb = make_service(tmp_path, renderers=renderers)
     r = service.add("ada", ["https://example.org/p"])["results"][0]
     assert r["ok"] and r["kind"] == "web" and r["total"] == 3
     hit = service.search("ada", "blue", k=1)["results"][0]
-    assert hit["kind"] == "web" and hit["source"] == "https://example.org/p" and hit["y_offset"] == 2048
+    assert hit["kind"] == "web" and hit["source"] == "https://example.org/p" and hit["y_offset"] == 1400
     again = service.add("ada", ["https://example.org/p"])["results"][0]
     assert again["added"] == 0 and again["reused"] == 3 and emb.image_calls == 3
 

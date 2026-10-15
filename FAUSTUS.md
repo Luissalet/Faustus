@@ -12015,7 +12015,9 @@ reimplementado con el modelo de datos de Faustus (aviso en las cabeceras, `THIRD
 **Índice visual (#522).**
 - **Qué guarda**: cada fuente se renderiza (PDF a 200 dpi con pypdfium2, nunca PyMuPDF; página web con el navegador de
   Faustus a 875 px de ancho en teselas de ≤8192 px; imagen suelta) y se corta en franjas de ≤1024 px de alto (y en horizontal
-  si es más ancha de 875 px), mínimo 28 px, sin franjas de un solo color. Cada franja lleva el MD5 de sus píxeles: reindexar
+  si es más ancha de 875 px), mínimo 28 px, repartidas a partes iguales (una página de 2200 px da tres de ~733, no
+  1024 + 1024 + 152: el pie de página no queda solo en una franja), sin franjas de un solo color ni con menos de un 0,4 % de
+  tinta (número de página, pie), que en la prueba real con un PDF de 5 páginas salían arriba en cualquier búsqueda. Cada franja lleva el MD5 de sus píxeles: reindexar
   la misma fuente solo vuelve a embeber las franjas cuyo MD5 cambió (el PDF se indexa página a página para no cargarlo entero).
 - **Embebedor** (`embedder.py`, interfaz `VisualEmbedder`): `Qwen/Qwen3-VL-Embedding-2B` con transformers, perezoso, descargado
   en la primera indexación o búsqueda a `data/models/visual-embedding` (o `visual_index_models_dir`); último token,

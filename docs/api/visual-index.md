@@ -9,7 +9,9 @@ pages whose text lacks their data. Code: `src/visual_index/` (`tiling.py`, `rend
 
 A source is rendered (PDF at 200 dpi with pypdfium2; a web page by the browser Faustus already has, 875 px wide, in tiles of
 at most 8192 px; a picture as it is) and cut into strips of at most 1024 px high (and 875 px wide, so a wider page is also
-cut across), at least 28 px on each side. Strips of one flat colour are left out. Each strip has the MD5 of its pixels:
+cut across), at least 28 px on each side. The rows and columns of a page are split evenly (a 2200 px page gives three
+strips of about 733 px, not 1024 + 1024 + 152), so a running footer never becomes a strip of its own. Strips of one flat
+colour, or with under 0.4 % ink (a page number, a footer line), are left out: they only matched every query a little. Each strip has the MD5 of its pixels:
 indexing a source again embeds only the strips whose MD5 changed and drops the ones that are gone; when nothing changed the result says `unchanged: true`.
 
 ## Embedder
