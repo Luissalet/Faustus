@@ -97,3 +97,9 @@ wordfreq>=3.1
 
 # inspect_image / pdf_ops: render a PDF page to an image (pure wheel, no system binaries)
 pypdfium2>=4
+
+# Visual index (src/visual_index, docs/api/visual-index.md): local multimodal embedder Qwen/Qwen3-VL-Embedding-2B.
+# Not installed by default: install a torch build that matches your CUDA first (pytorch.org), then uncomment/install
+# transformers. The model (about 4 to 4.5 GB) downloads on first use. Without them the app starts and the index says so.
+# torch
+# transformers>=4.57

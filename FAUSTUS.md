@@ -11992,3 +11992,64 @@ por su lado (HoardLink 3f9d8fd). Pruebas: `tests/test_vision_routing.py` (2 nuev
 portuguesa y daba a `pt` señal suficiente. `src/reply_language.instruction_text_for_language` quita ahora los enlaces
 (`esquema://…` y `www.…`) antes de puntuar; un mensaje que sin el enlace no decide nada usa
 `reply_language_default` (es). Prueba en `tests/test_reply_language.py`.
+
+## 345. Índice visual local y «mira la página» en Deep Research y web_fetch (15-10-2026)
+
+Dos capacidades que comparten el mismo recorte de capturas: guardar PDF, imágenes y páginas web como **franjas** de pantalla
+y buscarlas por significado (#522), y leer una captura de una página cuyo texto no contiene su dato (#523). Código en
+`src/visual_index/`; la geometría del recorte y el modo de embeber siguen el trabajo abierto de PixelRAG (Apache-2.0),
+reimplementado con el modelo de datos de Faustus (aviso en las cabeceras, `THIRD_PARTY_NOTICES.md` y
+`docs/adaptations/provenance.json`). API y herramientas: `docs/api/visual-index.md`.
+
+**Índice visual (#522).**
+- **Qué guarda**: cada fuente se renderiza (PDF a 200 dpi con pypdfium2, nunca PyMuPDF; página web con el navegador de
+  Faustus a 875 px de ancho en teselas de ≤8192 px; imagen suelta) y se corta en franjas de ≤1024 px de alto (y en horizontal
+  si es más ancha de 875 px), mínimo 28 px, sin franjas de un solo color. Cada franja lleva el MD5 de sus píxeles: reindexar
+  la misma fuente solo vuelve a embeber las franjas cuyo MD5 cambió (el PDF se indexa página a página para no cargarlo entero).
+- **Embebedor** (`embedder.py`, interfaz `VisualEmbedder`): `Qwen/Qwen3-VL-Embedding-2B` con transformers, perezoso, descargado
+  en la primera indexación o búsqueda a `data/models/visual-embedding` (o `visual_index_models_dir`); último token,
+  normalizado L2, 2048 dimensiones; las consultas llevan la instrucción de recuperación. **Nunca usa las GPU 0 y 1**
+  (se filtran aunque `visual_index_gpus` las nombre): pide memoria al árbitro (`hoard_link.lease`) en las tarjetas 2 y 3 y, si
+  no hay, corre en CPU; se descarga tras `visual_index_idle_unload_seconds` sin uso. Sin `torch`/`transformers` el arranque
+  no se rompe: las llamadas devuelven un 503/`dependencies_missing` con el comando de instalación. Hay un
+  `FakeEmbedder` determinista para las pruebas.
+- **Almacén** (`store.py`): `data/visual_index/<dueño>/<colección>/` con vectores float16 (`vectors.npy`), `strips.json`,
+  `sources.json` y los PNG de las franjas; búsqueda plana por producto escalar con numpy (sin faiss). Una colección recuerda
+  con qué embebedor se construyó y rechaza mezclar otro. Colecciones por usuario.
+- **Herramientas** (diferidas, familia `visual_index`): `visual_index_add {"paths"|"urls": [...], "collection"?, "pages"?}`,
+  `visual_search {"query", "k"?, "collection"?}` (devuelve fuente, página, `y_offset`, puntuación y ruta de la imagen),
+  `view_tile {"id", "question"?}`, `visual_index_list`, `visual_index_remove`. `view_tile` adjunta la franja como imagen si
+  el modelo del turno ve imágenes; si no, la lee el modelo de visión residente con tu pregunta; si no hay ninguno, lo dice
+  (`vision_available: false`) y no describe nada. Tope `visual_index_view_limit_per_turn` (6) franjas vistas por turno.
+- **REST** (`/api/visual-index/…`: `status`, `collections`, `add`, `search`, `tiles/{id}`, `tiles/{id}/image`,
+  `tiles/{id}/read`) con el mismo servicio; añadir una ruta de disco exige admin, una URL no.
+- **Pantalla**: Studio › «Índice visual» (`/visual-index`): colecciones y fuentes, añadir rutas/URLs, buscar y leer
+  franjas; avisa con la causa cuando falta el embebedor o no hay modelo de visión. Es/en.
+
+**Mira la página (#523).**
+- **Cuándo**: `lookpage.assess_page` decide con contadores baratos: texto vacío o por debajo de `research_look_min_chars`
+  (600), canvas con poco texto, `<table>` que no salieron como tabla en el texto, bibliotecas que dibujan tablas/gráficos con
+  script (ag-grid, Highcharts, Plotly, Datawrapper…) o página de imágenes grandes/SVG con poco texto.
+- **Qué hace**: captura la página en franjas (mismo recorte), reparte las franjas permitidas por toda la página y se las
+  enseña una a una al modelo de visión residente con la pregunta de la investigación; una franja sin nada relevante contesta
+  `NONE` y se descarta. Lo leído entra en el hallazgo con la marca `[from a screenshot]`, `from_capture` y el modelo, va al
+  extractor dentro del bloque «contenido no fiable» (viene de una página) y la lista de fuentes del informe y de Studio lo
+  señalan («leído de una captura»).
+- **Límites** (ajustes `research_look_*`): `research_look_at_pages` (activo), 4 franjas por página, 16 por investigación,
+  8 páginas por investigación, 3 teselas y 180 s por página. En `web_fetch` el interruptor es `web_fetch_look_at_page`
+  (activo) y la herramienta acepta `look` (true fuerza, false omite) y `question`.
+- **Sin modelo de visión**: no se captura nada y no se inventa nada. Si el marcado muestra que el dato está en tablas, gráficos
+  o imágenes, el informe cierra con una sección «Páginas con el dato en forma visual» («la página X solo tiene el dato en una
+  tabla o gráfico visual y no hay modelo de visión…», en el idioma del informe); `web_fetch` añade esa misma nota.
+  Una página corta sin marcado visual (un muro de acceso) no se declara «con datos ocultos».
+- Qué no hace: no hace OCR por sí mismo (lo que se lee es lo que el modelo de visión transcribe, con posibles errores y
+  marcado como tal); no ve contenido que exija sesión; una página de más de `research_look_max_tiles` × 8192 px se lee
+  solo hasta ahí.
+
+**Comprobado**: 41 tests del índice (recorte, incremental por MD5, almacén, PDF real con pypdfium2, herramientas, rutas con
+TestClient, sin transformers el arranque sigue, GPU 0/1 excluidas, TTL) y 30 de «mira la página» (heurística, presupuesto,
+modelo falso, navegador falso, informe en es/en, `web_fetch`); suites vecinas (registro de herramientas, esquema de ajustes,
+Deep Research, `web_fetch`, Studio) en verde; pantalla de Studio abierta con Chromium real (aviso de dependencias, sin modelo
+de visión); captura real de `https://example.org/` con el navegador de Faustus. **No probado**: el modelo real
+`Qwen3-VL-Embedding-2B` (sin descarga posible desde este entorno ni GPU), una lectura real con un modelo de visión y una
+investigación completa con una página de tabla dinámica; ver PENDIENTES.
