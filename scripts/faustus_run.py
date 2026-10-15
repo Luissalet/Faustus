@@ -270,6 +270,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="initial response budget for this turn, 5–900 seconds; includes admission and queue")
     ap.add_argument("--plan", action="store_true", help="plan mode: read and propose, no changes")
     ap.add_argument("--web", action="store_true", help="allow web search for the turn")
+    ap.add_argument("--unattended", action="store_true",
+                    help="nobody answers questions during the run: the agent decides instead of asking")
     ap.add_argument("--approve", action="store_true", help="approve every tool card of the run for the task")
     ap.add_argument("--resume-approval", default="", help="resume a stopped run by approving this card id")
     ap.add_argument("--max-legs", type=int, default=12, help="approval resumes allowed with --approve")
@@ -336,6 +338,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             form["plan_mode"] = "true"
         if args.web:
             form["allow_web_search"] = "true"
+        if args.unattended:
+            form["unattended"] = "true"
         return form
 
     if args.json:

@@ -181,6 +181,16 @@ class TestDetectAdminIntent:
     def test_general_question(self):
         assert _detect_admin_intent(self._msgs("what is the capital of France?")) is False
 
+    def test_coding_brief_words_are_not_admin(self):
+        brief = ("Your task is to implement the evaluator. Note: delete the node when the tree "
+                 "is empty, keep the server setup and the parser tokens. Read "
+                 "https://docs.python.org/3/library/exceptions.html for the error types.")
+        assert _detect_admin_intent(self._msgs(brief)) is False
+
+    def test_notes_and_tokens_still_admin_when_meant(self):
+        assert _detect_admin_intent(self._msgs("show me my notes")) is True
+        assert _detect_admin_intent(self._msgs("rotate the API token")) is True
+
     # --- Edge cases ---
 
     def test_empty_messages(self):

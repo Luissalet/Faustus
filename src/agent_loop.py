@@ -2026,6 +2026,24 @@ _ADMIN_KEYWORDS = [
     "document", "documents", "doc", "docs", "library", "tidy",
     "note", "notes", "todo", "todos", "reminder", "reminders",
 ]
+# Whole words only, and without the words every coding brief uses ("your task
+# is...", "delete the node", "an HTTP server", "setup()", "tokens" of a
+# parser): matched as substrings they put 13 admin schemas (sessions,
+# webhooks, endpoints, tokens...) into almost every workspace turn, and a
+# small model pays for every one of them on every round.
+_ADMIN_KEYWORDS_AMBIGUOUS = frozenset({
+    "task", "tasks", "delete", "server", "setup", "config", "manage",
+    "token", "tokens", "truncate", "note", "notes",
+})
+_ADMIN_KEYWORDS_RE = re.compile(
+    r"(?<![\w-])(?:"
+    + "|".join(sorted((re.escape(k) for k in _ADMIN_KEYWORDS if k not in _ADMIN_KEYWORDS_AMBIGUOUS),
+                      key=len, reverse=True))
+    + r"|scheduled tasks?|recurring tasks?|manage (?:my|the) \w+|api tokens?|access tokens?|mcp servers?"
+    + r"|(?:my|a|the|new) notes?|notes? (?:file|app)|take (?:a )?notes?"
+    + r")(?![\w-])"
+)
+_URL_RE = re.compile(r"\bhttps?://\S+")
 
 _ATTACHED_FILE_ENVELOPE_RE = re.compile(r"(?m)^=== File: .+? ===\s*$")
 
@@ -2053,7 +2071,7 @@ def _detect_admin_intent(messages: List[Dict]) -> bool:
             if isinstance(content, list):
                 content = " ".join(b.get("text", "") for b in content if isinstance(b, dict))
             content_lower = _request_text_without_attached_files(content).lower()
-            return any(kw in content_lower for kw in _ADMIN_KEYWORDS)
+            return bool(_ADMIN_KEYWORDS_RE.search(_URL_RE.sub(" ", content_lower)))
     return False
 
 

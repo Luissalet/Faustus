@@ -2119,6 +2119,8 @@ def setup_chat_routes(
             "autonomy_preset": {"type": "string", "enum": ["supervised", "bounded_autonomous", "read_only"]},
             "plan_mode": {"type": "boolean"}, "no_memory": {"type": "boolean"},
             "no_skills": {"type": "boolean"},
+            "unattended": {"type": "boolean",
+                "description": "Nobody reads questions until the turn ends (headless run, task container): the agent decides instead of asking."},
             "tool_approval_id": {"type": "string", "description": "Opaque ID of the pending sealed action for this chat."},
             "tool_approval_decision": {"type": "string", "enum": ["approve_action", "approve_task", "approve", "approve_workspace", "deny"],
                 "description": "approve_action authorizes only the sealed action once; other scopes retain their existing meaning."},
@@ -2200,6 +2202,7 @@ def setup_chat_routes(
             execution_defaults.get("autonomy_preset") or ""
         ).strip().lower()
         plan_mode = str(form_data.get("plan_mode") or (body or {}).get("plan_mode") or "").lower() == "true"
+        unattended = str(form_data.get("unattended") or (body or {}).get("unattended") or "").lower() == "true"
         chat_mode = str(form_data.get("mode") or (body or {}).get("mode") or "").lower()  # 'chat' or 'agent'
         tool_approval_id = (
             form_data.get("tool_approval_id")
@@ -3243,6 +3246,9 @@ def setup_chat_routes(
             if plan_mode:
                 from src.tool_security import plan_mode_disabled_tools
                 disabled_tools.update(plan_mode_disabled_tools())
+            # Unattended turn: a question would only end the run unanswered.
+            elif unattended:
+                disabled_tools.add("ask_user")
 
             tool_policy = build_effective_tool_policy(
                 disabled_tools=disabled_tools,
@@ -4468,6 +4474,7 @@ def setup_chat_routes(
                             fallback_statuses=_foreground_policy.eligible_statuses,
                             fallback_on_empty=_foreground_policy.fallback_on_empty,
                             plan_mode=plan_mode,
+                            unattended=unattended,
                             approved_plan=approved_plan or None,
                             workspace=workspace or None,
                             workspace_roots=_turn_file_roots or None,

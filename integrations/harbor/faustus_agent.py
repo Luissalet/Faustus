@@ -115,9 +115,12 @@ class Faustus(BaseInstalledAgent):
             f"> {shlex.quote(logs + '/' + SERVER_LOG)} 2>&1 &); "
             f"for i in $(seq 1 240); do {health} 2>/dev/null && break; sleep 1; done; "
             f"{health} || {{ echo 'faustus server did not start'; tail -n 40 {shlex.quote(logs + '/' + SERVER_LOG)}; exit 1; }}; "
+            # Nobody answers during a trial. Older bundles lack the flag, so
+            # it is passed only when this bundle's runner knows it.
+            f"U=; grep -q -- '--unattended' {REMOTE_APP}/scripts/faustus_run.py && U=--unattended; "
             f"{REMOTE_PY} {REMOTE_APP}/scripts/faustus_run.py -p @{shlex.quote(prompt_path)} "
             f"--url http://127.0.0.1:7000 --workspace \"$WS\" --model {shlex.quote(model)} "
-            f"--endpoint-url {shlex.quote(base_url)} {' '.join(shlex.quote(f) for f in run_flags)} "
+            f"--endpoint-url {shlex.quote(base_url)} $U {' '.join(shlex.quote(f) for f in run_flags)} "
             f"> {shlex.quote(logs + '/' + OUTPUT)} 2> {shlex.quote(logs + '/faustus-run.err')}; "
             f"rc=$?; tail -c 4000 {shlex.quote(logs + '/faustus-run.err')}; exit $rc"
         )

@@ -144,6 +144,16 @@ def test_a_run_without_model_opens_the_chat_on_the_default_model(capsys):
     assert _H.forms[0]["model"] == "big-27b"
 
 
+def test_unattended_marks_every_leg_of_the_turn():
+    srv, url = _serve([LEG_DONE])
+    try:
+        code = fr.main(["-p", "hola", "--url", url, "--model", "m", "--unattended"])
+    finally:
+        srv.shutdown()
+    assert code == 0
+    assert _H.forms[0]["unattended"] == "true"
+
+
 def test_a_refused_turn_says_why(capsys):
     srv, url = _serve([], refuse="No model selected for this chat.")
     try:
