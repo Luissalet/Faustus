@@ -7980,6 +7980,49 @@ def _empty_response_fallback(
 #: container): nobody reads questions or approves anything until it ends, so
 #: a question is a stopped run. The rules above that say "ask the user first"
 #: do not apply; this one does.
+#: Tools that carry the agent's words to the other party of a headless
+#: conversation task (a simulated customer behind an MCP server, say). In
+#: such a run plain text reaches nobody: the first prose answer ends the run
+#: mid-conversation.
+_RELAY_TOOL_RE = re.compile(
+    r"(?:^|__)(?:send_message_to_(?:user|customer)|(?:send|reply|respond|say|talk)_to_(?:user|customer)"
+    r"|message_(?:the_)?(?:user|customer))$"
+)
+_CONVERSATION_END_RE = re.compile(r"(?:^|__)(?:end_conversation|end_chat|close_conversation)$")
+_UNATTENDED_RELAY_NUDGE_LIMIT = 25
+#: Status codes and error classes that mean "the model server hiccuped", not
+#: "the request is wrong". An unattended run waits them out instead of ending.
+_TRANSIENT_STATUSES = frozenset({408, 409, 425, 429, 500, 502, 503, 504, 520, 522, 524, 529})
+_UNATTENDED_TRANSPORT_RETRIES = 8
+
+
+def _unattended_relay_tool(tool_names, ledger_events) -> Optional[str]:
+    """The tool that delivers messages to the user in a headless conversation
+    task, or None when there is none or the conversation was already ended."""
+    relay = next((n for n in (tool_names or ()) if n and _RELAY_TOOL_RE.search(str(n))), None)
+    if not relay:
+        return None
+    for ev in ledger_events or ():
+        if isinstance(ev, dict) and _CONVERSATION_END_RE.search(str(ev.get("tool") or "")):
+            return None
+    return relay
+
+
+def _unattended_transport_retryable(error_data, status) -> bool:
+    """A model-server failure worth waiting out in a run nobody is watching."""
+    error_class = str((error_data or {}).get("error_class") or "")
+    if error_class.startswith("transport.") or error_class in {"rate_limited", "overloaded", "timeout"}:
+        return True
+    try:
+        return int(status) in _TRANSIENT_STATUSES
+    except (TypeError, ValueError):
+        return False
+
+
+def _unattended_transport_wait(attempt: int) -> float:
+    return float(min(15 * (2 ** max(0, attempt - 1)), 120))
+
+
 UNATTENDED_DIRECTIVE = (
     "## UNATTENDED RUN - OVERRIDES ANY RULE ABOUT ASKING THE USER\n"
     "Nobody will read a question or approve anything until this run ends. Never stop to ask: pick the most reasonable "
@@ -7992,6 +8035,9 @@ UNATTENDED_DIRECTIVE = (
     "commands the request names, and read the output files you were asked to produce. Fix what fails and check again.\n"
     "- Long commands (builds, installs, training) are fine: bound them with `timeout`, or start them in the background and "
     "poll, instead of giving up on them.\n"
+    "- If a tool carries your messages to the user or customer (`send_message_to_user` or similar), everything you say "
+    "to them goes through it: plain text is never delivered. Keep the conversation going through that tool until the "
+    "task says it is over.\n"
 )
 
 PLAN_MODE_DIRECTIVE = (
@@ -11552,6 +11598,8 @@ async def _stream_agent_loop_body(
         _empty_round_max_nudges = 3
     _empty_round_nudges = 0
     _echo_nudges = 0
+    _relay_nudges = 0
+    _transport_retries = 0
     # Two consecutive marker-only rounds mean the nudge itself isn't working
     # (seen live: the model echoed `<<faustus_ctx_ack>>` twice in a row even
     # after being told to answer). At that point re-nudging a third time is
@@ -13479,6 +13527,7 @@ async def _stream_agent_loop_body(
         _degenerate_output_hit = False
         _degenerate_output_reason = ""
         _engine_lost_hit = False
+        _transport_retry_hit = False
         _context_overflow_hit = False
         _image_input_refused_now = False
         _round_actual_model = model
@@ -13816,6 +13865,37 @@ async def _stream_agent_loop_body(
                         "failed or timed out — falling through to the normal error",
                         round_num,
                     )
+                # Nobody is watching an unattended run, so a model-server blip
+                # (reset connection, 502/503, rate limit) is waited out and the
+                # round redone, instead of ending a long task on one hiccup.
+                # Seen on the benchmarks: three conversations ended at round 1
+                # when the shared server dropped connections for a minute.
+                if (
+                    unattended
+                    and not (round_response or "").strip()
+                    and _unattended_transport_retryable(error_data, terminal_status)
+                    and _transport_retries < _UNATTENDED_TRANSPORT_RETRIES
+                    and round_num < max_rounds
+                ):
+                    _transport_retries += 1
+                    _wait_s = _unattended_transport_wait(_transport_retries)
+                    logger.warning(
+                        "[harness] round %s: model server failure in an unattended run "
+                        "(status=%s class=%s); redoing the round in %.0fs (%s/%s)",
+                        round_num, terminal_status, error_data.get("error_class"), _wait_s,
+                        _transport_retries, _UNATTENDED_TRANSPORT_RETRIES,
+                    )
+                    yield (
+                        "data: " + json.dumps({
+                            "type": "harness_check", "status": "auto_continue",
+                            "reason": "transport_retry", "round": round_num,
+                            "attempt": _transport_retries, "max_attempts": _UNATTENDED_TRANSPORT_RETRIES,
+                            "wait_s": _wait_s,
+                        }) + "\n\n"
+                    )
+                    await asyncio.sleep(_wait_s)
+                    _transport_retry_hit = True
+                    break
                 # The transport cannot replay deltas already delivered, but the
                 # agent can continue from its existing transcript. No tools from
                 # this unfinished generation have been dispatched. Completed
@@ -14518,6 +14598,15 @@ async def _stream_agent_loop_body(
             yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
             continue
 
+        if _transport_retry_hit:
+            if round_response and full_response.endswith(round_response):
+                full_response = full_response[:-len(round_response)]
+            _ledger.notes.append(f"transport_retry@{round_num}")
+            _rounds_budget += 1  # waiting out the server must not eat the step budget
+            yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
+            yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+            continue
+
         if _engine_lost_hit:
             # The engine was already restarted and confirmed healthy (above,
             # before the break). Discard whatever partial text this round
@@ -14629,6 +14718,7 @@ async def _stream_agent_loop_body(
             continue
 
         _round_request_duration_ms = max(0.0, (time.monotonic() - _inference_started_monotonic) * 1000.0)
+        _transport_retries = 0
         logger.info(
             "[agent-timing] round_stream_done round=%s elapsed=%.3fs text_chars=%s tool_calls=%s first_event=%s first_token=%s",
             round_num,
@@ -15663,6 +15753,49 @@ async def _stream_agent_loop_body(
             # web question (no workspace, retrieved memory as untrusted
             # context) — the model echoed the marker, the turn ended, and the
             # person got an empty reply. One nudge, then the loop below.
+            # A headless conversation task (a simulated customer behind an
+            # MCP server): prose reaches nobody, and ending the turn on it
+            # abandons the customer mid-conversation. Seen on the benchmarks:
+            # "Could you please provide your email?" as the final answer.
+            _relay_tool = (
+                _unattended_relay_tool(_tool_names_sent, _ledger.events)
+                if unattended and _hc_text and "###STOP###" not in _hc_text else None
+            )
+            if (
+                _relay_tool
+                and _relay_nudges < _UNATTENDED_RELAY_NUDGE_LIMIT
+                and round_num < max_rounds
+            ):
+                _relay_nudges += 1
+                _ledger.notes.append(f"relay_nudge@{round_num}")
+                logger.warning(
+                    "[harness] round %s answered in plain text in an unattended conversation; nudging to %s",
+                    round_num, _relay_tool,
+                )
+                messages.append({
+                    "role": "user",
+                    "_harness_note": True,
+                    "content": (
+                        "[Harness check - automatic runtime message, not a new user request] "
+                        "Nobody reads plain text in this run, so this message of yours was NOT delivered:\n"
+                        + _hc_text[:1500]
+                        + f"\nEverything you say to the user goes through `{_relay_tool}`. Call it now with "
+                        "what you want to say, then keep working through the tools until the task says "
+                        "the conversation is over."
+                    ),
+                })
+                yield (
+                    "data: " + json.dumps({
+                        "type": "harness_check", "status": "no_action", "round": round_num,
+                        "attempt": _relay_nudges, "max_attempts": _UNATTENDED_RELAY_NUDGE_LIMIT,
+                        "reason": "undelivered_message", "tool": _relay_tool,
+                    }) + "\n\n"
+                )
+                full_response = _full_response_before_round
+                yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
+                yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                continue
+
             if (
                 _boundary_echo_only
                 and not _harness_scope_active
