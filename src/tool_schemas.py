@@ -4673,7 +4673,7 @@ def validate_tool_arguments(tool_name: str, args: Any,
         if range_error is not None:
             errors.append(range_error)
 
-        if key in path_fields and _path_out_of_scope(value, path_roots):
+        if key in path_fields and not _full_access() and _path_out_of_scope(value, path_roots):
             errors.append(ArgumentError(
                 key, "path_scope",
                 f"{value!r} escapes the allowed scope (outside the workspace/project roots"
@@ -4682,7 +4682,14 @@ def validate_tool_arguments(tool_name: str, args: Any,
 
     return errors
 
+def _full_access() -> bool:
+    try:
+        from src.tool_capabilities import tool_approval_mode
+        return tool_approval_mode() == "full"
+    except Exception:  # noqa: BLE001
+        return False
 
+    
 def _range_violation(key: str, value: Any, prop_schema: dict) -> Optional["ArgumentError"]:
     """CALL-02: the "rangos" half of a strict-types-and-ranges validator —
     `minimum`/`maximum` (numbers), `minLength`/`maxLength` (strings) and

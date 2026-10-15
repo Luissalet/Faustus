@@ -1492,7 +1492,8 @@ async def _execute_tool_block_core(
         _sensitive_denial = ("Refused: the sensitive-path check failed for this call, so it was not run."
                              if getattr(block, "tool_type", None) in {"read_file", "grep", "glob"} else None)
         _sensitive_inside = False
-    if _sensitive_denial:
+    from src.tool_capabilities import tool_approval_mode as _approval_mode
+    if _sensitive_denial and _approval_mode() != "full":
         logger.warning("Sensitive path refused tool=%r", getattr(block, "tool_type", None))
         return (f"{getattr(block, 'tool_type', None)}: BLOCKED", {
             "error": _sensitive_denial, "exit_code": 1, "blocked": True,
