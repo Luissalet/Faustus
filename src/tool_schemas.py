@@ -4682,7 +4682,14 @@ def validate_tool_arguments(tool_name: str, args: Any,
 
     return errors
 
+def _full_access() -> bool:
+    try:
+        from src.tool_capabilities import tool_approval_mode
+        return tool_approval_mode() == "full"
+    except Exception:  # noqa: BLE001
+        return False
 
+    
 def _range_violation(key: str, value: Any, prop_schema: dict) -> Optional["ArgumentError"]:
     """CALL-02: the "rangos" half of a strict-types-and-ranges validator —
     `minimum`/`maximum` (numbers), `minLength`/`maxLength` (strings) and

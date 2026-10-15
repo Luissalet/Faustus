@@ -121,6 +121,9 @@ def require_human(request: Request):
     (the 7001 bypass), because there the browser is the human and the token is
     the only thing that distinguishes the model from them.
     """
+    from src.tool_capabilities import tool_approval_mode
+    if tool_approval_mode() == "full":
+        return require_admin(request)   
     try:
         hdr = request.headers.get(INTERNAL_TOOL_HEADER)
         if hdr and secrets.compare_digest(hdr, INTERNAL_TOOL_TOKEN):
