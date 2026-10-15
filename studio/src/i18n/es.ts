@@ -1058,6 +1058,7 @@ export const es: Record<string, string> = {
   "Checking the official client…": "Comprobando el cliente oficial…",
   "Checking what is set up": "Comprobando qué está configurado",
   "Checking whether this is still current…": "Comprobando si sigue vigente…",
+  "Checking which vision model answers…": "Comprobando qué modelo de visión responde…",
   "Checking…": "Comprobando…",
   "Checklist lines only — struck-through/[x] import as done, active ones as open.": "Solo líneas de checklist — las tachadas o [x] se importan como completadas, las activas como abiertas.",
   "Checkpoint saved": "Punto de control guardado",

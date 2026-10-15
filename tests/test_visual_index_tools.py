@@ -12,6 +12,15 @@ from src.visual_index import service as svc
 
 from tests.vi_helpers import BLUE, RED, fake_web, make_service, page, png_file
 
+
+@pytest.fixture(autouse=True)
+def _fresh_vision_cache():
+    from src.visual_index.vision import clear_vision_cache
+    clear_vision_cache()
+    yield
+    clear_vision_cache()
+
+
 NAMES = ("visual_index_add", "visual_search", "view_tile", "visual_index_list", "visual_index_remove")
 
 

@@ -260,10 +260,12 @@ class VisualIndexService:
         embedder = embedder_status(self.pool, probe=probe)
         vision: Dict[str, Any] = {"available": False}
         try:
-            from .vision import vision_ready
+            from .vision import vision_ready_cached
 
-            ok, why, model = vision_ready(owner)
+            ok, why, model = vision_ready_cached(owner)
             vision = {"available": ok, "model": model, "note": why}
+            if ok is None:
+                vision["checking"] = True
         except Exception as exc:  # noqa: BLE001
             vision["note"] = str(exc)
         return {"enabled": enabled(), "embedder": embedder, "vision": vision, "geometry": describe_geometry(),

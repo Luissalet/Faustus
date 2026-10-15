@@ -54,6 +54,7 @@ export type IndexStatus = {
   loaded: boolean;
   device: string;
   visionAvailable: boolean;
+  visionChecking: boolean;
   visionModel: string;
   visionNote: string;
   collections: CollectionSummary[];
@@ -96,6 +97,7 @@ export function statusFrom(raw: unknown): IndexStatus {
     loaded: emb.loaded === true,
     device: str(emb.device),
     visionAvailable: vis.available === true,
+    visionChecking: vis.checking === true,
     visionModel: str(vis.model),
     visionNote: str(vis.note),
     collections: (Array.isArray(o.collections) ? o.collections : []).map(collectionFrom),

@@ -18,6 +18,15 @@ from src.visual_index.store import VisualStore
 
 from tests.vi_helpers import BLUE, RED, make_service, page, png_file
 
+
+@pytest.fixture(autouse=True)
+def _fresh_vision_cache():
+    from src.visual_index.vision import clear_vision_cache
+    clear_vision_cache()
+    yield
+    clear_vision_cache()
+
+
 FAKE_WORKER = textwrap.dedent('''
     import argparse, json, os, sys
     import numpy as np

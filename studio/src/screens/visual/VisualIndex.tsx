@@ -167,7 +167,9 @@ export function VisualIndexScreen() {
       ) : null}
       {status ? (
         <p className="fs-vix__meta">
-          {status.visionAvailable
+          {status.visionChecking
+            ? t('Checking which vision model answers…')
+            : status.visionAvailable
             ? `${t('Vision model')}: ${status.visionModel}`
             : `${t('No vision model')}: ${status.visionNote || t('strips can be searched but not read')}`}
           {status.device ? ` · ${status.device}` : ''}

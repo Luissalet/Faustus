@@ -11,6 +11,15 @@ from src.visual_index import service as svc
 from tests.vi_helpers import BLUE, RED, fake_web, make_service, page, png_file
 
 
+@pytest.fixture(autouse=True)
+def _fresh_vision_cache():
+    from src.visual_index.vision import clear_vision_cache
+    clear_vision_cache()
+    yield
+    clear_vision_cache()
+
+
+
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     admin = {"is": True}
@@ -129,3 +138,18 @@ def test_routes_are_in_the_real_app():
 def test_status_accepts_probe(client):
     body = client.get("/api/visual-index/status?probe=1").json()
     assert "embedder" in body and "geometry" in body
+
+
+def test_a_slow_vision_router_does_not_hold_the_status(monkeypatch):
+    import time as _time
+    from src.visual_index import vision
+
+    def slow(owner):
+        _time.sleep(3)
+        return True, "", "qwen-vl"
+    monkeypatch.setattr(vision, "vision_ready", slow)
+    t0 = _time.monotonic()
+    first = vision.vision_ready_cached("u", wait=0.2)
+    assert first == (None, "checking", "") and _time.monotonic() - t0 < 1.5
+    _time.sleep(3.2)
+    assert vision.vision_ready_cached("u", wait=0.2) == (True, "", "qwen-vl")

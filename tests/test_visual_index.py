@@ -17,6 +17,15 @@ from src.visual_index.store import StoreError, VisualStore, check_collection, ow
 from tests.vi_helpers import BLUE, GREEN, RED, fake_web, make_service, page, png_file
 
 
+@pytest.fixture(autouse=True)
+def _fresh_vision_cache():
+    from src.visual_index.vision import clear_vision_cache
+    clear_vision_cache()
+    yield
+    clear_vision_cache()
+
+
+
 # ------------------------------------------------------------------------------------------------ tiling
 def test_grid_heights_widths_and_minimum_side():
     boxes = tiling.grid(1654, 2339)             # A4 at 200 dpi
