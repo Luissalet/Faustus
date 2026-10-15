@@ -134,3 +134,27 @@ def test_an_attended_turn_still_reports_the_dropped_connection(monkeypatch):
     events = _run(unattended=False, user="What is 2 + 2?")
     assert not [e for e in events if e.get("reason") == "transport_retry"]
     assert len(seen) == 1
+
+def _empty_completion():
+    err = {"error": "All model candidates returned no substantive output", "status": 502,
+           "error_class": "generation.empty_completion", "fallback_eligible": False}
+    return [f"event: error\ndata: {json.dumps(err)}\n\n"]
+
+
+def test_empty_replies_do_not_end_an_unattended_task(tmp_path, monkeypatch):
+    """A terminal task ended at round 30 of a two-hour budget on two empty
+    replies from the model; unattended, a few more are waited out."""
+    _patch_common(monkeypatch)
+    seen = _scripted(monkeypatch, [_empty_completion(), _empty_completion(), _empty_completion(),
+                                   _text("Finished: the solver is in /app/solve.py and eval.py passes.")])
+    gen = al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": "Make /app/solve.py pass eval.py"}],
+        max_rounds=8, relevant_tools={"read_file", "glob"}, workspace=str(tmp_path), unattended=True,
+    )
+    events = _events(_collect(gen))
+    assert len(seen) >= 4, [e.get("type") for e in events]
+    nudges = [e for e in events if e.get("type") == "harness_check" and e.get("status") == "empty_round"]
+    assert nudges
+    last = json.dumps(seen[-1])
+    assert "Nobody can answer a question in this run" in last

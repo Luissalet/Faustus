@@ -11596,6 +11596,12 @@ async def _stream_agent_loop_body(
         _empty_round_max_nudges = max(1, int(get_setting("agent_empty_round_max_nudges", 3) or 3))
     except (TypeError, ValueError):
         _empty_round_max_nudges = 3
+    # Nobody can be asked anything in an unattended run, and an empty reply
+    # from the GLM is usually one bad sample, not the end of the task: a
+    # terminal task ended at round 30 of a two-hour budget on two of them.
+    _empty_completion_limit = 4 if unattended else 1
+    if unattended:
+        _empty_round_max_nudges = max(_empty_round_max_nudges, 5)
     _empty_round_nudges = 0
     _echo_nudges = 0
     _relay_nudges = 0
@@ -13810,7 +13816,7 @@ async def _stream_agent_loop_body(
                     and _harness_enabled
                     and not _force_answer
                     and not plan_mode
-                    and _xr.permits("empty_completion", _empty_round_nudges, 1)
+                    and _xr.permits("empty_completion", _empty_round_nudges, _empty_completion_limit)
                     and (
                         _harness_scope_active
                         or round_num > 1
@@ -15646,6 +15652,18 @@ async def _stream_agent_loop_body(
             if _text_action == _loop_decisions.NUDGE_EMPTY:
                 _empty_round_nudges += 1
                 _open = [t.get("content") for t in (_ledger.progress or []) if t.get("status") != "completed"]
+                # The loop-breaker hid the tool the model was circling on; an
+                # empty reply after that means hiding it left the model with
+                # nothing it wanted to do (a terminal task without `bash`).
+                # Unattended, give the tools back and say so.
+                _restored_after_empty = []
+                if unattended and _loop_recovery_temporarily_disabled:
+                    _restored_after_empty = sorted(_loop_recovery_temporarily_disabled)
+                    disabled_tools.difference_update(_loop_recovery_temporarily_disabled)
+                    _loop_recovery_temporarily_disabled.clear()
+                    _loop_recovery_active = False
+                    _loop_recovery_blocked_tools.clear()
+                    _loop_recovery_retries = 0
                 logger.warning("[harness] round %s ended with no text and no tool call — nudging (open objectives: %s)",
                                round_num, _open[:4])
                 _ledger.notes.append(f"empty_round_nudge@{round_num}")
@@ -15666,9 +15684,13 @@ async def _stream_agent_loop_body(
                            if _bare_ack_round else
                            "Your last message was EMPTY: no text and no tool call, so nothing happened. ")
                         + (f"Open objectives: {'; '.join(str(o) for o in _open[:4])}. " if _open else "")
+                        + (f"These tools are available again: {', '.join(_restored_after_empty)}; do not repeat "
+                           "the command you were circling on, change the approach. " if _restored_after_empty else "")
                         + "Either continue the task by calling a tool now, or write the final answer "
                         "stating exactly what was done and what remains. "
-                        "Continúa con la siguiente unidad. Si algo no está claro, haz UNA pregunta concreta.")
+                        + ("Nobody can answer a question in this run: keep working on the next step."
+                           if unattended else
+                           "Continúa con la siguiente unidad. Si algo no está claro, haz UNA pregunta concreta."))
                     ),
                 })
                 yield (
