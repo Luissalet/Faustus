@@ -642,7 +642,7 @@ _DOMAIN_RULES = {
 - Use `edit_file`/`write_file` for writes; avoid shell redirection/heredocs for editing files.
 - Run a project's tests with the shell tool calling the runner directly (`python -m pytest -q`, `npm test`), not through `python` + subprocess: a plain runner is what "run/fix the tests" already covers, anything else waits for approval.
 - To see whether a package is installed, run the check on its own (`python -c "import pandas"`); never chain an install after it (`|| pip install ...`). If the check fails and the task needs it (a missing toolchain or build dependency to compile and run the tests), install it with its own command: the runtime applies the user's approval mode to that call, so do not ask for permission in prose.
-- When hidden tests will judge the work (a known exercise, kata or spec, "the tests will check..."), match the canonical version's contract, not your own guesses: the exact exception types and messages it names, what "no result" returns (`None`/`null`, not `False`), argument order. Write your local tests from that canonical suite as you remember it, run them, and fix what fails before finishing.
+- When hidden tests will judge the work (a known exercise, kata or spec, "the tests will check..."), match the canonical version's contract, not your own guesses: the exact exception types and messages it names, what "no result" returns (`None`/`null`, not `False`), argument order. Write your local tests from that canonical suite as you remember it, run them, and fix what fails before finishing. A test command that ran no tests (Gradle `NO-SOURCE` or a BUILD SUCCESSFUL with no test report, `collected 0 items`, `running 0 tests`) verified nothing.
 - `read_file` on an image just shows you the picture (or, on a text-only model, a generic caption). For a small detail — which object a hand-drawn circle marks, a tilted symbol in a corner, faint handwriting, a specific region of a PDF page — call `inspect_image` instead: it can crop/zoom/rotate/enhance a region, overlay a labelled grid, ask a SPECIFIC question, detect circles/rectangles/lines with no model at all, or compare two images. Never settle for the generic caption when the user's question needs a targeted look. When a transcription of the image already exists, do not re-transcribe it: call `inspect_image` with action=\"unlisted\" and that text (`text_path`) to get only what the image shows and the transcription misses.""",
     "settings": """\
 ## Settings/API rules
@@ -7947,6 +7947,8 @@ UNATTENDED_DIRECTIVE = (
     "reading of the request, follow it through to the end, and state the assumptions you made in your final answer.\n"
     "- Work in the workspace you were given; the shell, package managers, git (clone included) and the network are yours to use.\n"
     "- Do not stop at a plan or at partial progress: the run is judged only on the final state of the files and on what you finally answer.\n"
+    "- Put a first working version of the requested output on disk early (a simpler or slower approach is fine), "
+    "check it, then improve it: a run that ends while you are still deliberating leaves nothing to judge.\n"
     "- Before you finish, check the result the way the request will be checked: run the program, the tests or the exact "
     "commands the request names, and read the output files you were asked to produce. Fix what fails and check again.\n"
     "- Long commands (builds, installs, training) are fine: bound them with `timeout`, or start them in the background and "
@@ -11417,6 +11419,19 @@ async def _stream_agent_loop_body(
     except Exception:
         _local_ep = False
         _think_watchdog_on = False
+    # An unattended run can lose its whole time budget to one round of
+    # reasoning that never reaches a tool call (seen live: 45 minutes of
+    # thinking on a hard problem, no file written, on a shared LAN server the
+    # local-endpoint test does not cover). Watch it there too, on a budget
+    # sized for hard problems rather than for an interactive turn.
+    if unattended and _harness_enabled and not _think_watchdog_on:
+        try:
+            _unattended_budget = float(get_setting("agent_unattended_think_budget_seconds", 900) or 0)
+        except (TypeError, ValueError):
+            _unattended_budget = 900.0
+        if _unattended_budget > 0:
+            _think_budget_s = _unattended_budget
+            _think_watchdog_on = True
     _think_user_pinned = isinstance(gen_overrides, dict) and gen_overrides.get("think") is True
     _think_user_off = isinstance(gen_overrides, dict) and gen_overrides.get("think") is False
     _think_mode_info = think_mode if isinstance(think_mode, dict) else {}
@@ -11442,8 +11457,11 @@ async def _stream_agent_loop_body(
     except (TypeError, ValueError):
         _turn_budget_tokens = 0
     if _think_budget_s > 0 and _turn_budget_tokens > 0:
-        _think_budget_s = max(_think_budget_s, _turn_budget_tokens / 8.0 * 1.2)
-    if _think_user_pinned:
+        # Unattended runs go to served models that stream well above 8 tok/s
+        # even when shared; at 8 a "max" budget alone would allow 41 minutes.
+        _budget_rate = 12.0 if unattended else 8.0
+        _think_budget_s = max(_think_budget_s, _turn_budget_tokens / _budget_rate * 1.2)
+    if _think_user_pinned and not unattended:
         _think_watchdog_on = False  # the user pinned thinking on: respect it
     elif not _think_user_off and _harness_scope_active and _local_ep:
         # Local coding turns think by default (Cursor-style), with the
