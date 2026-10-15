@@ -12498,3 +12498,12 @@ sí mismos cada poco (y te pueden ver al girar); y edificios en pixel art fuera 
 casas) que ocupan su sitio. El editor los pinta y coloca, el recorrido los anima paso a paso (también en la página jugable) y al
 guardar se comprueba que todo se alcanza con esas reglas. Por MCP: `gym_map_generate` acepta `puzzle` (`ice`, `arrows`,
 `switches`) y `gym_save` acepta en el mapa las casillas `_ ^ v < > s d`, `turns` en cada entrenador y `props`.
+
+## Silver's Hoard: vestíbulo de salas, salas de amigos y espectadores — 15-10-2026
+
+Los combates en directo de Silver (plugin `silver`) ya no necesitan pasar cada enlace: tu vestíbulo (`/lobby?c=…` en el puerto
+de las salas) lista tus salas abiertas para unirse o mirar, Silver guarda las direcciones de los vestíbulos de tus amigos y junta
+sus salas en Combatir › En directo y en el Hoy del Hub (contrato de agenda), y cada sala tiene un enlace para el público que ve el
+combate sin jugar (por turnos la vista pública; en tiempo real su propia copia del simulador con las entradas de los dos). Por
+MCP: `pvp_lobby`, `pvp_lobby_new_code`, `pvp_friends`, `pvp_friend_add`, `pvp_friend_remove`; `pvp_open` acepta
+`listed` y `pvp_get` devuelve `watch_links` y `spectators`.
