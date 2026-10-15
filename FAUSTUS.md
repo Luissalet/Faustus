@@ -11993,6 +11993,28 @@ ortofoto), Toledo (6.917 edificios, 15.584 árboles, 3 puentes con arcos), Peñ�
 Europa (roca, nieve, bosque) generados con todas las partes cerradas; formulario y visor revisados en Chrome; maqueta de
 Cáceres creada por MCP.
 
+## Gulliver's Hoard: revisión de calidad — 15-10-2026 (mañana)
+
+Segunda sesión sobre Gulliver, midiendo los 3MF generados (vértices, aristas, caras) y mirando el visor. Commits `4fd451b`,
+`1ddd7e5` y `df64eff` del repo de Gulliver (sin push):
+
+- El 3MF escribía los vértices con 4 decimales y juntaba vértices a décimas de micra: el laminador leía miles de triángulos
+  degenerados y aristas con cuatro caras (Badajoz: 10.868 en Edificios). Ahora 6 decimales (9 cifras si aun así se juntan);
+  Toledo regenerado: cero vértices repetidos, cero triángulos degenerados y cero aristas con más de dos caras en las 8 partes.
+- El agua de los ríos se cortaba en trozos de 300 m con un nivel plano cada uno: escalones rectos de orilla a orilla (se
+  veían como líneas oscuras en el Tajo y el Guadiana). Ahora el nivel es una superficie continua por masa de agua (el suelo
+  más bajo a 150 m, suavizado a lo largo del agua y siempre por debajo de las orillas); lagos y estanques siguen planos y
+  los puentes toman el nivel de esa superficie (Toledo pasa de 3 a 5 puentes con arcos).
+- La miniatura de montaña pintaba roca y nieve opacas encima del sombreado: ahora el sombreado multiplica todas las capas
+  y Picos de Europa muestra su relieve en la biblioteca.
+- Con «todo el campo en verde» (preajuste Paisaje) se dibujan todas las sendas, también sobre la roca y la nieve (Picos de
+  Europa: 525 sendas).
+- La Badajoz guardada tenía 2 aristas abiertas porque era de un código anterior; regenerada, cerrada. Peñíscola estaba en
+  2×1 piezas de 154×308 mm que no caben en la cama de 256 mm: pasada a 2×2.
+
+Verificado en el PC: 57 pruebas en Windows y 4 del panel; las cinco maquetas regeneradas por la ruta MCP de Gulliver
+(`/api/agent/call`) con todas las partes y piezas cerradas; visor y biblioteca revisados en Chrome.
+
 ## Archivos que entrega una herramienta: descarga en el chat — 15-10-2026
 
 Una app de la familia puede terminar el resultado de una herramienta con `"deliverables": [{"path": ..., "name": ...}]`:
