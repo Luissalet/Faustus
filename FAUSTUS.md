@@ -11966,6 +11966,26 @@ Verificado en el PC: 47 pruebas en Windows, Toledo (IGN 5 m, 678 edificios, Tajo
 marco, 2 piezas con pines) generadas desde la interfaz y por MCP, mallas cerradas en todas las partes y piezas, archivo en
 Vulcan por la regla del Hub, y el panel de Faustus contestando con las herramientas de Gulliver.
 
+## Gulliver's Hoard al detalle — 15-10-2026 (madrugada)
+
+Luis pidió llegar al nivel de las maquetas comerciales de ciudades y montañas «e incluso más». Commit `d0dfed2` del repo de
+Gulliver (sin push):
+
+- Calles, caminos y curvas de nivel cortados por su contorno real (prisma del contorno menos una copia del terreno bajada) y
+  costa trazada con marching squares: se acabaron los bordes en escalera. Calles a 0,2 mm, cuñas entre calles y isletas
+  minúsculas cerradas.
+- Edificios del Catastro en España (WFS INSPIRE, cada parte con su huella y sus plantas) con las partes 3D, tejados y
+  monumentos de OpenStreetMap encima; tejados a dos y cuatro aguas, mansarda, a un agua, pirámides, conos, cúpulas.
+- Árboles 3D detectados en la ortofoto PNOA (índice de verde y picos de la distancia al borde de la copa), más los de OSM.
+- Puentes con pilas y arcos, vías con balasto en su color, caminos recortados del verde, estanques y fuentes.
+- Montaña: nieve, glaciares, roca por pendiente y por mapa, campo verde y la exageración vertical limitada.
+- Cada generación corre en su propio proceso (la app y las tools siguen respondiendo).
+
+Verificado en el PC: 51 pruebas en Windows y 4 del panel; Badajoz (13.273 edificios del Catastro, 8.688 árboles de la
+ortofoto), Toledo (6.917 edificios, 15.584 árboles, 3 puentes con arcos), Peñíscola (costa lisa, 2 piezas) y Picos de
+Europa (roca, nieve, bosque) generados con todas las partes cerradas; formulario y visor revisados en Chrome; maqueta de
+Cáceres creada por MCP.
+
 ## Archivos que entrega una herramienta: descarga en el chat — 15-10-2026
 
 Una app de la familia puede terminar el resultado de una herramienta con `"deliverables": [{"path": ..., "name": ...}]`:
