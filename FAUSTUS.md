@@ -11990,6 +11990,8 @@ compartido; el Hub la descubre y la arranca). Simulador de combates sobre el mot
   gimnasio o entrenador (victoria, comprobado, combate más lejano, menos turnos, más PS); una página exportada como «Reto de
   la semana» juega todos los combates con la semilla y la suerte de la IA de esa semana, iguales para todos, y la
   importación lo comprueba (tools leaderboard, leaderboard_remove; export weekly).
+- Frontera de Pokémon Unbound (romhack) en Personajes: sus 14 entrenadores especiales con 67 grupos de sets (816), cada
+  uno con la habilidad que Unbound da a esa especie, en combates libres de 8.ª generación (scripts/build_unbound.mjs).
 - 82 herramientas.
 
 Verificado en el PC: 47 pruebas del motor y 29 de la app en Windows, liga de Johto instalada y combate IA contra IA por el
