@@ -535,3 +535,16 @@ def test_unattended_prompt_drops_whole_sections_only():
     assert "charts" not in msgs[0]["content"] and "screenshots" not in msgs[0]["content"]
     assert "## Base rules\n- keep" in msgs[0]["content"] and "## File rules\n- keep too" in msgs[0]["content"]
     assert msgs[1]["content"].startswith("## Answer quality")
+
+def test_unattended_rule_lines_drop_only_unusable_instructions():
+    from src.agent_loop import _strip_prompt_rule_lines
+    body = ("## Base rules\n- Keep answers concise.\n"
+            "- If ambiguous, call ask_user with the question.\n"
+            "8. Use a ```chart``` block for comparisons.\n"
+            "- Change repo files with `apply_patch`. Do not use `create_document` for repo files.\n"
+            "Plain prose mentioning ask_user stays.\n")
+    msgs = [{"role": "system", "content": body, "_agent_injected": "prompt"}]
+    _strip_prompt_rule_lines(msgs)
+    out = msgs[0]["content"]
+    assert "Keep answers concise" in out and "apply_patch" in out and "Plain prose" in out
+    assert "call ask_user" not in out and "```chart```" not in out

@@ -5352,6 +5352,34 @@ def _unattended_dropped_sections() -> tuple:
     return tuple(drop)
 
 
+#: Rule lines that only apply when a person reads the reply in Studio, or that
+#: point at tools an unattended turn is never given (it has no ask_user, no
+#: desktop, no board, git or memory tools there). Left in, they are
+#: instructions the model cannot follow — "call ask_user with the specific
+#: question" in a run that cannot ask.
+_UNATTENDED_DROP_LINE_MARKERS = (
+    "ask_user", "```chart```", "```choices```", "```html```", "desktop_screenshot",
+    "board_*", "git_*", "manage_memory", "/workspace pick", "use `create_document` only when",
+    "cost or measurement incomplete", "A tool catalogue can expose",
+    "For casual messages like",
+)
+_RULE_LINE_RE = re.compile(r"^(?:- |\d+\. )")
+
+
+def _strip_prompt_rule_lines(messages: List[Dict], markers=_UNATTENDED_DROP_LINE_MARKERS) -> List[Dict]:
+    """Drop single rule lines (``- …`` / ``N. …``) that mention any marker."""
+    for message in messages:
+        if message.get("_agent_injected") not in {"prompt", "merged_prompt"}:
+            continue
+        content = message.get("content")
+        if not isinstance(content, str):
+            continue
+        kept = [line for line in content.split("\n")
+                if not (_RULE_LINE_RE.match(line) and any(m in line for m in markers))]
+        message["content"] = "\n".join(kept)
+    return messages
+
+
 def _strip_prompt_sections(messages: List[Dict], headers) -> List[Dict]:
     """Remove whole ``## `` sections, by exact heading, from the generated prompt."""
     for message in messages:
@@ -10834,6 +10862,7 @@ async def _stream_agent_loop_body(
             _prepend_agent_directive(route_messages, build_active_plan_note(approved_plan))
         if unattended and not plan_mode and not guide_only:
             _strip_prompt_sections(route_messages, _unattended_dropped_sections())
+            _strip_prompt_rule_lines(route_messages)
             _prepend_agent_directive(route_messages, UNATTENDED_DIRECTIVE)
         if guide_only:
             _prepend_agent_directive(route_messages, GUIDE_ONLY_DIRECTIVE)
