@@ -1111,7 +1111,7 @@ ALWAYS_APPROVE_TOOLS = frozenset(
     {"desktop_click", "desktop_type", "desktop_key", "desktop_scroll", "desktop_focus_window"}
 )
 DESKTOP_CONTROL_MODES = ("ask_each", "ask_task", "off")
-DEFAULT_DESKTOP_CONTROL_MODE = "ask_each"
+DEFAULT_DESKTOP_CONTROL_MODE = "ask_task"
 
 
 def desktop_control_mode() -> str:

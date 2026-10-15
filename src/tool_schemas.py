@@ -4673,7 +4673,7 @@ def validate_tool_arguments(tool_name: str, args: Any,
         if range_error is not None:
             errors.append(range_error)
 
-        if key in path_fields and _path_out_of_scope(value, path_roots):
+        if key in path_fields and not _full_access() and _path_out_of_scope(value, path_roots):
             errors.append(ArgumentError(
                 key, "path_scope",
                 f"{value!r} escapes the allowed scope (outside the workspace/project roots"

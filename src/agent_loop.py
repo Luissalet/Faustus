@@ -539,7 +539,7 @@ _AGENT_RULES = """\
 - A tool catalogue can expose only part of a service. Absence from that catalogue, or a historical note, does not prove that the current API lacks a feature; report the observed scope and leave unverified capabilities unknown.
 - Calls that do not depend on each other (reading several files, editing different files, independent searches) go in the SAME round: they run side by side, and one round is cheaper than several.
 - Finish only when the user's concrete request is actually done, or clearly state that you are blocked.
-- A NEW SYSTEM IS DECIDED WITH THE USER FIRST. "Implement X" / "add auth" / "make me a system for Y" with at least two reasonable designs (where the data lives, which framework or language, where it goes, how far the scope reaches) that neither the request nor the code settles: your FIRST action is `ask_user` with 2-4 options (recommended first, one line each) and you write NOTHING until they answer. A small edit has one obvious reading - just do it; a new system has several - ask, once, and only about what you cannot decide yourself.
+- DO THE WORK, DO NOT STOP TO ASK. "Implement X" / "add auth" / "make me a system for Y" with several reasonable designs (where the data lives, which framework or language, where it goes, how far the scope reaches) that neither the request nor the code settles: pick the design you would recommend, build it, and say in one line which one you picked so the user can redirect. `ask_user` is only for what you cannot find out or infer yourself (a credential, a fact only the user knows).
 - User identity facts/preferences ("my name is X", "call me X", "I live in X") use `manage_memory`, not contacts.
 - For git, use the git_* tools, not bash: they respect the user's repository policy and show up in the Source control panel.
 - When the user talks about branches, commits, pushes or "the repo" without naming one, use git_* with `repo` (name) or no path at all — they resolve to the project's repository; only ask which one if there are several.
@@ -566,7 +566,7 @@ _API_AGENT_RULES = """\
 - A tool catalogue can expose only part of a service. Absence from that catalogue, or a historical note, does not prove that the current API lacks a feature; report the observed scope and leave unverified capabilities unknown.
 - Calls that do not depend on each other (reading several files, editing different files, independent searches) go in the SAME round: they run side by side, and one round is cheaper than several.
 - Finish only when the user's concrete request is actually done, or clearly state that you are blocked.
-- A NEW SYSTEM IS DECIDED WITH THE USER FIRST. "Implement X" / "add auth" / "make me a system for Y" with at least two reasonable designs (where the data lives, which framework or language, where it goes, how far the scope reaches) that neither the request nor the code settles: your FIRST action is `ask_user` with 2-4 options (recommended first, one line each) and you write NOTHING until they answer. A small edit has one obvious reading - just do it; a new system has several - ask, once, and only about what you cannot decide yourself.
+- DO THE WORK, DO NOT STOP TO ASK. "Implement X" / "add auth" / "make me a system for Y" with several reasonable designs (where the data lives, which framework or language, where it goes, how far the scope reaches) that neither the request nor the code settles: pick the design you would recommend, build it, and say in one line which one you picked so the user can redirect. `ask_user` is only for what you cannot find out or infer yourself (a credential, a fact only the user knows).
 - User identity facts/preferences ("my name is X", "call me X", "I live in X") use `manage_memory`, not contacts.
 - For git, use the git_* tools, not bash: they respect the user's repository policy and show up in the Source control panel.
 - When the user talks about branches, commits, pushes or "the repo" without naming one, use git_* with `repo` (name) or no path at all — they resolve to the project's repository; only ask which one if there are several.
@@ -1328,7 +1328,7 @@ If the user asks for a reminder/alarm before the event, pass `reminder_minutes` 
     "search_chats": "- ```search_chats``` — Search past session transcripts for direct conversation evidence. Use when user asks 'did we discuss X?', 'find the conversation about Y', or when prior chat context is more appropriate than persistent memory.",
     "pipeline": "- ```pipeline``` — Run a multi-step AI pipeline. Args (JSON) with ordered steps, each specifying a model and prompt. Use for complex workflows.",
     "ui_control": "- ```ui_control``` — Control the UI: toggle tools on/off, OPEN PANELS, open email reply drafts, switch models, change themes. Commands: `toggle <name> on/off` (names: bash/shell, web/search, research, incognito, document_editor/documents), `open_panel <name>` (panels: documents, gallery, email, sessions, notes, memories/brain, skills, settings, cookbook), `open_email_reply <uid> <folder> <reply|reply-all|ai-reply> <body text>` (opens an email compose document pre-filled with body, DOES NOT send; use this for normal “write/draft a reply saying X” requests), `set_mode agent/chat`, `switch_model <name>`, `set_theme <preset>`, `create_theme <name> <bg> <fg> <panel> <border> <accent>` (optional key=val for advanced colors AND background effects: bgPattern=<none|dots|synapse|rain|constellations|perlin-flow|petals|sparkles|embers>, bgEffectColor=#RRGGBB, bgEffectIntensity=<num>, bgEffectSize=<num>, frosted=true|false). \"open documents\" / \"open library\" / \"show gallery\" / \"open inbox\" / \"open notes\" / \"open cookbook\" all map to `open_panel <name>`. Built-in theme presets: dark, light, midnight, paper, cyberpunk, retrowave, forest, ocean, ume, copper, terminal, organs, lavender, graphite, terracotta, cute. For any other vibe/name, use create_theme.",
-    "ask_user": "- ```ask_user``` — Ask the user to DECIDE when the task is ambiguous and the answer changes what you build next: which approach, which library or storage, which files or behaviour they meant, which scope (a request like \"add auth\" or \"implement X\" with several sensible designs is exactly this). Args (JSON): {\"question\": \"one clear question\", \"options\": [{\"label\": \"short choice\", \"description\": \"one line: what happens if they pick it\"}, ...], \"multi\": false?, \"allow_free_text\": true?}. 2-4 options, the recommended one FIRST with \"(recommended)\" in its label; set \"multi\": true for a checklist when several may apply. The user gets one button per option (each carries a stable `id` in the response so their pick is unambiguous), a checklist when multi, and — unless you pass \"allow_free_text\": false — always a free-text line to answer in their own words, so never add an \"Other\" option yourself. The question itself gets a stable `question_id`. Calling this ENDS your turn and their answer comes back as your next message. Do not ask what has an obvious default or what you can check yourself; ask once, with all the decisions you need in that one question when they are related.",
+    "ask_user": "- ```ask_user``` — Ask the user for something you cannot find out or infer yourself (a credential, a fact only they know). For a choice between reasonable designs, pick the one you would recommend and build it instead of asking; say which one you picked. Args (JSON): {\"question\": \"one clear question\", \"options\": [{\"label\": \"short choice\", \"description\": \"one line: what happens if they pick it\"}, ...], \"multi\": false?, \"allow_free_text\": true?}. 2-4 options, the recommended one FIRST with \"(recommended)\" in its label; set \"multi\": true for a checklist when several may apply. The user gets one button per option (each carries a stable `id` in the response so their pick is unambiguous), a checklist when multi, and — unless you pass \"allow_free_text\": false — always a free-text line to answer in their own words, so never add an \"Other\" option yourself. The question itself gets a stable `question_id`. Calling this ENDS your turn and their answer comes back as your next message. Do not ask what has an obvious default or what you can check yourself; ask once, with all the decisions you need in that one question when they are related.",
     "lookup_tools": "- ```lookup_tools``` — Search the tool catalog and load schemas on demand. Use when a needed tool is not in this turn's native schema list, or before saying a tool is unavailable. Args (JSON): {\"query\": \"send email\"} and/or {\"names\": [\"git_commit\"]}; {} lists the tool categories and {\"category\": \"email\"} lists one. Optional `detail`: `catalog` (one-liners) or `schema` (full JSON). Returned tools use the conversation's tool-call format; native function schemas load on the next round.",
     "update_plan": "- ```update_plan``` — While executing an approved plan, write the plan back: tick steps done or revise them. Args (JSON): {\"plan\": \"- [x] done step\\n- [ ] next step\"} — or, instead of markdown, {\"steps\": [{\"title\": \"...\", \"status\": \"pending|done|blocked\"}, ...]}. Always pass the COMPLETE checklist, not a diff; there is no length limit. Call it after finishing each step (mark it `- [x]`) and whenever the user asks to change the plan. The user's docked plan window updates live. Does nothing if there's no active plan.",
     # Desktop control (FAUSTUS): the model sees the screen and drives it.
@@ -2860,7 +2860,7 @@ def _workspace_coding_rules(workspace: Optional[str]) -> str:
         "- This mode is for coding, debugging, shell, file, build, benchmark, and repo tasks. Do not use personal-assistant tools like email, calendar, notes, memory, documents, gallery, or UI panels for workspace work.\n"
         "- Work from the real filesystem and command output. Inspect before editing.\n"
         "- Start by orienting with `get_workspace` plus `grep`/`glob`/`ls`/`read_file`; prefer targeted reads over dumping whole files. Several searches beat one guess from memory.\n"
-        "- A new system is decided with the user first: when the request (\"implement X\", \"add Y\") admits several reasonable designs (storage, framework or language, location, scope) and neither the request nor the code settles it, call `ask_user` with 2-4 options (recommended first, one line each) BEFORE writing any file. Small edits have one obvious reading: just do them.\n"
+        "- Do the work, do not stop to ask: when the request (\"implement X\", \"add Y\") admits several reasonable designs (storage, framework or language, location, scope) and neither the request nor the code settles it, pick the one you would recommend, build it, and say in one line which you picked so the user can redirect. Use `ask_user` only for something you cannot find out or infer (a credential, a fact only the user knows).\n"
         "- For multi-step coding work, call `todowrite` and keep the task list current.\n"
         "- Before writing new code, check whether it needs to exist at all and whether the codebase, the standard library or an installed dependency already does it; the smallest change that does the job wins.\n"
         "- Change repo files with `apply_patch` for related source edits, `edit_file` for one exact replacement, or `write_file` for new/full files. Do not use `create_document`, shell redirects, heredocs, or `sed -i` to modify repo files.\n"
@@ -7882,6 +7882,22 @@ def _empty_response_fallback(
     return _error_msg, f'data: {json.dumps({"delta": _error_msg})}\n\n'
 
 
+#: An unattended run (`faustus_run --unattended`, a scheduled job, CI, a task
+#: container): nobody reads questions or approves anything until it ends, so
+#: a question is a stopped run. The rules above that say "ask the user first"
+#: do not apply; this one does.
+UNATTENDED_DIRECTIVE = (
+    "## UNATTENDED RUN - OVERRIDES ANY RULE ABOUT ASKING THE USER\n"
+    "Nobody will read a question or approve anything until this run ends. Never stop to ask: pick the most reasonable "
+    "reading of the request, follow it through to the end, and state the assumptions you made in your final answer.\n"
+    "- Work in the workspace you were given; the shell, package managers, git (clone included) and the network are yours to use.\n"
+    "- Do not stop at a plan or at partial progress: the run is judged only on the final state of the files and on what you finally answer.\n"
+    "- Before you finish, check the result the way the request will be checked: run the program, the tests or the exact "
+    "commands the request names, and read the output files you were asked to produce. Fix what fails and check again.\n"
+    "- Long commands (builds, installs, training) are fine: bound them with `timeout`, or start them in the background and "
+    "poll, instead of giving up on them.\n"
+)
+
 PLAN_MODE_DIRECTIVE = (
     "## PLAN MODE — OVERRIDES EVERYTHING ELSE BELOW\n"
     "You are in PLAN MODE. Your ONLY job this turn is to PROPOSE a plan. You have "
@@ -8027,6 +8043,7 @@ async def _stream_agent_loop_body(
     plan_mode: bool = False,
     approved_plan: Optional[str] = None,
     tool_policy: Optional[ToolPolicy] = None,
+    unattended: bool = False,
     workspace: Optional[str] = None,
     workspace_roots: Optional[List[str]] = None,
     forced_tools: Optional[Set[str]] = None,
@@ -10758,6 +10775,8 @@ async def _stream_agent_loop_body(
             _prepend_agent_directive(route_messages, PLAN_MODE_DIRECTIVE)
         elif approved_plan and approved_plan.strip() and not guide_only:
             _prepend_agent_directive(route_messages, build_active_plan_note(approved_plan))
+        if unattended and not plan_mode and not guide_only:
+            _prepend_agent_directive(route_messages, UNATTENDED_DIRECTIVE)
         if guide_only:
             _prepend_agent_directive(route_messages, GUIDE_ONLY_DIRECTIVE)
             if _tool_documentation_context:
@@ -11576,6 +11595,16 @@ async def _stream_agent_loop_body(
         # the exact call that the server will seal for user approval.  Schema
         # visibility is not authority: both the loop and dispatcher still gate
         # execution, and only a one-use server record can cross that boundary.
+        # A tool this host cannot run at all (PowerShell in a Linux container,
+        # the desktop tools without a display) is never offered: the call
+        # could only fail and cost a round (src/host_tools.py).
+        from src.host_tools import unavailable_tools as _host_off
+        _off = _host_off()
+        if _off:
+            schemas = [
+                schema for schema in schemas
+                if (schema.get("function", {}) or {}).get("name", schema.get("name")) not in _off
+            ]
         return schemas
 
     def _tool_schemas_for_route(route_state):

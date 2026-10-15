@@ -1437,6 +1437,20 @@ def _mark_host_dead(url: str) -> bool:
             return True
         return False
 
+def _retry_through_cooldown(should_retry: bool, wait: float, cooled: bool,
+                            has_own_fallback: bool) -> Tuple[bool, float]:
+    """A connect failure that cools the host used to end the stream at once.
+    That is right when the caller has other candidates to move on to
+    (`availability_only_transport`); with a single endpoint it ended the
+    whole turn on one slow TCP connect to a busy server. Then the attempt
+    waits out the cooldown and tries again, within the same retry budget."""
+    if not cooled:
+        return should_retry, wait
+    if has_own_fallback:
+        return False, wait
+    return should_retry, max(wait, DEAD_HOST_COOLDOWN + 1.0)
+
+
 def _clear_host_dead(url: str) -> None:
     key = _host_key(url)
     with _host_health_lock:
@@ -6765,7 +6779,8 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                 exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
                 delta_emitted=_delta_emitted,
             )
-            _should_retry = _should_retry and not _cooled
+            _should_retry, _wait = _retry_through_cooldown(
+                _should_retry, _wait, _cooled, availability_only_transport)
             _tail = f" — host cooled for {DEAD_HOST_COOLDOWN:.0f}s" if _cooled else " — transient, will retry"
             logger.warning(f"ChatGPT Subscription stream connect to {target_url} failed: {e}{_tail}")
             async for chunk in _stream_retry_or_fail(
@@ -7065,7 +7080,8 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                 exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
                 delta_emitted=_delta_emitted,
             )
-            _should_retry = _should_retry and not _cooled
+            _should_retry, _wait = _retry_through_cooldown(
+                _should_retry, _wait, _cooled, availability_only_transport)
             _tail = f" — host cooled for {DEAD_HOST_COOLDOWN:.0f}s" if _cooled else " — transient, will retry"
             logger.warning(f"Ollama stream connect to {target_url} failed: {e}{_tail}")
             async for chunk in _stream_retry_or_fail(
@@ -7422,7 +7438,8 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                 exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
                 delta_emitted=_delta_emitted,
             )
-            _should_retry = _should_retry and not _cooled
+            _should_retry, _wait = _retry_through_cooldown(
+                _should_retry, _wait, _cooled, availability_only_transport)
             _tail = f" — host cooled for {DEAD_HOST_COOLDOWN:.0f}s" if _cooled else " — transient, will retry"
             logger.warning(f"Anthropic stream connect to {target_url} failed: {e}{_tail}")
             async for chunk in _stream_retry_or_fail(
@@ -7990,7 +8007,8 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
             exc=e, attempt=_attempt, max_retries=max_retries, budget=_budget,
             delta_emitted=_delta_emitted,
         )
-        _should_retry = _should_retry and not _cooled
+        _should_retry, _wait = _retry_through_cooldown(
+            _should_retry, _wait, _cooled, availability_only_transport)
         if not _should_retry and not _delta_emitted and not _engine_wait_used:
             from src import engine_swap
             if engine_swap.recoverable_url(target_url):

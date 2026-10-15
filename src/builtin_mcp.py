@@ -790,7 +790,16 @@ async def register_builtin_servers(mcp_manager):
         except BaseException as e:
             logger.warning(f"Built-in MCP server {name} error: {type(e).__name__}: {e}")
 
+    # FAUSTUS_BUILTIN_MCP narrows the built-in servers to a comma list of ids
+    # ("none" = no built-in server, browser included). A headless agent in a
+    # container starts only what the work needs: every server is a process
+    # with its own interpreter and ~60 MB, and a small task container has
+    # 2 GB in all.
+    _only = os.environ.get("FAUSTUS_BUILTIN_MCP", "").strip().lower()
+    _allowed = None if not _only else {s.strip() for s in _only.split(",") if s.strip() and s.strip() != "none"}
     for server_id, (script, name) in _BUILTIN_SERVERS.items():
+        if _allowed is not None and server_id not in _allowed:
+            continue
         script_path = os.path.join(base_dir, script)
         if not os.path.exists(script_path):
             logger.warning(f"Built-in MCP server script not found: {script_path}")
@@ -804,6 +813,8 @@ async def register_builtin_servers(mcp_manager):
     async def _start_npx_servers():
         await asyncio.sleep(3)  # let Python servers finish first
         for server_id, cfg in _BUILTIN_NPX_SERVERS.items():
+            if _allowed is not None and server_id not in _allowed:
+                continue
             if server_id == DEVTOOLS_SERVER_ID and not _truthy(_browser_settings().get("browser_devtools_mcp")):
                 # Off by default (settings.py DEFAULT_SETTINGS): unlike
                 # builtin_browser this one does not start until an admin
