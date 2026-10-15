@@ -12572,3 +12572,33 @@ desde la semilla, con cámara, velocidades y clasificación. Por MCP: `mass_pres
 - Tres herramientas nuevas en el plugin (`official_art_search`, `avatar_images`, `avatar_from_url`). Probado en una instancia
   privada con copia de los datos (subir, enlace, arte de Cintia y Lance, entrenador desde personaje, combate por turnos y en tiempo
   real) y después en la 5230 reiniciada desde el Hub (visor, diálogo, herramientas por la API del agente); pytest y motor en verde.
+
+
+## Borrado a través de enlaces y restauración — 16-10-2026
+
+Una limpieza de D: con Disk Hoard vació carpetas de C: porque algunas copias de trabajo de D: tenían junctions hacia ellas.
+Las junctions eran `node_modules`, Prospero y el motor AuK. El borrado definitivo entraba por ellas: en Windows, `os.walk` y
+`os.path.islink` no tratan una junction como enlace. Prospero se quedó sin repositorio, sin datos y sin AuK. Dieciocho apps
+se quedaron sin `node_modules` y Gutenberg sin `.venv`.
+
+- **Disk Hoard (c3841d2, c453e07):** el borrado definitivo recorre con `scandir` y quita como enlace cualquier entrada con
+  atributo de punto de reanálisis, sin entrar en ella; también un enlace pasado tal cual. La protección del agente tampoco entra
+  en enlaces. Los tests cubren una junction a una carpeta externa, árboles normales y profundos. La suite completa vuelve a pasar:
+  dos tests fallaban por importar el servidor antes de fijar la carpeta de datos de prueba.
+- **Hoard Link (8dd2200):** las copias de seguridad solo se saltan carpetas de caché (`cache`, `.cache`, `caches`,
+  `*_cache`, `*-cache`, `__pycache__`). Antes, `*cache*` excluía ficheros como `transformers/cache_utils.py` y un entorno
+  restaurado salía roto.
+- **Prospero (f71d993):** se clonó de nuevo de GitHub, con `e34c3a4` como último commit. No había trabajo posterior en ningún
+  chat ni agente, y los commits de los bundles viejos están en `main` con otro hash. Los datos se restauraron del backup del Hub
+  de las 4:00 del 15-10. Las cuatro renderizaciones finales de más de 512 MB que el backup no guarda se volvieron a renderizar
+  desde sus timelines, que no habían cambiado, con los mismos ids de recurso.
+- **AuK:** Prospero lee ahora `.env` al arrancar. El motor (`.venv` y repositorio AuK) está en `D:\LocalAI\engines\auk` y los
+  modelos en `D:\LocalAI\models\voice\auk` (Qwen2.5-Omni-3B y AuK-Flash, con el sha256 de Hugging Face), sin enlaces ni copias.
+  Retoma en vivo: «Hay 18 grados con sol.», 8,9 GiB de VRAM.
+- **Silver (0e73de6):** nuevo ajuste `neural_ai_cache` para la carpeta de pesos de la IA neuronal, en el panel, en
+  `settings_set` y en el estado. Apunta a `D:\LocalAI\engines\metamon\cache`, y la junction de `data/cache/neural` se ha
+  quitado. La IA arranca en CUDA sin descargar nada.
+- **Trabajo de las copias:** antes de borrar las copias de D: y las viejas de `tmp`/`.qa`, lo no commiteado y los commits que
+  faltaban quedaron como ramas `rescue/*` en el repo real de cada una (hilo 690 del Ágora).
+- **Reglas:** `AGENTS.md` y `CRITERIOS.md` prohíben los enlaces hacia las carpetas de Luis, también `node_modules`. Un
+  worktree vive mientras su tarea está abierta, y no se dejan clones, bundles ni copias de datos.
