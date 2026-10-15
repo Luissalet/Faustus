@@ -12489,3 +12489,12 @@ Además, el tiempo real de Silver tiene lugares de los juegos como suelo y plant
 Plateado, Cascada Meteoro, sala del campeón y castillo, con decorado y ambiente propios), público de Pokémon del lugar en los
 bordes que salta con los golpes grandes, y las frases de los entrenadores en bocadillos durante el combate. `arena_save` acepta
 los suelos `pyre`, `summit`, `meteor`, `champion` y `castle`.
+
+## Silver's Hoard: puzles y edificios en los mapas de gimnasio — 15-10-2026
+
+Los mapas de gimnasio de Silver (plugin `silver`) admiten los puzles de los gimnasios de los juegos: hielo que te desliza hasta que
+algo te para, baldosas con flecha que te llevan en su dirección e interruptores que abren las puertas; entrenadores que giran sobre
+sí mismos cada poco (y te pueden ver al girar); y edificios en pixel art fuera del gimnasio (centro, tienda, tres gimnasios, cuatro
+casas) que ocupan su sitio. El editor los pinta y coloca, el recorrido los anima paso a paso (también en la página jugable) y al
+guardar se comprueba que todo se alcanza con esas reglas. Por MCP: `gym_map_generate` acepta `puzzle` (`ice`, `arrows`,
+`switches`) y `gym_save` acepta en el mapa las casillas `_ ^ v < > s d`, `turns` en cada entrenador y `props`.
