@@ -45,9 +45,10 @@ STATUS_WAIT_S = 1.5
 
 def vision_ready_cached(owner: Optional[str], *, max_age: float = STATUS_MAX_AGE_S,
                         wait: float = STATUS_WAIT_S) -> Tuple[Optional[bool], str, str]:
-    """``vision_ready`` for a status panel: the vision router can take seconds (it asks every endpoint), so a fresh
-    answer is reused for ``max_age`` seconds and a slow check runs in the background. While it runs, after ``wait``
-    seconds, the answer is ``(None, "checking", "")``; the next call gets the result. ``ask`` never uses this."""
+    """``vision_ready`` for a status panel: the vision router can take seconds (it asks every endpoint), so an answer is
+    reused for ``max_age`` seconds and refreshed in the background after that, returning the last answer meanwhile.
+    Only the very first check waits, at most ``wait`` seconds; if it is still running the answer is
+    ``(None, "checking", "")`` and the next call gets the result. ``ask`` never uses this."""
     key = str(owner or "")
     now = time.monotonic()
     with _LOCK:
@@ -57,17 +58,22 @@ def vision_ready_cached(owner: Optional[str], *, max_age: float = STATUS_MAX_AGE
         worker = _PENDING.get(key)
         if worker is None or not worker.is_alive():
             def run() -> None:
-                result = vision_ready(owner)
+                try:
+                    result = vision_ready(owner)
+                except Exception as exc:  # noqa: BLE001
+                    result = (False, f"the vision check failed ({str(exc)[:120]})", "")
                 with _LOCK:
                     _CACHE[key] = (time.monotonic(), result)
                     _PENDING.pop(key, None)
             worker = threading.Thread(target=run, name="visual-index-vision-check", daemon=True)
             _PENDING[key] = worker
             worker.start()
+        if hit:                                   # stale: refreshing behind, answer with what we know
+            return hit[1]
     worker.join(wait)
     with _LOCK:
         hit = _CACHE.get(key)
-        if hit and time.monotonic() - hit[0] <= max_age + wait + 1:
+        if hit:
             return hit[1]
     return None, "checking", ""
 

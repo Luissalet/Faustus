@@ -65,6 +65,16 @@ export function VisualIndexScreen() {
     };
   }, [current, collections]);
 
+  // The server answers "checking" while it asks the vision router in the background: look again once it has had time.
+  const visionChecking = status?.visionChecking === true;
+  useEffect(() => {
+    if (!visionChecking) return;
+    const timer = window.setTimeout(() => {
+      api.loadStatus().then(setStatus).catch(() => undefined);
+    }, 10000);
+    return () => window.clearTimeout(timer);
+  }, [visionChecking]);
+
   const ready = status ? api.readiness(status) : { ready: false, reason: '' };
 
   const onAdd = async () => {

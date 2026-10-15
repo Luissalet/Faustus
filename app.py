@@ -261,6 +261,8 @@ _TIMEOUT_EXEMPT_PREFIXES = (
     "/api/blender/run",     # a headless Blender render; its own blender_timeout_seconds (300 s by default)
     "/api/workflows/runs",  # advancing a run executes its nodes, model nodes included, in the request
     "/api/engines/heal",    # restarting a stuck local model server waits for the model to load again
+    "/api/visual-index/add",    # renders and embeds every strip; a cold embedder loads its model first (seen live: 504 at 45s)
+    "/api/visual-index/tiles",  # reading a strip asks the vision model, which may have to load
 )
 # Session-scoped long calls: `/api/session/{id}/condense` is one LLM pass over a
 # hand-picked range on the session's own model — a cold local 27B needs minutes

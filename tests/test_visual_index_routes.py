@@ -153,3 +153,22 @@ def test_a_slow_vision_router_does_not_hold_the_status(monkeypatch):
     assert first == (None, "checking", "") and _time.monotonic() - t0 < 1.5
     _time.sleep(3.2)
     assert vision.vision_ready_cached("u", wait=0.2) == (True, "", "qwen-vl")
+
+
+def test_a_stale_vision_answer_is_returned_while_it_refreshes(monkeypatch):
+    import time as _time
+    from src.visual_index import vision
+
+    calls = []
+
+    def slow(owner):
+        calls.append(owner)
+        _time.sleep(0.5)
+        return False, "no vision model", ""
+    monkeypatch.setattr(vision, "vision_ready", slow)
+    assert vision.vision_ready_cached("u", wait=2) == (False, "no vision model", "")
+    t0 = _time.monotonic()
+    assert vision.vision_ready_cached("u", max_age=0, wait=2) == (False, "no vision model", "")   # stale, no wait
+    assert _time.monotonic() - t0 < 0.3
+    _time.sleep(0.8)
+    assert len(calls) == 2
