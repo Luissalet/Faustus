@@ -1,5 +1,5 @@
 import { chooseStudioRoute, configuredDefaultRoute } from '../adapters/model-selection';
-import { CheckSquare, FileText, FolderKanban, GitBranch, MessageSquare, PanelRight, Waypoints, X } from 'lucide-react';
+import { CheckSquare, FileText, FolderKanban, GitBranch, MessageSquare, PanelRight, Sparkles, Waypoints, X } from 'lucide-react';
 import {withImageReferences} from '../lib/image-references';
 import {MessageNavigator} from './studio/MessageNavigator';
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
@@ -3840,7 +3840,8 @@ export function StudioScreen() {
           behaviorModeId={activeModeId}
           onPickBehaviorMode={pickBehaviorMode}
           chatModeChip={<ChatModeChip mode={activeChatMode} onPick={(next) => { void pickChatMode(next); }} />}
-          presetChip={<><PresetPicker current={preset} onPick={(p) => setPreset(p ? { id: p.id, name: p.name } : null)} onNotice={say} openSignal={presetSignal} />{!knobs.incognito&&<ChatTeam sessionId={sessionId} routes={routes} coordinator={route} busy={busy} ensureSession={()=>ensureSession(t('Conversation'))} onEnabled={setTeamEnabled}/>}</>}
+          activePresetChip={<PresetPicker current={preset} onPick={(p) => setPreset(p ? { id: p.id, name: p.name } : null)} onNotice={say} openSignal={presetSignal} hideWhenEmpty />}
+          presetChip={<><button type="button" className="fs-studio__chip" aria-pressed={Boolean(preset)} title={preset ? `Preset: ${preset.name}` : t('Preset or persona (system prompt)')} onClick={() => setPresetSignal((n) => n + 1)} data-testid="studio-preset-menu"><Sparkles size={13} aria-hidden="true" /> <span>{preset ? preset.name : t('Preset')}</span></button>{!knobs.incognito&&<ChatTeam sessionId={sessionId} routes={routes} coordinator={route} busy={busy} ensureSession={()=>ensureSession(t('Conversation'))} onEnabled={setTeamEnabled}/>}</>}
           lastSent={lastSent}
           extraControls={<><LocalVideo/><StyleLab key={'style:'+sessionId} model={route?route.model+'@'+route.endpointName:''} onSaved={saved=>setPreset({id:saved.id,name:saved.name})}/>{project&&!knobs.incognito?<ProjectVisualReferences key={sessionId||project.id} projectId={project.id} onUse={async(file,referenceRole)=>{
             const sid=sessionId;

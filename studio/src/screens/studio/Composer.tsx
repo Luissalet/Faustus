@@ -206,8 +206,11 @@ export interface ComposerProps {
   onPickBehaviorMode: (id: string) => void;
   /** The Lean/Normal chat-mode chip (always visible beside the behaviour mode), rendered by the screen. */
   chatModeChip?: ReactNode;
-  /** The preset chip (picker + clear), rendered by the screen. */
+  /** The preset entry inside the + menu, rendered by the screen. */
   presetChip?: ReactNode;
+  /** The ACTIVE preset, always visible in the bar (it rewrites the system
+   *  prompt of every chat, so it never hides behind +). */
+  activePresetChip?: ReactNode;
   extraControls?: ReactNode;
   /** ↑ on an empty composer brings back the last thing you sent. */
   lastSent?: string;
@@ -346,6 +349,7 @@ export function Composer({
   onPickBehaviorMode,
   chatModeChip,
   presetChip,
+  activePresetChip,
   extraControls,
   lastSent,
   textareaRef,
@@ -1084,6 +1088,7 @@ export function Composer({
         </div>
           </div>
         </Popover>
+        {activePresetChip}
         <div className="fs-studio__seg" role="radiogroup" aria-label={t('Mode')}>
           <span className="fs-studio__seg-thumb" data-mode={knobs.mode} aria-hidden="true" />
           <button

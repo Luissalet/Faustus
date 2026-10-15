@@ -12512,3 +12512,18 @@ MCP: `pvp_lobby`, `pvp_lobby_new_code`, `pvp_friends`, `pvp_friend_add`, `pvp_fr
 Daedalus genera modelos 3D desde PNG, JPG o WebP con TRELLIS.2 a 512/1024, repartiendo sus capas entre las cuatro NVIDIA locales y coordinando la VRAM con Hoard Hub. Su motor incorporado y entorno son propios. Conserva la geometría completa y el aspecto PBR, los trabajos, sus parámetros y cada versión. El visor permite materiales o geometría, comparación con cámaras enlazadas y descarga GLB/STL/PLY con tamaño explícito: GLB en metros, STL/PLY en milímetros. La API y las 11 herramientas MCP usan la misma cola, cancelación e historial. El copilot utiliza Faustus y las Sparks globales.
 
 El refinado aprendido crea otra versión y permite transferir el aspecto del original. En el ejemplo mecánico probado, DetailGen3D perdió detalles frente a TRELLIS.2, incluso con 8192 latentes; no se activa automáticamente ni se presenta como mejora garantizada. Las mallas abiertas requieren preparación para impresión; no hay reparación, retopología ni rigging automáticos. Generación y refinado nativos por MCP ejecutaron capas en las cuatro GPU, con pruebas de persistencia, carreras, unidades y navegador. Detalle, licencias y evidencia en el README de Daedalus y las tareas Ágora619/622. Dirección local: http://127.0.0.1:8830.
+
+## Studio: el preset activo siempre a la vista — 15-10-2026
+
+Un preset (`code_analyze`, `brainstorm`, `reason`, las plantillas propias o el que guarda «Aprender un estilo») cambia el
+system prompt de **todos** los chats nuevos: se guarda de forma global en `faustus_studio_preset` y viaja como `preset_id` en
+`/api/chat_stream`. Su chip vivía dentro del menú «+» del compositor, así que un preset olvidado era invisible: el 15-10 un
+chat normal contestó «Input is not code. Please provide code to analyze.» porque «Code Analyze» seguía puesto desde el día
+anterior, y GLM gastó la mayor parte de su razonamiento decidiendo entre el preset y la petición.
+
+Ahora el preset activo sale como chip en la barra del compositor, junto a «+», con su × para quitarlo; sin preset no ocupa
+sitio. El menú «+» conserva la entrada «Preset» y `/preset` sigue abriendo la paleta. Hay una sola paleta, la del chip de
+la barra (`PresetPicker` con `hideWhenEmpty`). Solo se abre con una señal nueva, nunca al volver a montarse.
+Verificado con Playwright contra el 7000: chip visible con «Code Analyze», la × lo vacía, «+ › Preset» abre la paleta,
+elegir «Reason» lo pone en la barra y sobrevive a recargar sin abrir la paleta sola; `tsc`, build y
+`tests/test_studio_guards.py` + `tests/test_studio_commands_js.py` en verde.
