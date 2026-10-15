@@ -98,6 +98,9 @@ class Faustus(BaseInstalledAgent):
             "FAUSTUS_ENDPOINT_URL": base_url, "FAUSTUS_MODEL": model, "FAUSTUS_DATA_DIR": "/tmp/faustus-data",
             "FAUSTUS_APP_ROOT": REMOTE_APP, "FAUSTUS_SETTINGS_JSON": json.dumps(self._settings),
             "PYTHONDONTWRITEBYTECODE": "1",
+            # A model server shared by many trials can take longer than the
+            # default 10 s to accept a connection.
+            "LLM_CONNECT_TIMEOUT": os.environ.get("FAUSTUS_LLM_CONNECT_TIMEOUT", "30"),
         })
         run_flags = ["--approve", "--json", "--timeout", str(int(self._run_timeout)), "--max-legs", "200"]
         if self._effort:

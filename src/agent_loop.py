@@ -13587,9 +13587,16 @@ async def _stream_agent_loop_body(
                 # turn with a raw HTTP-400 message.
                 if (
                     is_degenerate_output_error(error_data)
-                    and _xr.permits("degenerate_output_retry", _degenerate_retries, 3)
+                    # Three retries, plus one more per ten rounds: a long task
+                    # on a model that loops now and then (the GLM on the
+                    # Sparks) used to end on its third loop at round 13.
+                    and _xr.permits("degenerate_output_retry", _degenerate_retries, 3 + round_num // 10)
                     and (not _degenerate_output_retried
-                         or round_num - _last_degenerate_retry_round >= 4)
+                         or round_num - _last_degenerate_retry_round >= 4
+                         # Mid-task (tools already ran), the ladder below
+                         # answers without tools and so ends the work half
+                         # done: retry the round instead, within the budget.
+                         or bool(tool_events))
                     and round_num < max_rounds
                 ):
                     _degenerate_output_hit = True
@@ -14475,7 +14482,7 @@ async def _stream_agent_loop_body(
                     "type": "harness_check", "status": "auto_continue",
                     "reason": "degenerate_output_retry", "round": round_num,
                     "dropped_untrusted_context": _dropped_untrusted,
-                    **_xr.event("degenerate_output_retry", used=_degenerate_retries, limit=3, round_num=round_num),
+                    **_xr.event("degenerate_output_retry", used=_degenerate_retries, limit=3 + round_num // 10, round_num=round_num),
                 }) + "\n\n"
             )
             yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
