@@ -55,6 +55,23 @@ def test_guard_does_not_raise_on_a_legitimate_long_hash():
     guard.check(hash_like + hash_like)  # 130 chars, no exception
 
 
+def test_guard_does_not_raise_on_test_code_that_names_its_nodes_with_one_letter():
+    """A test file for a tree exercise: `Tree("x", [Tree("a"), Tree("b")])` line
+    after line. Without the one-letter names it reads "tree tree tree tree",
+    which ended a whole benchmark run as a phrase loop."""
+    guard = llm_core._DegenerateStreamGuard("glm")
+    for i in range(40):
+        guard.check(f'        tree = Tree("x", [Tree("a", [Tree("b"), Tree("c")]), Tree("d")])  # case {i}\n')
+        guard.check('        self.assertTreeEquals(tree.from_pov("x"), Tree("x"))\n')
+
+
+def test_guard_still_raises_on_a_word_loop_in_code():
+    guard = llm_core._DegenerateStreamGuard("glm")
+    with pytest.raises(llm_core.DegenerateOutput):
+        for _ in range(20):
+            guard.check("tree tree tree tree ")
+
+
 def test_guard_does_not_raise_on_ordinary_prose():
     guard = llm_core._DegenerateStreamGuard("looping-model")
     guard.check(
@@ -548,6 +565,23 @@ def test_content_may_repeat_long_lines_without_tripping():
     guard = _DegenerateStreamGuard("m")
     row = '{"title": "Venusaur Line - Pokemon Silhouette Frame | Normal, Inverse & Scaled STL"}\n'
     _feed_in_chunks(guard.check, row * 5)  # content channel: no paragraph-loop rule
+
+
+def test_drafting_code_in_the_reasoning_is_not_a_loop_until_it_really_repeats():
+    """GLM drafts the function or the test it is writing in its reasoning and
+    rewrites it; unchanged lines come back on every draft (15-10 benchmarks)."""
+    import pytest
+    from src.llm_core import DegenerateOutput, _DegenerateStreamGuard
+
+    draft = (
+        "Let me write it again with the fix.\n"
+        "def _find_signature(self, encoding: str = None) -> tuple[str, int]:\n"
+        "    self.assertEqual(can_chain([(1, 2), (3, 2), (1, 3)]), [(1, 2), (2, 3), (3, 1)])\n"
+    )
+    guard = _DegenerateStreamGuard("glm")
+    _feed_in_chunks(guard.check_reasoning, draft * 5)  # a fifth draft is still drafting
+    with pytest.raises(DegenerateOutput):
+        _feed_in_chunks(guard.check_reasoning, draft)
 
 
 def test_varied_reasoning_is_left_alone():

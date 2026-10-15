@@ -1265,9 +1265,15 @@ class _DegenerateStreamGuard:
 
         reason = self._raw_repeat_reason()
 
-        tokens = [t.lower() for t in _DEGENERATE_WORD_RE.findall(text) if len(t) >= 2]
-        for token in tokens:
-            if token == self.last_token:
+        # One-character words stay in the window: they are what tells code
+        # that builds `Tree("x", [Tree("a"), Tree("b")])` apart from a model
+        # stuck on "tree tree tree". Dropping them made a test file for a
+        # tree exercise look like a phrase loop and ended the run (15-10).
+        for token in (t.lower() for t in _DEGENERATE_WORD_RE.findall(text)):
+            if len(token) < 2:
+                self.last_token = ""
+                self.same_run = 0
+            elif token == self.last_token:
                 self.same_run += 1
             else:
                 self.last_token = token
@@ -1349,7 +1355,7 @@ class _DegenerateStreamGuard:
             if len(norm) < _REASONING_LOOP_MIN_CHARS:
                 continue
             counts[norm] = counts.get(norm, 0) + 1
-            if counts[norm] >= _REASONING_LOOP_REPEATS:
+            if counts[norm] >= _reasoning_loop_repeats(norm):
                 raise DegenerateOutput(
                     f"reasoning loop: the same sentence came back {counts[norm]} times "
                     f"('{norm[:60]}…')",
@@ -1363,6 +1369,16 @@ class _DegenerateStreamGuard:
 _REASONING_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n+")
 _REASONING_LOOP_MIN_CHARS = 60
 _REASONING_LOOP_REPEATS = 3
+#: A model that drafts code in its reasoning rewrites the function, the test or
+#: the JSON fixture it is working on, and most lines come back unchanged on
+#: each draft. Three copies of a code line is a third draft, not a wedge: on
+#: the benchmarks (15-10) nearly every reasoning-loop abort was a code line.
+_REASONING_LOOP_REPEATS_CODE = 6
+_CODE_LINE_HINT_RE = re.compile(r"[(\[{=;\"_`<>]|::|->|^\s*(?:#|//|--|\*)")
+
+
+def _reasoning_loop_repeats(sentence: str) -> int:
+    return _REASONING_LOOP_REPEATS_CODE if _CODE_LINE_HINT_RE.search(sentence) else _REASONING_LOOP_REPEATS
 
 
 def _model_activity_key(url: str, model: str) -> str:
