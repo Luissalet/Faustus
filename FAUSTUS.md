@@ -11972,7 +11972,10 @@ compartido; el Hub la descubre y la arranca). Simulador de combates sobre el mot
   con `scripts/build_ps_anims.mjs`, reproducidas por una adaptación propia en canvas que mueve los sprites como allí), su
   fondo de combate según la generación del formato y sus capas de tiempo atmosférico y de campo; los dibujos se descargan
   una vez (`fx_cache`, `prefetch` los baja todos). En Ajustes se vuelve a los efectos de Silver o al campo con degradado.
-- 78 herramientas.
+- Nivel de IA «maestro»: búsqueda en árbol de Montecarlo de poke-engine (motor en Rust, opcional,
+  requirements-master.txt) que explora cientos de miles de futuros por turno en individuales de 9.ª generación; sin él
+  juega como el experto. El panel «Por qué» muestra los futuros explorados (tool ai_levels).
+- 79 herramientas.
 
 Verificado en el PC: 47 pruebas del motor y 29 de la app en Windows, liga de Johto instalada y combate IA contra IA por el
 puente del Hub, partida humana en el navegador con sprites descargados y registro en castellano.
