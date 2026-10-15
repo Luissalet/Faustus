@@ -1468,3 +1468,8 @@ Hecho: motor propio incorporado de imagen a 3D 512/1024 y refinado aprendido, ca
 ## Daedalus627 — refinado alternativo y ampliación aprendida
 
 Hecho: UltraShape nativo con alineación de copia; segunda etapa TRELLIS512→1024 desde latente guardado, geometría/PBR nuevos y cuatro GPU. Ultra da resultados mixtos; ampliación con mejor detalle en dos mallas completas, originales/versiones conservados. Visor completo/ligero, enlaces directos,12MCP y estilo/icono familiares.21CPU, controles independientes, MCP y navegador. Sin garantía universal ni impresión directa. Recuperados código y13trabajos tras limpieza externa; evidencia en research-inbox/daedalus-refiners627-20261015, comparador privado63625 y producto8830.
+
+
+## Daedalus636 — preparación opcional para impresión y juegos, 16-10-2026
+
+Hecho: pasadas CPU nativas de reparación de malla y optimización triangular con UV y horneado PBR, en la misma cola/API/MCP/interfaz. Reparación por volumen128/256/384 o superficie; tres salidas cerradas verificadas. La reconstrucción aproxima y puede suavizar/unir piezas. La mecánica reparada→juegos cumplió50k con49.647caras/7,7MB; búho99.949 ante50k, con aviso de presupuesto incumplido. Cada pasada conserva padre y originales; informa del cierre, piezas y presupuesto logrados y exporta GLB/STL/PLY con escala. Materiales descartados no reaparecen al encadenar pasadas.14 MCP, estilos e icono familiares. Publicación GitHub del código autorizada por Luis; pesos y trabajos locales. La preparación no certifica grosores/soportes y no añade rigging ni retopología de animación. Evidencia y pruebas reales en HoardStorage/daedalus-development636.
