@@ -11963,7 +11963,10 @@ compartido; el Hub la descubre y la arranca). Simulador de combates sobre el mot
 - Vídeo de la repetición (`battle_video`): un Chrome o Edge sin ventana graba la repetición con su sonido (efectos, gritos y
   música) y deja un MP4 en exportaciones; opcionalmente lo manda a Lumiere's Hoard (`media_receive`). Probado en el PC:
   clip de 25 s con sonido recibido por Lumiere.
-- 73 herramientas.
+- Sets populares y uso (data.pkmn.cc): botón «Sets» en cada Pokémon del editor (sets de Smogon del formato o el más
+  cercano, con su uso en el ranking: objetos, habilidades, movimientos, teratipos y compañeros) y «Equipo de muestra» con
+  los más usados; se descargan al pedirlos y se guardan una semana. Tools sets_popular, usage_top, sample_team.
+- 76 herramientas.
 
 Verificado en el PC: 47 pruebas del motor y 29 de la app en Windows, liga de Johto instalada y combate IA contra IA por el
 puente del Hub, partida humana en el navegador con sprites descargados y registro en castellano.
