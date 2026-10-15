@@ -39,7 +39,7 @@ def test_a_downloaded_video_becomes_a_download_link_for_its_owner(own_database, 
     [dl] = out["downloads"]
     assert dl["url"] == f"/api/artifacts/{dl['id']}/download" and dl["name"] == video.name
     assert dl["media_type"] == "video/mp4" and dl["size"] == video.stat().st_size
-    assert f"[{video.name}]({dl['url']})" in out["stdout"]
+    assert f"[clip (123).mp4]({dl['url']})" in out["stdout"], "brackets in the name would break the Markdown link"
     assert json.loads(result["stdout"])["ok"] is True  # the original result is left alone
     with db_mod.SessionLocal() as db:
         row = artifact_catalog.get(db, dl["id"])

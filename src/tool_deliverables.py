@@ -66,6 +66,12 @@ def _human(size: int) -> str:
     return f"{size} B"
 
 
+def link_label(name: str) -> str:
+    """A file name as Markdown link text: square brackets (yt-dlp names carry ``[id]``) would end the label early
+    and leave the link as plain text, so they become parentheses."""
+    return " ".join(str(name).replace("[", "(").replace("]", ")").split()) or "file"
+
+
 def publish(path: str, name: str, *, owner: str, session_id: str = "", call_id: str = "",
             tool: str = "") -> Dict[str, Any]:
     """Copy one file into the artifact store as this owner's occurrence; returns its download."""
@@ -136,7 +142,7 @@ def deliver(result: Any, *, owner: str, session_id: str = "", call_id: str = "",
     if published:
         lines.append("Faustus made these files downloadable for the user (desktop app: a save dialog; "
                      "browser or phone: a normal download). Give them to the user as these Markdown links, unchanged:")
-        lines += [f"- [{p['name']}]({p['url']}) ({_human(p['size'])})" for p in published]
+        lines += [f"- [{link_label(p['name'])}]({p['url']}) ({_human(p['size'])})" for p in published]
     if problems:
         lines.append("Not offered as downloads: " + "; ".join(problems))
     key = "stdout" if isinstance(out.get("stdout"), str) else "output"
