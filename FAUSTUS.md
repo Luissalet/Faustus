@@ -11978,6 +11978,8 @@ compartido; el Hub la descubre y la arranca). Simulador de combates sobre el mot
 - Créditos visibles: página «Créditos» con todas las fuentes y licencias, los artistas de los sprites de entrenador
   (índice de Showdown) y de los sprites de la arena en tiempo real (SpriteCollab), con búsqueda; el autor sale en las
   páginas de entrenador y personaje, en el selector de sprites y bajo la arena (tool credits).
+- Vídeo también de los combates en tiempo real: la página de vídeo reproduce la repetición en su arena (barras y
+  créditos, a 1× o 2×) y la graba con sonido como las de por turnos (botón «Vídeo» y battle_video).
 - 80 herramientas.
 
 Verificado en el PC: 47 pruebas del motor y 29 de la app en Windows, liga de Johto instalada y combate IA contra IA por el
