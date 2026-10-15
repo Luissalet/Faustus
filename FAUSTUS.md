@@ -11982,6 +11982,10 @@ compartido; el Hub la descubre y la arranca). Simulador de combates sobre el mot
   créditos, a 1× o 2×) y la graba con sonido como las de por turnos (botón «Vídeo» y battle_video).
 - IA que no ve tu equipo (ajuste o ai_hidden por asiento): solo sabe lo que el combate ha enseñado y adivina el resto con
   las estadísticas de uso del formato; el consejo de la experta para una persona tampoco ve el equipo rival.
+- Resultados de amigos comprobados repitiendo los combates: la página jugable manda el registro de cada combate por
+  turnos y la app lo vuelve a jugar al importar el código (equipos esperados, elecciones legales, mismo final y, con la
+  misma versión de la IA, las elecciones del rival tienen que ser las suyas); la medalla lo indica. De paso, la IA de la
+  página jugable ya juega de verdad (antes se quedaba en elecciones por defecto).
 - 80 herramientas.
 
 Verificado en el PC: 47 pruebas del motor y 29 de la app en Windows, liga de Johto instalada y combate IA contra IA por el
