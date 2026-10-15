@@ -8023,6 +8023,20 @@ def _unattended_transport_wait(attempt: int) -> float:
     return float(min(15 * (2 ** max(0, attempt - 1)), 120))
 
 
+#: Sent once, the first time an unattended task over a workspace says it is
+#: done (see the completion audit in stream_agent_loop).
+COMPLETION_AUDIT_NOTE = (
+    "[Harness check - automatic runtime message, not a new user request] Before this run ends, audit the work: "
+    "nobody will review it after you, and it is judged only on what the task statement asks for.\n"
+    "1. Re-read the original task statement and list every requirement it states: files and paths, names, output "
+    "format, exact messages, edge cases, limits on speed or size, commands that must work, things that must NOT change.\n"
+    "2. Check each one now with a tool (run it, read the file, time it, try the edge case) - not from memory.\n"
+    "3. Fix whatever fails, then check it again.\n"
+    "4. Remove scratch files you created that the task did not ask for, unless they are needed to run the result.\n"
+    "Then give your final answer: one line per requirement with how you checked it."
+)
+
+
 UNATTENDED_DIRECTIVE = (
     "## UNATTENDED RUN - OVERRIDES ANY RULE ABOUT ASKING THE USER\n"
     "Nobody will read a question or approve anything until this run ends. Never stop to ask: pick the most reasonable "
@@ -11606,6 +11620,7 @@ async def _stream_agent_loop_body(
     _echo_nudges = 0
     _relay_nudges = 0
     _transport_retries = 0
+    _completion_audit_done = False
     # Two consecutive marker-only rounds mean the nudge itself isn't working
     # (seen live: the model echoed `<<faustus_ctx_ack>>` twice in a row even
     # after being told to answer). At that point re-nudging a third time is
@@ -15815,6 +15830,43 @@ async def _stream_agent_loop_body(
                 )
                 full_response = _full_response_before_round
                 yield f'data: {json.dumps({"type": "response_replace", "text": full_response.strip()})}\n\n'
+                yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
+                continue
+
+            # The first time an unattended task over a workspace says it is
+            # done, it audits the work against the task statement once before
+            # the run ends: nobody reviews it afterwards, and most lost
+            # benchmark tasks were "answered" with one stated requirement
+            # (a speed limit, an interactive case, an exact message) never
+            # checked. Conversation tasks are left alone: their work is the
+            # conversation, and it is already over.
+            if (
+                unattended
+                and workspace
+                and not _completion_audit_done
+                and _hc_text
+                and not _boundary_echo_only
+                and (_ledger.mutations or len(_ledger.events or []) >= 3)
+                and _unattended_relay_tool(_tool_names_sent, []) is None
+                and round_num < max_rounds
+            ):
+                _completion_audit_done = True
+                _ledger.notes.append(f"completion_audit@{round_num}")
+                logger.info("[harness] round %s: unattended completion audit before the run ends", round_num)
+                if round_response.strip():
+                    messages.append({"role": "assistant", "content": round_response})
+                messages.append({
+                    "role": "user",
+                    "_harness_note": True,
+                    "content": COMPLETION_AUDIT_NOTE,
+                })
+                yield (
+                    "data: " + json.dumps({
+                        "type": "harness_check", "status": "auto_continue", "round": round_num,
+                        "reason": "completion_audit", "attempt": 1, "max_attempts": 1,
+                    }) + "\n\n"
+                )
+                full_response += "\n\n"
                 yield f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
                 continue
 

@@ -158,3 +158,36 @@ def test_empty_replies_do_not_end_an_unattended_task(tmp_path, monkeypatch):
     assert nudges
     last = json.dumps(seen[-1])
     assert "Nobody can answer a question in this run" in last
+
+
+def _glob(pattern):
+    return _text("```glob\n" + json.dumps({"pattern": pattern}) + "\n```", "tool_calls")
+
+
+def _audit_run(monkeypatch, tmp_path, unattended):
+    _patch_common(monkeypatch)
+    seen = _scripted(monkeypatch, [
+        _glob("*.py"), _glob("src/*.py"), _glob("tests/*.py"),
+        _text("Done: solve.py now passes eval.py."),
+        _text("Checked every requirement: eval.py passes, output format matches."),
+    ])
+    gen = al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": "Make /app/solve.py pass eval.py"}],
+        max_rounds=10, relevant_tools={"read_file", "glob"}, workspace=str(tmp_path), unattended=unattended,
+    )
+    return seen, _events(_collect(gen))
+
+
+def test_an_unattended_task_audits_its_work_once_before_the_run_ends(tmp_path, monkeypatch):
+    seen, events = _audit_run(monkeypatch, tmp_path, unattended=True)
+    audits = [e for e in events if e.get("reason") == "completion_audit"]
+    assert len(audits) == 1, [e.get("type") for e in events]
+    assert len(seen) == 5
+    assert "audit the work" in json.dumps(seen[4])
+
+
+def test_an_attended_task_is_not_audited(tmp_path, monkeypatch):
+    seen, events = _audit_run(monkeypatch, tmp_path, unattended=False)
+    assert not [e for e in events if e.get("reason") == "completion_audit"]
+    assert len(seen) == 4
