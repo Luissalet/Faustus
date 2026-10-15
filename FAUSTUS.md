@@ -12507,3 +12507,8 @@ sus salas en Combatir › En directo y en el Hoy del Hub (contrato de agenda), y
 combate sin jugar (por turnos la vista pública; en tiempo real su propia copia del simulador con las entradas de los dos). Por
 MCP: `pvp_lobby`, `pvp_lobby_new_code`, `pvp_friends`, `pvp_friend_add`, `pvp_friend_remove`; `pvp_open` acepta
 `listed` y `pvp_get` devuelve `watch_links` y `spectators`.
+## Daedalus's Hoard: generación 3D local y versiones — 15-10-2026
+
+Daedalus genera modelos 3D desde PNG, JPG o WebP con TRELLIS.2 a 512/1024, repartiendo sus capas entre las cuatro NVIDIA locales y coordinando la VRAM con Hoard Hub. Su motor incorporado y entorno son propios. Conserva la geometría completa y el aspecto PBR, los trabajos, sus parámetros y cada versión. El visor permite materiales o geometría, comparación con cámaras enlazadas y descarga GLB/STL/PLY con tamaño explícito: GLB en metros, STL/PLY en milímetros. La API y las 11 herramientas MCP usan la misma cola, cancelación e historial. El copilot utiliza Faustus y las Sparks globales.
+
+El refinado aprendido crea otra versión y permite transferir el aspecto del original. En el ejemplo mecánico probado, DetailGen3D perdió detalles frente a TRELLIS.2, incluso con 8192 latentes; no se activa automáticamente ni se presenta como mejora garantizada. Las mallas abiertas requieren preparación para impresión; no hay reparación, retopología ni rigging automáticos. Generación y refinado nativos por MCP ejecutaron capas en las cuatro GPU, con pruebas de persistencia, carreras, unidades y navegador. Detalle, licencias y evidencia en el README de Daedalus y las tareas Ágora619/622. Dirección local: http://127.0.0.1:8830.

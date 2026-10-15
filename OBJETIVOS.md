@@ -1460,3 +1460,7 @@ Luis autorizó las dos propuestas: guía de montaje por generación (Gulliver #6
 desde repeticiones (Silver #609) y habilidades con avisos laterales en ambos modos (#611). Implementadas y
 verificadas por pruebas, MCP y navegador; estado final de revisión/activación en FAUSTUS.md. No requieren
 una nueva decisión de Luis.
+
+## Daedalus622 — generación y refinado opcional, 15-10-2026
+
+Hecho: motor propio incorporado de imagen a 3D 512/1024 y refinado aprendido, capas repartidas entre cuatro GPU, leases del Hub, trabajos/versiones persistentes, cancelación, visor PBR/geometría, comparación y exportación GLB/STL/PLY con escala. API y MCP comunes y copilot de Faustus. Las pruebas reales no acreditan que el refinado supere al original; se conserva como opción. La preparación para impresión, la retopología y el rigging no están implementados; no se han convertido en objetivos activos nuevos sin petición. Estado final de revisión y activación en FAUSTUS.md y en la tarea622.
