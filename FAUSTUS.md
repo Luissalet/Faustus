@@ -12602,3 +12602,37 @@ se quedaron sin `node_modules` y Gutenberg sin `.venv`.
   faltaban quedaron como ramas `rescue/*` en el repo real de cada una (hilo 690 del Ágora).
 - **Reglas:** `AGENTS.md` y `CRITERIOS.md` prohíben los enlaces hacia las carpetas de Luis, también `node_modules`. Un
   worktree vive mientras su tarea está abierta, y no se dejan clones, bundles ni copias de datos.
+
+
+## Silver's Hoard: jugar en la batalla campal, página para amigos y vídeo — 16-10-2026
+
+Luis: «nada se queda en objetivos, lo implementas y punto». El punto 2 de OBJETIVOS de Silver está hecho en main (76df8b3,
+c05bc2c y fd6ccf5, sin push; Ágora #635).
+
+- **Jugar con un Pokémon de la multitud:** el simulador campal (`engine/src/realtime/mass.mjs`) acepta `spec.player` y un registro
+  de entradas `[tick, mx, my, slot, ax, ay, roll]` en enteros. Sin jugador, las batallas dan las mismas huellas que antes.
+  - Controles en pantalla: WASD o stick para moverse, 1-4 (o los botones del mando) para lanzar hacia el ratón o al rival más
+    cercano, clic para el movimiento 1, Espacio para rodar (0,2 s en los que nada te toca) y Esc para pausar.
+  - En pantalla: anillo dorado «TÚ» y una mira.
+  - El motor repite la partida antes de guardarla (`mass_play`, `mass_play_get`, `mass_play_delete`). Cada batalla tiene su
+    tabla de partidas jugadas, y cualquiera se puede volver a ver.
+- **Página para amigos (`mass_export`):** un HTML con la batalla dentro, en un fichero nuevo cada vez, que devuelve `battle_id`
+  y `hash`. Funciona abierto desde el disco, sin llamadas a la app.
+  - El amigo ve la batalla o juega con uno de sus Pokémon y recibe un código `SILVERMASS1-`. Importar ese código repite su
+    partida y la guarda; un código cuenta una sola vez.
+  - Importar la página entera añade la batalla.
+- **Vídeo (`mass_video`):** MP4 con sonido. La cámara es automática y sigue a los que quedan en pie (o a quien jugó la partida).
+  `_record_video` de Silver acepta ahora `url_path`, `stem` y `seconds`.
+- **Pantalla:** se oyen los movimientos, los golpes y los K.O., y hay un botón de cámara automática. Silver tiene ahora 144
+  herramientas.
+- **Pruebas:** motor 182 en verde, pytest completo en verde. `test_pvp::test_turn_by_turn_room` fallaba una de cada 24 veces
+  (un Terremoto crítico de Garchomp debilitaba a Tyranitar antes de que moviera) y el test se corrigió en c05bc2c.
+  - Playwright en una instancia privada: jugar en la app, repetición con la misma huella, página abierta desde `file://`, código
+    importado en Compartir y vídeo con sonido.
+  - Con 1025 Pokémon y una persona jugando, la batalla va a 30 ticks/s.
+  - 5230 reiniciada desde el Hub; las herramientas nuevas se probaron por su MCP.
+- **Integrado también #634** (a12908d como fbd5768): el arte de las imágenes propias conserva categoría, crédito, fuente y título
+  al compartir. Era el parche del arte sin confirmar que estaba en las copias borradas.
+- **Arte de Prospero perdido en la restauración:** al restaurar Prospero desde el backup de las 4:00 del 15-10, faltaban las
+  poses de espalda y de victoria del sprite de Luis, dibujadas a las 5:2x. Se volvieron a importar al proyecto «Silver's Hoard»
+  de Prospero: las 6 imágenes de `ComfyUI\output` de esa hora y los 6 sprites finales de Silver.
