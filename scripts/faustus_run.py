@@ -253,6 +253,38 @@ class Turn:
             pass
 
 
+def register_mcp_servers(client: "Client", spec: str) -> List[str]:
+    """Register the MCP servers a run is handed (a task's own service).
+
+    ``spec`` is a JSON list, or ``@file`` holding one. Each item takes
+    ``name``, ``transport`` (``stdio``, ``sse``, ``http``/``streamable-http``),
+    and ``url`` or ``command`` + ``args``. Returns the names registered.
+    """
+    spec = (spec or "").strip()
+    if not spec:
+        return []
+    if spec.startswith("@"):
+        with open(spec[1:], encoding="utf-8") as fh:
+            spec = fh.read()
+    servers = json.loads(spec)
+    names: List[str] = []
+    for server in servers if isinstance(servers, list) else []:
+        if not isinstance(server, dict) or not server.get("name"):
+            continue
+        transport = str(server.get("transport") or "stdio").lower()
+        if transport in ("streamable-http", "streamable_http"):
+            transport = "http"
+        form: Dict[str, Any] = {"name": str(server["name"]), "transport": transport}
+        if server.get("url"):
+            form["url"] = str(server["url"])
+        if server.get("command"):
+            form["command"] = str(server["command"])
+        form["args"] = json.dumps([str(a) for a in server.get("args") or []])
+        client.post_form("/api/mcp/servers", form, timeout=120)
+        names.append(form["name"])
+    return names
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Run one Faustus agent turn headless.")
     ap.add_argument("-p", "--prompt", required=True, help="the message; '-' reads stdin, '@file' reads a file")
@@ -272,6 +304,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--web", action="store_true", help="allow web search for the turn")
     ap.add_argument("--unattended", action="store_true",
                     help="nobody answers questions during the run: the agent decides instead of asking")
+    ap.add_argument("--mcp-servers", default="",
+                    help="JSON list of MCP servers to register before the turn: "
+                         "[{name, transport: stdio|sse|http, url?, command?, args?}]; '@file' reads a file")
     ap.add_argument("--approve", action="store_true", help="approve every tool card of the run for the task")
     ap.add_argument("--resume-approval", default="", help="resume a stopped run by approving this card id")
     ap.add_argument("--max-legs", type=int, default=12, help="approval resumes allowed with --approve")
@@ -315,10 +350,11 @@ def main(argv: Optional[List[str]] = None) -> int:
                 if not resolved or resolved.get("id") != project["id"]:
                     raise RuntimeError("The server did not attach the new chat to the selected project.")
         select_agent_identity(client, args, session, project)
+        register_mcp_servers(client, args.mcp_servers)
         for warning in args.project_warnings:
             print(warning, file=sys.stderr)
         message = read_prompt(args.prompt)
-    except (urllib.error.URLError, OSError, RuntimeError) as exc:
+    except (urllib.error.URLError, OSError, RuntimeError, ValueError) as exc:
         _emit_summary(out, args, None, Turn(), started, "error", _error_text(exc))
         return EXIT_ERROR
 

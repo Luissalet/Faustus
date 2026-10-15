@@ -237,3 +237,23 @@ def test_resumed_automatic_actor_is_not_rebound(capsys):
     try:code=fr.main(['-p','continue','--url',url,'--session','old','--agent-id','faustus'])
     finally:srv.shutdown()
     assert code==fr.EXIT_ERROR and not _H.puts and not _H.forms
+
+
+def test_mcp_servers_are_registered_before_the_turn(tmp_path):
+    calls = []
+
+    class _C:
+        def post_form(self, path, form, timeout=30):
+            calls.append((path, form))
+            return {"id": "x"}
+
+    spec = tmp_path / "mcp.json"
+    spec.write_text(json.dumps([
+        {"name": "shop", "transport": "streamable-http", "url": "http://svc:8000/mcp"},
+        {"name": "local", "transport": "stdio", "command": "tool", "args": ["--x", 1]},
+        {"transport": "sse", "url": "http://nameless"},
+    ]), encoding="utf-8")
+    assert fr.register_mcp_servers(_C(), "@" + str(spec)) == ["shop", "local"]
+    assert calls[0] == ("/api/mcp/servers", {"name": "shop", "transport": "http", "url": "http://svc:8000/mcp", "args": "[]"})
+    assert calls[1][1]["command"] == "tool" and json.loads(calls[1][1]["args"]) == ["--x", "1"]
+    assert fr.register_mcp_servers(_C(), "") == []

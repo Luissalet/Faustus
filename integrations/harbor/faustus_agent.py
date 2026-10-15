@@ -23,6 +23,7 @@ import shlex
 from pathlib import Path
 from typing import Any
 
+from harbor.agents.capabilities import AgentCapabilities
 from harbor.agents.installed.base import BaseInstalledAgent, NonZeroAgentExitCodeError, with_prompt_template
 from harbor.agents.model_connection import ModelConnectionSpec
 from harbor.environments.base import BaseEnvironment
@@ -41,6 +42,9 @@ def _bundle_dir() -> Path:
 
 class Faustus(BaseInstalledAgent):
     MODEL_CONNECTION = ModelConnectionSpec(default_provider="openai", passthrough=True)
+    # A task's MCP servers are registered in the headless server before the
+    # turn (``faustus_run --mcp-servers``) and offered to the agent as tools.
+    capabilities = AgentCapabilities(mcp_servers=True)
 
     def __init__(self, *args, effort: str | None = None, think_mode: str | None = None,
                  settings: dict[str, Any] | str | None = None, run_timeout: float | None = None, **kwargs):
@@ -106,6 +110,12 @@ class Faustus(BaseInstalledAgent):
             # Each round's exact messages and tool schemas, next to the trial logs.
             env["FAUSTUS_PROMPT_DUMP"] = f"{logs}/prompt"
         run_flags = ["--approve", "--json", "--timeout", str(int(self._run_timeout)), "--max-legs", "200"]
+        if self.mcp_servers:
+            mcp_path = f"{logs}/mcp-servers.json"
+            servers = [s.model_dump(mode="json") if hasattr(s, "model_dump") else dict(s) for s in self.mcp_servers]
+            await self._upload_config_text(environment, content=json.dumps(servers), remote_path=mcp_path,
+                                           filename="mcp-servers.json")
+            run_flags += ["--mcp-servers", "@" + mcp_path]
         if self._effort:
             run_flags += ["--effort", self._effort]
         if self._think_mode:

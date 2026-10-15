@@ -4361,6 +4361,21 @@ def setup_chat_routes(
                                 })
                         except Exception:
                             pass
+                        # An unattended run is handed its MCP servers for the job
+                        # (a task container's own service): their tools are the
+                        # job's interface, not something retrieval may leave out.
+                        if unattended:
+                            try:
+                                _job_mcp = {
+                                    str(row.get("qualified_name") or "")
+                                    for row in (get_mcp_manager().get_all_tools({}) or [])
+                                    if not row.get("is_disabled")
+                                }
+                                _job_mcp.discard("")
+                                if _job_mcp:
+                                    _forced_tools = set(_forced_tools or set()) | _job_mcp
+                            except Exception:
+                                logger.debug("unattended MCP tools not forced", exc_info=True)
                         # /agents (multi-agent delegation) names the tool explicitly;
                         # make sure retrieval cannot drop it.
                         if isinstance(message, str) and "delegate_agents" in message:
