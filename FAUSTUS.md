@@ -11928,7 +11928,7 @@ lista de modelos (`sparks_aux_endpoints`, f4324cf1, 3c9b04ea). Evidencia: `resea
 
 ## Silver's Hoard como plugin — 15-10-2026
 
-Nueva app de la familia (`plugins/silver/plugin.json`, puerto 5230, servicio `silvers-hoard`, 55 herramientas por el contrato
+Nueva app de la familia (`plugins/silver/plugin.json`, puerto 5230, servicio `silvers-hoard`, 62 herramientas por el contrato
 compartido; el Hub la descubre y la arranca). Simulador de combates sobre el motor abierto de Showdown en un proceso Node:
 
 - Entrenadores (equipo importado, creado con el editor visual o aleatorio; nivel y estilo de IA; avatar; frases), combates
@@ -11942,7 +11942,14 @@ compartido; el Hub la descubre y la arranca). Simulador de combates sobre el mot
   por defecto, o imágenes propias como arte oficial), recortados con BiRefNet y devueltos como dibujo y como sprite de 96 px.
   Probado de verdad en las GPU 1-3 con fotos de Luis y retratos oficiales de personajes públicos.
 - Por defecto todo vale (`gen9nationaldexag`): Mega, movimientos Z y teracristalización juntos; la IA usa los tres.
-- Hay además un modo de combate en tiempo real (otra sesión, f85ed5d).
+- Hay además un modo de combate en tiempo real (otra sesión, f85ed5d), 154 personajes con sus equipos juego a juego, puntos de
+  entrenamiento como en Pokémon Champions e imágenes de medalla (otra sesión, f1b43ce).
+- La IA experta busca también en dobles (parejas de las mejores jugadas de sus dos Pokémon jugadas en copias del combate):
+  69 de 100 contra la difícil, frente a 49 antes. Nunca lee la jugada que una persona ya ha mandado: la adivina.
+- Calculadora de daño (`damage_calc` y panel al pie del editor de equipos): las 16 tiradas, crítico y golpes para el KO de
+  cada movimiento contra cualquier Pokémon o uno de otro entrenador, con mejoras, tera, megaevolución, tiempo, campo,
+  pantallas y PS restantes, con la fórmula del propio simulador; los movimientos se miden como se usan (Pixilate, Bola Voltio
+  del tiempo...), también en la IA.
 
 Verificado en el PC: 47 pruebas del motor y 29 de la app en Windows, liga de Johto instalada y combate IA contra IA por el
 puente del Hub, partida humana en el navegador con sprites descargados y registro en castellano.
