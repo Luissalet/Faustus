@@ -12485,3 +12485,7 @@ pixel art digeridos con el digestor de vídeo de Links: pantalla de VS, Poké Ba
 del ganador, caras de los Pokémon en las barras con el daño reciente en blanco y efectos propios de Hipnosis, Lengüetazo, martillos,
 engranajes, cadenas, drenajes, Fuego Fatuo, Cometa Draco y Doble Equipo. Es solo dibujo: el combate y sus herramientas MCP no
 cambian (mismo resultado con y sin ella). Se ajusta en Ajustes de Silver (espectáculo o sobria, % o PS, cámara e impacto).
+Además, el tiempo real de Silver tiene lugares de los juegos como suelo y plantilla del diseñador de arenas (Monte Pírico, Monte
+Plateado, Cascada Meteoro, sala del campeón y castillo, con decorado y ambiente propios), público de Pokémon del lugar en los
+bordes que salta con los golpes grandes, y las frases de los entrenadores en bocadillos durante el combate. `arena_save` acepta
+los suelos `pyre`, `summit`, `meteor`, `champion` y `castle`.
