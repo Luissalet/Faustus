@@ -11981,6 +11981,13 @@ Primer uso: Links Hoard. «Descárgame este vídeo: <tweet>» → `media_downloa
 Links, guarda el enlace en su historial (etiqueta «descarga») y lista el archivo en `deliverables`; Faustus contesta con el
 enlace de descarga. Pruebas: `tests/test_tool_deliverables.py` (5).
 
+Con YouTube también sin cuenta (15-10-2026): cuando YouTube contesta «confirma que no eres un bot», Links repite la descarga
+con los reproductores integrado y web móvil de yt-dlp antes de probar cookies. Si un sitio exige cuenta, el resultado trae
+`login: {site, label}` y el modelo ofrece `site_login` de Links: abre una ventana de Chrome en el PC con un perfil propio de
+Links, el usuario inicia sesión (nunca el asistente) y Links guarda la sesión sola; después `media_retry`. `site_sessions`
+y `site_logout` completan el trío. Probado en el 7000: «Descárgame este vídeo: <YouTube>» → MP4 de 80,5 MB con enlace de
+descarga, sin cuenta.
+
 ## Visión de un modelo multimodal en un servidor de la red — 15-10-2026
 
 `/api/models` marcaba `models_vision` solo con las cachés de Ollama, LM Studio y llama.cpp o por el nombre, así que
