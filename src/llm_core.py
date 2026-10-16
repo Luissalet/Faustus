@@ -25,7 +25,26 @@ from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
-_LOCAL_MODEL_LOCK = asyncio.Lock()
+class _CrossLoopModelLock:
+    """One physical generation slot shared by chat and worker event loops."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+
+    async def acquire(self):
+        # Never block an event loop or leave a thread acquiring after cancellation.
+        while not self._lock.acquire(blocking=False):
+            await asyncio.sleep(0.025)
+        return True
+
+    def release(self):
+        self._lock.release()
+
+    def locked(self):
+        return self._lock.locked()
+
+
+_LOCAL_MODEL_LOCK = _CrossLoopModelLock()
 _LOCAL_MODEL_WAITING_FOREGROUND = 0
 _LOCAL_MODEL_CURRENT: Dict[str, object] = {}
 #: Foreground calls sharing the slot holder's server (see
@@ -610,7 +629,7 @@ async def _local_model_slot_gate(target_url: str, model: str, workload: Optional
                         "[model-gate] cancelling background local model call for foreground request model=%s",
                         model,
                     )
-                    task.cancel()
+                    task.get_loop().call_soon_threadsafe(task.cancel)
         else:
             # Background work should not jump in while the browser/chat is active
             # or while a foreground request is waiting to acquire the local model.
