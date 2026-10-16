@@ -12813,3 +12813,32 @@ QA y vista previa propios detenidos tras comprobar cero combates, trabajos y des
 verificados. Manual nativo:168 párrafos,167 ajenos con texto y estilos exactos; grafo84 nodos,83 ajenos
 y todas las aristas exactos, sin embeddings. Memoria y continuidad actualizadas; no se reactivó la
 programación nocturna. La continuación directa queda cerrada con las dos correcciones activas.
+
+## Silver's Hoard: sliders y cambio de Pokémon — 16-10-2026
+
+El editor de equipos usa seis sliders de puntos, junto a los números y botones +/−, con límites de32 por
+estadística y66 en total. Los miembros nuevos parten de0; abrir un equipo guardado o importado conserva
+su reparto. En móvil cada slider ocupa una fila completa. Los IV siguen usando el valor habitual31.
+
+Cambiar a otra especie reinicia su set (habilidad, movimientos, EV, objeto, naturaleza, mote, teratipo,
+género y variocolor), conservando el nivel del equipo. Cambiar solo una escritura equivalente de la misma
+especie mantiene el set. El formulario no deja guardar sin movimientos y permite elegir la habilidad y los
+ataques legales nuevos; se evita arrastrar la habilidad o los movimientos del Pokémon anterior.
+
+Entrega ef7cb35 (#660) aprobada CAS1 por revisión independiente espontánea e integrada en Main. Ratón/teclado/límites,
+Clear all, miembro nuevo0, cambio Porygon-Z→Muk-Alola y escritura equivalente probados en navegador;
+MCP guarda y recupera elMuk conEV0 eIV31 y conserva el reparto64 del otro entrenador. Móvil390×844,
+scrollWidth380, consola0. CombateRT customgame completo con elMuk reconstruido. El validador nacional
+puede advertir de0EV/nivel50; no se añade1EV automáticamente para ocultarlo. Motor y formatos sin cambios.
+
+Node364 pruebas aprobadas/1omitida y buildapp+HTML aprobado. FullPython final321 aprobadas/2omitidas, salida0: se repitió tras
+corregir un montaje de QA donde build:app había borrado la plantillaHTML; no se atribuye verde a la primera
+ejecución. Evidencias: D:\LocalAI\research-inbox\silver-stat-sliders-20261016. Solo Codex, sin encargos a
+Claude, push, modelos ni reinicio de Main; la partida humana se preserva. Automatización nocturna pausada.
+
+Frontend Main compilado y servido byte a byte como el archivo local; plantillaHTML idéntica a QA. La
+integración conserva los blobs aprobados y usa bloqueo de merge, HEAD fresco y Main limpio. Revisión
+independiente: Node364/1skip y buildcompleto; Python/browser/MCP comprobados por el autor. Backend
+PID123200 sigue desde06:09:17 y la partida humana continúa abierta. QA propia detenida tras0live/jobs/runs,
+puerto63852libre y pestaña temporal cerrada. Worktree de producto retirado con comprobaciones de ruta,
+registroGit, limpieza y ausencia de enlaces; grafo propio85nodos/84ajenos y aristas exactas, sin embeddings.
