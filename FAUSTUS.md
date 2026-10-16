@@ -12887,3 +12887,30 @@ Una Spark remota residente no toma el bloqueo de modelos del PC. Ese bloqueo adm
 Probado en fixture aislado: GLM editó y ejecutó tests; Codex introdujo después un bug deliberado; Qwen leyó la revisión actual, señaló un contraejemplo, se reprodujo RED, GLM corrigió y ejecutó tres tests GREEN y Qwen verificó el código corregido. Una llamada write_file de Qwen devolvió blocked/autonomy_read_only y el archivo no apareció. Receipt repetido devuelve el mismo turno sin editar de nuevo; Stop de un grupo deja terminar otro. Fuente revisada independientemente R1/R2/R3/R6 e integrada preservando el merge ajeno del harness; 62 pruebas del conjunto integrado pasan, además de las suites de área y navegador/MCP.
 
 No hay un bucle automático de correcciones: se usan turnos dirigidos, con un máximo recomendado de dos ciclos y revisión optativa. Tampoco se acredita superioridad general entre modelos ni una entrada real de 1M por leer el catálogo. Perfil, límites, recuperación y contrato en docs/api/glm-qwen-review.md; evidencia detallada y resultados de evaluación en D:/LocalAI/research-inbox/sparks668-20261016.
+
+## Silver's Hoard: rellenar un Pokémon con un set competitivo — 16-10-2026
+
+Cada ficha del editor de equipos muestra **Sets de Smogon**. El selector identifica el Pokémon,
+permite comparar variantes y ofrece **Aplicar set** para completar sus movimientos, objeto,
+habilidad, naturaleza, EV, IV y teratipo. Después se guarda el equipo. Abrir o cerrar el selector
+no modifica el borrador y los demás miembros conservan sus datos. No se añadió relleno masivo:
+es la corrección expresa de Luis. Equipo de muestra conserva su función anterior e independiente.
+
+La capacidad individual ya existía; 10463da (#669) aclara sus controles y ayuda en ES/EN.
+Reutiliza sets_popular y trainer_update de UI/API/MCP, sin cambiar lógica, backend, caché,
+formatos ni validadores. Consulta real del producto a data.pkmn.cc:200, dos variantes de Garchomp.
+La respuesta403 de urllib genérico no se atribuye al producto ni motiva un fallback nuevo.
+
+QA aislada: aplicar TankChomp solo a Garchomp conserva exactamente el Pikachu de al lado,
+su nombre, nivel, variocolor y reparto. Garchomp conserva nombre y nivel50 y recibe todos los
+campos del set; los IV anteriores0 pasan a31. Guardado y recuperación por MCP comprobados.
+El validador OU conserva su aviso por nivel50; customgame valida sin problemas, sin añadir EV.
+Combate real jugado con Terremoto y terminado a30s; no se afirma K.O. del rival.
+Navegador EN/ES, ratón/teclado, móvil390×844 sin desbordamiento y consola0.
+Build completo app+play, Python321/2omitidas y Node364/1omitida aprobados; detector0hallazgos.
+10463da aprobado por revisión independiente CASR1 e integrado exacto en Main; interfaz activa.
+El revisor comprobó las seis pruebas Smogon, sin repetir las suites completas ni la QA del autor.
+Build completo de Main y todos sus assets idénticos a QA, comprobados por HTTP; plantilla play
+idéntica de 4.830.400 bytes. La partida humana sigue abierta y el backend no se ha reiniciado.
+Evidencia en research-inbox/silver-smogon-fill-20261016.
+Sin push nuevo, modelos, reinicios de Main, delegaciones ni encargos a Claude.
