@@ -89,6 +89,8 @@ Local-first means you choose where inference happens. Cloud APIs and authenticat
 
 Local agent turns default to temperature `0.6`. The `agent_local_temperature_cap` setting defaults to `0.4` and applies when coding intent is accompanied by code-shaped evidence (for example a source path or function call) together with a programming action; prose requests for documents, reports, poems, chapters, recipes, or chats take precedence. Creating or organizing a project, files, documents, pages, or menus alone does not trigger it. Short neutral follow-ups such as “continue” inherit the cap through consecutive acknowledgements only when the latest real request in that conversation history is a coding request; a new document, recipe, or chat request ends the scope. An explicit per-turn temperature takes precedence, and remote endpoints are unaffected. The cap changes temperature only; it does not lower reasoning effort or token budgets.
 
+For local OpenAI-compatible requests, a positive `max_tokens` value sets the output limit. Zero or a negative value means Faustus adds no output limit; provider limits and the model's context window still apply. This works for synchronous, asynchronous and streaming requests. See [output limit configuration](docs/api/local-output-budgets.md).
+
 The connected Hoard family includes local [CookHoard](https://github.com/Luissalet/CookHoard) and [GamerHoard](https://github.com/Luissalet/GamerHoard) MCP tools, [HomeHoard](https://github.com/Luissalet/HomeHoard) for finding belongings from a photo-free local inventory snapshot, and [Mercator's Hoard](https://github.com/Luissalet/Mercators-Hoard) for a local usage and sales dashboard. HomeHoard's web inventory refreshes its Faustus snapshot after the first manual connection while its localhost bridge is running; its mobile copy is transferred manually. Scribe's audio capabilities live in Funes.
 
 ## Quick start
@@ -837,10 +839,3 @@ with stable source identities. Automations shows incoming work, retained results
 and separate family delivery; retrying delivery does not repeat execution.
 The Execution MCP exposes three event operations alongside its process tools.
 See [external events](docs/api/external-events.md) for envelopes and semantics.
-
-
-### Requested output budgets (507, 14 October 2026)
-
-Native synchronous, asynchronous and streaming local-compatible requests preserve explicit output budgets. Zero/negative requests impose no application output cap; automatic sampler defaults no longer silently replace them with8,192/2,048 tokens. Positive limits/overrides, thinking, tools, model and cancellation remain. Provider limits still apply. See `docs/api/local-output-budgets.md`.
-
-Approved transport source e940bff3, rebased with identical functional blobs, passes53 composition checks plus earlier382 core checks. The real configured global Sparks astronomy run at1M/max/16k reasoning returned2,001 characters and a saved HTML document; one round stopped at20,452 tokens. API/MCP history agrees. This demonstrates useful text delivery for the reproduced empty-answer case, not general quality or latency superiority. Generated diagram shading and orbit/phase-period errors remain open under502; the earlier793.86s failed prototype is preserved. Evidence: `D:/LocalAI/research-inbox/faustus507-backlog-20261014/LIVE-RESULT.md`.
