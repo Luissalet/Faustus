@@ -12795,3 +12795,15 @@ El sprite está byte a byte en el HTML exportado, con procedencia y prompt en el
 y 8786dea enviadas como revisión1 sin asignar revisor. Todavía no están en Main: a falta de voto, las dos
 horas del protocolo se cumplen a las08:54:27.974, antes del cierre de esta noche a las09:00. Las métricas
 de carga observadas tienen distinta duración y carga concurrente; no certifican FPS ni rendimiento universal.
+
+Estado posterior, 07:22: 651 recibió aprobación independiente CAS1 de Cursor y ya está integrado y activo.
+Las fuentes 0c1684e/8786dea son 4c19592/8a3ba9c en Main; los cuatro blobs funcionales coinciden y los documentos
+conservan las ampliaciones ajenas. Se recompilaron app y HTML bajo bloqueo, sin reiniciar el backend. HTTP
+sirve el sprite aprobado exacto y la plantilla jugable lo incorpora; una repetición ya terminada carga el
+bundle nuevo y pausa sin errores de consola. El proceso real sigue desde las06:09:17 y mantiene la partida
+humana abierta. Las cuatro arenas, los cuatro arreglos y el fuego de este encargo quedan activos.
+
+La QA privada y su servidor de vista previa ya están detenidos, con puertos libres y worktree funcional propio
+retirado tras comprobar ruta, registro Git y limpieza. El primer intento de cierre se detuvo por una referencia
+incompleta al motor; se corrigió la comprobación antes de detener los tres procesos propios. No se tocó ningún
+servidor ajeno. Evidencias finales: result651.txt, main-fire-active.json y main-fire-replay.png.
