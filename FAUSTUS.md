@@ -12640,8 +12640,8 @@ c05bc2c y fd6ccf5, sin push; Ágora #635).
 ## Silver's Hoard: selector visual y correcciones de combate — 16-10-2026
 
 Ágora637, revisión independiente APPROVE CAS2: `3709144`, `4b1fb0c` y `7f5e169` integrados en Main
-`5526904`, sin push. La activación completa espera al cierre de las ediciones concurrentes; no se confunde con
-la interfaz nueva ya compilada mientras el servidor conserva módulos anteriores.
+`5526904`, sin push. Activación completa tras el reinicio coordinado de Silver; comprobación posterior en5230:
+Leon con12equipos deEspada/Escudo yHistorial con37filas cargadas. Ágora637 cerrada.
 
 - Selector compartido con retratos, nombres, búsqueda bilingüe y desplegables de origen, región y juego en el
   modal y en Combatir; los mismos filtros en Entrenadores. Incluye personajes aún sin instalar, como Leon/Lionel
@@ -12654,8 +12654,7 @@ la interfaz nueva ya compilada mientras el servidor conserva módulos anteriores
   conservan la megaevolución al retirar al Pokémon; las reproducciones1–6 mantienen sus reglas.
 - Historial ofrece espera limitada de15s y reintento. El fallo intermitente original no se reprodujo: no se afirma
   que su causa haya quedado identificada. Inglés inicial con preferencia explícita conservada; auditoría global640 abierta.
-- Campal641: comparte efectosRT y elimina el tope de ocho objetivos en su primera entrega; sigue CHANGES R1 por
-  daño de Surf contra un único rival y dirección de la marca de embestida. Resoluciones del vídeo campal/recorder642 pendientes.
+- Campal641: la sección siguiente documenta la R2 corregida, aprobada y activa. Recorder642 sigue su revisión separada.
 
 Pruebas637:224PythonPASS,187NodePASS y1omitida deRust opcional; builds app/página jugable, MCP nativo145 con
 instalación deLeon, filtros, cancelación yRT7, MP4 realH2641280×720/AAC, navegador desktop/móvil/repetición/fallback
@@ -12682,3 +12681,27 @@ sin embeddings,79 nodos ajenos y aristas preservados. Evidencia:`D:\LocalAI\rese
 
 Pruebas: motor 288 PASS (+1 omitida), Python completa PASS, test_names_i18n 10/10, navegador ES↔EN en caliente y barrido
 EN de todas las páginas. Commits 798b73a, a3bb9a1, 3fd70ce, 31e159d, c7527bb (sin push).
+
+## Silver's Hoard: arranque de la grabacion MP4 — 16-10-2026
+
+Ágora644 R3 APPROVE CAS3 independiente, df942e2+4c65ad9+fad1a4f integrados enMain da422bb.
+La grabacion espera al preload de la arena y al primer fotograma real de captura. La tarjeta VS queda dibujada
+mientras el combate sigue en tick0; se mantiene durante el calentamiento y despues comienza la reproduccion.
+La captura prefiere VP8/Opus y el archivo final conserva H264/AAC. Entrada normal del combate intacta.
+
+Los MP4 reportados por Luis contra Leon(720p) y Red(1080p) se han regenerado por MCP nativo y revisado:
+VS visible desde el primer fotograma, primer enfrentamiento y secuencia final avanzando, audio no vacio.
+Freezedetect estricto y contraste visual no encuentran pausas>=0.8s durante esos combates; las pausas deVS
+yresultado son intencionales. No se promete rendimiento universal. Los originales deDownloads permanecen
+intactos; los archivos corregidos tienen nombres distintos. Main construida y VS comprobada en navegador.
+Revision:12Node+2adversariales propios delrevisor, evidencia research-inbox/silver644-qa/reviewer-r3.md.
+
+Ágora645 R2 APPROVE CAS2: b1a6126+d802f09+ca6a7af integrados enMainSilver6b98b8b, activos tras
+reiniciar soloSilver por elHub con0trabajos enmarcha. Reglas8: un segundo de recuperación porPokémon tras
+cada movimiento, además de la recarga individual; incluye ataqueespecial, Metrónomo y autoreseteo del muñeco.
+Los desplazamientos largos prolongan la espera hasta terminar; moverse/esquivar sigue disponible y los compañeros
+de dobles son independientes. Versiones1–7 conservan tiempos/resultados. API/MCP rt_rules describe la regla y
+la UI muestra su cuenta atrás. 262Python condefault8 PASS,209NodePASS/1skipRust, buildapp/playPASS,
+MCP156Mainsololectura yMCP150privadostart/finish8, navegadorrealcontrolescon0.9común y2.9individual.
+Revisor:36Node+10Python+3adversarialesPASS. Antes/despuésdelreinicio16tablas y6archivosprotegidos exactos.
+Evidencia645: research-inbox/silver644-qa/reviewer645-r2.md; ningún push ni pruebas que escriban en datos deLuis.
