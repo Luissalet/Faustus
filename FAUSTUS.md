@@ -12914,3 +12914,41 @@ Build completo de Main y todos sus assets idénticos a QA, comprobados por HTTP;
 idéntica de 4.830.400 bytes. La partida humana sigue abierta y el backend no se ha reiniciado.
 Evidencia en research-inbox/silver-smogon-fill-20261016.
 Sin push nuevo, modelos, reinicios de Main, delegaciones ni encargos a Claude.
+
+## Silver: coreografías y texturas de tiempo real — 17-10-2026
+
+El lote672 añade presentación propia para Excavar, Volar/Bote y Rodar/Bola Hielo,
+y una elevación breve del rival tras un impacto de Movimiento Sísmico. Las poses
+PMD ajustan su velocidad a la preparación ya decidida por el motor. No hay cambios
+de daño, invulnerabilidad, coordenadas, cooldowns ni entradas de repetición; no se
+incorpora un agarre o una cinemática global que detenga a terceros. La preferencia
+expresa de Luis excluye destrucción y terreno reactivo durante la lucha.
+
+Hierba y arena reciben dos suelos originales generados con imagegen, con reflejos
+visuales estables y centro legible; los proyectiles Water añaden un atlas original
+con cuatro fotogramas y anclajes medidos por núcleo brillante. PNG fuente, WebP,
+procedencia y script de empaquetado quedan dentro del proyecto. Las cuatro arenas
+ilustradas anteriores, partículas simples y dibujos de respaldo se conservan.
+El reloj del renderer controla los efectos, pausa y reinicio; reducir movimiento
+elimina saltos y giros decorativos. El renderer campal mantiene sus efectos previos.
+No se han importado código, sprites ni texturas ajenos de la referencia investigada.
+
+64204591 (#672) aprobado por revisión independiente CASR1 e integrado exacto en Main.
+El revisor ejecutó las ocho pruebas visuales y Node372/1omitida, sin repetir browser,
+MCP, Python ni exportaciones. Autor: Python321 aprobadas y2
+omitidas, Node372 aprobadas y1omitida, ocho nuevas pruebas visuales y build app+play.
+El primer Node detectó Image ausente en el fallback de una prueba: se corrigió y se
+repitió toda la suite. Detector una vez: solo un color preexistente, sin hallazgos
+en líneas nuevas. MCP nativo160 herramientas, QA propia63856 sin modelos ni datos
+reales. UI jugó ataques, y una repetición con entradas públicas validada por el motor
+contiene Dig81, Fly88, Rollout63, Seismic Toss100, Water Pulse57 y Hydro Pump98 de daño.
+Móvil390×844: body380, canvas346×195, consola0. HTML exportado jugado por la vista previa
+nativa download=false, no mediante servidor alternativo ni file://: Golduck pierde
+por K.O. a12.1s; no se afirma victoria. MP4 nativo generado con H2641280×720/30fps y
+AAC, duración medida69.794s; no se afirma música comprobada en esta QA sin descargas
+de audio. Frames inspeccionados muestran vuelo, elevación de impacto Sísmico y atlas
+de agua en vuelo. Medición de28.446s:0.858s de script y0.082s de layout; no es un
+benchmark de FPS. Build Main y todos los assets idénticos a QA por HTTP, plantilla
+play6482872bytes igual. Main conserva la partida humana abierta; no se reinició aquí.
+Evidencia research-inbox/silver-visuals-20261017.
+Sin push, reinicio Main, modelos, subagentes ni encargos a Claude.
