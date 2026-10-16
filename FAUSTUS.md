@@ -12785,3 +12785,13 @@ Main responde con 160 herramientas y mantiene la misma partida humana abierta; j
 No se han repetido escrituras de QA en Main ni realizado un reinicio desde este encargo. Los resultados de
 las regresiones y del navegador corresponden a las instancias aisladas descritas arriba. El fuego 651 sigue
 pendiente de la ruta de efectos reservada. Evidencia adicional: main-backend-active.json.
+
+Estado posterior, 06:54: la ruta de efectos caducó y 651 incorpora ya el sprite original de fuego en el
+renderer existente de QA: proyectiles y cabezas de haces, cuatro fotogramas a 12 fps, dirección, pausa,
+reinicio y fade; estilos sencillos y fallo de carga conservan el efecto procedural. No cambia el motor.
+297 pruebas Python aprobadas y dos omitidas; 301 Node y una omitida; build app/HTML, MCP nativo156/3 llamadas,
+dos repeticiones reales, móvil sin desbordamiento y HTML autónomo jugado hasta K.O., pausa y repetición.
+El sprite está byte a byte en el HTML exportado, con procedencia y prompt en el proyecto. Fuentes 0c1684e
+y 8786dea enviadas como revisión1 sin asignar revisor. Todavía no están en Main: a falta de voto, las dos
+horas del protocolo se cumplen a las08:54:27.974, antes del cierre de esta noche a las09:00. Las métricas
+de carga observadas tienen distinta duración y carga concurrente; no certifican FPS ni rendimiento universal.
