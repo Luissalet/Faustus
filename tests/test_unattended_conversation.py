@@ -210,3 +210,16 @@ def test_an_announced_step_that_never_ran_is_sent_back_to_the_audit(tmp_path, mo
     events = _events(_collect(gen))
     assert [e for e in events if e.get("reason") == "completion_audit"], [e.get("type") for e in events]
     assert len(seen) >= 3
+
+
+def test_back_to_back_loops_before_any_tool_do_not_end_an_unattended_task(monkeypatch):
+    """Two polyglot runs died at rounds 3 and 7: the model looped again within
+    four rounds before running any tool, and the recovery ladder ended the turn."""
+    import src.llm_core as llm_core
+    _patch_common(monkeypatch)
+    loop = llm_core._degenerate_output_error_chunk(
+        llm_core.DegenerateOutput("repeated phrase 'edge cases edge cases' 10 times", "glm", "http://x"))
+    seen = _scripted(monkeypatch, [[loop], [loop], [loop], _text("The answer is 4.")])
+    events = _run(user="What is 2 + 2?")
+    assert len(seen) == 4, [e.get("type") for e in events]
+    assert not [e for e in events if e.get("type") == "error"]

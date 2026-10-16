@@ -65,6 +65,12 @@ def test_guard_does_not_raise_on_test_code_that_names_its_nodes_with_one_letter(
         guard.check('        self.assertTreeEquals(tree.from_pov("x"), Tree("x"))\n')
 
 
+def test_guard_does_not_raise_on_a_grid_of_one_letter_cells():
+    guard = llm_core._DegenerateStreamGuard("glm")
+    for _ in range(30):
+        guard.check('    {"a", "a", "a", "a", "b"},\n')
+
+
 def test_guard_still_raises_on_a_word_loop_in_code():
     guard = llm_core._DegenerateStreamGuard("glm")
     with pytest.raises(llm_core.DegenerateOutput):

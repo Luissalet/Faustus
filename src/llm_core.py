@@ -1285,9 +1285,10 @@ class _DegenerateStreamGuard:
         if not reason and self.same_run >= 28 and self.total_chars >= 100:
             reason = f"repeated '{self.last_token}' {self.same_run} times"
         elif not reason and len(self.recent_tokens) >= 72:
-            top = max(set(self.recent_tokens), key=self.recent_tokens.count)
+            words = {t for t in self.recent_tokens if len(t) >= 2} or set(self.recent_tokens)
+            top = max(words, key=self.recent_tokens.count)
             count = self.recent_tokens.count(top)
-            if count >= 60 and count / max(len(self.recent_tokens), 1) >= 0.78:
+            if len(top) >= 2 and count >= 60 and count / max(len(self.recent_tokens), 1) >= 0.78:
                 reason = f"repeated '{top}' {count}/{len(self.recent_tokens)} recent tokens"
         if not reason and len(self.recent_tokens) >= 80:
             # Phrase loops are common on some local quantized MLX/MoE models:
@@ -1295,7 +1296,11 @@ class _DegenerateStreamGuard:
             # trip the single-token guard above, but it is still a wedged
             # generation. Require many repeats of the same 4-gram so normal
             # prose/list formatting is not interrupted.
-            grams = [tuple(self.recent_tokens[i:i + 4]) for i in range(0, len(self.recent_tokens) - 3)]
+            # A phrase of one-letter words ("a a a a") is a grid or a test
+            # fixture far more often than a loop; a real one-character loop
+            # is caught by the raw-repeat rule above.
+            grams = [g for g in (tuple(self.recent_tokens[i:i + 4]) for i in range(0, len(self.recent_tokens) - 3))
+                     if any(len(t) >= 2 for t in g)]
             if grams:
                 top_gram = max(set(grams), key=grams.count)
                 gram_count = grams.count(top_gram)

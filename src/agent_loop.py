@@ -13801,7 +13801,12 @@ async def _stream_agent_loop_body(
                          # Mid-task (tools already ran), the ladder below
                          # answers without tools and so ends the work half
                          # done: retry the round instead, within the budget.
-                         or bool(tool_events))
+                         or bool(tool_events)
+                         # Unattended, the ladder's tool-less answer is the
+                         # end of the task: two polyglot runs died at rounds
+                         # 3 and 7 on back-to-back loops before any tool ran.
+                         # Keep retrying within the same budget.
+                         or unattended)
                     and round_num < max_rounds
                 ):
                     _degenerate_output_hit = True
