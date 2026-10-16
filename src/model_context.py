@@ -184,6 +184,9 @@ KNOWN_CONTEXT_WINDOWS = {
     'llama-3': 131072,
 
     # --- Qwen ---
+    # Flash-Next's native window, distinct from the generic Qwen3 family.
+    # Source: https://huggingface.co/Qwen/Qwen3.8-Flash-Next
+    'qwen3.8-flash-next': 262144,
     'qwen3': 131072,
     'qwen2.5': 131072,
     'qwen2': 32768,
