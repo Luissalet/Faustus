@@ -12842,3 +12842,36 @@ independiente: Node364/1skip y buildcompleto; Python/browser/MCP comprobados por
 PID123200 sigue desde06:09:17 y la partida humana continúa abierta. QA propia detenida tras0live/jobs/runs,
 puerto63852libre y pestaña temporal cerrada. Worktree de producto retirado con comprobaciones de ruta,
 registroGit, limpieza y ausencia de enlaces; grafo propio85nodos/84ajenos y aristas exactas, sin embeddings.
+
+## Silver's Hoard: arenas visibles y música en MP4 — 16-10-2026
+
+La colección de arenas estaba vacía: los cuatro suelos ilustrados nocturnos estaban integrados en el editor,
+pero faltaban sus arenas guardadas. Se crearon por el API/MCP del producto Sala del campeón, Monte
+Plateado, Cascada Meteoro y Castillo, con sus rocas originales. No se copió una biblioteca de prueba a Main.
+
+El selector de tiempo real de combate, serie y torneo presenta las arenas guardadas mediante miniaturas
+seleccionables del suelo y de las rocas. Comparte el SVG con el editor, conserva el desplegable Custom y
+los botones Open/With rocks y funciona con ratón, Intro y Espacio. En móvil390×844 las tarjetas caben
+sin desbordamiento. Los selectores propios de Training/Gym/LiveRooms conservan su interfaz anterior.
+
+El MP4 perdía la música porque el reproductor la iniciaba mientras esperaba en pausa, antes de conectar
+la captura de audio. La ruta de grabación conecta ahora esa captura antes de cargar el combate; ver una
+repetición normal conserva su flujo. Prueba nativa RED/GREEN con la misma batalla y pista sintética en
+QA: banda3791.23Hz antes−91dB/silencio, después−40.5dB; ambosH264720p30/AAC48kHz. Los MP4 ya
+exportados requieren exportarse de nuevo. No se atribuye el fallo a la fuente musical de PokeRogue.
+
+Entregas 9a3f13b (#663) y bb50ea5 (#664) aprobadas CAS R1 por revisión independiente e integradas FF
+en Main limpio. Build completo app+play, Python 321 aprobadas/2 omitidas y Node 364/1 omitida. El revisor
+repitió build y Node, sin repetir Python ni las pruebas de navegador/MCP/audio efectuadas por el autor.
+Navegador y MCP prueban una partida nueva jugada con Splash en Cascada: final a los 30s/tick900,
+seis rocas y suelo meteor. El MP4 conserva también la música en clásico (−42.8dB) y campal (−40.8dB).
+
+Frontend activo en5230: todos los assets idénticos a QA y HTTP byte a byte igual al disco; las cuatro
+miniaturas comprobadas en el selector real. Plantilla HTML idéntica a QA y exportación de gimnasio de
+4831915bytes comprobada por API. Abrir el HTML mediante file:// fue bloqueado por la política del
+navegador: no se eludió ni se afirma haber jugado ese archivo en este lote. La app y los MP4 nativos sí
+se probaron en navegador. La partida humana sigue abierta y el backend PID123200 continúa desde06:09:17.
+
+Evidencia D:/LocalAI/research-inbox/silver-arenas-visible-20261016. Sin push, reinicios de Main, modelos,
+delegaciones ni encargos a Claude. La automatización nocturna permanece pausada. Es un ajuste local:
+README EN/ES, arquitectura, memoria y nodo propio del grafo actualizados; no cambia el manual global.
