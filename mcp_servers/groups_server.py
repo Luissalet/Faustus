@@ -17,14 +17,19 @@ from src.stdio_guard import guard
 server = Server("groups")
 S = {"type": "string"}
 GROUP = {"group_id": S}
+PARTICIPANT = {'type': 'object', 'properties': {
+    'route': {'type': 'object'}, 'personaName': S, 'personaPrompt': S, 'personaId': S, 'sessionId': S,
+    'autonomyPreset': {'type': 'string', 'enum': ['supervised', 'bounded_autonomous', 'read_only']},
+    'inputTokenBudget': {'type': 'integer', 'minimum': 4096, 'maximum': 200000},
+}}
 SPECS = {
     "group_options": ("GET", "/config", {}, [], True, "Read the configured global model (Sparks), supported working-group modes and native tool execution options."),
     "group_list": ("GET", "", {"space_id": S}, [], True, "List persistent groups of models/agents, optionally in one Agora space. Work continues when the observer disconnects."),
-    "group_create": ("POST", "", {"participants": {"type": "array", "items": {"type": "object"}}, "name": S, "workspace": S, "space_id": S,
+    "group_create": ("POST", "", {"participants": {"type": "array", "items": PARTICIPANT}, "name": S, "workspace": S, "space_id": S,
         "mode": {"type": "string", "enum": ["parallel", "round-robin"]}, "executionMode": {"type": "string", "enum": ["chat", "agent"]}},
-        ["participants"], False, "Create a persistent group. Each participant may set a route/model and personaName/personaPrompt. Omitted routes use the global configured model. Agent mode uses native tools; chat mode preserves plain conversation."),
+        ["participants"], False, "Create a persistent group. Each participant may set a route/model, personaName/personaPrompt, autonomyPreset (read_only for reviewers), and inputTokenBudget. Omitted routes use the global configured model. Agent mode uses native tools; chat mode preserves plain conversation."),
     "group_get": ("GET", "/{group_id}", GROUP, ["group_id"], True, "Read persistent members, ordered turns, partial/completed replies, errors and actual native run IDs."),
-    'group_update': ('PATCH', '/{group_id}', {**GROUP, 'name': S, 'participants': {'type': 'array', 'items': {'type': 'object'}},
+    'group_update': ('PATCH', '/{group_id}', {**GROUP, 'name': S, 'participants': {'type': 'array', 'items': PARTICIPANT},
         'mode': {'type': 'string', 'enum': ['parallel', 'round-robin']}, 'executionMode': {'type': 'string', 'enum': ['chat', 'agent']},
         'workspace': S, 'expected_revision': {'type': 'integer'}}, ['group_id'], False,
         'Rename a group or edit its members without replacing the room or remaining member sessions. Removed members take no new turns; current work can finish. Use the observed revision for concurrent edits.'),

@@ -14,6 +14,19 @@ from src.hoard_link.coordination.groups import GroupStore as _SharedGroupStore
 logger = logging.getLogger(__name__)
 
 
+def participant_execution_options(member):
+    """Reuse native execution preferences and input budgeting for each member."""
+    from src.project_execution_defaults import validate
+    from src.context_budget import parse_turn_input_budget
+    options = {}
+    if member.get('autonomyPreset') is not None:
+        options.update(validate({'autonomy_preset': member['autonomyPreset']}))
+    budget = parse_turn_input_budget(member.get('inputTokenBudget'))
+    if budget is not None:
+        options['input_token_budget'] = budget
+    return options
+
+
 class GroupStore(_SharedGroupStore):
     def __init__(self, path=None):
         super().__init__(path=path or Path(DATA_DIR) / "groups.db")
@@ -305,6 +318,8 @@ class NativeGroupBridge:
         self.member_locks = {}
 
     def validate(self, definition, owner):
+        for member in definition['participants']:
+            participant_execution_options(member)
         for sid in [definition["parentId"], *(p["sessionId"] for p in definition["participants"])]:
             session = self.sessions.get_session(sid)
             if owner and session.owner != owner:
@@ -327,6 +342,7 @@ class NativeGroupBridge:
         self._append_once(turn["group_id"], "assistant", step["text"],
                           {"group_step_id": step["id"], "group_turn_id": turn["id"],
                            "group_model": member["personaName"], "model": member["route"]["model"],
+                           "group_route": step['detail'].get('route', {}),
                            "group_step_status": step.get("status", "done"), "group_error": step.get("error", ""),
                            "group_tool_results": step["detail"].get("tool_results", [])},
                           ("group_step_id", step["id"]))
@@ -341,6 +357,7 @@ class NativeGroupBridge:
         selected = []
         names = {}
         for source in participants:
+            participant_execution_options(source)
             route = dict(source.get("route") or {})
             if route.get("endpointId"):
                 resolved = resolve_endpoint_by_id(route["endpointId"], route.get("model") or "", owner=owner, require_exact_model=True)
@@ -363,6 +380,7 @@ class NativeGroupBridge:
                      "endpointName": route.get("endpointName", ""), "kind": route.get("kind", "")}
             selected.append({"route": route, "personaId": source.get("personaId", ""),
                              "personaName": label, "personaPrompt": source.get("personaPrompt", ""),
+                             **{key: source[key] for key in ('autonomyPreset', 'inputTokenBudget') if source.get(key) is not None},
                              "headers": headers, '_previous_session': source.get('sessionId', '')})
         if len(selected) < 2:
             raise ValueError("A group needs at least two participants")
@@ -491,6 +509,13 @@ class NativeGroupBridge:
                     "selected_endpoint_id": member["route"].get("endpointId", ""),
                     "workspace": turn["definition"].get("workspace", ""), "allow_bash": True, "allow_web_search": True}
                 body.update({k: v for k, v in continuation.items() if k not in {"request_id", "message"}})
+                # Saved member policy also applies to question continuations.
+                # The normal chat endpoint enforces read_only at tool dispatch.
+                body.update(participant_execution_options(member))
+                from core.log_safety import redact_url
+                detail['route'] = {'model': member['route']['model'],
+                    'endpointId': member['route'].get('endpointId', ''),
+                    'endpointUrl': redact_url(member['route'].get('endpointUrl', ''))}
                 request = native_request(self.app, owner, body)
                 try:
                     response = await self.chat_endpoint(request, initial_response_timeout_s=None)

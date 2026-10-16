@@ -57,6 +57,34 @@ def test_directed_turn_addresses_only_selected_member_after_edit(tmp_path):
     assert [s['member_id'] for s in store.steps(turn)] == ['two']
 
 
+def test_member_policy_is_persistent_and_does_not_change_old_queued_turns(tmp_path):
+    sessions = Sessions()
+    bridge = NativeGroupBridge(sessions, None, None)
+    coordinator = GroupCoordinator(None, bridge, store=GroupStore(tmp_path/'groups.db'))
+    members = [{'route': {'model': name, 'endpointUrl': 'http://127.0.0.1:65534'},
+                **({'autonomyPreset': 'read_only', 'inputTokenBudget': 180000} if name == 'Reviewer' else {})}
+               for name in ('Implementer', 'Reviewer')]
+    original = coordinator.adopt(bridge.create(members, 'round-robin', 'alice'), 'alice')
+    turn_id, _ = coordinator.store.enqueue(original['parentId'], 'alice', 'Review', 'old')
+    observed = coordinator.store.group(original['parentId'], 'alice')
+    observed['participants'][1]['inputTokenBudget'] = 90000
+    updated = coordinator.update(original['parentId'], 'alice', {'participants': observed['participants']}, observed['revision'])
+    assert updated['participants'][1]['autonomyPreset'] == 'read_only'
+    assert updated['participants'][1]['inputTokenBudget'] == 90000
+    assert updated['participants'][1]['sessionId'] == original['participants'][1]['sessionId']
+    assert coordinator.store.turns(original['parentId'])[0]['definition']['participants'][1]['autonomyPreset'] == 'read_only'
+    assert coordinator.store.turns(original['parentId'])[0]['definition']['participants'][1]['inputTokenBudget'] == 180000
+
+
+def test_bad_policy_is_rejected_before_creating_any_session():
+    sessions = Sessions()
+    bridge = NativeGroupBridge(sessions, None, None)
+    members = [{'route': {'model': 'reviewer', 'endpointUrl': 'http://127.0.0.1:65534'}, 'autonomyPreset': 'typo'}] * 2
+    with pytest.raises(ValueError):
+        bridge.create(members, 'round-robin', 'alice')
+    assert not sessions.rows
+
+
 def test_member_context_cursor_reads_new_peer_results_and_keeps_parallel_replies_unread():
     from core.models import ChatMessage
     sessions = Sessions()

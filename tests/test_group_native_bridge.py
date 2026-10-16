@@ -180,3 +180,39 @@ def test_failed_member_shares_typed_uncertainty_and_failure_with_next_model():
     context=bridge._context(t,t['definition']['participants'][1])
     assert 'outcome_unknown' in context and 'read history' in context and 'attempt1' in context
     assert 'failed: 503 after attempt' in context
+
+
+async def test_reviewer_policy_and_route_survive_question_continuation(monkeypatch):
+    from src import chat_outbox
+    monkeypatch.setattr(chat_outbox, 'get', lambda **kwargs: None)
+    seen = []
+    async def endpoint(request, **kwargs):
+        seen.append(await request.json())
+        async def stream():
+            yield 'data: {"delta":"Review complete"}\n\n'
+        return StreamingResponse(stream())
+    bridge = NativeGroupBridge(Sessions(), endpoint, FastAPI())
+    t = turn()
+    member = t['definition']['participants'][0]
+    member.update(autonomyPreset='read_only', inputTokenBudget=180000)
+    member['route'] = {'model': 'reviewer-model', 'endpointId': 'qwen-endpoint',
+                       'endpointUrl': 'http://user:private@qwen/v1/chat/completions?api_key=secret'}
+    st = step()
+    st['detail'] = {'continuation': {'message': 'Continue review', 'autonomy_preset': 'bounded_autonomous'}}
+    async def update(*args): pass
+    result = await bridge.invoke(turn=t, step=st, member=member, owner='owner', progress=update)
+    assert seen[0]['autonomy_preset'] == 'read_only'
+    assert seen[0]['input_token_budget'] == 180000
+    assert seen[0]['selected_endpoint_id'] == 'qwen-endpoint'
+    assert seen[0]['model'] == 'reviewer-model'
+    assert 'private' not in str(result['detail']['route']) and 'secret' not in str(result['detail']['route'])
+    bridge.reply(t, {**st, **result}, 'owner')
+    metadata = bridge.sessions.get_session('parent').history[-1].metadata
+    assert metadata['group_route'] == result['detail']['route']
+
+
+@pytest.mark.parametrize('options', [{'autonomyPreset': 'typo'}, {'inputTokenBudget': True}, {'inputTokenBudget': 1048576}])
+def test_invalid_member_policy_cannot_silently_gain_write_access(options):
+    from src.group_orchestrator import participant_execution_options
+    with pytest.raises(ValueError):
+        participant_execution_options(options)

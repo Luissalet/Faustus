@@ -12,6 +12,10 @@ async def test_native_catalog_exposes_tools_modes_queue_and_pending_questions():
     assert catalog['group_resume'].inputSchema['properties']['answer']['type']=='object'
     assert catalog['group_get'].annotations.readOnlyHint
     assert not catalog['group_send'].annotations.readOnlyHint
+    for name in ('group_create', 'group_update'):
+        participant = catalog[name].inputSchema['properties']['participants']['items']['properties']
+        assert 'read_only' in participant['autonomyPreset']['enum']
+        assert participant['inputTokenBudget']['maximum'] == 200000
 
 async def test_mcp_request_targets_own_native_api_and_preserves_ids(monkeypatch):
     captured=[]
