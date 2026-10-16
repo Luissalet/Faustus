@@ -12778,3 +12778,27 @@ El informe duradero, los hashes completos, las pruebas y los límites están en
 `D:\LocalAI\research-inbox\silver-noche-20261016\RESULT.txt`; continuidad en `CONTINUIDAD.txt` de esa carpeta.
 Manual nativo y grafo actualizados únicamente en la sección y nodo propios, preservando el resto y sin
 embeddings. Este encargo y su automatización se limitan a esta noche, hasta las09:00Europe/Madrid.
+
+## Silver's Hoard: reloj compartido de los efectos — 16-10-2026
+
+Continuación humana «Sigue», posterior al cierre nocturno, realizada por Codex solo. La automatización
+nocturna sigue pausada; no se asignó trabajo ni revisión a Claude.
+
+Los proyectiles que giran o pulsan usan el reloj del renderer, por lo que conservan la fase durante la pausa
+y al reiniciar una repetición. El adaptador de las campales expone ese mismo reloj a los efectos compartidos:
+se corrige el fallo del fuego al cargarse su imagen. Son dos líneas de producto, sin modificar simulación,
+daño, colisiones ni formatos. El comportamiento se comparte con las páginas jugables exportadas.
+
+Entrega d5cc3bf (#658) en revisión, aún sin integrar en Main. QA aislada con npm ci propio: 321 pruebas
+Python aprobadas y dos omitidas; 364 Node aprobadas y una omitida; compilación app/HTML aprobada.
+Regresiones RED→GREEN de ocho familias de proyectil y del constructor real de MassRenderer.
+
+MCP nativo: 160 herramientas disponibles y fixtures legales nuevos. App RT con roca en vuelo: dos capturas
+idénticas tras 16 segundos en pausa. Móvil 390×844 sin desbordamiento. Campal completa comprobada contra
+el motor (hash qcduv8); HTML campal jugado con Fire Blast, pausa/reanudación y final a 30 segundos, siete
+de daño y código SILVERMASS1. Sin errores de consola. El HTML RT se cerró por abandono solo de QA;
+no se presenta como victoria ni K.O. La simulación y los datos reales de Luis permanecen intactos.
+
+Evidencias, logs y continuidad: D:\LocalAI\research-inbox\silver-sigue-20261016. Sin push, modelos ni
+reinicio de Main; la partida humana abierta permanece intocable. Integrar con revisión o el plazo de dos
+horas del Ágora, bloqueo de merge y HEAD fresco. No hay autoaprobación.
