@@ -12778,3 +12778,10 @@ omitidas; 301 del motor aprobadas y una omitida. MCP nativo 156/14 llamadas, sub
 y navegador hasta turno3; consola sin errores. QA cerrada sin partidas ni trabajos activos. Los dos arreglos
 de backend, nombres 652 e importación 656, siguen pendientes de activación: el servidor real permanece desde
 03:51:45 y conserva la partida humana abierta. El fuego 651 sigue preparado sin conexión al renderer.
+
+Estado posterior, 06:20: los arreglos de nombres 652 e importación 656 ya están activos y sus tareas cerradas.
+Otro agente reinició Silver a las 06:09:17, después de integrarse ambos cambios. La lectura MCP nativa de
+Main responde con 160 herramientas y mantiene la misma partida humana abierta; jobs y active_runs vacíos.
+No se han repetido escrituras de QA en Main ni realizado un reinicio desde este encargo. Los resultados de
+las regresiones y del navegador corresponden a las instancias aisladas descritas arriba. El fuego 651 sigue
+pendiente de la ruta de efectos reservada. Evidencia adicional: main-backend-active.json.
