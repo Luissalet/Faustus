@@ -12662,3 +12662,23 @@ instalación deLeon, filtros, cancelación yRT7, MP4 realH2641280×720/AAC, nave
 y combate completo. Revisor R2:14Python y5Node propios. Conjunto integrado5526904:buildapp/play y20Python/13Node
 de composición PASS. Manual nativoCAS/readback cambia soloSilver de168párrafos;167 ajenos intactos. Grafo propio
 sin embeddings,79 nodos ajenos y aristas preservados. Evidencia:`D:\LocalAI\research-inbox\silver637-qa`.
+
+## Silver's Hoard: nombres en el idioma del lector, filtros por región y juego, olas de campal v3 — 16-10-2026
+
+- Lo que la app inventa sale en el idioma de quien lee (#640, `silvers_hoard/names_i18n.py` + `client/src/loc.js`): entrenadores
+  de personaje, de cartucho y aleatorios («Trainer 512»), gimnasios y ligas de los juegos con ciudad, medalla, descripción y
+  miembros, retos, medallas, campales de lista, rivales de instalaciones guardados solo en castellano («Entrenadora Guay Nora»
+  → «Ace Trainer Nora», Cerebros de la Frontera, emblemas de jefe) y etapas de racha. Lo que escribe el usuario no se toca.
+- El registro del combate reescribe `|player|` y `|win|` al nombre del asiento traducido (también cuando el simulador lo
+  recorta a 40 caracteres) y se rehace al cambiar de idioma; títulos, ganador, tira de reto, Historial, selector de
+  entrenadores, Entrenadores, Combatir, página del entrenador y editores de gimnasio/liga usan lo mismo.
+- Desplegables de región y juego en Gimnasios, Ligas e Instalaciones (`components/PlaceFilters.jsx`); el API da a cada
+  gimnasio, liga e instalación su `region` y `game_id`.
+- Campal reglas v3 (#641 R2): la ola de Surf/Terremoto solo reparte ×0,75 si al salir hay más de un rival en su alcance;
+  v1 y v2 conservan reglas y huellas (las 6 campales guardadas dan same=true). La marca de embestida normaliza su dirección.
+- Una página abierta durante una recompilación recarga una vez en vez de quedarse en blanco (`client/src/lazy.js`).
+- Pendiente de turno ajeno (#644): nombres traducidos en Video.jsx y en la arena en tiempo real (RtScreen: nombre del
+  asiento, «Nv.» y la etiqueta Pausa/Play).
+
+Pruebas: motor 288 PASS (+1 omitida), Python completa PASS, test_names_i18n 10/10, navegador ES↔EN en caliente y barrido
+EN de todas las páginas. Commits 798b73a, a3bb9a1, 3fd70ce, 31e159d, c7527bb (sin push).
