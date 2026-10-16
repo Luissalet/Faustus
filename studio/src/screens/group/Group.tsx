@@ -68,10 +68,11 @@ function Setup({ routes, defaultRoute, personas, presets, onStart, onPresetsChan
   const loadPreset = (g: GroupPreset) => {
     const list: Participant[] = [];
     for (const p of g.participants) {
-      const route = routes.find((r) => r.model === p.modelId && (!p.endpointId || r.endpointId === p.endpointId)) ?? routes.find((r) => r.model === p.modelId);
+      const route = routes.find((r) => r.model === p.modelId && (!p.endpointId || r.endpointId === p.endpointId));
       if (!route) continue;
       const persona = p.characterId ? personas.find((x) => x.id === p.characterId) : undefined;
-      list.push({ route, personaId: persona?.id ?? '', personaName: persona?.name ?? p.characterName ?? '', personaPrompt: persona?.systemPrompt ?? '' });
+      list.push({ route, personaId: persona?.id ?? '', personaName: persona?.name ?? p.characterName ?? '',
+        personaPrompt: persona?.systemPrompt ?? p.personaPrompt ?? '', autonomyPreset: p.autonomyPreset, inputTokenBudget: p.inputTokenBudget });
     }
     if (!list.length) {
       say(t('None of that group’s models is available now.'), 'warn');
@@ -149,6 +150,14 @@ function Setup({ routes, defaultRoute, personas, presets, onStart, onPresetsChan
                   {x.name}
                 </option>
               ))}
+            </select>
+            <select className="fs-field fs-grp__persona" value={p.autonomyPreset ?? ''}
+              aria-label={t('Tools for {model}', { model: p.route.model })}
+              onChange={(event) => setParticipants((cur) => cur.map((member, j) => j === i ? { ...member, autonomyPreset: event.target.value as Participant['autonomyPreset'] || undefined } : member))}>
+              <option value="">{t('Project defaults')}</option>
+              <option value="supervised">{t('Supervised')}</option>
+              <option value="bounded_autonomous">{t('Autonomous')}</option>
+              <option value="read_only">{t('Read only')}</option>
             </select>
             <IconButton icon={X} label={t('Remove {name}', { name: speakerName(p) })} size="sm" onClick={() => setParticipants((cur) => cur.filter((_, j) => j !== i))} disabled={participants.length <= 1} />
           </li>
@@ -372,6 +381,7 @@ export function GroupScreen({embedded = false}: {embedded?: boolean} = {}) {
               <span key={p.sessionId} className="fs-grp__seat" title={p.route.model}>
                 <Avatar name={speakerName(p)} />
                 {speakerName(p)}
+                {p.autonomyPreset === 'read_only' && <small>{t('Read only')}</small>}
               </span>
             ))}
           </div>

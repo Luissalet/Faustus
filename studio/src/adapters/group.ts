@@ -11,6 +11,8 @@ export interface Participant {
   personaId: string;
   personaName: string;
   personaPrompt: string;
+  autonomyPreset?: 'supervised' | 'bounded_autonomous' | 'read_only';
+  inputTokenBudget?: number;
 }
 
 export type GroupMode = 'parallel' | 'round-robin';
@@ -29,7 +31,8 @@ export interface GroupState {
 
 export interface GroupPreset {
   name: string;
-  participants: { modelId: string; modelDisplay: string; endpointId?: string; characterId?: string; characterName?: string }[];
+  participants: { modelId: string; modelDisplay: string; endpointId?: string; characterId?: string; characterName?: string;
+    personaPrompt?: string; autonomyPreset?: Participant['autonomyPreset']; inputTokenBudget?: number }[];
 }
 
 const STATES_KEY = 'fs-group-states';
@@ -166,6 +169,9 @@ export async function listGroupPresets(signal?: AbortSignal): Promise<GroupPrese
       endpointId: typeof p.endpointId === 'string' ? p.endpointId : undefined,
       characterId: typeof p.characterId === 'string' ? p.characterId : undefined,
       characterName: typeof p.characterName === 'string' ? p.characterName : undefined,
+      personaPrompt: typeof p.personaPrompt === 'string' ? p.personaPrompt : undefined,
+      autonomyPreset: ['supervised', 'bounded_autonomous', 'read_only'].includes(String(p.autonomyPreset)) ? p.autonomyPreset as Participant['autonomyPreset'] : undefined,
+      inputTokenBudget: typeof p.inputTokenBudget === 'number' ? p.inputTokenBudget : undefined,
     })),
   }));
 }
@@ -178,6 +184,8 @@ export async function saveGroupPresets(groups: GroupPreset[]): Promise<void> {
 export function presetFrom(name: string, participants: Participant[]): GroupPreset {
   return {
     name,
-    participants: participants.map((p) => ({ modelId: p.route.model, modelDisplay: p.route.model.split('/').pop() ?? p.route.model, endpointId: p.route.endpointId, characterId: p.personaId || undefined, characterName: p.personaName || undefined })),
+    participants: participants.map((p) => ({ modelId: p.route.model, modelDisplay: p.route.model.split('/').pop() ?? p.route.model,
+      endpointId: p.route.endpointId, characterId: p.personaId || undefined, characterName: p.personaName || undefined,
+      personaPrompt: p.personaPrompt || undefined, autonomyPreset: p.autonomyPreset, inputTokenBudget: p.inputTokenBudget })),
   };
 }
