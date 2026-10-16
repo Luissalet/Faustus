@@ -12,6 +12,8 @@
 
 .fs-grp__setup {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-inline-size: 0;
   gap: var(--fs-space-3);
   padding: var(--fs-space-4);
   border: 1px solid var(--fs-border);
@@ -49,6 +51,7 @@
 
 .fs-grp__row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--fs-space-2);
   max-inline-size: none;
@@ -59,7 +62,7 @@
 }
 
 .fs-grp__pick {
-  flex: 1;
+  flex: 1 1 14rem;
   display: inline-flex;
   align-items: center;
   gap: var(--fs-space-2);
@@ -85,9 +88,12 @@
 
 .fs-grp__persona {
   inline-size: 200px;
+  max-inline-size: 100%;
   block-size: var(--fs-control-sm);
   padding-block: 0;
 }
+
+.fs-grp__setup > .fs-inline { flex-wrap: wrap; }
 
 /* ── Chat ── */
 
