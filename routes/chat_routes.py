@@ -2922,6 +2922,13 @@ def setup_chat_routes(
             _doc_context_msgs = _doc_context_messages(_parse_doc_context_payload(doc_context_raw), ctx.user)
             if _hoard_context is not None:
                 _doc_context_msgs.append(_hoard_copilot.context_message(_hoard_context))
+                # A Hoard with an installed manifest but no connected tool server
+                # is connected before the turn, so the panel can act on the app.
+                from src.hoard_copilot_turn import connect_origin_app as _connect_origin
+                _connected_now = await _connect_origin(get_mcp_manager(), _hoard_context)
+                if _connected_now:
+                    logger.info("[hoard-copilot] %s the panel's app before the turn (%s)", _connected_now,
+                                (_hoard_context.get("origin") or {}).get("app_id"))
                 from src.hoard_copilot_turn import origin_hint_message as _origin_hint
                 try:
                     _hint = _origin_hint(_hoard_context, get_mcp_manager())

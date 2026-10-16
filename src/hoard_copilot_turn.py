@@ -109,6 +109,107 @@ def remember_origin_server(manager: Any, context: Optional[Mapping[str, Any]]) -
     return server
 
 
+#: preset id -> monotonic time of the last automatic connection attempt.
+_CONNECT_TRIED: Dict[str, float] = {}
+#: One automatic attempt per app every this many seconds (an app that is off
+#: is not probed again on every turn of its panel).
+CONNECT_RETRY_S = 300.0
+
+
+def _connected_family(manager: Any, keys: Set[str]) -> list:
+    connections = getattr(manager, "_connections", {}) or {}
+    tools = getattr(manager, "_tools", {}) or {}
+    return [sid for sid in tools if _family(sid, (connections.get(sid) or {}).get("name", sid), keys)]
+
+
+def origin_preset(context: Optional[Mapping[str, Any]], presets: Optional[Iterable[Mapping[str, Any]]] = None) -> str:
+    """Id of the connector preset (an installed plugin manifest) of the panel's
+    app: by app id or tool server id, else by name; '' when there is none."""
+    origin = origin_of(context)
+    keys = {_norm(origin.get("tool_server_id")), _norm(origin.get("app_id")), _norm(origin.get("app_name"))} - {""}
+    if not keys:
+        return ""
+    if presets is None:
+        try:
+            from src import connectors
+            presets = connectors.list_presets()
+        except Exception:  # noqa: BLE001
+            return ""
+    rows = [p for p in presets or [] if isinstance(p, Mapping) and p.get("id")]
+    for p in rows:
+        if _norm(p["id"]) in keys:
+            return str(p["id"])
+    for p in rows:
+        if _norm(p.get("name")) in keys:
+            return str(p["id"])
+    return ""
+
+
+async def _internal_post(path: str, body: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
+    """POST to Faustus's own API as the in-process tool layer (admin routes)."""
+    import httpx
+    from core.constants import internal_api_base
+    from core.middleware import INTERNAL_TOOL_HEADER, INTERNAL_TOOL_TOKEN
+    async with httpx.AsyncClient(timeout=90.0, trust_env=False) as client:
+        response = await client.post(internal_api_base() + path, json=dict(body),
+                                     headers={INTERNAL_TOOL_HEADER: INTERNAL_TOOL_TOKEN})
+        return response.json() if response.status_code == 200 else None
+
+
+async def connect_origin_app(manager: Any, context: Optional[Mapping[str, Any]], *,
+                             post: Optional[Callable[..., Any]] = None, find: Optional[Callable[..., Any]] = None,
+                             connectors_of: Optional[Callable[[str], list]] = None,
+                             presets: Optional[Iterable[Mapping[str, Any]]] = None,
+                             clock: Callable[[], float] = time.monotonic) -> str:
+    """A panel turn from a Hoard whose tools are not connected to Faustus although
+    its plugin manifest is installed: connect it now, the way the Connectors
+    screen does (switch its connector back on, or adopt the running app), so
+    the turn gets the app's tools.
+
+    Live 17-10-2026: Silver's Hoard had a manifest but no connector, and its
+    copilot answered with nothing but web searches. Returns "connected",
+    "adopted" or "" (already connected, no manifest, app not running, or tried a
+    moment ago). Never raises: a turn always goes ahead."""
+    try:
+        origin = origin_of(context)
+        keys = {_norm(origin.get("tool_server_id")), _norm(origin.get("app_id")), _norm(origin.get("app_name"))} - {""}
+        if not keys or _connected_family(manager, keys):
+            return ""
+        preset_id = origin_preset(context, presets)
+        if not preset_id:
+            return ""
+        now = clock()
+        if now - _CONNECT_TRIED.get(preset_id, float("-inf")) < CONNECT_RETRY_S:
+            return ""
+        _CONNECT_TRIED[preset_id] = now
+        post = post or _internal_post
+        if connectors_of is None:
+            def connectors_of(pid: str) -> list:
+                from src import connector_sidecar
+                return [e for e in connector_sidecar.list_connectors(redact=True) if e.get("preset_id") == pid]
+        existing = connectors_of(preset_id)
+        if existing:
+            result = await post(f"/api/app-connectors/{existing[0]['id']}/connect", {})
+            return "connected" if isinstance(result, Mapping) and result.get("connected") else ""
+        if find is None:
+            from src import connector_discovery, connectors
+            preset = connectors.get_preset(preset_id)
+            if preset is None:
+                return ""
+            candidate = await connector_discovery.find_app(preset)
+        else:
+            candidate = await find(preset_id)
+        port = int(getattr(candidate, "port", 0) or 0) if candidate is not None else 0
+        if not port:
+            return ""
+        result = await post("/api/app-connectors/adopt", {"port": port, "preset_id": preset_id})
+        return "adopted" if isinstance(result, Mapping) and result.get("id") else ""
+    except Exception:  # noqa: BLE001 - connecting is a convenience; the turn goes on without it
+        import logging
+        logging.getLogger(__name__).debug("[hoard-copilot] connecting the origin app failed", exc_info=True)
+        return ""
+
+
 #: server_id -> (data_space_id or "", checked_at)
 _SPACE_CACHE: Dict[str, tuple] = {}
 _SPACE_TTL_S = 600.0
@@ -303,10 +404,17 @@ def origin_server_note(manager: Any, context: Optional[Mapping[str, Any]]) -> Op
         origin = origin_of(context)
         keys = {_norm(origin.get("tool_server_id")), _norm(origin.get("app_id")), _norm(origin.get("app_name"))} - {""}
         family = [sid for sid, name in servers.items() if keys and _family(sid, name, keys)]
-        if not family:
-            return None
-        server = find_origin_server(servers, context, server_data_spaces)
         app = str(origin.get("app_name") or origin.get("app_id") or "").strip()
+        if not family:
+            if not keys:
+                return None
+            # Live 17-10: with no Silver's Hoard server the copilot spent nine
+            # minutes looking for Smogon sets on the web instead of saying so.
+            return (f"{app} is not connected to Faustus as a tool server right now, so none of its tools can read or "
+                    f"change anything in this turn. Say so plainly and that it is connected from Connectors (or by "
+                    f"reopening the panel once the app is running); do not stand in for its tools with web searches "
+                    f"or other apps, and do not claim any change was made in {app}.")
+        server = find_origin_server(servers, context, server_data_spaces)
         if len(family) == 1:
             if server:
                 return None
@@ -358,4 +466,4 @@ def origin_hint_message(context: Optional[Mapping[str, Any]], manager: Any = Non
 
 __all__ = ["ORIGIN_TOOL_LIMIT", "origin_of", "find_origin_server", "pick_read_tools", "server_data_spaces",
            "origin_app_tools", "origin_server_note", "origin_hint_message", "current_origin_server",
-           "remember_origin_server", "note_participation"]
+           "remember_origin_server", "note_participation", "connect_origin_app", "origin_preset", "CONNECT_RETRY_S"]

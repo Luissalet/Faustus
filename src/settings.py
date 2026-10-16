@@ -968,6 +968,10 @@ DEFAULT_SETTINGS = {
     # otherwise-Latin answer cannot trip it.
     "local_gibberish_script_threshold": 0.40,
     "local_gibberish_window_chars": 300,
+    # Seconds a streamed answer may go silent once it has started before the
+    # call is closed as degenerate (src.llm_core._lines_until_stall). The first
+    # line may take as long as the prompt needs. 0 = no cap.
+    "llm_stream_idle_timeout_s": 240,
     # Output cap for a self-hosted OpenAI-compatible endpoint that is NOT
     # Ollama (llama.cpp's llama-server, vLLM, LM Studio-style servers —
     # src.llm_core._apply_local_generation_stability) when neither a saved

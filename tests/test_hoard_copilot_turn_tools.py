@@ -132,3 +132,79 @@ def test_open_objects_are_held_by_id_not_by_title():
     assert "identified by their ids" in hint and "same title" in hint
     empty = origin_hint_message({"origin": {"app_id": "cicero"}, "active_objects": []})["content"]
     assert "identified by their ids" not in empty
+
+
+# --------------------------------------------------------------- an app whose tools are not connected (17-10-2026)
+PRESETS = [{"id": "silver", "name": "Silver's Hoard"}, {"id": "kafka", "name": "Kafka's Hoard"}]
+
+
+def _connect(mgr, context, *, existing=(), port=5230, clock=None, posted=None):
+    import asyncio
+    from src import hoard_copilot_turn as turn
+    calls = posted if posted is not None else []
+
+    async def post(path, body):
+        calls.append((path, dict(body)))
+        return {"connected": True} if path.endswith("/connect") else {"id": "conn-1"}
+
+    async def find(preset_id):
+        return SimpleNamespace(port=port) if port else None
+
+    return asyncio.run(turn.connect_origin_app(
+        mgr, context, post=post, find=find, connectors_of=lambda pid: list(existing), presets=PRESETS,
+        clock=clock or (lambda: 1000.0))), calls
+
+
+def test_a_panel_from_an_app_without_a_connector_adopts_the_running_app(monkeypatch):
+    from src import hoard_copilot_turn as turn
+    monkeypatch.setattr(turn, "_CONNECT_TRIED", {})
+    panel = ctx(app_id="silver", app_name="Silver's Hoard", tool_server_id="silver")
+    result, calls = _connect(manager(SERVERS), panel)
+    assert result == "adopted" and calls == [("/api/app-connectors/adopt", {"port": 5230, "preset_id": "silver"})]
+    # tried a moment ago: the next turn does not probe again
+    again, calls2 = _connect(manager(SERVERS), panel, clock=lambda: 1000.0 + turn.CONNECT_RETRY_S - 1)
+    assert again == "" and calls2 == []
+    later, calls3 = _connect(manager(SERVERS), panel, clock=lambda: 1000.0 + turn.CONNECT_RETRY_S + 1)
+    assert later == "adopted" and len(calls3) == 1
+
+
+def test_a_switched_off_connector_is_switched_on_and_a_connected_app_is_left_alone(monkeypatch):
+    from src import hoard_copilot_turn as turn
+    monkeypatch.setattr(turn, "_CONNECT_TRIED", {})
+    panel = ctx(app_id="silver", app_name="Silver's Hoard")
+    result, calls = _connect(manager(SERVERS), panel, existing=[{"id": "c-9", "preset_id": "silver"}])
+    assert result == "connected" and calls == [("/api/app-connectors/c-9/connect", {})]
+    kafka = ctx(app_id="kafka", app_name="Kafka's Hoard")
+    assert _connect(manager(SERVERS), kafka) == ("", [])          # already connected
+    assert _connect(manager(SERVERS), ctx(app_id="mybook")) == ("", [])   # no manifest installed
+    monkeypatch.setattr(turn, "_CONNECT_TRIED", {})
+    assert _connect(manager(SERVERS), panel, port=0)[0] == ""     # the app is not running
+
+
+def test_connecting_never_breaks_a_turn(monkeypatch):
+    import asyncio
+    from src import hoard_copilot_turn as turn
+    monkeypatch.setattr(turn, "_CONNECT_TRIED", {})
+
+    async def boom(*a, **k):
+        raise RuntimeError("down")
+
+    panel = ctx(app_id="silver", app_name="Silver's Hoard")
+    assert asyncio.run(turn.connect_origin_app(manager(SERVERS), panel, post=boom, find=boom,
+                                               connectors_of=lambda pid: [], presets=PRESETS)) == ""
+    assert asyncio.run(turn.connect_origin_app(None, None)) == ""
+
+
+def test_the_preset_is_found_by_id_or_by_name():
+    from src.hoard_copilot_turn import origin_preset
+    assert origin_preset(ctx(app_id="silver"), PRESETS) == "silver"
+    assert origin_preset(ctx(app_name="Silver's Hoard"), PRESETS) == "silver"
+    assert origin_preset(ctx(app_id="nobody"), PRESETS) == ""
+    assert origin_preset({}, PRESETS) == ""
+
+
+def test_the_hint_says_when_the_app_is_not_connected_instead_of_letting_the_model_wander():
+    hint = origin_hint_message(ctx(app_id="silver", app_name="Silver's Hoard"), manager(SERVERS))["content"]
+    assert "not connected to Faustus" in hint and "web searches" in hint
+    connected = origin_hint_message(ctx(app_id="kafka", app_name="Kafka's Hoard"), manager(SERVERS))["content"]
+    assert "not connected" not in connected

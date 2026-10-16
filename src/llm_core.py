@@ -727,6 +727,57 @@ def _stream_timeout(read_timeout) -> httpx.Timeout:
     return httpx.Timeout(connect=LLMConfig.CONNECT_TIMEOUT, read=float(read_timeout), write=30.0, pool=5.0)
 
 
+#: Silence cap once a streamed answer has started (setting
+#: `llm_stream_idle_timeout_s`, 0 = off). The first line may take as long as
+#: the prompt needs; after it, a server that sends nothing for this long is
+#: generating something it holds back. Live 17-10-2026: vLLM's GLM tool-call
+#: parser held a broken call for nine minutes while the Sparks kept
+#: generating at 130 tokens/s, and the copilot turn showed only "Sending...".
+_STREAM_IDLE_DEFAULT_S = 240.0
+_STREAM_STALLED = object()
+
+
+def _stream_idle_cap() -> float:
+    try:
+        from src.settings import get_setting
+        value = float(get_setting("llm_stream_idle_timeout_s", _STREAM_IDLE_DEFAULT_S) or 0)
+    except Exception:  # noqa: BLE001 - a bad setting keeps the default
+        value = _STREAM_IDLE_DEFAULT_S
+    return max(0.0, value)
+
+
+async def _lines_until_stall(lines, idle_s: float):
+    """The SSE lines of a response as they arrive; once the first one is in,
+    a gap longer than ``idle_s`` yields ``_STREAM_STALLED`` and stops."""
+    it = lines.__aiter__()
+    started = False
+    while True:
+        try:
+            if started and idle_s > 0:
+                line = await asyncio.wait_for(it.__anext__(), timeout=idle_s)
+            else:
+                line = await it.__anext__()
+        except StopAsyncIteration:
+            return
+        except asyncio.TimeoutError:
+            yield _STREAM_STALLED
+            return
+        started = True
+        yield line
+
+
+def _stream_stalled_error_chunk(model: str, url: str, idle_s: float) -> str:
+    """Typed `event: error` for a stream that went silent mid-answer. It is
+    tagged as degenerate output: the cause is the model producing something
+    the server will not stream (a runaway tool call), and the agent loop's
+    recovery for degenerate rounds is the right answer to it."""
+    name = model or "model"
+    logger.warning("[stream-stall] %s at %s sent nothing for %.0fs mid-answer; closing", name, _host_key(url), idle_s)
+    message = (f"Stopped generation: {name} sent nothing for {int(idle_s)} s in the middle of its answer while the "
+               f"server kept working (usually a tool call it cannot finish). Try again or use another model.")
+    return f'event: error\ndata: {json.dumps({"status": 502, "text": message, "error": message, "error_class": DEGENERATE_OUTPUT_ERROR_CLASS, "fallback_eligible": False, "stalled_s": int(idle_s)})}\n\n'
+
+
 # Cache for LLM responses
 def _cache_header_identity(headers) -> str:
     """Return a non-secret identity for credential-distinct request routes."""
@@ -7741,7 +7792,13 @@ async def _stream_llm_inner(url: str, model: str, messages: List[Dict], temperat
                     yield chunk
                 return
 
-            async for line in r.aiter_lines():
+            _idle_cap = _stream_idle_cap()
+            async for line in _lines_until_stall(r.aiter_lines(), _idle_cap):
+                if line is _STREAM_STALLED:
+                    # Leaving the `async with` closes the connection, which is
+                    # what makes the server stop generating.
+                    yield _stream_stalled_error_chunk(model, target_url, _idle_cap)
+                    return
                 if not line:
                     continue
 
