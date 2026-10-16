@@ -12789,8 +12789,9 @@ y al reiniciar una repetición. El adaptador de las campales expone ese mismo re
 se corrige el fallo del fuego al cargarse su imagen. Son dos líneas de producto, sin modificar simulación,
 daño, colisiones ni formatos. El comportamiento se comparte con las páginas jugables exportadas.
 
-Entrega d5cc3bf (#658) en revisión, aún sin integrar en Main. QA aislada con npm ci propio: 321 pruebas
-Python aprobadas y dos omitidas; 364 Node aprobadas y una omitida; compilación app/HTML aprobada.
+Entrega d5cc3bf (#658) aprobada CAS1 por revisión independiente espontánea e integrada en Main.
+QA aislada con npm ci propio: 321 pruebas Python aprobadas y dos omitidas; 364 Node aprobadas
+y una omitida; compilación app/HTML aprobada.
 Regresiones RED→GREEN de ocho familias de proyectil y del constructor real de MassRenderer.
 
 MCP nativo: 160 herramientas disponibles y fixtures legales nuevos. App RT con roca en vuelo: dos capturas
@@ -12800,5 +12801,15 @@ de daño y código SILVERMASS1. Sin errores de consola. El HTML RT se cerró por
 no se presenta como victoria ni K.O. La simulación y los datos reales de Luis permanecen intactos.
 
 Evidencias, logs y continuidad: D:\LocalAI\research-inbox\silver-sigue-20261016. Sin push, modelos ni
-reinicio de Main; la partida humana abierta permanece intocable. Integrar con revisión o el plazo de dos
-horas del Ágora, bloqueo de merge y HEAD fresco. No hay autoaprobación.
+reinicio de Main; la partida humana abierta permanece intocable. Integración exacta con bloqueo de merge,
+HEAD fresco y Main limpio; frontend compilado y servido byte a byte como el archivo local. La plantilla
+HTML coincide con la probada en QA. El backend conserva PID123200 desde06:09:17 y la única partida
+humana sigue abierta. El retorno SILVERMASS1 se importó por MCP y su repetición conserva siete de daño;
+exportación nativa MP4 H2641280×720 a30fps y AAC con audio no silencioso. Contenedor23.284s, frente a21.7s
+informados por el servicio; ambos datos quedan guardados, sin presentar la duración informada como exacta.
+
+QA y vista previa propios detenidos tras comprobar cero combates, trabajos y desafíos activos; puertos
+63850/63851 libres. Worktree de producto retirado con ruta, registro Git, limpieza y ausencia de enlaces
+verificados. Manual nativo:168 párrafos,167 ajenos con texto y estilos exactos; grafo84 nodos,83 ajenos
+y todas las aristas exactos, sin embeddings. Memoria y continuidad actualizadas; no se reactivó la
+programación nocturna. La continuación directa queda cerrada con las dos correcciones activas.
