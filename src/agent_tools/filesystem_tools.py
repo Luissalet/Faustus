@@ -1688,8 +1688,40 @@ _TEMP_TRASH_DIRNAME = ".faustus_temp_trash"
 _TEMP_REGISTRY_FILENAME = "_temp_registry.json"
 
 
-def _history_sidecar_dir(path: str) -> str:
+def _faustus_data_dir() -> str:
+    env = os.environ.get("ODYSSEUS_DATA_DIR")
+    if env:
+        return env
+    from src.constants import DATA_DIR
+    return DATA_DIR
+
+
+def _private_store_for(directory: str) -> str:
+    """Faustus's own bookkeeping for one folder of the user's, kept in
+    Faustus's data directory instead of the folder itself.
+
+    It used to live in `<folder>/.faustus_edit_history/`. A benchmark task
+    that checks a folder holds exactly the files it asked for failed on that
+    alone ("Expected only main.py.c, found: [..., '.faustus_edit_history',
+    ...]"), and so does any build, archive or `ls` the user runs there: the
+    work folder belongs to the user."""
+    folder = os.path.normcase(os.path.abspath(directory))
+    key = hashlib.sha256(folder.encode("utf-8", "surrogatepass")).hexdigest()[:24]
+    store = os.path.join(_faustus_data_dir(), "edit_history", key)
+    os.makedirs(store, exist_ok=True)
+    origin = os.path.join(store, "folder.txt")
+    if not os.path.exists(origin):
+        with open(origin, "w", encoding="utf-8") as fh:
+            fh.write(os.path.abspath(directory) + "\n")
+    return store
+
+
+def _legacy_sidecar_dir(path: str) -> str:
     return os.path.join(os.path.dirname(os.path.abspath(path)), _EDIT_HISTORY_DIRNAME)
+
+
+def _history_sidecar_dir(path: str) -> str:
+    return _private_store_for(os.path.dirname(os.path.abspath(path)))
 
 
 def _ensure_private_dir(directory: str) -> None:
@@ -1722,7 +1754,6 @@ def record_edit_history(path: str, *, tool: str, pre_revision: Optional[str],
     into a failed tool call."""
     try:
         sidecar_dir = _history_sidecar_dir(path)
-        _ensure_private_dir(sidecar_dir)
         entry: Dict[str, Any] = {
             "ts": time.time(), "tool": tool,
             "pre_revision": pre_revision, "post_revision": post_revision,
@@ -1744,6 +1775,9 @@ def list_edit_history(path: str, *, limit: int = 50) -> List[Dict[str, Any]]:
     """Oldest-first up to the sidecar's whole log, returning only the most
     recent `limit` entries — the timeline EDIT-05's frontend renders."""
     sidecar = _history_sidecar_path(path)
+    if not os.path.isfile(sidecar):
+        # History recorded before it moved out of the user's folder.
+        sidecar = os.path.join(_legacy_sidecar_dir(path), os.path.basename(path) + ".jsonl")
     if not os.path.isfile(sidecar):
         return []
     out: List[Dict[str, Any]] = []
@@ -1770,6 +1804,8 @@ def restore_edit_history(path: str, *, pre_revision: str) -> Dict[str, Any]:
             continue
         snapshot_path = os.path.join(_history_sidecar_dir(path), entry["pre_snapshot"])
         if not os.path.isfile(snapshot_path):
+            snapshot_path = os.path.join(_legacy_sidecar_dir(path), entry["pre_snapshot"])
+        if not os.path.isfile(snapshot_path):
             return {"restored": False, "reason": "snapshot file is missing"}
         with open(snapshot_path, "rb") as fh:
             data = fh.read()
@@ -1782,7 +1818,7 @@ def restore_edit_history(path: str, *, pre_revision: str) -> Dict[str, Any]:
 
 
 def _temp_registry_path(workspace_root: str) -> str:
-    return os.path.join(workspace_root, _EDIT_HISTORY_DIRNAME, _TEMP_REGISTRY_FILENAME)
+    return os.path.join(_private_store_for(workspace_root), _TEMP_REGISTRY_FILENAME)
 
 
 def _read_registry(workspace_root: str) -> List[str]:

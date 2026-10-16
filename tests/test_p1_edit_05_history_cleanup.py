@@ -4,6 +4,7 @@ arbitrary user file), moving to a recoverable trash instead of deleting.
 """
 import asyncio
 import os
+import pathlib
 
 import pytest
 
@@ -45,7 +46,7 @@ def test_restore_refuses_a_tampered_snapshot(tmp_path):
     pre_rev = ft.sha256_revision(b"v1")
     ft.record_edit_history(str(target), tool="edit_file", pre_revision=pre_rev,
                            post_revision="sha256:" + "0" * 64, pre_bytes=b"v1")
-    snapshot = tmp_path / ".faustus_edit_history" / (pre_rev.replace("sha256:", "") + ".snapshot")
+    snapshot = pathlib.Path(ft._history_sidecar_dir(str(target))) / (pre_rev.replace("sha256:", "") + ".snapshot")
     assert snapshot.exists()
     snapshot.write_bytes(b"tampered")  # corrupt the recorded snapshot
 
@@ -53,6 +54,34 @@ def test_restore_refuses_a_tampered_snapshot(tmp_path):
     assert result["restored"] is False
     assert "no longer match" in result["reason"]
     assert target.read_text() == "v1"  # untouched
+
+
+def test_edit_history_leaves_nothing_in_the_user_folder(tmp_path, monkeypatch):
+    """A task that checks its folder holds exactly the files it asked for
+    failed on Faustus's own `.faustus_edit_history/` alone."""
+    monkeypatch.setattr(
+        "src.tool_execution._resolve_tool_path",
+        lambda raw: str(tmp_path / raw), raising=False)
+    asyncio.run(ft.WriteFileTool().execute("main.py.c\nint main(){return 0;}", {}))
+    asyncio.run(ft.EditFileTool().execute(
+        '{"path": "main.py.c", "old_string": "return 0", "new_string": "return 1"}', {}))
+    ft.mark_temp_file(str(tmp_path), str(tmp_path / "main.py.c"))
+    assert sorted(os.listdir(tmp_path)) == ["main.py.c"]
+    assert [h["tool"] for h in ft.list_edit_history(str(tmp_path / "main.py.c"))] == ["write_file", "edit_file"]
+
+
+def test_history_written_in_the_old_place_is_still_restorable(tmp_path):
+    target = tmp_path / "f.txt"
+    target.write_text("v2")
+    legacy = tmp_path / ".faustus_edit_history"
+    legacy.mkdir()
+    pre_rev = ft.sha256_revision(b"v1")
+    (legacy / (pre_rev.replace("sha256:", "") + ".snapshot")).write_bytes(b"v1")
+    (legacy / "f.txt.jsonl").write_text(
+        '{"ts": 1, "tool": "edit_file", "pre_revision": "%s", "post_revision": null, "pre_snapshot": "%s"}\n'
+        % (pre_rev, pre_rev.replace("sha256:", "") + ".snapshot"), encoding="utf-8")
+    assert ft.restore_edit_history(str(target), pre_revision=pre_rev)["restored"] is True
+    assert target.read_text() == "v1"
 
 
 def test_restore_reports_missing_revision_instead_of_guessing(tmp_path):
