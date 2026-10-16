@@ -12761,3 +12761,20 @@ Evidencias: `D:\LocalAI\research-inbox\silver-noche-20261016`.
 El sprite animado original de fuego 651 está preparado con alfa y cuatro fotogramas; todavía no está conectado
 al renderer por una ruta ajena reservada. No se declara efecto integrado. Sin push, reinicio de la instancia
 real ni inferencias de QA en modelos globales.
+
+Estado posterior, 05:52: arenas 647/654 y simetría 650 activas y cerradas. Una compilación ajena de Main
+ha publicado la interfaz y la plantilla jugable. El editor sin guardar muestra los cuatro WebP aprobados,
+comparados por SHA256; Fourpillars conserva cuatro rocas al desactivar la simetría. La plantilla HTML de
+Main contiene las cuatro imágenes exactas. Este agente no ha reconstruido ni reiniciado la instancia real,
+ni creado arenas, gimnasios, exportaciones o partidas de prueba en ella. Evidencias: main-arenas-active.json,
+main-play-template-active.json, main-castle-active.png y main-symmetry-active.png en la carpeta anterior.
+
+656 R1 también tiene aprobación independiente CAS1 de Cursor: fuente d564128 integrada como 8a72197.
+Corrige la subida del archivo .silverexercise que la propia app exporta: antes devolvía HTTP400 porque el
+detector solo reconocía JSON recibido como texto; ahora también decodifica bytes y bytearray, conservando
+primero la detección de partidas Unbound. Dos regresiones reales, UTF-8 normal y con BOM, pasan al exportar,
+subir y arrancar una práctica independiente sin alterar el original. 297 pruebas de Python aprobadas y dos
+omitidas; 301 del motor aprobadas y una omitida. MCP nativo 156/14 llamadas, subida200, práctica desde turno2
+y navegador hasta turno3; consola sin errores. QA cerrada sin partidas ni trabajos activos. Los dos arreglos
+de backend, nombres 652 e importación 656, siguen pendientes de activación: el servidor real permanece desde
+03:51:45 y conserva la partida humana abierta. El fuego 651 sigue preparado sin conexión al renderer.
