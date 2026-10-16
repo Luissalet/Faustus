@@ -191,3 +191,22 @@ def test_an_attended_task_is_not_audited(tmp_path, monkeypatch):
     seen, events = _audit_run(monkeypatch, tmp_path, unattended=False)
     assert not [e for e in events if e.get("reason") == "completion_audit"]
     assert len(seen) == 4
+
+
+def test_an_announced_step_that_never_ran_is_sent_back_to_the_audit(tmp_path, monkeypatch):
+    """A terminal task ended on "Now writing the filter." after one todo list:
+    no file written, the turn closed as answered. The audit catches it too."""
+    _patch_common(monkeypatch)
+    seen = _scripted(monkeypatch, [
+        _glob("*.html"),
+        _text("Now writing the filter."),
+        _text("Wrote /app/filter.py and checked it against the sample pages."),
+    ])
+    gen = al.stream_agent_loop(
+        "http://127.0.0.1:11434/v1", "qwen3-coder:30b",
+        [{"role": "user", "content": "Write /app/filter.py that strips JavaScript from HTML files"}],
+        max_rounds=8, relevant_tools={"read_file", "glob"}, workspace=str(tmp_path), unattended=True,
+    )
+    events = _events(_collect(gen))
+    assert [e for e in events if e.get("reason") == "completion_audit"], [e.get("type") for e in events]
+    assert len(seen) >= 3

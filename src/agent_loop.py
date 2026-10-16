@@ -15838,7 +15838,9 @@ async def _stream_agent_loop_body(
             # the run ends: nobody reviews it afterwards, and most lost
             # benchmark tasks were "answered" with one stated requirement
             # (a speed limit, an interactive case, an exact message) never
-            # checked. Conversation tasks are left alone: their work is the
+            # checked. It runs even when nothing changed yet: a terminal task
+            # once ended after a todo list and one sentence, its file never
+            # written. Conversation tasks are left alone: their work is the
             # conversation, and it is already over.
             if (
                 unattended
@@ -15846,7 +15848,6 @@ async def _stream_agent_loop_body(
                 and not _completion_audit_done
                 and _hc_text
                 and not _boundary_echo_only
-                and (_ledger.mutations or len(_ledger.events or []) >= 3)
                 and _unattended_relay_tool(_tool_names_sent, []) is None
                 and round_num < max_rounds
             ):
