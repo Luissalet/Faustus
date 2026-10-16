@@ -184,6 +184,33 @@ class EncryptedText(TypeDecorator):
         return decrypt(value)
 
 
+class EncryptedHeaders(TypeDecorator):
+    """Keep the existing JSON column, encrypting new session credentials.
+
+    Legacy JSON objects remain readable without rewriting unrelated sessions.
+    Application code still receives the same dictionary after a restart.
+    """
+    impl = JSON
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if not value:
+            return value
+        import json
+        from src.secret_storage import encrypt, is_encrypted
+        if isinstance(value, str) and is_encrypted(value):
+            return value
+        return encrypt(json.dumps(value, ensure_ascii=False))
+
+    def process_result_value(self, value, dialect):
+        from src.secret_storage import decrypt, is_encrypted
+        if isinstance(value, str) and is_encrypted(value):
+            import json
+            decoded = decrypt(value)
+            return json.loads(decoded) if decoded else {}
+        return value
+
+
 class Session(TimestampMixin, Base):
     """
     SQLAlchemy model for Session table.
@@ -221,8 +248,8 @@ class Session(TimestampMixin, Base):
     # source without inventing a side-thread wire.
     forked_from = Column(String, ForeignKey("sessions.id", ondelete="SET NULL"), nullable=True, index=True)
 
-    # Headers stored as JSON
-    headers = Column(JSON, default=dict)
+    # Existing JSON shape in memory; credentials encrypted at rest.
+    headers = Column(EncryptedHeaders, default=dict)
     
     # Timestamps are provided by TimestampMixin
     last_accessed = Column(DateTime, default=func.now(), onupdate=func.now())
