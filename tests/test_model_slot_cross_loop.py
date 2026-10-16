@@ -80,3 +80,23 @@ def test_cancelled_waiter_cannot_take_slot_later():
         lock.release()
 
     asyncio.run(scenario())
+
+
+def test_resident_remote_sparks_do_not_wait_for_another_model_slot(monkeypatch):
+    lock = llm_core._CrossLoopModelLock()
+    monkeypatch.setattr(llm_core, '_LOCAL_MODEL_LOCK', lock)
+    monkeypatch.setattr(llm_core, 'is_local_endpoint', lambda url: True)
+    monkeypatch.setattr(llm_core, 'is_sparks_url', lambda url: True)
+
+    async def scenario():
+        await lock.acquire()
+        try:
+            async def call():
+                async with llm_core._local_model_slot_gate('http://192.168.0.236:8002/v1', 'glm'):
+                    return 'independent'
+            assert await asyncio.wait_for(call(), timeout=0.5) == 'independent'
+            assert lock.locked()  # It neither released nor replaced Spark 4's slot.
+        finally:
+            lock.release()
+
+    asyncio.run(scenario())

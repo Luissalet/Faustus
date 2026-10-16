@@ -548,6 +548,13 @@ async def _local_model_slot_gate(target_url: str, model: str, workload: Optional
         yield
         return
 
+    # The configured remote Sparks service owns its GPUs and scheduler. It
+    # must remain usable while another endpoint (for example Spark 4) holds
+    # this PC's model slot. Loopback engines still share the physical gate.
+    if not _is_loopback_url(target_url) and is_sparks_url(target_url):
+        yield
+        return
+
     # Engine swap (src/engine_swap.py): start a managed llama.cpp engine on
     # demand if `target_url` maps to one and it is not already up, and track
     # usage (in-flight + last-used) for the idle reaper. Guarded throughout:
